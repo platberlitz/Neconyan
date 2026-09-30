@@ -172,12 +172,12 @@ describe('icons only top bar', () => {
         const buttonSource = getFunctionSource('createTopbarPageButton');
         expect(buttonSource).toContain('icon: config?.icon ?? \'fa-circle-dot\'');
         for (const entry of [
-            "id: 'advanced-formatting',",
-            "id: 'agents',",
-            "id: 'server',",
-            "id: 'console-logs',",
-            "{ id: 'editor', label: 'Editor', icon: 'fa-pen-to-square' }",
-            "{ id: 'import', label: 'Import', icon: 'fa-file-import' }",
+            'id: \'advanced-formatting\',',
+            'id: \'agents\',',
+            'id: \'server\',',
+            'id: \'console-logs\',',
+            '{ id: \'editor\', label: \'Editor\', icon: \'fa-pen-to-square\' }',
+            '{ id: \'import\', label: \'Import\', icon: \'fa-file-import\' }',
         ]) {
             expect(normalizedTabsSource).toContain(entry);
         }
@@ -195,8 +195,8 @@ describe('icons only top bar', () => {
         }
 
         expect(cssSource).toMatch(/:root\[data-sb-topbar-icons-only='true'\] #sb-left-shell-toggle,\n:root\[data-sb-topbar-icons-only='true'\] #sb-right-shell-toggle \{\n\s*display: none;\n\}/);
-        expect(mobileCss).toContain(":root:not([data-sb-topbar-icons-only='true'])[data-sb-mobile-nav-layout='horizontal'][data-sb-mobile-nav-customize='shown'] #sb-left-shell-toggle");
-        expect(mobileCss).toContain(":root:not([data-sb-topbar-icons-only='true'])[data-sb-mobile-nav-replacement='shown'] #sb-left-shell-toggle");
+        expect(mobileCss).toContain(':root:not([data-sb-topbar-icons-only=\'true\'])[data-sb-mobile-nav-layout=\'horizontal\'][data-sb-mobile-nav-customize=\'shown\'] #sb-left-shell-toggle');
+        expect(mobileCss).toContain(':root:not([data-sb-topbar-icons-only=\'true\'])[data-sb-mobile-nav-replacement=\'shown\'] #sb-left-shell-toggle');
 
         // The parking machinery and its bay are gone entirely.
         expect(normalizedTabsSource).not.toContain('SB_TOPBAR_PARKED_IDS');
@@ -215,13 +215,13 @@ describe('icons only top bar', () => {
         expect(buildSource).toContain('activateCharacterTopbarButton,');
 
         const proxyStateSource = getFunctionSource('syncProxyButtonState');
-        expect(proxyStateSource).toContain("const isCharacterButton = proxyButton.id === 'sb-character-toggle';");
+        expect(proxyStateSource).toContain('const isCharacterButton = proxyButton.id === \'sb-character-toggle\';');
         expect(proxyStateSource).toContain('if (isCharacterButton && isTopbarIconsOnlyActive())');
         expect(proxyStateSource).toContain('isCharacterPanelTabOpen(NN_CHARACTER_PANEL_DEFAULT_TAB)');
-        expect(proxyStateSource).toContain("proxyButton.classList.remove('is-open', 'is-pinned');");
-        expect(proxyStateSource).toContain("proxyButton.classList.toggle('is-current', isCurrent);");
-        expect(proxyStateSource).toContain("proxyButton.classList.toggle('is-open', isOpen);");
-        expect(proxyStateSource).toContain("proxyButton.classList.toggle('is-pinned', isPinned);");
+        expect(proxyStateSource).toContain('proxyButton.classList.remove(\'is-open\', \'is-pinned\');');
+        expect(proxyStateSource).toContain('proxyButton.classList.toggle(\'is-current\', isCurrent);');
+        expect(proxyStateSource).toContain('proxyButton.classList.toggle(\'is-open\', isOpen);');
+        expect(proxyStateSource).toContain('proxyButton.classList.toggle(\'is-pinned\', isPinned);');
 
         const pageStateSource = getFunctionSource('syncTopbarPageButtonStates');
         expect(pageStateSource).toContain('syncCharacterTopbarButtonState();');
@@ -363,7 +363,7 @@ describe('icons only top bar', () => {
         const dedupeSource = getFunctionSource('syncTopbarIconsOnlyDedupe');
         expect(dedupeSource).not.toContain('style.setProperty(\'display\'');
         expect(dedupeSource).toContain('const claimedByClusters = new Set(Array.from(clusterButtons).filter(isActuallyVisible).map(button => button.dataset.sbTopbarPage));');
-        expect(dedupeSource).toContain("'sb-topbar-shortcut-duplicate'");
+        expect(dedupeSource).toContain('\'sb-topbar-shortcut-duplicate\'');
         expect(dedupeSource).toContain('iconsOnly && claimedByClusters.has(getShortcutTarget(side))');
         expect(normalizedTabsSource).not.toContain('sb-topbar-page-duplicate');
         expect(cssSource).toContain(':root[data-sb-topbar-icons-only=\'true\'] .sb-topbar-shortcut-duplicate');
@@ -389,16 +389,16 @@ describe('icons only top bar', () => {
 
 
     test('retires the Advanced toggle and keeps every control available', () => {
-        expect(normalizedTabsSource).not.toContain("id: 'sb-advanced-toggle'");
+        expect(normalizedTabsSource).not.toContain('id: \'sb-advanced-toggle\'');
         expect(normalizedTabsSource).not.toContain('function toggleAdvancedMode()');
         expect(normalizedTabsSource).not.toContain('function setTopbarIconsOnly(mode, enabled');
         expect(normalizedTabsSource).toContain('function isTopbarIconsOnlyActive()');
         const activeSource = getFunctionSource('isTopbarIconsOnlyActive');
         expect(activeSource).toContain('return true;');
-        expect(normalizedTabsSource).toContain("document.documentElement.dataset.neconyanMode = 'advanced';");
+        expect(normalizedTabsSource).toContain('document.documentElement.dataset.neconyanMode = \'advanced\';');
         const orderSource = getFunctionSource('getTopbarGroupOrder');
-        expect(orderSource).toContain("right.push('sb-home-toggle', 'sb-topbar-divider-home');");
-        expect(normalizedTabsSource).not.toContain("Advanced mode (show all controls)");
+        expect(orderSource).toContain('right.push(\'sb-home-toggle\', \'sb-topbar-divider-home\');');
+        expect(normalizedTabsSource).not.toContain('Advanced mode (show all controls)');
     });
 
     test('keeps title previews independent from Advanced mode', () => {

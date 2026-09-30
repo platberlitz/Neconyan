@@ -65,6 +65,9 @@ describe('character card metadata preservation', () => {
             server = app.listen(0, '127.0.0.1', resolve);
         });
         baseUrl = `http://127.0.0.1:${server.address().port}`;
+        // Image work can block the loop past an idle socket deadline during the full suite.
+        // Keep fixture connections open until teardown rather than racing the fetch pool.
+        server.keepAliveTimeout = 0;
     });
 
     // Models a card Neconyan has not recorded yet, such as one edited by an outside tool before first use.

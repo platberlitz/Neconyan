@@ -1293,7 +1293,7 @@ describe('in-chat agent scoped enabled state', () => {
         const start = source.indexOf('async function migrateBundledTemplateMetadataToSavedAgents()');
         const body = source.slice(start, source.indexOf('\n}\n', start));
 
-        expect(body).toContain("await saveAgentBatch(changes, 'Bundled agent credits');");
+        expect(body).toContain('await saveAgentBatch(changes, \'Bundled agent credits\');');
         expect(body).not.toContain('saveAgent(');
     });
 });

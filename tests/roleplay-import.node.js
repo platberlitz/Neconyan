@@ -106,6 +106,18 @@ test('malformed uploaded histories refuse before publishing a file or pending ev
     assert.deepEqual(fs.readdirSync(path.dirname(f.filename)), ['Source.jsonl']);
 });
 
+test('Chub histories retain empty message and swipe text', t => {
+    const f = fixture(t, false, 'import-chub-empty');
+    const records = structuredClone(f.records);
+    records[2].mes = { message: '' };
+    records[2].swipes = [{ message: '' }, { message: 'Other' }];
+    const result = commitSingleChatImport(f.scope, input(f, { bytes: Buffer.from(records.map(JSON.stringify).join('\n')) }),
+        roleplayNativeHost, convertImportedChatFile);
+    const imported = fs.readFileSync(path.join(path.dirname(f.filename), result.names[0] + '.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(imported[2].mes, '');
+    assert.deepEqual(imported[2].swipes, ['', 'Other']);
+});
+
 test('over-capacity multi-history upload refuses before staging or linking', t => {
     const f = fixture(t, true, 'import-over-capacity');
     const saved = readRoleplayEntity(f.scope, 'group', 'group', { storage: true });

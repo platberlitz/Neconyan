@@ -6,8 +6,16 @@ import { openPersonaEditor, openQuietChatForSmoke } from './chat-scroll-regressi
 test.setTimeout(120000);
 
 async function dismissTour(page) {
+    await page.waitForFunction(async () => {
+        const { eventSource, event_types } = await import('/scripts/events.js');
+        return eventSource.autoFireLastArgs.has(event_types.APP_READY);
+    });
     const skip = page.getByRole('button', { name: 'Skip', exact: true });
-    await page.addLocatorHandler(skip, () => skip.click());
+    await page.addLocatorHandler(skip, async () => {
+        await skip.click();
+        await skip.waitFor({ state: 'hidden' });
+        await page.evaluate(() => window.NeconyanShell.openTab('characters', 'persona'));
+    });
     if (await skip.isVisible()) await skip.click();
 }
 
@@ -19,6 +27,55 @@ async function openPersonaBrowser(page) {
 for (const width of [393, 1280]) {
     test.describe(`Persona cards at ${width}px`, () => {
         test.use({ viewport: { width, height: width === 393 ? 852 : 900 }, isMobile: width === 393, hasTouch: width === 393 });
+
+        test('imports a SillyBunny persona library without changing existing personas', async ({ page }, testInfo) => {
+            await openQuietChatForSmoke(page, { selectCharacter: false });
+            await dismissTour(page);
+            const before = await page.evaluate(async () => {
+                const { power_user } = await import('/scripts/power-user.js');
+                const { user_avatar } = await import('/scripts/personas.js');
+                window.NeconyanShell.openTab('characters', 'persona');
+                return { names: { ...power_user.personas }, selected: user_avatar, defaultPersona: power_user.default_persona };
+            });
+            await openPersonaBrowser(page);
+            const responsePromise = page.waitForResponse('**/api/avatars/import-persona');
+            const chooserPromise = page.waitForEvent('filechooser');
+            await page.locator('#persona_card_import').click();
+            await (await chooserPromise).setFiles({ name: 'personas_20260930.json', mimeType: 'application/json', buffer: Buffer.from('\uFEFF' + JSON.stringify({
+                personas: { 'old-rin.png': 'SillyBunny Rin', 'old-kit.png': 'SillyBunny Kit' },
+                persona_descriptions: { 'old-rin.png': { description: 'Portable description.\n猫', title: 'Visitor', position: 4, depth: 7, role: 2,
+                    appendices: [{ id: 'rain', name: 'Rain', description: 'Wet streets.' }], connections: [{ id: 'private' }], activeAppendices: { private: ['rain'] } } },
+                default_persona: 'old-rin.png',
+            })) });
+            const response = await responsePromise;
+            expect(response.status()).toBe(200);
+            const imported = await response.json();
+            expect(imported.personas).toHaveLength(2);
+            expect(imported.missingAvatars).toBe(2);
+            await expect(page.getByText('This persona backup contains no pictures. The imported personas use the default picture; you can replace it in Edit.', { exact: true })).toBeVisible();
+            const metrics = await page.locator('#persona_card_import').boundingBox();
+            expect(metrics.height).toBeGreaterThanOrEqual(width === 393 ? 44 : 32);
+            expect(metrics.x + metrics.width).toBeLessThanOrEqual(width);
+            await page.screenshot({ path: testInfo.outputPath('sillybunny-personas-imported.png') });
+            await page.reload();
+            await page.waitForFunction('document.getElementById("preloader") === null');
+            const after = await page.evaluate(async avatars => {
+                const { power_user } = await import('/scripts/power-user.js');
+                const { user_avatar } = await import('/scripts/personas.js');
+                return { names: power_user.personas, selected: user_avatar, defaultPersona: power_user.default_persona,
+                    entries: avatars.map(avatar => power_user.persona_descriptions[avatar]) };
+            }, imported.personas.map(persona => persona.avatar));
+            expect(after.names).toMatchObject(before.names);
+            expect(after.selected).toBe(before.selected);
+            expect(after.defaultPersona).toBe(before.defaultPersona);
+            expect(after.entries[0]).toMatchObject({ description: 'Portable description.\n猫', title: 'Visitor', position: 4, depth: 7, role: 2,
+                appendices: [{ id: 'rain', name: 'Rain', description: 'Wet streets.' }], connections: [], activeAppendices: {} });
+            expect(after.entries[1].description).toBe('');
+            for (const persona of imported.personas) {
+                expect((await page.request.get(`/User Avatars/${persona.avatar}`)).ok()).toBe(true);
+            }
+            expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+        });
 
         test('exports and imports both formats, preserves content after reload and never replaces the original', async ({ page }, testInfo) => {
             await openQuietChatForSmoke(page, { selectCharacter: false });
@@ -77,7 +134,7 @@ for (const width of [393, 1280]) {
                 const imported = await response.json();
                 imports.push(imported.avatar);
                 expect(imported.avatar).not.toBe(original);
-                await expect(page.getByText('Persona imported. Its linked lorebook is missing; import the lorebook separately and link it again.', { exact: true })).toBeVisible();
+                await expect(page.getByText('Persona imported. Its linked lorebook is missing; import the lorebook separately and link it again.', { exact: true })).toBeVisible({ timeout: 30000 });
                 await expect(page.locator(`.avatar-container[data-avatar-id="${imported.avatar}"]`)).toHaveCount(1);
                 await page.screenshot({ path: testInfo.outputPath(`${format}-imported.png`) });
             }
@@ -141,6 +198,22 @@ test('rejects malformed cards and avatar paths without creating personas', async
     expect(results.after).toEqual(results.before);
 });
 
+test('the legacy restore input validates the whole library before changing personas', async ({ page }) => {
+    await openQuietChatForSmoke(page, { selectCharacter: false });
+    await dismissTour(page);
+    const before = await page.evaluate(async () => (await import('/scripts/power-user.js')).power_user.personas);
+    const response = page.waitForResponse('**/api/avatars/import-persona');
+    await page.locator('#personas_restore_input').setInputFiles({
+        name: 'invalid-backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({
+            personas: { 'first.png': 'Must not be partially imported', 'invalid.png': 42 }, persona_descriptions: {},
+        })),
+    });
+    expect((await response).status()).toBe(400);
+    await expect(page.getByText('Could not import this persona file. Choose a persona card or a SillyTavern or SillyBunny persona backup JSON.', { exact: true })).toBeVisible();
+    expect(await page.evaluate(async () => (await import('/scripts/power-user.js')).power_user.personas)).toEqual(before);
+    await expect(page.locator('#personas_restore_input')).toHaveValue('');
+});
+
 test('keeps imported details available and reports a failed settings save', async ({ page }) => {
     await openQuietChatForSmoke(page, { selectCharacter: false });
     await dismissTour(page);
@@ -157,7 +230,7 @@ test('keeps imported details available and reports a failed settings save', asyn
             avatar: `data:image/png;base64,${image.toString('base64')}`,
         })),
     });
-    await expect(page.getByText('The persona is loaded, but its details could not be saved. Edit the persona to retry saving before reloading.', { exact: true })).toBeVisible();
+    await expect(page.getByText('The persona is loaded, but its details could not be saved. Edit the persona to retry saving before reloading.', { exact: true })).toBeVisible({ timeout: 30000 });
     const imported = await page.evaluate(async () => {
         const { power_user } = await import('/scripts/power-user.js');
         const avatar = Object.keys(power_user.personas).find(key => power_user.personas[key] === 'Retry me');

@@ -206,7 +206,7 @@ describe('Neconyan native server ownership', () => {
         }
         fs.writeFileSync(path.join(pluginsPath, 'HOPPER.mjs'), poison);
         fs.writeFileSync(path.join(pluginsPath, 'renamed.mjs'), [
-            "import fs from 'node:fs';",
+            'import fs from \'node:fs\';',
             'export const info = { id: "hopper", name: "Old Meower", description: "Duplicate check" };',
             `export function init() { fs.writeFileSync(${JSON.stringify(marker)}, 'initialized'); }`,
         ].join('\n'));

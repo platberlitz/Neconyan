@@ -20,13 +20,12 @@ import { operationError, withOperation } from './store.js';
 
 const BATCHED_PIPELINE = 2;
 const MAX_AUTOMATIC_ATTEMPTS = 6;
-const SKIPPED_REPORT_LIMIT = 200;
 
 function importReport(plan, skipped) {
     const skippedImports = skipped.filter(item => plan.files[item.index].defaultIndex === undefined).length;
-    return { ...plan.extensionsReport, imported: plan.importedCount - skippedImports, defaults: plan.files.length - plan.importedCount,
+    return { ...plan.extensionsReport, imported: plan.importedCount - skippedImports, defaults: plan.files.length - plan.importedCount - (skipped.length - skippedImports),
         removed: plan.removals.length, sourceRoot: plan.sourceRoot, mode: plan.mode,
-        skippedCount: skipped.length, skipped: skipped.slice(0, SKIPPED_REPORT_LIMIT).map(item => ({ file: item.relative, reason: item.reason })),
+        skippedCount: skipped.length, skipped: skipped.map(item => ({ file: item.relative, reason: item.reason })),
         ...(plan.content === 'core' ? { content: 'core', parts: plan.parts, excludedCount: plan.excluded.length, excluded: plan.excluded,
             personaSettingsOnly: plan.files.some((file, index) => file.personaSettings && !skipped.some(item => item.index === index)) } : {}) };
 }

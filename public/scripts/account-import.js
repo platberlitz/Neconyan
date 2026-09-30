@@ -19,16 +19,16 @@ export function describeAccountImportSkips(result) {
     }
     if (count) {
         const listed = (Array.isArray(result.skipped) ? result.skipped : []).slice(0, SKIPPED_SHOWN).map(item => `• ${item.reason}`);
-        sections.push([`${count === 1 ? '1 file was' : `${count} files were`} damaged and could not be imported:`, ...listed,
-            ...(count > listed.length ? [`…and ${count - listed.length} more.`] : []),
-            `${excluded ? 'Other selected files were imported.' : 'Everything else was imported.'} To bring a damaged item back, re-export it from the original app and import it again.`].join('\n'));
+        sections.push([`${count === 1 ? '1 file could' : `${count} files could`} not be imported:`, ...listed,
+            ...(count > listed.length ? [`…and ${count - listed.length} more. Download the report for the full list.`] : []),
+            'Other selected files were imported. Check the reasons above before retrying.'].join('\n'));
     }
     if (result.personaSettingsOnly) sections.push('Only persona names and descriptions were read from settings.json. Other settings in that file were not imported.');
     if (result.parts) sections.unshift(`Selected libraries: ${result.parts.map(part => ({ chats: 'Chats', personas: 'Personas', characters: 'Character cards' })[part]).join(', ')}.`);
     return sections.join('\n\n');
 }
 
-/** The screen shows a short list; this download includes every deliberate exclusion. */
+/** The screen shows a short list; this download includes every excluded or skipped file. */
 export function mountAccountImportReportDownload(container, result) {
     if (!(result?.excludedCount || result?.skippedCount || result?.personaSettingsOnly)) return null;
     const button = document.createElement('button');

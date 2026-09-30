@@ -39,7 +39,7 @@ const screenshotsDir = join(__dirname, '..', 'screenshots');
 // Viewport configurations
 const viewports = {
     desktop: { width: 1920, height: 1080 },
-    mobile: { width: 390, height: 844 }
+    mobile: { width: 390, height: 844 },
 };
 
 async function dismissOnboardingIfPresent(page) {
@@ -159,7 +159,7 @@ const sections = [
             // Ensure Presets tab is active
             await forceClick(page, 'button[role="tab"][aria-label="Presets"]');
             await page.waitForTimeout(500);
-        }
+        },
     },
     {
         name: 'customize',
@@ -167,7 +167,7 @@ const sections = [
         setup: async (page) => {
             await ensureOnlyOpen(page, 'customize');
             await page.waitForTimeout(500);
-        }
+        },
     },
     {
         name: 'agents',
@@ -177,7 +177,7 @@ const sections = [
             // Click Agents tab
             await forceClick(page, 'button[role="tab"][aria-label="Agents"]');
             await page.waitForTimeout(500);
-        }
+        },
     },
     {
         name: 'characters',
@@ -185,7 +185,7 @@ const sections = [
         setup: async (page) => {
             await ensureOnlyOpen(page, 'characters');
             await page.waitForTimeout(500);
-        }
+        },
     },
     {
         name: 'in-chat',
@@ -205,7 +205,7 @@ const sections = [
             // Wait for chat to load
             await page.waitForSelector('#chat', { state: 'visible', timeout: 10000 });
             await page.waitForTimeout(2000);
-        }
+        },
     },
     {
         name: 'search',
@@ -264,10 +264,10 @@ async function captureScreenshots(viewportType) {
     try {
         // Navigate to Neconyan
         console.log(`   Navigating to ${baseURL}...`);
-        await page.goto(baseURL, { waitUntil: 'networkidle', timeout: 30000 });
+        await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
         // Wait for app to initialize
-        await page.waitForTimeout(6000);
+        await page.locator('#preloader').waitFor({ state: 'detached', timeout: 60000 });
         await dismissOnboardingIfPresent(page);
 
         // Capture each section
@@ -285,7 +285,7 @@ async function captureScreenshots(viewportType) {
                 await page.screenshot({
                     path: filepath,
                     fullPage: false,
-                    type: 'png'
+                    type: 'png',
                 });
 
                 console.log(`   ✓ Saved: ${filename}`);

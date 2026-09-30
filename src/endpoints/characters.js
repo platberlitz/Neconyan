@@ -747,6 +747,7 @@ function publishCharacterCard(request, avatar, bytes, legacyWrite) {
             valid = false;
         }
         const existing = fs.lstatSync(filename, { bigint: true, throwIfNoEntry: false });
+        if (request[importCreatesCard] && existing) throw roleplayError('ROLEPLAY_CHARACTER_CHANGED', 'Another card now occupies this import destination. Import the card again.', 409);
         if (!validRoleplayAvatar(avatar) || (existing && (!existing.isFile() || existing.nlink !== 1n))) {
             // Odd names and aliased paths cannot be protected; the guard still refuses a protected physical file.
             assertUntrackedRoleplayFiles(lease, [filename]);
@@ -889,6 +890,7 @@ async function writeCharacterData(inputFile, data, outputFile, request, crop = u
         }
         return true;
     } catch (err) {
+        if (request[importCreatesCard] !== undefined && String(err?.code).startsWith('ROLEPLAY_')) throw err;
         console.error(err);
         return false;
     }
@@ -991,7 +993,7 @@ export async function applyAvatarCropResize(jimp, crop) {
     let finalWidth = image.bitmap.width, finalHeight = image.bitmap.height;
 
     // Apply crop if defined
-    if (typeof crop == 'object' && [crop.x, crop.y, crop.width, crop.height].every(x => typeof x === 'number')) {
+    if (crop && typeof crop == 'object' && [crop.x, crop.y, crop.width, crop.height].every(Number.isFinite)) {
         safeCrop(image, { x: crop.x, y: crop.y, w: crop.width, h: crop.height });
         // Apply standard resize if requested
         if (crop.want_resize) {
@@ -1477,12 +1479,12 @@ function convertWorldInfoToCharacterBook(name, entries, extensions = {}) {
  * @returns {Promise<string>} Internal name of the character
  */
 async function importFromYaml(uploadPath, context, preservedFileName) {
-    const fileText = fs.readFileSync(uploadPath, 'utf8');
+    const fileText = new TextDecoder('utf-8', { fatal: true }).decode(fs.readFileSync(uploadPath));
     fs.unlinkSync(uploadPath);
     const yamlData = yaml.parse(fileText);
     console.info('Importing from YAML');
     yamlData.name = sanitize(yamlData.name);
-    const fileName = preservedFileName || getPngName(yamlData.name, context.request.user.directories);
+    const fileName = preservedFileName || getPngName(yamlData.name, context.request.user.directories, context.request);
     let char = convertToV2({
         'name': yamlData.name,
         'description': yamlData.context ?? '',
@@ -1525,7 +1527,7 @@ async function importFromCharX(uploadPath, { request }, preservedFileName) {
     processedCard.create_date = new Date().toISOString();
     processedCard.name = sanitize(processedCard.name);
 
-    const fileName = preservedFileName || getPngName(processedCard.name, request.user.directories);
+    const fileName = preservedFileName || getPngName(processedCard.name, request.user.directories, request);
     // Use the actual character name for asset folders, not the unique filename
     // ST's sprite system looks up by character name, not PNG filename
     const characterFolder = processedCard.name;
@@ -1546,13 +1548,14 @@ async function importFromCharX(uploadPath, { request }, preservedFileName) {
 }
 
 async function importFromByaf(uploadPath, { request }, preservedFileName) {
-    const data = (await fsPromises.readFile(uploadPath)).buffer;
+    const buffer = await fsPromises.readFile(uploadPath);
+    const data = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
     await fsPromises.unlink(uploadPath);
     console.info('Importing from BYAF');
 
     const byafData = await new ByafParser(data).parse();
     const card = readFromV2(byafData.card);
-    const fileName = preservedFileName || getPngName(sanitize(byafData.character.displayName || card.name, { replacement: sanitizeSafeCharacterReplacements }), request.user.directories);
+    const fileName = preservedFileName || getPngName(sanitize(byafData.character.displayName || card.name, { replacement: sanitizeSafeCharacterReplacements }), request.user.directories, request);
 
     // Don't import chats and images if the character is being replaced or updated, instead of newly imported.
     if (!preservedFileName) {
@@ -1641,7 +1644,7 @@ export function publishByafChat(request, fileName, chatName, chat) {
  * @returns {Promise<string>} Internal name of the character
  */
 async function importFromJson(uploadPath, { request }, preservedFileName) {
-    const data = fs.readFileSync(uploadPath, 'utf8');
+    const data = new TextDecoder('utf-8', { fatal: true }).decode(fs.readFileSync(uploadPath));
     fs.unlinkSync(uploadPath);
 
     let jsonData = JSON.parse(data);
@@ -1652,7 +1655,7 @@ async function importFromJson(uploadPath, { request }, preservedFileName) {
         unsetPrivateFields(jsonData);
         jsonData = readFromV2(jsonData);
         jsonData.create_date = new Date().toISOString();
-        const pngName = preservedFileName || getPngName(jsonData.data?.name || jsonData.name, request.user.directories);
+        const pngName = preservedFileName || getPngName(jsonData.data?.name || jsonData.name, request.user.directories, request);
         const char = JSON.stringify(jsonData);
         const result = await writeCharacterData(DEFAULT_AVATAR_PATH, char, pngName, request);
         return result ? pngName : '';
@@ -1662,7 +1665,7 @@ async function importFromJson(uploadPath, { request }, preservedFileName) {
         if (jsonData.creator_notes) {
             jsonData.creator_notes = jsonData.creator_notes.replace('Creator\'s notes go here.', '');
         }
-        const pngName = preservedFileName || getPngName(jsonData.name, request.user.directories);
+        const pngName = preservedFileName || getPngName(jsonData.name, request.user.directories, request);
         let char = {
             'name': jsonData.name,
             'description': jsonData.description ?? '',
@@ -1689,7 +1692,7 @@ async function importFromJson(uploadPath, { request }, preservedFileName) {
         if (jsonData.creator_notes) {
             jsonData.creator_notes = jsonData.creator_notes.replace('Creator\'s notes go here.', '');
         }
-        const pngName = preservedFileName || getPngName(jsonData.char_name, request.user.directories);
+        const pngName = preservedFileName || getPngName(jsonData.char_name, request.user.directories, request);
         let char = {
             'name': jsonData.char_name,
             'description': jsonData.char_persona ?? '',
@@ -1697,7 +1700,7 @@ async function importFromJson(uploadPath, { request }, preservedFileName) {
             'personality': '',
             'first_mes': jsonData.char_greeting ?? '',
             'avatar': 'none',
-            'chat': jsonData.name + ' - ' + humanizedDateTime(),
+            'chat': jsonData.char_name + ' - ' + humanizedDateTime(),
             'mes_example': jsonData.example_dialogue ?? '',
             'scenario': jsonData.world_scenario ?? '',
             'create_date': new Date().toISOString(),
@@ -1728,7 +1731,7 @@ async function importFromPng(uploadPath, { request }, preservedFileName) {
     let jsonData = JSON.parse(imgData);
 
     jsonData.name = sanitize(jsonData.data?.name || jsonData.name);
-    const pngName = preservedFileName || getPngName(jsonData.name, request.user.directories);
+    const pngName = preservedFileName || getPngName(jsonData.name, request.user.directories, request);
 
     if (jsonData.spec !== undefined) {
         console.info(`Found a ${jsonData.spec} character file.`);
@@ -2619,20 +2622,30 @@ router.post('/chats', validateAvatarUrlMiddleware, async function (request, resp
     }
 });
 
+const pendingImportNames = new Set();
+const importReservedName = Symbol('importReservedName');
+const importCreatesCard = Symbol('importCreatesCard');
+
 /**
- * Gets the name for the uploaded PNG file.
+ * Gets an available PNG name and reserves it for an import until its request finishes.
  * @param {string} file File name
  * @param {import('../users.js').UserDirectoryList} directories User directories
- * @returns {string} - The name for the uploaded PNG file
+ * @param {import('express').Request} [request] Import request
+ * @returns {string} The name for the uploaded PNG file
  */
-function getPngName(file, directories) {
+function getPngName(file, directories, request) {
     // Neconyan: Windows forbids <>:"/\|?* in file names, so sanitise imports there. POSIX keeps pipes.
     file = sanitiseFilenameForWindows(file);
     let i = 1;
     const baseName = file;
-    while (fs.existsSync(path.join(directories.characters, `${file}.png`))) {
+    const filename = () => path.join(directories.characters, `${file}.png`);
+    while (fs.existsSync(filename()) || pendingImportNames.has(filename())) {
         file = baseName + i;
         i++;
+    }
+    if (request) {
+        request[importReservedName] = filename();
+        pendingImportNames.add(filename());
     }
     return file;
 }
@@ -2654,35 +2667,27 @@ router.post('/import', async function (request, response) {
     if (!request.body || !request.file) return response.sendStatus(400);
 
     const uploadPath = path.join(request.file.destination, request.file.filename);
-    const format = request.body.file_type;
-    const preservedFileName = getPreservedName(request);
-
-    if (preservedFileName) {
-        recoverFileWriteSync(path.join(request.user.directories.characters, `${preservedFileName}.png`));
-    }
-    if (request.body.expected_revision !== undefined && request.body.expected_revision !== '') {
-        // The same check runs again inside the account lease when the card is published.
-        try {
+    try {
+        const format = request.body.file_type;
+        const preservedFileName = getPreservedName(request);
+        request[importCreatesCard] = !preservedFileName;
+        if (preservedFileName) {
+            recoverFileWriteSync(path.join(request.user.directories.characters, `${preservedFileName}.png`));
+        }
+        if (request.body.expected_revision !== undefined && request.body.expected_revision !== '') {
+            // The same check runs again inside the account lease when the card is published.
             if (!preservedFileName) throw roleplayError('ROLEPLAY_CHARACTER_REVISION_INVALID', 'An expected revision needs the character it replaces.', 400);
             assertExpectedCardRevision(request, path.join(request.user.directories.characters, `${preservedFileName}.png`));
-        } catch (error) {
-            if (String(error?.code).startsWith('ROLEPLAY_')) return sendCharacterRoleplayError(response, error);
-            console.error('Could not check the character revision before import.', error);
-            return response.sendStatus(500);
         }
-    }
-
-    const formatImportFunctions = {
-        'yaml': importFromYaml,
-        'yml': importFromYaml,
-        'json': importFromJson,
-        'png': importFromPng,
-        'charx': importFromCharX,
-        'byaf': importFromByaf,
-    };
-
-    try {
-        const importFunction = formatImportFunctions[format];
+        const formatImportFunctions = {
+            'yaml': importFromYaml,
+            'yml': importFromYaml,
+            'json': importFromJson,
+            'png': importFromPng,
+            'charx': importFromCharX,
+            'byaf': importFromByaf,
+        };
+        const importFunction = Object.hasOwn(formatImportFunctions, format) ? formatImportFunctions[format] : null;
 
         if (!importFunction) {
             throw new Error(`Unsupported format: ${format}`);
@@ -2701,8 +2706,12 @@ router.post('/import', async function (request, response) {
 
         response.send({ file_name: fileName });
     } catch (err) {
+        if (String(err?.code).startsWith('ROLEPLAY_')) return sendCharacterRoleplayError(response, err);
         console.error(err);
         response.send({ error: true });
+    } finally {
+        pendingImportNames.delete(request[importReservedName]);
+        fs.rmSync(uploadPath, { force: true });
     }
 });
 

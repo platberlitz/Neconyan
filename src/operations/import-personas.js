@@ -12,7 +12,7 @@ const damaged = reason => Object.assign(operationError(reason, 400), { importDam
 
 function settingsObject(bytes, current = false) {
     try {
-        const value = JSON.parse(bytes.toString('utf8'));
+        const value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
         if (!plain(value)) throw new Error('Not an object');
         return value;
     } catch {

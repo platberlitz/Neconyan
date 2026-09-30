@@ -301,7 +301,14 @@ router.post('/import', authoringRoute((request, response, lease) => {
 
         assertNativeMediaTargetIdle(lease, { kind: 'lorebook', id: filename });
 
-        let fileContents = request.body.convertedData ?? fs.readFileSync(pathToUpload, 'utf8');
+        let fileContents = request.body.convertedData ?? fs.readFileSync(pathToUpload);
+        try {
+            fileContents = typeof fileContents === 'string'
+                ? fileContents.replace(/^\uFEFF/, '')
+                : new TextDecoder('utf-8', { fatal: true }).decode(fileContents);
+        } catch {
+            return response.status(400).send('Is not a valid world info file');
+        }
         const worldContent = tryParse(fileContents);
         if (!isValidWorldInfoData(worldContent)) {
             console.warn(`World Info import rejected: '${requestedName}' is not a valid world info file`);

@@ -10,7 +10,7 @@ import encodeChunks from '../src/png/encode.js';
 import { fixture, png } from './roleplay-transactions-fixture.js';
 
 const { retainUploadedArchive, capturedArchiveInput, readUploadedArchive } = await import('../src/operations/input-files.js');
-const { captureFolderImport, captureZipImport, openCapturedZipEntry, openImportArchive } = await import('../src/operations/account-import-sources.js');
+const { captureFolderImport, captureZipImport, openCapturedZipEntry, openImportArchive, resolveAccountImportRoot } = await import('../src/operations/account-import-sources.js');
 const { roleplayStoreDirectory, resetRoleplayAccount } = await import('../src/roleplay-store.js');
 const { captureAccountImport } = await import('../src/operations/account-import.js');
 const { admitOperation, finalizeOperation, readOperation } = await import('../src/operations/store.js');
@@ -35,6 +35,72 @@ function sourceFile(p, relative, content) {
     return filename;
 }
 
+test('application folder detection prefers the user data over application extensions', t => {
+    const p = setup(t);
+    sourceFile(p, 'extensions/app-extension/index.js', 'application code');
+    sourceFile(p, 'data/default-user/settings.json', '{}');
+    assert.equal(resolveAccountImportRoot(p.sourceRoot), path.join(p.sourceRoot, 'data/default-user'));
+});
+
+test('ZIP source detection keeps recognised names inside chat folders at their original paths', async t => {
+    const p = setup(t);
+    const filename = path.join(p.sourceRoot, 'upload.zip');
+    await zipFile(filename, [['archive-account/chats/characters/Only.jsonl', '{}']]);
+    const source = await retainUploadedArchive(p.base, p.f.scope, 'nested-root', filename);
+    const captured = await captureZipImport(source, { coreOnly: true });
+    assert.equal(captured.sourceRoot, 'archive-account');
+    assert.deepEqual(captured.files.map(file => file.relative), ['chats/characters/Only.jsonl']);
+});
+
+test('ZIP source detection selects default-user even when another account has more files', async t => {
+    const p = setup(t);
+    const filename = path.join(p.sourceRoot, 'upload.zip');
+    await zipFile(filename, [
+        ['SillyTavern/data/default-user/settings.json', '{}'],
+        ['SillyTavern/data/other/settings.json', '{}'],
+        ['SillyTavern/data/other/User Avatars/one.png', png],
+        ['SillyTavern/data/other/User Avatars/two.png', png],
+    ]);
+    const source = await retainUploadedArchive(p.base, p.f.scope, 'default-root', filename);
+    const captured = await captureZipImport(source, { coreOnly: true });
+    assert.equal(captured.sourceRoot, 'SillyTavern/data/default-user');
+    assert.deepEqual(captured.files.map(file => file.relative), ['settings.json']);
+});
+
+test('ZIP source detection refuses ambiguous accounts rather than guessing by file count', async t => {
+    const p = setup(t);
+    const filename = path.join(p.sourceRoot, 'upload.zip');
+    await zipFile(filename, [['data/alice/settings.json', '{}'], ['data/bob/settings.json', '{}']]);
+    const source = await retainUploadedArchive(p.base, p.f.scope, 'ambiguous-root', filename);
+    await assert.rejects(captureZipImport(source, { coreOnly: true }), /Multiple user folders/);
+});
+
+test('full application ZIP selects modern user data even when the username is a library name', async t => {
+    const p = setup(t);
+    const filename = path.join(p.sourceRoot, 'upload.zip');
+    await zipFile(filename, [
+        ['SillyTavern/extensions/application/index.js', 'application code'],
+        ['SillyTavern/data/characters/settings.json', '{}'],
+        ['SillyTavern/data/characters/chats/characters/Keep.jsonl', '{}'],
+    ]);
+    const source = await retainUploadedArchive(p.base, p.f.scope, 'application-root', filename);
+    const captured = await captureZipImport(source);
+    assert.equal(captured.sourceRoot, 'SillyTavern/data/characters');
+    assert.deepEqual(captured.files.map(file => file.relative).sort(), ['chats/characters/Keep.jsonl', 'settings.json']);
+});
+
+test('skipped bundled defaults are not counted as successfully restored files', async t => {
+    const p = setup(t);
+    sourceFile(p, 'settings.json', '{}');
+    const defaults = { directories: ['characters'], files: [{ relative: 'characters/Damaged.png', data: Buffer.from('broken').toString('base64') }] };
+    const accepted = await accept(p, 'damaged-default', { mode: 'folder', path: p.sourceRoot }, defaults);
+    await runOperation(accepted.context);
+    const result = readOperation(p.base, 'damaged-default').result;
+    assert.equal(result.defaults, 0);
+    assert.equal(result.imported, 1);
+    assert.equal(result.skippedCount, 1);
+});
+
 test('cached plan verification still refuses a changed saved import plan', async t => {
     const p = setup(t);
     sourceFile(p, 'settings.json', JSON.stringify({ name1: 'Imported' }));
@@ -46,6 +112,34 @@ test('cached plan verification still refuses a changed saved import plan', async
     record.plan.files[0].relative = 'secrets.json';
     fs.writeFileSync(filename, JSON.stringify(record));
     assert.throws(() => readOperation(p.base, 'cached-plan'), /record needs recovery/);
+});
+
+test('the completed report retains every skipped file beyond the old 200-file limit', async t => {
+    const p = setup(t);
+    for (let index = 0; index < 205; index++) sourceFile(p, `chats/Nova/Broken-${index}.jsonl`, 'broken');
+    const accepted = await accept(p, 'full-report', { mode: 'folder', path: p.sourceRoot, content: 'core', parts: ['chats'] });
+    await runOperation(accepted.context);
+    const result = readOperation(p.base, 'full-report').result;
+    assert.equal(result.imported, 0);
+    assert.equal(result.skippedCount, 205);
+    assert.equal(result.skipped.length, 205);
+    assert.equal(new Set(result.skipped.map(item => item.file)).size, 205);
+});
+
+for (const content of ['all', 'core']) test(`${content} settings import accepts a BOM and refuses damaged UTF-8`, async t => {
+    const p = setup(t);
+    const settings = { name1: 'Imported', power_user: { personas: { 'one.png': '猫' }, persona_descriptions: {} } };
+    sourceFile(p, 'settings.json', '\uFEFF' + JSON.stringify(settings));
+    const accepted = await accept(p, 'bom-settings', { mode: 'folder', path: p.sourceRoot, content });
+    await runOperation(accepted.context);
+    const filename = path.join(p.base.directories.root, 'settings.json');
+    const before = fs.readFileSync(filename);
+    assert.equal(JSON.parse(before).power_user.personas['one.png'], '猫');
+    sourceFile(p, 'settings.json', Buffer.concat([Buffer.from('{"power_user":{"personas":{"one.png":"'), Buffer.from([0xff]), Buffer.from('"}}}') ]));
+    const damaged = await accept(p, 'damaged-settings', { mode: 'folder', path: p.sourceRoot, content });
+    await runOperation(damaged.context);
+    assert.equal(readOperation(p.base, 'damaged-settings').result.skippedCount, 1);
+    assert.deepEqual(fs.readFileSync(filename), before);
 });
 
 async function accept(p, key, input = { mode: 'folder', path: p.sourceRoot }, defaults = { directories: [], files: [] }) {

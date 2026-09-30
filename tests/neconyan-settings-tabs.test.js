@@ -64,14 +64,14 @@ describe('Neconyan settings theme drawers', () => {
             expect(settingsTabsSource).toContain(icon);
         }
         expect(settingsTabsSource).toContain('function ensureStscriptDrawer()');
-        expect(settingsTabsSource).toContain("drawer.id = 'sb-stscript-drawer';");
-        expect(settingsTabsSource).toContain("chatSection.parentElement?.insertBefore(drawer, chatSection.nextSibling);");
+        expect(settingsTabsSource).toContain('drawer.id = \'sb-stscript-drawer\';');
+        expect(settingsTabsSource).toContain('chatSection.parentElement?.insertBefore(drawer, chatSection.nextSibling);');
     });
 
     test('keeps the new top-bar Quick Actions wording and removes replacement-page controls', () => {
         expect(shellTabsSource).toContain('Show Custom Quick Actions at the top bar');
         expect(shellTabsSource).not.toContain('Use a chosen page instead of Quick Actions');
-        expect(shellTabsSource).toContain("id: 'sb-topbar-quick-actions'");
+        expect(shellTabsSource).toContain('id: \'sb-topbar-quick-actions\'');
         expect(shellTabsSource).toContain('refreshDesktopTopbarQuickActions');
     });
 });

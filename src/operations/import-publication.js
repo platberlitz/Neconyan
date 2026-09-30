@@ -71,7 +71,7 @@ export function importSkipReason(file, error) {
 
 function object(bytes, label, current = false) {
     try {
-        const value = JSON.parse(bytes.toString('utf8'));
+        const value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
         if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Not an object');
         return value;
     } catch {

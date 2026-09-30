@@ -59,7 +59,7 @@ describe('OpenAI-compatible Claude model capabilities', () => {
 
     test('applies Claude model constraints while building generation parameters', () => {
         expect(openAiSource).toContain('return createChatGenerationParameters(');
-        expect(providerSource).toContain("applyClaudeModelParameterConstraints(data, { preserveReasoning: ['claude', 'linkapi'].includes(source) });");
+        expect(providerSource).toContain('applyClaudeModelParameterConstraints(data, { preserveReasoning: [\'claude\', \'linkapi\'].includes(source) });');
     });
 });
 
@@ -162,7 +162,7 @@ describe('Kimi K3 model capabilities', () => {
     });
 
     test('applies K3 constraints while building Custom, Moonshot, NanoGPT and OpenRouter generation parameters', () => {
-        expect(providerSource).toContain("['custom', 'moonshot', 'nanogpt', 'openrouter'].includes(source) && isKimiK3Model(model)");
+        expect(providerSource).toContain('[\'custom\', \'moonshot\', \'nanogpt\', \'openrouter\'].includes(source) && isKimiK3Model(model)');
         expect(providerSource).toContain('applyKimiK3ModelParameterConstraints(data);');
         expect(providerSource).toContain('!kimi');
     });

@@ -11,7 +11,7 @@ import { getImages, tryParse } from '../util.js';
 import { getFileNameValidationFunction } from '../middleware/validateFileName.js';
 import { applyAvatarCropResize } from './characters.js';
 import { invalidateThumbnail } from './thumbnails.js';
-import { createPersonaCard, decodePersonaCard, encodePersonaCard, MAX_PERSONA_CARD_BYTES } from '../persona-card.js';
+import { createPersonaCard, decodePersonaImport, encodePersonaCard, MAX_PERSONA_CARD_BYTES } from '../persona-card.js';
 
 export const router = express.Router();
 
@@ -44,16 +44,25 @@ router.post('/export-persona', async (request, response) => {
 router.post('/import-persona', async (request, response) => {
     if (!request.file) return response.sendStatus(400);
     const uploadPath = path.join(request.file.destination, request.file.filename);
+    const created = [];
     try {
         if (fs.statSync(uploadPath).size > MAX_PERSONA_CARD_BYTES) return response.sendStatus(413);
         const format = path.extname(request.file.originalname).slice(1).toLowerCase();
-        const { card, image } = decodePersonaCard(fs.readFileSync(uploadPath), format);
-        // Validate and strip card metadata, preserving the full image without another crop.
-        const avatarImage = await (await Jimp.read(image)).getBuffer('image/png');
-        const avatar = `persona-${randomUUID()}.png`;
-        writeFileAtomicSync(path.join(request.user.directories.avatars, avatar), avatarImage);
-        return response.send({ avatar, ...card.data });
+        const { cards, backup } = decodePersonaImport(fs.readFileSync(uploadPath), format);
+        const fallback = backup ? fs.readFileSync(new URL('../../public/img/user-default.png', import.meta.url)) : null;
+        const personas = [];
+        for (const { card, image } of cards) {
+            // Validate and strip card metadata, preserving the full image without another crop.
+            const avatarImage = image ? await (await Jimp.read(image)).getBuffer('image/png') : fallback;
+            const avatar = `persona-${randomUUID()}.png`;
+            const filename = path.join(request.user.directories.avatars, avatar);
+            writeFileAtomicSync(filename, avatarImage);
+            created.push(filename);
+            personas.push({ avatar, ...card.data });
+        }
+        return response.send(backup ? { personas, missingAvatars: personas.length } : personas[0]);
     } catch (error) {
+        for (const filename of created) fs.rmSync(filename, { force: true });
         console.warn('Could not import persona card:', error.message);
         return response.sendStatus(400);
     } finally {
@@ -80,11 +89,12 @@ router.post('/delete', getFileNameValidationFunction('avatar'), function (reques
     return response.sendStatus(404);
 });
 
-router.post('/upload', getFileNameValidationFunction('overwrite_name'), async (request, response) => {
+router.post('/upload', async (request, response) => {
     if (!request.file) return response.sendStatus(400);
-
+    const pathToUpload = path.join(request.file.destination, request.file.filename);
     try {
-        const pathToUpload = path.join(request.file.destination, request.file.filename);
+        const overwrite = request.body.overwrite_name;
+        if (overwrite && (typeof overwrite !== 'string' || overwrite !== sanitize(overwrite))) return response.sendStatus(400);
         const crop = tryParse(request.query.crop);
         const rawImg = await Jimp.read(pathToUpload);
         const image = await applyAvatarCropResize(rawImg, crop);
@@ -94,13 +104,14 @@ router.post('/upload', getFileNameValidationFunction('overwrite_name'), async (r
             invalidateThumbnail(request.user.directories, 'persona', sanitize(request.body.overwrite_name));
         }
 
-        const filename = sanitize(request.body.overwrite_name || `${Date.now()}.png`);
+        const filename = sanitize(request.body.overwrite_name || `${randomUUID()}.png`);
         const pathToNewFile = path.join(request.user.directories.avatars, filename);
         writeFileAtomicSync(pathToNewFile, image);
-        fs.unlinkSync(pathToUpload);
         return response.send({ path: filename });
     } catch (err) {
         console.error('Error uploading user avatar:', err);
         return response.status(400).send('Is not a valid image');
+    } finally {
+        fs.rmSync(pathToUpload, { force: true });
     }
 });

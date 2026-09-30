@@ -784,15 +784,15 @@ function importKoboldLiteChat(_userName, _characterName, data, timestamp) {
  */
 function flattenChubChat(userName, characterName, lines) {
     function flattenSwipe(swipe) {
-        return swipe.message ? swipe.message : swipe;
+        return typeof swipe?.message === 'string' ? swipe.message : swipe;
     }
 
     function convert(line) {
         const lineData = tryParse(line);
         if (!lineData) return line;
 
-        if (lineData.mes && lineData.mes.message) {
-            lineData.mes = lineData?.mes.message;
+        if (typeof lineData.mes?.message === 'string') {
+            lineData.mes = lineData.mes.message;
         }
 
         if (lineData?.swipes && Array.isArray(lineData.swipes)) {
@@ -2173,7 +2173,8 @@ function importProtectedChat(request, response, group) {
 }
 
 router.post('/group/import', (request, response) => importProtectedChat(request, response, true));
-router.post('/import', validateAvatarUrlMiddleware, (request, response) => importProtectedChat(request, response, false));
+// The protected importer validates the target and owns upload cleanup, including refused requests.
+router.post('/import', (request, response) => importProtectedChat(request, response, false));
 
 router.post('/group/get', (request, response) => sendProtectedChatLoad(request, response, true));
 

@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import sanitize from 'sanitize-filename';
 import { read as readCharacterCard, write as writeCharacterCard } from './character-card-parser.js';
 
 const SPEC = 'neconyan_persona';
@@ -85,10 +86,33 @@ export function decodePersonaCard(buffer, format) {
         return { card: normalizePersonaCard(metadata?.data?.extensions?.neconyan_persona), image: buffer };
     }
     if (format !== 'json') throw new Error('Unsupported persona card format.');
-    const data = JSON.parse(buffer.toString('utf8'));
+    const data = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(buffer));
     const card = normalizePersonaCard(data);
     if (typeof data.avatar !== 'string' || !/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(data.avatar)) {
         throw new Error('The persona card needs an embedded PNG avatar.');
     }
     return { card, image: Buffer.from(data.avatar.split(',')[1], 'base64') };
+}
+
+/** SillyTavern and SillyBunny persona backups contain a library, without image bytes. */
+export function decodePersonaImport(buffer, format) {
+    if (buffer.length > MAX_PERSONA_CARD_BYTES) throw new Error('Persona card is too large.');
+    if (format === 'json') {
+        const data = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(buffer));
+        if (isObject(data) && data.spec === undefined && Object.hasOwn(data, 'personas')) {
+            if (!isObject(data.personas) || !isObject(data.persona_descriptions)) throw new Error('Invalid persona backup.');
+            const names = Object.entries(data.personas);
+            if (!names.length || names.length > 1000) throw new Error('A persona backup must contain between 1 and 1000 personas.');
+            for (const key of new Set([...Object.keys(data.personas), ...Object.keys(data.persona_descriptions)])) {
+                if (!key || key !== sanitize(key) || ['.', '..', '__proto__', 'constructor', 'prototype'].includes(key)) {
+                    throw new Error('Invalid persona avatar filename.');
+                }
+                if (Object.hasOwn(data.persona_descriptions, key) && !isObject(data.persona_descriptions[key])) throw new Error('Invalid persona description.');
+            }
+            return { backup: true, cards: names.map(([key, name]) => ({
+                card: createPersonaCard(name, data.persona_descriptions[key] ?? {}), image: null,
+            })) };
+        }
+    }
+    return { backup: false, cards: [decodePersonaCard(buffer, format)] };
 }

@@ -348,7 +348,7 @@ class PresetManager {
      * @returns {Promise<void>}
      */
     static async performMasterImport(data, fileName) {
-        if (!data || typeof data !== 'object') {
+        if (!data || typeof data !== 'object' || Array.isArray(data)) {
             toastr.error(t`Invalid data provided for master import`);
             return;
         }
@@ -1655,15 +1655,22 @@ export async function initPresetManager() {
             return;
         }
 
-        const fileName = file.name.replace('.json', '').replace('.settings', '');
-        const data = await parseJsonFile(file);
-        const name = data?.name ?? fileName;
-        data.name = name;
-
-        await presetManager.savePreset(name, data);
-        const successToast = !presetManager.isAdvancedFormatting() ? t`Preset imported` : t`Template imported`;
-        toastr.success(successToast);
-        e.target.value = null;
+        try {
+            const fileName = file.name.replace(/\.(?:json|settings)$/i, '');
+            const data = await parseJsonFile(file);
+            if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid preset object');
+            const name = data.name ?? fileName;
+            if (typeof name !== 'string' || !name.trim()) throw new Error('Invalid preset name');
+            data.name = name;
+            await presetManager.savePreset(name, data);
+            const successToast = !presetManager.isAdvancedFormatting() ? t`Preset imported` : t`Template imported`;
+            toastr.success(successToast);
+        } catch (error) {
+            console.error('Could not import preset', error);
+            toastr.error(t`Could not import this preset. Check the JSON file and the server connection, then try again.`);
+        } finally {
+            e.target.value = '';
+        }
     });
 
     $(document).on('click', '[data-preset-manager-delete]', async function () {
@@ -1838,10 +1845,16 @@ export async function initPresetManager() {
             return;
         }
 
-        const data = await parseJsonFile(file);
-        const fileName = file.name.replace('.json', '');
-        await PresetManager.performMasterImport(data, fileName);
-        e.target.value = null;
+        try {
+            const data = await parseJsonFile(file);
+            const fileName = file.name.replace(/\.json$/i, '');
+            await PresetManager.performMasterImport(data, fileName);
+        } catch (error) {
+            console.error('Could not import formatting templates', error);
+            toastr.error(t`Could not import these templates. Check the JSON file and the server connection, then try again.`);
+        } finally {
+            e.target.value = '';
+        }
     });
 
     $('#af_master_export').on('click', async () => {

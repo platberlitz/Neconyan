@@ -1,4 +1,4 @@
-/* global document, getComputedStyle */
+/* global document, getComputedStyle, window */
 import { expect, test } from '@playwright/test';
 
 for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 }]) {

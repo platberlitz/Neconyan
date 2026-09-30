@@ -6,8 +6,6 @@ module.exports = {
     ],
     extends: [
         'eslint:recommended',
-        'plugin:jest/recommended',
-        'plugin:playwright/recommended',
     ],
     env: {
         es6: true,
@@ -19,6 +17,8 @@ module.exports = {
         sourceType: 'module',
     },
     overrides: [
+        { files: ['*.test.js'], extends: ['plugin:jest/recommended'] },
+        { files: ['*.e2e.js', '*-fixture.js', '*-helpers.js', 'capture-screenshots.js'], extends: ['plugin:playwright/recommended'] },
     ],
     ignorePatterns: [
         '*.min.js',

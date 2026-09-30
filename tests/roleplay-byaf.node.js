@@ -10,6 +10,15 @@ import { readRoleplayAccount, roleplayPathKey } from '../src/roleplay-store.js';
 import { bootstrapRoleplayAccount } from '../src/roleplay-lifecycle.js';
 import { roleplayNativeHost } from '../src/endpoints/chats.js';
 
+test('BYAF histories without a creation timestamp retain their messages', () => {
+    const rows = ByafParser.getChatFromScenario({ firstMessages: [{ text: 'Greeting' }], messages: [
+        { type: 'ai', outputs: [{ text: 'Reply', activeTimestamp: 100 }] },
+    ] }, 'User', 'Nova', []).split('\n').map(row => JSON.parse(row));
+    assert.equal(rows[1].mes, 'Greeting');
+    assert.ok(Number.isFinite(Date.parse(rows[1].send_date)));
+    assert.equal(rows[2].mes, 'Reply');
+});
+
 test('BYAF scenarios create recorded chats and refuse occupied names', t => {
     const f = fixture(t);
     const request = { user: { profile: { handle: 'fixture' }, directories: f.scope.directories } };

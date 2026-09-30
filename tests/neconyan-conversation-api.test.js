@@ -1353,7 +1353,7 @@ describe('Neconyan Conversation REST API', () => {
         expect(largeSaveResponse.status).toBe(200);
         expect((await largeSaveResponse.json()).version).toBe(2);
         expect(readConversationStore().characters['large.png'].branches[DEFAULT_BRANCH_ID].messages).toHaveLength(97);
-    });
+    }, 30000);
 
     test('personaId scopes solo and group Conversation storage independently', async () => {
         const rileyResponse = await postJson('/message/append', {

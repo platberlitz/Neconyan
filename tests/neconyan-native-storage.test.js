@@ -86,7 +86,7 @@ describe('native private storage', () => {
         const firstBytes = fs.readFileSync(savedPath, 'utf8');
         expect(JSON.parse(fs.readFileSync(backupPath, 'utf8')).revision).toBe(baseRevision);
         expect(JSON.parse(fs.readFileSync(markerPath, 'utf8'))).toEqual({ format: 1, storage: 'server' });
-        if (origin === 'legacy-file') expect(fs.readFileSync(legacyPath, 'utf8')).toBe(legacyBytes);
+        expect(fs.existsSync(legacyPath) ? fs.readFileSync(legacyPath, 'utf8') : null).toBe(origin === 'legacy-file' ? legacyBytes : null);
         const second = await request('post', first.body);
         expect(second.status).toBe(200);
         expect(second.body.revision).toBe(baseRevision + 2);

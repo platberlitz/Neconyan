@@ -194,9 +194,9 @@ describe('Neconyan settings and extension controllers', () => {
         expect(source).toContain('className = \'sb-settings-category-select\';');
         expect(source).toContain('className = \'sb-extensions-select\';');
         expect(source).toContain('block.insertBefore(layout, firstHost);');
-        expect(source).toContain("No third-party extensions installed. Use Install extension to add one.");
-        expect(source).toContain("resetThirdParty: () => state.setScope('third-party')");
-        expect(source).toContain("state.setScope('built-in')");
+        expect(source).toContain('No third-party extensions installed. Use Install extension to add one.');
+        expect(source).toContain('resetThirdParty: () => state.setScope(\'third-party\')');
+        expect(source).toContain('state.setScope(\'built-in\')');
         expect(cssSource).toContain('grid-template-columns: minmax(180px, 200px) minmax(0, 1fr);');
         expect(cssSource).toContain('body.neconyan .sb-extensions-layout {\n    grid-template-columns: minmax(0, 1fr);\n}');
         expect(cssSource).toContain('body.neconyan .sb-extensions-layout [hidden]');
@@ -212,17 +212,17 @@ describe('Neconyan settings and extension controllers', () => {
         expect([...context.readPinnedExtensionKeys()]).toEqual(['built-in:alpha']);
         values.set('NeconyanPinnedExtensions.v1', '{broken');
         expect([...context.readPinnedExtensionKeys()]).toEqual([]);
-        expect(source).toContain("row.className = 'sb-extension-master-row';");
-        expect(source).toContain("pin.className = 'sb-extension-pin';");
+        expect(source).toContain('row.className = \'sb-extension-master-row\';');
+        expect(source).toContain('pin.className = \'sb-extension-pin\';');
         expect(source).toContain('state.mountedUnits');
         expect(cssSource).toContain('.sb-extension-master-row');
         expect(cssSource).toContain('.sb-extension-pin');
     });
 
     test('routes included tool settings to a dedicated shell page', () => {
-        expect(shellSource).toContain("id: 'included-tool'");
+        expect(shellSource).toContain('id: \'included-tool\'');
         expect(shellSource).toContain('function buildIncludedToolPanel()');
-        expect(shellSource).toContain("openShell('right', 'included-tool')");
+        expect(shellSource).toContain('openShell(\'right\', \'included-tool\')');
         expect(shellSource).toContain('restoreMountedUnits');
     });
 });

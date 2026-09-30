@@ -184,7 +184,7 @@ describe('Neconyan Calico defaults', () => {
 
         expect(saved.power_user.theme).toBe(calicoDarkTheme.name);
         expect(saved.power_user.main_text_color).toBe(calicoDarkTheme.main_text_color);
-        expect(saved.power_user["neconyan_theme_migration_v3"]).toBe('migrated');
+        expect(saved.power_user['neconyan_theme_migration_v3']).toBe('migrated');
     });
 
     test('migrates old stock Calico themes while preserving their light or dark choice', () => {
@@ -237,7 +237,7 @@ describe('Neconyan Calico defaults', () => {
 
         expect(saved.power_user.theme).toBe(calicoTheme.name);
         expect(saved.power_user.quote_text_color).toBe('rgba(3, 4, 5, 1)');
-        expect(saved.power_user["neconyan_theme_migration_v3"]).toBe('inspected');
+        expect(saved.power_user['neconyan_theme_migration_v3']).toBe('inspected');
     });
 
     test('resets an edited same-name Calico theme through the immutable dark fallback', () => {
@@ -304,7 +304,7 @@ describe('Neconyan Calico defaults', () => {
     test('keeps the tutorial free of the retired Advanced step', () => {
         const source = readSource('public', 'scripts', 'welcome-screen.js');
 
-        expect(source).not.toContain("type: 'show-advanced'");
+        expect(source).not.toContain('type: \'show-advanced\'');
         expect(source).not.toContain('Show Advanced');
         expect(source).not.toContain('setAdvancedMode');
     });
@@ -316,11 +316,11 @@ describe('Neconyan Calico defaults', () => {
     test('keeps the persistent workspace rail on real shell routes', () => {
         const welcomeSource = readSource('public', 'scripts', 'welcome-screen.js');
 
-        expect(welcomeSource).toContain("rail.id = 'neconyan-workspace-rail'");
+        expect(welcomeSource).toContain('rail.id = \'neconyan-workspace-rail\'');
         expect(welcomeSource).toContain('id="neconyan-sidebar-toggle"');
         expect(welcomeSource).toContain('data-neconyan-route');
         expect(welcomeSource).toContain('globalThis.NeconyanShell');
-        expect(welcomeSource).toContain("fetch('/api/chats/recent'");
+        expect(welcomeSource).toContain('fetch(\'/api/chats/recent\'');
     });
 });
 
@@ -362,35 +362,35 @@ describe('Meower prompt defaults', () => {
         expect(index).toContain('<option value="Nunito">Nunito</option>');
         expect(index).toContain('<option value="Fredoka One">Fredoka One</option>');
         expect(login).toContain('webfonts/FredokaOne/stylesheet.css?v=20260913g');
-        expect(style).toContain("--mainFontFamily: 'Nunito', 'Figtree'");
-        expect(neconyanCss).toContain("--mainFontFamily: 'Nunito', 'Figtree'");
-        expect(neconyanCss).toContain("--sb-font-display: 'Fredoka One', var(--mainFontFamily);");
+        expect(style).toContain('--mainFontFamily: \'Nunito\', \'Figtree\'');
+        expect(neconyanCss).toContain('--mainFontFamily: \'Nunito\', \'Figtree\'');
+        expect(neconyanCss).toContain('--sb-font-display: \'Fredoka One\', var(--mainFontFamily);');
         // The picked-font override must carry :has(body.neconyan) or the (0,2,1) default above outranks it.
-        expect(neconyanCss).toContain(":root[style*='--mainFontFamily']:has(body.neconyan) { --sb-font-display: var(--mainFontFamily); }");
+        expect(neconyanCss).toContain(':root[style*=\'--mainFontFamily\']:has(body.neconyan) { --sb-font-display: var(--mainFontFamily); }');
         expect(neconyanCss).toContain('body.neconyan:not(.sbterm) :is(h1, h2, h3, h4, h5, h6, .sb-topbar-brand, .neconyan-rail-brand) { font-family: var(--sb-font-display); }');
-        expect(nunito).toContain("font-family: 'Nunito';");
+        expect(nunito).toContain('font-family: \'Nunito\';');
         expect(nunito).toContain('font-weight: 200 1000;');
         expect(nunito).toContain('font-display: swap;');
         expect(nunito).toContain('Nunito[wght].woff2?v=20260913g');
         expect(nunito).toContain('Nunito-Italic[wght].woff2?v=20260913g');
         expect(index).not.toContain('webfonts/Fredoka/Fredoka[wght]');
-        expect(neconyanCss).not.toContain("font-family: 'Fredoka';");
+        expect(neconyanCss).not.toContain('font-family: \'Fredoka\';');
         expect(neconyanCss).not.toContain('/webfonts/Fredoka/');
-        expect(powerUserSource).toContain("'Fredoka One': '/webfonts/FredokaOne/stylesheet.css?v=20260913g'");
-        expect(powerUserSource).toContain("Nunito: '/webfonts/Nunito/stylesheet.css?v=20260913g'");
-        expect(powerUserSource).toContain("Figtree: '/webfonts/Figtree/stylesheet.css?v=20260422b'");
-        expect(powerUserSource).toContain("google_font: '',");
-        expect(fredoka).toContain("font-family: 'Fredoka One';");
+        expect(powerUserSource).toContain('\'Fredoka One\': \'/webfonts/FredokaOne/stylesheet.css?v=20260913g\'');
+        expect(powerUserSource).toContain('Nunito: \'/webfonts/Nunito/stylesheet.css?v=20260913g\'');
+        expect(powerUserSource).toContain('Figtree: \'/webfonts/Figtree/stylesheet.css?v=20260422b\'');
+        expect(powerUserSource).toContain('google_font: \'\',');
+        expect(fredoka).toContain('font-family: \'Fredoka One\';');
         expect(fredoka).toContain('font-style: normal;');
         expect(fredoka).toContain('font-weight: 400;');
         expect(fredoka).toContain('font-display: swap;');
-        expect(fredoka).toContain("FredokaOne-Regular.ttf?v=20260913g");
+        expect(fredoka).toContain('FredokaOne-Regular.ttf?v=20260913g');
         expect(fredoka).not.toContain('font-style: italic');
     });
 
     test('purges caches through the service-worker protocol', () => {
-        expect(scriptSource).toContain("controller.postMessage({ type: 'NN_CLEAR_CACHES' }");
-        expect(scriptSource).toContain("event?.data?.type === 'NN_CLEAR_CACHES_DONE'");
+        expect(scriptSource).toContain('controller.postMessage({ type: \'NN_CLEAR_CACHES\' }');
+        expect(scriptSource).toContain('event?.data?.type === \'NN_CLEAR_CACHES_DONE\'');
         expect(scriptSource).not.toContain('SB_CLEAR_CACHES');
     });
 

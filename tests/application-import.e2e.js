@@ -261,9 +261,9 @@ for (const phone of [false, true]) {
         const note = card.locator('.sb-import-note');
         await expect(note).toContainText(relative, { timeout: 60000 });
         await expect(note).toContainText('Backup ZIP imported.');
-        await expect(note).toContainText('1 file was damaged and could not be imported:');
+        await expect(note).toContainText('1 file could not be imported:');
         await expect(note).toContainText('The file is not a valid PNG image.');
-        await expect(note).toContainText('Everything else was imported.');
+        await expect(note).toContainText('Other selected files were imported.');
         await expect(note.getByRole('button', { name: 'Reload to use the imported data' })).toBeVisible();
         expect(await page.evaluate(() => window.__importPageMarker)).toBe(true);
         expect(await fs.readFile(path.join(app.directory, 'data/default-user/user/files/healthy.txt'), 'utf8')).toBe('Healthy file');
@@ -284,7 +284,7 @@ for (const phone of [false, true]) {
         const reopened = await showImporter(account);
         await reopened.card.getByLabel('Saved account imports').selectOption(submitted.record.key);
         const savedStatus = reopened.card.getByRole('status').filter({ hasText: relative });
-        await expect(savedStatus).toContainText('1 file was damaged and could not be imported:');
+        await expect(savedStatus).toContainText('1 file could not be imported:');
         await expect(savedStatus).toContainText(`Cannot read '${relative}': The file is not a valid PNG image.`);
         const savedGeometry = await savedStatus.evaluate(element => ({ width: element.clientWidth, scrollWidth: element.scrollWidth }));
         expect(savedGeometry.scrollWidth).toBeLessThanOrEqual(savedGeometry.width + 1);
@@ -310,7 +310,7 @@ for (const phone of [false, true]) {
         }));
         const note = card.locator('.sb-import-note');
         await expect(note).toContainText('Backup ZIP imported.', { timeout: 60000 });
-        await expect(note).toContainText('1 file was damaged and could not be imported:');
+        await expect(note).toContainText('1 file could not be imported:');
         await expect(note).toContainText(`Cannot import '${refused}': Roleplay identity requires JSON-only values.`);
         await expect(card).not.toContainText('Invalid Roleplay source identifier');
         for (const [index, main_chat] of parents.entries()) {

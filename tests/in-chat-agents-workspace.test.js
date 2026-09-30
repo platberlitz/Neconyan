@@ -41,23 +41,23 @@ describe('in-chat agents workspace redesign', () => {
         expect(settingsSource).toContain('id="ica--agentViewSelect"');
         expect(editorSource).toContain('id="ica--editor-section-select"');
         expect(settingsSource).toContain('aria-orientation="vertical"');
-        expect(indexSource).toContain("settingsRoot.addEventListener('sb:reveal-search-target'");
-        expect(indexSource).toContain("setAgentWorkspaceView(viewPanel.dataset.icaView, { focus: false })");
-        expect(indexSource).toContain("tab.setAttribute('tabindex', active ? '0' : '-1');");
-        expect(indexSource).toContain("event.key === 'ArrowDown'");
-        expect(indexSource).toContain("event.key === 'Home'");
+        expect(indexSource).toContain('settingsRoot.addEventListener(\'sb:reveal-search-target\'');
+        expect(indexSource).toContain('setAgentWorkspaceView(viewPanel.dataset.icaView, { focus: false })');
+        expect(indexSource).toContain('tab.setAttribute(\'tabindex\', active ? \'0\' : \'-1\');');
+        expect(indexSource).toContain('event.key === \'ArrowDown\'');
+        expect(indexSource).toContain('event.key === \'Home\'');
     });
 
     test('renders pinned agents through the same sortable rows as every other filter', () => {
-        expect(indexSource).toContain("if (activeTab === 'quick')");
+        expect(indexSource).toContain('if (activeTab === \'quick\')');
         expect(indexSource).toContain('agents = agents.filter(agent => Boolean(agent.favorite));');
         expect(indexSource).toContain('setupCategorySortable(items[0]);');
         expect(indexSource).not.toContain('const showQuickSection');
         expect(indexSource).not.toContain('ica--quick-grid');
         expect(indexSource).toContain('ica--card-primary-actions');
         expect(indexSource).toContain('More actions');
-        expect(indexSource).toContain("card.find('.ica--card-secondary').on('click', event => event.stopPropagation());");
-        expect(indexSource).toContain("$(this).attr('tabindex', isActive ? '0' : '-1');");
+        expect(indexSource).toContain('card.find(\'.ica--card-secondary\').on(\'click\', event => event.stopPropagation());');
+        expect(indexSource).toContain('$(this).attr(\'tabindex\', isActive ? \'0\' : \'-1\');');
     });
 
     test('keeps every editor field in a visible information architecture wrapper', () => {
@@ -89,15 +89,15 @@ describe('in-chat agents workspace redesign', () => {
             expect(editorSource).toContain(`id="${id}"`);
         }
 
-        expect(indexSource).toContain("this.id === 'ica--companion-view'");
-        expect(indexSource).toContain("visible = activeEditorView === 'companion' && companionExecution;");
-        expect(indexSource).toContain("this.id === 'ica--tracker-builder-view'");
-        expect(indexSource).toContain("this.id === 'ica--when-view'");
-        expect(indexSource).toContain("visible = activeEditorView === 'when' && availability.placement;");
-        expect(indexSource).toContain("if (!availability.reply && activeEditorView === 'reply')");
-        expect(indexSource).not.toContain("companionExecution && ['when', 'reply'].includes(activeEditorView)");
-        expect(indexSource).toContain("editorEl.find('#ica--editor-tabs').on('click', '[data-editor-tab]'");
-        expect(indexSource).toContain("editorEl.find('#ica--editor-tabs').on('keydown', '[data-editor-tab]'");
+        expect(indexSource).toContain('this.id === \'ica--companion-view\'');
+        expect(indexSource).toContain('visible = activeEditorView === \'companion\' && companionExecution;');
+        expect(indexSource).toContain('this.id === \'ica--tracker-builder-view\'');
+        expect(indexSource).toContain('this.id === \'ica--when-view\'');
+        expect(indexSource).toContain('visible = activeEditorView === \'when\' && availability.placement;');
+        expect(indexSource).toContain('if (!availability.reply && activeEditorView === \'reply\')');
+        expect(indexSource).not.toContain('companionExecution && [\'when\', \'reply\'].includes(activeEditorView)');
+        expect(indexSource).toContain('editorEl.find(\'#ica--editor-tabs\').on(\'click\', \'[data-editor-tab]\'');
+        expect(indexSource).toContain('editorEl.find(\'#ica--editor-tabs\').on(\'keydown\', \'[data-editor-tab]\'');
     });
 
     test('uses labelled primary row actions and a compact secondary disclosure', () => {

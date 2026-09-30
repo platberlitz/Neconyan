@@ -330,7 +330,7 @@ export class ByafParser {
      * @returns {string} Chat data
      */
     static getChatFromScenario(scenario, userName, characterName, chatBackgrounds) {
-        const chatStartDate = scenario?.messages?.length == 0 ? new Date().toISOString() : scenario?.messages?.filter(m => 'createdAt' in m)[0].createdAt;
+        const chatStartDate = scenario?.messages?.find(message => message?.createdAt !== undefined)?.createdAt ?? new Date().toISOString();
         const chatBackground = chatBackgrounds.find(bg => bg.paths.includes(scenario?.backgroundImage || ''))?.name || '';
         /** @type {object[]} */
         const chat = [{

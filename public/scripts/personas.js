@@ -44,7 +44,6 @@ import {
     isFalseBoolean,
     isTrueBoolean,
     onlyUnique,
-    parseJsonFile,
     setInfoBlock,
     localizePagination,
     renderPaginationDropdown,
@@ -2665,11 +2664,18 @@ async function importPersonaCard(event) {
             body: formData,
         });
         if (!response.ok) throw new Error(`Persona import failed (${response.status})`);
-        const { avatar, name, ...descriptor } = await response.json();
-        const missingLorebook = descriptor.lorebook && !world_names?.includes(descriptor.lorebook);
-        if (missingLorebook) descriptor.lorebook = '';
-        power_user.personas[avatar] = name;
-        power_user.persona_descriptions[avatar] = { ...descriptor, connections: [], activeAppendices: {} };
+        const result = await response.json();
+        const personas = result.personas ?? [result];
+        const avatar = personas[0].avatar;
+        let missingLorebook = false;
+        for (const { avatar, name, ...descriptor } of personas) {
+            if (descriptor.lorebook && !world_names?.includes(descriptor.lorebook)) {
+                missingLorebook = true;
+                descriptor.lorebook = '';
+            }
+            power_user.personas[avatar] = name;
+            power_user.persona_descriptions[avatar] = { ...descriptor, connections: [], activeAppendices: {} };
+        }
         const saved = await saveSettings(0, { returnResult: true });
         $('#persona_search_bar').val('').trigger('input');
         personasFilter.setFilterData(FILTER_TYPES.PERSONA_SEARCH, '', true);
@@ -2678,16 +2684,21 @@ async function importPersonaCard(event) {
             await getUserAvatars(true, avatar);
             return;
         }
-        await eventSource.emit(event_types.PERSONA_CREATED, { avatarId: avatar, name, description: descriptor.description, title: descriptor.title });
+        for (const { avatar, name, description, title } of personas) {
+            await eventSource.emit(event_types.PERSONA_CREATED, { avatarId: avatar, name, description, title });
+        }
         await getUserAvatars(true, avatar);
+        if (result.missingAvatars) {
+            toastr.warning(t`This persona backup contains no pictures. The imported personas use the default picture; you can replace it in Edit.`, t`Persona Management`);
+        }
         if (missingLorebook) {
             toastr.warning(t`Persona imported. Its linked lorebook is missing; import the lorebook separately and link it again.`, t`Persona Management`);
-        } else {
+        } else if (!result.missingAvatars) {
             toastr.success(t`Persona card imported. Select it in Browse to use it.`, t`Persona Management`);
         }
     } catch (error) {
         console.error('Could not import persona card', error);
-        toastr.error(t`Could not import this persona card. Choose a PNG or JSON exported from Persona Management.`, t`Persona Management`);
+        toastr.error(t`Could not import this persona file. Choose a persona card or a SillyTavern or SillyBunny persona backup JSON.`, t`Persona Management`);
     } finally {
         input.value = '';
         button.prop('disabled', false);
@@ -2705,83 +2716,6 @@ function onBackupPersonas() {
 
     const blob = new Blob([data], { type: 'application/json' });
     download(blob, filename, 'application/json');
-}
-
-async function onPersonasRestoreInput(e) {
-    const file = e.target.files[0];
-
-    if (!file) {
-        console.debug('No file selected');
-        return;
-    }
-
-    const data = await parseJsonFile(file);
-
-    if (!data) {
-        toastr.warning(t`Invalid file selected`, t`Persona Management`);
-        console.debug('Invalid file selected');
-        return;
-    }
-
-    if (!data.personas || !data.persona_descriptions || typeof data.personas !== 'object' || typeof data.persona_descriptions !== 'object') {
-        toastr.warning(t`Invalid file format`, t`Persona Management`);
-        console.debug('Invalid file selected');
-        return;
-    }
-
-    const avatarsList = await getUserAvatars(false);
-    const warnings = [];
-
-    // Merge personas with existing ones
-    for (const [key, value] of Object.entries(data.personas)) {
-        if (key in power_user.personas) {
-            warnings.push(`Persona "${key}" (${value}) already exists, skipping`);
-            continue;
-        }
-
-        power_user.personas[key] = value;
-
-        // If the avatar is missing, upload it
-        if (!avatarsList.includes(key)) {
-            warnings.push(`Persona image "${key}" (${value}) is missing, uploading default avatar`);
-            await uploadUserAvatar(default_user_avatar, key);
-        }
-    }
-
-    // Merge persona descriptions with existing ones
-    for (const [key, value] of Object.entries(data.persona_descriptions)) {
-        if (key in power_user.persona_descriptions) {
-            warnings.push(`Persona description for "${key}" (${power_user.personas[key]}) already exists, skipping`);
-            continue;
-        }
-
-        if (!power_user.personas[key]) {
-            warnings.push(`Persona for "${key}" does not exist, skipping`);
-            continue;
-        }
-
-        power_user.persona_descriptions[key] = value;
-    }
-
-    if (data.default_persona) {
-        if (data.default_persona in power_user.personas) {
-            power_user.default_persona = data.default_persona;
-        } else {
-            warnings.push(`Default persona "${data.default_persona}" does not exist, skipping`);
-        }
-    }
-
-    if (warnings.length) {
-        toastr.success(t`Personas restored with warnings. Check console for details.`, t`Persona Management`);
-        console.warn(`PERSONA RESTORE REPORT\n====================\n${warnings.join('\n')}`);
-    } else {
-        toastr.success(t`Personas restored successfully.`, t`Persona Management`);
-    }
-
-    await getUserAvatars();
-    setPersonaDescription();
-    saveSettingsDebounced();
-    $('#personas_restore_input').val('');
 }
 
 /**
@@ -3932,7 +3866,8 @@ export async function initPersonas() {
     $('#persona_card_import').on('click', () => $('#persona_card_import_input').trigger('click'));
     $('#persona_card_import_input').on('change', importPersonaCard);
     $('#personas_restore').on('click', () => $('#personas_restore_input').trigger('click'));
-    $('#personas_restore_input').on('change', onPersonasRestoreInput);
+    // Older entry points use the same validated import and acknowledged settings save.
+    $('#personas_restore_input').on('change', importPersonaCard);
     $('#persona_sort_order').val(power_user.persona_sort_order).on('input', function () {
         const value = String($(this).val());
         // Save sort order, but do not save search sorting, as this is a temporary sorting option

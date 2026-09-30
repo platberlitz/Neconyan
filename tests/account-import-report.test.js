@@ -21,10 +21,16 @@ test('a mixed report distinguishes damage from deliberate omissions and does not
     const text = formatReport({ excludedCount: 1, excluded: [{ file: 'themes/Old.json', reason: 'Your current appearance is kept.' }],
         skippedCount: 1, skipped: [{ file: 'characters/Broken.png', reason: 'Cannot read \'characters/Broken.png\': Invalid PNG.' }] });
     expect(text).toContain('left out on purpose');
-    expect(text).toContain('1 file was damaged and could not be imported:');
+    expect(text).toContain('1 file could not be imported:');
     expect(text).toContain('characters/Broken.png');
     expect(text).toContain('Other selected files were imported.');
     expect(text).not.toContain('Everything else was imported.');
+});
+
+test('a settings conflict is not misreported as a damaged backup', () => {
+    const text = formatReport({ skippedCount: 1, skipped: [{ file: 'settings.json', reason: 'The newer settings were kept.' }] });
+    expect(text).toContain('The newer settings were kept.');
+    expect(text).not.toContain('damaged');
 });
 
 test('long exclusion reports point to the full downloadable file list', () => {

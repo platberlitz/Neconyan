@@ -1,3 +1,4 @@
+/* global globalThis */
 import { afterEach, describe, expect, jest, test } from '@jest/globals';
 import envPaths from 'env-paths';
 import fs from 'node:fs';
@@ -63,9 +64,9 @@ describe('Neconyan project boundaries', () => {
     });
 
     test('labels clean local Git projects without an upstream neutrally', () => {
-        expect(tabsSource).toContain("if (!repository?.trackingBranch)");
-        expect(tabsSource).toContain("pillLabel = 'Local project';");
-        expect(tabsSource).toContain("pillTone = 'neutral';");
+        expect(tabsSource).toContain('if (!repository?.trackingBranch)');
+        expect(tabsSource).toContain('pillLabel = \'Local project\';');
+        expect(tabsSource).toContain('pillTone = \'neutral\';');
     });
 });
 

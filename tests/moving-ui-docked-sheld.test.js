@@ -13,7 +13,7 @@ describe('Moving UI leaves the docked chat workspace alone', () => {
 
     test('never makes #sheld draggable, so the Conversation header cannot pin it over the rail', () => {
         const initMovingUI = rossSource.slice(rossSource.indexOf('export async function initMovingUI()'));
-        expect(initMovingUI.slice(0, initMovingUI.indexOf('\n}\n'))).not.toContain("dragElement($('#sheld'))");
+        expect(initMovingUI.slice(0, initMovingUI.indexOf('\n}\n'))).not.toContain('dragElement($(\'#sheld\'))');
         expect(rossSource).not.toContain('#sb_conversation_header');
     });
 

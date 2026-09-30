@@ -507,12 +507,8 @@ export function getBase64Async(file) {
  * @returns {Promise<any>} A promise that resolves to the parsed JSON object.
  */
 export async function parseJsonFile(file) {
-    return new Promise((resolve, reject) => {
-        const fileReader = new FileReader();
-        fileReader.readAsText(file);
-        fileReader.onload = event => resolve(JSON.parse(String(event.target.result)));
-        fileReader.onerror = error => reject(error);
-    });
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer());
+    return JSON.parse(text);
 }
 
 /**

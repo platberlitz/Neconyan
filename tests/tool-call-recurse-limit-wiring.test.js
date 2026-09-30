@@ -51,7 +51,7 @@ describe('tool call recurse limit wiring', () => {
 
         expect(applySource).toContain('ToolManager.RECURSE_LIMIT = recurseLimit;');
         expect(loadSource).toContain('applyToolCallRecurseLimit(oai_settings.tool_call_recurse_limit);');
-        expect(initSource).toContain("$('#tool_call_recurse_limit').on('input'");
+        expect(initSource).toContain('$(\'#tool_call_recurse_limit\').on(\'input\'');
         expect(initSource).toContain('applyToolCallRecurseLimit($(this).val());');
     });
 });

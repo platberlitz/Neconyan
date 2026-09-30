@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import '../src/fetch-patch.js';
 import { Jimp } from '../src/jimp.js';
 import { read as readCharacterCard } from '../src/character-card-parser.js';
-import { createPersonaCard, decodePersonaCard, encodePersonaCard, normalizePersonaCard } from '../src/persona-card.js';
+import { createPersonaCard, decodePersonaCard, decodePersonaImport, encodePersonaCard, normalizePersonaCard } from '../src/persona-card.js';
 
 const image = fs.readFileSync(new URL('../public/img/user-default.png', import.meta.url));
 const descriptor = {
@@ -73,5 +73,37 @@ describe('portable persona cards', () => {
         expect(() => decodePersonaCard(image, 'png')).toThrow();
         expect(() => decodePersonaCard(Buffer.from(JSON.stringify(createPersonaCard('Rin', {}))), 'json')).toThrow();
         expect(() => decodePersonaCard(Buffer.from('{'), 'json')).toThrow();
+    });
+
+    test('imports a SillyBunny library with portable descriptions and no account bindings', () => {
+        const backup = {
+            personas: { 'rin.png': 'Rin 🐈', 'new.png': 'New persona' },
+            persona_descriptions: { 'rin.png': descriptor },
+            default_persona: 'rin.png',
+        };
+        const imported = decodePersonaImport(Buffer.from('\uFEFF' + JSON.stringify(backup)), 'json');
+        expect(imported.backup).toBe(true);
+        expect(imported.cards).toEqual([
+            { card: createPersonaCard('Rin 🐈', descriptor), image: null },
+            { card: createPersonaCard('New persona', {}), image: null },
+        ]);
+        expect(JSON.stringify(imported)).not.toContain('private-chat');
+        expect(JSON.stringify(imported)).not.toContain('private-character');
+    });
+
+    test.each([
+        { personas: [], persona_descriptions: {} },
+        { personas: {}, persona_descriptions: {} },
+        { personas: { '../settings.json': 'Rin' }, persona_descriptions: {} },
+        { personas: { 'rin.png': 12 }, persona_descriptions: {} },
+        { personas: { 'rin.png': 'Rin' }, persona_descriptions: { 'rin.png': [] } },
+        JSON.parse('{"personas":{"__proto__":"Rin"},"persona_descriptions":{}}'),
+    ])('rejects malformed persona libraries before importing any entries: %j', backup => {
+        expect(() => decodePersonaImport(Buffer.from(JSON.stringify(backup)), 'json')).toThrow();
+    });
+
+    test('rejects damaged UTF-8 rather than silently changing persona text', () => {
+        const bytes = Buffer.concat([Buffer.from('{"personas":{"rin.png":"'), Buffer.from([0xff]), Buffer.from('"},"persona_descriptions":{}}')]);
+        expect(() => decodePersonaImport(bytes, 'json')).toThrow();
     });
 });

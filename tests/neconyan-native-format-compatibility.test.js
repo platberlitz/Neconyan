@@ -1,3 +1,4 @@
+/* global globalThis */
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 import { exportProfiles, importProfiles } from '../public/scripts/extensions/third-party/Neconyan-PromptTags/src/settings.js';
 import { createSuite } from '../public/scripts/extensions/third-party/Neconyan-Prompting-Lab/src/schema.js';

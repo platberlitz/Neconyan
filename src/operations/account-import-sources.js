@@ -54,14 +54,17 @@ export function resolveAccountImportRoot(input) {
     const root = path.resolve(input.trim());
     directory(root);
     const likely = candidate => MARKERS.some(marker => fs.existsSync(path.join(candidate, marker)));
-    if (likely(root)) return root;
     const data = path.basename(root) === 'data' ? root : path.join(root, 'data');
-    directory(data);
-    const candidates = fs.readdirSync(data, { withFileTypes: true }).filter(entry => entry.isDirectory() && !entry.isSymbolicLink())
-        .map(entry => path.join(data, entry.name)).filter(likely);
+    const candidates = [];
+    if (fs.existsSync(data)) {
+        directory(data);
+        candidates.push(...fs.readdirSync(data, { withFileTypes: true }).filter(entry => entry.isDirectory() && !entry.isSymbolicLink())
+            .map(entry => path.join(data, entry.name)).filter(likely));
+    }
     if (candidates.length === 1) return candidates[0];
     const preferred = candidates.find(candidate => path.basename(candidate) === 'default-user');
     if (preferred) return preferred;
+    if (!candidates.length && likely(root)) return root;
     throw operationError(candidates.length ? 'Multiple user folders were found. Select the exact user folder.' : 'No importable user folder was found.', 400);
 }
 
@@ -139,18 +142,35 @@ export async function captureZipImport(source, { coreOnly = false, parts } = {})
             zip.readEntry();
         });
     } finally { zip.close(); }
-    const scores = new Map();
+    const roots = new Set();
     for (const entry of entries) {
-        if (entry.name.startsWith('__MACOSX/')) continue;
-        const parts = entry.name.replace(/\/$/, '').split('/');
-        for (let index = 0; index < parts.length; index++) if (importRelativePath(parts.slice(index).join('/'))
-            && (!coreOnly || coreImportPath(parts.slice(index).join('/'), entry.name.endsWith('/')))) {
-            const base = parts.slice(0, index).join('/');
-            scores.set(base, (scores.get(base) ?? 0) + 1);
+        if (entry.name.startsWith('__MACOSX/') || entry.name.endsWith('/')) continue;
+        const segments = entry.name.split('/');
+        const recognised = index => importRelativePath(segments.slice(index).join('/'))
+            && (!coreOnly || coreImportPath(segments.slice(index).join('/'), false));
+        for (let index = 0; index < segments.length; index++) if (recognised(index)) {
+            // A user may itself be named 'characters' or another recognised folder.
+            if (segments[index - 1] === 'data' && recognised(index + 1)) index++;
+            roots.add(segments.slice(0, index).join('/'));
+            // Recognised names deeper inside a library are content, not another account.
+            break;
         }
     }
+    // Match folder imports: prefer modern account data over application-level assets.
+    const modern = [...roots].filter(value => /(?:^|\/)data\/[^/]+$/.test(value));
+    const candidates = modern.length ? modern : [...roots].filter(value => {
+        if (!value) return true;
+        const segments = value.split('/');
+        while (segments.length) {
+            segments.pop();
+            if (roots.has(segments.join('/'))) return false;
+        }
+        return true;
+    });
     const preferred = value => value === 'default-user' || value.endsWith('/default-user');
-    const selected = [...scores].sort((a, b) => b[1] - a[1] || Number(preferred(b[0])) - Number(preferred(a[0])) || b[0].length - a[0].length)[0]?.[0];
+    const defaults = candidates.filter(preferred);
+    if (candidates.length > 1 && defaults.length !== 1) throw operationError('Multiple user folders were found. Select the exact user folder and ZIP it separately.', 400);
+    const selected = defaults[0] ?? candidates[0];
     if (selected === undefined) throw operationError('The ZIP does not contain importable user data.', 400);
     const files = [];
     const directories = [];
