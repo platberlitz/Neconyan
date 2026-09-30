@@ -87,33 +87,108 @@ The chat turned into continuous prose, for when you'd rather read a story than s
   <img src="docs/readme/banner-getting-started.webp" alt="Getting Started">
 </p>
 
+Pick whichever fits what you've got:
+
+| You've got | Go with |
+| --- | --- |
+| An Android phone on Android 11 or newer | [The Android app](#android-app) |
+| An older Android phone, or you like a terminal | [Termux](#android-with-termux) |
+| Windows, macOS or Linux | [A computer install](#on-a-computer) |
+| An iPhone | A computer install, then [open it on your phone](#opening-it-on-your-phone) |
+
+Whichever you pick, you still need a model to talk to: an API key from a provider, or a local backend like KoboldCpp or Ollama.
+
 ### Android app
 
-On an Android 11 or newer phone, install `Neconyan-1.0.0-android-arm64.apk` from
-the [latest release](https://github.com/platberlitz/Neconyan/releases/latest).
-It runs Neconyan on your phone, without Termux or a separate server. You still
-need your own model connection. Allow about 2 GiB of free storage and give the
-first opening time to unpack. [Android setup, backups and build instructions.](android/README.md)
+On Android 11 or newer, download the file ending in `-android-arm64.apk` from the [latest release](https://github.com/platberlitz/Neconyan/releases/latest) and open it. Android will probably ask you to allow installing apps from your browser first.
 
-### Computer or Termux
+Everything runs on the phone, so there's no Termux or computer involved. Leave about 2 GiB free and give the first opening time to unpack. To update, install the new APK over the old one and your chats stay put. [Android setup, backups and build instructions.](android/README.md)
 
-1. Extract the release into its own folder.
-2. Run the launcher for your system (the table below).
-3. Open **http://127.0.0.1:4433/** in your browser.
-4. Go to **Model → Connections** and pick your provider and model.
-5. Import or make a character, or just chat with an assistant from Home.
+### On a computer
 
-| System | Launcher |
-| --- | --- |
-| Windows | `Start.bat` |
-| macOS | `Start.command` |
-| Linux / WSL | `./start.sh` |
-| Android (Termux) | `bash start.sh` |
+1. **Get Neconyan.** There are two ways, and the second one keeps itself up to date.
 
-The launcher checks what you've got installed and sets everything up for you.
+   - **Download it.** Grab the file ending in `-source.zip` from the [latest release](https://github.com/platberlitz/Neconyan/releases/latest) and unzip it somewhere easy to find, like your Documents folder. On Windows, right-click the zip and choose **Extract All** first, because running the launcher from inside the zip won't work. You'll end up with a folder named after the version, like `Neconyan-1.0.4`.
+   - **Clone it with [Git](https://git-scm.com/downloads).** Open a terminal where you want the folder and run the line below. The launcher then checks for a new version every time you start it and updates before opening, which is why I'd go this way.
+
+     ```sh
+     git clone https://github.com/platberlitz/Neconyan.git
+     ```
+
+2. **Start it.** Open the Neconyan folder and run the launcher for your system.
+
+   | System | How |
+   | --- | --- |
+   | Windows | Double-click `Start.bat` |
+   | macOS | Double-click `Start.command` |
+   | Linux or WSL | Open a terminal in the folder and run `./start.sh` |
+
+   The first start takes a few minutes. If you don't have Bun or Node.js (the programs that actually run Neconyan), the launcher installs Bun for you, then downloads everything else Neconyan needs. Keep that window open while you use Neconyan; closing it, or pressing Ctrl+C in it, stops Neconyan.
+
+3. **Open it.** Your browser should open by itself. If it doesn't, go to **http://127.0.0.1:4433/**.
+4. **Connect a model.** Click **Connections** in the sidebar, pick your provider and model, then paste your API key or your local backend's address. After that, import a character or say hi to Miso, Taro or Nori on Home.
+
+Next time, run the same launcher again.
+
+**Updating.** Git installs update themselves when you start them. For the zip, download the new one and unzip it into a new folder, close Neconyan, then copy the `data` folder from the old Neconyan folder into the new one, plus `config.yaml` if you changed it. Start the new one and check your chats are there before you delete the old folder.
+
+### Android with Termux
+
+[Termux](https://termux.dev/) is a terminal app for Android. It's more fiddly than the app above, but it works on older phones too.
+
+1. Install Termux from [F-Droid](https://f-droid.org/packages/com.termux/) or [its GitHub releases](https://github.com/termux/termux-app/releases).
+2. Open Termux and update it. If it stops to ask about a config file, press Enter to keep the current one.
+
+   ```sh
+   pkg update && pkg upgrade -y
+   ```
+
+3. Install Git, then download Neconyan into your Termux home. `--depth 1` skips the project's old history, so it's a smaller download, and updates still work.
+
+   ```sh
+   pkg install -y git
+   ```
+
+   ```sh
+   git clone --depth 1 https://github.com/platberlitz/Neconyan.git ~/Neconyan
+   ```
+
+4. Start it. The first start installs Node.js and everything else Neconyan needs, so give it a few minutes.
+
+   ```sh
+   cd ~/Neconyan && bash start.sh
+   ```
+
+5. When you see `Go to: http://127.0.0.1:4433/ to open Neconyan`, open that address in Chrome or any other browser on the phone. Then connect a model from **Connections**, same as on a computer.
+
+A few Termux habits worth picking up:
+
+- Android likes to stop apps in the background. Pull down your notifications and tap **Acquire wakelock** on the Termux one, so Neconyan keeps running while you're in the browser.
+- To stop Neconyan, tap **CTRL** on the row of extra keys, then **C**.
+- Next time, open Termux and run `cd ~/Neconyan && bash start.sh` again. It updates itself before starting.
+- Keep the folder in your Termux home. The launcher refuses to run from shared storage like `/sdcard`, because Android blocks the file links Neconyan's packages need there.
+- In Chrome's menu, **Add to home screen** gives Neconyan its own icon.
+
+### Opening it on your phone
+
+If Neconyan runs on your computer, your phone can use it too, as long as both are on the same Wi-Fi. It's the only way to use it on an iPhone for now.
+
+1. Stop Neconyan and open `config.yaml` in the Neconyan folder with any text editor. It appears after the first start. Change `listen: false` to `listen: true`.
+2. While you're in there, turn on a password, because otherwise anyone on your Wi-Fi can open it. Set `basicAuthMode: true`, then change the `username` and `password` under `basicAuthUser`.
+3. Start Neconyan again and find your computer's local address.
+   - **Windows:** run `ipconfig` in Command Prompt and look for **IPv4 Address**.
+   - **macOS:** hold Option and click the Wi-Fi icon in the menu bar, then look for **IP Address**.
+   - **Linux:** run `hostname -I`.
+4. On your phone's browser, type that address with `http://` in front and `:4433` after it, for example `http://192.168.1.20:4433`.
+
+If Windows asks whether to let Bun or Node.js through the firewall, allow it on private networks. If your phone shows a page that just says **Forbidden**, your network hands out addresses starting with `10.`, which Neconyan blocks by default. Add this line under `whitelist:` in `config.yaml`, then restart Neconyan:
+
+```yaml
+  - 10.0.0.0/8
+```
 
 <details>
-<summary><b>Picking Node.js or Bun yourself</b></summary>
+<summary><b>Picking Node.js or Bun, and other launcher options</b></summary>
 
 Every system also has separate Node.js and Bun launchers, if you'd rather choose:
 
@@ -131,20 +206,25 @@ npm install
 npm run start:node
 ```
 
-Bun 1.3.14 or newer works too: install the dependencies, then run `bun run start`, or `bun run start:mobile` to use less memory. Keep the repo's `.npmrc` file as it is.
+Bun 1.3.14 or newer works too: run `bun install`, then `bun run start`, or `bun run start:mobile` to use less memory. Keep the repo's `.npmrc` file as it is.
+
+To stop a Git install updating itself, set `NECONYAN_AUTO_UPDATE=0` before running the launcher.
 
 </details>
 
 <details>
 <summary><b>If something won't start</b></summary>
 
+- **Windows says it protected your PC:** click **More info**, then **Run anyway**. It says that about most downloaded launchers.
+- **macOS won't open `Start.command` because it's from an unidentified developer:** right-click it and choose **Open**. On newer macOS versions, go to **System Settings → Privacy & Security** and click **Open Anyway** instead.
 - **macOS or Linux says the launcher isn't executable:** run this in the Neconyan folder.
 
   ```sh
   chmod +x Start*.command start*.sh scripts/*.sh
   ```
 
-- **Android:** keep the folder inside your Termux home, not shared storage. Node.js is the default there. Bun needs two extra packages first:
+- **A Git install stopped updating:** the launcher skips updates if you've edited any of Neconyan's own files, and says why when it starts. Your chats and `config.yaml` don't count.
+- **Android:** Node.js is the default in Termux. Bun needs two extra packages first:
 
   ```sh
   pkg update && pkg install -y glibc-repo && pkg install -y glibc-runner
