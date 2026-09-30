@@ -27,11 +27,15 @@ jest.unstable_mockModule('../public/scripts/popup.js', () => ({
     POPUP_TYPE: { CONFIRM: 'confirm' }, POPUP_RESULT: { AFFIRMATIVE: 1 }, Popup: class { show() { return popupAnswer; } },
 }));
 jest.unstable_mockModule('../public/scripts/utils.js', () => ({ uuidv4: () => 'memory-test-submission' }));
+jest.unstable_mockModule('../public/scripts/i18n.js', () => ({
+    t: (strings, ...values) => strings.reduce((text, part, index) => text + part + (values[index] ?? ''), ''),
+    translate: text => text === 'Needs attention' ? 'Bitte überprüfen' : text,
+}));
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/state.js', () => ({ conversationState }));
 jest.unstable_mockModule('../public/scripts/events.js', () => ({
     event_types: new Proxy({}, { get: (_, name) => name }), eventSource: { on: (name, handler) => listeners.set(name, handler) },
 }));
-const { getMewmoryLocator, getMewmoryScope, getOverflowMessages, hideOverflowMessages, initMewmory, mewmory, prepareMewmoryGeneration, processMewmory, refreshMewmory, requestMewmory, stopMewmoryBackfill } = await import('../public/scripts/mewmory/index.js');
+const { getMewmoryLocator, getMewmoryScope, getOverflowMessages, hideOverflowMessages, initMewmory, mewmory, notifyMewmory, prepareMewmoryGeneration, processMewmory, refreshMewmory, requestMewmory, stopMewmoryBackfill } = await import('../public/scripts/mewmory/index.js');
 const config = { revision: 1, roles: {} };
 const response = data => ({ ok: true, json: async () => data });
 
@@ -46,6 +50,16 @@ beforeEach(() => {
     Object.assign(mewmory, { view: null, config: null, stories: [], error: '', loading: false, busy: false, backfilling: false });
 });
 afterEach(() => jest.restoreAllMocks());
+
+test('status labels are translated without changing the state used by the interface', () => {
+    const button = { dataset: {}, setAttribute: jest.fn(), querySelector: () => null };
+    global.document.querySelectorAll = () => [button];
+    mewmory.error = 'A failed request';
+    notifyMewmory();
+    expect(button.dataset.mewmoryStatus).toBe('Needs attention');
+    expect(button.title).toBe('Mewmory: Bitte überprüfen');
+    expect(button.setAttribute).toHaveBeenCalledWith('aria-label', button.title);
+});
 
 test('new chats and branches load even without a listed archive or a mounted panel', async () => {
     for (const name of ['new-chat', 'branch']) {

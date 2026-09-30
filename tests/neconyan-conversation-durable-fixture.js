@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import fs from 'node:fs/promises';
 import { createServer } from 'node:net';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -39,7 +40,7 @@ export async function acknowledgeActiveSettings(page) {
 
 export const test = base.extend({
     libraryCache: [async ({}, use) => {
-        const directory = await fs.mkdtemp('/tmp/opencode/conversation-libraries-');
+        const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'conversation-libraries-'));
         try {
             // Seed a previously compiled bundle on slow hosts; the server still checks its input-derived cache key.
             if (process.env.NECONYAN_TEST_LIBRARY_CACHE) await fs.cp(process.env.NECONYAN_TEST_LIBRARY_CACHE, directory, { recursive: true });
@@ -51,7 +52,7 @@ export const test = base.extend({
         if (process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1') {
             throw new Error('Set NECONYAN_CONVERSATION_TEST_DISPOSABLE=1 to run this owned, disposable fixture.');
         }
-        const directory = await fs.mkdtemp('/tmp/opencode/conversation-durable-');
+        const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'conversation-durable-'));
         const provider = await createMewmoryProvider();
         provider.mode.reply = { choices: [{ message: { role: 'assistant', content: REPLY } }] };
         const reservation = createServer();

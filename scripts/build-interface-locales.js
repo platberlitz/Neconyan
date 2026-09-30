@@ -22,10 +22,22 @@ for (const locale of locales) {
 
 // Keep in step with public/scripts/ui-localization.js: every visible text node and caption attribute is looked up at runtime.
 const hole = '\u0000';
-const captionProperties = ['label', 'title', 'placeholder', 'description', 'textContent', 'innerText', 'okButton', 'cancelButton', 'text', 'ariaLabel', 'tooltip', 'subtitle', 'heading', 'hint', 'emptyText'];
+const captionProperties = ['label', 'title', 'placeholder', 'description', 'textContent', 'innerText', 'okButton', 'cancelButton', 'text', 'ariaLabel', 'tooltip', 'subtitle', 'heading', 'hint', 'emptyText', 'speaker'];
 const captionAttributes = ['title', 'placeholder', 'aria-label'];
-const literalText = node => node?.type === 'Literal' && typeof node.value === 'string' ? node.value
-    : node?.type === 'TemplateLiteral' && !node.expressions.length ? node.quasis[0].value.cooked : null;
+const literalTextCache = new WeakMap();
+function literalText(node) {
+    if (!node || typeof node !== 'object') return null;
+    if (literalTextCache.has(node)) return literalTextCache.get(node);
+    let text = null;
+    if (node.type === 'Literal' && typeof node.value === 'string') text = node.value;
+    else if (node.type === 'TemplateLiteral' && !node.expressions.length) text = node.quasis[0].value.cooked;
+    else if (node.type === 'BinaryExpression' && node.operator === '+') {
+        const left = literalText(node.left), right = literalText(node.right);
+        if (left !== null && right !== null) text = left + right;
+    }
+    literalTextCache.set(node, text);
+    return text;
+}
 const addCaption = value => {
     if (typeof value !== 'string') return;
     const trimmed = value.trim();
@@ -56,8 +68,28 @@ function collectHtmlString(value) {
     collectHtml(load(value));
 }
 
-function walkAst(node) {
+// Captions also reach the page through helper arguments, fallbacks, ternaries, arrays and short templates,
+// so any sentence-cased string outside code-only positions is collected; the runtime only matches visible text.
+const codeOnlyCalls = new Set(['querySelector', 'querySelectorAll', 'closest', 'matches', 'getElementById', 'getElementsByClassName', 'addEventListener',
+    'removeEventListener', 'dispatchEvent', 'getItem', 'setItem', 'removeItem', 'getAttribute', 'hasAttribute', 'removeAttribute', 'toggleAttribute',
+    'fetch', 'includes', 'startsWith', 'endsWith', 'indexOf', 'split', 'replace', 'replaceAll', 'match', 'test', 'require', 'import', 'postMessage', 'Error', 'TypeError', 'RangeError', 'SyntaxError', 'CustomEvent', 'Event', 'RegExp', 'Symbol', 'getContext']);
+const codeOnlyKeys = new Set(['id', 'key', 'type', 'name', 'value', 'class', 'className', 'icon', 'selector', 'event', 'role', 'mode', 'source', 'tag', 'url', 'path', 'method', 'kind', 'action', 'shellKey', 'tabId', 'prompt', 'content', 'template', 'system', 'instruction']);
+// Reference text written for the model, not for the page.
+const modelOnlyFiles = /neconyan-assistant-knowledge[\\/]/;
+const calleeName = callee => callee?.property?.name || callee?.name || callee?.property?.value;
+// Multi-line strings are prompt text and single CamelCase words are identifiers; neither is a caption.
+const sentenceText = value => typeof value === 'string' && value.length <= 240 && /^[A-Z]/.test(value.trim()) && /[a-z]{2,}/.test(value)
+    && !/[{}<>[\]#=|\\\n]/.test(value.trim()) && !/^[A-Z][a-z\d]+(?:[A-Z][a-z\d]*)+$/.test(value.trim());
+const templateKey = node => node.quasis.map((q, index) => (q.value.cooked ?? '') + (index < node.expressions.length ? '${' + index + '}' : '')).join('');
+
+function walkAst(node, quiet = false) {
     if (!node || typeof node !== 'object') return;
+    if (!quiet && node.type === 'Literal' && sentenceText(node.value)) addCaption(node.value);
+    if (!quiet && node.type === 'BinaryExpression' && sentenceText(literalText(node))) addCaption(literalText(node));
+    if (!quiet && node.type === 'TemplateLiteral' && sentenceText(node.quasis[0].value.cooked) && !node.quasis.some(q => /[<>]/.test(q.value.cooked ?? ''))) {
+        const key = templateKey(node).trim();
+        if (/^[^$]*[a-z]{2,}/.test(key) && key.length <= 240) add(key);
+    }
     if (node.type === 'TaggedTemplateExpression' && node.tag.name === 't') {
         add(node.quasi.quasis.map((q, index) => q.value.cooked + (index < node.quasi.expressions.length ? '${' + index + '}' : '')).join(''));
     } else if (node.type === 'TemplateLiteral') {
@@ -66,7 +98,7 @@ function walkAst(node) {
         collectHtmlString(node.value);
     }
     if (node.type === 'Property' && captionProperties.includes(node.key.name || node.key.value)) addCaption(literalText(node.value));
-    if (node.type === 'Property' && (node.key.name || node.key.value) === 'body') literalText(node.value)?.split('\n').forEach(addCaption);
+    if (node.type === 'Property' && /^(body|\w+Body)$/.test(node.key.name || node.key.value)) literalText(node.value)?.split('\n').forEach(addCaption);
     if (node.type === 'AssignmentExpression' && [...captionProperties, 'ariaLabel'].includes(node.left.property?.name)) addCaption(literalText(node.right));
     if (node.type === 'CallExpression' && ['translate'].includes(node.callee.name) && node.arguments[0]?.type === 'Literal') add(node.arguments[1]?.value || node.arguments[0].value, node.arguments[0].value);
     if (node.type === 'CallExpression' && node.callee.object?.name === 'toastr' && ['success', 'info', 'warning', 'error'].includes(node.callee.property?.name)) {
@@ -74,9 +106,18 @@ function walkAst(node) {
     }
     if (node.type === 'CallExpression' && ['setAttribute', 'attr'].includes(node.callee.property?.name) && captionAttributes.includes(literalText(node.arguments[0]))) addCaption(literalText(node.arguments[1]));
     if (node.type === 'CallExpression' && ['text', 'setTooltip'].includes(node.callee.property?.name) && node.arguments.length === 1) addCaption(literalText(node.arguments[0]));
-    for (const value of Object.values(node)) {
-        if (Array.isArray(value)) value.forEach(walkAst);
-        else if (value && typeof value === 'object') walkAst(value);
+    const codeOnly = ((node.type === 'CallExpression' || node.type === 'NewExpression') && codeOnlyCalls.has(calleeName(node.callee)))
+        || (node.type === 'CallExpression' && node.callee.object?.name === 'console')
+        || (node.type === 'BinaryExpression' && ['===', '!==', '==', '!=', 'in', 'instanceof'].includes(node.operator))
+        || ['ImportDeclaration', 'ExportAllDeclaration', 'ImportExpression', 'ThrowStatement'].includes(node.type);
+    for (const [field, value] of Object.entries(node)) {
+        const childQuiet = quiet || codeOnly
+            || (node.type === 'ExportNamedDeclaration' && field !== 'declaration')
+            || (node.type === 'SwitchCase' && field === 'test')
+            || (node.type === 'Property' && (field === 'key' || codeOnlyKeys.has(node.key?.name || node.key?.value)))
+            || (node.type === 'MemberExpression' && field === 'property');
+        if (Array.isArray(value)) value.forEach(child => walkAst(child, childQuiet));
+        else if (value && typeof value === 'object') walkAst(value, childQuiet);
     }
 }
 
@@ -88,7 +129,7 @@ function visit(directory) {
         if (!/\.(html|js)$/.test(filename) || filename.endsWith('.min.js')) continue;
         const text = fs.readFileSync(filename, 'utf8');
         if (filename.endsWith('.js')) {
-            try { walkAst(parse(text, { ecmaVersion: 'latest', sourceType: 'module' })); } catch { /* Vendor scripts may not be modules. */ }
+            try { walkAst(parse(text, { ecmaVersion: 'latest', sourceType: 'module' }), modelOnlyFiles.test(filename)); } catch { /* Vendor scripts may not be modules. */ }
             continue;
         }
         collectHtml(load(text));
@@ -100,6 +141,11 @@ const assistants = JSON.parse(fs.readFileSync(path.resolve('default/content/assi
 for (const personality of assistants.personalities || []) [personality.role, personality.summary].forEach(addCaption);
 const placeholders = value => (value.match(/\$\{[^}]+\}|\{\{[^}]+\}\}|%[sd]|\{\d+\}/g) || []).sort();
 const command = process.env.NECONYAN_TRANSLATION_COMMAND;
+if (process.argv.includes('--list')) {
+    // Synchronous, so a large list is not cut short by exiting while a pipe drains.
+    fs.writeSync(1, JSON.stringify(Object.keys(source).sort()) + '\n');
+    process.exit(0);
+}
 if (!command) {
     console.log(JSON.stringify({ strings: Object.keys(source).length, locales: locales.map(item => item.lang) }));
     process.exit(0);

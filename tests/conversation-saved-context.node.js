@@ -65,7 +65,7 @@ test('solo context resolves known partners while group discovery excludes muted,
 });
 
 test('a Conversation participant freezes its configured image provider with the accepted request', async t => {
-    const temporary = fs.mkdtempSync(path.join('/tmp/opencode', 'conversation-image-binding-'));
+    const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'conversation-image-binding-'));
     const root = path.join(temporary, 'tester');
     t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
     const directories = { root, characters: path.join(root, 'characters') };

@@ -7,6 +7,9 @@ let warnSpy;
 beforeAll(async () => {
     jest.resetModules();
     warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    await jest.unstable_mockModule('../public/scripts/i18n.js', () => ({
+        t: (strings, ...values) => strings.reduce((text, part, index) => text + part + (values[index] ?? ''), ''),
+    }));
 
     await jest.unstable_mockModule('../public/scripts/extensions.js', () => ({
         extension_settings: {},

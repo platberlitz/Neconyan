@@ -361,7 +361,7 @@ export function mountNeconyanModelWorkspace(root = document) {
 }
 
 function getLorebookFolderName(metadata, folderId) {
-    return metadata.folders.find(folder => folder.id === folderId)?.name || 'Unfiled';
+    return metadata.folders.find(folder => folder.id === folderId)?.name || t`Unfiled`;
 }
 
 async function mutateLorebookFolders(mutator, render) {
@@ -487,8 +487,8 @@ function renderLorebookLibrary(library) {
         if (folderId && counts.has(folderId)) counts.set(folderId, counts.get(folderId) + 1);
     }
     const folderButtons = [
-        ['all', 'All books', names.length],
-        ['unfiled', 'Unfiled', names.filter(name => !metadata.assignments[name]).length],
+        ['all', t`All books`, names.length],
+        ['unfiled', t`Unfiled`, names.filter(name => !metadata.assignments[name]).length],
         ...metadata.folders.map(folder => [folder.id, folder.name, counts.get(folder.id) || 0]),
     ];
     for (const [id, label, count] of folderButtons) {

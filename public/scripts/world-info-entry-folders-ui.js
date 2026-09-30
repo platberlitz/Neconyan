@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 import { Popup, POPUP_TYPE } from './popup.js';
 import { accountStorage } from './util/AccountStorage.js';
 import { ENTRY_FOLDER_KEY, addEntryFolder, getEntryFolder, getEntryFolders, groupEntriesByFolder, normalizeEntryFolder, renameEntryFolder, setEntryFolder } from './world-info-entry-folders.js';
@@ -150,7 +151,7 @@ export function createEntryFolderUI({ name, data, save, refresh, syncOriginal, r
                 row.dataset.folder = folder;
                 const collapsed = view.closed.has(folder) && !searching;
                 children.forEach(node => node.classList.toggle('neco-entry-folder-hidden', collapsed));
-                const toggle = button(`${folder || 'Unfiled'} (${total})`, collapsed ? 'fa-folder' : 'fa-folder-open', () => {
+                const toggle = button(`${folder || t`Unfiled`} (${total})`, collapsed ? 'fa-folder' : 'fa-folder-open', () => {
                     const closed = toggle.getAttribute('aria-expanded') === 'true';
                     if (closed) view.closed.add(folder); else view.closed.delete(folder);
                     accountStorage.setItem(storageKey, JSON.stringify([...view.closed]));

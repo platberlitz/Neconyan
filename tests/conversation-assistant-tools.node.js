@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import test, { after } from 'node:test';
 import { setConfigFilePath } from '../src/util.js';
@@ -19,7 +20,7 @@ const { cancelAutoSaves } = await import('../src/endpoints/settings.js');
 after(() => cancelAutoSaves());
 
 async function fixture(t, id = 'miso-male', { text = false } = {}) {
-    const temporary = fs.mkdtempSync('/tmp/opencode/conversation-assistant-');
+    const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'conversation-assistant-'));
     t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
     const root = path.join(temporary, 'tester');
     const directories = { root };
