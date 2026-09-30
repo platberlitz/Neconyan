@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.6
+
+### Merged Staging PRs
+- PR #2 (2026-09-30) `fix: improve german translation quality`
+
 ## Unreleased
 
 - Add native Mewmory for Roleplay: revision-aware story memory, Pawspective histories, protected NPC references, lore-aware retrieval, separate selector/fallback roles, preservation checkpoints, and inspection with correction, undo, export and restore.
