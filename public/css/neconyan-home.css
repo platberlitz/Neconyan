@@ -51,7 +51,9 @@ body.neconyan .neconyan-home.welcomePanel--compact .neconyan-home-cat img { widt
     body.neconyan .neconyan-home .recentChat .chatDate { margin-left: 0; width: 100%; }
 }
 
-body.neconyan .neconyan-home button { border-radius: 6px !important; box-shadow: none !important; }
+body.neconyan .neconyan-home button { border-radius: var(--neconyan-home-action-radius, 6px) !important; box-shadow: none !important; }
+body.neconyan .neconyan-assistant-disclosure { display: none; }
+.neconyan-assistant-choices { display: contents; }
 
 body.neconyan .neconyan-home .showMoreChats.rotated { transform: none; }
 
@@ -80,7 +82,7 @@ body.neconyan .neconyan-home-actions { gap: 16px; }
 body.neconyan .neconyan-home-actions > button,
 body.neconyan .neconyan-home .showMoreChats,
 body.neconyan .neconyan-home-footer > button {
-    border-radius: 18px !important;
+    border-radius: var(--neconyan-home-action-radius, 18px) !important;
 }
 
 body.neconyan .neconyan-home-actions > button {

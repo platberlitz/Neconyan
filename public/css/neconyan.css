@@ -329,19 +329,19 @@ body.ripplestyle #chat .mes .mesAvatarWrapper .avatar.has-expression > .neconyan
 body.neconyan.flatchat:not(.sbterm) #chat { padding: 24px max(24px, calc((100% - 820px) / 2)); text-shadow: none; }
 /* Reserve room for the perched bodies, including first/history/Story/terminal rows. */
 body.neconyan #chat .mes.mes[mesid]:has(> .neconyan-message-sleeper:not([hidden])) {
-    contain: layout style; margin-top: 44px !important; margin-bottom: 0 !important; overflow: visible;
+    contain: layout style; margin-top: var(--neconyan-sleeper-space, 44px) !important; margin-bottom: 0 !important; overflow: visible;
 }
 body.neconyan #sheld .sb-conversation-message-bubble:has(> .neconyan-message-sleeper),
 body.neconyan #sheld :is(.sbtw-post, .sbtw-reply):has(> .neconyan-message-sleeper) {
-    position: relative; overflow: visible; margin-top: 44px;
+    position: relative; overflow: visible; margin-top: var(--neconyan-sleeper-space, 44px);
 }
 body.neconyan #sheld .sbtw-list { padding-inline: 18px; }
-body.neconyan #sheld .sbtw-quote-card { position: relative; margin-top: 44px; }
+body.neconyan #sheld .sbtw-quote-card { position: relative; margin-top: var(--neconyan-sleeper-space, 44px); }
 body.neconyan #sheld .sbtw-quote-card .sbtw-post-compact { position: static; margin-top: 0; }
 body.neconyan #sheld .sb-conversation-message[data-message-id] { gap: 20px; }
 @media (min-width: 769px) {
     body.neconyan:is(.sbterm, :not(.flatchat)) #chat { padding-inline: 24px; }
-    body.neconyan.echostyle:not(.sbterm) #chat .mes .mes_text { margin-top: 44px; }
+    body.neconyan.echostyle:not(.sbterm) #chat .mes .mes_text { margin-top: var(--neconyan-sleeper-space, 44px); }
     body.neconyan.echostyle:not(.sbterm) #chat .mes > .neconyan-message-sleeper { top: calc(var(--neconyan-sleeper-text-top, 0px) - 41px); }
     body.neconyan.flatchat:not(.sbterm):not(.sbstory) #chat .mes > .neconyan-message-sleeper { top: -29px; }
     body.neconyan.flatchat:not(.sbterm):not(.sbstory) #chat .mes[is_user='false'] > .neconyan-message-sleeper { left: calc(var(--avatar-width, 50px) + 13px); }

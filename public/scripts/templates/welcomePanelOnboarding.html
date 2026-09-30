@@ -20,19 +20,22 @@
         <div class="neconyan-assistant-picker-heading">
             <div><h2 id="neconyan-assistant-picker-title">Choose an assistant</h2><p>Miso the tiger and Taro and Nori the cats! They know all about Neconyan, so don't be afraid to ask them anything. Do be mindful of hallucinations, though; double check everything!</p></div>
         </div>
-        <div class="neconyan-assistant-list">
-            {{#each assistantPersonalities}}
-            <article class="neconyan-assistant-row" data-assistant-name="{{name}}" data-assistant-personality="{{id}}">
-                <div class="neconyan-assistant-portrait-wrap"><img src="{{initialPortrait}}" alt="{{name}} assistant portrait" width="112" height="152" loading="lazy" decoding="async" data-assistant-portrait></div>
-                <div class="neconyan-assistant-copy"><h3>{{name}}</h3><p class="neconyan-assistant-role">{{role}}</p><p>{{summary}}</p><p class="neconyan-assistant-selection" data-assistant-selection aria-live="polite">Choose Male, Female or Neutral.</p></div>
-                <fieldset class="neconyan-assistant-variants"><legend>{{genderLegend}}</legend>
-                    {{#each variants}}<label for="neconyan-assistant-{{id}}"><input id="neconyan-assistant-{{id}}" type="radio" name="assistant-{{../id}}" value="{{id}}" data-assistant-variant data-gender="{{gender}}" data-portrait="{{portrait}}"{{#if selected}} checked{{/if}}><span>{{label}}</span></label>{{#if updateAvailable}}<button type="button" class="menu_button neconyan-assistant-update" data-assistant-update data-assistant-id="{{id}}" data-assistant-label="{{../name}} ({{label}})" data-assistant-update-avatar="{{installedAvatar}}" aria-label="Install updated {{../name}} ({{label}}) copy">Install updated copy</button>{{/if}}{{/each}}
-                </fieldset>
-                <button type="button" class="menu_button neconyan-assistant-open" data-assistant-open disabled><span data-assistant-action-label>Choose a gender</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
-            </article>
-            {{/each}}
+        <button type="button" class="menu_button welcomeActionButton neconyan-assistant-disclosure" data-action="toggle-assistants" aria-expanded="false" aria-controls="neconyan-assistant-choices">Show assistants</button>
+        <div id="neconyan-assistant-choices" class="neconyan-assistant-choices">
+            <div class="neconyan-assistant-list">
+                {{#each assistantPersonalities}}
+                <article class="neconyan-assistant-row" data-assistant-name="{{name}}" data-assistant-personality="{{id}}">
+                    <div class="neconyan-assistant-portrait-wrap"><img src="{{initialPortrait}}" alt="{{name}} assistant portrait" width="112" height="152" loading="lazy" decoding="async" data-assistant-portrait></div>
+                    <div class="neconyan-assistant-copy"><h3>{{name}}</h3><p class="neconyan-assistant-role">{{role}}</p><p>{{summary}}</p><p class="neconyan-assistant-selection" data-assistant-selection aria-live="polite">Choose Male, Female or Neutral.</p></div>
+                    <fieldset class="neconyan-assistant-variants"><legend>{{genderLegend}}</legend>
+                        {{#each variants}}<label for="neconyan-assistant-{{id}}"><input id="neconyan-assistant-{{id}}" type="radio" name="assistant-{{../id}}" value="{{id}}" data-assistant-variant data-gender="{{gender}}" data-portrait="{{portrait}}"{{#if selected}} checked{{/if}}><span>{{label}}</span></label>{{#if updateAvailable}}<button type="button" class="menu_button neconyan-assistant-update" data-assistant-update data-assistant-id="{{id}}" data-assistant-label="{{../name}} ({{label}})" data-assistant-update-avatar="{{installedAvatar}}" aria-label="Install updated {{../name}} ({{label}}) copy">Install updated copy</button>{{/if}}{{/each}}
+                    </fieldset>
+                    <button type="button" class="menu_button neconyan-assistant-open" data-assistant-open disabled><span data-assistant-action-label>Choose a gender</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
+                </article>
+                {{/each}}
+            </div>
+            <p class="neconyan-assistant-picker-status" data-assistant-picker-status role="status" aria-live="polite">Choose a gender to open an assistant.</p>
         </div>
-        <p class="neconyan-assistant-picker-status" data-assistant-picker-status role="status" aria-live="polite">Choose a gender to open an assistant.</p>
     </section>
     {{else}}
     <section class="neconyan-assistant-picker neconyan-assistant-picker--error neconyan-cat-panel" data-assistant-picker aria-labelledby="neconyan-assistant-picker-title">

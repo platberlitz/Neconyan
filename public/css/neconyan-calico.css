@@ -188,8 +188,8 @@ body.neconyan .neconyan-cat-control {
     position: relative;
     isolation: isolate;
     overflow: visible;
-    border-radius: 28px 28px 18px 18px !important;
-    padding-inline: 56px 38px !important;
+    border-radius: var(--neconyan-cat-radius, 28px 28px 18px 18px) !important;
+    padding-inline: var(--neconyan-cat-padding-inline, 56px 38px) !important;
     min-height: 48px;
 }
 

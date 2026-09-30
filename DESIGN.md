@@ -44,6 +44,12 @@ Rules:
 - Spacing scale: 4, 6, 8, 12, 16, 18, 24. Panel padding 18px on desktop, 12px on phones. Message gap 24px desktop, 10px phones.
 - Cat ears (`.neconyan-cat-panel::before/::after`) sit on the top edge of one box per screen: the composer on desktop, the whole bottom bar and the sheet tab row on phones.
 
+## Shell Styles
+
+- Shell Styles load a separate sheet from `public/css/shell-styles/` and are scoped to the saved `data-sb-theme`. Keep the chosen palette, fonts, message tints and functional portraits.
+- Kittyless is the intentional exception to cat decorations: solid rounded cards, pill actions, no ears, whiskers, paw textures, mascots or sleeping animals. Use neutral default avatars, keep chosen portraits, and collapse Home's assistant choices behind 'Show assistants'. Other styles retain the decorations.
+- Kittyless has a Sunburst woodland railway background without animals. A user-selected background remains above it; never replace the user's selection when switching styles.
+
 ## Phone vs desktop rules
 
 - Breakpoint: 768px. Phone stylesheets are gated at the link level; JS uses `isMobileViewport()`.
