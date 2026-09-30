@@ -3018,38 +3018,3 @@ body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] .sb-shell
 #ica--settings .ica--card-primary-actions { flex: 1 1 auto; min-width: 0; }
 #ica--settings .ica--card-primary-actions .ica--card-btn { min-height: 44px; gap: 5px; opacity: 1; border: 1px solid var(--neco-border); border-radius: 10px; background: var(--neco-raised); }
 #ica--settings .ica--card-primary-actions .ica--btn-history[aria-pressed='true'] { background: var(--neco-ginger); color: var(--neco-on-accent); }
-
-/* Vectorization: source controls, search evidence and Miso's in-place guide. */
-#vectors_container .vectors-workspace { display: grid; gap: 16px; min-width: 0; padding: 14px 4px; text-align: left; color: var(--neco-ink); }
-#vectors_container .vectors-workspace [hidden] { display: none; }
-#vectors_container .vectors-workspace :is(h3, h4, p) { margin: 0; overflow-wrap: anywhere; }
-#vectors_container .vectors-workspace h3 { font: 400 1.45em/1.25 var(--sb-font-display); color: var(--neco-ink); }
-#vectors_container .vectors-workspace h4 { font-size: 1.08em; color: var(--neco-ink); }
-#vectors_container .vectors-workspace p { color: var(--neco-muted); line-height: 1.55; font-size: .94em; }
-#vectors_container .vectors-workspace :is(section, header) { display: grid; gap: 12px; min-width: 0; }
-#vectors_container .vectors-workspace section > h4:not(:first-child), #vectors_container .vectors-workspace section > div > h4 { margin-top: 16px; }
-#vectors_container .vectors-workspace section > div:not(.vectors-fields):not(.vectors-actions) { display: grid; gap: 10px; min-width: 0; }
-#vectors_container .vectors-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-#vectors_container .vectors-nav button { min-width: 0; min-height: 44px; padding: 8px 5px; border: 1px solid var(--neco-border); border-radius: 12px; background: var(--neco-surface); color: var(--neco-ink); font: inherit; font-weight: 700; overflow-wrap: anywhere; cursor: pointer; }
-#vectors_container .vectors-nav [aria-selected='true'] { background: var(--neco-ginger); color: var(--neco-on-accent); border-color: var(--neco-ginger); }
-#vectors_container .vectors-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 175px), 1fr)); gap: 12px; }
-#vectors_container .vectors-fields > label { display: grid; align-content: start; gap: 6px; min-width: 0; }
-#vectors_container .vectors-workspace .text_pole { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; margin: 0; color: var(--neco-ink); background: var(--neco-surface); border: 1px solid var(--neco-border); border-radius: 10px; }
-#vectors_container .vectors-workspace textarea { resize: vertical; }
-#vectors_container .vectors-workspace :is(.checkbox_label, .radio_group label) { display: flex; align-items: center; gap: 10px; min-height: 44px; line-height: 1.4; }
-#vectors_container .vectors-workspace :is(input[type='checkbox'], input[type='radio']) { flex: 0 0 auto; }
-#vectors_container .vectors-workspace fieldset { min-width: 0; padding: 10px 12px; margin: 0; border: 1px solid var(--neco-border); border-radius: 12px; }
-#vectors_container .vectors-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-#vectors_container .vectors-workspace .menu_button { width: fit-content; max-width: 100%; min-height: 44px; margin: 0; white-space: normal; text-align: center; }
-#vectors_container .vectors-workspace :is(button, input, select, textarea, a):focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 3px; }
-#vectors_container .vectors-workspace [aria-invalid='true'] { outline: 2px solid var(--neco-ginger); }
-#vectors_container .vectors-guide { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: start; gap: 12px; padding: 14px; background: var(--neco-surface); border: 1px solid var(--neco-border); border-left: 4px solid var(--neco-ginger); border-radius: 16px; }
-#vectors_container .vectors-guide img { width: 64px; height: 64px; object-fit: cover; border-radius: 50%; }
-#vectors_container .vectors-guide > div { display: grid; gap: 10px; min-width: 0; }
-#vectors_container [data-vectors-guide-body] { grid-column: 1 / -1; }
-#vectors_container [data-vectors-guide-copy] { display: grid; gap: 12px; }
-#vectors_container :is(#vectors_search_results, .vectors-results) { display: grid; gap: 14px; margin: 0; padding-left: 24px; }
-#vectors_container :is(#vectors_search_results, .vectors-results) li { padding: 12px; background: var(--neco-surface); border: 1px solid var(--neco-border); border-radius: 12px; overflow-wrap: anywhere; }
-#vectors_container :is(#vectors_search_results, .vectors-results) :is(strong, small) { display: block; margin-bottom: 8px; }
-#vectors_container :is(#vectors_search_results, .vectors-results) p { white-space: pre-wrap; max-height: 320px; overflow-y: auto; }
-#vectors_container #vectors_action_status:empty, #vectors_container #vectors_chat_stats:empty { display: none; }

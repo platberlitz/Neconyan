@@ -5091,24 +5091,20 @@ input[type='range']::-moz-range-thumb {
 }
 
 #user-settings-block .inline-drawer-content > [name],
-#user-settings-block .inline-drawer-content > .flex-container.flexFlowColumn,
-.vectors_settings > div,
-.vectors_settings [id$='_settings'] {
+#user-settings-block .inline-drawer-content > .flex-container.flexFlowColumn {
     min-width: 0;
 }
 
 #CharacterHandlingToggles,
 #MiscellaneousToggles,
-#STscriptToggles,
-.vectors_settings {
+#STscriptToggles {
     display: flex;
     flex-direction: column;
     gap: var(--sb-row-gap);
 }
 
 #CharacterHandlingToggles > .flex-container.alignitemscenter,
-#STscriptToggles > div,
-.vectors_settings .flex-container {
+#STscriptToggles > div {
     gap: var(--sb-row-gap);
     min-width: 0;
 }
@@ -5135,7 +5131,6 @@ input[type='range']::-moz-range-thumb {
 #CharacterHandlingToggles .checkbox_label,
 #MiscellaneousToggles .checkbox_label,
 #STscriptToggles .checkbox_label,
-.vectors_settings .checkbox_label,
 #tts_container .checkbox_label {
     padding: var(--sb-settings-card-padding);
     border-radius: var(--sb-radius-md);
@@ -5145,7 +5140,6 @@ input[type='range']::-moz-range-thumb {
 }
 
 #STscriptToggles .checkbox_label > span,
-.vectors_settings .checkbox_label > span,
 #tts_container .checkbox_label > span {
     flex: 1 1 auto;
 }
@@ -5154,7 +5148,6 @@ input[type='range']::-moz-range-thumb {
     margin-left: auto;
 }
 
-.vectors_settings h4,
 #tts_container h4 {
     margin: var(--sb-section-gap) 0 var(--sb-row-gap);
     padding: 10px 14px;
