@@ -5,7 +5,7 @@ import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createRoleplayDirectory, inspectRoleplayFile, roleplayHash, roleplayLease } from '../roleplay-store.js';
 import { commitRoleplayLifecycleLocked, commitSingleChatWriteLocked } from '../roleplay-lifecycle.js';
-import { roleplayNativeHost } from '../endpoints/chats.js';
+import { InvalidChatDataError, roleplayNativeHost } from '../endpoints/chats.js';
 import { fsyncDirectorySync } from '../util.js';
 import { BINARY_FILE_LIMIT, openOperationBinary } from './binary-files.js';
 import { readImportInput } from './import-inputs.js';
@@ -153,6 +153,15 @@ export async function stageImportBatch(context, batch, { archive, prepared }) {
     return skipped;
 }
 
+/** A chat refused before anything was staged is listed like a damaged file instead of stopping the whole import. */
+function refusedChatReason(lease, file, error) {
+    if (error?.roleplayWritePending || roleplayLease(lease).state.pending) return null;
+    const damaged = importSkipReason(file, error);
+    if (damaged) return damaged;
+    if (error?.code !== 'ROLEPLAY_INVALID' && !(error instanceof InvalidChatDataError)) return null;
+    return `Cannot import '${file.relative}': ${error.message}`;
+}
+
 function chatInput(file, operationKey, records) {
     return { operationKey, mode: file.target.source ? 'update' : 'create', sourceKind: 'storage',
         ...(file.target.source ? { source: file.target.source } : { destination: file.target.resource.locator, expectedVacancy: file.target.vacancy }),
@@ -163,7 +172,7 @@ function chatInput(file, operationKey, records) {
  * Publish staged files, chats and cards in plan order behind one saved cursor.
  * Every step is safe to repeat: chats and cards keep receipts, and a renamed file already matches its staged evidence.
  */
-export async function publishImportBatches(context, plan, { archive, onProgress, afterImportPublication, skipped = new Set() } = {}) {
+export async function publishImportBatches(context, plan, { archive, onProgress, onSkip, afterImportPublication, skipped = new Set() } = {}) {
     let next = withOperation(context, ({ value, save }) => {
         if (!value.effects[PUBLISH_EFFECT]) { value.effects[PUBLISH_EFFECT] = { state: 'prepared', next: 0 }; save(); }
         return value.effects[PUBLISH_EFFECT].state === 'done' ? plan.files.length : value.effects[PUBLISH_EFFECT].next;
@@ -197,7 +206,16 @@ export async function publishImportBatches(context, plan, { archive, onProgress,
                 if (resource?.kind === 'chat') {
                     const receipt = roleplayHash([state.accountId, 'chat-write', operationKey]);
                     if (!state.submissions[receipt] && state.pending?.operationKeyHash !== receipt) assertImportTarget(lease, file.target);
-                    commitSingleChatWriteLocked(lease, chatInput(file, operationKey, importChatRecords(input)), roleplayNativeHost);
+                    try {
+                        commitSingleChatWriteLocked(lease, chatInput(file, operationKey, importChatRecords(input)), roleplayNativeHost);
+                    } catch (error) {
+                        const reason = refusedChatReason(lease, file, error);
+                        if (!reason) throw error;
+                        onSkip?.(value, { index, relative: file.relative, reason });
+                        skipped.add(index);
+                        effect.next = index + 1;
+                        continue;
+                    }
                 } else if (resource) {
                     const receipt = roleplayHash([state.accountId, 'lifecycle', operationKey]);
                     const settled = Boolean(state.submissions[receipt]) || state.pending?.operationKeyHash === receipt;

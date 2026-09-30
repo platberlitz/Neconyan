@@ -156,6 +156,36 @@ for (const phone of [false, true]) {
         expect(await fs.access(path.join(app.directory, 'data/default-user', relative)).then(() => true, () => false)).toBe(false);
     });
 
+    test(`${viewport} backup ZIP imports branch chats that name their parent the older SillyTavern ways`, async ({ app }) => {
+        const account = await app.account({ phone });
+        const folder = account.avatar.replace(/\.png$/i, '');
+        const parents = [1687345678901, `${folder}: Branch`, 'Trailing dot.', ['list']];
+        const refused = `chats/${folder}/Negative zero.jsonl`;
+        const archive = archiver('zip'); const chunks = [];
+        archive.on('data', chunk => chunks.push(chunk));
+        parents.forEach((main_chat, index) => archive.append([
+            { user_name: 'User', character_name: 'Durable Nova', chat_metadata: { main_chat } },
+            { name: 'Durable Nova', is_user: false, mes: `Branch reply ${index}` },
+        ].map(row => JSON.stringify(row)).join('\n'), { name: `default-user/chats/${folder}/Branch ${index}.jsonl` }));
+        archive.append(`${JSON.stringify({ user_name: 'User', character_name: 'Durable Nova', chat_metadata: {} })}\n{"name":"Durable Nova","is_user":false,"mes":"Refused","n":-0.0}`, { name: `default-user/${refused}` });
+        await archive.finalize();
+        const { page, card } = await showImporter(account);
+        await submit(page, () => card.getByLabel('Choose a SillyTavern backup ZIP').setInputFiles({
+            name: 'default-user.zip', mimeType: 'application/zip', buffer: Buffer.concat(chunks),
+        }));
+        const note = card.locator('.sb-import-note');
+        await expect(note).toContainText('Backup ZIP imported.', { timeout: 60000 });
+        await expect(note).toContainText('1 file was damaged and could not be imported:');
+        await expect(note).toContainText(`Cannot import '${refused}': Roleplay identity requires JSON-only values.`);
+        await expect(card).not.toContainText('Invalid Roleplay source identifier');
+        for (const [index, main_chat] of parents.entries()) {
+            const rows = (await fs.readFile(path.join(app.directory, 'data/default-user/chats', folder, `Branch ${index}.jsonl`), 'utf8')).trim().split('\n').map(row => JSON.parse(row));
+            expect(rows[0].chat_metadata.main_chat).toEqual(main_chat);
+            expect(rows[1].mes).toBe(`Branch reply ${index}`);
+        }
+        expect(await fs.access(path.join(app.directory, 'data/default-user', refused)).then(() => true, () => false)).toBe(false);
+    });
+
     for (const mode of ['folder', 'zip']) test(`${viewport} whole ${mode} account import finishes with pages closed and does not repeat after deletion`, async ({ app, browser }) => {
         const account = await app.account({ phone });
         const fields = { avatar_url: account.avatar, file_name: 'Imported history' };

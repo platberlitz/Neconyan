@@ -20,7 +20,7 @@ const { applyExtraction, applyInterview, extractionInput, interviewInput, pendin
 const { forcedMatches, validateSelection, recall, recallInBackground } = await import('../src/mewmory/retrieval.js');
 const { hybridCandidates, lexicalSearch, searchDocuments, updateIndex } = await import('../src/mewmory/search.js');
 const { loadCurrentState } = await import('../src/mewmory/sources.js');
-const { buildBranchMemoryState, chatPath, listStories, mutateState, normalizeLocator, readState, renameChatMemory, renameCharacterMemory, renameWorldMemory, removeChatMemory, removeSourceMemory, statePath, writeJson } = await import('../src/mewmory/store.js');
+const { branchParentLocator, buildBranchMemoryState, chatPath, listStories, mutateState, normalizeLocator, readState, renameChatMemory, renameCharacterMemory, renameWorldMemory, removeChatMemory, removeSourceMemory, statePath, writeJson } = await import('../src/mewmory/store.js');
 const { ensureMewmoryMessageIds } = await import('../public/scripts/mewmory/message-identity.js');
 const { getCounter, getTokenizerModel } = await import('../src/mewmory/tokens.js');
 const { inspectState, restoreRecords } = await import('../src/endpoints/mewmory.js');
@@ -961,6 +961,15 @@ test('native branch saves capture memory immediately, including a continuation w
     assert.equal(state.inheritedTimeline.length, parent.timeline.length);
     assert.ok(state.timeline.every(ref => sourceAt(state, ref)));
     assert.doesNotThrow(() => inspectState(state, defaultConfig()));
+});
+
+test('branch parents named by an old numeric group id resolve and unusable names are ignored', () => {
+    assert.deepEqual(branchParentLocator(locator, { main_chat: 1687345678901 }), { ...locator, chat: '1687345678901' });
+    assert.deepEqual(branchParentLocator(locator, { main_chat: 'Gift parent' }), { ...locator, chat: 'Gift parent' });
+    for (const main_chat of [undefined, '', 0, locator.chat, 'Mara: Branch', 'Trailing dot.', 'x'.repeat(300), '..', ['list'], { nested: true }, true]) {
+        assert.equal(branchParentLocator(locator, { main_chat }), null, JSON.stringify(main_chat));
+    }
+    assert.equal(branchParentLocator(locator, undefined), null);
 });
 
 test('character and book renames preserve distinct identities, deletion reaches renamed sources, and unbound books survive', async t => {

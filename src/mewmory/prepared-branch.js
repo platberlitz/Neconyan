@@ -38,6 +38,22 @@ function readPair(paths) {
     } catch (cause) { throw Object.assign(damaged(), { cause }); }
 }
 
+/**
+ * Imported and older chats can name their parent with a group's numeric id or a name that
+ * is not a safe file name. Such a chat has no parent memory to inherit, so it is not an error.
+ */
+function branchParentLocator(locator, childChat, mainChat) {
+    if (!mainChat) return null;
+    const chat = Number.isSafeInteger(mainChat) ? String(mainChat) : mainChat;
+    if (chat === childChat) return null;
+    try {
+        return normaliseRoleplayLocator({ ...locator, chat });
+    } catch (error) {
+        if (error?.code === 'ROLEPLAY_INVALID') return null;
+        throw error;
+    }
+}
+
 function pairEvidence(pair) {
     return pair ? { archive: fingerprint(pair.archive), guard: fingerprint(pair.guard) } : null;
 }
@@ -47,7 +63,8 @@ export function prepareBranchMemoryCapture(directories, locator, { metadata, mes
     validateMode(mode);
     const child = canonicalMemoryPaths(directories, locator);
     if (mode === 'create') assertAbsent(child);
-    if (!metadata.main_chat || metadata.main_chat === child.locator.chat) return { plan: null, payloads: [] };
+    const parentLocator = branchParentLocator(locator, child.locator.chat, metadata.main_chat);
+    if (!parentLocator) return { plan: null, payloads: [] };
     const chatFile = roleplayChatPath({ directories }, locator);
     const existing = readPair(child);
     if (existing) return withChatFileLocks([chatFile], () => withChatFileLocks([child.archive], () => {
@@ -55,7 +72,6 @@ export function prepareBranchMemoryCapture(directories, locator, { metadata, mes
         if (!isDeepStrictEqual(pairEvidence(current), pairEvidence(existing))) throw damaged();
         return { plan: { kind: 'existing', child: pairEvidence(current) }, payloads: [] };
     }));
-    const parentLocator = normaliseRoleplayLocator({ ...locator, chat: metadata.main_chat });
     const parent = canonicalMemoryPaths(directories, parentLocator);
     // Inspect before locking: the lock helper creates directories, which preparation must not do.
     const inherited = readPair(parent);
