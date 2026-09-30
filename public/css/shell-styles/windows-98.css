@@ -1,0 +1,438 @@
+/* Shell Style: Windows 98. Loaded at runtime only while this style is active.
+   Keeps the Calico palette tokens, fonts and message tints, and lays square corners,
+   two-pixel bevels, navy caption bars and 256-colour pixel-art cats on top. */
+
+:root[data-sb-theme='windows-98'] body.neconyan {
+    --neconyan-cat-radius: 0;
+    --neconyan-home-action-radius: 0;
+    --neconyan-control-radius: 0;
+    --neconyan-message-radius: 0;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) {
+    --w98-title: #000080;
+    --w98-title-end: #1084d0;
+    --w98-title-ink: #fff;
+    --w98-face: color-mix(in srgb, var(--neco-canvas) 72%, #808080);
+    --w98-field: color-mix(in srgb, var(--neco-canvas) 88%, #000);
+    --w98-light: color-mix(in srgb, var(--w98-face) 55%, #fff);
+    --w98-hilite: color-mix(in srgb, var(--w98-face) 80%, #fff);
+    --w98-shadow: color-mix(in srgb, var(--w98-face) 55%, #000);
+    --w98-dark: #0a0a0a;
+    --w98-raised: inset -1px -1px 0 var(--w98-dark), inset 1px 1px 0 var(--w98-light), inset -2px -2px 0 var(--w98-shadow), inset 2px 2px 0 var(--w98-hilite);
+    --w98-sunken: inset -1px -1px 0 var(--w98-light), inset 1px 1px 0 var(--w98-shadow), inset -2px -2px 0 var(--w98-hilite), inset 2px 2px 0 var(--w98-dark);
+    --w98-etched: inset 1px 1px 0 var(--w98-shadow), inset -1px -1px 0 var(--w98-light), inset 2px 2px 0 var(--w98-light), inset -2px -2px 0 var(--w98-shadow);
+    --w98-caption: linear-gradient(90deg, var(--w98-title), var(--w98-title-end));
+    --neco-surface: var(--w98-face);
+    --neco-rail: var(--w98-face);
+    --neco-raised: color-mix(in srgb, var(--w98-face) 88%, #fff);
+    --neco-border: var(--w98-shadow);
+    --neco-panel-gradient: var(--w98-face);
+    --neco-canvas-gradient:
+        url('../../img/neconyan/win98/paw-cream.webp?v=20260930a') right 14px top 18px / 88px 88px no-repeat,
+        url('../../img/neconyan/win98/paw-pink.webp?v=20260930a') 92% 24% / 48px 48px no-repeat,
+        url('../../img/neconyan/win98/paw-peach.webp?v=20260930a') left 4px bottom 18px / 84px 84px no-repeat,
+        url('../../img/neconyan/win98/paw-ink.webp?v=20260930a') 76% 97% / 72px 72px no-repeat,
+        var(--neco-canvas);
+    --sb-shell-shadow: none;
+    --sb-radius-button: 0;
+    --sb-radius-sm: 0;
+    --sb-radius-md: 0;
+    --sb-radius-lg: 0;
+    --sb-radius-xl: 0;
+    --sb-message-radius: 0;
+}
+
+/* Light surfaces take the real Windows 98 silver and white edit fields. */
+:root[data-sb-theme='windows-98'][data-sb-surface-tone='light'] body.neconyan:not(.sbterm) {
+    --w98-face: #c0c0c0;
+    --w98-field: #fff;
+    --w98-light: #fff;
+    --w98-hilite: #dfdfdf;
+    --w98-shadow: #808080;
+}
+
+/* A chosen accent recolours the caption bars, like the Display Properties Appearance tab. */
+:root[data-sb-theme='windows-98'][data-neconyan-accent='custom'] body.neconyan:not(.sbterm) {
+    --w98-title: color-mix(in srgb, var(--neco-ginger) 70%, #000);
+    --w98-title-end: color-mix(in srgb, var(--neco-accent-secondary) 60%, var(--neco-ginger));
+}
+
+/* Wallpaper: a 256-colour sky with cats hidden in the clouds. */
+:root[data-sb-theme='windows-98'] body.neconyan::before {
+    background-image: url('../../img/neconyan/shell-windows-98.webp?v=20260930a');
+    background-position: 50% 50%;
+    opacity: .8;
+}
+:root[data-sb-theme='windows-98'][data-sb-surface-tone='light'] body.neconyan::before { opacity: .9; }
+
+/* Every cat and assistant picture swaps to its Windows 98 pixel-art redraw. */
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='img/neconyan/cat-head.webp'] { content: url('../../img/neconyan/win98/cat-head.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='img/neconyan/cat-tail.webp'] { content: url('../../img/neconyan/win98/cat-tail.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='img/neconyan/cozy-library.webp'] { content: url('../../img/neconyan/win98/cozy-library.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='img/neconyan/curious-search.webp'] { content: url('../../img/neconyan/win98/curious-search.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='img/neconyan/sleepy-chat.webp'] { content: url('../../img/neconyan/win98/sleepy-chat.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='img/neconyan/sleeping-calico-left.webp'] { content: url('../../img/neconyan/win98/sleeping-calico-left.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='img/neconyan/sleeping-calico-left-twitch.webp'] { content: url('../../img/neconyan/win98/sleeping-calico-left-twitch.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='img/neconyan/sleeping-tiger-right.webp'] { content: url('../../img/neconyan/win98/sleeping-tiger-right.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='img/neconyan/sleeping-tiger-right-twitch.webp'] { content: url('../../img/neconyan/win98/sleeping-tiger-right-twitch.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='img/neconyan-pixel-cat-running.webp'] { content: url('../../img/neconyan/win98/startup-cat.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img:is([src*='img/neconyan-pixel-cat-rest.webp'], [src*='img/neconyan-pixel-cat.webp']) { content: url('../../img/neconyan/win98/startup-cat-rest.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img:is([src*='img/neconyan-icon-192.png'], [src*='img/icon-64x64.png']) { content: url('../../img/neconyan/win98/badge-calico.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='assistant-icons/miso-male.png'] { content: url('../../img/neconyan/win98/icon-miso-male.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='assistant-icons/miso-female.png'] { content: url('../../img/neconyan/win98/icon-miso-female.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='assistant-icons/miso-neutral.png'] { content: url('../../img/neconyan/win98/icon-miso-neutral.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='assistant-icons/taro-male.png'] { content: url('../../img/neconyan/win98/icon-taro-male.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='assistant-icons/taro-female.png'] { content: url('../../img/neconyan/win98/icon-taro-female.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='assistant-icons/taro-neutral.png'] { content: url('../../img/neconyan/win98/icon-taro-neutral.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='assistant-icons/nori-male.png'] { content: url('../../img/neconyan/win98/icon-nori-male.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='assistant-icons/nori-female.png'] { content: url('../../img/neconyan/win98/icon-nori-female.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='assistant-icons/nori-neutral.png'] { content: url('../../img/neconyan/win98/icon-nori-neutral.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='assistants/miso-male/portrait'] { content: url('../../img/neconyan/win98/portrait-miso-male.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='assistants/miso-female/portrait'] { content: url('../../img/neconyan/win98/portrait-miso-female.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='assistants/miso-neutral/portrait'] { content: url('../../img/neconyan/win98/portrait-miso-neutral.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='assistants/taro-male/portrait'] { content: url('../../img/neconyan/win98/portrait-taro-male.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='assistants/taro-female/portrait'] { content: url('../../img/neconyan/win98/portrait-taro-female.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='assistants/taro-neutral/portrait'] { content: url('../../img/neconyan/win98/portrait-taro-neutral.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='assistants/nori-male/portrait'] { content: url('../../img/neconyan/win98/portrait-nori-male.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='assistants/nori-female/portrait'] { content: url('../../img/neconyan/win98/portrait-nori-female.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='assistants/nori-neutral/portrait'] { content: url('../../img/neconyan/win98/portrait-nori-neutral.webp?v=20260930a'); }
+
+/* The redraws are stored at twice their display size, so smooth scaling keeps the dithering even. */
+:root[data-sb-theme='windows-98'] body.neconyan .neconyan-startup-cat { image-rendering: auto; }
+
+/* Cat ears on panels, message avatars and the chat tools menu use the pixel-art ears. */
+:root[data-sb-theme='windows-98'] body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::before,
+:root[data-sb-theme='windows-98'] body.neconyan.flatchat:not(.sbterm) #chat .mes .avatar::before,
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .sb-conversation-message-avatar::before,
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #options::before {
+    background-image: url('../../img/neconyan/win98/ear-left.webp?v=20260930a');
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::after,
+:root[data-sb-theme='windows-98'] body.neconyan.flatchat:not(.sbterm) #chat .mes .avatar::after,
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .sb-conversation-message-avatar::after,
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #options::after {
+    background-image: url('../../img/neconyan/win98/ear-right.webp?v=20260930a');
+}
+
+/* Chat tools menu: a flat Start-menu panel with the pixel paws. */
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(#options > .options-content, #extensionsMenu) {
+    background:
+        url('../../img/neconyan/win98/paw-cream.webp?v=20260930a') right -16px top -12px / 76px auto no-repeat,
+        url('../../img/neconyan/win98/paw-ink.webp?v=20260930a') right 18px bottom 34% / 40px auto no-repeat,
+        var(--w98-face);
+    border: 0;
+    border-radius: 0;
+    box-shadow: var(--w98-raised), 2px 2px 0 rgb(0 0 0 / 0.35);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #options .options-content > hr {
+    background:
+        url('../../img/neconyan/win98/paw-peach.webp?v=20260930a') center / 11px auto no-repeat,
+        linear-gradient(var(--w98-shadow), var(--w98-shadow)) left calc(50% - 1px) / calc(50% - 14px) 1px no-repeat,
+        linear-gradient(var(--w98-light), var(--w98-light)) left calc(50% + 1px) / calc(50% - 14px) 1px no-repeat,
+        linear-gradient(var(--w98-shadow), var(--w98-shadow)) right calc(50% - 1px) / calc(50% - 14px) 1px no-repeat,
+        linear-gradient(var(--w98-light), var(--w98-light)) right calc(50% + 1px) / calc(50% - 14px) 1px no-repeat;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(#options .options-content > a, #extensionsMenu > .extension_container > div, #extensionsMenu > :not(.extension_container))::after {
+    background-image: url('../../img/neconyan/win98/paw-pink.webp?v=20260930a');
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(#options .options-content > a, #extensionsMenu > .extension_container > div, #extensionsMenu > :not(.extension_container)):is(:hover, :focus-visible) {
+    background: var(--w98-caption);
+    color: var(--w98-title-ink);
+    border-radius: 0;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan #preloader::after {
+    content: 'Please wait while Neconyan starts...';
+    color: var(--neco-ink);
+}
+
+/* Top bar and workspace rail: raised silver window frames. */
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(#top-bar, #neconyan-workspace-rail, #sb-mobile-nav-content) {
+    background: var(--w98-face);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: var(--w98-raised);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(#sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inner) {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #sb-topbar-inner :is(button, .sb-proxy-button):is(:hover, [aria-pressed='true']) {
+    background: var(--w98-face);
+    border: 0;
+    border-radius: 0;
+    box-shadow: var(--w98-raised);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #sb-topbar-inner :is(button, .sb-proxy-button):active {
+    box-shadow: var(--w98-sunken);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #neconyan-workspace-rail .neconyan-rail-footer-action, #sb-mobile-nav .sb-nav-item) {
+    border-radius: 0;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #neconyan-workspace-rail .neconyan-rail-footer-action, #sb-mobile-nav .sb-nav-item):is(:hover, :focus-visible) {
+    background: color-mix(in srgb, var(--w98-title-end) 22%, var(--w98-face));
+}
+
+/* The selected item gets the navy highlight Windows 98 uses for selected list entries. */
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #sb-mobile-nav .sb-nav-item):is([aria-current='page'], .is-active),
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .neconyan-mode-button[aria-pressed='true'] {
+    background: var(--w98-title);
+    color: var(--w98-title-ink);
+    box-shadow: none;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #sb-mobile-nav .sb-nav-item):is([aria-current='page'], .is-active) :is(i, span, .fa-solid) {
+    color: inherit;
+}
+
+/* Push buttons: square, silver, two-pixel bevel that sinks when pressed. */
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button, .neconyan-cat-control, #neconyan-workspace-rail .neconyan-rail-new):not(#sb-topbar-inner *):not(.menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset, .neconyan-home-primary) {
+    background: var(--w98-face);
+    color: var(--neco-ink);
+    border: 0;
+    border-radius: 0;
+    box-shadow: var(--w98-raised);
+    transform: none;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button, .neconyan-cat-control, #neconyan-workspace-rail .neconyan-rail-new):not(#sb-topbar-inner *):not(.menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset, .neconyan-home-primary):is(:hover, :focus-visible) {
+    background: var(--neco-raised);
+    transform: none;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button, .neconyan-cat-control, #neconyan-workspace-rail .neconyan-rail-new):not(#sb-topbar-inner *):not(.menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset, .neconyan-home-primary):active {
+    box-shadow: var(--w98-sunken);
+    transform: none;
+}
+
+/* Accent-filled buttons keep their fill and label colour, with the bevel and a default-button frame. */
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]),
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .neconyan-home-actions > .neconyan-home-primary {
+    border: 1px solid var(--w98-dark);
+    border-radius: 0;
+    box-shadow: var(--w98-raised);
+    transform: none;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]):active,
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .neconyan-home-actions > .neconyan-home-primary:active {
+    box-shadow: var(--w98-sunken);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button, .neconyan-cat-control, .neconyan-home-primary, input, select, textarea):focus-visible {
+    outline: 1px dotted var(--neco-ink);
+    outline-offset: -4px;
+}
+
+/* Edit fields: sunken white wells. */
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']), select, textarea:not(#send_textarea)) {
+    background-color: var(--w98-field);
+    border: 0;
+    border-radius: 0;
+    box-shadow: var(--w98-sunken);
+}
+
+/* Home: each block is a small window with a caption bar drawn along its top edge. */
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.neconyan-home-intro, .neconyan-assistant-picker, .welcomeRecentShell) {
+    padding-top: 34px;
+    background: var(--w98-caption) 3px 3px / calc(100% - 6px) 20px no-repeat, var(--w98-face);
+    border: 0;
+    border-radius: 0;
+    box-shadow: var(--w98-raised), 3px 3px 0 rgb(0 0 0 / 0.3);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.neconyan-assistant-row, .neconyan-assistant-disclosure) {
+    border-radius: 0;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .neconyan-assistant-row {
+    background: var(--w98-field);
+    border: 0;
+    box-shadow: var(--w98-sunken);
+}
+
+/* Drawers and dialogs: a window with a navy caption bar and square close button. */
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.sb-shell-root, #right-nav-panel).openDrawer {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .sb-shell-frame {
+    background: var(--w98-face);
+    border: 0;
+    border-radius: 0;
+    box-shadow: var(--w98-raised);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.sb-shell-main, .sb-shell-nav, .sb-character-shell-nav) {
+    background: transparent;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .sb-shell-header {
+    background: var(--w98-caption);
+    color: var(--w98-title-ink);
+    border: 0;
+    border-radius: 0;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .sb-shell-header :is(.sb-shell-title, .sb-shell-kicker, .sb-shell-subtitle, h1, h2, h3, i) {
+    color: var(--w98-title-ink);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .sb-shell-close {
+    background: var(--w98-face);
+    color: var(--neco-ink);
+    border: 0;
+    border-radius: 0;
+    box-shadow: var(--w98-raised);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .sb-shell-close:active {
+    box-shadow: var(--w98-sunken);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .sb-shell-panel-scroller {
+    background: var(--w98-face);
+    border: 0;
+    border-radius: 0;
+}
+
+/* Property-sheet tabs: raised tabs, the selected one joins the page below it. */
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.sb-shell-tab, .sb-settings-tab-btn, #right-nav-panel .sb-character-editor-subtab) {
+    border-radius: 0;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.sb-shell-tab.is-active, .sb-settings-tab-btn.active, #right-nav-panel .sb-character-editor-subtab.is-active) {
+    background: var(--w98-title);
+    color: var(--w98-title-ink);
+    box-shadow: none;
+}
+
+/* Settings groups and cards: etched group boxes. */
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.sb-theme-card, .sb-settings-group, .sb-shell-callout, .sb-admin-card, .sb-agent-card) {
+    background: var(--w98-face);
+    border: 0;
+    border-radius: 0;
+    box-shadow: var(--w98-etched);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) dialog.popup {
+    padding-top: 26px;
+    background: var(--w98-caption) 3px 3px / calc(100% - 6px) 18px no-repeat, var(--w98-face);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: var(--w98-raised), 4px 4px 0 rgb(0 0 0 / 0.35);
+}
+
+/* Composer: a raised window with a sunken edit field and a square Send button. */
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(#send_form, #sb-bottom-chat-bar) {
+    --neco-surface: var(--w98-face);
+    background-image: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: var(--w98-raised);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .sb-conversation-composer.neconyan-cat-panel {
+    background: var(--w98-face);
+    border: 0;
+    border-radius: 0;
+    box-shadow: var(--w98-raised);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #send_but {
+    background: var(--w98-face);
+    color: var(--neco-ink);
+    border: 0;
+    border-radius: 0;
+    box-shadow: var(--w98-raised);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #send_but:active {
+    box-shadow: var(--w98-sunken);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.mes_block, .sb-conversation-message-bubble),
+:root[data-sb-theme='windows-98'] body.neconyan.flatchat:not(.sbterm) #chat .mes .mes_block {
+    border-radius: 0;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.avatar img, .sb-conversation-message-avatar, .sb-conversation-message-avatar img),
+:root[data-sb-theme='windows-98'] body.neconyan.flatchat:not(.sbterm) #chat .mes .avatar {
+    border-radius: 0;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #right-nav-panel.openDrawer > .sb-character-shell-header.neconyan-cat-panel {
+    border: 0;
+    border-radius: 0;
+    background: var(--w98-face);
+    box-shadow: var(--w98-raised);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header > #sb_character_dock_toggle {
+    border: 0;
+    border-radius: 0;
+    background: var(--w98-face);
+    box-shadow: var(--w98-raised);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header > #sb_character_dock_toggle[aria-pressed='true'] {
+    box-shadow: var(--w98-sunken);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) {
+    border: 0;
+    border-radius: 0;
+    background: var(--w98-face);
+    box-shadow: var(--w98-raised);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select):is(:hover, .is-active-entity) {
+    background: color-mix(in srgb, var(--w98-face) 82%, var(--w98-title-end));
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #send_textarea {
+    border-radius: 0;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) * {
+    scrollbar-color: var(--w98-face) color-mix(in srgb, var(--w98-face) 70%, var(--w98-light));
+}
+
+/* Phones: the whole bottom bar is one box (see neconyan-calico.css), so this style dresses that
+   outer box and the chat-name row inside it drops its own frame instead of doubling the edge. */
+@media (max-width: 768px) {
+    :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel {
+        --neco-surface: var(--w98-face);
+        background-image: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        border: 0;
+        border-radius: 0;
+        box-shadow: var(--w98-raised);
+    }
+    :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel #sb-bottom-chat-bar {
+        background-image: none;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+    }
+}

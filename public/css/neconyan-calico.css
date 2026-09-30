@@ -170,7 +170,7 @@ body.neconyan :is(
     #leftSendForm > div,
     #rightSendForm > div,
     #send_form .mes_stop
-) { border-radius: 12px !important; }
+) { border-radius: var(--neconyan-control-radius, 12px) !important; }
 
 body.neconyan #send_form :is(#options_button, #leftSendForm button, #rightSendForm button, #leftSendForm > div:not(#send_but), #rightSendForm > div:not(#send_but)) {
     border: 1px solid var(--neco-border);

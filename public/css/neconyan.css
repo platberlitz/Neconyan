@@ -371,7 +371,7 @@ body.neconyan #send_textarea {
 }
 body.neconyan :is(#leftSendForm, #rightSendForm) > :is(div, button),
 body.neconyan #options_button { border-radius: 12px; border: 1px solid var(--neco-border); background: var(--neco-raised); box-shadow: none; }
-body.neconyan :is(#send_but, #sb_conversation_send) { border-radius: 12px !important; background: var(--neco-ginger) !important; color: var(--neco-on-accent) !important; box-shadow: none; }
+body.neconyan :is(#send_but, #sb_conversation_send) { border-radius: var(--neconyan-control-radius, 12px) !important; background: var(--neco-ginger) !important; color: var(--neco-on-accent) !important; box-shadow: none; }
 body.neconyan :is(#send_form:focus-within, .sb-conversation-composer:focus-within) { border-color: var(--neco-ginger); box-shadow: none; }
 body.neconyan #send_form:focus-within :is(#nonQRFormItems, #send_textarea) { background: transparent; box-shadow: none; }
 body.neconyan #send_form.sb-generating-controls { border-color: var(--neco-ginger); box-shadow: inset 0 0 0 3px var(--neco-ginger); }
@@ -2472,7 +2472,7 @@ body.neconyan #toast-container > div {
     background-image: none !important;
     border: 1px solid var(--neco-border);
     border-left: 3px solid var(--neco-ginger);
-    border-radius: 12px !important;
+    border-radius: var(--neconyan-control-radius, 12px) !important;
     box-shadow: 0 12px 28px color-mix(in oklch, var(--neco-charcoal) 42%, transparent);
     backdrop-filter: none;
     opacity: 1;
@@ -2885,7 +2885,7 @@ body.neconyan #right-nav-panel #neconyan-character-library #charListFixedTop {
 }
 body.neconyan #right-nav-panel #neconyan-character-library #form_character_search_form { grid-column: 1; grid-row: 1; margin: 0; }
 body.neconyan #right-nav-panel #neconyan-character-library .sb-character-library-primary-actions { grid-column: 2; grid-row: 1; padding: 0; border: 0; gap: 6px; }
-body.neconyan #right-nav-panel #neconyan-character-library .sb-character-library-primary-actions > .neconyan-cat-control { padding: 8px 12px !important; min-height: 44px; border-radius: 10px !important; }
+body.neconyan #right-nav-panel #neconyan-character-library .sb-character-library-primary-actions > .neconyan-cat-control { padding: 8px 12px !important; min-height: 44px; border-radius: var(--neconyan-control-radius, 10px) !important; }
 body.neconyan #right-nav-panel #neconyan-character-library .sb-character-library-primary-actions > .neconyan-cat-control::before,
 body.neconyan #right-nav-panel #neconyan-character-library .sb-character-library-primary-actions > .neconyan-cat-control::after,
 body.neconyan #right-nav-panel #neconyan-character-library .sb-character-library-primary-actions .neconyan-whiskers { display: none; }

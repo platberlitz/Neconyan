@@ -48,6 +48,7 @@ Rules:
 
 - Shell Styles load a separate sheet from `public/css/shell-styles/` and are scoped to the saved `data-sb-theme`. Keep the chosen palette, fonts, message tints and functional portraits.
 - Kittyless is the intentional exception to cat decorations: solid rounded cards, pill actions, no ears, whiskers, paw textures, mascots or sleeping animals. Use neutral default avatars, keep chosen portraits, and collapse Home's assistant choices behind 'Show assistants'. Other styles retain the decorations.
+- Windows 98 is the retro exception: grey bevelled boxes (raised controls, sunken fields), navy caption strips, square corners, and every bundled cat, ear, paw, sleeper, startup cat, assistant portrait and assistant icon swapped by CSS `content: url()` for a Sunburst pixel-art redraw in `public/img/neconyan/win98/`. Redraws keep each original's aspect ratio because `content: url()` keeps the image box. Installed assistant cards (characters carrying a `neconyan_assistant` id) get their portrait swapped too, through a small runtime `<style id="sb-shell-style-assistant-art">` that `neconyan-tabs.js` rebuilds from the character list; characters the user made or imported keep their own avatars.
 - Kittyless has a Sunburst woodland railway background without animals. A user-selected background remains above it; never replace the user's selection when switching styles.
 
 ## Phone vs desktop rules
