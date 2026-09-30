@@ -1,0 +1,187 @@
+/* Shell Style: Kittyless. Rounded, solid panels and quiet pill actions.
+   Keep the chosen palette, fonts, wallpaper and character portraits, not the decorations. */
+
+:root[data-sb-theme='kittyless'] body.neconyan {
+    --neconyan-cat-radius: 999px;
+    --neconyan-cat-padding-inline: 20px;
+    --neconyan-home-action-radius: 999px;
+    --neconyan-sleeper-space: 16px;
+}
+
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) {
+    --kittyless-line: color-mix(in srgb, var(--neco-ink) 18%, var(--neco-surface));
+    --kittyless-primary: var(--neco-cream);
+    --kittyless-on-primary: var(--neco-charcoal);
+    --neco-canvas-gradient: var(--neco-canvas);
+    --neco-panel-gradient: var(--neco-surface);
+    --neco-action-gradient: var(--kittyless-primary);
+    --sb-shell-shadow: none;
+    --sb-radius-button: 999px;
+    --sb-radius-lg: 20px;
+    --sb-radius-xl: 24px;
+}
+
+:root[data-sb-theme='kittyless'][data-neconyan-accent='custom'] body.neconyan:not(.sbterm) {
+    --kittyless-primary: var(--neco-ginger);
+    --kittyless-on-primary: var(--neco-on-accent);
+    --kittyless-line: color-mix(in srgb, var(--neco-accent-secondary) 35%, var(--neco-border));
+}
+
+/* A saved style also hides the startup mascot before the application boots. */
+:root[data-sb-theme='kittyless'] body.neconyan :is(.neconyan-home-cat, .neconyan-whiskers, .neconyan-cat-mark, .neconyan-empty-illustration, .sb-entity-empty-illustration, .sb-conversation-empty-illustration, .sbtw-empty-art, .ica--empty-illustration, .neconyan-startup-cat, .neconyan-message-sleeper, .neconyan-rail-brand > img, .sb-topbar-brand > img, .welcomeHeaderLogo),
+:root[data-sb-theme='kittyless'] body.neconyan #neconyan-tour-coachmark [data-tour-paw-stamp] {
+    display: none;
+}
+
+:root[data-sb-theme='kittyless'] body.neconyan #preloader::after {
+    content: 'Loading Neconyan...';
+    font-family: var(--mainFontFamily);
+    color: var(--neco-ink);
+}
+
+:root[data-sb-theme='kittyless'] body.neconyan::before {
+    background-image: url('../../img/neconyan/shell-kittyless.webp?v=20260930a');
+    background-position: 50% 50%;
+    opacity: .8;
+}
+:root[data-sb-theme='kittyless'][data-neconyan-calico-tone='light'] body.neconyan::before { opacity: .45; }
+
+:root[data-sb-theme='kittyless'] body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::before,
+:root[data-sb-theme='kittyless'] body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::after,
+:root[data-sb-theme='kittyless'] body.neconyan.flatchat:not(.sbterm) #chat .mes .avatar::before,
+:root[data-sb-theme='kittyless'] body.neconyan.flatchat:not(.sbterm) #chat .mes .avatar::after,
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .sb-conversation-message-avatar::before,
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .sb-conversation-message-avatar::after {
+    display: none;
+    content: none;
+}
+
+/* Keep useful navigation icons, with neutral symbols in place of animal glyphs. */
+:root[data-sb-theme='kittyless'] body.neconyan .fa-cat::before { content: '\f544'; }
+:root[data-sb-theme='kittyless'] body.neconyan .fa-paw::before { content: '\f1d8'; }
+:root[data-sb-theme='kittyless'] body.neconyan :is(.sbtw-bunny img, img[src*='user-default.png']) {
+    content: url('../../img/neconyan/kittyless-avatar.svg');
+}
+
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) :is(#top-bar, #sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inner, #neconyan-workspace-rail, #sb-mobile-nav-content, .sb-shell-frame, .sb-shell-header, .sb-shell-nav, .sb-character-shell-nav, dialog.popup) {
+    background: var(--neco-surface);
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) #top-bar { border-bottom: 1px solid var(--kittyless-line); }
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) #neconyan-workspace-rail { border-right: 1px solid var(--kittyless-line); }
+
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #neconyan-workspace-rail .neconyan-rail-footer-action, #sb-mobile-nav .sb-nav-item) {
+    background: transparent;
+    box-shadow: none;
+}
+
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #sb-mobile-nav .sb-nav-item):is([aria-current='page'], .is-active) {
+    background: var(--neco-raised);
+    color: var(--neco-ink);
+    box-shadow: inset 3px 0 0 var(--kittyless-primary);
+}
+
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) #neconyan-workspace-rail .neconyan-rail-new {
+    background: var(--kittyless-primary);
+    color: var(--kittyless-on-primary);
+    border-color: transparent;
+}
+
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-home { gap: 22px; }
+
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) :is(.neconyan-home-intro, .neconyan-assistant-picker, .welcomeRecentShell) {
+    padding: 26px;
+    border: 1px solid var(--kittyless-line);
+    border-radius: 24px;
+    background: var(--neco-surface);
+    box-shadow: none;
+}
+
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-home-actions { gap: 10px; margin-top: 16px; }
+
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-home-actions > button,
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-cat-control:not(.neconyan-home-primary) {
+    background: transparent;
+    border: 1px solid var(--kittyless-line);
+    box-shadow: none;
+    transform: none;
+}
+
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-home-actions > button:is(:hover, :focus-visible) {
+    background: var(--neco-raised);
+    border-color: var(--kittyless-primary);
+    transform: none;
+}
+
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-home-actions > .neconyan-home-primary,
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-home-actions > .neconyan-home-primary:is(:hover, :focus-visible) {
+    background: var(--kittyless-primary);
+    color: var(--kittyless-on-primary);
+    border-color: transparent;
+}
+
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-home-actions small { color: inherit; opacity: .8; }
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-assistant-list { gap: 16px; padding-top: 0; }
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-assistant-disclosure {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 10px 20px;
+    border: 1px solid var(--kittyless-line);
+    background: transparent;
+    color: var(--neco-ink);
+}
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-assistant-picker:not(.is-expanded) .neconyan-assistant-choices { display: none; }
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-assistant-picker.is-expanded .neconyan-assistant-list { margin-top: 18px; }
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-assistant-row { background: var(--neco-raised); border-color: var(--kittyless-line); }
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-home-footer { padding-top: 0; border: 0; }
+
+/* The rest of the shell uses the same solid surfaces without changing chat layouts. */
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) :is(.sb-theme-card, .sb-settings-group, .sb-shell-callout, .sb-admin-card, .sb-agent-card) {
+    background: var(--neco-surface);
+    border: 1px solid var(--kittyless-line);
+    border-radius: 20px;
+    box-shadow: none;
+}
+
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) :is(.sb-shell-tab, .sb-settings-tab-btn, #right-nav-panel .sb-character-editor-subtab):is(.is-active, .active) {
+    background: var(--neco-raised);
+    border-color: var(--kittyless-line);
+    color: var(--neco-ink);
+}
+
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) :is(input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea:not(#send_textarea)) {
+    border: 1px solid var(--kittyless-line);
+    border-radius: 12px;
+    background: var(--neco-raised);
+}
+
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) :is(button, input, select, textarea, summary):focus-visible {
+    outline: 2px solid var(--kittyless-primary);
+    outline-offset: 3px;
+}
+
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) #send_form {
+    border: 1px solid var(--kittyless-line);
+    border-radius: 20px;
+    box-shadow: none;
+}
+
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) #send_but {
+    background: var(--kittyless-primary);
+    color: var(--kittyless-on-primary);
+}
+
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .sb-conversation-composer.neconyan-cat-panel { margin-top: 12px; }
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) dialog.popup { border: 1px solid var(--kittyless-line); border-radius: 24px; }
+
+@media (max-width: 768px) {
+    :root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-home { padding: 16px 12px 28px; gap: 16px; }
+    :root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) :is(.neconyan-home-intro, .neconyan-assistant-picker, .welcomeRecentShell) { padding: 20px 16px; border-radius: 20px; }
+    :root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel { border-top-color: var(--kittyless-line); }
+    :root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel #sb-bottom-chat-bar { background-image: none; border: 0; box-shadow: none; }
+}

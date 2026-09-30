@@ -120,6 +120,15 @@ describe('in-chat agents workspace redesign', () => {
         expect(mobileShell).toContain('body.neconyan #ica--settings .ica--card-secondary-actions { left: 0; right: auto; }');
     });
 
+    test('keeps More tools above the filters, inside the panel, and in the page flow on phones', () => {
+        const toolsRule = styleSource.slice(styleSource.indexOf('.ica--more-tools {'), styleSource.indexOf('}', styleSource.indexOf('.ica--more-tools {')));
+        const menuRule = styleSource.slice(styleSource.indexOf('.ica--more-tools-menu {'), styleSource.indexOf('}', styleSource.indexOf('.ica--more-tools-menu {')));
+        expect(toolsRule).toContain('margin-left: auto;');
+        expect(menuRule).toContain('z-index: 11;');
+        const mobileShell = readRepoFile('public/css/neconyan-mobile-shell.css');
+        expect(mobileShell).toContain('body.neconyan #ica--settings .ica--more-tools-menu { position: static;');
+    });
+
     test('gives companion activity the same labelled action language', () => {
         expect(dashboardSource).toContain('Activity &amp; companion results');
         expect(dashboardSource).toContain('Run enabled companions');

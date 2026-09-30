@@ -42,6 +42,7 @@ sed -e 's#](\.github/readme-#](readme-#g' \
     -e 's#src="public/#src="../public/#g' \
     -e 's#src="docs/#src="../docs/#g' \
     -e 's#](docs/#](../docs/#g' \
+    -e 's#](android/#](../android/#g' \
     -e 's#](LICENSE)#](../LICENSE)#g' "$SOURCE_README" >> "$TMP_FILE"
 
 if cmp -s "$TMP_FILE" "$TARGET_README"; then

@@ -329,19 +329,19 @@ body.ripplestyle #chat .mes .mesAvatarWrapper .avatar.has-expression > .neconyan
 body.neconyan.flatchat:not(.sbterm) #chat { padding: 24px max(24px, calc((100% - 820px) / 2)); text-shadow: none; }
 /* Reserve room for the perched bodies, including first/history/Story/terminal rows. */
 body.neconyan #chat .mes.mes[mesid]:has(> .neconyan-message-sleeper:not([hidden])) {
-    contain: layout style; margin-top: 44px !important; margin-bottom: 0 !important; overflow: visible;
+    contain: layout style; margin-top: var(--neconyan-sleeper-space, 44px) !important; margin-bottom: 0 !important; overflow: visible;
 }
 body.neconyan #sheld .sb-conversation-message-bubble:has(> .neconyan-message-sleeper),
 body.neconyan #sheld :is(.sbtw-post, .sbtw-reply):has(> .neconyan-message-sleeper) {
-    position: relative; overflow: visible; margin-top: 44px;
+    position: relative; overflow: visible; margin-top: var(--neconyan-sleeper-space, 44px);
 }
 body.neconyan #sheld .sbtw-list { padding-inline: 18px; }
-body.neconyan #sheld .sbtw-quote-card { position: relative; margin-top: 44px; }
+body.neconyan #sheld .sbtw-quote-card { position: relative; margin-top: var(--neconyan-sleeper-space, 44px); }
 body.neconyan #sheld .sbtw-quote-card .sbtw-post-compact { position: static; margin-top: 0; }
 body.neconyan #sheld .sb-conversation-message[data-message-id] { gap: 20px; }
 @media (min-width: 769px) {
     body.neconyan:is(.sbterm, :not(.flatchat)) #chat { padding-inline: 24px; }
-    body.neconyan.echostyle:not(.sbterm) #chat .mes .mes_text { margin-top: 44px; }
+    body.neconyan.echostyle:not(.sbterm) #chat .mes .mes_text { margin-top: var(--neconyan-sleeper-space, 44px); }
     body.neconyan.echostyle:not(.sbterm) #chat .mes > .neconyan-message-sleeper { top: calc(var(--neconyan-sleeper-text-top, 0px) - 41px); }
     body.neconyan.flatchat:not(.sbterm):not(.sbstory) #chat .mes > .neconyan-message-sleeper { top: -29px; }
     body.neconyan.flatchat:not(.sbterm):not(.sbstory) #chat .mes[is_user='false'] > .neconyan-message-sleeper { left: calc(var(--avatar-width, 50px) + 13px); }
@@ -371,7 +371,7 @@ body.neconyan #send_textarea {
 }
 body.neconyan :is(#leftSendForm, #rightSendForm) > :is(div, button),
 body.neconyan #options_button { border-radius: 12px; border: 1px solid var(--neco-border); background: var(--neco-raised); box-shadow: none; }
-body.neconyan :is(#send_but, #sb_conversation_send) { border-radius: 12px !important; background: var(--neco-ginger) !important; color: var(--neco-on-accent) !important; box-shadow: none; }
+body.neconyan :is(#send_but, #sb_conversation_send) { border-radius: var(--neconyan-control-radius, 12px) !important; background: var(--neco-ginger) !important; color: var(--neco-on-accent) !important; box-shadow: none; }
 body.neconyan :is(#send_form:focus-within, .sb-conversation-composer:focus-within) { border-color: var(--neco-ginger); box-shadow: none; }
 body.neconyan #send_form:focus-within :is(#nonQRFormItems, #send_textarea) { background: transparent; box-shadow: none; }
 body.neconyan #send_form.sb-generating-controls { border-color: var(--neco-ginger); box-shadow: inset 0 0 0 3px var(--neco-ginger); }
@@ -2487,7 +2487,7 @@ body.neconyan #toast-container > div {
     background-image: none !important;
     border: 1px solid var(--neco-border);
     border-left: 3px solid var(--neco-ginger);
-    border-radius: 12px !important;
+    border-radius: var(--neconyan-control-radius, 12px) !important;
     box-shadow: 0 12px 28px color-mix(in oklch, var(--neco-charcoal) 42%, transparent);
     backdrop-filter: none;
     opacity: 1;
@@ -2900,7 +2900,7 @@ body.neconyan #right-nav-panel #neconyan-character-library #charListFixedTop {
 }
 body.neconyan #right-nav-panel #neconyan-character-library #form_character_search_form { grid-column: 1; grid-row: 1; margin: 0; }
 body.neconyan #right-nav-panel #neconyan-character-library .sb-character-library-primary-actions { grid-column: 2; grid-row: 1; padding: 0; border: 0; gap: 6px; }
-body.neconyan #right-nav-panel #neconyan-character-library .sb-character-library-primary-actions > .neconyan-cat-control { padding: 8px 12px !important; min-height: 44px; border-radius: 10px !important; }
+body.neconyan #right-nav-panel #neconyan-character-library .sb-character-library-primary-actions > .neconyan-cat-control { padding: 8px 12px !important; min-height: 44px; border-radius: var(--neconyan-control-radius, 10px) !important; }
 body.neconyan #right-nav-panel #neconyan-character-library .sb-character-library-primary-actions > .neconyan-cat-control::before,
 body.neconyan #right-nav-panel #neconyan-character-library .sb-character-library-primary-actions > .neconyan-cat-control::after,
 body.neconyan #right-nav-panel #neconyan-character-library .sb-character-library-primary-actions .neconyan-whiskers { display: none; }
@@ -3033,38 +3033,3 @@ body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] .sb-shell
 #ica--settings .ica--card-primary-actions { flex: 1 1 auto; min-width: 0; }
 #ica--settings .ica--card-primary-actions .ica--card-btn { min-height: 44px; gap: 5px; opacity: 1; border: 1px solid var(--neco-border); border-radius: 10px; background: var(--neco-raised); }
 #ica--settings .ica--card-primary-actions .ica--btn-history[aria-pressed='true'] { background: var(--neco-ginger); color: var(--neco-on-accent); }
-
-/* Vectorization: source controls, search evidence and Miso's in-place guide. */
-#vectors_container .vectors-workspace { display: grid; gap: 16px; min-width: 0; padding: 14px 4px; text-align: left; color: var(--neco-ink); }
-#vectors_container .vectors-workspace [hidden] { display: none; }
-#vectors_container .vectors-workspace :is(h3, h4, p) { margin: 0; overflow-wrap: anywhere; }
-#vectors_container .vectors-workspace h3 { font: 400 1.45em/1.25 var(--sb-font-display); color: var(--neco-ink); }
-#vectors_container .vectors-workspace h4 { font-size: 1.08em; color: var(--neco-ink); }
-#vectors_container .vectors-workspace p { color: var(--neco-muted); line-height: 1.55; font-size: .94em; }
-#vectors_container .vectors-workspace :is(section, header) { display: grid; gap: 12px; min-width: 0; }
-#vectors_container .vectors-workspace section > h4:not(:first-child), #vectors_container .vectors-workspace section > div > h4 { margin-top: 16px; }
-#vectors_container .vectors-workspace section > div:not(.vectors-fields):not(.vectors-actions) { display: grid; gap: 10px; min-width: 0; }
-#vectors_container .vectors-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-#vectors_container .vectors-nav button { min-width: 0; min-height: 44px; padding: 8px 5px; border: 1px solid var(--neco-border); border-radius: 12px; background: var(--neco-surface); color: var(--neco-ink); font: inherit; font-weight: 700; overflow-wrap: anywhere; cursor: pointer; }
-#vectors_container .vectors-nav [aria-selected='true'] { background: var(--neco-ginger); color: var(--neco-on-accent); border-color: var(--neco-ginger); }
-#vectors_container .vectors-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 175px), 1fr)); gap: 12px; }
-#vectors_container .vectors-fields > label { display: grid; align-content: start; gap: 6px; min-width: 0; }
-#vectors_container .vectors-workspace .text_pole { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; margin: 0; color: var(--neco-ink); background: var(--neco-surface); border: 1px solid var(--neco-border); border-radius: 10px; }
-#vectors_container .vectors-workspace textarea { resize: vertical; }
-#vectors_container .vectors-workspace :is(.checkbox_label, .radio_group label) { display: flex; align-items: center; gap: 10px; min-height: 44px; line-height: 1.4; }
-#vectors_container .vectors-workspace :is(input[type='checkbox'], input[type='radio']) { flex: 0 0 auto; }
-#vectors_container .vectors-workspace fieldset { min-width: 0; padding: 10px 12px; margin: 0; border: 1px solid var(--neco-border); border-radius: 12px; }
-#vectors_container .vectors-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-#vectors_container .vectors-workspace .menu_button { width: fit-content; max-width: 100%; min-height: 44px; margin: 0; white-space: normal; text-align: center; }
-#vectors_container .vectors-workspace :is(button, input, select, textarea, a):focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 3px; }
-#vectors_container .vectors-workspace [aria-invalid='true'] { outline: 2px solid var(--neco-ginger); }
-#vectors_container .vectors-guide { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: start; gap: 12px; padding: 14px; background: var(--neco-surface); border: 1px solid var(--neco-border); border-left: 4px solid var(--neco-ginger); border-radius: 16px; }
-#vectors_container .vectors-guide img { width: 64px; height: 64px; object-fit: cover; border-radius: 50%; }
-#vectors_container .vectors-guide > div { display: grid; gap: 10px; min-width: 0; }
-#vectors_container [data-vectors-guide-body] { grid-column: 1 / -1; }
-#vectors_container [data-vectors-guide-copy] { display: grid; gap: 12px; }
-#vectors_container :is(#vectors_search_results, .vectors-results) { display: grid; gap: 14px; margin: 0; padding-left: 24px; }
-#vectors_container :is(#vectors_search_results, .vectors-results) li { padding: 12px; background: var(--neco-surface); border: 1px solid var(--neco-border); border-radius: 12px; overflow-wrap: anywhere; }
-#vectors_container :is(#vectors_search_results, .vectors-results) :is(strong, small) { display: block; margin-bottom: 8px; }
-#vectors_container :is(#vectors_search_results, .vectors-results) p { white-space: pre-wrap; max-height: 320px; overflow-y: auto; }
-#vectors_container #vectors_action_status:empty, #vectors_container #vectors_chat_stats:empty { display: none; }

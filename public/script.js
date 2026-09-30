@@ -550,9 +550,8 @@ export let isChatSaving = false;
 export let firstRun = false;
 export let settingsReady = false;
 let currentVersion = '0.0.0';
-const NECONYAN_UI_VERSION = 'Neconyan v1.0.0';
 
-export let displayVersion = NECONYAN_UI_VERSION;
+export let displayVersion = 'Neconyan';
 
 let generation_started = new Date();
 /** @type {Character[]} */
@@ -590,7 +589,7 @@ export function getNeconyanFrontendIconSrc({ absolute = false } = {}) {
 export let system_avatar = getNeconyanFrontendIconSrc();
 export const comment_avatar = 'img/quill.png';
 export const default_user_avatar = 'img/user-default.png';
-export let CLIENT_VERSION = 'Neconyan:1.0.0'; // For Horde header
+export let CLIENT_VERSION = 'Neconyan'; // For Horde header
 
 function applyNeconyanFrontendIcon(iconId = getStoredNeconyanFrontendIcon()) {
     const normalizedIconId = normalizeNeconyanFrontendIcon(iconId);
@@ -912,10 +911,11 @@ export const MAX_INJECTION_DEPTH = 10000;
 async function getClientVersion() {
     try {
         const response = await fetch('/version');
+        if (!response.ok) throw new Error(`Version request failed: ${response.status}`);
         const data = await response.json();
         CLIENT_VERSION = data.agent;
         currentVersion = data.pkgVersion;
-        displayVersion = NECONYAN_UI_VERSION;
+        displayVersion = `Neconyan v${currentVersion}`;
 
         $('#version_display').text(displayVersion);
         $('#version_display_welcome').text(displayVersion);

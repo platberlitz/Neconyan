@@ -2856,6 +2856,7 @@ body.neconyan .ica--standalone-title { display: none; }
 .ica--more-tools {
     position: relative;
     flex: 0 0 auto;
+    margin-left: auto;
 }
 
 .ica--more-tools summary {
@@ -2890,7 +2891,7 @@ body.neconyan .ica--standalone-title { display: none; }
 
 .ica--more-tools-menu {
     position: absolute;
-    z-index: 5;
+    z-index: 11;
     top: calc(100% + 6px);
     right: 0;
     display: flex;

@@ -2,3 +2,576 @@
     content: '🟢';
     margin-left: 5px;
 }
+
+/* Vectorization workspace: status header, Miso's guide, labelled tabs and one card per group of settings. */
+#vectors_container .vectors-workspace {
+    container: vectors / inline-size;
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+    padding: 12px 0 16px;
+    text-align: left;
+    color: var(--neco-ink);
+}
+
+#vectors_container .vectors-workspace :is(h3, h4, p) {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+#vectors_container .vectors-workspace p {
+    color: var(--neco-muted);
+    font-size: 13px;
+    line-height: 1.55;
+}
+
+#vectors_container .vectors-workspace code {
+    padding: 1px 6px;
+    border-radius: 6px;
+    background-color: var(--neco-raised);
+    color: var(--neco-ink);
+    font-size: 12px;
+}
+
+#vectors_container .vectors-workspace .vectors-hero {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px 14px;
+    padding: 16px 18px;
+    background-color: var(--neco-surface);
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+}
+
+#vectors_container .vectors-hero-mark {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background-color: color-mix(in srgb, var(--neco-ginger) 18%, var(--neco-surface));
+    color: var(--neco-ginger);
+    font-size: 18px;
+}
+
+#vectors_container .vectors-hero-copy {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+#vectors_container .vectors-workspace .vectors-hero .vectors-title {
+    margin: 0;
+    padding: 0;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    color: var(--neco-ink);
+    font: 400 21px/1.25 var(--sb-font-display);
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+#vectors_container .vectors-workspace .vectors-state {
+    grid-column: 2;
+    justify-self: start;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 10px;
+    background-color: var(--neco-canvas);
+    color: var(--neco-muted);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+#vectors_container .vectors-workspace .vectors-state::before {
+    content: '';
+    flex: 0 0 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--neco-muted);
+}
+
+#vectors_container .vectors-workspace .vectors-state[data-vectors-state='on'] {
+    border-color: var(--neco-ginger);
+    color: var(--neco-ink);
+}
+
+#vectors_container .vectors-workspace .vectors-state[data-vectors-state='on']::before {
+    background-color: var(--neco-ginger);
+}
+
+#vectors_container .vectors-guide {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    align-items: center;
+    gap: 12px 14px;
+    padding: 14px 18px;
+    background-color: var(--neco-surface);
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+}
+
+#vectors_container .vectors-guide img {
+    width: 48px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: 50%;
+    background-color: var(--neco-raised);
+}
+
+#vectors_container .vectors-guide-intro {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 2px 16px;
+    min-width: 0;
+}
+
+#vectors_container .vectors-guide-intro > strong {
+    color: var(--neco-ink);
+    font: 400 16px/1.3 var(--sb-font-display);
+}
+
+#vectors_container .vectors-guide-intro > button {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+}
+
+#vectors_container .vectors-workspace [data-vectors-guide-body] {
+    grid-column: 1 / -1;
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+    padding-top: 14px;
+    border-top: 1px solid var(--neco-border);
+}
+
+#vectors_container [data-vectors-guide-progress] {
+    color: var(--neco-ginger);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+#vectors_container [data-vectors-guide-copy] {
+    display: grid;
+    gap: 10px;
+}
+
+#vectors_container .vectors-workspace [data-vectors-guide-copy] p {
+    color: var(--neco-ink);
+    font-size: 14px;
+}
+
+#vectors_container .vectors-nav {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    padding: 4px;
+    background-color: var(--neco-surface);
+    border: 1px solid var(--neco-border);
+    border-radius: 10px;
+}
+
+#vectors_container .vectors-nav button {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 0;
+    min-height: 44px;
+    margin: 0;
+    padding: 6px 8px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: var(--neco-muted);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.2;
+    text-align: center;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+}
+
+#vectors_container .vectors-nav button > i {
+    font-size: 14px;
+}
+
+#vectors_container .vectors-nav [aria-selected='true'] {
+    background-color: var(--neco-ginger);
+    color: var(--neco-on-accent);
+}
+
+#vectors_container .vectors-nav [data-vectors-on]::after {
+    content: '';
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background-color: var(--neco-ginger);
+}
+
+#vectors_container .vectors-nav [aria-selected='true'][data-vectors-on]::after {
+    background-color: var(--neco-on-accent);
+}
+
+@media (hover: hover) {
+    #vectors_container .vectors-nav button:not([aria-selected='true']):hover {
+        background-color: var(--neco-raised);
+        color: var(--neco-ink);
+    }
+}
+
+#vectors_container .vectors-workspace :is(section, .vectors-stack) {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+}
+
+#vectors_container .vectors-card {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+    padding: 16px 18px;
+    background-color: var(--neco-surface);
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+}
+
+#vectors_container .vectors-workspace h4 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    color: var(--neco-ink);
+    font: 400 17px/1.3 var(--sb-font-display);
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+#vectors_container .vectors-workspace h4 > i {
+    display: grid;
+    place-items: center;
+    flex: 0 0 28px;
+    height: 28px;
+    border-radius: 50%;
+    background-color: var(--neco-raised);
+    color: var(--neco-ginger);
+    font-size: 13px;
+}
+
+#vectors_container .vectors-split {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--neco-border);
+}
+
+#vectors_container .vectors-field,
+#vectors_container .vectors-fields > label {
+    display: grid;
+    align-content: start;
+    gap: 6px;
+    min-width: 0;
+}
+
+#vectors_container .vectors-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+    gap: 12px;
+}
+
+#vectors_container .vectors-fields > label {
+    align-content: space-between;
+}
+
+#vectors_container .vectors-workspace :is(.vectors-field > label:not(.checkbox_label), .vectors-fields > label, legend) {
+    color: var(--neco-ink);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+#vectors_container .vectors-workspace .text_pole {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    margin: 0;
+    color: var(--neco-ink);
+    background-color: var(--neco-canvas);
+    border: 1px solid var(--neco-border);
+    border-radius: 6px;
+    font-weight: 500;
+}
+
+#vectors_container .vectors-workspace textarea.text_pole {
+    min-height: 72px;
+    resize: vertical;
+}
+
+#vectors_container .vectors-workspace .checkbox_label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--neco-ink);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.4;
+    cursor: pointer;
+}
+
+#vectors_container .vectors-workspace .checkbox_label.vectors-switch {
+    padding: 8px 14px;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background-color: var(--neco-canvas);
+    font-weight: 600;
+}
+
+#vectors_container .vectors-workspace .checkbox_label.vectors-switch:has(input:checked) {
+    border-color: var(--neco-ginger);
+    background-color: color-mix(in srgb, var(--neco-ginger) 12%, var(--neco-surface));
+}
+
+#vectors_container .vectors-workspace fieldset.radio_group {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+    gap: 8px;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+#vectors_container .vectors-workspace fieldset.radio_group legend {
+    margin: 0;
+    padding: 0 0 6px;
+}
+
+#vectors_container .vectors-workspace fieldset.radio_group label {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    min-height: 44px;
+    margin: 0;
+    padding: 8px 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background-color: var(--neco-canvas);
+    color: var(--neco-ink);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.3;
+    cursor: pointer;
+}
+
+#vectors_container .vectors-workspace fieldset.radio_group label:has(input:checked) {
+    border-color: var(--neco-ginger);
+    background-color: color-mix(in srgb, var(--neco-ginger) 12%, var(--neco-surface));
+}
+
+#vectors_container .vectors-workspace :is(input[type='checkbox'], input[type='radio']) {
+    flex: 0 0 auto;
+    margin: 0;
+    accent-color: var(--neco-ginger);
+}
+
+#vectors_container .vectors-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+#vectors_container .vectors-workspace .menu_button {
+    gap: 8px;
+    width: fit-content;
+    max-width: 100%;
+    min-height: 44px;
+    margin: 0;
+    white-space: normal;
+    text-align: center;
+}
+
+#vectors_container .vectors-workspace a {
+    justify-self: start;
+    color: var(--neco-ginger);
+    font-weight: 600;
+}
+
+#vectors_container .vectors-workspace .vectors-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background-color: var(--neco-raised);
+    color: var(--neco-ink);
+}
+
+#vectors_container .vectors-note > i {
+    margin-top: 3px;
+    color: var(--neco-ginger);
+}
+
+#vectors_container :is(#vectors_search_results, .vectors-results) {
+    display: grid;
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: vectors-result;
+}
+
+#vectors_container :is(#vectors_search_results, .vectors-results) li {
+    counter-increment: vectors-result;
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    padding: 14px 16px;
+    background-color: var(--neco-surface);
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    overflow-wrap: anywhere;
+}
+
+#vectors_container :is(#vectors_search_results, .vectors-results) li > strong {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--neco-ink);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+#vectors_container :is(#vectors_search_results, .vectors-results) li > strong::before {
+    content: counter(vectors-result);
+    display: grid;
+    place-items: center;
+    flex: 0 0 24px;
+    height: 24px;
+    border-radius: 50%;
+    background-color: var(--neco-ginger);
+    color: var(--neco-on-accent);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+#vectors_container :is(#vectors_search_results, .vectors-results) li > small {
+    color: var(--neco-muted);
+    font-size: 11px;
+}
+
+#vectors_container :is(#vectors_search_results, .vectors-results) li > p {
+    max-height: 320px;
+    overflow-y: auto;
+    padding: 10px 12px;
+    border-radius: 6px;
+    background-color: var(--neco-canvas);
+    color: var(--neco-ink);
+    white-space: pre-wrap;
+}
+
+#vectors_container #vectors_saved_work,
+#vectors_container #vectors_saved_work > div {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+}
+
+#vectors_container .vectors-activity {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+}
+
+#vectors_container .vectors-workspace #vectors_action_status {
+    flex: 1 1 240px;
+    padding: 10px 14px;
+    border: 1px solid var(--neco-ginger);
+    border-radius: 8px;
+    background-color: color-mix(in srgb, var(--neco-ginger) 10%, var(--neco-surface));
+    color: var(--neco-ink);
+    font-weight: 600;
+}
+
+#vectors_container .vectors-workspace :is(button, input, select, textarea, a, [tabindex]):focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+#vectors_container .vectors-workspace [aria-invalid='true'] {
+    outline: 2px solid var(--neco-ginger);
+}
+
+@container vectors (min-width: 640px) {
+    #vectors_container .vectors-nav {
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+
+    #vectors_container .vectors-nav button {
+        flex-direction: row;
+        gap: 8px;
+    }
+}
+
+@container vectors (max-width: 480px) {
+    #vectors_container .vectors-workspace .vectors-hero,
+    #vectors_container .vectors-guide,
+    #vectors_container .vectors-card {
+        padding: 12px 14px;
+    }
+
+    #vectors_container .vectors-workspace .vectors-state {
+        grid-column: 1 / -1;
+    }
+
+    #vectors_container .vectors-guide-intro {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    #vectors_container .vectors-guide-intro > button {
+        grid-column: 1;
+        grid-row: auto;
+        margin-top: 8px;
+    }
+}
+
+#vectors_container .vectors-activity:not(:has(#vectors_action_status:not(:empty), #vectors_stop:not([hidden]))) {
+    display: none;
+}
+
+#vectors_container .vectors-workspace :is(.vectors-note, [role='status']):empty,
+#vectors_container :is(#vectors_search_results, .vectors-results):empty,
+#vectors_container .vectors-workspace [hidden] {
+    display: none;
+}

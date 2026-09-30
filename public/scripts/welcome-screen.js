@@ -913,6 +913,14 @@ async function handleWelcomeAction(button) {
     const action = button.dataset.action || '';
     const value = button.dataset.actionValue || '';
     switch (action) {
+        case 'toggle-assistants': {
+            const picker = button.closest('[data-assistant-picker]');
+            if (!picker) break;
+            const expanded = picker.classList.toggle('is-expanded');
+            button.setAttribute('aria-expanded', String(expanded));
+            button.textContent = expanded ? t`Hide assistants` : t`Show assistants`;
+            break;
+        }
         case 'resume-chat':
             globalThis.NeconyanShell?.closeWorkspace?.();
             hideWelcomeHome();
@@ -1214,7 +1222,7 @@ async function sendWelcomePanel(chats, expand, requestId, assistantPersonalities
             return;
         }
         const templateData = buildWelcomeTemplateData(chats, assistantPersonalities);
-        const template = await renderTemplateAsync('/scripts/templates/welcomePanelOnboarding.html?v=20260928a', templateData, true, true, true);
+        const template = await renderTemplateAsync('/scripts/templates/welcomePanelOnboarding.html?v=20260930-kittyless1', templateData, true, true, true);
         if (requestId !== welcomeRequestId) {
             return;
         }

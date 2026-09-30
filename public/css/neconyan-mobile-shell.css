@@ -3021,7 +3021,7 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
     #send_textarea {
         padding: 8px 6px !important;
         line-height: 1.15 !important;
-        border-radius: 10px !important;
+        border-radius: var(--neconyan-control-radius, 10px) !important;
         background: var(--sb-composer-input-state-bg, var(--sb-composer-input-bg)) !important;
         box-shadow: var(--sb-composer-input-state-shadow, none) !important;
     }
@@ -3437,4 +3437,5 @@ body.neconyan #open_chat_expressions #expressions_stop_sprite_generation { grid-
     body.neconyan #ica--settings .ica--card-primary-actions:not(:has(> .ica--btn-run)) .ica--btn-edit { order: 0; }
     body.neconyan #ica--settings .ica--card-more { justify-content: center; width: 100%; height: 100%; border: 1px solid var(--neco-border); border-radius: 10px; font-size: .85em; }
     body.neconyan #ica--settings .ica--card-secondary-actions { left: 0; right: auto; }
+    body.neconyan #ica--settings .ica--more-tools-menu { position: static; box-sizing: border-box; width: 100%; min-width: 0; max-width: none; margin-top: 6px; box-shadow: none; }
 }

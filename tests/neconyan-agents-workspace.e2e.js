@@ -130,6 +130,18 @@ for (const width of [1280, 1024, 997, 768, 390, 393, 320]) {
                 await expect(page.locator('#ica--search')).toHaveValue('');
                 const settingsGeometry = await page.locator('#ica--settings').evaluate(root => ({ width: root.clientWidth, scrollWidth: root.scrollWidth }));
                 expect(settingsGeometry.scrollWidth).toBeLessThanOrEqual(settingsGeometry.width + 1);
+                await page.locator('#ica--moreTools > summary').click();
+                const toolButtons = page.locator('.ica--more-tools-menu .menu_button:visible');
+                for (let index = 0; index < await toolButtons.count(); index++) {
+                    await toolButtons.nth(index).scrollIntoViewIfNeeded();
+                    expect(await toolButtons.nth(index).evaluate(element => {
+                        const box = element.getBoundingClientRect();
+                        const panel = document.querySelector('#ica--settings').getBoundingClientRect();
+                        const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+                        return box.left >= panel.left - 1 && box.right <= panel.right + 1 && (element === hit || element.contains(hit));
+                    })).toBe(true);
+                }
+                await page.locator('#ica--moreTools > summary').click();
                 await capture(page, info, 'manage');
 
                 await page.locator('#ica--templates').click();

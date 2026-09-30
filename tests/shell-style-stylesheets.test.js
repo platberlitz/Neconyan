@@ -105,6 +105,7 @@ describe('shell style runtime stylesheets', () => {
     });
 
     for (const id of runtimeIds) {
+        const protectedDecorations = id === 'kittyless' ? [] : ['.neconyan-whiskers', '.neconyan-cat-panel::before'];
         test(`${id} only styles its own shell and layers over Calico`, () => {
             const source = readSource('public', 'css', 'shell-styles', `${id}.css`);
             const stripped = stripCssBlockComments(source);
@@ -115,11 +116,12 @@ describe('shell style runtime stylesheets', () => {
             const unscoped = selectors.flatMap(splitSelectorList).filter(part => !part.startsWith(prefix));
             expect(unscoped).toEqual([]);
 
-            // The Calico identity stays: the sheet must not replace the palette tokens, fonts,
-            // message tints or cat decorations, only the chrome around them. Excluding the
-            // whiskers from an icon selector is allowed; styling them is not.
+            // The palette, fonts and message tints stay. Kittyless alone intentionally hides
+            // the cat decorations. Other styles must still leave them untouched.
             const withoutExclusions = stripped.replaceAll(':not(.neconyan-whiskers)', '');
-            for (const forbidden of ['--neco-canvas:', '--neco-ink:', '--neco-muted:', '--neco-ginger:', '--neco-user:', '--mainFontFamily:', '--sb-font-display:', '--SmartThemeBotMesBlurTintColor', '--SmartThemeUserMesBlurTintColor', '.neconyan-whiskers', '.neconyan-cat-panel::before']) {
+            const forbiddenTokens = ['--neco-canvas:', '--neco-ink:', '--neco-muted:', '--neco-ginger:', '--neco-user:', '--mainFontFamily:', '--sb-font-display:', '--SmartThemeBotMesBlurTintColor', '--SmartThemeUserMesBlurTintColor',
+                ...protectedDecorations];
+            for (const forbidden of forbiddenTokens) {
                 expect(withoutExclusions).not.toContain(forbidden);
             }
 
@@ -136,7 +138,7 @@ describe('shell style runtime stylesheets', () => {
     }
 
     test('every style, Calico included, follows the chosen accent colour', () => {
-        const signatureHues = { 'windows-aero': '--aero-hue:', 'cozy-warm': '--cozy-amber:', 'hypr-glow': '--hypr-b:', 'slate-flat': '--slate-cool:', 'clean-minimal': '--clean-line-strong:' };
+        const signatureHues = { kittyless: '--kittyless-primary:', 'windows-aero': '--aero-hue:', 'windows-98': '--w98-title:', 'cozy-warm': '--cozy-amber:', 'hypr-glow': '--hypr-b:', 'slate-flat': '--slate-cool:', 'clean-minimal': '--clean-line-strong:' };
         for (const [id, hueVar] of Object.entries(signatureHues)) {
             const source = stripCssBlockComments(readSource('public', 'css', 'shell-styles', `${id}.css`));
             const customBlock = source.match(new RegExp(`:root\\[data-sb-theme='${id}'\\]\\[data-neconyan-accent='custom'\\] body\\.neconyan:not\\(\\.sbterm\\) \\{([^}]*)\\}`));

@@ -119,7 +119,12 @@ export function mountVectorWorkspace(settings) {
     };
     const updateState = () => {
         const enabled = [settings.enabled_chats && t`chats`, settings.enabled_files && t`files`, settings.enabled_world_info && t`lorebooks`].filter(Boolean);
-        find('[data-vectors-state]').textContent = enabled.length ? t`Used in replies: ${enabled.join(', ')}.` : t`Retrieval is off. You can still index sources and try a search.`;
+        const state = find('[data-vectors-state]');
+        state.textContent = enabled.length ? t`Used in replies: ${enabled.join(', ')}.` : t`Retrieval is off. You can still index sources and try a search.`;
+        state.dataset.vectorsState = enabled.length ? 'on' : 'off';
+        for (const [tab, on] of [['chats', settings.enabled_chats], ['files', settings.enabled_files], ['world', settings.enabled_world_info]]) {
+            find(`#vectors-tab-${tab}`).toggleAttribute('data-vectors-on', Boolean(on));
+        }
     };
     root.addEventListener('input', updateState);
     eventSource.on(event_types.CHAT_CHANGED, () => {
@@ -129,6 +134,7 @@ export function mountVectorWorkspace(settings) {
     });
     const savedResults = document.createElement('ol');
     savedResults.className = 'vectors-results';
+    savedResults.setAttribute('role', 'list');
     savedResults.setAttribute('aria-label', t`Saved search results`);
     mountSavedVectorWork(find('#vectors_saved_work'), { onResult: result => renderSearchResults(savedResults, result) });
     find('#vectors_saved_work').append(savedResults);

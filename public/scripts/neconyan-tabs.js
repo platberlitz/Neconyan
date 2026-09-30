@@ -152,7 +152,7 @@ const NN_SHORTCUT_LABELS = Object.freeze({
 });
 const NN_PANEL_STYLESHEETS = Object.freeze({
     'characters:world-info': [
-        { href: 'css/world-info.css?v=20260929k', id: 'deferred-world-info-css' },
+        { href: 'css/world-info.css?v=20260930-uipolish1', id: 'deferred-world-info-css' },
     ],
     'characters:persona': [
         { href: 'css/personas.css?v=20260912h', id: 'deferred-personas-css' },
@@ -468,15 +468,23 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20260929m';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20260930-win98a';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
         label: 'Calico',
     },
     {
+        id: 'kittyless',
+        label: 'Kittyless',
+    },
+    {
         id: 'windows-aero',
         label: 'Windows Aero',
+    },
+    {
+        id: 'windows-98',
+        label: 'Windows 98',
     },
     {
         id: 'clean-minimal',
@@ -4999,6 +5007,44 @@ function setShellTheme(themeId, { persist = true } = {}) {
 
     updateThemePickerUi();
     updateThemeBadge();
+    syncShellStyleAssistantArt();
+}
+
+const NN_WINDOWS_98_ASSISTANT_IDS = new Set(['miso', 'taro', 'nori'].flatMap(name => ['male', 'female', 'neutral'].map(gender => `${name}-${gender}`)));
+let nnShellStyleAssistantArtBound = false;
+
+// Installed assistants are ordinary character files, so their avatars need rules built from the loaded character list.
+function buildWindows98AssistantArtCss(characterList) {
+    const rules = [];
+    for (const character of Array.isArray(characterList) ? characterList : []) {
+        const assistantId = character?.data?.extensions?.neconyan_assistant?.id;
+        const avatar = character?.avatar;
+        if (!NN_WINDOWS_98_ASSISTANT_IDS.has(assistantId) || typeof avatar !== 'string' || !avatar || avatar === 'none') continue;
+        const file = encodeURIComponent(avatar);
+        rules.push(`:root[data-sb-theme='windows-98'] body.neconyan img:is([src$="type=avatar&file=${file}"], [src*="type=avatar&file=${file}&"], [src$="/characters/${file}"], [src*="/characters/${file}?"]) { content: url('img/neconyan/win98/portrait-${assistantId}.webp?v=20260930a'); }`);
+    }
+    return rules.join('\n');
+}
+
+function syncShellStyleAssistantArt() {
+    let style = document.getElementById('sb-shell-style-assistant-art');
+    if (nnState.theme !== 'windows-98') {
+        style?.remove();
+        return;
+    }
+    if (!nnShellStyleAssistantArtBound && eventSource?.on) {
+        nnShellStyleAssistantArtBound = true;
+        for (const eventName of [event_types.CHARACTER_PAGE_LOADED, event_types.CHARACTER_EDITED, event_types.CHARACTER_RENAMED, event_types.CHARACTER_DELETED]) {
+            if (eventName) eventSource.on(eventName, () => syncShellStyleAssistantArt());
+        }
+    }
+    const css = buildWindows98AssistantArtCss(characters);
+    if (!style) {
+        style = document.createElement('style');
+        style.id = 'sb-shell-style-assistant-art';
+        document.head.append(style);
+    }
+    if (style.textContent !== css) style.textContent = css;
 }
 
 function applyFrontendIcon(iconId = nnState.frontendIcon) {
