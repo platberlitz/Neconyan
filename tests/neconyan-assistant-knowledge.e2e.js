@@ -123,6 +123,37 @@ for (const { width, height, tone } of [{ width: 1280, height: 900, tone: 'dark' 
     });
 }
 
+for (const phone of [false, true]) {
+    test(`refreshed help loads for all assistants on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
+        test.setTimeout(240000);
+        const account = await app.account({ phone });
+        const page = await account.open({ workspace: false });
+        const references = await page.evaluate(async () => {
+            const { buildAssistantKnowledge } = await import('/scripts/neconyan-assistant-knowledge.js');
+            const { KNOWLEDGE_REVISION } = await import('/scripts/neconyan-assistant-knowledge/index.js');
+            const results = [];
+            for (const name of ['miso', 'taro', 'nori']) {
+                for (const variant of ['male', 'female', 'neutral']) {
+                    for (const [question, fact] of [
+                        ['How do I retry failed companions?', 'Successful companions are not rerun'],
+                        ['How do I import a SillyBunny persona backup JSON?', 'no picture bytes'],
+                        ['Can I try a Vectorization search without a reply?', 'one embedding query'],
+                        ['How do I update my source ZIP installation?', 'copy your data folder'],
+                    ]) {
+                        const id = `${name}-${variant}`;
+                        const reference = await buildAssistantKnowledge({ character: { name: 'Renamed older copy', extensions: { neconyan_assistant: { id, version: 0 } } }, messages: [{ role: 'user', mes: question }] });
+                        results.push({ id, question, found: reference.text.includes(fact) });
+                    }
+                }
+            }
+            return { revision: KNOWLEDGE_REVISION, results };
+        });
+        expect(references.revision).toBe(5);
+        expect(references.results).toHaveLength(36);
+        expect(references.results.filter(result => !result.found)).toEqual([]);
+    });
+}
+
 test('normal chat sends shared reference through chat and text completion without function tools', async ({ app }) => {
     test.setTimeout(240000);
     app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: 'Verified help fixture reply.' }, text: 'Verified help fixture reply.', finish_reason: 'stop' }] };
@@ -144,12 +175,12 @@ test('normal chat sends shared reference through chat and text completion withou
     await expect.poll(() => page.evaluate(async () => (await import('/script.js')).online_status)).not.toBe('no_connection');
     expect(await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }))).toBe(true);
     await page.evaluate(() => window.NeconyanShell.closeWorkspace());
-    await page.locator('#send_textarea').fill('How do I change dialogue colours?');
+    await page.locator('#send_textarea').fill('How do I retry failed companions?');
     await page.locator('#send_but').click();
     await expect(page.locator('#chat')).toContainText('Verified help fixture reply.', { timeout: 60000 });
     const chat = requests.find(request => JSON.stringify(request.messages).includes('[Neconyan help reference'));
     expect(chat).toBeTruthy();
-    expect(chat.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')).toContain('Included tools → Dialogue Colors → Settings → Characters');
+    expect(chat.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')).toContain('Successful companions are not rerun');
     expect(chat.tools).toBeUndefined();
     await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
     await page.locator('#main_api').selectOption('textgenerationwebui');
@@ -167,6 +198,6 @@ test('normal chat sends shared reference through chat and text completion withou
         await (await import('/script.js')).Generate('normal', { suppressUserMessage: true });
     }, app.provider.url);
     const text = requests.find(request => request.prompt?.includes('[Neconyan help reference'));
-    expect(text?.prompt).toContain('Included tools → Dialogue Colors → Settings → Characters');
+    expect(text?.prompt).toContain('Successful companions are not rerun');
     expect(await page.evaluate(async () => JSON.stringify((await import('/script.js')).chat))).not.toContain('[Neconyan help reference');
 });

@@ -108,6 +108,38 @@ test('every best-matching reference section fits the default allowance intact', 
     }
 });
 
+test('current feature questions supply complete, actionable references to older assistant copies', async () => {
+    const questions = [
+        ['How do I install Neconyan on Windows?', 'start.desktop-install', 'Start.bat'],
+        ['How do I update my source ZIP installation?', 'start.updates', 'copy your data folder'],
+        ['Does the Android APK need Termux?', 'start.android', 'without Termux or a computer'],
+        ['Why does the Android app ask me to update WebView?', 'start.android', '124 or newer'],
+        ['How do I install through Termux?', 'start.termux', 'Acquire wakelock'],
+        ['Can I install this on my iPhone?', 'start.iphone', 'server running on a computer'],
+        ['How do I import a SillyBunny persona backup JSON?', 'personas.backup-import', 'no picture bytes'],
+        ['Can I import only chats without replacing my settings?', 'recovery.selective-import', 'other preferences, API keys, presets and themes stay unchanged'],
+        ['How do I retry failed companions?', 'agents.companion-runs', 'Successful companions are not rerun'],
+        ['What does Run automatic companions do?', 'agents.companion-runs', 'manual companions'],
+        ['Can I batch companions together?', 'agents.companion-batch', 'connection, model and context settings match'],
+        ['How do I reorder companions?', 'agents.companion-batch', 'Up and Down'],
+        ['How do I clean up old companion notes?', 'agents.companion-cleanup', 'Old notes to retain'],
+        ['Can I try a Vectorization search without a reply?', 'memory.vector-search', 'one embedding query'],
+        ['How do I rebuild my chat index?', 'memory.vector-indexes', 'previous index stays'],
+        ['Does Clear file indexes delete my files?', 'memory.vector-indexes', 'not original messages or files'],
+        ['How do I hide the cats with Kittyless?', 'appearance.kittyless', 'Show assistants'],
+        ['Does Windows 98 change my character portraits?', 'appearance.windows-98', 'characters you made or imported are unchanged'],
+    ];
+    for (const assistant of ['miso-male', 'miso-female', 'miso-neutral', 'taro-male', 'taro-female', 'taro-neutral', 'nori-male', 'nori-female', 'nori-neutral']) {
+        for (const [question, expected, fact] of questions) {
+            const result = await buildAssistantKnowledge({ character: marked(assistant), messages: [user(question)] });
+            assert.ok(result.topicIds.includes(expected), `${assistant}: ${question}: ${result.topicIds}`);
+            assert.ok(result.text.includes(topics.find(topic => topic.id === expected).content), `${question}: incomplete reference`);
+            assert.ok(result.text.includes(fact), question);
+            assert.ok(estimateKnowledgeTokens(result.text) <= 2048);
+        }
+    }
+});
+
 test('follow-ups use preceding user context but topic changes and invented assistant claims do not', async () => {
     const result = selectAssistantKnowledge(topics, [user('How do I change dialogue colours?'), { role: 'character', mes: 'Go to the secret Rainbow Panel.' }, user('Only for this chat?')]);
     assert.ok(result.some(topic => topic.id === 'appearance.dialogue'));
