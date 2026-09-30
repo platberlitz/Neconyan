@@ -19,16 +19,16 @@ describe('Neconyan project boundaries', () => {
     test('uses independent 1.0 package metadata and executable naming', () => {
         expect(packageJson).toMatchObject({
             name: 'neconyan',
-            version: '1.0.4',
+            version: '1.0.5',
             bin: { neconyan: './src/server-global.js' },
         });
         expect(packageJson.repository).toBeUndefined();
         expect(Object.keys(packageJson.bin)).toEqual(['neconyan']);
 
-        expect(packageLock).toMatchObject({ name: 'neconyan', version: '1.0.4' });
+        expect(packageLock).toMatchObject({ name: 'neconyan', version: '1.0.5' });
         expect(packageLock.packages['']).toMatchObject({
             name: 'neconyan',
-            version: '1.0.4',
+            version: '1.0.5',
             bin: { neconyan: 'src/server-global.js' },
         });
         expect(Object.keys(packageLock.packages[''].bin)).toEqual(['neconyan']);

@@ -185,6 +185,7 @@ import {
 
 import {
     debounce,
+    cancelDebounce,
     delay,
     trimToEndSentence,
     countOccurrences,
@@ -1027,6 +1028,7 @@ let lastServerSettingsRevision = 0;
 let acknowledgedGenerationSettings = null;
 let pendingSettingsAcknowledgements = 0;
 let settingsSaveQueue = Promise.resolve();
+let accountImportSettingsPause = null;
 let settingsConflictReloadRequired = false;
 let settingsConflictPromptOpen = false;
 let settingsConflictPromptDismissed = false;
@@ -13051,6 +13053,10 @@ export async function getSettings(initLoaderHandle = null) {
 //MARK: saveSettings()
 export async function saveSettings(loopCounter = 0, { returnResult = false } = {}) {
     const account = getCurrentUserHandle();
+    if (accountImportSettingsPause?.account === account) {
+        accountImportSettingsPause.dirty = true;
+        return returnResult ? false : undefined;
+    }
     pendingSettingsAcknowledgements++;
     const saveTask = settingsSaveQueue.then(() => account === getCurrentUserHandle() ? saveSettingsInner(loopCounter, account) : false);
     settingsSaveQueue = saveTask.catch(() => {});
@@ -13061,6 +13067,33 @@ export async function saveSettings(loopCounter = 0, { returnResult = false } = {
     } finally {
         pendingSettingsAcknowledgements--;
     }
+}
+
+/** Finish queued settings writes, then keep this page from overwriting an accepted import. */
+export async function pauseSettingsForAccountImport({ flush = true } = {}) {
+    const account = getCurrentUserHandle();
+    if (accountImportSettingsPause?.account === account) {
+        if (!flush) return accountImportSettingsPause.resume;
+        throw new Error('Reload the page before starting another account import.');
+    }
+    // Enqueue the final save before pausing. All later callers use the same guard above.
+    const ready = flush ? saveSettings(0, { returnResult: true }) : settingsSaveQueue.then(() => true);
+    const pause = { account, dirty: false };
+    accountImportSettingsPause = pause;
+    cancelDebounce(saveSettingsDebounced);
+    const resume = () => {
+        if (accountImportSettingsPause !== pause) return;
+        accountImportSettingsPause = null;
+        if (pause.dirty && account === getCurrentUserHandle()) saveSettingsDebounced();
+    };
+    pause.resume = resume;
+    try {
+        if (!await ready || account !== getCurrentUserHandle()) {
+            throw new Error('Save the current settings before importing account data.');
+        }
+    } catch (error) { resume(); throw error; }
+    acknowledgedGenerationSettings = null;
+    return resume;
 }
 
 /** Return proof of the saved active controls, never mutable settings or credentials. */

@@ -50,3 +50,12 @@ test('an unreadable upload response keeps its original key and never starts publ
     await f.run({ mode: 'zip' }, { file: f.file });
     expect(f.upload).toHaveBeenCalledTimes(1);
 });
+
+test('the ZIP is retained before the final settings flush pauses background writes', async () => {
+    const f = fixture(); const order = [];
+    f.upload.mockImplementationOnce(async () => { order.push('upload'); return { inputId: 'a'.repeat(64) }; });
+    const prepareInput = jest.fn(async input => { order.push('prepare'); return input; });
+    await f.run({ mode: 'zip' }, { file: f.file, prepareInput });
+    expect(order).toEqual(['upload', 'prepare']);
+    expect(prepareInput).toHaveBeenCalledWith({ mode: 'zip', inputId: 'a'.repeat(64) });
+});

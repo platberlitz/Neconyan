@@ -1,4 +1,4 @@
-import { getCurrentChatId, getRequestHeaders, saveChatConditional, saveSettings } from '../script.js';
+import { getCurrentChatId, getRequestHeaders, pauseSettingsForAccountImport, saveChatConditional } from '../script.js';
 import { getCurrentUserHandle } from './user.js';
 import { getOperationClient, mountOperationRecovery } from './operations-client.js';
 import { createAccountImportClient } from './account-import-client.js';
@@ -32,13 +32,23 @@ export async function importAccountData(input, options = {}) {
         if (!response.ok) throw Object.assign(new Error(value.error || 'The ZIP upload failed.'), { status: response.status });
         return value;
     };
-    return createAccountImportClient({ client, owner, storage: localStorage, upload })(input, { ...options, prepareInput: async value => {
-        assertOwner();
-        if (getCurrentChatId()) await saveChatConditional({ throwOnError: true, throwOnPromptError: true });
-        if (!await saveSettings(0, { returnResult: true })) throw new Error('Save the current settings before importing account data.');
-        assertOwner();
-        return value;
-    } });
+    let resumeSettings;
+    try {
+        if (client.hasPending(`account-import:${input.mode}`)) resumeSettings = await pauseSettingsForAccountImport({ flush: false });
+        const record = await createAccountImportClient({ client, owner, storage: localStorage, upload })(input, { ...options, prepareInput: async value => {
+            assertOwner();
+            if (getCurrentChatId()) await saveChatConditional({ throwOnError: true, throwOnPromptError: true });
+            resumeSettings = await pauseSettingsForAccountImport();
+            assertOwner();
+            return value;
+        } });
+        // Extension-only imports do not replace settings. Account imports need a reload first.
+        if (input.mode === 'extensions') resumeSettings?.();
+        return record;
+    } catch (error) {
+        if (error.refused || error.notAccepted) resumeSettings?.();
+        throw error;
+    }
 }
 
 export async function mountSavedAccountImports(container, { onResult, onBusy, signal } = {}) {
@@ -66,14 +76,19 @@ export async function mountSavedAccountImports(container, { onResult, onBusy, si
     select.addEventListener('change', async () => {
         if (controller || !select.value) return;
         controller = new AbortController(); select.disabled = true; stop.style.display = ''; reload.style.display = 'none'; onBusy?.(true);
+        let resumeSettings;
         try {
+            resumeSettings = await pauseSettingsForAccountImport({ flush: false });
             const record = await client.observe(await client.read(select.value), { signal: controller.signal,
                 onProgress: progress => { status.textContent = progress?.stage || 'Importing retained files'; } });
             const skips = describeAccountImportSkips(record.result);
             status.textContent = `${record.result.imported} imported files are saved. Reload to use the imported settings.${skips ? `\n\n${skips}` : ''}`;
             reload.style.display = '';
             onResult?.(record.result);
-        } catch (error) { status.textContent = error.cancelled ? 'Import stopped. Saved local changes remain available for recovery.' : error.message; } finally { controller = null; select.disabled = false; stop.style.display = 'none'; onBusy?.(false); }
+        } catch (error) {
+            if (error.refused || error.notAccepted) resumeSettings?.();
+            status.textContent = error.cancelled ? 'Import stopped. Saved local changes remain available for recovery.' : error.message;
+        } finally { controller = null; select.disabled = false; stop.style.display = 'none'; onBusy?.(false); }
     });
     await refresh();
 }

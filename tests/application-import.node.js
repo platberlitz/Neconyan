@@ -149,7 +149,7 @@ test('invalid imported history is skipped while later destination edits still re
     sourceFile(p, 'user/files/late.txt', 'Must not be published');
     const late = await accept(p, 'late-edit');
     fs.writeFileSync(p.f.filename, Buffer.concat([original, Buffer.from('\n{"name":"User","is_user":true,"mes":"Newer message"}') ]));
-    await assert.rejects(runOperation(late.context), /destination changed/);
+    await assert.rejects(runOperation(late.context), /destination changed: 'chats\/Nova\/Source.jsonl'.*Reload the page and retry/);
     assert.match(fs.readFileSync(p.f.filename, 'utf8'), /Newer message/);
     assert.equal(fs.existsSync(path.join(p.base.directories.root, 'user/files/late.txt')), false);
 });

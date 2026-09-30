@@ -13820,6 +13820,10 @@ function setSillyTavernImportBusy(isBusy) {
         refs.progress.hidden = false;
         refs.progress.removeAttribute('value');
         refs.progressLabel.textContent = 'Preparing import…';
+    } else if (refs?.progress) {
+        refs.progress.hidden = true;
+        refs.progress.removeAttribute('value');
+        refs.progressLabel.textContent = '';
     }
     updateSillyTavernImportInteractivity();
 }
@@ -14193,8 +14197,9 @@ function showSkippedImportFiles(refs, heading, skips, result) {
 
 function showNativeImportProgress(progress) {
     const total = Number(progress?.total) || 0;
-    showImportProgress({ percent: total ? Math.round(Number(progress?.completed || 0) / total * 100) : 0,
-        phase: progress?.stage || 'Preparing account import' });
+    const completed = Math.min(total, Math.max(0, Number(progress?.completed) || 0));
+    const stage = progress?.stage || 'Preparing account import';
+    showImportProgress({ percent: null, phase: `${stage}${total ? ` (${completed} of ${total})` : ''}` });
 }
 
 function injectSillyTavernImportCard() {

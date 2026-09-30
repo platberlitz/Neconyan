@@ -56,6 +56,7 @@ function createHarness({ profile = normalizeCustomEndpointPreset({ name: 'Saved 
         extension_settings: { neconyan_conversation: { characters: {} }, otherExtension: { enabled: true } },
         CONVERSATION_STORE_KEY: 'neconyan_conversation',
         settingsSaveQueue: Promise.resolve(),
+        accountImportSettingsPause: null,
         pendingSettingsAcknowledgements: 0,
         acknowledgedGenerationSettings: null,
         generationSettingsSnapshot,

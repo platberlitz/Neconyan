@@ -2,6 +2,7 @@
 export function createLabClient({ request, observeJob, account, storage, uuid = () => crypto.randomUUID(),
     basePath = '/api/labs', storagePrefix = 'neconyan-labs', label = 'Labs' }) {
     const read = key => request(`${basePath}/records/${encodeURIComponent(key)}`);
+    const hasPending = scope => Boolean(storage.getItem(`${storagePrefix}:${account}:${scope}`));
     const list = (kind = '') => request(`${basePath}/records?kind=${encodeURIComponent(kind)}`);
     const refusal = record => Object.assign(new Error(record.error || 'This reviewed change was refused. Review the current records before trying again.'), { refused: true });
 
@@ -87,7 +88,7 @@ export function createLabClient({ request, observeJob, account, storage, uuid = 
         }
     }
     const recover = async (key, options) => observe(await request(`${basePath}/records/${encodeURIComponent(key)}/recover`, { method: 'POST', body: '{}' }), options);
-    return { run, read, list, observe, request, recover };
+    return { run, read, list, observe, request, recover, hasPending };
 }
 
 const recoveryPanels = new WeakMap();

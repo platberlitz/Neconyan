@@ -22,7 +22,7 @@ const STRUCTURED_LIMIT = 32 * 1024 * 1024;
 const evidence = file => file ? { rawHash: file.rawHash, physical: file.physical } : null;
 const physical = stat => ({ dev: String(stat.dev), ino: String(stat.ino), birthtimeNs: String(stat.birthtimeNs) });
 const same = (left, right) => roleplayHash(left) === roleplayHash(right);
-const changed = () => operationError('An import destination changed. The newer file was kept.');
+const changed = relative => operationError(`An import destination changed${relative ? `: '${relative}'` : ''}. The newer file was kept. Reload the page and retry the import.`);
 
 export function captureImportTarget(lease, relative) {
     const { scope, state } = roleplayLease(lease);
@@ -44,7 +44,7 @@ export function captureImportTarget(lease, relative) {
         }
     } else {
         const slot = state.paths[roleplayPathKey(state, resource.kind, resource.locator)];
-        if (slot?.instanceId) throw changed();
+        if (slot?.instanceId) throw changed(relative);
         target.vacancy = slot?.generation ?? 0;
     }
     return target;
@@ -53,9 +53,9 @@ export function captureImportTarget(lease, relative) {
 export function assertImportTarget(lease, target) {
     const { scope } = roleplayLease(lease);
     const filename = path.join(scope.directories.root, target.relative);
-    if (!same(evidence(inspectRoleplayFile(filename, BINARY_FILE_LIMIT, { allowMissingParent: true })), target.evidence)) throw changed();
+    if (!same(evidence(inspectRoleplayFile(filename, BINARY_FILE_LIMIT, { allowMissingParent: true })), target.evidence)) throw changed(target.relative);
     if (!target.resource) assertUntrackedRoleplayFiles(lease, [filename]);
-    else if (!same(captureImportTarget(lease, target.relative), target)) throw changed();
+    else if (!same(captureImportTarget(lease, target.relative), target)) throw changed(target.relative);
 }
 
 /** Marks a failure that affects only one backup file, so the import can skip that file and continue. */
