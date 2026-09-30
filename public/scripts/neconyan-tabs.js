@@ -13811,6 +13811,7 @@ function updateSillyTavernImportInteractivity() {
     if (refs.pathInput instanceof HTMLInputElement) {
         refs.pathInput.disabled = state.busy;
     }
+    for (const input of refs.card.querySelectorAll('[data-import-part]')) input.disabled = state.busy;
 }
 
 function setSillyTavernImportBusy(isBusy) {
@@ -14025,6 +14026,21 @@ function logSillyTavernExtensionSyncReport(reportData) {
     console.groupEnd();
 }
 
+function selectedAccountImportParts(refs) {
+    const parts = Array.from(refs.card.querySelectorAll('[data-import-part]:checked'), input => input.value);
+    if (!parts.length) {
+        setServerAdminMessage(refs.note, 'Choose at least one library to import: chats, personas or character cards.', 'warn');
+        toastr.warning('Choose at least one library to import.', 'Import SillyTavern');
+        return null;
+    }
+    return parts;
+}
+
+function accountImportPartNames(parts) {
+    const labels = { chats: 'chats', personas: 'personas', characters: 'character cards' };
+    return parts.map(part => labels[part]).join(', ');
+}
+
 async function handleSillyTavernFolderImport() {
     const refs = getImporterRefs();
 
@@ -14041,7 +14057,9 @@ async function handleSillyTavernFolderImport() {
         return;
     }
 
-    const confirmed = window.confirm(`Import data from this folder into the current Neconyan account?\n\n${sourcePath}\n\nFiles with the same name will be replaced, and the page will reload when the import finishes.`);
+    const parts = selectedAccountImportParts(refs);
+    if (!parts) return;
+    const confirmed = window.confirm(`Import ${accountImportPartNames(parts)} from this folder?\n\n${sourcePath}\n\nMatching files in the selected libraries will be replaced. Unselected libraries, other account settings, themes, presets and bookkeeping files are left out. A report will list files left out before you reload.`);
     if (!confirmed) {
         return;
     }
@@ -14051,10 +14069,10 @@ async function handleSillyTavernFolderImport() {
     setServerAdminMessage(refs.note, 'Importing folder data… This may take a moment for larger libraries.');
 
     try {
-        const { importAccountData, describeAccountImportSkips } = await import('./account-import.js');
-        const { result } = await importAccountData({ mode: 'folder', path: sourcePath }, { onProgress: showNativeImportProgress });
+        const { importAccountData, describeAccountImportSkips, mountAccountImportReportDownload } = await import('./account-import.js');
+        const { result } = await importAccountData({ mode: 'folder', content: 'core', parts, path: sourcePath }, { onProgress: showNativeImportProgress });
 
-        if (showSkippedImportFiles(refs, 'Folder import finished.', describeAccountImportSkips(result), result)) {
+        if (showSkippedImportFiles(refs, 'Folder import finished.', describeAccountImportSkips(result), result, mountAccountImportReportDownload)) {
             return;
         }
 
@@ -14135,7 +14153,9 @@ async function handleSillyTavernZipImport(file) {
         return;
     }
 
-    const confirmed = window.confirm(`Import this SillyTavern backup ZIP into the current Neconyan account?\n\n${file.name}\n\nFiles with the same name will be replaced, and the page will reload when the import finishes.`);
+    const parts = selectedAccountImportParts(refs);
+    if (!parts) { refs.zipFileInput.value = ''; return; }
+    const confirmed = window.confirm(`Import ${accountImportPartNames(parts)} from this backup ZIP?\n\n${file.name}\n\nMatching files in the selected libraries will be replaced. Unselected libraries, other account settings, themes, presets and bookkeeping files are left out. A report will list files left out before you reload.`);
     if (!confirmed) {
         if (refs.zipFileInput instanceof HTMLInputElement) {
             refs.zipFileInput.value = '';
@@ -14149,10 +14169,10 @@ async function handleSillyTavernZipImport(file) {
     setServerAdminMessage(refs.note, 'Importing backup ZIP… This may take a moment for larger libraries.');
 
     try {
-        const { importAccountData, describeAccountImportSkips } = await import('./account-import.js');
-        const { result } = await importAccountData({ mode: 'zip' }, { file, onProgress: showNativeImportProgress });
+        const { importAccountData, describeAccountImportSkips, mountAccountImportReportDownload } = await import('./account-import.js');
+        const { result } = await importAccountData({ mode: 'zip', content: 'core', parts }, { file, onProgress: showNativeImportProgress });
 
-        if (showSkippedImportFiles(refs, 'Backup ZIP imported.', describeAccountImportSkips(result), result)) {
+        if (showSkippedImportFiles(refs, 'Backup ZIP imported.', describeAccountImportSkips(result), result, mountAccountImportReportDownload)) {
             return;
         }
 
@@ -14174,24 +14194,26 @@ async function handleSillyTavernZipImport(file) {
 }
 
 /**
- * Keeps the list of damaged files on screen instead of reloading straight away.
+ * Keeps deliberate exclusions and damaged files on screen instead of reloading straight away.
  * @returns {boolean} True when files were skipped and the list is showing.
  */
-function showSkippedImportFiles(refs, heading, skips, result) {
+function showSkippedImportFiles(refs, heading, skips, result, mountReportDownload) {
     if (!skips) {
         return false;
     }
 
-    console.warn('Account import skipped damaged files.', result?.skipped);
-    setServerAdminMessage(refs.note, `${heading}\n\n${skips}`, 'warn');
+    const count = Number(result?.skippedCount) || 0;
+    console.info('Account import files left out.', { excluded: result?.excluded, skipped: result?.skipped });
+    setServerAdminMessage(refs.note, `${heading}\n\n${skips}`, count ? 'warn' : 'good');
     const reload = document.createElement('button');
     reload.type = 'button';
     reload.className = 'menu_button';
     reload.textContent = 'Reload to use the imported data';
     reload.addEventListener('click', () => location.reload());
     refs.note.append('\n', reload);
-    const count = Number(result?.skippedCount) || 0;
-    toastr.warning(`${count === 1 ? '1 damaged file was' : `${count} damaged files were`} skipped. Everything else was imported.`, 'Import SillyTavern');
+    mountReportDownload(refs.note, result);
+    if (count) toastr.warning(`${count === 1 ? '1 file could' : `${count} files could`} not be imported. Review the report before reloading.`, 'Import SillyTavern');
+    else toastr.success('Selected libraries imported. Review the files left out before reloading.', 'Import SillyTavern');
     return true;
 }
 
@@ -14225,20 +14247,25 @@ function injectSillyTavernImportCard() {
     const header = createElement('div', { className: 'sb-admin-card-header' });
     const copy = createElement('div', { className: 'sb-admin-card-copy' });
     const title = createElement('strong', { text: 'Import Your SillyTavern Setup' });
-    const description = createElement('p', { text: 'Bring over characters, chats, presets, themes, extensions, and account settings from an existing SillyTavern folder or backup ZIP without touching the filesystem manually.' });
+    const description = createElement('p', { text: 'Choose which chats, personas and character cards to bring over from a SillyTavern or SillyBunny folder or backup ZIP. Other account settings stay as they are. Files left out are listed after the import.' });
     const badge = createElement('span', { className: 'sb-server-pill', text: 'Easy Import' });
     copy.append(title, description);
     header.append(copy, badge);
 
-    const hintRow = createElement('div', { className: 'sb-import-hints' });
-    for (const label of ['Characters', 'Chats', 'Presets', 'Themes', 'Extensions']) {
-        hintRow.appendChild(createElement('span', { className: 'sb-import-chip', text: label }));
+    const choicesTitle = createElement('strong', { text: 'Choose what to import' });
+    const hintRow = createElement('div', { className: 'sb-import-hints', attrs: { role: 'group', 'aria-label': 'Choose what to import' } });
+    for (const [value, text] of [['chats', 'Chats'], ['personas', 'Personas'], ['characters', 'Character cards']]) {
+        const label = createElement('label', { className: 'sb-import-chip' });
+        const input = createElement('input', { attrs: { type: 'checkbox', value, 'data-import-part': value } });
+        input.checked = true;
+        label.append(input, createElement('span', { text }));
+        hintRow.appendChild(label);
     }
 
     const grid = createElement('div', { className: 'sb-import-grid' });
     const folderPane = createElement('div', { className: 'sb-import-pane' });
     const folderTitle = createElement('strong', { text: 'Import From Folder Path' });
-    const folderBody = createElement('p', { text: 'Paste the path to your SillyTavern install, its `data` folder, or the specific user folder you want to import. Use the full import for everything, or sync just your third-party extensions with a detailed report.' });
+    const folderBody = createElement('p', { text: 'Paste the path to your SillyTavern install, its data folder, or the user folder you want to import. Import the selected libraries, or use Sync Extensions separately.' });
     const pathRow = createElement('div', { className: 'sb-import-path-row' });
     const actionRow = createElement('div', { className: 'sb-import-action-row' });
     const pathInput = createElement('input', {
@@ -14269,7 +14296,7 @@ function injectSillyTavernImportCard() {
 
     const zipPane = createElement('div', { className: 'sb-import-pane' });
     const zipTitle = createElement('strong', { text: 'Import From Backup ZIP' });
-    const zipBody = createElement('p', { text: 'Use the backup ZIP that SillyTavern exports. Pick the file here and Neconyan will import it into this account.' });
+    const zipBody = createElement('p', { text: 'Choose a SillyTavern or SillyBunny backup ZIP. Only the libraries ticked above are imported. Chats include group chats and attachments.' });
     const zipButton = createElement('button', {
         className: 'menu_button menu_button_icon sb-server-action menu_button_primary',
         attrs: { type: 'button' },
@@ -14289,7 +14316,7 @@ function injectSillyTavernImportCard() {
 
     const note = createElement('div', {
         className: 'sb-server-note sb-import-note',
-        text: 'Full imports replace matching files and reload automatically. Extension sync replaces matching third-party extension folders, then shows a report so you can review it before reloading.',
+        text: 'Matching files in selected libraries are replaced. If Personas is ticked, persona names and descriptions are merged into your current settings. Other preferences, API keys, presets, themes and bookkeeping files are not imported. Review the files left out before reloading.',
     });
     const report = createElement('section', {
         className: 'sb-import-report',
@@ -14310,7 +14337,7 @@ function injectSillyTavernImportCard() {
     const progress = createElement('progress', { attrs: { max: '100', 'aria-labelledby': 'sb-import-progress-label' } });
     progress.hidden = true;
     progress.style.width = '100%';
-    card.append(header, hintRow, grid, progressLabel, progress, note, report);
+    card.append(header, choicesTitle, hintRow, grid, progressLabel, progress, note, report);
     cardHost.prepend(card);
 
     getImporterState().refs = {

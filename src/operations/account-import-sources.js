@@ -12,10 +12,11 @@ import { FILE_WRITE_RECOVERY_SUFFIX } from '../util.js';
 import { inspectRoleplayFile, roleplayHash, roleplayStoreDirectory } from '../roleplay-store.js';
 import { operationError } from './store.js';
 import { BINARY_FILE_LIMIT } from './binary-files.js';
+import { coreImportPath, importExclusionReason } from './import-content-policy.js';
 
 const ROOT_FILES = [SETTINGS_FILE, SECRETS_FILE, ENTITY_DATE_ADDED_FILE, ENTITY_LAST_CHAT_FILE];
 const ROOT_DIRECTORIES = [...new Set(Object.values(USER_DIRECTORY_TEMPLATE).filter(Boolean).map(value => value.split('/')[0]))];
-const MARKERS = [SETTINGS_FILE, 'characters', 'chats', 'group chats', 'groups', 'OpenAI Settings', 'themes', 'extensions'];
+const MARKERS = [SETTINGS_FILE, 'characters', 'chats', 'group chats', 'groups', 'User Avatars', 'OpenAI Settings', 'themes', 'extensions'];
 const within = (candidate, parent) => candidate === parent || candidate.startsWith(parent + path.sep);
 const evidence = file => ({ rawHash: file.rawHash, physical: file.physical });
 // Marks a ZIP entry whose own compressed bytes are unreadable, so the import skips only that file.
@@ -24,10 +25,17 @@ const damagedEntry = error => {
     return error;
 };
 
-export function importRelativePath(value) {
+function safeRelativePath(value) {
     if (typeof value !== 'string' || !value || value.length > 1000 || value.includes('\\') || value.includes('\0') || value.startsWith('/')) return null;
     const parts = value.replace(/\/$/, '').split('/');
     if (parts.some(part => !part || part === '.' || part === '..')) return null;
+    return parts.join('/');
+}
+
+export function importRelativePath(value) {
+    const safe = safeRelativePath(value);
+    if (!safe) return null;
+    const parts = safe.split('/');
     if (parts.some(part => /^\.neconyan-chat-[a-f0-9]{64}\.lock(?:\.owner)?$/.test(part))) return null;
     if (!(parts.length === 1 && ROOT_FILES.includes(parts[0])) && !ROOT_DIRECTORIES.includes(parts[0])) return null;
     if (parts.at(-1).endsWith(FILE_WRITE_RECOVERY_SUFFIX) || parts.at(-1).endsWith('.sillybunny-write-recovery') || (parts[0] === USER_DIRECTORY_TEMPLATE.extensions && parts.includes('.git'))) return null;
@@ -57,19 +65,29 @@ export function resolveAccountImportRoot(input) {
     throw operationError(candidates.length ? 'Multiple user folders were found. Select the exact user folder.' : 'No importable user folder was found.', 400);
 }
 
-export function captureFolderImport(base, sourcePath, { extensionsOnly = false } = {}) {
+export function captureFolderImport(base, sourcePath, { extensionsOnly = false, coreOnly = false, parts } = {}) {
     const sourceRoot = resolveAccountImportRoot(sourcePath);
     const targetRoot = path.resolve(base.directories.root);
     if (within(sourceRoot, targetRoot) || within(sourceRoot, roleplayStoreDirectory(base))) throw operationError('The import source belongs to this account or its protected records.', 400);
     const files = [];
     const directories = [];
+    const excluded = [];
+    let visited = 0;
     let total = 0;
     const visit = (filename, relative, depth = 0) => {
-        if (depth > 32 || files.length + directories.length >= 100000) throw operationError('The import exceeds its file or folder capacity.', 413);
+        if (depth > 32 || visited++ >= 100000) throw operationError('The import exceeds its file or folder capacity.', 413);
         if (within(filename, targetRoot) || within(filename, roleplayStoreDirectory(base))) throw operationError('The import source contains this account or its protected records.', 400);
         const normalized = importRelativePath(relative);
-        if (!normalized) return;
+        const safe = safeRelativePath(relative);
+        if (!safe || !normalized && !coreOnly) return;
         const stat = fs.lstatSync(filename);
+        if (coreOnly && (!normalized || !coreImportPath(normalized, stat.isDirectory(), parts))) {
+            // Inventory excluded files without reading their contents or following links.
+            if (stat.isDirectory() && !stat.isSymbolicLink()) {
+                for (const entry of fs.readdirSync(filename).sort()) visit(path.join(filename, entry), `${safe}/${entry}`, depth + 1);
+            } else excluded.push({ file: safe, reason: importExclusionReason(safe, parts) });
+            return;
+        }
         if (stat.isSymbolicLink() || (!stat.isFile() && !stat.isDirectory())) throw operationError('Linked or special files cannot be imported.', 400);
         if (stat.isDirectory()) {
             directory(filename); directories.push(normalized);
@@ -81,10 +99,10 @@ export function captureFolderImport(base, sourcePath, { extensionsOnly = false }
             files.push({ relative: normalized, filename, size: file.size, evidence: evidence(file) });
         }
     };
-    const selected = extensionsOnly ? [USER_DIRECTORY_TEMPLATE.extensions] : [...ROOT_FILES, ...ROOT_DIRECTORIES];
-    for (const relative of selected) if (fs.existsSync(path.join(sourceRoot, relative))) visit(path.join(sourceRoot, relative), relative);
-    if (!files.length) throw operationError('No importable files were found in that folder.', 400);
-    return { sourceRoot, files, directories, total };
+    const selected = extensionsOnly ? [USER_DIRECTORY_TEMPLATE.extensions] : coreOnly ? fs.readdirSync(sourceRoot).sort() : [...ROOT_FILES, ...ROOT_DIRECTORIES];
+    for (const relative of selected) if (coreOnly || fs.existsSync(path.join(sourceRoot, relative))) visit(path.join(sourceRoot, relative), relative);
+    if (!files.length && (!coreOnly || !excluded.length)) throw operationError('No importable files were found in that folder.', 400);
+    return { sourceRoot, files, directories, total, ...(coreOnly ? { excluded } : {}) };
 }
 
 function openZip(source) {
@@ -100,7 +118,7 @@ function openZip(source) {
 }
 
 /** Read the central directory once, rejecting duplicate destinations and oversized expansion before writes. */
-export async function captureZipImport(source) {
+export async function captureZipImport(source, { coreOnly = false, parts } = {}) {
     const actual = inspectRoleplayFile(source.filename, BINARY_FILE_LIMIT);
     if (!actual || roleplayHash(evidence(actual)) !== roleplayHash(source.evidence)) throw operationError('The retained ZIP changed before inspection.');
     const zip = await openZip(source);
@@ -112,7 +130,7 @@ export async function captureZipImport(source) {
             zip.on('entry', entry => {
                 try {
                     if (entries.length >= 100000) throw operationError('The ZIP exceeds its entry capacity.', 413);
-                    if (!Number.isSafeInteger(entry.uncompressedSize) || entry.uncompressedSize < 0 || entry.uncompressedSize > BINARY_FILE_LIMIT) throw operationError('A ZIP entry exceeds its file capacity.', 413);
+                    if (!Number.isSafeInteger(entry.uncompressedSize) || entry.uncompressedSize < 0 || !coreOnly && entry.uncompressedSize > BINARY_FILE_LIMIT) throw operationError('A ZIP entry exceeds its file capacity.', 413);
                     entries.push({ name: entry.fileName, size: entry.uncompressedSize, attributes: entry.externalFileAttributes,
                         crc32: entry.crc32, compressedSize: entry.compressedSize, offset: entry.relativeOffsetOfLocalHeader });
                     zip.readEntry();
@@ -125,7 +143,8 @@ export async function captureZipImport(source) {
     for (const entry of entries) {
         if (entry.name.startsWith('__MACOSX/')) continue;
         const parts = entry.name.replace(/\/$/, '').split('/');
-        for (let index = 0; index < parts.length; index++) if (importRelativePath(parts.slice(index).join('/'))) {
+        for (let index = 0; index < parts.length; index++) if (importRelativePath(parts.slice(index).join('/'))
+            && (!coreOnly || coreImportPath(parts.slice(index).join('/'), entry.name.endsWith('/')))) {
             const base = parts.slice(0, index).join('/');
             scores.set(base, (scores.get(base) ?? 0) + 1);
         }
@@ -135,12 +154,20 @@ export async function captureZipImport(source) {
     if (selected === undefined) throw operationError('The ZIP does not contain importable user data.', 400);
     const files = [];
     const directories = [];
+    const excluded = [];
     const seen = new Set();
     let total = 0;
     for (const entry of entries) {
         if (selected && !entry.name.startsWith(selected + '/')) continue;
-        const relative = importRelativePath(selected ? entry.name.slice(selected.length + 1) : entry.name);
+        const value = selected ? entry.name.slice(selected.length + 1) : entry.name;
+        const relative = importRelativePath(value);
+        if (coreOnly && (!relative || !coreImportPath(relative, entry.name.endsWith('/'), parts))) {
+            const safe = safeRelativePath(value);
+            if (safe && !entry.name.endsWith('/')) excluded.push({ file: safe, reason: importExclusionReason(safe, parts) });
+            continue;
+        }
         if (!relative) continue;
+        if (entry.size > BINARY_FILE_LIMIT) throw operationError('A ZIP entry exceeds its file capacity.', 413);
         const type = (entry.attributes >>> 16) & 0xf000;
         if (type && type !== 0x8000 && type !== 0x4000) throw operationError('Linked or special ZIP entries cannot be imported.', 400);
         if (entry.name.endsWith('/')) { directories.push(relative); continue; }
@@ -149,13 +176,13 @@ export async function captureZipImport(source) {
         if (total > BINARY_FILE_LIMIT) throw operationError('The ZIP exceeds its total expanded capacity.', 413);
         files.push({ relative, size: entry.size, zip: entry });
     }
-    if (!files.length) throw operationError('The ZIP contains no importable files.', 400);
+    if (!files.length && (!coreOnly || !excluded.length)) throw operationError('The ZIP contains no importable files.', 400);
     if (directories.some(relative => seen.has(relative))) throw operationError('A ZIP file also occupies a destination folder.', 400);
     for (const file of files) {
         const parts = file.relative.split('/');
         while (parts.length > 1) { parts.pop(); if (seen.has(parts.join('/'))) throw operationError('A ZIP file also occupies a destination folder.', 400); }
     }
-    return { source, sourceRoot: selected, files, directories: [...new Set(directories)], total };
+    return { source, sourceRoot: selected, files, directories: [...new Set(directories)], total, ...(coreOnly ? { excluded } : {}) };
 }
 
 /**

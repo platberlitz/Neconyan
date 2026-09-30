@@ -3562,18 +3562,6 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     gap: var(--sb-shell-space-xs);
 }
 
-.sb-import-chip {
-    display: inline-flex;
-    align-items: center;
-    min-height: 28px;
-    padding: 0 10px;
-    border-radius: 999px;
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 76%, transparent);
-    background: color-mix(in srgb, var(--color-primary, var(--sb-accent)) 10%, transparent);
-    font-size: calc(var(--mainFontSize) * 0.7);
-    line-height: 1.2;
-}
-
 .sb-import-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -3810,12 +3798,6 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 
     .sb-import-hints {
         gap: 6px;
-    }
-
-    .sb-import-chip {
-        min-height: 24px;
-        padding: 0 8px;
-        font-size: calc(var(--mainFontSize) * 0.66);
     }
 
     .sb-import-pane,

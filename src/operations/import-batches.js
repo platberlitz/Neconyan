@@ -11,6 +11,7 @@ import { BINARY_FILE_LIMIT, openOperationBinary } from './binary-files.js';
 import { readImportInput } from './import-inputs.js';
 import { assertImportTarget, importChatRecords, importDamage, importInputLimit, importSkipReason } from './import-publication.js';
 import { operationError, withOperation } from './store.js';
+import { publishImportPersonasLocked } from './import-personas.js';
 
 // Large account imports record their progress once per batch instead of once per file.
 const BATCH_FILES = 128;
@@ -172,7 +173,8 @@ function chatInput(file, operationKey, records) {
  * Publish staged files, chats and cards in plan order behind one saved cursor.
  * Every step is safe to repeat: chats and cards keep receipts, and a renamed file already matches its staged evidence.
  */
-export async function publishImportBatches(context, plan, { archive, onProgress, onSkip, afterImportPublication, skipped = new Set() } = {}) {
+export async function publishImportBatches(context, plan, { archive, onProgress, onSkip, afterImportPublication,
+    afterPersonaSettingsPrepared, afterPersonaSettingsPublication, skipped = new Set() } = {}) {
     let next = withOperation(context, ({ value, save }) => {
         if (!value.effects[PUBLISH_EFFECT]) { value.effects[PUBLISH_EFFECT] = { state: 'prepared', next: 0 }; save(); }
         return value.effects[PUBLISH_EFFECT].state === 'done' ? plan.files.length : value.effects[PUBLISH_EFFECT].next;
@@ -184,11 +186,11 @@ export async function publishImportBatches(context, plan, { archive, onProgress,
         let bytes = 0;
         for (let index = next; index < plan.files.length && batch.length < limit; index++) {
             const file = plan.files[index];
-            const size = file.target.resource ? file.size : 0;
+            const size = file.target.resource || file.personaSettings ? file.size : 0;
             if (batch.length && bytes + size > BATCH_BYTES) break;
             batch.push({ file, index }); bytes += size;
         }
-        for (const item of batch) if (item.file.target.resource && !skipped.has(item.index)) item.bytes = await readPlannedInput(context, archive, item.file, item.index);
+        for (const item of batch) if ((item.file.target.resource || item.file.personaSettings) && !skipped.has(item.index)) item.bytes = await readPlannedInput(context, archive, item.file, item.index);
         const started = Date.now();
         const reached = withOperation(context, ({ lease, value, save }) => {
             context.signal.throwIfAborted();
@@ -203,7 +205,22 @@ export async function publishImportBatches(context, plan, { archive, onProgress,
                 if (skipped.has(index)) { effect.next = index + 1; continue; }
                 const operationKey = `application:${context.job.id}:import:${index}`;
                 const resource = file.target.resource;
-                if (resource?.kind === 'chat') {
+                if (file.personaSettings) {
+                    flush();
+                    let reason;
+                    try {
+                        reason = publishImportPersonasLocked(lease, value, save, file, index, input, { afterPersonaSettingsPrepared, afterPersonaSettingsPublication });
+                    } catch (error) {
+                        reason = importSkipReason(file, error);
+                        if (!reason) throw error;
+                    }
+                    if (reason) {
+                        onSkip?.(value, { index, relative: file.relative, reason });
+                        skipped.add(index);
+                        effect.next = index + 1;
+                        continue;
+                    }
+                } else if (resource?.kind === 'chat') {
                     const receipt = roleplayHash([state.accountId, 'chat-write', operationKey]);
                     if (!state.submissions[receipt] && state.pending?.operationKeyHash !== receipt) assertImportTarget(lease, file.target);
                     try {

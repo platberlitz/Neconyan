@@ -154,6 +154,215 @@ test('invalid imported history is skipped while later destination edits still re
     assert.equal(fs.existsSync(path.join(p.base.directories.root, 'user/files/late.txt')), false);
 });
 
+test('core ZIP import leaves bookkeeping out when the account updates it during import', async t => {
+    const p = setup(t);
+    const upload = path.join(p.sourceRoot, 'default-user.zip');
+    await zipFile(upload, [
+        ['default-user/characters/New.png', writeCard(png, JSON.stringify({ name: 'New', description: 'Imported card' }))],
+        ['default-user/entity-date-added.json', '{"version":1}'],
+        ['default-user/chats/New/Imported.jsonl', p.f.records.map(row => JSON.stringify(row)).join('\n')],
+    ]);
+    const retained = await retainUploadedArchive(p.base, p.f.scope, 'core-zip', upload);
+    const accepted = await accept(p, 'core-zip', { mode: 'zip', content: 'core', inputId: retained.id });
+    const bookkeeping = path.join(p.base.directories.root, 'entity-date-added.json');
+    const newerBookkeeping = '{"version":1,"characters":{"entries":{"New.png":12345}}}';
+    await runOperation(accepted.context, { afterImportStaged: () => fs.writeFileSync(bookkeeping, newerBookkeeping) });
+    const record = readOperation(p.base, 'core-zip');
+    assert.equal(record.state, 'completed');
+    assert.equal(record.result.imported, 2);
+    assert.equal(record.result.skippedCount, 0);
+    assert.deepEqual(record.result.excluded.map(item => item.file), ['entity-date-added.json']);
+    assert.match(record.result.excluded[0].reason, /bookkeeping/i);
+    assert.equal(fs.readFileSync(bookkeeping, 'utf8'), newerBookkeeping);
+    assert.equal(JSON.parse(readCard(fs.readFileSync(path.join(p.base.directories.characters, 'New.png')))).name, 'New');
+    assert.equal(fs.existsSync(path.join(p.base.directories.chats, 'New/Imported.jsonl')), true);
+});
+
+for (const mode of ['folder', 'zip']) test(`core ${mode} import keeps the three libraries and merges personas without importing unrelated data`, async t => {
+    const p = setup(t, `core-${mode}`);
+    const settingsFile = path.join(p.base.directories.root, 'settings.json');
+    const current = { _version: 7, _settingsRevision: 4, username: 'Current user', theme: 'Current theme', power_user: {
+        default_persona: 'Existing.png', persona_description: 'Current active description', custom_css: 'Keep this',
+        personas: { 'Existing.png': 'Existing name' }, persona_descriptions: { 'Existing.png': { description: 'Existing description' } },
+    }, extension_settings: { unrelated: { keep: true }, neconyan_conversation: { characters: {}, serverOperations: { job: { at: 1 } }, automation: { mode: 'server' } } } };
+    fs.writeFileSync(settingsFile, JSON.stringify(current));
+    const description = { description: 'Imported persona description', title: 'Imported title', position: 0, depth: 2, role: 0, lorebook: '', appendices: [] };
+    const entries = [
+        ['settings.json', JSON.stringify({ username: 'Must not replace user', power_user: { personas: { 'Imported.png': 'Imported persona' },
+            persona_descriptions: { 'Imported.png': description }, default_persona: 'Imported.png', custom_css: 'Must not replace CSS' },
+        extension_settings: { neconyan_conversation: { characters: { malicious: {} } } } })],
+        ['characters/Imported.png', writeCard(png, JSON.stringify({ name: 'Imported', description: 'Imported card' }))],
+        ['chats/Imported/History.jsonl', p.f.records.map(row => JSON.stringify(row)).join('\n')],
+        ['User Avatars/Imported.png', png],
+        ['groups/Imported.json', JSON.stringify({ id: 'Imported', members: ['Imported.png'], chats: ['Imported group'] })],
+        ['group chats/Imported group.jsonl', p.f.records.map(row => JSON.stringify(row)).join('\n')],
+        ['user/files/attachment.txt', 'Imported attachment'], ['user/images/attachment.png', png],
+    ];
+    const omitted = ['entity-date-added.json', 'entity-last-chat.json', 'secrets.json', 'themes/Old.json', 'OpenAI Settings/Old.json',
+        'extensions/Old/index.js', 'worlds/Unused.json', 'backups/old.jsonl', 'user/workflows/unused.json', 'readme.txt'];
+    entries.push(...omitted.map(relative => [relative, 'PRIVATE UNRELATED CONTENT']));
+    let input;
+    if (mode === 'zip') {
+        const upload = path.join(p.sourceRoot, 'default-user.zip');
+        await zipFile(upload, entries.map(([relative, bytes]) => [`data/default-user/${relative}`, bytes]));
+        const retained = await retainUploadedArchive(p.base, p.f.scope, 'core', upload);
+        input = { mode, content: 'core', inputId: retained.id };
+    } else {
+        for (const [relative, bytes] of entries) sourceFile(p, relative, bytes);
+        input = { mode, content: 'core', path: p.sourceRoot };
+    }
+    const defaults = { directories: ['themes'], files: [{ relative: 'themes/Default.json', data: Buffer.from('{}').toString('base64') }] };
+    const accepted = await accept(p, 'core', input, defaults);
+    await runOperation(accepted.context, { afterImportInputs() {
+        current.username = 'Changed while importing'; current._version++; current._settingsRevision++;
+        fs.writeFileSync(settingsFile, JSON.stringify(current));
+    } });
+    const record = readOperation(p.base, 'core');
+    assert.equal(record.state, 'completed'); assert.equal(record.result.content, 'core');
+    assert.equal(record.result.imported, 8); assert.equal(record.result.defaults, 0); assert.equal(record.result.skippedCount, 0);
+    assert.equal(record.result.excludedCount, omitted.length);
+    assert.deepEqual(record.result.excluded.map(item => item.file).sort(), omitted.sort());
+    assert.ok(record.result.excluded.every(item => typeof item.reason === 'string' && item.reason.length));
+    assert.doesNotMatch(JSON.stringify(record), /PRIVATE UNRELATED CONTENT/);
+    for (const relative of omitted) assert.equal(fs.existsSync(path.join(p.base.directories.root, relative)), false, relative);
+    assert.equal(fs.existsSync(path.join(p.base.directories.root, 'themes/Default.json')), false);
+    assert.deepEqual(fs.readFileSync(path.join(p.base.directories.root, 'User Avatars/Imported.png')), png);
+    assert.equal(fs.readFileSync(path.join(p.base.directories.root, 'user/files/attachment.txt'), 'utf8'), 'Imported attachment');
+    assert.equal(fs.existsSync(path.join(p.base.directories.root, 'group chats/Imported group.jsonl')), true);
+    const saved = JSON.parse(fs.readFileSync(settingsFile));
+    assert.equal(saved.username, 'Changed while importing'); assert.equal(saved.theme, current.theme);
+    assert.equal(saved.power_user.default_persona, 'Existing.png'); assert.equal(saved.power_user.persona_description, 'Current active description');
+    assert.equal(saved.power_user.custom_css, 'Keep this');
+    assert.deepEqual(saved.power_user.personas, { ...current.power_user.personas, 'Imported.png': 'Imported persona' });
+    assert.deepEqual(saved.power_user.persona_descriptions, { ...current.power_user.persona_descriptions, 'Imported.png': description });
+    assert.deepEqual(saved.extension_settings, current.extension_settings);
+    assert.equal(saved._version, 9); assert.equal(saved._settingsRevision, 6);
+});
+
+for (const mode of ['folder', 'zip']) for (const part of ['chats', 'personas', 'characters']) test(`core ${mode} import selects only ${part} and names every unselected file`, async t => {
+    const p = setup(t, `selected-${mode}-${part}`);
+    const settings = path.join(p.base.directories.root, 'settings.json');
+    const current = '{"_version":4,"username":"Current user","power_user":{"personas":{},"persona_descriptions":{}}}';
+    fs.writeFileSync(settings, current);
+    const libraries = {
+        characters: [['characters/Selected.png', writeCard(png, JSON.stringify({ name: 'Selected', description: 'Selected card' }))]],
+        personas: [['settings.json', '{"username":"Unwanted user","power_user":{"personas":{"Selected.png":"Selected persona"},"persona_descriptions":{"Selected.png":{"description":"Selected description"}}}}'], ['User Avatars/Selected.png', png]],
+        chats: [['chats/Nova/Selected.jsonl', p.f.records.map(row => JSON.stringify(row)).join('\n')],
+            ['groups/Selected.json', '{"id":"Selected","members":["Nova.png"],"chats":["Selected group"]}'],
+            ['group chats/Selected group.jsonl', p.f.records.map(row => JSON.stringify(row)).join('\n')],
+            ['user/files/Selected.txt', 'Chat attachment'], ['user/images/Selected.png', png]],
+    };
+    const entries = Object.values(libraries).flat();
+    let input;
+    if (mode === 'zip') {
+        const upload = path.join(p.sourceRoot, 'default-user.zip');
+        await zipFile(upload, entries.map(([relative, bytes]) => [`default-user/${relative}`, bytes]));
+        const retained = await retainUploadedArchive(p.base, p.f.scope, 'selected', upload);
+        input = { mode, content: 'core', parts: [part], inputId: retained.id };
+    } else {
+        for (const [relative, bytes] of entries) sourceFile(p, relative, bytes);
+        input = { mode, content: 'core', parts: [part], path: p.sourceRoot };
+    }
+    const accepted = await accept(p, 'selected', input);
+    await runOperation(accepted.context);
+    const record = readOperation(p.base, 'selected');
+    assert.equal(record.state, 'completed'); assert.deepEqual(record.result.parts, [part]);
+    assert.equal(record.result.imported, libraries[part].length); assert.equal(record.result.skippedCount, 0);
+    const omitted = Object.entries(libraries).filter(([key]) => key !== part).flatMap(([, files]) => files.map(([relative]) => relative));
+    assert.deepEqual(record.result.excluded.map(item => item.file).sort(), omitted.sort());
+    assert.ok(record.result.excluded.every(item => /were not selected for this import/.test(item.reason)));
+    for (const relative of omitted.filter(relative => relative !== 'settings.json')) assert.equal(fs.existsSync(path.join(p.base.directories.root, relative)), false, relative);
+    for (const [relative] of libraries[part]) assert.equal(fs.existsSync(path.join(p.base.directories.root, relative)), true, relative);
+    assert.equal(JSON.parse(fs.readFileSync(settings)).username, 'Current user');
+    if (part === 'personas') {
+        assert.equal(JSON.parse(fs.readFileSync(settings)).power_user.personas['Selected.png'], 'Selected persona');
+    } else assert.equal(fs.readFileSync(settings, 'utf8'), current);
+});
+
+test('unselected damaged libraries are left out without reading them and an absent selected ZIP library produces a report', async t => {
+    const p = setup(t);
+    const upload = path.join(p.sourceRoot, 'default-user.zip');
+    await zipFile(upload, [['default-user/characters/Damaged.png', 'Not a card'], ['default-user/settings.json', 'Not JSON']]);
+    const retained = await retainUploadedArchive(p.base, p.f.scope, 'absent', upload);
+    const accepted = await accept(p, 'absent', { mode: 'zip', content: 'core', parts: ['chats'], inputId: retained.id });
+    await runOperation(accepted.context);
+    const record = readOperation(p.base, 'absent');
+    assert.equal(record.state, 'completed'); assert.equal(record.result.imported, 0); assert.equal(record.result.skippedCount, 0);
+    assert.equal(record.result.excludedCount, 2);
+    assert.deepEqual(record.result.excluded.map(item => item.file), ['characters/Damaged.png', 'settings.json']);
+    assert.equal(fs.existsSync(path.join(p.base.directories.characters, 'Damaged.png')), false);
+    assert.equal(fs.existsSync(path.join(p.base.directories.root, 'settings.json')), false);
+});
+
+test('library choices reject empty, unknown and invalid selections before source capture', async t => {
+    const p = setup(t);
+    for (const parts of [[], ['themes'], 'personas', null, ['chats', 'personas', 'characters', 'chats']]) {
+        await assert.rejects(captureAccountImport(p.base, p.f.scope, { mode: 'folder', content: 'core', parts, path: '/not-a-source' }), /Select at least one library/);
+    }
+    await assert.rejects(captureAccountImport(p.base, p.f.scope, { mode: 'folder', parts: ['personas'], path: p.sourceRoot }), /Library choices apply only/);
+});
+
+test('core folder import accepts an avatar-only library and inventories ignored links without following them', async t => {
+    const p = setup(t);
+    sourceFile(p, 'User Avatars/Persona.png', png);
+    fs.symlinkSync('/does-not-exist', path.join(p.sourceRoot, 'secrets.json'));
+    const accepted = await accept(p, 'avatars', { mode: 'folder', content: 'core', path: p.sourceRoot });
+    await runOperation(accepted.context);
+    assert.deepEqual(readOperation(p.base, 'avatars').result.excluded, [{ file: 'secrets.json', reason: 'API keys and passwords are not imported.' }]);
+    assert.deepEqual(fs.readFileSync(path.join(p.base.directories.root, 'User Avatars/Persona.png')), png);
+});
+
+test('malformed persona settings are skipped without stopping healthy core libraries', async t => {
+    for (const [index, data] of ['not JSON', '{"power_user":{"personas":[]}}', '{"power_user":{"personas":{"__proto__":"bad"}}}',
+        '{"power_user":{"persona_descriptions":{"Persona.png":{"description":false}}}}'].entries()) {
+        const p = setup(t, `bad-persona-${index}`);
+        const settings = path.join(p.base.directories.root, 'settings.json');
+        fs.writeFileSync(settings, '{"username":"Keep me"}');
+        sourceFile(p, 'settings.json', data); sourceFile(p, 'chats/Nova/Healthy.jsonl', p.f.records.map(row => JSON.stringify(row)).join('\n'));
+        const accepted = await accept(p, 'bad-persona', { mode: 'folder', content: 'core', path: p.sourceRoot });
+        await runOperation(accepted.context);
+        const result = readOperation(p.base, 'bad-persona').result;
+        assert.equal(result.imported, 1); assert.equal(result.skippedCount, 1); assert.equal(result.skipped[0].file, 'settings.json');
+        assert.equal(fs.readFileSync(settings, 'utf8'), '{"username":"Keep me"}');
+        assert.equal(fs.existsSync(path.join(p.base.directories.chats, 'Nova/Healthy.jsonl')), true);
+    }
+});
+
+test('interrupted persona publication resumes once and never overwrites later settings or persona deletions', async t => {
+    for (const point of ['afterPersonaSettingsPrepared', 'afterPersonaSettingsPublication', 'afterImportPublication']) {
+        const p = setup(t, point);
+        const settings = path.join(p.base.directories.root, 'settings.json');
+        fs.writeFileSync(settings, JSON.stringify({ username: 'Current', power_user: { personas: {}, persona_descriptions: {} } }));
+        sourceFile(p, 'settings.json', JSON.stringify({ power_user: { personas: { 'Persona.png': 'Imported' }, persona_descriptions: {} } }));
+        const accepted = await accept(p, 'interrupted-persona', { mode: 'folder', content: 'core', path: p.sourceRoot });
+        await assert.rejects(runOperation(accepted.context, { [point]: () => { throw new Error('lost persona acknowledgement'); } }), /lost persona/);
+        const newer = { username: 'Later settings', power_user: { personas: {}, persona_descriptions: {} }, _version: 40 };
+        fs.writeFileSync(settings, JSON.stringify(newer));
+        await runOperation(accepted.context);
+        assert.deepEqual(JSON.parse(fs.readFileSync(settings)), newer);
+        const record = readOperation(p.base, 'interrupted-persona');
+        assert.equal(record.state, 'completed');
+        if (point !== 'afterImportPublication') {
+            assert.equal(record.result.skippedCount, 1); assert.match(record.result.skipped[0].reason, /newer settings were kept/);
+        }
+    }
+});
+
+test('persona publication recovers both sides of its durable rename when there are no later edits', async t => {
+    for (const point of ['afterPersonaSettingsPrepared', 'afterPersonaSettingsPublication']) {
+        const p = setup(t, `recover-${point}`);
+        const settings = path.join(p.base.directories.root, 'settings.json');
+        fs.writeFileSync(settings, '{"_version":2,"username":"Current"}');
+        sourceFile(p, 'settings.json', '{"power_user":{"personas":{"Persona.png":"Imported"}}}');
+        const accepted = await accept(p, 'recover-persona', { mode: 'folder', content: 'core', path: p.sourceRoot });
+        await assert.rejects(runOperation(accepted.context, { [point]: () => { throw new Error('lost persona acknowledgement'); } }), /lost persona/);
+        await runOperation(accepted.context);
+        const saved = JSON.parse(fs.readFileSync(settings));
+        assert.equal(saved.power_user.personas['Persona.png'], 'Imported'); assert.equal(saved._version, 3);
+        assert.equal(readOperation(p.base, 'recover-persona').result.skippedCount, 0);
+    }
+});
+
 test('branch chats that name their parent the older SillyTavern ways import from a ZIP', async t => {
     const p = setup(t);
     const parents = [1687345678901, 'Nova: Branch', 'Trailing dot.', 'Trailing space ', 'x'.repeat(300), 'CON', '..', ['list'], { nested: true }, true, 'Source'];

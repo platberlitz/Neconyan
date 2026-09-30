@@ -1,3 +1,11 @@
+/** A core-library import must not resume an older whole-account import. */
+export function accountImportScope(input) {
+    const base = `account-import:${input.mode}`;
+    if (input.content !== 'core' || input.mode === 'extensions') return base;
+    const parts = ['chats', 'personas', 'characters'].filter(part => !input.parts || input.parts.includes(part));
+    return `${base}:core${parts.length === 3 ? '' : `:${parts.join('+') || 'none'}`}`;
+}
+
 /** Keep an uploaded source and its acceptance separate from the lifetime of the importer. */
 export function createAccountImportClient({ client, owner, storage, upload, uuid = () => crypto.randomUUID() }) {
     const storageKey = `neconyan-account-import-upload:${owner}`;
@@ -27,8 +35,8 @@ export function createAccountImportClient({ client, owner, storage, upload, uuid
     }
     return async (input, { file, prepareInput = value => value, ...options } = {}) => {
         try {
-            const record = await client.run('account-import', input, { ...options, scope: `account-import:${input.mode}`, prepareInput: async value => {
-                const prepared = value.mode === 'zip' ? { mode: 'zip', inputId: await retainedZip(file) } : value;
+            const record = await client.run('account-import', input, { ...options, scope: accountImportScope(input), prepareInput: async value => {
+                const prepared = value.mode === 'zip' ? { ...value, inputId: await retainedZip(file) } : value;
                 return prepareInput(prepared);
             } });
             if (input.mode === 'zip') storage.removeItem(storageKey);

@@ -4,7 +4,10 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import archiver from 'archiver';
+import { write as writeCard } from '../src/character-card-parser.js';
 import { test } from './neconyan-conversation-durable-fixture.js';
+
+const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64');
 
 test.setTimeout(300000);
 
@@ -80,7 +83,10 @@ for (const phone of [false, true]) {
         const account = await app.account({ phone });
         const { page, card } = await showImporter(account);
         const settings = JSON.parse((await account.post('/api/settings/get')).settings);
+        const currentUsername = settings.username;
         settings.username = 'Imported backup user';
+        settings.power_user.personas = { ...settings.power_user.personas, 'Imported.png': 'Imported persona' };
+        settings.power_user.persona_descriptions = { ...settings.power_user.persona_descriptions, 'Imported.png': { description: 'Imported persona description' } };
         const archive = archiver('zip'); const chunks = [];
         archive.on('data', chunk => chunks.push(chunk));
         archive.append(JSON.stringify(settings), { name: 'default-user/settings.json' });
@@ -106,8 +112,137 @@ for (const phone of [false, true]) {
         await expect(card.getByRole('button', { name: 'Reload to use the imported data' })).toBeVisible();
         await expect(card.locator('progress')).toBeHidden();
         expect(await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }))).toBe(false);
-        expect(JSON.parse(await fs.readFile(path.join(app.directory, 'data/default-user/settings.json'), 'utf8')).username).toBe('Imported backup user');
+        const saved = JSON.parse(await fs.readFile(path.join(app.directory, 'data/default-user/settings.json'), 'utf8'));
+        expect(saved.username).toBe(currentUsername);
+        expect(saved.power_user.personas['Imported.png']).toBe('Imported persona');
+        expect(saved.power_user.persona_descriptions['Imported.png'].description).toBe('Imported persona description');
         expect(await fs.readFile(path.join(app.directory, 'data/default-user/chats/Imported/History 119.jsonl'), 'utf8')).toContain('Imported reply 119');
+    });
+
+    test(`${viewport} core ZIP imports the three libraries and reports every deliberate exclusion after reopening`, async ({ app }) => {
+        const account = await app.account({ phone });
+        const { page, card } = await showImporter(account);
+        for (const name of ['Chats', 'Personas', 'Character cards']) {
+            const choice = card.getByRole('checkbox', { name, exact: true });
+            await expect(choice).toBeChecked();
+            expect(await choice.evaluate(input => input.closest('label').getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+        }
+        const current = JSON.parse((await account.post('/api/settings/get')).settings);
+        const archive = archiver('zip'); const chunks = [];
+        archive.on('data', chunk => chunks.push(chunk));
+        archive.append(writeCard(png, JSON.stringify({ name: 'Imported card', description: 'Imported character description' })), { name: 'default-user/characters/Imported.png' });
+        archive.append([
+            { user_name: 'User', character_name: 'Imported card', chat_metadata: {} },
+            { name: 'Imported card', is_user: false, mes: 'Imported history' },
+        ].map(row => JSON.stringify(row)).join('\n'), { name: 'default-user/chats/Imported/History.jsonl' });
+        archive.append(png, { name: 'default-user/User Avatars/Persona.png' });
+        archive.append(JSON.stringify({ username: 'Must not replace current user', power_user: {
+            personas: { 'Persona.png': 'Imported persona' }, persona_descriptions: { 'Persona.png': { description: 'Imported description', title: 'Imported title', position: 0 } },
+            custom_css: 'Must not replace current CSS', default_persona: 'Persona.png',
+        } }), { name: 'default-user/settings.json' });
+        archive.append(JSON.stringify({ id: 'Imported', members: ['Imported.png'], chats: ['Imported group'] }), { name: 'default-user/groups/Imported.json' });
+        archive.append([
+            { user_name: 'User', character_name: 'Imported card', chat_metadata: {} },
+            { name: 'Imported card', is_user: false, mes: 'Imported group history' },
+        ].map(row => JSON.stringify(row)).join('\n'), { name: 'default-user/group chats/Imported group.jsonl' });
+        archive.append('Imported attachment', { name: 'default-user/user/files/attachment.txt' });
+        archive.append('Not even valid bookkeeping', { name: 'default-user/entity-date-added.json' });
+        archive.append('Must not read API keys', { name: 'default-user/secrets.json' });
+        for (let index = 0; index < 25; index++) archive.append('Unused theme', { name: `default-user/themes/Unused ${index}.json` });
+        await archive.finalize();
+        const submitted = await submit(page, () => card.getByLabel('Choose a SillyTavern backup ZIP').setInputFiles({
+            name: 'default-user.zip', mimeType: 'application/zip', buffer: Buffer.concat(chunks),
+        }));
+        expect(submitted.requestBody.content).toBe('core');
+        expect(submitted.requestBody.parts).toEqual(['chats', 'personas', 'characters']);
+        await account.settled(submitted.job.id);
+        const note = card.locator('.sb-import-note');
+        await expect(note).toContainText('27 files were left out on purpose:', { timeout: 60000 });
+        await expect(note).toContainText('entity-date-added.json: Account bookkeeping is not needed');
+        await expect(note).toContainText('secrets.json: API keys and passwords are not imported.');
+        await expect(note).toContainText('7 more. Download the report for the full list.');
+        await expect(note).not.toContainText('damaged');
+        await expect(note).not.toContainText('An import destination changed');
+        const downloadButton = note.getByRole('button', { name: 'Download skipped-files report' });
+        const downloading = page.waitForEvent('download');
+        await downloadButton.click();
+        const download = await downloading;
+        const report = await fs.readFile(await download.path(), 'utf8');
+        expect(report).toContain('themes/Unused 24.json: Themes are not part of this import.');
+        expect(report).toContain('settings.json: Only persona names and descriptions were imported');
+        expect(report).not.toContain('Must not read API keys');
+        const saved = JSON.parse(await fs.readFile(path.join(app.directory, 'data/default-user/settings.json'), 'utf8'));
+        expect(saved.username).toBe(current.username); expect(saved.power_user.custom_css).toBe(current.power_user.custom_css);
+        expect(saved.power_user.default_persona).toBe(current.power_user.default_persona);
+        expect(saved.power_user.personas['Persona.png']).toBe('Imported persona');
+        expect(saved.power_user.persona_descriptions['Persona.png'].description).toBe('Imported description');
+        expect(saved.extension_settings.neconyan_conversation.characters[account.threadKey].branches.main.messages[0].mes).toBe('Original question.');
+        const root = path.join(app.directory, 'data/default-user');
+        expect(await fs.readFile(path.join(root, 'characters/Imported.png'))).toEqual(writeCard(png, JSON.stringify({ name: 'Imported card', description: 'Imported character description' })));
+        expect(await fs.readFile(path.join(root, 'User Avatars/Persona.png'))).toEqual(png);
+        expect(await fs.readFile(path.join(root, 'chats/Imported/History.jsonl'), 'utf8')).toContain('Imported history');
+        expect(await fs.readFile(path.join(root, 'group chats/Imported group.jsonl'), 'utf8')).toContain('Imported group history');
+        expect(JSON.parse(await fs.readFile(path.join(root, 'groups/Imported.json'), 'utf8')).chats).toContain('Imported group');
+        expect(await fs.readFile(path.join(root, 'user/files/attachment.txt'), 'utf8')).toBe('Imported attachment');
+        expect(await fs.access(path.join(root, 'themes/Unused 24.json')).then(() => true, () => false)).toBe(false);
+        await note.scrollIntoViewIfNeeded();
+        const geometry = await note.evaluate(element => ({ width: element.clientWidth, scrollWidth: element.scrollWidth,
+            right: element.getBoundingClientRect().right, viewport: window.innerWidth, whiteSpace: getComputedStyle(element).whiteSpace,
+        }));
+        expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.width + 1);
+        expect(geometry.right).toBeLessThanOrEqual(geometry.viewport);
+        expect(geometry.whiteSpace).not.toBe('nowrap');
+        expect((await downloadButton.boundingBox()).height).toBeGreaterThanOrEqual(44);
+        await test.info().attach(`${viewport}-core-import-report`, { body: await page.screenshot(), contentType: 'image/png' });
+        await page.close();
+        const reopened = await showImporter(account);
+        await reopened.card.getByLabel('Saved account imports').selectOption(submitted.record.key);
+        await expect(reopened.card.getByRole('status').filter({ hasText: 'entity-date-added.json' })).toContainText('27 files were left out on purpose:');
+        await expect(reopened.card.getByRole('button', { name: 'Download skipped-files report' })).toBeVisible();
+    });
+
+    test(`${viewport} ZIP imports only the chosen persona library and refuses an empty selection before uploading`, async ({ app }) => {
+        const account = await app.account({ phone });
+        const { page, card } = await showImporter(account);
+        const current = JSON.parse((await account.post('/api/settings/get')).settings);
+        const archive = archiver('zip'); const chunks = [];
+        archive.on('data', chunk => chunks.push(chunk));
+        archive.append('Damaged card in an unselected library', { name: 'default-user/characters/Not selected.png' });
+        archive.append('Damaged history in an unselected library', { name: 'default-user/chats/Not selected/History.jsonl' });
+        archive.append(png, { name: 'default-user/User Avatars/Chosen.png' });
+        archive.append(JSON.stringify({ username: 'Unwanted account settings', power_user: { personas: { 'Chosen.png': 'Chosen persona' },
+            persona_descriptions: { 'Chosen.png': { description: 'Chosen description' } } } }), { name: 'default-user/settings.json' });
+        await archive.finalize();
+        const file = { name: 'default-user.zip', mimeType: 'application/zip', buffer: Buffer.concat(chunks) };
+        for (const name of ['Chats', 'Personas', 'Character cards']) await card.getByRole('checkbox', { name, exact: true }).uncheck();
+        let uploads = 0;
+        page.on('request', request => { if (request.url().endsWith('/api/operations/import-input')) uploads++; });
+        await card.getByLabel('Choose a SillyTavern backup ZIP').setInputFiles(file);
+        await expect(card.locator('.sb-import-note')).toContainText('Choose at least one library to import');
+        expect(uploads).toBe(0);
+        await card.getByRole('checkbox', { name: 'Personas', exact: true }).check();
+        await card.getByRole('group', { name: 'Choose what to import' }).scrollIntoViewIfNeeded();
+        await test.info().attach(`${viewport}-import-library-choices`, { body: await page.screenshot(), contentType: 'image/png' });
+        const submitted = await submit(page, () => card.getByLabel('Choose a SillyTavern backup ZIP').setInputFiles(file));
+        expect(submitted.requestBody.parts).toEqual(['personas']);
+        await account.settled(submitted.job.id);
+        const note = card.locator('.sb-import-note');
+        await expect(note).toContainText('Selected libraries: Personas.', { timeout: 60000 });
+        await expect(note).toContainText('characters/Not selected.png: Character cards were not selected for this import.');
+        await expect(note).toContainText('chats/Not selected/History.jsonl: Chats were not selected for this import.');
+        await expect(note).not.toContainText('damaged and could not be imported');
+        const root = path.join(app.directory, 'data/default-user');
+        const saved = JSON.parse(await fs.readFile(path.join(root, 'settings.json'), 'utf8'));
+        expect(saved.username).toBe(current.username);
+        expect(saved.power_user.personas['Chosen.png']).toBe('Chosen persona');
+        expect(saved.power_user.persona_descriptions['Chosen.png'].description).toBe('Chosen description');
+        expect(await fs.readFile(path.join(root, 'User Avatars/Chosen.png'))).toEqual(png);
+        expect(await fs.access(path.join(root, 'characters/Not selected.png')).then(() => true, () => false)).toBe(false);
+        expect(await fs.access(path.join(root, 'chats/Not selected/History.jsonl')).then(() => true, () => false)).toBe(false);
+        await page.close();
+        const reopened = await showImporter(account);
+        await reopened.card.getByLabel('Saved account imports').selectOption(submitted.record.key);
+        await expect(reopened.card.getByRole('status').filter({ hasText: 'Selected libraries: Personas.' })).toContainText('2 files were left out on purpose:');
     });
 
     test(`${viewport} backup ZIP skips a damaged file, imports the rest and lists the skip after reopening`, async ({ app }) => {

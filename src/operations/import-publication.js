@@ -17,6 +17,7 @@ import { fsyncDirectorySync } from '../util.js';
 import { BINARY_FILE_LIMIT, openOperationBinary } from './binary-files.js';
 import { readImportInput } from './import-inputs.js';
 import { operationError, withOperation } from './store.js';
+import { readImportPersonas } from './import-personas.js';
 
 const STRUCTURED_LIMIT = 32 * 1024 * 1024;
 const evidence = file => file ? { rawHash: file.rawHash, physical: file.physical } : null;
@@ -51,6 +52,8 @@ export function captureImportTarget(lease, relative) {
 }
 
 export function assertImportTarget(lease, target) {
+    // Persona-only imports merge into the latest settings while holding the account lock.
+    if (target.personaSettings) return;
     const { scope } = roleplayLease(lease);
     const filename = path.join(scope.directories.root, target.relative);
     if (!same(evidence(inspectRoleplayFile(filename, BINARY_FILE_LIMIT, { allowMissingParent: true })), target.evidence)) throw changed(target.relative);
@@ -108,6 +111,7 @@ export function importChatRecords(bytes) {
 export function prepareImportValue(context, file, index, input) {
     const resource = file.target.resource;
     const read = () => input ?? readImportInput(context, index, STRUCTURED_LIMIT);
+    if (file.personaSettings) { readImportPersonas(read()); return { personas: true }; }
     if (resource) {
         const bytes = read();
         if (resource.kind === 'chat') {

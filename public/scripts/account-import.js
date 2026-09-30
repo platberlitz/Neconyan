@@ -1,19 +1,50 @@
 import { getCurrentChatId, getRequestHeaders, pauseSettingsForAccountImport, saveChatConditional } from '../script.js';
 import { getCurrentUserHandle } from './user.js';
 import { getOperationClient, mountOperationRecovery } from './operations-client.js';
-import { createAccountImportClient } from './account-import-client.js';
+import { accountImportScope, createAccountImportClient } from './account-import-client.js';
 
 const SKIPPED_SHOWN = 20;
 
-/** Lists the damaged files a finished import left out, or returns an empty string when nothing was skipped. */
+/** Keep intentional exclusions separate from files that could not be imported. */
 export function describeAccountImportSkips(result) {
     const count = Number(result?.skippedCount) || 0;
-    if (!count) return '';
-    const listed = (Array.isArray(result.skipped) ? result.skipped : []).slice(0, SKIPPED_SHOWN).map(item => `• ${item.reason}`);
-    const more = count - listed.length;
-    return [`${count === 1 ? '1 file was' : `${count} files were`} damaged and could not be imported:`, ...listed,
-        ...(more > 0 ? [`…and ${more} more.`] : []),
-        'Everything else was imported. To bring a skipped item back, re-export it from the original app and import it again.'].join('\n');
+    const excluded = Number(result?.excludedCount) || 0;
+    if (!count && !excluded && !result?.personaSettingsOnly) return '';
+    const sections = [];
+    if (excluded) {
+        const listed = (Array.isArray(result.excluded) ? result.excluded : []).slice(0, SKIPPED_SHOWN).map(item => `• ${item.file}: ${item.reason}`);
+        sections.push([`${excluded === 1 ? '1 file was' : `${excluded} files were`} left out on purpose:`, ...listed,
+            ...(excluded > listed.length ? [`…and ${excluded - listed.length} more. Download the report for the full list.`] : []),
+            'Only the selected libraries were imported. Chats include group chats and attachments. Your other settings are kept.'].join('\n'));
+    }
+    if (count) {
+        const listed = (Array.isArray(result.skipped) ? result.skipped : []).slice(0, SKIPPED_SHOWN).map(item => `• ${item.reason}`);
+        sections.push([`${count === 1 ? '1 file was' : `${count} files were`} damaged and could not be imported:`, ...listed,
+            ...(count > listed.length ? [`…and ${count - listed.length} more.`] : []),
+            `${excluded ? 'Other selected files were imported.' : 'Everything else was imported.'} To bring a damaged item back, re-export it from the original app and import it again.`].join('\n'));
+    }
+    if (result.personaSettingsOnly) sections.push('Only persona names and descriptions were read from settings.json. Other settings in that file were not imported.');
+    if (result.parts) sections.unshift(`Selected libraries: ${result.parts.map(part => ({ chats: 'Chats', personas: 'Personas', characters: 'Character cards' })[part]).join(', ')}.`);
+    return sections.join('\n\n');
+}
+
+/** The screen shows a short list; this download includes every deliberate exclusion. */
+export function mountAccountImportReportDownload(container, result) {
+    if (!(result?.excludedCount || result?.skippedCount || result?.personaSettingsOnly)) return null;
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'menu_button'; button.textContent = 'Download skipped-files report';
+    button.addEventListener('click', () => {
+        const lines = [`${result.imported} imported files saved.`, 'Files left out on purpose:',
+            ...(result.excluded ?? []).map(item => `${item.file}: ${item.reason}`),
+            ...(result.personaSettingsOnly ? ['settings.json: Only persona names and descriptions were imported; other settings were kept.'] : []),
+            'Files that could not be imported:', ...(result.skipped ?? []).map(item => item.reason)];
+        const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' }));
+        const link = document.createElement('a'); link.href = url; link.download = 'Neconyan-import-report.txt';
+        document.body.append(link); link.click(); link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+    });
+    container.append(button);
+    return button;
 }
 
 export async function importAccountData(input, options = {}) {
@@ -34,7 +65,7 @@ export async function importAccountData(input, options = {}) {
     };
     let resumeSettings;
     try {
-        if (client.hasPending(`account-import:${input.mode}`)) resumeSettings = await pauseSettingsForAccountImport({ flush: false });
+        if (client.hasPending(accountImportScope(input))) resumeSettings = await pauseSettingsForAccountImport({ flush: false });
         const record = await createAccountImportClient({ client, owner, storage: localStorage, upload })(input, { ...options, prepareInput: async value => {
             assertOwner();
             if (getCurrentChatId()) await saveChatConditional({ throwOnError: true, throwOnPromptError: true });
@@ -62,6 +93,7 @@ export async function mountSavedAccountImports(container, { onResult, onBusy, si
     wrapper.append(select, stop, reload, status); container.append(wrapper);
     mountOperationRecovery(wrapper, { signal, onError: error => { status.textContent = error.message; } });
     let controller;
+    let reportDownload;
     const refresh = async () => {
         if (controller || signal?.aborted) return;
         const records = await client.list('account-import');
@@ -76,13 +108,15 @@ export async function mountSavedAccountImports(container, { onResult, onBusy, si
     select.addEventListener('change', async () => {
         if (controller || !select.value) return;
         controller = new AbortController(); select.disabled = true; stop.style.display = ''; reload.style.display = 'none'; onBusy?.(true);
+        reportDownload?.remove();
         let resumeSettings;
         try {
             resumeSettings = await pauseSettingsForAccountImport({ flush: false });
             const record = await client.observe(await client.read(select.value), { signal: controller.signal,
                 onProgress: progress => { status.textContent = progress?.stage || 'Importing retained files'; } });
             const skips = describeAccountImportSkips(record.result);
-            status.textContent = `${record.result.imported} imported files are saved. Reload to use the imported settings.${skips ? `\n\n${skips}` : ''}`;
+            status.textContent = `${record.result.imported} imported files are saved. Reload to use the imported data.${skips ? `\n\n${skips}` : ''}`;
+            reportDownload = mountAccountImportReportDownload(wrapper, record.result);
             reload.style.display = '';
             onResult?.(record.result);
         } catch (error) {

@@ -12,6 +12,7 @@ import { captureImportInput } from './import-inputs.js';
 import { captureExtensionReport } from './import-extension-report.js';
 import { captureImportTarget, assertImportTarget, importNeedsCheck, importSkipReason, prepareImportValue, stageImportFile, publishImportFile } from './import-publication.js';
 import { importBatches, publishImportBatches, readPlannedInput, stageImportBatch } from './import-batches.js';
+import { normaliseCoreImportParts } from './import-content-policy.js';
 import { publishFileDeletions } from './file-deletion.js';
 import { BINARY_FILE_LIMIT } from './binary-files.js';
 import { registerOperation } from './jobs.js';
@@ -25,7 +26,9 @@ function importReport(plan, skipped) {
     const skippedImports = skipped.filter(item => plan.files[item.index].defaultIndex === undefined).length;
     return { ...plan.extensionsReport, imported: plan.importedCount - skippedImports, defaults: plan.files.length - plan.importedCount,
         removed: plan.removals.length, sourceRoot: plan.sourceRoot, mode: plan.mode,
-        skippedCount: skipped.length, skipped: skipped.slice(0, SKIPPED_REPORT_LIMIT).map(item => ({ file: item.relative, reason: item.reason })) };
+        skippedCount: skipped.length, skipped: skipped.slice(0, SKIPPED_REPORT_LIMIT).map(item => ({ file: item.relative, reason: item.reason })),
+        ...(plan.content === 'core' ? { content: 'core', parts: plan.parts, excludedCount: plan.excluded.length, excluded: plan.excluded,
+            personaSettingsOnly: plan.files.some((file, index) => file.personaSettings && !skipped.some(item => item.index === index)) } : {}) };
 }
 
 function extensionRemovals(lease, files) {
@@ -54,18 +57,24 @@ function extensionRemovals(lease, files) {
 
 export async function captureAccountImport(base, account, input, { defaults } = {}) {
     if (!['folder', 'zip', 'extensions'].includes(input.mode)) throw operationError('Select a folder, ZIP or extension import.', 400);
+    if (input.content !== undefined && !['core', 'all'].includes(input.content)) throw operationError('Select the core libraries or the complete account data.', 400);
+    const coreOnly = input.content === 'core' && input.mode !== 'extensions';
+    if (input.parts !== undefined && !coreOnly) throw operationError('Library choices apply only to chats, personas and character-card imports.', 400);
+    const parts = coreOnly ? normaliseCoreImportParts(input.parts) : undefined;
     let captured;
     if (input.mode === 'zip') {
         const archive = capturedArchiveInput(base, account, input.inputId);
-        const source = await captureZipImport(archive);
+        const source = await captureZipImport(archive, { coreOnly, parts });
         captured = { ...source, archive };
         delete captured.source;
-    } else captured = captureFolderImport(base, input.path, { extensionsOnly: input.mode === 'extensions' });
+    } else captured = captureFolderImport(base, input.path, { extensionsOnly: input.mode === 'extensions', coreOnly, parts });
     const extensionsReport = input.mode === 'extensions' ? captureExtensionReport(base, captured) : null;
-    const content = { version: 1, ...(input.mode === 'extensions' ? { directories: [], files: [] } : defaults ?? captureUserResetContent(base.directories)) };
+    const content = { version: 1, ...(input.mode === 'extensions' || coreOnly ? { directories: [], files: [] } : defaults ?? captureUserResetContent(base.directories)) };
     const defaultsHash = prepareRoleplayResetContent(base, account, content);
     return withRoleplayAccount(base, account, lease => {
-        const files = captured.files.map(file => ({ ...file, target: captureImportTarget(lease, file.relative) }));
+        const files = captured.files.map(file => coreOnly && file.relative === 'settings.json'
+            ? { ...file, personaSettings: true, target: { relative: file.relative, resource: null, personaSettings: true } }
+            : { ...file, target: captureImportTarget(lease, file.relative) });
         const selected = new Set(files.map(file => file.relative));
         for (const [defaultIndex, file] of content.files.entries()) {
             if (selected.has(file.relative)) continue;
@@ -76,7 +85,7 @@ export async function captureAccountImport(base, account, input, { defaults } = 
         // Saved settings become visible only after all other imported files are durable.
         files.sort((left, right) => Number(left.relative === 'settings.json') - Number(right.relative === 'settings.json'));
         const removals = input.mode === 'extensions' ? extensionRemovals(lease, files) : [];
-        return { ...captured, mode: input.mode, account, files, defaults: defaultsHash, removals, extensionsReport, pipeline: BATCHED_PIPELINE,
+        return { ...captured, ...(coreOnly ? { content: 'core', parts } : {}), mode: input.mode, account, files, defaults: defaultsHash, removals, extensionsReport, pipeline: BATCHED_PIPELINE,
             directories: [...new Set([...captured.directories, ...content.directories])], importedCount: captured.files.length };
     });
 }
@@ -166,7 +175,7 @@ async function runBatchedImport(context, plan, dependencies) {
                 for (const directory of plan.directories) createRoleplayDirectory(path.join(root, directory), root);
             });
             const unchecked = new Set(skipped.map(item => item.index));
-            const staged = [...plan.files.entries()].filter(([index, file]) => !file.target.resource && !unchecked.has(index)).map(([index, file]) => ({ file, index }));
+            const staged = [...plan.files.entries()].filter(([index, file]) => !file.target.resource && !file.personaSettings && !unchecked.has(index)).map(([index, file]) => ({ file, index }));
             let done = 0;
             if (staged.length) await report('Preparing imported files', 0, staged.length);
             for (const batch of importBatches(staged, item => item.file.size)) {
@@ -188,6 +197,7 @@ async function runBatchedImport(context, plan, dependencies) {
         }
         await report('Saving imported files', record.effects['import-publish']?.next ?? 0, plan.files.length);
         await publishImportBatches(context, plan, { archive, afterImportPublication: dependencies.afterImportPublication,
+            afterPersonaSettingsPrepared: dependencies.afterPersonaSettingsPrepared, afterPersonaSettingsPublication: dependencies.afterPersonaSettingsPublication,
             skipped: new Set((record.importSkipped ?? []).map(item => item.index)),
             onSkip: (value, item) => {
                 value.importSkipped = [...(value.importSkipped ?? []), item];

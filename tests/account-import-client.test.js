@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals';
-import { createAccountImportClient } from '../public/scripts/account-import-client.js';
+import { accountImportScope, createAccountImportClient } from '../public/scripts/account-import-client.js';
 
 function fixture() {
     const values = new Map();
@@ -58,4 +58,24 @@ test('the ZIP is retained before the final settings flush pauses background writ
     await f.run({ mode: 'zip' }, { file: f.file, prepareInput });
     expect(order).toEqual(['upload', 'prepare']);
     expect(prepareInput).toHaveBeenCalledWith({ mode: 'zip', inputId: 'a'.repeat(64) });
+});
+
+test('core ZIP preparation retains its content policy and cannot resume a legacy full import', async () => {
+    const f = fixture(); const prepareInput = jest.fn(value => value);
+    await f.run({ mode: 'zip', content: 'core' }, { file: f.file, prepareInput });
+    expect(prepareInput).toHaveBeenCalledWith({ mode: 'zip', content: 'core', inputId: 'a'.repeat(64) });
+    expect(f.client.run.mock.calls[0][2].scope).toBe('account-import:zip:core');
+    expect(accountImportScope({ mode: 'zip' })).toBe('account-import:zip');
+    expect(accountImportScope({ mode: 'folder', content: 'core' })).toBe('account-import:folder:core');
+    expect(accountImportScope({ mode: 'extensions', content: 'core' })).toBe('account-import:extensions');
+});
+
+test('library choices reach ZIP preparation and resume only imports with the same choices', async () => {
+    const f = fixture(); const prepareInput = jest.fn(value => value);
+    await f.run({ mode: 'zip', content: 'core', parts: ['personas'] }, { file: f.file, prepareInput });
+    expect(prepareInput).toHaveBeenCalledWith({ mode: 'zip', content: 'core', parts: ['personas'], inputId: 'a'.repeat(64) });
+    expect(f.client.run.mock.calls[0][2].scope).toBe('account-import:zip:core:personas');
+    expect(accountImportScope({ mode: 'zip', content: 'core', parts: ['characters', 'chats'] })).toBe('account-import:zip:core:chats+characters');
+    expect(accountImportScope({ mode: 'zip', content: 'core', parts: ['characters', 'personas', 'chats'] })).toBe('account-import:zip:core');
+    expect(accountImportScope({ mode: 'zip', content: 'core', parts: ['personas'] })).not.toBe(accountImportScope({ mode: 'zip', content: 'core', parts: ['chats'] }));
 });
