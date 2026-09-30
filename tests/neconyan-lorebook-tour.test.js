@@ -6,14 +6,19 @@ const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 let getLorebookTourSteps;
 let parseLorebookTourCopy;
 let followLorebookTourStep;
+let translateLorebookTourCopy;
+const catalogue = { 'First paragraph.': 'Erster Absatz.', 'Second **one**.': 'Zweiter **Absatz**.' };
 
 beforeAll(async () => {
     await jest.unstable_mockModule('../public/scripts/i18n.js', () => ({
-        t: (strings, ...values) => strings.reduce((text, part, index) => text + part + (index < values.length ? values[index] : ''), ''),
+        t: (strings, ...values) => {
+            const text = strings.reduce((joined, part, index) => joined + part + (index < values.length ? values[index] : ''), '');
+            return catalogue[text] ?? text;
+        },
     }));
     await jest.unstable_mockModule('../public/scripts/util/AccountStorage.js', () => ({ accountStorage: { getItem: jest.fn(), setItem: jest.fn() } }));
     await jest.unstable_mockModule('../public/scripts/neconyan-assistant-art.js', () => ({ getAssistantIconSrc: () => 'nori.png' }));
-    ({ getLorebookTourSteps, parseLorebookTourCopy, followLorebookTourStep } = await import('../public/scripts/neconyan-lorebook-tour.js'));
+    ({ getLorebookTourSteps, parseLorebookTourCopy, followLorebookTourStep, translateLorebookTourCopy } = await import('../public/scripts/neconyan-lorebook-tour.js'));
 });
 
 describe('Lorebooks tour follows the user', () => {
@@ -79,6 +84,17 @@ describe('Lorebooks tour copy', () => {
             [{ text: 'Then ', bold: false }, { text: 'Next', bold: true }],
         ]);
         expect(parseLorebookTourCopy('<img src=x>')).toEqual([[{ text: '<img src=x>', bold: false }]]);
+    });
+
+    test('translates each paragraph on its own, since the catalogue keeps one key per paragraph', () => {
+        expect(translateLorebookTourCopy('First paragraph.\n\n  Second **one**.')).toBe('Erster Absatz.\n\nZweiter **Absatz**.');
+    });
+
+    test('every tour paragraph has a German translation', () => {
+        const german = { ...JSON.parse(read('../public/locales/de-de.json')), ...JSON.parse(read('../public/locales/neconyan/de-de.json')) };
+        const variants = [{ hasBooks: true, hasEntries: true }, { hasBooks: false }, { hasBooks: true, hasEntries: false }];
+        const lines = variants.flatMap(options => getLorebookTourSteps(options).flatMap(step => [step.title, step.hint, ...step.body.split('\n')]));
+        expect(lines.map(line => line.trim()).filter(line => line && !german[line])).toEqual([]);
     });
 });
 

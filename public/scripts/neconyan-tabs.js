@@ -9981,21 +9981,24 @@ function syncCharacterHeaderCopy(activeTab = 'characters') {
     const title = panel?.querySelector('.sb-character-shell-header .sb-shell-title');
     const subtitle = panel?.querySelector('.sb-character-shell-header .sb-shell-subtitle');
     const description = panel?.querySelector('.sb-character-shell-header .sb-shell-description');
+    // The static data-i18n markers only describe the first tab; left in place they stop the
+    // page localiser from translating the copy written here for every other tab.
+    for (const element of [title, subtitle, description]) element?.removeAttribute('data-i18n');
 
     if (title instanceof HTMLElement) {
         title.textContent = '';
-        title.append(document.createTextNode(copy.title));
+        title.append(document.createTextNode(translate(copy.title)));
         if (activeTab === 'persona') {
             title.insertAdjacentHTML('beforeend', NN_PERSONA_HELP_LINK_HTML);
         }
     }
 
     if (subtitle instanceof HTMLElement) {
-        renderShellSubtitle(subtitle, copy.subtitle, { isHtml: copy.subtitleIsHtml === true });
+        renderShellSubtitle(subtitle, copy.subtitleIsHtml ? copy.subtitle : translate(copy.subtitle), { isHtml: copy.subtitleIsHtml === true });
     }
 
     if (description instanceof HTMLElement) {
-        description.textContent = copy.description;
+        description.textContent = translate(copy.description);
     }
 }
 

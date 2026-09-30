@@ -10,6 +10,7 @@ import { getFriendlyTokenizerName, getTokenCountAsync } from '../tokenizers.js';
 import { conversationState } from '../neconyan-conversation/state.js';
 import { cancelJob } from '../jobs.js';
 import { uuidv4 } from '../utils.js';
+import { t, translate } from '../i18n.js';
 
 export const mewmory = {
     config: null, view: null, stories: [], error: '', loading: false, busy: false, backfilling: false, preparing: false,
@@ -36,10 +37,11 @@ export function notifyMewmory() {
     window.dispatchEvent(new CustomEvent('mewmory:updated'));
     const state = mewmory.error ? 'Needs attention' : mewmory.loading ? 'Loading' : mewmory.busy || mewmory.preparing ? 'Updating memories'
         : mewmory.view?.enabled ? 'Up to date' : 'Off';
+    const label = t`Mewmory: ${translate(state)}`;
     for (const button of document.querySelectorAll('[data-neconyan-route="mewmory"], [data-sb-tab="mewmory"]')) {
         button.dataset.mewmoryStatus = state;
-        button.title = 'Mewmory: ' + state;
-        button.setAttribute('aria-label', 'Mewmory: ' + state);
+        button.title = label;
+        button.setAttribute('aria-label', label);
         const icon = button.querySelector('i');
         icon?.classList.toggle('fa-brain', !mewmory.error);
         icon?.classList.toggle('fa-triangle-exclamation', Boolean(mewmory.error));

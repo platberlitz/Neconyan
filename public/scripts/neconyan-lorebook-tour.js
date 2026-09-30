@@ -149,6 +149,15 @@ export function parseLorebookTourCopy(text) {
         line.split('**').map((segment, index) => ({ text: segment, bold: index % 2 === 1 })).filter(run => run.text));
 }
 
+/**
+ * Translates tour copy paragraph by paragraph, since the catalogue keeps one key per paragraph.
+ * @param {string} text Copy with newline paragraphs
+ * @returns {string} Translated copy with the same paragraphs
+ */
+export function translateLorebookTourCopy(text) {
+    return String(text ?? '').split('\n').map(line => line.trim() && t([line.trim()])).join('\n');
+}
+
 const tour = {
     root: null,
     card: null,
@@ -323,7 +332,7 @@ async function show(stepId) {
     card.dataset.step = step.id;
     card.querySelector('.neconyan-lorebook-tour-count').textContent = t`Step ${index + 1} of ${steps.length}`;
     card.querySelector('.neconyan-lorebook-tour-title').textContent = t([step.title]);
-    renderCopy(card.querySelector('.neconyan-lorebook-tour-body'), t([step.body]));
+    renderCopy(card.querySelector('.neconyan-lorebook-tour-body'), translateLorebookTourCopy(step.body));
     card.querySelector('.neconyan-lorebook-tour-hint').textContent = t([step.hint]);
     card.querySelector('[data-lorebook-tour-back]').disabled = index === 0;
     const next = card.querySelector('[data-lorebook-tour-next]');

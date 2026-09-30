@@ -6,6 +6,7 @@ import { download, escapeHtml, escapeRegex, getSortableDelay, uuidv4 } from '../
 import { activateSendButtons, CLIENT_VERSION, chat, getChatGeneration, getCurrentChatId, getRequestHeaders, is_send_press, normalizeContentText, saveChatDebounced, saveSettings, saveSettingsDebounced, substituteParams } from '../../../script.js';
 import { getCurrentUserHandle } from '../../user.js';
 import { eventSource, event_types } from '../../events.js';
+import { t } from '../../i18n.js';
 import { is_group_generating } from '../../group-chats.js';
 import {
     areAgentsGloballyEnabled,
@@ -1398,7 +1399,7 @@ function getTemplateVersionValue(template) {
 }
 
 function buildAgentOrderPill(agent) {
-    return `<span class="ica--card-pill ica--card-pill--order" title="Lower numbers run earlier when Append Agents Execution is set to Sequential."><i class="fa-solid fa-sort-numeric-down fa-xs"></i> Order ${escapeHtml(getAgentOrderValue(agent))}</span>`;
+    return `<span class="ica--card-pill ica--card-pill--order" title="Lower numbers run earlier when Append Agents Execution is set to Sequential."><i class="fa-solid fa-sort-numeric-down fa-xs"></i> ${escapeHtml(t`Order ${getAgentOrderValue(agent)}`)}</span>`;
 }
 
 function hasTemplateUpdate(agent) {
@@ -1683,7 +1684,7 @@ function canPreviewPreGenerationPrompt(agent) {
 }
 
 function getPromptTransformLabel(agent) {
-    return getPromptTransformMode(agent) === 'append' ? 'prompt append' : 'prompt rewrite';
+    return getPromptTransformMode(agent) === 'append' ? t`prompt append` : t`prompt rewrite`;
 }
 
 function getCompanionTriggerLabel(companion) {
@@ -3183,7 +3184,7 @@ function renderAgentList() {
             const card = $(`
                 <div class="ica--agent-card ${enabledClass}${selectModeActive ? ' ica--selectable' : ''}${selectedAgentIds.has(agent.id) ? ' ica--selected' : ''}" data-agent-id="${escapeHtml(agent.id)}">
                     <div class="ica--card-header">
-                        ${selectModeActive ? `<input type="checkbox" class="ica--card-select" title="Select agent" ${selectedAgentIds.has(agent.id) ? 'checked' : ''} />` : `<button type="button" class="ica--card-toggle ${toggleClass}" aria-pressed="${agentEnabled}" aria-label="${agentEnabled ? 'Disable' : 'Enable'} ${escapeHtml(agent.name)}" title="${agentEnabled ? 'Disable' : 'Enable'}"></button>`}
+                        ${selectModeActive ? `<input type="checkbox" class="ica--card-select" title="Select agent" ${selectedAgentIds.has(agent.id) ? 'checked' : ''} />` : `<button type="button" class="ica--card-toggle ${toggleClass}" aria-pressed="${agentEnabled}" aria-label="${escapeHtml(agentEnabled ? t`Disable ${agent.name}` : t`Enable ${agent.name}`)}" title="${agentEnabled ? 'Disable' : 'Enable'}"></button>`}
                         <div class="ica--card-identity">
                             <span class="ica--card-name">${escapeHtml(agent.name)}</span>
                             <span class="ica--card-mobile-phase">${escapeHtml(getAgentCardPhaseLabel(agent))}${companionExecution ? ' · Companion' : ''}</span>
@@ -3204,8 +3205,8 @@ function renderAgentList() {
                         ${agent.conditions.triggerProbability < 100 ? `<span class="ica--card-pill"><i class="fa-solid fa-dice fa-xs"></i> ${agent.conditions.triggerProbability}%</span>` : ''}
                         ${buildCompanionCardPill(agent)}
                         ${preInterceptEnabled ? `<span class="ica--card-pill"><i class="fa-solid fa-shuffle fa-xs"></i> ${preInterceptLabel}</span>` : ''}
-                        ${!companionExecution && !preInterceptEnabled && agent.injection.position === 1 ? `<span class="ica--card-pill">depth ${agent.injection.depth}</span>` : ''}
-                        ${promptTransformEnabled ? `<span class="ica--card-pill"><i class="fa-solid fa-robot fa-xs"></i> ${promptTransformLabel}</span>` : ''}
+                        ${!companionExecution && !preInterceptEnabled && agent.injection.position === 1 ? `<span class="ica--card-pill">${escapeHtml(t`depth ${agent.injection.depth}`)}</span>` : ''}
+                        ${promptTransformEnabled ? `<span class="ica--card-pill"><i class="fa-solid fa-robot fa-xs"></i> ${escapeHtml(promptTransformLabel)}</span>` : ''}
                         ${regexCount > 0 ? `<span class="ica--card-pill"><i class="fa-solid fa-wand-magic-sparkles fa-xs"></i> ${regexCount} regex</span>` : ''}
                         ${connectionProfileLabel ? `<span class="ica--card-pill"><i class="fa-solid fa-plug fa-xs"></i> ${escapeHtml(connectionProfileLabel)}</span>` : ''}
                         ${modelOverrideLabel ? `<span class="ica--card-pill"><i class="fa-solid fa-microchip fa-xs"></i> ${escapeHtml(modelOverrideLabel)}</span>` : ''}
