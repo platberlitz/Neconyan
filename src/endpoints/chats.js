@@ -1117,7 +1117,7 @@ class IntegrityMismatchError extends Error {
     }
 }
 
-class InvalidChatDataError extends Error {
+export class InvalidChatDataError extends Error {
     constructor(...params) {
         super(...params);
         if (Error.captureStackTrace) {

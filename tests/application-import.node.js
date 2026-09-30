@@ -154,6 +154,45 @@ test('invalid imported history is skipped while later destination edits still re
     assert.equal(fs.existsSync(path.join(p.base.directories.root, 'user/files/late.txt')), false);
 });
 
+test('branch chats that name their parent the older SillyTavern ways import from a ZIP', async t => {
+    const p = setup(t);
+    const parents = [1687345678901, 'Nova: Branch', 'Trailing dot.', 'Trailing space ', 'x'.repeat(300), 'CON', '..', ['list'], { nested: true }, true, 'Source'];
+    const entries = parents.map((main_chat, index) => {
+        const rows = structuredClone(p.f.records);
+        rows[0].chat_metadata.main_chat = main_chat;
+        return [`data/default-user/chats/Nova/Branch #${index}.jsonl`, rows.map(row => JSON.stringify(row)).join('\n')];
+    });
+    const upload = path.join(p.sourceRoot, 'branches.zip');
+    await zipFile(upload, entries);
+    const retained = await retainUploadedArchive(p.base, p.f.scope, 'branches', upload);
+    const accepted = await accept(p, 'branches', { mode: 'zip', inputId: retained.id });
+    await runOperation(accepted.context);
+    const record = readOperation(p.base, 'branches');
+    assert.equal(record.state, 'completed');
+    assert.equal(record.result.skippedCount, 0);
+    for (const index of parents.keys()) {
+        const [header] = fs.readFileSync(path.join(p.base.directories.chats, 'Nova', `Branch #${index}.jsonl`), 'utf8').split('\n');
+        assert.deepEqual(JSON.parse(header).chat_metadata.main_chat, parents[index]);
+    }
+});
+
+test('a chat refused while publishing is skipped by name while healthy files import', async t => {
+    const p = setup(t);
+    const lines = p.f.records.map(row => JSON.stringify(row));
+    sourceFile(p, 'chats/Nova/Healthy.jsonl', lines.join('\n'));
+    sourceFile(p, 'chats/Nova/Negative zero.jsonl', [lines[0], lines[1].replace('"is_user":true', '"is_user":true,"n":-0.0')].join('\n'));
+    sourceFile(p, 'user/files/new.txt', 'Healthy file');
+    const accepted = await accept(p, 'refused');
+    await runOperation(accepted.context);
+    const record = readOperation(p.base, 'refused');
+    assert.equal(record.state, 'completed');
+    assert.equal(record.result.skippedCount, 1);
+    assert.deepEqual(record.result.skipped, [{ file: 'chats/Nova/Negative zero.jsonl', reason: 'Cannot import \'chats/Nova/Negative zero.jsonl\': Roleplay identity requires JSON-only values.' }]);
+    assert.equal(fs.existsSync(path.join(p.base.directories.chats, 'Nova', 'Negative zero.jsonl')), false);
+    assert.deepEqual(fs.readFileSync(path.join(p.base.directories.chats, 'Nova', 'Healthy.jsonl'), 'utf8').split('\n').slice(1), lines.slice(1));
+    assert.equal(fs.readFileSync(path.join(p.base.directories.root, 'user/files/new.txt'), 'utf8'), 'Healthy file');
+});
+
 function rawCard(data) {
     const chunks = extractChunks(png);
     chunks.splice(-1, 0, PNGtext.encode('chara', Buffer.from(data).toString('base64')));

@@ -21,6 +21,13 @@ const BATCHED_PIPELINE = 2;
 const MAX_AUTOMATIC_ATTEMPTS = 6;
 const SKIPPED_REPORT_LIMIT = 200;
 
+function importReport(plan, skipped) {
+    const skippedImports = skipped.filter(item => plan.files[item.index].defaultIndex === undefined).length;
+    return { ...plan.extensionsReport, imported: plan.importedCount - skippedImports, defaults: plan.files.length - plan.importedCount,
+        removed: plan.removals.length, sourceRoot: plan.sourceRoot, mode: plan.mode,
+        skippedCount: skipped.length, skipped: skipped.slice(0, SKIPPED_REPORT_LIMIT).map(item => ({ file: item.relative, reason: item.reason })) };
+}
+
 function extensionRemovals(lease, files) {
     const root = roleplayLease(lease).scope.directories.root;
     const prefix = USER_DIRECTORY_TEMPLATE.extensions;
@@ -170,13 +177,10 @@ async function runBatchedImport(context, plan, dependencies) {
             record = withOperation(context, ({ lease, value, save }) => {
                 context.signal.throwIfAborted();
                 assertTargets(lease);
-                const skippedImports = skipped.filter(item => plan.files[item.index].defaultIndex === undefined).length;
                 value.importPrepared = null;
                 value.importSkipped = skipped;
                 value.importReady = true;
-                value.importResult = { ...plan.extensionsReport, imported: plan.importedCount - skippedImports, defaults: plan.files.length - plan.importedCount,
-                    removed: plan.removals.length, sourceRoot: plan.sourceRoot, mode: plan.mode,
-                    skippedCount: skipped.length, skipped: skipped.slice(0, SKIPPED_REPORT_LIMIT).map(item => ({ file: item.relative, reason: item.reason })) };
+                value.importResult = importReport(plan, skipped);
                 save();
                 return value;
             });
@@ -185,7 +189,12 @@ async function runBatchedImport(context, plan, dependencies) {
         await report('Saving imported files', record.effects['import-publish']?.next ?? 0, plan.files.length);
         await publishImportBatches(context, plan, { archive, afterImportPublication: dependencies.afterImportPublication,
             skipped: new Set((record.importSkipped ?? []).map(item => item.index)),
+            onSkip: (value, item) => {
+                value.importSkipped = [...(value.importSkipped ?? []), item];
+                value.importResult = importReport(plan, value.importSkipped);
+            },
             onProgress: (completed, total) => report('Saving imported files', completed, total) });
+        record = withOperation(context, ({ value }) => value);
     } finally { archive?.close(); }
     if (plan.removals.length) publishFileDeletions(context, plan.removals, record.importResult, dependencies);
     return record.importResult;

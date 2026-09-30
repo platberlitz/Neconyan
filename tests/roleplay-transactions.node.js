@@ -519,6 +519,31 @@ test('exact jsonl basenames select the correct parent memory without suffix norm
     assert.equal(child.parent.locator.chat, 'Parent.jsonl');
 });
 
+test('numeric parent ids inherit memory and unusable parent names save without it', t => {
+    const f = fixture(t);
+    const parent = memoryParent(f, '1687345678901');
+    const input = f.input();
+    input.records[0].chat_metadata.main_chat = 1687345678901;
+    commitSingleChatWrite(f.scope, input, host);
+    const child = canonicalMemoryPaths(f.scope.directories, f.locator);
+    assert.equal(JSON.parse(fs.readFileSync(child.archive)).storyId, parent.state.storyId);
+    for (const [index, main_chat] of ['Nova: Branch', 'Trailing dot.', 'x'.repeat(300), '..', ['list'], { nested: true }, true].entries()) {
+        const g = fixture(t, false, `unusable-${index}`);
+        const saved = g.input();
+        saved.records[0].chat_metadata.main_chat = main_chat;
+        commitSingleChatWrite(g.scope, saved, host);
+        assert.equal(fs.existsSync(canonicalMemoryPaths(g.scope.directories, g.locator).archive), false);
+        assert.equal(readRoleplayAccount(g.scope).pending, null);
+    }
+    // A zero parent id still means 'no parent', as before, even when a chat named '0' has memory.
+    const zero = fixture(t, false, 'zero-parent');
+    memoryParent(zero, '0');
+    const unset = zero.input();
+    unset.records[0].chat_metadata.main_chat = 0;
+    commitSingleChatWrite(zero.scope, unset, host);
+    assert.equal(fs.existsSync(canonicalMemoryPaths(zero.scope.directories, zero.locator).archive), false);
+});
+
 test('a different child memory is retained when a pending capture resumes', t => {
     const f = fixture(t);
     memoryParent(f);

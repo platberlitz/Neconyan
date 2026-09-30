@@ -376,13 +376,31 @@ export function synchronize(directories, locator, context = [], source = readCha
     });
 }
 
+/**
+ * The parent of a branch chat, given an already canonical child locator. Older and imported
+ * chats can name the parent with a group's numeric id or a name that is not a safe file name;
+ * the first still resolves and the second simply has no parent memory.
+ */
+export function branchParentLocator(locator, metadata) {
+    const value = metadata?.main_chat;
+    if (!value) return null;
+    const chat = Number.isSafeInteger(value) ? String(value) : value;
+    let parent;
+    try {
+        parent = normalizeLocator({ ...locator, chat });
+    } catch (error) {
+        if (error?.status === 400) return null;
+        throw error;
+    }
+    return parent.chat === locator.chat ? null : parent;
+}
+
 /** Called by native saves before reporting branch creation as successful. */
 export function captureBranchMemory(directories, locator, { metadata, messages }) {
     if (!directories.root) return;
     locator = normalizeLocator(locator);
-    if (!metadata.main_chat || metadata.main_chat === locator.chat
-        || fs.existsSync(statePath(directories, locator)) || fs.existsSync(recoveryPath(directories, locator))) return;
-    const parentLocator = normalizeLocator({ ...locator, chat: metadata.main_chat });
+    const parentLocator = branchParentLocator(locator, metadata);
+    if (!parentLocator || fs.existsSync(statePath(directories, locator)) || fs.existsSync(recoveryPath(directories, locator))) return;
     const parentFile = statePath(directories, parentLocator);
     if (!fs.existsSync(parentFile)) return;
     return withChatFileLocks([parentFile, statePath(directories, locator)], () => {

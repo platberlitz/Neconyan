@@ -3,7 +3,7 @@ import { readConfig } from '../mewmory/models.js';
 import { processingVersion } from '../mewmory/processing.js';
 import { recallFingerprint } from '../mewmory/retrieval.js';
 import { prepareMewmoryPrompt } from '../mewmory/prepare.js';
-import { buildBranchMemoryState, chatMemoryExists, normalizeLocator, readState } from '../mewmory/store.js';
+import { branchParentLocator, buildBranchMemoryState, chatMemoryExists, normalizeLocator, readState } from '../mewmory/store.js';
 import { readContextSourcesSync, purgeMissingContextSources } from '../mewmory/sources.js';
 import { agentCollectionDirectory, readAgentCollection } from '../in-chat-agent-storage.js';
 import { getActiveCompanionResults } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
@@ -13,10 +13,8 @@ export function capturePromptingMemory(directories, locator, records) {
     locator = normalizeLocator(locator);
     const source = { metadata: records[0].chat_metadata ?? {}, messages: records.slice(1) };
     let state = readState(directories, locator);
-    if (!chatMemoryExists(directories, locator) && source.metadata.main_chat && source.metadata.main_chat !== locator.chat) {
-        const parent = normalizeLocator({ ...locator, chat: source.metadata.main_chat });
-        if (chatMemoryExists(directories, parent)) state = buildBranchMemoryState(readState(directories, parent), locator, source.messages);
-    }
+    const parent = chatMemoryExists(directories, locator) ? null : branchParentLocator(locator, source.metadata);
+    if (parent && chatMemoryExists(directories, parent)) state = buildBranchMemoryState(readState(directories, parent), locator, source.messages);
     if (!state.enabled) return null;
     const sources = readContextSourcesSync(directories, locator, state, source);
     const legacy = source.messages.some(message => Object.values(getActiveCompanionResults(message))
