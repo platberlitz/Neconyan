@@ -139,6 +139,7 @@ for (const phone of [false, true]) {
                         ['How do I import a SillyBunny persona backup JSON?', 'no picture bytes'],
                         ['Can I try a Vectorization search without a reply?', 'one embedding query'],
                         ['How do I update my source ZIP installation?', 'copy your data folder'],
+                        ['How do I activate the relationship tracker?', 'Agents → Manage agents → Browse library'],
                     ]) {
                         const id = `${name}-${variant}`;
                         const reference = await buildAssistantKnowledge({ character: { name: 'Renamed older copy', extensions: { neconyan_assistant: { id, version: 0 } } }, messages: [{ role: 'user', mes: question }] });
@@ -148,9 +149,40 @@ for (const phone of [false, true]) {
             }
             return { revision: KNOWLEDGE_REVISION, results };
         });
-        expect(references.revision).toBe(5);
-        expect(references.results).toHaveLength(36);
+        expect(references.revision).toBe(6);
+        expect(references.results).toHaveLength(45);
         expect(references.results.filter(result => !result.found)).toEqual([]);
+    });
+
+    test(`documented Relationship Tracker installation works on ${phone ? 'phone' : 'desktop'}`, async ({ app }, info) => {
+        test.setTimeout(240000);
+        const account = await app.account({ phone });
+        const page = await account.open({ workspace: false });
+        const generationRequests = [];
+        page.on('request', request => {
+            if (/\/generate(?:-quiet)?(?:\?|$)/.test(request.url())) generationRequests.push(request.url());
+        });
+        await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
+        await expect(page.locator('#ica--settings')).toBeVisible();
+        await page.getByRole('button', { name: 'Browse library', exact: true }).click();
+        await page.getByRole('textbox', { name: 'Search templates', exact: true }).fill('Relationship Tracker');
+        const template = page.locator('.ica--template-card[data-id="tpl-relationship-tracker"]');
+        await expect(template.getByRole('button', { name: 'Add agent', exact: true })).toBeVisible();
+        await template.getByRole('button', { name: 'Add agent', exact: true }).click();
+        await expect(template.getByRole('button', { name: 'Add another', exact: true })).toBeVisible();
+        await page.getByRole('button', { name: 'Close library', exact: true }).click();
+        const enabled = page.getByRole('button', { name: 'Enable Relationship Tracker', exact: true });
+        await expect(enabled).toHaveAttribute('aria-pressed', 'false');
+        await enabled.click();
+        await expect(page.getByRole('button', { name: 'Disable Relationship Tracker', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        await expect(page.locator('#ica--globalEnabled')).toContainText('Agents On');
+        expect(await page.evaluate(async () => {
+            const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+            return store.getAgents().filter(agent => agent.sourceTemplateId === 'tpl-relationship-tracker')
+                .map(agent => ({ name: agent.name, enabled: store.isAgentEnabledForCurrentScope(agent) }));
+        })).toEqual([{ name: 'Relationship Tracker', enabled: true }]);
+        expect(generationRequests).toEqual([]);
+        await page.screenshot({ path: info.outputPath('relationship-tracker-installed.png') });
     });
 }
 

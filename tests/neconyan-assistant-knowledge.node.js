@@ -108,6 +108,31 @@ test('every best-matching reference section fits the default allowance intact', 
     }
 });
 
+test('tracker activation starts with template installation, including the logged Discord queries', async () => {
+    const questions = [
+        'beau can you tell rid how to activate the relationship tracker?',
+        'relationship tracker enable activate',
+        'install add relationship tracker agent import template',
+        'How do I turn on the relationship tracker?',
+        'How do I install a tracker from templates?',
+    ];
+    for (const question of questions) {
+        assert.equal(ids(question)[0], 'agents.install-trackers', `${question}: ${ids(question)}`);
+        const result = await buildAssistantKnowledge({ character: marked('nori-neutral'), messages: [user(question)] });
+        assert.equal(result.topicIds[0], 'agents.install-trackers', question);
+        assert.match(result.text, /Agents → Manage agents → Browse library/);
+        assert.match(result.text, /Relationship Tracker/);
+        assert.match(result.text, /Add agent/);
+        assert.match(result.text, /disabled/);
+        assert.match(result.text, /Agents On/);
+        assert.match(result.text, /model requests/);
+    }
+    const messages = [user(questions[0]), { role: 'assistant', content: 'You need Import agents or Reset bundled agents.' },
+        user('jeez i meant the steps to installing it you dork')];
+    assert.equal(selectAssistantKnowledge(topics, messages)[0]?.id, 'agents.install-trackers');
+    assert.equal(ids('How do Mewmory trackers work?')[0], 'mewmory.trackers');
+});
+
 test('current feature questions supply complete, actionable references to older assistant copies', async () => {
     const questions = [
         ['How do I install Neconyan on Windows?', 'start.desktop-install', 'Start.bat'],
