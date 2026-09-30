@@ -30,6 +30,13 @@ Three things combined to cause it:
 - Include extension manifests in discovery. Older servers and extensions with missing manifests retain the separate-file fallback.
 - Restore the saved token-count cache before settings and extensions initialise. Previously, startup counted prompts before loading the saved cache, then replaced those newly calculated entries.
 - Minify the shared library on Bun as well as Node. Check the result with a JavaScript parser and fall back to the original valid file if minification produces invalid syntax. The compiled-file cache signature changes so existing installations rebuild it automatically.
+- Check whether account storage is ready without copying it. The shell asked once per settings drawer, and each copy of a large account's storage took long enough to add up to about a second on a phone.
+- Build the custom endpoint model list once per list instead of appending each model through jQuery. A 703-model list went from about 0.4 seconds to under 0.1.
+- Time Machine records its settings repairs as it makes them instead of comparing the whole settings block before and after, which it did once per preset.
+
+On a copy of a large real account (phone size, three alternating runs each), the loading screen cleared after a median of 8.9 seconds instead of 10.0 with no network delay, and 15.8 instead of 16.9 with 60 ms per round trip at 20 Mbps.
+
+The public reverse proxy was also returning a replacement service worker that erased browser caches on every load, and overriding all static-file cache headers. That override is now removed: the app's own service worker and headers pass through, unversioned scripts still check for updates, and fonts and images can keep their cached copies. A Chromium check on the public site confirmed that the worker stayed registered and reused an identical cached stylesheet in 5 ms, with no page errors. Documents still reach the server and sign-in responses are not cached; Safari behaviour was not directly tested.
 
 ### Background work
 
@@ -108,6 +115,8 @@ In the 120-message test, five to six seconds still pass between pressing Enter a
 - The settings save before each send uploads the whole settings file, so its size follows the account: about 170 KB in the test, several megabytes on a large account.
 - With auto-sync on, Dialogue Colors still reads its own settings block every 5 seconds (every 30 while the tab is hidden). That block holds every saved colour and was about 650 KB on the large account tested.
 - Agents' tracker button, the stop button and character colour detection each read computed styles in response to message events, which forces a style pass each time.
+- Opening the app makes about 950 requests. With 60 ms per round trip that adds about 7 seconds to the loading screen compared with no delay, even when the browser already holds every file, because scripts are served with `no-cache` and each one is checked with the server again.
+- Dialogue Colors normalises its whole colour record several times during startup (about 0.4 seconds on the large account). Its cross-device sync depends on those passes, so they were left alone.
 - After a reply, the server re-reads and parses its job list on every check. Each job keeps its full request for crash recovery (about 92 KB each here), so this parsing grows with job history.
 
 The three allow-listed `:has()` rules still trigger whole-page restyling while they apply: in Terminal UI mode, while an upstream drawer is maximised, and in Conversation mode on screens 360 pixels wide or narrower.

@@ -4457,16 +4457,17 @@ function saveModelList(data, source = oai_settings.chat_completion_source) {
     }
 
     if (oai_settings.chat_completion_source == chat_completion_sources.CUSTOM) {
-        $('.model_custom_select').empty();
-        $('.model_custom_select').append('<option value="">None</option>');
-        model_list.forEach((model) => {
-            $('.model_custom_select').append(
-                $('<option>', {
-                    value: model.id,
-                    text: model.id,
-                    selected: model.id == oai_settings.custom_model,
-                }));
-        });
+        // Built once per list: appending through jQuery re-queried and cloned every
+        // option, which took about 0.4s at startup with a long model list.
+        for (const list of document.querySelectorAll('.model_custom_select')) {
+            const options = document.createDocumentFragment();
+            options.append(new Option('None', ''));
+            for (const model of model_list) {
+                const id = model.id == null ? '' : String(model.id);
+                options.append(new Option(id, id, false, model.id == oai_settings.custom_model));
+            }
+            list.replaceChildren(options);
+        }
 
         if (!oai_settings.custom_model && model_list.length > 0) {
             $('#model_custom_select').val(model_list[0].id).trigger('change');

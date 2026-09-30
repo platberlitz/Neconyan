@@ -81,13 +81,17 @@ export function getSettings() {
         needsRepair = true;
     }
     const settings = container[MODULE_NAME];
-    const before = canonicalJson(settings);
+    // Tracks each repair directly: this runs once per preset while capturing, and
+    // comparing canonical JSON of the whole block before and after was the slow part.
+    let changed = false;
 
     if (!Array.isArray(settings.snapshots)) {
         settings.snapshots = [];
+        changed = true;
     }
     if (!Array.isArray(settings.quarantinedSnapshots)) {
         settings.quarantinedSnapshots = [];
+        changed = true;
     }
 
     const valid = [];
@@ -96,7 +100,11 @@ export function getSettings() {
         const row = normalizeRow(candidate);
         if (!row || seen.has(row.id)) {
             settings.quarantinedSnapshots.push(candidate);
+            changed = true;
             continue;
+        }
+        if (candidate.id !== row.id || candidate.url !== row.url) {
+            changed = true;
         }
         seen.add(row.id);
         valid.push(row);
@@ -106,18 +114,26 @@ export function getSettings() {
     for (const key of ['captureCharacters', 'captureLorebooks', 'capturePresets']) {
         if (typeof settings[key] !== 'boolean') {
             settings[key] = defaults()[key];
+            changed = true;
         }
     }
-    settings.keepPerTarget = Number.isFinite(settings.keepPerTarget)
+    const keepPerTarget = Number.isFinite(settings.keepPerTarget)
         ? Math.max(1, Math.floor(settings.keepPerTarget))
         : DEFAULT_KEEP_PER_TARGET;
-    settings.maxTotalBytes = Number.isFinite(settings.maxTotalBytes) && settings.maxTotalBytes > 0
+    const maxTotalBytes = Number.isFinite(settings.maxTotalBytes) && settings.maxTotalBytes > 0
         ? Math.floor(settings.maxTotalBytes)
         : DEFAULT_MAX_TOTAL_BYTES;
-    settings.lastCommit = typeof settings.lastCommit === 'string' ? settings.lastCommit : '';
+    const lastCommit = typeof settings.lastCommit === 'string' ? settings.lastCommit : '';
+    changed ||= !Object.is(settings.keepPerTarget, keepPerTarget)
+        || !Object.is(settings.maxTotalBytes, maxTotalBytes)
+        || settings.lastCommit !== lastCommit
+        || settings.settingsVersion !== SETTINGS_VERSION;
+    settings.keepPerTarget = keepPerTarget;
+    settings.maxTotalBytes = maxTotalBytes;
+    settings.lastCommit = lastCommit;
     settings.settingsVersion = SETTINGS_VERSION;
 
-    needsRepair ||= before !== canonicalJson(settings);
+    needsRepair ||= changed;
     return settings;
 }
 

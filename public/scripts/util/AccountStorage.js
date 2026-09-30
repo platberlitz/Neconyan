@@ -145,6 +145,15 @@ class AccountStorage {
     }
 
     /**
+     * Checks whether a key exists without copying the state.
+     * @param {string} key Key to look up
+     * @returns {boolean} True if the key is stored
+     */
+    hasItem(key) {
+        return Object.hasOwn(this.#state, key);
+    }
+
+    /**
      * Gets a snapshot of the storage state.
      * @returns {Record<string, string>} A deep clone of the storage state
      */

@@ -2,6 +2,7 @@ import { describe, expect, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import vm from 'node:vm';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const openAiSource = readFileSync(path.join(repoRoot, 'public', 'scripts', 'openai.js'), 'utf8');
@@ -31,6 +32,51 @@ function getFunctionSource(name) {
 }
 
 describe('OpenAI custom favorites wiring', () => {
+    test('builds both custom model lists in one replacement while retaining the selected model', () => {
+        const source = getFunctionSource('saveModelList');
+        const start = source.indexOf('if (oai_settings.chat_completion_source == chat_completion_sources.CUSTOM) {');
+        const end = source.indexOf('if (oai_settings.chat_completion_source == chat_completion_sources.AIMLAPI)', start);
+        const block = source.slice(start, end);
+        const targets = [[], []];
+        let queries = 0;
+        let replacements = 0;
+        let changeEvents = 0;
+
+        const context = {
+            chat_completion_sources: { CUSTOM: 'custom' },
+            oai_settings: { chat_completion_source: 'custom', custom_model: 'saved' },
+            model_list: [{ id: 'alpha' }, { id: 'saved' }, { id: '<unsafe>' }],
+            document: {
+                querySelectorAll: () => {
+                    queries++;
+                    return targets.map(target => ({ replaceChildren: fragment => {
+                        replacements++;
+                        target.splice(0, target.length, ...fragment.options);
+                    } }));
+                },
+                createDocumentFragment: () => ({ options: [], append(option) { this.options.push(option); } }),
+            },
+            Option: function (text, value, defaultSelected = false, selected = false) {
+                Object.assign(this, { text, value, defaultSelected, selected });
+            },
+            $: () => ({ val: () => ({ trigger: () => { changeEvents++; } }) }),
+        };
+
+        vm.runInNewContext(block, context);
+        expect(queries).toBe(1);
+        expect(replacements).toBe(2);
+        expect(targets[0]).toEqual(targets[1]);
+        expect(targets[0].map(option => option.value)).toEqual(['', 'alpha', 'saved', '<unsafe>']);
+        expect(targets[0].filter(option => option.selected).map(option => option.value)).toEqual(['saved']);
+        expect(targets[0][1]).not.toBe(targets[1][1]);
+        expect(changeEvents).toBe(0);
+
+        context.oai_settings.custom_model = '';
+        vm.runInNewContext(block, context);
+        expect(targets[0]).toHaveLength(4);
+        expect(changeEvents).toBe(1);
+    });
+
     test('imports the Custom endpoint favorites key helper', () => {
         expect(openAiSource).toContain('getCustomEndpointFavoritesKey,');
         expect(openAiSource).toContain('} from \'./openai-preset-utils.js\';');

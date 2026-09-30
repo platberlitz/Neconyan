@@ -4074,6 +4074,11 @@ function getShellAccountStorage() {
     }
 
     try {
+        // Called once per settings drawer at startup; copying the whole state here cost about a second on phones.
+        if (typeof storage.hasItem === 'function') {
+            return storage.hasItem(NN_ACCOUNT_STORAGE_READY_MARKER) ? storage : null;
+        }
+
         const snapshot = storage.getState();
         return snapshot && Object.hasOwn(snapshot, NN_ACCOUNT_STORAGE_READY_MARKER) ? storage : null;
     } catch {
