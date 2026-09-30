@@ -33,10 +33,29 @@
     display: none;
 }
 
+:root[data-sb-theme='kittyless'] body.neconyan #preloader {
+    background: linear-gradient(to bottom, transparent 55%, rgb(10 12 20 / .7)), url('../../img/neconyan/loader-kittyless-wide.webp?v=20260930a') 50% 50% / cover no-repeat, #141514;
+}
+
+@media (max-aspect-ratio: 4/5) {
+    :root[data-sb-theme='kittyless'] body.neconyan #preloader {
+        background-image: linear-gradient(to bottom, transparent 55%, rgb(10 12 20 / .7)), url('../../img/neconyan/loader-kittyless-tall.webp?v=20260930a');
+    }
+}
+
 :root[data-sb-theme='kittyless'] body.neconyan #preloader::after {
     content: 'Loading Neconyan...';
+    position: absolute;
+    left: 50%;
+    bottom: max(48px, calc(env(safe-area-inset-bottom) + 32px));
+    transform: translateX(-50%);
+    padding: 10px 22px;
+    border-radius: 999px;
+    border: 1px solid rgb(255 236 210 / .22);
+    background: rgb(12 14 22 / .62);
+    color: #f6ecdf;
     font-family: var(--mainFontFamily);
-    color: var(--neco-ink);
+    white-space: nowrap;
 }
 
 :root[data-sb-theme='kittyless'] body.neconyan::before {
