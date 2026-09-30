@@ -30,17 +30,34 @@
 }
 
 #load-spinner {
-    --spinner-size: 2em;
     transition: all var(--sb-transition-slow);
     opacity: 1;
-    top: calc(50% - var(--spinner-size) / 2);
-    left: calc(50% - var(--spinner-size) / 2);
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     position: absolute;
-    width: var(--spinner-size);
-    height: var(--spinner-size);
+    width: min(288px, 72vw);
+    aspect-ratio: 2 / 1;
     display: flex;
     align-items: center;
     justify-content: center;
+}
+
+#load-spinner .neconyan-startup-cat {
+    position: static;
+    transform: none;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+#load-spinner .action-loader-progress {
+    display: none;
+    font-size: 48px;
+}
+
+body.reduced-motion #load-spinner .action-loader-progress {
+    animation: none;
 }
 
 /* Action loader toast styles */

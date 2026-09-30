@@ -696,9 +696,9 @@ class BulkEditOverlay {
 
     #getDisabledElements = () => [...this.container.getElementsByClassName(BulkEditOverlay.bogusFolderClass)];
 
-    #getEntityKey = element => element.hasAttribute('data-chid')
-        ? Number(element.getAttribute('data-chid'))
-        : element.getAttribute('data-grid');
+    #getEntityKey = element => element.hasAttribute('data-grid')
+        ? element.getAttribute('data-grid')
+        : Number(element.getAttribute('data-chid'));
 
     toggleCharacterSelected = event => {
         event.stopPropagation();

@@ -3,6 +3,28 @@
 :root[style*='--mainFontFamily']:has(body.neconyan) { --sb-font-display: var(--mainFontFamily); }
 body.neconyan:not(.sbterm) :is(h1, h2, h3, h4, h5, h6, .sb-topbar-brand, .neconyan-rail-brand) { font-family: var(--sb-font-display); }
 
+/* Bulk selection must survive Shell Style card and hover backgrounds without resizing rows. */
+body.neconyan:not(.sbterm) #right-nav-panel.openDrawer #rm_print_characters_block.group_overlay_mode_select > :is(.character_select, .group_select).flex-container.character_selected {
+    background: color-mix(in srgb, var(--neco-ginger) 28%, var(--neco-surface));
+    outline: 2px solid var(--neco-ink);
+    outline-offset: -2px;
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block.group_overlay_mode_select > :is(.character_select, .group_select).flex-container.character_selected::after {
+    content: '\f00c' / '';
+    position: absolute;
+    inset: auto 8px 8px auto;
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    border-radius: var(--sb-radius-sm);
+    background: var(--neco-ink);
+    color: var(--neco-canvas);
+    font: 900 16px 'Font Awesome 6 Free';
+    pointer-events: none;
+}
+
 body.neconyan {
     color-scheme: dark;
     --neco-canvas: var(--SmartThemeBlurTintColor, oklch(18.5% 0.008 55));

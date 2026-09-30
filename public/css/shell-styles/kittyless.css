@@ -27,6 +27,11 @@
     --kittyless-line: color-mix(in srgb, var(--neco-accent-secondary) 35%, var(--neco-border));
 }
 
+/* Keep blocking actions visible without mascot artwork. */
+:root[data-sb-theme='kittyless'] body.neconyan #load-spinner .action-loader-progress {
+    display: inline-block;
+}
+
 /* A saved style also hides the startup mascot before the application boots. */
 :root[data-sb-theme='kittyless'] body.neconyan :is(.neconyan-home-cat, .neconyan-whiskers, .neconyan-cat-mark, .neconyan-empty-illustration, .sb-entity-empty-illustration, .sb-conversation-empty-illustration, .sbtw-empty-art, .ica--empty-illustration, .neconyan-startup-cat, .neconyan-message-sleeper, .neconyan-rail-brand > img, .sb-topbar-brand > img, .welcomeHeaderLogo),
 :root[data-sb-theme='kittyless'] body.neconyan #neconyan-tour-coachmark [data-tour-paw-stamp] {

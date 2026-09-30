@@ -487,10 +487,27 @@ let preloaderYoinked = false;
 export function createDefaultLoaderOverlay() {
     const loaderElement = document.createElement('div');
     loaderElement.id = 'loader';
+    loaderElement.setAttribute('role', 'status');
+    loaderElement.setAttribute('aria-label', t`Loading…`);
 
     const spinnerElement = document.createElement('div');
     spinnerElement.id = 'load-spinner';
-    spinnerElement.className = 'fa-solid fa-gear fa-spin fa-3x';
+    const mascot = document.createElement('img');
+    const reducedMotion = document.body.classList.contains('reduced-motion')
+        || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    mascot.className = 'neconyan-startup-cat';
+    mascot.src = reducedMotion
+        ? 'img/neconyan-pixel-cat-rest.webp?v=20260913g'
+        : 'img/neconyan-pixel-cat-running.webp?v=20260913g';
+    mascot.alt = '';
+    mascot.width = 384;
+    mascot.height = 192;
+    mascot.decoding = 'async';
+
+    const progress = document.createElement('span');
+    progress.className = 'action-loader-progress fa-solid fa-circle-notch fa-spin';
+    progress.setAttribute('aria-hidden', 'true');
+    spinnerElement.append(mascot, progress);
 
     loaderElement.appendChild(spinnerElement);
 
