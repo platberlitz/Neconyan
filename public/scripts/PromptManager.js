@@ -16,6 +16,7 @@ import { accountStorage } from './util/AccountStorage.js';
 import { getPromptDisplayTokenCounts, getPromptSourceTokenCounts, isCommentOnlyPromptContent, mergePromptTokenCounts } from './prompt-token-counts.js';
 import { getRenderedMarkerPrompt } from './prompt-manager-marker-preview.js';
 import { clearPromptSetVariables } from './prompt-variable-cleanup.js';
+import { withReadOnlyVariables } from './variable-read-only.js';
 import { RUNTIME_AGENTS_IDENTIFIER, resolveInChatAgentTokenUsage } from './in-chat-agent-inspection.js';
 import {
     resolvePromptManagerRenderState,
@@ -2134,7 +2135,9 @@ class PromptManager {
             .filter(prompt => this.shouldTrigger(prompt))
             .filter(prompt => !(Number(runtimeCounts[prompt.identifier]) > 0))
             .map(prompt => {
-                const prepared = this.preparePrompt(prompt);
+                // Counting for display must not run variable setters: they would change chat
+                // variables and save the open chat in the background.
+                const prepared = withReadOnlyVariables(() => this.preparePrompt(prompt));
                 if (!prepared.content && typeof prompt.content === 'string' && prompt.content && !isCommentOnlyPromptContent(prompt.content)) {
                     prepared.content = prompt.content;
                     rawContentFallbacks.add(prompt.identifier);
