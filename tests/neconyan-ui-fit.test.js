@@ -24,8 +24,33 @@ describe('avatar cat ears', () => {
         expect(frame).toContain('overflow: visible !important;');
     });
 
-    test('the picture keeps its rounded corners without relying on overflow clipping', () => {
-        expect(calicoCss).toMatch(/body\.neconyan\.flatchat:not\(\.sbterm\) #chat \.mes \.avatar > img,\s*body\.neconyan:not\(\.sbterm\) \.sb-conversation-message-avatar img \{ border-radius: 14px; \}/);
+    test('the picture follows the avatar style without relying on overflow clipping', () => {
+        expect(calicoCss).toMatch(/body\.neconyan\.flatchat:not\(\.sbterm\) #chat \.mes \.avatar > img,\s*body\.neconyan:not\(\.sbterm\) \.sb-conversation-message-avatar img,[^{]*\{ border-radius: var\(--neco-avatar-img-radius\) !important; \}/);
+    });
+});
+
+describe('avatar style setting', () => {
+    const themeCss = read('css/neconyan-theme.css');
+
+    test('Circle, Square, Rounded and Rectangle each get distinct shape tokens', () => {
+        const radius = cls => calicoCss.match(new RegExp(`\\nbody\\.neconyan${cls} \\{ --neco-avatar-radius: ([^;]+);`))[1];
+        const shapes = ['', '\\.square-avatars', '\\.rounded-avatars', '\\.big-avatars'].map(radius);
+        expect(shapes[0]).toBe('50%');
+        expect(new Set(shapes).size).toBe(4);
+        expect(ruleBody(calicoCss, 'body\\.neconyan\\.big-avatars')).toContain('--neco-avatar-height: calc(var(--avatar-base-width) * 4 / 3);');
+    });
+
+    test('chat frames and character rows use the tokens instead of fixed corners', () => {
+        const frame = ruleBody(calicoCss, 'body\\.neconyan\\.flatchat:not\\(\\.sbterm\\) #chat \\.mes \\.avatar,\\s*body\\.neconyan:not\\(\\.sbterm\\) \\.sb-conversation-message-avatar');
+        expect(frame).toContain('border-radius: var(--neco-avatar-radius) !important;');
+        const row = ruleBody(calicoCss, 'body\\.neconyan:not\\(\\.sbterm\\) #right-nav-panel #rm_print_characters_block > :is\\(\\.character_select, \\.group_select\\) > \\.avatar');
+        expect(row).toContain('border-radius: var(--neco-avatar-radius) !important;');
+    });
+
+    test('Rectangle can grow the chat avatar height past the square theme pin', () => {
+        const box = ruleBody(themeCss, '#chat \\.mes:not\\(\\.smallSysMes\\) \\.mesAvatarWrapper \\.avatar');
+        expect(box).toContain('--neco-avatar-block: var(--neco-avatar-height, var(--avatar-base-height));');
+        expect(box).toContain('max-block-size: var(--neco-avatar-block);');
     });
 });
 

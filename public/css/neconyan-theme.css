@@ -1428,13 +1428,14 @@ select.text_pole:where(:not([multiple]):not([size]):not(.select2-hidden-accessib
 }
 
 #chat .mes:not(.smallSysMes) .mesAvatarWrapper .avatar {
+    --neco-avatar-block: var(--neco-avatar-height, var(--avatar-base-height));
     inline-size: var(--avatar-base-width);
-    block-size: var(--avatar-base-height);
+    block-size: var(--neco-avatar-block);
     min-inline-size: var(--avatar-base-width);
-    min-block-size: var(--avatar-base-height);
+    min-block-size: var(--neco-avatar-block);
     max-inline-size: var(--avatar-base-width);
-    max-block-size: var(--avatar-base-height);
-    flex: 0 0 var(--avatar-base-height);
+    max-block-size: var(--neco-avatar-block);
+    flex: 0 0 var(--neco-avatar-block);
     display: flex;
     align-items: center;
     justify-content: center;
