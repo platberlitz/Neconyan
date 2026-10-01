@@ -44,18 +44,30 @@
 }
 
 /* Light surfaces take the real Windows 98 silver and white edit fields. */
-:root[data-sb-theme='windows-98'][data-sb-surface-tone='light'] body.neconyan:not(.sbterm) {
+:root[data-sb-theme='windows-98'][data-sb-surface-tone='light']:not([data-sb-text-tone='light']) body.neconyan:not(.sbterm) {
     --w98-face: #c0c0c0;
     --w98-field: #fff;
     --w98-light: #fff;
     --w98-hilite: #dfdfdf;
     --w98-shadow: #808080;
+    --neco-muted: color-mix(in srgb, var(--neco-ink) 78%, var(--w98-face));
 }
 
-/* A chosen accent recolours the caption bars, like the Display Properties Appearance tab. */
+/* Bright text on a light surface would vanish on silver, so the faces go dark grey instead. */
+:root[data-sb-theme='windows-98'][data-sb-surface-tone='light'][data-sb-text-tone='light'] body.neconyan:not(.sbterm) {
+    --w98-face: #3c3c3c;
+    --w98-field: #1e1e1e;
+    --w98-light: #707070;
+    --w98-hilite: #545454;
+    --w98-shadow: #202020;
+    --neco-muted: color-mix(in srgb, var(--neco-ink) 78%, var(--w98-face));
+}
+
+/* A chosen accent recolours the caption bars, like the Display Properties Appearance tab,
+   darkened as far as the white title text needs. */
 :root[data-sb-theme='windows-98'][data-neconyan-accent='custom'] body.neconyan:not(.sbterm) {
-    --w98-title: color-mix(in srgb, var(--neco-ginger) 70%, #000);
-    --w98-title-end: color-mix(in srgb, var(--neco-accent-secondary) 60%, var(--neco-ginger));
+    --w98-title: var(--neco-accent-deep, color-mix(in srgb, var(--neco-ginger) 70%, #000));
+    --w98-title-end: var(--neco-accent-secondary-deep, color-mix(in srgb, var(--neco-accent-secondary) 60%, var(--neco-ginger)));
 }
 
 /* Wallpaper: a 256-colour sky with cats hidden in the clouds. */
@@ -299,7 +311,7 @@
     border-radius: 0;
 }
 
-:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .sb-shell-header :is(.sb-shell-title, .sb-shell-kicker, .sb-shell-subtitle, h1, h2, h3, i) {
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .sb-shell-header :is(.sb-shell-title, .sb-shell-kicker, .sb-shell-subtitle, .sb-shell-description, h1, h2, h3, i) {
     color: var(--w98-title-ink);
 }
 

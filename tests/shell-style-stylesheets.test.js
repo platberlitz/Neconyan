@@ -118,7 +118,10 @@ describe('shell style runtime stylesheets', () => {
 
             // The palette, fonts and message tints stay. Kittyless alone intentionally hides
             // the cat decorations. Other styles must still leave them untouched.
-            const withoutExclusions = stripped.replaceAll(':not(.neconyan-whiskers)', '');
+            // Muted text may be re-derived from the user's own ink when a style forces its own
+            // panel colour (Windows 98 silver or dark grey); that adds no new palette colour.
+            const withoutExclusions = stripped.replaceAll(':not(.neconyan-whiskers)', '')
+                .replace(/--neco-muted: color-mix\(in srgb, var\(--neco-ink\) \d+%, var\(--w98-face\)\);/g, '');
             const forbiddenTokens = ['--neco-canvas:', '--neco-ink:', '--neco-muted:', '--neco-ginger:', '--neco-user:', '--mainFontFamily:', '--sb-font-display:', '--SmartThemeBotMesBlurTintColor', '--SmartThemeUserMesBlurTintColor',
                 ...protectedDecorations];
             for (const forbidden of forbiddenTokens) {

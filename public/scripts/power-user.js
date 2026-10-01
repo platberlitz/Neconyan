@@ -1571,6 +1571,24 @@ function getContrastAwareInk(backgroundChannelsList) {
     return darkMinimumContrast >= lightMinimumContrast ? 'rgb(0, 0, 0)' : 'rgb(255, 255, 255)';
 }
 
+/**
+ * Darkens a colour just enough for white text on it to reach the given contrast ratio.
+ * @param {number[]} channels RGB channels
+ * @param {number} minimumContrast Contrast ratio against white
+ * @returns {string} rgb() colour
+ */
+export function getDeepAccentColor(channels, minimumContrast = 4.5) {
+    const whiteLuminance = getRelativeLuminanceFromChannels([255, 255, 255]);
+    let deep = channels.slice(0, 3);
+    for (let scale = 1; scale >= 0; scale -= 0.04) {
+        deep = channels.slice(0, 3).map(channel => Math.round(channel * scale));
+        if (getContrastRatioFromLuminance(whiteLuminance, getRelativeLuminanceFromChannels(deep)) >= minimumContrast) {
+            break;
+        }
+    }
+    return `rgb(${deep.join(', ')})`;
+}
+
 function applyAccentContrastPalette() {
     const quoteChannels = parseColorChannels(power_user.quote_text_color);
     if (!quoteChannels) {
@@ -1583,6 +1601,12 @@ function applyAccentContrastPalette() {
     document.documentElement.style.setProperty('--neco-accent-ink', accentInk);
     document.documentElement.style.setProperty('--sb-on-accent', accentInk);
     document.documentElement.style.setProperty('--sb-on-solid-accent', accentInk);
+
+    // Shell styles with white caption text (Windows 98 title bars) paint them with these, so a
+    // pale accent still leaves the title readable.
+    const secondaryChannels = parseColorChannels(power_user.underline_text_color) ?? quoteChannels;
+    document.documentElement.style.setProperty('--neco-accent-deep', getDeepAccentColor(quoteChannels, 4.5));
+    document.documentElement.style.setProperty('--neco-accent-secondary-deep', getDeepAccentColor(secondaryChannels, 4.5));
 }
 
 function applyLandingContrastPalette() {
@@ -1597,6 +1621,11 @@ function applyLandingContrastPalette() {
     const landingMuted = isLightSurface ? 'rgba(102, 103, 95, 0.84)' : 'rgba(190, 177, 161, 0.84)';
 
     document.documentElement.dataset.sbSurfaceTone = isLightSurface ? 'light' : 'dark';
+    // Light text means the user wants dark panels; shell styles with fixed faces follow this.
+    const textChannels = parseColorChannels(power_user.main_text_color);
+    if (textChannels) {
+        document.documentElement.dataset.sbTextTone = getContrastAwareInk([textChannels]) === 'rgb(0, 0, 0)' ? 'light' : 'dark';
+    }
     document.documentElement.style.setProperty('--sb-landing-strong', landingStrong);
     document.documentElement.style.setProperty('--sb-landing-muted', landingMuted);
     document.documentElement.style.setProperty('--sb-contrast-strong', landingStrong);
