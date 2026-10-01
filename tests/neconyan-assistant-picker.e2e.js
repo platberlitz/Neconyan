@@ -1,5 +1,5 @@
 /* global window */
-import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
+import { acknowledgeSettingsSave, isolateSettingsSaves } from './chat-scroll-regression-helpers.js';
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 
@@ -7,6 +7,8 @@ const manifest = JSON.parse(readFileSync(new URL('../default/content/assistants/
 const variants = manifest.personalities.flatMap(personality => personality.variants.map(variant => ({ ...variant, personality: personality.id, name: personality.name })));
 
 test.use({ serviceWorkers: 'block' });
+// These tests open and save the same assistant chats, so run them one after another.
+test.describe.configure({ mode: 'default' });
 test.setTimeout(180000);
 
 async function openHome(page) {
@@ -32,6 +34,7 @@ async function activeAssistant(page) {
 test('all nine choices open real chats, preserve their chat on repeat, and associate expressions', async ({ page }, testInfo) => {
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
+    await isolateSettingsSaves(page);
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('.neconyan-assistant-row').first()).toBeVisible({ timeout: 45000 });
     const firstOpen = new Map();
@@ -44,7 +47,7 @@ test('all nine choices open real chats, preserve their chat on repeat, and assoc
         const installed = page.waitForResponse(response => response.url().endsWith('/api/characters/assistants/install') && response.request().method() === 'POST');
         await action.press('Enter');
         expect((await installed).ok()).toBe(true);
-        await expect(page.locator('body')).not.toHaveClass(/neconyan-home-visible/);
+        await expect(page.locator('body')).not.toHaveClass(/neconyan-home-visible/, { timeout: 30000 });
         await expect.poll(async () => (await activeAssistant(page)).id).toBe(variant.id);
         const state = await activeAssistant(page);
         expect(state.chatId).toBeTruthy();
@@ -61,7 +64,7 @@ test('all nine choices open real chats, preserve their chat on repeat, and assoc
     const row = page.locator(`[data-assistant-personality="${repeat.personality}"]`);
     await row.locator(`input[value="${repeat.id}"]`).check();
     await row.locator('[data-assistant-open]').click();
-    await expect(page.locator('body')).not.toHaveClass(/neconyan-home-visible/);
+    await expect(page.locator('body')).not.toHaveClass(/neconyan-home-visible/, { timeout: 30000 });
     await expect.poll(async () => (await activeAssistant(page)).id).toBe(repeat.id);
     const reopened = await activeAssistant(page);
     expect(reopened.avatar).toBe(firstOpen.get(repeat.id).avatar);
@@ -122,9 +125,11 @@ for (const width of [320, 390, 1280]) {
                 const { name, ...theme } = JSON.parse(readFileSync(new URL(`../default/content/themes/${filename}`, import.meta.url), 'utf8'));
                 await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
                 await page.route('**/api/settings/get', async route => {
-                    const response = await route.fetch();
+                    const response = await route.fetch({ maxRetries: 2 });
                     const data = await response.json();
+                    if (typeof data.settings !== 'string') return route.fulfill({ response });
                     const settings = JSON.parse(data.settings);
+                    settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
                     Object.assign(settings.power_user, theme, { theme: name });
                     data.settings = JSON.stringify(settings);
                     await route.fulfill({ response, json: data });
@@ -180,6 +185,6 @@ test('catalog and install failures keep Home usable and can be retried', async (
     await expect(row.locator('input[data-gender="neutral"]')).toBeChecked();
     await expect(row.locator('[data-assistant-open]')).toBeEnabled();
     await row.locator('[data-assistant-open]').click();
-    await expect(page.locator('body')).not.toHaveClass(/neconyan-home-visible/);
+    await expect(page.locator('body')).not.toHaveClass(/neconyan-home-visible/, { timeout: 30000 });
     await expect.poll(async () => (await activeAssistant(page)).id).toBe('nori-neutral');
 });

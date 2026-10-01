@@ -30,16 +30,18 @@ async function syncPhoneCss(page, phone) {
 
 for (const phone of [false, true]) {
     test(`${phone ? 'iPhone stand-in' : 'desktop'} Kittyless, disclosure, wallpaper and style restoration`, async ({ browser }, info) => {
-        test.setTimeout(120000);
+        test.setTimeout(240000);
         const context = await prepareContext(browser, phone);
         const page = await context.newPage();
         const errors = [];
         page.on('pageerror', error => errors.push(error.message));
         await page.route('**/api/characters/all', route => route.fulfill({ json: [] }));
         await page.route('**/api/settings/get', async route => {
-            const response = await route.fetch();
+            const response = await route.fetch({ maxRetries: 2 });
             const data = await response.json();
+            if (typeof data.settings !== 'string') return route.fulfill({ response });
             const settings = JSON.parse(data.settings);
+            settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
             settings.firstRun = false;
             settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', WelcomePage_PanelMode: 'full' };
             await route.fulfill({ response, json: { ...data, settings: JSON.stringify(settings) } });

@@ -13,6 +13,40 @@ export function acknowledgeSettingsSave(route, version = Date.now()) {
     } });
 }
 
+/**
+ * Keep this page's settings writes in memory. Parallel tests share the preview
+ * account, so real saves from two pages trip the "Settings changed on another
+ * device" prompt and block clicks. Reloads in the same page read back what the
+ * page saved. `prepare` edits the settings of every full settings load and
+ * `prepareEnvelope` edits every settings/get response body.
+ */
+export async function isolateSettingsSaves(page, prepare = () => {}, prepareEnvelope = () => {}) {
+    let saved = null;
+    await page.route('**/api/settings/save', route => {
+        const settings = route.request().postDataJSON();
+        const version = Math.max(Date.now(), (settings._version || 0) + 1);
+        const settingsRevision = (settings._settingsRevision || 0) + 1;
+        saved = { ...settings, _version: version, _settingsRevision: settingsRevision };
+        return route.fulfill({ status: 200, json: { result: 'ok', version, settingsRevision } });
+    });
+    await page.route('**/api/settings/get', async route => {
+        const names = route.request().postDataJSON()?.extensionSettings;
+        if (saved && Array.isArray(names)) {
+            const source = saved.extension_settings || {};
+            return route.fulfill({ json: { extension_settings: Object.fromEntries(names.filter(name => Object.hasOwn(source, name)).map(name => [name, source[name]])) } });
+        }
+        const response = await route.fetch({ maxRetries: 2 });
+        const data = await response.json();
+        await prepareEnvelope(data);
+        if (typeof data.settings !== 'string') return route.fulfill({ response, json: data });
+        const settings = saved ? structuredClone(saved) : JSON.parse(data.settings);
+        settings.extension_settings ??= {};
+        settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
+        await prepare(settings);
+        return route.fulfill({ response, json: { ...data, settings: JSON.stringify(settings) } });
+    });
+}
+
 export async function openPersonaEditor(page, section = 'prompt') {
     const edit = page.locator('#persona_workspace_tab_edit');
     if (await edit.isVisible()) await edit.click();

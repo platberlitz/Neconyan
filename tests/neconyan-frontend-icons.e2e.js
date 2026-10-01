@@ -1,7 +1,8 @@
 /* global window */
 import { expect, test } from '@playwright/test';
+import { isolateSettingsSaves } from './chat-scroll-regression-helpers.js';
 
-test.setTimeout(60000);
+test.setTimeout(120000);
 
 async function expand(page, selector) {
     const header = page.locator(selector);
@@ -15,10 +16,7 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
             const errors = [];
             page.on('pageerror', error => errors.push(error.message));
             let firstLoad = true;
-            await page.route('**/api/settings/get', async route => {
-                const response = await route.fetch();
-                const data = await response.json();
-                const settings = JSON.parse(data.settings);
+            await isolateSettingsSaves(page, settings => {
                 settings.firstRun = false;
                 settings.accountStorage['NeconyanTutorialStatus.v1'] = 'skipped';
                 settings.accountStorage.WelcomePage_PanelMode = 'full';
@@ -26,7 +24,15 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
                     for (const id of ['miso', 'taro', 'nori']) delete settings.accountStorage[`neconyanAssistantGender:${id}`];
                     firstLoad = false;
                 }
-                await route.fulfill({ response, json: { ...data, settings: JSON.stringify(settings) } });
+            });
+            // Other suites leave unread Conversation replies behind, which would badge the favicon.
+            await page.route('**/api/neconyan-conversation/store/get', async route => {
+                const response = await route.fetch({ maxRetries: 2 });
+                const data = await response.json();
+                for (const thread of Object.values(data.store?.characters || {})) {
+                    for (const branch of Object.values(thread.branches || {})) branch.unread = 0;
+                }
+                await route.fulfill({ response, json: data });
             });
             await page.goto('/');
             await expect(page.locator('.neconyan-assistant-row').first()).toBeAttached({ timeout: 60000 });

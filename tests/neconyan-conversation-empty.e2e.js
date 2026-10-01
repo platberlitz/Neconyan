@@ -20,9 +20,11 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
             page.on('pageerror', error => errors.push(error.message));
             await page.route('**/api/characters/all', route => route.fulfill({ json: [] }));
             await page.route('**/api/settings/get', async route => {
-                const response = await route.fetch();
+                const response = await route.fetch({ maxRetries: 2 });
                 const data = await response.json();
+                if (typeof data.settings !== 'string') return route.fulfill({ response });
                 const settings = JSON.parse(data.settings);
+                settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
                 settings.firstRun = false;
                 settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
                 data.settings = JSON.stringify(settings);

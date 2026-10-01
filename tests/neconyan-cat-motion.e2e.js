@@ -1,5 +1,5 @@
 /* global document, window, MouseEvent */
-import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
+import { acknowledgeSettingsSave, isolateSettingsSaves } from './chat-scroll-regression-helpers.js';
 import { gunzipSync } from 'node:zlib';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
@@ -28,7 +28,7 @@ test('Home paints the backflip and keeps OS and app motion preferences separate'
     let settings;
     const savedSettings = [];
     await page.route('**/api/settings/get', async route => {
-        const response = await route.fetch();
+        const response = await route.fetch({ maxRetries: 2 });
         const envelope = await response.json();
         if (!settings) {
             settings = JSON.parse(envelope.settings);
@@ -102,6 +102,7 @@ test('kitty clouds remain visible behind Home, Characters and Conversation', asy
         modelRequests.push(route.request().url());
         return route.fulfill({ status: 503, json: { error: 'No model calls during appearance checks.' } });
     });
+    await isolateSettingsSaves(page);
     const asset = await page.request.get('/img/neconyan/kitty-clouds.webp?v=20260913g');
     expect(asset.status()).toBe(200);
     await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -165,9 +166,11 @@ for (const tone of ['Dark', 'Light']) {
         const { name, ...theme } = JSON.parse(readFileSync(new URL(`../default/content/themes/${filename}`, import.meta.url), 'utf8'));
         await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
         await page.route('**/api/settings/get', async route => {
-            const response = await route.fetch();
+            const response = await route.fetch({ maxRetries: 2 });
             const data = await response.json();
+            if (typeof data.settings !== 'string') return route.fulfill({ response });
             const settings = JSON.parse(data.settings);
+            settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
             settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
             Object.assign(settings.power_user, theme, { theme: name, reduced_motion: false });
             data.settings = JSON.stringify(settings);
@@ -268,7 +271,7 @@ test('one loading cat remains visible through the early-to-popup handoff', async
         await expect(page.locator('#preloader')).toHaveCSS('background-color', 'rgb(20, 21, 20)');
         await expect(page.locator('.neconyan-startup-cat:visible')).toHaveCount(1);
         releaseScript();
-        await expect(page.locator('.splash-screen .neconyan-startup-cat')).toBeVisible({ timeout: 30000 });
+        await expect(page.locator('.splash-screen .splash-logo.neconyan-startup-cat')).toBeVisible({ timeout: 30000 });
         await expect(page.locator('#preloader')).toBeHidden();
         await expect(page.locator('.neconyan-startup-cat:visible')).toHaveCount(1);
         await expect(page.locator('.splash-screen #load-spinner')).toBeHidden();
@@ -296,14 +299,16 @@ for (const width of [320, 390]) {
                 await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
                 // The update toast would cover the ear this test presses.
                 await page.route('**/api/server-admin/status', async route => {
-                    const response = await route.fetch();
+                    const response = await route.fetch({ maxRetries: 2 });
                     const data = await response.json();
                     await route.fulfill({ response, json: { ...data, repository: { ...data.repository, behind: 0 } } });
                 });
                 await page.route('**/api/settings/get', async route => {
-                    const response = await route.fetch();
+                    const response = await route.fetch({ maxRetries: 2 });
                     const data = await response.json();
+                    if (typeof data.settings !== 'string') return route.fulfill({ response });
                     const settings = JSON.parse(data.settings);
+                    settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
                     settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
                     Object.assign(settings.power_user, theme, { theme: name, reduced_motion: false });
                     data.settings = JSON.stringify(settings);

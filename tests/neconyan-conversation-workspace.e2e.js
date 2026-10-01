@@ -1,9 +1,11 @@
 /* global document, window, getComputedStyle */
-import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
+import { isolateSettingsSaves } from './chat-scroll-regression-helpers.js';
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
+// These tests open and save the same assistant chats, so run them one after another.
+test.describe.configure({ mode: 'default' });
 test.setTimeout(120000);
 
 async function assertReadable(page, foregroundSelector, backgroundSelector) {
@@ -46,18 +48,10 @@ for (const width of [1280, 390, 320]) {
                     modelRequests.push(route.request().url());
                     return route.fulfill({ status: 503, json: { error: 'No model calls during UI check' } });
                 });
-                if (tone === 'light') {
-                    const { name, ...theme } = JSON.parse(readFileSync(new URL('../default/content/themes/Neconyan Calico.json', import.meta.url), 'utf8'));
-                    await page.route('**/api/settings/get', async route => {
-                        const response = await route.fetch();
-                        const data = await response.json();
-                        const settings = JSON.parse(data.settings);
-                        Object.assign(settings.power_user, theme, { theme: name });
-                        data.settings = JSON.stringify(settings);
-                        await route.fulfill({ response, json: data });
-                    });
-                    await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
-                }
+                const { name, ...theme } = JSON.parse(readFileSync(new URL('../default/content/themes/Neconyan Calico.json', import.meta.url), 'utf8'));
+                await isolateSettingsSaves(page, settings => {
+                    if (tone === 'light') Object.assign(settings.power_user, theme, { theme: name });
+                });
                 await page.goto('/', { waitUntil: 'domcontentloaded' });
                 await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 60000 });
                 const miso = page.locator('[data-assistant-personality="miso"]');
