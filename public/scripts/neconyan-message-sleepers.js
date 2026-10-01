@@ -3,6 +3,78 @@ const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const frames = new Map();
 const active = new Map();
 
+// At 96x77 the paws meet the bubble 41px below the image's top. Its tail hangs
+// 17px past the side. Measure the bubble rather than guessing from the avatar size.
+function sleeperPlacement(message, bubble, isUser) {
+    return {
+        top: bubble.top - message.top - 41,
+        left: isUser ? bubble.right - message.left - 79 : bubble.left - message.left - 17,
+    };
+}
+
+const pending = new Set();
+let placementFrame = 0;
+const observedBubbles = new Set();
+const bubbleSizes = new ResizeObserver(entries => {
+    for (const { target } of entries) queuePlacement(target.closest('.mes'));
+});
+
+function queuePlacement(message) {
+    if (!message) return;
+    pending.add(message);
+    if (placementFrame) return;
+    placementFrame = requestAnimationFrame(() => {
+        placementFrame = 0;
+        const measured = [...pending].filter(message => message.isConnected).map(message => {
+            const bubble = message.querySelector(':scope > .mes_block');
+            if (!bubble) return null;
+            const placement = document.body.matches('.flatchat.nnchat:not(.sbterm):not(.sbstory)')
+                ? sleeperPlacement(message.getBoundingClientRect(), bubble.getBoundingClientRect(), message.getAttribute('is_user') === 'true') : null;
+            return { message, placement };
+        });
+        pending.clear();
+        for (const item of measured) {
+            if (!item) continue;
+            for (const axis of ['top', 'left']) {
+                const key = '--nnchat-sleeper-' + axis;
+                if (item.placement) item.message.style.setProperty(key, item.placement[axis] + 'px');
+                else item.message.style.removeProperty(key);
+            }
+        }
+    });
+}
+
+function watchBubbles() {
+    for (const bubble of observedBubbles) {
+        if (bubble.isConnected) continue;
+        bubbleSizes.unobserve(bubble);
+        observedBubbles.delete(bubble);
+    }
+    for (const bubble of document.querySelectorAll('#chat .mes > .mes_block')) {
+        if (observedBubbles.has(bubble)) continue;
+        observedBubbles.add(bubble);
+        bubbleSizes.observe(bubble);
+        queuePlacement(bubble.closest('.mes'));
+    }
+}
+
+function initBubblePlacement() {
+    const chat = document.getElementById('chat');
+    if (!chat) return;
+    watchBubbles();
+    new MutationObserver(records => {
+        // Streaming text is handled by the size observer; only scan for new or removed bubbles.
+        if (records.some(record => record.target === chat || [...record.addedNodes, ...record.removedNodes]
+            .some(node => node instanceof HTMLElement && (node.matches('.mes, .mes_block') || node.querySelector('.mes_block'))))) watchBubbles();
+    }).observe(chat, { childList: true, subtree: true });
+    new MutationObserver(() => {
+        for (const bubble of observedBubbles) queuePlacement(bubble.closest('.mes'));
+    }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+}
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initBubblePlacement, { once: true });
+else initBubblePlacement();
+
 function rest(img) {
     const state = active.get(img);
     if (!state) return;

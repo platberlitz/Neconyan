@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 import { describe, expect, it } from '@jest/globals';
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
@@ -47,10 +48,31 @@ describe('extra Neconyan chat styles', () => {
         }
     });
 
-    it('moves Messenger swipe controls under the bubble, away from the bottom-aligned avatars', () => {
+    it('keeps Messenger avatars at the top and swipe controls under the bubble', () => {
+        expect(chatStylesSource).toMatch(/nnchat-messenger:not\(\.sbterm\) #chat \.mes \{\s*align-items: flex-start;/);
         expect(chatStylesSource).toContain(':is(.last_mes, :has(.deep-swipe-counter, .assistant-swipe-arrow))');
         expect(chatStylesSource).toMatch(/nnchat-messenger:not\(\.sbterm\) #chat \.mes\[is_user='true'\] \.swipeRightBlock \{\s*right: calc\(var\(--avatar-base-width\) \+ 10px\);/);
         expect(chatStylesSource).toMatch(/nnchat-messenger:not\(\.sbterm\) #chat \.mes:not\(\[is_user='true'\]\) :is\(\.swipe_left, \.deep-swipe-left-outer\) \{\s*left: calc\(var\(--avatar-base-width\) \+ 10px\);/);
+    });
+
+    it('gives Screenplay, Compact and Storybook real user message surfaces', () => {
+        expect(chatStylesSource).toMatch(/nnchat-script[^}]+\.mes_block \{[^}]*border: 1px solid var\(--neco-border\);/);
+        expect(chatStylesSource).toMatch(/nnchat-compact[^}]+\.mes_block \{[^}]*border: 1px solid var\(--neco-border\);/);
+        expect(chatStylesSource).toMatch(/nnchat-storybook:not\(\.sbterm\) #chat \.mes:not\(\.smallSysMes\)\[is_user='true'\] \.mes_block \{[^}]*background: color-mix/);
+    });
+
+    it('positions the cats from the actual message block instead of estimated avatar offsets', () => {
+        expect(chatStylesSource).toContain('top: var(--nnchat-sleeper-top, -41px)');
+        expect(chatStylesSource).toContain('left: var(--nnchat-sleeper-left, 0px)');
+        const source = read('public/scripts/neconyan-message-sleepers.js');
+        expect(source).toContain('new ResizeObserver');
+        expect(source).toContain('bubble.getBoundingClientRect()');
+        expect(source).toContain('bubbleSizes.unobserve(bubble)');
+        const placement = vm.runInNewContext(source.slice(source.indexOf('function sleeperPlacement('), source.indexOf('\nconst pending')) + '\nsleeperPlacement');
+        const message = { top: 100, left: 20 };
+        const bubble = { top: 112, left: 80, right: 400 };
+        expect(placement(message, bubble, false)).toEqual({ top: -29, left: 43 });
+        expect(placement(message, bubble, true)).toEqual({ top: -29, left: 301 });
     });
 
     it('lets Deep Swipe keep message borders and shadows that chat styles rely on', () => {

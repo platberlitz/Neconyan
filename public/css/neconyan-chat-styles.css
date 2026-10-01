@@ -1612,7 +1612,7 @@ body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat {
     --avatar-base-height: 38px;
 }
 body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes {
-    align-items: flex-end;
+    align-items: flex-start;
     gap: 10px;
     margin-bottom: 12px;
     padding: 2px 0;
@@ -1641,8 +1641,7 @@ body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes .name_text {
 body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes .timestamp {
     font-size: 11px;
 }
-/* Avatars sit at the bottom of the row here, where swipe controls normally go, so the
-   controls get their own row under the bubble on the avatar's side. */
+/* Swipe controls keep their own row below the bubble, separate from the top-aligned avatar. */
 body.neconyan.flatchat.nnchat-messenger:not(.sbterm):not(.hideAllSwipeButtons) #chat .mes:not(.smallSysMes, [is_system='true']):is(.last_mes, :has(.deep-swipe-counter, .assistant-swipe-arrow)),
 body.neconyan.flatchat.nnchat-messenger.swipeAllMessages:not(.sbterm):not(.hideAllSwipeButtons) #chat .mes:not(.smallSysMes) {
     padding-bottom: 34px;
@@ -1726,10 +1725,10 @@ body.neconyan.flatchat.nnchat-script:not(.sbterm) #chat .mes:not(.smallSysMes) .
 body.neconyan.flatchat.nnchat-script:not(.sbterm) #chat .mes:not(.smallSysMes) .mes_block,
 body.neconyan.flatchat.nnchat-script:not(.sbterm) #chat .mes:not(.smallSysMes)[is_user='true'] .mes_block {
     width: min(100%, 64ch);
-    padding: 4px 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
+    padding: 12px calc(16px * var(--messageMarginScale, 1));
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-surface);
     box-shadow: none;
 }
 body.neconyan.flatchat.nnchat-script:not(.sbterm) #chat .mes .ch_name > .flex-container:first-child {
@@ -1769,14 +1768,15 @@ body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes:hover {
 }
 body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes:not(.smallSysMes) .mes_block,
 body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes:not(.smallSysMes)[is_user='true'] .mes_block {
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
+    padding: 6px calc(10px * var(--messageMarginScale, 1));
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-surface);
     box-shadow: none;
 }
-body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes[is_user='true'] {
-    box-shadow: inset 2px 0 0 color-mix(in oklch, var(--neco-ginger) 60%, transparent);
+body.neconyan.flatchat:is(.nnchat-script, .nnchat-compact):not(.sbterm) #chat .mes:not(.smallSysMes)[is_user='true'] .mes_block {
+    border-color: color-mix(in oklch, var(--neco-ginger) 45%, var(--neco-border));
+    background: color-mix(in oklch, var(--neco-ginger) 14%, var(--neco-surface));
 }
 body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes .mes_text {
     font-size: 0.94em;
@@ -1809,12 +1809,9 @@ body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes:not(.smallSysMes
     box-shadow: 0 6px 18px color-mix(in oklch, var(--neco-charcoal) 20%, transparent);
 }
 body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes:not(.smallSysMes)[is_user='true'] .mes_block {
-    padding: 6px calc(18px * var(--messageMarginScale, 1));
-    border: 0;
+    padding: 12px calc(18px * var(--messageMarginScale, 1));
     border-left: 3px solid var(--neco-ginger);
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
+    background: color-mix(in oklch, var(--neco-ginger) 10%, var(--neco-surface));
 }
 body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes .ch_name > .flex-container:first-child {
     justify-content: center;
@@ -1856,23 +1853,11 @@ body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes[is_user='true'] 
 body.neconyan.big-avatars.flatchat.nnchat:not(.sbterm) #chat {
     --neco-avatar-height: calc(var(--avatar-base-width) * 4 / 3);
 }
-body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes[is_user='true'] {
-    box-shadow: none;
-    background: color-mix(in oklch, var(--neco-ginger) 7%, transparent);
-}
-@media (min-width: 769px) {
-    body.neconyan.flatchat.nnchat:is(.nnchat-messenger, .nnchat-compact):not(.sbterm):not(.sbstory) #chat .mes[is_user='false'] > .neconyan-message-sleeper {
-        left: calc(var(--avatar-base-width) + 14px);
-    }
-    body.neconyan.flatchat.nnchat.nnchat-compact:not(.sbterm):not(.sbstory) #chat .mes[is_user='false'] > .neconyan-message-sleeper {
-        top: -46px;
-    }
-    body.neconyan.flatchat.nnchat.nnchat-script:not(.sbterm):not(.sbstory) #chat .mes > .neconyan-message-sleeper {
-        left: max(0px, calc(50% - 32ch));
-    }
-    body.neconyan.flatchat.nnchat.nnchat-storybook:not(.sbterm):not(.sbstory) #chat .mes > .neconyan-message-sleeper {
-        left: max(0px, calc(50% - 34ch));
-    }
+/* The sleeper module measures the actual bubble, including centred and reversed layouts. */
+body.neconyan.flatchat.nnchat:not(.sbterm):not(.sbstory) #chat .mes[mesid] > .neconyan-message-sleeper {
+    top: var(--nnchat-sleeper-top, -41px);
+    left: var(--nnchat-sleeper-left, 0px);
+    right: auto;
 }
 
 @media (max-width: 768px) {
