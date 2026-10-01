@@ -444,7 +444,7 @@ body.neconyan.neconyan-home-visible #neconyan-home-host { display: block; flex: 
 body.neconyan.neconyan-home-visible #sheld > :not(#neconyan-home-host) { display: none !important; }
 /* Hide chrome until Home or clearChat removes the boot skeleton; welcome-screen.js drops the class. */
 body.neconyan.neconyan-home-booting :is(#top-bar, #form_sheld, #ica--tracker-panel, #ica--tracker-panel-handle) { visibility: hidden !important; }
-body.neconyan.neconyan-home-booting #sheld { background: var(--neco-canvas); }
+body.neconyan.neconyan-home-booting #sheld { background: transparent; }
 body.neconyan .welcomePanel {
     width: 100%; max-width: 900px; margin: 0 auto; padding: 72px 32px 40px; gap: 36px;
     border: 0; border-radius: 0; background: transparent; box-shadow: none; text-shadow: none;

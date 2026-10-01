@@ -16,7 +16,7 @@
 }
 
 /* A saved choice also hides the startup mascot before the application boots. */
-:root[data-sb-kittyless='true'] body.neconyan :is(.neconyan-home-cat, .neconyan-whiskers, .neconyan-cat-mark, .neconyan-empty-illustration, .sb-entity-empty-illustration, .sb-conversation-empty-illustration, .sbtw-empty-art, .ica--empty-illustration, .neconyan-startup-cat, .neconyan-message-sleeper, .neconyan-rail-brand > img, .sb-topbar-brand > img, .welcomeHeaderLogo),
+:root[data-sb-kittyless='true'] body.neconyan :is(.neconyan-home-cat, .neconyan-workspace-kitty, .neconyan-whiskers, .neconyan-cat-mark, .neconyan-empty-illustration, .sb-entity-empty-illustration, .sb-conversation-empty-illustration, .sbtw-empty-art, .ica--empty-illustration, .neconyan-startup-cat, .neconyan-message-sleeper, .neconyan-rail-brand > img, .sb-topbar-brand > img, .welcomeHeaderLogo),
 :root[data-sb-kittyless='true'] body.neconyan #neconyan-tour-coachmark [data-tour-paw-stamp] {
     display: none;
 }

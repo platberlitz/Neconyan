@@ -2100,17 +2100,41 @@ body.neconyan .welcomeAdvancedHome > summary small {
 .neconyan-home-skeleton {
     display: grid;
     place-items: center;
-    gap: 10px;
-    min-height: 280px;
-    color: var(--SmartThemeBodyColor);
+    min-height: 360px;
+    padding: 24px 16px;
+    color: var(--neco-text, var(--SmartThemeBodyColor));
     text-align: center;
 }
 
+.neconyan-workspace-splash {
+    display: grid;
+    justify-items: center;
+    gap: 16px;
+    width: min(100%, 360px);
+    padding: 24px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 24px;
+    background: color-mix(in srgb, var(--neco-surface, var(--SmartThemeBlurTintColor)) 72%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.neconyan-workspace-splash picture {
+    line-height: 0;
+}
+
 .neconyan-home-skeleton img {
-    width: 56px;
-    height: 56px;
-    border-radius: 18px;
-    background: var(--neco-cream, #f4e4d4);
+    width: 176px;
+    height: 220px;
+    max-width: 100%;
+    object-fit: contain;
+    background: transparent;
+}
+
+.neconyan-workspace-splash p {
+    margin: 0;
+    font-family: var(--sb-font-body, 'Nunito', sans-serif);
+    line-height: 1.5;
 }
 
 @media (max-width: 520px) {
