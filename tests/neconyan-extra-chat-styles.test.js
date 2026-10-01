@@ -47,6 +47,12 @@ describe('extra Neconyan chat styles', () => {
         }
     });
 
+    it('moves Messenger swipe controls under the bubble, away from the bottom-aligned avatars', () => {
+        expect(chatStylesSource).toContain(':is(.last_mes, :has(.deep-swipe-counter, .assistant-swipe-arrow))');
+        expect(chatStylesSource).toMatch(/nnchat-messenger:not\(\.sbterm\) #chat \.mes\[is_user='true'\] \.swipeRightBlock \{\s*right: calc\(var\(--avatar-base-width\) \+ 10px\);/);
+        expect(chatStylesSource).toMatch(/nnchat-messenger:not\(\.sbterm\) #chat \.mes:not\(\[is_user='true'\]\) :is\(\.swipe_left, \.deep-swipe-left-outer\) \{\s*left: calc\(var\(--avatar-base-width\) \+ 10px\);/);
+    });
+
     it('lets Deep Swipe keep message borders and shadows that chat styles rely on', () => {
         const idleRule = deepSwipeSource.match(/\.mes \.mes_text,\s*\.mes \.mes_block\s*\{([^}]*)\}/);
         expect(idleRule).not.toBeNull();

@@ -1641,6 +1641,45 @@ body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes .name_text {
 body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes .timestamp {
     font-size: 11px;
 }
+/* Avatars sit at the bottom of the row here, where swipe controls normally go, so the
+   controls get their own row under the bubble on the avatar's side. */
+body.neconyan.flatchat.nnchat-messenger:not(.sbterm):not(.hideAllSwipeButtons) #chat .mes:not(.smallSysMes, [is_system='true']):is(.last_mes, :has(.deep-swipe-counter, .assistant-swipe-arrow)),
+body.neconyan.flatchat.nnchat-messenger.swipeAllMessages:not(.sbterm):not(.hideAllSwipeButtons) #chat .mes:not(.smallSysMes) {
+    padding-bottom: 34px;
+}
+body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes .swipeRightBlock {
+    flex-direction: row-reverse;
+    align-items: center;
+    gap: 2px;
+    inline-size: auto;
+    bottom: 2px;
+}
+body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes .swipeRightBlock .deep-swipe-right {
+    inline-size: var(--sb-message-icon-size, 30px);
+    justify-content: center;
+}
+body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes :is(.swipe_left, .deep-swipe-left-outer) {
+    bottom: 2px;
+}
+body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes:not([is_user='true']) :is(.swipe_left, .deep-swipe-left-outer) {
+    left: calc(var(--avatar-base-width) + 10px);
+}
+body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes:not([is_user='true']) .swipeRightBlock {
+    left: calc(var(--avatar-base-width) + 12px + var(--sb-message-icon-size, 30px));
+    right: auto;
+}
+body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes:not([is_user='true']) .assistant-swipe-arrow {
+    left: calc(var(--avatar-base-width) + 58px + var(--sb-message-icon-size, 30px));
+    right: auto;
+    bottom: 4px;
+}
+body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes[is_user='true'] .swipeRightBlock {
+    right: calc(var(--avatar-base-width) + 10px);
+}
+body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes[is_user='true'] :is(.swipe_left, .deep-swipe-left-outer) {
+    left: auto;
+    right: calc(var(--avatar-base-width) + 58px + var(--sb-message-icon-size, 30px));
+}
 
 body.neconyan.flatchat.nnchat-notebook:not(.sbterm) #chat .mes {
     --nnchat-line: calc(1.7em * var(--neco-line-ratio, 1));
