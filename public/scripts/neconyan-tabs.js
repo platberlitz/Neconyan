@@ -1248,7 +1248,18 @@ const NN_SEARCH_TARGET_SELECTOR = [
     '.bg-header-row-1',
     '.bg-header-row-2',
     '.ch_name',
+    'select[title]',
 ].join(', ');
+
+// The global search skips these rows: they wrap several unrelated controls, so their text
+// reads as one long jumble. The controls inside are indexed on their own.
+const NN_SEARCH_JUMBLED_ROW_SELECTOR = '.bg-header-row-1, .bg-header-row-2';
+// Sliders such as Temperature are named only by their aria-label.
+const NN_SEARCH_READABLE_TARGET_SELECTOR = `${NN_SEARCH_TARGET_SELECTOR}, input[type="range"][aria-label]`;
+// Blocks shown only for one provider or backend. When hidden, their fields cannot be reached.
+const NN_SEARCH_SOURCE_GATED_SELECTOR = '[data-source], [data-tg-type], [data-tg-samplers], [id$="_api"]';
+// Elements that head a section, so a result for them is a result for the whole section.
+const NN_SEARCH_SECTION_HEADING_SELECTOR = '.inline-drawer-toggle, .standoutHeader, .extension_name, h3, h4, h5, summary';
 
 const NN_ADVANCED_SEARCH_ROUTES = new Set([
     'left:sampling',
@@ -1261,11 +1272,39 @@ const NN_ADVANCED_SEARCH_ROUTES = new Set([
     'characters:import',
 ]);
 
-const NN_UNIVERSAL_SEARCH_PLACEHOLDER = 'Type to search...';
-const NN_UNIVERSAL_SEARCH_IDLE_TITLE = 'Search all settings';
-const NN_UNIVERSAL_SEARCH_IDLE_HINT = 'Jump to any workspace or customization control from one place.';
-const NN_UNIVERSAL_SEARCH_EMPTY_HINT = 'Could not find query. Try a broader term or a different setting name.';
-const NN_UNIVERSAL_SEARCH_RESULT_LIMIT = 10;
+const NN_UNIVERSAL_SEARCH_PLACEHOLDER = 'Search pages and settings...';
+const NN_UNIVERSAL_SEARCH_IDLE_TITLE = 'Search pages and settings';
+const NN_UNIVERSAL_SEARCH_IDLE_HINT = 'Type a page or a setting name, such as Sampling, Temperature or Hide cats.';
+const NN_UNIVERSAL_SEARCH_EMPTY_HINT = 'Try the name of a page, such as Connections, or a shorter word from the setting.';
+const NN_UNIVERSAL_SEARCH_RESULT_LIMIT = 12;
+const NN_UNIVERSAL_SEARCH_PAGE_LIMIT = 3;
+
+// Every page in the workspace rail, so searching a page name opens that page instead of listing
+// the buttons inside it. Keywords are the other words people use for the same page.
+const NN_SEARCH_PAGES = Object.freeze([
+    { route: 'home', label: 'Home', description: 'Recent chats, characters and quick starts.', keywords: ['start', 'dashboard', 'welcome'] },
+    { route: 'new-chat', label: 'New chat', description: 'Start a fresh chat.', keywords: ['temporary chat', 'start chat'] },
+    { route: 'characters', label: 'Characters', description: 'Browse, create and import characters.', keywords: ['bots', 'character cards', 'groups'], covers: ['characters::characters::characters'] },
+    { route: 'model', label: 'Connections', description: 'Choose the service, API key and model that write the replies.', keywords: ['api', 'api key', 'provider', 'model', 'backend', 'connect', 'proxy', 'endpoint', 'connection profiles'] },
+    { route: 'agents', label: 'Agents', description: 'Helpers that run alongside your chats.', keywords: ['in-chat agents', 'companion agents'] },
+    { route: 'mewmory', label: 'Mewmory', description: 'Long-term memory for Roleplay chats.', keywords: ['memory', 'memories', 'remember', 'recall', 'pawspective', 'summary'] },
+    { route: 'lorebooks', label: 'Lorebooks', description: 'World info entries the model reads when they come up.', keywords: ['world info', 'lore', 'worldbook'], covers: ['characters::characters::world-info'] },
+    { route: 'extensions', label: 'Extensions', description: 'Turn tools on and off, and install new ones.', keywords: ['plugins', 'add-ons', 'install extension', 'manage extensions'] },
+    { route: 'presets', label: 'Presets', description: 'Saved bundles of prompts and reply settings.', keywords: ['prompt manager', 'chat completion preset'] },
+    { route: 'sampling', label: 'Sampling', description: 'How the model picks its words: temperature, penalties and more.', keywords: ['temperature', 'top p', 'top k', 'penalty', 'samplers', 'seed', 'logit bias'] },
+    { route: 'formatting', label: 'Formatting', description: 'Templates and system prompts sent to the model.', keywords: ['advanced formatting', 'context template', 'instruct', 'system prompt', 'tokenizer'] },
+    { route: 'regex', label: 'Regexes', description: 'Find-and-replace rules for messages and prompts.', keywords: ['regex', 'find and replace', 'scripts'] },
+    { route: 'expressions', label: 'Character Expressions', description: 'Character pictures that change with the mood of each reply.', keywords: ['sprites', 'emotions', 'classifier'] },
+    { route: 'persona', label: 'Persona', description: 'The character you play.', keywords: ['personas', 'user name', 'my character', 'avatar'], covers: ['characters::characters::persona'] },
+    { route: 'pathfinder', label: 'Pawthfinder', description: 'Lets the model choose which lorebook entries matter for each reply.', keywords: ['pathfinder', 'lorebook search'] },
+    { route: 'dialogue-colors', label: 'Dialogue Colors', description: 'Give every speaker their own colour.', keywords: ['dialogue colours', 'colours', 'colors', 'speaker colours', 'character colors'] },
+    { route: 'quick-image-gen', label: 'Quick Image Gen', description: 'Make pictures of characters and scenes.', keywords: ['image generation', 'images', 'pictures', 'art'] },
+    { route: 'background', label: 'Background', description: 'The picture or video behind your chats.', keywords: ['backgrounds', 'wallpaper', 'animated background', 'video'] },
+    { route: 'settings', label: 'Settings', description: 'Appearance, chat behaviour and interface options.', keywords: ['preferences', 'options', 'theme', 'shell style', 'appearance'] },
+    { route: 'server', label: 'Server', description: 'Status, updates, restarts and config.yaml.', keywords: ['update', 'restart', 'config', 'version', 'branch'] },
+    { route: 'console-logs', label: 'Console Logs', description: 'Live server logs for troubleshooting.', keywords: ['logs', 'debug', 'errors', 'console'] },
+    { route: 'report-issue', label: 'Report an Issue', description: 'Opens the Neconyan GitHub issues page in a new tab.', keywords: ['bug', 'issue', 'github', 'feedback'] },
+].map(page => Object.freeze(page)));
 const NN_MOBILE_QUICK_ACTION_LIMIT = nnMobileShellLifecycle.railModel.limits.quickActionLimit;
 const NN_MOBILE_QUICK_ACTION_ICON_FALLBACK = nnMobileShellLifecycle.railModel.limits.iconFallback;
 let nnIsSyncingRailActions = false;
@@ -3204,24 +3243,52 @@ function isCharacterEditorMenuType(menuType) {
     return ['character_edit', 'create'].includes(menuType ?? '');
 }
 
-function getSearchTextCandidates(element) {
+// Reads visible words with a space between elements, so a drawer title and its caption do not
+// run together, and skips the option lists of dropdowns.
+function getSearchElementText(element) {
+    if (!(element instanceof Element) || element instanceof HTMLSelectElement) {
+        return '';
+    }
+
+    const parts = [];
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+        acceptNode: node => node.parentElement?.closest('option, optgroup, select, script, style, template, svg')
+            ? NodeFilter.FILTER_REJECT
+            : NodeFilter.FILTER_ACCEPT,
+    });
+    while (walker.nextNode()) {
+        parts.push(walker.currentNode.nodeValue);
+    }
+    return parts.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+function getSearchHeadingText(element, { readable = false } = {}) {
+    if (!readable || !element?.matches?.('.inline-drawer-toggle, .inline-drawer-header')) {
+        return '';
+    }
+    return getSearchElementText(element.querySelector('b, strong') ?? element);
+}
+
+function getSearchTextCandidates(element, { readable = false } = {}) {
+    const readText = node => (readable ? getSearchElementText(node) : node?.textContent);
     const extensionContainer = element.closest('.extension_container');
-    const extensionName = extensionContainer?.querySelector('.extension_name')?.textContent ?? '';
+    const extensionName = readText(extensionContainer?.querySelector('.extension_name')) ?? '';
     const candidates = [
         element.dataset.sbSearchLabel,
-        element.matches('.extension_name') ? element.textContent : '',
+        getSearchHeadingText(element, { readable }),
+        element.matches('.extension_name') ? readText(element) : '',
         extensionName,
         element.getAttribute('aria-label'),
         element.getAttribute('title'),
         element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement ? element.placeholder : '',
         element instanceof HTMLSelectElement ? element.selectedOptions?.[0]?.textContent : '',
         element.matches('.range-block, .range-block-title, .range-block-header')
-            ? element.closest('.range-block')?.querySelector('.range-block-title, .range-block-header, label, strong, h4, h5')?.textContent
+            ? readText(element.closest('.range-block')?.querySelector('.range-block-title, .range-block-header, label, strong, h4, h5'))
             : '',
         element.matches('.extension_container, .extension_name')
-            ? extensionContainer?.querySelector('.extension_name, .inline-drawer-header, .inline-drawer-toggle, h3, h4, strong')?.textContent
+            ? readText(extensionContainer?.querySelector('.extension_name, .inline-drawer-header, .inline-drawer-toggle, h3, h4, strong'))
             : '',
-        element.textContent,
+        readText(element),
     ];
 
     return candidates
@@ -3230,18 +3297,66 @@ function getSearchTextCandidates(element) {
         .filter((candidate, index, collection) => collection.indexOf(candidate) === index);
 }
 
-function getSearchDisplayText(element, fallback = '') {
-    const candidates = getSearchTextCandidates(element);
+function getSearchDisplayText(element, fallback = '', { readable = false } = {}) {
+    const headingText = getSearchHeadingText(element, { readable });
+    if (headingText) {
+        return clampText(headingText, 110);
+    }
+    const candidates = getSearchTextCandidates(element, { readable });
     const normalizedFallback = normalizeText(fallback);
     const preferredCandidate = candidates.find(candidate => normalizeText(candidate) !== normalizedFallback);
     return clampText(preferredCandidate || candidates[0] || fallback, 110);
 }
 
-function getSearchText(element, sectionLabel = '') {
+function getSearchText(element, sectionLabel = '', { readable = false } = {}) {
     return normalizeText([
-        ...getSearchTextCandidates(element),
+        ...getSearchTextCandidates(element, { readable }),
         sectionLabel,
     ].join(' '));
+}
+
+function getSearchWordStartPattern(term) {
+    return new RegExp(`(?:^|[^\\p{L}\\p{N}])${escapeRegex(term)}`, 'u');
+}
+
+function hasSearchWordStarts(text, patterns) {
+    return patterns.every(pattern => pattern.test(text));
+}
+
+// Ranks a result by where the words land: the item's own name first, then its section, then
+// anything else it mentions (tooltips, placeholders, page keywords).
+function scoreSearchEntry(entry, query, patterns) {
+    const label = normalizeText(entry.displayText);
+    const section = normalizeText(entry.sectionLabel);
+    // Page names win ties with settings of the same name: the page is usually where you want to go.
+    const pageBonus = entry.kind === 'page' ? 20 : 0;
+    const lengthPenalty = label.length / 1000;
+
+    if (label === query) return { score: 100 + pageBonus - lengthPenalty, sectionOnly: false };
+    if (label.startsWith(query)) return { score: 80 + pageBonus - lengthPenalty, sectionOnly: false };
+    if (hasSearchWordStarts(label, patterns)) return { score: 60 + pageBonus - lengthPenalty, sectionOnly: false };
+    if (entry.kind === 'page') {
+        // 'model' is exactly a keyword of Connections; 'temp' only starts one of New chat's.
+        const keywordScore = entry.keywords?.includes(query) ? 75 : 45;
+        return { score: keywordScore - lengthPenalty, sectionOnly: false };
+    }
+    if (section && (section === query || hasSearchWordStarts(section, patterns))) {
+        return { score: 30 - lengthPenalty, sectionOnly: true };
+    }
+    return { score: 10 - lengthPenalty, sectionOnly: false };
+}
+
+function isSearchElementSwitchedOff(element) {
+    let current = element instanceof HTMLElement ? element.closest(NN_SEARCH_SOURCE_GATED_SELECTOR) : null;
+
+    while (current) {
+        if (current.style.display === 'none') {
+            return true;
+        }
+        current = current.parentElement?.closest(NN_SEARCH_SOURCE_GATED_SELECTOR) ?? null;
+    }
+
+    return false;
 }
 
 function getPersonaSearchAvatarId(element) {
@@ -3422,6 +3537,7 @@ function getCharacterPanelSearchEntries() {
             sectionLabel: tab.label,
             tabId: tab.id,
             tabLabel: tab.label,
+            kind: 'tab',
             advanced: NN_ADVANCED_SEARCH_ROUTES.has(`characters:${tab.id}`),
             dedupeKey: `characters::${tab.id}`,
         };
@@ -15975,7 +16091,9 @@ function updateThemePickerUi() {
     }
 }
 
-function createSearchIndex(tabState, { includeThemeCard = false } = {}) {
+// `readable` is the global search's index: it includes the Shell Style card and reads labels
+// with clean spacing. Phone quick actions keep the older labels because their saved keys use them.
+function createSearchIndex(tabState, { includeThemeCard = false, readable = false } = {}) {
     const searchRoot = tabState.searchRoot;
     if (!(searchRoot instanceof HTMLElement)) {
         return [];
@@ -15983,22 +16101,22 @@ function createSearchIndex(tabState, { includeThemeCard = false } = {}) {
 
     const entries = [];
     const seen = new Set();
-    const excludedSelector = includeThemeCard
+    const excludedSelector = includeThemeCard || readable
         ? '.sb-search-result, [data-sb-search-index-ignore], .sb-legacy-search-hidden, .sb-mobile-quick-actions-group, .sb-desktop-quick-actions-group'
         : '.sb-search-result, [data-sb-search-index-ignore], .sb-theme-card, .sb-legacy-search-hidden';
 
-    for (const element of searchRoot.querySelectorAll(NN_SEARCH_TARGET_SELECTOR)) {
+    for (const element of searchRoot.querySelectorAll(readable ? NN_SEARCH_READABLE_TARGET_SELECTOR : NN_SEARCH_TARGET_SELECTOR)) {
         if (!(element instanceof HTMLElement)) {
             continue;
         }
 
-        if (element.closest(excludedSelector)) {
+        if (element.closest(excludedSelector) || (readable && element.matches(NN_SEARCH_JUMBLED_ROW_SELECTOR))) {
             continue;
         }
 
-        const sectionLabel = getSearchSectionLabel(element, tabState.label);
-        const searchText = getSearchText(element, sectionLabel);
-        const displayText = getSearchDisplayText(element, sectionLabel);
+        const sectionLabel = getSearchSectionLabel(element, tabState.label, { readable });
+        const searchText = getSearchText(element, sectionLabel, { readable });
+        const displayText = getSearchDisplayText(element, sectionLabel, { readable });
         const dedupeKey = getSearchEntryDedupeKey(tabState, sectionLabel, displayText, { element });
 
         if (searchText.length < 3 || seen.has(dedupeKey)) {
@@ -16071,7 +16189,9 @@ function getPersonaSearchEntries(tabState) {
     return entries;
 }
 
-function getSearchSectionLabel(element, fallback) {
+function getSearchSectionLabel(element, fallback, { readable = false } = {}) {
+    const readText = node => String((readable ? getSearchElementText(node) : node?.textContent) ?? '').replace(/\s+/g, ' ').trim();
+
     // For extension containers: use the extension's own name/header, not the parent tab label
     const extContainer = element.closest('.extension_container, [id$="-container"]');
     if (extContainer instanceof HTMLElement) {
@@ -16080,7 +16200,7 @@ function getSearchSectionLabel(element, fallback) {
             ?? extContainer.querySelector(':scope > .inline-drawer > .inline-drawer-toggle, :scope > .inline-drawer > .inline-drawer-header')
             ?? extContainer.querySelector('h3, h4, strong');
         if (extName) {
-            const text = String(extName.textContent ?? '').replace(/\s+/g, ' ').trim();
+            const text = readText(extName);
             if (text) return text;
         }
     }
@@ -16090,18 +16210,52 @@ function getSearchSectionLabel(element, fallback) {
     if (inlineDrawer instanceof HTMLElement) {
         const toggle = inlineDrawer.querySelector(':scope > .inline-drawer-toggle');
         if (toggle) {
-            const text = String(toggle.textContent ?? '').replace(/\s+/g, ' ').trim();
+            const text = readable ? getSearchHeadingText(toggle, { readable }) : readText(toggle);
             if (text && text !== fallback) return text;
         }
     }
 
     const preferred = element.closest('.persona_management_global_settings')
-        ?? element.closest('.bg-header-row-1')
-        ?? element.closest('.bg-header-row-2')
+        ?? (readable ? null : element.closest('.bg-header-row-1') ?? element.closest('.bg-header-row-2'))
         ?? element.closest('label, h3, h4, h5, strong');
 
-    const text = String(preferred?.textContent ?? fallback).replace(/\s+/g, ' ').trim();
+    const text = preferred ? readText(preferred) : String(fallback ?? '').trim();
     return text || fallback;
+}
+
+// The element a folded section result scrolls to, matching the order getSearchSectionLabel uses.
+function getSearchSectionElement(element) {
+    if (!(element instanceof HTMLElement)) {
+        return null;
+    }
+    return element.closest('.extension_container, [id$="-container"]')
+        ?? element.closest('.inline-drawer')
+        ?? element;
+}
+
+function getSearchPageEntries() {
+    return NN_SEARCH_PAGES.map(page => ({
+        element: null,
+        searchText: normalizeText([page.label, page.route.replace(/-/g, ' '), ...page.keywords].join(' ')),
+        displayText: page.label,
+        sectionLabel: '',
+        detail: page.description,
+        keywords: [page.route.replace(/-/g, ' '), ...page.keywords].map(normalizeText),
+        tabId: page.route,
+        tabLabel: 'Pages',
+        groupLabel: 'Pages',
+        kind: 'page',
+        covers: page.covers ?? [],
+        dedupeKey: `page::${page.route}`,
+        action: () => {
+            const railButton = document.querySelector(`#neconyan-workspace-rail [data-neconyan-route="${CSS.escape(page.route)}"]`);
+            if (railButton instanceof HTMLElement) {
+                railButton.click();
+                return;
+            }
+            globalThis.NeconyanWelcome?.activateRoute?.(page.route);
+        },
+    }));
 }
 
 function collectGlobalSearchMatches(query) {
@@ -16112,9 +16266,9 @@ function collectGlobalSearchMatches(query) {
     }
 
     const searchTerms = normalizedQuery.split(' ').filter(Boolean);
-    const matches = new Map();
+    const wordPatterns = searchTerms.map(getSearchWordStartPattern);
 
-    const searchSources = [];
+    const searchSources = [{ shellKey: 'pages', shellLabel: 'Pages', entries: getSearchPageEntries() }];
 
     for (const [shellKey, shellState] of Object.entries(nnState.shells)) {
         const shellLabel = getShellConfig(shellKey)?.title || shellKey;
@@ -16122,7 +16276,7 @@ function collectGlobalSearchMatches(query) {
 
         for (const tabState of shellState.tabs.values()) {
             if (!tabState.searchIndex || ['settings', 'extensions'].includes(tabState.id)) {
-                tabState.searchIndex = createSearchIndex(tabState);
+                tabState.searchIndex = createSearchIndex(tabState, { readable: true });
             }
 
             entries.push(...tabState.searchIndex);
@@ -16142,45 +16296,87 @@ function collectGlobalSearchMatches(query) {
         entries: getCharacterPanelSearchEntries(),
     });
 
-    for (const { shellKey, shellLabel, entries } of searchSources) {
-        for (const entry of entries) {
-            if (!searchTerms.every(term => entry.searchText.includes(term))) {
-                continue;
-            }
+    const collectMatches = (isMatch) => {
+        const matches = new Map();
 
-            const startsWithQuery = entry.searchText.startsWith(normalizedQuery);
-            const exactMatch = entry.searchText === normalizedQuery;
-            const match = {
-                ...entry,
-                shellKey,
-                shellLabel,
-                advanced: entry.advanced === true || NN_ADVANCED_SEARCH_ROUTES.has(`${shellKey}:${entry.tabId}`),
-                score: Number(exactMatch) * 100 + Number(startsWithQuery) * 10 - entry.displayText.length / 1000,
-            };
-            const matchKey = [
-                shellKey,
-                entry.dedupeKey || [
-                    entry.tabId,
-                    normalizeText(entry.sectionLabel),
-                    normalizeText(entry.displayText),
-                ].filter(Boolean).join('::'),
-            ].filter(Boolean).join('::');
-            const existingMatch = matches.get(matchKey);
-            const shouldReplaceMatch = !existingMatch
-                || match.score > existingMatch.score
-                || (match.score === existingMatch.score
-                    && typeof match.action === 'function'
-                    && typeof existingMatch.action !== 'function');
+        for (const { shellKey, shellLabel, entries } of searchSources) {
+            for (const entry of entries) {
+                if (!isMatch(entry.searchText) || isSearchElementSwitchedOff(entry.element)) {
+                    continue;
+                }
 
-            if (shouldReplaceMatch) {
-                matches.set(matchKey, match);
+                const { score, sectionOnly } = scoreSearchEntry(entry, normalizedQuery, wordPatterns);
+                const sectionText = normalizeText(entry.sectionLabel);
+                // Controls that only matched through their section name fold into one result
+                // for that section, so a section search does not list every button inside it.
+                const isSection = typeof entry.action !== 'function'
+                    && !entry.kind
+                    && Boolean(sectionText)
+                    && (sectionOnly || (normalizeText(entry.displayText) === sectionText
+                        && entry.element instanceof HTMLElement
+                        && entry.element.matches(NN_SEARCH_SECTION_HEADING_SELECTOR)));
+                const isWholeTab = isSection && sectionText === normalizeText(entry.tabLabel);
+                const match = {
+                    ...entry,
+                    ...(isSection ? {
+                        kind: 'section',
+                        displayText: entry.sectionLabel,
+                        element: isWholeTab ? null : sectionOnly ? getSearchSectionElement(entry.element) : entry.element,
+                        dedupeKey: `${entry.tabId}::section::${sectionText}`,
+                    } : {}),
+                    shellKey,
+                    shellLabel,
+                    advanced: entry.advanced === true || NN_ADVANCED_SEARCH_ROUTES.has(`${shellKey}:${entry.tabId}`),
+                    score,
+                };
+                const matchKey = [
+                    shellKey,
+                    match.dedupeKey || [
+                        entry.tabId,
+                        normalizeText(entry.sectionLabel),
+                        normalizeText(entry.displayText),
+                    ].filter(Boolean).join('::'),
+                ].filter(Boolean).join('::');
+                const existingMatch = matches.get(matchKey);
+                const shouldReplaceMatch = !existingMatch
+                    || match.score > existingMatch.score
+                    || (match.score === existingMatch.score
+                        && typeof match.action === 'function'
+                        && typeof existingMatch.action !== 'function');
+
+                if (shouldReplaceMatch) {
+                    matches.set(matchKey, match);
+                }
             }
+        }
+
+        return matches;
+    };
+
+    // Words must start a word in the result ('temp' finds Temperature, not Attempts). Only when
+    // nothing matches that way does search fall back to matching inside words.
+    let matches = collectMatches(text => hasSearchWordStarts(text, wordPatterns));
+    if (!matches.size) {
+        matches = collectMatches(text => searchTerms.every(term => text.includes(term)));
+    }
+
+    for (const match of matches.values()) {
+        for (const coveredKey of match.covers ?? []) {
+            matches.delete(coveredKey);
         }
     }
 
-    return Array.from(matches.values())
-        .sort((left, right) => right.score - left.score)
-        .slice(0, NN_UNIVERSAL_SEARCH_RESULT_LIMIT);
+    const ranked = Array.from(matches.values()).sort((left, right) => right.score - left.score);
+    // Matching pages always make the list, even when many settings outrank them.
+    const pages = ranked.filter(match => match.kind === 'page').slice(0, NN_UNIVERSAL_SEARCH_PAGE_LIMIT);
+    const settings = ranked
+        .filter(match => match.kind !== 'page')
+        .slice(0, NN_UNIVERSAL_SEARCH_RESULT_LIMIT - pages.length);
+    const ordered = [...pages, ...settings].sort((left, right) => right.score - left.score);
+    // A page found by its own name goes first: results are grouped, and settings groups
+    // would otherwise push it down the list.
+    const namedPages = ordered.filter(match => match.kind === 'page' && match.score >= 80);
+    return [...namedPages, ...ordered.filter(match => !namedPages.includes(match))];
 }
 
 function getTabSearchEntries(tabState, { includeThemeCard = false } = {}) {
@@ -16354,7 +16550,7 @@ function renderUniversalSearchResults(query) {
     const matches = collectGlobalSearchMatches(trimmedQuery);
     const groupedMatches = new Map();
     for (const match of matches) {
-        const groupLabel = `${match.shellLabel} · ${match.tabLabel}`;
+        const groupLabel = match.groupLabel || `${match.shellLabel} · ${match.tabLabel}`;
         if (!groupedMatches.has(groupLabel)) {
             groupedMatches.set(groupLabel, []);
         }
@@ -16382,22 +16578,33 @@ function renderUniversalSearchResults(query) {
                     'aria-selected': 'false',
                 },
             });
-            const detailText = normalizeText(match.displayText) === normalizeText(match.sectionLabel)
-                ? `Jump straight to this item in ${match.tabLabel}.`
-                : match.displayText;
-            const sectionDisplay = match.sectionLabel === match.tabLabel
-                ? match.displayText || match.tabLabel
-                : match.sectionLabel;
+            const label = match.displayText || match.sectionLabel || match.tabLabel;
+            const labelText = normalizeText(label);
+            const sectionText = normalizeText(match.sectionLabel);
+            // Say where a setting lives when its section adds something the group label does not.
+            const detailText = match.detail || (
+                match.kind !== 'section'
+                && sectionText
+                && sectionText !== labelText
+                && sectionText !== normalizeText(match.tabLabel)
+                    ? `in ${match.sectionLabel}`
+                    : ''
+            );
+            const kindText = match.kind === 'page'
+                ? 'Open page'
+                : match.kind === 'section'
+                    ? 'Open section'
+                    : match.kind === 'tab'
+                        ? 'Open tab'
+                        : typeof match.action === 'function' ? 'Quick action' : 'Jump to setting';
 
-            button.appendChild(createElement('strong', { text: sectionDisplay }));
+            button.appendChild(createElement('strong', { text: label }));
 
-            if (sectionDisplay !== match.displayText) {
+            if (detailText) {
                 button.appendChild(createElement('span', { text: detailText }));
             }
 
-            button.appendChild(createElement('small', {
-                text: typeof match.action === 'function' ? 'Quick action' : 'Jump to setting',
-            }));
+            button.appendChild(createElement('small', { text: kindText }));
 
             button.addEventListener('click', () => {
                 clearUniversalSearch({ blur: true });
@@ -16584,6 +16791,11 @@ function revealSearchMatch(shellKey, match) {
     }
 
     openShell(shellKey, match.tabId);
+
+    // A result for a whole tab has no single element to scroll to.
+    if (!(match.element instanceof HTMLElement)) {
+        return;
+    }
 
     window.setTimeout(() => {
         revealSettingsCategoryFor(match.element);

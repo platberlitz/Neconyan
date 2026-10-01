@@ -1940,6 +1940,7 @@ globalThis.NeconyanWelcome = {
     isRailReordering: () => neconyanRailOrder?.enabled,
     setRailReordering: setNeconyanRailReordering,
     resetRailOrder: resetNeconyanRailOrder,
+    activateRoute: activateNeconyanRailRoute,
 };
 
 export function hideWelcomeHome() {

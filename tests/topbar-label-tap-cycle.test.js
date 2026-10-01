@@ -379,7 +379,7 @@ describe('icons only top bar', () => {
         expect(revealSource).not.toContain('setAdvancedMode');
 
         const collectSource = getFunctionSource('collectGlobalSearchMatches');
-        expect(collectSource).toContain('const searchSources = [];');
+        expect(collectSource).toContain('const searchSources = [{ shellKey: \'pages\', shellLabel: \'Pages\', entries: getSearchPageEntries() }];');
         expect(collectSource).toContain('shellKey: \'characters\'');
         expect(collectSource).toContain('advanced: entry.advanced === true || NN_ADVANCED_SEARCH_ROUTES.has');
     });
