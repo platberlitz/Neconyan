@@ -535,6 +535,7 @@ const NECONYAN_NATIVE_TOOL_DEFINITIONS = Object.freeze([
     { id: 'third-party/Neconyan-Prompting-Lab', label: 'Prompting Lab', icon: 'fa-flask', actions: ['open', 'settings'], open: 'prompting-lab' },
     { id: 'neconyan-debugger', label: 'Debugger', icon: 'fa-bug', actions: ['open', 'settings'], open: 'debugger' },
     { id: 'neconyan-chats-archive', label: 'Chat Archive', icon: 'fa-box-archive', actions: ['open'], open: 'chat-archive' },
+    { id: 'css-snippets', label: 'CSS Snippets', icon: 'fa-list-check', actions: ['open'], open: 'css-snippets' },
     { id: 'third-party/Neconyan-Lorebook-Distiller', label: 'Lorebook Distiller', icon: 'fa-book-medical', actions: ['open'], open: 'distiller' },
     { id: 'third-party/Neconyan-Time-Machine', label: 'Card & Lorebook Time Machine', icon: 'fa-clock-rotate-left', actions: ['open', 'settings'], open: 'time-machine' },
     { id: 'third-party/Neconyan-Deep-Swipe', label: 'Deep Swipe', icon: 'fa-arrows-up-down', actions: ['settings'] },
@@ -2848,6 +2849,9 @@ async function openNeconyanNativeTool(tool) {
                 return openNeconyanNativeExtensionSettings(tool);
             case 'chat-archive':
                 if (await clickNeconyanNativeLauncher('#sbca_drawer_button')) return true;
+                return openNeconyanNativeManage(tool.label);
+            case 'css-snippets':
+                if (await clickNeconyanNativeLauncher('#csss_manager_button')) return true;
                 return openNeconyanNativeManage(tool.label);
             case 'distiller':
                 if (await clickNeconyanNativeLauncher('#sbld-menu-item')) return true;

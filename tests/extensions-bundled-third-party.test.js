@@ -84,7 +84,7 @@ test('native discovery owns aliases once, protects every mutation, and preserves
         fs.writeFileSync(path.join(local, 'CustomTool/user.txt'), 'Custom settings');
         const discovered = await request('get', '/discover');
         const native = discovered.body.filter(entry => entry.type === 'native');
-        expect(native).toHaveLength(17);
+        expect(native).toHaveLength(18);
         expect(native.find(entry => entry.name === 'third-party/MacroEnhanced').aliases).toContain('Neconyan-MacroEnhanced');
         expect(native.find(entry => entry.name === 'neconyan-debugger').aliases).toContain('Neconyan-Debugger');
         expect(discovered.body.filter(entry => entry.type === 'local')).toEqual([{ type: 'local', name: 'third-party/CustomTool' }]);

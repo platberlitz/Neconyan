@@ -190,7 +190,7 @@ describe('Neconyan workspace rail behavior', () => {
         expect(labels).toEqual([
             'Preset Tools', 'Chat Completion Tabs', 'Dialogue Colors', 'Termeownal UI', 'BotSearcher',
             'Prompt Tags', 'Regex Agent Themes', 'Macro Enhanced', 'World Info Lab', 'Prompting Lab',
-            'Debugger', 'Chat Archive', 'Lorebook Distiller', 'Card & Lorebook Time Machine',
+            'Debugger', 'Chat Archive', 'CSS Snippets', 'Lorebook Distiller', 'Card & Lorebook Time Machine',
             'Deep Swipe', 'Story Mode', 'Meower',         'Pawthfinder',
         ]);
         expect(welcomeSource).toContain('[\'extensions\', \'Extensions\', \'fa-cubes\']');

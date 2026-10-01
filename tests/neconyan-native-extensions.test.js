@@ -45,6 +45,7 @@ const expectedDirectories = [
     'Neconyan-Prompting-Lab',
     'Neconyan-Debugger',
     'Neconyan-Chats-Archive',
+    'SillyTavern-CssSnippets',
     'Neconyan-Lorebook-Distiller',
     'Neconyan-Time-Machine',
     'Neconyan-Deep-Swipe',
@@ -60,9 +61,9 @@ function walk(directory) {
 }
 
 describe('Neconyan native extension catalog', () => {
-    test('contains the pinned 17-entry release catalog and server halves', () => {
+    test('contains the pinned 18-entry release catalog and server halves', () => {
         const release = JSON.parse(fs.readFileSync(path.join(repoRoot, 'tests/fixtures/neconyan-native-release.json'), 'utf8'));
-        expect(NECONYAN_NATIVE_EXTENSIONS).toHaveLength(17);
+        expect(NECONYAN_NATIVE_EXTENSIONS).toHaveLength(18);
         for (const extension of NECONYAN_NATIVE_EXTENSIONS) {
             expect(extension).toMatchObject(release[extension.directory]);
             const directory = extension.runtimeDirectory
@@ -93,6 +94,8 @@ describe('Neconyan native extension catalog', () => {
         expect(getNativeExtension('Neconyan-Terminal-UI')?.displayName).toBe('Termeownal UI');
         expect(getNativeExtension('third-party/Neconyan-Debugger')?.runtimeId).toBe('neconyan-debugger');
         expect(getNativeExtension('neconyan-debugger')?.displayName).toBe('Debugger');
+        expect(getNativeExtension('third-party/SillyTavern-CssSnippets')?.runtimeId).toBe('css-snippets');
+        expect(getNativeExtension('css-snippets')?.displayName).toBe('CSS Snippets');
         expect(getNativeExtension('SillyTavern-ChatCompletionTabs')?.displayName).toBe('Chat Completion Tabs');
         expect(getNativeExtension('third-party/Neconyan-MacroEnhanced')?.displayName).toBe('Macro Enhanced');
         expect(getNativeExtension('SILLYTAVERN-CHARACTER-COLORS')?.displayName).toBe('Dialogue Colors');
@@ -100,7 +103,7 @@ describe('Neconyan native extension catalog', () => {
 
     test('ships runtime manifests without development artifacts or nested repositories', () => {
         const forbidden = /(?:^|\/)(?:\.git|\.opencode|\.cursor-key|node_modules|tests?|test-results|screenshots|docs|scripts)(?:\/|$)|(?:^|\/)(?:package(?:-lock)?\.json|npm-shrinkwrap\.json|yarn\.lock)$/;
-        for (const directory of expectedDirectories.filter(name => !['Neconyan-Debugger', 'Neconyan-Chats-Archive'].includes(name))) {
+        for (const directory of expectedDirectories.filter(name => !['Neconyan-Debugger', 'Neconyan-Chats-Archive', 'SillyTavern-CssSnippets'].includes(name))) {
             const root = path.join(runtimeRoot, directory);
             expect(fs.existsSync(path.join(root, 'manifest.json'))).toBe(true);
             for (const licenseFile of (getNativeExtension(directory)?.licenseFiles ?? [])) {

@@ -86,6 +86,13 @@
     "sourceUrl": "https://github.com/platberlitz/SillyBunny-Chats-Archive",
     "licenseFiles": []
   },
+  "SillyTavern-CssSnippets": {
+    "version": "1.21.2-nc1",
+    "pinnedRevision": "835d5f7848875842fb3b726ea13d6cc42dca3505",
+    "sourceOrigin": "https://github.com/LenAnderson/SillyTavern-CssSnippets.git",
+    "sourceUrl": "https://github.com/LenAnderson/SillyTavern-CssSnippets",
+    "licenseFiles": []
+  },
   "Neconyan-Lorebook-Distiller": {
     "version": "0.1.0",
     "pinnedRevision": "237ea54d6f94e731d4b918f9c445e1b78fa2dcf6",

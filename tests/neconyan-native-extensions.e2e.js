@@ -126,7 +126,7 @@ async function expectLoadedFont(page, name, style = 'normal') {
     expect(loaded).toBe(true);
 }
 
-test('Included tools stay closed until opened and keep eighteen keyboard-accessible disclosures', async ({ page }) => {
+test('Included tools stay closed until opened and keep nineteen keyboard-accessible disclosures', async ({ page }) => {
     await mockNativeSettings(page);
     await page.setViewportSize({ width: 1280, height: 1000 });
     await safety.navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
@@ -134,12 +134,12 @@ test('Included tools stay closed until opened and keep eighteen keyboard-accessi
 
     const railTools = page.locator('#neconyan-workspace-rail [data-neconyan-native-tool-list]');
     await expect(page.locator('#neconyan-workspace-rail .neconyan-rail-tools')).not.toHaveAttribute('open', '');
-    await expect(railTools.locator('details[data-neconyan-native-tool]')).toHaveCount(18);
+    await expect(railTools.locator('details[data-neconyan-native-tool]')).toHaveCount(19);
     const summaryState = await railTools.locator('summary').evaluateAll(summaries => summaries.map(summary => ({
         controls: summary.getAttribute('aria-controls'),
         expanded: summary.getAttribute('aria-expanded'),
     })));
-    expect(new Set(summaryState.map(item => item.controls)).size).toBe(18);
+    expect(new Set(summaryState.map(item => item.controls)).size).toBe(19);
     expect(summaryState.every(item => ['true', 'false'].includes(item.expanded))).toBe(true);
     await page.locator('#neconyan-workspace-rail .neconyan-rail-tools > summary').focus();
     await page.keyboard.press('Enter');
@@ -152,8 +152,8 @@ test('Included tools stay closed until opened and keep eighteen keyboard-accessi
     await page.setViewportSize({ width: 390, height: 1000 });
     await page.locator('#sb-hamburger').click();
     const mobileTools = page.locator('#neconyan-workspace-rail [data-neconyan-native-tool-list]');
-    await expect(mobileTools.locator('details[data-neconyan-native-tool]')).toHaveCount(18);
-    await expect(mobileTools.locator('[data-neconyan-native-tool-action="manage"]')).toHaveCount(18);
+    await expect(mobileTools.locator('details[data-neconyan-native-tool]')).toHaveCount(19);
+    await expect(mobileTools.locator('[data-neconyan-native-tool-action="manage"]')).toHaveCount(19);
 });
 
 test.describe('Editor surfaces and composer density', () => {

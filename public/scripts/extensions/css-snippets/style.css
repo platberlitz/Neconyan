@@ -1,0 +1,518 @@
+#csss_manager_button {
+    gap: 6px;
+    width: max-content;
+    min-height: 32px;
+    padding: 0 10px;
+    white-space: nowrap;
+}
+
+#csss_manager_button:focus-visible,
+.csss-manager :is(button, input, textarea, summary):focus-visible {
+    outline: 2px solid var(--sb-focus-ring, var(--neco-ginger, var(--SmartThemeQuoteColor, currentColor)));
+    outline-offset: 2px;
+}
+
+.csss-trigger-label {
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.csss-dialog {
+    padding: 0;
+    border-radius: var(--sb-radius-panel, 16px);
+}
+
+.csss-dialog .popup-body {
+    box-sizing: border-box;
+    min-block-size: 0;
+    padding: 16px;
+    overflow: hidden !important;
+    border-radius: inherit;
+    background: var(--neco-surface, var(--SmartThemeBlurTintColor, transparent));
+}
+
+.csss-dialog .popup-content {
+    min-block-size: 0;
+    margin: 0;
+    padding: 0;
+    overflow: hidden !important;
+}
+
+.csss-dialog .popup-controls {
+    justify-content: flex-end;
+    margin: 12px 0 0;
+    padding: 4px 0 0;
+    border-block-start: 1px solid var(--csss-border, var(--SmartThemeBorderColor));
+}
+
+.csss-dialog .popup-controls .menu_button {
+    min-block-size: var(--sb-mobile-touch-target, 44px);
+    padding-inline: 16px;
+}
+
+.csss-manager {
+    --csss-border: var(--neco-border, var(--SmartThemeBorderColor, currentColor));
+    --csss-ink: var(--neco-ink, var(--SmartThemeBodyColor, inherit));
+    --csss-muted: var(--neco-muted, var(--SmartThemeBodyColor, inherit));
+    --csss-surface: var(--neco-surface, var(--SmartThemeBlurTintColor, transparent));
+    --csss-raised: var(--neco-raised, var(--SmartThemeBlurTintColor, transparent));
+    --csss-accent: var(--neco-ginger, var(--SmartThemeQuoteColor, currentColor));
+    --csss-on-accent: var(--neco-on-accent, var(--SmartThemeBodyColor, inherit));
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    block-size: 75vh;
+    block-size: 75dvh;
+    min-block-size: 0;
+    overflow: hidden;
+    color: var(--csss-ink);
+    font-size: 15px;
+    text-align: start;
+}
+
+.csss-manager [hidden] {
+    display: none !important;
+}
+
+.csss-visually-hidden {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.csss-head {
+    display: grid;
+    gap: 4px;
+    padding-inline-end: 40px;
+}
+
+.csss-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-family: var(--sb-font-display, inherit);
+    font-size: 22px;
+    font-weight: 400;
+    line-height: 1.2;
+}
+
+.csss-title i {
+    color: var(--csss-accent);
+}
+
+.csss-intro,
+.csss-context,
+.csss-muted,
+.csss-scope,
+.csss-count {
+    margin: 0;
+    color: var(--csss-muted);
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.csss-context {
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.csss-tools {
+    display: grid;
+    gap: 8px;
+}
+
+.csss-search-row {
+    display: grid;
+    gap: 4px;
+}
+
+.csss-manager .csss-search {
+    inline-size: 100%;
+    min-block-size: 38px;
+    margin: 0;
+    border-radius: 6px;
+}
+
+.csss-actions,
+.csss-exportbar,
+.csss-card-actions,
+.csss-switches,
+.csss-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.csss-manager .csss-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: max-content;
+    min-block-size: 36px;
+    margin: 0;
+    padding: 0 12px;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.csss-dialog .csss-manager .csss-primary:not(.disabled):not([disabled]) {
+    border-color: var(--csss-accent);
+    background: var(--csss-accent);
+    color: var(--csss-on-accent);
+}
+
+.csss-dialog .csss-manager .csss-primary:not(.disabled):not([disabled]):hover {
+    background: var(--neco-ginger-hover, var(--csss-accent));
+}
+
+.csss-manager .csss-danger:hover {
+    border-color: var(--SmartThemeRedColor, var(--csss-accent));
+}
+
+.csss-manager .csss-button[aria-pressed='true'] {
+    border-color: var(--csss-accent);
+    box-shadow: inset 0 0 0 1px var(--csss-accent);
+}
+
+.csss-manager .csss-button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.csss-filters-label {
+    color: var(--csss-muted);
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.csss-chip {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--csss-border);
+    border-radius: 999px;
+    background: var(--csss-surface);
+    color: var(--csss-ink);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.csss-chip[aria-pressed='true'] {
+    border-color: var(--csss-accent);
+    background: var(--csss-accent);
+    color: var(--csss-on-accent);
+}
+
+.csss-exportbar {
+    padding: 8px 12px;
+    border: 1px dashed var(--csss-accent);
+    border-radius: 8px;
+    background: var(--csss-surface);
+}
+
+.csss-exportbar-count {
+    margin-inline-end: auto;
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.csss-scroll {
+    display: grid;
+    align-content: start;
+    gap: 8px;
+    flex: 1 1 auto;
+    min-block-size: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 2px 4px 8px 2px;
+}
+
+.csss-list {
+    display: grid;
+    gap: 8px;
+}
+
+.csss-empty {
+    margin: 0;
+    padding: 24px 16px;
+    border: 1px dashed var(--csss-border);
+    border-radius: 8px;
+    color: var(--csss-muted);
+    text-align: center;
+}
+
+.csss-card {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--csss-border);
+    border-inline-start-width: 4px;
+    border-radius: 8px;
+    background: var(--csss-surface);
+}
+
+.csss-card[data-state='live'] {
+    border-inline-start-color: var(--csss-accent);
+}
+
+.csss-card[data-state='off'] .csss-name {
+    opacity: 0.75;
+}
+
+.csss-card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-inline-size: 0;
+}
+
+.csss-manager .csss-icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    inline-size: 36px;
+    block-size: 36px;
+    margin: 0;
+    padding: 0;
+    border-radius: 999px;
+}
+
+.csss-manager .csss-name {
+    flex: 1 1 12rem;
+    min-inline-size: 0;
+    min-block-size: 36px;
+    margin: 0;
+    border-radius: 6px;
+    font-weight: 700;
+}
+
+.csss-status {
+    flex: 0 0 auto;
+    padding: 4px 10px;
+    border: 1px solid var(--csss-border);
+    border-radius: 999px;
+    background: var(--csss-raised);
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.csss-status[data-state='live'] {
+    border-color: var(--csss-accent);
+    background: var(--csss-accent);
+    color: var(--csss-on-accent);
+}
+
+.csss-status[data-state='off'] {
+    background: transparent;
+    color: var(--csss-muted);
+}
+
+.csss-select {
+    flex: 0 0 auto;
+    margin: 0;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.csss-preview {
+    display: block;
+    overflow: hidden;
+    color: var(--csss-muted);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.csss-card-body {
+    display: grid;
+    gap: 8px;
+}
+
+.csss-switch {
+    margin: 0;
+    padding: 4px 10px;
+    border: 1px solid var(--csss-border);
+    border-radius: 10px;
+    background: var(--csss-raised);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.csss-switch:has(input:checked) {
+    border-color: var(--csss-accent);
+}
+
+.csss-switch:has(input:disabled) {
+    opacity: 0.6;
+}
+
+.csss-manager .csss-code {
+    box-sizing: border-box;
+    inline-size: 100%;
+    min-block-size: 9rem;
+    max-block-size: 50vh;
+    margin: 0;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.45;
+    resize: vertical;
+    tab-size: 4;
+}
+
+.csss-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 0;
+    padding: 8px 12px;
+    border: 1px solid var(--SmartThemeRedColor, var(--csss-accent));
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+.csss-assign {
+    border: 1px solid var(--csss-border);
+    border-radius: 8px;
+    background: var(--csss-raised);
+}
+
+.csss-assign-summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-block-size: 36px;
+    padding: 0 12px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.csss-assign-body {
+    display: grid;
+    gap: 6px;
+    padding: 0 12px 12px;
+}
+
+.csss-assign-heading {
+    margin: 4px 0 0;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.csss-assign-themes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+    gap: 4px 12px;
+}
+
+.csss-assign-item {
+    margin: 0;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+.csss-assign-chats {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.csss-assign-chat {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+.csss-manager .csss-small {
+    min-block-size: 32px;
+    padding: 0 10px;
+}
+
+@media (any-pointer: coarse) {
+    #csss_manager_button,
+    .csss-manager .csss-button,
+    .csss-manager .csss-small,
+    .csss-manager .csss-name,
+    .csss-manager .csss-search,
+    .csss-chip,
+    .csss-switch,
+    .csss-select,
+    .csss-assign-summary,
+    .csss-assign-item {
+        min-block-size: var(--sb-mobile-touch-target, 44px);
+    }
+
+    .csss-manager .csss-icon-button {
+        inline-size: var(--sb-mobile-touch-target, 44px);
+        block-size: var(--sb-mobile-touch-target, 44px);
+    }
+
+    .csss-switch,
+    .csss-select {
+        display: inline-flex;
+        align-items: center;
+    }
+}
+
+@media screen and (max-width: 768px) {
+    .csss-dialog .popup-body {
+        padding: 12px;
+    }
+
+    .csss-manager {
+        block-size: 80vh;
+        block-size: 80dvh;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+
+    .csss-scroll {
+        flex: 0 0 auto;
+        overflow: visible;
+    }
+
+    .csss-head {
+        padding-inline-end: 44px;
+    }
+
+    .csss-manager .csss-button {
+        flex: 1 1 calc(50% - 6px);
+        justify-content: center;
+        width: auto;
+    }
+
+    .csss-card-head {
+        flex-wrap: wrap;
+    }
+
+    .csss-manager .csss-name {
+        flex-basis: calc(100% - 52px);
+    }
+
+    .csss-status {
+        margin-inline-start: 52px;
+    }
+
+    .csss-assign-themes {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

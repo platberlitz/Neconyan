@@ -24,6 +24,10 @@ const stylesheets = [
         name: 'input history',
         url: new URL('../public/scripts/extensions/input-history/style.css', import.meta.url),
     },
+    {
+        name: 'CSS snippets',
+        url: new URL('../public/scripts/extensions/css-snippets/style.css', import.meta.url),
+    },
 ].map(stylesheet => ({
     ...stylesheet,
     source: readFileSync(fileURLToPath(stylesheet.url), 'utf8').replace(/\r\n/g, '\n'),

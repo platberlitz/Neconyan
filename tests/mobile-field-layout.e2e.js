@@ -113,7 +113,7 @@ test('field focus stays inside clipped core and bundled-extension panels', async
     const extensionRoot = '/scripts/extensions/';
     for (const stylesheet of [
         '/css/mewmory.css', '/css/world-info.css',
-        ...['quick-image-gen', 'neconyan-chats-archive', 'third-party/Neconyan-BotSearcher',
+        ...['quick-image-gen', 'neconyan-chats-archive', 'css-snippets', 'third-party/Neconyan-BotSearcher',
             'third-party/Neconyan-Hopper', 'third-party/Neconyan-PromptTags',
             'third-party/Neconyan-WorldInfo-Lab', 'third-party/Neconyan-Regex-Agent-Themes',
             'third-party/sillytavern-character-colors'].map(name => `${extensionRoot}${name}/style.css`),

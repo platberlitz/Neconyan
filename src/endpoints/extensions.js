@@ -30,6 +30,7 @@ const CORE_EXTENSIONS = new Set([
     'neconyan-debugger',
     // Neconyan: ship Chats Archive as a built-in core extension.
     'neconyan-chats-archive',
+    'css-snippets',
 ]);
 const MANUAL_SYNC_EXTENSIONS = new Map([
     ['quick-image-gen', {

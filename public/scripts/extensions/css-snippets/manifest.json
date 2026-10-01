@@ -1,0 +1,19 @@
+{
+    "display_name": "CSS Snippets",
+    "author": "LenAnderson",
+    "version": "1.21.2-nc1",
+    "description": "Keep small pieces of CSS you can switch on and off, limit to a theme, or limit to a chat. Reads and writes the same snippets as LenAnderson's SillyTavern-CssSnippets, including its /csss slash commands.",
+    "requires": [],
+    "optional": [],
+    "dependencies": [],
+    "js": "index.js",
+    "css": "style.css",
+    "homePage": "https://github.com/LenAnderson/SillyTavern-CssSnippets",
+    "loading_order": 100,
+    "auto_update": false,
+    "hooks": {
+        "activate": "activate",
+        "enable": "enable",
+        "disable": "disable"
+    }
+}
