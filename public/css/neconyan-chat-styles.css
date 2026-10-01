@@ -68,11 +68,11 @@ body.sb-sheld-blur #sheld::before {
     -webkit-backdrop-filter: blur(calc(var(--sheldBlurStrength, 0) * 1px));
 }
 
-body:not(.bubblechat):not(.echostyle):not(.whisperstyle):not(.hushstyle):not(.ripplestyle):not(.tidestyle) #chat .mes:not(.smallSysMes) .mes_block {
+body:not(.bubblechat):not(.echostyle):not(.whisperstyle):not(.hushstyle):not(.ripplestyle):not(.tidestyle):not(.nnchat) #chat .mes:not(.smallSysMes) .mes_block {
     background-color: var(--SmartThemeBotMesBlurTintColor);
 }
 
-body:not(.bubblechat):not(.echostyle):not(.whisperstyle):not(.hushstyle):not(.ripplestyle):not(.tidestyle) #chat .mes[is_user="true"]:not(.smallSysMes) .mes_block {
+body:not(.bubblechat):not(.echostyle):not(.whisperstyle):not(.hushstyle):not(.ripplestyle):not(.tidestyle):not(.nnchat) #chat .mes[is_user="true"]:not(.smallSysMes) .mes_block {
     background-color: var(--SmartThemeUserMesBlurTintColor);
 }
 
@@ -1597,5 +1597,253 @@ body:is(.echostyle, .whisperstyle, .hushstyle, .ripplestyle, .tidestyle) #chat .
     body.ripplestyle #chat .mes:not(.smallSysMes) .mes_text {
         margin-top: 0 !important;
         padding-top: 0 !important;
+    }
+}
+
+/* --- Neconyan chat styles: Messenger, Notebook, Screenplay, Compact, Storybook ---
+   Each one keeps the flatchat body class (avatars, ears, sleeping animals and phone rules
+   still apply) and adds its own class on top, so selectors carry one extra class to win. */
+body.neconyan.flatchat.nnchat:not(.sbterm) #chat .mes .mes_block {
+    background-image: none;
+}
+
+body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat {
+    --avatar-base-width: 38px;
+    --avatar-base-height: 38px;
+}
+body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes {
+    align-items: flex-end;
+    gap: 10px;
+    margin-bottom: 12px;
+    padding: 2px 0;
+}
+body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes[is_user='true'] {
+    flex-direction: row-reverse;
+}
+body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes:not(.smallSysMes) .mes_block {
+    flex: 0 1 auto;
+    width: auto;
+    max-width: min(80%, 640px);
+}
+body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes:not([is_user='true']) .mes_block {
+    padding: 10px 14px;
+    border-radius: 20px 20px 20px 6px;
+}
+body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes[is_user='true'] .mes_block {
+    padding: 10px 14px;
+    border: 1px solid color-mix(in oklch, var(--neco-ginger) 45%, var(--neco-border));
+    border-radius: 20px 20px 6px 20px;
+    background: color-mix(in oklch, var(--neco-ginger) 24%, var(--neco-surface));
+}
+body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes .name_text {
+    font-size: 12px;
+}
+body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes .timestamp {
+    font-size: 11px;
+}
+
+body.neconyan.flatchat.nnchat-notebook:not(.sbterm) #chat .mes {
+    --nnchat-line: 1.7em;
+    --nnchat-rule: color-mix(in srgb, var(--SmartThemeBodyColor) 13%, transparent);
+}
+body.neconyan.flatchat.nnchat-notebook:not(.sbterm) #chat .mes:not(.smallSysMes) .mes_block {
+    padding: 12px 18px 14px 26px;
+    border: 1px solid color-mix(in oklch, var(--neco-cream) 18%, var(--neco-border));
+    border-radius: 4px 10px 10px 4px;
+    background: var(--neco-surface);
+    box-shadow: inset 3px 0 0 color-mix(in oklch, var(--neco-pink) 60%, transparent), 0 2px 8px color-mix(in oklch, var(--neco-charcoal) 16%, transparent);
+}
+body.neconyan.flatchat.nnchat-notebook:not(.sbterm) #chat .mes[is_user='true']:not(.smallSysMes) .mes_block {
+    background: color-mix(in oklch, var(--neco-ginger) 14%, var(--neco-surface));
+    box-shadow: inset 3px 0 0 color-mix(in oklch, var(--neco-ginger) 70%, transparent), 0 2px 8px color-mix(in oklch, var(--neco-charcoal) 16%, transparent);
+}
+body.neconyan.flatchat.nnchat-notebook:not(.sbterm) #chat .mes .mes_text {
+    line-height: var(--nnchat-line);
+    background: linear-gradient(transparent calc(100% - 1px), var(--nnchat-rule) calc(100% - 1px)) 0 0 / 100% var(--nnchat-line);
+}
+body.neconyan.flatchat.nnchat-notebook:not(.sbterm) #chat .mes .mes_text :is(p, ul, ol, blockquote) {
+    margin-block: 0 var(--nnchat-line);
+    line-height: var(--nnchat-line);
+}
+body.neconyan.flatchat.nnchat-notebook:not(.sbterm) #chat .mes .mes_text > :last-child {
+    margin-bottom: 0;
+}
+body.neconyan.flatchat.nnchat-notebook:not(.sbterm) #chat .mes .name_text {
+    font-family: var(--sb-font-display);
+    font-weight: 400;
+    font-size: 15px;
+    letter-spacing: 0.02em;
+}
+
+body.neconyan.flatchat.nnchat-script:not(.sbterm) #chat .mes {
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    margin-bottom: 18px;
+}
+body.neconyan.flatchat.nnchat-script:not(.sbterm) #chat .mes:not(.smallSysMes) .mesAvatarWrapper {
+    display: none;
+}
+body.neconyan.flatchat.nnchat-script:not(.sbterm) #chat .mes:not(.smallSysMes) .mes_block,
+body.neconyan.flatchat.nnchat-script:not(.sbterm) #chat .mes:not(.smallSysMes)[is_user='true'] .mes_block {
+    width: min(100%, 64ch);
+    padding: 4px 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+body.neconyan.flatchat.nnchat-script:not(.sbterm) #chat .mes .ch_name > .flex-container:first-child {
+    justify-content: center;
+}
+body.neconyan.flatchat.nnchat-script:not(.sbterm) #chat .mes .name_text {
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+body.neconyan.flatchat.nnchat-script:not(.sbterm) #chat .mes[is_user='true'] .name_text {
+    color: var(--neco-ginger);
+}
+body.neconyan.flatchat.nnchat-script:not(.sbterm) #chat .mes .mes_text {
+    padding-inline: clamp(0px, 6%, 48px);
+    font-family: ui-monospace, 'Courier New', monospace;
+    font-size: 0.95em;
+    line-height: 1.6;
+}
+body.neconyan.flatchat.nnchat-script:not(.sbterm) #chat .mes .mes_text em {
+    color: var(--neco-muted);
+}
+
+body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat {
+    --avatar-base-width: 30px;
+    --avatar-base-height: 30px;
+}
+body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes {
+    gap: 10px;
+    margin-bottom: 2px;
+    padding: 6px 8px;
+    border-radius: 8px;
+}
+body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes:hover {
+    background: color-mix(in srgb, var(--neco-raised) 70%, transparent);
+}
+body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes:not(.smallSysMes) .mes_block,
+body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes:not(.smallSysMes)[is_user='true'] .mes_block {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes[is_user='true'] {
+    box-shadow: inset 2px 0 0 color-mix(in oklch, var(--neco-ginger) 60%, transparent);
+}
+body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes .mes_text {
+    font-size: 0.94em;
+    line-height: 1.45;
+}
+body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes .mes_text :is(p, ul, ol, blockquote) {
+    margin-block: 0 0.4em;
+}
+body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes .name_text {
+    font-size: 12px;
+}
+body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes[is_user='true'] .name_text {
+    color: var(--neco-ginger);
+}
+
+body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes {
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes:not(.smallSysMes) .mesAvatarWrapper {
+    display: none;
+}
+body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes:not(.smallSysMes) .mes_block {
+    width: min(100%, 68ch);
+    padding: 22px clamp(16px, 5%, 40px) 26px;
+    border: 1px solid color-mix(in oklch, var(--neco-cream) 24%, var(--neco-border));
+    border-radius: 6px;
+    background: color-mix(in oklch, var(--neco-cream) 7%, var(--neco-surface));
+    box-shadow: 0 6px 18px color-mix(in oklch, var(--neco-charcoal) 20%, transparent);
+}
+body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes:not(.smallSysMes)[is_user='true'] .mes_block {
+    padding: 6px 18px;
+    border: 0;
+    border-left: 3px solid var(--neco-ginger);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes .ch_name > .flex-container:first-child {
+    justify-content: center;
+}
+body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes:not([is_user='true']) .name_text {
+    font-family: var(--sb-font-display);
+    font-weight: 400;
+    font-size: 17px;
+    letter-spacing: 0.04em;
+}
+body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes:not([is_user='true']) .name_text::before { content: '~ '; color: var(--neco-ginger); }
+body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes:not([is_user='true']) .name_text::after { content: ' ~'; color: var(--neco-ginger); }
+body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes .mes_text {
+    font-family: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+    font-size: 1.06em;
+    line-height: 1.75;
+    text-align: justify;
+    hyphens: auto;
+}
+body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes .mes_text p {
+    margin-block: 0;
+}
+body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes .mes_text p + p {
+    text-indent: 1.6em;
+}
+body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes:not([is_user='true']) .mes_text > p:first-child::first-letter {
+    float: left;
+    margin: 0.08em 0.1em 0 0;
+    font-family: var(--sb-font-display);
+    font-size: 3.2em;
+    line-height: 0.85;
+    color: var(--neco-ginger);
+}
+body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes[is_user='true'] .mes_text {
+    font-style: italic;
+    text-align: start;
+}
+
+body.neconyan.big-avatars.flatchat.nnchat:not(.sbterm) #chat {
+    --neco-avatar-height: calc(var(--avatar-base-width) * 4 / 3);
+}
+body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes[is_user='true'] {
+    box-shadow: none;
+    background: color-mix(in oklch, var(--neco-ginger) 7%, transparent);
+}
+@media (min-width: 769px) {
+    body.neconyan.flatchat.nnchat:is(.nnchat-messenger, .nnchat-compact):not(.sbterm):not(.sbstory) #chat .mes[is_user='false'] > .neconyan-message-sleeper {
+        left: calc(var(--avatar-base-width) + 14px);
+    }
+    body.neconyan.flatchat.nnchat.nnchat-compact:not(.sbterm):not(.sbstory) #chat .mes[is_user='false'] > .neconyan-message-sleeper {
+        top: -46px;
+    }
+    body.neconyan.flatchat.nnchat.nnchat-script:not(.sbterm):not(.sbstory) #chat .mes > .neconyan-message-sleeper {
+        left: max(0px, calc(50% - 32ch));
+    }
+    body.neconyan.flatchat.nnchat.nnchat-storybook:not(.sbterm):not(.sbstory) #chat .mes > .neconyan-message-sleeper {
+        left: max(0px, calc(50% - 34ch));
+    }
+}
+
+@media (max-width: 768px) {
+    body.neconyan.flatchat.nnchat-notebook:not(.sbterm) #chat .mes:not(.smallSysMes) .mes_block {
+        padding: 10px 12px 12px 16px;
+    }
+    body.neconyan.flatchat.nnchat:not(.sbterm) #chat .mes:not(.smallSysMes) {
+        gap: 10px;
+    }
+    body.neconyan.flatchat.nnchat:is(.nnchat-notebook, .nnchat-script, .nnchat-compact, .nnchat-storybook):not(.sbterm) #chat .mes .mes_text {
+        padding-inline-end: 26px;
     }
 }

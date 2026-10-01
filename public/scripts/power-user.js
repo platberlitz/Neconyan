@@ -328,6 +328,12 @@ export const chat_styles = Object.freeze({
     HUSH: 5,
     RIPPLE: 6,
     TIDE: 7,
+    // Neconyan: styles layered on flatchat so its avatars, ears and sleeping animals still apply.
+    MESSENGER: 8,
+    NOTEBOOK: 9,
+    SCREENPLAY: 10,
+    COMPACT: 11,
+    STORYBOOK: 12,
 });
 
 const CHAT_STYLE_BODY_CLASSES = Object.freeze({
@@ -339,11 +345,16 @@ const CHAT_STYLE_BODY_CLASSES = Object.freeze({
     [chat_styles.HUSH]: 'hushstyle',
     [chat_styles.RIPPLE]: 'ripplestyle',
     [chat_styles.TIDE]: 'tidestyle',
+    [chat_styles.MESSENGER]: 'flatchat nnchat nnchat-messenger',
+    [chat_styles.NOTEBOOK]: 'flatchat nnchat nnchat-notebook',
+    [chat_styles.SCREENPLAY]: 'flatchat nnchat nnchat-script',
+    [chat_styles.COMPACT]: 'flatchat nnchat nnchat-compact',
+    [chat_styles.STORYBOOK]: 'flatchat nnchat nnchat-storybook',
 });
 
 const LEGACY_CHAT_STYLE_BODY_CLASSES = Object.freeze([]);
 const NATIVE_CHAT_STYLE_STYLESHEET_ID = 'neconyan-native-chat-styles';
-const NATIVE_CHAT_STYLE_STYLESHEET_HREF = 'css/neconyan-chat-styles.css?v=20260918e';
+const NATIVE_CHAT_STYLE_STYLESHEET_HREF = 'css/neconyan-chat-styles.css?v=20261001-chatstyles';
 
 function ensureNativeChatStyleStylesheet() {
     if (document.getElementById(NATIVE_CHAT_STYLE_STYLESHEET_ID)) {

@@ -25,14 +25,14 @@ describe('core message transparency wiring', () => {
 
     test('loads the native chat stylesheet during chat-display setup so default chat styles get core transparency', () => {
         expect(indexSource).not.toContain('id="neconyan-native-chat-styles"');
-        expect(powerUserSource).toContain('const NATIVE_CHAT_STYLE_STYLESHEET_HREF = \'css/neconyan-chat-styles.css?v=20260918e\';');
+        expect(powerUserSource).toContain('const NATIVE_CHAT_STYLE_STYLESHEET_HREF = \'css/neconyan-chat-styles.css?v=20261001-chatstyles\';');
         expect(powerUserSource).toContain('ensureNativeChatStyleStylesheet();');
     });
 
     test('paints default and document message blocks without double-painting bubble or native styles', () => {
-        expect(chatStylesSource).toContain('body:not(.bubblechat):not(.echostyle):not(.whisperstyle):not(.hushstyle):not(.ripplestyle):not(.tidestyle) #chat .mes:not(.smallSysMes) .mes_block');
+        expect(chatStylesSource).toContain('body:not(.bubblechat):not(.echostyle):not(.whisperstyle):not(.hushstyle):not(.ripplestyle):not(.tidestyle):not(.nnchat) #chat .mes:not(.smallSysMes) .mes_block');
         expect(chatStylesSource).toContain('background-color: var(--SmartThemeBotMesBlurTintColor);');
-        expect(chatStylesSource).toContain('body:not(.bubblechat):not(.echostyle):not(.whisperstyle):not(.hushstyle):not(.ripplestyle):not(.tidestyle) #chat .mes[is_user="true"]:not(.smallSysMes) .mes_block');
+        expect(chatStylesSource).toContain('body:not(.bubblechat):not(.echostyle):not(.whisperstyle):not(.hushstyle):not(.ripplestyle):not(.tidestyle):not(.nnchat) #chat .mes[is_user="true"]:not(.smallSysMes) .mes_block');
         expect(chatStylesSource).toContain('background-color: var(--SmartThemeUserMesBlurTintColor);');
     });
 

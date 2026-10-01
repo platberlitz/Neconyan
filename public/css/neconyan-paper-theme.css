@@ -107,8 +107,8 @@ button:not(.ica--tpanel-handle):not(.gg-action-button):not(.neconyan-edit-action
     padding-right: clamp(6px, 1.5vw, 16px) !important;
 }
 
-/* Softer, more opaque message bubbles with tighter text margins */
-.mes {
+/* Softer, more opaque message bubbles with tighter text margins; the newer chat styles draw their own shapes */
+:where(body:not(.nnchat)) .mes {
     position: relative;
     border-radius: var(--neconyan-message-radius, 18px) !important;
     margin-left: 0 !important;
@@ -123,16 +123,16 @@ button:not(.ica--tpanel-handle):not(.gg-action-button):not(.neconyan-edit-action
     -webkit-backdrop-filter: blur(6px);
 }
 
-.mes[is_user='true'] {
+:where(body:not(.nnchat)) .mes[is_user='true'] {
     background-color: var(--SmartThemeUserMesBlurTintColor) !important;
 }
 
-.mes[is_user='false'] {
+:where(body:not(.nnchat)) .mes[is_user='false'] {
     background-color: var(--SmartThemeBotMesBlurTintColor) !important;
 }
 
 /* Light paper fiber on bubbles */
-.mes::after {
+:where(body:not(.nnchat)) .mes::after {
     content: '';
     position: absolute;
     inset: 0;
@@ -152,12 +152,12 @@ button:not(.ica--tpanel-handle):not(.gg-action-button):not(.neconyan-edit-action
 }
 
 /* Greatly reduce inner gap between bubble edge and message text */
-.mes .mes_block {
+:where(body:not(.nnchat)) .mes .mes_block {
     padding: 2px 4px !important;
     margin: 0 !important;
 }
 
-.mes .mes_text {
+:where(body:not(.nnchat)) .mes .mes_text {
     margin: 0 !important;
     padding: 0 !important;
 }
