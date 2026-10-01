@@ -1,5 +1,6 @@
 import { t } from './i18n.js';
 import { getAssistantIconSrc } from './neconyan-assistant-art.js';
+import { createPageIntro } from './neconyan-page-intro.js';
 
 import { TOOL_TOUR_INVITE_PREFIX, addTourInvitationDismiss, dismissTourInvitation } from './neconyan-tour-invitations.js';
 export { TOOL_TOUR_INVITE_PREFIX } from './neconyan-tour-invitations.js';
@@ -1273,9 +1274,6 @@ export function mountToolPage(id, heading, root) {
     heading?.querySelector('.neconyan-tool-page-intro')?.remove();
     heading?.querySelector('.neconyan-tool-tour-invite')?.remove();
     if (!page || !(heading instanceof HTMLElement)) return false;
-    const intro = element('div', 'neconyan-tool-page-intro neconyan-cat-panel');
-    const copy = element('div', 'neconyan-tool-page-copy');
-    copy.append(element('span', 'neconyan-native-kicker', t([page.kicker])), element('p', 'neconyan-tool-page-description', t([page.description])));
     const launch = element('button', 'menu_button menu_button_icon neconyan-tool-tour-button');
     launch.type = 'button';
     launch.setAttribute('aria-label', t([`Start ${ASSISTANT_NAMES[page.assistant]}'s ${page.name} tour`]));
@@ -1284,7 +1282,7 @@ export function mountToolPage(id, heading, root) {
     icon.setAttribute('aria-hidden', 'true');
     launch.append(icon, element('span', '', t`Tour`));
     launch.addEventListener('click', () => startToolTour(page.key, root));
-    intro.append(copy, launch);
+    const intro = createPageIntro(page.key, t([page.kicker]), t([page.description]), launch);
     heading.append(intro, buildInvite(page, root));
     return true;
 }

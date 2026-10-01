@@ -22,13 +22,13 @@
 }
 
 .neconyan-tool-page-intro {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     justify-content: space-between;
     gap: 12px 16px;
     margin-top: 10px;
-    padding: 16px 18px;
+    padding: 8px 12px;
     border: 1px solid var(--neco-border);
     border-radius: 14px;
     background: var(--neco-raised, var(--neco-surface));
@@ -37,14 +37,57 @@
 
 .neconyan-tool-page-copy {
     display: grid;
-    flex: 1 1 280px;
+    grid-column: 1 / -1;
     gap: 4px;
     min-width: 0;
 }
 
-.neconyan-tool-page-copy .neconyan-native-kicker {
+.neconyan-tool-page-intro .neconyan-native-kicker {
     color: var(--neco-ginger);
     font-weight: 700;
+}
+
+.neconyan-tool-page-copy[hidden] {
+    display: none;
+}
+
+body.neconyan :is(#left-nav-panel, #user-settings-block, #right-nav-panel) .neconyan-tool-page-intro > .neconyan-tool-tour-button {
+    min-height: 44px;
+    min-block-size: 44px;
+}
+
+body.neconyan :is(#left-nav-panel, #user-settings-block, #right-nav-panel) .neconyan-tool-page-intro > .neconyan-page-intro-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    width: 100%;
+    min-height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    box-shadow: none;
+    color: var(--neco-ginger);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.neconyan-page-intro-toggle .neconyan-native-kicker {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.neconyan-page-intro-toggle > i {
+    flex: 0 0 12px;
+    font-size: 12px;
+}
+
+.neconyan-page-intro-toggle:focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
 }
 
 .neconyan-tool-page-description {
@@ -569,7 +612,7 @@ body.neconyan .openDrawer[data-neconyan-native-page]:not([data-neconyan-native-p
     }
 
     .neconyan-tool-page-intro {
-        padding: 12px;
+        padding: 6px 10px;
     }
 
     /* The page intro already says what the tool does; the generic Settings blurb only misleads here. */
@@ -598,8 +641,9 @@ body.neconyan .openDrawer[data-neconyan-native-page]:not([data-neconyan-native-p
     }
 
     .neconyan-tool-page-intro .neconyan-tool-tour-button {
-        flex: 1 1 100%;
         justify-content: center;
+        white-space: nowrap;
+        padding-inline: 12px;
     }
 
     #neconyan-tool-tour.neconyan-tool-tour {
