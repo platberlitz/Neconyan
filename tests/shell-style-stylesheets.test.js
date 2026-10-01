@@ -160,3 +160,40 @@ describe('shell style runtime stylesheets', () => {
         }
     });
 });
+
+describe('Windows 98 hourglass cats', () => {
+    const win98 = (...parts) => path.join(repoRoot, 'public', 'img', 'neconyan', 'win98', ...parts);
+    const webpFrames = file => {
+        const bytes = readFileSync(win98(file));
+        expect(bytes.toString('latin1', 0, 4)).toBe('RIFF');
+        expect(bytes.toString('latin1', 8, 12)).toBe('WEBP');
+        let frames = 0;
+        for (let offset = 12; offset + 8 <= bytes.length;) {
+            const size = bytes.readUInt32LE(offset + 4);
+            if (bytes.toString('latin1', offset, offset + 4) === 'ANMF') frames++;
+            offset += 8 + size + (size % 2);
+        }
+        return frames;
+    };
+
+    test('the moving cats spin their hourglass and the still ones do not', () => {
+        expect(webpFrames('startup-cat.webp')).toBeGreaterThanOrEqual(6);
+        expect(webpFrames('home-cat.webp')).toBeGreaterThanOrEqual(6);
+        expect(webpFrames('startup-cat-still.webp')).toBe(0);
+        expect(webpFrames('startup-cat-rest.webp')).toBe(0);
+    });
+
+    test('reduced motion swaps the spinning cats for still copies', () => {
+        const css = stripCssBlockComments(readSource('public', 'css', 'shell-styles', 'windows-98.css'));
+        const running = "img[src*='img/neconyan-pixel-cat-running.webp'] { content: url('../../img/neconyan/win98/";
+        const moving = "img[src*='img/neconyan-pixel-cat.webp'] { content: url('../../img/neconyan/win98/";
+        expect(css).toContain(`body.neconyan ${running}startup-cat.webp`);
+        expect(css).toContain(`body.neconyan ${moving}home-cat.webp`);
+        const media = css.match(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/);
+        expect(media).not.toBeNull();
+        expect(media[1]).toContain(`${running}startup-cat-still.webp`);
+        expect(media[1]).toContain(`${moving}startup-cat-rest.webp`);
+        expect(css).toContain(`body.neconyan.reduced-motion ${running}startup-cat-still.webp`);
+        expect(css).toContain(`body.neconyan.reduced-motion ${moving}startup-cat-rest.webp`);
+    });
+});

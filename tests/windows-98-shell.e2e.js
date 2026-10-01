@@ -17,6 +17,7 @@ const REDRAWS = [
     ['img/neconyan/sleeping-tiger-right-twitch.webp', 'img/neconyan/win98/sleeping-tiger-right-twitch.webp'],
     ['img/neconyan-pixel-cat-running.webp', 'img/neconyan/win98/startup-cat.webp'],
     ['img/neconyan-pixel-cat-rest.webp', 'img/neconyan/win98/startup-cat-rest.webp'],
+    ['img/neconyan-pixel-cat.webp', 'img/neconyan/win98/home-cat.webp'],
     ['img/neconyan-icon-192.png', 'img/neconyan/win98/badge-calico.webp'],
     ...['miso', 'taro', 'nori'].flatMap(person => ['male', 'female', 'neutral'].flatMap(gender => [
         [`img/neconyan/assistant-icons/${person}-${gender}.png`, `img/neconyan/win98/icon-${person}-${gender}.webp`],

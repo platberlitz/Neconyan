@@ -76,8 +76,18 @@
 :root[data-sb-theme='windows-98'] body.neconyan img[src*='img/neconyan/sleeping-calico-left-twitch.webp'] { content: url('../../img/neconyan/win98/sleeping-calico-left-twitch.webp?v=20260930a'); }
 :root[data-sb-theme='windows-98'] body.neconyan img[src*='img/neconyan/sleeping-tiger-right.webp'] { content: url('../../img/neconyan/win98/sleeping-tiger-right.webp?v=20260930a'); }
 :root[data-sb-theme='windows-98'] body.neconyan img[src*='img/neconyan/sleeping-tiger-right-twitch.webp'] { content: url('../../img/neconyan/win98/sleeping-tiger-right-twitch.webp?v=20260930a'); }
-:root[data-sb-theme='windows-98'] body.neconyan img[src*='img/neconyan-pixel-cat-running.webp'] { content: url('../../img/neconyan/win98/startup-cat.webp?v=20260930a'); }
-:root[data-sb-theme='windows-98'] body.neconyan img:is([src*='img/neconyan-pixel-cat-rest.webp'], [src*='img/neconyan-pixel-cat.webp']) { content: url('../../img/neconyan/win98/startup-cat-rest.webp?v=20260930a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='img/neconyan-pixel-cat-running.webp'] { content: url('../../img/neconyan/win98/startup-cat.webp?v=20261001a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='img/neconyan-pixel-cat.webp'] { content: url('../../img/neconyan/win98/home-cat.webp?v=20261001a'); }
+:root[data-sb-theme='windows-98'] body.neconyan img[src*='img/neconyan-pixel-cat-rest.webp'] { content: url('../../img/neconyan/win98/startup-cat-rest.webp?v=20260930a'); }
+
+/* The hourglass spins in the moving cats; reduced motion keeps it still. The boot picture element
+   swaps its source without touching src, so the running cat needs its own still copy here. */
+@media (prefers-reduced-motion: reduce) {
+    :root[data-sb-theme='windows-98'] body.neconyan img[src*='img/neconyan-pixel-cat-running.webp'] { content: url('../../img/neconyan/win98/startup-cat-still.webp?v=20261001a'); }
+    :root[data-sb-theme='windows-98'] body.neconyan img[src*='img/neconyan-pixel-cat.webp'] { content: url('../../img/neconyan/win98/startup-cat-rest.webp?v=20260930a'); }
+}
+:root[data-sb-theme='windows-98'] body.neconyan.reduced-motion img[src*='img/neconyan-pixel-cat-running.webp'] { content: url('../../img/neconyan/win98/startup-cat-still.webp?v=20261001a'); }
+:root[data-sb-theme='windows-98'] body.neconyan.reduced-motion img[src*='img/neconyan-pixel-cat.webp'] { content: url('../../img/neconyan/win98/startup-cat-rest.webp?v=20260930a'); }
 :root[data-sb-theme='windows-98'] body.neconyan img:is([src*='img/neconyan-icon-192.png'], [src*='img/icon-64x64.png']) { content: url('../../img/neconyan/win98/badge-calico.webp?v=20260930a'); }
 :root[data-sb-theme='windows-98'] body.neconyan img[src*='assistant-icons/miso-male.png'] { content: url('../../img/neconyan/win98/icon-miso-male.webp?v=20260930a'); }
 :root[data-sb-theme='windows-98'] body.neconyan img[src*='assistant-icons/miso-female.png'] { content: url('../../img/neconyan/win98/icon-miso-female.webp?v=20260930a'); }
