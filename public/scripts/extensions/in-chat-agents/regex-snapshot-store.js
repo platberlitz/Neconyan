@@ -1,5 +1,12 @@
 const regexScriptsByAgentId = new Map();
 
+/** Id prefix of scripts the bundled Regex Agent Themes extension appends to an agent. */
+export const THEME_ADD_ON_SCRIPT_PREFIX = 'rat:';
+
+function isThemeAddOnScript(script) {
+    return String(script?.id ?? '').startsWith(THEME_ADD_ON_SCRIPT_PREFIX);
+}
+
 const REGEX_SCRIPT_REVISION_FIELDS = [
     'findRegex',
     'replaceString',
@@ -186,11 +193,26 @@ export function resolveRegexScriptsForSnapshot(snapshot) {
 
     if (Array.isArray(snapshot.regexScriptRefs)) {
         const resolvedScripts = [];
+        const referencedAgentIds = [];
         for (const ref of snapshot.regexScriptRefs) {
-            const cachedScripts = regexScriptsByAgentId.get(String(ref?.agentId ?? '')) ?? [];
+            const agentId = String(ref?.agentId ?? '');
+            if (!referencedAgentIds.includes(agentId)) {
+                referencedAgentIds.push(agentId);
+            }
+            const cachedScripts = regexScriptsByAgentId.get(agentId) ?? [];
             const script = cachedScripts.find(item => String(item?.id ?? '') === String(ref?.scriptId ?? ''));
             if (script) {
                 resolvedScripts.push(script);
+            }
+        }
+
+        // Scripts a theme appends to an agent (meter bars, empty-slot cleanup) belong to the
+        // agent's current look, so they also apply to replies saved before the theme added them.
+        for (const agentId of referencedAgentIds) {
+            for (const script of regexScriptsByAgentId.get(agentId) ?? []) {
+                if (isThemeAddOnScript(script) && !resolvedScripts.includes(script)) {
+                    resolvedScripts.push(script);
+                }
             }
         }
 

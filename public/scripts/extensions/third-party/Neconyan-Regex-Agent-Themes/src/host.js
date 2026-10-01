@@ -17,6 +17,11 @@ const STORE_URL = '/scripts/extensions/in-chat-agents/agent-store.js';
 const SCRIPTS_URL = '/scripts/extensions/in-chat-agents/regex-scripts.js';
 
 const REQUIRED_STORE = ['getAgents', 'saveAgent'];
+
+// Companion note cards are drawn by In-Chat Agents from these message extras and redrawn
+// when this event fires (companion/companion-shared.js and companion/companion-runner.js).
+const COMPANION_RESULTS_EXTRA_KEY = 'inChatAgentCompanionResults';
+const COMPANION_RESULTS_UPDATED_EVENT = 'in_chat_agent_companion_results_updated';
 const REQUIRED_SCRIPTS = ['normalizeRegexScript'];
 
 let state = null;
@@ -114,9 +119,9 @@ export async function waitForAgents({ attempts = 20, delayMs = 250, signal } = {
 }
 
 /**
- * Re-renders visible messages whose live script refs point at a changed agent. This reads
- * chat metadata but never rewrites or saves it; off-screen messages resolve the same live
- * cache when Neconyan renders them later.
+ * Re-renders visible messages whose live script refs point at a changed agent, and redraws
+ * the companion note cards that agent wrote. This reads chat metadata but never rewrites or
+ * saves it; off-screen messages resolve the same live cache when Neconyan renders them later.
  */
 export async function repaintMessagesForAgents(changes) {
     const context = getContext();
@@ -142,6 +147,7 @@ export async function repaintMessagesForAgents(changes) {
     }
 
     const updates = [];
+    const cardIndexes = [];
     context.chat.forEach((message, index) => {
         if (!message || message.is_user || message.is_system) {
             return;
@@ -154,18 +160,36 @@ export async function repaintMessagesForAgents(changes) {
         if (matches) {
             updates.push({ index, message });
         }
+        if (holdsCompanionResultsFor(message, wanted)) {
+            cardIndexes.push(index);
+        }
     });
 
     const results = await Promise.allSettled(
         updates.map(({ index, message }) => context.updateMessageBlock(index, message)),
     );
-    const repainted = results.filter(result => result.status === 'fulfilled').length;
+    const cards = await Promise.allSettled(cardIndexes.map(messageIndex => (
+        context.eventSource?.emit?.(COMPANION_RESULTS_UPDATED_EVENT, { messageIndex })
+    )));
+    const repaintedMessages = results.filter(result => result.status === 'fulfilled').length;
+    const repaintedCards = cards.filter(result => result.status === 'fulfilled').length;
+    const matched = new Set([...updates.map(update => update.index), ...cardIndexes]).size;
+    const failed = (results.length - repaintedMessages) + (cards.length - repaintedCards);
     return {
-        ok: repainted === results.length,
-        matched: updates.length,
-        repainted,
-        failed: results.length - repainted,
+        ok: failed === 0,
+        matched,
+        repainted: Math.max(0, matched - failed),
+        failed,
     };
+}
+
+function holdsCompanionResultsFor(message, wanted) {
+    const swipeExtra = Array.isArray(message.swipe_info) ? message.swipe_info[message.swipe_id]?.extra : null;
+    const results = swipeExtra?.[COMPANION_RESULTS_EXTRA_KEY] ?? message.extra?.[COMPANION_RESULTS_EXTRA_KEY];
+    if (!results || typeof results !== 'object') {
+        return false;
+    }
+    return Object.keys(results).some(agentId => wanted.has(agentId));
 }
 
 /** Test seam: lets the apply tests inject a fake store without touching the DOM. */
