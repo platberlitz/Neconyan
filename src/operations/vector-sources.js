@@ -76,12 +76,12 @@ function vectorOptions(raw) {
     };
 }
 
-function fileCollections(base, settings, chat, input, sources) {
+export function fileCollections(base, settings, chat, input = {}, sources = [], { skipMissing = false, avatars = [] } = {}) {
     if (input.scope && !['global', 'chat', 'character', 'attached'].includes(input.scope)) throw operationError('Choose a valid attachment scope.', 400);
     const ext = settings.extension_settings || {};
     const metadata = chat?.records[0].chat_metadata || {};
     const byScope = { global: ext.attachments || [], chat: metadata.attachments || [],
-        character: ext.character_attachments?.[chat?.locator.avatar] || [] };
+        character: unique([chat?.locator.avatar, ...avatars].filter(Boolean)).flatMap(avatar => ext.character_attachments?.[avatar] || []) };
     const attached = chat?.records.slice(1).flatMap(row => row.extra?.files || []) || [];
     const available = [...(input.scope ? byScope[input.scope] ?? [] : Object.values(byScope).flat()),
         ...(!input.scope || input.scope === 'attached' ? attached : [])]
@@ -98,16 +98,20 @@ function fileCollections(base, settings, chat, input, sources) {
         const attachment = available.find(file => file.url === url);
         const inline = attached.find(file => file.url === url && typeof file.text === 'string');
         if (inline) return { id: `file_${getStringHash(url)}`, kind: 'file', url, bytes: Buffer.byteLength(inline.text), text: inline.text,
+            inlineMessageIndex: chat.records.slice(1).findIndex(row => row.extra?.files?.includes(inline)),
             attached: true, dataBank: Object.values(byScope).flat().some(file => file.url === url) };
         const filename = path.join(base.directories.files, name);
         const file = readRoleplayFile(filename, LIMIT);
-        if (!file) throw operationError('A selected vector file no longer exists.');
+        if (!file) {
+            if (skipMissing) return null;
+            throw operationError('A selected vector file no longer exists.');
+        }
         let text;
         try { text = new TextDecoder('utf-8', { fatal: true }).decode(file.bytes); } catch { throw operationError('The selected vector file is not readable text.'); }
         sources.push({ relative: path.relative(base.directories.root, filename), evidence: authoringEvidence(file) });
         return { id: `file_${getStringHash(url)}`, kind: 'file', url, bytes: Number(attachment.size) || file.bytes.length, text,
             attached: attached.some(item => item.url === url), dataBank: Object.values(byScope).flat().some(file => file.url === url) };
-    });
+    }).filter(Boolean);
 }
 
 /** Capture whole source sets and every old index before accepting any embedding requests. */

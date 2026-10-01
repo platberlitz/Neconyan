@@ -1,11 +1,12 @@
-import { eventSource, event_types, getCurrentChatId, substituteParams } from '../../../script.js';
-import { getContext } from '../../extensions.js';
+import { eventSource, event_types, getCurrentChatId, saveSettingsDebounced, substituteParams } from '../../../script.js';
+import { extension_settings, getContext } from '../../extensions.js';
 import { getDataBankAttachments } from '../../chats.js';
 import { getStringHash } from '../../utils.js';
 import { getAssistantIconSrc } from '../../neconyan-assistant-art.js';
 import { accountStorage } from '../../util/AccountStorage.js';
 import { t } from '../../i18n.js';
 import { mountSavedVectorWork, runVectorWork } from './native.js';
+import { PREFIX_PRESETS } from '../../mewmory/rag-settings.js';
 
 const GUIDE_KEY = 'neconyanVectorsGuideStep';
 function renderSearchResults(results, result) {
@@ -39,6 +40,34 @@ const steps = () => [
 export function mountVectorWorkspace(settings) {
     const root = document.querySelector('#vectors_container .vectors-workspace');
     const find = selector => root.querySelector(selector);
+    const prefixes = document.createElement('div'); prefixes.className = 'vectors-card';
+    const heading = document.createElement('h4'); heading.textContent = t`Embedding prefixes`;
+    const explanation = document.createElement('p');
+    explanation.textContent = t`Some models need different text before searches and documents. Use your model's recommendation; spaces and line breaks are preserved. Mewmory can share this connection and these prefixes. Changed prefixes trigger fresh indexing before meaning search is used.`;
+    prefixes.append(heading, explanation);
+    const savePrefixes = () => { Object.assign(extension_settings.vectors, settings); saveSettingsDebounced(); };
+    const controls = {};
+    const presetLabel = document.createElement('label'); presetLabel.htmlFor = 'vectors_prefix_preset'; presetLabel.textContent = t`Prefix preset`;
+    const preset = document.createElement('select'); preset.id = 'vectors_prefix_preset'; preset.className = 'text_pole';
+    preset.add(new Option(t`Choose a preset`, ''));
+    PREFIX_PRESETS.forEach((value, index) => preset.add(new Option(value.label, String(index))));
+    prefixes.append(presetLabel, preset);
+    for (const [key, caption] of [['queryPrefix', t`Query prefix`], ['documentPrefix', t`Document prefix`]]) {
+        const field = document.createElement('div'); field.className = 'vectors-field';
+        const label = document.createElement('label'); label.htmlFor = 'vectors_' + key; label.textContent = caption;
+        const control = document.createElement('textarea'); control.id = label.htmlFor; control.className = 'text_pole';
+        control.rows = 2; control.maxLength = 500; control.value = settings[key] || '';
+        control.addEventListener('input', () => { settings[key] = control.value; preset.value = ''; savePrefixes(); });
+        controls[key] = control; field.append(label, control); prefixes.append(field);
+    }
+    preset.addEventListener('change', () => {
+        if (preset.value === '') return;
+        const value = PREFIX_PRESETS[Number(preset.value)];
+        controls.queryPrefix.value = settings.queryPrefix = value.query;
+        controls.documentPrefix.value = settings.documentPrefix = value.document;
+        savePrefixes();
+    });
+    find('#vectors-panel-connection').append(prefixes);
     const tabs = [...root.querySelectorAll('[data-vectors-tab]')];
     const openTab = (name, focus = false) => {
         for (const tab of tabs) {

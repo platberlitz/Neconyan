@@ -3,14 +3,14 @@ import express from 'express';
 import { abortOnRequestClose } from '../util.js';
 import {
     continueState, eligibleRecords, fail, hash, list, object, putRecord, recordEligible, recordRevision,
-    refKey, sourceAt, sourceEligible, strings, syncSources, text, undoRecord, validateRecord,
+    refKey, sourceAt, sourceEligible, SOURCE_TYPES, strings, syncSources, text, undoRecord, validateRecord,
 } from '../mewmory/core.js';
 import { activeReferences, assemblyFingerprint, currentOverviews, generationFingerprint } from '../mewmory/context.js';
-import { publicConfig, readConfig, roleVersion, saveConfig } from '../mewmory/models.js';
+import { embed, publicConfig, readConfig, roleVersion, saveConfig } from '../mewmory/models.js';
 import { addUsage, pendingSources, processingVersion } from '../mewmory/processing.js';
 import { cancelProcessing, startProcessing, waitForProcessing } from '../mewmory/worker.js';
 import { recall } from '../mewmory/retrieval.js';
-import { lexicalSearch, searchDocuments, updateIndex } from '../mewmory/search.js';
+import { hybridCandidates, searchDocuments, updateIndex } from '../mewmory/search.js';
 import { loadCurrentState, purgeMissingContextSources, readContextSources } from '../mewmory/sources.js';
 import { commitRecovery, listStories, MAX_ARCHIVE_BYTES, mutateState, normalizeLocator, readChat, recoveryState } from '../mewmory/store.js';
 import { getCounter } from '../mewmory/tokens.js';
@@ -200,10 +200,35 @@ route('/process/cancel', async (directories, body) => inspectState(
     await cancelProcessing(directories, normalizeLocator(body.locator)), readConfig(directories),
 ));
 
-route('/search', async (directories, body) => {
-    const state = await loadCurrentState(directories, normalizeLocator(body.locator));
+route('/search', async (directories, body, signal) => {
+    const locator = normalizeLocator(body.locator);
+    const state = await loadCurrentState(directories, locator);
+    const config = readConfig(directories);
+    const fingerprint = assemblyFingerprint(state, config);
     const query = text(body.query, 'Search query', 6000);
-    return { matches: lexicalSearch(searchDocuments(state), query, 40).map(({ document }) => document) };
+    const mode = body.mode || config.retrieval.mode;
+    if (!['keyword', 'hybrid', 'semantic'].includes(mode)) fail('Choose a valid search mode.');
+    if (body.dataType && !SOURCE_TYPES.includes(body.dataType)) fail('Choose a valid source type.');
+    const asOf = body.asOf ?? Infinity;
+    if (asOf !== Infinity && (!Number.isSafeInteger(asOf) || asOf < 0)) fail('Choose a valid message position.');
+    const documents = searchDocuments(state, asOf, config).filter(document => (!body.dataType || document.dataType === body.dataType)
+        && (!body.ownerId || document.ownerId === body.ownerId) && (!body.subjectId || document.subjectIds.includes(body.subjectId)));
+    let vector = null; let error = ''; const usage = [];
+    if (mode !== 'keyword' && config.roles.embedding.enabled && state.index.version === roleVersion(config, 'embedding')) {
+        try {
+            const result = await embed(directories, config, [query], { query: true, dataTypes: ['chat'], signal });
+            usage.push(result.usage);
+            vector = result.vectors[0];
+            const dimension = Object.values(state.index.vectors)[0]?.vector.length;
+            if (dimension && vector.length !== dimension) { vector = null; fail('Embedding dimensions changed. Rebuild the search index.', 502); }
+        } catch (failure) { error = failure.message; }
+    }
+    const current = await loadCurrentState(directories, locator);
+    if (assemblyFingerprint(current, readConfig(directories)) !== fingerprint) fail('The archive or retrieval settings changed during this search. Search again.', 409);
+    if (usage.length) mutateState(directories, locator, state => { addUsage(state, usage); }, current.revision);
+    return { matches: hybridCandidates(documents, query, vector, state.index.vectors, 40, { ...config.retrieval, mode }),
+        retrieval: { requestedMode: mode, usedMode: vector ? mode : 'keyword', keywordFallback: mode !== 'keyword' && !vector,
+            documents: documents.length, error }, usage };
 });
 
 route('/recall', (directories, body, signal, owner) => body.background === true

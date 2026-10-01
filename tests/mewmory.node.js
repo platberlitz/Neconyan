@@ -18,7 +18,7 @@ const { activeReferences, assembleContext, generationFingerprint } = await impor
 const { callJsonRole, defaultConfig, embed, isLocalEndpoint, validateEndpoint, saveConfig } = await import('../src/mewmory/models.js');
 const { applyExtraction, applyInterview, extractionInput, interviewInput, pendingSources, processBatch } = await import('../src/mewmory/processing.js');
 const { forcedMatches, validateSelection, recall, recallInBackground } = await import('../src/mewmory/retrieval.js');
-const { hybridCandidates, lexicalSearch, searchDocuments, updateIndex } = await import('../src/mewmory/search.js');
+const { expandNeighbours, hybridCandidates, lexicalSearch, searchDocuments, splitPassages, updateIndex } = await import('../src/mewmory/search.js');
 const { loadCurrentState } = await import('../src/mewmory/sources.js');
 const { branchParentLocator, buildBranchMemoryState, chatPath, listStories, mutateState, normalizeLocator, readState, renameChatMemory, renameCharacterMemory, renameWorldMemory, removeChatMemory, removeSourceMemory, statePath, writeJson } = await import('../src/mewmory/store.js');
 const { ensureMewmoryMessageIds } = await import('../public/scripts/mewmory/message-identity.js');
@@ -33,6 +33,255 @@ const { startOperation, registerMewmoryOperations } = await import('../src/mewmo
 const { getJob: getSavedJob, recoverJobs, updateJob } = await import('../src/jobs/store.js');
 const { setDirectoriesResolver, testExports: jobRunner } = await import('../src/jobs/runner.js');
 const { readArtifact } = await import('../src/jobs/artifacts.js');
+
+test('RAG prefixes preserve whitespace through saving and real custom and native requests', async t => {
+    const { directories } = disk(t);
+    const provider = await createMewmoryProvider();
+    t.after(() => new Promise(resolve => provider.server.close(resolve)));
+    const config = defaultConfig();
+    Object.assign(config.roles.embedding, { enabled: true, endpoint: provider.url, model: 'embedding',
+        queryPrefix: 'query: \n ', documentPrefix: 'passage: ' });
+    saveConfig(directories, config);
+    let saved = readConfig(directories);
+    await embed(directories, saved, ['gift'], { dataTypes: ['chat'] });
+    await embed(directories, saved, ['gift'], { query: true, dataTypes: ['chat'] });
+    assert.deepEqual(provider.calls.map(call => call.input), [['passage: gift'], ['query: \n gift']]);
+    assert.equal(publicConfig(directories).roles.embedding.queryPrefix, 'query: \n ');
+    const settings = { extension_settings: { vectors: { source: 'llamacpp', use_alt_endpoint: true,
+        alt_endpoint_url: provider.url, queryPrefix: 'search_query: ', documentPrefix: 'search_document: ' } } };
+    writeJson(path.join(directories.root, 'settings.json'), settings);
+    saved.roles.embedding.provider = 'native';
+    saveConfig(directories, saved);
+    saved = readConfig(directories);
+    const version = roleVersion(saved, 'embedding');
+    await embed(directories, saved, ['gift'], { dataTypes: ['file'] });
+    await embed(directories, saved, ['gift'], { query: true, dataTypes: ['chat'] });
+    assert.deepEqual(provider.calls.slice(2).map(call => call.input), [['search_document: gift'], ['search_query: gift']]);
+    assert.equal(publicConfig(directories).roles.embedding.native.source, 'llamacpp');
+    assert.equal(JSON.stringify(publicConfig(directories)).includes('credentialsHash'), false);
+    settings.extension_settings.vectors.documentPrefix = 'new: ';
+    writeJson(path.join(directories.root, 'settings.json'), settings);
+    assert.notEqual(roleVersion(readConfig(directories), 'embedding'), version);
+    await assert.rejects(embed(directories, saved, ['gift']), /settings changed/);
+    assert.equal(provider.calls.length, 4, 'a stale native connection cannot dispatch');
+    saved = readConfig(directories);
+    saved.roles.embedding.allowedData = ['chat'];
+    saveConfig(directories, saved);
+    await assert.rejects(embed(directories, readConfig(directories), ['file text'], { dataTypes: ['file'] }), /cannot read/);
+    assert.equal(provider.calls.length, 4);
+    settings.extension_settings.vectors.alt_endpoint_url = 'https://vector.example.test/';
+    writeJson(path.join(directories.root, 'settings.json'), settings);
+    saved = readConfig(directories); saved.localOnly = true;
+    assert.throws(() => saveConfig(directories, saved), /provider is remote/);
+    settings.extension_settings.vectors.source = 'webllm';
+    writeJson(path.join(directories.root, 'settings.json'), settings);
+    assert.match(readConfig(directories).roles.embedding.error, /browser embeddings/);
+});
+
+test('archive HTTP search combines semantic retrieval, filters, safe fallback and source revalidation', async t => {
+    const { directories, write } = disk(t);
+    const provider = await createMewmoryProvider();
+    t.after(() => new Promise(resolve => provider.server.close(resolve)));
+    const config = defaultConfig();
+    Object.assign(config.roles.embedding, { enabled: true, endpoint: provider.url, model: 'embedding' });
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    const state = mutateState(directories, locator, state => { event(state); });
+    await updateIndex(state, directories, readConfig(directories));
+    mutateState(directories, locator, () => state, state.revision);
+    const express = (await import('express')).default;
+    const { router } = await import('../src/endpoints/mewmory.js');
+    const app = express();
+    app.use(express.json());
+    app.use((request, response, next) => { request.user = { directories }; next(); });
+    app.use(router);
+    const server = await new Promise(resolve => { const listener = app.listen(0, '127.0.0.1', () => resolve(listener)); });
+    t.after(() => new Promise(resolve => server.close(resolve)));
+    const search = async options => {
+        const response = await fetch('http://127.0.0.1:' + server.address().port + '/search', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locator, query: 'gift', ...options }),
+        });
+        return { status: response.status, body: await response.json() };
+    };
+    const calls = provider.calls.length;
+    const keyword = await search({ mode: 'keyword', dataType: 'memory', subjectId: 'gift' });
+    assert.equal(keyword.status, 200);
+    assert.equal(provider.calls.length, calls);
+    assert.ok(keyword.body.matches.some(match => match.id === 'event:gift'));
+    assert.deepEqual((await search({ mode: 'keyword', ownerId: 'other-character' })).body.matches, []);
+    const semantic = await search({ mode: 'semantic', dataType: 'chat', asOf: 0, query: 'unrelated words' });
+    assert.equal(semantic.status, 200);
+    assert.equal(semantic.body.retrieval.usedMode, 'semantic');
+    assert.equal(semantic.body.retrieval.documents, 1);
+    assert.ok(semantic.body.matches.length > 0);
+    assert.ok(semantic.body.matches.every(match => match.dataType === 'chat' && match.asOf <= 0 && match.retrieval.similarity > 0));
+    assert.equal(semantic.body.usage.length, 1);
+    provider.mode.fail = true;
+    const fallback = await search({ mode: 'hybrid', dataType: 'memory' });
+    assert.equal(fallback.status, 200);
+    assert.equal(fallback.body.retrieval.keywordFallback, true);
+    assert.ok(fallback.body.retrieval.error);
+    assert.ok(fallback.body.matches.some(match => match.id === 'event:gift'));
+    assert.equal((await search({ dataType: 'invented' })).status, 400);
+    provider.mode.fail = false;
+    provider.mode.reply = body => {
+        write([{ name: 'Mara', mes: 'The old evidence has been deleted.', is_user: false }]);
+        return { data: body.input.map((_, index) => ({ index, embedding: [1, 1, 1] })) };
+    };
+    const stale = await search({ mode: 'semantic' });
+    assert.equal(stale.status, 409);
+    assert.match(stale.body.error, /changed during this search/);
+    assert.equal(stale.body.matches, undefined);
+});
+
+test('RAG settings validate bounds and retain defaults for older saved configurations', t => {
+    const { directories } = disk(t);
+    const config = defaultConfig();
+    delete config.retrieval;
+    delete config.roles.embedding.provider;
+    writeJson(path.join(directories.root, 'mewmory/config.json'), config);
+    assert.equal(readConfig(directories).retrieval.chunkSize, 1800);
+    assert.equal(readConfig(directories).roles.embedding.provider, 'custom');
+    const saved = readConfig(directories);
+    for (const retrieval of [{ chunkSize: 256, chunkOverlap: 200 }, { batchSize: 11 }, { mode: 'invented' }, { semanticWeight: 1.01 }, { resultLimit: 0 }]) {
+        assert.throws(() => saveConfig(directories, { ...saved, retrieval: { ...saved.retrieval, ...retrieval } }));
+    }
+    const blank = structuredClone(saved);
+    blank.roles.embedding.queryPrefix = ' '.repeat(501);
+    assert.throws(() => saveConfig(directories, blank), /500/);
+    assert.equal(readConfig(directories).revision, 0, 'failed validation never writes settings');
+});
+
+test('passages retain exact offsets, cover original text, expand neighbours and remove prompt overlap', () => {
+    const original = 'First paragraph with a lunar gift.\n\n' + '🦊 A different sentence about the moon. '.repeat(35);
+    const options = { chunkSize: 256, chunkOverlap: 40 };
+    const passages = splitPassages(original, options);
+    assert.ok(passages.length > 3);
+    let covered = 0;
+    for (const passage of passages) {
+        assert.equal(passage.text, original.slice(passage.start, passage.end));
+        assert.ok(passage.text.length <= 256 && passage.start <= covered);
+        assert.equal(/[\uD800-\uDBFF]$/u.test(passage.text), false);
+        assert.equal(/^[\uDC00-\uDFFF]/u.test(passage.text), false);
+        covered = passage.end;
+    }
+    assert.equal(covered, original.length);
+    const state = newState(locator);
+    syncSources(state, [{ name: 'Mara', mes: original }]);
+    const documents = searchDocuments(state, Infinity, { retrieval: options });
+    const expanded = expandNeighbours([documents[1]], documents, 1);
+    assert.equal(expanded.length, 3);
+    const assembled = assembleContext(state, expanded, { counter, memoryTokens: 10000 });
+    const pieces = [...assembled.memoryText.matchAll(/characters (\d+)-(\d+)\][^\n]*\n([^]*?)(?=\n\n\[|$)/g)];
+    assert.ok(pieces.length >= 3, 'original source offsets accompany each inserted range');
+    const ranges = pieces.map(match => [Number(match[1]), Number(match[2])]).sort((a, b) => a[0] - b[0]);
+    assert.ok(ranges.every((range, index) => !index || range[0] >= ranges[index - 1][1]), 'no source character is inserted twice');
+    state.excludedSources.push(state.timeline[0].id);
+    assert.equal(searchDocuments(state).length, 0);
+    assert.equal(assembleContext(state, expanded, { counter }).memoryText, '');
+});
+
+test('hybrid ranking honours modes, similarity, source diversity, duplicates and stale vectors', () => {
+    const document = (id, text, source = id) => ({ id, text, searchText: text, kind: 'source', refs: [{ id: source, revision: 1 }] });
+    const documents = [document('keyword', 'moon moon gift'), document('meaning', 'lunar present'),
+        document('second', 'moon second passage', 'keyword'), document('duplicate', 'lunar present'), document('stale', 'unrelated')];
+    const index = Object.fromEntries(documents.map(item => [item.id, { textHash: hash(item.searchText), vector: item.id === 'keyword' ? [0, 1] : [1, 0] }]));
+    index.stale.textHash = 'old content';
+    const keyword = hybridCandidates(documents, 'moon', [1, 0], index, 10, { mode: 'keyword', maxPerSource: 1 });
+    assert.deepEqual(keyword.map(item => item.id), ['keyword']);
+    const semantic = hybridCandidates(documents, 'moon', [1, 0], index, 10, { mode: 'semantic', minSimilarity: 0.9, maxPerSource: 1 });
+    assert.equal(semantic.some(item => item.id === 'keyword' || item.id === 'stale'), false);
+    assert.equal(semantic.filter(item => item.text === 'lunar present').length, 1);
+    assert.ok(semantic.every(item => item.retrieval.similarity === 1));
+    assert.deepEqual(hybridCandidates(documents, 'moon', null, index, 10, { mode: 'semantic', maxPerSource: 1 }).map(item => item.id), ['keyword']);
+    assert.equal(hybridCandidates(documents, 'moon', [1, 0], index, 1, { semanticWeight: 0 })[0].id, 'keyword');
+    assert.notEqual(hybridCandidates(documents, 'moon', [1, 0], index, 1, { semanticWeight: 1 })[0].id, 'keyword');
+    const perspectives = ['mara', 'nova'].map(ownerId => ({ ...document(ownerId, 'moon gift'), kind: 'memory', ownerId }));
+    assert.equal(hybridCandidates(perspectives, 'moon', null, {}, 10).length, 2, 'Identical wording does not erase another character’s perspective.');
+});
+
+test('file retrieval uses native attachment scope, obeys scene boundaries and purges deleted sources', async t => {
+    const messages = [{ mewmory_id: 'before', name: 'Mara', mes: 'Earlier scene.' },
+        { mewmory_id: 'after', name: 'Mara', mes: 'Reads the file.', extra: { files: [{ url: '/user/files/later.txt', text: 'Future lunar secret' }] } }];
+    const { directories, write } = disk(t, messages);
+    directories.files = path.join(directories.root, 'user/files');
+    fs.mkdirSync(directories.files, { recursive: true });
+    for (const name of ['global', 'character', 'other', 'disabled']) fs.writeFileSync(path.join(directories.files, name + '.txt'), name + ' saved text');
+    writeJson(path.join(directories.root, 'settings.json'), { extension_settings: {
+        attachments: [{ url: '/user/files/global.txt' }, { url: '/user/files/disabled.txt' }],
+        disabled_attachments: ['/user/files/disabled.txt'], character_attachments: {
+            'Mara.png': [{ url: '/user/files/character.txt' }], 'Other.png': [{ url: '/user/files/other.txt' }],
+        },
+    } });
+    let state = await loadCurrentState(directories, locator);
+    const files = state => searchDocuments(state).filter(document => document.dataType === 'file');
+    assert.equal(files(state).length, 3);
+    assert.doesNotMatch(JSON.stringify(files(state)), /disabled saved|other saved/);
+    assert.doesNotMatch(JSON.stringify(searchDocuments(state, 0)), /Future lunar/);
+    assert.doesNotMatch(JSON.stringify(extractionInput(state, state.timeline, 0, false)), /Future lunar|global saved/);
+    mutateState(directories, locator, current => { current.excludedSources.push(current.timeline[1].id); });
+    state = await loadCurrentState(directories, locator);
+    assert.doesNotMatch(JSON.stringify(files(state)), /Future lunar/);
+    write(messages.slice(0, 1));
+    state = await loadCurrentState(directories, locator);
+    assert.doesNotMatch(JSON.stringify(state), /Future lunar/);
+    fs.rmSync(path.join(directories.files, 'global.txt'));
+    state = await loadCurrentState(directories, locator);
+    assert.doesNotMatch(JSON.stringify(state), /global saved text/);
+    const config = readConfig(directories); config.retrieval.includeFiles = false;
+    saveConfig(directories, config);
+    state = await loadCurrentState(directories, locator);
+    assert.equal(files(state).length, 0);
+});
+
+test('ranked recall works without a selector and local replies never dispatch model requests', async t => {
+    const { directories } = disk(t);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base'; config.retrieval.resultLimit = 2;
+    saveConfig(directories, config);
+    const dependencies = { call: async () => assert.fail('No selector is enabled'), embedFn: async () => assert.fail('No embeddings are enabled'), scheduleBackground: false };
+    const result = await recall(directories, locator, { query: 'gift' }, dependencies);
+    assert.ok(result.memoryText.length > 0);
+    assert.ok(result.selected.length <= 2);
+    assert.equal(result.inspection.retrieval.aiSelection, false);
+    assert.equal(result.inspection.retrieval.usedMode, 'keyword');
+    assert.doesNotMatch(result.memoryText, /Selected by ranked retrieval/);
+    const saved = readConfig(directories);
+    for (const role of ['embedding', 'selector']) Object.assign(saved.roles[role], { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: role });
+    saveConfig(directories, saved);
+    const local = await recall(directories, locator, { local: true, query: 'gift' }, dependencies);
+    assert.ok(local.memoryText.length > 0);
+    assert.equal(local.inspection.status, 'local');
+});
+
+test('forks remove future file copies and continuations retain the original attachment parent', () => {
+    const messages = structuredClone(fixture.messages);
+    const state = newState(locator);
+    syncSources(state, messages, [
+        { id: 'file:early', type: 'file', name: 'Early', text: 'Early attachment evidence.', meta: { messageIndex: 0 } },
+        { id: 'file:future', type: 'file', name: 'Later', text: 'FUTURE FILE SECRET.', meta: { messageIndex: 5 } },
+    ]);
+    const early = forkState(state, { ...locator, chat: 'Early fork' }, 2, messages.slice(0, 3));
+    assert.equal(JSON.stringify(early).includes('FUTURE FILE SECRET'), false);
+    assert.ok(searchDocuments(early).some(document => document.text === 'Early attachment evidence.'));
+    const continued = continueState(state, { ...locator, chat: 'Continued' }, [{ name: 'User', mes: 'A later conversation.', send_date: 'new' }]);
+    const file = sourceAt(continued, continued.contextSources.find(ref => ref.id === 'file:future'));
+    assert.deepEqual(file.meta.parentRef, state.timeline[5]);
+    assert.equal(searchDocuments(continued, 2).some(document => document.text === 'FUTURE FILE SECRET.'), false);
+    assert.ok(searchDocuments(continued).some(document => document.text === 'FUTURE FILE SECRET.'));
+});
+
+test('an embedding dimension change cannot partially publish a replacement index', async () => {
+    const state = base(); const config = defaultConfig();
+    config.roles.embedding.enabled = true;
+    config.retrieval.batchSize = 1;
+    const before = structuredClone(state.index);
+    let calls = 0;
+    await assert.rejects(updateIndex(state, {}, config, { embedFn: async () => ({ vectors: [++calls === 1 ? [1, 0] : [1, 0, 0]], usage: {} }) }), /dimensions changed/);
+    assert.deepEqual(state.index, before);
+});
 
 test('manual index rebuild owns every batch, persists its result and does not replay completed calls', async t => {
     const messages = Array.from({ length: 80 }, (_, index) => ({ name: 'Mara', mes: 'Saved passage ' + index, is_user: false }));
@@ -1409,11 +1658,13 @@ test('evidence expansion adds an original passage even when more than twelve rec
     const config = defaultConfig();
     config.writerTokenizer = 'cl100k_base';
     config.candidateLimit = 4;
+    Object.assign(config.roles.selector, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'selector' });
     saveConfig(directories, config);
     await loadCurrentState(directories, locator);
     mutateState(directories, locator, state => {
         state.enabled = true;
-        for (let index = 0; index < 16; index++) event(state, { id: 'event:evidence-' + index, text: 'Mara the sigil', refs: [state.timeline[0]], asOf: 0 });
+        for (let index = 0; index < 16; index++) event(state, { id: 'event:evidence-' + index, text: 'Mara the sigil detail ' + index,
+            searchDescription: 'Mara the sigil', refs: [state.timeline[0]], asOf: 0 });
     });
     let round = 0;
     await recall(directories, locator, {}, { call: async (_directories, _config, role, _contract, input) => {
@@ -1531,6 +1782,7 @@ test('a background batch saves alongside recall, indexing and appended chat with
     const { directories, write } = disk(t, messages);
     const config = defaultConfig();
     config.writerTokenizer = 'cl100k_base';
+    Object.assign(config.roles.selector, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'selector' });
     saveConfig(directories, config);
     await loadCurrentState(directories, locator);
     mutateState(directories, locator, state => { state.enabled = true; event(state); });
@@ -1836,6 +2088,7 @@ test('recall uses its completed snapshot when automatic memory finishes, but rej
     const { directories } = disk(t);
     const config = defaultConfig();
     config.writerTokenizer = 'cl100k_base';
+    Object.assign(config.roles.selector, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'selector' });
     saveConfig(directories, config);
     await loadCurrentState(directories, locator);
     mutateState(directories, locator, state => { state.enabled = true; event(state); });
@@ -1865,6 +2118,7 @@ test('local recall overlaps embeddings and selection, reuses completed IDs and r
     const { directories, write } = disk(t);
     const config = defaultConfig();
     config.writerTokenizer = 'cl100k_base';
+    Object.assign(config.roles.selector, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'selector' });
     Object.assign(config.roles.embedding, { enabled: true, endpoint: 'http://127.0.0.1:4491/v1', model: 'embedding' });
     saveConfig(directories, config);
     await loadCurrentState(directories, locator);

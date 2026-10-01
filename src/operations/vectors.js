@@ -108,6 +108,8 @@ export async function runVectors(context, plan, dependencies = {}) {
         ...dependencies, beforeDispatch: lease => assertVectorSources(lease, plan),
     })).model;
     const snapshots = plan.collections.map(collection => snapshotFor(context, plan, collection, model));
+    const prefixVersion = roleplayHash([plan.policy.settings.queryPrefix || '', plan.policy.settings.documentPrefix || '']);
+    const compatible = snapshot => (snapshot.data.prefixVersion || roleplayHash(['', ''])) === prefixVersion;
     const verify = lease => { assertVectorSources(lease, plan); for (const snapshot of snapshots) assertVectorIndex(lease, snapshot); };
     withOperation(context, ({ lease }) => verify(lease));
     if (plan.action === 'list') return Object.fromEntries(snapshots.map(snapshot => {
@@ -121,6 +123,7 @@ export async function runVectors(context, plan, dependencies = {}) {
         query = parts.join('\n').replace(/\n{3,}/g, '\n\n').trim();
     }
     if (plan.action === 'query') {
+        if (snapshots.some(snapshot => snapshot.data.items.length && !compatible(snapshot))) throw operationError('Vector prefixes changed. Re-index these sources before searching.');
         if (!query.trim() || !snapshots.length) return {};
         const result = await vectorBatch(context, plan, 'query', [query], { ...dependencies, isQuery: true, beforeDispatch: verify });
         withOperation(context, ({ lease }) => verify(lease));
@@ -134,15 +137,16 @@ export async function runVectors(context, plan, dependencies = {}) {
     for (const [collectionIndex, collection] of plan.collections.entries()) {
         context.signal.throwIfAborted();
         const snapshot = snapshots[collectionIndex];
+        const rebuild = plan.rebuild || !compatible(snapshot);
         const metadata = await cached(context, `vector-items:${collectionIndex}`,
-            () => prepareItems(context, plan, collection, collectionIndex, snapshot, verify, dependencies));
+            () => prepareItems(context, { ...plan, rebuild }, collection, collectionIndex, snapshot, verify, dependencies));
         if (metadata.length > 100000) throw operationError('This vector collection exceeds the saved item limit.', 413);
         const key = item => collection.kind === 'chat' ? item.hash : `${item.hash}:${item.index}`;
         const keys = new Set(metadata.map(key));
-        const oldKeys = new Set(plan.rebuild ? [] : snapshot.data.items.map(item => key(item.metadata)));
+        const oldKeys = new Set(rebuild ? [] : snapshot.data.items.map(item => key(item.metadata)));
         const fresh = metadata.filter(item => !oldKeys.has(key(item)));
         const positions = new Map(metadata.map(item => [key(item), item.index]));
-        const items = plan.rebuild ? [] : snapshot.data.items.filter(item => keys.has(key(item.metadata))).map(item => ({
+        const items = rebuild ? [] : snapshot.data.items.filter(item => keys.has(key(item.metadata))).map(item => ({
             ...item, metadata: { ...item.metadata, index: positions.get(key(item.metadata)) },
         }));
         const batchSize = plan.batchSize ?? 10;
@@ -155,7 +159,7 @@ export async function runVectors(context, plan, dependencies = {}) {
             items.push(...batch.map((item, index) => vectorItem(collection.id, item, vectors.vectors[index], offset + index)));
             await context.progress({ stage: `Indexing ${collection.id}`, completed: offset + batch.length, total: fresh.length });
         }
-        replacements.push({ snapshot, data: { ...snapshot.data, metadata_config: {}, items } });
+        replacements.push({ snapshot, data: { ...snapshot.data, prefixVersion, metadata_config: {}, items } });
     }
     const result = { remaining: 0, collections: replacements.map(({ snapshot, data }) => ({ collectionId: snapshot.collectionId,
         model: snapshot.model, count: data.items.length, hashes: [...new Set(data.items.map(item => item.metadata.hash))] })) };

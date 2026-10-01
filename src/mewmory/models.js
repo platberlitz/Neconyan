@@ -10,6 +10,8 @@ import { fail, hash, list, object, ROLE_NAMES, SOURCE_TYPES, text } from './core
 import { readJson, writeJson } from './store.js';
 import { getCounter, getTokenizerModel, TOKENIZERS } from './tokens.js';
 import { listModelProfiles, resolveModelProfile } from './connection-profiles.js';
+import { captureVectorPolicy, requestVectorEmbedding } from '../operations/vector-provider.js';
+import { RAG_DEFAULTS } from '../../public/scripts/mewmory/rag-settings.js';
 
 export const ROLE_LABELS = { extractor: 'Facts and events', pawspective: 'Pawspective interviews', embedding: 'Embeddings', selector: 'Recall selector', fallback: 'Recall fallback' };
 
@@ -17,12 +19,12 @@ export function defaultConfig() {
     return {
         revision: 0, defaultsVersion: 2, localOnly: false, autoUpdate: true, historyWindow: 30000,
         memoryTokens: 6000, batchMessages: 12, candidateLimit: 24,
-        writerTokenizer: 'auto', excludeHistory: true,
+        writerTokenizer: 'auto', excludeHistory: true, retrieval: { ...RAG_DEFAULTS },
         roles: Object.fromEntries(ROLE_NAMES.map(name => [name, {
             enabled: false, profileId: '', endpoint: '', model: '', modelOverride: '', modelRevision: '', allowRemote: true,
             contextTokens: 200000, maxOutputTokens: name === 'embedding' ? 0 : 32000,
             timeoutMs: 300000, tokenizer: 'auto', allowedData: [...SOURCE_TYPES],
-            queryPrefix: '', documentPrefix: '',
+            queryPrefix: '', documentPrefix: '', ...(name === 'embedding' ? { provider: 'custom' } : {}),
         }])),
     };
 }
@@ -56,6 +58,28 @@ function integer(value, label, min, max) {
     return value;
 }
 
+function prefix(value, label) {
+    if (value === undefined) return '';
+    if (typeof value !== 'string' || value.length > 500) fail(label + ' must be text of at most 500 characters.');
+    return value;
+}
+
+function validateRetrieval(input = {}) {
+    object(input, 'Retrieval settings');
+    const result = { ...RAG_DEFAULTS, ...input };
+    if (!['hybrid', 'keyword', 'semantic'].includes(result.mode)) fail('Choose hybrid, keyword or semantic search.');
+    for (const [key, min, max] of [['chunkSize', 256, 12000], ['chunkOverlap', 0, 4000], ['queryMessages', 1, 12],
+        ['resultLimit', 1, 64], ['maxPerSource', 1, 64], ['neighbourChunks', 0, 2], ['batchSize', 1, 10]]) {
+        integer(result[key], key, min, max);
+    }
+    if (result.chunkOverlap >= result.chunkSize / 2) fail('Passage overlap must be less than half the passage size.');
+    for (const key of ['semanticWeight', 'minSimilarity']) {
+        if (typeof result[key] !== 'number' || !Number.isFinite(result[key]) || result[key] < 0 || result[key] > 1) fail(key + ' must be between 0 and 1.');
+    }
+    if (typeof result.includeFiles !== 'boolean') fail('Attached-file retrieval must be switched on or off.');
+    return Object.fromEntries(Object.keys(RAG_DEFAULTS).map(key => [key, result[key]]));
+}
+
 export function validateConfig(input) {
     object(input, 'Settings');
     const result = defaultConfig();
@@ -67,6 +91,7 @@ export function validateConfig(input) {
     result.memoryTokens = integer(input.memoryTokens, 'Selected memory budget, tokens', 256, 64000);
     result.batchMessages = integer(input.batchMessages, 'Messages per update', 1, 24);
     result.candidateLimit = integer(input.candidateLimit, 'Recall candidates', 4, 64);
+    result.retrieval = validateRetrieval(input.retrieval);
     if (!TOKENIZERS.includes(input.writerTokenizer)) fail('Choose a token counter for your main writer from the list.');
     result.writerTokenizer = input.writerTokenizer;
     object(input.roles, 'Model roles');
@@ -74,12 +99,16 @@ export function validateConfig(input) {
         try {
             const role = object(input.roles[name], 'Role');
             const enabled = role.enabled === true;
+            const provider = name === 'embedding' ? role.provider || 'custom' : 'custom';
+            if (!['custom', 'native'].includes(provider)) fail('Choose a valid embedding connection.');
+            const native = provider === 'native';
             const profileId = text(role.profileId || '', 'Connection profile', 250, true);
-            const endpoint = text(role.endpoint, 'Endpoint', 2048, !enabled || Boolean(profileId));
+            const endpoint = text(role.endpoint, 'Endpoint', 2048, !enabled || Boolean(profileId) || native);
             const allowRemote = role.allowRemote === true;
             result.roles[name] = {
-                enabled, profileId, endpoint: !profileId && endpoint ? enabled ? validateEndpoint(endpoint, { localOnly: result.localOnly, allowRemote }) : endpoint : '',
-                model: text(role.model, 'Model', 250, !enabled || Boolean(profileId)),
+                enabled, profileId: native ? '' : profileId, endpoint: !native && !profileId && endpoint ? enabled ? validateEndpoint(endpoint, { localOnly: result.localOnly, allowRemote }) : endpoint : '',
+                model: text(role.model, 'Model', 250, !enabled || Boolean(profileId) || native),
+                ...(name === 'embedding' ? { provider } : {}),
                 modelOverride: text(role.modelOverride, 'Model override', 250, true),
                 modelRevision: text(role.modelRevision, 'Model revision', 250, true), allowRemote,
                 contextTokens: integer(role.contextTokens, 'Context limit, tokens', 1024, 2000000),
@@ -88,8 +117,8 @@ export function validateConfig(input) {
                     : fail('Timeout, seconds must be between 1 and 300.'),
                 tokenizer: role.tokenizer,
                 allowedData: [...new Set(list(role.allowedData, 'Allowed data', SOURCE_TYPES.length))],
-                queryPrefix: text(role.queryPrefix, 'Query prefix', 500, true),
-                documentPrefix: text(role.documentPrefix, 'Document prefix', 500, true),
+                queryPrefix: prefix(role.queryPrefix, 'Query prefix'),
+                documentPrefix: prefix(role.documentPrefix, 'Document prefix'),
             };
             if (!TOKENIZERS.includes(role.tokenizer)) fail('Choose a token counter for this role from the list.');
             if (result.roles[name].allowedData.some(type => !SOURCE_TYPES.includes(type))) fail('Choose what this role may read from the list.');
@@ -117,13 +146,26 @@ function readSavedConfig(directories) {
         }
         config.defaultsVersion = 2;
     }
+    config.retrieval = { ...RAG_DEFAULTS, ...config.retrieval };
+    config.roles.embedding.provider ||= 'custom';
     return config;
+}
+
+function resolveNativeRole(directories, role) {
+    const nativePolicy = captureVectorPolicy({ directories });
+    if (nativePolicy.source === 'webllm') fail('Choose a server provider in Vectorization; browser embeddings cannot run in Mewmory background jobs.');
+    return { ...role, nativePolicy, model: nativePolicy.settings.model || nativePolicy.source, endpoint: nativePolicy.settings.apiUrl || '',
+        queryPrefix: nativePolicy.settings.queryPrefix || '', documentPrefix: nativePolicy.settings.documentPrefix || '' };
 }
 
 export function readConfig(directories) {
     const config = readSavedConfig(directories);
     for (const name of ROLE_NAMES) {
         const role = config.roles[name];
+        if (name === 'embedding' && role.enabled && role.provider === 'native') {
+            try { config.roles[name] = resolveNativeRole(directories, role); } catch (error) { role.error = error.message; }
+            continue;
+        }
         if (!role.enabled || !role.profileId) continue;
         try {
             role.connection = resolveModelProfile(directories, role.profileId, name === 'embedding', role.modelOverride);
@@ -143,8 +185,11 @@ export function publicConfig(directories) {
     return { ...config, profiles, roles: Object.fromEntries(ROLE_NAMES.map(name => {
         const role = config.roles[name];
         const model = role.profileId ? role.modelOverride || profiles.find(profile => profile.id === role.profileId)?.model || '' : role.model;
-        return [name, { ...role, model, error: resolved.roles[name].error || '', autoTokenizer: model ? getTokenizerModel(model) : '',
-            hasKey: Boolean(readSecret(directories, 'mewmory_' + name)) }];
+        const native = resolved.roles[name].nativePolicy;
+        return [name, { ...role, model, ...(native ? { native: { source: native.source, model: native.settings.model,
+            queryPrefix: native.settings.queryPrefix || '', documentPrefix: native.settings.documentPrefix || '' } } : {}),
+        error: resolved.roles[name].error || '', autoTokenizer: (native ? resolved.roles[name].model : model) ? getTokenizerModel(native ? resolved.roles[name].model : model) : '',
+        hasKey: Boolean(readSecret(directories, 'mewmory_' + name)) }];
     })) };
 }
 
@@ -157,6 +202,10 @@ export function saveConfig(directories, input) {
     });
     for (const name of ROLE_NAMES) {
         const role = validated.roles[name];
+        if (name === 'embedding' && role.enabled && role.provider === 'native') {
+            authorizeRole({ ...validated, roles: { ...validated.roles, [name]: resolveNativeRole(directories, role) } }, name, []);
+            continue;
+        }
         if (!role.enabled || !role.profileId) continue;
         try {
             const connection = resolveModelProfile(directories, role.profileId, name === 'embedding', role.modelOverride);
@@ -192,8 +241,8 @@ export function saveConfig(directories, input) {
 
 export function roleVersion(config, name) {
     if (name === 'embedding') {
-        const { endpoint, model, modelRevision, queryPrefix, documentPrefix, profileId } = config.roles.embedding;
-        return hash({ endpoint, model, modelRevision, queryPrefix, documentPrefix, profileId });
+        const { endpoint, model, modelRevision, queryPrefix, documentPrefix, profileId, nativePolicy } = config.roles.embedding;
+        return hash({ endpoint, model, modelRevision, queryPrefix, documentPrefix, profileId, ...(nativePolicy ? { nativePolicy } : {}) });
     }
     return hash([config.localOnly, { ...config.roles[name], timeoutMs: undefined }]);
 }
@@ -203,7 +252,10 @@ function authorizeRole(config, name, dataTypes) {
     if (!ROLE_NAMES.includes(name) || !role?.enabled) fail('Enable ' + (ROLE_LABELS[name] || 'the model role') + ' in Mewmory settings, then save the configuration.', 409);
     if (role.error) fail(ROLE_LABELS[name] + ': ' + role.error, 409);
     let endpoint = role.endpoint;
-    if (!role.connection || endpoint) {
+    if (role.nativePolicy) {
+        const local = role.nativePolicy.source === 'transformers' || (endpoint && isLocalEndpoint(endpoint));
+        if (!local && (config.localOnly || !role.allowRemote)) fail('The saved Vectorization provider is remote. Allow remote access for Embeddings or choose a local provider.', 403);
+    } else if (!role.connection || endpoint) {
         endpoint = validateEndpoint(endpoint, { localOnly: config.localOnly, allowRemote: role.allowRemote });
     } else if (config.localOnly || !role.allowRemote) {
         fail('This role is not allowed to send your story to a service on another computer, and the chosen connection profile is one. Tick \'Allow sending story data to a service on another computer\' for this role, or pick a local profile.', 403);
@@ -239,7 +291,13 @@ async function requestModel(directories, config, name, payload, dataTypes, signa
     const started = Date.now();
     try {
         let data;
-        if (role.connection && name !== 'embedding') {
+        if (role.nativePolicy && name === 'embedding') {
+            const result = await requestVectorEmbedding(directories, role.nativePolicy, payload.input, {
+                isQuery: payload.query, signal: controller.signal, fetchImpl: send, beforeDispatch: checkCurrent,
+            });
+            checkCurrent();
+            data = { data: result.vectors.map((embedding, index) => ({ embedding, index })) };
+        } else if (role.connection && name !== 'embedding') {
             const { runBackendGeneration, extractGeneratedText } = await import('../endpoints/conversation-generation.js');
             const request = { user: { directories }, headers: {} };
             const connection = { ...role.connection.payload };
@@ -332,15 +390,15 @@ export async function callJsonRole(directories, config, name, contract, input, {
 export async function embed(directories, config, texts, { query = false, dataTypes = SOURCE_TYPES, signal } = {}) {
     const { role } = authorizeRole(config, 'embedding', dataTypes);
     const counter = await getCounter(role.tokenizer, { tokenizerKey: 'openai', tokenizerName: role.model });
-    const prefix = query ? role.queryPrefix : role.documentPrefix;
+    const prefix = (query ? role.queryPrefix : role.documentPrefix) || '';
     const input = texts.map(value => prefix + value);
     if (input.some(value => counter.count(value) > role.contextTokens)) fail('A passage is too long for the Embeddings context limit. Check Embeddings > Context limit, tokens in Mewmory settings against your model service’s limit.', 409);
-    const result = await requestModel(directories, config, 'embedding', { input }, dataTypes, signal);
+    const result = await requestModel(directories, config, 'embedding', role.nativePolicy ? { input: texts, query } : { input }, dataTypes, signal);
     const rows = result.data.data;
     if (!Array.isArray(rows) || rows.length !== texts.length) fail('The Embeddings model sent back fewer results than Mewmory asked for. Try again, or choose a different Embeddings model in Mewmory settings.', 502);
     const vectors = rows.slice().sort((a, b) => a.index - b.index).map((row, index) => {
         if (row.index !== index || !Array.isArray(row.embedding) || !row.embedding.length || row.embedding.length > 32768
-            || row.embedding.some(value => typeof value !== 'number' || !Number.isFinite(value))) fail('The Embeddings model sent back results Mewmory cannot use. Check that the chosen model is an embeddings model.', 502);
+            || !row.embedding.some(value => value !== 0) || row.embedding.some(value => typeof value !== 'number' || !Number.isFinite(value))) fail('The Embeddings model sent back results Mewmory cannot use. Check that the chosen model is an embeddings model.', 502);
         return row.embedding;
     });
     if (vectors.some(vector => vector.length !== vectors[0].length)) fail('The Embeddings model sent back results of different sizes in one reply. Choose a different Embeddings model in Mewmory settings.', 502);

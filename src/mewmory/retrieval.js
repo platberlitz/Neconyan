@@ -5,7 +5,8 @@ import { SELECTION_CONTRACT } from './contracts.js';
 import { assemblyFingerprint, assembleContext, currentOverviews, generationFingerprint } from './context.js';
 import { callJsonRole, embed, readConfig, roleVersion } from './models.js';
 import { addUsage } from './processing.js';
-import { hybridCandidates, searchDocuments, terms, updateIndex } from './search.js';
+import { expandNeighbours, hybridCandidates, searchDocuments, terms, updateIndex } from './search.js';
+import { RAG_DEFAULTS } from '../../public/scripts/mewmory/rag-settings.js';
 import { loadCurrentState } from './sources.js';
 import { mutateState, statePath } from './store.js';
 import { getCounter } from './tokens.js';
@@ -154,6 +155,7 @@ export async function recall(directories, locator, {
 } = {}, { call = callJsonRole, embedFn = embed, loadState = loadCurrentState, mutate = mutateState,
     scheduleBackground = true, readConfiguration = readConfig } = {}) {
     const config = readConfiguration(directories);
+    const retrieval = { ...RAG_DEFAULTS, ...config.retrieval };
     const state = await loadState(directories, locator);
     if (!state.enabled) return { enabled: false, npcText: '', memoryText: '', tokens: { npc: 0, memory: 0 } };
     const fingerprint = assemblyFingerprint(state, config);
@@ -169,39 +171,49 @@ export async function recall(directories, locator, {
     } catch (error) {
         indexError = error.message;
     }
-    const scene = state.timeline.filter(ref => sourceEligible(state, ref, asOf)).slice(-8).map(ref => {
+    const scene = state.timeline.filter(ref => sourceEligible(state, ref, asOf)).slice(-retrieval.queryMessages).map(ref => {
         const source = sourceAt(state, ref);
         return { id: refKey(ref), speaker: source.speaker, text: source.text.slice(-6000) };
     });
     if (manualQuery) scene.push({ id: 'inspection-query', speaker: 'Author search', text: text(manualQuery, 'Search', 6000) });
     const query = scene.map(cue => cue.speaker + ': ' + cue.text).join('\n');
-    const allDocuments = searchDocuments(state, asOf);
+    const allDocuments = searchDocuments(state, asOf, config);
     let vector = null;
-    if (!local && config.roles.embedding.enabled && state.index.version === roleVersion(config, 'embedding')) {
+    if (!local && retrieval.mode !== 'keyword' && query.trim() && config.roles.embedding.enabled && state.index.version === roleVersion(config, 'embedding')) {
         try {
             const result = await embedFn(directories, config, [query], { query: true, signal, dataTypes: ['chat'] });
-            vector = result.vectors[0];
             usage.push(result.usage);
+            vector = result.vectors[0];
+            const indexedDimension = Object.values(state.index.vectors)[0]?.vector.length;
+            if (indexedDimension && vector.length !== indexedDimension) {
+                vector = null;
+                fail('The query vector has a different size from the index. Set a new model revision and rebuild the index.', 502);
+            }
         } catch (error) {
             indexError = error.message;
         }
     }
     const forced = forcedMatches(state, allDocuments, query, asOf);
     const candidates = [...new Map([...forced, ...hybridCandidates(allDocuments, query, vector,
-        state.index.vectors, config.candidateLimit)].map(document => [document.id, document])).values()];
+        state.index.vectors, config.candidateLimit, retrieval)].map(document => [document.id, document])).values()];
     const cached = local && state.recalls.findLast(item => item.status === 'complete' && item.asOf <= asOf
         && item.sourceCount <= sourceCount && item.validationFingerprint === recallFingerprint(state, config, item.sourceCount));
     const selection = local ? {
         status: { status: 'local', selections: cached?.selections || [], rejections: [], needsEvidence: [] },
         documents: candidates, usage: [], fallbackUsed: false, error: '',
+    } : !config.roles.selector.enabled ? {
+        status: { status: 'complete', selections: candidates.slice(0, retrieval.resultLimit).map(document => ({ recordId: document.id,
+            relevanceType: 'direct', currentCueRefs: scene.map(cue => cue.id), memoryEvidenceRefs: document.refs.map(refKey),
+            justification: 'Selected by ranked retrieval; AI selection is switched off.' })), rejections: [], needsEvidence: [] },
+        documents: candidates, usage: [], fallbackUsed: false, error: '',
     } : await selectMemories(state, directories, config, candidates, scene, allDocuments, asOf, signal, call);
     usage.push(...selection.usage);
     await loadState(directories, locator);
-    const selectedIds = new Set([...forced.map(document => document.id), ...selection.status.selections.map(item => item.recordId),
-        ...(local ? candidates.map(document => document.id) : [])]);
+    const rankedIds = [...new Set([...selection.status.selections.map(item => item.recordId), ...(local ? candidates.map(document => document.id) : [])])];
+    const selectedIds = new Set([...forced.map(document => document.id), ...rankedIds.slice(0, retrieval.resultLimit)]);
     // Use one coherent completed snapshot; the model never supplies assembled memory text.
     const currentById = new Map(allDocuments.map(document => [document.id, document]));
-    const currentDocuments = [...selectedIds].map(id => currentById.get(id)).filter(Boolean);
+    const currentDocuments = expandNeighbours([...selectedIds].map(id => currentById.get(id)).filter(Boolean), allDocuments, retrieval.neighbourChunks);
     const assembly = assembleContext(state, currentDocuments, {
         asOf, counter, memoryTokens: config.memoryTokens, forcedIds: forced.map(document => document.id),
     });
@@ -209,7 +221,14 @@ export async function recall(directories, locator, {
         id: operationId || hash([Date.now(), fingerprint, scene]), at: Date.now(), asOf: Number.isFinite(asOf) ? asOf : state.timeline.length - 1,
         status: selection.status.status, fallbackUsed: selection.fallbackUsed,
         error: selection.error, indexError, ...selection.status,
-        candidates: selection.documents.map(document => ({ id: document.id, kind: document.kind, refs: document.refs })),
+        candidates: selection.documents.map(document => ({ id: document.id, kind: document.kind, refs: document.refs,
+            dataType: document.dataType, ...(document.kind === 'source' ? { sourceName: document.sourceName, start: document.start, end: document.end } : {}),
+            ...document.retrieval })),
+        retrieval: { requestedMode: retrieval.mode, usedMode: vector ? retrieval.mode : 'keyword',
+            keywordFallback: retrieval.mode !== 'keyword' && !vector, aiSelection: !local && config.roles.selector.enabled,
+            documents: allDocuments.length, indexed: Object.keys(state.index.vectors).length, selected: assembly.selected,
+            expanded: currentDocuments.filter(document => !selectedIds.has(document.id)).map(document => document.id),
+            limited: rankedIds.slice(retrieval.resultLimit) },
         forcedIds: forced.map(document => document.id), omitted: assembly.omitted, usage,
         sourceCount, validationFingerprint, background,
     };

@@ -4,7 +4,7 @@ import { getActiveCompanionResults, isEmptyOutputSentinel } from '../../public/s
 export const POLICY_VERSION = 'mewmory-2';
 export const RECORD_KINDS = ['entity', 'state', 'event', 'relationship', 'knowledge', 'commitment', 'interview', 'overview'];
 export const ROLE_NAMES = ['extractor', 'pawspective', 'embedding', 'selector', 'fallback'];
-export const SOURCE_TYPES = ['chat', 'character', 'lore', 'memory'];
+export const SOURCE_TYPES = ['chat', 'character', 'lore', 'memory', 'file'];
 export const hash = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
 export const refKey = ref => ref.id + '@' + ref.revision;
 export const uniqueRefs = refs => [...new Map(refs.map(ref => [refKey(ref), ref])).values()];
@@ -101,6 +101,8 @@ export function sourceEligible(state, ref, asOf = Infinity) {
     const revision = source && sourceAt(state, ref);
     return Boolean(source?.active && source.current === ref.revision && revision?.enabled
         && !state.excludedSources.includes(ref.id)
+        && (source.type !== 'file' || !revision.meta?.parentRef || (state.sources[revision.meta.parentRef.id]?.type === 'chat'
+            && sourceEligible(state, revision.meta.parentRef, asOf)))
         && (source.type !== 'chat' || revision.sequence <= asOf));
 }
 
@@ -202,7 +204,8 @@ function trackerSource(message, previous, trackerAgentIds) {
 /** Reconcile only accepted, persisted messages and their completed trackers. Rejected alternatives never enter. */
 export function syncSources(state, messages, context = [], { trackerAgentIds = [] } = {}) {
     const previousTimeline = state.timeline;
-    const previousContext = state.contextSources.map(refKey).join(',');
+    const extractionContext = refs => refs.filter(ref => state.sources[ref.id]?.type !== 'file').map(refKey).join(',');
+    const previousContext = extractionContext(state.contextSources);
     const occurrences = new Map();
     const inherited = state.inheritedTimeline || [];
     const previousLocal = previousTimeline.slice(inherited.length);
@@ -267,9 +270,12 @@ export function syncSources(state, messages, context = [], { trackerAgentIds = [
     const deleted = previousTimeline.filter(ref => !remaining.has(ref.id)).map(ref => ref.id);
     if (deleted.length) purgeSources(state, deleted);
     state.timeline = timeline;
-    const contextSources = context.map(source => appendSource(state, source.id, source.type, {
+    const contextSources = context.filter(source => source.type !== 'file' || !Number.isInteger(source.meta?.messageIndex)
+        || source.meta.parentRef || local[source.meta.messageIndex]).map(source => appendSource(state, source.id, source.type, {
         text: source.text, speaker: source.name, sequence: -1, enabled: source.enabled !== false,
-        entityId: source.entityId || '', meta: source.meta || {},
+        entityId: source.entityId || '', meta: { ...source.meta,
+            ...(source.type === 'file' && Number.isInteger(source.meta?.messageIndex)
+                ? { parentRef: source.meta.parentRef || local[source.meta.messageIndex] } : {}) },
     }));
     const activeContext = new Set(contextSources.map(ref => ref.id));
     for (const sourceId of state.contextSources.map(ref => ref.id)) {
@@ -277,7 +283,7 @@ export function syncSources(state, messages, context = [], { trackerAgentIds = [
     }
     state.contextSources = contextSources;
     const changedAt = timeline.findIndex((ref, index) => previousTimeline[index] && refKey(ref) !== refKey(previousTimeline[index]));
-    if (previousContext !== contextSources.map(refKey).join(',')) {
+    if (previousContext !== extractionContext(contextSources)) {
         state.coverage = {};
         state.checkpoints = {};
     } else if (changedAt >= 0) {
@@ -297,6 +303,9 @@ export function syncSources(state, messages, context = [], { trackerAgentIds = [
 /** Deleting a message purges its copies, dependent prose, undo copies, and search vectors. */
 export function purgeSources(state, sourceIds) {
     const removedSources = new Set(sourceIds);
+    for (const source of Object.values(state.sources)) {
+        if (source.type === 'file' && source.revisions.some(revision => removedSources.has(revision.meta?.parentRef?.id))) removedSources.add(source.id);
+    }
     const removedVersions = new Set();
     const revisions = [...state.records, ...state.audit.map(entry => entry.before).filter(Boolean)];
     let changed = true;
@@ -351,6 +360,11 @@ export function forkState(parent, locator, through, messages) {
     state.records = [...new Map([...state.records.filter(record => record.asOf <= through), ...projected]
         .map(record => [record.id, record])).values()];
     state.timeline = state.timeline.filter(ref => sourceAt(state, ref)?.sequence <= through);
+    state.contextSources = state.contextSources.filter(ref => {
+        const source = state.sources[ref.id];
+        const parentRef = sourceAt(state, ref)?.meta?.parentRef;
+        return source.type !== 'file' || !parentRef || sourceAt(parent, parentRef)?.sequence <= through;
+    });
     const visible = new Set([...state.timeline, ...state.contextSources].map(ref => ref.id));
     state.sources = Object.fromEntries(Object.entries(state.sources).filter(([key]) => visible.has(key)));
     state.records = state.records.map(record => ({ ...record, branchId: state.branchId }));

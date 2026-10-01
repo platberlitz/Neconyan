@@ -5,6 +5,7 @@ import {
 import { getFriendlyTokenizerName } from '../tokenizers.js';
 import { uuidv4 } from '../utils.js';
 import { dismissJob, retryJob } from '../jobs.js';
+import { PREFIX_PRESETS, RAG_DEFAULTS } from './rag-settings.js';
 
 const tabs = [['now', 'Now'], ['pawspective', 'Pawspective'], ['archive', 'Archive'], ['recall', 'Recall'], ['settings', 'Settings']];
 const kinds = { entity: 'NPC or entity reference', state: 'Current state', event: 'Event', relationship: 'Relationship fact',
@@ -12,7 +13,8 @@ const kinds = { entity: 'NPC or entity reference', state: 'Current state', event
 const roles = { extractor: 'Facts and events', pawspective: 'Pawspective interviews', embedding: 'Embeddings', selector: 'Recall selector', fallback: 'Recall fallback' };
 const tokenizers = ['auto', 'o200k_base', 'cl100k_base', 'gpt2', 'llama', 'llama3', 'mistral', 'gemma', 'claude', 'qwen2', 'deepseek', 'nemo', 'jamba', 'yi'];
 const ui = { root: null, tab: 'now', owner: '', subject: '', significance: '', status: '', kind: 'objective', query: '', offset: 0,
-    source: null, editor: null, draft: null, savedDraft: '', configError: '', role: 'extractor', restore: null, matches: null, running: false, progress: '', scope: '' };
+    source: null, editor: null, draft: null, savedDraft: '', configError: '', role: 'extractor', restore: null, matches: null,
+    searchMode: 'hybrid', searchType: '', searchReport: null, running: false, progress: '', scope: '' };
 
 function node(tag, className = '', content = '') {
     const element = document.createElement(tag);
@@ -42,6 +44,7 @@ function field(label, value, onChange, { type = 'text', multiline = false, optio
         }
     } else if (!multiline) {
         control.type = type;
+        if (type === 'number') control.step = 'any';
         if (type === 'password') control.autocomplete = 'new-password';
     }
     control.value = value ?? '';
@@ -313,7 +316,9 @@ function renderArchive(root) {
     const controls = node('div', 'mewmory-fields');
     const search = async () => {
         ui.offset = 0;
-        ui.matches = ui.query.trim() ? (await requestMewmory('search', { query: ui.query })).matches : null;
+        const result = ui.query.trim() ? await requestMewmory('search', { query: ui.query, mode: ui.searchMode, dataType: ui.searchType }) : null;
+        ui.matches = result?.matches || null;
+        ui.searchReport = result?.retrieval || null;
         await refreshMewmory(filters());
     };
     controls.append(field('Memory type', ui.kind, value => {
@@ -321,7 +326,10 @@ function renderArchive(root) {
         ui.offset = 0;
         void act(() => refreshMewmory(filters()), { refresh: false });
     }, { options: [['objective', 'All facts and events'], ...Object.entries(kinds).filter(([kind]) => !['interview', 'overview'].includes(kind))] }),
-    field('Search memories and original messages', ui.query, value => { ui.query = value; }, { key: 'archive-search' }));
+    field('Search memories and original messages', ui.query, value => { ui.query = value; }, { key: 'archive-search' }),
+    field('Search method', ui.searchMode, value => { ui.searchMode = value; }, { options: [['hybrid', 'Keywords and meaning'], ['keyword', 'Keywords'], ['semantic', 'Meaning']] }),
+    field('Search source', ui.searchType, value => { ui.searchType = value; }, { options: [['', 'All sources'], ['chat', 'Chat messages'],
+        ['memory', 'Saved memories'], ['character', 'Character cards'], ['lore', 'Lorebooks'], ['file', 'Attached files and Data Bank']] }));
     const form = node('form');
     form.addEventListener('submit', event => { event.preventDefault(); void act(search, { refresh: false }); });
     form.append(controls);
@@ -330,20 +338,26 @@ function renderArchive(root) {
         button('Add memory', () => openEditor()));
     form.append(actions);
     root.append(form);
+    if (ui.searchReport) root.append(node('p', 'mewmory-caption', 'Search used ' + ui.searchReport.usedMode + ' matching across '
+        + ui.searchReport.documents + ' passages.' + (ui.searchReport.keywordFallback ? ' Meaning search is unavailable; keyword matches are shown.' : '')
+        + (ui.searchReport.error ? ' ' + ui.searchReport.error : '')));
     const records = section('Memories');
     for (const record of view.records.filter(record => !['interview', 'overview'].includes(record.kind))) renderRecord(record, records);
     if (!view.records.length) empty(records, 'No memories here yet', 'Run an update, choose another memory type, or add a memory yourself.');
     root.append(records);
     pagination(root);
-    const sources = section(ui.matches ? 'Matching original messages' : 'Recent messages and lore');
+    const sources = section(ui.matches ? 'Ranked archive matches' : 'Recent messages, lore and files');
     if (ui.matches) {
-        const passages = ui.matches.filter(match => match.kind === 'source');
+        const passages = ui.matches;
         for (const passage of passages) {
             const row = node('article', 'mewmory-record');
-            row.append(node('p', 'mewmory-prose', passage.text), sourceButtons(passage.refs));
+            row.append(node('strong', '', passage.sourceName || kinds[passage.kind] || passage.dataType),
+                node('p', 'mewmory-prose', passage.text), sourceButtons(passage.refs));
+            if (passage.retrieval) row.append(node('p', 'mewmory-caption', 'Rank score: ' + passage.retrieval.score.toFixed(4)
+                + (passage.retrieval.similarity === null ? '' : ' · Meaning similarity: ' + passage.retrieval.similarity.toFixed(3))));
             sources.append(row);
         }
-        if (!passages.length) sources.append(node('p', 'mewmory-caption', 'No usable message matches this search.'));
+        if (!passages.length) sources.append(node('p', 'mewmory-caption', 'No eligible memory or passage matches this search.'));
     } else {
         for (const source of view.sources) {
             const row = node('article', 'mewmory-record');
@@ -363,9 +377,16 @@ function renderRecall(root) {
         return;
     }
     root.append(node('p', 'mewmory-caption', [{ complete: 'Done', needs_evidence: 'Needed more detail', uncertain: 'Unsure' }[run.status] || run.status,
-        run.fallbackUsed ? 'Picked by Recall fallback' : 'Picked by Recall selector',
+        run.retrieval && !run.retrieval.aiSelection ? 'Ranked retrieval' : run.fallbackUsed ? 'Picked by Recall fallback' : 'Picked by Recall selector',
         new Date(run.at).toLocaleString()].join(' · ')));
     if (run.error || run.indexError) root.append(node('p', 'mewmory-caption', run.error || run.indexError));
+    if (run.retrieval) {
+        const report = run.retrieval;
+        root.append(node('p', 'mewmory-caption', 'Search: ' + report.usedMode + ' · ' + report.documents + ' searchable passages · '
+            + report.indexed + ' saved embeddings · ' + report.selected.length + ' included.'
+            + (report.keywordFallback ? ' Keyword recovery was used while meaning search was unavailable for this recall.' : '')
+            + (report.limited.length ? ' ' + report.limited.length + ' candidates were outside the result limit.' : '')));
+    }
     for (const [title, entries] of [['Picked', run.selections], ['Considered but left out', run.rejections]]) {
         const block = section(title);
         if (!entries.length) block.append(node('p', 'mewmory-caption', title === 'Picked'
@@ -375,6 +396,9 @@ function renderRecall(root) {
             const candidate = run.candidates.find(candidate => candidate.id === entry.recordId);
             item.append(node('strong', '', (entry.relevanceType || candidate?.kind || 'Candidate').replaceAll('_', ' ')),
                 node('p', 'mewmory-prose', entry.justification));
+            if (title === 'Picked' && run.retrieval) item.append(node('p', 'mewmory-caption', run.retrieval.selected.includes(entry.recordId)
+                ? 'Included in the prompt.' : run.retrieval.limited.includes(entry.recordId) ? 'Outside the result limit.'
+                    : run.omitted.includes(entry.recordId) ? 'Did not fit the memory budget.' : 'Already covered or no longer eligible.'));
             if (candidate) item.append(sourceButtons(candidate.refs));
             block.append(item);
         }
@@ -382,6 +406,19 @@ function renderRecall(root) {
     }
     if (run.forcedIds?.length) root.append(node('p', 'mewmory-caption', run.forcedIds.length + ' pinned memories or promises that this scene brings up were included automatically.'));
     if (run.omitted?.length) root.append(node('p', 'mewmory-caption', run.omitted.length + ' memories did not fit in Selected memory budget, tokens.'));
+    if (run.retrieval?.selected.length) {
+        const included = section('Included passages and memories');
+        for (const id of run.retrieval.selected) {
+            const candidate = run.candidates.find(item => item.id === id);
+            const row = node('article', 'mewmory-record');
+            row.append(node('strong', '', candidate?.sourceName || candidate?.kind || 'Neighbouring passage'), node('p', 'mewmory-caption', id));
+            if (candidate?.score !== undefined) row.append(node('p', 'mewmory-caption', 'Rank score: ' + candidate.score.toFixed(4)
+                + (candidate.similarity === null ? '' : ' · Meaning similarity: ' + candidate.similarity.toFixed(3))));
+            if (candidate) row.append(sourceButtons(candidate.refs));
+            included.append(row);
+        }
+        root.append(included);
+    }
     root.append(node('p', 'mewmory-caption', 'Before the reply is written, Mewmory checks again that the messages behind these memories have not changed. These explanations are only shown here and are never sent to the writer.'));
     renderPreview(root);
 }
@@ -485,6 +522,7 @@ function renderEditor(root) {
 
 function resetSettingsDraft(config = mewmory.config) {
     ui.draft = structuredClone(config);
+    ui.draft.retrieval = { ...RAG_DEFAULTS, ...ui.draft.retrieval };
     ui.savedDraft = JSON.stringify(ui.draft);
 }
 
@@ -519,6 +557,25 @@ function renderSettings(root) {
     );
     settings.append(budgets);
     root.append(settings);
+    const retrieval = section('Search and passages');
+    const rag = draft.retrieval;
+    retrieval.append(node('p', 'mewmory-caption', 'Retrieval finds relevant saved text for the writer. Current replies use quick local search and completed recall; fresh meaning search and AI selection run in the background.'));
+    const ragFields = node('div', 'mewmory-fields');
+    ragFields.append(field('Retrieval method', rag.mode, value => { rag.mode = value; }, { options: [['hybrid', 'Keywords and meaning'], ['keyword', 'Keywords'], ['semantic', 'Meaning, with keyword recovery']] }));
+    for (const [key, label, hint] of [
+        ['chunkSize', 'Passage size, characters', 'Maximum size. Splitting prefers paragraphs, lines and words.'],
+        ['chunkOverlap', 'Passage overlap, characters', 'Repeated context between passages; less than half the passage size. Repeated text is removed from the final prompt.'],
+        ['queryMessages', 'Recent messages to search with', 'Between 1 and 12 accepted messages.'],
+        ['semanticWeight', 'Meaning weight, 0 to 1', 'Hybrid search only: 0 favours keywords, 1 favours meaning.'],
+        ['minSimilarity', 'Minimum meaning similarity, 0 to 1', 'Raise this to demand closer matches. Scores are not confidence percentages.'],
+        ['resultLimit', 'Maximum selected results', 'Before neighbouring passages are added. Pinned memories are always considered.'],
+        ['maxPerSource', 'Maximum matches per source', 'Keeps a long file from filling every candidate position.'],
+        ['neighbourChunks', 'Neighbouring passages, each side', '0 to 2. Adds nearby original text within the memory budget.'],
+        ['batchSize', 'Passages per embedding request', '1 to 10. Provider limits may lower this further.'],
+    ]) ragFields.append(field(label, rag[key], value => { rag[key] = value; }, { type: 'number', key: 'rag-' + key, hint }));
+    retrieval.append(ragFields, check('Search attached files and the Data Bank', rag.includeFiles, value => { rag.includeFiles = value; }),
+        node('p', 'mewmory-caption', 'Only files attached to this account, character or chat are searched. File passages are references for the writer, not knowledge automatically given to characters. Allow file access separately for each model role.'));
+    root.append(retrieval);
     const model = section('Model roles');
     model.dataset.mewmoryTour = 'models';
     const picker = node('div', 'mewmory-role-picker');
@@ -537,9 +594,17 @@ function renderSettings(root) {
     const roleForm = node('fieldset', 'mewmory-role');
     roleForm.append(node('legend', '', roles[ui.role]), check('Enable this role', role.enabled, value => { role.enabled = value; }));
     const fields = node('div', 'mewmory-fields');
+    const native = ui.role === 'embedding' && role.provider === 'native';
+    if (ui.role === 'embedding') fields.append(field('Embedding connection', role.provider || 'custom', value => {
+        role.provider = value; render();
+    }, { key: 'embedding-provider', options: [['custom', 'Mewmory connection'], ['native', 'Use native Vectorization']],
+        hint: 'Native mode follows Vectorization’s saved provider, model, credentials and prefixes. Its server providers work even when Vectorization chat retrieval is off.' }));
+    if (native) roleForm.append(node('p', 'mewmory-caption', role.native
+        ? 'Saved Vectorization connection: ' + role.native.source + ' · ' + (role.native.model || 'server default')
+        : 'Save this configuration to resolve the current Vectorization connection. Configure its provider and prefixes in Included tools > Vectorization.'));
     const profiles = (mewmory.config.profiles || []).filter(profile => ui.role !== 'embedding' || profile.embeddings);
     const selectedProfile = profiles.find(profile => profile.id === role.profileId);
-    fields.append(field('Connection profile', role.profileId || '', value => {
+    if (!native) fields.append(field('Connection profile', role.profileId || '', value => {
         role.profileId = value;
         const profile = profiles.find(profile => profile.id === value);
         role.model = profile?.model || '';
@@ -548,13 +613,13 @@ function renderSettings(root) {
     }, { options: [['', 'Manual endpoint'], ...profiles.map(profile => [profile.id, profile.name]),
         ...(role.profileId && !selectedProfile ? [[role.profileId, 'Unavailable saved profile']] : [])], key: 'profile-' + ui.role,
     hint: 'Uses the saved profile’s model and server-side credentials. Embeddings need an OpenAI-compatible profile.' }));
-    if (role.profileId) fields.append(field(selectedProfile?.model ? 'Model override, optional' : 'Model', role.modelOverride || '', value => {
+    if (!native && role.profileId) fields.append(field(selectedProfile?.model ? 'Model override, optional' : 'Model', role.modelOverride || '', value => {
         role.modelOverride = value;
         render();
     }, { key: 'model-override-' + ui.role, hint: selectedProfile?.model
         ? 'Leave blank to use the profile’s model: ' + selectedProfile.model
         : 'This profile has no saved model. Enter the model name provided by your service.' }));
-    if (!role.profileId) fields.append(
+    if (!native && !role.profileId) fields.append(
         field('OpenAI-compatible endpoint', role.endpoint, value => { role.endpoint = value; }, { hint: 'For example: http://127.0.0.1:8000/v1', key: 'endpoint-' + ui.role }),
         field('Model', role.model, value => { role.model = value; render(); }, { key: 'model-' + ui.role }),
         field('API key', role.apiKey || '', value => { role.apiKey = value; }, { type: 'password', hint: role.hasKey ? 'A key is saved. Leave blank to keep it.' : 'Stored in the server’s protected credentials.', key: 'api-key-' + ui.role }),
@@ -577,15 +642,21 @@ function renderSettings(root) {
                 + ' Counts are approximate. Choose a tokenizer manually if your provider uses a different one.' : '',
         }),
     );
-    if (ui.role === 'embedding') fields.append(
-        field('Query prefix, optional', role.queryPrefix, value => { role.queryPrefix = value; }),
-        field('Document prefix, optional', role.documentPrefix, value => { role.documentPrefix = value; }),
-    );
+    if (ui.role === 'embedding') {
+        if (!native) fields.append(field('Prefix preset', '', value => {
+            const preset = PREFIX_PRESETS[Number(value)];
+            if (!preset || value === '') return;
+            role.queryPrefix = preset.query; role.documentPrefix = preset.document; render();
+        }, { options: [['', 'Choose a preset'], ...PREFIX_PRESETS.map((preset, index) => [String(index), preset.label])],
+            hint: 'Use the prefix recommended by your embedding model. Leading spaces, trailing spaces and line breaks are kept exactly.' }));
+        fields.append(field('Query prefix, optional', native ? role.native?.queryPrefix || '' : role.queryPrefix, value => { role.queryPrefix = value; }, { multiline: true, disabled: native }),
+            field('Document prefix, optional', native ? role.native?.documentPrefix || '' : role.documentPrefix, value => { role.documentPrefix = value; }, { multiline: true, disabled: native }));
+    }
     roleForm.append(fields, check('Allow sending story data to a service on another computer', role.allowRemote, value => { role.allowRemote = value; }));
-    if (!role.profileId) roleForm.append(check('Remove the saved API key when saving', role.clearKey, value => { role.clearKey = value; }));
+    if (!native && !role.profileId) roleForm.append(check('Remove the saved API key when saving', role.clearKey, value => { role.clearKey = value; }));
     const scope = section('This role may read');
     scope.dataset.mewmoryTour = 'permissions';
-    for (const [type, label] of [['chat', 'Chat messages'], ['character', 'Character cards'], ['lore', 'Enabled lore'], ['memory', 'Saved memories']]) {
+    for (const [type, label] of [['chat', 'Chat messages'], ['character', 'Character cards'], ['lore', 'Enabled lore'], ['memory', 'Saved memories'], ['file', 'Attached files and Data Bank']]) {
         scope.append(check(label, role.allowedData.includes(type), checked => {
             role.allowedData = role.allowedData.filter(item => item !== type);
             if (checked) role.allowedData.push(type);
@@ -745,6 +816,7 @@ function render() {
         ui.subject = '';
         ui.offset = 0;
         ui.matches = null;
+        ui.searchReport = null;
         ui.query = '';
         ui.significance = '';
         ui.status = '';
@@ -758,7 +830,7 @@ function render() {
     heading.append(node('p', 'mewmory-caption mewmory-scope', locator?.chat || 'No Roleplay chat selected'),
         button('Refresh', () => act(() => refreshMewmory(filters()), { refresh: false })));
     const status = node('p', 'mewmory-status', mewmory.error || (mewmory.loading ? 'Loading this chat’s memory…' : mewmory.busy || mewmory.preparing ? 'Updating memories…'
-        : mewmory.view?.enabled ? mewmory.config?.roles.extractor.enabled ? 'Up to date' : 'Facts and events is switched off in Settings, so nothing new is being remembered.' : 'Off'));
+        : mewmory.view?.enabled ? mewmory.config?.roles.extractor.enabled ? 'Up to date' : 'Facts and events is switched off. Original passages remain searchable.' : 'Off'));
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
     status.dataset.error = String(Boolean(mewmory.error));

@@ -94,7 +94,7 @@ export function registerMewmoryOperations({ call = callJsonRole, embedFn = embed
                     const version = roleVersion(config, 'embedding');
                     const vectors = index => index.version === version ? index.vectors : index.build?.version === version ? index.build.vectors : {};
                     const combined = { ...vectors(current.index), ...vectors(state.index) };
-                    const documents = searchDocuments(current).filter(document => config.roles.embedding.allowedData.includes(document.dataType));
+                    const documents = searchDocuments(current, Infinity, config).filter(document => config.roles.embedding.allowedData.includes(document.dataType));
                     const valid = Object.fromEntries(documents.filter(document => combined[document.id]?.textHash === hash(document.searchText))
                         .map(document => [document.id, combined[document.id]]));
                     result.remaining = config.roles.embedding.enabled ? documents.length - Object.keys(valid).length : 0;

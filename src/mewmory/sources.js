@@ -7,6 +7,7 @@ import { fail, hash, POLICY_VERSION, purgeSources, sourceAt } from './core.js';
 import { readConfig } from './models.js';
 import { processingVersion } from './processing.js';
 import { captureBranchMemory, mutateState, readChatShared, readJsonShared, readStateShared, synchronize } from './store.js';
+import { fileCollections } from '../operations/vector-sources.js';
 
 const cardTextCache = new Map();
 const CARD_TEXT_CACHE_MAX_ENTRIES = 128;
@@ -101,6 +102,15 @@ export function readContextSourcesSync(directories, locator, state, source = rea
             });
         }
     }
+    if (readConfig(directories).retrieval.includeFiles) {
+        const chat = { locator, records: [{ chat_metadata: metadata }, ...source.messages] };
+        const files = fileCollections({ directories }, settings, chat, {}, [], { skipMissing: true, avatars: [...avatars] });
+        for (const file of files) {
+            const messageIndex = file.inlineMessageIndex ?? (file.dataBank ? -1 : source.messages.findIndex(row => row.extra?.files?.some(item => item.url === file.url)));
+            sources.push({ id: 'file:' + hash(file.url).slice(0, 32), type: 'file', name: decodeURIComponent(file.url.slice('/user/files/'.length)),
+                text: file.text, meta: { url: file.url, ...(messageIndex >= 0 ? { messageIndex } : {}) } });
+        }
+    }
     return sources;
 }
 
@@ -136,6 +146,9 @@ export function purgeMissingContextSources(directories, state) {
             if (!book || !book.entries?.[revision.meta.uid]) deleted.push(source.id);
         } else if (source.type === 'character' && revision.meta.avatar
             && !fs.existsSync(path.join(directories.characters, revision.meta.avatar))) {
+            deleted.push(source.id);
+        } else if (source.type === 'file' && revision.meta.url
+            && !fs.existsSync(path.join(directories.files, decodeURIComponent(revision.meta.url.slice('/user/files/'.length))))) {
             deleted.push(source.id);
         }
     }

@@ -91,6 +91,7 @@ export function assembleContext(state, documents, { asOf = Infinity, counter, me
     const names = new Map(currentRecords(eligibleRecords(state, { asOf }).filter(record => record.kind === 'entity'), record => record.entityId)
         .map(record => [record.entityId, record.name]));
     const included = new Set();
+    const includedRanges = new Map();
     const selected = [];
     const omitted = [];
     const blocks = [];
@@ -103,10 +104,18 @@ export function assembleContext(state, documents, { asOf = Infinity, counter, me
         }
         const bundle = expandBundle(state, document, asOf);
         const unique = bundle.records.filter(record => !included.has(record.id));
-        const sourceBlocks = bundle.sources.filter(source => !included.has(source.id)).map(source => {
+        const passages = bundle.sources.filter(source => !included.has(source.id)).flatMap(source => {
             const original = sourceAt(state, source.refs[0]);
-            return '[Original ' + source.dataType + ' passage; ' + source.refs.map(refKey).join(', ') + '; ' + original.speaker + ']\n' + source.text;
+            const key = refKey(source.refs[0]);
+            if (!Number.isInteger(source.start) || original.text.slice(source.start, source.end) !== source.text) return [{ source, text: source.text }];
+            let ranges = [[source.start, source.end]];
+            for (const [start, end] of includedRanges.get(key) || []) ranges = ranges.flatMap(([a, b]) => b <= start || a >= end ? [[a, b]]
+                : [...(a < start ? [[a, start]] : []), ...(b > end ? [[end, b]] : [])]);
+            return ranges.map(([start, end]) => ({ source, start, end, key, text: original.text.slice(start, end) }));
         });
+        const sourceBlocks = passages.map(({ source, start, end, text }) => '[Original ' + source.dataType + ' passage; '
+            + source.refs.map(refKey).join(', ') + '; ' + sourceAt(state, source.refs[0]).speaker
+            + (start === undefined ? '' : '; characters ' + start + '-' + end) + ']\n' + text);
         // Current overview comes before historical interviews.
         unique.sort((a, b) => Number(current.some(record => record.id === b.id)) - Number(current.some(record => record.id === a.id)) || a.asOf - b.asOf);
         const block = [...unique.map(record => recordText(record, current, names)), ...sourceBlocks].join('\n\n');
@@ -122,6 +131,8 @@ export function assembleContext(state, documents, { asOf = Infinity, counter, me
         selected.push(document.id);
         for (const record of unique) included.add(record.id);
         for (const source of bundle.sources) included.add(source.id);
+        for (const passage of passages) if (passage.key) includedRanges.set(passage.key,
+            [...(includedRanges.get(passage.key) || []), [passage.start, passage.end]]);
     }
     const memoryText = blocks.length ? preamble + blocks.join('\n\n') : '';
     return {

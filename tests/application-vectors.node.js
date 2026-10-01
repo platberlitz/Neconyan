@@ -42,6 +42,40 @@ function embeddings(_url, request) {
     return new Response(JSON.stringify({ data: inputs.map((_, index) => ({ index, embedding: [1, index + 1] })) }));
 }
 
+test('native prefixes apply exactly once and changed prefixes rebuild before query', async t => {
+    const p = prepared(t);
+    const calls = [];
+    const fetchImpl = async (url, request) => { calls.push(JSON.parse(request.body).input); return embeddings(url, request); };
+    Object.assign(p.settings.extension_settings.vectors, { documentPrefix: 'passage: ', queryPrefix: 'query: \n ' });
+    p.saveSettings();
+    let accepted = await acceptApplicationOperation(p.request, p.body('prefix-first'));
+    await runOperation(p.context(accepted.job), { fetchImpl });
+    assert.ok(calls.flat().every(text => text.startsWith('passage: ') && !text.startsWith('passage: passage:')));
+    assert.ok(JSON.parse(fs.readFileSync(p.filename, 'utf8')).items.every(item => !item.metadata.text.startsWith('passage: ')));
+    accepted = await acceptApplicationOperation(p.request, { ...p.body('prefix-query'), action: 'query', collectionIds: [p.f.locator.chat], query: 'moon' });
+    await runOperation(p.context(accepted.job), { fetchImpl });
+    assert.deepEqual(calls.at(-1), ['query: \n moon']);
+    p.settings.extension_settings.vectors.documentPrefix = 'document: '; p.saveSettings();
+    accepted = await acceptApplicationOperation(p.request, { ...p.body('prefix-stale'), action: 'query', collectionIds: [p.f.locator.chat], query: 'moon' });
+    await assert.rejects(runOperation(p.context(accepted.job), { fetchImpl: async () => assert.fail('Stale vectors cannot be queried') }), /prefixes changed/);
+    accepted = await acceptApplicationOperation(p.request, p.body('prefix-rebuild'));
+    await runOperation(p.context(accepted.job), { fetchImpl });
+    assert.ok(calls.at(-1).every(text => text.startsWith('document: ')));
+    accepted = await acceptApplicationOperation(p.request, p.body('prefix-reuse'));
+    await runOperation(p.context(accepted.job), { fetchImpl: async () => assert.fail('Unchanged content must reuse vectors') });
+});
+
+test('a late embedding response after cancellation leaves the original index intact', async t => {
+    const p = prepared(t);
+    const accepted = await acceptApplicationOperation(p.request, p.body('cancelled-response'));
+    const controller = new AbortController();
+    await assert.rejects(runOperation({ ...p.context(accepted.job), signal: controller.signal }, { fetchImpl: async (url, request) => {
+        controller.abort();
+        return embeddings(url, request);
+    } }), /cancelled/);
+    assert.deepEqual(JSON.parse(fs.readFileSync(p.filename, 'utf8')), p.old);
+});
+
 test('one accepted vector prompt prepares chat and file contributions without changing saved history', async t => {
     const p = prepared(t);
     const url = '/user/files/context.txt';

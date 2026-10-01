@@ -41,6 +41,11 @@ export function captureVectorPolicy(base, saved = readLabSettings(base)) {
         : ['mistral', 'nomicai', 'llamacpp', 'koboldcpp'].includes(source) ? models[source]
             : String(options[google ? 'google_model' : `${source}_model`] ?? models[source]);
     const settings = { model };
+    for (const key of ['queryPrefix', 'documentPrefix']) {
+        const value = options[key] ?? '';
+        if (typeof value !== 'string' || value.length > 500) throw operationError('Vector prefixes must be text of at most 500 characters.', 400);
+        if (value) settings[key] = value;
+    }
     const credentials = {};
     if (secrets[source]) {
         credentials.key = readSecret(base.directories, SECRET_KEYS[secrets[source]]);
@@ -107,7 +112,9 @@ export async function vectorBatch(context, plan, step, texts, { isQuery = false,
     try {
         verify();
         if (source === 'webllm') {
-            const vectors = requestBrowserWork(context, `vectors:${step}`, 'webllm.embedding', { texts, model: settings.model, isQuery });
+            const vectors = requestBrowserWork(context, `vectors:${step}`, 'webllm.embedding', {
+                texts: texts.map(text => (settings[isQuery ? 'queryPrefix' : 'documentPrefix'] || '') + text), model: settings.model, isQuery,
+            });
             const result = { identity, model: settings.model, vectors: validate(vectors, texts.length) };
             writeArtifact(context.directories, context.job.id, artifact, result);
             return result;
@@ -118,37 +125,51 @@ export async function vectorBatch(context, plan, step, texts, { isQuery = false,
     } catch (error) { throw providerNotDispatched(error); }
     const run = async () => {
         try { verify(); } catch (error) { throw providerNotDispatched(error); }
-        const options = { fetchImpl, signal: context.signal, config };
-        let vectors; let model = settings.model;
-        try {
-            switch (source) {
-                case 'transformers': vectors = await getTransformersBatchVector(texts); break;
-                case 'nomicai': vectors = await getNomicAIBatchVector(texts, source, context.directories, options); break;
-                case 'cohere': vectors = await getCohereBatchVector(texts, isQuery, context.directories, model, options); break;
-                case 'llamacpp': vectors = await getLlamaCppBatchVector(texts, settings.apiUrl, context.directories, options); break;
-                case 'vllm': vectors = await getVllmBatchVector(texts, settings.apiUrl, model, context.directories, options); break;
-                case 'ollama': vectors = await getOllamaBatchVector(texts, settings.apiUrl, model, settings.keep, context.directories, options); break;
-                case 'palm': vectors = await getMakerSuiteBatchVector(texts, model, null, options); break;
-                case 'vertexai': vectors = await getVertexBatchVector(texts, model, null, options); break;
-                case 'koboldcpp': {
-                    const url = new URL(settings.apiUrl); url.pathname = '/api/extra/embeddings';
-                    const headers = {}; setAdditionalHeadersByType(headers, source, settings.apiUrl, context.directories);
-                    const data = await readEmbeddingResponse(await fetchImpl(url, { method: 'POST', signal: context.signal,
-                        headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify({ input: texts }) }), 'KoboldCpp');
-                    if (!Array.isArray(data.data)) throw operationError('KoboldCpp did not return vectors.', 502);
-                    model = String(data.model || 'unknown');
-                    vectors = data.data.map(value => Array.isArray(value) ? value[0] : value).sort((a, b) => a.index - b.index).map(value => value.embedding);
-                    break;
-                }
-                default: vectors = await requestOpenAIBatchVector(texts, source, context.directories, model, settings.urlOverride, options);
-            }
-        } catch (error) {
-            if (error.embeddingResponse && isDefiniteProviderRefusal(error.status)) throw providerRefused(error);
-            throw error;
-        }
-        return { identity, model, vectors: validate(vectors, texts.length) };
+        const result = await requestVectorEmbedding(context.directories, plan.policy, texts, { isQuery, fetchImpl, signal: context.signal, config });
+        return { identity, ...result };
     };
     const result = source === 'transformers' ? await run() : await providerStep(context, `vectors:${step}`, run);
     writeArtifact(context.directories, context.job.id, artifact, result);
     return result;
+}
+
+/** Shared provider adapters; each caller owns its durable request and permission checks. */
+export async function requestVectorEmbedding(directories, policy, texts, { isQuery = false, fetchImpl = fetch, signal, config, beforeDispatch = () => {} } = {}) {
+    const { source, settings } = policy;
+    if (source === 'webllm') throw operationError('Browser embeddings need an open Vectorization workspace. Choose a server embedding provider for Mewmory.', 400);
+    if (!config && ['palm', 'vertexai'].includes(source)) config = await getGoogleApiConfigForSettings(directories, settings.google,
+        settings.model, source === 'palm' ? 'batchEmbedContents' : 'predict');
+    beforeDispatch();
+    if (signal?.aborted) throw operationError('The vector request was cancelled.', 499);
+    texts = texts.map(text => (settings[isQuery ? 'queryPrefix' : 'documentPrefix'] || '') + text);
+    const options = { fetchImpl, signal, config };
+    let vectors; let model = settings.model;
+    try {
+        switch (source) {
+            case 'transformers': vectors = await getTransformersBatchVector(texts); break;
+            case 'nomicai': vectors = await getNomicAIBatchVector(texts, source, directories, options); break;
+            case 'cohere': vectors = await getCohereBatchVector(texts, isQuery, directories, model, options); break;
+            case 'llamacpp': vectors = await getLlamaCppBatchVector(texts, settings.apiUrl, directories, options); break;
+            case 'vllm': vectors = await getVllmBatchVector(texts, settings.apiUrl, model, directories, options); break;
+            case 'ollama': vectors = await getOllamaBatchVector(texts, settings.apiUrl, model, settings.keep, directories, options); break;
+            case 'palm': vectors = await getMakerSuiteBatchVector(texts, model, null, options); break;
+            case 'vertexai': vectors = await getVertexBatchVector(texts, model, null, options); break;
+            case 'koboldcpp': {
+                const url = new URL(settings.apiUrl); url.pathname = '/api/extra/embeddings';
+                const headers = {}; setAdditionalHeadersByType(headers, source, settings.apiUrl, directories);
+                const data = await readEmbeddingResponse(await fetchImpl(url, { method: 'POST', signal,
+                    headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify({ input: texts }) }), 'KoboldCpp');
+                if (!Array.isArray(data.data)) throw operationError('KoboldCpp did not return vectors.', 502);
+                model = String(data.model || 'unknown');
+                vectors = data.data.map(value => Array.isArray(value) ? value[0] : value).sort((a, b) => a.index - b.index).map(value => value.embedding);
+                break;
+            }
+            default: vectors = await requestOpenAIBatchVector(texts, source, directories, model, settings.urlOverride, options);
+        }
+    } catch (error) {
+        if (error.embeddingResponse && isDefiniteProviderRefusal(error.status)) throw providerRefused(error);
+        throw error;
+    }
+    if (signal?.aborted) throw operationError('The vector request was cancelled.', 499);
+    return { model, vectors: validate(vectors, texts.length) };
 }
