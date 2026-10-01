@@ -3036,7 +3036,7 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         gap: 2px;
     }
 
-    #chat .mes .mesAvatarWrapper > :is(.mesIDDisplay, .mes_timer, .tokenCounterDisplay) {
+    #chat .mes .mesAvatarWrapper .mes_stats > :is(.mesIDDisplay, .mes_timer, .tokenCounterDisplay) {
         min-block-size: calc(var(--mainFontSize) * 1.04);
         padding-inline: 1px;
         font-size: calc(var(--mainFontSize) * 0.74);

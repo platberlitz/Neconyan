@@ -1396,7 +1396,7 @@ body:is(.echostyle, .whisperstyle, .hushstyle, .ripplestyle, .tidestyle) #chat .
         transform: none !important;
     }
 
-    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes .mesAvatarWrapper > :is(.mesIDDisplay, .mes_timer, .tokenCounterDisplay) {
+    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes .mesAvatarWrapper .mes_stats > :is(.mesIDDisplay, .mes_timer, .tokenCounterDisplay) {
         line-height: 1.15;
         margin: 0;
         max-width: 100%;

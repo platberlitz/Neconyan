@@ -1457,7 +1457,7 @@ select.text_pole:where(:not([multiple]):not([size]):not(.select2-hidden-accessib
     flex: 0 0 auto;
 }
 
-#chat .mes .mesAvatarWrapper > :is(.mesIDDisplay, .mes_timer, .tokenCounterDisplay) {
+#chat .mes .mesAvatarWrapper .mes_stats > :is(.mesIDDisplay, .mes_timer, .tokenCounterDisplay) {
     inline-size: max-content;
     max-inline-size: 100%;
     min-block-size: calc(var(--mainFontSize) * var(--sb-message-meta-line-height));
@@ -1467,7 +1467,7 @@ select.text_pole:where(:not([multiple]):not([size]):not(.select2-hidden-accessib
     white-space: nowrap;
 }
 
-#chat .mes .mesAvatarWrapper > .mesIDDisplay {
+#chat .mes .mesAvatarWrapper .mes_stats > .mesIDDisplay {
     border: 0;
     border-radius: 0;
     box-shadow: none;
@@ -1475,7 +1475,7 @@ select.text_pole:where(:not([multiple]):not([size]):not(.select2-hidden-accessib
     -webkit-backdrop-filter: none;
 }
 
-#chat .mes .mesAvatarWrapper > :is(.mes_timer, .tokenCounterDisplay):empty {
+#chat .mes .mesAvatarWrapper .mes_stats > :is(.mes_timer, .tokenCounterDisplay):empty {
     display: none;
 }
 
@@ -1790,7 +1790,7 @@ body.bubblechat .mes[is_user='true'] .mes_block {
         gap: 3px;
     }
 
-    #chat .mes .mesAvatarWrapper > :is(.mesIDDisplay, .mes_timer, .tokenCounterDisplay) {
+    #chat .mes .mesAvatarWrapper .mes_stats > :is(.mesIDDisplay, .mes_timer, .tokenCounterDisplay) {
         min-block-size: calc(var(--mainFontSize) * 1.12);
         font-size: calc(var(--mainFontSize) * 0.82);
     }

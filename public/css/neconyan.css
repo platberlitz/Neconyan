@@ -380,40 +380,90 @@ body.neconyan { --neco-gutter: calc(24px * var(--messageMarginScale, 1)); --neco
 /* Keep the floating holders measurable for the expression worker's mode detection. */
 body.ripplestyle :is(#expression-wrapper, #visual-novel-wrapper) { visibility: hidden; pointer-events: none; }
 #chat .neconyan-expression-avatar { display: none; }
-/* Message statistics need their own surface when the avatar sits over wallpaper. */
-body.neconyan #chat .mes[mesid] .mesAvatarWrapper > :is(.mesIDDisplay, .mes_timer, .tokenCounterDisplay, .reasoning-tokens-badge) {
+/* Message number, timer, token counts and the agent history button share one box under the avatar. */
+body.neconyan #chat .mes .mesAvatarWrapper > .mes_stats {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    box-sizing: border-box;
+    inline-size: max-content;
+    min-inline-size: min(calc(var(--mainFontSize) * 3.4), 100%);
+    max-inline-size: 100%;
+    margin: 2px 0 0;
+    padding: 4px 3px;
+    border: 1px solid var(--neco-border);
+    border-radius: var(--neconyan-control-radius, 10px);
     background: var(--neco-surface);
-    color: var(--neco-ink);
-    opacity: 1;
-    padding: 2px 4px;
-    border-radius: 4px;
-    font-weight: 700;
-    text-shadow: none;
-    max-inline-size: max(100%, 44px);
-    white-space: normal;
-    overflow-wrap: anywhere;
+    color: var(--neco-muted);
+    font-size: calc(var(--mainFontSize) * 0.75);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
 }
 
-body.neconyan #chat .mes .mesAvatarWrapper > .agent-transform-badge {
-    width: 44px;
+@supports (corner-shape: squircle) {
+    body.neconyan #chat .mes .mesAvatarWrapper > .mes_stats { border-radius: var(--neconyan-control-radius, 16px); corner-shape: squircle; }
+}
+
+body.neconyan #chat .mes .mesAvatarWrapper > .mes_stats:not(:has(> :is(body:not(.no-mesIDDisplay) .mesIDDisplay, body:not(.no-timer) .mes_timer, body:not(.no-tokenCount) .tokenCounterDisplay, .reasoning-tokens-badge, .agent-transform-badge):not(:empty))) { display: none; }
+
+body.neconyan #chat .mes[mesid] .mesAvatarWrapper > .mes_stats > :is(.mesIDDisplay, .mes_timer, .tokenCounterDisplay, .reasoning-tokens-badge) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    inline-size: auto;
+    max-inline-size: 100%;
+    min-block-size: 0;
+    margin: 0;
+    padding: 0 2px;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    color: inherit;
+    opacity: 1;
+    font: inherit;
+    line-height: 1.3;
+    text-shadow: none;
+    box-shadow: none;
+    transform: none;
+    white-space: nowrap;
+}
+
+body.neconyan #chat .mes[mesid] .mesAvatarWrapper > .mes_stats > .mesIDDisplay { color: var(--neco-ink); }
+
+body.neconyan #chat .mes .mesAvatarWrapper > .mes_stats > .agent-transform-badge {
+    position: relative;
+    box-sizing: border-box;
+    width: 100%;
+    height: calc(var(--mainFontSize) * 1.5);
+    min-width: 0;
+    min-height: 0;
+    margin: 2px 0 0;
+    padding: 0;
+    border: 0;
+    border-top: 1px solid var(--neco-border);
+    border-radius: 0 !important;
+    background: none;
+    color: inherit;
+    opacity: 1;
+    font-size: calc(var(--mainFontSize) * 0.8);
+    text-shadow: none;
+    box-shadow: none;
+}
+
+body.neconyan #chat .mes .mesAvatarWrapper > .mes_stats > .agent-transform-badge::after {
+    content: '';
+    position: absolute;
+    inset: 50% auto auto 50%;
+    width: max(100%, 44px);
     height: 44px;
-    min-width: 44px;
-    min-height: 44px;
-    margin: 4px 0 0;
-    border-color: var(--neco-border);
-    background: var(--neco-surface);
-    color: var(--neco-ink);
-    opacity: 1;
-    font-size: 16px;
-    text-shadow: none;
+    transform: translate(-50%, -50%);
 }
 
-body.neconyan #chat .mes .mesAvatarWrapper > .agent-transform-badge:hover {
-    background: var(--neco-raised);
-    border-color: var(--neco-ginger);
-}
+body.neconyan #chat .mes .mesAvatarWrapper > .mes_stats > .agent-transform-badge:hover { color: var(--neco-ginger); }
 
-body.neconyan #chat .mes .mesAvatarWrapper > .agent-transform-badge:focus-visible {
+body.neconyan #chat .mes .mesAvatarWrapper > .mes_stats > .agent-transform-badge:focus-visible {
     outline: 2px solid var(--neco-ginger);
     outline-offset: 2px;
 }

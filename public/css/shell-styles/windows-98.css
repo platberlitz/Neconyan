@@ -483,3 +483,31 @@
         box-shadow: none;
     }
 }
+
+/* Message statistics sit in a raised dialog panel, with the agent history button as a real push button. */
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #chat .mes .mesAvatarWrapper > .mes_stats {
+    padding: 4px;
+    border: 0;
+    border-radius: 0;
+    background: var(--w98-face);
+    box-shadow: var(--w98-raised);
+    color: var(--neco-ink);
+    font-weight: 400;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #chat .mes .mesAvatarWrapper > .mes_stats > .agent-transform-badge {
+    margin-top: 3px;
+    border: 0;
+    background: var(--w98-face);
+    box-shadow: var(--w98-raised);
+    color: var(--neco-ink);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #chat .mes .mesAvatarWrapper > .mes_stats > .agent-transform-badge:active {
+    box-shadow: var(--w98-sunken);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #chat .mes .mesAvatarWrapper > .mes_stats > .agent-transform-badge:focus-visible {
+    outline: 1px dotted var(--neco-ink);
+    outline-offset: -4px;
+}
