@@ -1,8 +1,8 @@
 import { t } from './i18n.js';
-import { accountStorage } from './util/AccountStorage.js';
 import { getAssistantIconSrc } from './neconyan-assistant-art.js';
 
-export const TOOL_TOUR_INVITE_PREFIX = 'neconyanToolTourInvite.';
+import { TOOL_TOUR_INVITE_PREFIX, addTourInvitationDismiss, dismissTourInvitation } from './neconyan-tour-invitations.js';
+export { TOOL_TOUR_INVITE_PREFIX } from './neconyan-tour-invitations.js';
 
 const ASSISTANT_NAMES = Object.freeze({ miso: 'Miso', taro: 'Taro', nori: 'Nori' });
 
@@ -1029,7 +1029,7 @@ async function move(delta) {
 }
 
 function rememberInvite(key) {
-    accountStorage.setItem(`${TOOL_TOUR_INVITE_PREFIX}${key}`, 'seen');
+    dismissTourInvitation(`${TOOL_TOUR_INVITE_PREFIX}${key}`);
     document.querySelectorAll(`.neconyan-tool-tour-invite[data-tool-page="${key}"]`).forEach(invite => { invite.hidden = true; });
 }
 
@@ -1150,7 +1150,7 @@ function buildInvite(page, root) {
     later.addEventListener('click', () => rememberInvite(page.key));
     actions.append(start, later);
     invite.append(portrait(page.assistant), copy, actions);
-    invite.hidden = accountStorage.getItem(`${TOOL_TOUR_INVITE_PREFIX}${page.key}`) === 'seen';
+    addTourInvitationDismiss(invite, `${TOOL_TOUR_INVITE_PREFIX}${page.key}`, root);
     return invite;
 }
 

@@ -154,39 +154,39 @@ const NN_SHORTCUT_LABELS = Object.freeze({
 });
 const NN_PANEL_STYLESHEETS = Object.freeze({
     'characters:world-info': [
-        { href: 'css/world-info.css?v=20260930-uipolish1', id: 'deferred-world-info-css' },
+        { href: 'css/world-info.css?v=20261001-invites1', id: 'deferred-world-info-css' },
     ],
     'characters:persona': [
         { href: 'css/personas.css?v=20260912h', id: 'deferred-personas-css' },
-        { href: 'css/neconyan-tool-pages.css?v=20261001-kitty1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-invites1', id: 'deferred-tool-pages-css' },
     ],
     'left:api': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-kitty1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-invites1', id: 'deferred-tool-pages-css' },
     ],
     'left:sampling': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-kitty1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-invites1', id: 'deferred-tool-pages-css' },
     ],
     'left:advanced-formatting': [
         { href: 'css/macros.css', id: 'deferred-macros-css' },
-        { href: 'css/neconyan-tool-pages.css?v=20261001-kitty1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-invites1', id: 'deferred-tool-pages-css' },
     ],
     'left:mewmory': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-kitty1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-invites1', id: 'deferred-tool-pages-css' },
     ],
     'right:extensions': [
         { href: 'css/extensions-panel.css?v=20260425a', id: 'deferred-extensions-panel-css' },
     ],
     'right:background': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-kitty1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-invites1', id: 'deferred-tool-pages-css' },
     ],
     'right:server': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-kitty1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-invites1', id: 'deferred-tool-pages-css' },
     ],
     'right:console-logs': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-kitty1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-invites1', id: 'deferred-tool-pages-css' },
     ],
     'right:included-tool': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-kitty1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-invites1', id: 'deferred-tool-pages-css' },
     ],
 });
 const NN_FRONTEND_ICON_DEFAULT = 'calico';
@@ -493,7 +493,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261001-accent2';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261001-invites1';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -15747,6 +15747,34 @@ function injectThemePicker() {
         title: 'Interface',
         content: [frontendIconSettingsGroup, surfaceSliderGroup, bottomBarSliderGroup],
     });
+    const restoreTourInvites = createElement('button', {
+        id: 'sb-restore-tour-invitations',
+        className: 'menu_button',
+        text: 'Restore tour invitations',
+        attrs: { type: 'button' },
+    });
+    const tourInviteStatus = createElement('p', {
+        className: 'sb-theme-slider-caption',
+        attrs: { role: 'status' },
+    });
+    restoreTourInvites.addEventListener('click', async () => {
+        try {
+            const { restoreTourInvitations } = await import('./neconyan-tour-invitations.js');
+            restoreTourInvitations();
+            tourInviteStatus.textContent = 'Tour invitations restored. Open a page to see its invitation again.';
+        } catch (error) {
+            console.warn('[Neconyan] Could not restore tour invitations:', error);
+            tourInviteStatus.textContent = 'Could not restore tour invitations. Please try again.';
+        }
+    });
+    const tourSettingsGroup = createThemeSettingsDrawer({
+        id: 'sb-page-tours-drawer',
+        title: 'Page tours',
+        content: [createElement('p', {
+            className: 'sb-theme-slider-caption',
+            text: 'Restore page-tour invitations you hid or already tried. The Tour buttons on each page always remain available.',
+        }), restoreTourInvites, tourInviteStatus],
+    });
 
     getMessageStyleSelect()?.addEventListener('change', updateThemePickerUi);
     document.addEventListener('sb:chat-style-updated', updateThemePickerUi);
@@ -15777,7 +15805,7 @@ function injectThemePicker() {
         );
     }
 
-    card.append(shellStyleSettingsGroup, interfaceSettingsGroup, topbarLabelSettingsGroup, shortcutSettingsGroup);
+    card.append(shellStyleSettingsGroup, interfaceSettingsGroup, tourSettingsGroup, topbarLabelSettingsGroup, shortcutSettingsGroup);
     if (!(desktopSettingsOutlet instanceof HTMLElement)) {
         card.append(
             desktopNavLayoutSettingsGroup,

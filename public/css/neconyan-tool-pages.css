@@ -55,7 +55,7 @@
 
 .neconyan-tool-tour-invite {
     display: grid;
-    grid-template-columns: 48px minmax(0, 1fr);
+    grid-template-columns: 48px minmax(0, 1fr) 44px;
     align-items: center;
     gap: 8px 12px;
     padding: 12px;
@@ -100,6 +100,17 @@
 
 .neconyan-tool-page-intro .neconyan-tool-tour-button i {
     color: var(--neco-ginger);
+}
+
+body.neconyan :is(#left-nav-panel, #user-settings-block, #right-nav-panel) .neconyan-tool-tour-invite .menu_button.neconyan-tour-invite-dismiss {
+    grid-column: 3;
+    grid-row: 1;
+    align-self: start;
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    min-block-size: 44px;
+    padding: 0;
 }
 
 .neconyan-tool-tour .menu_button.neconyan-tool-tour-next:not([disabled]),

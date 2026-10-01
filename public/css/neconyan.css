@@ -3066,3 +3066,8 @@ body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] .sb-shell
 #ica--settings .ica--card-primary-actions { flex: 1 1 auto; min-width: 0; }
 #ica--settings .ica--card-primary-actions .ica--card-btn { min-height: 44px; gap: 5px; opacity: 1; border: 1px solid var(--neco-border); border-radius: 10px; background: var(--neco-raised); }
 #ica--settings .ica--card-primary-actions .ica--btn-history[aria-pressed='true'] { background: var(--neco-ginger); color: var(--neco-on-accent); }
+/* Keep the page-tour restore action comfortable to tap in Settings. */
+body.neconyan #sb-restore-tour-invitations {
+    min-height: 44px;
+    min-block-size: 44px;
+}

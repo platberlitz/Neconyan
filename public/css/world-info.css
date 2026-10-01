@@ -2566,7 +2566,7 @@ body.neconyan #WorldInfo.sb-shell-embedded-content #world_popup_entries_list .wo
 /* Neconyan: Nori's Lorebooks tour and its first-visit invitation. */
 .neconyan-lorebook-tour-invite {
     display: grid;
-    grid-template-columns: 48px minmax(0, 1fr);
+    grid-template-columns: 48px minmax(0, 1fr) 44px;
     align-items: center;
     gap: 8px 12px;
     padding: 12px;
@@ -2578,6 +2578,17 @@ body.neconyan #WorldInfo.sb-shell-embedded-content #world_popup_entries_list .wo
 
 .neconyan-lorebook-tour-invite[hidden] {
     display: none;
+}
+
+body.neconyan #WorldInfo .neconyan-lorebook-tour-invite .menu_button.neconyan-tour-invite-dismiss {
+    grid-column: 3;
+    grid-row: 1;
+    align-self: start;
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    min-block-size: 44px;
+    padding: 0;
 }
 
 .neconyan-lorebook-tour-invite p {

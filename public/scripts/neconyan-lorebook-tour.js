@@ -1,8 +1,8 @@
 import { t } from './i18n.js';
-import { accountStorage } from './util/AccountStorage.js';
 import { getAssistantIconSrc } from './neconyan-assistant-art.js';
 
-export const LOREBOOK_TOUR_INVITE_KEY = 'neconyanLorebookTourInvite';
+import { LOREBOOK_TOUR_INVITE_KEY, addTourInvitationDismiss, dismissTourInvitation } from './neconyan-tour-invitations.js';
+export { LOREBOOK_TOUR_INVITE_KEY } from './neconyan-tour-invitations.js';
 
 const ENTRY_EDIT_BUTTON = '#world_popup_entries_list .world_entry .WIEntryHeaderMain > button:first-child';
 const ENTRY_KEYWORDS = '.world_entry_edit .keyprimary';
@@ -368,7 +368,7 @@ async function move(delta) {
 }
 
 function rememberInvite() {
-    accountStorage.setItem(LOREBOOK_TOUR_INVITE_KEY, 'seen');
+    dismissTourInvitation(LOREBOOK_TOUR_INVITE_KEY);
     tour.root?.querySelectorAll('.neconyan-lorebook-tour-invite').forEach(invite => { invite.hidden = true; });
 }
 
@@ -509,7 +509,7 @@ function buildInvite(root) {
     later.addEventListener('click', () => rememberInvite());
     actions.append(start, later);
     invite.append(portrait, copy, actions);
-    invite.hidden = accountStorage.getItem(LOREBOOK_TOUR_INVITE_KEY) === 'seen';
+    addTourInvitationDismiss(invite, LOREBOOK_TOUR_INVITE_KEY, root);
     return invite;
 }
 
