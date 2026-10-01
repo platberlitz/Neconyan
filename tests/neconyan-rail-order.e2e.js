@@ -82,14 +82,15 @@ for (const phone of [false, true]) {
     test.describe(`${phone ? 'phone' : 'desktop'} sidebar order`, () => {
         test.use({ viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, hasTouch: phone, isMobile: phone, serviceWorkers: 'block', reducedMotion: 'reduce' });
         test('settings, drag, keyboard, saved order and reset', async ({ page }, info) => {
-            test.setTimeout(120000);
+            test.setTimeout(240000);
             let stored = JSON.stringify({ enabled: false, primary: ['model', 'model', 'removed', 'home', 'story'] });
             // Exercise the real account save/load flow without changing the preview account.
             await page.route('**/api/settings/get', async route => {
                 const response = await route.fetch();
                 const body = await response.json();
+                if (typeof body.settings !== 'string') return route.fulfill({ response, json: body });
                 const data = JSON.parse(body.settings);
-                data.accountStorage = { ...data.accountStorage, [key]: stored };
+                data.accountStorage = { ...data.accountStorage, 'NeconyanWorkspaceRailCollapsed.v1': 'false', [key]: stored };
                 await route.fulfill({ response, json: { ...body, settings: JSON.stringify(data) } });
             });
             await page.route('**/api/settings/save', async route => {

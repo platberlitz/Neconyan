@@ -148,6 +148,7 @@ describe('Neconyan workspace rail behavior', () => {
         closes.length = 0;
         listeners.click({ target: new Element(['#neconyan-workspace-rail button'], ['#neconyan-sidebar-toggle']) });
         listeners.click({ target: new Element(['#neconyan-workspace-rail button'], ['[data-neconyan-refresh-recent]']) });
+        listeners.click({ target: new Element(['#neconyan-workspace-rail button'], ['[data-neconyan-section-toggle]']) });
         listeners.click({ target: new Element() });
         drawerOpen = false;
         listeners.click({ target: railButton });
@@ -170,6 +171,104 @@ describe('Neconyan workspace rail behavior', () => {
         expect(tabsSource).toContain('createRailOrderSettingsGroup(\'mobile\')');
         expect(tabsSource).toContain('desktopBottomChatBarSettingsGroup,\n            desktopRailOrderSettingsGroup,');
         expect(tabsSource).toContain('mobileBottomChatBarSettingsGroup,\n            mobileRailOrderSettingsGroup,');
+    });
+
+    test('Quick Actions mounts below Fine-tuning and edits the current viewport shortcuts', () => {
+        const build = getWelcomeFunctionSource('ensureNeconyanRail');
+        expect(build.indexOf('data-neconyan-advanced-nav')).toBeLessThan(build.indexOf('data-neconyan-quick-actions'));
+        expect(build.indexOf('data-neconyan-quick-actions')).toBeLessThan(build.indexOf('data-neconyan-finer-nav'));
+        expect(build).toContain('initializeNeconyanRailSections(rail)');
+        const routes = [];
+        const context = vm.createContext({
+            getActiveShellRailMode: () => 'mobile',
+            document: { querySelector: selector => selector },
+            revealSearchMatch: (...args) => routes.push(args),
+        });
+        vm.runInContext(tabsSource.match(/^function editNeconyanRailQuickActions\([\s\S]*?^}/m)[0], context);
+        context.editNeconyanRailQuickActions();
+        expect(routes).toEqual([['right', { tabId: 'settings', element: '#sb-mobile-settings-outlet .sb-mobile-quick-actions-group' }]]);
+        context.getActiveShellRailMode = () => 'desktop';
+        context.editNeconyanRailQuickActions();
+        expect(routes[1][1].element).toBe('#sb-desktop-settings-outlet .sb-desktop-quick-actions-group');
+    });
+
+    test('Quick Actions refreshes the active saved list and keeps the existing activation route', () => {
+        class Element {
+            constructor(options = {}) { Object.assign(this, options); this.dataset = {}; this.children = []; }
+            append(...children) { this.children.push(...children); }
+            appendChild(child) { this.append(child); }
+            replaceChildren() { this.children = []; }
+            addEventListener(_type, callback) { this.click = callback; }
+        }
+        const list = new Element();
+        const calls = [];
+        const desktop = [{ type: 'custom', key: 'setting:one', label: '<saved setting>' }];
+        const context = vm.createContext({
+            HTMLElement: Element,
+            document: { querySelector: () => list },
+            getActiveShellRailMode: () => 'desktop',
+            getQuickActionState: () => desktop,
+            normalizeMobileQuickAction: item => item,
+            createElement: (_tag, options) => new Element(options),
+            NN_MOBILE_QUICK_ACTION_ICON_FALLBACK: 'fa-bolt',
+            activateMobileNavAction: action => calls.push(action),
+        });
+        vm.runInContext(tabsSource.match(/^function refreshNeconyanRailQuickActions\([\s\S]*?^}/m)[0], context);
+        context.refreshNeconyanRailQuickActions();
+        const button = list.children[0];
+        expect(button.children[1].text).toBe('<saved setting>');
+        expect(button.children[0].className).toBe('fa-solid fa-bolt');
+        button.click();
+        expect(calls).toEqual(desktop);
+        context.refreshNeconyanRailQuickActions();
+        expect(list.children[0]).toBe(button);
+        context.getActiveShellRailMode = () => 'mobile';
+        context.getQuickActionState = () => [];
+        context.refreshNeconyanRailQuickActions();
+        expect(list.children[0].text).toContain('No Quick Actions');
+        context.getQuickActionState = () => [{ type: 'tab', label: 'Mobile shortcut' }];
+        context.refreshNeconyanRailQuickActions();
+        expect(list.children[0].children[1].text).toBe('Mobile shortcut');
+    });
+
+    test('section toggles restore saved state, persist independently and keep recent actions outside', () => {
+        const names = ['workspace', 'advanced', 'quickActions', 'finer', 'modes', 'recent'];
+        const panels = names.map(name => {
+            const label = { textContent: name, replaceWith(button) { this.button = button; } };
+            return { previousElementSibling: { querySelector: () => label }, label };
+        });
+        const tools = { open: false, addEventListener(_type, callback) { this.toggle = callback; } };
+        const saved = new Map([['sections', '{"advanced":true,"workspace":false,"tools":false}']]);
+        const context = vm.createContext({
+            NECONYAN_RAIL_SECTIONS_KEY: 'sections',
+            accountStorage: { getItem: key => saved.get(key), setItem: (key, value) => saved.set(key, value) },
+            document: { createElement: () => ({
+                dataset: {}, attributes: {}, label: {},
+                setAttribute(key, value) { this.attributes[key] = value; },
+                querySelector() { return this.label; },
+                addEventListener(_type, callback) { this.click = callback; },
+            }) },
+        });
+        vm.runInContext(getWelcomeFunctionSource('initializeNeconyanRailSections'), context);
+        let index = 0;
+        context.initializeNeconyanRailSections({ querySelector: () => panels[index++] || tools });
+        expect(panels.map(panel => panel.hidden)).toEqual([false, true, false, false, false, false]);
+        expect(tools.open).toBe(true);
+        panels[0].label.button.click();
+        expect(panels[0].hidden).toBe(true);
+        expect(panels[0].label.button.attributes['aria-expanded']).toBe('false');
+        expect(panels[0].label.button.attributes['aria-controls']).toBe(panels[0].id);
+        expect(JSON.parse(saved.get('sections'))).toEqual({ advanced: true, workspace: true, tools: false });
+        panels[0].label.button.click();
+        expect(panels[0].hidden).toBe(false);
+        tools.open = false;
+        tools.toggle();
+        expect(JSON.parse(saved.get('sections')).tools).toBe(true);
+        saved.set('sections', 'invalid');
+        index = 0;
+        context.initializeNeconyanRailSections({ querySelector: () => panels[index++] || tools });
+        expect(panels.every(panel => !panel.hidden)).toBe(true);
+        expect(tools.open).toBe(false);
     });
 
     test('keeps the old avatar updater as the same callable function', () => {

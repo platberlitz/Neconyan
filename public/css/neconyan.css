@@ -206,6 +206,11 @@ body.neconyan :is(.neconyan-rail-section-label, .neconyan-rail-section-heading) 
     margin: 0 10px 8px; color: var(--neco-muted); font-size: 11px; font-weight: 500;
 }
 body.neconyan .neconyan-rail-section-heading { display: flex; align-items: center; margin-right: 0; }
+body.neconyan #neconyan-workspace-rail .neconyan-rail-section-toggle { min-width: 0; padding: 0; font-size: 11px; font-weight: 500; }
+body.neconyan .neconyan-rail-section-toggle > span { flex: 1; }
+body.neconyan .neconyan-rail-section-toggle[aria-expanded='false'] > i { transform: rotate(-90deg); }
+body.neconyan #neconyan-workspace-rail [hidden] { display: none; }
+body.neconyan #neconyan-workspace-rail button:focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: -2px; }
 body.neconyan .neconyan-rail-button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 body.neconyan .neconyan-rail-modes-label { margin-top: 14px; }
 body.neconyan .neconyan-rail-advanced { margin-top: 14px; }
@@ -559,7 +564,7 @@ body.neconyan #neconyan-tour-coachmark button:focus-visible { outline: 2px solid
     body.neconyan.neconyan-rail-ready { --neco-sidebar-offset: var(--neco-sidebar-width); }
     :root[data-neconyan-sidebar='closed'] body.neconyan { --neco-sidebar-width: 52px; }
     :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail { padding-inline: 7px; }
-    :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail :is(.neconyan-rail-brand > img, .neconyan-rail-brand > span, button > span, button > small, kbd, .neconyan-rail-section-label, .neconyan-rail-section-heading, .neconyan-rail-empty) { display: none; }
+    :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail :is(.neconyan-rail-brand > img, .neconyan-rail-brand > span, button > span, button > small, kbd, .neconyan-rail-section-label, .neconyan-rail-section-heading, .neconyan-rail-section-toggle, .neconyan-rail-empty) { display: none; }
     :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail .neconyan-rail-brand { justify-content: center; }
     :root[data-neconyan-sidebar='closed'] #neconyan-workspace-rail #neconyan-sidebar-toggle { margin: auto; }
     body.neconyan #top-bar { left: var(--neco-sidebar-offset) !important; right: 0 !important; width: calc(100% - var(--neco-sidebar-offset)) !important; max-width: none !important; padding-inline: 0; }

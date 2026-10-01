@@ -1431,6 +1431,7 @@ async function sendWelcomePanel(chats, expand, requestId, assistantPersonalities
 
 const NECONYAN_RAIL_COLLAPSED_KEY = 'NeconyanWorkspaceRailCollapsed.v1';
 const NECONYAN_RAIL_ORDER_KEY = 'NeconyanWorkspaceRailOrder.v1';
+const NECONYAN_RAIL_SECTIONS_KEY = 'NeconyanWorkspaceRailSections.v1';
 const NECONYAN_ISSUES_URL = 'https://github.com/platberlitz/Neconyan/issues';
 let neconyanRailOrder;
 const neconyanRailGroups = {};
@@ -1547,6 +1548,50 @@ function initializeNeconyanRailOrder(rail) {
 
 function isNeconyanRailCollapsed() {
     return accountStorage.getItem(NECONYAN_RAIL_COLLAPSED_KEY) === 'true';
+}
+
+function initializeNeconyanRailSections(rail) {
+    let saved;
+    try {
+        saved = JSON.parse(accountStorage.getItem(NECONYAN_RAIL_SECTIONS_KEY));
+    } catch { /* Invalid saved sections use their default expanded state. */ }
+    const collapsed = { ...saved };
+    for (const [name, selector] of Object.entries({
+        workspace: '[data-neconyan-primary-nav]', advanced: '[data-neconyan-advanced-nav]',
+        quickActions: '[data-neconyan-quick-actions]', finer: '[data-neconyan-finer-nav]',
+        modes: '[data-neconyan-mode-nav]', recent: '[data-neconyan-recent-list]',
+    })) {
+        const panel = rail.querySelector(selector);
+        const heading = panel.previousElementSibling;
+        const label = heading.querySelector('span') || heading;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'neconyan-rail-section-toggle';
+        button.dataset.neconyanSectionToggle = name;
+        button.setAttribute('aria-label', label.textContent);
+        panel.id = `neconyan-rail-section-${name}`;
+        button.setAttribute('aria-controls', panel.id);
+        button.innerHTML = '<span></span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i>';
+        button.querySelector('span').textContent = label.textContent;
+        if (label === heading) heading.replaceChildren(button);
+        else label.replaceWith(button);
+        const apply = () => {
+            panel.hidden = collapsed[name] === true;
+            button.setAttribute('aria-expanded', String(!panel.hidden));
+        };
+        apply();
+        button.addEventListener('click', () => {
+            collapsed[name] = !panel.hidden;
+            apply();
+            accountStorage.setItem(NECONYAN_RAIL_SECTIONS_KEY, JSON.stringify(collapsed));
+        });
+    }
+    const tools = rail.querySelector('.neconyan-rail-tools');
+    tools.open = collapsed.tools === false;
+    tools.addEventListener('toggle', () => {
+        collapsed.tools = !tools.open;
+        accountStorage.setItem(NECONYAN_RAIL_SECTIONS_KEY, JSON.stringify(collapsed));
+    });
 }
 
 function setNeconyanRailCollapsed(collapsed) {
@@ -1788,6 +1833,10 @@ function ensureNeconyanRail() {
                     <div id="neconyan-rail-advanced-title" class="neconyan-rail-section-heading"><span>Fine-tuning</span></div>
                     <div data-neconyan-advanced-nav></div>
                 </section>
+                <section class="neconyan-rail-advanced" aria-labelledby="neconyan-rail-quick-actions-title">
+                    <div id="neconyan-rail-quick-actions-title" class="neconyan-rail-section-heading"><span>Quick Actions</span><button class="neconyan-rail-icon-button" type="button" data-neconyan-edit-quick-actions aria-label="Edit Quick Actions" title="Edit Quick Actions"><i class="fa-solid fa-pen" aria-hidden="true"></i></button></div>
+                    <div data-neconyan-quick-actions></div>
+                </section>
                 <section class="neconyan-rail-advanced neconyan-rail-finer" aria-labelledby="neconyan-rail-finer-title">
                     <div id="neconyan-rail-finer-title" class="neconyan-rail-section-heading"><span>Troubleshooting</span></div>
                     <div data-neconyan-finer-nav></div>
@@ -1886,6 +1935,7 @@ function ensureNeconyanRail() {
     });
     rail.querySelector('[data-neconyan-refresh-recent]').addEventListener('click', () => void refreshNeconyanRail());
     rail.querySelector('[data-neconyan-open-archive]').addEventListener('click', () => openNeconyanChatArchive());
+    rail.querySelector('[data-neconyan-edit-quick-actions]').addEventListener('click', () => globalThis.NeconyanShell?.editQuickActions?.());
     const toolsDetails = rail.querySelector('.neconyan-rail-tools');
     const toolsSummary = rail.querySelector('.neconyan-rail-tools > .neconyan-native-tools-summary');
     toolsDetails?.addEventListener('toggle', () => {
@@ -1898,7 +1948,9 @@ function ensureNeconyanRail() {
     });
 
     document.body.insertBefore(rail, document.getElementById('sheld') || document.body.firstChild);
+    initializeNeconyanRailSections(rail);
     initializeNeconyanRailOrder(rail);
+    globalThis.NeconyanShell?.refreshRailQuickActions?.();
     globalThis.NeconyanNativeTools?.mount?.();
     initializeNeconyanHome(rail);
     document.body.classList.add('neconyan-rail-ready');

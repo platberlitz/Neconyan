@@ -15122,8 +15122,8 @@ function createMobileQuickActionSettingsGroup(mode = 'mobile') {
     const description = createElement('p', {
         className: 'sb-theme-slider-caption',
         text: isDesktop
-            ? 'Choose the shortcuts shown below Settings in the desktop side rail. Defaults can be removed or restored.'
-            : 'Choose the shortcuts shown in the mobile quick drawer. Defaults can be removed or restored.',
+            ? 'Choose the shortcuts shown beneath Fine-tuning in the desktop sidebar. Defaults can be removed or restored.'
+            : 'Choose the shortcuts shown beneath Fine-tuning in the phone sidebar. Defaults can be removed or restored.',
     });
     const resetButton = createElement('button', {
         id: `sb-${mode}-quick-action-reset`,
@@ -17628,6 +17628,7 @@ function syncMobileShellRailTabVisibility(shellState, currentShellKey, hideCusto
 }
 
 function syncMobileShellRailActions(shellKey = null) {
+    refreshNeconyanRailQuickActions();
     const shellKeys = shellKey ? [shellKey] : ['left', 'right'];
     const railMode = getActiveShellRailMode();
     const navState = getNavState(railMode);
@@ -17995,6 +17996,40 @@ function createMobileQuickActionButton(item) {
     });
 
     return button;
+}
+
+function refreshNeconyanRailQuickActions() {
+    const list = document.querySelector('#neconyan-workspace-rail [data-neconyan-quick-actions]');
+    if (!(list instanceof HTMLElement)) return;
+    const mode = getActiveShellRailMode();
+    const actions = getQuickActionState(mode);
+    const signature = JSON.stringify([mode, actions]);
+    if (list.dataset.quickActionsSignature === signature) return;
+    list.dataset.quickActionsSignature = signature;
+    list.replaceChildren();
+    for (const item of actions) {
+        const action = normalizeMobileQuickAction(item);
+        if (!action) continue;
+        const button = createElement('button', {
+            className: 'neconyan-rail-button',
+            attrs: { type: 'button', title: action.label, 'aria-label': action.label },
+        });
+        button.append(
+            createElement('i', { className: `fa-solid ${action.icon || NN_MOBILE_QUICK_ACTION_ICON_FALLBACK}`, attrs: { 'aria-hidden': 'true' } }),
+            createElement('span', { text: action.label }),
+        );
+        button.addEventListener('click', () => activateMobileNavAction(action));
+        list.appendChild(button);
+    }
+    if (!list.children.length) list.appendChild(createElement('p', {
+        className: 'neconyan-rail-empty', text: 'No Quick Actions. Use Edit Quick Actions to add shortcuts.',
+    }));
+}
+
+function editNeconyanRailQuickActions() {
+    const mode = getActiveShellRailMode();
+    const element = document.querySelector(`#sb-${mode}-settings-outlet .sb-${mode}-quick-actions-group`);
+    revealSearchMatch('right', { tabId: 'settings', element });
 }
 
 function refreshMobileNavQuickActions() {
@@ -18384,13 +18419,14 @@ function ensureNeconyanRailDrawerBindings() {
             return;
         }
         const button = event.target.closest('#neconyan-workspace-rail button');
-        if (!(button instanceof HTMLElement) || button.matches('#neconyan-sidebar-toggle, [data-neconyan-refresh-recent]')) {
+        if (!(button instanceof HTMLElement) || button.matches('#neconyan-sidebar-toggle, [data-neconyan-refresh-recent], [data-neconyan-section-toggle]')) {
             return;
         }
         window.setTimeout(() => setNeconyanRailDrawerOpen(false), 0);
     });
 
     window.matchMedia(NN_MOBILE_MEDIA_QUERY).addEventListener('change', event => {
+        refreshNeconyanRailQuickActions();
         if (!event.matches) {
             setNeconyanRailDrawerOpen(false);
         }
@@ -20146,6 +20182,8 @@ function initAll() {
 
     const neconyanShell = /** @type {any} */ (globalThis.NeconyanShell || {});
     globalThis.NeconyanShell = Object.assign(neconyanShell, {
+        refreshRailQuickActions: refreshNeconyanRailQuickActions,
+        editQuickActions: editNeconyanRailQuickActions,
         openExtensionSettings,
         openIncludedTool: openNeconyanIncludedToolPage,
         openTab(shellKey, tabId) {
