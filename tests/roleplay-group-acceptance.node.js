@@ -26,7 +26,7 @@ function saved(t, { disabled = [] } = {}) {
         world_info_settings: { world_info: { globalSelect: [] } },
         main_api: 'openai',
         active_generation: { api: 'openai', source: 'custom', model: 'fixture' },
-        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:18000/v1', openai_max_context: 4096 },
+        oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:18000/v1', openai_max_context: 4096, openai_max_tokens: 512 },
     }));
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
     const request = () => ({ user: { profile: { handle: f.scope.owner }, directories: dirs } });

@@ -38,7 +38,7 @@ function saved(t, { settingsRevision = 7, powerUser = null } = {}) {
         main_api: 'openai',
         active_generation: { api: 'openai', source: 'custom', model: 'fixture' },
         oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:18000/v1',
-            openai_max_context: 4096, function_calling: true },
+            openai_max_context: 4096, openai_max_tokens: 512, function_calling: true },
         extension_settings: { connectionManager: { profiles: [{ id: 'active', api: 'custom', model: 'fixture',
             preset: 'Main', 'api-url': 'http://127.0.0.1:18000/v1' }] } },
     }));
@@ -244,7 +244,7 @@ test('a named workflow refuses a changed anchor, an unknown name, a missing inst
     await refuse({ ...base, name: 'guided.nope' }, 400);
     await refuse({ ...base, intent: {} }, 400);
     await refuse({ ...base, source: { locator: { ...f.locator, group: true } } }, 400);
-    await refuse({ ...base, maxTokens: 9000 }, 400);
+    await refuse({ ...base, maxTokens: 64001 }, 400);
     await refuse({ ...base, key: 'x'.repeat(300) }, 400);
     await refuse({ ...base, extra: 1 }, 400);
     await refuse({ ...base, anchor: { messageIndex: 1, chosen: true, other: 2 } }, 400);
