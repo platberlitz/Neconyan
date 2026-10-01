@@ -504,6 +504,7 @@ function renderSettings(root) {
     const draft = ui.draft;
     if (!draft) return;
     const settings = section('Automatic memory');
+    settings.dataset.mewmoryTour = 'automatic';
     settings.append(node('p', 'mewmory-caption', 'Model roles are shared by all your chats; turning Mewmory on is per chat. These models are set up separately from the model that writes replies.'),
         check('Update automatically during play', draft.autoUpdate, value => { draft.autoUpdate = value; }),
         check('Only use models on this computer', draft.localOnly, value => { draft.localOnly = value; }),
@@ -519,6 +520,7 @@ function renderSettings(root) {
     settings.append(budgets);
     root.append(settings);
     const model = section('Model roles');
+    model.dataset.mewmoryTour = 'models';
     const picker = node('div', 'mewmory-role-picker');
     picker.setAttribute('role', 'group');
     picker.setAttribute('aria-label', 'Model role to set up');
@@ -582,6 +584,7 @@ function renderSettings(root) {
     roleForm.append(fields, check('Allow sending story data to a service on another computer', role.allowRemote, value => { role.allowRemote = value; }));
     if (!role.profileId) roleForm.append(check('Remove the saved API key when saving', role.clearKey, value => { role.clearKey = value; }));
     const scope = section('This role may read');
+    scope.dataset.mewmoryTour = 'permissions';
     for (const [type, label] of [['chat', 'Chat messages'], ['character', 'Character cards'], ['lore', 'Enabled lore'], ['memory', 'Saved memories']]) {
         scope.append(check(label, role.allowedData.includes(type), checked => {
             role.allowedData = role.allowedData.filter(item => item !== type);

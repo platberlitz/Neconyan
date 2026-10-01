@@ -531,7 +531,7 @@ const TOOL_PAGES = Object.freeze({
                 targets: ['.mewmory-heading'],
                 title: 'Which chat this is',
                 body: 'The top line shows which chat Mewmory is looking at. **Refresh** reloads its memories after you edit messages elsewhere.',
-                emptyBody: 'Open a saved Roleplay chat first. Until then, Mewmory has nothing to remember, so most of this page is empty.',
+                emptyBody: 'Open a saved Roleplay chat to inspect its memories. You can still set up the models in **Settings** without a chat. We will walk through those controls too.',
                 hint: 'No chat, no memories. Even I need material.',
             },
             {
@@ -539,22 +539,101 @@ const TOOL_PAGES = Object.freeze({
                 targets: ['.mewmory-tabs'],
                 optional: true,
                 title: 'The five tabs',
-                body: '**Now** shows what Mewmory is tracking at this point in the story. **Pawspective** follows how each character sees things, linked to the messages behind it. **Archive** keeps older memories. **Recall** shows what was added to the last prompt. **Settings** sets the models it uses.',
+                body: '**Now** shows current facts and events. **Pawspective** tracks what each character thinks and knows. **Archive** lets you search older memories. **Recall** explains which memories were selected for a reply. **Settings** controls the models, privacy and space used for memory.\nYou can click these tabs yourself, or use **Next** to follow along. The tour does not change or save your configuration.',
                 hint: 'Check Recall when a character forgets something. It tells you exactly why.',
             },
             {
                 id: 'pane',
-                targets: ['.mewmory-page'],
-                optional: true,
+                tab: '#mewmory-tab-now',
+                targets: ['#mewmory-pane-now'],
                 title: 'Reading and fixing memories',
-                body: 'Each memory can be edited or deleted. If Mewmory wrote something wrong, fix it here and the correction is used from the next reply on.',
+                body: 'With a saved chat open, **Now** shows the memories for that story. Turn on **Use Mewmory in this chat** when you want it to remember this chat. That switch does not turn it on for other chats.\nEdit a wrong memory instead of keeping an incorrect fact. If this page is empty, open a saved Roleplay chat first; you can still follow the Settings steps now.',
                 hint: 'Wrong notes are worse than no notes. Correct them.',
+            },
+            {
+                id: 'pawspective', tab: '#mewmory-tab-pawspective', targets: ['#mewmory-pane-pawspective'],
+                title: 'Whose point of view is this?',
+                body: '**Pawspective** separates what each character knows and believes from the story’s objective facts. Choose the character and subject to inspect their view. The source messages let you check why that view was recorded.\nAn empty tab can mean there is no saved chat or no interview yet; configure the Pawspective role before expecting it to create interviews.',
+                hint: 'Knowing a fact and believing it are different things.',
+            },
+            {
+                id: 'archive', tab: '#mewmory-tab-archive', targets: ['#mewmory-pane-archive'],
+                title: 'Find an older memory',
+                body: '**Archive** searches the chat’s stored memories. Use its filters to narrow the type or search text. Older messages are not deleted when Mewmory leaves them out of the reply prompt.\nCheck the source before editing or deleting a memory. Those actions change the saved story; the tour only shows where they are.',
+                hint: 'Check what actually happened before correcting the record.',
+            },
+            {
+                id: 'recall', tab: '#mewmory-tab-recall', targets: ['#mewmory-pane-recall'],
+                title: 'Check what went into the reply',
+                body: '**Recall** shows the memory selection for a reply, including its status and limits. A stored detail is not guaranteed to be selected every time.\nWhen a reply misses something, check that the memory exists, then check Recall. Connection failures or insufficient space are different from a memory that was never recorded.',
+                hint: 'Start with the evidence. It saves a lot of guessing.',
+            },
+            {
+                id: 'settings', tab: '#mewmory-tab-settings', targets: ['#mewmory-pane-settings [data-mewmory-tour="automatic"] > .mewmory-caption'],
+                title: 'Settings are shared; switching on is per chat',
+                body: 'These settings are shared by your chats, but **Use Mewmory in this chat** is a separate switch for each story. Mewmory also has its own model connections; changing the model that writes your chat replies does not configure these roles.\nChanges here are a draft until you press **Save configuration**. We will look at the controls without changing them.',
+                hint: 'Read first. Save when you actually mean it.',
+            },
+            {
+                id: 'roles', tab: '#mewmory-tab-settings', targets: ['.mewmory-role-picker'],
+                title: 'Choose a job, then configure its model',
+                body: '**Facts and events** reads the chat and writes memories. **Pawspective interviews** records a character’s point of view. **Recall selector** chooses from existing memories; **Recall fallback** is the alternative selection role. Neither recall role invents new memories.\nClick a role to see its settings. The roles can use the same model or different models. **Enable this role** determines whether that job is available.',
+                hint: 'Different jobs. They need not be different models.',
+            },
+            {
+                id: 'connection', tab: '#mewmory-tab-settings', open: '#mewmory-role-extractor',
+                targets: ['#mewmory-field-profile-extractor'],
+                title: 'Reuse a saved connection, or enter one manually',
+                body: 'A **Connection profile** uses the model and protected credentials saved in Connections. A blank **Model override, optional** keeps that profile’s model; enter an override only to use another model on the same service.\n**Manual endpoint** instead shows the service’s OpenAI-compatible address, model name and API key. A blank key keeps a saved key. The separate removal checkbox deletes it when you save.',
+                hint: 'Use the connection you already trust. No need to type the key twice.',
+            },
+            {
+                id: 'privacy', tab: '#mewmory-tab-settings',
+                targets: ['#mewmory-pane-settings [data-mewmory-tour="permissions"]'],
+                title: 'Decide what each role may read',
+                body: '**This role may read** controls whether the selected role receives chat messages, character cards, enabled lore or saved memories. Review those permissions for each role.\n**Only use models on this computer** applies to every role. Sending data to a service on another computer also needs that role’s **Allow sending story data** permission. A hosted provider is another computer, even when Neconyan itself runs locally.',
+                hint: 'Your story, your permissions. Check them before you save.',
+            },
+            {
+                id: 'limits', tab: '#mewmory-tab-settings', open: '#mewmory-role-extractor',
+                targets: ['#mewmory-field-context-extractor', '#mewmory-field-output-extractor'],
+                title: 'Give the memory model accurate limits',
+                body: '**Context limit, tokens** is how much text this role’s model can take. Tokens are the pieces of text models count. Use the service’s real limit; raising this number does not make the model larger.\n**Output limit, tokens** reserves room for its answer, leaving less room for the request. **Timeout, seconds** is how long to wait. **Tokenizer for this role** controls the text-counting method; Auto tries to match the model. **Model revision, optional** records a version identifier.',
+                hint: 'A bigger number on the form does not change the model. Unfortunately.',
+            },
+            {
+                id: 'embeddings', tab: '#mewmory-tab-settings', open: '#mewmory-role-embedding',
+                targets: ['#mewmory-role-embedding'],
+                title: 'Meaning search is optional',
+                body: '**Embeddings** turns text into numbers used to find memories with a similar meaning. Keyword search still works with this role off. Use a model that supports embeddings, not an ordinary chat model; saved profiles must be OpenAI-compatible.\nThe output limit does not apply here. Set query or document prefixes only when your embedding model’s instructions require them. This role has its own data and remote-service permissions too.',
+                hint: 'Optional means optional. Get the basic setup working first.',
+            },
+            {
+                id: 'updates', tab: '#mewmory-tab-settings',
+                targets: ['[id="mewmory-field-Messages per update"]'],
+                title: 'Choose how often new memories are written',
+                body: '**Update automatically during play** makes Mewmory process new chat while you play. **Messages per update** sets the batch size: smaller batches ask it to update more often and put less text into each request.\nFor an existing chat, **Catch up on this whole chat** processes earlier messages. **Check for missed details** checks the chat again. Those are real model requests, not steps the tour runs for you.',
+                hint: 'More frequent work can mean more requests. Choose deliberately.',
+            },
+            {
+                id: 'budgets', tab: '#mewmory-tab-settings',
+                targets: ['[id="mewmory-field-Recent chat target, tokens"]'],
+                title: 'Share the reply model’s available space',
+                body: '**Recent chat target, tokens** is the target for recent chat only. **Selected memory budget, tokens** limits the selected memories added to the reply prompt. Character details, NPC references and other instructions also need space.\n**Recall candidates** limits the memories considered for selection. **Writer tokenizer** counts text for the model writing your replies, separately from each memory role’s tokenizer. **Leave out older chat that Mewmory has already remembered** can shorten the prompt; the older messages stay saved.',
+                hint: 'Recent chat and memories both need room. Neither gets the whole limit.',
+            },
+            {
+                id: 'save', tab: '#mewmory-tab-settings',
+                targets: ['#mewmory-pane-settings > .mewmory-actions', '#mewmory-settings-status'],
+                title: 'Save deliberately, and read the result',
+                body: '**Save configuration** applies your draft. **Discard unsaved settings** returns to the saved version. The status below tells you whether there are unsaved changes, a successful save or an error.\nIf settings were saved elsewhere, discard your stale draft to load them before editing again. The tour does not press Save, turn on roles or spend a model request.',
+                hint: 'A saved configuration is what runs. A draft is only a draft.',
             },
             {
                 id: 'done',
                 targets: ['.neconyan-tool-tour-button'],
                 title: 'That is the whole page',
-                body: 'Press **Tour** at any time to see this again. In **Settings**, choose how often Mewmory updates with **Messages per update**.',
+                body: 'Choose connections for the roles you need, check their data permissions and limits, then **Save configuration**. Open a saved Roleplay chat and turn on **Use Mewmory in this chat** when ready.\nPress **Tour** whenever you want to review these settings. If a detail is missing from a reply, check **Recall** to see what was selected.',
                 hint: 'Now, I remember there was a cigarette somewhere.',
             },
         ],
@@ -898,6 +977,7 @@ const tour = {
     stepId: '',
     target: null,
     watch: 0,
+    observer: null,
     token: 0,
     opener: null,
     spacer: null,
@@ -962,6 +1042,24 @@ function clearTarget() {
     tour.target = null;
 }
 
+function followMewmoryTab(event) {
+    if (tour.key !== 'mewmory' || !event.isTrusted) return;
+    const tab = event.target.closest('.mewmory-tabs button');
+    const step = { 'mewmory-tab-now': 'pane', 'mewmory-tab-pawspective': 'pawspective',
+        'mewmory-tab-archive': 'archive', 'mewmory-tab-recall': 'recall', 'mewmory-tab-settings': 'settings' }[tab?.id];
+    if (step) void show(step);
+}
+
+function refreshTourTarget() {
+    if (!tour.card || !tour.root) return;
+    const step = currentSteps().find(item => item.id === tour.stepId);
+    const target = step?.targets.map(selector => findShown(tour.root, selector)).find(Boolean);
+    if (!target || target === tour.target) return;
+    clearTarget();
+    tour.target = target;
+    target.classList.add('neconyan-tool-tour-target');
+}
+
 function openStep(step) {
     if (!tour.root) return;
     const tab = step.tab ? findShown(tour.root, step.tab) : null;
@@ -971,7 +1069,7 @@ function openStep(step) {
         const header = findShown(tour.root, selector);
         const details = header?.closest('details');
         if (details && !details.open) details.open = true;
-        else if (header?.getAttribute('aria-expanded') === 'false') header.click();
+        else if (header?.getAttribute('aria-expanded') === 'false' || header?.getAttribute('aria-pressed') === 'false') header.click();
     }
 }
 
@@ -1102,6 +1200,12 @@ export function startToolTour(id, root) {
     tour.key = page.key;
     tour.opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     tour.root = root;
+    if (page.key === 'mewmory') {
+        root.addEventListener('click', followMewmoryTab);
+        // Switching tabs or roles rebuilds Mewmory's controls, including the highlighted node.
+        tour.observer = new MutationObserver(refreshTourTarget);
+        tour.observer.observe(root, { childList: true, subtree: true });
+    }
     tour.card = buildCard(page);
     document.body.append(tour.card);
     document.addEventListener('keydown', onKeydown, true);
@@ -1121,6 +1225,9 @@ export function startToolTour(id, root) {
 export function endToolTour({ restoreFocus = true } = {}) {
     tour.token++;
     clearInterval(tour.watch);
+    tour.observer?.disconnect();
+    tour.observer = null;
+    tour.root?.removeEventListener('click', followMewmoryTab);
     tour.spacer?.remove();
     tour.spacer = null;
     clearTarget();

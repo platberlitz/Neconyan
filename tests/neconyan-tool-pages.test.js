@@ -239,6 +239,22 @@ describe('settings pages open as Neconyan pages with an assistant tour', () => {
         expect(scope.body).toBe(emptyBody);
     });
 
+    test('Mewmory walks through Settings even without a saved chat or visible settings pane', () => {
+        const steps = getToolTourSteps('mewmory', { isShown: () => false, empty: true });
+        for (const id of ['settings', 'roles', 'connection', 'privacy', 'limits', 'embeddings', 'updates', 'budgets', 'save']) {
+            const step = steps.find(item => item.id === id);
+            expect(step?.tab).toBe('#mewmory-tab-settings');
+            expect(step.body.length).toBeGreaterThan(150);
+        }
+        expect(steps.find(step => step.id === 'connection').open).toBe('#mewmory-role-extractor');
+        expect(steps.find(step => step.id === 'embeddings').open).toBe('#mewmory-role-embedding');
+        expect(steps.find(step => step.id === 'save').body).toContain('does not press Save');
+        const source = read('../public/scripts/neconyan-tool-tour.js');
+        expect(source).toContain('new MutationObserver(refreshTourTarget)');
+        expect(source).toContain("'mewmory-tab-settings': 'settings'");
+        expect(source).toContain('!event.isTrusted');
+    });
+
     test('native pages hide the tab blurb and give loose controls a card', () => {
         expect(css).toContain('.openDrawer[data-neconyan-native-page]:not([data-neconyan-native-page=\'\']) .sb-shell-header .sb-shell-subtitle');
         expect(css).toContain(':is(#left-nav-panel, #user-settings-block).openDrawer[data-neconyan-native-page]:not([data-neconyan-native-page=\'\']) .sb-shell-header .sb-shell-description');
