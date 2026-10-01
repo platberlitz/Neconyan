@@ -101,6 +101,35 @@ function compileExtractPattern(pattern) {
     }
 }
 
+/** Reorders labelled, single-line fields to match the agent's own format example.
+ * Values, headers and surrounding prose are retained. Ambiguous records are left alone.
+ */
+export function repairTrackerFieldOrder(agent, text) {
+    const source = normalizeText(text);
+    const tag = getTrackerTag(agent, source);
+    const examples = findTrackerBlocks(agent.prompt, tag).filter(block => block.complete);
+    const parse = block => {
+        const lines = block.text.split('\n');
+        const fields = lines.slice(1, -1).map(line => ({ line, key: line.match(/^([a-z][a-z0-9_-]*):[ \t]*/i)?.[1] }));
+        if (!fields.length || fields.some(field => !field.key) || new Set(fields.map(field => field.key)).size !== fields.length) return null;
+        return { lines, fields, variant: lines[0].split('|')[0] };
+    };
+    let result = source;
+    for (const block of findTrackerBlocks(source, tag).reverse()) {
+        if (!block.complete) continue;
+        const record = parse(block);
+        if (!record) continue;
+        const candidates = examples.map(parse).filter(example => example?.variant === record.variant
+            && example.fields.length === record.fields.length
+            && example.fields.every(field => record.fields.some(current => current.key === field.key)));
+        if (candidates.length !== 1) continue;
+        const values = new Map(record.fields.map(field => [field.key, field.line]));
+        const reordered = [record.lines[0], ...candidates[0].fields.map(field => values.get(field.key)), record.lines.at(-1)].join('\n');
+        result = result.slice(0, block.start) + reordered + result.slice(block.end);
+    }
+    return result;
+}
+
 export function getTrackerMetadataKey(agent = {}) {
     const variable = String(agent?.postProcess?.extractVariable ?? '').trim();
     return variable ? `agent_${variable}` : '';

@@ -10,6 +10,7 @@ const {
     inspectTrackerState,
     mergeTrackerRepairPayload,
     normalizeCompanionTrackerRepairPayload,
+    repairTrackerFieldOrder,
     writeTrackerMetadataValue,
 } = await import('../public/scripts/extensions/in-chat-agents/tracker-state.js');
 
@@ -22,6 +23,24 @@ const statusAgent = {
 };
 
 describe('in-chat agent tracker state', () => {
+    test('field order repair retains exact values, inline HTML, and surrounding trackers', () => {
+        const agent = { ...statusAgent, prompt: '[STATUS|Name]\ndate: time\nturn: event\n[/STATUS]' };
+        const original = 'Before\n[STATUS|Alice]\nturn: <font color="red">A: B</font>\ndate: Dinner\n[/STATUS]\n[NPC|Bob]Keep[/NPC]\nAfter';
+        const fixed = repairTrackerFieldOrder(agent, original);
+        expect(fixed).toBe(original.replace('turn: <font color="red">A: B</font>\ndate: Dinner', 'date: Dinner\nturn: <font color="red">A: B</font>'));
+        expect(repairTrackerFieldOrder(agent, fixed)).toBe(fixed);
+    });
+
+    test.each([
+        'turn: One\nturn: Two',
+        'turn: One\nunknown: Two',
+        'turn: One\nNarration\ndate: Dinner',
+        'turn: One',
+    ])('field order repair leaves ambiguous or incomplete fields unchanged: %s', body => {
+        const agent = { ...statusAgent, prompt: '[STATUS|Name]\ndate: time\nturn: event\n[/STATUS]' };
+        const original = `[STATUS|Alice]\n${body}\n[/STATUS]`;
+        expect(repairTrackerFieldOrder(agent, original)).toBe(original);
+    });
     test('uses complete structural blocks when a configured pattern is stale', () => {
         const agent = {
             ...statusAgent,

@@ -80,6 +80,7 @@ import {
     getTrackerRepairPayload,
     inspectTrackerState,
     mergeTrackerRepairPayload,
+    repairTrackerFieldOrder,
     TRACKER_REPAIR_INSTRUCTION,
     writeTrackerMetadataValue,
 } from './tracker-state.js';
@@ -6380,6 +6381,15 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
             continue;
         }
 
+        const reordered = repairTrackerFieldOrder(agent, currentPromptTransformText);
+        if (reordered !== currentPromptTransformText && inspectTrackerRepairState(agent, reordered, message.name).status === 'valid') {
+            currentPromptTransformText = reordered;
+            chatStateChanged = true;
+            messageDisplayChanged = true;
+            trackerRepairs++;
+            continue;
+        }
+
         if (inspection.blocks.some(block => !block.replaceable)) {
             trackerRepairErrors++;
             unsafeTrackerRepairs++;
@@ -6502,7 +6512,7 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     const postProcessRuns = utilityAgents.length + trackerMetadataUpdates;
     const errorRuns = failedRuns.length + trackerRepairErrors;
     const parts = [];
-    if (trackerRepairs > 0) parts.push(`${trackerRepairs} tracker${trackerRepairs > 1 ? 's' : ''} regenerated`);
+    if (trackerRepairs > 0) parts.push(`${trackerRepairs} tracker${trackerRepairs > 1 ? 's' : ''} repaired`);
     if (changedRuns.length > 0) parts.push(`${changedRuns.length} prompt transform${changedRuns.length > 1 ? 's' : ''} applied`);
     if (postProcessRuns > 0) parts.push(`${postProcessRuns} post-process${postProcessRuns > 1 ? 'es' : ''} run`);
     if (regexSnapshotChanged) parts.push('regex snapshot updated');

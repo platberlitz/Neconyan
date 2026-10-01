@@ -7145,7 +7145,7 @@ describe('in-chat agent post-processing runner', () => {
         expect(chat[0].mes).toBe('Fresh reply without an inline tracker block.\n\n[STATUS|Alice|Tired|Moderate]\nresting\n[/STATUS]');
         expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
         expect(saveChatDebounced).toHaveBeenCalledTimes(1);
-        expect(globalThis.toastr.success).toHaveBeenCalledWith('1 tracker regenerated, 1 post-process run', 'Trackers fixed');
+        expect(globalThis.toastr.success).toHaveBeenCalledWith('1 tracker repaired, 1 post-process run', 'Trackers fixed');
 
         await new Promise(resolve => setTimeout(resolve, 5));
     });
@@ -7264,7 +7264,7 @@ describe('in-chat agent post-processing runner', () => {
         expect(globalThis.toastr.warning).toHaveBeenCalledWith(expect.stringContaining('1 error'), 'Tracker repair incomplete');
     });
 
-    test('manual tracker fix repairs the screenshot header using the actual relationship card rules', async () => {
+    test.each(['header', 'field order'])('manual tracker fix repairs relationship %s using the actual card rules', async kind => {
         usePreExtractTracker();
         const template = JSON.parse(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/relationship-tracker.json', import.meta.url)));
         const bundles = JSON.parse(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/regex-bundles.json', import.meta.url)));
@@ -7272,21 +7272,24 @@ describe('in-chat agent post-processing runner', () => {
         expect(scripts.length).toBeGreaterThan(0);
         Object.assign(enabledAgents[0], { ...template, id: 'relationship', regexScripts: scripts });
         const body = 'route: 🌱 Slow Burn Under Glass\npath: Close > Confidant > Intimate\nheart: He keeps holding hands.\ntrust: He trusts Kris.\nwant: Stay\nguard: Pride\nlikes: Soup\ndislikes: Distance\ntell: His thumb moves.\nunsaid: Stay here.\nmemory: Dinner: They held hands.\ndate: Dinner\nturn: Kris squeezed back.\nnext: Time together';
-        const broken = `[METER|Alhaitham|Confidant|💚 STABLE]🌅 WARMING]\n${body}\n[/METER]`;
         const repaired = `[METER|Alhaitham|Confidant|💚 STABLE|🌅 WARMING]\n${body}\n[/METER]`;
+        const broken = kind === 'header'
+            ? repaired.replace('STABLE|', 'STABLE]')
+            : repaired.replace('date: Dinner\nturn: Kris squeezed back.', 'turn: Kris squeezed back.\ndate: Dinner');
+        const requests = kind === 'header' ? 1 : 0;
         generateQuietPrompt.mockResolvedValueOnce(repaired);
         const { runTrackerFixOnMessage } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
         chat.push({ name: 'Assistant', mes: `Before\n${broken}\nAfter`, is_user: false, extra: {} });
 
         await runTrackerFixOnMessage(0);
 
-        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(requests);
         expect(chat[0].mes).toBe(`Before\n${repaired}\nAfter`);
         expect(chatMetadata.agent_relationship_data).toBe(repaired);
         expect(globalThis.toastr.warning).not.toHaveBeenCalled();
         await new Promise(resolve => setTimeout(resolve, 5));
         await runTrackerFixOnMessage(0);
-        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(requests);
     });
 
     test('manual tracker fix refuses a replacement that drops an existing tracker record', async () => {

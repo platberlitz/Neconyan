@@ -8,11 +8,12 @@ test.setTimeout(180000);
 test.skip(process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1', 'Requires a disposable tracker repair fixture.');
 
 const body = 'route: 🌱 Slow Burn Under Glass\npath: Close > Confidant > Intimate\nheart: He keeps holding hands.\ntrust: He trusts Kris.\nwant: Stay\nguard: Pride\nlikes: Soup\ndislikes: Distance\ntell: His thumb moves.\nunsaid: Stay here.\nmemory: Dinner: They held hands.\ndate: Dinner\nturn: Kris squeezed back.\nnext: Time together';
-const broken = `[METER|Alhaitham|Confidant|💚 STABLE]🌅 WARMING]\n${body}\n[/METER]`;
 const repaired = `[METER|Alhaitham|Confidant|💚 STABLE|🌅 WARMING]\n${body}\n[/METER]`;
 
-for (const phone of [false, true]) {
-    test(`Fix Trackers repairs an inline broken header and persists it on ${phone ? 'phone' : 'desktop'}`, async ({ app }, info) => {
+for (const { phone, kind } of [false, true].flatMap(phone => ['header', 'field order'].map(kind => ({ phone, kind })))) {
+    test(`Fix Trackers repairs inline ${kind} and persists it on ${phone ? 'phone' : 'desktop'}`, async ({ app }, info) => {
+        const broken = kind === 'header' ? repaired.replace('STABLE|', 'STABLE]')
+            : repaired.replace('date: Dinner\nturn: Kris squeezed back.', 'turn: Kris squeezed back.\ndate: Dinner');
         const account = await app.account({ phone, activeConnection: true });
         app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: repaired } }] };
         const chatName = 'Tracker repair regression';
@@ -42,12 +43,13 @@ for (const phone of [false, true]) {
         await acknowledgeActiveSettings(page);
         const message = page.locator('#chat .mes[mesid="0"]');
         const text = message.locator('.mes_text');
-        await expect(text).toContainText('[METER|Alhaitham|Confidant|💚 STABLE]🌅 WARMING]');
+        await expect(text).toContainText(broken.split('\n')[0]);
         await expect(text.locator('details')).toHaveCount(0);
         await message.locator('.extraMesButtonsHint').click();
         await message.locator('.mes_fix_trackers').click();
         await expect(text.locator('details').first()).toBeVisible({ timeout: 60000 });
         await expect(text).not.toContainText('[METER|');
+        if (kind === 'field order') expect(app.provider.calls).toHaveLength(0);
         await expect(text).toContainText('Before the tracker.');
         await expect(text).toContainText('After the tracker.');
         await text.locator('details').first().locator(':scope > summary').click();
