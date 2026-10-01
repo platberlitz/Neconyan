@@ -1105,7 +1105,7 @@ body.ripplestyle {
 }
 body.ripplestyle {
     .mesIDDisplay {
-        background: var(--customBgColor2) !important;
+        background: var(--customBgColor2);
         width: fit-content;
         padding: 0 8px;
         border-radius: 8px;

@@ -1468,7 +1468,6 @@ select.text_pole:where(:not([multiple]):not([size]):not(.select2-hidden-accessib
 }
 
 #chat .mes .mesAvatarWrapper > .mesIDDisplay {
-    background: transparent !important;
     border: 0;
     border-radius: 0;
     box-shadow: none;
