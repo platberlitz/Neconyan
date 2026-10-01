@@ -748,6 +748,97 @@ export function pollStreamingRequestConnection(request, response, onDisconnect) 
     });
 }
 
+/** The most characters the finish-reason scan will retain as an unfinished SSE line. */
+const FINISH_REASON_SCAN_MAX_UNFINISHED = 64 * 1024;
+
+/**
+ * Neconyan: reads the provider's own finish reason out of the SSE bytes on their way
+ * to the client, without changing what is written. The scan is created only for a
+ * response that declares an event stream; anything else is a disabled scan that
+ * retains nothing and reports nothing, so binary bodies never reach the parser. The
+ * scan tolerates a reason split across chunks and an answer with several choices, and
+ * the last non-null reason it sees wins. A stream that never reports one yields
+ * nothing rather than a guessed placeholder.
+ *
+ * Only the unfinished line (the text after the last newline) is retained, and it is
+ * capped. A line that would exceed the cap disables the scan permanently for that
+ * stream: it keeps the last reason already seen, ignores every later line, and never
+ * guesses. Each chunk is searched only from the previous search position, so an
+ * unfinished line is never re-scanned from its start.
+ * @param {{ headers?: { get?: (name: string) => (string|null|undefined) } }} [from] The forwarded response.
+ * @returns {{ push: (chunk: Buffer|string) => void, flush: () => (string|null) }}
+ */
+export function createFinishReasonScan(from) {
+    const contentType = from?.headers?.get?.('content-type');
+    const isEventStream = typeof contentType === 'string' && /^text\/event-stream\b/i.test(contentType.trim());
+
+    let pending = '';
+    let reason = null;
+    let disabled = !isEventStream;
+
+    const consume = line => {
+        if (!line.startsWith('data:')) return;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === '[DONE]') return;
+        let parsed;
+        try {
+            parsed = JSON.parse(payload);
+        } catch {
+            // A line the provider cut across chunks: the next push completes it.
+            return;
+        }
+        const choices = Array.isArray(parsed?.choices) ? parsed.choices : [];
+        for (const choice of choices) {
+            if (choice?.finish_reason != null) reason = choice.finish_reason;
+        }
+    };
+
+    return {
+        push(chunk) {
+            if (disabled) return;
+            const text = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
+            let start = 0;
+            while (start < text.length) {
+                const newline = text.indexOf('\n', start);
+                if (newline === -1) break;
+                // A line that began in an earlier chunk is completed here, once.
+                consume(pending + text.slice(start, newline + 1));
+                pending = '';
+                start = newline + 1;
+            }
+            const unfinished = text.slice(start);
+            if (unfinished.length === 0) return;
+            if (pending.length + unfinished.length > FINISH_REASON_SCAN_MAX_UNFINISHED) {
+                pending = '';
+                disabled = true;
+                return;
+            }
+            pending += unfinished;
+        },
+        flush() {
+            if (!disabled) {
+                consume(pending);
+                pending = '';
+            }
+            return reason;
+        },
+    };
+}
+
+/**
+ * Neconyan: the one finish line both streaming sites write. The provider's own reason
+ * is named only when it supplied one; a missing reason is not an error and is never
+ * reported as a guess.
+ * @param {string|null} finishReason The last non-null finish reason the provider sent.
+ */
+function logStreamFinished(finishReason) {
+    if (finishReason) {
+        console.info('Streaming request finished', { finishReason });
+    } else {
+        console.info('Streaming request finished');
+    }
+}
+
 /**
  * Neconyan: drains the upstream body to the end even after the client has gone, so a resumable
  * generation (see resumable-generations.js) can be picked up later. Only an explicit cancel stops it.
@@ -757,6 +848,7 @@ export function pollStreamingRequestConnection(request, response, onDisconnect) 
  * @param {() => void | Promise<void>} [onDisconnect] Provider-specific abort hook, run on cancel.
  */
 function forwardResumableFetchBody(from, to, generation, onDisconnect = null) {
+    const finishReason = createFinishReasonScan(from);
     const unregisterCancel = generation.onCancel(() => {
         try {
             const disconnectResult = onDisconnect?.();
@@ -786,13 +878,14 @@ function forwardResumableFetchBody(from, to, generation, onDisconnect = null) {
     };
 
     from.body.on('data', chunk => {
+        finishReason.push(chunk);
         if (!to.writableEnded) {
             to.write(chunk);
         }
     });
 
     from.body.on('end', () => {
-        console.info('Streaming request finished');
+        logStreamFinished(finishReason.flush());
         finish();
     });
 
@@ -871,6 +964,9 @@ export async function forwardFetchResponse(from, to, request = null, onDisconnec
             }
         });
 
+        const finishReason = createFinishReasonScan(from);
+        from.body.on('data', chunk => finishReason.push(chunk));
+
         from.body.pipe(to);
 
         to.on('close', function () {
@@ -891,7 +987,7 @@ export async function forwardFetchResponse(from, to, request = null, onDisconnec
 
         from.body.on('end', function () {
             stopPolling();
-            console.info('Streaming request finished');
+            logStreamFinished(finishReason.flush());
             to.end();
         });
 

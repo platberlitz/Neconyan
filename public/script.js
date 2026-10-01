@@ -8091,26 +8091,38 @@ async function loadNativeRoleplayWorkflows() {
  *
  * @param {string} type Generation type.
  * @param {object} options The generation options this call site passed.
+ * @param {(reason: string) => void} [collector] Optional collector for the single refusing condition.
  * @returns {boolean} True when the named workflow may own this generation.
  */
-export function willRunNativeRoleplayWorkflow(type, options = {}) {
-    if (!['normal', 'continue', 'swipe', 'regenerate'].includes(type)) return false;
-    if (options.skipNativeRoleplay || options.automatic_trigger) return false;
-    if (options.jsonSchema || options.force_chid || options.force_name2 || options.quiet_prompt) return false;
-    if (options.depth > 0 || options.cacheScope || options.suppressUserMessage || options.preserveLastMessage) return false;
-    if (options.signal?.aborted) return false;
+export function willRunNativeRoleplayWorkflow(type, options = {}, collector = null) {
+    const refuse = reason => {
+        if (typeof collector === 'function') collector(reason);
+        return false;
+    };
+    if (!['normal', 'continue', 'swipe', 'regenerate'].includes(type)) return refuse('type');
+    if (options.skipNativeRoleplay) return refuse('skip-flag');
+    if (options.automatic_trigger) return refuse('automatic-trigger');
+    if (options.jsonSchema) return refuse('json-schema');
+    if (options.force_chid) return refuse('force-chid');
+    if (options.force_name2) return refuse('force-name2');
+    if (options.quiet_prompt) return refuse('quiet-prompt');
+    if (options.depth > 0) return refuse('depth');
+    if (options.cacheScope) return refuse('cache-scope');
+    if (options.suppressUserMessage) return refuse('suppress-user-message');
+    if (options.preserveLastMessage) return refuse('preserve-last-message');
+    if (options.signal?.aborted) return refuse('signal');
     // A group turn is a family of speakers and stays on the browser path until the
     // server owns the whole group workflow.
-    if (selected_group) return false;
+    if (selected_group) return refuse('group');
     // The built-in helper adds its help reference and its own tools in the page, and
     // the server prompt has neither, so its chats stay on the browser path.
-    if (isNeconyanAssistant(characters[this_chid])) return false;
+    if (isNeconyanAssistant(characters[this_chid])) return refuse('assistant');
     // Only a protected solo chat is server-owned, and the stamp proves the account
     // that owns it is the one making the request.
     try {
         roleplayAccountStamp();
     } catch {
-        return false;
+        return refuse('stamp');
     }
     // Composer text and a pending attachment stay with the host: Generate saves them
     // as the user's own message before the workflow is submitted.
@@ -8118,15 +8130,21 @@ export function willRunNativeRoleplayWorkflow(type, options = {}) {
 }
 
 /** The one decision for this call site, taken before any browser generation state changes. */
-async function nativeRoleplayWorkflowFor(type, options) {
-    if (!willRunNativeRoleplayWorkflow(type, options)) return null;
+async function nativeRoleplayWorkflowFor(type, options, collector = null) {
+    const report = typeof collector === 'function' ? collector
+        : reason => console.debug('Roleplay workflow refused', { type, reason });
+    if (!willRunNativeRoleplayWorkflow(type, options, report)) return null;
     const workflows = await loadNativeRoleplayWorkflows();
     const name = workflows?.roleplayWorkflowNameFor?.(type) ?? null;
-    if (!name) return null;
+    if (!workflows || !name) {
+        report('workflow-module');
+        return null;
+    }
     // A page prompt addition the server cannot carry faithfully keeps this call on
     // the browser path rather than generating without it. The workflow captures the
-    // additions again after the composer's commands have run.
-    return await workflows.capturePagePrompts(name) ? { name, workflows } : null;
+    // additions again after the composer's commands have run. A probing caller's
+    // collector is passed on, so only the emitting decision point writes the line.
+    return await workflows.capturePagePrompts(name, collector) ? { name, workflows } : null;
 }
 
 function consumePendingGeneratedMessageExtra(message) {
@@ -17451,7 +17469,10 @@ export async function swipe(event, direction, { source, repeated, message = chat
                 chat[mesId].swipe_id = originalSwipeId;
                 const target = chat[mesId];
                 const generationAtStart = chatGeneration;
-                const native = mesId === chat.length - 1 ? await nativeRoleplayWorkflowFor('swipe', generationOptions ?? {}) : null;
+                // This probe only learns whether the swipe can run natively. When it
+                // refuses, Generate re-evaluates below and emits the one refusal line,
+                // so the probe collects silently instead of logging twice.
+                const native = mesId === chat.length - 1 ? await nativeRoleplayWorkflowFor('swipe', generationOptions ?? {}, () => {}) : null;
                 if (chat[mesId] !== target || chatGeneration !== generationAtStart) {
                     swipeState = SWIPE_STATE.NONE;
                     showSwipeButtons();
