@@ -54,7 +54,10 @@ async function assertHeader(root) {
         const box = selector => header.querySelector(selector).getBoundingClientRect().toJSON();
         const tour = box('.neconyan-tool-tour-button');
         const close = box('.sb-shell-close');
+        const titleText = document.createRange();
+        titleText.selectNodeContents(header.querySelector('.sb-shell-title'));
         return {
+            titleTextRight: titleText.getBoundingClientRect().right,
             title: box('.sb-shell-title'), description: box('.neconyan-tool-page-description'), tour, close,
             overlap: Math.min(tour.right, close.right) > Math.max(tour.left, close.left)
                 && Math.min(tour.bottom, close.bottom) > Math.max(tour.top, close.top),
@@ -66,13 +69,15 @@ async function assertHeader(root) {
         const measurements = await measure();
         return {
             descriptionBelowTitle: measurements.description.top >= measurements.title.bottom,
-            tourBelowTitle: measurements.tour.top >= measurements.title.bottom,
+            tourOnTitleRow: measurements.tour.bottom <= measurements.description.top,
+            tourClearOfTitle: measurements.tour.left >= measurements.titleTextRight,
+            descriptionFullWidth: measurements.description.right > measurements.tour.left,
             touchTarget: measurements.tour.height >= 44,
             overlap: measurements.overlap,
             fitsHeader: measurements.tour.right <= measurements.header.right,
             subtitle: measurements.subtitle,
         };
-    }).toEqual({ descriptionBelowTitle: true, tourBelowTitle: true, touchTarget: true, overlap: false, fitsHeader: true, subtitle: 'none' });
+    }).toEqual({ descriptionBelowTitle: true, tourOnTitleRow: true, tourClearOfTitle: true, descriptionFullWidth: true, touchTarget: true, overlap: false, fitsHeader: true, subtitle: 'none' });
     await expect(root.locator('.sb-shell-header .neconyan-page-intro-toggle')).toHaveCount(0);
     await expect(root.locator('.sb-shell-panel-active .neconyan-tool-page-intro')).toHaveCount(0);
 }

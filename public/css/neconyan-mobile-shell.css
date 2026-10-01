@@ -3450,6 +3450,14 @@ body.neconyan #open_chat_expressions #expressions_stop_sprite_generation { grid-
     }
 
     body.neconyan :is(#left-nav-panel, #user-settings-block).openDrawer .sb-shell-header:has(.neconyan-page-intro-header) > .sb-shell-title {
-        padding-inline-end: 44px;
+        padding-inline-end: 128px;
+    }
+
+    body.neconyan :is(#left-nav-panel, #user-settings-block).openDrawer .sb-shell-header:has(.neconyan-page-intro-header) > .sb-shell-description {
+        display: none;
+    }
+
+    body.neconyan :is(#left-nav-panel, #user-settings-block).openDrawer .sb-shell-header .neconyan-page-intro-header > .neconyan-tool-tour-button {
+        right: 54px;
     }
 }
