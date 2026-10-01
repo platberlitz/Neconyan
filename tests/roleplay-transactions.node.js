@@ -46,6 +46,30 @@ for (const group of [false, true]) {
     });
 }
 
+test('closed save receipts are dropped once their chat moves far enough ahead to refuse a replay', t => {
+    const f = fixture(t);
+    const input = f.input();
+    const first = commitSingleChatWrite(f.scope, input, host);
+    const firstKey = Object.keys(readRoleplayAccount(f.scope).submissions)[0];
+    const edit = index => {
+        const records = fs.readFileSync(f.filename, 'utf8').trim().split('\n').map(JSON.parse);
+        records[1].mes = `Later edit ${index}`;
+        return commitSingleChatWrite(f.scope, { operationKey: `edit-${index}`, mode: 'update', source: f.source(), records, backup: { deferBackup: true } }, host);
+    };
+    for (let index = 1; index < 16; index++) edit(index);
+    assert.ok(readRoleplayAccount(f.scope).submissions[firstKey]);
+    assert.deepEqual(commitSingleChatWrite(f.scope, input, host), first);
+    edit(16);
+    const state = readRoleplayAccount(f.scope);
+    assert.equal(state.submissions[firstKey], undefined);
+    assert.equal(Object.keys(state.submissions).length, 16);
+    const saved = fs.readFileSync(f.filename);
+    assert.throws(() => commitSingleChatWrite(f.scope, input, host), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    assert.deepEqual(fs.readFileSync(f.filename), saved);
+    for (let index = 17; index < 40; index++) edit(index);
+    assert.equal(Object.keys(readRoleplayAccount(f.scope).submissions).length, 16);
+});
+
 test('transaction no-op preserves exact BOM/whitespace, inode and missing integrity', t => {
     const f = fixture(t);
     const raw = '\uFEFF' + f.records.map(row => '  ' + JSON.stringify(row)).join('\n') + '\n';

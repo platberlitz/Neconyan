@@ -62,6 +62,30 @@ test('each typed effect writes once and a completed replay never writes again', 
     assert.ok(!messages(f).some(message => message.mes === 'Again'));
 });
 
+test('an open job keeps its finished write receipt through many later saves and never writes twice', async t => {
+    const f = fixture(t);
+    const { roleplayHash, withRoleplayAccountLock, roleplayLease, saveRoleplayAccount } = await import('../src/roleplay-store.js');
+    const { commitSingleChatWrite } = await import('../src/roleplay-lifecycle.js');
+    const append = admit(f, 'append', 'append');
+    const appended = applyRoleplayJobEffect(f.scope, stamp(f.scope), { operationKey: 'append', jobId: append.jobId, output: { message: { name: 'Nova', is_user: false, mes: 'Appended' } } }, host);
+    // A crash after the chat write but before the job receipt closed.
+    withRoleplayAccountLock(f.scope, lease => {
+        const receipt = roleplayLease(lease).state.submissions[roleplayHash([f.scope.accountId, 'roleplay-job', 'append'])];
+        Object.assign(receipt, { state: 'accepted', effects: {} });
+        delete receipt.outcome;
+        saveRoleplayAccount(lease);
+    });
+    for (let index = 0; index < 20; index++) {
+        const records = readRoleplayChat(f.scope, f.locator).records;
+        records[1].mes = `Manual edit ${index}`;
+        commitSingleChatWrite(f.scope, { operationKey: `edit-${index}`, mode: 'update', source: captureRoleplaySource(f.scope, { locator: f.locator }), records, backup: { deferBackup: true } }, host);
+    }
+    const count = messages(f).filter(message => message.mes === 'Appended').length;
+    const replay = applyRoleplayJobEffect(f.scope, stamp(f.scope), { operationKey: 'append', jobId: append.jobId, output: { message: { name: 'Nova', is_user: false, mes: 'Appended' } } }, host);
+    assert.deepEqual(replay, appended);
+    assert.equal(messages(f).filter(message => message.mes === 'Appended').length, count);
+});
+
 test('moved anchors, foreign jobs, withdrawn jobs and older incarnations are refused', async t => {
     const f = fixture(t);
     const swipe = admit(f, 'swipe', 'swipe', { message: 1 });

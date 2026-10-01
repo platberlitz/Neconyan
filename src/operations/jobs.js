@@ -14,7 +14,10 @@ function localPublication(base, key) {
 }
 
 export function listApplicationRecovery(base) {
-    return listOperations(base).filter(record => localPublication(base, record.key)).map(({ key, label }) => ({ key, label }));
+    // Each authoritative read loads the whole account, so skip records the listing already shows are settled.
+    return listOperations(base).filter(record => record.jobId && !['completed', 'refused'].includes(record.state)
+        && ['cancelled', 'failed', 'interrupted'].includes(getJob(base.directories, record.jobId)?.state))
+        .filter(record => localPublication(base, record.key)).map(({ key, label }) => ({ key, label }));
 }
 
 /** Explicit recovery only finishes recorded local publications, preserving provider uncertainty. */

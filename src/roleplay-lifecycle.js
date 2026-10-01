@@ -17,6 +17,7 @@ import { applyPreparedBranchMemoryCapture, assertPreparedBranchMemory, prepareBr
 import { read as readCharacterCard } from './character-card-parser.js';
 import { MAX_ARCHIVE_BYTES, chatMemoryExists, removeChatMemory, removeSourceMemory, renameCharacterMemory, renameChatMemory } from './mewmory/store.js';
 import { createEntityDateAdded, removeEntityDateAdded } from './entity-date-added.js';
+import { getJob } from './jobs/store.js';
 import { decodeFileWriteRecovery, fsyncDirectorySync, humanizedDateTime, tryWriteFileSync, FILE_WRITE_RECOVERY_SUFFIX } from './util.js';
 
 const CHAT_LIMIT = 64 * 1024 * 1024;
@@ -163,6 +164,31 @@ function finishedState(state, pending, physical) {
     return next;
 }
 
+/**
+ * Every chat save leaves a receipt, and every later load rehashes them all. Once a chat has moved this many
+ * revisions past a closed write, replaying that write's key fails its stale source check instead of reapplying it.
+ */
+const CHAT_RECEIPT_KEEP_REVISIONS = 16;
+
+function prunableChatWriteReceipts(state, scope, keepKeyHash) {
+    const kept = new Set([keepKeyHash]);
+    for (const resource of Object.values(state.resources)) if (resource.busySubmission) kept.add(resource.busySubmission);
+    for (const receipt of Object.values(state.submissions)) {
+        if (!receipt.jobId || !['preparing', 'accepted'].includes(receipt.state)) continue;
+        // An open Roleplay job finds its finished write by this receipt and would otherwise write again.
+        let operationKey;
+        try { operationKey = getJob(scope.directories, receipt.jobId)?.intent?.roleplay?.operationKey; } catch { return []; }
+        if (typeof operationKey === 'string' && operationKey && operationKey.length <= 200) kept.add(key(state, `job:${operationKey}`));
+    }
+    return Object.entries(state.submissions).filter(([keyHash, receipt]) => {
+        if (kept.has(keyHash) || receipt.state !== 'closed' || receipt.jobId !== null || receipt.outcome?.kind !== undefined) return false;
+        const effects = Object.keys(receipt.effects);
+        if (effects.length !== 1 || effects[0] !== EFFECT_KEY) return false;
+        const resource = state.resources[receipt.targetInstanceId];
+        return resource.status !== 'live' || resource.revision - receipt.effects[EFFECT_KEY].appliedRevision >= CHAT_RECEIPT_KEEP_REVISIONS;
+    }).map(([keyHash]) => keyHash);
+}
+
 function preparedFromPayload(pending, bytes) {
     const parsed = parseChatJsonl(bytes);
     if (parsed.status !== 'ok' || roleplayContentHash(parsed.records) !== pending.after.contentHash) throw conflict();
@@ -263,9 +289,20 @@ function applyPending(lease, host) {
     } catch (error) { throw Object.assign(error, { chatCommitted: true, integrity: pending.after.integrity }); }
     const result = resultFor(pending);
     const final = finishedState(state, pending, file.physical);
+    const pruned = prunableChatWriteReceipts(final, scope, pending.operationKeyHash).map(keyHash => {
+        const effect = final.submissions[keyHash].effects[EFFECT_KEY];
+        delete final.submissions[keyHash];
+        return effect;
+    });
     Object.assign(state, final);
     try { saveRoleplayAccount(lease); } catch (error) { throw Object.assign(error, { chatCommitted: true, integrity: pending.after.integrity }); }
     cleanupRoleplayReceiptsLocked(lease, pending.operationKeyHash);
+    for (const effect of pruned) {
+        if (!effect.cleanup) continue;
+        try { cleanupEffect(lease, effect); } catch (error) {
+            console.warn('Roleplay receipt cleanup retained its remaining files:', error?.code || error?.name);
+        }
+    }
     return result;
 }
 
