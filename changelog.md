@@ -8,6 +8,7 @@
 ## Unreleased
 
 - Add native Mewmory for Roleplay: revision-aware story memory, Pawspective histories, protected NPC references, lore-aware retrieval, separate selector/fallback roles, preservation checkpoints, and inspection with correction, undo, export and restore.
+- Fix quoted numeric Chat Completion preset values being stored as text: the context size and the other numeric settings are now coerced when a preset is applied, so a server-owned Roleplay workflow no longer refuses to start, and its refusal now names the saved context size instead of a capacity problem.
 
 ## v1.7.1
 

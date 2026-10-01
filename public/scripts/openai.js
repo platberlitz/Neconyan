@@ -104,6 +104,7 @@ import {
     buildChatCompletionSamplingSettingsSnapshot,
     buildCustomEndpointPresetForSave,
     buildReverseProxyPresetForSave,
+    coerceNumericPresetSetting,
     getChatCompletionSamplingProfileLookupKeys,
     getCustomEndpointFavoritesKey,
     migrateNanoGptProviderSettings,
@@ -7590,7 +7591,7 @@ function onSettingsPresetChange() {
                 } else {
                     updateInput(selector, preset[key]);
                 }
-                oai_settings[setting] = preset[key];
+                oai_settings[setting] = coerceNumericPresetSetting(key, preset[key]);
             }
         }
 

@@ -1,3 +1,21 @@
+/** Numeric preset keys whose browser controls store numbers, so a preset cannot leave them as text. */
+const NUMERIC_PRESET_SETTING_KEYS = new Set([
+    'temperature',
+    'frequency_penalty',
+    'presence_penalty',
+    'top_p',
+    'top_k',
+    'top_a',
+    'min_p',
+    'typical_p',
+    'repetition_penalty',
+    'openai_max_context',
+    'openai_max_tokens',
+    'seed',
+    'n',
+    'tool_call_recurse_limit',
+]);
+
 /**
  * Builds a Chat Completion preset body from live settings and the OpenAI settings map.
  * The default preserves legacy behavior by including connection fields.
@@ -250,6 +268,24 @@ export function buildChatCompletionPresetForSave(settings, settingsMap) {
         includeConnection: shouldIncludeConnectionFieldsInPreset(settings),
         includeSampling: shouldIncludeSamplingFieldsInPreset(settings),
     });
+}
+
+/**
+ * Coerces a quoted numeric value for a pinned numeric preset key, so applying a
+ * preset cannot leave a live numeric setting as text. Anything else, including an
+ * unparseable string, passes through unchanged.
+ *
+ * @param {string} key Preset key
+ * @param {unknown} value Preset value
+ * @returns {unknown} The number when the value is a numeric string for a pinned key, otherwise the value
+ */
+export function coerceNumericPresetSetting(key, value) {
+    if (!NUMERIC_PRESET_SETTING_KEYS.has(key) || typeof value !== 'string' || !value.trim()) {
+        return value;
+    }
+
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : value;
 }
 
 /**
