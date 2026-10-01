@@ -1,0 +1,306 @@
+/* Full-page included tools (Pawthfinder and friends) and their assistant tours.
+   Loaded on demand with the right shell's Included tool page. */
+
+.neconyan-included-tool-page[data-tool-page]:not([data-tool-page='']) {
+    display: grid;
+    gap: 16px;
+    width: min(100%, 1040px);
+    margin-inline: auto;
+    padding: 18px 20px 24px;
+}
+
+.neconyan-included-tool-page[data-tool-page]:not([data-tool-page='']) > .neconyan-included-tool-heading {
+    display: grid;
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+}
+
+.neconyan-included-tool-page[data-tool-page]:not([data-tool-page='']) > .neconyan-included-tool-content {
+    margin: 0;
+    padding: 0;
+}
+
+.neconyan-tool-page-intro {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 16px;
+    margin-top: 10px;
+    padding: 16px 18px;
+    border: 1px solid var(--neco-border);
+    border-radius: 14px;
+    background: var(--neco-raised, var(--neco-surface));
+    color: var(--neco-ink);
+}
+
+.neconyan-tool-page-copy {
+    display: grid;
+    flex: 1 1 280px;
+    gap: 4px;
+    min-width: 0;
+}
+
+.neconyan-tool-page-copy .neconyan-native-kicker {
+    color: var(--neco-ginger);
+    font-weight: 700;
+}
+
+.neconyan-tool-page-description {
+    margin: 0;
+    color: var(--neco-muted);
+    line-height: 1.5;
+}
+
+.neconyan-tool-tour-invite {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px 12px;
+    padding: 12px;
+    border: 1px solid color-mix(in srgb, var(--neco-ginger) 45%, var(--neco-border));
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--neco-ginger) 8%, var(--neco-surface));
+    color: var(--neco-ink);
+}
+
+.neconyan-tool-tour-invite[hidden] {
+    display: none;
+}
+
+.neconyan-tool-tour-invite p {
+    margin: 0;
+    line-height: 1.5;
+}
+
+.neconyan-tool-tour-invite-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    grid-column: 1 / -1;
+}
+
+.neconyan-tool-tour-portrait {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: var(--neco-raised, var(--neco-surface));
+}
+
+.neconyan-tool-page-intro .neconyan-tool-tour-button,
+.neconyan-tool-tour :is(.menu_button, button),
+.neconyan-tool-tour-invite .menu_button {
+    min-height: 44px;
+    width: auto;
+    margin: 0;
+    padding: 8px 16px;
+}
+
+.neconyan-tool-page-intro .neconyan-tool-tour-button i {
+    color: var(--neco-ginger);
+}
+
+.neconyan-tool-tour .menu_button.neconyan-tool-tour-next:not([disabled]),
+.neconyan-tool-tour-invite .menu_button.neconyan-tool-tour-next:not([disabled]) {
+    border-color: var(--neco-ginger);
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+    font-weight: 700;
+}
+
+.neconyan-tool-tour .menu_button.neconyan-tool-tour-next:not([disabled]):hover,
+.neconyan-tool-tour-invite .menu_button.neconyan-tool-tour-next:not([disabled]):hover {
+    background: var(--neco-ginger-hover, var(--neco-ginger));
+}
+
+#neconyan-tool-tour.neconyan-tool-tour {
+    position: fixed;
+    right: max(24px, env(safe-area-inset-right));
+    bottom: max(24px, env(safe-area-inset-bottom));
+    z-index: calc(var(--sb-z-popout, 4000) + 20);
+    display: grid;
+    gap: 12px;
+    width: min(400px, calc(100vw - 24px));
+    max-height: min(60dvh, 520px);
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding: 16px;
+    border: 1px solid var(--neco-border);
+    border-radius: 14px;
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    font-family: var(--mainFontFamily, inherit);
+    text-shadow: none;
+    box-shadow: 0 8px 32px color-mix(in oklch, var(--neco-charcoal, black) 30%, transparent);
+}
+
+#neconyan-tool-tour:focus-visible,
+.neconyan-tool-tour button:focus-visible,
+.neconyan-tool-tour-invite button:focus-visible,
+.neconyan-tool-page-intro .neconyan-tool-tour-button:focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+.neconyan-tool-tour-head {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 12px;
+}
+
+.neconyan-tool-tour-heading {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.neconyan-tool-tour-speaker,
+.neconyan-tool-tour-count {
+    color: var(--neco-muted);
+    font-size: 12px;
+}
+
+.neconyan-tool-tour-count {
+    color: var(--neco-ginger);
+}
+
+.neconyan-tool-tour-title {
+    font-family: var(--sb-font-display, inherit);
+    font-size: 18px;
+    font-weight: 400;
+    line-height: 1.25;
+}
+
+.neconyan-tool-tour .neconyan-tool-tour-close {
+    width: 44px;
+    padding: 0;
+    justify-content: center;
+}
+
+.neconyan-tool-tour-body p,
+.neconyan-tool-tour-hint {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.55;
+}
+
+.neconyan-tool-tour-body p + p {
+    margin-top: 8px;
+}
+
+.neconyan-tool-tour-hint {
+    padding-left: 12px;
+    border-left: 2px solid color-mix(in srgb, var(--neco-ginger) 60%, transparent);
+    color: var(--neco-muted);
+    font-style: italic;
+}
+
+.neconyan-tool-tour-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.neconyan-tool-tour-actions button:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.neconyan-tool-tour-target {
+    scroll-margin-top: 24px;
+    outline: 3px solid var(--neco-ginger);
+    outline-offset: 3px;
+    border-radius: 10px;
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--neco-ginger) 22%, transparent);
+    animation: neconyan-tool-tour-glow 1.6s ease-out infinite;
+}
+
+@keyframes neconyan-tool-tour-glow {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--neco-ginger) 45%, transparent); }
+    100% { box-shadow: 0 0 0 14px color-mix(in srgb, var(--neco-ginger) 0%, transparent); }
+}
+
+.neconyan-tool-tour-spacer {
+    flex: none;
+    pointer-events: none;
+}
+
+body.neconyan-tool-tour-active #neconyan-tour-coachmark {
+    visibility: hidden;
+}
+
+/* Pawthfinder: swap its generic palette for the Neconyan one. */
+.neconyan-included-tool-page[data-tool-page='pathfinder'] .pf--settings {
+    --pf-accent: var(--neco-ginger);
+    --pf-on-accent: var(--neco-on-accent);
+    --pf-surface: var(--neco-surface);
+    --pf-surface-strong: var(--neco-raised, var(--neco-surface));
+    --pf-surface-soft: color-mix(in srgb, var(--neco-ginger) 6%, var(--neco-surface));
+    --pf-surface-hover: color-mix(in srgb, var(--neco-ginger) 12%, var(--neco-raised, var(--neco-surface)));
+    --pf-border: var(--neco-border);
+    --pf-text: var(--neco-ink);
+    --pf-text-muted: var(--neco-muted);
+    --pf-radius-sm: 10px;
+    --pf-radius-md: 14px;
+    --pf-radius-lg: 18px;
+    gap: 16px;
+}
+
+.neconyan-included-tool-page[data-tool-page='pathfinder'] .pf--settings :is(.pf--section-header strong, .pf--quickstart-title strong) {
+    font-family: var(--sb-font-display, inherit);
+    font-weight: 400;
+    letter-spacing: 0.01em;
+}
+
+.neconyan-included-tool-page[data-tool-page='pathfinder'] .pf--settings .pf--step-badge {
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+}
+
+@media (max-width: 768px) {
+    .neconyan-included-tool-page[data-tool-page]:not([data-tool-page='']) {
+        gap: 12px;
+        padding: 12px 12px 20px;
+    }
+
+    .neconyan-tool-page-intro {
+        padding: 12px;
+    }
+
+    /* The page intro already says what the tool does; the generic Settings blurb only misleads here. */
+    body.neconyan #user-settings-block.openDrawer[data-tool-page]:not([data-tool-page='']) .sb-shell-header .sb-shell-description {
+        display: none;
+    }
+
+    .neconyan-tool-page-intro .neconyan-tool-tour-button {
+        flex: 1 1 100%;
+        justify-content: center;
+    }
+
+    #neconyan-tool-tour.neconyan-tool-tour {
+        right: max(12px, env(safe-area-inset-right));
+        left: max(12px, env(safe-area-inset-left));
+        bottom: max(12px, env(safe-area-inset-bottom));
+        width: auto;
+        max-height: 48dvh;
+        padding: 14px;
+    }
+
+    .neconyan-tool-tour-actions button {
+        flex: 1;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .neconyan-tool-tour-target {
+        animation: none;
+    }
+
+    body.neconyan .neconyan-tool-page-intro.neconyan-cat-panel::before,
+    body.neconyan .neconyan-tool-page-intro.neconyan-cat-panel::after {
+        animation: none;
+    }
+}

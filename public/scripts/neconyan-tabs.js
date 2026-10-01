@@ -164,6 +164,9 @@ const NN_PANEL_STYLESHEETS = Object.freeze({
     'right:extensions': [
         { href: 'css/extensions-panel.css?v=20260425a', id: 'deferred-extensions-panel-css' },
     ],
+    'right:included-tool': [
+        { href: 'css/neconyan-tool-pages.css?v=20261001-toolpages', id: 'deferred-tool-pages-css' },
+    ],
 });
 const NN_FRONTEND_ICON_DEFAULT = 'calico';
 const NN_FRONTEND_ICONS = Object.freeze([
@@ -469,7 +472,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261001-w98ink';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261001-toolpages';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -2723,6 +2726,12 @@ function buildIncludedToolPanel() {
     host.append(heading, content);
     panelBundle.scroller.append(host);
     panelBundle.searchRoot = host;
+    // The shell root carries the key too so the phone header can drop the generic Settings blurb.
+    const setToolPageKey = key => {
+        host.dataset.toolPage = key;
+        const root = getShellState('right')?.root;
+        if (root) root.dataset.toolPage = key;
+    };
     panelBundle.onActivate = async () => {
         const token = ++activationToken;
         const tool = getSelectedIncludedTool();
@@ -2755,6 +2764,12 @@ function buildIncludedToolPanel() {
             return globalThis.NeconyanExtensions?.mountUnit?.(tool.label, content, tool.id);
         }, 4000);
         if (token !== activationToken) return;
+        setToolPageKey('');
+        void import('./neconyan-tool-tour.js').then(({ getToolPageKey, mountToolPage }) => {
+            if (token !== activationToken) return;
+            setToolPageKey(mounted ? getToolPageKey(tool.id) : '');
+            mountToolPage(mounted ? tool.id : '', heading, host);
+        }).catch(error => console.warn('[Neconyan] Could not load the tool page tour:', error));
         if (!mounted) {
             const message = createElement('p', { className: 'neconyan-included-tool-unavailable', text: `No settings are available for ${tool.label}. Use Manage extensions to install or enable it.` });
             const manage = createElement('button', { className: 'menu_button', text: 'Manage extensions', attrs: { type: 'button' } });
@@ -2772,10 +2787,38 @@ function buildIncludedToolPanel() {
     };
     panelBundle.onDeactivate = () => {
         activationToken += 1;
+        setToolPageKey('');
+        void import('./neconyan-tool-tour.js').then(({ endToolTour }) => endToolTour({ restoreFocus: false })).catch(() => {});
         neconyanIncludedToolRestore?.();
         neconyanIncludedToolRestore = null;
     };
     return panelBundle;
+}
+
+const NECONYAN_TOOL_PAGE_ROUTES = Object.freeze({
+    pathfinder: 'pathfinder',
+});
+
+function getIncludedToolRailRoute() {
+    const selected = normalizeNeconyanNativeToolId(neconyanIncludedToolSelection);
+    const key = Object.keys(NECONYAN_TOOL_PAGE_ROUTES).find(id => selected === id || selected.endsWith(`/${id}`));
+    return key ? NECONYAN_TOOL_PAGE_ROUTES[key] : 'extensions';
+}
+
+/**
+ * Opens an included tool as its own full page beside the rail.
+ * @param {string} id Tool id from NECONYAN_NATIVE_TOOL_DEFINITIONS
+ * @returns {boolean} Whether the tool was found
+ */
+function openNeconyanIncludedToolPage(id) {
+    const wanted = normalizeNeconyanNativeToolId(id);
+    const tool = getNeconyanNativeTools().find(item => {
+        const itemId = normalizeNeconyanNativeToolId(item.id);
+        return itemId === wanted || itemId.endsWith(`/${wanted}`);
+    });
+    if (!tool) return false;
+    void openNeconyanNativeExtensionSettings(tool);
+    return true;
 }
 
 async function openNeconyanNativeExtensionSettings(tool) {
@@ -8902,6 +8945,7 @@ function syncNeconyanRailSelection() {
                 background: 'background',
                 server: 'server',
                 'console-logs': 'console-logs',
+                'included-tool': getIncludedToolRailRoute(),
             }[getShellState('right')?.activeTabId] ?? 'settings')
                 : isLandingPageVisible() ? 'home' : '';
     for (const button of document.querySelectorAll('#neconyan-workspace-rail [data-neconyan-route]')) {
@@ -19690,6 +19734,7 @@ function initAll() {
     const neconyanShell = /** @type {any} */ (globalThis.NeconyanShell || {});
     globalThis.NeconyanShell = Object.assign(neconyanShell, {
         openExtensionSettings,
+        openIncludedTool: openNeconyanIncludedToolPage,
         openTab(shellKey, tabId) {
             if (shellKey === 'characters') {
                 openCharacterPanelTab(tabId);

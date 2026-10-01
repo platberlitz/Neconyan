@@ -5926,6 +5926,11 @@ async function openPathfinderEditor(agent) {
         return;
     }
 
+    // Neconyan opens Pawthfinder as a full page beside the rail; the popup is for hosts without the shell.
+    if (globalThis.NeconyanShell?.openIncludedTool?.('pathfinder')) {
+        return;
+    }
+
     const settingsPanel = await openPathfinderSettings(agent);
 
     if (!settingsPanel) return;
