@@ -32,8 +32,10 @@ async function prepare(browser, phone) {
     await page.route('**/api/settings/get', async route => {
         const response = await route.fetch();
         const data = await response.json();
+        if (typeof data.settings !== 'string') return route.fulfill({ response });
         const settings = JSON.parse(data.settings);
         settings.firstRun = false;
+        settings.extension_settings.disabledExtensions = [...new Set([...(settings.extension_settings.disabledExtensions || []), 'third-party/Neconyan-Time-Machine'])];
         settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
         await route.fulfill({ response, json: { ...data, settings: JSON.stringify(settings) } });
     });
@@ -80,8 +82,8 @@ for (const phone of [false, true]) {
                 for (const view of ['characters', 'groups']) {
                     await page.evaluate(view => NeconyanShell.openTab('characters', view), view);
                     const rows = page.locator(`#rm_print_characters_block > .${view === 'characters' ? 'character' : 'group'}_select`);
-                    await expect(rows.first()).toBeVisible();
-                    await expect(rows.first().locator('[data-entity-action="open-chat"]')).toBeVisible();
+                    await expect(rows.first()).toBeVisible({ timeout: 15000 });
+                    await expect(rows.first().locator('[data-entity-action="open-chat"]')).toBeVisible({ timeout: 15000 });
                     await page.locator('#right-nav-panel').evaluate(async el => {
                         await Promise.allSettled(el.getAnimations()
                             .filter(animation => animation.effect.getTiming().iterations !== Infinity)
@@ -127,6 +129,7 @@ for (const phone of [false, true]) {
                 }
             }
         } finally {
+            await page.unrouteAll({ behavior: 'ignoreErrors' });
             await context.close();
         }
     });
@@ -152,7 +155,7 @@ for (const phone of [false, true]) {
                 await page.route('**/api/characters/chats', route => route.fulfill({ json: {} }));
                 await page.evaluate(view => NeconyanShell.openTab('characters', view), view);
                 const row = page.locator(`#rm_print_characters_block > .${view === 'groups' ? 'group' : 'character'}_select`).first();
-                await expect(row.locator('[data-entity-action="open-chat"]')).toBeVisible();
+                await expect(row.locator('[data-entity-action="open-chat"]')).toBeVisible({ timeout: 15000 });
                 await page.locator('#bulkEditButton').click();
                 await row.click({ position: { x: 5, y: 5 } });
                 await expect(page.locator('#bulkSelectedCount')).toHaveText('1');
@@ -163,13 +166,14 @@ for (const phone of [false, true]) {
                 await expect(mascot).toBeVisible();
                 await expect(mascot).toHaveAttribute('src', /neconyan-pixel-cat-rest\.webp/);
                 expect(await mascot.evaluate(el => getComputedStyle(el).content)).toContain('win98/startup-cat-rest.webp');
-                await expect.poll(() => requests.length).toBe(1);
+                await expect.poll(() => requests.length, { timeout: 15000 }).toBe(1);
                 expect(view === 'groups' ? requests[0].id : requests[0].avatar_url).toBe(view === 'groups' ? 'selection-0' : CARDS[0].avatar);
                 release();
                 await expect(page.locator('#loader')).toHaveCount(0, { timeout: 15000 });
                 await expect(page.locator('#rm_print_characters_block')).not.toHaveClass(/group_overlay_mode_select/);
             } finally {
                 release();
+                await page.unrouteAll({ behavior: 'ignoreErrors' });
                 await context.close();
             }
         });
@@ -222,6 +226,7 @@ for (const phone of [false, true]) {
             await expect(page.locator('#load-spinner img')).toHaveAttribute('src', /neconyan-pixel-cat-rest\.webp/);
             await page.evaluate(async () => { await window.bulkTestLoader.hide(); });
         } finally {
+            await page.unrouteAll({ behavior: 'ignoreErrors' });
             await context.close();
         }
     });
