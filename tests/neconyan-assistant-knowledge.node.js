@@ -94,6 +94,16 @@ test('real help questions retrieve the appropriate topic', () => {
         ['Why were damaged files skipped during my import?', 'recovery.damaged-import'],
         ['What is the Current Model label in the top bar?', 'connections.current-model'],
         ['Can I use DM assistant tools with Miso?', 'conversation.assistants'],
+        ['Why do Square and Rounded avatars look the same?', 'appearance.avatar-style'],
+        ['What does the Storybook chat style look like?', 'appearance.chat-style'],
+        ['The Page Width slider does nothing', 'appearance.page-size'],
+        ['Windows 98 header is unreadable with bright text', 'appearance.windows-98'],
+        ['Does a Regex Agent Themes change restyle companion note cards?', 'tools.tracker-themes'],
+        ['Is there a Pawthfinder tour with Taro?', 'pathfinder.setup'],
+        ['How do I open Quick Image Gen?', 'images.quick'],
+        ['How do I add sprites in Character Expressions?', 'images.expressions'],
+        ['Can the regex editor explain what this pattern does?', 'tools.regex-helpers'],
+        ['How do I find a script in Regexes?', 'tools.regex'],
     ]) assert.ok(ids(question).includes(expected), `${question}: ${ids(question)}`);
 });
 
