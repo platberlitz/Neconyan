@@ -44,14 +44,14 @@ export function findTrackerBlocks(text, tag) {
         const lineEnd = source.indexOf('\n', openMatch.index);
         const openingBracketEnd = source.indexOf(']', openMatch.index + openMatch[0].length);
         const hasCompleteOpener = openingBracketEnd >= 0 && (lineEnd < 0 || openingBracketEnd < lineEnd);
-        closer.lastIndex = hasCompleteOpener ? openingBracketEnd + 1 : nextOpenStart;
-        const closeMatch = hasCompleteOpener ? closer.exec(source) : null;
+        closer.lastIndex = openMatch.index + openMatch[0].length;
+        const closeMatch = closer.exec(source);
 
         if (closeMatch && closeMatch.index < nextOpenStart) {
             const end = closeMatch.index + closeMatch[0].length;
             matchedClosers.add(closeMatch.index);
             blocks.push({
-                complete: true,
+                complete: hasCompleteOpener && openingBracketEnd < closeMatch.index,
                 replaceable: true,
                 start: openMatch.index,
                 end,
@@ -237,8 +237,8 @@ export function normalizeCompanionTrackerRepairPayload(agent = {}, text = '') {
 }
 
 /**
- * Atomically replaces an agent's existing complete blocks, repairs a safely
- * bounded trailing malformed block, or inserts a missing tracker payload.
+ * Atomically replaces complete blocks or malformed headers with explicit closing
+ * tags, or inserts a missing tracker payload. Unbounded spans preserve the prose.
  * @param {object} agent
  * @param {string} messageText
  * @param {string} payload
@@ -252,11 +252,11 @@ export function mergeTrackerRepairPayload(agent = {}, messageText = '', payload 
     }
 
     const inspection = inspectTrackerState(agent, source);
-    const completeBlocks = inspection.blocks.filter(block => block.complete);
-    if (inspection.status === 'valid' && completeBlocks.length > 0) {
+    const replaceableBlocks = inspection.blocks.filter(block => block.replaceable);
+    if (replaceableBlocks.length > 0 && replaceableBlocks.length === inspection.blocks.length) {
         let nextText = source;
-        for (let index = completeBlocks.length - 1; index >= 0; index--) {
-            const block = completeBlocks[index];
+        for (let index = replaceableBlocks.length - 1; index >= 0; index--) {
+            const block = replaceableBlocks[index];
             nextText = `${nextText.slice(0, block.start)}${index === 0 ? addition : ''}${nextText.slice(block.end)}`;
         }
         return {
@@ -269,18 +269,7 @@ export function mergeTrackerRepairPayload(agent = {}, messageText = '', payload 
 
     const malformedBlocks = inspection.blocks.filter(block => !block.complete);
     if (malformedBlocks.length > 0) {
-        const block = completeBlocks.length === 0 && malformedBlocks.length === 1 ? malformedBlocks[0] : null;
-        if (!block?.replaceable) {
-            return { text: source, changed: false, replaced: false, reason: 'unsafe-malformed' };
-        }
-
-        const nextText = `${source.slice(0, block.start)}${addition}${source.slice(block.end)}`;
-        return {
-            text: nextText,
-            changed: nextText !== source,
-            replaced: true,
-            reason: '',
-        };
+        return { text: source, changed: false, replaced: false, reason: 'unsafe-malformed' };
     }
 
     if (!source.trim()) {

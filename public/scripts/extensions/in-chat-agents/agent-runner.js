@@ -75,6 +75,7 @@ import { buildRegexScriptRefsForAgent, cacheAgentRegexScripts, migrateLegacyRege
 import { AGENT_REGEX_PLACEMENT, applyRegexScriptList } from './regex-scripts.js';
 import { getCompanionReferenceIds, stripEmptyOutputSentinelLines } from './companion/companion-shared.js';
 import {
+    findTrackerBlocks,
     getTrackerMetadataKey,
     getTrackerRepairPayload,
     inspectTrackerState,
@@ -6210,6 +6211,30 @@ export async function runAgentOnTarget(agentId, target) {
     return await enqueueManualAgentRun(agentId, target);
 }
 
+function inspectTrackerRepairState(agent, text, characterOverride) {
+    const inspection = inspectTrackerState(agent, text);
+    if (inspection.status !== 'valid') return inspection;
+
+    const displayScripts = getAgentRegexScripts(agent).filter(script =>
+        !script.disabled && script.markdownOnly && !script.promptOnly
+        && script.placement?.includes(AGENT_REGEX_PLACEMENT.AI_OUTPUT),
+    );
+    if (displayScripts.length === 0) return inspection;
+
+    // A closed block can still have a broken header or missing fields. Check each
+    // block with the same display rules used by the message, not just extraction.
+    const broken = inspection.payloads.some(payload => {
+        const rendered = applyRegexScriptList(payload, displayScripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, {
+            characterOverride,
+            isMarkdown: true,
+            substituteParamsFn: substituteParams,
+            substituteParamsExtendedFn: substituteParamsExtended,
+        });
+        return rendered === payload || (inspection.tag && findTrackerBlocks(rendered, inspection.tag).length > 0);
+    });
+    return broken ? { ...inspection, status: 'unrenderable' } : inspection;
+}
+
 export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = agentGenerationCancelRevision } = {}) {
     resetChatBackupSequence();
     if (!areAgentsGloballyEnabled()) {
@@ -6270,6 +6295,7 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     const promptRuns = [];
     let trackerRepairs = 0;
     let trackerRepairErrors = 0;
+    let unsafeTrackerRepairs = 0;
     let currentPromptTransformText = unwrapAssistantResponseWrapper(message.mes);
 
     let appendBatch = [];
@@ -6349,8 +6375,14 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
         if (!isFixTargetCurrent()) return;
         if (!isAgentRuntimeAllowed(agent)) continue;
 
-        const inspection = inspectTrackerState(agent, currentPromptTransformText);
+        const inspection = inspectTrackerRepairState(agent, currentPromptTransformText, message.name);
         if (inspection.status === 'valid') {
+            continue;
+        }
+
+        if (inspection.blocks.some(block => !block.replaceable)) {
+            trackerRepairErrors++;
+            unsafeTrackerRepairs++;
             continue;
         }
 
@@ -6362,7 +6394,7 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
         try {
             const repairAgent = {
                 ...agent,
-                prompt: `${String(agent.prompt).trim()}\n\n${TRACKER_REPAIR_INSTRUCTION}`,
+                prompt: `${String(agent.prompt).trim()}\n\n${TRACKER_REPAIR_INSTRUCTION}\nRepair the existing tracker records in the selected reply. Preserve their facts and return every record for this tracker in the exact required format, with all header separators, fields and closing tags. Return the repaired records even when nothing changed in the scene.`,
                 postProcess: {
                     ...agent.postProcess,
                     promptTransformMode: 'append',
@@ -6373,7 +6405,9 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
                 cancelRevision: fixCancelRevision,
             });
             if (!isFixTargetCurrent() || result.status === 'stale-target') return;
-            if (!String(result.outputText ?? '').trim() || result.status === 'error' || result.status === 'cancelled') {
+            const repaired = inspectTrackerRepairState(agent, result.outputText, message.name);
+            if (!String(result.outputText ?? '').trim() || ['error', 'cancelled', 'truncated'].includes(result.status)
+                || repaired.status !== 'valid' || repaired.payloads.length < inspection.blocks.length) {
                 trackerRepairErrors++;
                 continue;
             }
@@ -6445,7 +6479,11 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
         messageDisplayChanged = true;
     }
 
-    if (textChanged && !await syncPromptTransformMessageStateAsync(message, messageIndex)) return;
+    if (textChanged) {
+        chatStateChanged = true;
+        messageDisplayChanged = true;
+        if (!await syncPromptTransformMessageStateAsync(message, messageIndex)) return;
+    }
     if (!isFixTargetCurrent()) {
         return;
     }
@@ -6455,7 +6493,7 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
         saveChatDebouncedForAgent({ deferBackup: false });
     }
 
-    if (messageDisplayChanged) {
+    if (messageDisplayChanged || regexSnapshotChanged) {
         scheduleMessageRefresh(messageIndex, message, { deferBackup: true });
     }
 
@@ -6470,9 +6508,14 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     if (regexSnapshotChanged) parts.push('regex snapshot updated');
     if (errorRuns > 0) parts.push(`${errorRuns} error${errorRuns > 1 ? 's' : ''}`);
 
-    if (parts.length > 0) {
+    if (errorRuns > 0) {
+        const detail = unsafeTrackerRepairs > 0
+            ? ' A broken tracker has no clear start or end. Check its opening and closing tags in the message, then try again.'
+            : ' Some trackers could not be repaired. Check the agent connection and output format, then try again.';
+        toastr.warning(parts.join(', ') + '.' + detail, 'Tracker repair incomplete');
+    } else if (parts.length > 0) {
         toastr.success(parts.join(', '), 'Trackers fixed');
     } else {
-        toastr.info('No changes made.', 'Trackers fixed');
+        toastr.info('No tracker changes were needed.', 'Trackers checked');
     }
 }

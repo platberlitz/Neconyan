@@ -1,6 +1,7 @@
 /* eslint-disable playwright/no-duplicate-hooks, playwright/no-standalone-expect */
 /* global document, globalThis */
 import { describe, test, expect, jest, beforeEach, afterEach } from '@jest/globals';
+import { readFileSync } from 'node:fs';
 
 function createEventSource() {
     const handlers = new Map();
@@ -7259,7 +7260,80 @@ describe('in-chat agent post-processing runner', () => {
         expect(chat[0].mes).toBe('Fresh reply without a tracker.');
         expect(chatMetadata.agent_status_data).toBeUndefined();
         expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
-        expect(globalThis.toastr.success).toHaveBeenCalledWith('1 post-process run, 1 error', 'Trackers fixed');
+        expect(globalThis.toastr.success).not.toHaveBeenCalled();
+        expect(globalThis.toastr.warning).toHaveBeenCalledWith(expect.stringContaining('1 error'), 'Tracker repair incomplete');
+    });
+
+    test('manual tracker fix repairs the screenshot header using the actual relationship card rules', async () => {
+        usePreExtractTracker();
+        const template = JSON.parse(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/relationship-tracker.json', import.meta.url)));
+        const bundles = JSON.parse(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/regex-bundles.json', import.meta.url)));
+        const scripts = bundles['tpl-relationship-tracker'];
+        expect(scripts.length).toBeGreaterThan(0);
+        Object.assign(enabledAgents[0], { ...template, id: 'relationship', regexScripts: scripts });
+        const body = 'route: 🌱 Slow Burn Under Glass\npath: Close > Confidant > Intimate\nheart: He keeps holding hands.\ntrust: He trusts Kris.\nwant: Stay\nguard: Pride\nlikes: Soup\ndislikes: Distance\ntell: His thumb moves.\nunsaid: Stay here.\nmemory: Dinner: They held hands.\ndate: Dinner\nturn: Kris squeezed back.\nnext: Time together';
+        const broken = `[METER|Alhaitham|Confidant|💚 STABLE]🌅 WARMING]\n${body}\n[/METER]`;
+        const repaired = `[METER|Alhaitham|Confidant|💚 STABLE|🌅 WARMING]\n${body}\n[/METER]`;
+        generateQuietPrompt.mockResolvedValueOnce(repaired);
+        const { runTrackerFixOnMessage } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        chat.push({ name: 'Assistant', mes: `Before\n${broken}\nAfter`, is_user: false, extra: {} });
+
+        await runTrackerFixOnMessage(0);
+
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(chat[0].mes).toBe(`Before\n${repaired}\nAfter`);
+        expect(chatMetadata.agent_relationship_data).toBe(repaired);
+        expect(globalThis.toastr.warning).not.toHaveBeenCalled();
+        await new Promise(resolve => setTimeout(resolve, 5));
+        await runTrackerFixOnMessage(0);
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+    });
+
+    test('manual tracker fix refuses a replacement that drops an existing tracker record', async () => {
+        usePreExtractTracker();
+        const original = '[STATUS|Alice|Ready|Mild]\none\n[/STATUS]\nBetween\n[STATUS|Bob|Tired|Moderate\ntwo\n[/STATUS]';
+        generateQuietPrompt.mockResolvedValueOnce('[STATUS|Bob|Tired|Moderate]\ntwo\n[/STATUS]');
+        const { runTrackerFixOnMessage } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        chat.push({ name: 'Assistant', mes: original, is_user: false, extra: {} });
+        await runTrackerFixOnMessage(0);
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(chat[0].mes).toBe(original);
+        expect(globalThis.toastr.success).not.toHaveBeenCalled();
+        expect(globalThis.toastr.warning).toHaveBeenCalledWith(expect.stringContaining('1 error'), 'Tracker repair incomplete');
+    });
+
+    test('manual tracker fix rejects generated blocks that still fail the display rules', async () => {
+        useRegexOnlyAgent();
+        const scripts = enabledAgents[0].regexScripts;
+        scripts[0].findRegex = '/\\[STATUS\\|([^|\\]]+)\\|([^|\\]]+)\\|([^|\\]]+)\\]([\\s\\S]*?)\\[\\/STATUS\\]/g';
+        usePreExtractTracker();
+        enabledAgents[0].regexScripts = scripts;
+        const broken = '[STATUS|Alice]\nresting\n[/STATUS]';
+        generateQuietPrompt.mockResolvedValueOnce(broken);
+        const { runTrackerFixOnMessage } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        chat.push({ name: 'Assistant', mes: `Before\n${broken}\nAfter`, is_user: false, extra: {} });
+
+        await runTrackerFixOnMessage(0);
+
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(chat[0].mes).toBe(`Before\n${broken}\nAfter`);
+        expect(globalThis.toastr.success).not.toHaveBeenCalled();
+        expect(globalThis.toastr.warning).toHaveBeenCalledWith(expect.stringContaining('1 error'), 'Tracker repair incomplete');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('manual tracker fix explains an unbounded broken block without spending a model request', async () => {
+        usePreExtractTracker();
+        const original = 'Before\n[STATUS|Alice|Tired|Moderate]\nresting\nNarration that must survive.';
+        const { runTrackerFixOnMessage } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        chat.push({ name: 'Assistant', mes: original, is_user: false, extra: {} });
+
+        await runTrackerFixOnMessage(0);
+
+        expect(generateQuietPrompt).not.toHaveBeenCalled();
+        expect(chat[0].mes).toBe(original);
+        expect(globalThis.toastr.success).not.toHaveBeenCalled();
+        expect(globalThis.toastr.warning).toHaveBeenCalledWith(expect.stringContaining('opening and closing tags'), 'Tracker repair incomplete');
     });
 
     test('manual tracker fix keeps metadata from the newest valid tracker state', async () => {
@@ -7281,8 +7355,9 @@ describe('in-chat agent post-processing runner', () => {
         await new Promise(resolve => setTimeout(resolve, 5));
     });
 
-    test('manual tracker fix preserves unrelated regex snapshot references', async () => {
+    test('manual tracker fix refreshes the displayed snapshot while preserving unrelated references', async () => {
         usePreExtractTracker();
+        document.querySelector.mockImplementation(selector => selector === '.mes[mesid="0"]' ? {} : null);
         const tracker = enabledAgents[0];
         useRegexOnlyAgent();
         enabledAgents = [tracker, enabledAgents[0]];
@@ -7308,6 +7383,8 @@ describe('in-chat agent post-processing runner', () => {
         expect(chat[0].extra.inChatAgents.regexScriptRefs).toEqual([
             expect.objectContaining({ agentId: 'agent-regex-only', scriptId: 'regex-script-1' }),
         ]);
+        await new Promise(resolve => setTimeout(resolve, 5));
+        expect(updateMessageBlock).toHaveBeenCalledWith(0, chat[0]);
     });
 
     test('snapshots regex-only agents on streamed tokens before final message events', async () => {

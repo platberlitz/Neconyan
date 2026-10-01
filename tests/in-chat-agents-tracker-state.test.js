@@ -87,6 +87,24 @@ describe('in-chat agent tracker state', () => {
             .toEqual(expect.objectContaining({ text: strayCloser, changed: false, reason: 'unsafe-malformed' }));
     });
 
+    test('repairs a broken opening header bounded by its explicit closer', () => {
+        const broken = '[STATUS|Alice|Tired|Moderate\nnote: Long day\n[/STATUS]';
+        const repaired = '[STATUS|Alice|Tired|Moderate]\nnote: Long day\n[/STATUS]';
+        expect(inspectTrackerState(statusAgent, broken).status).toBe('malformed');
+        expect(findTrackerBlocks(broken, 'STATUS')).toEqual([
+            expect.objectContaining({ complete: false, replaceable: true, text: broken }),
+        ]);
+        expect(mergeTrackerRepairPayload(statusAgent, `Before\n${broken}\nAfter`, repaired))
+            .toEqual(expect.objectContaining({ text: `Before\n${repaired}\nAfter`, changed: true }));
+    });
+
+    test('repairs mixed bounded blocks without consuming intervening prose or other trackers', () => {
+        const original = 'Before\n[STATUS|Alice|Tired|Moderate]\none\n[/STATUS]\nBetween\n[STATUS|Bob|Tired|Moderate\ntwo\n[/STATUS]\n[ITEM|Key]keep[/ITEM]\nAfter';
+        const repaired = '[STATUS|Alice|Ready|Mild]\none\n[/STATUS]\n\n[STATUS|Bob|Ready|Mild]\ntwo\n[/STATUS]';
+        expect(mergeTrackerRepairPayload(statusAgent, original, repaired).text)
+            .toBe(`Before\n${repaired}\nBetween\n\n[ITEM|Key]keep[/ITEM]\nAfter`);
+    });
+
     test('uses configured extraction for custom non-bracket trackers', () => {
         const agent = {
             prompt: 'Return one STATE line.',
