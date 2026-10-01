@@ -5,7 +5,9 @@ import {
     generateOpenAiCompatibleSpeech,
     generateOpenAiSpeech,
     getOpenAiTtsResponseFormat,
+    generatePollinationsSpeech,
     listElevenLabsVoices,
+    pollinationsModelVoices,
     synthesizeElevenLabs,
 } from '../src/endpoints/speech-transports.js';
 
@@ -79,4 +81,26 @@ test('a provider failure carries its status and body for the route to relay', as
         generateOpenAiCompatibleSpeech({ endpoint: `${base}/v1/audio/speech`, text: 'Hello', model: 'fail' }),
         error => error.providerStatus === 500 && error.providerBody === 'boom',
     );
+});
+
+test('Pollinations default speech model reads voices from the free OpenAI audio model', async () => {
+    const models = [
+        { name: 'elevenlabs/eleven-v3', aliases: ['tts', 'tts-1'], voices: ['alloy', 'rachel'] },
+        { name: 'openai/tts-1', aliases: [], voices: ['nova', 'echo'] },
+        { name: 'hexgrad/kokoro-82m', aliases: ['kokoro'], voices: ['af_heart'] },
+    ];
+    assert.deepEqual(pollinationsModelVoices(models, 'openai-audio'), ['nova', 'echo']);
+    assert.deepEqual(pollinationsModelVoices(models, undefined), ['nova', 'echo']);
+    assert.deepEqual(pollinationsModelVoices(models, 'kokoro'), ['af_heart']);
+    assert.equal(pollinationsModelVoices(models, 'missing'), null);
+    assert.equal(pollinationsModelVoices({ error: 'down' }, 'openai-audio'), null);
+
+    let sent;
+    await generatePollinationsSpeech({ key: 'k', text: 'Hello', model: 'openai-audio', voice: 'nova' }, {
+        fetchImpl: async (_url, options) => {
+            sent = JSON.parse(options.body);
+            return new Response(Buffer.from('mp3bytes'), { headers: { 'content-type': 'audio/mpeg' } });
+        },
+    });
+    assert.equal(sent.model, 'openai/tts-1');
 });

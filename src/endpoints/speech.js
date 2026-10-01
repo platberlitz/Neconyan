@@ -7,7 +7,7 @@ import FormData from 'form-data';
 import mime from 'mime-types';
 import { runPipeline } from '../transformers.js';
 import { readSecret, SECRET_KEYS } from './secrets.js';
-import { fetchElevenLabsHistoryAudio, generatePollinationsSpeech, listElevenLabsHistory, listElevenLabsVoices, synthesizeElevenLabs } from './speech-transports.js';
+import { fetchElevenLabsHistoryAudio, generatePollinationsSpeech, listElevenLabsHistory, listElevenLabsVoices, POLLINATIONS_AUDIO_MODELS_URL, pollinationsModelVoices, pollinationsSpeechModel, synthesizeElevenLabs } from './speech-transports.js';
 
 export const router = express.Router();
 
@@ -85,26 +85,17 @@ const pollinations = express.Router();
 
 pollinations.post('/voices', async (req, res) => {
     try {
-        const model = req.body.model || 'openai-audio';
-
-        const response = await fetch('https://gen.pollinations.ai/text/models');
+        const response = await fetch(POLLINATIONS_AUDIO_MODELS_URL);
 
         if (!response.ok) {
             throw new Error('Failed to fetch Pollinations models');
         }
 
-        const data = await response.json();
-
-        if (!Array.isArray(data)) {
-            throw new Error('Invalid data format received from Pollinations');
+        const voices = pollinationsModelVoices(await response.json(), req.body.model);
+        if (!voices) {
+            throw new Error(`No voices found for Pollinations speech model ${pollinationsSpeechModel(req.body.model)}`);
         }
 
-        const audioModelData = data.find(m => m.name === model);
-        if (!audioModelData || !Array.isArray(audioModelData.voices)) {
-            throw new Error('No voices found for the specified model');
-        }
-
-        const voices = audioModelData.voices;
         return res.json(voices);
     } catch (error) {
         console.error(error);

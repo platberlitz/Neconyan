@@ -6,6 +6,7 @@ import { speechJson } from './speech-voices.js';
 import { localSpeechRequest, speechNumber as n } from './speech-local-requests.js';
 import { prepareGoogleRequestHeaders } from './caption-transports.js';
 import { readResponseArrayBuffer, readResponseText, normalizeImageSource } from '../../public/scripts/extensions/quick-image-gen/lib/security.js';
+import { pollinationsSpeechModel } from '../endpoints/speech-transports.js';
 
 const endpointQueues = new Map();
 const bearer = key => key ? { Authorization: `Bearer ${key}` } : {};
@@ -45,7 +46,7 @@ export async function prepareSpeechTransport(config, segment, { signal, fetchImp
         }, bearer(key));
         result.pcm = s.response_format === 'pcm';
     } else if (!result && provider === 'Pollinations') result = request('https://gen.pollinations.ai/v1/audio/speech', {
-        model: !s.model || s.model === 'openai-audio' ? 'tts-1' : s.model, input: text, voice: voice.id,
+        model: pollinationsSpeechModel(s.model), input: text, voice: voice.id,
     }, bearer(key));
     else if (!result && provider === 'Chutes') {
         if (s.model && s.model !== 'kokoro') throw speechError('The saved Chutes speech model is unsupported.');

@@ -250,7 +250,7 @@ describe('conversation mode scoped connection profile', () => {
         expect(pollinationsTtsSource).toContain('text: chunk');
         expect(pollinationsTtsSource).not.toContain('Say exactly this and nothing else');
         expect(speechTransportsSource).toContain('https://gen.pollinations.ai/v1/audio/speech');
-        expect(speechTransportsSource).toContain('model === \'openai-audio\' ? \'tts-1\' : model');
+        expect(speechTransportsSource).toContain('model === \'openai-audio\' ? \'openai/tts-1\' : model');
         expect(speechTransportsSource).toContain('input: text');
         expect(speechEndpointSource).not.toContain('modalities: [\'text\', \'audio\']');
     });

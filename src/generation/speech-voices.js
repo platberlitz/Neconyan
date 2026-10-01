@@ -1,6 +1,7 @@
 import { languages } from 'google-translate-api-x';
 import { speechError } from './speech-config.js';
 import { readResponseText } from '../../public/scripts/extensions/quick-image-gen/lib/security.js';
+import { POLLINATIONS_AUDIO_MODELS_URL, pollinationsModelVoices } from '../endpoints/speech-transports.js';
 
 const OPENAI = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'marin', 'onyx', 'nova', 'sage', 'shimmer', 'verse', 'cedar'];
 const GEMINI = ['Zephyr', 'Puck', 'Charon', 'Kore', 'Fenrir', 'Leda', 'Orus', 'Aoede', 'Callirhoe', 'Autonoe', 'Enceladus',
@@ -78,9 +79,7 @@ export async function resolveSpeechVoice(config, entry, { signal, fetchImpl = fe
     } else if (provider === 'Azure') voices = (await get(`${endpoint}/voices/list`, { 'Ocp-Apim-Subscription-Key': key }))
         .map(item => ({ id: item.ShortName, name: item.ShortName, lang: item.Locale }));
     else if (provider === 'Pollinations') {
-        const data = await get('https://gen.pollinations.ai/text/models');
-        const model = data.find(item => item.name === (settings.model || 'openai-audio'));
-        voices = entries(model?.voices);
+        voices = entries(pollinationsModelVoices(await get(POLLINATIONS_AUDIO_MODELS_URL), settings.model));
     } else if (provider === 'Electron Hub') {
         const data = await get('https://api.electronhub.ai/v1/models', { Authorization: `Bearer ${key}` });
         const model = (data.data ?? data).find(item => item.id === (settings.model || 'tts-1'));

@@ -117,13 +117,40 @@ export async function generateOpenAiCompatibleSpeech({ endpoint, key, text, voic
     return bufferAudio(result, OPENAI_TTS_CONTENT_TYPES[format]);
 }
 
+export const POLLINATIONS_AUDIO_MODELS_URL = 'https://gen.pollinations.ai/audio/models';
+
+/**
+ * Pollinations now files 'openai-audio' under its chat models and gives the bare
+ * 'tts-1' alias to the paid ElevenLabs v3 voice, so the saved default resolves to
+ * the free OpenAI speech model by its full name.
+ * @param {string} [model] Saved Pollinations speech model
+ * @returns {string} Model id sent to Pollinations
+ */
+export function pollinationsSpeechModel(model) {
+    return !model || model === 'openai-audio' ? 'openai/tts-1' : model;
+}
+
+/**
+ * @param {unknown} models Pollinations audio model list
+ * @param {string} [model] Saved Pollinations speech model
+ * @returns {string[] | null} Voices offered by that model, or null when it is not listed
+ */
+export function pollinationsModelVoices(models, model) {
+    if (!Array.isArray(models)) {
+        return null;
+    }
+    const id = pollinationsSpeechModel(model);
+    const match = models.find(item => item?.name === id) ?? models.find(item => Array.isArray(item?.aliases) && item.aliases.includes(id));
+    return Array.isArray(match?.voices) ? match.voices : null;
+}
+
 export async function generatePollinationsSpeech({ key, text, model, voice, signal } = {}, { fetchImpl = fetch } = {}) {
     if (!key) {
         throw Object.assign(new Error('No API key saved for Pollinations TTS'), { status: 400 });
     }
 
     // Neconyan divergence: Pollinations TTS must hit the provider's audio endpoint directly so Conversation narration receives literal speech output.
-    const speechModel = !model || model === 'openai-audio' ? 'tts-1' : model;
+    const speechModel = pollinationsSpeechModel(model);
     const result = await fetchImpl('https://gen.pollinations.ai/v1/audio/speech', {
         method: 'POST',
         headers: {
