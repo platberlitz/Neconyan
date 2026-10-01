@@ -165,7 +165,7 @@ const NN_PANEL_STYLESHEETS = Object.freeze({
         { href: 'css/extensions-panel.css?v=20260425a', id: 'deferred-extensions-panel-css' },
     ],
     'right:included-tool': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-msgrswipe', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-w98lift', id: 'deferred-tool-pages-css' },
     ],
 });
 const NN_FRONTEND_ICON_DEFAULT = 'calico';
@@ -472,7 +472,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261001-msgrswipe';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261001-w98lift';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',

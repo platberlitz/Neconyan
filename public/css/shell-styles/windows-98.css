@@ -63,6 +63,13 @@
     --neco-muted: color-mix(in srgb, var(--neco-ink) 78%, var(--w98-face));
 }
 
+/* Dark text on a dark surface would vanish on the grey faces, so it is lifted just enough to read. */
+:root[data-sb-theme='windows-98'][data-sb-surface-tone='dark'][data-sb-text-tone='dark'] body.neconyan:not(.sbterm) {
+    --neco-ink: var(--neco-ink-on-face, #f0f0f0);
+    --SmartThemeBodyColor: var(--neco-ink-on-face, #f0f0f0);
+    --neco-muted: color-mix(in srgb, var(--neco-ink) 78%, var(--w98-face));
+}
+
 /* A chosen accent recolours the caption bars, like the Display Properties Appearance tab,
    darkened as far as the white title text needs. */
 :root[data-sb-theme='windows-98'][data-neconyan-accent='custom'] body.neconyan:not(.sbterm) {
@@ -313,6 +320,12 @@
 
 :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .sb-shell-header :is(.sb-shell-title, .sb-shell-kicker, .sb-shell-subtitle, .sb-shell-description, h1, h2, h3, i) {
     color: var(--w98-title-ink);
+}
+
+/* The phone drawer header shows its description in the muted colour, which fades into the title bar. */
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(#left-nav-panel, #user-settings-block).openDrawer .sb-shell-header .sb-shell-description {
+    color: var(--w98-title-ink);
+    opacity: .85;
 }
 
 :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .sb-shell-close {

@@ -38,4 +38,17 @@ describe('Windows 98 shell style stays readable with custom colours', () => {
     test('every caption text line uses the caption ink', () => {
         expect(css).toMatch(/\.sb-shell-header :is\([^)]*\.sb-shell-description[^)]*\) \{\s*color: var\(--w98-title-ink\);/);
     });
+
+    test('the phone drawer description beats the muted drawer rule', () => {
+        expect(css).toMatch(/:is\(#left-nav-panel, #user-settings-block\)\.openDrawer \.sb-shell-header \.sb-shell-description \{\s*color: var\(--w98-title-ink\);/);
+    });
+
+    test('dark text on a dark surface is lifted to a readable copy of itself', () => {
+        expect(powerUser).toContain('export function getLiftedInkColor(channels, backgroundChannels, minimumContrast = 4.5)');
+        expect(powerUser).toContain('setProperty(\'--neco-ink-on-face\', getLiftedInkColor(textChannels, faceChannels, 7))');
+        const rule = css.match(/\[data-sb-surface-tone='dark'\]\[data-sb-text-tone='dark'\] body\.neconyan:not\(\.sbterm\) \{([^}]*)\}/);
+        expect(rule).not.toBeNull();
+        expect(rule[1]).toContain('--neco-ink: var(--neco-ink-on-face, #f0f0f0);');
+        expect(rule[1]).toContain('--neco-muted: color-mix(in srgb, var(--neco-ink) 78%, var(--w98-face));');
+    });
 });

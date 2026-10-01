@@ -1589,6 +1589,25 @@ export function getDeepAccentColor(channels, minimumContrast = 4.5) {
     return `rgb(${deep.join(', ')})`;
 }
 
+/**
+ * Lightens a text colour just enough to reach the given contrast ratio on a dark background.
+ * @param {number[]} channels RGB channels of the text
+ * @param {number[]} backgroundChannels RGB channels of the background
+ * @param {number} minimumContrast Contrast ratio to reach
+ * @returns {string} rgb() colour
+ */
+export function getLiftedInkColor(channels, backgroundChannels, minimumContrast = 4.5) {
+    const backgroundLuminance = getRelativeLuminanceFromChannels(backgroundChannels);
+    let lifted = channels.slice(0, 3);
+    for (let step = 0; step <= 25; step++) {
+        lifted = channels.slice(0, 3).map(channel => Math.round(channel + ((255 - channel) * step / 25)));
+        if (getContrastRatioFromLuminance(getRelativeLuminanceFromChannels(lifted), backgroundLuminance) >= minimumContrast) {
+            break;
+        }
+    }
+    return `rgb(${lifted.join(', ')})`;
+}
+
 function applyAccentContrastPalette() {
     const quoteChannels = parseColorChannels(power_user.quote_text_color);
     if (!quoteChannels) {
@@ -1625,6 +1644,10 @@ function applyLandingContrastPalette() {
     const textChannels = parseColorChannels(power_user.main_text_color);
     if (textChannels) {
         document.documentElement.dataset.sbTextTone = getContrastAwareInk([textChannels]) === 'rgb(0, 0, 0)' ? 'light' : 'dark';
+        // Windows 98 window faces mix the surface 72/28 with mid grey; text too dark for that
+        // face is lifted towards white.
+        const faceChannels = blurChannels.slice(0, 3).map(channel => (channel * 0.72) + (128 * 0.28));
+        document.documentElement.style.setProperty('--neco-ink-on-face', getLiftedInkColor(textChannels, faceChannels, 7));
     }
     document.documentElement.style.setProperty('--sb-landing-strong', landingStrong);
     document.documentElement.style.setProperty('--sb-landing-muted', landingMuted);

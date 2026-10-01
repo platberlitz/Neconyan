@@ -120,8 +120,11 @@ describe('shell style runtime stylesheets', () => {
             // the cat decorations. Other styles must still leave them untouched.
             // Muted text may be re-derived from the user's own ink when a style forces its own
             // panel colour (Windows 98 silver or dark grey); that adds no new palette colour.
+            // Windows 98 may also swap the user's ink for the lifted copy the theme code works
+            // out from that same ink when it would vanish on the grey faces.
             const withoutExclusions = stripped.replaceAll(':not(.neconyan-whiskers)', '')
-                .replace(/--neco-muted: color-mix\(in srgb, var\(--neco-ink\) \d+%, var\(--w98-face\)\);/g, '');
+                .replace(/--neco-muted: color-mix\(in srgb, var\(--neco-ink\) \d+%, var\(--w98-face\)\);/g, '')
+                .replace(/--(?:neco-ink|SmartThemeBodyColor): var\(--neco-ink-on-face, #[0-9a-f]{3,6}\);/g, '');
             const forbiddenTokens = ['--neco-canvas:', '--neco-ink:', '--neco-muted:', '--neco-ginger:', '--neco-user:', '--mainFontFamily:', '--sb-font-display:', '--SmartThemeBotMesBlurTintColor', '--SmartThemeUserMesBlurTintColor',
                 ...protectedDecorations];
             for (const forbidden of forbiddenTokens) {
