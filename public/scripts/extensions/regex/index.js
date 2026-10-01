@@ -1,4 +1,4 @@
-import { characters, eventSource, event_types, getCurrentChatId, messageFormatting, reloadCurrentChat, saveSettingsDebounced, this_chid } from '../../../script.js';
+import { characters, chat, eventSource, event_types, getCurrentChatId, messageFormatting, reloadCurrentChat, saveSettingsDebounced, this_chid } from '../../../script.js';
 import { extension_settings, renderExtensionTemplateAsync } from '../../extensions.js';
 import { selected_group } from '../../group-chats.js';
 import { callGenericPopup, Popup, POPUP_TYPE } from '../../popup.js';
@@ -12,6 +12,7 @@ import { allowPresetScripts, allowScopedScripts, disallowPresetScripts, disallow
 import { t } from '../../i18n.js';
 import { accountStorage } from '../../util/AccountStorage.js';
 import { getPresetManager } from '../../preset-manager.js';
+import { filterRegexScriptRows, setupRegexEditorHelpers } from './helpers.js';
 
 // Re-exports for legacy extensions
 export { getRegexScripts };
@@ -752,6 +753,13 @@ async function loadRegexScripts() {
     $('#regex_preset_toggle').prop('checked', isPresetScriptsAllowed(getCurrentPresetAPI(), getCurrentPresetName()));
 
     setMoveButtonsVisibility();
+    applyRegexScriptFilter();
+}
+
+function applyRegexScriptFilter() {
+    const settings = document.querySelector('.regex_settings');
+    const query = /** @type {HTMLInputElement} */ (document.getElementById('regex_script_filter'))?.value ?? '';
+    if (settings) filterRegexScriptRows(settings, query);
 }
 
 /**
@@ -842,6 +850,9 @@ async function onRegexEditorOpenClick(existingId, scriptType) {
 
     editorHtml.find('input, textarea, select').on('input', updateTestResult);
     updateInfoBlock(editorHtml);
+    setupRegexEditorHelpers(editorHtml.get(0), {
+        getSampleText: () => [...chat].reverse().find((message) => !message?.is_system && message?.mes)?.mes ?? '',
+    });
 
     const popupResult = await callGenericPopup(editorHtml, POPUP_TYPE.CONFIRM, '', { okButton: t`Save`, cancelButton: t`Cancel`, allowVerticalScrolling: true });
     if (popupResult) {
@@ -1731,6 +1742,7 @@ export async function init() {
         onRegexEditorOpenClick(false, SCRIPT_TYPES.GLOBAL);
     });
     $('#open_regex_debugger').on('click', onRegexDebuggerOpenClick);
+    $('#regex_script_filter').on('input', applyRegexScriptFilter);
     $('#open_scoped_editor').on('click', function () {
         if (this_chid === undefined) {
             toastr.error(t`No character selected.`);

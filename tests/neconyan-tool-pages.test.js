@@ -135,7 +135,7 @@ describe('Character Expressions opens as a page led by Miso', () => {
     test('the rail item and the included tools list both open the page', () => {
         expect(shell).toContain('{ id: \'expressions\', label: \'Character Expressions\', icon: \'fa-masks-theater\', actions: [\'settings\'] }');
         expect(shell).toMatch(/NECONYAN_TOOL_PAGE_ROUTES = Object\.freeze\(\{[^}]*expressions: 'expressions'/);
-        expect(rail).toContain('shell?.openIncludedTool?.(\'expressions\')');
+        expect(rail).toMatch(/case 'expressions':\s*case 'regex':\s*if \(shell\?\.openIncludedTool\?\.\(route\)\) break;/);
     });
 
     test('settings are grouped into three titled sections and the page hides the drawer title', () => {
@@ -144,5 +144,34 @@ describe('Character Expressions opens as a page led by Miso', () => {
         }
         expect(css).toContain('[data-tool-page=\'expressions\'] .expression_settings > .inline-drawer > .inline-drawer-header');
         expect(css).toContain('[data-tool-page=\'expressions\'] #image_list');
+    });
+});
+
+describe('Regexes opens as a page led by Taro', () => {
+    const shell = read('../public/scripts/neconyan-tabs.js');
+    const css = read('../public/css/neconyan-tool-pages.css');
+    const dropdown = read('../public/scripts/extensions/regex/dropdown.html');
+    const manifest = JSON.parse(read('../public/scripts/extensions/regex/manifest.json'));
+
+    test('Taro walks the toolbar, the editor helpers and every script list', () => {
+        const page = getToolPage('regex');
+        expect(page.assistant).toBe('taro');
+        expect(page.name).toBe('Regexes');
+        const steps = getToolTourSteps('regex', { isShown: () => true });
+        expect(steps.map(step => step.id)).toEqual(['welcome', 'new', 'editor', 'filter', 'bulk', 'presets', 'global', 'preset', 'scoped', 'done']);
+        expect(steps.find(step => step.id === 'editor').body).toContain('Start from a recipe');
+    });
+
+    test('the rail item and the included tools list both open the page under one name', () => {
+        expect(shell).toContain('{ id: \'regex\', label: \'Regexes\', icon: \'fa-code\', actions: [\'settings\'] }');
+        expect(shell).toMatch(/NECONYAN_TOOL_PAGE_ROUTES = Object\.freeze\(\{[^}]*regex: 'regex'/);
+        expect(manifest.display_name).toBe('Regexes');
+    });
+
+    test('the page has a script search box and shows each list as a card', () => {
+        expect(dropdown).toContain('id="regex_script_filter"');
+        expect(dropdown).toContain('regex_toolbar');
+        expect(css).toContain('[data-tool-page=\'regex\'] .regex_settings > .inline-drawer > .inline-drawer-header');
+        expect(css).toContain('#global_scripts_block');
     });
 });

@@ -159,3 +159,127 @@ input.enable_scoped {
 .regex-script-label:not(:has(input[name="regex_expand"]:checked)) .regex_script_buttons {
     display: none;
 }
+
+.regex_recipe {
+    gap: 10px;
+    margin-top: 6px;
+}
+
+.regex_helpers {
+    display: grid;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.regex_helpers_row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+}
+
+.regex_helpers_row > small {
+    min-width: 7em;
+    opacity: 0.8;
+}
+
+.regex_flag_chips,
+.regex_snippet_chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.regex_helper_chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding: 4px 10px;
+    min-height: 32px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 8%, transparent);
+    font-size: 0.9em;
+    white-space: nowrap;
+    width: auto;
+}
+
+.regex_helper_chip:has(input:checked) {
+    border-color: var(--neco-ginger, var(--SmartThemeQuoteColor));
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 22%, transparent);
+}
+
+.regex_helper_chip:has(input:disabled) {
+    opacity: 0.55;
+}
+
+.regex_helper_chip code {
+    opacity: 0.7;
+}
+
+.regex_explain {
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 10px;
+    padding: 6px 10px;
+}
+
+.regex_explain > summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.regex_explain_list {
+    display: grid;
+    gap: 4px;
+    margin: 8px 0 2px;
+    padding-left: 1.4em;
+}
+
+.regex_explain_list li {
+    line-height: 1.45;
+}
+
+.regex_explain_list code {
+    margin-right: 8px;
+    padding: 1px 6px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 16%, transparent);
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.regex_explain_empty {
+    list-style: none;
+    margin-left: -1.4em;
+    opacity: 0.75;
+}
+
+.regex_test_tools {
+    gap: 10px;
+    margin-top: 6px;
+}
+
+.regex_test_matches {
+    color: var(--neco-ginger, var(--SmartThemeQuoteColor));
+    font-weight: 600;
+}
+
+@media (max-width: 768px) {
+    .regex_helper_chip {
+        min-height: 44px;
+    }
+
+    .regex_helpers_row > small {
+        min-width: 100%;
+    }
+}
+
+.regex-script-label.regex_filtered_out {
+    display: none;
+}
+
+.regex_script_filter_row {
+    gap: 10px;
+    margin-top: 10px;
+}

@@ -14,6 +14,10 @@
         <small class="flex-container extensions_info" data-i18n="ext_regex_desc">
             Regex is a tool to find/replace strings using regular expressions. If you want to learn more, click on the ? next to the title.
         </small>
+        <label class="regex_recipe flex-container alignItemsCenter">
+            <small data-i18n="Start from a recipe">Start from a recipe</small>
+            <select class="regex_recipe_select text_pole textarea_compact flex1"></select>
+        </label>
         <hr />
 
         <div id="regex_info_block_wrapper">
@@ -36,6 +40,13 @@
                 </label>
                 <textarea id="regex_test_output" class="text_pole textarea_compact" rows="4" data-i18n="[placeholder]ext_regex_output_placeholder" placeholder="Empty" readonly></textarea>
             </div>
+            <div class="regex_test_tools flex-container alignItemsCenter wide100p">
+                <button type="button" class="menu_button menu_button_icon regex_test_use_last">
+                    <i class="fa-solid fa-comment-dots"></i>
+                    <span data-i18n="Use the last reply">Use the last reply</span>
+                </button>
+                <small class="regex_test_matches" aria-live="polite"></small>
+            </div>
             <hr>
         </div>
 
@@ -54,6 +65,20 @@
                 </label>
                 <div>
                     <input class="find_regex text_pole textarea_compact" type="text" />
+                </div>
+                <div class="regex_helpers">
+                    <div class="regex_helpers_row">
+                        <small data-i18n="Options">Options</small>
+                        <div class="regex_flag_chips"></div>
+                    </div>
+                    <div class="regex_helpers_row">
+                        <small data-i18n="Insert a piece">Insert a piece</small>
+                        <div class="regex_snippet_chips"></div>
+                    </div>
+                    <details class="regex_explain">
+                        <summary data-i18n="What this pattern does">What this pattern does</summary>
+                        <ol class="regex_explain_list"></ol>
+                    </details>
                 </div>
             </div>
             <div class="flex1">

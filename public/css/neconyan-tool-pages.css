@@ -416,6 +416,62 @@ body.neconyan-tool-tour-active #neconyan-tour-coachmark {
     overflow-wrap: anywhere;
 }
 
+/* Regexes: toolbar, search and each script list as its own card. */
+.neconyan-included-tool-page[data-tool-page='regex'] .regex_settings > .inline-drawer > .inline-drawer-header,
+.neconyan-included-tool-page[data-tool-page='regex'] .regex_settings > .inline-drawer > .inline-drawer-content > hr {
+    display: none;
+}
+
+#user-settings-block .neconyan-included-tool-page[data-tool-page='regex'] .regex_settings > .inline-drawer > .inline-drawer-content {
+    display: grid;
+    gap: 14px;
+    padding: 0;
+}
+
+.neconyan-included-tool-page[data-tool-page='regex'] .regex_toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.neconyan-included-tool-page[data-tool-page='regex'] .regex_script_filter_row {
+    margin: 0;
+}
+
+.neconyan-included-tool-page[data-tool-page='regex'] :is(#regex_presets_block, #global_scripts_block, #preset_scripts_block, #scoped_scripts_block) {
+    min-width: 0;
+    padding: 16px 18px;
+    border: 1px solid var(--neco-border);
+    border-radius: 14px;
+    background: var(--neco-raised, var(--neco-surface));
+    color: var(--neco-ink);
+}
+
+.neconyan-included-tool-page[data-tool-page='regex'] :is(#regex_presets_block, #global_scripts_block, #preset_scripts_block, #scoped_scripts_block) strong {
+    font-family: var(--sb-font-display, inherit);
+    font-size: 18px;
+    font-weight: 400;
+}
+
+.neconyan-included-tool-page[data-tool-page='regex'] :is(#regex_presets_block, #global_scripts_block, #preset_scripts_block, #scoped_scripts_block) > small {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--neco-muted);
+}
+
+.neconyan-included-tool-page[data-tool-page='regex'] .regex-script-label {
+    border-color: var(--neco-border);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--neco-surface) 70%, transparent);
+}
+
+.neconyan-included-tool-page[data-tool-page='regex'] .regex_bulk_operations {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px;
+    border: 1px dashed color-mix(in srgb, var(--neco-ginger) 45%, var(--neco-border));
+    border-radius: 12px;
+}
+
 @media (max-width: 768px) {
     .neconyan-included-tool-page[data-tool-page='expressions'] .expression_section {
         padding: 12px;
@@ -424,6 +480,18 @@ body.neconyan-tool-tour-active #neconyan-tour-coachmark {
     .neconyan-included-tool-page[data-tool-page='expressions'] #image_list {
         grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
         gap: 8px;
+    }
+
+    .neconyan-included-tool-page[data-tool-page='regex'] :is(#regex_presets_block, #global_scripts_block, #preset_scripts_block, #scoped_scripts_block) {
+        padding: 12px;
+    }
+
+    .neconyan-included-tool-page[data-tool-page='regex'] #regex_presets_block > .flex-container {
+        flex-wrap: wrap;
+    }
+
+    .neconyan-included-tool-page[data-tool-page='regex'] #regex_presets {
+        flex: 1 1 100%;
     }
 }
 

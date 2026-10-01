@@ -7,7 +7,7 @@
             <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
         <div class="inline-drawer-content">
-            <div class="flex-container">
+            <div class="flex-container regex_toolbar">
                 <div id="open_regex_editor" class="menu_button menu_button_icon" data-i18n="[title]ext_regex_new_global_script_desc" title="New global regex script">
                     <i class="fa-solid fa-pen-to-square"></i>
                     <small data-i18n="ext_regex_new_global_script">+ Global</small>
@@ -69,6 +69,10 @@
                     <small data-i18n="Delete">Delete</small>
                 </div>
             </div>
+            <label class="regex_script_filter_row flex-container alignItemsCenter" for="regex_script_filter">
+                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                <input id="regex_script_filter" class="text_pole flex1" type="search" autocomplete="off" data-i18n="[placeholder]Find a script by name" placeholder="Find a script by name" />
+            </label>
             <hr />
             <div id="regex_presets_block">
                 <div class="flex-container alignItemsBaseline">

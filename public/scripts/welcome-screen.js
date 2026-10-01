@@ -1648,10 +1648,8 @@ function activateNeconyanRailRoute(route) {
             shell?.openTab?.('left', 'advanced-formatting');
             break;
         case 'expressions':
-            if (shell?.openIncludedTool?.('expressions')) break;
-            void shell?.openExtensionSettings?.(route);
-            break;
         case 'regex':
+            if (shell?.openIncludedTool?.(route)) break;
             void shell?.openExtensionSettings?.(route);
             break;
         case 'agents':
