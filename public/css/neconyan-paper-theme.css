@@ -15,7 +15,7 @@
     --thought-box-accent: var(--SmartThemeQuoteColor, rgba(186, 150, 88, 1));
 }
 
-/* Paper grain and wash overlay */
+/* Fine, neutral paper fibres: no colour wash or repeating dots over the text. */
 body::after {
     content: '';
     position: fixed;
@@ -24,18 +24,8 @@ body::after {
     pointer-events: none;
     opacity: var(--sb-paper-texture-opacity, 0);
     mix-blend-mode: soft-light;
-    background-image:
-        radial-gradient(circle at 18% 22%, rgba(255, 248, 220, 0.65) 0 1.2px, transparent 1.8px),
-        radial-gradient(circle at 74% 38%, rgba(80, 62, 42, 0.5) 0 1px, transparent 1.6px),
-        radial-gradient(circle at 41% 79%, rgba(255, 255, 240, 0.42) 0 1.2px, transparent 1.9px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.055), rgba(0, 0, 0, 0.04)),
-        linear-gradient(115deg, rgba(255, 244, 204, 0.22), transparent 38%, rgba(91, 69, 42, 0.16)),
-        repeating-linear-gradient(
-            0deg,
-            rgba(255, 255, 255, 0.035) 0 1px,
-            transparent 1px 5px
-        );
-    background-size: 30px 30px, 25px 25px, 38px 38px, 100% 100%, 100% 100%, 100% 100%;
+    background-image: url('../img/neconyan/paper-fibre.webp');
+    background-size: 256px 256px;
 }
 
 /* Slimmer top bar with centered icons */
@@ -131,7 +121,7 @@ button:not(.ica--tpanel-handle):not(.gg-action-button):not(.neconyan-edit-action
     background-color: var(--SmartThemeBotMesBlurTintColor) !important;
 }
 
-/* Light paper fiber on bubbles */
+/* A weaker layer of the same grain on bubbles, controlled by the same slider. */
 :where(body:not(.nnchat)) .mes::after {
     content: '';
     position: absolute;
@@ -140,15 +130,8 @@ button:not(.ica--tpanel-handle):not(.gg-action-button):not(.neconyan-edit-action
     pointer-events: none;
     opacity: calc(var(--sb-paper-texture-opacity, 0) * 0.09);
     mix-blend-mode: soft-light;
-    background-image:
-        radial-gradient(circle at 20% 30%, rgba(255, 248, 220, 0.65) 0 1px, transparent 1.6px),
-        radial-gradient(circle at 70% 60%, rgba(82, 62, 39, 0.45) 0 0.8px, transparent 1.4px),
-        repeating-linear-gradient(
-            90deg,
-            rgba(255, 255, 255, 0.035) 0 1px,
-            transparent 1px 7px
-        );
-    background-size: 26px 26px, 31px 31px, 100% 100%;
+    background-image: url('../img/neconyan/paper-fibre.webp');
+    background-size: 256px 256px;
 }
 
 /* Greatly reduce inner gap between bubble edge and message text */

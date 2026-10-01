@@ -107,6 +107,22 @@ describe('paper texture regression guards', () => {
         expect(thoughtBoxTokenBlock).toContain('--SmartThemeBodyColor');
         expect(thoughtBoxTokenBlock).toContain('--SmartThemeQuoteColor');
     });
+
+    test('uses fine neutral grain instead of regular dots or a colour wash', () => {
+        const overlays = [
+            paperThemeCss.match(/body::after\s*\{[\s\S]*?\}/)?.[0] ?? '',
+            paperThemeCss.match(/\.mes::after\s*\{[\s\S]*?\}/)?.[0] ?? '',
+        ];
+        for (const overlay of overlays) {
+            expect(overlay).toContain("url('../img/neconyan/paper-fibre.webp')");
+            expect(overlay).toContain('background-size: 256px 256px');
+            expect(overlay).toContain('pointer-events: none');
+            expect(overlay).not.toMatch(/(?:radial|linear)-gradient/);
+        }
+        const grain = readFileSync(path.join(repoRoot, 'public/img/neconyan/paper-fibre.webp'));
+        expect(grain.toString('ascii', 8, 12)).toBe('WEBP');
+        expect(grain.length).toBeLessThan(100_000);
+    });
 });
 
 describe('index.html mobile stylesheet gates', () => {
