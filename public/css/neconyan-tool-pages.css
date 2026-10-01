@@ -292,6 +292,141 @@ body.neconyan-tool-tour-active #neconyan-tour-coachmark {
     letter-spacing: 0.01em;
 }
 
+/* Character Expressions: three grouped cards and a tidy sprite grid. */
+.neconyan-included-tool-page[data-tool-page='expressions'] .expression_settings > .inline-drawer > .inline-drawer-header {
+    display: none;
+}
+
+#user-settings-block .neconyan-included-tool-page[data-tool-page='expressions'] .expression_settings > .inline-drawer > .inline-drawer-content {
+    display: grid;
+    gap: 16px;
+    padding: 0;
+}
+
+.neconyan-included-tool-page[data-tool-page='expressions'] .expression_section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    padding: 16px 18px;
+    border: 1px solid var(--neco-border);
+    border-radius: 14px;
+    background: var(--neco-raised, var(--neco-surface));
+    color: var(--neco-ink);
+}
+
+#user-settings-block .neconyan-included-tool-page[data-tool-page='expressions'] .expression_section_title {
+    margin: 0 0 4px;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-family: var(--sb-font-display, inherit);
+    font-size: 18px;
+    font-weight: 400;
+    color: var(--neco-ink);
+}
+
+.neconyan-included-tool-page[data-tool-page='expressions'] .expression_section :is(small, .hint) {
+    color: var(--neco-muted);
+}
+
+.neconyan-included-tool-page[data-tool-page='expressions'] .expression_section > [class*='_block'] {
+    margin-block: 6px;
+}
+
+.neconyan-included-tool-page[data-tool-page='expressions'] .expression_agent_block {
+    padding: 12px 14px;
+    border: 1px solid color-mix(in srgb, var(--neco-ginger) 35%, var(--neco-border));
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--neco-ginger) 6%, var(--neco-surface));
+}
+
+.neconyan-included-tool-page[data-tool-page='expressions'] #no_chat_expressions {
+    padding: 18px;
+    border: 1px dashed var(--neco-border);
+    border-radius: 12px;
+    color: var(--neco-muted);
+    text-align: center;
+}
+
+.neconyan-included-tool-page[data-tool-page='expressions'] .expression_buttons {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 8px;
+    margin-block: 10px;
+}
+
+.neconyan-included-tool-page[data-tool-page='expressions'] .expression_buttons > .menu_button {
+    margin: 0;
+    min-height: 40px;
+    align-items: center;
+}
+
+#user-settings-block .neconyan-included-tool-page[data-tool-page='expressions'] #image_list_header {
+    margin: 8px 0 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-family: var(--sb-font-display, inherit);
+    font-size: 16px;
+    font-weight: 400;
+}
+
+.neconyan-included-tool-page[data-tool-page='expressions'] #image_list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+    gap: 12px;
+    margin: 8px 0 0;
+}
+
+.neconyan-included-tool-page[data-tool-page='expressions'] #image_list .expression_list_item {
+    min-width: 0;
+    max-width: none;
+    aspect-ratio: 3 / 4;
+    max-height: none;
+    overflow: hidden;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--neco-ink) 6%, var(--neco-surface));
+}
+
+.neconyan-included-tool-page[data-tool-page='expressions'] #image_list .expression_list_item:is(:hover, :focus-visible) {
+    border-color: color-mix(in srgb, var(--neco-ginger) 60%, var(--neco-border));
+}
+
+.neconyan-included-tool-page[data-tool-page='expressions'] #image_list .expression_list_image_container {
+    width: 100%;
+    height: 100%;
+}
+
+.neconyan-included-tool-page[data-tool-page='expressions'] #image_list .expression_list_image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.neconyan-included-tool-page[data-tool-page='expressions'] #image_list .expression_list_title {
+    height: auto;
+    min-height: 28px;
+    padding: 4px 6px;
+    background: color-mix(in srgb, var(--neco-surface) 86%, transparent);
+    font-size: 13px;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 768px) {
+    .neconyan-included-tool-page[data-tool-page='expressions'] .expression_section {
+        padding: 12px;
+    }
+
+    .neconyan-included-tool-page[data-tool-page='expressions'] #image_list {
+        grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+        gap: 8px;
+    }
+}
+
 @media (max-width: 768px) {
     .neconyan-included-tool-page[data-tool-page]:not([data-tool-page='']) {
         gap: 12px;

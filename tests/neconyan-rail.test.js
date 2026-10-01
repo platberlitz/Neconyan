@@ -191,7 +191,7 @@ describe('Neconyan workspace rail behavior', () => {
             'Preset Tools', 'Chat Completion Tabs', 'Dialogue Colors', 'Termeownal UI', 'BotSearcher',
             'Prompt Tags', 'Regex Agent Themes', 'Macro Enhanced', 'World Info Lab', 'Prompting Lab',
             'Debugger', 'Chat Archive', 'CSS Snippets', 'Lorebook Distiller', 'Card & Lorebook Time Machine',
-            'Deep Swipe', 'Story Mode', 'Meower', 'Pawthfinder', 'Quick Image Gen',
+            'Deep Swipe', 'Story Mode', 'Meower', 'Pawthfinder', 'Quick Image Gen', 'Character Expressions',
         ]);
         expect(welcomeSource).toContain('[\'extensions\', \'Extensions\', \'fa-cubes\']');
         expect(welcomeSource).toContain('class="neconyan-rail-advanced"');

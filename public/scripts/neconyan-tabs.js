@@ -165,7 +165,7 @@ const NN_PANEL_STYLESHEETS = Object.freeze({
         { href: 'css/extensions-panel.css?v=20260425a', id: 'deferred-extensions-panel-css' },
     ],
     'right:included-tool': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-qigpage', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-exprpage2', id: 'deferred-tool-pages-css' },
     ],
 });
 const NN_FRONTEND_ICON_DEFAULT = 'calico';
@@ -472,7 +472,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261001-qigpage';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261001-exprpage2';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -548,6 +548,7 @@ const NECONYAN_NATIVE_TOOL_DEFINITIONS = Object.freeze([
     // extension, so it is presented here and resolved by its settings unit.
     { id: 'pathfinder', label: 'Pawthfinder', icon: 'fa-diamond-turn-right', actions: ['settings'], unitOnly: true },
     { id: 'quick-image-gen', label: 'Quick Image Gen', icon: 'fa-image', actions: ['settings'] },
+    { id: 'expressions', label: 'Character Expressions', icon: 'fa-masks-theater', actions: ['settings'] },
 ]);
 
 const nativeToolActionLabel = actionName => ({ open: t`Open`, settings: t`Settings`, manage: t`Manage extensions` })[actionName];
@@ -2799,6 +2800,7 @@ function buildIncludedToolPanel() {
 const NECONYAN_TOOL_PAGE_ROUTES = Object.freeze({
     pathfinder: 'pathfinder',
     'quick-image-gen': 'quick-image-gen',
+    expressions: 'expressions',
 });
 
 function getIncludedToolRailRoute() {

@@ -113,3 +113,36 @@ describe('Quick Image Gen opens as a page led by Nori', () => {
         expect(css).toContain('--qig-accent: var(--neco-ginger);');
     });
 });
+
+describe('Character Expressions opens as a page led by Miso', () => {
+    const shell = read('../public/scripts/neconyan-tabs.js');
+    const rail = read('../public/scripts/welcome-screen.js');
+    const css = read('../public/css/neconyan-tool-pages.css');
+    const settings = read('../public/scripts/extensions/expressions/settings.html');
+
+    test('Miso leads a tour that skips steps for hidden classifier options', () => {
+        const page = getToolPage('expressions');
+        expect(page.assistant).toBe('miso');
+        expect(page.name).toBe('Character Expressions');
+        expect(page.emptyWhen).toContain('#open_chat_expressions');
+        const all = getToolTourSteps('expressions', { isShown: () => true }).map(step => step.id);
+        expect(all).toEqual(['welcome', 'classifier', 'agent', 'prompt', 'translate', 'choices', 'sprites', 'done']);
+        const visible = getToolTourSteps('expressions', { isShown: () => false }).map(step => step.id);
+        expect(visible).not.toContain('agent');
+        expect(visible).not.toContain('prompt');
+    });
+
+    test('the rail item and the included tools list both open the page', () => {
+        expect(shell).toContain('{ id: \'expressions\', label: \'Character Expressions\', icon: \'fa-masks-theater\', actions: [\'settings\'] }');
+        expect(shell).toMatch(/NECONYAN_TOOL_PAGE_ROUTES = Object\.freeze\(\{[^}]*expressions: 'expressions'/);
+        expect(rail).toContain('shell?.openIncludedTool?.(\'expressions\')');
+    });
+
+    test('settings are grouped into three titled sections and the page hides the drawer title', () => {
+        for (const section of ['classifier', 'behaviour', 'sprites']) {
+            expect(settings).toContain(`expression_section expression_section_${section}`);
+        }
+        expect(css).toContain('[data-tool-page=\'expressions\'] .expression_settings > .inline-drawer > .inline-drawer-header');
+        expect(css).toContain('[data-tool-page=\'expressions\'] #image_list');
+    });
+});
