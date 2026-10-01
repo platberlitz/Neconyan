@@ -260,6 +260,38 @@ body.neconyan-tool-tour-active #neconyan-tour-coachmark {
     color: var(--neco-on-accent);
 }
 
+/* Quick Image Gen: the page header already names it, so drop the drawer title and use Neconyan colours. */
+.neconyan-included-tool-page[data-tool-page='quick-image-gen'] #qig-settings {
+    --qig-accent: var(--neco-ginger);
+    --qig-surface: var(--neco-raised, var(--neco-surface));
+    --qig-surface-soft: color-mix(in srgb, var(--neco-ginger) 6%, var(--neco-surface));
+    --qig-line: var(--neco-border);
+    --qig-line-strong: color-mix(in srgb, var(--neco-ginger) 40%, var(--neco-border));
+    --qig-text-soft: var(--neco-muted);
+    --qig-radius: 10px;
+    color: var(--neco-ink);
+}
+
+.neconyan-included-tool-page[data-tool-page='quick-image-gen'] #qig-settings > .inline-drawer > .inline-drawer-header {
+    display: none;
+}
+
+.neconyan-included-tool-page[data-tool-page='quick-image-gen'] #qig-settings > .inline-drawer > .inline-drawer-content {
+    display: block;
+    padding-top: 0;
+}
+
+/* Its button bar sticks to the top while scrolling, so tour stops land below it. */
+.neconyan-included-tool-page[data-tool-page='quick-image-gen'] #qig-settings .neconyan-tool-tour-target:not(.qig-action-bar) {
+    scroll-margin-top: 120px;
+}
+
+.neconyan-included-tool-page[data-tool-page='quick-image-gen'] #qig-settings :is(.qig-section-kicker, .qig-card-title) {
+    font-family: var(--sb-font-display, inherit);
+    font-weight: 400;
+    letter-spacing: 0.01em;
+}
+
 @media (max-width: 768px) {
     .neconyan-included-tool-page[data-tool-page]:not([data-tool-page='']) {
         gap: 12px;
@@ -273,6 +305,16 @@ body.neconyan-tool-tour-active #neconyan-tour-coachmark {
     /* The page intro already says what the tool does; the generic Settings blurb only misleads here. */
     body.neconyan #user-settings-block.openDrawer[data-tool-page]:not([data-tool-page='']) .sb-shell-header .sb-shell-description {
         display: none;
+    }
+
+    /* Four rows of buttons pinned to the top leave too little room on a phone page. */
+    .neconyan-included-tool-page[data-tool-page='quick-image-gen'] #qig-settings .qig-action-bar {
+        position: static;
+        margin: 0;
+    }
+
+    .neconyan-included-tool-page[data-tool-page='quick-image-gen'] #qig-settings :is(.qig-menu-section, .neconyan-tool-tour-target:not(.qig-action-bar)) {
+        scroll-margin-top: 24px;
     }
 
     .neconyan-tool-page-intro .neconyan-tool-tour-button {

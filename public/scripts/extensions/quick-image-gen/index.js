@@ -6849,10 +6849,6 @@ function buildLLMEmptyPromptWarning(meta, rawText, cleanedText) {
     }
 }
 
-function extractLLMResponse(response) {
-    return extractLLMResponseDetails(response).text;
-}
-
 // Recent chat turns for the separate AI. Off (0) by default: helper requests are standalone,
 // and the override profile may point at a different provider than the chat does. The history
 // ends at the scene being illustrated and skips hidden messages and QIG's own image messages.
@@ -15936,10 +15932,6 @@ function getCurrentCardKey() {
     return getCurrentCardScopeInfo().cardKey;
 }
 
-function getCurrentCardLabel() {
-    return getCurrentCardScopeInfo().cardLabel;
-}
-
 function getKnownFilterScopeCharacterMap(ctx = getContext()) {
     const known = new Map();
     for (const entry of getContextCharactersList(ctx)) {
@@ -23572,17 +23564,3 @@ export function deactivate() {
 
 // Export module info for SillyTavern
 export { extensionName };
-
-// Neconyan divergence: minimal helper exports for the Expressions Agent bridge.
-// These are kept intentionally small so upstream syncs only need to preserve this
-// one export block. The actual sprite-generation logic lives outside QIG in
-// public/scripts/extensions/expressions/expression-sprite-bridge.js.
-export {
-    ensureQuickImageGenReady,
-    getSettings,
-    getGenerationSettingsForRun,
-    generateForProvider,
-    generateScopedImage,
-    finalizeGeneratedEntry,
-    withTransientGenerationSettings,
-};

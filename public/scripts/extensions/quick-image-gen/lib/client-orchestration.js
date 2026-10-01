@@ -84,27 +84,6 @@ function cloneRecord(value) {
     return JSON.parse(JSON.stringify(value));
 }
 
-const MUTABLE_MESSAGE_KEYS = Object.freeze(["mes", "extra", "swipes", "swipe_id"]);
-
-export function snapshotMutableMessageState(message) {
-    if (!message || typeof message !== "object") return null;
-    return MUTABLE_MESSAGE_KEYS.map(key => ({
-        key,
-        present: Object.prototype.hasOwnProperty.call(message, key),
-        value: cloneRecord(message[key]),
-    }));
-}
-
-export function restoreMutableMessageState(message, snapshot) {
-    if (!message || typeof message !== "object" || !Array.isArray(snapshot)) return false;
-    for (const entry of snapshot) {
-        if (!entry || !MUTABLE_MESSAGE_KEYS.includes(entry.key)) continue;
-        if (entry.present) message[entry.key] = cloneRecord(entry.value);
-        else delete message[entry.key];
-    }
-    return true;
-}
-
 async function sendClonedConnectionProfileRequest({
     service,
     context,

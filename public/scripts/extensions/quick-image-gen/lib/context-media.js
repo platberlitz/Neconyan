@@ -699,15 +699,6 @@ function allMedia(library) {
     );
 }
 
-export function countContextMediaPathReferences(library) {
-    const references = new Map();
-    for (const media of allMedia(library)) {
-        if (!media.path) continue;
-        references.set(media.path, (references.get(media.path) || 0) + 1);
-    }
-    return references;
-}
-
 export function canDeleteContextMediaPath(library, path, removingMediaIds) {
     const normalizedPath = normalizeMediaPath(path);
     if (!normalizedPath) return false;

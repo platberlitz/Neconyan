@@ -87,3 +87,29 @@ describe('Pawthfinder opens as a page instead of a popup', () => {
         expect(css).not.toMatch(/!important/);
     });
 });
+
+describe('Quick Image Gen opens as a page led by Nori', () => {
+    const shell = read('../public/scripts/neconyan-tabs.js');
+    const rail = read('../public/scripts/welcome-screen.js');
+    const css = read('../public/css/neconyan-tool-pages.css');
+
+    test('Nori leads a tour that opens each settings section before showing it', () => {
+        const page = getToolPage('quick-image-gen');
+        expect(page.assistant).toBe('nori');
+        expect(page.name).toBe('Quick Image Gen');
+        const steps = getToolTourSteps('quick-image-gen', { isShown: () => true });
+        expect(steps.map(step => step.id)).toEqual(expect.arrayContaining(['actions', 'status', 'prompt', 'source', 'more', 'provider', 'automation', 'done']));
+        expect(steps.find(step => step.id === 'provider').open).toEqual(expect.arrayContaining(['#qig-setup-toggle', '#qig-section-provider-toggle']));
+    });
+
+    test('the rail item and the included tools list both open the page', () => {
+        expect(shell).toContain('{ id: \'quick-image-gen\', label: \'Quick Image Gen\', icon: \'fa-image\', actions: [\'settings\'] }');
+        expect(shell).toMatch(/NECONYAN_TOOL_PAGE_ROUTES = Object\.freeze\(\{[^}]*'quick-image-gen': 'quick-image-gen'/);
+        expect(rail).toContain('shell?.openIncludedTool?.(\'quick-image-gen\')');
+    });
+
+    test('the page drops the duplicate drawer title and uses Neconyan colours', () => {
+        expect(css).toContain('[data-tool-page=\'quick-image-gen\'] #qig-settings > .inline-drawer > .inline-drawer-header');
+        expect(css).toContain('--qig-accent: var(--neco-ginger);');
+    });
+});

@@ -735,10 +735,6 @@ function replacePngTextMetadata(value, keyword, text, { insert = true } = {}) {
     return output.buffer;
 }
 
-export function embedPngMetadata(value, text) {
-    return replacePngTextMetadata(value, 'parameters', sanitizeGenerationParameterText(text));
-}
-
 function isPlainObject(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
     const prototype = Object.getPrototypeOf(value);
@@ -937,10 +933,6 @@ export async function readPngMetadataBundle(value) {
         parameters,
         structured: structuredText == null ? null : parseStructuredGenerationMetadata(structuredText),
     };
-}
-
-export async function readPngMetadata(value) {
-    return (await readPngMetadataBundle(value)).parameters;
 }
 
 export function parseGenerationParameters(text) {

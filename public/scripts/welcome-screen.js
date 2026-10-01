@@ -1673,6 +1673,7 @@ function activateNeconyanRailRoute(route) {
             void globalThis.NeconyanExtensions?.focusUnit?.('Dialogue Colors');
             break;
         case 'quick-image-gen':
+            if (shell?.openIncludedTool?.('quick-image-gen')) break;
             shell?.openTab?.('right', 'extensions');
             void globalThis.NeconyanExtensions?.focusUnit?.('Quick Image Gen');
             break;

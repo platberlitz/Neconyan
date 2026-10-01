@@ -315,11 +315,6 @@ function renderValue(value, tokenValues) {
     return value;
 }
 
-export function renderComfyWorkflow(workflow, tokenValues = {}) {
-    if (!isRecord(tokenValues)) throw new Error("ComfyUI placeholder values must be an object");
-    return renderValue(parseComfyWorkflow(workflow), tokenValues);
-}
-
 const MAX_COMPONENT_VALUE_BYTES = 4096;
 const MAX_COMPONENT_OVERRIDE_ENTRIES = 256;
 const MAX_COMPONENT_CHOICES = 10_000;
@@ -346,9 +341,6 @@ export function collectComfyWorkflowStringInputCandidates(workflow) {
     }
     return found;
 }
-
-// Kept for the existing caller; this now returns candidates, not inferred component eligibility.
-export const discoverComfyWorkflowComponents = collectComfyWorkflowStringInputCandidates;
 
 export function parseComfyObjectInfoComboInputs(value, classType) {
     if (!isRecord(value) || typeof classType !== "string" || !hasOwn(value, classType)) return [];
@@ -670,58 +662,6 @@ export function parseComfyHistoryEntry(entry, options = {}) {
     if (terminal && images.length) return { state: "success", terminal: true, messages, images };
     if (terminal) return { state: "completed_no_images", terminal: true, messages, images: [] };
     return { state: "pending", terminal: false, messages, images };
-}
-
-function parseWebSocketEnvelope(message) {
-    let value = message;
-    if (isRecord(message) && (message.type === "message" || typeof message.type !== "string")) value = message.data;
-    if (typeof value === "string") {
-        try {
-            value = JSON.parse(value);
-        } catch {
-            return null;
-        }
-    }
-    return isRecord(value) ? value : null;
-}
-
-export function parseComfyWebSocketMessage(message, promptId) {
-    const envelope = parseWebSocketEnvelope(message);
-    if (!envelope || typeof envelope.type !== "string" || !isRecord(envelope.data)) return null;
-    const data = envelope.data;
-    const eventPromptId = data.prompt_id ?? data.promptId;
-    if (typeof eventPromptId !== "string" || eventPromptId !== promptId) return null;
-
-    if (envelope.type === "progress") {
-        return { type: "progress", promptId, value: data.value, max: data.max, node: data.node ?? null };
-    }
-    if (envelope.type === "executing") {
-        if (data.node === null) return { type: "success", promptId, terminal: true, legacy: true };
-        if (data.node != null) return { type: "current_node", promptId, node: String(data.node), terminal: false };
-        return null;
-    }
-    if (envelope.type === "execution_success") {
-        return { type: "success", promptId, terminal: true, data };
-    }
-    if (envelope.type === "execution_error") {
-        return {
-            type: "error",
-            promptId,
-            terminal: true,
-            message: messageText(data, "ComfyUI execution failed"),
-            data,
-        };
-    }
-    if (envelope.type === "execution_interrupted") {
-        return {
-            type: "interrupted",
-            promptId,
-            terminal: true,
-            message: messageText(data, "ComfyUI execution was interrupted"),
-            data,
-        };
-    }
-    return null;
 }
 
 function abortError(message = "The operation was aborted") {

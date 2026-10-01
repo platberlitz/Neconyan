@@ -13,6 +13,7 @@ const TOOL_PAGES = Object.freeze({
         kicker: 'Lore helper',
         description: 'Let the model choose which lorebook entries matter for each reply, instead of waiting for keywords.',
         invite: 'Taro will show you what each part of this page does, one step at a time.',
+        emptyWhen: '#pf--lorebook-list .pf--empty-state',
         steps: [
             {
                 id: 'welcome',
@@ -91,6 +92,104 @@ const TOOL_PAGES = Object.freeze({
                 title: 'That is the whole page',
                 body: 'Choose a lorebook, choose a mode, then send a message. Everything here saves as you change it.\nPress **Tour** at the top of the page whenever you want this walk again.',
                 hint: 'I will be outside having a smoke. Call me if it misbehaves.',
+            },
+        ],
+    },
+    'quick-image-gen': {
+        assistant: 'nori',
+        name: 'Quick Image Gen',
+        kicker: 'Picture maker',
+        description: 'Make pictures of your characters and scenes with an image service, then drop them straight into the chat.',
+        invite: 'Nori will show you what each part of this page does, one step at a time.',
+        steps: [
+            {
+                id: 'actions',
+                targets: ['#qig-settings .qig-action-bar'],
+                title: 'The buttons you will use most',
+                body: '**Generate** makes a picture with the settings below. The keyboard shortcut is shown on the button.\n**Quick Setup** walks you through choosing an image service and pasting its key. **Logs** shows what happened on recent tries, **Gallery** keeps the pictures you made, and **Prompts** lists the prompts you used before.',
+                hint: 'Gallery is my portfolio. Every picture in it is priceless. Mostly because none of them cost anything.',
+            },
+            {
+                id: 'status',
+                targets: ['#qig-settings .qig-menu-hero'],
+                title: 'Is it ready?',
+                body: 'This strip says whether Quick Image Gen can make a picture right now, then lists the image service, model, size and prompt source it will use.\nIf something is missing, such as an API key, a warning appears here saying exactly where to fix it.',
+                hint: 'Read it before you press Generate. I am not explaining a blank picture to anyone.',
+            },
+            {
+                id: 'configuration',
+                targets: ['#qig-settings .qig-field:has(#qig-config-select)'],
+                title: 'Configurations',
+                body: 'A **configuration** is one complete setup saved under a name: image service, key, model and generation settings.\nUse the floppy disk to save the current setup as a new one, the arrows to overwrite the selected one, and the bin to delete it. Switching between them is quicker than retyping everything.',
+                hint: 'I keep one called Fancy and one called Fancy But Free. Guess which one I use.',
+            },
+            {
+                id: 'prompt',
+                targets: ['#qig-settings .qig-field:has(#qig-prompt)'],
+                title: 'The prompt',
+                body: 'Describe the picture you want. You can use **{{char}}** and **{{user}}** for the character and your persona names.\nWhen the prompt source below is **Chat scene**, this box is skipped and the selected chat messages are used instead.',
+                hint: 'Be specific. "Cute cat" gets you any cat. "Tuxedo cat on velvet, smug" gets you me.',
+            },
+            {
+                id: 'source',
+                targets: ['#qig-settings .qig-field:has(.qig-prompt-source)'],
+                title: 'Where the prompt comes from',
+                body: '**Manual** sends the prompt box as it is. **Chat scene** turns the selected chat messages into the scene, and can let your text model rewrite them into an image prompt.\n**AI-tagged** asks your text model to add image tags to its replies. Turn on **Auto-generate** under **Automation & Delivery** so those tags make pictures.',
+                hint: 'Chat scene is for when you are lazy. I respect that.',
+            },
+            {
+                id: 'style',
+                targets: ['#qig-settings .qig-field:has(#qig-style)'],
+                title: 'Style',
+                body: 'A style adds a look to every prompt, such as anime or photo. Choose **None** to send your prompt without additions.',
+                hint: 'Taste cannot be taught. Luckily, it can be picked from a list.',
+            },
+            {
+                id: 'more',
+                targets: ['#qig-settings .qig-settings-search-shell', '#qig-setup-toggle'],
+                open: '#qig-setup-toggle',
+                title: 'More settings',
+                body: '**More settings** holds everything else, in four sections. Lost? Type a word such as **resolution**, **key** or **negative** into the search box and only the matching settings stay visible.',
+                hint: 'Search first. Scrolling through all of that is beneath both of us.',
+            },
+            {
+                id: 'provider',
+                targets: ['#qig-settings .qig-flow-provider'],
+                open: ['#qig-setup-toggle', '#qig-section-provider-toggle'],
+                title: 'Image service and output',
+                body: 'Choose the **image service** that draws your pictures, paste its key if it needs one, then pick the model, picture size and how many pictures to make at once.\nSome **Pollinations** models work without a key, so it is a good first try. The status strip warns you if the model you picked needs one.',
+                hint: 'Free is my favourite price. It is also my only price.',
+            },
+            {
+                id: 'prompting',
+                targets: ['#qig-settings .qig-menu-section--prompt'],
+                open: ['#qig-setup-toggle', '#qig-section-create-toggle'],
+                title: 'Prompting tools',
+                body: 'These turn a plain description into a proper image prompt, or let your text model rewrite a prompt before it is sent. Use them when your pictures keep missing the point.',
+                hint: 'A good prompt is like a good outfit. Most people need help with both.',
+            },
+            {
+                id: 'context',
+                targets: ['#qig-settings .qig-flow-context'],
+                open: ['#qig-setup-toggle', '#qig-section-context-toggle'],
+                title: 'Context rules and media',
+                body: 'Give a character their own prompt, style, picture size and reference pictures, so every picture of them matches.\nThis section also manages saved pictures and videos that can be shown in chats.',
+                hint: 'Consistency matters. I have looked this good in every single picture.',
+            },
+            {
+                id: 'automation',
+                targets: ['#qig-settings .qig-flow-automation'],
+                open: ['#qig-setup-toggle', '#qig-section-automation-toggle'],
+                title: 'Automation and delivery',
+                body: 'Choose whether pictures are made automatically, for example every few replies or when the text model adds image tags, and set the keyboard shortcuts.\nLeave automatic pictures off until you know what each one costs on your image service.',
+                hint: 'Automatic pictures on a paid service is how I ended up broke. Learn from me.',
+            },
+            {
+                id: 'done',
+                targets: ['.neconyan-tool-tour-button'],
+                title: 'That is everything',
+                body: 'Choose an image service, write a prompt or pick a scene, then press **Generate**. Settings save as you change them.\nPress **Tour** at the top of the page whenever you want me again.',
+                hint: 'You will want me again. Everybody does. Hehe.',
             },
         ],
     },
@@ -202,7 +301,8 @@ function coveredByCard(node) {
 
 function currentSteps() {
     const root = tour.root;
-    const empty = Boolean(root?.querySelector('#pf--lorebook-list .pf--empty-state'));
+    const emptyWhen = TOOL_PAGES[tour.key]?.emptyWhen;
+    const empty = Boolean(emptyWhen && root?.querySelector(emptyWhen));
     return getToolTourSteps(tour.key, {
         empty,
         isShown: step => Boolean(root && step.targets.some(selector => findShown(root, selector))),
@@ -216,8 +316,10 @@ function clearTarget() {
 
 function openStep(step) {
     if (!step.open || !tour.root) return;
-    const header = findShown(tour.root, step.open);
-    if (header?.getAttribute('aria-expanded') === 'false') header.click();
+    for (const selector of [].concat(step.open)) {
+        const header = findShown(tour.root, selector);
+        if (header?.getAttribute('aria-expanded') === 'false') header.click();
+    }
 }
 
 function renderCopy(host, text) {

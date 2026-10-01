@@ -89,7 +89,3 @@ SELECTED SCENE:
 {{scene}}
 
 Plain visual description:`;
-
-export function getDefaultInstructionTemplate(style) {
-    return style === "natural" ? DEFAULT_NATURAL_INSTRUCTION_TEMPLATE : DEFAULT_TAGS_INSTRUCTION_TEMPLATE;
-}

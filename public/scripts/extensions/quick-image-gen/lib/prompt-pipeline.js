@@ -91,13 +91,6 @@ export function isTagSegment(segment) {
     return !PROSE_CLAUSE_START.test(part);
 }
 
-export function looksLikeTagList(text) {
-    const value = String(text ?? "");
-    if (!value.trim() || value.includes("\n")) return false;
-    const segments = value.split(",").map(part => part.trim()).filter(Boolean);
-    return segments.length > 1 && segments.every(isTagSegment);
-}
-
 export function dedupePromptTags(text) {
     const value = String(text ?? "");
     if (!value.trim() || value.includes("\n")) return value;
