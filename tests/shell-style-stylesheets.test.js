@@ -79,6 +79,27 @@ const themeIds = readThemeIds();
 const runtimeIds = themeIds.filter(id => id !== 'calico');
 
 describe('shell style runtime stylesheets', () => {
+    test('tour accent actions use the primary-button contract in every shell style', () => {
+        const tours = readSource('public', 'scripts', 'neconyan-tool-tour.js');
+        expect(tours).toContain("'menu_button menu_button_primary neconyan-tool-tour-next', t`Show me around`");
+        expect(tours).toContain("'menu_button menu_button_primary neconyan-tool-tour-next', t`Next`");
+        const loreTours = readSource('public', 'scripts', 'neconyan-lorebook-tour.js');
+        expect(loreTours).toContain("'menu_button menu_button_primary neconyan-lorebook-tour-next', t`Show me around`");
+        expect(loreTours).toContain("'menu_button menu_button_primary neconyan-lorebook-tour-next', t`Next`");
+        for (const id of runtimeIds.filter(id => id !== 'kittyless')) {
+            const source = readSource('public', 'css', 'shell-styles', `${id}.css`);
+            expect(source).toContain('.menu_button_primary, .popup-button-ok');
+        }
+    });
+
+    test('Windows Aero never adds a shadow or glow to text', () => {
+        const source = stripCssBlockComments(readSource('public', 'css', 'shell-styles', 'windows-aero.css'));
+        const shadows = [...source.matchAll(/text-shadow:\s*([^;]+);/g)].map(match => match[1]);
+        expect(shadows).toHaveLength(4);
+        expect(shadows.every(shadow => shadow === 'none')).toBe(true);
+        expect(source).not.toContain('--aero-glow');
+    });
+
     test('every shell style other than Calico ships a sheet, and nothing else does', () => {
         const shipped = readdirSync(shellStylesDir).filter(name => name.endsWith('.css')).map(name => name.replace(/\.css$/, '')).sort();
         expect(shipped).toEqual([...runtimeIds].sort());

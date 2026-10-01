@@ -421,7 +421,7 @@ function buildCard() {
     back.type = 'button';
     back.dataset.lorebookTourBack = '';
     back.addEventListener('click', () => void move(-1));
-    const next = element('button', 'menu_button neconyan-lorebook-tour-next', t`Next`);
+    const next = element('button', 'menu_button menu_button_primary neconyan-lorebook-tour-next', t`Next`);
     next.type = 'button';
     next.dataset.lorebookTourNext = '';
     next.addEventListener('click', () => void move(1));
@@ -501,7 +501,7 @@ function buildInvite(root) {
     const copy = element('p');
     copy.append(element('strong', '', t`New to lorebooks?`), document.createTextNode(` ${t`Nori can show you what each part does, one step at a time.`}`));
     const actions = element('div', 'neconyan-lorebook-tour-invite-actions');
-    const start = element('button', 'menu_button neconyan-lorebook-tour-next', t`Show me around`);
+    const start = element('button', 'menu_button menu_button_primary neconyan-lorebook-tour-next', t`Show me around`);
     start.type = 'button';
     start.addEventListener('click', () => startLorebookTour(root));
     const later = element('button', 'menu_button', t`Not now`);

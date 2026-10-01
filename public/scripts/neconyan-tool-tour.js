@@ -1079,7 +1079,7 @@ function buildCard(page) {
     back.type = 'button';
     back.dataset.toolTourBack = '';
     back.addEventListener('click', () => void move(-1));
-    const next = element('button', 'menu_button neconyan-tool-tour-next', t`Next`);
+    const next = element('button', 'menu_button menu_button_primary neconyan-tool-tour-next', t`Next`);
     next.type = 'button';
     next.dataset.toolTourNext = '';
     next.addEventListener('click', () => void move(1));
@@ -1142,7 +1142,7 @@ function buildInvite(page, root) {
     const copy = element('p');
     copy.append(element('strong', '', t([`New to ${page.name}?`])), document.createTextNode(` ${t([page.invite])}`));
     const actions = element('div', 'neconyan-tool-tour-invite-actions');
-    const start = element('button', 'menu_button neconyan-tool-tour-next', t`Show me around`);
+    const start = element('button', 'menu_button menu_button_primary neconyan-tool-tour-next', t`Show me around`);
     start.type = 'button';
     start.addEventListener('click', () => startToolTour(page.key, root));
     const later = element('button', 'menu_button', t`Not now`);

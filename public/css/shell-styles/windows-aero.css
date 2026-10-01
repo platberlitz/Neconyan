@@ -1,6 +1,6 @@
 /* Shell Style: Windows Aero. Loaded at runtime only while this style is active.
    Keeps the Calico palette, paw wallpaper and cat decorations, and lays Aero glass,
-   caption glow and glossy Win7 controls on top, all mixed from the Calico tokens. */
+   crisp captions and glossy Win7 controls on top, all mixed from the Calico tokens. */
 
 :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) {
     --aero-hue: #3d8ff0;
@@ -10,7 +10,6 @@
     --aero-glass-strong: color-mix(in srgb, var(--aero-tint) 90%, transparent);
     --aero-shine: linear-gradient(180deg, rgb(255 255 255 / 0.28) 0, rgb(255 255 255 / 0.1) 50%, rgb(255 255 255 / 0) 50.5%);
     --aero-edge: rgb(255 255 255 / 0.36);
-    --aero-glow: color-mix(in srgb, var(--aero-hue) 55%, rgb(255 255 255 / 0.85));
     --aero-select: linear-gradient(180deg, color-mix(in srgb, var(--neco-ginger) 18%, transparent), color-mix(in srgb, var(--neco-ginger) 40%, transparent));
     --aero-select-border: color-mix(in srgb, var(--neco-ginger) 65%, transparent);
     --aero-button: linear-gradient(180deg, color-mix(in srgb, var(--neco-raised) 72%, #fff 28%) 0, var(--neco-raised) 50%, color-mix(in srgb, var(--neco-raised) 88%, #000) 100%);
@@ -27,7 +26,6 @@
     --aero-tint: color-mix(in srgb, var(--neco-surface) 56%, var(--aero-hue-light) 44%);
     --aero-shine: linear-gradient(180deg, rgb(255 255 255 / 0.55) 0, rgb(255 255 255 / 0.22) 50%, rgb(255 255 255 / 0) 50.5%);
     --aero-edge: rgb(255 255 255 / 0.8);
-    --aero-glow: rgb(255 255 255 / 0.95);
     --aero-button: linear-gradient(180deg, #fbfbfb 0, #ececec 50%, color-mix(in srgb, var(--neco-raised) 70%, #cfcfcf) 100%);
     --aero-button-hover: linear-gradient(180deg, color-mix(in srgb, var(--aero-hue-light) 22%, #fff) 0, color-mix(in srgb, var(--aero-hue-light) 38%, #fff) 50%, color-mix(in srgb, var(--aero-hue-light) 70%, #fff) 51%, var(--aero-hue-light) 100%);
 }
@@ -46,7 +44,7 @@
     opacity: .72;
 }
 
-/* Top bar: a strip of blue-tinted glass with the caption-text glow. */
+/* Top bar: a strip of blue-tinted glass with crisp caption text. */
 :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) :is(#top-bar, #sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inner) {
     background: var(--aero-shine), var(--aero-glass);
     backdrop-filter: blur(14px) saturate(160%);
@@ -65,7 +63,7 @@
 }
 
 :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) :is(.sb-topbar-brand, #sb-topbar-title, #sb-topbar-clock) {
-    text-shadow: 0 0 10px var(--aero-glow), 0 0 4px var(--aero-glow);
+    text-shadow: none;
 }
 
 :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) #sb-topbar-inner :is(button, .sb-proxy-button):is(:hover, [aria-pressed='true']) {
@@ -86,7 +84,7 @@
 }
 
 :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) #neconyan-workspace-rail .neconyan-rail-brand {
-    text-shadow: 0 0 10px var(--aero-glow);
+    text-shadow: none;
 }
 
 :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #neconyan-workspace-rail .neconyan-rail-footer-action, #sb-mobile-nav .sb-nav-item):is(:hover, [aria-current='page'], .is-active),
@@ -184,7 +182,7 @@
 }
 
 :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) .sb-shell-title {
-    text-shadow: 0 0 10px var(--aero-glow);
+    text-shadow: none;
 }
 
 :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) .sb-shell-panel-scroller {
@@ -205,7 +203,7 @@
     border-radius: 0 0 5px 5px;
     min-width: 44px;
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45);
-    text-shadow: 0 0 4px rgb(0 0 0 / 0.5);
+    text-shadow: none;
 }
 
 :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) .sb-shell-close:hover {
