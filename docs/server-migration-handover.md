@@ -2,6 +2,42 @@
 
 ## Release preparation: 1.0.0
 
+### 2 October: 1.0.6 released from main, staging moves to 1.0.7
+
+The first Release E2E run on staging `d5fe7f5` failed six groups, so `main`
+was held back while three fixes and one test update landed on staging:
+`466c8e2` stops Prompt Manager token counts from running `{{setvar}}` macros and
+saving the open chat in the background (this set off group chat integrity
+popups); `cff3662` updates browser tests for the tools that moved to full pages,
+the eighteenth native extension (CSS Snippets) and partial settings reads;
+`d139055` makes Dialogue Colors read back the regex block its save check
+compares, which stops the repeated settings saves introduced by `76c5723` (they
+caused 'Settings changed on another device' popups, refused account backups and
+a refused Conversation reply); `068091a` keeps a loader shown just after startup
+from being emptied by startup cleanup (an empty, unclosable popup on phones;
+present since before 1.0.5).
+
+`main` was then fast-forwarded to `068091a` without a merge commit. All 395
+unit-test suites passed (5,030 tests, two skipped), all 1,572 server tests and
+89 Mewmory tests passed, and root lint, frontend budgets, the production build
+and Bun server initialisation passed. Tests-folder lint still reports 25
+existing errors and 380 warnings that were already on staging before this
+release; they did not block it. Release E2E run `36946470037` passed all 16
+browser-test groups after one rerun of group 16: the sidebar sections test
+reloaded before the debounced settings save carrying the Quick Actions section
+state had fired. Staging `40b97c8` makes that test wait for the save first; the
+app itself still has no settings flush when a page is closed within a second of
+a change, which predates this release.
+
+Android run `36946473578` passed the signed build and Android 11 and 15 emulator
+lifecycle checks. The downloaded checksums, embedded payloads, provenance for
+`068091aefe4bddcbcde5754e94c1190af911557c`, signing-certificate records and
+16 KiB alignment checks were verified. All source ZIP contents and file modes
+match the release commit. Neconyan 1.0.6 is published at
+https://github.com/platberlitz/Neconyan/releases/tag/v1.0.6 with the annotated
+tag `v1.0.6` and all nine release assets. It has not been tested on a physical
+phone. Staging now moves to `1.0.7`, including the version displayed in the app.
+
 ### 30 September: 1.0.5 released from main, staging moves to 1.0.6
 
 `main` was fast-forwarded to staging at `3d5c367` without a merge commit.
