@@ -449,7 +449,7 @@ body.neconyan:not(.sbterm) .sb-conversation-message[data-role='user'] .sb-conver
 }
 body.neconyan.flatchat:not(.sbterm) #chat .mes:not([is_user='true']) .mes_block,
 body.neconyan:not(.sbterm) .sb-conversation-message:not([data-role='user']) .sb-conversation-message-bubble {
-    padding: 12px 16px;
+    padding: 12px var(--neco-bubble-pad);
     border: 1px solid color-mix(in oklch, var(--neco-cream) 22%, var(--neco-border));
     border-radius: 14px 14px 14px 6px;
     background: color-mix(in srgb, color-mix(in oklch, var(--neco-cream) 9%, var(--neco-surface)) 90%, transparent);

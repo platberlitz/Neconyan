@@ -3440,3 +3440,7 @@ body.neconyan #open_chat_expressions #expressions_stop_sprite_generation { grid-
     body.neconyan #neconyan-lorebook-library #world_popup_primary_actions.neconyan-lorebook-primary-actions { flex: 1 1 100%; }
     body.neconyan #neconyan-lorebook-library #world_popup_primary_actions .world_popup_action_group--select { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); row-gap: 14px; width: 100%; }
 }
+@media (max-width: 768px) {
+    /* Page Width scales the desktop reading column; phone chats already fill the screen, so the slider would do nothing. */
+    #AppearanceLayoutSection [name="FontBlurChatWidthBlock"] > div:has(> #chat_width_slider) { display: none; }
+}

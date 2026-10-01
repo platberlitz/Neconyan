@@ -349,12 +349,14 @@ body.neconyan :is(#sheld, #chat, #form_sheld, #sb-bottom-chat-bar) {
     border: 0; border-radius: 0; background: var(--neco-canvas); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
 }
 body.neconyan #sheld { min-width: 0; overflow: hidden; }
+/* Page Size & Clarity sliders: each scale is 1 at its default, so the stock sizes are unchanged. */
+body.neconyan { --neco-gutter: calc(24px * var(--messageMarginScale, 1)); --neco-bubble-pad: calc(16px * var(--messageMarginScale, 1)); --neco-reading-width: calc(820px * var(--neconyanPageWidthScale, 1)); --neco-line-height: calc(1 + var(--neconyanLineSpacing, 1.2) * .54); --neco-line-ratio: calc(var(--neconyanLineSpacing, 1.2) / 1.2); }
 /* Keep the floating holders measurable for the expression worker's mode detection. */
 body.ripplestyle :is(#expression-wrapper, #visual-novel-wrapper) { visibility: hidden; pointer-events: none; }
 #chat .neconyan-expression-avatar { display: none; }
 body.ripplestyle #chat .mes .mesAvatarWrapper .avatar.has-expression > :not(.neconyan-expression-avatar) { display: none; }
 body.ripplestyle #chat .mes .mesAvatarWrapper .avatar.has-expression > .neconyan-expression-avatar { display: block; object-fit: contain; mask-image: none; -webkit-mask-image: none; }
-body.neconyan.flatchat:not(.sbterm) #chat { padding: 24px max(24px, calc((100% - 820px) / 2)); text-shadow: none; }
+body.neconyan.flatchat:not(.sbterm) #chat { padding: 24px max(var(--neco-gutter), calc((100% - var(--neco-reading-width)) / 2)); text-shadow: none; }
 /* Reserve room for the perched bodies, including first/history/Story/terminal rows. */
 body.neconyan #chat .mes.mes[mesid]:has(> .neconyan-message-sleeper:not([hidden])) {
     contain: layout style; margin-top: var(--neconyan-sleeper-space, 44px) !important; margin-bottom: 0 !important; overflow: visible;
@@ -370,7 +372,7 @@ body.neconyan #sheld .sb-conversation-message[data-message-id] { gap: 20px; alig
 /* Centre on the bubble itself, not on the room reserved above it for the sleeping cat. */
 body.neconyan #sheld .sb-conversation-message:has(> .sb-conversation-message-bubble > .neconyan-message-sleeper) > .sb-conversation-message-avatar { margin-top: var(--neconyan-sleeper-space, 44px); }
 @media (min-width: 769px) {
-    body.neconyan:is(.sbterm, :not(.flatchat)) #chat { padding-inline: 24px; }
+    body.neconyan:is(.sbterm, :not(.flatchat)) #chat { padding-inline: max(var(--neco-gutter), calc(50% * (1 - var(--neconyanPageWidthScale, 1)))); }
     body.neconyan.echostyle:not(.sbterm) #chat .mes .mes_text { margin-top: var(--neconyan-sleeper-space, 44px); }
     body.neconyan.echostyle:not(.sbterm) #chat .mes > .neconyan-message-sleeper { top: calc(var(--neconyan-sleeper-text-top, 0px) - 41px); }
     body.neconyan.flatchat:not(.sbterm):not(.sbstory) #chat .mes > .neconyan-message-sleeper { top: -29px; }
@@ -379,11 +381,11 @@ body.neconyan #sheld .sb-conversation-message:has(> .sb-conversation-message-bub
 body.neconyan.flatchat:not(.sbterm) #chat .mes { width: 100%; max-width: 100%; margin: 0 auto 24px; padding: 12px 0; gap: 18px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 body.neconyan.flatchat:not(.sbterm) #chat .mes::before { display: none; }
 body.neconyan.flatchat:not(.sbterm) #chat .mes .mes_block { min-width: 0; padding: 0; border: 0; box-shadow: none; }
-body.neconyan.flatchat:not(.sbterm) #chat .mes[is_user='true'] .mes_block { padding: 12px 16px; border-radius: 8px; background: var(--neco-user); }
-body.neconyan.flatchat:not(.sbterm) #chat .mes :is(.mes_text, .mes_reasoning) { font-size: 1em; line-height: 1.65; }
+body.neconyan.flatchat:not(.sbterm) #chat .mes[is_user='true'] .mes_block { padding: 12px var(--neco-bubble-pad); border-radius: 8px; background: var(--neco-user); }
+body.neconyan.flatchat:not(.sbterm) #chat .mes :is(.mes_text, .mes_reasoning) { font-size: 1em; line-height: var(--neco-line-height); }
 body.neconyan.flatchat:not(.sbterm) #chat .mes .name_text { font-weight: 600; font-size: 13px; }
 body.neconyan.flatchat:not(.sbterm) #chat .mes :is(.mes_button, .extraMesButtons > div) { border-radius: 5px; box-shadow: none; background: transparent; }
-body.neconyan #form_sheld { width: 100%; max-width: 860px; margin: 0 auto; padding: 0 24px max(18px, env(safe-area-inset-bottom)); }
+body.neconyan #form_sheld { width: 100%; max-width: max(420px, calc(860px * var(--neconyanPageWidthScale, 1))); margin: 0 auto; padding: 0 24px max(18px, env(safe-area-inset-bottom)); }
 body.neconyan :is(#send_form, #sb-bottom-chat-bar) { background: var(--neco-surface); }
 body.neconyan #sb-bottom-chat-bar { padding-inline: 0; }
 body.neconyan #send_form { padding: 6px; border: 1px solid var(--neco-border); border-radius: 10px; box-shadow: none; }
@@ -420,11 +422,11 @@ body.neconyan #sheld #sb_conversation_pals_rail {
 }
 body.neconyan #sheld #sb_conversation_pals_rail[data-open='true'] { visibility: visible; pointer-events: auto; }
 body.neconyan #sheld #sb_conversation_pals_rail .sb-conversation-rail-close { display: inline-flex; }
-body.neconyan .sb-conversation-timeline { padding: 24px max(24px, calc((100% - 820px) / 2)); gap: 24px; }
+body.neconyan .sb-conversation-timeline { padding: 24px max(var(--neco-gutter), calc((100% - var(--neco-reading-width)) / 2)); gap: 24px; }
 body.neconyan .sb-conversation-message-bubble { padding: 8px 0; background: transparent; color: var(--neco-ink); border: 0; border-radius: 0; box-shadow: none; }
-body.neconyan .sb-conversation-message[data-role='user'] .sb-conversation-message-bubble { padding: 12px 16px; background: var(--neco-user); border-radius: 8px; }
+body.neconyan .sb-conversation-message[data-role='user'] .sb-conversation-message-bubble { padding: 12px var(--neco-bubble-pad); background: var(--neco-user); border-radius: 8px; }
 body.neconyan :is(.sb-conversation-message-name, .sb-conversation-message-text) { color: var(--neco-ink); }
-body.neconyan .sb-conversation-message-text { line-height: 1.65; }
+body.neconyan .sb-conversation-message-text { line-height: var(--neco-line-height); }
 body.neconyan :is(.sb-conversation-message-reply-preview, .sb-conversation-composer-reply-card) { border-inline-start: 0; border-radius: 5px; background: var(--neco-surface); }
 body.neconyan .sb-conversation-message-time { color: var(--neco-muted); }
 body.neconyan .sb-conversation-composer {
@@ -569,7 +571,7 @@ body.neconyan #neconyan-tour-coachmark button:focus-visible { outline: 2px solid
     body.neconyan #sb-topbar-inner :is(#sb-hamburger, #sb-shortcut-left, #sb-shortcut-right, #sb-topbar-edit-card, #ica--tracker-panel-topbar) {
         min-width: 44px !important; min-height: 44px !important; height: 44px !important;
     }
-    body.neconyan #chat, body.neconyan .sb-conversation-timeline { padding: 16px 12px; }
+    body.neconyan #chat, body.neconyan .sb-conversation-timeline { padding: 16px calc(12px * var(--messageMarginScale, 1)); }
     body.neconyan #form_sheld { padding: 0 10px max(10px, env(safe-area-inset-bottom)); }
     body.neconyan .sb-conversation-composer { width: calc(100% - 20px); margin-bottom: max(10px, env(safe-area-inset-bottom)); }
     body.neconyan #sheld #sb_conversation_header { padding-inline: 10px; }

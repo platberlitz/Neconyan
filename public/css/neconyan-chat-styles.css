@@ -1626,11 +1626,11 @@ body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes:not(.smallSysMes
     max-width: min(80%, 640px);
 }
 body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes:not([is_user='true']) .mes_block {
-    padding: 10px 14px;
+    padding: 10px calc(14px * var(--messageMarginScale, 1));
     border-radius: 20px 20px 20px 6px;
 }
 body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes[is_user='true'] .mes_block {
-    padding: 10px 14px;
+    padding: 10px calc(14px * var(--messageMarginScale, 1));
     border: 1px solid color-mix(in oklch, var(--neco-ginger) 45%, var(--neco-border));
     border-radius: 20px 20px 6px 20px;
     background: color-mix(in oklch, var(--neco-ginger) 24%, var(--neco-surface));
@@ -1643,11 +1643,11 @@ body.neconyan.flatchat.nnchat-messenger:not(.sbterm) #chat .mes .timestamp {
 }
 
 body.neconyan.flatchat.nnchat-notebook:not(.sbterm) #chat .mes {
-    --nnchat-line: 1.7em;
+    --nnchat-line: calc(1.7em * var(--neco-line-ratio, 1));
     --nnchat-rule: color-mix(in srgb, var(--SmartThemeBodyColor) 13%, transparent);
 }
 body.neconyan.flatchat.nnchat-notebook:not(.sbterm) #chat .mes:not(.smallSysMes) .mes_block {
-    padding: 12px 18px 14px 26px;
+    padding: 12px calc(18px * var(--messageMarginScale, 1)) 14px calc(26px * var(--messageMarginScale, 1));
     border: 1px solid color-mix(in oklch, var(--neco-cream) 18%, var(--neco-border));
     border-radius: 4px 10px 10px 4px;
     background: var(--neco-surface);
@@ -1706,10 +1706,10 @@ body.neconyan.flatchat.nnchat-script:not(.sbterm) #chat .mes[is_user='true'] .na
     color: var(--neco-ginger);
 }
 body.neconyan.flatchat.nnchat-script:not(.sbterm) #chat .mes .mes_text {
-    padding-inline: clamp(0px, 6%, 48px);
+    padding-inline: calc(clamp(0px, 6%, 48px) * var(--messageMarginScale, 1));
     font-family: ui-monospace, 'Courier New', monospace;
     font-size: 0.95em;
-    line-height: 1.6;
+    line-height: calc(1.6 * var(--neco-line-ratio, 1));
 }
 body.neconyan.flatchat.nnchat-script:not(.sbterm) #chat .mes .mes_text em {
     color: var(--neco-muted);
@@ -1722,7 +1722,7 @@ body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat {
 body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes {
     gap: 10px;
     margin-bottom: 2px;
-    padding: 6px 8px;
+    padding: 6px calc(8px * var(--messageMarginScale, 1));
     border-radius: 8px;
 }
 body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes:hover {
@@ -1741,7 +1741,7 @@ body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes[is_user='true'] {
 }
 body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes .mes_text {
     font-size: 0.94em;
-    line-height: 1.45;
+    line-height: calc(1.45 * var(--neco-line-ratio, 1));
 }
 body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes .mes_text :is(p, ul, ol, blockquote) {
     margin-block: 0 0.4em;
@@ -1763,14 +1763,14 @@ body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes:not(.smallSysMes
 }
 body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes:not(.smallSysMes) .mes_block {
     width: min(100%, 68ch);
-    padding: 22px clamp(16px, 5%, 40px) 26px;
+    padding: 22px calc(clamp(16px, 5%, 40px) * var(--messageMarginScale, 1)) 26px;
     border: 1px solid color-mix(in oklch, var(--neco-cream) 24%, var(--neco-border));
     border-radius: 6px;
     background: color-mix(in oklch, var(--neco-cream) 7%, var(--neco-surface));
     box-shadow: 0 6px 18px color-mix(in oklch, var(--neco-charcoal) 20%, transparent);
 }
 body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes:not(.smallSysMes)[is_user='true'] .mes_block {
-    padding: 6px 18px;
+    padding: 6px calc(18px * var(--messageMarginScale, 1));
     border: 0;
     border-left: 3px solid var(--neco-ginger);
     border-radius: 0;
@@ -1791,7 +1791,7 @@ body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes:not([is_user='tr
 body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes .mes_text {
     font-family: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
     font-size: 1.06em;
-    line-height: 1.75;
+    line-height: calc(1.75 * var(--neco-line-ratio, 1));
     text-align: justify;
     hyphens: auto;
 }
@@ -1838,7 +1838,7 @@ body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes[is_user='true'] {
 
 @media (max-width: 768px) {
     body.neconyan.flatchat.nnchat-notebook:not(.sbterm) #chat .mes:not(.smallSysMes) .mes_block {
-        padding: 10px 12px 12px 16px;
+        padding: 10px calc(12px * var(--messageMarginScale, 1)) 12px calc(16px * var(--messageMarginScale, 1));
     }
     body.neconyan.flatchat.nnchat:not(.sbterm) #chat .mes:not(.smallSysMes) {
         gap: 10px;

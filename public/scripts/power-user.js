@@ -354,7 +354,7 @@ const CHAT_STYLE_BODY_CLASSES = Object.freeze({
 
 const LEGACY_CHAT_STYLE_BODY_CLASSES = Object.freeze([]);
 const NATIVE_CHAT_STYLE_STYLESHEET_ID = 'neconyan-native-chat-styles';
-const NATIVE_CHAT_STYLE_STYLESHEET_HREF = 'css/neconyan-chat-styles.css?v=20261001-chatstyles';
+const NATIVE_CHAT_STYLE_STYLESHEET_HREF = 'css/neconyan-chat-styles.css?v=20261001-sliders';
 
 function ensureNativeChatStyleStylesheet() {
     if (document.getElementById(NATIVE_CHAT_STYLE_STYLESHEET_ID)) {
@@ -1506,19 +1506,26 @@ function applyToastrPosition() {
     $(`#toastr_position option[value="${power_user.toastr_position}"]`).prop('selected', true);
 }
 
+// Neconyan: the desktop shell fills the space beside the sidebar, so Page Width scales the reading column instead (1 = the stock column).
+function setChatWidthProperties() {
+    const root = document.documentElement;
+    const chatWidth = Number(power_user.chat_width);
+    const scale = Number.isFinite(chatWidth) ? Math.min(100, Math.max(25, chatWidth)) / 100 : 1;
+    root.style.setProperty('--sheldWidth', `${power_user.chat_width}vw`);
+    root.style.setProperty('--neconyanPageWidthScale', String(scale));
+}
+
 function applyChatWidth(type) {
     if (type === 'forced') {
-        let r = document.documentElement;
-        r.style.setProperty('--sheldWidth', `${power_user.chat_width}vw`);
+        setChatWidthProperties();
         $('#chat_width_slider').val(power_user.chat_width);
-        //document.documentElement.style.setProperty('--sheldWidth', power_user.chat_width);
     } else {
         //this is to prevent the slider from updating page in real time
-        $('#chat_width_slider').off('mouseup touchend').on('mouseup touchend', async () => {
+        $('#chat_width_slider').off('change mouseup touchend').on('change mouseup touchend', async () => {
             // This is a hack for Firefox to let it render before applying the block width.
             // Otherwise it takes the incorrect slider position with the new value AFTER the resizing.
             await delay(1);
-            document.documentElement.style.setProperty('--sheldWidth', `${power_user.chat_width}vw`);
+            setChatWidthProperties();
             await delay(1);
         });
     }
@@ -2306,7 +2313,7 @@ function applyFontScale(type) {
         document.documentElement.style.setProperty('--fontScale', String(power_user.font_scale));
     } else {
         //this is to prevent the slider from updating page in real time
-        $('#font_scale').off('mouseup touchend').on('mouseup touchend', () => {
+        $('#font_scale').off('change mouseup touchend').on('change mouseup touchend', () => {
             document.documentElement.style.setProperty('--fontScale', String(power_user.font_scale));
         });
     }
@@ -2322,12 +2329,13 @@ function applyLineSpacing(type) {
 
         document.documentElement.style.setProperty('--lineSpacingDesktopLeading', `${spacingScale * 0.5}rem`);
         document.documentElement.style.setProperty('--lineSpacingMobileLeading', `${spacingScale * 0.42}rem`);
+        document.documentElement.style.setProperty('--neconyanLineSpacing', String(spacingScale));
     };
 
     if (type === 'forced') {
         setLineSpacing();
     } else {
-        $('#line_spacing').off('mouseup touchend').on('mouseup touchend', setLineSpacing);
+        $('#line_spacing').off('change mouseup touchend').on('change mouseup touchend', setLineSpacing);
     }
 
     $('#line_spacing_counter').val(power_user.line_spacing);
@@ -2345,7 +2353,7 @@ function applyMessageMarginSize(type) {
     if (type === 'forced') {
         setMessageMarginSize();
     } else {
-        $('#message_margin_size').off('mouseup touchend').on('mouseup touchend', setMessageMarginSize);
+        $('#message_margin_size').off('change mouseup touchend').on('change mouseup touchend', setMessageMarginSize);
     }
 
     $('#message_margin_size_counter').val(power_user.message_margin_size);
