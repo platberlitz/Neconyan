@@ -228,6 +228,18 @@
         "type": "theme"
     },
     {
+        "filename": "themes/Windows 98.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Windows Aero.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Windows Aero Light.json",
+        "type": "theme"
+    },
+    {
         "filename": "backgrounds/__transparent.png",
         "type": "background"
     },
