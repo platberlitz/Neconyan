@@ -76,10 +76,14 @@ body.neconyan {
 body.neconyan #bg-header-fixed .bg-header-row-1 > h3 { flex: 0 1 auto; padding: 0; border: 0; background: transparent; }
 body.neconyan #background_fitting { flex: 1 0 auto; width: auto; min-width: calc(7ch + 52px); max-width: none; }
 /* The built-in wallpaper follows the same fit as selected images. */
-body.neconyan:has(#bg1.cover)::before { background-size: cover; background-position: center; }
-body.neconyan:has(#bg1.contain)::before { background-size: contain; background-position: center; }
+body.neconyan:has(#bg1.cover)::before { background-size: cover; background-position: var(--neconyan-wallpaper-focus, center); }
+body.neconyan:has(#bg1.contain)::before { background-size: contain; background-position: var(--neconyan-wallpaper-focus, center); }
 body.neconyan:has(#bg1.stretch)::before { background-size: 100% 100%; }
-body.neconyan:has(#bg1.center)::before { background-size: auto; background-position: center; }
+body.neconyan:has(#bg1.center)::before { background-size: auto; background-position: var(--neconyan-wallpaper-focus, center); }
+/* Background Position: the part of the picture kept in view when the screen crops it. */
+:root[data-sb-bg-position] #bg1,
+:root[data-sb-bg-position] body.neconyan::before { background-position: var(--sb-bg-position) !important; }
+body.neconyan #background_position { flex: 0 1 auto; width: auto; min-width: calc(6ch + 40px); max-width: none; }
 body.neconyan {
     --sb-accent: var(--neco-ginger);
     --sb-accent-soft: var(--neco-user);
@@ -362,7 +366,9 @@ body.neconyan #sheld :is(.sbtw-post, .sbtw-reply):has(> .neconyan-message-sleepe
 body.neconyan #sheld .sbtw-list { padding-inline: 18px; }
 body.neconyan #sheld .sbtw-quote-card { position: relative; margin-top: var(--neconyan-sleeper-space, 44px); }
 body.neconyan #sheld .sbtw-quote-card .sbtw-post-compact { position: static; margin-top: 0; }
-body.neconyan #sheld .sb-conversation-message[data-message-id] { gap: 20px; }
+body.neconyan #sheld .sb-conversation-message[data-message-id] { gap: 20px; align-items: center; }
+/* Centre on the bubble itself, not on the room reserved above it for the sleeping cat. */
+body.neconyan #sheld .sb-conversation-message:has(> .sb-conversation-message-bubble > .neconyan-message-sleeper) > .sb-conversation-message-avatar { margin-top: var(--neconyan-sleeper-space, 44px); }
 @media (min-width: 769px) {
     body.neconyan:is(.sbterm, :not(.flatchat)) #chat { padding-inline: 24px; }
     body.neconyan.echostyle:not(.sbterm) #chat .mes .mes_text { margin-top: var(--neconyan-sleeper-space, 44px); }

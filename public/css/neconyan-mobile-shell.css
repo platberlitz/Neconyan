@@ -2933,12 +2933,12 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
 
     #sb-bottom-chat-bar {
         --sb-bottom-chat-mobile-gutter: max(env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
-        --sb-bottom-chat-mobile-gap: clamp(1px, calc(1.5px * var(--sb-bottom-bar-scale)), 3px);
-        --sb-bottom-chat-mobile-padding-block: clamp(1px, calc(1.5px * var(--sb-bottom-bar-scale)), 2px);
+        --sb-bottom-chat-mobile-gap: clamp(2px, calc(3px * var(--sb-bottom-bar-scale)), 5px);
+        --sb-bottom-chat-mobile-padding-block: clamp(2px, calc(3px * var(--sb-bottom-bar-scale)), 4px);
         --sb-bottom-chat-mobile-padding-inline: clamp(3px, calc(4px * var(--sb-bottom-bar-scale)), 6px);
-        --sb-bottom-chat-mobile-button-size: clamp(26px, calc(28px * var(--sb-bottom-bar-scale)), 32px);
-        --sb-bottom-chat-mobile-select-height: clamp(26px, calc(28px * var(--sb-bottom-bar-scale)), 32px);
-        --sb-bottom-chat-mobile-persona-size: clamp(26px, calc(28px * var(--sb-bottom-bar-scale)), 32px);
+        --sb-bottom-chat-mobile-button-size: clamp(30px, calc(40px * var(--sb-bottom-bar-scale)), 48px);
+        --sb-bottom-chat-mobile-select-height: clamp(30px, calc(40px * var(--sb-bottom-bar-scale)), 48px);
+        --sb-bottom-chat-mobile-persona-size: clamp(30px, calc(40px * var(--sb-bottom-bar-scale)), 48px);
         --sb-bottom-chat-mobile-radius: 0px;
         /* Keep vertical drags on the band between #chat and the composer from
            becoming visual-viewport pans; its only owned gesture is the

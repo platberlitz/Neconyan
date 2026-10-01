@@ -110,10 +110,19 @@ let cachedSystemBackgrounds = [];
 let backgroundLibraryLoaded = false;
 let backgroundLibraryPromise;
 
+const BACKGROUND_POSITIONS = Object.freeze({
+    center: '50% 50%',
+    left: '0% 50%',
+    right: '100% 50%',
+    top: '50% 0%',
+    bottom: '50% 100%',
+});
+
 export let background_settings = {
     name: '__transparent.png',
     url: generateUrlParameter('__transparent.png', false),
     fitting: 'classic',
+    position: 'auto',
     animation: false,
     sortOrder: BG_SORT_OPTIONS.AZ,
 };
@@ -267,6 +276,8 @@ export function loadBackgroundSettings(settings) {
     setBackground(backgroundSettings.name, backgroundSettings.url);
     setFittingClass(backgroundSettings.fitting);
     $('#background_fitting').val(backgroundSettings.fitting);
+    setBackgroundPosition(backgroundSettings.position);
+    $('#background_position').val(background_settings.position);
     $('#background_thumbnails_animation').prop('checked', background_settings.animation);
     $('#bg-sort').val(background_settings.sortOrder);
     highlightSelectedBackground();
@@ -1714,6 +1725,24 @@ function setFittingClass(fitting) {
     background_settings.fitting = fitting;
 }
 
+/**
+ * Chooses which part of the background stays in view when the screen crops it.
+ * 'auto' keeps each built-in wallpaper's own focus, such as the sleeping cat.
+ * @param {string} position Position key
+ */
+export function setBackgroundPosition(position) {
+    const value = BACKGROUND_POSITIONS[position];
+    const root = document.documentElement;
+    if (value) {
+        root.dataset.sbBgPosition = position;
+        root.style.setProperty('--sb-bg-position', value);
+    } else {
+        delete root.dataset.sbBgPosition;
+        root.style.removeProperty('--sb-bg-position');
+    }
+    background_settings.position = value ? position : 'auto';
+}
+
 function highlightSelectedBackground() {
     $('.bg_example.selected-background').removeClass('selected-background');
 
@@ -1930,6 +1959,11 @@ export function initBackgrounds() {
     $('#background_fitting').on('input', function () {
         background_settings.fitting = String($(this).val());
         setFittingClass(background_settings.fitting);
+        saveSettingsDebounced();
+    });
+
+    $('#background_position').on('input', function () {
+        setBackgroundPosition(String($(this).val()));
         saveSettingsDebounced();
     });
 

@@ -16,7 +16,7 @@
             background-color: #141514;
         }
     </style>
-    <link rel="preload" as="style" href="style.css?v=20261001-lorebook">
+    <link rel="preload" as="style" href="style.css?v=20261001-uifit">
     <script type="importmap">
         { "imports": { "#macro-vendor": "./lib.js" } }
     </script>
@@ -41,18 +41,18 @@
     <link rel="icon" type="image/png" sizes="192x192" href="img/neconyan-icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="img/neconyan-icon-512.png">
     <link rel="apple-touch-icon" sizes="180x180" href="img/neconyan-icon-180.png" />
-    <link rel="stylesheet" type="text/css" href="style.css?v=20261001-lorebook">
+    <link rel="stylesheet" type="text/css" href="style.css?v=20261001-uifit">
     <link rel="stylesheet" type="text/css" href="css/st-tailwind.css">
     <link rel="stylesheet" type="text/css" href="css/toggle-dependent.css">
     <link rel="stylesheet" type="text/css" href="css/select2-overrides.css?v=20260609a">
     <link rel="stylesheet" type="text/css" href="css/mobile-styles.css?v=20260916p" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-theme.css?v=20261001-lorebook">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-theme.css?v=20261001-uifit">
     <link rel="stylesheet" type="text/css" href="css/neconyan-paper-theme.css?v=20260918b" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-tabs.css?v=20261001-lorebook">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-mobile-shell.css?v=20261001-lorebook" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan.css?v=20261001-lorebook">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-home.css?v=20261001-lorebook">
-    <link id="neconyan-calico-stylesheet" rel="stylesheet" type="text/css" href="css/neconyan-calico.css?v=20261001-lorebook">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-tabs.css?v=20261001-uifit">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-mobile-shell.css?v=20261001-uifit" media="(max-width: 768px)">
+    <link rel="stylesheet" type="text/css" href="css/neconyan.css?v=20261001-uifit">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-home.css?v=20261001-uifit">
+    <link id="neconyan-calico-stylesheet" rel="stylesheet" type="text/css" href="css/neconyan-calico.css?v=20261001-uifit">
     <link href="css/neconyan-menus.css?v=20260926a" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <link href="css/neconyan-help.css?v=20260929b" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <script>
@@ -62,7 +62,7 @@
                 if (['kittyless', 'windows-aero', 'windows-98', 'clean-minimal', 'macos-minimal', 'cozy-warm', 'hypr-glow', 'slate-flat'].indexOf(shellStyle) === -1) return;
                 var link = document.createElement('link');
                 link.rel = 'stylesheet';
-                link.href = 'css/shell-styles/' + shellStyle + '.css?v=20261001-perf';
+                link.href = 'css/shell-styles/' + shellStyle + '.css?v=20261001-uifit';
                 link.setAttribute('data-sb-shell-style', shellStyle);
                 document.documentElement.setAttribute('data-sb-theme', shellStyle);
                 document.head.appendChild(link);
@@ -6263,6 +6263,14 @@
                             <option value="contain" data-i18n="Contain">Contain</option>
                             <option value="stretch" data-i18n="Stretch">Stretch</option>
                             <option value="center" data-i18n="Center">Center</option>
+                        </select>
+                        <select id="background_position" class="text_pole" data-i18n="[title]Background Position" title="Background Position">
+                            <option value="auto" data-i18n="Auto focus">Auto focus</option>
+                            <option value="center" data-i18n="Centre">Centre</option>
+                            <option value="left" data-i18n="Left">Left</option>
+                            <option value="right" data-i18n="Right">Right</option>
+                            <option value="top" data-i18n="Top">Top</option>
+                            <option value="bottom" data-i18n="Bottom">Bottom</option>
                         </select>
                         <div id="auto_background" class="menu_button menu_button_icon" data-i18n="[title]Automatically select a background based on the chat context" title="Automatically select a background based on the chat context.">
                             <i class="fa-solid fa-wand-magic"></i>

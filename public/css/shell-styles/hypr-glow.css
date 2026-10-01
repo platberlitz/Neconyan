@@ -27,6 +27,8 @@
 /* Wallpaper: this style's own scene, still behind the Calico paw prints and cat decorations. */
 :root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm)::before {
     background-image: url('../../img/neconyan/shell-hypr-glow.webp?v=20260929a');
+    /* The cat sleeps at the right-hand edge, so narrow screens crop towards it. */
+    --neconyan-wallpaper-focus: 100% 50%;
     opacity: .85;
 }
 

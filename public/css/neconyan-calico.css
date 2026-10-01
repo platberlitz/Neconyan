@@ -342,7 +342,7 @@ body.neconyan::before {
     inset: 0;
     z-index: -2;
     pointer-events: none;
-    background: url('../img/neconyan/kitty-clouds.webp?v=20260913g') 50% 50% / cover no-repeat;
+    background: url('../img/neconyan/kitty-clouds.webp?v=20260913g') var(--neconyan-wallpaper-focus, 50% 50%) / cover no-repeat;
     opacity: .67;
 }
 :root[data-neconyan-calico-tone='dark'] body.neconyan::before {
@@ -410,7 +410,8 @@ body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='chara
 body.neconyan.flatchat:not(.sbterm) #chat .mes .avatar,
 body.neconyan:not(.sbterm) .sb-conversation-message-avatar {
     position: relative;
-    overflow: visible;
+    /* The ears sit above the frame; neconyan-theme.css clips avatars with !important. */
+    overflow: visible !important;
     border: 2px solid color-mix(in oklch, var(--neco-ginger) 55%, var(--neco-border));
     border-radius: 16px;
     background: color-mix(in oklch, var(--neco-cream) 26%, var(--neco-surface));
@@ -433,7 +434,8 @@ body.neconyan.flatchat:not(.sbterm) #chat .mes .avatar::before,
 body.neconyan:not(.sbterm) .sb-conversation-message-avatar::before { left: 5px; background-image: url('../img/neconyan/ear-left.webp'); }
 body.neconyan.flatchat:not(.sbterm) #chat .mes .avatar::after,
 body.neconyan:not(.sbterm) .sb-conversation-message-avatar::after { right: 5px; background-image: url('../img/neconyan/ear-right.webp'); }
-body.neconyan:not(.sbterm) .sb-conversation-message-avatar img { border-radius: inherit; }
+body.neconyan.flatchat:not(.sbterm) #chat .mes .avatar > img,
+body.neconyan:not(.sbterm) .sb-conversation-message-avatar img { border-radius: 14px; }
 body.neconyan.flatchat:not(.sbterm) #chat .mes[is_user='true'] .mes_block,
 body.neconyan:not(.sbterm) .sb-conversation-message[data-role='user'] .sb-conversation-message-bubble {
     border: 1px solid color-mix(in oklch, var(--neco-pink) 26%, var(--neco-border));
@@ -479,7 +481,7 @@ body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.ch
 }
 
 @media (max-width: 390px) {
-    body.neconyan::before { background-position: 78% 50%; }
+    body.neconyan::before { background-position: var(--neconyan-wallpaper-focus, 78% 50%); }
 }
 
 /* Compact character header: mode and native workspace launchers share one

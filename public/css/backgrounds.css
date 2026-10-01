@@ -152,7 +152,8 @@ body.sb-bg-blur #bg_custom {
     display: none;
 }
 
-#background_fitting {
+#background_fitting,
+#background_position {
     flex: 0 1 180px;
     max-width: none;
     min-height: 44px;

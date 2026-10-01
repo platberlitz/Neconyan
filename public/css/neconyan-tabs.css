@@ -4905,13 +4905,13 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     #sb-bottom-chat-bar {
         --sb-bottom-chat-mobile-gutter: max(14px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
         --sb-bottom-chat-mobile-width: calc(100% - (var(--sb-bottom-chat-mobile-gutter) * 2));
-        --sb-bottom-chat-mobile-gap: clamp(1px, calc(2px * var(--sb-bottom-bar-scale)), 4px);
-        --sb-bottom-chat-mobile-padding-block: clamp(1px, calc(2px * var(--sb-bottom-bar-scale)), 3px);
-        --sb-bottom-chat-mobile-padding-inline: clamp(4px, calc(5px * var(--sb-bottom-bar-scale)), 7px);
-        --sb-bottom-chat-mobile-button-size: clamp(28px, calc(30px * var(--sb-bottom-bar-scale)), 34px);
-        --sb-bottom-chat-mobile-select-height: clamp(28px, calc(30px * var(--sb-bottom-bar-scale)), 34px);
-        --sb-bottom-chat-mobile-persona-size: clamp(28px, calc(30px * var(--sb-bottom-bar-scale)), 34px);
-        --sb-bottom-chat-mobile-radius: clamp(9px, calc(11px * var(--sb-bottom-bar-scale)), 14px);
+        --sb-bottom-chat-mobile-gap: clamp(2px, calc(4px * var(--sb-bottom-bar-scale)), 6px);
+        --sb-bottom-chat-mobile-padding-block: clamp(2px, calc(3px * var(--sb-bottom-bar-scale)), 5px);
+        --sb-bottom-chat-mobile-padding-inline: clamp(4px, calc(6px * var(--sb-bottom-bar-scale)), 9px);
+        --sb-bottom-chat-mobile-button-size: clamp(30px, calc(40px * var(--sb-bottom-bar-scale)), 60px);
+        --sb-bottom-chat-mobile-select-height: clamp(30px, calc(40px * var(--sb-bottom-bar-scale)), 60px);
+        --sb-bottom-chat-mobile-persona-size: clamp(30px, calc(40px * var(--sb-bottom-bar-scale)), 60px);
+        --sb-bottom-chat-mobile-radius: clamp(10px, calc(14px * var(--sb-bottom-bar-scale)), 20px);
         width: min(var(--sb-bottom-chat-mobile-width), calc(100% - (var(--sb-bottom-chat-mobile-gutter) * 2)));
         max-width: calc(100% - (var(--sb-bottom-chat-mobile-gutter) * 2));
         display: grid;
@@ -4945,7 +4945,7 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
         min-height: var(--sb-bottom-chat-mobile-select-height);
         max-height: var(--sb-bottom-chat-mobile-select-height);
         padding: 0 clamp(6px, calc(8px * var(--sb-bottom-bar-scale)), 10px);
-        font-size: clamp(calc(var(--mainFontSize) * 0.68), calc(var(--mainFontSize) * 0.76 * var(--sb-bottom-bar-scale)), calc(var(--mainFontSize) * 0.86));
+        font-size: clamp(calc(var(--mainFontSize) * 0.7), calc(var(--mainFontSize) * 0.82 * var(--sb-bottom-bar-scale)), calc(var(--mainFontSize) * 1.1));
         line-height: var(--sb-bottom-chat-mobile-select-height);
         border-radius: clamp(10px, calc(11px * var(--sb-bottom-bar-scale)), 14px);
     }
@@ -4975,7 +4975,7 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
         grid-row: 2;
         display: flex;
         align-items: center;
-        justify-content: center;
+        justify-content: flex-start;
         width: 100%;
         min-width: 0;
         gap: var(--sb-bottom-chat-mobile-gap);
@@ -5029,6 +5029,7 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 
     .sb-bottom-chat-management-actions {
         width: max-content;
+        margin-inline: auto;
     }
 
     .sb-bottom-chat-nav-actions {
@@ -5051,8 +5052,8 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
         min-height: var(--sb-bottom-chat-mobile-button-size);
         max-height: var(--sb-bottom-chat-mobile-button-size);
         padding: 0;
-        border-radius: clamp(8px, calc(9px * var(--sb-bottom-bar-scale)), 12px);
-        font-size: clamp(calc(var(--mainFontSize) * 0.68), calc(var(--mainFontSize) * 0.78 * var(--sb-bottom-bar-scale)), calc(var(--mainFontSize) * 0.88));
+        border-radius: clamp(8px, calc(10px * var(--sb-bottom-bar-scale)), 15px);
+        font-size: calc(var(--sb-bottom-chat-mobile-button-size) * 0.42);
         line-height: 1;
     }
 }
@@ -5061,19 +5062,19 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     #sb-bottom-chat-bar {
         --sb-bottom-chat-mobile-gutter: max(4px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
         --sb-bottom-chat-mobile-width: calc(100% - (var(--sb-bottom-chat-mobile-gutter) * 2));
-        --sb-bottom-chat-mobile-gap: clamp(1px, calc(1.5px * var(--sb-bottom-bar-scale)), 3px);
-        --sb-bottom-chat-mobile-padding-block: clamp(1px, calc(1.5px * var(--sb-bottom-bar-scale)), 2px);
+        --sb-bottom-chat-mobile-gap: clamp(2px, calc(3px * var(--sb-bottom-bar-scale)), 5px);
+        --sb-bottom-chat-mobile-padding-block: clamp(2px, calc(3px * var(--sb-bottom-bar-scale)), 4px);
         --sb-bottom-chat-mobile-padding-inline: clamp(3px, calc(4px * var(--sb-bottom-bar-scale)), 6px);
-        --sb-bottom-chat-mobile-button-size: clamp(26px, calc(28px * var(--sb-bottom-bar-scale)), 32px);
-        --sb-bottom-chat-mobile-select-height: clamp(26px, calc(28px * var(--sb-bottom-bar-scale)), 32px);
-        --sb-bottom-chat-mobile-persona-size: clamp(26px, calc(28px * var(--sb-bottom-bar-scale)), 32px);
+        --sb-bottom-chat-mobile-button-size: clamp(30px, calc(40px * var(--sb-bottom-bar-scale)), 48px);
+        --sb-bottom-chat-mobile-select-height: clamp(30px, calc(40px * var(--sb-bottom-bar-scale)), 48px);
+        --sb-bottom-chat-mobile-persona-size: clamp(30px, calc(40px * var(--sb-bottom-bar-scale)), 48px);
         --sb-bottom-chat-mobile-radius: clamp(8px, calc(10px * var(--sb-bottom-bar-scale)), 13px);
     }
 
     #sb-bottom-chat-select {
         flex-basis: 48px;
         padding-inline: clamp(5px, calc(6px * var(--sb-bottom-bar-scale)), 8px);
-        font-size: clamp(calc(var(--mainFontSize) * 0.64), calc(var(--mainFontSize) * 0.72 * var(--sb-bottom-bar-scale)), calc(var(--mainFontSize) * 0.82));
+        font-size: clamp(calc(var(--mainFontSize) * 0.66), calc(var(--mainFontSize) * 0.78 * var(--sb-bottom-bar-scale)), calc(var(--mainFontSize) * 1.05));
     }
 
     .sb-bottom-chat-search-status {
