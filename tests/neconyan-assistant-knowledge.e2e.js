@@ -15,6 +15,9 @@ async function fixture(page, tone = 'dark') {
     const requests = [];
     await page.route(/https?:\/\/(?!127\.0\.0\.1(?::|\/))/, route => route.abort());
     await page.route('**/api/settings/get', async route => {
+        // Section and extension reads have no full settings document to adjust.
+        const body = route.request().postDataJSON() ?? {};
+        if (body.extensionSettings || body.sections || body.settingsOnly) return route.continue();
         const envelope = await (await route.fetch()).json();
         const settings = JSON.parse(envelope.settings);
         settings.firstRun = false;

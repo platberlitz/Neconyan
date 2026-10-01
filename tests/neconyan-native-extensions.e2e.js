@@ -326,11 +326,11 @@ test('Built-in Extensions omits Included Tools while their settings remain searc
     await page.evaluate(() => window.NeconyanShell.openTab('right', 'extensions'));
     await page.getByRole('button', { name: 'Built-in', exact: true }).click();
     const entries = page.locator('.sb-extension-master-item');
-    await expect(entries).toHaveCount(10);
-    for (const name of ['BotSearcher', 'Dialogue Colors', 'Preset Tools', 'Prompt Tags', 'Time Machine', 'Meower', 'Story Mode', 'Pawthfinder']) {
+    await expect(entries).toHaveCount(7);
+    for (const name of ['BotSearcher', 'Dialogue Colors', 'Preset Tools', 'Prompt Tags', 'Time Machine', 'Meower', 'Story Mode', 'Pawthfinder', 'Quick Image Gen', 'Character Expressions', 'Regex']) {
         await expect(entries.filter({ hasText: new RegExp(`^${name}$`) })).toHaveCount(0);
     }
-    for (const name of ['TTS', 'Quick Reply', 'Quick Image Gen', 'Vectorization']) {
+    for (const name of ['TTS', 'Quick Reply', 'Vectorization']) {
         await expect(entries.filter({ hasText: new RegExp(`^${name}$`) })).toHaveCount(1);
     }
     // Pawthfinder keeps its settings page through the Included Tools route.
@@ -687,13 +687,13 @@ for (const width of [1280, 390, 320]) {
                 await expect(page.locator('body')).not.toHaveClass(/(?:^| )sbterm(?: |$)/);
                 const discovered = await page.request.get('/api/extensions/discover');
                 const native = (await discovered.json()).filter(entry => entry.type === 'native');
-                expect(native).toHaveLength(17);
-                expect(new Set(native.map(entry => entry.name)).size).toBe(17);
+                expect(native).toHaveLength(18);
+                expect(new Set(native.map(entry => entry.name)).size).toBe(18);
 
                 await page.evaluate(() => window.NeconyanShell.openTab('right', 'extensions'));
                 await page.locator('#extensions_details').click();
                 const catalog = page.locator('dialog.popup:visible .extension_native');
-                await expect(catalog).toHaveCount(17);
+                await expect(catalog).toHaveCount(18);
                 await expect(catalog.filter({ hasText: 'Meower' })).toHaveCount(1);
                 await expect(catalog.locator('.btn_update, .btn_sync, .btn_reinstall, .btn_delete, .btn_move, .btn_branch')).toHaveCount(0);
                 await expect(catalog.locator('.extension_missing')).toHaveCount(0);

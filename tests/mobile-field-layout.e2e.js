@@ -71,10 +71,8 @@ test('memory corrections and expression actions fit phone, tablet and desktop wi
     const stop = page.locator('#expressions_stop_sprite_generation');
     for (const width of [320, 393, 820, 1280]) {
         await page.setViewportSize({ width, height: width <= 393 ? 852 : 900 });
-        await page.evaluate(() => window.NeconyanShell.openTab('right', 'extensions'));
-        await page.getByRole('button', { name: 'Built-in', exact: true }).click();
-        const toggle = page.getByRole('button', { name: /^(Expand|Collapse) Character Expressions$/ });
-        if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+        await page.evaluate(() => window.NeconyanShell.openIncludedTool('expressions'));
+        await expect(page.locator('#user-settings-block .neconyan-shell-page-intro')).toHaveAttribute('data-tool-page', 'expressions', { timeout: 15_000 });
         await expect(page.locator('#expression_override')).toBeAttached();
         await expect(stop).toBeHidden();
         await expressionActions.scrollIntoViewIfNeeded({ timeout: 10_000 });
