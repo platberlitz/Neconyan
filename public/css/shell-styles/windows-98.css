@@ -175,6 +175,18 @@
     border-radius: 0;
 }
 
+/* With Hide cats on, the menu keeps its silver face and grooved divider without the paws. */
+:root[data-sb-theme='windows-98'][data-sb-kittyless='true'] body.neconyan:not(.sbterm) :is(#options > .options-content, #extensionsMenu) {
+    background: var(--w98-face);
+}
+
+:root[data-sb-theme='windows-98'][data-sb-kittyless='true'] body.neconyan:not(.sbterm) #options .options-content > hr {
+    height: 2px;
+    background:
+        linear-gradient(var(--w98-shadow), var(--w98-shadow)) top / 100% 1px no-repeat,
+        linear-gradient(var(--w98-light), var(--w98-light)) bottom / 100% 1px no-repeat;
+}
+
 :root[data-sb-theme='windows-98'] body.neconyan #preloader::after {
     content: 'Please wait while Neconyan starts...';
     color: var(--neco-ink);

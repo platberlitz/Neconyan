@@ -1,11 +1,11 @@
 /* Shell Style: Kittyless. Rounded, solid panels and quiet pill actions.
-   Keep the chosen palette, fonts, wallpaper and character portraits, not the decorations. */
+   Keep the chosen palette, fonts, wallpaper and character portraits. The cat removal itself lives in
+   css/neconyan-kittyless.css so the Hide cats switch can apply it to any style; this style turns it on. */
 
 :root[data-sb-theme='kittyless'] body.neconyan {
     --neconyan-cat-radius: 999px;
     --neconyan-cat-padding-inline: 20px;
     --neconyan-home-action-radius: 999px;
-    --neconyan-sleeper-space: 16px;
 }
 
 :root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) {
@@ -25,66 +25,6 @@
     --kittyless-primary: var(--neco-ginger);
     --kittyless-on-primary: var(--neco-on-accent);
     --kittyless-line: color-mix(in srgb, var(--neco-accent-secondary) 35%, var(--neco-border));
-}
-
-/* Keep blocking actions visible without mascot artwork. */
-:root[data-sb-theme='kittyless'] body.neconyan #load-spinner .action-loader-progress {
-    display: inline-block;
-}
-
-/* A saved style also hides the startup mascot before the application boots. */
-:root[data-sb-theme='kittyless'] body.neconyan :is(.neconyan-home-cat, .neconyan-whiskers, .neconyan-cat-mark, .neconyan-empty-illustration, .sb-entity-empty-illustration, .sb-conversation-empty-illustration, .sbtw-empty-art, .ica--empty-illustration, .neconyan-startup-cat, .neconyan-message-sleeper, .neconyan-rail-brand > img, .sb-topbar-brand > img, .welcomeHeaderLogo),
-:root[data-sb-theme='kittyless'] body.neconyan #neconyan-tour-coachmark [data-tour-paw-stamp] {
-    display: none;
-}
-
-:root[data-sb-theme='kittyless'] body.neconyan #preloader {
-    background: linear-gradient(to bottom, transparent 55%, rgb(10 12 20 / .7)), url('../../img/neconyan/loader-kittyless-wide.webp?v=20260930a') 50% 50% / cover no-repeat, #141514;
-}
-
-@media (max-aspect-ratio: 4/5) {
-    :root[data-sb-theme='kittyless'] body.neconyan #preloader {
-        background-image: linear-gradient(to bottom, transparent 55%, rgb(10 12 20 / .7)), url('../../img/neconyan/loader-kittyless-tall.webp?v=20260930a');
-    }
-}
-
-:root[data-sb-theme='kittyless'] body.neconyan #preloader::after {
-    content: 'Loading Neconyan...';
-    position: absolute;
-    left: 50%;
-    bottom: max(48px, calc(env(safe-area-inset-bottom) + 32px));
-    transform: translateX(-50%);
-    padding: 10px 22px;
-    border-radius: 999px;
-    border: 1px solid rgb(255 236 210 / .22);
-    background: rgb(12 14 22 / .62);
-    color: #f6ecdf;
-    font-family: var(--mainFontFamily);
-    white-space: nowrap;
-}
-
-:root[data-sb-theme='kittyless'] body.neconyan::before {
-    background-image: url('../../img/neconyan/shell-kittyless.webp?v=20260930a');
-    background-position: 50% 50%;
-    opacity: .8;
-}
-:root[data-sb-theme='kittyless'][data-neconyan-calico-tone='light'] body.neconyan::before { opacity: .45; }
-
-:root[data-sb-theme='kittyless'] body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::before,
-:root[data-sb-theme='kittyless'] body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::after,
-:root[data-sb-theme='kittyless'] body.neconyan.flatchat:not(.sbterm) #chat .mes .avatar::before,
-:root[data-sb-theme='kittyless'] body.neconyan.flatchat:not(.sbterm) #chat .mes .avatar::after,
-:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .sb-conversation-message-avatar::before,
-:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .sb-conversation-message-avatar::after {
-    display: none;
-    content: none;
-}
-
-/* Keep useful navigation icons, with neutral symbols in place of animal glyphs. */
-:root[data-sb-theme='kittyless'] body.neconyan .fa-cat::before { content: '\f544'; }
-:root[data-sb-theme='kittyless'] body.neconyan .fa-paw::before { content: '\f1d8'; }
-:root[data-sb-theme='kittyless'] body.neconyan :is(.sbtw-bunny img, img[src*='user-default.png']) {
-    content: url('../../img/neconyan/kittyless-avatar.svg');
 }
 
 :root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) :is(#top-bar, #sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inner, #neconyan-workspace-rail, #sb-mobile-nav-content, .sb-shell-frame, .sb-shell-header, .sb-shell-nav, .sb-character-shell-nav, dialog.popup) {

@@ -166,6 +166,7 @@ test('current feature questions supply complete, actionable references to older 
         ['How do I rebuild my chat index?', 'memory.vector-indexes', 'previous index stays'],
         ['Does Clear file indexes delete my files?', 'memory.vector-indexes', 'not original messages or files'],
         ['How do I hide the cats with Kittyless?', 'appearance.kittyless', 'Show assistants'],
+        ['What does the Hide cats switch do?', 'appearance.kittyless', 'Hide cats (Kittyless)'],
         ['Does Windows 98 change my character portraits?', 'appearance.windows-98', 'characters you made or imported are unchanged'],
     ];
     for (const assistant of ['miso-male', 'miso-female', 'miso-neutral', 'taro-male', 'taro-female', 'taro-neutral', 'nori-male', 'nori-female', 'nori-neutral']) {

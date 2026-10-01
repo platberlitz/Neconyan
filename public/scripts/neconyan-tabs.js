@@ -58,6 +58,7 @@ const NN_STORAGE_KEYS = Object.freeze({
     desktopShellSnapToChatWidth: 'sb-desktop-shell-snap-to-chat-width',
     characterDrawerRightLocked: 'sb-character-drawer-right-locked',
     theme: 'sb-theme',
+    kittyless: 'sb-kittyless',
     surfaceTransparency: 'sb-surface-transparency',
     topbarScaleDesktop: 'sb-topbar-scale-desktop',
     topbarScaleMobile: 'sb-topbar-scale-mobile',
@@ -157,35 +158,35 @@ const NN_PANEL_STYLESHEETS = Object.freeze({
     ],
     'characters:persona': [
         { href: 'css/personas.css?v=20260912h', id: 'deferred-personas-css' },
-        { href: 'css/neconyan-tool-pages.css?v=20261001-native1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-kitty1', id: 'deferred-tool-pages-css' },
     ],
     'left:api': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-native1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-kitty1', id: 'deferred-tool-pages-css' },
     ],
     'left:sampling': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-native1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-kitty1', id: 'deferred-tool-pages-css' },
     ],
     'left:advanced-formatting': [
         { href: 'css/macros.css', id: 'deferred-macros-css' },
-        { href: 'css/neconyan-tool-pages.css?v=20261001-native1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-kitty1', id: 'deferred-tool-pages-css' },
     ],
     'left:mewmory': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-native1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-kitty1', id: 'deferred-tool-pages-css' },
     ],
     'right:extensions': [
         { href: 'css/extensions-panel.css?v=20260425a', id: 'deferred-extensions-panel-css' },
     ],
     'right:background': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-native1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-kitty1', id: 'deferred-tool-pages-css' },
     ],
     'right:server': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-native1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-kitty1', id: 'deferred-tool-pages-css' },
     ],
     'right:console-logs': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-native1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-kitty1', id: 'deferred-tool-pages-css' },
     ],
     'right:included-tool': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-native1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-kitty1', id: 'deferred-tool-pages-css' },
     ],
 });
 const NN_FRONTEND_ICON_DEFAULT = 'calico';
@@ -492,7 +493,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261001-native1';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261001-kitty1';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -1370,6 +1371,7 @@ const nnState = {
     landingPageSyncFrame: 0,
     inlineDrawerAutoClose: normalizeStoredBoolean(safeGetItem(NN_STORAGE_KEYS.settingsDrawerAutoClose), false),
     theme: normalizeTheme(safeGetItem(NN_STORAGE_KEYS.theme)),
+    kittyless: normalizeStoredBoolean(safeGetItem(NN_STORAGE_KEYS.kittyless), false),
     frontendIcon: normalizeFrontendIcon(safeGetItem(NN_STORAGE_KEYS.frontendIcon)),
     surfaceTransparency: normalizeSurfaceTransparency(safeGetItem(NN_STORAGE_KEYS.surfaceTransparency)),
     paperTextureEnabled: normalizeStoredBoolean(safeGetItem(NN_STORAGE_KEYS.paperTextureEnabled), false),
@@ -5073,6 +5075,8 @@ function initChatAvatarVariables() {
     document.addEventListener('sb:chat-style-updated', () => scheduleChatAvatarVariableUpdate(0));
 }
 
+const NN_KITTYLESS_STYLESHEET_HREF = `css/neconyan-kittyless.css?v=${NN_SHELL_STYLE_STYLESHEET_VERSION}`;
+
 function getShellStyleStylesheetHref(themeId) {
     return `css/shell-styles/${themeId}.css?v=${NN_SHELL_STYLE_STYLESHEET_VERSION}`;
 }
@@ -5126,6 +5130,7 @@ function setShellTheme(themeId, { persist = true } = {}) {
     nnState.theme = nextTheme;
     document.documentElement.dataset.sbTheme = nextTheme;
     syncShellStyleStylesheet(nextTheme);
+    syncKittylessStylesheet();
 
     if (persist) {
         safeSetItem(NN_STORAGE_KEYS.theme, nextTheme);
@@ -5134,6 +5139,57 @@ function setShellTheme(themeId, { persist = true } = {}) {
     updateThemePickerUi();
     updateThemeBadge();
     syncShellStyleAssistantArt();
+}
+
+function isKittylessActive() {
+    return nnState.theme === 'kittyless' || nnState.kittyless;
+}
+
+// Cat removal is its own sheet so Hide cats works on every Shell Style; the Kittyless style always turns it on.
+// The inline head script in index.html applies the same attribute and link before first paint.
+function syncKittylessStylesheet() {
+    const active = isKittylessActive();
+    const links = [...document.querySelectorAll('link[data-sb-kittyless]')];
+
+    if (active) {
+        document.documentElement.dataset.sbKittyless = 'true';
+    } else {
+        delete document.documentElement.dataset.sbKittyless;
+        links.forEach(link => link.remove());
+        return;
+    }
+
+    const current = links.find(link => link.getAttribute('href') === NN_KITTYLESS_STYLESHEET_HREF);
+    links.filter(link => link !== current).forEach(link => link.remove());
+    // It must load after the Shell Style sheet so its rules win ties against that style's cats.
+    const followsStyle = link => [...document.querySelectorAll('link[data-sb-shell-style]')]
+        .every(style => style.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING);
+    if (current && followsStyle(current)) {
+        return;
+    }
+
+    const stylesheet = current ?? document.createElement('link');
+    stylesheet.rel = 'stylesheet';
+    stylesheet.href = NN_KITTYLESS_STYLESHEET_HREF;
+    stylesheet.dataset.sbKittyless = 'true';
+
+    const userStylesheet = document.querySelector('link[href^="css/user.css"]');
+    if (userStylesheet) {
+        userStylesheet.before(stylesheet);
+    } else {
+        document.head.append(stylesheet);
+    }
+}
+
+function setKittylessEnabled(enabled, { persist = true } = {}) {
+    nnState.kittyless = normalizeStoredBoolean(enabled, false);
+    syncKittylessStylesheet();
+
+    if (persist) {
+        safeSetItem(NN_STORAGE_KEYS.kittyless, String(nnState.kittyless));
+    }
+
+    updateThemePickerUi();
 }
 
 const NN_WINDOWS_98_ASSISTANT_IDS = new Set(['miso', 'taro', 'nori'].flatMap(name => ['male', 'female', 'neutral'].map(gender => `${name}-${gender}`)));
@@ -15549,10 +15605,26 @@ function injectThemePicker() {
         optionRow.appendChild(button);
     }
 
+    const kittylessChoice = createMobileNavChoice({
+        id: 'sb-kittyless-enabled-input',
+        type: 'checkbox',
+        value: 'kittyless-enabled',
+        label: 'Hide cats (Kittyless)',
+        icon: 'fa-eye-slash',
+        onChange: input => setKittylessEnabled(input.checked),
+    });
+    const kittylessCaption = createElement('p', {
+        id: 'sb-kittyless-caption',
+        className: 'sb-theme-slider-caption',
+        text: 'Hide the cats, ears, paws and sleeping animals while keeping the style you picked.',
+    });
+    const kittylessGroup = createElement('div', { className: 'sb-kittyless-setting' });
+    kittylessGroup.append(kittylessChoice, kittylessCaption);
+
     const shellStyleSettingsGroup = createThemeSettingsDrawer({
         id: 'sb-shell-style-drawer',
         title: 'Shell Style',
-        content: [description, optionRow],
+        content: [description, optionRow, kittylessGroup],
     });
     const interfaceSettingsGroup = createThemeSettingsDrawer({
         id: 'sb-interface-drawer',
@@ -15860,6 +15932,21 @@ function updateThemePickerUi() {
         mobileNavReplacementSelect.value = normalizeMobileNavReplacementTarget(nnState.mobileNav.replacementTarget);
         mobileNavReplacementSelect.disabled = !nnState.mobileNav.replaceQuickActions;
         mobileNavReplacementSelect.closest('.sb-mobile-nav-replacement-field')?.classList.toggle('is-disabled', !nnState.mobileNav.replaceQuickActions);
+    }
+
+    const kittylessInput = document.getElementById('sb-kittyless-enabled-input');
+    if (kittylessInput instanceof HTMLInputElement) {
+        const styleHidesCats = nnState.theme === 'kittyless';
+        kittylessInput.checked = isKittylessActive();
+        kittylessInput.disabled = styleHidesCats;
+        kittylessInput.closest('.sb-mobile-nav-choice')?.classList.toggle('is-selected', kittylessInput.checked);
+        kittylessInput.closest('.sb-kittyless-setting')?.classList.toggle('is-disabled', styleHidesCats);
+        const caption = document.getElementById('sb-kittyless-caption');
+        if (caption) {
+            caption.textContent = styleHidesCats
+                ? 'The Kittyless style always hides the cats. Pick another style to choose for yourself.'
+                : 'Hide the cats, ears, paws and sleeping animals while keeping the style you picked.';
+        }
     }
 
     if (paperTextureEnabledInput instanceof HTMLInputElement) {

@@ -1,0 +1,91 @@
+/* Kittyless: hides the decorative cats, ears, paws and sleeping animals on any Shell Style.
+   Loaded at runtime while the Kittyless style or the Hide cats switch is on; the chosen style keeps its own look. */
+
+:root[data-sb-kittyless='true'] body.neconyan {
+    --neconyan-sleeper-space: 16px;
+}
+
+/* Calico and Windows 98 scatter paw prints over the page canvas; this loads after them and wins the tie. */
+:root[data-sb-kittyless='true'] body.neconyan:not(.sbterm) {
+    --neco-canvas-gradient: var(--neco-canvas);
+}
+
+/* Keep blocking actions visible without mascot artwork. */
+:root[data-sb-kittyless='true'] body.neconyan #load-spinner .action-loader-progress {
+    display: inline-block;
+}
+
+/* A saved choice also hides the startup mascot before the application boots. */
+:root[data-sb-kittyless='true'] body.neconyan :is(.neconyan-home-cat, .neconyan-whiskers, .neconyan-cat-mark, .neconyan-empty-illustration, .sb-entity-empty-illustration, .sb-conversation-empty-illustration, .sbtw-empty-art, .ica--empty-illustration, .neconyan-startup-cat, .neconyan-message-sleeper, .neconyan-rail-brand > img, .sb-topbar-brand > img, .welcomeHeaderLogo),
+:root[data-sb-kittyless='true'] body.neconyan #neconyan-tour-coachmark [data-tour-paw-stamp] {
+    display: none;
+}
+
+:root[data-sb-kittyless='true'] body.neconyan #preloader {
+    background: linear-gradient(to bottom, transparent 55%, rgb(10 12 20 / .7)), url('../img/neconyan/loader-kittyless-wide.webp?v=20260930a') 50% 50% / cover no-repeat, #141514;
+}
+
+@media (max-aspect-ratio: 4/5) {
+    :root[data-sb-kittyless='true'] body.neconyan #preloader {
+        background-image: linear-gradient(to bottom, transparent 55%, rgb(10 12 20 / .7)), url('../img/neconyan/loader-kittyless-tall.webp?v=20260930a');
+    }
+}
+
+:root[data-sb-kittyless='true'] body.neconyan #preloader::after {
+    content: 'Loading Neconyan...';
+    position: absolute;
+    left: 50%;
+    bottom: max(48px, calc(env(safe-area-inset-bottom) + 32px));
+    transform: translateX(-50%);
+    padding: 10px 22px;
+    border-radius: 999px;
+    border: 1px solid rgb(255 236 210 / .22);
+    background: rgb(12 14 22 / .62);
+    color: #f6ecdf;
+    font-family: var(--mainFontFamily);
+    white-space: nowrap;
+}
+
+/* Calico's wallpaper has cats in it, so it swaps for the railway. Every other style keeps its own wallpaper. */
+:root[data-sb-kittyless='true']:is(:not([data-sb-theme]), [data-sb-theme='calico'], [data-sb-theme='kittyless']) body.neconyan::before {
+    background-image: url('../img/neconyan/shell-kittyless.webp?v=20260930a');
+    background-position: 50% 50%;
+    opacity: .8;
+}
+:root[data-sb-kittyless='true'][data-neconyan-calico-tone='light']:is(:not([data-sb-theme]), [data-sb-theme='calico'], [data-sb-theme='kittyless']) body.neconyan::before { opacity: .45; }
+
+:root[data-sb-kittyless='true'] body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::before,
+:root[data-sb-kittyless='true'] body.neconyan :is(.neconyan-cat-panel, .neconyan-assistant-row, #right-nav-panel .sb-character-editor-identity)::after,
+:root[data-sb-kittyless='true'] body.neconyan.flatchat:not(.sbterm) #chat .mes .avatar::before,
+:root[data-sb-kittyless='true'] body.neconyan.flatchat:not(.sbterm) #chat .mes .avatar::after,
+:root[data-sb-kittyless='true'] body.neconyan:not(.sbterm) .sb-conversation-message-avatar::before,
+:root[data-sb-kittyless='true'] body.neconyan:not(.sbterm) .sb-conversation-message-avatar::after,
+:root[data-sb-kittyless='true'] body.neconyan:not(.sbterm) #options::before,
+:root[data-sb-kittyless='true'] body.neconyan:not(.sbterm) #options::after,
+:root[data-sb-kittyless='true'] body.neconyan:not(.sbterm) :is(#options .options-content > a, #extensionsMenu > .extension_container > div, #extensionsMenu > :not(.extension_container))::after {
+    display: none;
+    content: none;
+}
+
+/* The chat tools menu drops its paw prints but keeps a plain divider. */
+:root[data-sb-kittyless='true'] body.neconyan:not(.sbterm) :is(#options > .options-content, #extensionsMenu) {
+    background-image: none;
+}
+:root[data-sb-kittyless='true'] body.neconyan:not(.sbterm) #options .options-content > hr {
+    height: 1px;
+    margin: 6px 10px;
+    background: var(--neco-border);
+}
+
+/* Keep useful navigation icons, with neutral symbols in place of animal glyphs. */
+:root[data-sb-kittyless='true'] body.neconyan .fa-cat::before { content: '\f544'; }
+:root[data-sb-kittyless='true'] body.neconyan .fa-paw::before { content: '\f1d8'; }
+:root[data-sb-kittyless='true'] body.neconyan :is(.sbtw-bunny img, img[src*='user-default.png']) {
+    content: url('../img/neconyan/kittyless-avatar.svg');
+}
+
+/* The Kittyless style locks the switch on, so it should still read as on. */
+:root[data-sb-kittyless='true'] body.neconyan .sb-kittyless-setting.is-disabled #sb-kittyless-enabled-input:checked {
+    opacity: 1;
+    color: inherit;
+}

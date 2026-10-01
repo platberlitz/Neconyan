@@ -105,7 +105,7 @@ describe('shell style runtime stylesheets', () => {
     });
 
     for (const id of runtimeIds) {
-        const protectedDecorations = id === 'kittyless' ? [] : ['.neconyan-whiskers', '.neconyan-cat-panel::before'];
+        const protectedDecorations = ['.neconyan-whiskers', '.neconyan-cat-panel::before'];
         test(`${id} only styles its own shell and layers over Calico`, () => {
             const source = readSource('public', 'css', 'shell-styles', `${id}.css`);
             const stripped = stripCssBlockComments(source);
@@ -116,8 +116,8 @@ describe('shell style runtime stylesheets', () => {
             const unscoped = selectors.flatMap(splitSelectorList).filter(part => !part.startsWith(prefix));
             expect(unscoped).toEqual([]);
 
-            // The palette, fonts and message tints stay. Kittyless alone intentionally hides
-            // the cat decorations. Other styles must still leave them untouched.
+            // The palette, fonts and message tints stay, and every style leaves the cat
+            // decorations alone. Hiding them belongs to css/neconyan-kittyless.css.
             // Muted text may be re-derived from the user's own ink when a style forces its own
             // panel colour (Windows 98 silver or dark grey); that adds no new palette colour.
             // Windows 98 may also swap the user's ink for the lifted copy the theme code works
@@ -164,6 +164,53 @@ describe('shell style runtime stylesheets', () => {
         for (const id of runtimeIds) {
             expect(readSource('public', 'css', 'shell-styles', `${id}.css`)).toContain('var(--neco-accent-secondary)');
         }
+    });
+});
+
+describe('Hide cats works with every shell style', () => {
+    const catSheet = readSource('public', 'css', 'neconyan-kittyless.css');
+    const stripped = stripCssBlockComments(catSheet);
+
+    test('the cat removal sheet only applies while cats are hidden', () => {
+        const selectors = collectSelectors(catSheet).flatMap(splitSelectorList);
+        expect(selectors.length).toBeGreaterThan(10);
+        expect(selectors.filter(part => !part.startsWith(":root[data-sb-kittyless='true']"))).toEqual([]);
+        expect(stripped).not.toMatch(/!important/);
+        expect(stripped).not.toMatch(/\b(transition|animation)\s*:/);
+        expect(stripped).not.toMatch(/(^|[^:])\/\//m);
+        for (const [, asset] of stripped.matchAll(/url\('\.\.\/([^'?]+)(?:\?[^']*)?'\)/g)) {
+            expect(existsSync(path.join(repoRoot, 'public', asset))).toBe(true);
+        }
+    });
+
+    test('it hides the cats, and swaps only Calico\'s wallpaper for the railway', () => {
+        for (const piece of ['.neconyan-whiskers', '.neconyan-home-cat', '.neconyan-message-sleeper', '.neconyan-startup-cat', '.neconyan-cat-panel, .neconyan-assistant-row', '#options::before', "content: '\\f544'"]) {
+            expect(stripped).toContain(piece);
+        }
+        expect(stripped).toContain(":root[data-sb-kittyless='true']:is(:not([data-sb-theme]), [data-sb-theme='calico'], [data-sb-theme='kittyless']) body.neconyan::before");
+        expect(stripped).toContain('shell-kittyless.webp');
+        expect(readSource('public', 'css', 'shell-styles', 'kittyless.css')).not.toContain('shell-kittyless.webp');
+    });
+
+    test('the head script and the shell script load it for the Kittyless style or the switch', () => {
+        const version = readShellScriptVersion();
+        const headScript = readHeadScript();
+        expect(headScript).toContain("if (shellStyle === 'kittyless' || localStorage.getItem('sb-kittyless') === 'true')");
+        expect(headScript).toContain(`'css/neconyan-kittyless.css?v=${version}'`);
+        expect(headScript).toContain("document.documentElement.setAttribute('data-sb-kittyless', 'true')");
+
+        expect(tabsSource).toContain("kittyless: 'sb-kittyless',");
+        expect(tabsSource).toContain('const NN_KITTYLESS_STYLESHEET_HREF = `css/neconyan-kittyless.css?v=${NN_SHELL_STYLE_STYLESHEET_VERSION}`;');
+        expect(tabsSource).toMatch(/function setShellTheme\([\s\S]*?syncShellStyleStylesheet\(nextTheme\);\s*syncKittylessStylesheet\(\);/);
+        expect(tabsSource).toMatch(/function isKittylessActive\(\) \{\s*return nnState\.theme === 'kittyless' \|\| nnState\.kittyless;/);
+        expect(tabsSource).toMatch(/function setKittylessEnabled\([\s\S]*?safeSetItem\(NN_STORAGE_KEYS\.kittyless/);
+    });
+
+    test('Shell Style has a Hide cats switch that the Kittyless style locks on', () => {
+        expect(tabsSource).toContain("id: 'sb-kittyless-enabled-input'");
+        expect(tabsSource).toContain("label: 'Hide cats (Kittyless)'");
+        expect(tabsSource).toContain('The Kittyless style always hides the cats.');
+        expect(stripped).toContain('.sb-kittyless-setting.is-disabled #sb-kittyless-enabled-input:checked');
     });
 });
 
