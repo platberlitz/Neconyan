@@ -1,3 +1,4 @@
+/* global globalThis */
 import { beforeAll, beforeEach, describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 
@@ -80,9 +81,9 @@ describe('page-tour invitation dismissal', () => {
 
     test('both page types register the X and Settings offers a searchable restore action', () => {
         const read = name => readFileSync(new URL(`../public/scripts/${name}.js`, import.meta.url), 'utf8');
-        expect(read('neconyan-tool-tour')).toContain('addTourInvitationDismiss(invite, `${TOOL_TOUR_INVITE_PREFIX}${page.key}`, root)');
+        expect(read('neconyan-tool-tour')).toContain('addTourInvitationDismiss(invite, `${TOOL_TOUR_INVITE_PREFIX}${page.key}`, heading ?? root)');
         expect(read('neconyan-lorebook-tour')).toContain('addTourInvitationDismiss(invite, LOREBOOK_TOUR_INVITE_KEY, root)');
-        expect(read('neconyan-tabs')).toContain("id: 'sb-restore-tour-invitations'");
+        expect(read('neconyan-tabs')).toContain('id: \'sb-restore-tour-invitations\'');
         expect(read('neconyan-tabs')).toContain('restoreTourInvitations();');
         const css = readFileSync(new URL('../public/css/neconyan.css', import.meta.url), 'utf8');
         expect(css).toMatch(/#sb-restore-tour-invitations\s*\{[^}]*min-height:\s*44px/);

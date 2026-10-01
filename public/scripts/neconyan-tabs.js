@@ -158,35 +158,38 @@ const NN_PANEL_STYLESHEETS = Object.freeze({
     ],
     'characters:persona': [
         { href: 'css/personas.css?v=20260912h', id: 'deferred-personas-css' },
-        { href: 'css/neconyan-tool-pages.css?v=20261001-intro1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
     ],
     'left:api': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-intro1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
+    ],
+    'left:presets': [
+        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
     ],
     'left:sampling': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-intro1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
     ],
     'left:advanced-formatting': [
         { href: 'css/macros.css', id: 'deferred-macros-css' },
-        { href: 'css/neconyan-tool-pages.css?v=20261001-intro1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
     ],
     'left:mewmory': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-intro1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
     ],
     'right:extensions': [
         { href: 'css/extensions-panel.css?v=20260425a', id: 'deferred-extensions-panel-css' },
     ],
     'right:background': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-intro1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
     ],
     'right:server': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-intro1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
     ],
     'right:console-logs': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-intro1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
     ],
     'right:included-tool': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-intro1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
     ],
 });
 const NN_FRONTEND_ICON_DEFAULT = 'calico';
@@ -2832,7 +2835,7 @@ function buildIncludedToolPanel() {
         void import('./neconyan-tool-tour.js').then(({ getToolPageKey, mountToolPage }) => {
             if (token !== activationToken) return;
             setToolPageKey(mounted ? getToolPageKey(tool.id) : '');
-            mountToolPage(mounted ? tool.id : '', heading, host);
+            mountToolPage(mounted ? tool.id : '', heading, host, shell?.headerIntro);
         }).catch(error => console.warn('[Neconyan] Could not load the tool page tour:', error));
         if (!mounted) {
             const message = createElement('p', { className: 'neconyan-included-tool-unavailable', text: `No settings are available for ${tool.label}. Use Manage extensions to install or enable it.` });
@@ -2873,9 +2876,10 @@ function getIncludedToolRailRoute() {
     return key ? NECONYAN_TOOL_PAGE_ROUTES[key] : 'extensions';
 }
 
-// Shell tabs that get the same intro card and assistant tour as the full-page Included tools.
+// Shell tabs that get the same introduction and assistant tour as the full-page Included tools.
 const NN_NATIVE_SHELL_PAGES = Object.freeze({
     'left:api': 'connections',
+    'left:presets': 'presets',
     'left:sampling': 'sampling',
     'left:advanced-formatting': 'formatting',
     'left:mewmory': 'mewmory',
@@ -2885,11 +2889,12 @@ const NN_NATIVE_SHELL_PAGES = Object.freeze({
 });
 
 /**
- * Puts the page introduction and tour at the top of a settings page.
+ * Puts the introduction beneath a shell title, or at the top of a standalone page.
  * @param {string} key Page key from the tool tour
  * @param {HTMLElement|null} host The page's scrolling container
+ * @param {HTMLElement|null} [headerHeading] Optional introduction beneath the shell title
  */
-function mountNeconyanNativePage(key, host) {
+function mountNeconyanNativePage(key, host, headerHeading = null) {
     if (!(host instanceof HTMLElement)) return;
     host.dataset.neconyanNativePage = key;
     let heading = host.querySelector(':scope > .neconyan-native-page-heading');
@@ -2897,21 +2902,29 @@ function mountNeconyanNativePage(key, host) {
         heading = createElement('div', { className: 'neconyan-native-page-heading' });
         host.prepend(heading);
     }
-    if (heading.dataset.toolPage === key && heading.querySelector('.neconyan-tool-page-intro')) return;
+    if (!headerHeading && heading.dataset.toolPage === key && heading.querySelector('.neconyan-tool-page-intro')) return;
     heading.dataset.toolPage = key;
     void import('./neconyan-tool-tour.js')
-        .then(({ mountToolPage }) => mountToolPage(key, heading, host))
+        .then(({ mountToolPage }) => {
+            if (headerHeading && headerHeading.dataset.toolPage !== key) return;
+            mountToolPage(key, heading, host, headerHeading);
+        })
         .catch(error => console.warn('[Neconyan] Could not load the page tour:', error));
 }
 
 function syncNeconyanNativeShellPage(shellKey, tabId) {
     const key = NN_NATIVE_SHELL_PAGES[`${shellKey}:${tabId}`] ?? '';
     const shellState = getShellState(shellKey);
+    const headerHeading = shellState?.headerIntro;
+    if (headerHeading) {
+        headerHeading.replaceChildren();
+        headerHeading.dataset.toolPage = key;
+    }
     const root = document.getElementById(getShellConfig(shellKey)?.rootPanelId ?? '');
     if (root instanceof HTMLElement) root.dataset.neconyanNativePage = key;
     if (!key) return;
     const panel = shellState?.tabs.get(tabId)?.panel;
-    mountNeconyanNativePage(key, panel?.querySelector(':scope > .sb-shell-panel-scroller') ?? null);
+    mountNeconyanNativePage(key, panel?.querySelector(':scope > .sb-shell-panel-scroller') ?? null, headerHeading);
 }
 
 /**
@@ -17195,6 +17208,7 @@ function buildShell(shellKey) {
     });
     const eyebrow = createElement('div', { className: 'sb-shell-kicker', text: shellConfig.title });
     const title = createElement('h2', { className: 'sb-shell-title', text: shellConfig.baseTab.label, attrs: { tabindex: '-1' } });
+    const headerIntro = createElement('div', { className: 'neconyan-shell-page-intro' });
     const subtitle = createElement('p', { className: 'sb-shell-subtitle' });
     const shellDescription = createElement('p', { className: 'sb-shell-description', text: shellConfig.subtitle });
     const panelBody = createElement('div', { className: 'sb-shell-body' });
@@ -17220,7 +17234,7 @@ function buildShell(shellKey) {
     });
     bindShellResizeHandle(resizeHandle, shellKey);
 
-    header.append(closeButton, eyebrow, title, subtitle, shellDescription);
+    header.append(closeButton, eyebrow, title, headerIntro, subtitle, shellDescription);
     main.append(header, panelBody);
     if (shellKey === 'left') {
         navWrapper.classList.add('sb-model-native-nav-wrapper');
@@ -17238,6 +17252,7 @@ function buildShell(shellKey) {
         tabs: new Map(),
         nav,
         headerTitle: title,
+        headerIntro,
         headerSubtitle: subtitle,
         root: shellRoot,
         resizeHandle,

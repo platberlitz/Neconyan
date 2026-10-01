@@ -4,9 +4,20 @@ import { eventSource, event_types } from './events.js';
 export const PAGE_INTRO_EXPANDED_PREFIX = 'neconyanPageIntroExpanded.';
 
 /** Build a compact page introduction, keeping its Tour button available at all times. */
-export function createPageIntro(key, kicker, description, launch) {
+export function createPageIntro(key, kicker, description, launch, { header = false } = {}) {
     const intro = document.createElement('div');
-    intro.className = 'neconyan-tool-page-intro neconyan-cat-panel';
+    intro.className = header ? 'neconyan-tool-page-intro neconyan-page-intro-header' : 'neconyan-tool-page-intro neconyan-cat-panel';
+    const copy = document.createElement('div');
+    copy.className = 'neconyan-tool-page-copy';
+    copy.id = `neconyan-page-intro-${key}`;
+    const text = document.createElement('p');
+    text.className = 'neconyan-tool-page-description';
+    text.textContent = description;
+    copy.append(text);
+    if (header) {
+        intro.append(copy, launch);
+        return intro;
+    }
     const toggle = document.createElement('button');
     toggle.type = 'button';
     toggle.className = 'neconyan-page-intro-toggle';
@@ -17,14 +28,7 @@ export function createPageIntro(key, kicker, description, launch) {
     label.textContent = kicker;
     toggle.append(icon, label);
 
-    const copy = document.createElement('div');
-    copy.className = 'neconyan-tool-page-copy';
-    copy.id = `neconyan-page-intro-${key}`;
     toggle.setAttribute('aria-controls', copy.id);
-    const text = document.createElement('p');
-    text.className = 'neconyan-tool-page-description';
-    text.textContent = description;
-    copy.append(text);
 
     const storageKey = `${PAGE_INTRO_EXPANDED_PREFIX}${key}`;
     const update = expanded => {

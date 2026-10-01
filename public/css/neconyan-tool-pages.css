@@ -526,7 +526,7 @@ body.neconyan-tool-tour-active #neconyan-tour-coachmark {
     border-radius: 12px;
 }
 
-/* Settings pages that share the tool page intro: Connections, Sampling, Formatting, Mewmory,
+/* Settings pages that share the tool page intro: Connections, Presets, Sampling, Formatting, Mewmory,
    Persona, Background, Server and Console Logs. */
 .neconyan-native-page-heading {
     display: grid;
@@ -538,8 +538,7 @@ body.neconyan-tool-tour-active #neconyan-tour-coachmark {
     display: none;
 }
 
-/* The intro card already describes the page, so the header keeps only its title. */
-body.neconyan .openDrawer[data-neconyan-native-page]:not([data-neconyan-native-page='']) .sb-shell-header .sb-shell-subtitle {
+#left-nav-panel[data-neconyan-native-page='presets'] #neconyan-model-presets-workspace > .neconyan-model-native-heading {
     display: none;
 }
 
@@ -613,12 +612,6 @@ body.neconyan .openDrawer[data-neconyan-native-page]:not([data-neconyan-native-p
 
     .neconyan-tool-page-intro {
         padding: 6px 10px;
-    }
-
-    /* The page intro already says what the tool does; the generic Settings blurb only misleads here. */
-    body.neconyan #user-settings-block.openDrawer[data-tool-page]:not([data-tool-page='']) .sb-shell-header .sb-shell-description,
-    body.neconyan :is(#left-nav-panel, #user-settings-block).openDrawer[data-neconyan-native-page]:not([data-neconyan-native-page='']) .sb-shell-header .sb-shell-description {
-        display: none;
     }
 
     .neconyan-native-page-heading {

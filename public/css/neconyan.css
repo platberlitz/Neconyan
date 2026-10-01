@@ -272,7 +272,7 @@ body.neconyan #left-nav-panel[data-sb-active-tab='agents'] .sb-shell-header {
     min-height: 48px; padding: 12px 56px 12px 24px; justify-content: center;
 }
 body.neconyan #left-nav-panel[data-sb-active-tab='agents'] .sb-shell-subtitle { display: none; }
-body.neconyan .sb-shell-header .sb-shell-close { top: 50%; transform: translateY(-50%); }
+body.neconyan .sb-shell-header .sb-shell-close { top: var(--neco-shell-close-top, 50%); transform: translateY(-50%); }
 body.neconyan .sb-shell-header .sb-shell-close:hover { transform: translateY(calc(-50% - 1px)); }
 body.neconyan .sb-shell-close { color: var(--neco-ink); background: var(--neco-surface); }
 body.neconyan .sb-shell-close::before { display: none; }
@@ -303,6 +303,27 @@ body.neconyan :is(.sb-shell-header, #right-nav-panel.openDrawer > .sb-character-
 body.neconyan .sb-shell-header .sb-shell-kicker { display: none; }
 body.neconyan .sb-shell-header .sb-shell-title { font-size: 16px; font-weight: 600; }
 body.neconyan .sb-shell-header .sb-shell-subtitle { color: var(--neco-muted); font-size: 12px; font-weight: 400; }
+body.neconyan .neconyan-shell-page-intro:empty { display: none; }
+body.neconyan .sb-shell-header:has(.neconyan-page-intro-header) {
+    --neco-shell-close-top: 26px;
+    flex-shrink: 0;
+    gap: 6px;
+}
+body.neconyan .sb-shell-header:has(.neconyan-page-intro-header) > :is(.sb-shell-subtitle, .sb-shell-description) { display: none; }
+body.neconyan .sb-shell-header:has(.neconyan-page-intro-header) > .sb-shell-title { min-height: 34px; }
+body.neconyan .sb-shell-header .neconyan-shell-page-intro { width: 100%; min-width: 0; }
+body.neconyan .sb-shell-header .neconyan-page-intro-header {
+    align-items: start;
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+}
+body.neconyan .sb-shell-header .neconyan-page-intro-header > .neconyan-tool-page-copy { grid-column: auto; font-size: 12px; }
+body.neconyan .sb-shell-header .neconyan-page-intro-header > .neconyan-tool-tour-button { margin: 0; }
 body.neconyan #right-nav-panel :is(.sb-character-editor-identity, .sb-character-editor-field-box, .sb-character-creator-notes-preview, .sb-character-editor-subtabs) {
     background: transparent; box-shadow: none; border-color: var(--neco-border); border-radius: 6px;
 }
@@ -2022,13 +2043,13 @@ body.neconyan #right-nav-panel #rm_group_chats_block #rm_group_top_bar .avatar i
         align-items: center;
         min-height: 52px !important;
         height: auto;
-        padding: 4px 56px 4px 12px !important;
+        padding: var(--neco-shell-header-padding, 4px 56px 4px 12px) !important;
         position: relative;
     }
 
     body.neconyan .sb-shell-root.openDrawer .sb-shell-header .sb-shell-close {
         position: absolute;
-        top: 50% !important;
+        top: var(--neco-shell-close-top, 50%) !important;
         margin: 0 !important;
         box-sizing: border-box;
         right: 4px !important;

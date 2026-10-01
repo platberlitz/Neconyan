@@ -3444,3 +3444,12 @@ body.neconyan #open_chat_expressions #expressions_stop_sprite_generation { grid-
     /* Page Width scales the desktop reading column; phone chats already fill the screen, so the slider would do nothing. */
     #AppearanceLayoutSection [name="FontBlurChatWidthBlock"] > div:has(> #chat_width_slider) { display: none; }
 }
+@media (max-width: 768px) {
+    body.neconyan :is(#left-nav-panel, #user-settings-block).openDrawer .sb-shell-header:has(.neconyan-page-intro-header) {
+        --neco-shell-header-padding: 10px 12px 12px;
+    }
+
+    body.neconyan :is(#left-nav-panel, #user-settings-block).openDrawer .sb-shell-header:has(.neconyan-page-intro-header) > .sb-shell-title {
+        padding-inline-end: 44px;
+    }
+}

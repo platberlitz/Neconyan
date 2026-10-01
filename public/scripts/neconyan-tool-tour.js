@@ -403,6 +403,86 @@ const TOOL_PAGES = Object.freeze({
             },
         ],
     },
+    presets: {
+        assistant: 'nori',
+        name: 'Presets',
+        kicker: 'Saved writing setup',
+        description: 'Choose a saved writing setup, edit its instructions and reply settings, or save your own version to use again.',
+        invite: 'Nori will show you how to choose, edit and save a preset, one step at a time.',
+        steps: [
+            {
+                id: 'welcome',
+                targets: ['.neconyan-tool-page-intro'],
+                title: 'What a preset saves',
+                body: 'A **preset** saves settings for how your model writes replies. **Chat Completion** presets also hold the prompts, the instructions sent with your chat.\nThe choices here match the **Reply format** on **Connections**. This tour won\'t change, save or delete a preset for you.',
+                hint: 'I\'m Nori. Let\'s keep the setup you actually like, for once.',
+            },
+            {
+                id: 'choose',
+                targets: ['#settings_preset_openai', '#settings_preset_textgenerationwebui', '#settings_preset_novel', '#settings_preset'],
+                title: 'Choosing a preset',
+                body: 'Pick a name from this list to load that preset. Loading another preset can replace your current reply settings, so save any edits you want to keep first.\nA **Text Completion** preset doesn\'t contain the instruction templates on **Formatting**. Those are managed separately.',
+                hint: 'Read what you\'re choosing. An impressive name isn\'t a recommendation.',
+            },
+            {
+                id: 'save',
+                targets: ['#update_oai_preset', '#respective-presets-block [data-preset-manager-update]'],
+                optional: true,
+                title: 'Saving your changes',
+                body: '**Update current preset**, the save button beside the list, replaces the selected preset with your current settings. Use it when you want to keep edits under the same name.\nChanging a setting and saving a preset are separate actions.',
+                hint: 'Check the selected name first. I don\'t enjoy losing a good setup.',
+            },
+            {
+                id: 'copy',
+                targets: ['#new_oai_preset', '#respective-presets-block [data-preset-manager-new]'],
+                optional: true,
+                title: 'Keeping the original',
+                body: '**Save preset as** saves the current setup under a name you choose. Use a new name to keep the original preset unchanged.\n**Rename current preset** changes the name of the selected preset; it isn\'t the same as making a second copy.',
+                hint: 'A personal version and an untouched original. Sensible. Almost suspiciously so.',
+            },
+            {
+                id: 'files',
+                targets: ['#import_oai_preset', '#respective-presets-block [data-preset-manager-import]'],
+                optional: true,
+                title: 'Importing and exporting',
+                body: '**Import preset** loads a preset file into your library. Use a file made for the reply format you\'re using.\n**Export preset** downloads the selected preset as a file, so you can back it up or share it. Read imported prompts before using them.',
+                hint: 'Keep a backup before experimenting. Backups are free, unlike my taste in models.',
+            },
+            {
+                id: 'linking',
+                targets: ['#openai_api-presets .inline-drawer:has(#bind_preset_to_connection)'],
+                optional: true,
+                title: 'What changes when you switch',
+                body: '**Preset API/Sampler Linking** decides what loading a Chat Completion preset changes.\n**Keep API/model linked to preset** lets it change your provider and model too. Leave it off to reuse the preset with your current connection. **Keep sampling settings linked to preset** lets it load the saved sampling values, the settings that control how words are picked.',
+                hint: 'The preset doesn\'t have to choose the expensive model for you. I admit this reluctantly.',
+            },
+            {
+                id: 'parameters',
+                targets: ['#sb-openai-budget'],
+                tab: '#openai-tab-btn-parameters',
+                optional: true,
+                title: 'Reply settings',
+                body: '**Parameters** groups the Chat Completion reply settings. **Token Budget** sets how much text the model can read and write; **Output** controls things such as streaming, showing the reply as it arrives.\nThe sliders that control word choice live on **Sampling**. Save the preset after making changes you want to keep.',
+                hint: 'Change one thing, try a reply, then decide. Even I can exercise restraint sometimes.',
+            },
+            {
+                id: 'prompts',
+                targets: ['#sb-openai-prompt-manager', '#completion_prompt_manager'],
+                tab: '#openai-tab-btn-prompts',
+                optional: true,
+                title: 'Instructions sent with your chat',
+                body: '**Prompts** holds the Chat Completion instructions and their order. Open an entry to read or edit it; enabled entries are included when appropriate.\nThese instructions can change the model\'s writing much more than a small slider adjustment. Save your own copy before editing someone else\'s preset, and save again when you\'re happy with it.',
+                hint: 'I read the instructions before blaming the model. Usually. Don\'t look at me like that.',
+            },
+            {
+                id: 'done',
+                targets: ['.neconyan-tool-tour-button'],
+                title: 'Your setup, saved',
+                body: '**Tour** brings me back whenever you need a reminder. Choose a preset, make a copy before experimenting, and save the changes you want to keep.\nLoading a preset changes settings, not the messages already in your chat.',
+                hint: 'There. Good taste, properly saved. I\'d charge for this if I knew how.',
+            },
+        ],
+    },
     sampling: {
         assistant: 'nori',
         name: 'Sampling',
@@ -974,6 +1054,7 @@ function translateCopy(text) {
 const tour = {
     key: '',
     root: null,
+    heading: null,
     card: null,
     stepId: '',
     target: null,
@@ -1006,7 +1087,8 @@ function isShown(node) {
 
 function findShown(root, selector) {
     try {
-        return [...root.querySelectorAll(selector)].find(isShown) || null;
+        return [...root.querySelectorAll(selector)].find(isShown)
+            || (root === tour.root ? [...(tour.heading?.querySelectorAll(selector) ?? [])].find(isShown) : null) || null;
     } catch {
         return null;
     }
@@ -1192,8 +1274,9 @@ function buildCard(page) {
  * Opens the assistant's step-by-step tour for a full-page tool.
  * @param {string} id Tool id or page key
  * @param {HTMLElement} root The page that holds the tool's controls
+ * @param {HTMLElement|null} [heading] Optional introduction outside the scrolling page
  */
-export function startToolTour(id, root) {
+export function startToolTour(id, root, heading = null) {
     const page = getToolPage(id);
     if (!page || !(root instanceof HTMLElement)) return;
     endToolTour({ restoreFocus: false });
@@ -1201,6 +1284,7 @@ export function startToolTour(id, root) {
     tour.key = page.key;
     tour.opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     tour.root = root;
+    tour.heading = heading;
     if (page.key === 'mewmory') {
         root.addEventListener('click', followMewmoryTab);
         // Switching tabs or roles rebuilds Mewmory's controls, including the highlighted node.
@@ -1214,7 +1298,7 @@ export function startToolTour(id, root) {
     tour.spacer = element('div', 'neconyan-tool-tour-spacer');
     tour.spacer.setAttribute('aria-hidden', 'true');
     tour.watch = setInterval(() => {
-        if (!isShown(tour.root)) endToolTour({ restoreFocus: false });
+        if (!isShown(tour.root) || (tour.heading && tour.heading.dataset.toolPage !== tour.key)) endToolTour({ restoreFocus: false });
     }, 1000);
     void show(page.steps[0].id).then(() => tour.card?.focus({ preventScroll: true }));
 }
@@ -1237,13 +1321,14 @@ export function endToolTour({ restoreFocus = true } = {}) {
     tour.stepId = '';
     tour.key = '';
     tour.root = null;
+    tour.heading = null;
     document.removeEventListener('keydown', onKeydown, true);
     document.body.classList.remove('neconyan-tool-tour-active');
     if (restoreFocus && isShown(tour.opener)) tour.opener.focus({ preventScroll: true });
     tour.opener = null;
 }
 
-function buildInvite(page, root) {
+function buildInvite(page, root, heading) {
     const invite = element('div', 'neconyan-tool-tour-invite');
     invite.dataset.toolPage = page.key;
     invite.setAttribute('role', 'note');
@@ -1252,13 +1337,13 @@ function buildInvite(page, root) {
     const actions = element('div', 'neconyan-tool-tour-invite-actions');
     const start = element('button', 'menu_button menu_button_primary neconyan-tool-tour-next', t`Show me around`);
     start.type = 'button';
-    start.addEventListener('click', () => startToolTour(page.key, root));
+    start.addEventListener('click', () => startToolTour(page.key, root, heading));
     const later = element('button', 'menu_button', t`Not now`);
     later.type = 'button';
     later.addEventListener('click', () => rememberInvite(page.key));
     actions.append(start, later);
     invite.append(portrait(page.assistant), copy, actions);
-    addTourInvitationDismiss(invite, `${TOOL_TOUR_INVITE_PREFIX}${page.key}`, root);
+    addTourInvitationDismiss(invite, `${TOOL_TOUR_INVITE_PREFIX}${page.key}`, heading ?? root);
     return invite;
 }
 
@@ -1267,12 +1352,14 @@ function buildInvite(page, root) {
  * @param {string} id Tool id or page key
  * @param {HTMLElement} heading Where the introduction goes
  * @param {HTMLElement} root The page that holds the tool's controls
+ * @param {HTMLElement|null} [headerHeading] Optional introduction beneath the shell title
  * @returns {boolean} Whether the tool has a full page
  */
-export function mountToolPage(id, heading, root) {
+export function mountToolPage(id, heading, root, headerHeading = null) {
     const page = getToolPage(id);
     heading?.querySelector('.neconyan-tool-page-intro')?.remove();
     heading?.querySelector('.neconyan-tool-tour-invite')?.remove();
+    headerHeading?.replaceChildren();
     if (!page || !(heading instanceof HTMLElement)) return false;
     const launch = element('button', 'menu_button menu_button_icon neconyan-tool-tour-button');
     launch.type = 'button';
@@ -1281,8 +1368,10 @@ export function mountToolPage(id, heading, root) {
     const icon = element('i', 'fa-solid fa-paw');
     icon.setAttribute('aria-hidden', 'true');
     launch.append(icon, element('span', '', t`Tour`));
-    launch.addEventListener('click', () => startToolTour(page.key, root));
-    const intro = createPageIntro(page.key, t([page.kicker]), t([page.description]), launch);
-    heading.append(intro, buildInvite(page, root));
+    launch.addEventListener('click', () => startToolTour(page.key, root, headerHeading));
+    const intro = createPageIntro(page.key, t([page.kicker]), t([page.description]), launch, { header: Boolean(headerHeading) });
+    (headerHeading ?? heading).append(intro);
+    if (headerHeading) headerHeading.dataset.toolPage = page.key;
+    heading.append(buildInvite(page, root, headerHeading));
     return true;
 }

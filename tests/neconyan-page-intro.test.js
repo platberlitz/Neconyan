@@ -1,3 +1,4 @@
+/* global globalThis */
 import { beforeAll, beforeEach, describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 
@@ -76,9 +77,22 @@ describe('compact page introductions', () => {
         expect(intro.children[2].hidden).toBe(false);
     });
 
-    test('all tool page intros use the shared account-backed compact control', () => {
+    test('header blurbs stay visible without a redundant kicker or remembered collapse', () => {
+        state = { 'neconyanPageIntroExpanded.connections': 'false' };
+        const launch = node();
+        const intro = createPageIntro('connections', 'Your model', 'Choose your model.', launch, { header: true });
+        expect(intro.className).toBe('neconyan-tool-page-intro neconyan-page-intro-header');
+        expect(intro.children).toHaveLength(2);
+        expect(intro.children[0].hidden).toBe(false);
+        expect(intro.children[0].children[0].textContent).toBe('Choose your model.');
+        expect(intro.children[1]).toBe(launch);
+        expect(state).toEqual({ 'neconyanPageIntroExpanded.connections': 'false' });
+        expect(settingsLoaded).toBeNull();
+    });
+
+    test('all tool page intros use the shared control with a header option', () => {
         const read = file => readFileSync(new URL('../public/' + file, import.meta.url), 'utf8');
-        expect(read('scripts/neconyan-tool-tour.js')).toContain('createPageIntro(page.key, t([page.kicker]), t([page.description]), launch)');
+        expect(read('scripts/neconyan-tool-tour.js')).toContain('createPageIntro(page.key, t([page.kicker]), t([page.description]), launch, { header: Boolean(headerHeading) })');
         expect(read('css/neconyan-tool-pages.css')).toContain('grid-template-columns: minmax(0, 1fr) auto');
         expect(read('css/neconyan-tool-pages.css')).toContain('.neconyan-tool-page-copy[hidden]');
     });

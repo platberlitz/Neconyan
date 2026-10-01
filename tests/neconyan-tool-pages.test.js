@@ -77,13 +77,12 @@ describe('Pawthfinder opens as a page instead of a popup', () => {
         expect(read('../public/script.js')).toContain('\'#neconyan-tool-tour\'');
     });
 
-    test('the page stylesheet uses tokens, guards motion and hides the generic blurb on phones', () => {
+    test('the page stylesheet uses tokens and guards motion', () => {
         const cssUrl = new URL('../public/css/neconyan-tool-pages.css', import.meta.url);
         expect(existsSync(cssUrl)).toBe(true);
         const css = readFileSync(cssUrl, 'utf8');
         expect(css).toContain('@media (prefers-reduced-motion: reduce)');
         expect(css).toContain('[data-tool-page=\'pathfinder\'] .pf--settings');
-        expect(css).toContain('#user-settings-block.openDrawer[data-tool-page]:not([data-tool-page=\'\']) .sb-shell-header .sb-shell-description');
         expect(css).not.toMatch(/!important/);
     });
 });
@@ -182,6 +181,7 @@ describe('settings pages open as Neconyan pages with an assistant tour', () => {
     const css = read('../public/css/neconyan-tool-pages.css');
     const pages = {
         connections: 'nori',
+        presets: 'nori',
         sampling: 'nori',
         formatting: 'taro',
         mewmory: 'taro',
@@ -207,12 +207,12 @@ describe('settings pages open as Neconyan pages with an assistant tour', () => {
     });
 
     test('the shell maps each settings tab to its page and mounts it whenever a tab opens', () => {
-        for (const [tab, key] of [['left:api', 'connections'], ['left:sampling', 'sampling'], ['left:advanced-formatting', 'formatting'], ['left:mewmory', 'mewmory'], ['right:background', 'background'], ['right:server', 'server'], ['right:console-logs', 'console-logs']]) {
+        for (const [tab, key] of [['left:api', 'connections'], ['left:presets', 'presets'], ['left:sampling', 'sampling'], ['left:advanced-formatting', 'formatting'], ['left:mewmory', 'mewmory'], ['right:background', 'background'], ['right:server', 'server'], ['right:console-logs', 'console-logs']]) {
             expect(shell).toContain(`'${tab}': '${key}'`);
         }
         expect(shell).toMatch(/activeTab\.onActivate\?\.\(\);\s*syncNeconyanNativeShellPage\(shellKey, tabId\);/);
         expect(shell).toContain('mountNeconyanNativePage(\'persona\', document.getElementById(\'sb_character_persona_panel\'))');
-        for (const tab of ['left:api', 'left:sampling', 'left:mewmory', 'right:background', 'right:server', 'right:console-logs']) {
+        for (const tab of ['left:api', 'left:presets', 'left:sampling', 'left:mewmory', 'right:background', 'right:server', 'right:console-logs']) {
             expect(shell).toMatch(new RegExp(`'${tab}': \\[\\s*\\{ href: 'css/neconyan-tool-pages\\.css`));
         }
     });
@@ -251,13 +251,29 @@ describe('settings pages open as Neconyan pages with an assistant tour', () => {
         expect(steps.find(step => step.id === 'save').body).toContain('does not press Save');
         const source = read('../public/scripts/neconyan-tool-tour.js');
         expect(source).toContain('new MutationObserver(refreshTourTarget)');
-        expect(source).toContain("'mewmory-tab-settings': 'settings'");
+        expect(source).toContain('\'mewmory-tab-settings\': \'settings\'');
         expect(source).toContain('!event.isTrusted');
     });
 
-    test('native pages hide the tab blurb and give loose controls a card', () => {
-        expect(css).toContain('.openDrawer[data-neconyan-native-page]:not([data-neconyan-native-page=\'\']) .sb-shell-header .sb-shell-subtitle');
-        expect(css).toContain(':is(#left-nav-panel, #user-settings-block).openDrawer[data-neconyan-native-page]:not([data-neconyan-native-page=\'\']) .sb-shell-header .sb-shell-description');
+    test('native and included tools mount the blurb below the title and keep invitations in the page', () => {
+        expect(shell).toContain('header.append(closeButton, eyebrow, title, headerIntro, subtitle, shellDescription)');
+        expect(shell).toContain('mountToolPage(key, heading, host, headerHeading)');
+        expect(shell).toContain('mountToolPage(mounted ? tool.id : \'\', heading, host, shell?.headerIntro)');
+        expect(shell).toContain('if (headerHeading && headerHeading.dataset.toolPage !== key) return');
+        expect(read('../public/css/neconyan.css')).toContain('.sb-shell-header:has(.neconyan-page-intro-header) > :is(.sb-shell-subtitle, .sb-shell-description) { display: none; }');
         expect(css).toContain('#left-nav-panel[data-neconyan-native-page=\'connections\'] .neconyan-model-provider-stack');
+    });
+
+    test('Nori explains presets without pressing save, import or delete and skips unavailable controls', () => {
+        const steps = getToolTourSteps('presets');
+        expect(steps.map(step => step.id)).toEqual(['welcome', 'choose', 'save', 'copy', 'files', 'linking', 'parameters', 'prompts', 'done']);
+        expect(getToolTourSteps('presets', { isShown: () => false }).map(step => step.id)).toEqual(['welcome', 'choose', 'done']);
+        expect(steps.find(step => step.id === 'choose').targets).toEqual(expect.arrayContaining(['#settings_preset_openai', '#settings_preset_textgenerationwebui', '#settings_preset_novel', '#settings_preset']));
+        expect(steps.find(step => step.id === 'prompts').tab).toBe('#openai-tab-btn-prompts');
+        expect(steps.find(step => step.id === 'parameters').tab).toBe('#openai-tab-btn-parameters');
+        expect(steps.every(step => !step.open)).toBe(true);
+        expect(steps[0].body).toContain('won\'t change, save or delete');
+        expect(steps.find(step => step.id === 'copy').body).toContain('keep the original preset unchanged');
+        expect(steps.find(step => step.id === 'linking').body).toContain('Leave it off');
     });
 });
