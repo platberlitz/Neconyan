@@ -801,7 +801,10 @@ function render() {
         if (id !== 'settings' && !mewmory.view) {
             if (locator) empty(page, mewmory.loading ? 'Loading memory' : 'Memory could not load',
                 mewmory.loading ? 'Your selected chat will appear here when it is ready.' : 'Press Refresh to try loading this chat again.');
-            else empty(page, 'Open a saved Roleplay chat', 'Choose a character or group chat to inspect its memory. Model roles can be configured in Settings.');
+            else {
+                empty(page, 'Open a saved Roleplay chat', 'Choose a character or group chat to inspect its memory. Model roles can be configured in Settings.');
+                page.dataset.mewmoryNoChat = 'true';
+            }
             if (locator && mewmory.error && !mewmory.loading) renderTransfers(page, true);
         } else {
             ({ now: renderNow, pawspective: renderPawspective, archive: renderArchive, recall: renderRecall, settings: renderSettings })[id](page);

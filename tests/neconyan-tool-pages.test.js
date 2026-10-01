@@ -175,3 +175,73 @@ describe('Regexes opens as a page led by Taro', () => {
         expect(css).toContain('#global_scripts_block');
     });
 });
+
+describe('settings pages open as Neconyan pages with an assistant tour', () => {
+    const shell = read('../public/scripts/neconyan-tabs.js');
+    const rail = read('../public/scripts/welcome-screen.js');
+    const css = read('../public/css/neconyan-tool-pages.css');
+    const pages = {
+        connections: 'nori',
+        sampling: 'nori',
+        formatting: 'taro',
+        mewmory: 'taro',
+        persona: 'miso',
+        'dialogue-colors': 'miso',
+        background: 'miso',
+        server: 'taro',
+        'console-logs': 'taro',
+    };
+
+    test('every page has an intro, an invite and a tour that starts and ends on the page chrome', () => {
+        for (const [key, assistant] of Object.entries(pages)) {
+            const page = getToolPage(key);
+            expect(page.assistant).toBe(assistant);
+            expect(page.kicker).toBeTruthy();
+            expect(page.description).toBeTruthy();
+            expect(page.invite).toBeTruthy();
+            const steps = getToolTourSteps(key, { isShown: () => true });
+            expect(steps[0].targets).toContain('.neconyan-tool-page-intro');
+            expect(steps.at(-1).targets).toContain('.neconyan-tool-tour-button');
+            expect(steps.length).toBeGreaterThan(3);
+        }
+    });
+
+    test('the shell maps each settings tab to its page and mounts it whenever a tab opens', () => {
+        for (const [tab, key] of [['left:api', 'connections'], ['left:sampling', 'sampling'], ['left:advanced-formatting', 'formatting'], ['left:mewmory', 'mewmory'], ['right:background', 'background'], ['right:server', 'server'], ['right:console-logs', 'console-logs']]) {
+            expect(shell).toContain(`'${tab}': '${key}'`);
+        }
+        expect(shell).toMatch(/activeTab\.onActivate\?\.\(\);\s*syncNeconyanNativeShellPage\(shellKey, tabId\);/);
+        expect(shell).toContain('mountNeconyanNativePage(\'persona\', document.getElementById(\'sb_character_persona_panel\'))');
+        for (const tab of ['left:api', 'left:sampling', 'left:mewmory', 'right:background', 'right:server', 'right:console-logs']) {
+            expect(shell).toMatch(new RegExp(`'${tab}': \\[\\s*\\{ href: 'css/neconyan-tool-pages\\.css`));
+        }
+    });
+
+    test('the Dialogue Colors extension id resolves to its page and the rail item lights up', () => {
+        expect(getToolPageKey('third-party/sillytavern-character-colors')).toBe('dialogue-colors');
+        expect(shell).toMatch(/NECONYAN_TOOL_PAGE_ROUTES = Object\.freeze\(\{[^}]*'sillytavern-character-colors': 'dialogue-colors'/);
+        expect(rail).toContain('shell?.openIncludedTool?.(\'sillytavern-character-colors\')');
+        expect(css).toContain('[data-tool-page=\'dialogue-colors\'] #dc-panel-toggle');
+    });
+
+    test('the persona tour switches the phone Browse and Edit tabs instead of skipping steps', () => {
+        const steps = getToolTourSteps('persona', { isShown: () => true });
+        expect(steps.find(step => step.id === 'list').tab).toBe('#persona_workspace_tab_browse');
+        expect(steps.find(step => step.id === 'description').tab).toBe('#persona_workspace_tab_edit');
+    });
+
+    test('Mewmory changes its first step when no Roleplay chat is open', () => {
+        expect(getToolPage('mewmory').emptyWhen).toContain('data-mewmory-no-chat');
+        expect(read('../public/scripts/mewmory/ui.js')).toContain('dataset.mewmoryNoChat');
+        const [scope] = getToolTourSteps('mewmory', { isShown: () => true, empty: true }).filter(step => step.id === 'scope');
+        const { emptyBody } = getToolPage('mewmory').steps.find(step => step.id === 'scope');
+        expect(emptyBody).toBeTruthy();
+        expect(scope.body).toBe(emptyBody);
+    });
+
+    test('native pages hide the tab blurb and give loose controls a card', () => {
+        expect(css).toContain('.openDrawer[data-neconyan-native-page]:not([data-neconyan-native-page=\'\']) .sb-shell-header .sb-shell-subtitle');
+        expect(css).toContain(':is(#left-nav-panel, #user-settings-block).openDrawer[data-neconyan-native-page]:not([data-neconyan-native-page=\'\']) .sb-shell-header .sb-shell-description');
+        expect(css).toContain('#left-nav-panel[data-neconyan-native-page=\'connections\'] .neconyan-model-provider-stack');
+    });
+});

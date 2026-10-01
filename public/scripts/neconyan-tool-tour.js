@@ -341,6 +341,504 @@ const TOOL_PAGES = Object.freeze({
             },
         ],
     },
+    connections: {
+        assistant: 'nori',
+        name: 'Connections',
+        kicker: 'Your model',
+        description: 'Choose the service that writes the replies, add its key, and pick the model to use. Save the setup as a connection to switch back to it in one click.',
+        invite: 'Nori will show you how to connect a model, one step at a time.',
+        steps: [
+            {
+                id: 'welcome',
+                targets: ['.neconyan-tool-page-intro'],
+                title: 'What this page is for',
+                body: 'Neconyan does not write replies itself. It sends your chat to a **model**, an AI service that writes the reply, and this page decides which one.\nYou need three things: a **provider** (the company or program that runs the model), usually an **API key** (a password the provider gives you), and a **model** name.',
+                hint: 'Think of it as choosing a restaurant. Some of them are very expensive. I know them all.',
+            },
+            {
+                id: 'saved',
+                targets: ['.neconyan-model-saved'],
+                optional: true,
+                title: 'Saved connections',
+                body: 'A **saved connection** remembers the provider, model and settings you are using now. Pick one from the list to switch everything back in one go.\n**New profile** saves the current setup under a new name. **Save** updates the one you picked. **Random model rotation** can swap between several saved connections for you.',
+                hint: 'Save the good setups. Rebuilding them from memory is a waste of my precious time.',
+            },
+            {
+                id: 'format',
+                targets: ['#main-API-selector-block'],
+                title: 'Reply format',
+                body: '**Chat Completion** sends the chat as a list of messages. Most online services, such as OpenAI, Claude, Gemini and OpenRouter, use this.\n**Text Completion** sends one long block of text. Programs you run yourself, such as KoboldCpp, usually use this. The other choices are for NovelAI, AI Horde and older Kobold setups.',
+                hint: 'If you are not sure, Chat Completion is the safe and stylish choice.',
+            },
+            {
+                id: 'provider',
+                targets: ['#openai_api', '#textgenerationwebui_api', '#kobold_api', '#novel_api', '#kobold_horde'],
+                title: 'Provider and Connect',
+                body: 'Choose your provider from the list, then press **Connect**. The light beside it turns green when Neconyan can reach the provider.\n**Connection tools** has a test button that sends a tiny message, which is the quickest way to check the key and model really work.',
+                hint: 'A green light is the only compliment a connection ever gives you.',
+            },
+            {
+                id: 'key',
+                targets: ['.neconyan-provider-connection', '#api_key_textgenerationwebui', '#api_key_novel'],
+                optional: true,
+                title: 'Address and key',
+                body: 'Paste the **API key** from your provider here. It is stored on your Neconyan server and is never shown again in full.\nFor a program on your own computer, enter its address instead, such as **http://127.0.0.1:5001**.',
+                hint: 'Keys are like credit cards. Never show them to anyone. Especially not me.',
+            },
+            {
+                id: 'model',
+                targets: ['.neconyan-provider-model', '#model_openai_select', '#model_textgenerationwebui_select'],
+                optional: true,
+                title: 'Choosing the model',
+                body: 'Pick a model from **Available models**, or type its exact name. The list button opens a searchable list, and the star keeps favourites at the top.\nDifferent models write differently and cost different amounts, so it is worth trying a few.',
+                hint: 'The priciest model is not always the best one. It hurts me to say it.',
+            },
+            {
+                id: 'done',
+                targets: ['.neconyan-tool-tour-button'],
+                title: 'That is the whole page',
+                body: 'Press **Tour** at any time to see this again. Once replies work, save the setup as a connection so you never have to enter it twice.',
+                hint: 'Now go chat. I will be here, pretending I can afford the good model.',
+            },
+        ],
+    },
+    sampling: {
+        assistant: 'nori',
+        name: 'Sampling',
+        kicker: 'How replies are written',
+        description: 'Fine-tune how the model picks its words: more surprising or more predictable, longer or shorter, more or less repetitive.',
+        invite: 'Nori will explain what each slider does, one step at a time.',
+        steps: [
+            {
+                id: 'welcome',
+                targets: ['.neconyan-tool-page-intro'],
+                title: 'What sampling means',
+                body: 'A model writes one small piece of a word at a time. For each piece it has a list of likely options, and **sampling** settings decide how it picks from that list.\nYou do not have to change anything here. The defaults work, and the active preset on the **Presets** page saves whatever you set.',
+                hint: 'Small adjustments, big difference. Like tailoring.',
+            },
+            {
+                id: 'backend',
+                targets: ['.sb-sampling-section-header'],
+                title: 'Only what your model understands',
+                body: 'This page only shows the settings your current **Reply format** can use. Change the provider or format on the **Connections** page and the list here changes to match.',
+                hint: 'No point paying for buttons that do nothing.',
+            },
+            {
+                id: 'priority',
+                targets: ['.sb-sampling-priority-row-top', '.sb-sampling-priority-row-bottom'],
+                optional: true,
+                title: 'The everyday settings',
+                body: 'The settings at the top are the ones people change most, such as how long a reply may be and how much of the chat the model can read.\nA **Seed** makes the same message give the same reply each time, which helps when testing. Leave it at **-1** for a fresh reply every time.',
+                hint: 'Start here. Everything else is for show-offs.',
+            },
+            {
+                id: 'sliders',
+                targets: ['.sb-sampling-grid'],
+                optional: true,
+                title: 'The sliders',
+                body: '**Temperature** controls surprise: higher gives more varied replies, lower gives safer and more repetitive ones.\n**Top P** and **Top K** cut unlikely words from the list before picking. **Frequency** and **Presence penalty** discourage the model from repeating itself.\nDrag a slider or type a number in the box beside it.',
+                hint: 'Change one thing at a time, then send a message. Otherwise you will never know what helped.',
+            },
+            {
+                id: 'more',
+                targets: ['.sb-sampling-multi-grid', '.sb-sampling-after-row'],
+                optional: true,
+                title: 'Lists and extras',
+                body: 'Some settings take a list instead of a number, such as words that must stop a reply or the order samplers run in. They sit below the sliders.',
+                hint: 'Advanced, yes. Expensive, no. My favourite kind of setting.',
+            },
+            {
+                id: 'done',
+                targets: ['.neconyan-tool-tour-button'],
+                title: 'That is the whole page',
+                body: 'Press **Tour** at any time to see this again. If replies go strange, lower **Temperature** first.',
+                hint: 'And if they are perfect, save the preset before you touch anything else.',
+            },
+        ],
+    },
+    formatting: {
+        assistant: 'taro',
+        name: 'Formatting',
+        kicker: 'Prompt layout',
+        description: 'Decide how your chat is laid out before it is sent to the model: the story template, the system prompt, and the wrapping some models expect.',
+        invite: 'Taro will show you what each section controls, one step at a time.',
+        steps: [
+            {
+                id: 'welcome',
+                targets: ['.neconyan-tool-page-intro'],
+                title: 'What formatting controls',
+                body: 'Before each reply, Neconyan builds one **prompt**: the character card, your persona, lorebook entries and the chat so far, joined together. This page decides the order and the wrapping.\nMost of it matters for **Text Completion**. With **Chat Completion**, the **Presets** page does this job instead.',
+                hint: 'Layout is everything. Nobody reads a messy report.',
+            },
+            {
+                id: 'notice',
+                targets: ['#advanced-formatting-cc-notice'],
+                optional: true,
+                title: 'Why some sections are missing',
+                body: 'You are using **Chat Completion**, so the sections that only work with **Text Completion** are hidden. Switch the **Reply format** on the **Connections** page to see them.',
+                hint: 'Hidden on purpose. I do not show people buttons that do nothing.',
+            },
+            {
+                id: 'context',
+                targets: ['#sb-af-context'],
+                optional: true,
+                title: 'Context Template',
+                body: 'The **Context Template** is the order the pieces go in, written as a **story string** with placeholders such as **{{description}}** and **{{persona}}**.\nPick a ready-made template from the list. Edit it only if your model needs something special.',
+                hint: 'Templates exist so you do not have to think. Use them.',
+            },
+            {
+                id: 'instruct',
+                targets: ['#sb-af-instruct'],
+                optional: true,
+                title: 'Instruct Template',
+                body: 'Many local models were trained to expect special markers around each message. The **Instruct Template** adds them. Choose the one named after your model family, or let Neconyan pick it automatically.',
+                hint: 'Wrong markers, confused model. Simple as that.',
+            },
+            {
+                id: 'system',
+                targets: ['#sb-af-sysprompt'],
+                optional: true,
+                title: 'System Prompt',
+                body: 'The **System Prompt** is the standing instruction at the top, such as **Write the next reply in this roleplay**. You can also set what gets added after the chat, words that end a reply early, and how tokens are counted.',
+                hint: 'Short and clear. Long system prompts are a confession of indecision.',
+            },
+            {
+                id: 'done',
+                targets: ['.neconyan-tool-tour-button'],
+                title: 'That is the whole page',
+                body: 'Press **Tour** at any time to see this again. If a local model rambles or speaks for you, check the Instruct Template first.',
+                hint: 'Now, I will be outside. Briefly.',
+            },
+        ],
+    },
+    mewmory: {
+        assistant: 'taro',
+        name: 'Mewmory',
+        kicker: 'Long-term memory',
+        description: 'Mewmory remembers events and NPC details from your Roleplay chats, and tracks how each character’s view changes, so long stories stay consistent.',
+        invite: 'Taro will show you how Mewmory remembers, one step at a time.',
+        emptyWhen: '#mewmory-workspace [data-mewmory-no-chat]',
+        steps: [
+            {
+                id: 'welcome',
+                targets: ['.neconyan-tool-page-intro'],
+                title: 'What Mewmory does',
+                body: 'Models forget anything that falls out of the chat they can read. **Mewmory** reads your Roleplay chat as it goes, writes down facts and events, and adds the ones that matter back into the prompt.\nIt works per chat, so each story keeps its own memories.',
+                hint: 'I never forget a face. Mewmory never forgets a fact. We get along.',
+            },
+            {
+                id: 'scope',
+                targets: ['.mewmory-heading'],
+                title: 'Which chat this is',
+                body: 'The top line shows which chat Mewmory is looking at. **Refresh** reloads its memories after you edit messages elsewhere.',
+                emptyBody: 'Open a saved Roleplay chat first. Until then, Mewmory has nothing to remember, so most of this page is empty.',
+                hint: 'No chat, no memories. Even I need material.',
+            },
+            {
+                id: 'tabs',
+                targets: ['.mewmory-tabs'],
+                optional: true,
+                title: 'The five tabs',
+                body: '**Now** shows what Mewmory is tracking at this point in the story. **Pawspective** follows how each character sees things, linked to the messages behind it. **Archive** keeps older memories. **Recall** shows what was added to the last prompt. **Settings** sets the models it uses.',
+                hint: 'Check Recall when a character forgets something. It tells you exactly why.',
+            },
+            {
+                id: 'pane',
+                targets: ['.mewmory-page'],
+                optional: true,
+                title: 'Reading and fixing memories',
+                body: 'Each memory can be edited or deleted. If Mewmory wrote something wrong, fix it here and the correction is used from the next reply on.',
+                hint: 'Wrong notes are worse than no notes. Correct them.',
+            },
+            {
+                id: 'done',
+                targets: ['.neconyan-tool-tour-button'],
+                title: 'That is the whole page',
+                body: 'Press **Tour** at any time to see this again. In **Settings**, choose how often Mewmory updates with **Messages per update**.',
+                hint: 'Now, I remember there was a cigarette somewhere.',
+            },
+        ],
+    },
+    persona: {
+        assistant: 'miso',
+        name: 'Persona',
+        kicker: 'Who you are',
+        description: 'Your persona is the character you play: a name, a picture and a short description the model reads so it knows who it is talking to.',
+        invite: 'Miso will show you how to set up who you are, one step at a time.',
+        steps: [
+            {
+                id: 'welcome',
+                targets: ['.neconyan-tool-page-intro'],
+                title: 'What a persona is',
+                body: 'A **persona** is you, in the story. Its name replaces **{{user}}** in cards and prompts, and its description tells the model what you look like and how you act.\nYou can have as many personas as you like and switch between them.',
+                hint: 'You can be anyone! A knight, a cat, a cat knight. I vote cat knight.',
+            },
+            {
+                id: 'list',
+                targets: ['#persona_workspace_panel_browse'],
+                tab: '#persona_workspace_tab_browse',
+                optional: true,
+                title: 'Your personas',
+                body: 'Click a persona to use it. **Create** makes a new one, **Import persona** loads one from a file, and the search box finds one by name.',
+                hint: 'Ooh, so many of you to choose from!',
+            },
+            {
+                id: 'controls',
+                targets: ['#persona_controls'],
+                tab: '#persona_workspace_tab_edit',
+                optional: true,
+                title: 'Name, picture and file',
+                body: '**Rename** changes the name, **Image** changes the picture, and **Export** saves this persona with its picture to a file you can keep or share.',
+                hint: 'Pick a cute picture. It shows next to every message you send!',
+            },
+            {
+                id: 'lore',
+                targets: ['#persona_lore_actions'],
+                tab: '#persona_workspace_tab_edit',
+                optional: true,
+                title: 'Linked lorebook',
+                body: 'A **lorebook** is a set of notes the model reads when certain words come up. Linking one here means it follows this persona into every chat.',
+                hint: 'Perfect for your backstory. Everyone deserves a backstory.',
+            },
+            {
+                id: 'description',
+                targets: ['#persona_description'],
+                tab: '#persona_workspace_tab_edit',
+                optional: true,
+                title: 'Persona Description',
+                body: 'Write who you are in a few lines: looks, personality, anything the model should know. Keep it short; the model reads it before every reply.\n**Scenario Notes**, just below, add extra details for one chat only.',
+                open: ['#persona_appendices_heading'],
+                hint: 'A few good lines beat a whole essay. Trust me!',
+            },
+            {
+                id: 'position',
+                targets: ['.persona_management_description_position_container'],
+                tab: '#persona_workspace_tab_edit',
+                optional: true,
+                title: 'Where it goes',
+                body: '**Position** decides where your description is placed in the prompt. **In Story String / Prompt Manager** suits almost everyone.',
+                hint: 'Leave this one alone unless something feels off.',
+            },
+            {
+                id: 'use',
+                targets: ['#persona_editor_tab_connections'],
+                tab: '#persona_workspace_tab_edit',
+                optional: true,
+                title: 'Use and More',
+                body: '**Use** locks this persona to the current chat, to a character, or makes it your default. **More** has duplicate, delete, backup and a few global settings.',
+                hint: 'Lock it to your favourite character and it will always be ready!',
+            },
+            {
+                id: 'done',
+                targets: ['.neconyan-tool-tour-button'],
+                title: 'That is the whole page',
+                body: 'Press **Tour** at any time to see this again. A name, a picture and two lines of description are enough to start.',
+                hint: 'Now, if anyone wants to give me belly rubs, I am right here.',
+            },
+        ],
+    },
+    'dialogue-colors': {
+        assistant: 'miso',
+        name: 'Dialogue Colors',
+        kicker: 'Who said what',
+        aliases: ['sillytavern-character-colors'],
+        description: 'Give every speaker their own colour, so you can tell at a glance who is talking in busy scenes.',
+        invite: 'Miso will show you how to colour your chats, one step at a time.',
+        steps: [
+            {
+                id: 'welcome',
+                targets: ['.neconyan-tool-page-intro'],
+                title: 'What Dialogue Colors does',
+                body: '**Dialogue Colors** finds the quoted speech in replies, works out who said it, and colours it to match that speaker.\nIt helps most in group chats and stories with lots of characters.',
+                hint: 'Everybody gets a colour! I want orange. Obviously.',
+            },
+            {
+                id: 'setup',
+                targets: ['#dc-page-setup'],
+                open: ['#dc-page-setup'],
+                title: 'Current setup',
+                body: '**Enabled** turns colouring on. **Colors saved** decides whether colours are kept per chat, per character card, or everywhere.\n**Engine** chooses how it works: **Local** colours the screen only and never changes your messages; **LLM** asks a model to add colour tags into the text itself.',
+                hint: 'Local is the gentle one. Start with Local!',
+            },
+            {
+                id: 'process',
+                targets: ['#dc-page-process'],
+                open: ['#dc-page-process'],
+                title: 'Process chat',
+                body: '**Scan entire chat** reads the chat and finds the speakers. **Colorize** fills in colours where dialogue has none yet, and **Recolor** updates colours you already have.',
+                hint: 'Scan first, then colour. Order matters, even for cats.',
+            },
+            {
+                id: 'characters',
+                targets: ['#dc-page-characters'],
+                open: ['#dc-page-characters'],
+                title: 'Characters',
+                body: 'Every speaker found is listed here with their colour. Click a colour to change it, or add a name by hand if someone was missed.',
+                hint: 'Give the villain a dramatic colour. It is more fun.',
+            },
+            {
+                id: 'appearance',
+                targets: ['#dc-page-appearance'],
+                open: ['#dc-page-appearance'],
+                title: 'Appearance',
+                body: 'Pick a palette and brightness, preview it for colour-blind readers, and choose extras such as bold speech or a small legend of who is who.',
+                hint: 'Pretty and readable. Like me!',
+            },
+            {
+                id: 'more',
+                targets: ['#dc-page-engine', '#dc-page-automation'],
+                optional: true,
+                title: 'The rest',
+                body: 'The sections further down set the model used in **LLM** mode, what runs automatically after each reply, saved styles, file import and export, and tidy-up tools.\n**Danger zone** at the very bottom removes colours for good, so read it twice before pressing anything there.',
+                hint: 'Danger zone means danger. I hide under the sofa for that one.',
+            },
+            {
+                id: 'done',
+                targets: ['.neconyan-tool-tour-button'],
+                title: 'That is the whole page',
+                body: 'Press **Tour** at any time to see this again. Turn on **Enabled**, keep **Local**, and press **Scan entire chat** to begin.',
+                hint: 'Now go make everything colourful! And maybe rub my belly on the way.',
+            },
+        ],
+    },
+    background: {
+        assistant: 'miso',
+        name: 'Background',
+        kicker: 'Behind your chats',
+        description: 'Choose the picture or video behind your chats, for every chat or just this one.',
+        invite: 'Miso will show you how to change the background, one step at a time.',
+        steps: [
+            {
+                id: 'welcome',
+                targets: ['.neconyan-tool-page-intro'],
+                title: 'What this page is for',
+                body: 'The **background** is the picture behind your messages. Pick one from your collection, upload your own, or use a looping video.',
+                hint: 'Pick something cosy! A sunny windowsill, maybe.',
+            },
+            {
+                id: 'fit',
+                targets: ['#bg-header-fixed'],
+                title: 'Fitting and adding',
+                body: 'The first list sets how the picture fills the screen, such as **Cover** or **Contain**. The second chooses which part stays in view.\n**Auto-select** asks your model to pick a background that suits the current chat. **New Folder** and **Add Background** organise and upload pictures, and the search box finds one by name.',
+                hint: 'Auto-select is like letting me decorate. Bold, but it works!',
+            },
+            {
+                id: 'animated',
+                targets: ['#bpt-animated-bg-panel'],
+                optional: true,
+                title: 'Animated Backgrounds',
+                body: 'Paste a YouTube link or a direct video link and press **Use URL** to play it behind the chat. **Muted**, **Loop** and **Autoplay** control how it plays, and saved links appear below.',
+                hint: 'A crackling fireplace video. Trust me. So cosy.',
+            },
+            {
+                id: 'list',
+                targets: ['#bg_tabs'],
+                optional: true,
+                title: 'Your backgrounds',
+                body: 'Click a picture to use it. **Global** sets the background for every chat; **Chat** sets one just for the chat you have open.\nThe pencil lets you select several to delete or move, and the minus and plus buttons make the pictures smaller or bigger.',
+                hint: 'A different background for every story! Fancy.',
+            },
+            {
+                id: 'done',
+                targets: ['.neconyan-tool-tour-button'],
+                title: 'That is the whole page',
+                body: 'Press **Tour** at any time to see this again. Try the **Chat** tab to give one story its own look.',
+                hint: 'Now, about that sunny windowsill...',
+            },
+        ],
+    },
+    server: {
+        assistant: 'taro',
+        name: 'Server',
+        kicker: 'Behind the scenes',
+        description: 'Check that Neconyan is running properly, install updates, and change the settings that live on the server itself.',
+        invite: 'Taro will walk you through the server controls, one step at a time.',
+        steps: [
+            {
+                id: 'welcome',
+                targets: ['.neconyan-tool-page-intro'],
+                title: 'What the server is',
+                body: 'Neconyan has two halves: the page in your browser, and the **server**, the program that stores your chats and talks to the model. This page looks after the server.',
+                hint: 'The part nobody sees. I respect it.',
+            },
+            {
+                id: 'status',
+                targets: ['.sb-server-card'],
+                title: 'Server status',
+                body: 'The top card shows whether the server is running, which version you have, and where it was installed from. Mention these when you report a problem.',
+                hint: 'Facts first. Always.',
+            },
+            {
+                id: 'updates',
+                targets: ['.sb-server-card:nth-of-type(2)', '.sb-server-card + .sb-server-card'],
+                optional: true,
+                title: 'Updates & Restart',
+                body: '**Check for updates** looks for a newer version. **Update & Restart** installs it and restarts the server, which takes a few seconds. **Restart server** restarts without updating.\nYour chats are not touched by an update.',
+                hint: 'Restart when nobody is mid-reply. Basic manners.',
+            },
+            {
+                id: 'thumbnails',
+                targets: ['.sb-thumbnail-card'],
+                optional: true,
+                title: 'Thumbnails',
+                body: '**Thumbnails** are the small copies of avatars and backgrounds shown in lists. Smaller ones load faster on phones; larger ones look sharper.',
+                hint: 'Sharp or fast. Choose. You cannot have both for free.',
+            },
+            {
+                id: 'config',
+                targets: ['.sb-server-config-editor'],
+                optional: true,
+                title: 'Server settings file',
+                body: 'This box edits **config.yaml**, the file that holds the server settings, such as the port and the login. **Save & Restart** applies changes.\nA typing mistake here can stop the server starting, so change one line at a time.',
+                hint: 'Careful. I have seen people take a whole server down with one stray space.',
+            },
+            {
+                id: 'done',
+                targets: ['.neconyan-tool-tour-button'],
+                title: 'That is the whole page',
+                body: 'Press **Tour** at any time to see this again. Check for updates now and then; that is all most people need here.',
+                hint: 'Right. Smoke break.',
+            },
+        ],
+    },
+    'console-logs': {
+        assistant: 'taro',
+        name: 'Console Logs',
+        kicker: 'Troubleshooting',
+        description: 'Read what the server is doing right now, so you can see why a reply failed or something will not load.',
+        invite: 'Taro will show you how to read the logs, one step at a time.',
+        steps: [
+            {
+                id: 'welcome',
+                targets: ['.neconyan-tool-page-intro'],
+                title: 'What logs are',
+                body: '**Logs** are the notes the server writes as it works: each request to the model, each error, each restart. When something breaks, the reason is usually here.',
+                hint: 'Evidence. My favourite thing after a quiet room.',
+            },
+            {
+                id: 'output',
+                targets: ['.sb-console-log-card'],
+                title: 'Reading the log',
+                body: 'New lines appear at the bottom while **Live** is on. **Pause Live** freezes the view so you can read; **Refresh** reloads it.\n**Copy logs** copies everything, ready to paste into a bug report. Check it for anything private first.',
+                hint: 'Read from the bottom up. The newest mess is at the bottom.',
+            },
+            {
+                id: 'verbose',
+                targets: ['.sb-console-log-verbose-card'],
+                optional: true,
+                title: 'Debug Logging',
+                body: 'Turning on **Debug Logging** makes the server write much more detail. It helps track down hard problems; switch it off afterwards to keep the log readable.',
+                hint: 'More detail is good. Until it is not.',
+            },
+            {
+                id: 'done',
+                targets: ['.neconyan-tool-tour-button'],
+                title: 'That is the whole page',
+                body: 'Press **Tour** at any time to see this again. When a reply fails, come here first and look at the last few red lines.',
+                hint: 'Done. Lighter?',
+            },
+        ],
+    },
 });
 
 /**
@@ -351,7 +849,8 @@ const TOOL_PAGES = Object.freeze({
 export function getToolPageKey(id) {
     const wanted = String(id ?? '').trim().replace(/^third-party[\\/]/i, '').toLowerCase();
     if (!wanted) return '';
-    return Object.keys(TOOL_PAGES).find(key => wanted === key || wanted.endsWith(`/${key}`)) || '';
+    const matches = name => wanted === name || wanted.endsWith(`/${name}`);
+    return Object.keys(TOOL_PAGES).find(key => matches(key) || (TOOL_PAGES[key].aliases ?? []).some(matches)) || '';
 }
 
 /**
@@ -453,7 +952,8 @@ function currentSteps() {
     const empty = Boolean(emptyWhen && root?.querySelector(emptyWhen));
     return getToolTourSteps(tour.key, {
         empty,
-        isShown: step => Boolean(root && step.targets.some(selector => findShown(root, selector))),
+        isShown: step => Boolean(root && (step.targets.some(selector => findShown(root, selector))
+            || (step.tab && findShown(root, step.tab) && step.targets.some(selector => root.querySelector(selector))))),
     });
 }
 
@@ -463,10 +963,15 @@ function clearTarget() {
 }
 
 function openStep(step) {
-    if (!step.open || !tour.root) return;
+    if (!tour.root) return;
+    const tab = step.tab ? findShown(tour.root, step.tab) : null;
+    if (tab?.getAttribute('aria-selected') === 'false') tab.click();
+    if (!step.open) return;
     for (const selector of [].concat(step.open)) {
         const header = findShown(tour.root, selector);
-        if (header?.getAttribute('aria-expanded') === 'false') header.click();
+        const details = header?.closest('details');
+        if (details && !details.open) details.open = true;
+        else if (header?.getAttribute('aria-expanded') === 'false') header.click();
     }
 }
 

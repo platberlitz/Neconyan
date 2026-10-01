@@ -472,6 +472,62 @@ body.neconyan-tool-tour-active #neconyan-tour-coachmark {
     border-radius: 12px;
 }
 
+/* Settings pages that share the tool page intro: Connections, Sampling, Formatting, Mewmory,
+   Persona, Background, Server and Console Logs. */
+.neconyan-native-page-heading {
+    display: grid;
+    gap: 12px;
+    margin: 0 0 16px;
+}
+
+.neconyan-native-page-heading:empty {
+    display: none;
+}
+
+/* The intro card already describes the page, so the header keeps only its title. */
+body.neconyan .openDrawer[data-neconyan-native-page]:not([data-neconyan-native-page='']) .sb-shell-header .sb-shell-subtitle {
+    display: none;
+}
+
+.neconyan-included-tool-page[data-tool-page='dialogue-colors'] #dc-panel-toggle {
+    display: none;
+}
+
+/* Its visually hidden labels are absolutely placed; without a box here they hang below the
+   page and scrolling to a section drags the page header off screen. */
+.neconyan-included-tool-page[data-tool-page='dialogue-colors'] #dc-ext {
+    position: relative;
+}
+
+#left-nav-panel[data-neconyan-native-page='connections'] .neconyan-model-provider-stack,
+#left-nav-panel[data-neconyan-native-page='formatting'] .sb-af-drawers > .sb-af-settings-drawer {
+    padding: 16px 18px;
+    border: 1px solid var(--neco-border);
+    border-radius: 14px;
+    background: var(--neco-raised, var(--neco-surface));
+}
+
+#left-nav-panel[data-neconyan-native-page='formatting'] .sb-af-drawers {
+    display: grid;
+    gap: 12px;
+}
+
+#left-nav-panel[data-neconyan-native-page='formatting'] .sb-af-settings-drawer > .inline-drawer-header {
+    padding: 0;
+    border: 0;
+}
+
+#left-nav-panel[data-neconyan-native-page='formatting'] .sb-af-settings-drawer > .inline-drawer-header b {
+    font-family: var(--sb-font-display);
+    font-size: 18px;
+    font-weight: 400;
+}
+
+/* The intro names the page; the old heading row keeps only its Text Completion import buttons. */
+#left-nav-panel[data-neconyan-native-page='formatting'] #AdvancedFormatting > .flex-container:first-child > h3 {
+    display: none;
+}
+
 @media (max-width: 768px) {
     .neconyan-included-tool-page[data-tool-page='expressions'] .expression_section {
         padding: 12px;
@@ -506,8 +562,18 @@ body.neconyan-tool-tour-active #neconyan-tour-coachmark {
     }
 
     /* The page intro already says what the tool does; the generic Settings blurb only misleads here. */
-    body.neconyan #user-settings-block.openDrawer[data-tool-page]:not([data-tool-page='']) .sb-shell-header .sb-shell-description {
+    body.neconyan #user-settings-block.openDrawer[data-tool-page]:not([data-tool-page='']) .sb-shell-header .sb-shell-description,
+    body.neconyan :is(#left-nav-panel, #user-settings-block).openDrawer[data-neconyan-native-page]:not([data-neconyan-native-page='']) .sb-shell-header .sb-shell-description {
         display: none;
+    }
+
+    .neconyan-native-page-heading {
+        margin-bottom: 12px;
+    }
+
+    #left-nav-panel[data-neconyan-native-page='connections'] .neconyan-model-provider-stack,
+    #left-nav-panel[data-neconyan-native-page='formatting'] .sb-af-drawers > .sb-af-settings-drawer {
+        padding: 12px;
     }
 
     /* Four rows of buttons pinned to the top leave too little room on a phone page. */

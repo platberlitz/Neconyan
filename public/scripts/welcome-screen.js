@@ -1671,6 +1671,7 @@ function activateNeconyanRailRoute(route) {
             void globalThis.NeconyanAgents?.openPathfinder?.();
             break;
         case 'dialogue-colors':
+            if (shell?.openIncludedTool?.('sillytavern-character-colors')) break;
             void globalThis.NeconyanExtensions?.focusUnit?.('Dialogue Colors');
             break;
         case 'quick-image-gen':

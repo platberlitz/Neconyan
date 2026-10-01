@@ -104,6 +104,8 @@ test('real help questions retrieve the appropriate topic', () => {
         ['How do I add sprites in Character Expressions?', 'images.expressions'],
         ['Can the regex editor explain what this pattern does?', 'tools.regex-helpers'],
         ['How do I find a script in Regexes?', 'tools.regex'],
+        ['Who leads the Sampling tour?', 'navigation.page-tours'],
+        ['Is there a walkthrough for the Persona page?', 'navigation.page-tours'],
     ]) assert.ok(ids(question).includes(expected), `${question}: ${ids(question)}`);
 });
 

@@ -157,15 +157,35 @@ const NN_PANEL_STYLESHEETS = Object.freeze({
     ],
     'characters:persona': [
         { href: 'css/personas.css?v=20260912h', id: 'deferred-personas-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-native1', id: 'deferred-tool-pages-css' },
+    ],
+    'left:api': [
+        { href: 'css/neconyan-tool-pages.css?v=20261001-native1', id: 'deferred-tool-pages-css' },
+    ],
+    'left:sampling': [
+        { href: 'css/neconyan-tool-pages.css?v=20261001-native1', id: 'deferred-tool-pages-css' },
     ],
     'left:advanced-formatting': [
         { href: 'css/macros.css', id: 'deferred-macros-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-native1', id: 'deferred-tool-pages-css' },
+    ],
+    'left:mewmory': [
+        { href: 'css/neconyan-tool-pages.css?v=20261001-native1', id: 'deferred-tool-pages-css' },
     ],
     'right:extensions': [
         { href: 'css/extensions-panel.css?v=20260425a', id: 'deferred-extensions-panel-css' },
     ],
+    'right:background': [
+        { href: 'css/neconyan-tool-pages.css?v=20261001-native1', id: 'deferred-tool-pages-css' },
+    ],
+    'right:server': [
+        { href: 'css/neconyan-tool-pages.css?v=20261001-native1', id: 'deferred-tool-pages-css' },
+    ],
+    'right:console-logs': [
+        { href: 'css/neconyan-tool-pages.css?v=20261001-native1', id: 'deferred-tool-pages-css' },
+    ],
     'right:included-tool': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-w98lift', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261001-native1', id: 'deferred-tool-pages-css' },
     ],
 });
 const NN_FRONTEND_ICON_DEFAULT = 'calico';
@@ -472,7 +492,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261001-w98lift';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261001-native1';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -2803,12 +2823,54 @@ const NECONYAN_TOOL_PAGE_ROUTES = Object.freeze({
     'quick-image-gen': 'quick-image-gen',
     expressions: 'expressions',
     regex: 'regex',
+    'sillytavern-character-colors': 'dialogue-colors',
 });
 
 function getIncludedToolRailRoute() {
     const selected = normalizeNeconyanNativeToolId(neconyanIncludedToolSelection);
     const key = Object.keys(NECONYAN_TOOL_PAGE_ROUTES).find(id => selected === id || selected.endsWith(`/${id}`));
     return key ? NECONYAN_TOOL_PAGE_ROUTES[key] : 'extensions';
+}
+
+// Shell tabs that get the same intro card and assistant tour as the full-page Included tools.
+const NN_NATIVE_SHELL_PAGES = Object.freeze({
+    'left:api': 'connections',
+    'left:sampling': 'sampling',
+    'left:advanced-formatting': 'formatting',
+    'left:mewmory': 'mewmory',
+    'right:background': 'background',
+    'right:server': 'server',
+    'right:console-logs': 'console-logs',
+});
+
+/**
+ * Puts the page introduction and tour at the top of a settings page.
+ * @param {string} key Page key from the tool tour
+ * @param {HTMLElement|null} host The page's scrolling container
+ */
+function mountNeconyanNativePage(key, host) {
+    if (!(host instanceof HTMLElement)) return;
+    host.dataset.neconyanNativePage = key;
+    let heading = host.querySelector(':scope > .neconyan-native-page-heading');
+    if (!heading) {
+        heading = createElement('div', { className: 'neconyan-native-page-heading' });
+        host.prepend(heading);
+    }
+    if (heading.dataset.toolPage === key && heading.querySelector('.neconyan-tool-page-intro')) return;
+    heading.dataset.toolPage = key;
+    void import('./neconyan-tool-tour.js')
+        .then(({ mountToolPage }) => mountToolPage(key, heading, host))
+        .catch(error => console.warn('[Neconyan] Could not load the page tour:', error));
+}
+
+function syncNeconyanNativeShellPage(shellKey, tabId) {
+    const key = NN_NATIVE_SHELL_PAGES[`${shellKey}:${tabId}`] ?? '';
+    const shellState = getShellState(shellKey);
+    const root = document.getElementById(getShellConfig(shellKey)?.rootPanelId ?? '');
+    if (root instanceof HTMLElement) root.dataset.neconyanNativePage = key;
+    if (!key) return;
+    const panel = shellState?.tabs.get(tabId)?.panel;
+    mountNeconyanNativePage(key, panel?.querySelector(':scope > .sb-shell-panel-scroller') ?? null);
 }
 
 /**
@@ -10005,6 +10067,8 @@ function syncCharacterShellTabs(activeTab = null) {
 
     syncCharacterHeaderCopy(normalizedTab);
     syncCharacterModeToggle();
+    if (panel instanceof HTMLElement) panel.dataset.neconyanNativePage = normalizedTab === 'persona' ? 'persona' : '';
+    if (normalizedTab === 'persona') mountNeconyanNativePage('persona', document.getElementById('sb_character_persona_panel'));
 
     panel?.querySelectorAll('[data-sb-character-tab]').forEach(tab => {
         if (!(tab instanceof HTMLElement)) {
@@ -16504,6 +16568,7 @@ function setActiveTab(shellKey, tabId, { focusButton = false } = {}) {
     }
 
     activeTab.onActivate?.();
+    syncNeconyanNativeShellPage(shellKey, tabId);
     const shellRoot = document.getElementById(shellConfig.rootPanelId);
     if (shellRoot instanceof HTMLElement) {
         shellRoot.dataset.sbActiveTab = tabId;
