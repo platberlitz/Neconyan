@@ -6743,13 +6743,50 @@ async function reviewLorebookRepair(book, fileName) {
     return result === POPUP_RESULT.CUSTOM1 ? book : null;
 }
 
+/** Choose files without removing the existing embedded character-card workflow. */
+async function importWorldInfoBatch() {
+    const result = await new Popup(`<h3>${t`Batch import lorebooks`}</h3><p>${t`Choose lorebook files, including JSON, or scan your character cards for embedded lorebooks.`}</p>`, POPUP_TYPE.TEXT, '', {
+        okButton: false,
+        cancelButton: t`Cancel`,
+        customButtons: [
+            { text: t`Lorebook files`, result: POPUP_RESULT.CUSTOM1, action: () => document.getElementById('world_import_file').click() },
+            { text: t`Character cards`, result: POPUP_RESULT.CUSTOM2 },
+        ],
+    }).show();
+    if (result === POPUP_RESULT.CUSTOM2) await importEmbeddedWorldInfoBatch();
+}
+
+/** Import each selected file through the same conversion, repair and overwrite checks. */
+export async function importWorldInfoFiles(files) {
+    const selected = Array.from(files);
+    const results = [];
+    for (const file of selected) {
+        try {
+            results.push({ file: file.name, ...await importWorldInfo(file, { notify: selected.length === 1 }) });
+        } catch (error) {
+            console.error('Error importing lorebook file:', file.name, error);
+            results.push({ file: file.name, status: 'failed', reason: String(error.message || error) });
+        }
+    }
+    if (selected.length > 1) {
+        const imported = results.filter(result => result.status === 'imported').length;
+        const skipped = results.filter(result => result.status === 'skipped').length;
+        const failed = results.filter(result => result.status === 'failed').length;
+        const rows = results.map(result => `<li>${escapeHtml(result.file)}: ${escapeHtml(result.status === 'imported' ? t`Imported` : result.reason)}</li>`).join('');
+        await callGenericPopup(`<h3>${t`Batch import complete`}</h3><p>${t`${imported} imported, ${skipped} skipped, ${failed} failed.`}</p><ul class="textAlignLeft">${rows}</ul>`, POPUP_TYPE.TEXT);
+    }
+    return results;
+}
+
 /**
  * Imports world info from a file.
  * @param {File} file File to import
+ * @param {{notify?: boolean}} options Notification options
+ * @returns {Promise<{status: string, name?: string, reason?: string}>} Per-file result
  */
-export async function importWorldInfo(file) {
+export async function importWorldInfo(file, { notify = true } = {}) {
     if (!file) {
-        return;
+        return { status: 'skipped', reason: t`No file selected.` };
     }
 
     const formData = new FormData();
@@ -6757,7 +6794,7 @@ export async function importWorldInfo(file) {
     let jsonData;
 
     try {
-        if (file.name.endsWith('.png')) {
+        if (file.name.toLowerCase().endsWith('.png')) {
             const buffer = new Uint8Array(await getFileBuffer(file));
             jsonData = extractDataFromPng(buffer, 'naidata');
         } else {
@@ -6766,8 +6803,8 @@ export async function importWorldInfo(file) {
         }
 
         if (jsonData === undefined || jsonData === null) {
-            toastr.error(t`File is not valid: ${file.name}`);
-            return;
+            if (notify) toastr.error(t`File is not valid: ${file.name}`);
+            return { status: 'failed', reason: t`The file is not valid.` };
         }
 
         const isNativeWorldInfo = jsonData.entries && typeof jsonData.entries === 'object' && !Array.isArray(jsonData.entries);
@@ -6776,13 +6813,13 @@ export async function importWorldInfo(file) {
         if (jsonData.format === 'lorestitch-project') {
             const imported = parseLorebookImport(jsonData, convertCharacterBook);
             const book = await reviewLorebookRepair(imported.book, file.name);
-            if (!book) return;
+            if (!book) return { status: 'skipped', reason: t`Import cancelled during repair review.` };
             formData.set('convertedData', JSON.stringify(book));
             formData.set('history', JSON.stringify(imported.history));
         } else if (isNativeWorldInfo) {
             console.log('Importing native World Info');
             const book = await reviewLorebookRepair(jsonData, file.name);
-            if (!book) return;
+            if (!book) return { status: 'skipped', reason: t`Import cancelled during repair review.` };
             if (book !== jsonData) formData.set('convertedData', JSON.stringify(book));
         } else if (jsonData.lorebookVersion !== undefined) {
             console.log('Converting Novel Lorebook');
@@ -6796,20 +6833,20 @@ export async function importWorldInfo(file) {
         } else if (Array.isArray(characterBook?.entries)) {
             console.log('Converting CharacterBook');
             const book = await reviewLorebookRepair(characterBook, file.name);
-            if (!book) return;
+            if (!book) return { status: 'skipped', reason: t`Import cancelled during repair review.` };
             formData.set('convertedData', JSON.stringify(convertCharacterBook(book)));
         } else {
             throw new Error('Unsupported World Info format');
         }
     } catch (error) {
-        toastr.error(`Error parsing file: ${error}`);
-        return;
+        if (notify) toastr.error(`Error parsing file: ${error}`);
+        return { status: 'failed', reason: `${t`Error parsing file`}: ${String(error.message || error)}` };
     }
 
     const worldName = file.name.substr(0, file.name.lastIndexOf('.'));
     const sanitizedWorldName = await getCanonicalWorldInfoName(worldName);
     if (!sanitizedWorldName) {
-        return false;
+        return { status: 'skipped', reason: t`No valid lorebook name was chosen.` };
     }
     const existingWorldName = findMatchingLorebookName(world_names, sanitizedWorldName);
     const persistedWorldName = existingWorldName ?? sanitizedWorldName;
@@ -6818,7 +6855,7 @@ export async function importWorldInfo(file) {
         actionName: 'Import',
     });
     if (!allowed) {
-        return false;
+        return { status: 'skipped', reason: t`Replacement was not approved. The existing lorebook was kept.` };
     }
     formData.set('name', persistedWorldName);
     const releaseSaveBlock = blockWorldInfoSaves(persistedWorldName);
@@ -6841,6 +6878,7 @@ export async function importWorldInfo(file) {
         saveTarget = null;
 
         const data = await result.json();
+        if (!data.name) throw new Error('The import response did not include a lorebook name.');
 
         if (data.name) {
             importedName = data.name;
@@ -6857,17 +6895,19 @@ export async function importWorldInfo(file) {
                 $('#world_editor_select').val(newIndex).trigger('change');
             }
 
-            toastr.success(t`World Info "${data.name}" imported successfully!`);
+            if (notify) toastr.success(t`World Info "${data.name}" imported successfully!`);
         }
     } catch (error) {
         console.error('Error importing world info:', error);
-        toastr.error(t`Failed to import World Info`);
+        if (notify) toastr.error(t`Failed to import World Info`);
+        return { status: 'failed', reason: `${t`Failed to import lorebook`}: ${String(error.message || error)}` };
     } finally {
         releaseSaveBlock(saveTarget);
     }
     if (importedName) {
         await eventSource.emit(event_types.WORLDINFO_UPDATED, importedName, importedData, { replaced: true });
     }
+    return { status: 'imported', name: importedName };
 }
 
 /**
@@ -7147,15 +7187,20 @@ export function initWorldInfo() {
             return;
         }
 
-        const file = e.target.files[0];
-
-        await importWorldInfo(file);
-
-        // Will allow to select the same file twice in a row
-        e.target.value = '';
+        const files = Array.from(e.target.files || []);
+        e.target.disabled = true;
+        $('#world_import_button, #world_batch_import_embedded').prop('disabled', true);
+        try {
+            await importWorldInfoFiles(files);
+        } finally {
+            // Allow the same files to be selected again, including after a failed import.
+            e.target.value = '';
+            e.target.disabled = false;
+            $('#world_import_button, #world_batch_import_embedded').prop('disabled', false);
+        }
     });
 
-    $('#world_batch_import_embedded').on('click', importEmbeddedWorldInfoBatch);
+    $('#world_batch_import_embedded').on('click', importWorldInfoBatch);
 
     $('#world_create_button').on('click', async () => {
         const tempName = getFreeWorldName();

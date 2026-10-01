@@ -45,3 +45,8 @@ test('partly used settings are explained even without other excluded files', () 
     expect(formatReport({ skippedCount: 0, excludedCount: 0, personaSettingsOnly: true, parts: ['personas'] })).toBe(
         'Selected libraries: Personas.\n\nOnly persona names and descriptions were read from settings.json. Other settings in that file were not imported.');
 });
+
+test('lorebooks are named in reports rather than producing an empty library label', () => {
+    expect(formatReport({ parts: ['lorebooks'], skippedCount: 1, skipped: [{ reason: 'Cannot read \'worlds/Broken.json\': The file is not valid JSON.' }] }))
+        .toContain('Selected libraries: Lorebooks.');
+});

@@ -18,6 +18,8 @@ import { BINARY_FILE_LIMIT, openOperationBinary } from './binary-files.js';
 import { readImportInput } from './import-inputs.js';
 import { operationError, withOperation } from './store.js';
 import { readImportPersonas } from './import-personas.js';
+import { isNativeLorebook } from '../../public/scripts/neconyan-lorebook-tools-core.js';
+import { validateWorldInfoHistory } from '../world-info-history.js';
 
 const STRUCTURED_LIMIT = 32 * 1024 * 1024;
 const evidence = file => file ? { rawHash: file.rawHash, physical: file.physical } : null;
@@ -83,9 +85,12 @@ function object(bytes, label, current = false) {
 
 const MERGED_FILES = ['settings.json', 'secrets.json', ENTITY_DATE_ADDED_FILE, ENTITY_LAST_CHAT_FILE];
 const CHAT_IMPORT_LIMIT = 64 * 1024 * 1024;
+const isLorebookFile = relative => /^worlds\/[^/]+\.json$/.test(relative);
+const isLorebookHistoryFile = relative => /^worlds\/\.history\/[^/]+\.json$/.test(relative);
 
 /** Files whose bytes are read and checked before any destination is published. */
-export const importNeedsCheck = file => Boolean(file.target.resource) || MERGED_FILES.includes(file.relative);
+export const importNeedsCheck = file => Boolean(file.target.resource) || MERGED_FILES.includes(file.relative)
+    || isLorebookFile(file.relative) || isLorebookHistoryFile(file.relative);
 export const importInputLimit = file => file.target.resource?.kind === 'chat' ? CHAT_IMPORT_LIMIT : STRUCTURED_LIMIT;
 
 /** Chat records are derived again from the same retained bytes, so they never need to be stored in the record. */
@@ -124,6 +129,16 @@ export function prepareImportValue(context, file, index, input) {
             throw error.code === 'ROLEPLAY_SOURCE_DAMAGED' ? importDamage(error, error.reason) : error;
         }
         return { entity: true };
+    }
+    if (isLorebookFile(file.relative) || isLorebookHistoryFile(file.relative)) {
+        const data = object(read(), file.relative);
+        const history = isLorebookHistoryFile(file.relative);
+        if (!(history ? validateWorldInfoHistory(data) : isNativeLorebook(data))) {
+            const reason = history ? 'The lorebook history is not valid.' : 'The file is not a valid lorebook.';
+            throw importDamage(operationError(reason, 400), reason);
+        }
+        // Backup imports retain the original names and bytes, including unknown metadata and history.
+        return null;
     }
     if (!MERGED_FILES.includes(file.relative)) return null;
     const incoming = object(read(), file.relative);

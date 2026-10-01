@@ -45,6 +45,8 @@ function createHost(initialBook = book()) {
     let editorData;
     const context = vm.createContext({
         lodash, structuredClone, Map, WeakMap, Set, TextEncoder, FormData, console,
+        escapeHtml: value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
+        callGenericPopup: jest.fn(async () => {}), POPUP_TYPE: { TEXT: 1 },
         escapeCharacterBookRegex, getFreeCharacterBookEntryId, normalizeCharacterBookPosition, serializeWorldInfoEntry,
         NECONYAN_LOREBOOK_FOLDERS_KEY, normalizeNeconyanLorebookFolders, renameNeconyanLorebookAssignment, unfileNeconyanLorebook,
         planLorebookRepair, repairChangeText, repairDefectText,
@@ -135,7 +137,7 @@ function createHost(initialBook = book()) {
         'reloadEditor', 'showWorldEditor', 'hideWorldEditor', 'loadWorldInfo',
         'cloneWorldInfoData', 'getWorldInfoCachedData', 'mergeWorldInfoData', 'mergeWorldInfoChanges', 'trackWorldInfoEntryRender', 'invalidateWorldInfoCache', '_save', 'cancelPendingWorldInfoSave',
         'settleWorldInfoSave', 'blockWorldInfoSaves', 'getCanonicalWorldInfoName', 'saveWorldInfo',
-        'replaceWorldInfoData', 'renameWorldInfo', 'deleteWorldInfo', 'reviewLorebookRepair', 'importWorldInfo',
+        'replaceWorldInfoData', 'renameWorldInfo', 'deleteWorldInfo', 'reviewLorebookRepair', 'importWorldInfo', 'importWorldInfoFiles', 'importWorldInfoBatch',
         'getNeconyanLorebookFolders', 'updateNeconyanLorebookFolders', 'warnNeconyanFolderSaveFailure',
         'getWIOriginalDataIndex', 'setWIOriginalDataValue', 'deleteWIOriginalDataValue', 'syncWIOriginalDataEntry', 'duplicateWorldInfoEntry',
         'getFreeWorldEntryUid', 'createWorldInfoEntry', 'appendWIOriginalDataEntry', 'handleNumberInputHelper',
@@ -810,6 +812,63 @@ describe('World Info lifecycle coordination', () => {
         expect(copied).not.toHaveProperty('originalData');
         expect(context.worldInfoCache.get('Copy')).toEqual(copied);
         expect(context.eventSource.emit).toHaveBeenLastCalledWith(event_types.WORLDINFO_UPDATED, 'Copy', copied, { replaced: true });
+    });
+
+    test('batch file imports keep healthy native and card JSON files, report damage and escape filenames', async () => {
+        const host = createHost();
+        const native = book();
+        const card = { spec: 'lorebook_v3', data: { name: 'Card JSON', extensions: { foreign: true }, entries: [
+            { id: 4, keys: ['Card lore'], content: 'Imported card lore', extensions: { foreign: 'kept' } },
+        ] } };
+        const results = await host.context.importWorldInfoFiles([
+            new File([JSON.stringify(native)], 'First.json'),
+            new File(['not JSON'], '<Broken>.json'),
+            new File([JSON.stringify(card)], 'Last.json'),
+        ]);
+        expect(results.map(result => result.status)).toEqual(['imported', 'failed', 'imported']);
+        expect(host.books.get('First')).toEqual(native);
+        expect(Object.values(host.books.get('Last').entries)[0].content).toBe('Imported card lore');
+        expect(host.books.get('Last').originalData.extensions).toEqual({ foreign: true });
+        const summary = host.context.callGenericPopup.mock.calls[0][0];
+        expect(summary).toContain('2 imported');
+        expect(summary).toContain('1 failed');
+        expect(summary).toContain('&lt;Broken&gt;.json');
+        expect(summary).not.toContain('<Broken>');
+        expect(host.context.toastr.success).not.toHaveBeenCalled();
+        expect(host.context.toastr.error).not.toHaveBeenCalled();
+    });
+
+    test('batch overwrite refusals leave the book untouched and continue to the next file', async () => {
+        const host = createHost();
+        host.context.checkOverwriteExistingData = jest.fn(async (_kind, names, name) => !names.includes(name));
+        const results = await host.context.importWorldInfoFiles([
+            new File([JSON.stringify({ entries: {} })], 'Lore.json'),
+            new File([JSON.stringify(book())], 'New.json'),
+            new File([JSON.stringify({ entries: {} })], 'New.json'),
+        ]);
+        expect(results.map(result => result.status)).toEqual(['skipped', 'imported', 'skipped']);
+        expect(host.books.get('Lore')).toEqual(book());
+        expect(host.books.get('New')).toEqual(book());
+        expect(host.context.callGenericPopup.mock.calls[0][0]).toContain('2 skipped');
+    });
+
+    test('batch source choice opens the file picker in its click action and retains the character-card scan', async () => {
+        const host = createHost();
+        let options;
+        host.context.POPUP_RESULT = { CUSTOM1: 1001, CUSTOM2: 1002 };
+        host.context.importEmbeddedWorldInfoBatch = jest.fn(async () => {});
+        const click = jest.fn();
+        host.context.document.getElementById = jest.fn(() => ({ click }));
+        host.context.Popup = class {
+            constructor(_content, _type, _input, value) { options = value; }
+            async show() { return 1002; }
+        };
+        await host.context.importWorldInfoBatch();
+        expect(host.context.importEmbeddedWorldInfoBatch).toHaveBeenCalledTimes(1);
+        expect(options.customButtons.map(button => button.text)).toEqual(['Lorebook files', 'Character cards']);
+        options.customButtons[0].action();
+        expect(host.context.document.getElementById).toHaveBeenCalledWith('world_import_file');
+        expect(click).toHaveBeenCalledTimes(1);
     });
 
     test('converted card imports publish and cache the installed native data, not the old book', async () => {

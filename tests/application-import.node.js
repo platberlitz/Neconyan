@@ -272,7 +272,7 @@ test('core ZIP import leaves bookkeeping out when the account updates it during 
     assert.equal(fs.existsSync(path.join(p.base.directories.chats, 'New/Imported.jsonl')), true);
 });
 
-for (const mode of ['folder', 'zip']) test(`core ${mode} import keeps the three libraries and merges personas without importing unrelated data`, async t => {
+for (const mode of ['folder', 'zip']) test(`core ${mode} import keeps the four libraries and merges personas without importing unrelated data`, async t => {
     const p = setup(t, `core-${mode}`);
     const settingsFile = path.join(p.base.directories.root, 'settings.json');
     const current = { _version: 7, _settingsRevision: 4, username: 'Current user', theme: 'Current theme', power_user: {
@@ -280,7 +280,8 @@ for (const mode of ['folder', 'zip']) test(`core ${mode} import keeps the three 
         personas: { 'Existing.png': 'Existing name' }, persona_descriptions: { 'Existing.png': { description: 'Existing description' } },
     }, extension_settings: { unrelated: { keep: true }, neconyan_conversation: { characters: {}, serverOperations: { job: { at: 1 } }, automation: { mode: 'server' } } } };
     fs.writeFileSync(settingsFile, JSON.stringify(current));
-    const description = { description: 'Imported persona description', title: 'Imported title', position: 0, depth: 2, role: 0, lorebook: '', appendices: [] };
+    const description = { description: 'Imported persona description', title: 'Imported title', position: 0, depth: 2, role: 0, lorebook: 'Imported lore', appendices: [] };
+    const lorebook = JSON.stringify({ entries: { 0: { uid: 0, key: ['Lore'], content: 'Imported lore', extensions: { foreign: true } } }, extensions: { foreign: 'kept' } });
     const entries = [
         ['settings.json', JSON.stringify({ username: 'Must not replace user', power_user: { personas: { 'Imported.png': 'Imported persona' },
             persona_descriptions: { 'Imported.png': description }, default_persona: 'Imported.png', custom_css: 'Must not replace CSS' },
@@ -291,9 +292,10 @@ for (const mode of ['folder', 'zip']) test(`core ${mode} import keeps the three 
         ['groups/Imported.json', JSON.stringify({ id: 'Imported', members: ['Imported.png'], chats: ['Imported group'] })],
         ['group chats/Imported group.jsonl', p.f.records.map(row => JSON.stringify(row)).join('\n')],
         ['user/files/attachment.txt', 'Imported attachment'], ['user/images/attachment.png', png],
+        ['worlds/Imported lore.json', lorebook],
     ];
     const omitted = ['entity-date-added.json', 'entity-last-chat.json', 'secrets.json', 'themes/Old.json', 'OpenAI Settings/Old.json',
-        'extensions/Old/index.js', 'worlds/Unused.json', 'backups/old.jsonl', 'user/workflows/unused.json', 'readme.txt'];
+        'extensions/Old/index.js', 'backups/old.jsonl', 'user/workflows/unused.json', 'readme.txt'];
     entries.push(...omitted.map(relative => [relative, 'PRIVATE UNRELATED CONTENT']));
     let input;
     if (mode === 'zip') {
@@ -313,7 +315,9 @@ for (const mode of ['folder', 'zip']) test(`core ${mode} import keeps the three 
     } });
     const record = readOperation(p.base, 'core');
     assert.equal(record.state, 'completed'); assert.equal(record.result.content, 'core');
-    assert.equal(record.result.imported, 8); assert.equal(record.result.defaults, 0); assert.equal(record.result.skippedCount, 0);
+    assert.equal(record.result.imported, 9); assert.equal(record.result.defaults, 0); assert.equal(record.result.skippedCount, 0);
+    assert.deepEqual(record.result.parts, ['chats', 'personas', 'characters', 'lorebooks']);
+    assert.equal(fs.readFileSync(path.join(p.base.directories.root, 'worlds/Imported lore.json'), 'utf8'), lorebook);
     assert.equal(record.result.excludedCount, omitted.length);
     assert.deepEqual(record.result.excluded.map(item => item.file).sort(), omitted.sort());
     assert.ok(record.result.excluded.every(item => typeof item.reason === 'string' && item.reason.length));
@@ -333,13 +337,14 @@ for (const mode of ['folder', 'zip']) test(`core ${mode} import keeps the three 
     assert.equal(saved._version, 9); assert.equal(saved._settingsRevision, 6);
 });
 
-for (const mode of ['folder', 'zip']) for (const part of ['chats', 'personas', 'characters']) test(`core ${mode} import selects only ${part} and names every unselected file`, async t => {
+for (const mode of ['folder', 'zip']) for (const part of ['chats', 'personas', 'characters', 'lorebooks']) test(`core ${mode} import selects only ${part} and names every unselected file`, async t => {
     const p = setup(t, `selected-${mode}-${part}`);
     const settings = path.join(p.base.directories.root, 'settings.json');
     const current = '{"_version":4,"username":"Current user","power_user":{"personas":{},"persona_descriptions":{}}}';
     fs.writeFileSync(settings, current);
     const libraries = {
         characters: [['characters/Selected.png', writeCard(png, JSON.stringify({ name: 'Selected', description: 'Selected card' }))]],
+        lorebooks: [['worlds/Selected.json', '{"entries":{"0":{"uid":0,"content":"Selected lore"}}}']],
         personas: [['settings.json', '{"username":"Unwanted user","power_user":{"personas":{"Selected.png":"Selected persona"},"persona_descriptions":{"Selected.png":{"description":"Selected description"}}}}'], ['User Avatars/Selected.png', png]],
         chats: [['chats/Nova/Selected.jsonl', p.f.records.map(row => JSON.stringify(row)).join('\n')],
             ['groups/Selected.json', '{"id":"Selected","members":["Nova.png"],"chats":["Selected group"]}'],
@@ -371,6 +376,40 @@ for (const mode of ['folder', 'zip']) for (const part of ['chats', 'personas', '
     if (part === 'personas') {
         assert.equal(JSON.parse(fs.readFileSync(settings)).power_user.personas['Selected.png'], 'Selected persona');
     } else assert.equal(fs.readFileSync(settings, 'utf8'), current);
+});
+
+for (const mode of ['folder', 'zip']) test(`lorebook-only ${mode} backups import native books and history, skip damaged books and retain existing copies`, async t => {
+    const p = setup(t, `lore-only-${mode}`);
+    const book = '{"entries":{"0":{"uid":0,"key":["Harbour"],"content":"The harbour is safe.","extensions":{"foreign":true}}},"extensions":{"foreign":"kept"}}';
+    const history = '{"version":1,"id":"test","createdAt":1,"updatedAt":1,"headCommitId":null,"commits":[]}';
+    const worlds = path.join(p.base.directories.root, 'worlds');
+    fs.mkdirSync(worlds, { recursive: true });
+    fs.writeFileSync(path.join(worlds, 'Broken.json'), book);
+    const entries = [['worlds/Harbour.json', book], ['worlds/.history/test.json', history],
+        ['worlds/Broken.json', 'not JSON'], ['worlds/Not a book.json', '{"entries":[]}'],
+        ['worlds/.history/broken.json', '{"version":1,"commits":[null]}']];
+    let input;
+    if (mode === 'zip') {
+        const upload = path.join(p.sourceRoot, 'lorebooks.zip');
+        await zipFile(upload, entries.map(([relative, bytes]) => [`SillyTavern/data/default-user/${relative}`, bytes]));
+        const retained = await retainUploadedArchive(p.base, p.f.scope, 'lore-only', upload);
+        input = { mode, content: 'core', parts: ['lorebooks'], inputId: retained.id };
+    } else {
+        for (const [relative, bytes] of entries) sourceFile(p, `data/default-user/${relative}`, bytes);
+        input = { mode, content: 'core', parts: ['lorebooks'], path: p.sourceRoot };
+    }
+    const accepted = await accept(p, 'lore-only', input);
+    await runOperation(accepted.context);
+    const result = readOperation(p.base, 'lore-only').result;
+    assert.equal(result.imported, 2); assert.equal(result.skippedCount, 3); assert.equal(result.excludedCount, 0);
+    assert.deepEqual(result.parts, ['lorebooks']);
+    assert.equal(fs.readFileSync(path.join(worlds, 'Harbour.json'), 'utf8'), book);
+    assert.equal(fs.readFileSync(path.join(worlds, '.history/test.json'), 'utf8'), history);
+    assert.equal(fs.readFileSync(path.join(worlds, 'Broken.json'), 'utf8'), book);
+    assert.equal(fs.existsSync(path.join(worlds, 'Not a book.json')), false);
+    assert.ok(result.skipped.some(item => item.file === 'worlds/Broken.json' && /not valid JSON/.test(item.reason)));
+    assert.ok(result.skipped.some(item => /not a valid lorebook/.test(item.reason)));
+    assert.ok(result.skipped.some(item => /history is not valid/.test(item.reason)));
 });
 
 test('unselected damaged libraries are left out without reading them and an absent selected ZIP library produces a report', async t => {
@@ -734,7 +773,7 @@ test('ZIP entries are checked for payload corruption and changes while the archi
 });
 
 test('an import interrupted before publication is automatically queued and finishes from its saved ZIP', async t => {
-    for (const stage of ['Checking chats, characters and settings', 'Preparing imported files', 'Saving imported files']) {
+    for (const stage of ['Checking chats, characters, lorebooks and settings', 'Preparing imported files', 'Saving imported files']) {
         const p = setup(t, stage.split(' ')[0]); const upload = path.join(p.sourceRoot, 'resume.zip');
         await zipFile(upload, [['settings.json', '{"name1":"Resumed"}'], ['user/files/one.txt', 'Retained bytes']]);
         const input = await retainUploadedArchive(p.base, p.f.scope, 'resume', upload);

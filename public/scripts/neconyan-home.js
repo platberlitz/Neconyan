@@ -2,7 +2,7 @@ const catMotionPreference = window.matchMedia('(prefers-reduced-motion: reduce)'
 let catPausedByUser = null;
 const CAT_MOVING_SRC = 'img/neconyan-pixel-cat.webp?v=20260913g';
 const CAT_RESTING_SRC = 'img/neconyan-pixel-cat-rest.webp?v=20260913g';
-const CAT_CONTROL_SELECTOR = '.neconyan-home-actions > button, .neconyan-assistant-open, .neconyan-rail-new, [data-neconyan-cat-control], #rm_button_create, #character_import_button, #create_button_label, #rm_button_back, #world_create_button, #world_import_button, #world_popup_new';
+const CAT_CONTROL_SELECTOR = '.neconyan-home-actions > button, .neconyan-assistant-open, .neconyan-rail-new, [data-neconyan-cat-control], #rm_button_create, #character_import_button, #create_button_label, #rm_button_back, #world_create_button, #world_import_button, #world_batch_import_embedded, #world_popup_new';
 const catPressTimers = new WeakMap();
 
 function pulseCatPress(element) {

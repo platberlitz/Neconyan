@@ -24,7 +24,7 @@ export function describeAccountImportSkips(result) {
             'Other selected files were imported. Check the reasons above before retrying.'].join('\n'));
     }
     if (result.personaSettingsOnly) sections.push('Only persona names and descriptions were read from settings.json. Other settings in that file were not imported.');
-    if (result.parts) sections.unshift(`Selected libraries: ${result.parts.map(part => ({ chats: 'Chats', personas: 'Personas', characters: 'Character cards' })[part]).join(', ')}.`);
+    if (result.parts) sections.unshift(`Selected libraries: ${result.parts.map(part => ({ chats: 'Chats', personas: 'Personas', characters: 'Character cards', lorebooks: 'Lorebooks' })[part]).join(', ')}.`);
     return sections.join('\n\n');
 }
 

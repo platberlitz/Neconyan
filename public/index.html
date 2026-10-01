@@ -16,7 +16,7 @@
             background-color: #141514;
         }
     </style>
-    <link rel="preload" as="style" href="style.css?v=20261001-perf">
+    <link rel="preload" as="style" href="style.css?v=20261001-lorebook">
     <script type="importmap">
         { "imports": { "#macro-vendor": "./lib.js" } }
     </script>
@@ -41,18 +41,18 @@
     <link rel="icon" type="image/png" sizes="192x192" href="img/neconyan-icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="img/neconyan-icon-512.png">
     <link rel="apple-touch-icon" sizes="180x180" href="img/neconyan-icon-180.png" />
-    <link rel="stylesheet" type="text/css" href="style.css?v=20261001-perf">
+    <link rel="stylesheet" type="text/css" href="style.css?v=20261001-lorebook">
     <link rel="stylesheet" type="text/css" href="css/st-tailwind.css">
     <link rel="stylesheet" type="text/css" href="css/toggle-dependent.css">
     <link rel="stylesheet" type="text/css" href="css/select2-overrides.css?v=20260609a">
     <link rel="stylesheet" type="text/css" href="css/mobile-styles.css?v=20260916p" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-theme.css?v=20261001-perf">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-theme.css?v=20261001-lorebook">
     <link rel="stylesheet" type="text/css" href="css/neconyan-paper-theme.css?v=20260918b" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-tabs.css?v=20261001-perf">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-mobile-shell.css?v=20261001-perf" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan.css?v=20261001-perf">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-home.css?v=20261001-perf">
-    <link id="neconyan-calico-stylesheet" rel="stylesheet" type="text/css" href="css/neconyan-calico.css?v=20261001-perf">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-tabs.css?v=20261001-lorebook">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-mobile-shell.css?v=20261001-lorebook" media="(max-width: 768px)">
+    <link rel="stylesheet" type="text/css" href="css/neconyan.css?v=20261001-lorebook">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-home.css?v=20261001-lorebook">
+    <link id="neconyan-calico-stylesheet" rel="stylesheet" type="text/css" href="css/neconyan-calico.css?v=20261001-lorebook">
     <link href="css/neconyan-menus.css?v=20260926a" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <link href="css/neconyan-help.css?v=20260929b" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <script>
@@ -4972,7 +4972,7 @@
                         <div id="world_popup">
                             <hr>
                         <div id="world_popup_primary_actions" class="flex-container alignitemscenter">
-                            <input type="file" id="world_import_file" accept=".json,.lorebook,.png,.stproj" name="avatar" hidden>
+                            <input type="file" id="world_import_file" accept=".json,.lorebook,.png,.stproj" name="avatar" multiple hidden>
                             <div class="world_popup_action_group world_popup_action_group--select">
                                 <button id="world_create_button" class="menu_button menu_button_icon" type="button">
                                     <i class="fa-solid fa-globe"></i>
@@ -4990,7 +4990,7 @@
                                     <button id="world_import_button" class="menu_button menu_button_icon" type="button" title="Import lorebook" data-i18n="[title]Import lorebook">
                                         <i class="fa-solid fa-file-import" aria-hidden="true"></i><span data-i18n="Import">Import</span>
                                     </button>
-                                    <button id="world_batch_import_embedded" class="menu_button menu_button_icon" type="button" title="Batch import embedded lorebooks" data-i18n="[title]Batch import embedded lorebooks">
+                                    <button id="world_batch_import_embedded" class="menu_button menu_button_icon" type="button" title="Batch import lorebook files or embedded character lorebooks" data-i18n="[title]Batch import lorebook files or embedded character lorebooks">
                                         <i class="fa-solid fa-cubes-stacked" aria-hidden="true"></i><span data-i18n="Batch import">Batch import</span>
                                     </button>
                                     <button id="world_popup_export" class="menu_button menu_button_icon" type="button" title="Export lorebook" data-i18n="[title]Export lorebook">

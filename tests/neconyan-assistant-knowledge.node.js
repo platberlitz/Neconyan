@@ -143,6 +143,8 @@ test('current feature questions supply complete, actionable references to older 
         ['Can I install this on my iPhone?', 'start.iphone', 'server running on a computer'],
         ['How do I import a SillyBunny persona backup JSON?', 'personas.backup-import', 'no picture bytes'],
         ['Can I import only chats without replacing my settings?', 'recovery.selective-import', 'other preferences, API keys, presets and themes stay unchanged'],
+        ['Can I import only lorebooks from a backup ZIP?', 'recovery.selective-import', 'native books from the worlds folder and their saved history'],
+        ['How do I batch import JSON lorebooks?', 'lorebooks.batch-import', 'refusing replacement keeps the existing book'],
         ['How do I retry failed companions?', 'agents.companion-runs', 'Successful companions are not rerun'],
         ['What does Run automatic companions do?', 'agents.companion-runs', 'manual companions'],
         ['Can I batch companions together?', 'agents.companion-batch', 'connection, model and context settings match'],

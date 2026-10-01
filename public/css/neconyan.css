@@ -2897,7 +2897,8 @@ body.neconyan #neconyan-lorebook-library :is(#world_editor_select, .world_editor
 body.neconyan #neconyan-lorebook-library[data-view='book'] { padding-block: 12px; }
 body.neconyan #neconyan-lorebook-library[data-view='book'] .neconyan-lorebook-selected { font-size: 18px; }
 body.neconyan #neconyan-lorebook-library .neconyan-lorebook-primary-actions { flex: 0 1 auto; }
-body.neconyan #neconyan-lorebook-library .world_popup_action_group--select { display: flex; flex-wrap: wrap; gap: 8px; }
+body.neconyan #neconyan-lorebook-library .world_popup_action_group--select { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 12px 36px; }
+body.neconyan #neconyan-lorebook-library .world_popup_action_group--select > button { width: 100%; margin: 0; }
 body.neconyan #neconyan-lorebook-library .neconyan-lorebook-toolbar { align-items: center; }
 body.neconyan #neconyan-lorebook-library .neconyan-legacy-book-picker[hidden],
 body.neconyan #neconyan-lorebook-library[data-view='book'] .world_popup_action_group--select { display: none !important; }

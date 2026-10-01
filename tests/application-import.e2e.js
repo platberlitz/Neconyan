@@ -119,17 +119,19 @@ for (const phone of [false, true]) {
         expect(await fs.readFile(path.join(app.directory, 'data/default-user/chats/Imported/History 119.jsonl'), 'utf8')).toContain('Imported reply 119');
     });
 
-    test(`${viewport} core ZIP imports the three libraries and reports every deliberate exclusion after reopening`, async ({ app }) => {
+    test(`${viewport} core ZIP imports the four libraries and reports every deliberate exclusion after reopening`, async ({ app }) => {
         const account = await app.account({ phone });
         const { page, card } = await showImporter(account);
-        for (const name of ['Chats', 'Personas', 'Character cards']) {
+        for (const name of ['Chats', 'Personas', 'Character cards', 'Lorebooks']) {
             const choice = card.getByRole('checkbox', { name, exact: true });
             await expect(choice).toBeChecked();
             expect(await choice.evaluate(input => input.closest('label').getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
         }
         const current = JSON.parse((await account.post('/api/settings/get')).settings);
         const archive = archiver('zip'); const chunks = [];
+        const lorebook = { entries: { 0: { uid: 0, key: ['Harbour'], content: 'Imported harbour lore.', extensions: { foreign: true } } }, extensions: { foreign: 'retained' } };
         archive.on('data', chunk => chunks.push(chunk));
+        archive.append(JSON.stringify(lorebook), { name: 'default-user/worlds/Imported lore.json' });
         archive.append(writeCard(png, JSON.stringify({ name: 'Imported card', description: 'Imported character description' })), { name: 'default-user/characters/Imported.png' });
         archive.append([
             { user_name: 'User', character_name: 'Imported card', chat_metadata: {} },
@@ -137,7 +139,7 @@ for (const phone of [false, true]) {
         ].map(row => JSON.stringify(row)).join('\n'), { name: 'default-user/chats/Imported/History.jsonl' });
         archive.append(png, { name: 'default-user/User Avatars/Persona.png' });
         archive.append(JSON.stringify({ username: 'Must not replace current user', power_user: {
-            personas: { 'Persona.png': 'Imported persona' }, persona_descriptions: { 'Persona.png': { description: 'Imported description', title: 'Imported title', position: 0 } },
+            personas: { 'Persona.png': 'Imported persona' }, persona_descriptions: { 'Persona.png': { description: 'Imported description', title: 'Imported title', position: 0, lorebook: 'Imported lore' } },
             custom_css: 'Must not replace current CSS', default_persona: 'Persona.png',
         } }), { name: 'default-user/settings.json' });
         archive.append(JSON.stringify({ id: 'Imported', members: ['Imported.png'], chats: ['Imported group'] }), { name: 'default-user/groups/Imported.json' });
@@ -154,7 +156,7 @@ for (const phone of [false, true]) {
             name: 'default-user.zip', mimeType: 'application/zip', buffer: Buffer.concat(chunks),
         }));
         expect(submitted.requestBody.content).toBe('core');
-        expect(submitted.requestBody.parts).toEqual(['chats', 'personas', 'characters']);
+        expect(submitted.requestBody.parts).toEqual(['chats', 'personas', 'characters', 'lorebooks']);
         await account.settled(submitted.job.id);
         const note = card.locator('.sb-import-note');
         await expect(note).toContainText('27 files were left out on purpose:', { timeout: 60000 });
@@ -176,6 +178,8 @@ for (const phone of [false, true]) {
         expect(saved.power_user.default_persona).toBe(current.power_user.default_persona);
         expect(saved.power_user.personas['Persona.png']).toBe('Imported persona');
         expect(saved.power_user.persona_descriptions['Persona.png'].description).toBe('Imported description');
+        expect(saved.power_user.persona_descriptions['Persona.png'].lorebook).toBe('Imported lore');
+        expect(await account.post('/api/worldinfo/get', { name: 'Imported lore' })).toEqual(lorebook);
         expect(saved.extension_settings.neconyan_conversation.characters[account.threadKey].branches.main.messages[0].mes).toBe('Original question.');
         const root = path.join(app.directory, 'data/default-user');
         expect(await fs.readFile(path.join(root, 'characters/Imported.png'))).toEqual(writeCard(png, JSON.stringify({ name: 'Imported card', description: 'Imported character description' })));
@@ -199,6 +203,8 @@ for (const phone of [false, true]) {
         await reopened.card.getByLabel('Saved account imports').selectOption(submitted.record.key);
         await expect(reopened.card.getByRole('status').filter({ hasText: 'entity-date-added.json' })).toContainText('27 files were left out on purpose:');
         await expect(reopened.card.getByRole('button', { name: 'Download skipped-files report' })).toBeVisible();
+        await reopened.page.evaluate(() => window.NeconyanShell.openTab('characters', 'world-info'));
+        await expect(reopened.page.getByRole('button', { name: 'Open Imported lore', exact: true })).toBeVisible();
     });
 
     test(`${viewport} ZIP imports only the chosen persona library and refuses an empty selection before uploading`, async ({ app }) => {
@@ -214,7 +220,7 @@ for (const phone of [false, true]) {
             persona_descriptions: { 'Chosen.png': { description: 'Chosen description' } } } }), { name: 'default-user/settings.json' });
         await archive.finalize();
         const file = { name: 'default-user.zip', mimeType: 'application/zip', buffer: Buffer.concat(chunks) };
-        for (const name of ['Chats', 'Personas', 'Character cards']) await card.getByRole('checkbox', { name, exact: true }).uncheck();
+        for (const name of ['Chats', 'Personas', 'Character cards', 'Lorebooks']) await card.getByRole('checkbox', { name, exact: true }).uncheck();
         let uploads = 0;
         page.on('request', request => { if (request.url().endsWith('/api/operations/import-input')) uploads++; });
         await card.getByLabel('Choose a SillyTavern backup ZIP').setInputFiles(file);

@@ -16,7 +16,7 @@ import { coreImportPath, importExclusionReason } from './import-content-policy.j
 
 const ROOT_FILES = [SETTINGS_FILE, SECRETS_FILE, ENTITY_DATE_ADDED_FILE, ENTITY_LAST_CHAT_FILE];
 const ROOT_DIRECTORIES = [...new Set(Object.values(USER_DIRECTORY_TEMPLATE).filter(Boolean).map(value => value.split('/')[0]))];
-const MARKERS = [SETTINGS_FILE, 'characters', 'chats', 'group chats', 'groups', 'User Avatars', 'OpenAI Settings', 'themes', 'extensions'];
+const MARKERS = [SETTINGS_FILE, 'characters', 'chats', 'group chats', 'groups', 'User Avatars', 'worlds', 'OpenAI Settings', 'themes', 'extensions'];
 const within = (candidate, parent) => candidate === parent || candidate.startsWith(parent + path.sep);
 const evidence = file => ({ rawHash: file.rawHash, physical: file.physical });
 // Marks a ZIP entry whose own compressed bytes are unreadable, so the import skips only that file.

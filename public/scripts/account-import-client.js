@@ -2,8 +2,9 @@
 export function accountImportScope(input) {
     const base = `account-import:${input.mode}`;
     if (input.content !== 'core' || input.mode === 'extensions') return base;
-    const parts = ['chats', 'personas', 'characters'].filter(part => !input.parts || input.parts.includes(part));
-    return `${base}:core${parts.length === 3 ? '' : `:${parts.join('+') || 'none'}`}`;
+    const parts = ['chats', 'personas', 'characters', 'lorebooks'].filter(part => !input.parts || input.parts.includes(part));
+    // Retain the old three-library scope; including lorebooks must never resume a plan that excluded them.
+    return `${base}:core${parts.length === 3 && !parts.includes('lorebooks') ? '' : `:${parts.join('+') || 'none'}`}`;
 }
 
 /** Keep an uploaded source and its acceptance separate from the lifetime of the importer. */

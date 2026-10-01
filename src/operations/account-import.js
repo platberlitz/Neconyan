@@ -58,7 +58,7 @@ export async function captureAccountImport(base, account, input, { defaults } = 
     if (!['folder', 'zip', 'extensions'].includes(input.mode)) throw operationError('Select a folder, ZIP or extension import.', 400);
     if (input.content !== undefined && !['core', 'all'].includes(input.content)) throw operationError('Select the core libraries or the complete account data.', 400);
     const coreOnly = input.content === 'core' && input.mode !== 'extensions';
-    if (input.parts !== undefined && !coreOnly) throw operationError('Library choices apply only to chats, personas and character-card imports.', 400);
+    if (input.parts !== undefined && !coreOnly) throw operationError('Library choices apply only to core imports of chats, personas, character cards and lorebooks.', 400);
     const parts = coreOnly ? normaliseCoreImportParts(input.parts) : undefined;
     let captured;
     if (input.mode === 'zip') {
@@ -149,7 +149,7 @@ async function runBatchedImport(context, plan, dependencies) {
             const prepared = {};
             // Damaged files are listed and left out; every healthy file still imports.
             const skipped = [];
-            if (checked.length) await report('Checking chats, characters and settings', 0, checked.length);
+            if (checked.length) await report('Checking chats, characters, lorebooks and settings', 0, checked.length);
             for (const [position, [index, file]] of checked.entries()) {
                 context.signal.throwIfAborted();
                 try {
@@ -160,7 +160,7 @@ async function runBatchedImport(context, plan, dependencies) {
                     if (!reason) throw error;
                     skipped.push({ index, relative: file.relative, reason });
                 }
-                await report('Checking chats, characters and settings', position + 1, checked.length);
+                await report('Checking chats, characters, lorebooks and settings', position + 1, checked.length);
             }
             const assertTargets = lease => {
                 const skip = new Set(skipped.map(item => item.index));

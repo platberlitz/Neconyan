@@ -14102,7 +14102,7 @@ function logSillyTavernExtensionSyncReport(reportData) {
 function selectedAccountImportParts(refs) {
     const parts = Array.from(refs.card.querySelectorAll('[data-import-part]:checked'), input => input.value);
     if (!parts.length) {
-        setServerAdminMessage(refs.note, 'Choose at least one library to import: chats, personas or character cards.', 'warn');
+        setServerAdminMessage(refs.note, 'Choose at least one library to import: chats, personas, character cards or lorebooks.', 'warn');
         toastr.warning('Choose at least one library to import.', 'Import SillyTavern');
         return null;
     }
@@ -14110,7 +14110,7 @@ function selectedAccountImportParts(refs) {
 }
 
 function accountImportPartNames(parts) {
-    const labels = { chats: 'chats', personas: 'personas', characters: 'character cards' };
+    const labels = { chats: 'chats', personas: 'personas', characters: 'character cards', lorebooks: 'lorebooks' };
     return parts.map(part => labels[part]).join(', ');
 }
 
@@ -14320,14 +14320,14 @@ function injectSillyTavernImportCard() {
     const header = createElement('div', { className: 'sb-admin-card-header' });
     const copy = createElement('div', { className: 'sb-admin-card-copy' });
     const title = createElement('strong', { text: 'Import Your SillyTavern Setup' });
-    const description = createElement('p', { text: 'Choose which chats, personas and character cards to bring over from a SillyTavern or SillyBunny folder or backup ZIP. Other account settings stay as they are. Files left out are listed after the import.' });
+    const description = createElement('p', { text: 'Choose which chats, personas, character cards and lorebooks to bring over from a SillyTavern or SillyBunny folder or backup ZIP. Other account settings stay as they are. Files left out are listed after the import.' });
     const badge = createElement('span', { className: 'sb-server-pill', text: 'Easy Import' });
     copy.append(title, description);
     header.append(copy, badge);
 
     const choicesTitle = createElement('strong', { text: 'Choose what to import' });
     const hintRow = createElement('div', { className: 'sb-import-hints', attrs: { role: 'group', 'aria-label': 'Choose what to import' } });
-    for (const [value, text] of [['chats', 'Chats'], ['personas', 'Personas'], ['characters', 'Character cards']]) {
+    for (const [value, text] of [['chats', 'Chats'], ['personas', 'Personas'], ['characters', 'Character cards'], ['lorebooks', 'Lorebooks']]) {
         const label = createElement('label', { className: 'sb-import-chip' });
         const input = createElement('input', { attrs: { type: 'checkbox', value, 'data-import-part': value } });
         input.checked = true;

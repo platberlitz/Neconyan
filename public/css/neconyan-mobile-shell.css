@@ -3435,3 +3435,8 @@ body.neconyan #open_chat_expressions #expressions_stop_sprite_generation { grid-
     body.neconyan #ica--settings .ica--card-secondary-actions { left: 0; right: auto; }
     body.neconyan #ica--settings .ica--more-tools-menu { position: static; box-sizing: border-box; width: 100%; min-width: 0; max-width: none; margin-top: 6px; box-shadow: none; }
 }
+@media (max-width: 768px) {
+    /* The three lorebook creation actions stack at one shared width; the cat padding leaves no room for a row. */
+    body.neconyan #neconyan-lorebook-library #world_popup_primary_actions.neconyan-lorebook-primary-actions { flex: 1 1 100%; }
+    body.neconyan #neconyan-lorebook-library #world_popup_primary_actions .world_popup_action_group--select { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); row-gap: 14px; width: 100%; }
+}
