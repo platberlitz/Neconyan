@@ -140,6 +140,14 @@ for (const phone of [false, true]) {
                         ['Can I try a Vectorization search without a reply?', 'one embedding query'],
                         ['How do I update my source ZIP installation?', 'copy your data folder'],
                         ['How do I activate the relationship tracker?', 'Agents → Manage agents → Browse library'],
+                        ['How do I edit the sidebar Quick Actions?', 'Desktop and mobile keep separate lists'],
+                        ['How do I start the Nori Presets tour?', 'with a new name keeps the original'],
+                        ['Can I hide the message statistics below the avatar?', 'Settings → Appearance → Visual Toggles'],
+                        ['Can Mewmory search without an AI selector?', 'ranked results go directly to the memory budget'],
+                        ['Can Mewmory use native Vectorization?', 'Use chat retrieval in replies can stay off'],
+                        ['Why are Mewmory Data Bank file passages missing?', 'This role may read'],
+                        ['Where do I set the E5 query and document prefixes?', 'Trailing spaces and line breaks are preserved'],
+                        ['Does Fix trackers repair reordered tracker fields locally?', 'Other repairs, transforms and companion runs may call models'],
                     ]) {
                         const id = `${name}-${variant}`;
                         const reference = await buildAssistantKnowledge({ character: { name: 'Renamed older copy', extensions: { neconyan_assistant: { id, version: 0 } } }, messages: [{ role: 'user', mes: question }] });
@@ -149,8 +157,8 @@ for (const phone of [false, true]) {
             }
             return { revision: KNOWLEDGE_REVISION, results };
         });
-        expect(references.revision).toBe(6);
-        expect(references.results).toHaveLength(45);
+        expect(references.revision).toBe(7);
+        expect(references.results).toHaveLength(117);
         expect(references.results.filter(result => !result.found)).toEqual([]);
     });
 
@@ -207,12 +215,12 @@ test('normal chat sends shared reference through chat and text completion withou
     await expect.poll(() => page.evaluate(async () => (await import('/script.js')).online_status)).not.toBe('no_connection');
     expect(await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }))).toBe(true);
     await page.evaluate(() => window.NeconyanShell.closeWorkspace());
-    await page.locator('#send_textarea').fill('How do I retry failed companions?');
+    await page.locator('#send_textarea').fill('Can Mewmory use native Vectorization?');
     await page.locator('#send_but').click();
     await expect(page.locator('#chat')).toContainText('Verified help fixture reply.', { timeout: 60000 });
     const chat = requests.find(request => JSON.stringify(request.messages).includes('[Neconyan help reference'));
     expect(chat).toBeTruthy();
-    expect(chat.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')).toContain('Successful companions are not rerun');
+    expect(chat.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')).toContain('Use chat retrieval in replies can stay off');
     expect(chat.tools).toBeUndefined();
     await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
     await page.locator('#main_api').selectOption('textgenerationwebui');
@@ -230,6 +238,6 @@ test('normal chat sends shared reference through chat and text completion withou
         await (await import('/script.js')).Generate('normal', { suppressUserMessage: true });
     }, app.provider.url);
     const text = requests.find(request => request.prompt?.includes('[Neconyan help reference'));
-    expect(text?.prompt).toContain('Successful companions are not rerun');
+    expect(text?.prompt).toContain('Use chat retrieval in replies can stay off');
     expect(await page.evaluate(async () => JSON.stringify((await import('/script.js')).chat))).not.toContain('[Neconyan help reference');
 });

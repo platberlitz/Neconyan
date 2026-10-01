@@ -168,6 +168,22 @@ test('current feature questions supply complete, actionable references to older 
         ['How do I hide the cats with Kittyless?', 'appearance.kittyless', 'Show assistants'],
         ['What does the Hide cats switch do?', 'appearance.kittyless', 'Hide cats (Kittyless)'],
         ['Does Windows 98 change my character portraits?', 'appearance.windows-98', 'characters you made or imported are unchanged'],
+        ['How do I edit the sidebar Quick Actions?', 'navigation.quick-actions', 'Desktop and mobile keep separate lists'],
+        ['Where did the collapsed sidebar sections go?', 'navigation.collapsed-sections', 'collapse or expand its links'],
+        ['Where is the Tour button on settings pages?', 'navigation.page-tours', 'Tour button in the title row'],
+        ['How do I start the Nori Presets tour?', 'connections.preset-tour', 'with a new name keeps the original'],
+        ['Can I hide the message statistics below the avatar?', 'appearance.message-statistics', 'Settings → Appearance → Visual Toggles'],
+        ['How do I set up Mewmory with saved connections?', 'mewmory.setup', 'Original passages work without Facts and events or Pawspective interviews'],
+        ['Can Mewmory search without an AI selector?', 'mewmory.search', 'ranked results go directly to the memory budget'],
+        ['How do I change Mewmory passage size and overlap?', 'mewmory.passages', 'Save configuration applies edits'],
+        ['Why are Mewmory Data Bank file passages missing?', 'mewmory.files', 'This role may read'],
+        ['Can Mewmory use native Vectorization?', 'mewmory.native-embeddings', 'Use chat retrieval in replies can stay off'],
+        ['Does Mewmory support WebLLM?', 'mewmory.native-embeddings', 'WebLLM cannot run in Mewmory background jobs'],
+        ['Where do I set the E5 query and document prefixes?', 'memory.embedding-prefixes', 'Trailing spaces and line breaks are preserved'],
+        ['How do I search memories and original messages in Archive?', 'mewmory.archive-search', 'Finding a passage in Archive does not prove it was included'],
+        ['Is there a detailed Mewmory tour with Taro?', 'mewmory.tour', 'Settings can be configured before opening a saved chat'],
+        ['Does Fix trackers repair reordered tracker fields locally?', 'agents.tracker-repair', 'without a model request'],
+        ['What does Tracker repair incomplete mean?', 'agents.tracker-repair', 'Other repairs, transforms and companion runs may call models'],
     ];
     for (const assistant of ['miso-male', 'miso-female', 'miso-neutral', 'taro-male', 'taro-female', 'taro-neutral', 'nori-male', 'nori-female', 'nori-neutral']) {
         for (const [question, expected, fact] of questions) {
