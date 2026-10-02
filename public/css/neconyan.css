@@ -391,6 +391,8 @@ body.neconyan :is(.inline-drawer-header, .sb-theme-settings-drawer > .inline-dra
     background: transparent; box-shadow: none; text-align: left;
 }
 body.neconyan #user-settings-block .sb-settings-subdrawer { margin-top: 0; }
+.sb-theme-lifted-drawer > .sb-settings-subdrawer-body[style*='display: block'] { display: flex !important; flex-direction: column; gap: var(--sb-shell-space-sm); min-width: 0; }
+.sb-theme-lifted-drawer > .sb-settings-subdrawer-body > p:first-child { margin-top: 0; }
 body.neconyan #user-settings-block .sb-settings-subdrawer > .inline-drawer-header {
     height: auto; min-height: 46px; margin: 0; padding: 10px 32px 10px 4px !important;
     justify-content: flex-start; text-align: left; font-size: 13px;

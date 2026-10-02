@@ -4689,24 +4689,11 @@ input[type='range']::-moz-range-thumb {
     gap: 12px;
 }
 
-.sb-accent-profiles-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    flex: 1 1 auto;
-    min-width: 0;
-    cursor: pointer;
-}
-
-.sb-accent-profiles-toggle .inline-drawer-icon {
-    flex: 0 0 auto;
-}
-
 .sb-accent-profiles-copy {
     display: flex;
     flex-direction: column;
     gap: 2px;
+    flex: 1 1 auto;
     min-width: 0;
 }
 
@@ -4901,10 +4888,6 @@ input[type='range']::-moz-range-thumb {
     .sb-accent-profiles-header {
         align-items: stretch;
         flex-direction: column;
-    }
-
-    .sb-accent-profiles-toggle {
-        width: 100%;
     }
 
     .sb-accent-profile-save {

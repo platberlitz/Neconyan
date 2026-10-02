@@ -77,22 +77,19 @@ describe('Neconyan accent color profiles', () => {
     test('wires the appearance UI and responsive profile controls', () => {
         expect(indexSource).toContain('id="sb-accent-profile-save"');
         expect(indexSource).toContain('id="sb-accent-profiles-panel"');
-        expect(indexSource).toContain('data-settings-tab="appearance"');
         expect(indexSource).toContain('id="sb-accent-profiles-list"');
         expect(indexSource).toContain('id="sb-accent-profiles-empty"');
-        expect(indexSource).toContain('class="inline-drawer-toggle sb-accent-profiles-toggle"');
-        expect(indexSource).toContain('class="inline-drawer-content sb-accent-profiles-content"');
+        expect(indexSource).toContain('class="sb-accent-profiles-content"');
+        expect(indexSource).toContain('data-i18n="Saved accent pairs"');
+        expect(indexSource).not.toContain('sb-accent-profiles-toggle');
         expect(indexSource).toContain('css/neconyan-theme.css?v=');
-        expect(powerUserSource).toContain('const NN_ACCENT_PROFILES_DRAWER_KEY = \'SBAccentProfilesDrawerExpanded\';');
-        expect(powerUserSource).toContain('function bindNnAccentProfilesDrawerPersistence()');
-        expect(powerUserSource).toContain('accountStorage.getItem(NN_ACCENT_PROFILES_DRAWER_KEY)');
-        expect(powerUserSource).toContain('accountStorage.setItem(NN_ACCENT_PROFILES_DRAWER_KEY, String(Boolean(expanded)))');
-        expect(powerUserSource).toContain('toggleDrawer(drawer, storedExpanded ?? false);');
+        expect(powerUserSource).not.toContain('NN_ACCENT_PROFILES_DRAWER_KEY');
+        expect(powerUserSource).not.toContain('bindNnAccentProfilesDrawerPersistence');
         expect(powerUserSource).toContain('$(document).on(\'click\', \'#sb-accent-profile-save\'');
         expect(powerUserSource).toContain('$(document).on(\'click\', \'.sb-accent-profile-apply\'');
         expect(powerUserSource).toContain('$(document).on(\'click\', \'.sb-accent-profile-delete\'');
         expect(themeCssSource).toContain('.sb-accent-profiles-panel');
-        expect(themeCssSource).toContain('.sb-accent-profiles-toggle');
+        expect(themeCssSource).not.toContain('.sb-accent-profiles-toggle');
         expect(themeCssSource).toContain('.sb-accent-profiles-content');
         expect(themeCssSource).toContain('grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));');
         expect(themeCssSource).toContain('@media screen and (max-width: 768px)');

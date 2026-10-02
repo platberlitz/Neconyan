@@ -61,7 +61,7 @@ import { resetTokenCache, tokenizers } from './tokenizers.js';
 import { BIAS_CACHE } from './logit-bias.js';
 import { renderTemplateAsync } from './templates.js';
 
-import { countOccurrences, debounce, delay, download, getFileText, getSanitizedFilename, getStringHash, isOdd, isTrueBoolean, onlyUnique, resetScrollHeight, shuffle, sortMoments, stringToRange, timestampToMoment, toggleDrawer } from './utils.js';
+import { countOccurrences, debounce, delay, download, getFileText, getSanitizedFilename, getStringHash, isOdd, isTrueBoolean, onlyUnique, resetScrollHeight, shuffle, sortMoments, stringToRange, timestampToMoment } from './utils.js';
 import { FILTER_TYPES } from './filters.js';
 import { SlashCommand } from './slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from './slash-commands/SlashCommandArgument.js';
@@ -173,7 +173,6 @@ const NECONYAN_PALETTE_BINDINGS = Object.freeze([
     ['border_color', '#border-color-picker', 'border'],
 ]);
 const NN_ACCENT_PROFILE_SEED_VERSION = 3;
-const NN_ACCENT_PROFILES_DRAWER_KEY = 'SBAccentProfilesDrawerExpanded';
 const MAX_NN_ACCENT_PROFILE_NAME_LENGTH = 40;
 const NECONYAN_ACCENT_PROFILE_SEEDS = Object.freeze([
     { name: 'Warm Signal', quote_text_color: 'rgba(201, 198, 168, 1)', underline_text_color: 'rgba(166, 164, 147, 1)' },
@@ -1937,50 +1936,6 @@ function renderAccentProfiles() {
         applyButton.append(swatches, name);
         item.append(applyButton, deleteButton);
         list.append(item);
-    });
-}
-
-function getStoredNnAccentProfilesDrawerExpanded() {
-    const storedValue = accountStorage.getItem(NN_ACCENT_PROFILES_DRAWER_KEY);
-    if (storedValue === null) {
-        return null;
-    }
-
-    return storedValue === 'true';
-}
-
-function setStoredNnAccentProfilesDrawerExpanded(expanded) {
-    accountStorage.setItem(NN_ACCENT_PROFILES_DRAWER_KEY, String(Boolean(expanded)));
-}
-
-function syncNnAccentProfilesDrawerExpandedState(drawer, expanded) {
-    const toggle = drawer.querySelector(':scope > .inline-drawer-header .sb-accent-profiles-toggle');
-    if (toggle instanceof HTMLElement) {
-        toggle.setAttribute('aria-expanded', String(Boolean(expanded)));
-    }
-}
-
-function bindNnAccentProfilesDrawerPersistence() {
-    const drawer = document.getElementById('sb-accent-profiles-panel');
-    if (!(drawer instanceof HTMLElement) || drawer.dataset.sbAccentProfilesDrawerBound === 'true') {
-        return;
-    }
-
-    drawer.dataset.sbAccentProfilesDrawerBound = 'true';
-
-    const storedExpanded = getStoredNnAccentProfilesDrawerExpanded();
-    toggleDrawer(drawer, storedExpanded ?? false);
-    syncNnAccentProfilesDrawerExpandedState(drawer, storedExpanded ?? false);
-
-    drawer.addEventListener('inline-drawer-toggle', () => {
-        const icon = drawer.querySelector(':scope > .inline-drawer-header .inline-drawer-icon');
-        if (!(icon instanceof HTMLElement)) {
-            return;
-        }
-
-        const expanded = icon.classList.contains('up');
-        syncNnAccentProfilesDrawerExpandedState(drawer, expanded);
-        setStoredNnAccentProfilesDrawerExpanded(expanded);
     });
 }
 
@@ -5434,8 +5389,6 @@ jQuery(async () => {
             toastr.info('Accent colors applied.', 'Neconyan palette');
         }
     });
-
-    bindNnAccentProfilesDrawerPersistence();
 
     $(document).on('click', '#sb-accent-profile-save', async function () {
         await saveAccentProfile();

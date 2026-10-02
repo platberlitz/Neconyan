@@ -499,7 +499,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261002e';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261002f';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -15822,7 +15822,7 @@ function injectThemePicker() {
         );
     }
 
-    card.append(shellStyleSettingsGroup, interfaceSettingsGroup, tourSettingsGroup, topbarLabelSettingsGroup, shortcutSettingsGroup);
+    const themeSettingsDrawers = [shellStyleSettingsGroup, interfaceSettingsGroup, topbarLabelSettingsGroup, shortcutSettingsGroup, tourSettingsGroup];
     if (!(desktopSettingsOutlet instanceof HTMLElement)) {
         card.append(
             desktopNavLayoutSettingsGroup,
@@ -15848,7 +15848,39 @@ function injectThemePicker() {
         );
     }
     themeBlock.append(card);
+    placeThemeSettingsDrawers(themeBlock, card, themeSettingsDrawers);
     updateThemePickerUi();
+}
+
+function placeThemeSettingsDrawers(themeBlock, card, drawers) {
+    const themeDrawer = themeBlock.closest('.inline-drawer');
+    const anchor = document.getElementById('sb-theme-presets-drawer') || themeDrawer;
+    if (!(anchor instanceof HTMLElement) || !(anchor.parentElement instanceof HTMLElement)) {
+        card.append(...drawers);
+        return;
+    }
+    const icons = {
+        'sb-shell-style-drawer': 'fa-paw',
+        'sb-interface-drawer': 'fa-sliders',
+        'sb-topbar-label-drawer': 'fa-heading',
+        'sb-quick-access-shortcuts-drawer': 'fa-bolt',
+        'sb-page-tours-drawer': 'fa-route',
+    };
+    for (const drawer of drawers) {
+        drawer.classList.remove('sb-theme-settings-drawer');
+        drawer.classList.add('wide100p', 'flexFlowColumn', 'sb-settings-subdrawer', 'sb-theme-lifted-drawer');
+        const header = drawer.querySelector(':scope > .inline-drawer-header');
+        header?.classList.add('userSettingsInnerExpandable');
+        const heading = header?.querySelector(':scope > strong');
+        if (heading) {
+            const label = createElement('b');
+            const glyph = createElement('i', { className: `fa-solid ${icons[drawer.id] || 'fa-gear'}`, attrs: { 'aria-hidden': 'true' } });
+            label.append(glyph, ' ', createElement('span', { text: heading.textContent || '' }));
+            heading.replaceWith(label);
+        }
+        drawer.querySelector(':scope > .sb-theme-settings-drawer-body')?.classList.add('sb-settings-subdrawer-body');
+    }
+    anchor.after(...drawers);
 }
 
 function updateThemePickerUi() {
