@@ -51,6 +51,11 @@ const addCaption = value => {
 };
 
 function collectHtml($) {
+    // The parser keeps <template> content in its own fragment, which 'body *' below never reaches.
+    $('template').each((_index, element) => {
+        const fragment = element.children[0];
+        if (fragment?.children?.length) collectHtml(load($.html(fragment.children)));
+    });
     $('[data-i18n]').each((_index, element) => {
         for (const spec of $(element).attr('data-i18n').split(';')) {
             const match = spec.match(/^\[([^\]]+)\](.+)$/);
