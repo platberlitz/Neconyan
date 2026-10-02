@@ -330,7 +330,7 @@
     border-radius: 0;
 }
 
-:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .sb-shell-header :is(.sb-shell-title, .sb-shell-kicker, .sb-shell-subtitle, .sb-shell-description, h1, h2, h3, i) {
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .sb-shell-header :is(.sb-shell-title, .sb-shell-kicker, .sb-shell-subtitle, .sb-shell-description, .neconyan-tool-page-description, h1, h2, h3, i):not(:is(.menu_button, .sb-shell-close) *) {
     color: var(--w98-title-ink);
 }
 
@@ -367,6 +367,10 @@
     background: var(--w98-title);
     color: var(--w98-title-ink);
     box-shadow: none;
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.sb-shell-tab.is-active, .sb-settings-tab-btn.active, #right-nav-panel .sb-character-editor-subtab.is-active) i {
+    color: inherit;
 }
 
 /* Settings groups and cards: etched group boxes. */

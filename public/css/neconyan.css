@@ -333,7 +333,7 @@ body.neconyan .sb-shell-header .neconyan-page-intro-header > .neconyan-tool-tour
     top: var(--neco-shell-close-top, 26px);
     right: 66px;
     margin: 0;
-    transform: translateY(-50%);
+    translate: 0 -50%;
 }
 body.neconyan #right-nav-panel :is(.sb-character-editor-identity, .sb-character-editor-field-box, .sb-character-creator-notes-preview, .sb-character-editor-subtabs) {
     background: transparent; box-shadow: none; border-color: var(--neco-border); border-radius: 6px;
