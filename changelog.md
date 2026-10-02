@@ -4,6 +4,7 @@
 
 ### Merged Staging PRs
 - PR #4 (2026-10-02) `fix: italian translation`
+- PR #5 (2026-10-02) `feat: add Windows 98, Windows Aero and Windows Aero Light themes`
 
 ## v1.0.6
 
