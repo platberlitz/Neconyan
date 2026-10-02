@@ -7431,7 +7431,8 @@ body:not(.movingUI) .drawer-content.maximized {
 }
 
 .ica-transform-diff-part--ins {
-    background: color-mix(in srgb, var(--color-success, var(--success, var(--SmartThemeQuoteColor))) 12%, var(--neco-surface, var(--SmartThemeBlurTintColor)));
+    background: color-mix(in srgb, #22c55e 30%, var(--neco-surface, var(--SmartThemeBlurTintColor)));
+    box-shadow: inset 0 -2px 0 #22c55e;
     color: var(--sb-contrast-strong, var(--SmartThemeBodyColor));
     text-decoration: none;
     border-radius: 2px;
@@ -7439,10 +7440,11 @@ body:not(.movingUI) .drawer-content.maximized {
 }
 
 .ica-transform-diff-part--del {
-    background: color-mix(in srgb, var(--color-danger, var(--SmartThemeUnderlineColor)) 12%, var(--neco-surface, var(--SmartThemeBlurTintColor)));
+    background: color-mix(in srgb, #f43f5e 30%, var(--neco-surface, var(--SmartThemeBlurTintColor)));
     color: var(--sb-contrast-strong, var(--SmartThemeBodyColor));
     text-decoration: line-through;
-    text-decoration-color: currentColor;
+    text-decoration-color: #f43f5e;
+    text-decoration-thickness: 2px;
     border-radius: 2px;
     padding: 0 1px;
 }

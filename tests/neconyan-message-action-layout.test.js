@@ -23,8 +23,10 @@ describe('Agent change highlights', () => {
         for (const type of ['ins', 'del']) {
             const rule = baseCss.match(new RegExp(`\\.ica-transform-diff-part--${type} \\{([^}]+)\\}`))[1];
             expect(rule).toContain('color: var(--sb-contrast-strong, var(--SmartThemeBodyColor));');
-            expect(rule).toContain('12%, var(--neco-surface, var(--SmartThemeBlurTintColor))');
+            expect(rule).toContain('30%, var(--neco-surface, var(--SmartThemeBlurTintColor))');
         }
+        expect(baseCss).toMatch(/\.ica-transform-diff-part--ins \{[^}]*#22c55e 30%[^}]*box-shadow: inset 0 -2px 0 #22c55e;/);
+        expect(baseCss).toMatch(/\.ica-transform-diff-part--del \{[^}]*#f43f5e 30%[^}]*text-decoration-color: #f43f5e;/);
     });
 
     test('restricts phone history scrolling to vertical movement without disabling text selection', () => {
