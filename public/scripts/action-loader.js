@@ -642,17 +642,23 @@ function yoinkPreloader() {
  * @param {string} [options.reason='cleanup'] Debug label for the cleanup path
  */
 export function cleanupActionLoaderArtifacts({ removePreloader = false, reason = 'cleanup' } = {}) {
-    document.getElementById('loader')?.remove();
+    // A loader shown after startup belongs to its caller, which hides it when its work ends.
+    const activeDialog = loaderPopup?.dlg;
+    const keepDialog = activeDialog && !activeDialog.querySelector('.splash-screen') ? activeDialog : null;
 
-    // Close and remove any open loader dialog overlays
+    // Close and remove any open loader dialog overlays before the stray loader below,
+    // otherwise its dialog no longer matches and stays open with nothing inside.
     for (const dlg of document.querySelectorAll('dialog[open]')) {
-        if (dlg.querySelector('#loader, .splash-screen, #load-spinner')) {
+        if (dlg !== keepDialog && dlg.querySelector('#loader, .splash-screen, #load-spinner')) {
             try { dlg.close(); } catch {
                 // Ignore dialog close failures before removing the element.
             }
             dlg.remove();
         }
     }
+
+    const strayLoader = document.getElementById('loader');
+    if (strayLoader && !keepDialog?.contains(strayLoader)) strayLoader.remove();
 
     if (removePreloader) {
         yoinkPreloader();
