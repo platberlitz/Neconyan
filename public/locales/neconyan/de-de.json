@@ -10815,5 +10815,7 @@
   "Turn on the overflow alert. Silent failures are how I lost three naps last week.": "Schalte die Überlaufwarnung ein. Durch stille Fehler habe ich letzte Woche drei Nickerchen verloren.",
   "**Include Names** also searches the names of whoever is speaking. **Recursive Scan** lets entries wake other entries.": "**Namen einbeziehen** durchsucht auch die Namen der Sprechenden. **Rekursive Suche** lässt Einträge andere Einträge wecken.",
   "**Case Sensitive** and **Match Whole Words** set how exactly keywords must match; an entry can still choose its own. **Use Group Scoring** turns on group scoring everywhere.": "**Groß-/Kleinschreibung beachten** und **Ganze Wörter abgleichen** legen fest, wie genau Schlüsselwörter passen müssen; ein Eintrag kann trotzdem eigene Regeln wählen. **Gruppenwertung verwenden** schaltet die Gruppenbewertung überall ein.",
-  "**Alert On Overflow** warns you when entries were left out because the budget was full.": "**Warnung bei Überlauf** warnt dich, wenn Einträge wegen eines vollen Budgets weggelassen wurden."
+  "**Alert On Overflow** warns you when entries were left out because the budget was full.": "**Warnung bei Überlauf** warnt dich, wenn Einträge wegen eines vollen Budgets weggelassen wurden.",
+  "Optional separator, including line breaks": "Optionales Trennzeichen, auch Zeilenumbrüche",
+  "e.g. What did we promise at the station?": "z. B. Was haben wir uns am Bahnhof versprochen?"
 }
