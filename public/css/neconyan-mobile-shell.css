@@ -1592,6 +1592,18 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         line-height: 1.2;
     }
 
+    :root[data-sb-mobile-nav-mode='icon-only'] body.neconyan :is(.sb-shell-root, #right-nav-panel).openDrawer :is(.sb-shell-nav, .sb-character-shell-nav) > .sb-shell-tab {
+        width: var(--sb-mobile-touch-target, 44px);
+        min-width: var(--sb-mobile-touch-target, 44px);
+        max-width: var(--sb-mobile-touch-target, 44px);
+        padding: 0;
+        gap: 0;
+    }
+
+    :root[data-sb-mobile-nav-mode='icon-only'] body.neconyan :is(.sb-shell-root, #right-nav-panel).openDrawer :is(.sb-shell-nav, .sb-character-shell-nav) > .sb-shell-tab .sb-shell-tab-copy {
+        display: none;
+    }
+
     .sb-shell-tab-copy small {
         font-size: calc(var(--mainFontSize) * 0.58);
         line-height: 1.24;

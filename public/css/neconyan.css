@@ -2075,7 +2075,7 @@ body.neconyan #right-nav-panel #rm_group_chats_block #rm_group_top_bar .avatar i
         flex-basis: auto;
     }
 
-    :root[data-sb-desktop-nav-layout='vertical'] body.neconyan .sb-shell-root.openDrawer .sb-shell-nav > .sb-shell-tab {
+    :root[data-sb-desktop-nav-layout='vertical']:not([data-sb-desktop-nav-mode='icon-only']) body.neconyan .sb-shell-root.openDrawer .sb-shell-nav > .sb-shell-tab {
         flex-direction: row;
         justify-content: flex-start;
         width: 100%;
@@ -2084,7 +2084,7 @@ body.neconyan #right-nav-panel #rm_group_chats_block #rm_group_top_bar .avatar i
         text-align: left;
     }
 
-    :root[data-sb-desktop-nav-layout='vertical'] body.neconyan .sb-shell-root.openDrawer .sb-shell-tab-copy {
+    :root[data-sb-desktop-nav-layout='vertical']:not([data-sb-desktop-nav-mode='icon-only']) body.neconyan .sb-shell-root.openDrawer .sb-shell-tab-copy {
         display: flex;
         flex: 1;
         align-items: flex-start;
