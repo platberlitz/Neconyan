@@ -15,6 +15,7 @@ test('interface text is localised everywhere except user-authored content', asyn
             <p data-i18n="Home">Recent</p>
             <div id="chat"><div class="mes"><div class="ch_name">Recent</div><div class="mes_text"><p>Recent</p></div></div></div>
             <span class="characterName">Recent</span>
+            <span id="persona_selected_name">Recent</span>
             <textarea placeholder="Recent">Recent</textarea>
             <pre>Recent</pre>
         </main>`);
@@ -31,7 +32,7 @@ test('interface text is localised everywhere except user-authored content', asyn
             button: [document.querySelector('button').textContent, document.querySelector('button').getAttribute('aria-label')],
             rootTitle: document.getElementById('root').title,
             input: document.querySelector('input').placeholder,
-            untouched: text('.ch_name, .mes_text p, .characterName, textarea, pre'),
+            untouched: text('.ch_name, .mes_text p, .characterName, #persona_selected_name, textarea, pre'),
             textareaPlaceholder: document.querySelector('textarea').placeholder,
         };
     });
@@ -42,7 +43,7 @@ test('interface text is localised everywhere except user-authored content', asyn
         button: ['Neu', 'Start'],
         rootTitle: 'Start',
         input: 'Neu',
-        untouched: ['Recent', 'Recent', 'Recent', 'Recent', 'Recent'],
+        untouched: ['Recent', 'Recent', 'Recent', 'Recent', 'Recent', 'Recent'],
         textareaPlaceholder: 'Recent',
     });
 });
