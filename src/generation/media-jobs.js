@@ -50,16 +50,20 @@ function saveReceipt(filename, value, baseline) {
     }
 }
 
-function reserveReceipt(base, filename, targetHash) {
+function reserveReceipt(base, filename, targetHash, releaseStoppedTarget) {
     const directory = path.dirname(filename);
     createRoleplayDirectory(directory, roleplayStoreDirectory(base));
     let used = RECEIPT_LIMIT;
     for (const name of fs.readdirSync(directory)) {
         if (!/^[a-f0-9]{64}\.json$/.test(name)) continue;
-        const { file, value } = readReceipt(path.join(directory, name));
+        let { file, value } = readReceipt(path.join(directory, name));
         if (!file) throw fail('A saved media receipt disappeared during admission.');
         if (value.targetHash === targetHash && value.state !== 'closed') {
-            throw fail('The media target already has accepted work.', 'MEDIA_TARGET_BUSY');
+            // Work that can no longer run or write is closed so it stops claiming the target.
+            const result = releaseStoppedTarget?.(value) ?? null;
+            if (!result) throw fail('The media target already has accepted work.', 'MEDIA_TARGET_BUSY');
+            value = { ...value, state: 'closed', result };
+            file = saveReceipt(path.join(directory, name), value, file);
         }
         used += value.state === 'closed' ? file.bytes.length : RECEIPT_LIMIT;
         if (used > STORE_LIMIT) throw fail('Media receipt storage is full; earlier ownership was retained.', 'MEDIA_STORE_FULL');
@@ -67,7 +71,8 @@ function reserveReceipt(base, filename, targetHash) {
 }
 
 /** Private admission for media work. Ownership survives job history and imported account settings. */
-export function admitNativeMediaJob(base, account, { operationKey, source, kind, request, target, approvalReservation = null }) {
+export function admitNativeMediaJob(base, account, { operationKey, source, kind, request, target, approvalReservation = null,
+    releaseStoppedTarget = null }) {
     if (typeof operationKey !== 'string' || !operationKey || operationKey.length > 200
         || !/^[a-z][a-z-]{0,31}$/.test(kind) || !source || !request || !target
         || Buffer.byteLength(JSON.stringify(request)) > 2 * 1024 * 1024) {
@@ -89,7 +94,7 @@ export function admitNativeMediaJob(base, account, { operationKey, source, kind,
         assertMediaSourceLocked(lease, source, kind);
         if (!value) {
             if (approvalReservation) reserveJobApprovalCapacityLocked(lease, approvalReservation);
-            reserveReceipt(base, filename, targetHash);
+            reserveReceipt(base, filename, targetHash, releaseStoppedTarget);
             value = { version: 1, account: stamp(account), intentHash, targetHash, jobId: null, state: 'preparing', effects: {},
                 ...(approvalReservation ? { approvalReservation } : {}) };
             file = saveReceipt(filename, value, null);

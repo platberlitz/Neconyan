@@ -66,7 +66,7 @@ async function closeEveryPage(browser) {
 }
 
 for (const [viewport, phone] of [['desktop', false], ['phone', true]]) {
-    test(`a dropped group provider connection shows its reason and is not retried on ${viewport}`, async ({ app }) => {
+    test(`a dropped group provider connection shows its reason, is not retried and frees the chat on ${viewport}`, async ({ app }) => {
         const setup = await prepare(app, phone, 0, 'manual', true);
         const page = await openGroup(setup);
         app.provider.mode.disconnect = true;
@@ -85,11 +85,27 @@ for (const [viewport, phone] of [['desktop', false], ['phone', true]]) {
             const groups = await import('/scripts/group-chats.js');
             return core.is_send_press || groups.is_group_generating;
         })).toBe(false);
+        app.provider.mode.disconnect = false;
+        app.provider.mode.streamReply = { first: 'The group reply was written', rest: ' by the server.' };
+        const resent = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit'));
+        await page.locator('#send_textarea').fill('Please try the group reply again.');
+        await page.locator('#send_textarea').press('Enter');
+        const response = await resent;
+        expect(response.status(), await response.text()).toBe(202);
+        const retry = await response.json();
+        await expect.poll(() => app.provider.calls.length).toBe(2);
+        await app.release();
+        await expect.poll(() => typeof app.provider.mode.finishStream).toBe('function');
+        app.provider.mode.finishStream();
+        await setup.account.settled(retry.jobId);
+        await expect(page.locator('#chat .mes').last()).toContainText(ANSWER);
         await app.restart();
         await delay(1200);
-        expect(app.provider.calls).toHaveLength(1);
+        expect(app.provider.calls).toHaveLength(2);
         expect(app.provider.calls[0].stream).toBe(true);
-        expect((await readRows(setup.file)).filter(row => row.is_user)).toHaveLength(1);
+        const rows = await readRows(setup.file);
+        expect(rows.filter(row => row.is_user)).toHaveLength(2);
+        expect(rows.filter(row => row.mes === ANSWER)).toHaveLength(1);
         expect((await setup.account.job(jobId)).state).toBe('interrupted');
     });
 }

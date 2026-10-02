@@ -1,6 +1,29 @@
-import { getJob, providerRecoverySteps } from '../jobs/store.js';
+import { getJob, providerRecoverySteps, TERMINAL_STATES } from '../jobs/store.js';
 import { roleplayHash } from '../roleplay-store.js';
 import { withNativeMediaReceipt } from './media-jobs.js';
+
+/**
+ * Release an earlier reply's claim on a chat once it can no longer run or write.
+ * A stopped or failed workflow is only resumed by a deliberate retry, which
+ * returns the closed receipt instead of writing. Pruned jobs were already finished.
+ */
+export function releaseStoppedRoleplayWorkflow({ owner, directories }) {
+    return value => {
+        if (value.state !== 'accepted' || Object.values(value.effects).some(effect => effect?.state !== 'done')) return null;
+        const job = value.jobId ? getJob(directories, value.jobId) : null;
+        if (job) {
+            if (job.type !== 'media.roleplay-workflow' || job.owner !== owner || job.parentId
+                || job.state === 'completed' || !TERMINAL_STATES.includes(job.state)) return null;
+            for (const id of job.children ?? []) {
+                const child = getJob(directories, id);
+                if (child && !TERMINAL_STATES.includes(child.state)) return null;
+            }
+        } else if (!value.jobId) {
+            return null;
+        }
+        return { stopped: true, chatChanged: Object.keys(value.effects).length > 0 };
+    };
+}
 
 /** Release a stopped workflow only when none of its model work ever started. */
 export function closeUnstartedRoleplayWorkflow({ owner, directories, job }) {

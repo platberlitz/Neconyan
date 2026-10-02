@@ -20,6 +20,7 @@ import { captureRoleplayWorkflowCapacity, MAX_WORKFLOW_CHAT_BYTES } from './role
 import { assertRoleplayNamedWorkflow, ROLEPLAY_WORKFLOW_NAMES, roleplayWorkflowContributions, roleplayWorkflowResultFacts } from './roleplay-workflow-named.js';
 import { roleplayEffectTrigger } from './roleplay-prompt.js';
 import { registerHandler } from '../jobs/runner.js';
+import { releaseStoppedRoleplayWorkflow } from './roleplay-workflow-cancellation.js';
 
 const error = (message, code = 'ROLEPLAY_WORKFLOW_RECOVERY') => roleplayError(code, message, 409);
 const CHILD = 'roleplay-workflow-child';
@@ -114,8 +115,13 @@ export function admitRoleplayWorkflowJob(base, account, { operationKey, source, 
             throw error('This named workflow runs one bounded model turn.', 'ROLEPLAY_WORKFLOW_INVALID');
         }
     }
-    return admitNativeMediaJob(base, account, { operationKey, source, kind: 'roleplay-workflow', request,
-        target: { kind: 'chat', id: source.instanceId } });
+    try {
+        return admitNativeMediaJob(base, account, { operationKey, source, kind: 'roleplay-workflow', request,
+            target: { kind: 'chat', id: source.instanceId }, releaseStoppedTarget: releaseStoppedRoleplayWorkflow(base) });
+    } catch (cause) {
+        if (cause?.code !== 'MEDIA_TARGET_BUSY') throw cause;
+        throw roleplayError('MEDIA_TARGET_BUSY', 'Another reply for this chat is still being written. Wait for it to finish, then send again.', 409);
+    }
 }
 
 function root(context) {
@@ -410,6 +416,7 @@ function publishPlan(context, job, chosen, plan, { effectId = 'final', proof = n
     const saved = readRoleplayWorkflowRecords(context, job.intent.media, proof);
     if (saved.proof.recordsHash !== plan.recordsHash || saved.proof.digest !== plan.recordsDigest) throw error('The saved workflow chat changed.');
     return withNativeMediaReceipt(context, ({ lease, value, save }) => {
+        if (value.state === 'closed') throw error('This reply was released before its chat write.');
         if (context.signal?.aborted || getJob(context.directories, job.id)?.cancellation?.requested) {
             throw error('The saved workflow was cancelled before its protected chat write.');
         }

@@ -15,7 +15,8 @@ const { captureRoleplayWorkflowRequest, admitRoleplayWorkflowJob, runRoleplayWor
     recoverWaitingRoleplayWorkflow } = await import('../src/generation/roleplay-workflow.js');
 const { getJob, releaseJob, setJobState, updateJob, requestCancellation } = await import('../src/jobs/store.js');
 const { providerStep, readArtifact } = await import('../src/jobs/artifacts.js');
-const { readNativeMediaJobResult } = await import('../src/generation/media-jobs.js');
+const { readNativeMediaJobResult, readNativeMediaJobResultForOwner } = await import('../src/generation/media-jobs.js');
+const { releaseStoppedRoleplayWorkflow } = await import('../src/generation/roleplay-workflow-cancellation.js');
 const { roleplayHash } = await import('../src/roleplay-store.js');
 
 const controls = { prompts: [{ identifier: 'main', role: 'system', content: '', system_prompt: true },
@@ -128,6 +129,52 @@ test('a stopped workflow with no child explanation uses plain language', async t
     updateJob(f.dirs, childJobId, { state: 'failed' });
     recoverWaitingRoleplayWorkflow(f.context());
     assert.equal(getJob(f.dirs, f.jobId).error.message, 'A reply step stopped before it finished.');
+});
+
+test('a reply that stopped after reaching the provider frees the chat for the next send', async t => {
+    const f = prepared(t);
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    const { childJobId } = await runRoleplayWorkflowJob(f.context());
+    const admitNext = operationKey => {
+        const source = f.f.source();
+        const request = captureRoleplayWorkflowRequest(f.f.scope, f.account, source, { avatar: 'Nova.png',
+            binding: { kind: 'profile', ...captureChatProfile(f.dirs, 'main') }, maxTokens: 32 });
+        return admitRoleplayWorkflowJob(f.f.scope, f.account, { operationKey, source, request });
+    };
+    assert.throws(() => admitNext('while-running'), { code: 'MEDIA_TARGET_BUSY',
+        message: 'Another reply for this chat is still being written. Wait for it to finish, then send again.' });
+    updateJob(f.dirs, childJobId, { state: 'interrupted', recoverability: 'unknown-outcome',
+        error: { code: 'JOB_FAILED', message: 'The connection closed.', status: 502 } });
+    recoverWaitingRoleplayWorkflow(f.context());
+    const before = f.records();
+    const next = admitNext('after-stop');
+    assert.equal(next.created, true);
+    assert.notEqual(next.jobId, f.jobId);
+    assert.deepEqual(readNativeMediaJobResultForOwner(f.f.scope, { operationKey: 'root-append' }),
+        { state: 'closed', jobId: f.jobId, result: { stopped: true, chatChanged: false } });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    assert.deepEqual(await runRoleplayWorkflowJob(f.context()), { result: { stopped: true, chatChanged: false } });
+    assert.deepEqual(getJob(f.dirs, f.jobId).children, [childJobId]);
+    assert.deepEqual(f.records(), before);
+});
+
+test('a stopped reply keeps the chat while a write or child step is unfinished', async t => {
+    const f = prepared(t);
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    const { childJobId } = await runRoleplayWorkflowJob(f.context());
+    const release = releaseStoppedRoleplayWorkflow({ owner: f.f.scope.owner, directories: f.dirs });
+    const receipt = effects => ({ state: 'accepted', jobId: f.jobId, effects });
+    updateJob(f.dirs, f.jobId, { state: 'interrupted' });
+    assert.equal(release(receipt({})), null, 'a running child still owns the chat');
+    updateJob(f.dirs, childJobId, { state: 'interrupted' });
+    assert.deepEqual(release(receipt({})), { stopped: true, chatChanged: false });
+    assert.deepEqual(release(receipt({ 'speaker:0': { state: 'done' } })), { stopped: true, chatChanged: true });
+    assert.equal(release(receipt({ final: { state: 'writing' } })), null, 'a half-written reply is never released');
+    assert.equal(release({ state: 'preparing', jobId: null, effects: {} }), null);
+    assert.equal(release({ ...receipt({}), jobId: null }), null);
+    assert.deepEqual(release({ ...receipt({}), jobId: 'pruned-job' }), { stopped: true, chatChanged: false });
+    updateJob(f.dirs, f.jobId, { state: 'completed' });
+    assert.equal(release(receipt({})), null);
 });
 
 test('a saved root parks for one child, keeps the old chat until durable completion and replays without paying', async t => {
