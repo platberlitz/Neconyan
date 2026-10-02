@@ -23,8 +23,10 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal }
             node = document.createElement('article');
             node.id = 'neconyan-roleplay-preview';
             node.className = 'mes_block';
+            // This is a direct child of the scrolling flex column, not a block inside a message.
+            // Keep its content height instead of squeezing the reply into the remaining chat space.
             Object.assign(node.style, { padding: '12px', borderRadius: '8px', background: 'var(--neco-surface)',
-                color: 'var(--neco-ink)', overflowWrap: 'anywhere' });
+                color: 'var(--neco-ink)', overflowWrap: 'anywhere', flexShrink: '0' });
             node.setAttribute('aria-label', 'Reply in progress');
             node.innerHTML = '<div class="ch_name"><span class="name_text"></span></div><small role="status"></small><details><summary>Reasoning</summary><div></div></details><div class="mes_text"></div>';
             node.querySelector('.mes_text').style.whiteSpace = 'pre-wrap';

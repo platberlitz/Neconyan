@@ -5,12 +5,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { acknowledgeActiveSettings, test } from './neconyan-conversation-durable-fixture.js';
+import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 
 test.setTimeout(240000);
 
 const ANSWER = 'The group reply was written by the server.';
 
-async function prepare(app, phone, companionCount = 0, companionTrigger = 'manual', stream = false) {
+async function prepare(app, phone, companionCount = 0, companionTrigger = 'manual', stream = false, contextOptions = {}) {
     app.provider.mode.hold = ['conversation-fixture'];
     app.provider.mode.reply = () => ({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: ANSWER } }] });
     const companions = Array.from({ length: companionCount }, (_, index) => ({ id: `group-note-${index}`,
@@ -19,7 +20,7 @@ async function prepare(app, phone, companionCount = 0, companionTrigger = 'manua
     for (const companion of companions) {
         await fs.writeFile(path.join(app.directory, 'data/default-user/InChatAgents', `${companion.id}.json`), JSON.stringify(companion));
     }
-    const account = await app.account({ phone, activeConnection: true, configureSettings(saved) {
+    const account = await app.account({ phone, contextOptions, activeConnection: true, configureSettings(saved) {
         saved.oai_settings.openai_max_context = 8192;
         saved.oai_settings.openai_max_tokens = 256;
         saved.oai_settings.stream_openai = stream;
@@ -63,6 +64,74 @@ async function closeEveryPage(browser) {
         for (const open of context.pages()) await open.close();
     }
     expect(browser.contexts().flatMap(context => context.pages())).toHaveLength(0);
+}
+
+for (const [viewport, phone, standalone] of [['desktop', false, false], ['iPhone browser', true, false], ['iPhone home screen', true, true]]) {
+    const installPhone = phone ? context => installIPhoneSafari(context, { standalone }) : async () => {};
+    const syncPhoneCss = phone ? applyIOSOnlyCss : async () => {};
+    test(`a long group reply stays readable while Companions run on ${viewport}`, async ({ app }, info) => {
+        const fixture = await prepare(app, phone, 1, 'auto', true, phone ? IPHONE_SAFARI_CONTEXT : {});
+        await installPhone(fixture.account.context);
+        const page = await openGroup(fixture);
+        await page.evaluate(() => {
+            window.jQuery('#chat_display').val('6').trigger('change');
+            window.NeconyanShell.applyTheme('windows-98');
+        });
+        await page.waitForFunction(() => document.querySelector('#neconyan-native-chat-styles')?.sheet
+            && document.querySelector('link[data-sb-shell-style="windows-98"]')?.sheet);
+        await syncPhoneCss(page);
+        await acknowledgeActiveSettings(page);
+        const first = 'The reply has started.\n\n';
+        const rest = Array(50).fill('The traveller pauses by the fountain, then follows the music through the town square.').join(' ') + '\n\nThe reply ends here.';
+        app.provider.mode.streamReply = { first, rest };
+        const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit') && response.status() === 202);
+        await page.locator('#send_textarea').fill('I enter the town and look around. What happens next?');
+        await page.locator('#send_textarea').press('Enter');
+        const { jobId } = await (await submitted).json();
+        await expect.poll(() => app.provider.calls.length, { timeout: 30000 }).toBe(1);
+        const preview = page.getByLabel('Reply in progress');
+        // The first preview module is loaded on demand in a fresh disposable account.
+        await expect(preview).toBeVisible({ timeout: 15000 });
+        await app.release();
+        await expect(preview.locator('.mes_text')).toHaveText(first);
+        await expect.poll(() => typeof app.provider.mode.finishStream).toBe('function');
+        app.provider.mode.hold = ['conversation-fixture', 'unused-named-model'];
+        app.provider.mode.finishStream();
+        await expect.poll(() => app.provider.calls.length).toBe(2);
+        await expect(preview.getByRole('status')).toHaveText('Running Companions…');
+        await expect(preview.locator('.mes_text')).toHaveText(first + rest);
+        await page.screenshot({ path: info.outputPath('reply-awaiting-companion.png') });
+        const bounds = await preview.evaluate(node => ({ clientHeight: node.clientHeight, scrollHeight: node.scrollHeight,
+            textBottom: node.querySelector('.mes_text').getBoundingClientRect().bottom - node.getBoundingClientRect().top }));
+        expect(bounds.scrollHeight - bounds.clientHeight, JSON.stringify(bounds)).toBeLessThanOrEqual(1);
+        expect(bounds.textBottom).toBeLessThanOrEqual(bounds.clientHeight);
+        expect((await readRows(fixture.file)).some(row => row.mes === first + rest)).toBe(false);
+
+        const endVisible = await page.evaluate(() => {
+            const chat = document.querySelector('#chat');
+            chat.scrollTop = chat.scrollHeight;
+            const text = document.querySelector('#neconyan-roleplay-preview .mes_text');
+            const range = document.createRange();
+            range.setStart(text.firstChild, text.textContent.length - 10);
+            range.setEnd(text.firstChild, text.textContent.length);
+            const end = range.getBoundingClientRect();
+            const x = (end.left + end.right) / 2;
+            const y = (end.top + end.bottom) / 2;
+            return text.contains(document.elementFromPoint(x, y));
+        });
+        expect(endVisible).toBe(true);
+        await page.locator('#chat').evaluate(chat => { chat.scrollTop = 0; });
+        await delay(650); // Cross a preview refresh while the user is reading earlier messages.
+        expect(await page.locator('#chat').evaluate(chat => chat.scrollTop)).toBe(0);
+        await app.release();
+        await fixture.account.settled(jobId);
+        await expect(preview).toHaveCount(0);
+        await expect(page.locator('#chat .mes').last()).toContainText('The reply ends here.');
+        const replies = (await readRows(fixture.file)).filter(row => row.mes?.includes('The reply ends here.'));
+        expect(replies).toHaveLength(1);
+        expect(replies[0].mes).toBe(first + rest);
+        expect(app.provider.calls).toHaveLength(2);
+    });
 }
 
 for (const [viewport, phone] of [['desktop', false], ['phone', true]]) {

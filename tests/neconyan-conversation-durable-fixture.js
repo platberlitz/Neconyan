@@ -117,9 +117,9 @@ export const test = base.extend({
             async release() {
                 await fetch(provider.url.replace(/\/v1$/, '') + '/fixture/release', { method: 'POST', body: '{}' });
             },
-            async account({ handle = 'default-user', phone = false, textProfile = false, activeConnection = false, tts = false, settings = {}, configureSettings = () => {} } = {}) {
+            async account({ handle = 'default-user', phone = false, contextOptions = {}, textProfile = false, activeConnection = false, tts = false, settings = {}, configureSettings = () => {} } = {}) {
                 const context = await browser.newContext({ baseURL: app.url, serviceWorkers: 'block', reducedMotion: 'reduce',
-                    viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, hasTouch: phone, isMobile: phone });
+                    viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, hasTouch: phone, isMobile: phone, ...contextOptions });
                 contexts.push(context);
                 const csrf = await (await context.request.get('/csrf-token')).json();
                 const headers = { 'X-CSRF-Token': csrf.token };
