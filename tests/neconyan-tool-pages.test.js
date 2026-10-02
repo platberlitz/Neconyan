@@ -190,6 +190,7 @@ describe('settings pages open as Neconyan pages with an assistant tour', () => {
         background: 'miso',
         server: 'taro',
         'console-logs': 'taro',
+        agents: 'taro',
     };
 
     test('every page has an intro, an invite and a tour that starts and ends on the page chrome', () => {
@@ -207,12 +208,12 @@ describe('settings pages open as Neconyan pages with an assistant tour', () => {
     });
 
     test('the shell maps each settings tab to its page and mounts it whenever a tab opens', () => {
-        for (const [tab, key] of [['left:api', 'connections'], ['left:presets', 'presets'], ['left:sampling', 'sampling'], ['left:advanced-formatting', 'formatting'], ['left:mewmory', 'mewmory'], ['right:background', 'background'], ['right:server', 'server'], ['right:console-logs', 'console-logs']]) {
+        for (const [tab, key] of [['left:api', 'connections'], ['left:presets', 'presets'], ['left:sampling', 'sampling'], ['left:advanced-formatting', 'formatting'], ['left:mewmory', 'mewmory'], ['left:agents', 'agents'], ['right:background', 'background'], ['right:server', 'server'], ['right:console-logs', 'console-logs']]) {
             expect(shell).toContain(`'${tab}': '${key}'`);
         }
         expect(shell).toMatch(/activeTab\.onActivate\?\.\(\);\s*syncNeconyanNativeShellPage\(shellKey, tabId\);/);
         expect(shell).toContain('mountNeconyanNativePage(\'persona\', document.getElementById(\'sb_character_persona_panel\'))');
-        for (const tab of ['left:api', 'left:presets', 'left:sampling', 'left:mewmory', 'right:background', 'right:server', 'right:console-logs']) {
+        for (const tab of ['left:api', 'left:presets', 'left:sampling', 'left:mewmory', 'left:agents', 'right:background', 'right:server', 'right:console-logs']) {
             expect(shell).toMatch(new RegExp(`'${tab}': \\[\\s*\\{ href: 'css/neconyan-tool-pages\\.css`));
         }
     });
@@ -275,5 +276,36 @@ describe('settings pages open as Neconyan pages with an assistant tour', () => {
         expect(steps[0].body).toContain('won\'t change, save or delete');
         expect(steps.find(step => step.id === 'copy').body).toContain('keep the original preset unchanged');
         expect(steps.find(step => step.id === 'linking').body).toContain('Leave it off');
+    });
+});
+
+describe('Agents page tour led by Taro', () => {
+    const source = read('../public/scripts/neconyan-tool-tour.js');
+
+    test('walks the page, the agent editor and the shared defaults in order', () => {
+        const ids = getToolTourSteps('agents', { isShown: () => true }).map(step => step.id);
+        expect(ids).toEqual(['welcome', 'overview', 'create', 'setups', 'more-tools', 'filters', 'card', 'card-actions',
+            'editor-basics', 'editor-instructions', 'editor-before', 'editor-conditions', 'editor-reply', 'editor-companion',
+            'editor-regex', 'editor-save', 'connections', 'rhythm', 'context', 'pawthfinder', 'glossary', 'done']);
+        expect(getToolPage('agents').assistant).toBe('taro');
+    });
+
+    test('editor steps run inside the agent editor dialog, opened from a card or the create button', () => {
+        const page = getToolPage('agents');
+        expect(page.dialogs.editor).toMatchObject({ root: '#ica--editor', close: '.popup-button-cancel', sectionSelect: '#ica--editor-section-select' });
+        expect(page.dialogs.editor.openers).toEqual(['#ica--agentList .ica--agent-card .ica--btn-edit', '#ica--addAgent']);
+        const editorSteps = page.steps.filter(step => step.dialog === 'editor').map(step => step.id);
+        expect(editorSteps).toEqual(['editor-basics', 'editor-instructions', 'editor-before', 'editor-conditions',
+            'editor-reply', 'editor-companion', 'editor-regex', 'editor-save']);
+    });
+
+    test('the tour moves its card into the modal, follows the phone section menu and closes the editor without saving', () => {
+        expect(source).toContain('dialog.append(tour.card);');
+        expect(source).toContain('select.dispatchEvent(new Event(\'change\', { bubbles: true }));');
+        expect(source).toMatch(/function closeTourDialog\(\)[\s\S]*?findShown\(dialog, config\?\.close \?\? ''\)\?\.click\(\);/);
+        expect(source).toContain('attributeFilter: [\'closing\', \'open\']');
+        expect(source).toContain('findShown(dialog, \'.popup-controls\')');
+        expect(source).toContain('window.innerHeight - controls.getBoundingClientRect().top');
+        expect(source).toMatch(/export function endToolTour[\s\S]*?closeTourDialog\(\);/);
     });
 });

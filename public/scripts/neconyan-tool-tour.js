@@ -719,6 +719,180 @@ const TOOL_PAGES = Object.freeze({
             },
         ],
     },
+    agents: {
+        assistant: 'taro',
+        name: 'Agents',
+        kicker: 'Helpers beside the chat',
+        description: 'Agents are saved helper prompts that run around each reply. They can steer the reply before it is written, rewrite it afterwards, or keep notes of their own.',
+        invite: 'Taro will show you how agents work, including the advanced settings, one step at a time.',
+        emptyWhen: '#ica--agentList .ica--empty-state',
+        dialogs: {
+            editor: {
+                root: '#ica--editor',
+                openers: ['#ica--agentList .ica--agent-card .ica--btn-edit', '#ica--addAgent'],
+                close: '.popup-button-cancel',
+                sectionSelect: '#ica--editor-section-select',
+            },
+        },
+        steps: [
+            {
+                id: 'welcome',
+                targets: ['.neconyan-tool-page-intro'],
+                title: 'What agents do',
+                body: 'An **agent** is a saved prompt with rules for when it runs, which model it uses and where its result goes.\nAn **inline** agent works on the reply itself: it adds instructions before the reply is written, or changes the reply afterwards. A **companion** makes its own request after a reply and saves a separate note. It never replaces the reply.',
+                hint: 'Think of them as staff. Good staff, when you tell them exactly what to do.',
+            },
+            {
+                id: 'overview', tab: '.ica--workspace-tab[data-workspace-view="manage"]',
+                targets: ['.ica--overview'],
+                title: 'The status line',
+                body: 'This line shows whether agents are running, how many you have, how many are switched on, and how many **Prompt tokens** the switched-on agents add to each request. Tokens are the pieces of text models count.\n**Agents On** pauses every agent at once and keeps each agent’s own switch as it was. **Stop agent** appears only while an agent is running.',
+                hint: 'One switch to silence the lot. Use it before you start blaming the model.',
+            },
+            {
+                id: 'create', tab: '.ica--workspace-tab[data-workspace-view="manage"]',
+                targets: ['.ica--toolbar'],
+                title: 'Make an agent, or borrow one',
+                body: '**Create agent** starts a blank agent. **Browse library** lists ready-made agents and **Starter kits**, which add a few agents that work together.\n**Select** lets you tick several agents and change them at once: their settings, their connection, or whether their notes stay in the chat history.',
+                hint: 'Start from the library. Writing everything yourself is how people end up writing it twice.',
+            },
+            {
+                id: 'setups', tab: '.ica--workspace-tab[data-workspace-view="manage"]',
+                targets: ['.ica--setup-controls'],
+                title: 'Saved setups',
+                body: 'A **saved setup** remembers your agents and which ones are switched on. **Save setup** stores the current state under a name, and **Load** brings it back later without deleting agents that are not in it.\nUse setups to swap between, say, a quiet setup for short chats and a full setup for long stories.',
+                hint: 'Name them properly. ‘Setup 3 final’ helps nobody.',
+            },
+            {
+                id: 'more-tools', tab: '.ica--workspace-tab[data-workspace-view="manage"]', open: '#ica--moreTools > summary',
+                targets: ['#ica--moreTools'],
+                title: 'More tools',
+                body: '**Fix trackers** runs your tracker agents again on the last reply. Trackers are agents that keep a running record, such as clothes, location or health. **Activity & companions** opens the companion dashboard, where you can run companions and read their history.\n**Move trackers to companions** turns inline trackers into companions so they stop changing the reply. **Import agents** and **Export agents** use files. **Reset bundled agents** restores the agents that came with Neconyan and leaves your own agents alone.',
+                hint: 'Reset only touches the bundled ones. Your own work is safe. Mostly from you.',
+            },
+            {
+                id: 'filters', tab: '.ica--workspace-tab[data-workspace-view="manage"]', optional: true,
+                targets: ['#ica--agentTabs', '#ica--search'],
+                title: 'Find an agent',
+                body: '**All**, **Pinned**, **Before reply**, **After reply** and **Companions** sort the list by when an agent runs. The search box and category filter narrow it further.\nFilters only change what you see. They never switch an agent off.',
+                hint: 'Hidden is not off. People mix those up constantly.',
+            },
+            {
+                id: 'card', tab: '.ica--workspace-tab[data-workspace-view="manage"]',
+                targets: ['#ica--agentList .ica--agent-card .ica--card-header', '#ica--agentList'],
+                title: 'Reading an agent card',
+                body: 'The switch on the left turns this agent on or off. Beside the name, the card shows whether it works **Inline** or as a **Companion**, and whether it runs before or after the reply.\nThe small labels underneath summarise its settings, such as its chance to run, its depth, whether it rewrites the reply, its connection and its **Order**. The star pins it, and the handle lets you drag it into a new position.',
+                emptyBody: 'Your agent list is empty, so there is no card to show yet. Use **Browse library** or **Create agent** first.\nEach card has a switch, shows whether the agent works inline or as a companion and when it runs, and lists its main settings underneath.',
+                hint: 'Read the labels. They tell you most of the story without opening anything.',
+            },
+            {
+                id: 'card-actions', tab: '.ica--workspace-tab[data-workspace-view="manage"]',
+                targets: ['#ica--agentList .ica--agent-card .ica--card-actions', '#ica--agentList'],
+                title: 'Card buttons',
+                body: '**Run** or **Apply to reply** runs the agent now on the latest reply. **Settings** opens a short form with the most common options. **Edit** opens the full editor, which we look at next.\n**More actions** holds Preview, Apply to target, a switch between inline and companion, Export and Delete. Companions also get **Batch & connect** and their own history.',
+                hint: 'Run it once by hand before you trust it on autopilot.',
+            },
+            {
+                id: 'editor-basics', dialog: 'editor', tab: '#ica--editor-tab-basics',
+                targets: ['#ica--editor-panel-basics'],
+                title: 'The editor: basics',
+                body: 'The tour opened the editor for you. It closes again without saving when we move on.\n**Run timing** decides when the agent works: before the reply is written, after it, or both. **Where results go** decides the kind of agent: **Prompt or reply** makes it inline, **Companion note** makes it a companion with its own **Companion output** tab.',
+                hint: 'Timing and destination. Get those two right and the rest is detail.',
+            },
+            {
+                id: 'editor-instructions', dialog: 'editor', tab: '#ica--editor-tab-instructions',
+                targets: ['#ica--editor-panel-instructions'],
+                title: 'Instructions and model',
+                body: 'The large box holds the agent’s instructions. **Macros** such as {{char}} and {{user}} are filled in when it runs, and the preview button shows the finished text.\nEach agent can use its own **Connection profile** and **Model override**, so a cheap, fast model can do the small jobs. The refine button asks a model to improve the instructions and shows the original and new versions side by side before anything changes.',
+                hint: 'Small jobs, small model. Your wallet will thank you.',
+            },
+            {
+                id: 'editor-before', dialog: 'editor', tab: '#ica--editor-tab-when', open: '#ica--before-mode-controls > summary',
+                targets: ['#ica--injection-section', '#ica--editor-panel-when'],
+                title: 'Before the reply: inject or intercept',
+                body: 'These controls appear when the agent runs before the reply. **Inject** adds the agent’s prompt to the main request, which costs nothing extra. **Intercept** makes a separate request first and can **Replace**, **Wrap** or **Patch** part of the context, so it costs more.\n**Position**, **Depth** and **Role** choose where injected text goes: in the prompt, or a number of messages back in the chat, sent as system, user or assistant text. The scan option lets words in this prompt trigger lorebook entries.',
+                hint: 'Inject is free. Intercept is a second request. Choose like you pay for it, because you do.',
+            },
+            {
+                id: 'editor-conditions', dialog: 'editor', tab: '#ica--editor-tab-when',
+                targets: ['#ica--editor-panel-when'],
+                title: 'When it runs',
+                body: '**Order** decides which agent goes first; lower numbers run earlier. It is a sequence, not a ranking of importance. **Probability** is the chance it runs when everything else matches.\n**Trigger keywords** limit it to chats that mention certain words; leave them empty to run every time. **Generation types** choose whether it runs for normal replies, Continue, Impersonate or background requests.',
+                hint: 'Keywords keep a specialist agent quiet until it is actually needed.',
+            },
+            {
+                id: 'editor-reply', dialog: 'editor', tab: '#ica--editor-tab-reply', optional: true,
+                targets: ['#ica--editor-panel-reply'],
+                title: 'After the reply: reply changes',
+                body: 'A **post-generation pass** sends the finished reply to the agent for a second look. **Rewrite current message** replaces the reply with the agent’s version; **Append generated content** adds its text to the end instead.\nYou can also run these passes on text written for you with Impersonate, or on companion notes before they are saved. Every change is kept in the message’s history, where you can compare the old and new text and undo it.',
+                hint: 'A proofreader that never sleeps. Check its work anyway.',
+            },
+            {
+                id: 'editor-companion', dialog: 'editor', tab: '#ica--editor-tab-basics',
+                targets: ['#ica--editor-execution', '#ica--editor-panel-basics'],
+                title: 'Companions in depth',
+                body: 'Set **Where results go** to **Companion note** and the **Companion output** tab appears. There you choose whether the companion runs automatically or only when asked, how its note is shown, and how much of the chat, character card, persona and lorebooks it reads.\nNotes can be fed back into later replies, so a companion can keep a plot outline or a tracker that the main model follows. Advanced routing lets companions run in a batch, share context or wait for each other.',
+                hint: 'Companions take notes. The reply stays yours.',
+            },
+            {
+                id: 'editor-regex', dialog: 'editor', tab: '#ica--editor-tab-regex',
+                targets: ['#ica--editor-panel-regex'],
+                title: 'Tidy the output with regex',
+                body: '**Regex** scripts are find-and-replace rules that tidy an agent’s output, for example to hide tracker tags or reformat a block. Each agent keeps its own scripts.\nBundled agents can restore their original scripts if you change them and regret it.',
+                hint: 'Regex is powerful and unforgiving. Test on a copy.',
+            },
+            {
+                id: 'editor-save', dialog: 'editor',
+                targets: ['.popup-controls'],
+                title: 'Save or walk away',
+                body: '**Save** keeps your changes to this agent. **Cancel** closes the editor and forgets them.\nThe tour presses Cancel for you on the next step, so nothing you looked at was changed.',
+                hint: 'Nothing saved. I am careful with other people’s things.',
+            },
+            {
+                id: 'connections', tab: '.ica--workspace-tab[data-workspace-view="connections"]',
+                targets: ['#ica--panel-connections .ica--settings-group:nth-of-type(1)'],
+                title: 'Default connections',
+                body: '**Connections & defaults** holds settings shared by every agent. **Default connection profile** is used by any agent without its own profile; **Current connection** follows the model you chat with.\n**Companion connection profile** gives companions a separate default. A quick, inexpensive model is usually enough for notes.',
+                hint: 'Set the defaults once. Override only where it matters.',
+            },
+            {
+                id: 'rhythm', tab: '.ica--workspace-tab[data-workspace-view="connections"]',
+                targets: ['#ica--panel-connections .ica--settings-group:nth-of-type(2)'],
+                title: 'Together or one at a time',
+                body: '**Run together** starts several agents at once, which is faster. **Run one at a time** is gentler on services that limit how many requests you send.\nThe last switch lets companions start while reply changes are still running, instead of waiting for them to finish.',
+                hint: 'If your provider starts refusing requests, slow down here first.',
+            },
+            {
+                id: 'context', tab: '.ica--workspace-tab[data-workspace-view="connections"]',
+                targets: ['#ica--panel-connections .ica--settings-group:nth-of-type(3)'],
+                title: 'Context and notices',
+                body: '**Helper prefill messages** add text to the start of every agent request, written as [system], [user] or [assistant] blocks. **Keep individual and group chat switches separate** lets group chats use different agents.\nThe notification switches control the small notices about reply changes. **Companion panel button** chooses where the button for the companion panel sits.',
+                hint: 'Fewer notices, calmer chat. Your call.',
+            },
+            {
+                id: 'pawthfinder', tab: '.ica--workspace-tab[data-workspace-view="connections"]', optional: true,
+                targets: ['#ica--panel-connections .ica--settings-group:nth-of-type(4)'],
+                title: 'Pawthfinder',
+                body: '**Pawthfinder** is a bundled agent with its own page. It looks things up in your lorebooks while you chat. This switch keeps it available, and **Open Pawthfinder** takes you to its settings.',
+                hint: 'My own little project. Treat it kindly.',
+            },
+            {
+                id: 'glossary',
+                targets: ['#ica--workspaceNav a[href="/docs/in-chat-agents-glossary"]'],
+                optional: true,
+                title: 'The glossary',
+                body: 'The **ICA glossary** explains every term on this page in more detail. It opens in a new tab, so you will not lose your place here.',
+                hint: 'I wrote notes in the margins. You will find them.',
+            },
+            {
+                id: 'done',
+                targets: ['.neconyan-tool-tour-button'],
+                title: 'That is the whole page',
+                body: 'Start with one agent from the library, run it once by hand, then switch it on. Open **Edit** when you want to change when it runs, which model it uses or what it does to the reply.\nPress **Tour** whenever you want this walk again.',
+                hint: 'Now, about that cigarette.',
+            },
+        ],
+    },
     persona: {
         assistant: 'miso',
         name: 'Persona',
@@ -1063,6 +1237,9 @@ const tour = {
     token: 0,
     opener: null,
     spacer: null,
+    dialog: null,
+    dialogConfig: null,
+    dialogObserver: null,
 };
 
 function element(tag, className = '', text = '') {
@@ -1109,15 +1286,106 @@ function coveredByCard(node) {
     return rect.bottom > card.top && rect.top < card.bottom && rect.right > card.left && rect.left < card.right;
 }
 
+function getDialogConfig(step) {
+    return step?.dialog ? TOOL_PAGES[tour.key]?.dialogs?.[step.dialog] ?? null : null;
+}
+
+function stepScope(step) {
+    return step?.dialog ? tour.dialog : tour.root;
+}
+
+function isDialogStepShown(step) {
+    // Until the dialog is open its tabs cannot be checked, so keep the step and decide once it opens.
+    if (!tour.dialog) return true;
+    const tab = step.tab ? tour.dialog.querySelector(step.tab) : null;
+    if (step.tab) return Boolean(tab && !tab.hidden);
+    return step.targets.some(selector => tour.dialog.querySelector(selector));
+}
+
 function currentSteps() {
     const root = tour.root;
     const emptyWhen = TOOL_PAGES[tour.key]?.emptyWhen;
     const empty = Boolean(emptyWhen && root?.querySelector(emptyWhen));
     return getToolTourSteps(tour.key, {
         empty,
-        isShown: step => Boolean(root && (step.targets.some(selector => findShown(root, selector))
+        isShown: step => step.dialog ? isDialogStepShown(step) : Boolean(root && (step.targets.some(selector => findShown(root, selector))
             || (step.tab && findShown(root, step.tab) && step.targets.some(selector => root.querySelector(selector))))),
     });
+}
+
+function releaseTourDialog() {
+    tour.dialogObserver?.disconnect();
+    tour.dialogObserver = null;
+    tour.dialog = null;
+    tour.dialogConfig = null;
+    if (tour.card && tour.card.parentElement !== document.body) {
+        tour.card.style.removeProperty('bottom');
+        document.body.append(tour.card);
+    }
+}
+
+function closeTourDialog() {
+    const dialog = tour.dialog;
+    const config = tour.dialogConfig;
+    if (!dialog) return;
+    releaseTourDialog();
+    if (dialog.open && !dialog.hasAttribute('closing')) findShown(dialog, config?.close ?? '')?.click();
+}
+
+function onTourDialogClosing() {
+    const dialog = tour.dialog;
+    if (!dialog || (dialog.open && !dialog.hasAttribute('closing'))) return;
+    // The user closed the dialog, so the tour carries on with the first step outside it.
+    releaseTourDialog();
+    if (!tour.card) return;
+    const steps = currentSteps();
+    const index = steps.findIndex(step => step.id === tour.stepId);
+    if (!steps[index]?.dialog) return;
+    const next = steps.slice(index).find(step => !step.dialog);
+    if (next) void show(next.id);
+    else endToolTour({ restoreFocus: false });
+}
+
+async function openTourDialog(step, token) {
+    const config = getDialogConfig(step);
+    if (!config) return null;
+    if (tour.dialog?.isConnected && tour.dialog.open && tour.dialogConfig === config) return tour.dialog;
+    closeTourDialog();
+    let host = findShown(document, config.root);
+    if (!host) {
+        const opener = config.openers.map(selector => findShown(tour.root, selector)).find(Boolean);
+        if (!opener) return null;
+        opener.click();
+        for (let attempt = 0; attempt < 40 && !host; attempt++) {
+            await wait(100);
+            if (token !== tour.token) return null;
+            host = findShown(document, config.root);
+        }
+    }
+    const dialog = host?.closest('dialog');
+    if (!dialog || token !== tour.token) return null;
+    tour.dialog = dialog;
+    tour.dialogConfig = config;
+    tour.dialogObserver = new MutationObserver(onTourDialogClosing);
+    tour.dialogObserver.observe(dialog, { attributes: true, attributeFilter: ['closing', 'open'] });
+    // A modal dialog makes everything outside it unclickable, so the card moves inside while the dialog is open.
+    if (tour.card) {
+        dialog.append(tour.card);
+        // The card sits above the dialog's own buttons so Save and Cancel stay reachable.
+        const controls = findShown(dialog, '.popup-controls');
+        const clearance = controls ? Math.max(0, window.innerHeight - controls.getBoundingClientRect().top) : 0;
+        if (clearance) tour.card.style.bottom = `${Math.ceil(clearance + 12)}px`;
+    }
+    return dialog;
+}
+
+function selectDialogSection(step, scope) {
+    const tab = scope.querySelector(step.tab);
+    const select = tour.dialogConfig?.sectionSelect ? findShown(scope, tour.dialogConfig.sectionSelect) : null;
+    const value = tab?.dataset.editorTab;
+    if (!select || !value || tab.hidden || select.value === value) return;
+    select.value = value;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 function clearTarget() {
@@ -1144,12 +1412,14 @@ function refreshTourTarget() {
 }
 
 function openStep(step) {
-    if (!tour.root) return;
-    const tab = step.tab ? findShown(tour.root, step.tab) : null;
+    const scope = stepScope(step);
+    if (!scope) return;
+    const tab = step.tab ? findShown(scope, step.tab) : null;
     if (tab?.getAttribute('aria-selected') === 'false') tab.click();
+    else if (!tab && step.tab && step.dialog) selectDialogSection(step, scope);
     if (!step.open) return;
     for (const selector of [].concat(step.open)) {
-        const header = findShown(tour.root, selector);
+        const header = findShown(scope, selector);
         const details = header?.closest('details');
         if (details && !details.open) details.open = true;
         else if (header?.getAttribute('aria-expanded') === 'false' || header?.getAttribute('aria-pressed') === 'false') header.click();
@@ -1167,11 +1437,30 @@ function renderCopy(host, text) {
 async function show(stepId) {
     if (!tour.card) return;
     const token = ++tour.token;
-    const steps = currentSteps();
+    let steps = currentSteps();
     const step = steps.find(item => item.id === stepId) || steps[0];
     if (!step) return;
     clearTarget();
     tour.stepId = step.id;
+    if (step.dialog) {
+        const dialog = await openTourDialog(step, token);
+        if (token !== tour.token) return;
+        if (!dialog) {
+            const after = steps.slice(steps.indexOf(step)).find(item => !item.dialog);
+            if (after) void show(after.id);
+            return;
+        }
+        steps = currentSteps();
+        if (!steps.some(item => item.id === step.id)) {
+            const all = getToolPage(tour.key).steps;
+            const nextId = all.slice(all.findIndex(item => item.id === step.id) + 1)
+                .find(item => steps.some(entry => entry.id === item.id))?.id;
+            if (nextId) void show(nextId);
+            return;
+        }
+    } else {
+        closeTourDialog();
+    }
     openStep(step);
     const index = Math.max(0, steps.findIndex(item => item.id === step.id));
     const card = tour.card;
@@ -1188,7 +1477,8 @@ async function show(stepId) {
     }
     await wait(60);
     if (token !== tour.token) return;
-    const target = step.targets.map(selector => findShown(tour.root, selector)).find(Boolean);
+    const scope = stepScope(step);
+    const target = scope ? step.targets.map(selector => findShown(scope, selector)).find(Boolean) : null;
     if (!target) return;
     tour.target = target;
     target.classList.add('neconyan-tool-tour-target');
@@ -1310,6 +1600,8 @@ export function startToolTour(id, root, heading = null) {
 export function endToolTour({ restoreFocus = true } = {}) {
     tour.token++;
     clearInterval(tour.watch);
+    clearTarget();
+    closeTourDialog();
     tour.observer?.disconnect();
     tour.observer = null;
     tour.root?.removeEventListener('click', followMewmoryTab);

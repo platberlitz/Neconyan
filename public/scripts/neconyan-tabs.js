@@ -158,38 +158,41 @@ const NN_PANEL_STYLESHEETS = Object.freeze({
     ],
     'characters:persona': [
         { href: 'css/personas.css?v=20260912h', id: 'deferred-personas-css' },
-        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261002-agents-tour1', id: 'deferred-tool-pages-css' },
     ],
     'left:api': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261002-agents-tour1', id: 'deferred-tool-pages-css' },
     ],
     'left:presets': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261002-agents-tour1', id: 'deferred-tool-pages-css' },
     ],
     'left:sampling': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261002-agents-tour1', id: 'deferred-tool-pages-css' },
     ],
     'left:advanced-formatting': [
         { href: 'css/macros.css', id: 'deferred-macros-css' },
-        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261002-agents-tour1', id: 'deferred-tool-pages-css' },
     ],
     'left:mewmory': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261002-agents-tour1', id: 'deferred-tool-pages-css' },
+    ],
+    'left:agents': [
+        { href: 'css/neconyan-tool-pages.css?v=20261002-agents-tour1', id: 'deferred-tool-pages-css' },
     ],
     'right:extensions': [
         { href: 'css/extensions-panel.css?v=20260425a', id: 'deferred-extensions-panel-css' },
     ],
     'right:background': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261002-agents-tour1', id: 'deferred-tool-pages-css' },
     ],
     'right:server': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261002-agents-tour1', id: 'deferred-tool-pages-css' },
     ],
     'right:console-logs': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261002-agents-tour1', id: 'deferred-tool-pages-css' },
     ],
     'right:included-tool': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261002-agents-tour1', id: 'deferred-tool-pages-css' },
     ],
 });
 const NN_FRONTEND_ICON_DEFAULT = 'calico';
@@ -496,7 +499,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261002d';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261002e';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -2883,6 +2886,7 @@ const NN_NATIVE_SHELL_PAGES = Object.freeze({
     'left:sampling': 'sampling',
     'left:advanced-formatting': 'formatting',
     'left:mewmory': 'mewmory',
+    'left:agents': 'agents',
     'right:background': 'background',
     'right:server': 'server',
     'right:console-logs': 'console-logs',
