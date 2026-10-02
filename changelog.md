@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.0
+
+### Merged Staging PRs
+- PR #4 (2026-10-02) `fix: italian translation`
+
 ## v1.0.6
 
 ### Merged Staging PRs
