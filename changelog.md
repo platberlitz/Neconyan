@@ -7,6 +7,7 @@
 - PR #5 (2026-10-02) `feat: add Windows 98, Windows Aero and Windows Aero Light themes`
 - PR #6 (2026-10-02) `fix: log the Roleplay workflow routing decision and stream finish reason`
 - PR #7 (2026-10-02) `fix: use the configured reply length for Roleplay workflow generations`
+- PR #8 (2026-10-02) `fix: coerce numeric chat settings so a quoted context size cannot block the Roleplay workflow`
 
 ## v1.0.6
 
