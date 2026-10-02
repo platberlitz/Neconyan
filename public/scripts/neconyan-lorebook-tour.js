@@ -83,6 +83,81 @@ const LOREBOOK_TOUR_STEPS = Object.freeze([
         hint: 'Short notes are cheaper. I like cheap. I mean, efficient.',
     },
     {
+        id: 'logic',
+        view: 'book',
+        needs: 'entry',
+        open: 'entry',
+        targets: ['.world_entry_edit .keysecondary', '.world_entry_edit select[name="entryLogicType"]'],
+        title: 'Narrow it down with a filter',
+        body: '**Optional Filter** is a second list of words that is checked after the keywords match. **Logic** decides what it needs.\n**AND ANY** needs at least one filter word as well. **AND ALL** needs every filter word. **NOT ANY** keeps the entry out if any filter word appears, and **NOT ALL** keeps it out only when all of them appear.\nLeave the filter empty and only the keywords count.',
+        hint: '\'Mara\' with NOT ANY \'funeral\' keeps her party plans out of the sad scene. I am a very sensitive cat.',
+    },
+    {
+        id: 'placement',
+        view: 'book',
+        needs: 'entry',
+        open: 'entry',
+        targets: ['.world_entry_edit .world_entry_placement_controls'],
+        title: 'Where it goes and who goes first',
+        body: '**Position** picks where the entry sits in what the model reads: before or after the character details, around the example messages or the Author\'s Note, or **@D** to place it inside the chat itself. **Outlet** holds it back for a prompt that asks for it.\n**Depth** only matters for **@D**: 0 puts it after the newest message, 4 puts it four messages back.\n**Order** settles ties when several entries land in the same place: higher numbers go closer to the end, where the model pays them more attention.\n**Trigger probability** is the chance, out of 100, that the entry joins in when its keywords match.',
+        hint: 'Depth 0 is shouting it in the model\'s ear. Use it for things that truly cannot be forgotten, like my snack schedule.',
+    },
+    {
+        id: 'advanced',
+        view: 'book',
+        needs: 'entry',
+        open: 'entry',
+        expand: 'advanced',
+        targets: ['.world_entry_edit .neconyan-entry-advanced > summary'],
+        title: 'Advanced entry settings',
+        body: 'Everything in here is optional. The defaults suit most entries, so only change what one entry really needs.\nI have opened it for you. Press **Next** and I will go through its three groups: **Activation rules**, **Inclusion and timing** and **Additional matching sources**.',
+        hint: 'The scary drawer. Do not worry, nothing in here bites. Except me, occasionally.',
+    },
+    {
+        id: 'recursion',
+        view: 'book',
+        needs: 'entry',
+        open: 'entry',
+        expand: 'advanced',
+        targets: ['.world_entry_edit .neconyan-entry-advanced-content > .neconyan-entry-flags'],
+        title: 'Entries that wake other entries',
+        body: 'When an entry joins in, its own text is searched for keywords too, so one entry can wake another. This is called **recursion**, and it needs **Recursive Scan** switched on in the lorebook settings.\n**Non-recursable** means other entries cannot wake this one. **Prevent further recursion** stops this one from waking others. **Delay until recursion** means only another entry can wake it, never the chat.\n**Ignore budget** lets it in even when the lorebook space is full. **Agent blacklisted** hides it from Agents that look things up in your lorebooks.',
+        hint: 'A mentions B, B mentions C, and suddenly the whole family tree turns up for dinner. That is recursion.',
+    },
+    {
+        id: 'overrides',
+        view: 'book',
+        needs: 'entry',
+        open: 'entry',
+        expand: 'advanced',
+        targets: ['.world_entry_edit .neconyan-entry-advanced-content [name="perEntryOverridesBlock"]'],
+        title: 'Rules for this entry only',
+        body: '**Selective** switches the Optional Filter on or off, and **Use Probability** does the same for Trigger probability.\nThe boxes beside them replace a lorebook-wide setting for this entry alone. Leave them on **Use global** unless this entry should behave differently.\n**Scan Depth** is how many recent messages are searched for its keywords. **Case-Sensitive** and **Whole Words** change how exactly a keyword must match.\n**Outlet Name** names the outlet for the **Outlet** position: write {{outlet::Name}} in a prompt and the entry appears there. **Automation ID** can run a Quick Reply when the entry joins in.',
+        hint: 'Whole Words on means \'cat\' will not match \'catastrophe\'. Learned that one the hard way.',
+    },
+    {
+        id: 'timing',
+        view: 'book',
+        needs: 'entry',
+        open: 'entry',
+        expand: 'advanced',
+        targets: ['.world_entry_edit .neconyan-entry-advanced-content > .flex-container:has(input[name="group"])'],
+        title: 'Groups and timing',
+        body: 'Entries with the same **Inclusion Group** name take turns: if several match at once, only one joins in. **Group Weight** makes one more likely to be picked, **Prioritize** lets it win outright, and **Group Scoring** picks the one with the most matching keywords.\n**Sticky** keeps an entry in for that many messages after it wakes. **Cooldown** makes it sit out that many messages afterwards. **Delay** keeps it out until the chat has at least that many messages.\n**Filter to Characters or Tags** limits the entry to the characters you list, or keeps it away from them with **Exclude**. **Filter to Generation Triggers** limits it to kinds of reply, such as swipes or continues.',
+        hint: 'Three moods for one character, one group, and the model only ever sees one. Very tidy. Very unlike my room.',
+    },
+    {
+        id: 'sources',
+        view: 'book',
+        needs: 'entry',
+        open: 'entry',
+        expand: 'advanced',
+        targets: ['.world_entry_edit .neconyan-entry-advanced-content > .neconyan-entry-flags:last-child'],
+        title: 'Look beyond the chat',
+        body: 'Keywords are normally only searched for in the chat messages. Tick any of these to also search the character\'s description, personality, scenario, notes or your persona.\nUse it for an entry that should follow a character around, whatever is being said.',
+        hint: 'Now the book can read the character sheet too. Nosy, like me.',
+    },
+    {
         id: 'health',
         view: 'book',
         needs: 'book',
@@ -98,6 +173,24 @@ const LOREBOOK_TOUR_STEPS = Object.freeze([
         title: 'Switch the book on',
         body: 'A book only works once it is switched on. Choose it in this list to use it in every chat.\nTo tie a book to one character instead, open their card and press **Character Lore**.',
         hint: 'A lorebook nobody switched on is just a very well-organised diary. Mine is badly organised, but that is beside the point.',
+    },
+    {
+        id: 'global-budget',
+        open: 'settings',
+        expand: 'activation',
+        targets: ['#wiSliders', '#wiActivationCard'],
+        title: 'How much the lorebooks may add',
+        body: 'These settings apply to every lorebook at once. **Scan Depth** is how many recent messages are searched for keywords.\n**Context %** and **Budget Cap** limit how much of the model\'s reading space entries may take. When it is full, the rest are left out, so keep this in mind for big books.\n**Min Activations** keeps searching further back until at least that many entries have joined, but never past **Max Depth**. **Max Recursion Steps** limits how many times in a row entries may wake each other.\n**Insertion Strategy** decides whether the character\'s own lorebook or the global ones go first.',
+        hint: 'A budget. For words. Even my lorebooks are on a diet.',
+    },
+    {
+        id: 'global-matching',
+        open: 'settings',
+        expand: 'activation',
+        targets: ['#wiCheckboxes'],
+        title: 'Matching rules for every book',
+        body: '**Include Names** also searches the names of whoever is speaking. **Recursive Scan** lets entries wake other entries.\n**Case Sensitive** and **Match Whole Words** set how exactly keywords must match; an entry can still choose its own. **Use Group Scoring** turns on group scoring everywhere.\n**Alert On Overflow** warns you when entries were left out because the budget was full.',
+        hint: 'Turn on the overflow alert. Silent failures are how I lost three naps last week.',
     },
     {
         id: 'done',
@@ -295,9 +388,21 @@ async function prepare(step) {
         findShown(root, ENTRY_EDIT_BUTTON)?.click();
         await waitFor(() => Boolean(findShown(root, ENTRY_KEYWORDS)), 2000);
     }
+    if (step.expand === 'advanced') {
+        const advanced = findShown(root, '.world_entry_edit .neconyan-entry-advanced');
+        if (advanced instanceof HTMLDetailsElement) advanced.open = true;
+    }
     if (step.open === 'settings') {
         const details = root.querySelector('.neconyan-lorebook-secondary-settings');
         if (details instanceof HTMLDetailsElement) details.open = true;
+    }
+    if (step.expand === 'activation') {
+        const card = root.querySelector('#wiActivationCard');
+        const content = card?.querySelector('.inline-drawer-content');
+        if (content && !isShown(content)) {
+            card.querySelector('.inline-drawer-toggle')?.click();
+            await waitFor(() => isShown(content), 1500);
+        }
     }
 }
 
