@@ -172,7 +172,7 @@ const NECONYAN_PALETTE_BINDINGS = Object.freeze([
     ['shadow_color', '#shadow-color-picker', 'shadow'],
     ['border_color', '#border-color-picker', 'border'],
 ]);
-const NN_ACCENT_PROFILE_SEED_VERSION = 2;
+const NN_ACCENT_PROFILE_SEED_VERSION = 3;
 const NN_ACCENT_PROFILES_DRAWER_KEY = 'SBAccentProfilesDrawerExpanded';
 const MAX_NN_ACCENT_PROFILE_NAME_LENGTH = 40;
 const NECONYAN_ACCENT_PROFILE_SEEDS = Object.freeze([
@@ -206,6 +206,14 @@ const NECONYAN_ACCENT_PROFILE_SEEDS = Object.freeze([
     { name: 'Pearl', quote_text_color: 'rgba(226, 232, 240, 1)', underline_text_color: 'rgba(148, 163, 184, 1)' },
     { name: 'Mango Tango', quote_text_color: 'rgba(251, 146, 60, 1)', underline_text_color: 'rgba(253, 186, 116, 1)' },
     { name: 'Neptune', quote_text_color: 'rgba(37, 99, 235, 1)', underline_text_color: 'rgba(34, 211, 238, 1)' },
+    { name: 'Midnight Ink', quote_text_color: 'rgba(30, 41, 72, 1)', underline_text_color: 'rgba(80, 96, 144, 1)' },
+    { name: 'Black Cherry', quote_text_color: 'rgba(88, 28, 58, 1)', underline_text_color: 'rgba(148, 58, 95, 1)' },
+    { name: 'Aubergine', quote_text_color: 'rgba(64, 35, 82, 1)', underline_text_color: 'rgba(116, 72, 138, 1)' },
+    { name: 'Deep Ocean', quote_text_color: 'rgba(18, 58, 76, 1)', underline_text_color: 'rgba(35, 106, 126, 1)' },
+    { name: 'Pine Shadow', quote_text_color: 'rgba(29, 62, 49, 1)', underline_text_color: 'rgba(67, 111, 80, 1)' },
+    { name: 'Espresso', quote_text_color: 'rgba(66, 42, 33, 1)', underline_text_color: 'rgba(119, 79, 54, 1)' },
+    { name: 'Storm Slate', quote_text_color: 'rgba(45, 52, 64, 1)', underline_text_color: 'rgba(93, 107, 127, 1)' },
+    { name: 'Oxblood', quote_text_color: 'rgba(89, 27, 32, 1)', underline_text_color: 'rgba(145, 60, 49, 1)' },
 ]);
 const THEME_COLOR_PROPERTIES = Object.freeze([
     { key: 'main_text_color', selector: '#main-text-color-picker', type: 'main' },

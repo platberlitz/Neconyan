@@ -42,6 +42,18 @@ for (const phone of [false, true]) {
             expect(await page.evaluate(() => getComputedStyle(document.body, '::before').backgroundSize)).toBe(size);
         }
 
+        for (const name of ['Midnight Ink', 'Black Cherry', 'Aubergine', 'Deep Ocean', 'Pine Shadow', 'Espresso', 'Storm Slate', 'Oxblood']) {
+            const button = page.locator(`.sb-accent-profile-apply[aria-label="Apply ${name} accent profile"]`);
+            await expect(button).toHaveCount(1);
+            const applied = await button.evaluate(el => {
+                const swatch = getComputedStyle(el).getPropertyValue('--sb-accent-profile-primary').trim();
+                el.click();
+                const style = getComputedStyle(document.body);
+                return { swatch, primary: style.getPropertyValue('--neco-ginger').trim(), ink: style.getPropertyValue('--neco-accent-ink').trim() };
+            });
+            expect(applied.primary).toBe(applied.swatch);
+            expect(applied.ink).toBe('rgb(255, 255, 255)');
+        }
         await page.evaluate(() => document.querySelector('.sb-accent-profile-apply').click());
         const readAccents = () => page.evaluate(() => {
             const style = getComputedStyle(document.body);

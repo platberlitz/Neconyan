@@ -2,6 +2,7 @@ import { describe, expect, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const readSource = (...parts) => readFileSync(path.join(repoRoot, ...parts), 'utf8').replace(/\r\n/g, '\n');
@@ -15,11 +16,11 @@ describe('Neconyan accent color profiles', () => {
     test('ships a generous seeded profile set by default', () => {
         const seedNames = [...seedBlock.matchAll(/name: '([^']+)'/g)].map(match => match[1]);
 
-        expect(powerUserSource).toContain('const NN_ACCENT_PROFILE_SEED_VERSION = 2;');
+        expect(powerUserSource).toContain('const NN_ACCENT_PROFILE_SEED_VERSION = 3;');
         expect(powerUserSource).toContain('sb_accent_profiles: NECONYAN_ACCENT_PROFILE_SEEDS.map(profile => ({ ...profile }))');
         expect(powerUserSource).toContain('sb_accent_profiles_seed_version: NN_ACCENT_PROFILE_SEED_VERSION');
         expect(powerUserSource).toContain('function normalizeAccentProfiles()');
-        expect(seedNames).toHaveLength(30);
+        expect(seedNames).toHaveLength(38);
         expect(seedNames).toEqual(expect.arrayContaining([
             'Warm Signal',
             'Story Moss',
@@ -29,7 +30,31 @@ describe('Neconyan accent color profiles', () => {
             'Aurora Veil',
             'Solar Flare',
             'Neptune',
+            'Midnight Ink',
+            'Black Cherry',
+            'Aubergine',
+            'Deep Ocean',
+            'Pine Shadow',
+            'Espresso',
+            'Storm Slate',
+            'Oxblood',
         ]));
+    });
+
+    test('adds dark profiles once during migration without replacing personal colours', () => {
+        const constants = powerUserSource.slice(powerUserSource.indexOf('const NN_ACCENT_PROFILE_SEED_VERSION'), powerUserSource.indexOf('const THEME_COLOR_PROPERTIES'));
+        const functions = powerUserSource.slice(powerUserSource.indexOf('function getSeedAccentProfiles()'), powerUserSource.indexOf('function getAccentProfile(index)'));
+        const personal = { name: 'My colours', quote_text_color: 'rgba(12, 34, 56, 1)', underline_text_color: 'rgba(65, 43, 21, 1)' };
+        const editedSeed = { ...personal, name: 'Warm Signal' };
+        const state = { sb_accent_profiles: [personal, editedSeed], sb_accent_profiles_seed_version: 2 };
+        const normalize = runInNewContext(`${constants}\n${functions}\nnormalizeAccentProfiles`, { power_user: state });
+        expect(normalize()).toBe(true);
+        expect(state.sb_accent_profiles_seed_version).toBe(3);
+        expect(state.sb_accent_profiles).toHaveLength(39);
+        expect(state.sb_accent_profiles.slice(0, 2)).toEqual([personal, editedSeed]);
+        expect(state.sb_accent_profiles.some(profile => profile.name === 'Midnight Ink')).toBe(true);
+        expect(normalize()).toBe(false);
+        expect(state.sb_accent_profiles).toHaveLength(39);
     });
 
     test('persists profiles in power_user and migrates seeds during settings load', () => {
