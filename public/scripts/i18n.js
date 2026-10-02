@@ -204,7 +204,8 @@ function findLang(language) {
 function translateElement(element) {
     const keys = element.getAttribute('data-i18n')?.split(';') ?? []; // An observed attribute may have been removed.
     for (const key of keys) {
-        const attributeMatch = key.match(/\[(\S+)\](.+)/); // [attribute]key
+        // Neconyan: anchored, unlike SillyTavern, so '[SP]' inside a sentence is not read as an attribute name. Same expression as scripts/build-interface-locales.js.
+        const attributeMatch = key.match(/^\[([^\]]+)\](.+)$/); // [attribute]key
         if (attributeMatch) { // attribute-tagged key
             const localizedValue = localeData?.[attributeMatch[2]];
             if (localizedValue || localizedValue === '') {
@@ -245,7 +246,7 @@ async function getMissingTranslations() {
         $(document).find('[data-i18n]').each(function () {
             const keys = $(this).data('i18n').split(';'); // Multi-key entries are ; delimited
             for (const key of keys) {
-                const attributeMatch = key.match(/\[(\S+)\](.+)/); // [attribute]key
+                const attributeMatch = key.match(/^\[([^\]]+)\](.+)$/); // [attribute]key
                 if (attributeMatch) { // attribute-tagged key
                     const localizedValue = localeData?.[attributeMatch[2]];
                     if (!localizedValue) {
