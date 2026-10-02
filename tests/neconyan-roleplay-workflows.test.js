@@ -418,3 +418,21 @@ test('a call site the host will not serve keeps the browser path', async () => {
     expect(await workflows.runNativeRoleplayGeneration('normal')).toBeNull();
     expect(requests).toHaveLength(0);
 });
+
+test.each([
+    ['group-1', true],
+    ['another-group', false],
+    [null, false],
+])('a completed group reply reloads only its selected group (%s), even with a speaker avatar', async (selectedGroup, shouldReload) => {
+    jest.resetModules();
+    jest.unstable_mockModule('../public/scripts/group-chats.js', () => ({ selected_group: selectedGroup }));
+    const groupWorkflows = await import('../public/scripts/neconyan-conversation/roleplay-workflows.js');
+    // The avatar mock remains Nova, just as group sending temporarily selects its speaker.
+    const pending = groupWorkflows.submitRoleplayGroupTurn({ groupId: 'group-1', forcedAvatars: ['nova.png'], generationId: 'readback-turn' });
+    await settle();
+    expect(requests.find(entry => entry.url.endsWith('/group/submit')).body.source.locator)
+        .toEqual({ chat: 'roleplay', group: true, groupId: 'group-1' });
+    await observers.get('job-1').onStop('done');
+    expect(await pending).toMatchObject({ accepted: true, state: 'closed' });
+    expect(reloads).toEqual(shouldReload ? [2] : []);
+});

@@ -13,6 +13,7 @@
  */
 import { activateSendButtons, chat, deactivateSendButtons, extension_prompts, getActiveGenerationAcknowledgement, getCurrentChatId, getRequestHeaders, isChatSaving, isGenerating, reloadCurrentChat, saveChatConditional, saveSettings, substituteParams, willRunNativeRoleplayWorkflow } from '../../script.js';
 import { activeGenerationInterceptors } from '../extensions.js';
+import { selected_group } from '../group-chats.js';
 import { cancelJob, listJobs, observeJob, TERMINAL } from '../jobs.js';
 import { roleplayAccountStamp } from '../roleplay-save-chain.js';
 import { getCurrentUserHandle } from '../user.js';
@@ -111,6 +112,14 @@ function currentLocator() {
     const avatar = String(getCurrentCharAvatar() || '');
     if (!chatName || !avatar) return null;
     return { chat: chatName, avatar, group: false };
+}
+
+function matchesCurrentWorkflowLocator(locator) {
+    if (!locator || String(getCurrentChatId() || '').replace(/\.jsonl$/, '') !== locator.chat) return false;
+    // Sending a group message temporarily selects its speaker. That is still a
+    // group chat, so the speaker's avatar must not block its saved reply readback.
+    if (locator.group) return Boolean(selected_group) && String(selected_group) === locator.groupId;
+    return !selected_group && currentLocator()?.avatar === locator.avatar;
 }
 
 /** The last block the host would continue, whoever wrote it, skipping hidden system blocks. */
@@ -320,10 +329,7 @@ async function readbackReceipt(key, name, options, id) {
             return null;
         }
         if (options.passive && (busyName || isGenerating() || isChatSaving)) return null;
-        const current = currentLocator();
-        const sameGroup = locator?.group && !getCurrentCharAvatar()
-            && String(getCurrentChatId() || '').replace(/\.jsonl$/, '') === locator.chat;
-        if (sameGroup || (current && locator && current.chat === locator.chat && current.avatar === locator.avatar)) {
+        if (matchesCurrentWorkflowLocator(locator)) {
             await reloadCurrentChat();
             adopted.set(id, receipt);
         }
@@ -384,7 +390,7 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, account 
         if (ended) return;
         stopPreview = observeRoleplayPreview(jobId, { account,
             isCurrent: () => account === getCurrentUserHandle()
-                && currentLocator()?.chat === locator?.chat && currentLocator()?.avatar === locator?.avatar,
+                && matchesCurrentWorkflowLocator(locator),
             onTerminal: value => {
                 if (value.state !== 'completed') {
                     if (value.error) globalThis.toastr?.error?.(value.error, 'Reply stopped');
@@ -486,11 +492,11 @@ export async function submitRoleplayWorkflow({ name, intent: named = {}, page = 
 export async function submitRoleplayGroupTurn({ groupId, forcedAvatars, generationId, signal = null, account = getCurrentUserHandle() }) {
     const chatName = String(getCurrentChatId() || '').replace(/\.jsonl$/, '');
     if (!chatName || !groupId) throw new Error('Open a saved group chat before generating.');
-    const locator = { chat: chatName, group: true };
+    const locator = { chat: chatName, group: true, groupId: String(groupId) };
     const stamp = roleplayAccountStamp().account;
     const payload = {
         key: createKey('group.reply'),
-        source: { locator: { ...locator, groupId: String(groupId) } },
+        source: { locator },
         messageCount: chat.length,
         forcedAvatars,
         generationId,

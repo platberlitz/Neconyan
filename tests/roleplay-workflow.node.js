@@ -23,7 +23,7 @@ const controls = { prompts: [{ identifier: 'main', role: 'system', content: '', 
 prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] }],
 function_calling: true };
 
-function prepared(t, effect = 'append', { assistant = false, pathfinder = false, autoSwipe = false, autoContinue = false } = {}) {
+function prepared(t, effect = 'append', { assistant = false, pathfinder = false, autoSwipe = false, autoContinue = false, continueTarget = 30 } = {}) {
     const f = fixture(t);
     const dirs = f.scope.directories;
     f.records[1].extra = {};
@@ -51,7 +51,7 @@ function prepared(t, effect = 'append', { assistant = false, pathfinder = false,
         world_info_settings: { world_info: { globalSelect: [] } },
         ...(autoSwipe || autoContinue ? { power_user: { ...(autoSwipe ? { auto_swipe: true,
             auto_swipe_minimum_length: 15, auto_swipe_blacklist: ['forbidden'], auto_swipe_blacklist_threshold: 2 } : {}),
-        ...(autoContinue ? { auto_continue: { enabled: true, allow_chat_completions: true, target_length: 30 } } : {}) } } : {}),
+        ...(autoContinue ? { auto_continue: { enabled: true, allow_chat_completions: true, target_length: continueTarget } } : {}) } } : {}),
         oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:18000/v1', function_calling: true },
         extension_settings: { connectionManager: { profiles: [{ id: 'main', api: 'custom', model: 'fixture', preset: 'Main',
             'api-url': 'http://127.0.0.1:18000/v1' }] },
@@ -99,6 +99,8 @@ function prepared(t, effect = 'append', { assistant = false, pathfinder = false,
 
 test('a saved root parks for one child, keeps the old chat until durable completion and replays without paying', async t => {
     const f = prepared(t);
+    assert.equal(f.request.capacity.maxTurns, 16);
+    assert.equal(f.request.capacity.companionTurns, 1);
     updateJob(f.dirs, f.jobId, { state: 'running' });
     const waiting = await runRoleplayWorkflowJob(f.context());
     assert.equal(waiting.waiting, true);
@@ -121,6 +123,7 @@ test('a saved root parks for one child, keeps the old chat until durable complet
 
 test('an automatic alternative freezes its rejection before paying another model turn and retains old swipes', async t => {
     const f = prepared(t, 'swipe', { autoSwipe: true });
+    assert.equal(f.request.capacity.companionTurns, 16);
     updateJob(f.dirs, f.jobId, { state: 'running' });
     await runRoleplayWorkflowJob(f.context());
     const calls = { count: 0, check(options, turn) {
@@ -147,6 +150,13 @@ test('an automatic alternative freezes its rejection before paying another model
     assert.equal(calls.count, 2);
 });
 
+test('a zero-target automatic continuation cannot multiply Companion text turns', t => {
+    const f = prepared(t, 'append', { autoContinue: true, continueTarget: 0 });
+    assert.equal(f.request.automatic.continuation.enabled, false);
+    assert.equal(f.request.capacity.companionTurns, 1);
+    assert.equal(f.request.capacity.maxTurns, 16);
+});
+
 test('automatic alternatives to a continuation preserve the original selected swipe and unrelated alternatives', async t => {
     const f = prepared(t, 'continue', { autoSwipe: true });
     updateJob(f.dirs, f.jobId, { state: 'running' });
@@ -166,6 +176,7 @@ test('automatic alternatives to a continuation preserve the original selected sw
 
 test('automatic continuation saves chunks and publishes only the complete selected reply', async t => {
     const f = prepared(t, 'append', { autoContinue: true });
+    assert.equal(f.request.capacity.companionTurns, 16);
     updateJob(f.dirs, f.jobId, { state: 'running' });
     await runRoleplayWorkflowJob(f.context());
     const calls = { count: 0, check(options, turn) {

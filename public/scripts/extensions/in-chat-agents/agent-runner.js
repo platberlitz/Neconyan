@@ -4226,6 +4226,11 @@ function onGenerationStarted(generationType, options, dryRun) {
     clearInChatAgentExtensionPrompts();
 }
 
+function onGroupWrapperStarted({ type, nativeRoleplay } = {}) {
+    // Native group turns do not dispatch a browser generation for each member.
+    if (nativeRoleplay) onGenerationStarted(type, { nativeRoleplay: true }, false);
+}
+
 function onGenerationEnded(_chatLength, generationContext) {
     if (generationContext && (generationContext.runId !== postProcessingGenerationRunId
         || generationContext.chatId !== getCurrentSnapshotChatId()
@@ -5924,6 +5929,9 @@ export function initAgentRunner() {
     setPromptStorePersistHook(() => { void persistPathfinderRuntimeSettingsToAgent(); });
 
     eventSource.on(event_types.GENERATION_STARTED, onGenerationStarted);
+    if (event_types.GROUP_WRAPPER_STARTED) {
+        eventSource.on(event_types.GROUP_WRAPPER_STARTED, onGroupWrapperStarted);
+    }
     eventSource.on(event_types.GENERATION_AFTER_COMMANDS, onGenerationAfterCommands);
     eventSource.on(event_types.GENERATION_ENDED, onGenerationEnded);
     eventSource.on(event_types.GENERATION_STOPPED, onGenerationStopped);

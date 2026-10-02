@@ -32,6 +32,11 @@ const historyKey = turn => `roleplay-workflow-history:${turn}`;
 const decisionKey = turn => `roleplay-workflow-decision:${turn}`;
 const speakerKey = index => `roleplay-workflow-speaker:${index}`;
 
+// Tool-only turns do not run Companions. Without automatic retries, each speaker
+// produces at most one text candidate, while all sixteen model turns remain reserved.
+const companionTurnLimit = (group, automatic) => automatic?.swipe?.enabled || automatic?.continuation?.enabled
+    ? MAX_TURNS : group?.speakers?.length ?? 1;
+
 export function captureRoleplayWorkflowRequest(base, account, source, { avatar, binding, maxTokens = 128,
     effect = 'append', named = null, forcedAvatars, selectedSpeakerAvatar, random, generationId } = {}) {
     if (named) {
@@ -65,7 +70,8 @@ export function captureRoleplayWorkflowRequest(base, account, source, { avatar, 
         : captureRoleplayWorkflowPolicy(base, account, source, worldInfo, { backend: binding.backend === 'text' ? 'text' : 'chat' });
     const companionBytes = Math.max(worldInfo.companionCapacity?.requiredBytes ?? 0,
         ...(speakers?.map(speaker => speaker.worldInfo.companionCapacity?.requiredBytes ?? 0) ?? []));
-    const capacity = captureRoleplayWorkflowCapacity(base, account, source, { companionBytes });
+    const capacity = captureRoleplayWorkflowCapacity(base, account, source,
+        { companionBytes, companionTurns: companionTurnLimit(group, automatic) });
     const stream = (!binding.backend || binding.backend === 'chat')
         && resolveGenerationProfile(base.directories, binding).active?.stream_openai === true;
     return { version: 1, avatar: selectedAvatar, effect, binding, maxTokens, worldInfo, stream,
@@ -82,6 +88,7 @@ export function admitRoleplayWorkflowJob(base, account, { operationKey, source, 
         Object.entries(request.capacity).filter(([key]) => key !== 'hash')))
         || request.capacity.version !== 1 || request.capacity.maxTurns !== MAX_TURNS
         || request.capacity.limitBytes !== MAX_WORKFLOW_CHAT_BYTES
+        || request.capacity.companionTurns !== companionTurnLimit(request.group, request.automatic)
         || request.capacity.companionBytes !== Math.max(request.worldInfo.companionCapacity?.requiredBytes ?? 0,
             ...(request.group?.speakers?.map(speaker => speaker.worldInfo?.companionCapacity?.requiredBytes ?? 0) ?? []))
         || request.capacity.sourceHash !== roleplayHash(source)
@@ -97,7 +104,7 @@ export function admitRoleplayWorkflowJob(base, account, { operationKey, source, 
         throw error('The saved workflow request changed before admission.', 'ROLEPLAY_WORKFLOW_INVALID');
     }
     if (roleplayHash(captureRoleplayWorkflowCapacity(base, account, source,
-        { companionBytes: request.capacity.companionBytes })) !== roleplayHash(request.capacity)) {
+        { companionBytes: request.capacity.companionBytes, companionTurns: request.capacity.companionTurns })) !== roleplayHash(request.capacity)) {
         throw error('The saved workflow chat capacity changed before admission.', 'ROLEPLAY_WORKFLOW_INVALID');
     }
     if (request.named !== undefined) {
