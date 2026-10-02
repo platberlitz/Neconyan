@@ -16,3 +16,14 @@ describe('Labelled message action layout', () => {
         expect(menu).toContain('text-align: left;');
     });
 });
+
+describe('Agent change highlights', () => {
+    const baseCss = readFileSync(new URL('../public/style.css', import.meta.url), 'utf8');
+    test('uses theme text on solid tinted surfaces instead of pale status text', () => {
+        for (const type of ['ins', 'del']) {
+            const rule = baseCss.match(new RegExp(`\\.ica-transform-diff-part--${type} \\{([^}]+)\\}`))[1];
+            expect(rule).toContain('color: var(--sb-contrast-strong, var(--SmartThemeBodyColor));');
+            expect(rule).toContain('12%, var(--neco-surface, var(--SmartThemeBlurTintColor))');
+        }
+    });
+});

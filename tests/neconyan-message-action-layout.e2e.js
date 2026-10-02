@@ -1,4 +1,4 @@
-/* global document, window */
+/* global document, window, getComputedStyle */
 import { expect, test } from '@playwright/test';
 import { openQuietChatForSmoke } from './chat-scroll-regression-helpers.js';
 import { createMockRoleplayStore } from './roleplay-browser-fixture.js';
@@ -75,6 +75,45 @@ for (const phone of [false, true]) {
             for (const line of lines) expect(Math.abs(line.left - lines[0].left)).toBeLessThan(1);
             await action.scrollIntoViewIfNeeded();
             await page.screenshot({ path: testInfo.outputPath('image-action-alignment.png') });
+        });
+
+        test('keeps inserted and deleted agent text readable in light and dark themes', async ({ page }, testInfo) => {
+            await page.locator('#chat .extraMesButtonsHint').click();
+            await page.locator('#chat .mes_view_agent_changes').click();
+            const diff = page.locator('dialog[open] .ica-transform-diff');
+            await expect(diff).toBeVisible();
+            for (const theme of ['Neconyan Calico', 'Nord Light', 'Solarized Light', 'Neconyan Calico Dark']) {
+                await page.locator('#themes').evaluate((el, name) => window.jQuery(el).val(name).trigger('change'), theme);
+                const highlights = await diff.locator('.ica-transform-diff-part--ins, .ica-transform-diff-part--del').evaluateAll(elements => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = canvas.height = 1;
+                    const context = canvas.getContext('2d', { willReadFrequently: true });
+                    const rgba = colour => {
+                        context.clearRect(0, 0, 1, 1);
+                        context.fillStyle = colour;
+                        context.fillRect(0, 0, 1, 1);
+                        return [...context.getImageData(0, 0, 1, 1).data];
+                    };
+                    const luminance = channels => channels.slice(0, 3).map(value => {
+                        const c = value / 255;
+                        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+                    }).reduce((sum, value, i) => sum + value * [0.2126, 0.7152, 0.0722][i], 0);
+                    return elements.map(el => {
+                        const style = getComputedStyle(el);
+                        const backdrop = rgba(getComputedStyle(el.parentElement).backgroundColor);
+                        const tint = rgba(style.backgroundColor);
+                        const background = tint.map((value, i) => i < 3 ? value * tint[3] / 255 + backdrop[i] * (1 - tint[3] / 255) : 255);
+                        const ink = luminance(rgba(style.color));
+                        const surface = luminance(background);
+                        return { contrast: (Math.max(ink, surface) + 0.05) / (Math.min(ink, surface) + 0.05), colour: style.backgroundColor, decoration: style.textDecorationLine };
+                    });
+                });
+                expect(highlights).toHaveLength(2);
+                for (const highlight of highlights) expect(highlight.contrast, `${theme} change text contrast`).toBeGreaterThanOrEqual(4.5);
+                expect(highlights[0].colour).not.toBe(highlights[1].colour);
+                expect(highlights.some(highlight => highlight.decoration === 'line-through')).toBe(true);
+                await page.screenshot({ path: testInfo.outputPath(`agent-diff-${theme}.png`) });
+            }
         });
     });
 }
