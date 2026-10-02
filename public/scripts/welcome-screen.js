@@ -1575,6 +1575,14 @@ function initializeNeconyanRailSections(rail) {
         button.querySelector('span').textContent = label.textContent;
         if (label === heading) heading.replaceChildren(button);
         else label.replaceWith(button);
+        heading.classList.add('neconyan-rail-section-collapsible');
+        const actions = heading.querySelectorAll(':scope > .neconyan-rail-icon-button');
+        if (actions.length) {
+            const group = document.createElement('span');
+            group.className = 'neconyan-rail-section-actions';
+            group.append(...actions);
+            heading.append(group);
+        }
         const apply = () => {
             panel.hidden = collapsed[name] === true;
             button.setAttribute('aria-expanded', String(!panel.hidden));

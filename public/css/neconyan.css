@@ -233,7 +233,11 @@ body.neconyan :is(.neconyan-rail-section-label, .neconyan-rail-section-heading) 
     margin: 0 10px 8px; color: var(--neco-muted); font-size: 11px; font-weight: 500;
 }
 body.neconyan .neconyan-rail-section-heading { display: flex; align-items: center; margin-right: 0; }
-body.neconyan #neconyan-workspace-rail .neconyan-rail-section-toggle { min-width: 0; padding: 0; font-size: 11px; font-weight: 500; }
+body.neconyan .neconyan-rail-section-collapsible { display: grid; margin-right: 0; }
+body.neconyan .neconyan-rail-section-collapsible > * { grid-area: 1 / 1; }
+body.neconyan .neconyan-rail-section-actions { display: flex; justify-self: end; align-self: center; margin-right: 22px; }
+body.neconyan #neconyan-workspace-rail .neconyan-rail-section-actions > .neconyan-rail-icon-button { margin-left: 0; }
+body.neconyan #neconyan-workspace-rail .neconyan-rail-section-toggle { min-width: 0; width: 100%; padding: 0; font-size: 11px; font-weight: 500; }
 body.neconyan .neconyan-rail-section-toggle > span { flex: 1; }
 body.neconyan .neconyan-rail-section-toggle[aria-expanded='false'] > i { transform: rotate(-90deg); }
 body.neconyan #neconyan-workspace-rail [hidden] { display: none; }
