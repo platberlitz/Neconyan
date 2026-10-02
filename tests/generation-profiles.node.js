@@ -154,7 +154,7 @@ test('acknowledged Horde saves its task ID before polling and never submits it t
         if (polls === 1) throw new Error('Polling connection dropped');
         return new Response(JSON.stringify({ done: true, generations: [{ text: 'Ada: Done' }] }));
     } };
-    await assert.rejects(runChatProfile(options), /conversation generation failed/);
+    await assert.rejects(runChatProfile(options), { message: 'The model provider could not complete the reply (HTTP 500).', status: 502 });
     assert.equal(submits, 1);
     assert.equal(getJob(fixture.directories, job.id).recoverability, 'resumable');
     markProviderUncertain(fixture.directories, job.id, { step: getJob(fixture.directories, job.id).resume });
@@ -175,7 +175,7 @@ test('acknowledged Horde saves its task ID before polling and never submits it t
     const unknown = acceptJob(fixture.directories, { owner: 'tester', type: 'roleplay.reply', submissionKey: 'horde-unknown', intent: {} }).job;
     setJobState(fixture.directories, unknown.id, 'running');
     await assert.rejects(runChatProfile({ ...options, jobContext: { ...options.jobContext, job: unknown },
-        fetch: async () => { submits++; throw new Error('Task acceptance is unknown'); } }), /conversation generation failed/);
+        fetch: async () => { submits++; throw new Error('Task acceptance is unknown'); } }), /The model provider could not complete the reply \(HTTP 502\)/);
     assert.equal(getJob(fixture.directories, unknown.id).recoverability, 'unknown-outcome');
     assert.ok(!recoverJobs(fixture.directories).recoverable.some(item => item.id === unknown.id));
     assert.equal(getJob(fixture.directories, unknown.id).state, 'interrupted');

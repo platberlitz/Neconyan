@@ -97,6 +97,39 @@ function prepared(t, effect = 'append', { assistant = false, pathfinder = false,
     };
 }
 
+for (const uncertain of [false, true]) {
+    test(`a stopped workflow reports its child failure without repeating it (uncertain: ${uncertain})`, async t => {
+        const f = prepared(t);
+        updateJob(f.dirs, f.jobId, { state: 'running' });
+        const { childJobId } = await runRoleplayWorkflowJob(f.context());
+        const reason = uncertain ? 'The connection to your model provider closed before a complete reply was received.'
+            : 'The Roleplay source changed after this work was prepared.';
+        updateJob(f.dirs, childJobId, { state: uncertain ? 'interrupted' : 'failed',
+            error: { code: uncertain ? 'JOB_FAILED' : 'ROLEPLAY_SOURCE_CHANGED', message: reason, status: uncertain ? 502 : 409 },
+            recoverability: uncertain ? 'unknown-outcome' : 'resumable' });
+        const before = f.records();
+        recoverWaitingRoleplayWorkflow(f.context());
+        const root = getJob(f.dirs, f.jobId);
+        assert.equal(root.state, 'interrupted');
+        assert.equal(root.stage, 'child-needs-recovery');
+        assert.equal(root.error.code, 'ROLEPLAY_WORKFLOW_CHILD');
+        assert.equal(root.error.message, reason + (uncertain
+            ? ' The provider may still have processed this request, so it was not retried automatically.' : ''));
+        recoverWaitingRoleplayWorkflow(f.context());
+        assert.deepEqual(getJob(f.dirs, f.jobId).children, [childJobId]);
+        assert.deepEqual(f.records(), before);
+    });
+}
+
+test('a stopped workflow with no child explanation uses plain language', async t => {
+    const f = prepared(t);
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    const { childJobId } = await runRoleplayWorkflowJob(f.context());
+    updateJob(f.dirs, childJobId, { state: 'failed' });
+    recoverWaitingRoleplayWorkflow(f.context());
+    assert.equal(getJob(f.dirs, f.jobId).error.message, 'A reply step stopped before it finished.');
+});
+
 test('a saved root parks for one child, keeps the old chat until durable completion and replays without paying', async t => {
     const f = prepared(t);
     assert.equal(f.request.capacity.maxTurns, 16);

@@ -30,6 +30,7 @@ export async function createMewmoryProvider(port = 0) {
         calls.push(call);
         if ([].concat(mode.hold).includes(name)) await new Promise(resolve => held.add(resolve));
         call.completedAt = Date.now();
+        if (mode.disconnect) return response.destroy();
         if (mode.redirect) {
             response.writeHead(mode.redirectStatus || 307, { Location: mode.redirect });
             return response.end('{}');

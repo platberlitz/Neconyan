@@ -10,7 +10,7 @@ test.setTimeout(240000);
 
 const ANSWER = 'The group reply was written by the server.';
 
-async function prepare(app, phone, companionCount = 0, companionTrigger = 'manual') {
+async function prepare(app, phone, companionCount = 0, companionTrigger = 'manual', stream = false) {
     app.provider.mode.hold = ['conversation-fixture'];
     app.provider.mode.reply = () => ({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: ANSWER } }] });
     const companions = Array.from({ length: companionCount }, (_, index) => ({ id: `group-note-${index}`,
@@ -22,6 +22,7 @@ async function prepare(app, phone, companionCount = 0, companionTrigger = 'manua
     const account = await app.account({ phone, activeConnection: true, configureSettings(saved) {
         saved.oai_settings.openai_max_context = 8192;
         saved.oai_settings.openai_max_tokens = 256;
+        saved.oai_settings.stream_openai = stream;
         saved.power_user.auto_swipe = false;
         saved.power_user.auto_continue = { enabled: false, allow_chat_completions: false, target_length: 400 };
         if (companionCount) {
@@ -62,6 +63,35 @@ async function closeEveryPage(browser) {
         for (const open of context.pages()) await open.close();
     }
     expect(browser.contexts().flatMap(context => context.pages())).toHaveLength(0);
+}
+
+for (const [viewport, phone] of [['desktop', false], ['phone', true]]) {
+    test(`a dropped group provider connection shows its reason and is not retried on ${viewport}`, async ({ app }) => {
+        const setup = await prepare(app, phone, 0, 'manual', true);
+        const page = await openGroup(setup);
+        app.provider.mode.disconnect = true;
+        const accepted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit') && response.status() === 202);
+        await page.locator('#send_textarea').fill('Please answer this group message.');
+        await page.locator('#send_textarea').press('Enter');
+        const { jobId } = await (await accepted).json();
+        await expect.poll(() => app.provider.calls.length).toBe(1);
+        await app.release();
+        await setup.account.settled(jobId, 'interrupted');
+        await expect(page.locator('.toast-error')).toContainText('Reply stopped');
+        await expect(page.locator('.toast-error')).toContainText('The connection to your model provider closed before a complete reply was received.');
+        await expect(page.locator('.toast-error')).toContainText('not retried automatically');
+        await expect.poll(() => page.evaluate(async () => {
+            const core = await import('/script.js');
+            const groups = await import('/scripts/group-chats.js');
+            return core.is_send_press || groups.is_group_generating;
+        })).toBe(false);
+        await app.restart();
+        await delay(1200);
+        expect(app.provider.calls).toHaveLength(1);
+        expect(app.provider.calls[0].stream).toBe(true);
+        expect((await readRows(setup.file)).filter(row => row.is_user)).toHaveLength(1);
+        expect((await setup.account.job(jobId)).state).toBe('interrupted');
+    });
 }
 
 for (const [viewport, phone, raceSettings, companionCount] of [

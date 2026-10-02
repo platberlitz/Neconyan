@@ -346,9 +346,20 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, account 
     if (!jobId || observed.has(jobId)) return;
     let stopPreview = () => {};
     let ended = false;
+    const onTerminal = value => {
+        if (ended) return;
+        if (value.state !== 'completed') {
+            const message = typeof value.error === 'string' ? value.error : value.error?.message;
+            if (message) globalThis.toastr?.error?.(message, 'Reply stopped');
+            stop(value.state);
+        } else stop('done');
+    };
     const stop = observeJob(jobId, {
         account,
         onSnapshot: async root => {
+            // The ordinary poll can finish before the preview stream. A failed
+            // job has no completed write to wait for, so release Send immediately.
+            if (TERMINAL.has(root.state)) { onTerminal(root); return; }
             if (root.state !== 'waiting' || !root.children?.length) return;
             const jobs = new Map((await listJobs({ account })).map(job => [job.id, job]));
             const pending = [root];
@@ -391,12 +402,7 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, account 
         stopPreview = observeRoleplayPreview(jobId, { account,
             isCurrent: () => account === getCurrentUserHandle()
                 && matchesCurrentWorkflowLocator(locator),
-            onTerminal: value => {
-                if (value.state !== 'completed') {
-                    if (value.error) globalThis.toastr?.error?.(value.error, 'Reply stopped');
-                    stop(value.state);
-                } else stop('done');
-            },
+            onTerminal,
         });
     }).catch(() => {});
 }

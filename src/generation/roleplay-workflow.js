@@ -614,8 +614,13 @@ export function recoverWaitingRoleplayWorkflow({ job, directories, owner }) {
     }
     if (children.every(child => child.state === 'completed')) updateJob(directories, current.id, { state: 'queued', stage: 'children-completed' });
     else if (children.some(child => ['failed', 'interrupted', 'conflict', 'cancelled'].includes(child.state))) {
+        const child = children.find(child => ['failed', 'interrupted', 'conflict', 'cancelled'].includes(child.state));
+        const reason = typeof child.error?.message === 'string' && child.error.message.trim()
+            ? child.error.message.trim().slice(0, 500) : 'A reply step stopped before it finished.';
+        const uncertainty = child.recoverability === 'unknown-outcome'
+            ? ' The provider may still have processed this request, so it was not retried automatically.' : '';
         updateJob(directories, current.id, { state: 'interrupted', stage: 'child-needs-recovery',
-            error: { code: 'ROLEPLAY_WORKFLOW_CHILD', message: 'The saved workflow child needs a reviewed recovery.' } });
+            error: { code: 'ROLEPLAY_WORKFLOW_CHILD', message: reason + uncertainty } });
     }
 }
 
