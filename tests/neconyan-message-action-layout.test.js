@@ -26,4 +26,13 @@ describe('Agent change highlights', () => {
             expect(rule).toContain('12%, var(--neco-surface, var(--SmartThemeBlurTintColor))');
         }
     });
+
+    test('restricts phone history scrolling to vertical movement without disabling text selection', () => {
+        const mobileCss = readFileSync(new URL('../public/css/neconyan-mobile-shell.css', import.meta.url), 'utf8');
+        const rule = mobileCss.match(/body\.neconyan \.ica-transform-history \.ica-transform-diff \{([^}]+)\}/)[1];
+        expect(rule).toContain('overflow-x: hidden;');
+        expect(rule).toContain('overscroll-behavior-x: none;');
+        expect(rule).toContain('touch-action: pan-y;');
+        expect(rule).not.toContain('user-select');
+    });
 });

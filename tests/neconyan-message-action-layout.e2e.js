@@ -6,32 +6,71 @@ import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './i
 
 test.setTimeout(120000);
 
-async function openAgentChat(page) {
+async function openAgentChat(page, longText = false) {
     const storage = createMockRoleplayStore(() => page.evaluate(async () =>
         (await import('/scripts/roleplay-save-chain.js')).roleplayAccountStamp().account));
     await page.route('**/api/chats/get', route => storage.read(route));
     await openQuietChatForSmoke(page, { selectCharacter: false });
     await page.route('**/api/chats/save', route => storage.save(route));
-    await page.evaluate(async () => {
+    await page.evaluate(async longText => {
         const context = window.SillyTavern.getContext();
         const id = context.characters.length;
         context.characters.push({ name: 'UI Cat', avatar: 'none', chat: 'agent-ui-check', first_mes: '', mes_example: '', shallow: false, data: {} });
         await context.selectCharacterById(id, { switchMenu: false });
+        const text = longText ? `${' '.repeat(120)}Indented text\n${'LongToken'.repeat(80)}\n${'A paragraph with literal <font> markup and readable words.\n'.repeat(45)}` : '';
+        const beforeText = `${text}Original reply`;
+        const afterText = `${text}Changed reply`;
         context.chat.splice(0, context.chat.length, {
-            name: 'UI Cat', is_user: false, is_system: false, mes: 'Changed reply', send_date: new Date().toISOString(),
-            extra: { inChatAgentTransformHistory: [{ agentName: 'UI Agent', beforeText: 'Original reply', afterText: 'Changed reply' }] },
+            name: 'UI Cat', is_user: false, is_system: false, mes: afterText, send_date: new Date().toISOString(),
+            extra: { inChatAgentTransformHistory: [{ agentName: 'UI Agent', beforeText, afterText }] },
         });
         await context.printMessages();
         (await import('/scripts/welcome-screen.js')).hideWelcomeHome();
+    }, longText);
+}
+
+async function checkPhoneAgentDiffScrolling(page, diff, context) {
+    await applyIOSOnlyCss(page);
+    await expect(diff).toHaveCSS('overflow-x', 'hidden');
+    await expect(diff).toHaveCSS('overscroll-behavior-x', 'none');
+    await expect(diff).toHaveCSS('touch-action', 'pan-y');
+    expect(await diff.evaluate(el => getComputedStyle(el).userSelect)).not.toBe('none');
+    const sizes = await diff.evaluate(el => {
+        el.scrollTop = 0;
+        return { width: el.clientWidth, scrollWidth: el.scrollWidth };
     });
+    expect(sizes.scrollWidth).toBeLessThanOrEqual(sizes.width);
+    const bounds = await diff.boundingBox();
+    const x = bounds.x + bounds.width / 2;
+    const y = bounds.y + Math.min(bounds.height / 2, 150);
+    const touch = await context.newCDPSession(page);
+    const swipe = async (dx, dy) => {
+        await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+        for (let step = 1; step <= 8; step++) {
+            await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + dx * step / 8, y: y + dy * step / 8 }] });
+        }
+        await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    };
+    await swipe(-80, 0);
+    expect(await diff.evaluate(el => el.scrollLeft)).toBe(0);
+    await swipe(80, 0);
+    expect(await diff.evaluate(el => el.scrollLeft)).toBe(0);
+    await swipe(0, -100);
+    await expect.poll(() => diff.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+    await touch.detach();
+}
+
+async function checkDesktopAgentDiffScrolling(page, diff) {
+    await expect(diff).toHaveCSS('overflow-x', 'auto');
 }
 
 for (const phone of [false, true]) {
     test.describe(`${phone ? 'iPhone stand-in' : 'Desktop'} message actions`, () => {
+        const checkScrolling = phone ? checkPhoneAgentDiffScrolling : checkDesktopAgentDiffScrolling;
         test.use(phone ? IPHONE_SAFARI_CONTEXT : { viewport: { width: 1280, height: 900 } });
-        test.beforeEach(async ({ context, page }) => {
+        test.beforeEach(async ({ context, page }, testInfo) => {
             if (phone) await installIPhoneSafari(context, { standalone: true });
-            await openAgentChat(page);
+            await openAgentChat(page, testInfo.title.includes('long agent changes'));
             if (phone) await applyIOSOnlyCss(page);
         });
 
@@ -113,6 +152,22 @@ for (const phone of [false, true]) {
                 expect(highlights[0].colour).not.toBe(highlights[1].colour);
                 expect(highlights.some(highlight => highlight.decoration === 'line-through')).toBe(true);
                 await page.screenshot({ path: testInfo.outputPath(`agent-diff-${theme}.png`) });
+            }
+        });
+
+        test('keeps long agent changes vertically scrollable without sideways overflow', async ({ page, context }, testInfo) => {
+            await page.locator('#chat .extraMesButtonsHint').click();
+            await page.locator('#chat .mes_view_agent_changes').click();
+            const diff = page.locator('dialog[open] .ica-transform-diff');
+            await page.locator('#themes').evaluate(el => window.jQuery(el).val('Neconyan Calico').trigger('change'));
+            for (const theme of ['calico', 'windows-98']) {
+                await page.evaluate(id => window.NeconyanShell.applyTheme(id), theme);
+                await page.waitForFunction(id => id === 'calico' || document.querySelector(`link[data-sb-shell-style="${id}"]`)?.sheet, theme);
+                await expect(diff).toBeVisible();
+                const sizes = await diff.evaluate(el => ({ width: el.clientWidth, scrollWidth: el.scrollWidth, height: el.clientHeight, scrollHeight: el.scrollHeight }));
+                expect(sizes.scrollHeight).toBeGreaterThan(sizes.height);
+                await checkScrolling(page, diff, context);
+                await page.screenshot({ path: testInfo.outputPath(`agent-diff-scroll-${theme}.png`) });
             }
         });
     });
