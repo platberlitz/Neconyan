@@ -14572,7 +14572,7 @@ const CHAT_LABEL_JSON_SCHEMA = Object.freeze({
         },
     },
 });
-const CHAT_LABEL_TIMESTAMP_PATTERN = '\\d{4}-\\d{2}-\\d{2}@\\d{2}h\\d{2}m\\d{2}s\\d{3}ms';
+const CHAT_LABEL_TIMESTAMP_PATTERN = '\\d{4}-\\d{2}-\\d{2}(?:@\\d{2}h\\d{2}m\\d{2}s\\d{3}ms| \\d{2}-\\d{2}-\\d{2})';
 let chatHistoryToolsAbortController = null;
 
 function getChatBaseName(fileName) {
@@ -14645,8 +14645,9 @@ async function searchPastChats(searchQuery = '', groupId = selected_group, chara
 }
 
 function isDatedChatFileName(fileName, displayName = '', isGroupChat = false) {
-    const baseName = getChatBaseName(fileName);
-    const suffix = '(?:\\s+imported)?';
+    // Branches keep their source chat's date, with a numbered suffix (or a legacy prefix).
+    const baseName = getChatBaseName(fileName).replace(/^Branch #\d+ - /i, '');
+    const suffix = '(?:\\s+imported)?(?:\\s+-\\s+Branch #\\d+)?';
     const timestampOnly = new RegExp(`^${CHAT_LABEL_TIMESTAMP_PATTERN}${suffix}$`, 'i');
 
     if (timestampOnly.test(baseName)) {
