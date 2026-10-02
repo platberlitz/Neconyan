@@ -135,7 +135,8 @@ export function workflowTokenLimit(directories, binding, requested) {
             'roleplay_workflow_budget_unset');
     }
     const contextLimit = getChatProfileContextLimit(directories, binding);
-    if (!Number.isSafeInteger(contextLimit) || contextLimit <= 128) throw changed('The saved connection has no room for a Roleplay workflow.', 'roleplay_workflow_context');
+    if (!Number.isSafeInteger(contextLimit)) throw changed('The saved context size is missing or not a usable number. Save a context size in the connection settings before using Roleplay workflows.', 'roleplay_workflow_context');
+    if (contextLimit <= 128) throw changed(`The saved context size (${contextLimit}) is too small for a Roleplay workflow.`, 'roleplay_workflow_context');
     const budget = Math.min(configured, MAX_WORKFLOW_TOKENS);
     console.info('Roleplay workflow reply length', { maxTokens: budget, source });
     return budget;

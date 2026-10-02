@@ -288,7 +288,10 @@ export function resolveGenerationProfile(directories, binding) {
 export function getChatProfileContextLimit(directories, binding) {
     const { preset, contextLimit, kind, active } = resolveGenerationProfile(directories, binding);
     if (contextLimit) return contextLimit;
-    if (kind === 'active') return Number.isSafeInteger(active.openai_max_context) && active.openai_max_context > 0 ? active.openai_max_context : null;
+    if (kind === 'active') {
+        const value = Number(active.openai_max_context);
+        return Number.isFinite(value) && value > 0 ? Math.floor(value) : null;
+    }
     for (const key of ['openai_max_context', 'max_context']) {
         const value = Number(preset?.[key]);
         if (Number.isFinite(value) && value > 0) return Math.floor(value);
