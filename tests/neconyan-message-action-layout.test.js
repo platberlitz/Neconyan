@@ -9,4 +9,10 @@ describe('Labelled message action layout', () => {
         expect(sizing).toContain('aspect-ratio: auto;');
         expect(sizing).toContain('block-size: auto;');
     });
+
+    test('left-aligns wrapped labels inside the expanded action menu', () => {
+        const menu = css.match(/body\.neconyan #chat \.extraMesButtons > \* \{([^}]+)\}/)[1];
+        expect(menu).toContain('justify-content: flex-start;');
+        expect(menu).toContain('text-align: left;');
+    });
 });

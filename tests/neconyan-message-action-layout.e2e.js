@@ -1,4 +1,4 @@
-/* global window */
+/* global document, window */
 import { expect, test } from '@playwright/test';
 import { openQuietChatForSmoke } from './chat-scroll-regression-helpers.js';
 import { createMockRoleplayStore } from './roleplay-browser-fixture.js';
@@ -56,6 +56,25 @@ for (const phone of [false, true]) {
             await page.screenshot({ path: testInfo.outputPath('agent-action-size.png') });
             await action.click();
             await expect(page.locator('dialog[open]')).toContainText('UI Agent');
+        });
+
+        test('left-aligns the wrapped Quick Image Gen message label', async ({ page }, testInfo) => {
+            const message = page.locator('#chat .mes[mesid="0"]');
+            await message.locator('.extraMesButtonsHint').click();
+            const action = message.locator('.qig-message-generate');
+            await expect(action).toBeVisible();
+            await expect(action).toHaveCSS('justify-content', 'flex-start');
+            await expect(action).toHaveCSS('text-align', 'left');
+            const label = action.locator('.neconyan-action-label');
+            const lines = await label.evaluate(el => {
+                const range = document.createRange();
+                range.selectNodeContents(el);
+                return [...range.getClientRects()].map(rect => ({ left: rect.left, right: rect.right }));
+            });
+            expect(lines.length).toBeGreaterThan(1);
+            for (const line of lines) expect(Math.abs(line.left - lines[0].left)).toBeLessThan(1);
+            await action.scrollIntoViewIfNeeded();
+            await page.screenshot({ path: testInfo.outputPath('image-action-alignment.png') });
         });
     });
 }

@@ -875,6 +875,7 @@ body.neconyan #chat .extraMesButtons > * {
     max-width: 100%;
     white-space: normal;
     justify-content: flex-start;
+    text-align: left;
 }
 /* Fixed icon slot so every label starts at the same x inside its column. */
 body.neconyan #chat .extraMesButtons > *::before {
