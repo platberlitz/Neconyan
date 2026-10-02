@@ -34,6 +34,20 @@ let busyName = null;
 let currentJobId = null;
 
 /**
+ * One DEBUG line per accepted submission, naming the workflow the server owns.
+ * Browsers hide DEBUG output behind the devtools filter by default, which is
+ * the wanted behaviour for lines the ordinary user never needs to see.
+ */
+function logRoleplayAccepted(name) {
+    console.debug('Roleplay workflow accepted', { name });
+}
+
+/** One DEBUG line per refusal, naming the single condition that refused it. */
+function logRoleplayRefusal(fields) {
+    console.debug('Roleplay workflow refused', fields);
+}
+
+/**
  * One promise per accepted key, resolved by whichever path reaches the durable
  * write first: the job observer or the receipt readback. A caller that must not
  * continue until the write is durable (Story Mode records its cut from the saved
@@ -163,9 +177,16 @@ const SETTINGS_PROOF_ATTEMPTS = 10;
  * a /inject note, a summary), resolved exactly as the browser prompt would have
  * used them. The server rebuilds everything else itself. Returns null when any
  * addition cannot be carried faithfully, so the caller keeps the browser path
- * instead of silently generating without it.
+ * instead of silently generating without it. Each refusal logs one DEBUG line
+ * naming the workflow and the refusing condition; a caller that is only probing
+ * the decision can pass a collector to take the reason instead of a log line.
  */
-export async function capturePagePrompts(name) {
+export async function capturePagePrompts(name, collector = null) {
+    const refuse = label => {
+        if (typeof collector === 'function') collector(label);
+        else logRoleplayRefusal({ name, reason: label });
+        return null;
+    };
     for (const interceptor of activeGenerationInterceptors()) {
         if (interceptor.key === 'DialogueColorsInterceptor') {
             await globalThis[interceptor.key]([], 0, () => {}, 'normal');
@@ -174,7 +195,7 @@ export async function capturePagePrompts(name) {
         if (interceptor.key === 'vectors_rearrangeChat') {
             continue;
         }
-        return null;
+        return refuse('interceptor');
     }
     const page = [];
     let bytes = 0;
@@ -184,13 +205,13 @@ export async function capturePagePrompts(name) {
         if (Number(entry.position) === -1) continue;
         if (SERVER_PROMPT_KEYS.has(key) || SERVER_PROMPT_PREFIXES.some(prefix => key.startsWith(prefix))) continue;
         if (name === 'story.passage' && (key === STORY_RULES_KEY || key === STORY_DIRECTION_KEY)) continue;
-        if (POLICY_PROMPT_PREFIXES.some(prefix => key.startsWith(prefix))) return null;
-        if (entry.scan) return null;
+        if (POLICY_PROMPT_PREFIXES.some(prefix => key.startsWith(prefix))) return refuse('policy-prefix');
+        if (entry.scan) return refuse('scan');
         if (typeof entry.filter === 'function') {
             try {
                 if (!await entry.filter()) continue;
             } catch {
-                return null;
+                return refuse('filter-error');
             }
         }
         const content = pagePromptText(key);
@@ -198,11 +219,14 @@ export async function capturePagePrompts(name) {
         const position = Number(entry.position);
         const depth = Number(entry.depth ?? 0);
         const role = PAGE_ROLES[Number(entry.role ?? 0)];
-        if (content.includes('{{') || !PAGE_KEY.test(key) || ![0, 1, 2].includes(position)
-            || !Number.isSafeInteger(depth) || depth < 0 || depth > 10000 || !role) return null;
+        if (content.includes('{{')) return refuse('macro');
+        if (!PAGE_KEY.test(key)) return refuse('key');
+        if (![0, 1, 2].includes(position)) return refuse('position');
+        if (!Number.isSafeInteger(depth) || depth < 0 || depth > 10000) return refuse('depth');
+        if (!role) return refuse('role');
         bytes += new TextEncoder().encode(content).length;
         page.push({ key, content, position, depth, role });
-        if (page.length > MAX_PAGE_PROMPTS || bytes > MAX_PAGE_BYTES) return null;
+        if (page.length > MAX_PAGE_PROMPTS || bytes > MAX_PAGE_BYTES) return refuse('size');
     }
     return page;
 }
@@ -446,6 +470,7 @@ export async function submitRoleplayWorkflow({ name, intent: named = {}, page = 
         }
     }
     pending.delete(account);
+    logRoleplayAccepted(name);
     if (accepted?.jobId) observeRoleplayWorkflowJob(accepted.jobId, { key: payload.key, name, locator, account });
     if (accepted?.result) void readback(payload.key, name, { locator, account });
     return { ...accepted, key: payload.key, finished };
@@ -486,6 +511,7 @@ export async function submitRoleplayGroupTurn({ groupId, forcedAvatars, generati
         signal?.throwIfAborted();
         accepted = await postSubmission({ ...payload, name: 'group.reply' }, account, '/api/roleplay/group/submit');
     }
+    logRoleplayAccepted('group.reply');
     const onAbort = () => { if (accepted?.jobId) void cancelJob(accepted.jobId, { reason: 'user_cancelled' }).catch(() => {}); };
     signal?.addEventListener('abort', onAbort, { once: true });
     try {
@@ -515,10 +541,14 @@ export async function runNativeRoleplayGeneration(type, { committed = false, pag
         return { native: true, name: null, key: null, jobId: null, state: 'refused', result: null, refused: true };
     };
     if (skipNativeRoleplay || !willRunNativeRoleplayWorkflow(type, { skipNativeRoleplay })) return null;
-    if (busyName) return committed ? refuse() : null;
+    if (busyName) {
+        logRoleplayRefusal({ type, reason: 'busy' });
+        return committed ? refuse() : null;
+    }
     const name = roleplayWorkflowNameFor(type);
     if (!name) return null;
     if (!isNativeRoleplayWorkflowReady()) {
+        logRoleplayRefusal({ type, reason: 'not-ready' });
         if (!committed) return null;
         globalThis.toastr?.error?.('Open a saved Roleplay chat before generating.', 'Nothing was generated');
         return { native: true, name, key: null, jobId: null, state: 'refused', result: null, refused: true };

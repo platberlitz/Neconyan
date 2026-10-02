@@ -11,7 +11,7 @@ const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 
 describe('light settings reads', () => {
     test.each([
-        ['public/scripts/extensions/third-party/sillytavern-character-colors/src/storage.js', 'extensionSettings: [MODULE_NAME]'],
+        ['public/scripts/extensions/third-party/sillytavern-character-colors/src/storage.js', 'fetchExtensionSettingsFromServer(names = [MODULE_NAME])'],
         ['public/scripts/extensions/third-party/Neconyan-Time-Machine/src/store.js', 'extensionSettings: [MODULE_NAME]'],
         ['public/scripts/extensions/quick-image-gen/lib/host-persistence.js', 'extensionSettings: [settingsKey]'],
         ['public/scripts/extensions/third-party/Neconyan-Time-Machine/src/api.js', 'sections: [\'presets\']'],
@@ -22,6 +22,18 @@ describe('light settings reads', () => {
         ['public/scripts/world-info.js', 'sections: [\'worlds\']'],
     ])('%s asks for %s', (file, marker) => {
         expect(read(file)).toContain(marker);
+    });
+
+    test('Dialogue Colors reads back every block its save check compares', () => {
+        const source = read('public/scripts/extensions/third-party/sillytavern-character-colors/src/storage.js');
+        // A partial read without regex made every verified save look unconfirmed,
+        // so each change retried three times and then saved settings again.
+        expect(source).toContain('const SAVE_VERIFICATION_EXTENSION_SETTINGS = [MODULE_NAME, \'regex\'];');
+        const start = source.indexOf('export function queueImmediateSettingsSave(');
+        expect(start).toBeGreaterThan(-1);
+        const body = source.slice(start, source.indexOf('\nfunction runStorageOperation', start));
+        expect(body).toContain('fetchExtensionSettingsFromServer(SAVE_VERIFICATION_EXTENSION_SETTINGS)');
+        expect(body).toContain('storedSettings?.regex');
     });
 
     test('Dialogue Colors skips the migration save when a browser has no old local data', () => {

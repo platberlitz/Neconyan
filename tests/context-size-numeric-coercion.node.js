@@ -27,7 +27,7 @@ function saved(t, contextValue = 4096) {
     dirs.openAI_Settings = path.join(dirs.root, 'openai-presets');
     fs.mkdirSync(dirs.openAI_Settings);
     fs.writeFileSync(path.join(dirs.openAI_Settings, 'Main.json'), JSON.stringify({ openai_max_context: 4096 }));
-    const controls = { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:18000/v1', function_calling: true, openai_max_tokens: 512 };
+    const controls = { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:18000/v1', function_calling: true, openai_max_tokens: 2048 };
     if (contextValue !== OMIT) controls.openai_max_context = contextValue;
     fs.writeFileSync(path.join(dirs.root, 'settings.json'), JSON.stringify({
         _settingsRevision: SETTINGS_REVISION,
@@ -70,7 +70,7 @@ test('a quoted fractional context size floors, and unusable values stay absent',
     }
 });
 
-test('a workflow submission with a quoted context is accepted and stores its intent request', async t => {
+test('a workflow submission with a quoted context preserves the configured reply length', async t => {
     const s = saved(t, '128000');
     const accepted = await acceptRoleplayNamedWorkflow(s.request(), s.body('roleplay.reply', { key: 'quoted-context' }));
     assert.equal(accepted.created, true);
@@ -79,7 +79,7 @@ test('a workflow submission with a quoted context is accepted and stores its int
     assert.equal(stored.binding.kind, 'active');
     assert.equal(stored.avatar, 'Nova.png');
     assert.equal(stored.effect, 'append');
-    assert.ok(Number.isSafeInteger(stored.maxTokens) && stored.maxTokens > 0);
+    assert.equal(stored.maxTokens, 2048);
 });
 
 test('an unusable context refuses with the context message and its code', async t => {

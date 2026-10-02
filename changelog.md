@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.1.0
+
+### Merged Staging PRs
+- PR #4 (2026-10-02) `fix: italian translation`
+- PR #5 (2026-10-02) `feat: add Windows 98, Windows Aero and Windows Aero Light themes`
+- PR #6 (2026-10-02) `fix: log the Roleplay workflow routing decision and stream finish reason`
+- PR #7 (2026-10-02) `fix: use the configured reply length for Roleplay workflow generations`
+
 ## v1.0.6
 
 ### Merged Staging PRs
@@ -9,6 +17,7 @@
 
 - Add native Mewmory for Roleplay: revision-aware story memory, Pawspective histories, protected NPC references, lore-aware retrieval, separate selector/fallback roles, preservation checkpoints, and inspection with correction, undo, export and restore.
 - Fix quoted numeric Chat Completion preset values being stored as text: the context size and the other numeric settings are now coerced when a preset is applied, so a server-owned Roleplay workflow no longer refuses to start, and its refusal now names the saved context size instead of a capacity problem.
+- Roleplay workflows now use the saved connection's configured reply length as it is, bounded only by the pipeline ceiling, and refuse with a named error when no reply length is set instead of silently generating 512 tokens.
 
 ## v1.7.1
 

@@ -112,6 +112,7 @@ for (const phone of [false, true]) {
             await expect(page.locator(`${list} > button`).first()).toBeVisible();
             await page.screenshot({ path: info.outputPath('quick-actions.png') });
             expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(phone ? 394 : 1281);
+            await expect.poll(() => JSON.parse(stored).quickActions).toBe(false);
             await ready(page);
             await openRail(page, phone);
             await expect(page.locator(`${list} > button`).first()).toBeVisible();

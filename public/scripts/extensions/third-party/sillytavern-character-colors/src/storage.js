@@ -1127,7 +1127,8 @@ export function queueImmediateSettingsSave(expectedSource = getAutoSyncRecord(tr
         }
         try {
             await saveSettings();
-            const storedSettings = await fetchExtensionSettingsFromServer();
+            // The check below compares the regex block too, so it has to be read back.
+            const storedSettings = await fetchExtensionSettingsFromServer(SAVE_VERIFICATION_EXTENSION_SETTINGS);
             const stored = storedSettings?.[MODULE_NAME];
             const moduleMatches = !!stored && recordsEqual(buildAutoSyncRecord(stored), expected);
             const regexMatches = JSON.stringify(storedSettings?.regex ?? null) === JSON.stringify(expectedRegex ?? null);
@@ -1530,13 +1531,15 @@ export function applyAutoSyncRecord(record, {
     return disposition;
 }
 
-async function fetchExtensionSettingsFromServer() {
+const SAVE_VERIFICATION_EXTENSION_SETTINGS = [MODULE_NAME, 'regex'];
+
+async function fetchExtensionSettingsFromServer(names = [MODULE_NAME]) {
     const response = await fetch('/api/settings/get', {
         method: 'POST',
         headers: getRequestHeaders(),
-        // Only this extension's block: auto-sync polls every few seconds and the
-        // whole settings file can be several megabytes.
-        body: JSON.stringify({ extensionSettings: [MODULE_NAME] }),
+        // Only the blocks the caller compares: auto-sync polls every few seconds and
+        // the whole settings file can be several megabytes.
+        body: JSON.stringify({ extensionSettings: names }),
         cache: 'no-cache',
     });
 

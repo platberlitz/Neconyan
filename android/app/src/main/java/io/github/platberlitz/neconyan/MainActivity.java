@@ -98,6 +98,7 @@ public final class MainActivity extends Activity {
                 chooser = callback;
                 Intent intent = params.createIntent();
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
+                if (params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE) intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
                 try { startActivityForResult(intent, 10); } catch (ActivityNotFoundException error) { chooser.onReceiveValue(null); chooser = null; }
                 return true;
             }
@@ -305,9 +306,24 @@ public final class MainActivity extends Activity {
             cancelExport(); runOnUiThread(() -> Toast.makeText(this, "Export failed. Check free storage and try again.", Toast.LENGTH_LONG).show());
         } finally { if (connection != null) connection.disconnect(); }
     }
+    // parseResult only reads getData(); pickers return a multi-file selection in
+    // ClipData with getData() empty, which reached the page as no files at all.
+    private static Uri[] chosenFiles(int result, Intent data) {
+        if (result != RESULT_OK || data == null) return null;
+        ClipData clip = data.getClipData();
+        if (clip != null) {
+            List<Uri> uris = new ArrayList<>();
+            for (int i = 0; i < clip.getItemCount(); i++) {
+                Uri uri = clip.getItemAt(i).getUri();
+                if (uri != null) uris.add(uri);
+            }
+            if (!uris.isEmpty()) return uris.toArray(new Uri[0]);
+        }
+        return WebChromeClient.FileChooserParams.parseResult(result, data);
+    }
     @Override public void onActivityResult(int code, int result, Intent data) {
         super.onActivityResult(code, result, data);
-        if (code == 10 && chooser != null) { chooser.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(result, data)); chooser = null; }
+        if (code == 10 && chooser != null) { chooser.onReceiveValue(chosenFiles(result, data)); chooser = null; }
         if (code == 13 && export != null) {
             if (result != RESULT_OK || data == null) { cancelExport(); return; }
             Uri destination = data.getData();
