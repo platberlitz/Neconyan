@@ -9,8 +9,12 @@ import { parse } from 'acorn';
 const root = path.resolve('public');
 const output = path.join(root, 'locales/neconyan');
 const source = {};
+// The HTML parser turns a template hole (NUL, below) inside an attribute into U+FFFD, so a key or value
+// carrying the replacement character is a caption with a hole in it, not a caption.
+const damaged = text => text.includes('\ufffd');
 const add = (key, value = key) => {
     if (typeof key !== 'string' || typeof value !== 'string' || !/[a-zA-Z]/.test(value) || value.length > 3000) return;
+    if (damaged(key) || damaged(value)) return;
     source[key] = value;
 };
 const metadata = JSON.parse(fs.readFileSync(path.join(root, 'locales/lang.json'), 'utf8'));

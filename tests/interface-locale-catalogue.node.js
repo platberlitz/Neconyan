@@ -28,6 +28,8 @@ test('the interface catalogue collects captions from helpers, fallbacks, templat
     for (const text of ['Server is not ready yet.', 'Could not close Meower.', 'BatchConflictError']) {
         assert.ok(!keys.has(text), `unexpected ${text}`);
     }
+    // A template hole parsed as HTML becomes U+FFFD; such a key is a caption with a hole in it.
+    assert.ok(![...keys].some(key => key.includes('\ufffd')), 'replacement character in the catalogue');
     const german = JSON.parse(readFileSync(new URL('../public/locales/neconyan/de-de.json', import.meta.url), 'utf8'));
     const slots = text => (text.match(/\$\{\d+\}/g) || []).sort();
     const entries = Object.entries(german);
