@@ -118,4 +118,14 @@ describe('Neconyan accent color profiles', () => {
         expect(calico).toContain('box-shadow: inset 3px 0 0 var(--neco-accent-secondary);');
         expect(calico).toContain('--neco-ginger-hover: color-mix(in oklch, var(--SmartThemeUnderlineColor) 40%, #fff);');
     });
+
+    test('gives custom secondary accents selected navigation surfaces without changing primary actions', () => {
+        const css = readSource('public', 'css', 'neconyan.css');
+        expect(css).toContain('--sb-shell-tab-active-bg: color-mix(in srgb, var(--neco-accent-secondary) 16%, var(--neco-surface));');
+        expect(css).toContain('--sb-state-active-border: color-mix(in srgb, var(--neco-accent-secondary) 60%, var(--neco-border));');
+        expect(css).toContain('--sb-state-active-bg: color-mix(in srgb, var(--neco-accent-secondary) 16%, var(--neco-rail));');
+        expect(css).toContain(':root[data-neconyan-accent=\'custom\']:not([data-sb-theme=\'windows-98\']) body.neconyan:not(.sbterm) :is(');
+        expect(css).toContain('.sb-conversation-settings-nav button[aria-current=\'page\']');
+        expect(css).toContain('--sb-on-solid-accent: var(--neco-on-accent);');
+    });
 });

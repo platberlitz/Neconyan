@@ -73,6 +73,33 @@ body.neconyan {
 }
 :root[data-sb-surface-tone='light'] body.neconyan { color-scheme: light; }
 :root[data-neconyan-accent='custom'] body.neconyan { --neco-accent-secondary: var(--SmartThemeUnderlineColor); }
+/* Primary colours keep the main actions; secondary colours identify navigation and selection. */
+:root[data-neconyan-accent='custom'] body.neconyan:not(.sbterm) {
+    --sb-shell-tab-active-bg: color-mix(in srgb, var(--neco-accent-secondary) 16%, var(--neco-surface));
+    --sb-state-active-bg: var(--sb-shell-tab-active-bg);
+    --sb-state-active-border: color-mix(in srgb, var(--neco-accent-secondary) 60%, var(--neco-border));
+}
+:root[data-neconyan-accent='custom'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail, #sb-mobile-nav-content) {
+    --sb-state-active-bg: color-mix(in srgb, var(--neco-accent-secondary) 16%, var(--neco-rail));
+}
+:root[data-neconyan-accent='custom']:not([data-sb-theme='windows-98']) body.neconyan:not(.sbterm) :is(
+    #neconyan-workspace-rail button:is([aria-current='page'], .is-active),
+    #sb-mobile-nav .sb-nav-item:is([aria-current='page'], .is-active),
+    .sb-shell-tab.is-active, .sb-character-shell-tab.is-active, .sb-settings-tab-btn.active,
+    #right-nav-panel .sb-character-editor-subtab.is-active,
+    .sb-conversation-settings-nav button[aria-current='page']
+) {
+    background: var(--sb-state-active-bg);
+    border-color: var(--sb-state-active-border);
+    color: var(--neco-ink);
+}
+:root[data-neconyan-accent='custom']:not([data-sb-theme='windows-98']) body.neconyan:not(.sbterm) #top-bar {
+    border-bottom-color: color-mix(in srgb, var(--neco-accent-secondary) 65%, var(--neco-border));
+}
+:root[data-neconyan-accent='custom']:not([data-sb-theme='windows-98']) body.neconyan:not(.sbterm) :is(.sb-shell-close, .sb-shell-tab, .sb-settings-tab-btn):hover {
+    background: color-mix(in srgb, var(--neco-accent-secondary) 12%, var(--neco-surface));
+    color: var(--neco-ink);
+}
 body.neconyan #bg-header-fixed .bg-header-row-1 > h3 { flex: 0 1 auto; padding: 0; border: 0; background: transparent; }
 body.neconyan #background_fitting { flex: 1 0 auto; width: auto; min-width: calc(7ch + 52px); max-width: none; }
 /* The built-in wallpaper follows the same fit as selected images. */
