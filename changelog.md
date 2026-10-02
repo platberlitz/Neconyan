@@ -15,6 +15,7 @@
 ## Unreleased
 
 - Add native Mewmory for Roleplay: revision-aware story memory, Pawspective histories, protected NPC references, lore-aware retrieval, separate selector/fallback roles, preservation checkpoints, and inspection with correction, undo, export and restore.
+- Roleplay workflows now use the saved connection's configured reply length as it is, bounded only by the pipeline ceiling, and refuse with a named error when no reply length is set instead of silently generating 512 tokens.
 
 ## v1.7.1
 

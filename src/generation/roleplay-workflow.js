@@ -25,6 +25,8 @@ const error = (message, code = 'ROLEPLAY_WORKFLOW_RECOVERY') => roleplayError(co
 const CHILD = 'roleplay-workflow-child';
 const FINAL = 'roleplay-workflow-final';
 const MAX_TURNS = 16;
+/** The accepted ceiling for one Roleplay workflow reply, aligned with the execution guard. */
+export const MAX_WORKFLOW_TOKENS = 64000;
 const childKey = turn => turn === 0 ? CHILD : `${CHILD}:${turn}`;
 const historyKey = turn => `roleplay-workflow-history:${turn}`;
 const decisionKey = turn => `roleplay-workflow-decision:${turn}`;
@@ -38,7 +40,7 @@ export function captureRoleplayWorkflowRequest(base, account, source, { avatar, 
     }
     if (named && source.locator.group) throw error('A named workflow answers one speaker, not a group turn.', 'ROLEPLAY_WORKFLOW_INVALID');
     if (!['append', 'continue', 'swipe', 'alternative', 'replace'].includes(effect)
-        || !Number.isSafeInteger(maxTokens) || maxTokens < 1 || maxTokens > 8192 || !binding?.fingerprint) {
+        || !Number.isSafeInteger(maxTokens) || maxTokens < 1 || maxTokens > MAX_WORKFLOW_TOKENS || !binding?.fingerprint) {
         throw error('The saved workflow selection is invalid.', 'ROLEPLAY_WORKFLOW_INVALID');
     }
     const contextLimit = getChatProfileContextLimit(base.directories, binding);
