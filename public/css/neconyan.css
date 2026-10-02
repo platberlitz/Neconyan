@@ -770,6 +770,7 @@ body.neconyan #chat .mes_buttons {
 }
 body.neconyan #chat .mes_block > .ch_name { flex-direction: column; align-items: stretch; gap: 6px; }
 body.neconyan #chat :is(.neconyan-message-action, .extraMesButtons > *) {
+    aspect-ratio: auto;
     inline-size: auto;
     block-size: auto;
     min-inline-size: 44px;
