@@ -5,7 +5,10 @@ import { readAuthoringFileLocked, authoringEvidence } from '../authoring-store.j
 import { getTool, invokeTool, registerTool } from '../tools/registry.js';
 import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
 import { syncLorebookOriginalEntry } from '../../public/scripts/neconyan-lorebook-tools-core.js';
-import { ASSISTANT_PREFIX, ASSISTANT_TOOLS, projectAssistantAgent } from './assistant-tool-data.js';
+import { ASSISTANT_PREFIX, ASSISTANT_TOOLS, assistantToolMutates, projectAssistantAgent } from './assistant-tool-data.js';
+import { applyNoteProposalLocked, checkProposalLocked, proposalIsDirectLocked, proposalSummary } from '../notebooks/assistant.js';
+import { notifyNotebookChanged } from '../notebooks/events.js';
+import { NotebookError } from '../notebooks/paths.js';
 import { captureAssistantToolSourceLocked, readBoundAssistantContextLocked } from './assistant-tool-sources.js';
 import { admitNativeMediaJob, finishNativeMediaJob, withNativeMediaReceipt } from './media-jobs.js';
 import { publishNativeAuthoringFile } from './authoring-tool-effects.js';
@@ -13,7 +16,7 @@ import { requireJobApproval } from './job-approvals.js';
 import { planAssistantCharacter, executeApprovedCharacterAction, assertApprovedCharacterEffectLocked } from './assistant-character-actions.js';
 
 const invalid = message => roleplayError('ASSISTANT_TOOL_SOURCE_CHANGED', message, 409);
-const EDITABLE_FILE_KINDS = new Set(['lorebook', 'agent', 'preset', 'character']);
+const EDITABLE_FILE_KINDS = new Set(['lorebook', 'agent', 'preset', 'character', 'notebook']);
 const RESULT_LIMIT = 128 * 1024;
 
 /** Bind one selected assistant card, chat, exact input, and every edited resource before work. */
@@ -28,15 +31,18 @@ export function admitAssistantToolJob(base, account, { operationKey, source, req
     if (request.mutating && !request.response && !EDITABLE_FILE_KINDS.has(request.resource?.kind)) {
         throw invalid('This assistant tool needs a protected native writer before it can be accepted.');
     }
+    if (request.resource?.kind === 'notebook' && (!request.proposal || !request.proposalHash)) throw invalid('The notebook change proposal is incomplete.');
+    const reviewed = request.proposal
+        ? { tool: request.name, arguments: request.args, summary: proposalSummary(request.proposal), proposalHash: request.proposalHash, diff: request.diff ?? '' }
+        : { tool: request.name, arguments: request.args, resource: request.resource, before: request.change?.before ?? null };
     const approvalReservation = request.mutating && !request.response ? { key: `assistant:${request.callId}`,
-        bytes: Buffer.byteLength(JSON.stringify({ tool: request.name, arguments: request.args,
-            resource: request.resource, before: request.change.before ?? null })) + 256 * 1024 } : null;
+        bytes: Buffer.byteLength(JSON.stringify(reviewed)) + 256 * 1024 } : null;
     return admitNativeMediaJob(base, account, { operationKey, source, request, target: request.target, kind: 'assistant-tool', approvalReservation });
 }
 
 function registeredName(request) { return `assistant_${request.tool.replaceAll('-', '_')}`; }
 const registered = new Map(Object.entries(ASSISTANT_TOOLS).map(([name, tool]) => [`${ASSISTANT_PREFIX}${name}`, registerTool({
-    name: `assistant_${tool.replaceAll('-', '_')}`, permission: 'assistant', mutating: tool.startsWith('edit-') || tool === 'create-character',
+    name: `assistant_${tool.replaceAll('-', '_')}`, permission: 'assistant', mutating: assistantToolMutates(tool),
     validate: args => !args || typeof args !== 'object' || Array.isArray(args) ? 'Assistant tool arguments must be an object.' : null,
     run: (_args, { target }) => target.execute(),
 })]));
@@ -120,6 +126,87 @@ function plannedChange(context, request) {
     });
 }
 
+const NOTE_FAILURE_STATUS = { 403: 'denied', 404: 'not_found', 409: 'conflict' };
+
+function assertBoundAssistantLocked(lease, context, request) {
+    const current = readBoundAssistantContextLocked(lease, context.job.intent.source, request.avatar);
+    if (roleplayHash(current.assistant) !== roleplayHash(request.assistant)
+        || current.settingsHash !== request.settingsHash || roleplayHash(current.settingsEvidence) !== roleplayHash(request.settingsEvidence)) {
+        throw invalid('The accepted assistant or its account settings changed.');
+    }
+}
+
+/** Notebook changes are reviewed proposals; the notebook service rechecks permission and revision at commit. */
+async function runNoteProposalJob(context, request) {
+    const { job, signal } = context;
+    const account = { accountId: job.intent.media.accountId, dataEpoch: job.intent.media.dataEpoch };
+    const effectKey = roleplayHash(['note', request.name, request.callId]);
+    const operationId = `native:${roleplayHash([job.id, request.callId]).slice(0, 40)}`;
+    const finishFailure = error => {
+        if (!(error instanceof NotebookError) || !NOTE_FAILURE_STATUS[error.status]) throw error;
+        withNativeMediaReceipt(context, ({ value, save }) => {
+            value.effects[effectKey] = { name: registeredName(request), state: 'done', failed: error.code };
+            save();
+        });
+        return finishNativeMediaJob(context, { tool: request.name, callId: request.callId, result: {
+            status: NOTE_FAILURE_STATUS[error.status], committed: false, code: error.code,
+            message: `${error.message} Nothing was saved.` } });
+    };
+    let direct = false;
+    if (request.direct) {
+        try {
+            direct = withNativeMediaReceipt(context, ({ lease }) => {
+                assertBoundAssistantLocked(lease, context, request);
+                return proposalIsDirectLocked(lease, request.proposal);
+            });
+        } catch (error) { return finishFailure(error); }
+    }
+    if (!direct) {
+        let approval;
+        try {
+            approval = requireJobApproval(context, { account, key: `assistant:${request.callId}`,
+                proposal: { kind: 'neconyan-note-proposal', tool: request.name, arguments: request.args,
+                    summary: proposalSummary(request.proposal), proposalHash: request.proposalHash, diff: request.diff ?? '' },
+                choices: ['allow', 'deny'],
+                assertSourceLocked: lease => {
+                    assertBoundAssistantLocked(lease, context, request);
+                    checkProposalLocked(lease, request.proposal);
+                } });
+        } catch (error) { return finishFailure(error); }
+        if (approval.decision === null) return { waiting: true, approval };
+        if (approval.decision === 'deny') return finishNativeMediaJob(context,
+            { tool: request.name, callId: request.callId, result: { status: 'denied', committed: false, message: 'Not saved. The change was declined.' } });
+    }
+    signal.throwIfAborted();
+    if (getTool(registeredName(request)) !== registered.get(request.name)) throw invalid('The selected assistant tool registration changed.');
+    let result;
+    try {
+        result = await invokeTool(registeredName(request), request.args, { permissions: ['assistant'], owner: context.owner, signal,
+            target: { execute: () => withNativeMediaReceipt(context, ({ lease }) => {
+                assertBoundAssistantLocked(lease, context, request);
+                const visible = applyNoteProposalLocked(lease, request.proposal,
+                    { operationId, actor: { kind: 'assistant', assistantId: request.assistantId } });
+                return { ...visible, effect: { operationId, revision: visible.revision ?? null } };
+            }) },
+            receipt: receipt => withNativeMediaReceipt(context, ({ value, save }) => {
+                if (receipt.phase === 'before') {
+                    if (!value.effects[effectKey]) { value.effects[effectKey] = { name: receipt.tool, state: 'preparing' }; save(); }
+                } else {
+                    value.effects[effectKey] = { name: receipt.tool, state: 'done', resultHash: roleplayHash(receipt.effect ?? null) };
+                    save();
+                }
+            }) });
+    } catch (error) { return finishFailure(error); }
+    const visible = { ...result };
+    delete visible.effect;
+    if (visible.committed) {
+        notifyNotebookChanged({ owner: context.owner, notebookId: visible.notebookId, noteId: visible.noteId ?? null,
+            revision: visible.revision ?? null, kind: request.proposal.operation === 'publish' ? 'lore' : 'note', operationId });
+    }
+    if (Buffer.byteLength(JSON.stringify(visible)) > RESULT_LIMIT) throw invalid('The notebook result exceeds its reserved capacity.');
+    return finishNativeMediaJob(context, { tool: request.name, callId: request.callId, result: visible });
+}
+
 /** One durable function-tool result; Stage 8 consumes it before the next model turn. */
 export async function runAssistantToolJob(context, { beforePublish, afterCommit, fetchImpl } = {}) {
     const { job, directories, signal } = context;
@@ -132,6 +219,7 @@ export async function runAssistantToolJob(context, { beforePublish, afterCommit,
         verifiedSource(context, request);
         return finishNativeMediaJob(context, { tool: request.name, callId: request.callId, result: request.response });
     }
+    if (request.proposal) return runNoteProposalJob(context, request);
     const plan = plannedChange(context, request);
     const account = { accountId: job.intent.media.accountId, dataEpoch: job.intent.media.dataEpoch };
     const approval = requireJobApproval(context, { account, key: `assistant:${request.callId}`,

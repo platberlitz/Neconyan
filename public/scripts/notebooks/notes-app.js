@@ -1,0 +1,1181 @@
+import { characters, getCurrentChatId, this_chid } from '../../script.js';
+import { selected_group } from '../group-chats.js';
+import { getCurrentUserHandle } from '../user.js';
+import { accountStorage } from '../util/AccountStorage.js';
+import { loadStylesheetAsync } from '../dynamic-styles.js';
+import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
+import { attachmentUrl, newOperationId, notesRequest, subscribeNotes } from './api.js';
+import { append, button, clear, debounce, formatTime, h } from './dom.js';
+import { clearDraft, readDraft, saveDraft } from './drafts.js';
+import { headingOutline, renderNoteInto } from './render.js';
+import { formatDiff } from './line-diff.js';
+
+const PREFS_KEY = 'neconyan_notes_prefs';
+const SAVE_DELAY_MS = 1200;
+const MAX_RETRY_MS = 60_000;
+const PHONE_QUERY = '(max-width: 768px)';
+const STATUS_TEXT = Object.freeze({
+    idle: '',
+    saved: 'Saved on server',
+    saving: 'Saving',
+    device: 'Saved on this device only',
+    conflict: 'Conflict',
+    error: 'Could not save',
+});
+
+const lf = text => String(text ?? '').replace(/\r\n?/g, '\n');
+const isPhone = () => globalThis.matchMedia?.(PHONE_QUERY).matches === true;
+const toast = (kind, message) => globalThis.toastr?.[kind]?.(message);
+
+function readPrefs() {
+    try {
+        const value = JSON.parse(accountStorage.getItem(PREFS_KEY) ?? '{}');
+        return value && typeof value === 'object' ? value : {};
+    } catch {
+        return {};
+    }
+}
+
+function writePrefs(patch) {
+    try {
+        const next = { ...readPrefs(), ...patch };
+        const positions = Object.entries(next.positions ?? {}).slice(-50);
+        next.positions = Object.fromEntries(positions);
+        accountStorage.setItem(PREFS_KEY, JSON.stringify(next));
+    } catch {
+        /* preferences are a convenience; ignore storage failures */
+    }
+}
+
+/** The chat scope ids used by note context policies, matching the server's roleplay locator. */
+export function currentChatScope() {
+    const chat = getCurrentChatId();
+    if (!chat) return null;
+    if (selected_group) return { chat: `group:${chat}`, character: null, label: 'This group chat' };
+    const avatar = characters?.[this_chid]?.avatar;
+    if (!avatar) return null;
+    return { chat: `${avatar}:${chat}`, character: avatar, label: 'This chat', characterName: characters[this_chid].name };
+}
+
+const app = {
+    state: {
+        account: null,
+        built: false,
+        open: false,
+        notebooks: [],
+        notebookId: null,
+        tree: null,
+        folder: null,
+        list: { notes: [], total: 0, offset: 0 },
+        searchQuery: '',
+        search: null,
+        note: null,
+        dirty: false,
+        status: 'idle',
+        pending: null,
+        saving: false,
+        retryMs: 0,
+        saveTimer: null,
+        layout: 'full',
+        pane: 'note',
+        detailsTab: 'properties',
+        view: 'write',
+        back: [],
+        unsubscribe: null,
+        remoteChanged: false,
+    },
+    elements: {},
+    panels: null,
+    dialogs: null,
+};
+
+/* ---------- requests and account guard ---------- */
+
+function accountChanged() {
+    const handle = getCurrentUserHandle();
+    if (app.state.account && handle !== app.state.account) {
+        resetForAccount(handle);
+        return true;
+    }
+    app.state.account = handle;
+    return false;
+}
+
+function resetForAccount(handle) {
+    const { state } = app;
+    clearTimeout(state.saveTimer);
+    Object.assign(state, { account: handle, notebooks: [], notebookId: null, tree: null, note: null, dirty: false,
+        pending: null, saving: false, back: [], search: null, status: 'idle' });
+    if (state.built) {
+        renderEditor();
+        void loadNotebooks();
+    }
+}
+
+async function request(route, body = {}) {
+    if (accountChanged()) return { status: 'cancelled', message: 'The signed-in account changed.' };
+    const account = app.state.account;
+    const result = await notesRequest(route, body);
+    if (getCurrentUserHandle() !== account) return { status: 'cancelled', message: 'The signed-in account changed.' };
+    return result;
+}
+
+function failed(result, fallback = 'That did not work.') {
+    if (!result || result.status === 'success' || result.status === 'no_change') return false;
+    if (result.status !== 'cancelled') toast('error', result.message || fallback);
+    return true;
+}
+
+/* ---------- shell ---------- */
+
+function buildRoot() {
+    const { elements, state } = app;
+    elements.status = h('span', { class: 'notes-status', role: 'status', 'aria-live': 'polite' });
+    elements.title = h('input', { class: 'text_pole notes-title-input', type: 'text', 'aria-label': 'Note name', maxlength: '160',
+        placeholder: 'Untitled', onchange: () => void renameFromTitle() });
+    elements.banner = h('div', { class: 'notes-banners' });
+    elements.textarea = h('textarea', { class: 'notes-source', 'aria-label': 'Note text (Markdown)', spellcheck: 'true',
+        autocapitalize: 'sentences', oninput: onEditorInput, onkeydown: onEditorKeydown, onscroll: debounce(rememberPosition, 400),
+        onselect: rememberPosition, onblur: () => hideSuggest() });
+    elements.reader = h('div', { class: 'notes-reader', tabindex: '0', onclick: onReaderClick, onkeydown: onReaderKeydown });
+    elements.suggest = h('ul', { class: 'notes-suggest', role: 'listbox', 'aria-label': 'Link suggestions', hidden: true });
+    elements.outline = h('div', { class: 'notes-outline' });
+    elements.toolbar = buildToolbar();
+    elements.viewTabs = h('div', { class: 'notes-choice-group notes-view-tabs', role: 'group', 'aria-label': 'Editor view' });
+    elements.editorBody = h('div', { class: 'notes-editor-body' }, elements.textarea, elements.reader, elements.suggest);
+    elements.empty = h('div', { class: 'notes-empty' });
+    elements.editor = h('div', { class: 'notes-editor', hidden: true },
+        h('div', { class: 'notes-editor-head' }, elements.title, elements.status),
+        elements.banner, elements.viewTabs, elements.toolbar, elements.editorBody);
+    elements.editorPane = h('section', { class: 'notes-pane notes-pane-editor', 'aria-label': 'Note' }, elements.empty, elements.editor);
+    elements.nav = h('nav', { class: 'notes-pane notes-pane-nav', 'aria-label': 'Notebooks and notes' });
+    elements.details = h('aside', { class: 'notes-pane notes-pane-details', 'aria-label': 'Note details' });
+    elements.paneTabs = h('div', { class: 'notes-choice-group notes-pane-tabs', role: 'group', 'aria-label': 'Notes sections' });
+    elements.back = button('Back', () => void goBack(), { icon: 'fa-arrow-left', className: 'notes-back', title: 'Back to the previous note' });
+    elements.layoutButton = button('', () => setLayout(state.layout === 'beside' ? 'full' : 'beside'), { icon: 'fa-table-columns', className: 'notes-layout-toggle' });
+    elements.close = button('Back to chat', () => hide(), { icon: 'fa-comments', className: 'notes-close' });
+    elements.resizer = h('div', { class: 'notes-resizer', role: 'separator', 'aria-orientation': 'vertical', tabindex: '0',
+        'aria-label': 'Resize notes panel', onpointerdown: startResize, onkeydown: resizeByKey });
+    elements.header = h('header', { class: 'notes-header' },
+        h('h2', { class: 'notes-heading', text: 'Notes' }), elements.back, h('span', { class: 'notes-spacer' }),
+        elements.layoutButton, elements.close);
+    elements.root = h('section', { id: 'neconyan-notes', class: 'notes-app', 'aria-label': 'Notes', hidden: true },
+        elements.resizer, elements.header, elements.paneTabs,
+        h('div', { class: 'notes-columns' }, elements.nav, elements.editorPane, elements.details));
+    document.body.append(elements.root);
+    globalThis.matchMedia?.(PHONE_QUERY).addEventListener?.('change', () => applyLayout());
+    state.built = true;
+}
+
+function renderPaneTabs() {
+    const { elements, state } = app;
+    clear(elements.paneTabs);
+    for (const [pane, label] of [['nav', 'Notebooks'], ['note', 'Note'], ['details', 'Details']]) {
+        elements.paneTabs.append(button(label, () => setPane(pane), { className: 'notes-choice', pressed: state.pane === pane }));
+    }
+}
+
+function setPane(pane) {
+    app.state.pane = pane;
+    applyLayout();
+    if (pane === 'details') app.panels?.renderDetails(app);
+}
+
+function applyLayout() {
+    const { elements, state } = app;
+    if (!elements.root) return;
+    const phone = isPhone();
+    const beside = !phone && state.layout === 'beside';
+    elements.root.dataset.layout = phone ? 'phone' : state.layout;
+    elements.root.dataset.pane = state.pane;
+    document.body.classList.toggle('neconyan-notes-beside', state.open && beside);
+    document.body.classList.toggle('neconyan-notes-open', state.open);
+    elements.layoutButton.hidden = phone;
+    const label = elements.layoutButton.querySelector('span');
+    if (label) label.textContent = state.layout === 'beside' ? 'Full width' : 'Beside chat';
+    elements.layoutButton.setAttribute('aria-label', state.layout === 'beside' ? 'Show notes at full width' : 'Show notes beside the chat');
+    elements.resizer.hidden = !beside;
+    elements.paneTabs.hidden = !(phone || beside);
+    elements.back.hidden = state.back.length === 0;
+    renderPaneTabs();
+    const width = Number(readPrefs().width) || 440;
+    document.body.style.setProperty('--neco-notes-beside-width', `${clampWidth(width)}px`);
+}
+
+function clampWidth(width) {
+    return Math.max(320, Math.min(width, Math.max(320, (globalThis.innerWidth || 1280) - 360)));
+}
+
+function setLayout(layout) {
+    app.state.layout = layout === 'beside' ? 'beside' : 'full';
+    writePrefs({ layout: app.state.layout });
+    applyLayout();
+}
+
+function startResize(event) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const target = event.currentTarget;
+    target.setPointerCapture?.(event.pointerId);
+    const move = moveEvent => {
+        const width = clampWidth((globalThis.innerWidth || 1280) - moveEvent.clientX);
+        document.body.style.setProperty('--neco-notes-beside-width', `${width}px`);
+    };
+    const end = endEvent => {
+        target.removeEventListener('pointermove', move);
+        target.removeEventListener('pointerup', end);
+        target.removeEventListener('pointercancel', end);
+        writePrefs({ width: clampWidth((globalThis.innerWidth || 1280) - endEvent.clientX) });
+    };
+    target.addEventListener('pointermove', move);
+    target.addEventListener('pointerup', end);
+    target.addEventListener('pointercancel', end);
+}
+
+function resizeByKey(event) {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const width = clampWidth((Number(readPrefs().width) || 440) + (event.key === 'ArrowLeft' ? 32 : -32));
+    writePrefs({ width });
+    document.body.style.setProperty('--neco-notes-beside-width', `${width}px`);
+}
+
+/* ---------- open / hide ---------- */
+
+async function ensureModules() {
+    if (!app.panels) app.panels = await import('./notes-panels.js');
+    if (!app.dialogs) app.dialogs = await import('./notes-dialogs.js');
+}
+
+export async function openNotes(options = {}) {
+    const { state } = app;
+    await loadStylesheetAsync('css/neconyan-notes.css?v=2', { id: 'neconyan-notes-css' }).catch(() => null);
+    await ensureModules();
+    if (!state.built) buildRoot();
+    accountChanged();
+    const prefs = readPrefs();
+    if (!state.open) state.layout = options.layout ?? (prefs.layout === 'beside' ? 'beside' : 'full');
+    if (options.layout) state.layout = options.layout;
+    state.open = true;
+    app.elements.root.hidden = false;
+    if (isPhone()) globalThis.NeconyanShell?.closeWorkspace?.();
+    if (!state.unsubscribe) state.unsubscribe = subscribeNotes(onRemoteChange);
+    if (!state.notebooks.length) await loadNotebooks(options.notebookId ?? prefs.notebookId);
+    else if (options.notebookId && options.notebookId !== state.notebookId) await selectNotebook(options.notebookId);
+    const noteId = options.noteId ?? (!state.note ? prefs.noteId : null);
+    if (noteId && state.notebookId) await openNote(state.notebookId, noteId, { quiet: !options.noteId });
+    state.pane = state.note ? 'note' : 'nav';
+    applyLayout();
+    renderEditor();
+    return app;
+}
+
+export function hideNotes() {
+    const { state, elements } = app;
+    if (!state.open) return;
+    if (state.dirty) void flushSave();
+    state.open = false;
+    if (elements.root) elements.root.hidden = true;
+    applyLayout();
+}
+
+const hide = hideNotes;
+
+/** Another workspace was chosen in the rail: a full-width Notes view gives way, a side panel stays. */
+export function onWorkspaceRoute(route) {
+    if (route === 'notes') return;
+    if (app.state.open && (app.state.layout === 'full' || isPhone())) hideNotes();
+}
+
+/* ---------- notebooks, tree and lists ---------- */
+
+async function loadNotebooks(preferred) {
+    const result = await request('/list');
+    if (failed(result, 'Notes could not load your notebooks.')) return;
+    app.state.notebooks = result.notebooks ?? [];
+    const chosen = app.state.notebooks.find(item => item.id === preferred) ?? app.state.notebooks[0];
+    if (chosen) await selectNotebook(chosen.id);
+    else renderNav();
+}
+
+async function selectNotebook(notebookId) {
+    const { state } = app;
+    if (state.dirty) await flushSave();
+    if (state.notebookId !== notebookId) {
+        state.note = null;
+        state.folder = null;
+        state.search = null;
+        state.searchQuery = '';
+    }
+    state.notebookId = notebookId;
+    writePrefs({ notebookId });
+    await refreshTree();
+    renderEditor();
+}
+
+async function refreshTree() {
+    const { state } = app;
+    if (!state.notebookId) return;
+    const [tree, list] = await Promise.all([
+        request('/tree', { notebookId: state.notebookId }),
+        request('/notes/list', { notebookId: state.notebookId, folder: state.folder, offset: state.list.offset, limit: 200 }),
+    ]);
+    if (tree.status === 'not_found') {
+        state.notebookId = null;
+        return loadNotebooks();
+    }
+    if (failed(tree) || failed(list)) return;
+    state.tree = tree;
+    state.list = { notes: list.notes ?? [], total: list.total ?? 0, offset: list.offset ?? 0 };
+    if (state.searchQuery) await runSearch(state.searchQuery);
+    renderNav();
+}
+
+const searchSoon = debounce(query => void runSearch(query), 300);
+
+async function runSearch(query) {
+    const { state } = app;
+    state.searchQuery = query;
+    if (!query.trim()) {
+        state.search = null;
+        renderNav();
+        return;
+    }
+    const result = await request('/search', { notebookId: state.notebookId, query, limit: 50 });
+    if (failed(result)) return;
+    if (state.searchQuery !== query) return;
+    state.search = result;
+    renderNav();
+}
+
+function noteButton(summary, extra = null) {
+    const current = app.state.note?.id === summary.id;
+    return h('li', { class: 'notes-list-item' },
+        h('button', { type: 'button', class: `notes-note-link${current ? ' is-current' : ''}`, 'aria-current': current ? 'true' : null,
+            onclick: () => void openNote(app.state.notebookId, summary.id, { pushBack: true }) },
+        h('span', { class: 'notes-note-title', text: summary.title || 'Untitled' }),
+        h('span', { class: 'notes-note-meta', text: [summary.folder || 'Top level', summary.favourite ? 'Favourite' : '', formatTime(summary.updatedAt)].filter(Boolean).join(' · ') }),
+        extra));
+}
+
+function section(title, ...children) {
+    return h('section', { class: 'notes-nav-section' }, h('h3', { class: 'notes-nav-heading', text: title }), ...children);
+}
+
+function renderNav() {
+    const { elements, state } = app;
+    const nav = elements.nav;
+    if (!nav) return;
+    const keepFocus = document.activeElement?.classList?.contains('notes-search-input');
+    clear(nav);
+    const notebookRow = h('div', { class: 'notes-notebook-row', role: 'group', 'aria-label': 'Notebooks' });
+    for (const notebook of state.notebooks) {
+        notebookRow.append(button(notebook.name, () => void selectNotebook(notebook.id), {
+            className: 'notes-choice notes-notebook', pressed: notebook.id === state.notebookId,
+            title: `${notebook.name} (${notebook.noteCount} notes${notebook.origin === 'import' ? ', imported' : ''})`,
+        }));
+    }
+    notebookRow.append(button('New notebook', () => void app.dialogs.newNotebook(app), { icon: 'fa-plus', className: 'notes-quiet' }));
+    nav.append(section('Notebooks', notebookRow));
+    if (!state.notebookId) {
+        nav.append(h('p', { class: 'notes-hint', text: 'Notebooks hold your notes. Make one to start writing.' }));
+        return;
+    }
+    const search = h('input', { type: 'search', class: 'text_pole notes-search-input', placeholder: 'Search titles and text',
+        'aria-label': 'Search notes', value: state.searchQuery, oninput: event => searchSoon(event.target.value) });
+    nav.append(h('div', { class: 'notes-nav-actions' },
+        button('New note', () => void app.dialogs.newNote(app), { icon: 'fa-file-circle-plus', className: 'notes-primary' }),
+        button('Quick note', () => void app.dialogs.quickNote(app), { icon: 'fa-bolt' })), search);
+    if (keepFocus) queueMicrotask(() => { search.focus(); search.setSelectionRange(search.value.length, search.value.length); });
+    if (state.search) {
+        const list = h('ul', { class: 'notes-list' });
+        for (const result of state.search.results ?? []) {
+            list.append(noteButton(result, result.snippet ? h('span', { class: 'notes-snippet', text: `${result.exact ? '' : 'Close match: '}${result.snippet}` }) : null));
+        }
+        nav.append(section(`Search results (${state.search.total})`, state.search.total ? list : h('p', { class: 'notes-hint', text: 'Nothing matched. Try fewer words.' })));
+        return;
+    }
+    const tree = state.tree;
+    if (tree?.origin === 'import' && tree.policy?.admitted === false) {
+        nav.append(h('p', { class: 'notes-notice', text: 'Imported notebook: assistants and chat context cannot use it until you allow that under AI access.' }));
+    }
+    if (tree?.favourites?.length) {
+        const list = h('ul', { class: 'notes-list' }, ...tree.favourites.slice(0, 20).map(note => noteButton(note)));
+        nav.append(section('Favourites', list));
+    }
+    if (tree?.recent?.length && !state.folder) {
+        const list = h('ul', { class: 'notes-list' }, ...tree.recent.slice(0, 8).map(note => noteButton(note)));
+        nav.append(section('Recent', list));
+    }
+    const folders = h('div', { class: 'notes-folder-row', role: 'group', 'aria-label': 'Folders' });
+    folders.append(button(`All notes (${tree?.noteCount ?? 0})`, () => void chooseFolder(null), { className: 'notes-choice', pressed: state.folder === null }));
+    folders.append(button(`Top level (${tree?.rootCount ?? 0})`, () => void chooseFolder(''), { className: 'notes-choice', pressed: state.folder === '' }));
+    for (const folder of tree?.folders ?? []) {
+        folders.append(button(`${folder.path} (${folder.count})`, () => void chooseFolder(folder.path), { className: 'notes-choice', pressed: state.folder === folder.path }));
+    }
+    nav.append(section('Folders', folders, h('div', { class: 'notes-nav-actions' },
+        button('New folder', () => void app.dialogs.newFolder(app), { icon: 'fa-folder-plus', className: 'notes-quiet' }),
+        state.folder ? button('Rename folder', () => void app.dialogs.renameFolder(app, state.folder), { icon: 'fa-pen', className: 'notes-quiet' }) : null,
+        state.folder ? button('Remove empty folder', () => void app.dialogs.deleteFolder(app, state.folder), { icon: 'fa-folder-minus', className: 'notes-quiet' }) : null)));
+    const list = h('ul', { class: 'notes-list' }, ...state.list.notes.map(note => noteButton(note)));
+    const more = state.list.total > state.list.offset + state.list.notes.length
+        ? button('Show more', () => void pageList(200), { className: 'notes-quiet' }) : null;
+    const less = state.list.offset > 0 ? button('Show earlier', () => void pageList(-200), { className: 'notes-quiet' }) : null;
+    nav.append(section(state.folder === null ? 'All notes' : state.folder || 'Top level',
+        state.list.notes.length ? list : h('p', { class: 'notes-hint', text: 'No notes here yet. New note starts one.' }),
+        h('div', { class: 'notes-nav-actions' }, less, more)));
+    nav.append(section('Notebook', h('div', { class: 'notes-nav-actions notes-wrap' },
+        button(`Trash (${tree?.trashCount ?? 0})`, () => void app.dialogs.trash(app), { icon: 'fa-trash-can', className: 'notes-quiet' }),
+        button('Assistant changes', () => void app.dialogs.proposals(app), { icon: 'fa-wand-magic-sparkles', className: 'notes-quiet' }),
+        button('Import', () => void app.dialogs.importNotes(app), { icon: 'fa-file-import', className: 'notes-quiet' }),
+        button('Export', () => void app.dialogs.exportNotebook(app), { icon: 'fa-file-export', className: 'notes-quiet' }),
+        button('Rename notebook', () => void app.dialogs.renameNotebook(app), { icon: 'fa-pen', className: 'notes-quiet' }),
+        button('Check notebook', () => void app.dialogs.diagnostics(app), { icon: 'fa-stethoscope', className: 'notes-quiet' }))));
+    if (tree?.skipped?.length) {
+        nav.append(h('p', { class: 'notes-notice', text: `${tree.skipped.length} file(s) in this notebook folder were left alone because Notes cannot read them safely.` }));
+    }
+}
+
+async function chooseFolder(folder) {
+    app.state.folder = folder;
+    app.state.list.offset = 0;
+    await refreshTree();
+}
+
+async function pageList(delta) {
+    app.state.list.offset = Math.max(0, app.state.list.offset + delta);
+    await refreshTree();
+}
+
+/* ---------- opening notes ---------- */
+
+function rememberPosition() {
+    const { state, elements } = app;
+    if (!state.note) return;
+    const positions = { ...(readPrefs().positions ?? {}) };
+    delete positions[state.note.id];
+    positions[state.note.id] = { scroll: elements.textarea.scrollTop, start: elements.textarea.selectionStart, end: elements.textarea.selectionEnd };
+    writePrefs({ noteId: state.note.id, notebookId: state.notebookId, positions });
+}
+
+async function openNote(notebookId, noteId, { pushBack = false, quiet = false, fragment = null } = {}) {
+    const { state } = app;
+    if (state.dirty) {
+        const saved = await flushSave();
+        if (!saved && state.dirty) {
+            toast('warning', 'This note still has unsaved changes on this device. They are kept as a draft.');
+        }
+    }
+    if (pushBack && state.note && state.note.id !== noteId) {
+        state.back.push({ notebookId: state.notebookId, noteId: state.note.id });
+        if (state.back.length > 30) state.back.shift();
+    }
+    if (notebookId !== state.notebookId) await selectNotebook(notebookId);
+    const result = await request('/notes/read', { notebookId, noteId });
+    if (result.status === 'not_found') {
+        if (!quiet) toast('warning', 'That note is not available. It may have been moved to Trash.');
+        state.note = null;
+        renderEditor();
+        return false;
+    }
+    if (failed(result)) return false;
+    if (state.dirty) await flushSave();
+    loadNoteDetail(result);
+    if (isPhone() || state.layout === 'beside') state.pane = 'note';
+    applyLayout();
+    renderEditor({ restorePosition: true, fragment });
+    renderNav();
+    writePrefs({ noteId, notebookId });
+    return true;
+}
+
+function loadNoteDetail(result) {
+    const { state } = app;
+    const note = result.note;
+    state.note = { id: note.id, notebookId: result.notebookId, revision: note.revision, serverText: note.text, path: note.path,
+        folder: note.folder, title: note.title, detail: note, associations: result.associations ?? [], provenance: result.provenance ?? [] };
+    state.dirty = false;
+    state.pending = null;
+    state.remoteChanged = false;
+    state.retryMs = 0;
+    const draft = readDraft(state.account, state.notebookId, note.id);
+    let text = lf(note.text);
+    clear(app.elements.banner ?? h('div'));
+    if (draft && draft.text !== text) {
+        if (draft.baseRevision === note.revision) {
+            text = draft.text;
+            state.dirty = true;
+            queueMicrotask(() => scheduleSave());
+            showBanner('draft', 'Restored changes saved on this device. They will be saved to the server now.', []);
+        } else {
+            queueMicrotask(() => showDraftConflict(draft));
+        }
+    } else if (draft) {
+        clearDraft(state.account, state.notebookId, note.id);
+    }
+    state.editorText = text;
+    setStatus(state.dirty ? 'device' : 'saved');
+}
+
+async function reloadNote({ keepView = true } = {}) {
+    const { state } = app;
+    if (!state.note) return;
+    const result = await request('/notes/read', { notebookId: state.notebookId, noteId: state.note.id });
+    if (failed(result)) return;
+    const view = state.view;
+    loadNoteDetail(result);
+    if (keepView) state.view = view;
+    renderEditor({ restorePosition: true });
+}
+
+async function goBack() {
+    const previous = app.state.back.pop();
+    if (!previous) return;
+    await openNote(previous.notebookId, previous.noteId, { quiet: true });
+}
+
+/* ---------- editor ---------- */
+
+function renderEditor({ restorePosition = false, fragment = null } = {}) {
+    const { elements, state } = app;
+    if (!elements.root) return;
+    const note = state.note;
+    elements.editor.hidden = !note;
+    elements.empty.hidden = Boolean(note);
+    if (!note) {
+        clear(elements.empty);
+        append(elements.empty, [
+            h('p', { class: 'notes-empty-title', text: 'Notes keeps your ideas, drafts and references, with or without a chat.' }),
+            state.notebookId ? h('div', { class: 'notes-nav-actions' },
+                button('New note', () => void app.dialogs.newNote(app), { icon: 'fa-file-circle-plus', className: 'notes-primary' }),
+                button('Quick note', () => void app.dialogs.quickNote(app), { icon: 'fa-bolt' })) : null,
+        ]);
+        app.panels?.renderDetails(app);
+        return;
+    }
+    elements.title.value = note.path.replace(/^.*\//, '').replace(/\.md$/i, '');
+    if (elements.textarea.value !== state.editorText) elements.textarea.value = state.editorText ?? '';
+    clear(elements.viewTabs);
+    for (const [view, label] of [['write', 'Write'], ['read', 'Read'], ['outline', 'Outline']]) {
+        elements.viewTabs.append(button(label, () => setView(view), { className: 'notes-choice', pressed: state.view === view }));
+    }
+    elements.toolbar.hidden = state.view !== 'write';
+    elements.textarea.hidden = state.view !== 'write';
+    elements.reader.hidden = state.view !== 'read';
+    elements.outline.hidden = state.view !== 'outline';
+    if (!elements.outline.isConnected) elements.editorBody.append(elements.outline);
+    if (state.view === 'read') renderReader();
+    if (state.view === 'outline') renderOutline();
+    if (restorePosition && state.view === 'write') {
+        const position = readPrefs().positions?.[note.id];
+        if (position) {
+            requestAnimationFrame(() => {
+                elements.textarea.scrollTop = Number(position.scroll) || 0;
+                const length = elements.textarea.value.length;
+                elements.textarea.setSelectionRange(Math.min(position.start ?? 0, length), Math.min(position.end ?? 0, length));
+            });
+        }
+    }
+    if (fragment) jumpToHeading(fragment);
+    app.panels?.renderDetails(app);
+}
+
+function setView(view) {
+    app.state.view = view;
+    renderEditor();
+    if (view === 'write') app.elements.textarea.focus({ preventScroll: true });
+}
+
+function renderReader() {
+    const { elements, state } = app;
+    renderNoteInto(elements.reader, elements.textarea.value, {
+        notebookId: state.notebookId,
+        notePath: state.note.path,
+        attachmentUrl: relative => attachmentUrl(state.notebookId, relative),
+    });
+}
+
+function renderOutline() {
+    const { elements } = app;
+    clear(elements.outline);
+    const headings = headingOutline(elements.textarea.value);
+    if (!headings.length) {
+        elements.outline.append(h('p', { class: 'notes-hint', text: 'No headings yet. Lines starting with # become headings.' }));
+        return;
+    }
+    const list = h('ul', { class: 'notes-outline-list' });
+    for (const heading of headings) {
+        list.append(h('li', { style: `--notes-outline-level:${heading.level - 1}` },
+            h('button', { type: 'button', class: 'notes-outline-item', text: heading.text, onclick: () => jumpToOffset(heading.offset) })));
+    }
+    elements.outline.append(list);
+}
+
+function jumpToOffset(offset) {
+    const { elements } = app;
+    app.state.view = 'write';
+    renderEditor();
+    const textarea = elements.textarea;
+    textarea.focus({ preventScroll: true });
+    textarea.setSelectionRange(offset, offset);
+    const before = textarea.value.slice(0, offset).split('\n').length - 1;
+    const lineHeight = parseFloat(getComputedStyle(textarea).lineHeight) || 22;
+    textarea.scrollTop = Math.max(0, before * lineHeight - 40);
+}
+
+function jumpToHeading(fragment) {
+    const wanted = String(fragment).replace(/^\^/, '').toLocaleLowerCase('und');
+    const text = app.elements.textarea.value;
+    const block = text.search(new RegExp(`\\^${wanted.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i'));
+    if (block >= 0) return jumpToOffset(text.lastIndexOf('\n', block) + 1);
+    const heading = headingOutline(text).find(item => item.text.toLocaleLowerCase('und') === wanted);
+    if (heading) jumpToOffset(heading.offset);
+}
+
+function onEditorInput() {
+    const { state, elements } = app;
+    if (!state.note) return;
+    state.editorText = elements.textarea.value;
+    state.dirty = state.editorText !== lf(state.note.serverText);
+    if (!state.dirty) {
+        clearDraft(state.account, state.notebookId, state.note.id);
+        if (!state.saving) setStatus('saved');
+        return;
+    }
+    const stored = saveDraft(state.account, state.notebookId, state.note.id, { text: state.editorText, baseRevision: state.note.revision });
+    if (!stored.ok) {
+        setStatus('error');
+        showBanner('storage', stored.reason === 'too-large'
+            ? 'This note is too large to keep a copy on this device. Keep this tab open until it says Saved on server.'
+            : 'This browser would not keep a copy of your changes on this device. Keep this tab open until it says Saved on server.', []);
+    } else if (!state.saving) {
+        setStatus('device');
+    }
+    maybeSuggest();
+    scheduleSave();
+}
+
+function scheduleSave(delay = SAVE_DELAY_MS) {
+    const { state } = app;
+    clearTimeout(state.saveTimer);
+    state.saveTimer = setTimeout(() => void saveNow(), delay);
+}
+
+/** Saves the editor text; resolves true once the server has the current text. */
+async function saveNow() {
+    const { state } = app;
+    clearTimeout(state.saveTimer);
+    const note = state.note;
+    if (!note || !state.dirty) return true;
+    if (state.status === 'conflict') return false;
+    if (state.saving) {
+        scheduleSave(400);
+        return false;
+    }
+    const text = state.editorText;
+    if (!state.pending || state.pending.text !== text || state.pending.noteId !== note.id || state.pending.baseRevision !== note.revision) {
+        state.pending = { text, noteId: note.id, baseRevision: note.revision, operationId: newOperationId('save') };
+    }
+    const pending = state.pending;
+    state.saving = true;
+    setStatus('saving');
+    const result = await request('/notes/update', {
+        operationId: pending.operationId, notebookId: state.notebookId, noteId: note.id, expectedRevision: pending.baseRevision,
+        changes: [{ type: 'replace_all', markdown: text }], reason: 'autosave',
+    });
+    state.saving = false;
+    if (state.note?.id !== note.id) return false;
+    if (result.status === 'success' || result.status === 'no_change') {
+        state.retryMs = 0;
+        state.pending = null;
+        note.revision = result.revision ?? note.revision;
+        note.serverText = text;
+        if (result.path) note.path = result.path;
+        state.ownRevisions = [...(state.ownRevisions ?? []).slice(-20), note.revision];
+        state.dirty = state.editorText !== text;
+        if (!state.dirty) {
+            clearDraft(state.account, state.notebookId, note.id);
+            setStatus('saved');
+        } else {
+            saveDraft(state.account, state.notebookId, note.id, { text: state.editorText, baseRevision: note.revision });
+            scheduleSave(300);
+        }
+        reportLoreUpdates(result.loreUpdates);
+        if (result.title && result.title !== note.title) {
+            note.title = result.title;
+            void refreshTree();
+        }
+        return !state.dirty;
+    }
+    if (result.status === 'conflict' && result.code === 'NOTE_CONFLICT') {
+        state.pending = null;
+        setStatus('conflict');
+        showSaveConflict();
+        return false;
+    }
+    if (result.status === 'cancelled') return false;
+    if (result.network || result.http >= 500 || result.status === 'unavailable') {
+        state.retryMs = Math.min(MAX_RETRY_MS, state.retryMs ? state.retryMs * 2 : 2000);
+        setStatus('device');
+        scheduleSave(state.retryMs);
+        return false;
+    }
+    setStatus('error');
+    showBanner('save-error', result.message || 'The server refused this save. Your text is kept on this device.', [
+        ['Try again', () => { clearBanner('save-error'); setStatus('device'); void saveNow(); }],
+    ]);
+    return false;
+}
+
+async function flushSave() {
+    clearTimeout(app.state.saveTimer);
+    return saveNow();
+}
+
+function reportLoreUpdates(updates) {
+    if (!Array.isArray(updates)) return;
+    const updated = updates.filter(item => item.updated).length;
+    const review = updates.filter(item => item.status === 'needs_review' || item.status === 'conflict').length;
+    if (updated) toast('success', `Lore kept up to date (${updated} entr${updated === 1 ? 'y' : 'ies'}).`);
+    if (review) toast('info', 'Linked lore needs a review before it changes. See Details > Lore.');
+}
+
+function setStatus(status) {
+    const { state, elements } = app;
+    if (state.status === status && elements.status?.textContent === STATUS_TEXT[status]) return;
+    state.status = status;
+    if (!elements.status) return;
+    elements.status.textContent = STATUS_TEXT[status] ?? '';
+    elements.status.dataset.status = status;
+}
+
+/* ---------- banners and conflicts ---------- */
+
+function showBanner(id, message, actions = []) {
+    const host = app.elements.banner;
+    if (!host) return;
+    host.querySelector(`[data-banner="${id}"]`)?.remove();
+    const row = h('div', { class: 'notes-banner', dataset: { banner: id }, role: 'alert' }, h('p', { text: message }));
+    const buttons = h('div', { class: 'notes-nav-actions notes-wrap' });
+    for (const [label, action] of actions) buttons.append(button(label, action, { className: 'notes-quiet' }));
+    buttons.append(button('Dismiss', () => row.remove(), { className: 'notes-quiet' }));
+    row.append(buttons);
+    host.append(row);
+}
+
+function clearBanner(id) {
+    app.elements.banner?.querySelector(`[data-banner="${id}"]`)?.remove();
+}
+
+async function compareTexts(title, before, after) {
+    const body = h('div', { class: 'notes-dialog' },
+        h('h3', { text: title }),
+        h('p', { class: 'notes-hint', text: 'Lines starting with - are only in the first version; lines starting with + are only in the second.' }),
+        h('pre', { class: 'notes-diff', text: formatDiff(lf(before), lf(after)) || '(no differences)' }));
+    await callGenericPopup(body, POPUP_TYPE.TEXT, '', { wide: true, large: true, okButton: 'Close' });
+}
+
+async function fetchServerText() {
+    const { state } = app;
+    const result = await request('/notes/read', { notebookId: state.notebookId, noteId: state.note.id });
+    return failed(result) ? null : result;
+}
+
+function showSaveConflict() {
+    showBanner('conflict', 'This note changed somewhere else since you opened it. Your text is kept on this device. Choose what to keep.', [
+        ['Compare', async () => {
+            const server = await fetchServerText();
+            if (server) await compareTexts('Server version (-) and your version (+)', server.note.text, app.elements.textarea.value);
+        }],
+        ['Use server version', async () => {
+            clearBanner('conflict');
+            clearDraft(app.state.account, app.state.notebookId, app.state.note.id);
+            await reloadNote();
+        }],
+        ['Save mine as a copy', async () => {
+            const text = app.elements.textarea.value;
+            const created = await createNote({ folder: app.state.note.folder, title: `${app.state.note.title} (my copy)`, text });
+            if (created) {
+                clearDraft(app.state.account, app.state.notebookId, app.state.note.id);
+                clearBanner('conflict');
+                await openNote(app.state.notebookId, created.noteId, { pushBack: true });
+            }
+        }],
+        ['Keep mine', async () => {
+            const server = await fetchServerText();
+            if (!server) return;
+            clearBanner('conflict');
+            app.state.note.revision = server.note.revision;
+            app.state.note.serverText = server.note.text;
+            app.state.dirty = app.elements.textarea.value !== lf(server.note.text);
+            setStatus('device');
+            void saveNow();
+        }],
+    ]);
+}
+
+function showDraftConflict(draft) {
+    showBanner('draft', `A draft from ${formatTime(draft.at)} on this device was written against an older version of this note.`, [
+        ['Compare', () => void compareTexts('Server version (-) and draft (+)', app.state.note.serverText, draft.text)],
+        ['Use draft', () => {
+            clearBanner('draft');
+            app.elements.textarea.value = draft.text;
+            onEditorInput();
+        }],
+        ['Save draft as a copy', async () => {
+            const created = await createNote({ folder: app.state.note.folder, title: `${app.state.note.title} (draft)`, text: draft.text });
+            if (created) {
+                clearDraft(app.state.account, app.state.notebookId, app.state.note.id);
+                clearBanner('draft');
+            }
+        }],
+        ['Discard draft', () => {
+            clearDraft(app.state.account, app.state.notebookId, app.state.note.id);
+            clearBanner('draft');
+        }],
+    ]);
+}
+
+/* ---------- remote changes ---------- */
+
+const refreshTreeSoon = debounce(() => void refreshTree(), 500);
+
+function onRemoteChange(change) {
+    const { state } = app;
+    if (!state.open || change.notebookId !== state.notebookId) {
+        if (change.kind === 'notebook') void loadNotebooks(state.notebookId);
+        return;
+    }
+    refreshTreeSoon();
+    if (change.kind === 'policy' || change.kind === 'lore' || change.kind === 'proposal') app.panels?.renderDetails(app);
+    const note = state.note;
+    if (!note || change.noteId !== note.id || !change.revision || change.revision === note.revision) return;
+    if ((state.ownRevisions ?? []).includes(change.revision) || state.saving) return;
+    if (!state.dirty) {
+        void reloadNote();
+        return;
+    }
+    state.remoteChanged = true;
+    showBanner('remote', 'This note was changed somewhere else while you were editing. Your text is still here.', [
+        ['Compare', async () => {
+            const server = await fetchServerText();
+            if (server) await compareTexts('Server version (-) and your version (+)', server.note.text, app.elements.textarea.value);
+        }],
+        ['Use server version', async () => { clearBanner('remote'); clearDraft(state.account, state.notebookId, note.id); await reloadNote(); }],
+    ]);
+}
+
+/* ---------- toolbar ---------- */
+
+function buildToolbar() {
+    const actions = [
+        ['Heading', 'fa-heading', () => prefixLines('## ')],
+        ['Bold', 'fa-bold', () => wrapSelection('**', '**', 'bold text')],
+        ['Italic', 'fa-italic', () => wrapSelection('*', '*', 'italic text')],
+        ['Strikethrough', 'fa-strikethrough', () => wrapSelection('~~', '~~', 'struck text')],
+        ['Bulleted list', 'fa-list-ul', () => prefixLines('- ')],
+        ['Numbered list', 'fa-list-ol', () => prefixLines('1. ')],
+        ['Task', 'fa-square-check', () => prefixLines('- [ ] ')],
+        ['Quote', 'fa-quote-left', () => prefixLines('> ')],
+        ['Link to note', 'fa-link', () => void app.dialogs.linkPicker(app)],
+        ['Web link', 'fa-globe', () => wrapSelection('[', '](https://)', 'link text')],
+        ['Image or file', 'fa-image', () => void app.dialogs.uploadAttachment(app)],
+        ['Code', 'fa-code', () => codeAction()],
+        ['Table', 'fa-table', () => insertBlock('| Column | Column |\n| --- | --- |\n| | |')],
+        ['Divider', 'fa-minus', () => insertBlock('---')],
+    ];
+    const bar = h('div', { class: 'notes-toolbar', role: 'toolbar', 'aria-label': 'Formatting' });
+    for (const [label, icon, action] of actions) {
+        bar.append(h('button', { type: 'button', class: 'menu_button notes-tool', title: label, 'aria-label': label,
+            onmousedown: event => event.preventDefault(), onclick: action }, h('i', { class: `fa-solid ${icon}`, 'aria-hidden': 'true' })));
+    }
+    bar.addEventListener('keydown', event => {
+        if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+        const items = [...bar.querySelectorAll('button')];
+        const index = items.indexOf(document.activeElement);
+        if (index < 0) return;
+        event.preventDefault();
+        items[(index + (event.key === 'ArrowRight' ? 1 : items.length - 1)) % items.length].focus();
+    });
+    return bar;
+}
+
+/** Replaces the selection through the browser's editing command so native undo keeps working. */
+function insertText(text, { select = null } = {}) {
+    const textarea = app.elements.textarea;
+    textarea.focus({ preventScroll: true });
+    const start = textarea.selectionStart;
+    let done = false;
+    try {
+        done = document.execCommand?.('insertText', false, text) === true;
+    } catch {
+        done = false;
+    }
+    if (!done) {
+        textarea.setRangeText(text, textarea.selectionStart, textarea.selectionEnd, 'end');
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    if (select) textarea.setSelectionRange(start + select[0], start + select[1]);
+}
+
+function wrapSelection(before, after, placeholder) {
+    const textarea = app.elements.textarea;
+    const selected = textarea.value.slice(textarea.selectionStart, textarea.selectionEnd);
+    const inner = selected || placeholder;
+    insertText(`${before}${inner}${after}`, { select: [before.length, before.length + inner.length] });
+}
+
+function prefixLines(prefix) {
+    const textarea = app.elements.textarea;
+    const value = textarea.value;
+    const start = value.lastIndexOf('\n', textarea.selectionStart - 1) + 1;
+    let end = value.indexOf('\n', Math.max(textarea.selectionEnd - (textarea.selectionEnd > textarea.selectionStart ? 1 : 0), start));
+    if (end < 0) end = value.length;
+    textarea.setSelectionRange(start, end);
+    const lines = value.slice(start, end).split('\n');
+    const all = lines.every(line => line.startsWith(prefix));
+    const next = lines.map(line => all ? line.slice(prefix.length) : `${prefix}${line}`).join('\n');
+    insertText(next);
+}
+
+function codeAction() {
+    const textarea = app.elements.textarea;
+    const selected = textarea.value.slice(textarea.selectionStart, textarea.selectionEnd);
+    if (selected.includes('\n') || !selected) insertBlock(`\`\`\`\n${selected || 'code'}\n\`\`\``);
+    else wrapSelection('`', '`', 'code');
+}
+
+function insertBlock(block) {
+    const textarea = app.elements.textarea;
+    const before = textarea.value.slice(0, textarea.selectionStart);
+    const lead = !before || before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n';
+    insertText(`${lead}${block}\n`);
+}
+
+function onEditorKeydown(event) {
+    if (!app.elements.suggest.hidden) {
+        const items = [...app.elements.suggest.querySelectorAll('[role="option"]')];
+        const index = items.findIndex(item => item.getAttribute('aria-selected') === 'true');
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            const next = items[(index + (event.key === 'ArrowDown' ? 1 : items.length - 1) + items.length) % items.length];
+            items.forEach(item => item.setAttribute('aria-selected', String(item === next)));
+            app.elements.textarea.setAttribute('aria-activedescendant', next?.id ?? '');
+            return;
+        }
+        if ((event.key === 'Enter' || event.key === 'Tab') && index >= 0) {
+            event.preventDefault();
+            items[index].click();
+            return;
+        }
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            hideSuggest();
+            return;
+        }
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        void flushSave();
+    }
+}
+
+/* ---------- [[ autocomplete ---------- */
+
+const suggestSoon = debounce(query => void fetchSuggestions(query), 180);
+
+function linkQuery() {
+    const textarea = app.elements.textarea;
+    const caret = textarea.selectionStart;
+    if (caret !== textarea.selectionEnd) return null;
+    const line = textarea.value.slice(textarea.value.lastIndexOf('\n', caret - 1) + 1, caret);
+    const match = /\[\[([^\]\n|#]{0,80})$/.exec(line);
+    if (!match || line.slice(0, match.index).endsWith('\\')) return null;
+    return { query: match[1], start: caret - match[1].length };
+}
+
+function maybeSuggest() {
+    const found = linkQuery();
+    if (!found) return hideSuggest();
+    suggestSoon(found.query);
+}
+
+async function fetchSuggestions(query) {
+    const found = linkQuery();
+    if (!found || found.query !== query) return;
+    const result = await request('/suggest', { notebookId: app.state.notebookId, query });
+    if (failed(result) || linkQuery()?.query !== query) return;
+    showSuggestions(result.notes ?? [], found);
+}
+
+export function linkTextFor(note, notes) {
+    const stem = note.path.replace(/^.*\//, '').replace(/\.md$/i, '');
+    const duplicate = notes.filter(item => item.path.replace(/^.*\//, '').replace(/\.md$/i, '').toLocaleLowerCase('und') === stem.toLocaleLowerCase('und')).length > 1;
+    return duplicate ? note.path.replace(/\.md$/i, '') : stem;
+}
+
+function showSuggestions(notes, found) {
+    const list = app.elements.suggest;
+    clear(list);
+    if (!notes.length) return hideSuggest();
+    notes.slice(0, 8).forEach((note, index) => {
+        list.append(h('li', { id: `notes-suggest-${index}`, role: 'option', class: 'notes-suggest-item', 'aria-selected': String(index === 0),
+            onmousedown: event => event.preventDefault(),
+            onclick: () => {
+                const textarea = app.elements.textarea;
+                textarea.setSelectionRange(found.start, textarea.selectionStart);
+                insertText(`${linkTextFor(note, notes)}]]`);
+                hideSuggest();
+            } }, h('span', { text: note.title }), h('span', { class: 'notes-note-meta', text: note.folder || 'Top level' })));
+    });
+    list.hidden = false;
+    app.elements.textarea.setAttribute('aria-activedescendant', 'notes-suggest-0');
+}
+
+function hideSuggest() {
+    if (!app.elements.suggest) return;
+    app.elements.suggest.hidden = true;
+    app.elements.textarea.removeAttribute('aria-activedescendant');
+}
+
+/* ---------- reading view links ---------- */
+
+async function followLink({ target, kind, fragment }) {
+    const { state } = app;
+    const result = await request('/resolve', { notebookId: state.notebookId, fromNoteId: kind === 'wiki' ? state.note?.id : undefined, target, kind });
+    if (failed(result)) return;
+    const jump = fragment || result.fragment || null;
+    if (result.resolution === 'resolved') {
+        if (result.note.id === state.note?.id) return jump && jumpToHeading(jump);
+        return openNote(state.notebookId, result.note.id, { pushBack: true, fragment: jump });
+    }
+    if (result.resolution === 'ambiguous') {
+        const chosen = await app.dialogs.chooseNote(app, `More than one note matches '${target}'. Which one?`, result.candidates);
+        if (chosen) await openNote(state.notebookId, chosen.id, { pushBack: true, fragment: jump });
+        return;
+    }
+    if (result.resolution === 'attachment') {
+        globalThis.open(attachmentUrl(state.notebookId, result.path), '_blank', 'noopener');
+        return;
+    }
+    if (result.resolution === 'missing') {
+        const name = target.replace(/\.md$/i, '');
+        const ok = await callGenericPopup(`There is no note called '${name}' yet. Create it?`, POPUP_TYPE.CONFIRM, '', { okButton: 'Create note', cancelButton: 'Not now' });
+        if (ok !== POPUP_RESULT.AFFIRMATIVE) return;
+        const slash = name.lastIndexOf('/');
+        const created = await createNote({ folder: slash >= 0 ? name.slice(0, slash) : state.note?.folder ?? 'Inbox', title: slash >= 0 ? name.slice(slash + 1) : name, text: '' });
+        if (created) await openNote(state.notebookId, created.noteId, { pushBack: true });
+    }
+}
+
+function onReaderClick(event) {
+    const link = event.target.closest?.('.notes-wikilink');
+    if (link) {
+        event.preventDefault();
+        if (link.dataset.notePath) void followLink({ target: link.dataset.notePath, kind: 'markdown', fragment: link.dataset.wikiFragment });
+        else void followLink({ target: [link.dataset.wikiTarget, link.dataset.wikiFragment].filter(Boolean).join('#'), kind: 'wiki' });
+        return;
+    }
+    const embed = event.target.closest?.('.notes-embed-chip');
+    if (embed) {
+        void followLink({ target: [embed.dataset.wikiTarget, embed.dataset.wikiFragment].filter(Boolean).join('#'), kind: 'wiki' });
+        return;
+    }
+    const external = event.target.closest?.('.notes-external-image');
+    if (external) {
+        const source = external.dataset.externalSource;
+        if (!/^https?:\/\//i.test(source ?? '')) return;
+        const image = h('img', { src: source, alt: external.dataset.alt ?? '', loading: 'lazy', referrerpolicy: 'no-referrer' });
+        external.replaceWith(image);
+        return;
+    }
+    const heading = event.target.closest?.('[data-heading-target]');
+    if (heading) {
+        event.preventDefault();
+        jumpToHeading(heading.dataset.headingTarget);
+    }
+}
+
+function onReaderKeydown(event) {
+    if ((event.key === 'Enter' || event.key === ' ') && event.target.classList?.contains('notes-embed-chip')) {
+        event.preventDefault();
+        onReaderClick(event);
+    }
+}
+
+/* ---------- shared actions used by panels and dialogs ---------- */
+
+async function createNote({ folder = 'Inbox', title = '', text = '', template = null } = {}) {
+    const { state } = app;
+    const result = await request('/notes/create', { operationId: newOperationId('create'), notebookId: state.notebookId, folder, title, text, template });
+    if (failed(result, 'The note could not be created.')) return null;
+    await refreshTree();
+    return result;
+}
+
+async function renameFromTitle() {
+    const { state, elements } = app;
+    const note = state.note;
+    if (!note) return;
+    const title = elements.title.value.trim();
+    const current = note.path.replace(/^.*\//, '').replace(/\.md$/i, '');
+    if (!title || title === current) {
+        elements.title.value = current;
+        return;
+    }
+    if (!(await flushSave())) {
+        toast('warning', 'Save the note first, then rename it.');
+        elements.title.value = current;
+        return;
+    }
+    await moveNote({ title, folder: note.folder });
+}
+
+async function moveNote({ title, folder }) {
+    const { state } = app;
+    const note = state.note;
+    const result = await request('/notes/move', { operationId: newOperationId('move'), notebookId: state.notebookId, noteId: note.id,
+        title, folder, expectedRevision: note.revision, updateLinks: true });
+    if (failed(result, 'The note could not be renamed.')) {
+        app.elements.title.value = note.path.replace(/^.*\//, '').replace(/\.md$/i, '');
+        return null;
+    }
+    if (result.updatedLinks) toast('success', `Updated ${result.updatedLinks} link${result.updatedLinks === 1 ? '' : 's'} in other notes.`);
+    if (result.unresolved?.length) toast('info', `${result.unresolved.length} link(s) could not be updated safely and were left as they were.`);
+    await reloadNote();
+    await refreshTree();
+    return result;
+}
+
+async function changeNote(changes, reason = 'edit') {
+    const { state } = app;
+    if (!(await flushSave())) {
+        toast('warning', 'Save your typing first; this note has unsaved changes.');
+        return null;
+    }
+    const result = await request('/notes/update', { operationId: newOperationId('edit'), notebookId: state.notebookId, noteId: state.note.id,
+        expectedRevision: state.note.revision, changes, reason });
+    if (failed(result, 'The change could not be saved.')) return null;
+    reportLoreUpdates(result.loreUpdates);
+    await reloadNote();
+    return result;
+}
+
+Object.assign(app, {
+    request, failed, toast, refreshTree, loadNotebooks, selectNotebook, openNote, reloadNote, flushSave, insertText, setStatus,
+    createNote, moveNote, changeNote, compareTexts, showBanner, clearBanner, renderNav, renderEditor, applyLayout, setPane,
+    chatScope: currentChatScope, lf, readPrefs, writePrefs, hide: hideNotes, setView,
+});
+
+export function notesApp() {
+    return app;
+}
+
+/** Opens Notes and starts saving a chat passage, used by the message action. */
+export async function captureFromChat(capture) {
+    await openNotes({ layout: isPhone() ? undefined : app.state.layout });
+    await app.dialogs.captureFromChat(app, capture);
+}
+
+globalThis.NeconyanNotes = Object.freeze({ open: openNotes, hide: hideNotes, onRoute: onWorkspaceRoute, captureFromChat });
+

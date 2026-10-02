@@ -368,6 +368,7 @@ describe('assistant shortcuts without shipped characters', () => {
             let tourResumed = false;
             const context = vm.createContext({
                 releaseChromeAfterBootSkeleton() {}, PinnedChatsManager: { init() {} }, ensureNeconyanRail() {},
+                installChatNoteCapture() {},
                 window: { addEventListener() {} }, concealWelcomeHome() {},
                 eventSource: { on: (key, handler) => handlers.set(key, handler), makeFirst() {} },
                 event_types: { APP_READY: 'ready' }, getCurrentChatId: () => activeChat ? 'existing' : undefined, chat: [],

@@ -28,7 +28,7 @@ describe('tool response origin', () => {
 
         expect(action).toHaveBeenCalledTimes(2);
         expect(action.mock.calls[0][1]).toBe(invocationContext);
-        expect(action.mock.calls[1][1]).toEqual(invocationContext);
+        expect(action.mock.calls[1][1]).toEqual({ ...invocationContext, callId: '1' });
     });
 
     test.each(['chat response', 'stream response'])('preserves active multi-tool batches for a %s', async format => {

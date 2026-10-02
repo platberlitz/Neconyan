@@ -6,10 +6,11 @@ const getJobApproval = jest.fn();
 const decideJobApproval = jest.fn();
 const popup = jest.fn();
 const buildAssistantReview = jest.fn(value => value);
+const buildNoteProposalReview = jest.fn(value => value);
 await jest.unstable_mockModule('../public/scripts/jobs.js', () => ({ listJobs, getJobApproval, decideJobApproval }));
 await jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => account }));
 await jest.unstable_mockModule('../public/scripts/popup.js', () => ({ callGenericPopup: popup, POPUP_RESULT: { AFFIRMATIVE: 1 }, POPUP_TYPE: { CONFIRM: 1 } }));
-await jest.unstable_mockModule('../public/scripts/neconyan-assistant-review.js', () => ({ buildAssistantReview }));
+await jest.unstable_mockModule('../public/scripts/neconyan-assistant-review.js', () => ({ buildAssistantReview, buildNoteProposalReview }));
 const { reviewAssistantJobChildren } = await import('../public/scripts/neconyan-assistant-job-review.js');
 
 const root = { id: 'root', state: 'waiting', owner: 'alice', children: ['speaker', 'foreign'] };
@@ -35,6 +36,15 @@ test.each([[1, 'allow'], [0, 'deny']])('reopened descendants review the saved pr
     expect(getJobApproval).toHaveBeenCalledWith('tool', 'approval', { account: 'alice' });
     expect(buildAssistantReview).toHaveBeenCalledWith({ resource: 'lorebook', target: 'Manual', field: 'content', before: 'Before', after: '<img src=x>' });
     expect(decideJobApproval).toHaveBeenCalledWith('tool', { ...approval, decision }, { account: 'alice' });
+});
+
+test('a native note proposal shows its summary and diff before saving', async () => {
+    const summary = { operation: 'append', label: 'Add to note: Magic system', changedRegions: ['Unresolved ideas'], affectsLiveLore: false, added: 1, removed: 0 };
+    getJobApproval.mockResolvedValueOnce({ ...approval, proposal: { kind: 'neconyan-note-proposal', summary, diff: '+ New idea', arguments: {} } });
+    await reviewAssistantJobChildren(root, 'alice');
+    expect(buildNoteProposalReview).toHaveBeenCalledWith({ summary, diff: '+ New idea' });
+    expect(buildAssistantReview).not.toHaveBeenCalled();
+    expect(decideJobApproval).toHaveBeenCalledWith('tool', expect.objectContaining({ decision: 'allow' }), { account: 'alice' });
 });
 
 test('concurrent observers share one approval popup', async () => {

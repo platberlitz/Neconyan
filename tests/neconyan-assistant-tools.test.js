@@ -112,7 +112,7 @@ async function runtime({ assistant = 'miso-male', group = null } = {}) {
 test('only supported active individual-chat assistant metadata registers tools', async () => {
     for (const options of [{}, { assistant: 'ordinary' }, { group: 'group' }]) {
         const { manager } = await runtime(options);
-        expect(manager.tools.length).toBe(Object.keys(options).length ? 0 : 14);
+        expect(manager.tools.length).toBe(Object.keys(options).length ? 0 : 25);
     }
 });
 

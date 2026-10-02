@@ -42,6 +42,7 @@ import { createProviderScope } from '../jobs/artifacts.js';
 import { stageBoundModelToolCalls } from './roleplay-tool-dispatch.js';
 import { publishRoleplayPreview } from './roleplay-preview.js';
 import { applyRoleplayVectorFiles, prepareRoleplayVectors } from './roleplay-vectors.js';
+import { prepareRoleplayNoteContext } from '../notebooks/context.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
 const REQUEST_OVERRIDES = new Set(['temperature', 'top_p', 'top_k', 'min_p', 'seed', 'frequency_penalty',
@@ -419,6 +420,14 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 if (agentPre.extensions.some(item => keys.has(item.key))) throw roleplayError('ROLEPLAY_INVALID', 'An Agent prompt key conflicts with an existing contributor.', 409);
                 contributions = { ...contributions, extensions: [...contributions.extensions, ...agentPre.extensions] };
                 scanContributions = contributions.extensions.filter(prompt => prompt.scan).map(prompt => prompt.content);
+            }
+            const noteContext = prepareRoleplayNoteContext({ directories, job, base, account, source, snapshot: request.worldInfo,
+                records: initialRecords, limit, maxTokens: request.maxTokens });
+            if (noteContext) {
+                if (contributions.extensions.some(item => item.key === noteContext.key)) {
+                    throw roleplayError('ROLEPLAY_INVALID', 'A notebook prompt conflicts with an existing contributor.', 409);
+                }
+                contributions = { ...contributions, extensions: [...contributions.extensions, noteContext] };
             }
             const identity = roleplayHash({ snapshot: request.worldInfo, records: initialRecords, contributions });
             preparedHistory = readArtifact(directories, job.id, 'roleplay-history-input');
