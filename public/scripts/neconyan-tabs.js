@@ -499,7 +499,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261002g';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261003a';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -15637,7 +15637,7 @@ function createTopbarLabelSettingsGroup() {
 }
 
 function injectThemePicker() {
-    if (document.getElementById('sb-theme-card')) {
+    if (document.getElementById('UI-presets-block')?.dataset.themePickerInitialized === 'true') {
         updateThemePickerUi();
         return;
     }
@@ -15849,6 +15849,10 @@ function injectThemePicker() {
     }
     themeBlock.append(card);
     placeThemeSettingsDrawers(themeBlock, card, themeSettingsDrawers);
+    if (!card.hasChildNodes()) {
+        card.remove();
+    }
+    themeBlock.dataset.themePickerInitialized = 'true';
     updateThemePickerUi();
 }
 

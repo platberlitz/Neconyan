@@ -35,6 +35,18 @@ describe('Neconyan settings theme drawers', () => {
         expect(themeBlock).toContain('id="ui-preset-save-button"');
     });
 
+    test('removes the empty shell card and duplicate inner UI Theme heading', () => {
+        expect(shellTabsSource).toContain("dataset.themePickerInitialized === 'true'");
+        expect(shellTabsSource).toContain('if (!card.hasChildNodes()) {\n        card.remove();\n    }');
+        expect(shellTabsSource).toContain("themeBlock.dataset.themePickerInitialized = 'true';");
+        const themeBlock = indexSource.match(/<div id="UI-presets-block"[^>]*>([\s\S]*?)<div class="sb-theme-presets">/)[1];
+        expect(themeBlock).toContain('class="sb-ui-theme-actions"');
+        expect(themeBlock).not.toContain('<h4');
+        expect(themeBlock).not.toContain('data-i18n="UI Theme"');
+        const themeCss = readSource('public', 'css', 'neconyan-theme.css');
+        expect(themeCss.match(/#UI-presets-block \{([^}]+)\}/)[1].trim()).toBe('gap: 12px;');
+    });
+
     test('groups shell theme controls into persisted appearance drawers', () => {
         const drawerIds = [
             'sb-shell-style-drawer',

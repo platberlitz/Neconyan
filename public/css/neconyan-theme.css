@@ -4350,28 +4350,21 @@ input[type='range']::-moz-range-thumb {
 
 #UI-presets-block {
     gap: 12px;
-    padding: 20px;
-    border-radius: var(--sb-radius-lg);
-    background:
-        linear-gradient(135deg, color-mix(in srgb, var(--sb-accent) 16%, transparent), transparent 62%),
-        linear-gradient(180deg, color-mix(in srgb, var(--SmartThemeBodyColor) 4%, transparent), color-mix(in srgb, var(--SmartThemeBlurTintColor) 86%, transparent));
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 86%, transparent);
-    box-shadow: 0 16px 28px color-mix(in srgb, var(--SmartThemeShadowColor) 10%, transparent);
 }
 
-#UI-presets-block > h4 {
+#UI-presets-block > .sb-ui-theme-actions {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
     margin: 0;
-    padding: 2px 6px 8px;
+    padding: 0;
     background: transparent;
     border: 0;
     box-shadow: none;
 }
 
-#UI-presets-block > h4 .flex-container {
+#UI-presets-block > .sb-ui-theme-actions .flex-container {
     gap: 8px;
     align-items: center;
     margin-left: auto;
@@ -5719,7 +5712,7 @@ input[type='range']::-moz-range-thumb {
         min-height: 13rem;
     }
 
-    #UI-presets-block > h4,
+    #UI-presets-block > .sb-ui-theme-actions,
     #UI-presets-block .flex-container.flexnowrap.alignitemscenter,
     .sb-settings-subdrawer-toolbar {
         align-items: center;
