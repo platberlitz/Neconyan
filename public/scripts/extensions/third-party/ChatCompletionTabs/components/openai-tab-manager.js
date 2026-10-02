@@ -24,6 +24,7 @@ export class OpenAITabManager {
                     contentSelectors: [
                         '#left-nav-panel #sb-openai-budget',
                         '#left-nav-panel #sb-openai-output',
+                        '#left-nav-panel #sb-openai-prompt-templates',
                         '#left-nav-panel #sb-openai-advanced',
                     ],
                 },
