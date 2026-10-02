@@ -1,5 +1,8 @@
 // Builds local UI dictionaries through a user-selected translation command.
 // No chats, cards, settings or credentials are read by this build.
+//   --list             print every collected key and exit; nothing is written or translated
+//   --write-catalogue  rewrite public/locales/neconyan/en.json and exit; nothing is translated
+//   NECONYAN_TRANSLATION_LANGS=pt-pt,it-it   translate only these supplements (default: all)
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -19,10 +22,24 @@ const add = (key, value = key) => {
 };
 const metadata = JSON.parse(fs.readFileSync(path.join(root, 'locales/lang.json'), 'utf8'));
 const locales = metadata.filter(item => item.lang !== 'en');
+// Every base dictionary feeds the catalogue, whichever languages are selected for translation below.
 for (const locale of locales) {
     const data = JSON.parse(fs.readFileSync(path.join(root, `locales/${locale.lang}.json`), 'utf8'));
     for (const [key, value] of Object.entries(data)) if (typeof value === 'string') add(key);
 }
+// NECONYAN_TRANSLATION_LANGS narrows which supplements are translated, never the catalogue.
+const requested = process.env.NECONYAN_TRANSLATION_LANGS?.split(',').map(code => code.trim()).filter(Boolean);
+if (requested?.length === 0) {
+    console.error('NECONYAN_TRANSLATION_LANGS is set but names no language.');
+    process.exit(1);
+}
+for (const code of requested || []) {
+    if (!locales.some(locale => locale.lang === code)) {
+        console.error(`Unknown language ${code}; see public/locales/lang.json.`);
+        process.exit(1);
+    }
+}
+const selected = requested ? locales.filter(locale => requested.includes(locale.lang)) : locales;
 
 // Keep in step with public/scripts/ui-localization.js: every visible text node and caption attribute is looked up at runtime.
 const hole = '\u0000';
@@ -150,17 +167,29 @@ const assistants = JSON.parse(fs.readFileSync(path.resolve('default/content/assi
 for (const personality of assistants.personalities || []) [personality.role, personality.summary].forEach(addCaption);
 const placeholders = value => (value.match(/\$\{[^}]+\}|\{\{[^}]+\}\}|%[sd]|\{\d+\}/g) || []).sort();
 const command = process.env.NECONYAN_TRANSLATION_COMMAND;
+// --list and --write-catalogue exit here, before the translation command is ever used.
 if (process.argv.includes('--list')) {
     // Synchronous, so a large list is not cut short by exiting while a pipe drains.
     fs.writeSync(1, JSON.stringify(Object.keys(source).sort()) + '\n');
     process.exit(0);
 }
-if (!command) {
-    console.log(JSON.stringify({ strings: Object.keys(source).length, locales: locales.map(item => item.lang) }));
+function writeCatalogue() {
+    fs.mkdirSync(output, { recursive: true });
+    const filename = path.join(output, 'en.json');
+    const temp = filename + '.tmp';
+    fs.writeFileSync(temp, JSON.stringify(source, null, 2) + '\n');
+    fs.renameSync(temp, filename);
+}
+if (process.argv.includes('--write-catalogue')) {
+    writeCatalogue();
+    console.log(JSON.stringify({ strings: Object.keys(source).length, wrote: path.relative(process.cwd(), path.join(output, 'en.json')) }));
     process.exit(0);
 }
-fs.mkdirSync(output, { recursive: true });
-fs.writeFileSync(path.join(output, 'en.json'), JSON.stringify(source, null, 2) + '\n');
+if (!command) {
+    console.log(JSON.stringify({ strings: Object.keys(source).length, locales: selected.map(item => item.lang) }));
+    process.exit(0);
+}
+writeCatalogue();
 async function translate(language, strings) {
     const entries = Object.entries(strings);
     const numbered = Object.fromEntries(entries.map(([, value], index) => [String(index), value]));
@@ -217,7 +246,7 @@ async function buildLocale(locale) {
     }
 }
 // Independent dictionary files can be checkpointed concurrently; requests stay bounded.
-const queue = [...locales];
+const queue = [...selected];
 await Promise.all(Array.from({ length: 4 }, async () => {
     while (queue.length) await buildLocale(queue.shift());
 }));
