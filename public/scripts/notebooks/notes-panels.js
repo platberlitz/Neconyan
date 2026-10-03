@@ -66,10 +66,12 @@ export async function renderDetails(app) {
     const tab = app.state.detailsTab;
     const tabs = h('div', { class: 'notes-detail-tabs notes-choice-group', role: 'group', 'aria-label': 'Note details' });
     for (const [id, label] of TABS) {
-        tabs.append(button(label, () => {
+        const choice = button(label, () => {
             app.state.detailsTab = id;
             void renderDetails(app);
-        }, { className: 'notes-choice', pressed: tab === id }));
+        }, { className: 'notes-choice', pressed: tab === id });
+        choice.dataset.tab = id;
+        tabs.append(choice);
     }
     const body = h('div', { class: 'notes-detail-body', 'aria-live': 'off' });
     const content = await buildTab(app, tab).catch(error => [notice(error?.message || 'This panel could not be loaded.', 'warning')]);

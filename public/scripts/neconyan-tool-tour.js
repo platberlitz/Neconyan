@@ -1368,6 +1368,130 @@ const TOOL_PAGES = Object.freeze({
             },
         ],
     },
+    notes: {
+        assistant: 'miso',
+        name: 'Notes',
+        aliases: ['notebooks'],
+        kicker: 'Writing space',
+        description: 'Keep ideas, drafts and references in notebooks that live next to your chats. Link notes together, let assistants read them when you say so, and write with or without a chat open.',
+        invite: 'Miso will show you where everything lives, one cosy corner at a time!',
+        rebuilds: true,
+        emptyWhen: '.notes-nav-empty',
+        steps: [
+            {
+                id: 'welcome',
+                targets: ['.neconyan-tool-page-intro'],
+                title: 'Welcome to Notes!',
+                body: 'This is your writing room! **Notes** keeps ideas, character drafts, scene plans and anything else you want to remember, all in **notebooks**.\nNothing here is sent to a model unless you allow it. It is your space first.',
+                hint: 'Grab a snack and settle in. Writing rooms need snacks!',
+            },
+            {
+                id: 'notebooks',
+                targets: ['[data-section="notebooks"]'],
+                tab: '.notes-pane-tabs [data-pane="nav"]',
+                open: '.notes-pane-tabs [data-pane="nav"]',
+                title: 'Notebooks',
+                body: 'Each **notebook** is a bundle of notes with its own folders, favourites and settings. Press a name to open it, or **New notebook** to start another one.\nOne for each story works nicely, but one big notebook is fine too!',
+                emptyBody: 'Each **notebook** is a bundle of notes with its own folders, favourites and settings.\nYou have none yet! Press **New notebook**, give it a name, and the rest of this tour fills in once it exists.',
+                hint: 'A notebook for recipes also counts. I checked.',
+            },
+            {
+                id: 'create',
+                targets: ['.notes-create-row'],
+                optional: true,
+                tab: '.notes-pane-tabs [data-pane="nav"]',
+                open: '.notes-pane-tabs [data-pane="nav"]',
+                title: 'Starting a note',
+                body: '**New note** asks for a title and a template: a blank page, a character draft, a location, a scene plan or a session journal.\n**Quick note** skips the questions and drops a dated page into the Inbox folder, perfect for a thought you need to catch right now!',
+                hint: 'Quick note is my favourite. Thoughts are slippery!',
+            },
+            {
+                id: 'find',
+                targets: ['[data-section="search"]', '[data-section="folders"]', '[data-section="list"]'],
+                optional: true,
+                tab: '.notes-pane-tabs [data-pane="nav"]',
+                open: '.notes-pane-tabs [data-pane="nav"]',
+                title: 'Finding your way back',
+                body: 'The search box looks through titles and text. Below it, **Favourites** and **Recent** keep your busiest pages close, and **Folders** narrow the list to one part of the notebook.\nEvery note in the list shows its folder and when you last touched it.',
+                hint: 'Favourite the ones you keep hunting for. Future you says thanks!',
+            },
+            {
+                id: 'editor',
+                targets: ['.notes-editor-head'],
+                optional: true,
+                tab: '.notes-pane-tabs [data-pane="note"]',
+                open: '.notes-pane-tabs [data-pane="note"]',
+                title: 'The page itself',
+                body: 'Type the title at the top and the note underneath. Saving happens on its own: the little badge says **Saved on server** when it is safe, and **Saved on this device only** if the server is away for a moment.\nPress **Ctrl+S** whenever you want to be extra sure.',
+                hint: 'It saves while you think. I wish I did that!',
+            },
+            {
+                id: 'views',
+                targets: ['.notes-view-tabs', '.notes-toolbar'],
+                optional: true,
+                tab: '.notes-pane-tabs [data-pane="note"]',
+                open: '.notes-pane-tabs [data-pane="note"]',
+                title: 'Write, Read and Outline',
+                body: '**Write** is the editor with its toolbar: headings, lists, tasks, quotes, tables, pictures and more. **Read** shows the finished page. **Outline** lists every heading so you can jump straight to one.\n**Sections** folds long parts away while you work on another bit.',
+                hint: 'Headings are little doors. Outline is the hallway!',
+            },
+            {
+                id: 'links',
+                targets: ['.notes-toolbar [aria-label="Link to note"]', '.notes-toolbar'],
+                optional: true,
+                tab: '.notes-pane-tabs [data-pane="note"]',
+                open: '.notes-pane-tabs [data-pane="note"]',
+                title: 'Linking notes together',
+                body: 'Type **[[** and start a name to link to another note, or press **Link to note** on the toolbar. Linked pages remember each other, so the **Links** tab shows who points where.\nWrite **![[name]]** to show another note inside this one.',
+                hint: 'Links are how a pile of notes becomes a world!',
+            },
+            {
+                id: 'details',
+                targets: ['.notes-detail-tabs'],
+                optional: true,
+                tab: '.notes-pane-tabs [data-pane="details"]',
+                open: '.notes-pane-tabs [data-pane="details"]',
+                title: 'Details',
+                body: '**Properties** holds tags, aliases and custom fields. **Links** lists outgoing links and backlinks. **Lore** can turn a note into a lorebook entry. **History** keeps earlier versions in case you need one back.',
+                hint: 'Tags are stickers. Put stickers on everything!',
+            },
+            {
+                id: 'ai',
+                targets: ['.notes-detail-body .notes-detail-section', '.notes-detail-body'],
+                optional: true,
+                tab: '.notes-pane-tabs [data-pane="details"]',
+                open: ['.notes-pane-tabs [data-pane="details"]', '.notes-detail-tabs [data-tab="ai"]'],
+                title: 'AI access',
+                body: 'Assistants see **nothing** from a notebook until you choose otherwise. Pick **Read** to let them look things up, or **Read and suggest edits** so they can propose changes you review before anything is saved.\nYou can also share one note, or just the selected text, for the next thirty minutes only.',
+                hint: 'Your notes, your rules. Assistants wait politely!',
+            },
+            {
+                id: 'tools',
+                targets: ['[data-section="views"]', '[data-section="tools"]'],
+                optional: true,
+                tab: '.notes-pane-tabs [data-pane="nav"]',
+                open: '.notes-pane-tabs [data-pane="nav"]',
+                title: 'The whole notebook at once',
+                body: '**Graph** draws how notes link to each other, **Property table** lines them up by their properties, and **Canvas** is a board for arranging cards.\nFurther down: **Import** and **Export** move notebooks as files, **Trash** keeps deleted notes until you are sure, and **Check notebook** looks for anything out of place.',
+                hint: 'Graph makes the prettiest hairballs. Lovingly!',
+            },
+            {
+                id: 'layout',
+                targets: ['.notes-layout-toggle'],
+                optional: true,
+                title: 'Notes beside the chat',
+                body: 'Press **Beside chat** to shrink Notes into a side column so you can write while a chat is open. Press it again for **Full width**.\nIn a chat, every message has **Save to note**, which copies it straight into a notebook.',
+                hint: 'Chat on one side, notes on the other. Cosy!',
+            },
+            {
+                id: 'done',
+                targets: ['.neconyan-tool-tour-button'],
+                title: 'You did so well!',
+                body: 'Press **Tour** at the top whenever you want me back, and **Back to chat** when you are done writing.\nGo on, make a note. Even a tiny one counts!',
+                hint: 'I am so proud. Belly rubs for everyone!',
+            },
+        ],
+    },
 });
 
 /**
@@ -1479,6 +1603,20 @@ function coveredByCard(node) {
     const rect = node.getBoundingClientRect();
     if (!card) return false;
     return rect.bottom > card.top && rect.top < card.bottom && rect.right > card.left && rect.left < card.right;
+}
+
+/** Wide pages keep a column under the card's usual corner; the card moves to the other corner when it would hide the target. */
+function dockCardAway(target) {
+    const card = tour.card;
+    if (!card) return;
+    delete card.dataset.dock;
+    card.style.removeProperty('--neconyan-tour-dock-left');
+    if (card.parentElement !== document.body || window.innerWidth <= 768 || !coveredByCard(target)) return;
+    const rect = target.getBoundingClientRect();
+    const left = Math.max(24, Math.round(tour.root?.getBoundingClientRect().left ?? 0) + 24);
+    if (rect.left < left + card.getBoundingClientRect().width + 12) return;
+    card.dataset.dock = 'left';
+    card.style.setProperty('--neconyan-tour-dock-left', `${left}px`);
 }
 
 function getDialogConfig(step) {
@@ -1604,6 +1742,7 @@ function refreshTourTarget() {
     clearTarget();
     tour.target = target;
     target.classList.add('neconyan-tool-tour-target');
+    dockCardAway(target);
 }
 
 function openStep(step) {
@@ -1682,7 +1821,9 @@ async function show(stepId) {
     const reduced = prefersReducedMotion();
     target.scrollIntoView({ block: 'start', behavior: reduced ? 'auto' : 'smooth' });
     await wait(reduced ? 50 : 500);
-    if (token === tour.token && coveredByCard(target)) target.scrollIntoView({ block: 'start' });
+    if (token !== tour.token) return;
+    if (coveredByCard(target)) target.scrollIntoView({ block: 'start' });
+    dockCardAway(target);
 }
 
 async function move(delta) {
@@ -1772,9 +1913,9 @@ export function startToolTour(id, root, heading = null) {
     tour.opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     tour.root = root;
     tour.heading = heading;
-    if (page.key === 'mewmory') {
-        root.addEventListener('click', followMewmoryTab);
-        // Switching tabs or roles rebuilds Mewmory's controls, including the highlighted node.
+    if (page.key === 'mewmory') root.addEventListener('click', followMewmoryTab);
+    if (page.key === 'mewmory' || page.rebuilds) {
+        // Switching tabs or panes rebuilds these pages' controls, including the highlighted node.
         tour.observer = new MutationObserver(refreshTourTarget);
         tour.observer.observe(root, { childList: true, subtree: true });
     }

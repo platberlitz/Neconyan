@@ -190,6 +190,11 @@ body.neconyan :is(#left-nav-panel, #user-settings-block, #right-nav-panel) .neco
     box-shadow: 0 8px 32px color-mix(in oklch, var(--neco-charcoal, black) 30%, transparent);
 }
 
+#neconyan-tool-tour.neconyan-tool-tour[data-dock='left'] {
+    right: auto;
+    left: var(--neconyan-tour-dock-left, 24px);
+}
+
 #neconyan-tool-tour:focus-visible,
 .neconyan-tool-tour button:focus-visible,
 .neconyan-tool-tour-invite button:focus-visible,

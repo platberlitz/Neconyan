@@ -3,6 +3,7 @@ import { selected_group } from '../group-chats.js';
 import { getCurrentUserHandle } from '../user.js';
 import { accountStorage } from '../util/AccountStorage.js';
 import { loadStylesheetAsync } from '../dynamic-styles.js';
+import { getAssistantIconSrc } from '../neconyan-assistant-art.js';
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
 import { attachmentUrl, newOperationId, notesRequest, subscribeNotes } from './api.js';
 import { append, button, clear, debounce, formatTime, h } from './dom.js';
@@ -11,6 +12,9 @@ import { headingOutline, renderNoteInto } from './render.js';
 import { formatDiff } from './line-diff.js';
 
 const PREFS_KEY = 'neconyan_notes_prefs';
+const NOTES_STYLESHEET = 'css/neconyan-notes.css?v=12';
+const TOOL_PAGES_STYLESHEET = 'css/neconyan-tool-pages.css?v=20261003-notes-tour1';
+const TOUR_PAGE_KEY = 'notes';
 const SAVE_DELAY_MS = 1200;
 const MAX_RETRY_MS = 60_000;
 const PHONE_QUERY = '(max-width: 768px)';
@@ -61,6 +65,7 @@ const app = {
     state: {
         account: null,
         built: false,
+        tourMounted: false,
         open: false,
         notebooks: [],
         importStages: [],
@@ -189,27 +194,46 @@ function buildRoot() {
     elements.details = h('aside', { class: 'notes-pane notes-pane-details', 'aria-label': 'Note details' });
     elements.paneTabs = h('div', { class: 'notes-choice-group notes-pane-tabs', role: 'group', 'aria-label': 'Notes sections' });
     elements.back = button('Back', () => void goBack(), { icon: 'fa-arrow-left', className: 'notes-back', title: 'Back to the previous note' });
-    elements.layoutButton = button('', () => setLayout(state.layout === 'beside' ? 'full' : 'beside'), { icon: 'fa-table-columns', className: 'notes-layout-toggle' });
+    elements.layoutButton = button('Beside chat', () => setLayout(state.layout === 'beside' ? 'full' : 'beside'), { icon: 'fa-table-columns', className: 'notes-layout-toggle' });
     elements.close = button('Back to chat', () => hide(), { icon: 'fa-comments', className: 'notes-close' });
     elements.resizer = h('div', { class: 'notes-resizer', role: 'separator', 'aria-orientation': 'vertical', tabindex: '0',
         'aria-label': 'Resize notes panel', onpointerdown: startResize, onkeydown: resizeByKey });
     elements.header = h('header', { class: 'notes-header' },
-        h('h2', { class: 'notes-heading', text: 'Notes' }), elements.back, h('span', { class: 'notes-spacer' }),
+        h('h2', { class: 'notes-heading' }, h('i', { class: 'fa-solid fa-book-open', 'aria-hidden': 'true' }), h('span', { text: 'Notes' })),
+        elements.back, h('span', { class: 'notes-spacer' }),
         elements.layoutButton, elements.close);
+    elements.intro = h('div', { class: 'notes-intro' });
     elements.root = h('section', { id: 'neconyan-notes', class: 'notes-app', 'aria-label': 'Notes', hidden: true },
-        elements.resizer, elements.header, elements.paneTabs,
+        elements.resizer, elements.header, elements.intro, elements.paneTabs,
         h('div', { class: 'notes-columns' }, elements.nav, elements.editorPane, elements.details));
     document.body.append(elements.root);
     globalThis.matchMedia?.(PHONE_QUERY).addEventListener?.('change', () => applyLayout());
     state.built = true;
 }
 
+/** Miso's guided tour lives in the shared tool-tour module; Notes only hosts its introduction strip. */
+async function mountTour() {
+    const { elements, state } = app;
+    if (state.tourMounted || !elements.intro) return;
+    state.tourMounted = true;
+    try {
+        await loadStylesheetAsync(TOOL_PAGES_STYLESHEET, { id: 'deferred-tool-pages-css' }).catch(() => null);
+        const tour = await import('../neconyan-tool-tour.js');
+        tour.mountToolPage(TOUR_PAGE_KEY, elements.intro, elements.root);
+    } catch (error) {
+        state.tourMounted = false;
+        console.warn('[Neconyan] Notes tour could not be prepared', error);
+    }
+}
+
 function renderPaneTabs() {
     const { elements, state } = app;
     clear(elements.paneTabs);
-    for (const [pane, label] of [['nav', 'Notebooks'], ['note', 'Note'], ['details', 'Details']]) {
+    for (const [pane, label, icon] of [['nav', 'Notebooks', 'fa-book'], ['note', 'Note', 'fa-pen-nib'], ['details', 'Details', 'fa-circle-info']]) {
         if (pane === 'details' && state.workspaceView === 'canvas') continue;
-        elements.paneTabs.append(button(label, () => setPane(pane), { className: 'notes-choice', pressed: state.pane === pane }));
+        const tab = button(label, () => setPane(pane), { icon, className: 'notes-choice', pressed: state.pane === pane });
+        tab.dataset.pane = pane;
+        elements.paneTabs.append(tab);
     }
 }
 
@@ -288,9 +312,10 @@ async function ensureModules() {
 
 export async function openNotes(options = {}) {
     const { state } = app;
-    await loadStylesheetAsync('css/neconyan-notes.css?v=11', { id: 'neconyan-notes-css' }).catch(() => null);
+    await loadStylesheetAsync(NOTES_STYLESHEET, { id: 'neconyan-notes-css' }).catch(() => null);
     await ensureModules();
     if (!state.built) buildRoot();
+    void mountTour();
     accountChanged();
     const prefs = readPrefs();
     if (!state.open) state.layout = options.layout ?? (prefs.layout === 'beside' ? 'beside' : 'full');
@@ -429,6 +454,12 @@ function section(title, ...children) {
     return h('section', { class: 'notes-nav-section' }, h('h3', { class: 'notes-nav-heading', text: title }), ...children);
 }
 
+/** Tags a nav section so the tour and styles can find it after the list is rebuilt. */
+function keyed(key, node) {
+    node.dataset.section = key;
+    return node;
+}
+
 function renderNav() {
     const { elements, state } = app;
     const nav = elements.nav;
@@ -443,16 +474,17 @@ function renderNav() {
         }));
     }
     notebookRow.append(button('New notebook', () => void app.dialogs.newNotebook(app), { icon: 'fa-plus', className: 'notes-quiet' }));
-    nav.append(section('Notebooks', notebookRow));
+    nav.append(keyed('notebooks', section('Notebooks', notebookRow)));
     if (!state.notebookId) {
-        nav.append(h('p', { class: 'notes-hint', text: 'Notebooks hold your notes. Make one to start writing.' }));
+        nav.append(keyed('empty', h('p', { class: 'notes-hint notes-nav-empty', text: 'Notebooks hold your notes. Make one to start writing.' })));
         return;
     }
     const search = h('input', { type: 'search', class: 'text_pole notes-search-input', placeholder: 'Search titles and text',
         'aria-label': 'Search notes', value: state.searchQuery, oninput: event => searchSoon(event.target.value) });
-    nav.append(h('div', { class: 'notes-nav-actions' },
+    nav.append(keyed('create', h('div', { class: 'notes-nav-actions notes-create-row' },
         button('New note', () => void app.dialogs.newNote(app), { icon: 'fa-file-circle-plus', className: 'notes-primary' }),
-        button('Quick note', () => void app.dialogs.quickNote(app), { icon: 'fa-bolt' })), search);
+        button('Quick note', () => void app.dialogs.quickNote(app), { icon: 'fa-bolt' }))),
+    keyed('search', h('div', { class: 'notes-search' }, h('i', { class: 'fa-solid fa-magnifying-glass notes-search-icon', 'aria-hidden': 'true' }), search)));
     if (keepFocus) queueMicrotask(() => { search.focus(); search.setSelectionRange(search.value.length, search.value.length); });
     if (state.search) {
         const list = h('ul', { class: 'notes-list' });
@@ -480,29 +512,31 @@ function renderNav() {
     for (const folder of tree?.folders ?? []) {
         folders.append(button(`${folder.path} (${folder.count})`, () => void chooseFolder(folder.path), { className: 'notes-choice', pressed: state.folder === folder.path }));
     }
-    nav.append(section('Folders', folders, h('div', { class: 'notes-nav-actions' },
+    nav.append(keyed('folders', section('Folders', folders, h('div', { class: 'notes-nav-actions' },
         button('New folder', () => void app.dialogs.newFolder(app), { icon: 'fa-folder-plus', className: 'notes-quiet' }),
         state.folder ? button('Rename folder', () => void app.dialogs.renameFolder(app, state.folder), { icon: 'fa-pen', className: 'notes-quiet' }) : null,
-        state.folder ? button('Remove empty folder', () => void app.dialogs.deleteFolder(app, state.folder), { icon: 'fa-folder-minus', className: 'notes-quiet' }) : null)));
+        state.folder ? button('Remove empty folder', () => void app.dialogs.deleteFolder(app, state.folder), { icon: 'fa-folder-minus', className: 'notes-quiet' }) : null))));
     const list = h('ul', { class: 'notes-list' }, ...state.list.notes.map(note => noteButton(note)));
     const more = state.list.total > state.list.offset + state.list.notes.length
         ? button('Show more', () => void pageList(200), { className: 'notes-quiet' }) : null;
     const less = state.list.offset > 0 ? button('Show earlier', () => void pageList(-200), { className: 'notes-quiet' }) : null;
-    nav.append(section(state.folder === null ? 'All notes' : state.folder || 'Top level',
+    nav.append(keyed('list', section(state.folder === null ? 'All notes' : state.folder || 'Top level',
         state.list.notes.length ? list : h('p', { class: 'notes-hint', text: 'No notes here yet. New note starts one.' }),
-        h('div', { class: 'notes-nav-actions' }, less, more)));
-    nav.append(section('Notebook', h('div', { class: 'notes-nav-actions notes-wrap' },
-        button('Graph', () => void openNotebookGraph(), { icon: 'fa-diagram-project', className: 'notes-graph-open' }),
-        button('Property table', () => void openNotebookTable(), { icon: 'fa-table', className: 'notes-table-open' }),
-        button('Canvas', () => void openNotebookCanvas(), { icon: 'fa-object-group', className: 'notes-canvas-open' }),
-        button('Obsidian sync', () => void app.dialogs.obsidianSync(app), { icon: 'fa-arrows-rotate', className: 'notes-quiet' }),
-        button(`Trash (${tree?.trashCount ?? 0})`, () => void app.dialogs.trash(app), { icon: 'fa-trash-can', className: 'notes-quiet' }),
-        button('Assistant changes', () => void app.dialogs.proposals(app), { icon: 'fa-wand-magic-sparkles', className: 'notes-quiet' }),
-        button('Import', () => void app.dialogs.importNotes(app), { icon: 'fa-file-import', className: 'notes-quiet' }),
-        state.importStages.length ? button('Unfinished imports', () => void app.dialogs.unfinishedImports(app), { icon: 'fa-arrow-rotate-right', className: 'notes-quiet' }) : null,
-        button('Export', () => void app.dialogs.exportNotebook(app), { icon: 'fa-file-export', className: 'notes-quiet' }),
-        button('Rename notebook', () => void app.dialogs.renameNotebook(app), { icon: 'fa-pen', className: 'notes-quiet' }),
-        button('Check notebook', () => void app.dialogs.diagnostics(app), { icon: 'fa-stethoscope', className: 'notes-quiet' }))));
+        h('div', { class: 'notes-nav-actions' }, less, more))));
+    const tool = (label, onClick, icon, className = '') => button(label, onClick, { icon, className: `notes-notebook-tool ${className}`.trim() });
+    nav.append(keyed('views', section('Notebook views', h('div', { class: 'notes-notebook-tools' },
+        tool('Graph', () => void openNotebookGraph(), 'fa-diagram-project', 'notes-graph-open'),
+        tool('Property table', () => void openNotebookTable(), 'fa-table', 'notes-table-open'),
+        tool('Canvas', () => void openNotebookCanvas(), 'fa-object-group', 'notes-canvas-open')))));
+    nav.append(keyed('tools', section('Notebook', h('div', { class: 'notes-notebook-tools' },
+        tool('Obsidian sync', () => void app.dialogs.obsidianSync(app), 'fa-arrows-rotate', 'notes-quiet'),
+        tool(`Trash (${tree?.trashCount ?? 0})`, () => void app.dialogs.trash(app), 'fa-trash-can', 'notes-quiet'),
+        tool('Assistant changes', () => void app.dialogs.proposals(app), 'fa-wand-magic-sparkles', 'notes-quiet'),
+        tool('Import', () => void app.dialogs.importNotes(app), 'fa-file-import', 'notes-quiet'),
+        state.importStages.length ? tool('Unfinished imports', () => void app.dialogs.unfinishedImports(app), 'fa-arrow-rotate-right', 'notes-quiet') : null,
+        tool('Export', () => void app.dialogs.exportNotebook(app), 'fa-file-export', 'notes-quiet'),
+        tool('Rename notebook', () => void app.dialogs.renameNotebook(app), 'fa-pen', 'notes-quiet'),
+        tool('Check notebook', () => void app.dialogs.diagnostics(app), 'fa-stethoscope', 'notes-quiet')))));
     if (tree?.skipped?.length) {
         nav.append(h('p', { class: 'notes-notice', text: `${tree.skipped.length} file(s) in this notebook folder were left alone because Notes cannot read them safely.` }));
     }
@@ -653,13 +687,16 @@ function renderEditor({ restorePosition = false, fragment = null } = {}) {
         app.sourceEditor?.setDocument('', null, [], { force: true });
         clear(elements.empty);
         append(elements.empty, [
-            h('p', { class: 'notes-empty-title', text: 'Notes keeps your ideas, drafts and references, with or without a chat.' }),
-            state.notebookId ? h('div', { class: 'notes-nav-actions' },
+            h('img', { class: 'notes-empty-portrait', src: getAssistantIconSrc('miso'), alt: '', width: '96', height: '96', loading: 'lazy', decoding: 'async' }),
+            h('p', { class: 'notes-empty-title', text: state.notebookId ? 'A fresh page, not a whisker on it' : 'Every good story starts with a notebook' }),
+            h('p', { class: 'notes-empty-copy', text: 'Notes keeps your ideas, drafts and references, with or without a chat.' }),
+            state.notebookId ? h('div', { class: 'notes-nav-actions notes-empty-actions' },
                 button('New note', () => void app.dialogs.newNote(app), { icon: 'fa-file-circle-plus', className: 'notes-primary' }),
                 button('Quick note', () => void app.dialogs.quickNote(app), { icon: 'fa-bolt' }),
-                button('Graph', () => void openNotebookGraph(), { icon: 'fa-diagram-project' }),
-                button('Property table', () => void openNotebookTable(), { icon: 'fa-table' }),
-                button('Canvas', () => void openNotebookCanvas(), { icon: 'fa-object-group' })) : null,
+                button('Graph', () => void openNotebookGraph(), { icon: 'fa-diagram-project', className: 'notes-quiet' }),
+                button('Property table', () => void openNotebookTable(), { icon: 'fa-table', className: 'notes-quiet' }),
+                button('Canvas', () => void openNotebookCanvas(), { icon: 'fa-object-group', className: 'notes-quiet' })) : h('div', { class: 'notes-nav-actions notes-empty-actions' },
+                button('New notebook', () => void app.dialogs.newNotebook(app), { icon: 'fa-plus', className: 'notes-primary' })),
         ]);
         app.panels?.renderDetails(app);
         return;
@@ -669,8 +706,10 @@ function renderEditor({ restorePosition = false, fragment = null } = {}) {
     if (app.sourceEditor) app.sourceEditor.setDocument(state.editorText ?? '', documentKey, noteFolds());
     else if (elements.textarea.value !== state.editorText) elements.textarea.value = state.editorText ?? '';
     clear(elements.viewTabs);
-    for (const [view, label] of [['write', 'Write'], ['read', 'Read'], ['outline', 'Outline']]) {
-        elements.viewTabs.append(button(label, () => setView(view), { className: 'notes-choice', pressed: state.view === view }));
+    for (const [view, label, icon] of [['write', 'Write', 'fa-pen'], ['read', 'Read', 'fa-book-open'], ['outline', 'Outline', 'fa-list-ul']]) {
+        const tab = button(label, () => setView(view), { icon, className: 'notes-choice', pressed: state.view === view });
+        tab.dataset.view = view;
+        elements.viewTabs.append(tab);
     }
     elements.toolbar.hidden = state.view !== 'write';
     elements.foldControls.hidden = state.view !== 'write';

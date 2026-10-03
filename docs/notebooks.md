@@ -6,6 +6,8 @@ Open it from **Notes** in the workspace rail (the sidebar on desktop, the drawer
 
 Notes stays highlighted while it is open, including beside the chat. **Back to chat** closes Notes and clears its highlight.
 
+The first time Notes opens, Miso offers to show you around. **Show me around** starts her tour; **Not now** hides the offer for that account until you restore tour invitations in Settings. You can start the tour later from the **Tour** button under the Notes title. The tour only switches between the Notebooks, Note and Details panes and the detail tabs; it never creates, saves, deletes or imports anything. Steps for parts of the page that are not on screen yet (for example the editor when no note is open) are skipped.
+
 Background updates do not switch the notebook you chose or replace its list with results from a notebook you left.
 
 ## The basics
