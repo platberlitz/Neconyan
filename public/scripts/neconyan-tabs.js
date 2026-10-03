@@ -2892,6 +2892,12 @@ const NN_NATIVE_SHELL_PAGES = Object.freeze({
     'right:console-logs': 'console-logs',
 });
 
+// Character drawer tabs with their own assistant tour.
+const NN_CHARACTER_NATIVE_PAGES = Object.freeze({
+    characters: 'character-library',
+    persona: 'persona',
+});
+
 /**
  * Puts the introduction beneath a shell title, or at the top of a standalone page.
  * @param {string} key Page key from the tool tour
@@ -2911,6 +2917,7 @@ function mountNeconyanNativePage(key, host, headerHeading = null) {
     void import('./neconyan-tool-tour.js')
         .then(({ mountToolPage }) => {
             if (headerHeading && headerHeading.dataset.toolPage !== key) return;
+            if (heading.dataset.toolPage !== key) return;
             mountToolPage(key, heading, host, headerHeading);
         })
         .catch(error => console.warn('[Neconyan] Could not load the page tour:', error));
@@ -10256,8 +10263,10 @@ function syncCharacterShellTabs(activeTab = null) {
 
     syncCharacterHeaderCopy(normalizedTab);
     syncCharacterModeToggle();
-    if (panel instanceof HTMLElement) panel.dataset.neconyanNativePage = normalizedTab === 'persona' ? 'persona' : '';
+    const nativePage = NN_CHARACTER_NATIVE_PAGES[normalizedTab] ?? '';
+    if (panel instanceof HTMLElement) panel.dataset.neconyanNativePage = nativePage;
     if (normalizedTab === 'persona') mountNeconyanNativePage('persona', document.getElementById('sb_character_persona_panel'));
+    else if (nativePage) mountNeconyanNativePage(nativePage, document.getElementById('rm_characters_block'));
 
     panel?.querySelectorAll('[data-sb-character-tab]').forEach(tab => {
         if (!(tab instanceof HTMLElement)) {

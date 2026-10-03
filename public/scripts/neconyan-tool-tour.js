@@ -971,6 +971,88 @@ const TOOL_PAGES = Object.freeze({
             },
         ],
     },
+    'character-library': {
+        assistant: 'nori',
+        name: 'Characters',
+        kicker: 'Your cast',
+        description: 'Every character card you own lives here. Pick one to chat with, make a new one, or tidy the whole collection.',
+        invite: 'Nori will show you around your characters. Try to keep up.',
+        emptyWhen: '#rm_print_characters_block .sb-entity-empty',
+        steps: [
+            {
+                id: 'welcome',
+                targets: ['.neconyan-tool-page-intro'],
+                title: 'Your character library',
+                body: 'A **character card** is one file that holds a character: their name, picture, personality and the first message they send you.\nEvery card you make or import lands in this list.',
+                hint: 'My collection is bigger. And shinier. I just cannot afford to show it to you right now.',
+            },
+            {
+                id: 'search',
+                targets: ['#character_search_bar'],
+                optional: true,
+                title: 'Find someone fast',
+                body: 'Type part of a name, a tag or a word from a description, and the list shrinks to match.',
+                hint: 'Searching is free. Finally, something in my price range.',
+            },
+            {
+                id: 'create',
+                targets: ['#rm_button_create'],
+                optional: true,
+                title: 'Create character',
+                body: '**Create character** opens a blank card. Give it a name, a picture, a description and a first message, then save.\nWant one from the internet instead? The **Import** tab handles that.',
+                hint: 'Make them glamorous. Like me. Hehe.',
+            },
+            {
+                id: 'archive',
+                targets: ['#sbca_drawer_button'],
+                optional: true,
+                title: 'Chat Archive',
+                body: '**Chat Archive** searches every chat you have ever had, with every character. Type a word you remember and jump straight back into that conversation.',
+                hint: 'Perfect for finding where you promised me a present. Do not think I forgot.',
+            },
+            {
+                id: 'view',
+                targets: ['#charListGridToggle'],
+                optional: true,
+                title: 'Grid or list',
+                body: 'This switches between a tall list with descriptions and a compact grid of pictures.',
+                hint: 'Grid view. Better for admiring faces. Mine especially.',
+            },
+            {
+                id: 'bulk',
+                targets: ['#bulkEditButton'],
+                optional: true,
+                title: 'Bulk edit',
+                body: '**Bulk edit** lets you tick several cards at once, then tag, favourite or delete them together. Press it again to stop selecting.',
+                hint: 'Clearing out the riff-raff in one go. Very efficient. Very me.',
+            },
+            {
+                id: 'cards',
+                targets: ['#rm_print_characters_block .character_select', '#rm_print_characters_block .sb-entity-empty'],
+                optional: true,
+                title: 'Your cards',
+                body: 'Click a card to switch to that character and load your latest chat with them. **Open chat** does the same and closes this menu, so you can start typing straight away.\n**Edit card** opens their details so you can change anything. A star on a card means it is one of your favourites.',
+                emptyBody: 'No cards yet. Press **Create character** above, or use the **Import** tab to bring one in from a file or a website.',
+                hint: 'Go on, pick one. If it is not me, I will only sulk a little.',
+            },
+            {
+                id: 'filters',
+                targets: ['.neconyan-character-filters'],
+                open: ['.neconyan-character-filters-summary'],
+                optional: true,
+                title: 'Filter and organise',
+                body: 'The chips show only **favourites**, only **groups**, or only cards with a certain **tag**, a short label such as fantasy or comedy. **Manage tags** lets you make and edit those labels.\nThe drop-down menu sorts the list by name, by date, by chat count and more.',
+                hint: 'Favourites at the top. That is where I would be, naturally.',
+            },
+            {
+                id: 'done',
+                targets: ['.neconyan-tool-tour-button'],
+                title: 'That is the whole page',
+                body: 'Press **Tour** at any time to see this again. Search to find someone, click to chat, and **Edit card** when you want to change them.',
+                hint: 'Tour over. Tips are welcome. Cash, ideally. I am a bit short this week.',
+            },
+        ],
+    },
     'dialogue-colors': {
         assistant: 'miso',
         name: 'Dialogue Colors',
@@ -1471,7 +1553,9 @@ async function show(stepId) {
     card.querySelector('.neconyan-tool-tour-hint').textContent = t([step.hint]);
     card.querySelector('[data-tool-tour-back]').disabled = index === 0;
     card.querySelector('[data-tool-tour-next]').textContent = index === steps.length - 1 ? t`Done` : t`Next`;
-    if (tour.spacer) {
+    // A host that clips its own overflow cannot scroll into the spacer; there it would only squash the host's own list.
+    if (tour.spacer && /^(hidden|clip)$/.test(getComputedStyle(tour.root).overflowY)) tour.spacer.remove();
+    else if (tour.spacer) {
         tour.root.append(tour.spacer);
         tour.spacer.style.height = `${Math.ceil(card.getBoundingClientRect().height) + 24}px`;
     }
@@ -1588,7 +1672,8 @@ export function startToolTour(id, root, heading = null) {
     tour.spacer = element('div', 'neconyan-tool-tour-spacer');
     tour.spacer.setAttribute('aria-hidden', 'true');
     tour.watch = setInterval(() => {
-        if (!isShown(tour.root) || (tour.heading && tour.heading.dataset.toolPage !== tour.key)) endToolTour({ restoreFocus: false });
+        const hostKey = tour.root?.dataset.neconyanNativePage;
+        if (!isShown(tour.root) || (tour.heading && tour.heading.dataset.toolPage !== tour.key) || (hostKey !== undefined && hostKey !== tour.key)) endToolTour({ restoreFocus: false });
     }, 1000);
     void show(page.steps[0].id).then(() => tour.card?.focus({ preventScroll: true }));
 }
