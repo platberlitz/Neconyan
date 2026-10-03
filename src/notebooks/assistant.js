@@ -13,6 +13,7 @@ import {
     createNoteLocked,
     listNotebookIdsLocked,
     loadNotebookLocked,
+    readBlobLocked,
     readJsonLocked,
     readManifestLocked,
     readOperationLocked,
@@ -146,7 +147,8 @@ export function createGrantLocked(lease, { notebookId, noteId = null, folder = n
                 throw new NotebookError('GRANT_INVALID', 'Select some text first.', 400);
             }
             if (end - start > MAX_READ_CHARS) throw new NotebookError('GRANT_INVALID', 'That selection is too long to share at once.', 413);
-            grant.selection = { start, end, hash: sectionHash(entry.text.slice(start, end)) };
+            const selectedText = entry.text.slice(start, end);
+            grant.selection = { start, end, hash: sectionHash(selectedText), text: selectedText };
             grant.operations = ops.filter(item => item === 'read' || item === 'edit');
             if (!grant.operations.includes('read')) grant.operations.unshift('read');
         } else if (!grant.operations.includes('read')) {
@@ -197,17 +199,24 @@ function grantFor(lease, grantId, at) {
 }
 
 /** Locates the selection a grant covers, following simple edits around it. */
-function grantSelection(grant, noteText) {
+function grantSelection(lease, grant, noteText) {
     const { start, end, hash } = grant.selection;
-    const length = end - start;
     if (sectionHash(noteText.slice(start, end)) === hash) return { start, end, text: noteText.slice(start, end) };
-    const found = [];
-    for (let index = 0; index + length <= noteText.length && found.length < 2; index += 1) {
-        if (sectionHash(noteText.slice(index, index + length)) === hash) found.push(index);
-        if (index > 2_000_000) break;
+    let shared = grant.selection.text;
+    // Older grants retain only a hash. Recover their exact text from private history.
+    if (typeof shared !== 'string') {
+        try {
+            shared = readBlobLocked(lease, grant.notebookId, grant.noteId, grant.revision).slice(start, end);
+        } catch (error) {
+            if (error.code !== 'HISTORY_NOT_FOUND') throw error;
+        }
     }
-    if (found.length !== 1) throw new NotebookError('NOTE_SELECTION_STALE', 'The shared selection changed. Ask the owner to share it again.', 409);
-    return { start: found[0], end: found[0] + length, text: noteText.slice(found[0], found[0] + length) };
+    const index = typeof shared === 'string' && shared.length === end - start && sectionHash(shared) === hash
+        ? noteText.indexOf(shared) : -1;
+    if (index === -1 || noteText.indexOf(shared, index + 1) !== -1) {
+        throw new NotebookError('NOTE_SELECTION_STALE', 'The shared selection changed. Ask the owner to share it again.', 409);
+    }
+    return { start: index, end: index + shared.length, text: shared };
 }
 
 /* ---------- access helpers ---------- */
@@ -328,7 +337,7 @@ function readForAssistant(lease, args, at) {
     const { entry, grantScope } = noteAccess(lease, { notebookId: args.notebookId, noteId: args.noteId, grant, need: 'read' });
     const base = { notebookId: args.notebookId, noteId: entry.id, title: entry.title, revision: entry.hash, notice: DATA_NOTICE };
     if (grantScope === 'selection') {
-        const selected = grantSelection(grant, entry.text);
+        const selected = grantSelection(lease, grant, entry.text);
         return { ...base, scope: 'selection', text: selected.text, textHash: sectionHash(selected.text), partial: false, canEdit: grant.operations.includes('edit') };
     }
     const sections = sectionList(entry.text);
@@ -339,10 +348,12 @@ function readForAssistant(lease, args, at) {
             throw new NotebookError(resolved.status === 'missing' ? 'NOTE_SELECTOR_MISSING' : 'NOTE_SELECTOR_AMBIGUOUS', 'That section could not be found exactly. Read the note again.', 409);
         }
         const body = sectionBody(entry.text, resolved.heading);
-        const slice = body.slice(0, MAX_READ_CHARS);
+        const offset = Math.max(0, Math.min(Number.isInteger(args.offset) ? args.offset : 0, body.length));
+        const slice = body.slice(offset, offset + MAX_READ_CHARS);
+        const nextOffset = offset + slice.length < body.length ? offset + slice.length : null;
         return {
             ...base, scope: 'section', sectionId, heading: resolved.heading.text, text: slice, textHash: sectionHash(body),
-            partial: slice.length < body.length, totalChars: body.length,
+            offset, nextOffset, partial: nextOffset !== null || offset > 0, totalChars: body.length,
         };
     }
     const offset = Math.max(0, Math.min(Number.isInteger(args.offset) ? args.offset : 0, entry.text.length));
@@ -449,7 +460,7 @@ function editProposal(lease, tool, args, grant) {
         const find = text(args.find, 'Text to replace', { required: true });
         const replace = text(args.replace, 'Replacement text');
         if (grantScope === 'selection') {
-            const selected = grantSelection(grant, entry.text);
+            const selected = grantSelection(lease, grant, entry.text);
             if (selected.text !== find) throw new NotebookError('NOTE_SELECTION_STALE', 'Only the shared selection can be changed.', 409);
             changes = [{ type: 'replace_selection', find, replace, start: selected.start }];
         } else {

@@ -133,6 +133,26 @@ test('lore-bound sections are not duplicated through the notes route', t => {
     assert.equal(unresolved.withheld[0].reason, 'lore-bound');
 });
 
+test('overlapping lore bindings exclude each region once and preserve unbound context', t => {
+    const { run, notebookId, create, policy, collect, root } = prepared(t);
+    fs.writeFileSync(path.join(root, 'worlds', 'Other World.json'), JSON.stringify({ entries: {} }));
+    const noteId = create('Nested lore', '# Published parent\nParent fact.\n\n## Published child\nChild fact.\n\n# Unpublished\nKeep this entire draft in context.');
+    const parent = { kind: 'heading', path: ['Published parent'] };
+    const child = { kind: 'heading', path: ['Published parent', 'Published child'] };
+    for (const [selector, book] of [[parent, 'Test World'], [child, 'Test World'], [parent, 'Other World']]) {
+        const preview = run(lease => lore.previewPublicationLocked(lease, { notebookId, noteId, selector, book }));
+        run(lease => lore.publishToLoreLocked(lease, {
+            operationId: op('overlap'), notebookId, noteId, selector, book,
+            expectedSourceHash: preview.sourceHash, expectedTargetHash: preview.targetHash,
+        }));
+    }
+    policy({ notes: { [noteId]: { context: { mode: 'pinned', scopes: [{ kind: 'global' }] } } } });
+    const result = collect(chatA);
+    assert.equal(result.items.length, 1);
+    assert.equal(result.items[0].text, '# Unpublished\nKeep this entire draft in context.');
+    assert.equal(result.excludedBound[0].regions.length, 3);
+});
+
 test('imported notebooks stay out of context until admitted', t => {
     const { notebookId, create, policy, collect } = prepared(t);
     const noteId = create('Pinned', 'Pinned body.');

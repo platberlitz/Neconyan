@@ -177,6 +177,22 @@ test('duplicate identity hints never claim an existing note', async t => {
     assert.ok(!ids.includes('n_aaaaaaaaaaaaaaaa'));
 });
 
+test('an import comparison can return to an earlier notebook without keeping the wrong target', async t => {
+    const { base, run, notebookId } = prepared(t);
+    const other = run(lease => store.createNotebookLocked(lease, { operationId: op('other'), name: 'Other' }));
+    const otherId = other.notebook.id;
+    const summary = await transfer.stageImport(base, { filename: 'Idea.md', bytes: Buffer.from('An imported idea') });
+    for (const target of [notebookId, otherId, notebookId]) {
+        const compared = run(lease => transfer.compareStageLocked(lease, { stageId: summary.stageId, notebookId: target }));
+        assert.equal(compared.target, target);
+    }
+    const result = await transfer.commitStageUpdate(base, {
+        operationId: op('return-import'), stageId: summary.stageId, notebookId, paths: ['Idea.md'],
+    });
+    assert.equal(result.results[0].status, 'created');
+    assert.equal(run(lease => store.loadNotebookLocked(lease, otherId)).entries.length, 0);
+});
+
 test('reimporting a changed export updates only selected notes with revision checks', async t => {
     const { base, run, notebookId } = prepared(t);
     const note = run(lease => store.createNoteLocked(lease, { operationId: op('n'), notebookId, folder: 'Inbox', title: 'Draft', text: 'one\n' }));

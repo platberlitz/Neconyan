@@ -74,7 +74,7 @@ for (const phone of [false, true]) {
             await fillSource(page, text);
             if (phone) await applyIOSOnlyCss(page);
             const root = page.locator('#neconyan-notes');
-            for (const [mode, assistant] of [['Roleplay', 'Taro'], ['Conversation', 'Nori'], ['Roleplay', 'Miso']]) {
+            for (const [mode, assistant] of [['Roleplay', 'Taro'], ['Conversation', 'Nori'], ['Conversation', 'Miso'], ['Roleplay', 'Miso']]) {
                 await root.getByRole('button', { name: 'Talk about this note', exact: true }).click();
                 const dialog = page.locator('.notes-discussion-dialog');
                 await expect(dialog.getByRole('button', { name: 'Miso', exact: true })).toBeVisible();
@@ -89,6 +89,11 @@ for (const phone of [false, true]) {
                 const composer = page.locator(mode === 'Roleplay' ? '#send_textarea' : '#sb_conversation_input');
                 await expect(composer).toBeVisible();
                 await expect(composer).toHaveValue(new RegExp('Discuss this exact text'));
+                await expect.poll(() => page.evaluate(() => window.NeconyanShell.getActiveMode())).toBe(mode.toLowerCase());
+                const bounds = await composer.boundingBox();
+                expect(bounds.width).toBeGreaterThan(100);
+                expect(bounds.height).toBeGreaterThanOrEqual(phone ? 44 : 30);
+                await page.screenshot({ path: info.outputPath(`opened-${mode.toLowerCase()}-${assistant.toLowerCase()}.png`) });
                 const state = await page.evaluate(async mode => {
                     const core = await import('/script.js');
                     const context = await import('/scripts/neconyan-conversation/context.js');
@@ -101,6 +106,21 @@ for (const phone of [false, true]) {
                 await composer.fill('');
                 await page.evaluate(async note => { await (await import('/scripts/notebooks/notes-app.js')).openNotes({ notebookId: note.notebookId, noteId: note.noteId }); }, note);
                 await expectSourceText(page, text);
+                if (mode === 'Conversation' && assistant === 'Miso') {
+                    await page.evaluate(async () => (await import('/scripts/notebooks/notes-app.js')).notesApp().setPane('details'));
+                    await root.getByRole('button', { name: 'AI access', exact: true }).click();
+                    await root.getByRole('button', { name: 'Share this note once', exact: true }).click();
+                    await expect(composer).toHaveValue(new RegExp(`noteId ${note.noteId}, grantId`));
+                    await expect(page.locator('#send_textarea')).toHaveValue('');
+                    await page.evaluate(async () => (await import('/scripts/notebooks/notes-app.js')).hideNotes());
+                    await expect(composer).toBeVisible();
+                    await composer.fill('');
+                    await page.evaluate(async note => {
+                        const notes = await import('/scripts/notebooks/notes-app.js');
+                        await notes.openNotes({ notebookId: note.notebookId, noteId: note.noteId });
+                        notes.notesApp().setPane('note');
+                    }, note);
+                }
             }
             await root.getByRole('button', { name: 'Talk about this note', exact: true }).click();
             await page.locator('.popup').getByRole('button', { name: 'Not now', exact: true }).click();

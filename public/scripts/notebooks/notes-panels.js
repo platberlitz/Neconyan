@@ -1,3 +1,5 @@
+import { getChatGeneration } from '../../script.js';
+import { getCurrentUserHandle } from '../user.js';
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
 import { newOperationId } from './api.js';
 import { append, button, choiceRow, clear, field, formatBytes, formatTime, h } from './dom.js';
@@ -582,26 +584,44 @@ async function contextPreview(app, scope) {
 
 async function shareOnce(app, scope) {
     const { state, elements } = app;
-    if (!(await app.flushSave())) return app.toast('warning', 'Save the note first.');
+    const { account, notebookId, note } = state;
+    const mode = globalThis.NeconyanShell?.getActiveMode?.() ?? 'roleplay';
+    const input = document.getElementById(mode === 'conversation' ? 'sb_conversation_input' : 'send_textarea');
+    if (!note || !input || !['roleplay', 'conversation'].includes(mode)) return app.toast('info', 'Open a Roleplay or Conversation chat first.');
+    const generation = getChatGeneration();
     const textarea = elements.textarea;
-    const body = { notebookId: state.notebookId, noteId: state.note.id, scope, operations: ['read'], minutes: 30 };
+    const selection = { start: textarea.selectionStart, end: textarea.selectionEnd };
+    const text = textarea.value;
+    const current = () => account === getCurrentUserHandle() && state.account === account && state.notebookId === notebookId
+        && state.note?.id === note.id && getChatGeneration() === generation
+        && (globalThis.NeconyanShell?.getActiveMode?.() ?? 'roleplay') === mode;
+    const changed = () => app.toast('warning', 'The note or chat changed. Share again from the intended note and chat.');
+    const conversation = mode === 'conversation' ? await import('../neconyan-conversation/context.js') : null;
+    if (!current()) return changed();
+    const conversationTarget = () => {
+        if (!conversation) return '';
+        const avatar = conversation.getCurrentCharAvatar();
+        const branch = conversation.getActiveConversationBranch(avatar, { create: false });
+        return JSON.stringify([conversation.getConversationThreadKey(avatar), branch?.id, branch?.createdAt]);
+    };
+    const target = conversationTarget();
+    const stillCurrent = () => current() && conversationTarget() === target && textarea.value === text;
+    if (!(await app.flushSave())) return app.toast('warning', 'Save the note first.');
+    if (!stillCurrent()) return changed();
+    const body = { notebookId, noteId: note.id, scope, operations: ['read'], minutes: 30 };
     if (scope === 'selection') {
-        const start = textarea.selectionStart;
-        const end = textarea.selectionEnd;
-        if (start === end) return app.toast('info', 'Select some text in the note first.');
-        body.selection = { start, end };
+        if (selection.start === selection.end) return app.toast('info', 'Select some text in the note first.');
+        body.selection = selection;
         body.operations = ['read', 'edit'];
     }
     const result = await app.request('/assistant/grants/create', body);
     if (app.failed(result, 'Sharing failed.')) return;
+    if (!stillCurrent()) return changed();
     const grant = result.grant;
-    const message = `Please read my note "${state.note.title}" with ReadNote (notebookId ${state.notebookId}, noteId ${state.note.id}, grantId ${grant.id}).`;
-    const input = document.getElementById('send_textarea');
-    if (input) {
-        input.value = input.value ? `${input.value}\n${message}` : message;
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-    app.toast('success', `Shared for 30 minutes. A message for the assistant was ${input ? 'added to the chat box' : 'prepared'}.`);
+    const message = `Please read my note '${note.title}' with ReadNote (notebookId ${notebookId}, noteId ${note.id}, grantId ${grant.id}).`;
+    input.value = input.value ? `${input.value}\n${message}` : message;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    app.toast('success', 'Shared for 30 minutes. A message for the assistant was added to the chat box.');
 }
 
 /* ---------- History ---------- */

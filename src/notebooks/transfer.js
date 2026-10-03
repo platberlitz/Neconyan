@@ -445,7 +445,8 @@ export function compareStageLocked(lease, { stageId, notebookId }) {
             : { state: 'new' };
     }
     stage.target = notebookId;
-    runOperationLocked(lease, { operationId: `compare:${stageId}:${state.structureRevision}`, kind: 'import-compare', args: { notebookId } }, () => {
+    // Comparing again must persist this target even if it was compared before.
+    runOperationLocked(lease, { operationId: `compare:${stageId}:${crypto.randomUUID()}`, kind: 'import-compare', args: { notebookId } }, () => {
         writeJsonLocked(lease, path.join(stageRoot(lease, stageId), 'stage.json'), stage);
         return { status: 'success' };
     });

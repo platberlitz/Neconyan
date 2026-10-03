@@ -75,10 +75,15 @@ function withoutBoundRegions(text, bindings) {
         ranges.push([resolved.heading.start, resolved.heading.end]);
         excluded.push({ bindingId: binding.id, region: resolved.heading.text });
     }
-    ranges.sort((a, b) => b[0] - a[0]);
-    let output = text;
-    for (const [start, end] of ranges) output = output.slice(0, start) + output.slice(end);
-    return { text: output, excluded };
+    ranges.sort((a, b) => a[0] - b[0]);
+    const kept = [];
+    let cursor = 0;
+    for (const [start, end] of ranges) {
+        if (start > cursor) kept.push(text.slice(cursor, start));
+        cursor = Math.max(cursor, end);
+    }
+    kept.push(text.slice(cursor));
+    return { text: kept.join(''), excluded };
 }
 
 function preparedNote(lease, notebookId, entry, bindings, bindingRevision) {

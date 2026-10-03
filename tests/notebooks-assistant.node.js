@@ -83,6 +83,29 @@ test('read access can read sections but cannot change or publish anything', t =>
     assert.equal(code(() => capture('preview-note-lore', { notebookId, noteId, book: 'Any' })).status, 403);
 });
 
+test('assistants can page through a long section without reading neighbouring sections', t => {
+    const { notebookId, create, policy, capture } = prepared(t);
+    const body = 'A long section. '.repeat(3200) + 'End of section.';
+    const noteId = create('Long note', `# Long section\n${body}\n\n# Private neighbour\nNot part of the requested section.`);
+    policy({ assistant: 'read' });
+    const sectionId = capture('read-note', { notebookId, noteId }).response.sections[0].id;
+    const first = capture('read-note', { notebookId, noteId, sectionId }).response;
+    assert.equal(first.offset, 0);
+    assert.equal(first.nextOffset, first.text.length);
+    assert.equal(first.partial, true);
+    let combined = first.text;
+    let page = first;
+    while (page.nextOffset !== null) {
+        page = capture('read-note', { notebookId, noteId, sectionId, offset: page.nextOffset }).response;
+        assert.equal(page.offset, combined.length);
+        assert.equal(page.textHash, first.textHash, 'the edit guard covers the complete section');
+        combined += page.text;
+    }
+    assert.equal(combined, body);
+    assert.equal(page.totalChars, body.length);
+    assert.equal(page.partial, true, 'the final page alone is still only part of the section');
+});
+
 test('an approved append is saved once, retries replay, and the rest of the note is untouched', t => {
     const { run, notebookId, create, policy, capture, read } = prepared(t);
     const noteId = create('Magic system', MAGIC);
@@ -144,6 +167,47 @@ test('a proposal made against an old revision is rejected instead of overwriting
     assert.equal(read(noteId), 'Alpha beta delta.\n');
     assert.equal(code(() => capture('edit-note-selection', { notebookId, noteId, find: 'a', replace: 'b' })).code, 'NOTE_SELECTION_AMBIGUOUS');
     assert.equal(code(() => capture('edit-note-selection', { notebookId, noteId, find: 'missing', replace: 'b' })).code, 'NOTE_SELECTION_STALE');
+});
+
+test('a shared selection still resolves after a large insertion before it', t => {
+    const { run, notebookId, create, capture } = prepared(t);
+    const shared = 'Only this sentence is shared.';
+    const original = `Private beginning.\n${shared}\nPrivate end.`;
+    const noteId = create('Moved selection', original);
+    const start = original.indexOf(shared);
+    const grant = run(lease => assistant.createGrantLocked(lease, { notebookId, noteId, scope: 'selection',
+        selection: { start, end: start + shared.length }, operations: ['read'] }));
+    const revision = run(lease => store.readNoteLocked(lease, { notebookId, noteId })).entry.hash;
+    run(lease => store.updateNoteLocked(lease, { operationId: op('insert'), notebookId, noteId, expectedRevision: revision,
+        changes: [{ type: 'replace_all', markdown: 'x'.repeat(2_100_000) + original }] }));
+    const response = capture('read-note', { notebookId, noteId, grantId: grant.id }).response;
+    assert.equal(response.scope, 'selection');
+    assert.equal(response.text, shared);
+    assert.ok(!JSON.stringify(response).includes('Private'));
+});
+
+test('older selection grants follow unique moved text and reject ambiguous matches', t => {
+    const { run, notebookId, create, capture } = prepared(t);
+    const shared = 'Shared 🔑 idea.';
+    const original = `Private beginning.\n${shared}\nPrivate end.`;
+    const noteId = create('Older selection', original);
+    const start = original.indexOf(shared);
+    const grant = run(lease => assistant.createGrantLocked(lease, { notebookId, noteId, scope: 'selection',
+        selection: { start, end: start + shared.length }, operations: ['read'] }));
+    assert.ok(!JSON.stringify(grant).includes(shared), 'public grant metadata does not include private text');
+    run(lease => {
+        const file = path.join(store.accountRootOf(lease), 'notebook-control', '_grants.json');
+        const saved = store.readJsonLocked(lease, file);
+        delete saved.entries[grant.id].selection.text;
+        store.writeJsonLocked(lease, file, saved);
+    });
+    const update = markdown => run(lease => store.updateNoteLocked(lease, { operationId: op('move'), notebookId, noteId,
+        expectedRevision: store.readNoteLocked(lease, { notebookId, noteId }).entry.hash,
+        changes: [{ type: 'replace_all', markdown }] }));
+    update(`An inserted paragraph.\n${original}`);
+    assert.equal(capture('read-note', { notebookId, noteId, grantId: grant.id }).response.text, shared);
+    update(`An inserted paragraph.\n${original}\n${shared}`);
+    assert.equal(code(() => capture('read-note', { notebookId, noteId, grantId: grant.id })).code, 'NOTE_SELECTION_STALE');
 });
 
 test('a selection grant shares only the selection and allows editing only that text', t => {
