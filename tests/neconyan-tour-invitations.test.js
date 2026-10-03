@@ -88,4 +88,17 @@ describe('page-tour invitation dismissal', () => {
         const css = readFileSync(new URL('../public/css/neconyan.css', import.meta.url), 'utf8');
         expect(css).toMatch(/#sb-restore-tour-invitations\s*\{[^}]*min-height:\s*44px/);
     });
+
+    test('Settings can hide every tour button and bring them back', () => {
+        const tabs = readFileSync(new URL('../public/scripts/neconyan-tabs.js', import.meta.url), 'utf8');
+        expect(tabs).toContain('tourButtonsHidden: \'sb-tour-buttons-hidden\'');
+        expect(tabs).toContain('id: \'sb-hide-tour-buttons-input\'');
+        expect(tabs).toContain('onChange: input => setTourButtonsHidden(input.checked)');
+        expect(tabs).toContain('setTourButtonsHidden(nnState.tourButtonsHidden, { persist: false });');
+        const selector = tabs.match(/const NN_TOUR_BUTTON_SELECTOR = '([^']+)'/)?.[1] ?? '';
+        for (const target of ['.neconyan-tool-tour-button', '.neconyan-lorebook-tour-button', '.neconyan-tool-tour-invite', '.neconyan-lorebook-tour-invite', '[data-action="replay-tutorial"]']) {
+            expect(selector).toContain(target);
+        }
+        expect(tabs).toMatch(/delete document\.documentElement\.dataset\.sbTourButtonsHidden;\s*style\?\.remove\(\);/);
+    });
 });

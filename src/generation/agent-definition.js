@@ -6,6 +6,7 @@ const text = value => typeof value === 'string' ? value : '';
 const oneOf = (value, values, fallback) => values.includes(value) ? value : fallback;
 const number = (value, fallback, min, max = Number.MAX_SAFE_INTEGER) => Number.isFinite(Number(value))
     ? Math.max(min, Math.min(max, Math.floor(Number(value)))) : fallback;
+export const MAX_AGENT_FALLBACK_CONNECTIONS = 10;
 export const isNativeCompanion = agent => agent.execution === 'companion' || agent.category === 'companion';
 export const agentTokenLimit = (value, fallback = 8192) => number(value, fallback, 16, 64000);
 

@@ -515,7 +515,7 @@ describe('Agent setup apply and recovery', () => {
                 applyingAgentSetup: false, agentSetupOperationBusy: false,
                 setAgentSetupStatus() {}, applyAgentSetupPreset: runtime.store.applyAgentSetupPreset,
                 buildConnectionProfileNameMap: () => new Map(), rememberAgentSetupSelection: async () => false,
-                syncToolAgentRegistrations: sync, renderAgentList() {}, renderAgentSetupControls() {},
+                syncToolAgentRegistrations: sync, populateProfileDropdown() {}, renderAgentList() {}, renderAgentSetupControls() {},
                 toastr: { error() {} }, escapeHtml: value => value,
             });
             vm.runInContext(action, context);

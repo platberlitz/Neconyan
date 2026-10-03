@@ -3351,6 +3351,97 @@ body.neconyan .ica--standalone-title { display: none; }
     margin-top: 2px;
 }
 
+.ica--fallback-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    padding-left: 10px;
+    border-left: 2px solid var(--ica-border);
+    font-size: calc(var(--mainFontSize) * 0.82);
+}
+
+.ica--fallback-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--SmartThemeBodyColor, #d6d2c8);
+    font-weight: 600;
+}
+
+.ica--fallback-count {
+    color: var(--ica-muted);
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+}
+
+.ica--fallback-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: ica-fallback;
+}
+
+.ica--fallback-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    counter-increment: ica-fallback;
+}
+
+.ica--fallback-row::before {
+    content: counter(ica-fallback) '.';
+    flex: 0 0 1.6em;
+    color: var(--ica-muted);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+.ica--fallback-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    line-height: 1.3;
+}
+
+.ica--fallback-row.is-missing .ica--fallback-name {
+    color: var(--ica-muted);
+    font-style: italic;
+}
+
+.ica--fallback-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 4px;
+}
+
+#ica--settings .ica--fallback-action {
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    margin: 0;
+    padding: 0;
+    justify-content: center;
+}
+
+#ica--settings .ica--fallback-list > .ica--fallback-add {
+    width: 100%;
+    margin: 0;
+}
+
+@media (pointer: coarse) {
+    #ica--settings .ica--fallback-action {
+        width: 44px;
+        min-width: 44px;
+        height: 44px;
+    }
+}
+
 .ica--editor-view-section {
     display: flex;
     flex-direction: column;

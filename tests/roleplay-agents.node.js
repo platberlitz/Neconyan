@@ -215,6 +215,63 @@ test('Agent capture binds saved scope, individual profiles and exact record iden
     assert.throws(() => f.locked(lease => readRoleplayAgentsLocked(lease, policy)), { code: 'ROLEPLAY_AGENT_SOURCE_CHANGED' });
 });
 
+test('Agent capture binds up to ten fallback connections per Agent kind and skips missing or repeated ones', t => {
+    const f = prepared(t, [
+        { id: 'post', enabled: true, phase: 'post', prompt: 'Rewrite', postProcess: { enabled: true, promptTransformEnabled: true } },
+        { id: 'companion', enabled: true, category: 'companion', prompt: 'A note' },
+    ], { connectionProfile: 'main', connectionFallbacks: ['main', 'missing', 'aux', 'aux'], companionConnectionFallbacks: ['aux'] });
+    const policy = f.locked(lease => captureRoleplayAgents(lease, f.settings));
+    const byId = Object.fromEntries(policy.agents.map(agent => [agent.id, agent]));
+    assert.deepEqual(byId.post.fallbacks.map(binding => binding.profileId), ['aux']);
+    assert.deepEqual(byId.companion.fallbacks.map(binding => binding.profileId), ['aux']);
+    const definitions = f.locked(lease => readRoleplayAgentsLocked(lease, policy));
+    assert.deepEqual(definitions.find(agent => agent.id === 'post').fallbacks.map(item => item.profileLabel), ['aux']);
+    const none = prepared(t, [{ id: 'plain', enabled: true, category: 'companion', prompt: 'A note' }], { connectionProfile: 'main' });
+    const plain = none.locked(lease => captureRoleplayAgents(lease, none.settings));
+    assert.equal(Object.hasOwn(plain.agents[0], 'fallbacks'), false, 'no fallbacks leaves saved policies unchanged');
+});
+
+test('a failed Agent connection hands over to the next fallback once and is never sent again', async t => {
+    const f = prepared(t);
+    const context = { ...f.context, providerScope: createProviderScope(f.context) };
+    const aux = { kind: 'profile', ...captureChatProfile(f.directories, 'aux') };
+    const calls = [];
+    const options = { base: f.scope, account: f.account, name: 'note', identity: roleplayHash('note'), binding: f.binding,
+        modelOverride: 'own-model', maxTokens: 64, macros: {}, assertCurrent() {},
+        fallbacks: [{ binding: f.binding, profileLabel: 'Same as primary' }, { binding: aux, profileLabel: 'Backup' }],
+        buildMessages: () => [{ role: 'user', content: 'Write a note' }],
+        generate: async ({ jobContext, binding, modelOverride, stepNamespace, onProviderStep, beforeDispatch }) => {
+            const name = createHash('sha256').update(stepNamespace).digest('hex');
+            onProviderStep(`provider:${name}`);
+            return providerStep(jobContext, name, () => {
+                calls.push([binding.profileId, modelOverride]);
+                beforeDispatch();
+                if (binding.profileId === 'main') throw Object.assign(new Error('Provider overloaded'), { status: 502 });
+                return { text: 'Backup note' };
+            });
+        } };
+    const result = await runAgentModelStep(context, options);
+    assert.equal(result.text, 'Backup note');
+    assert.equal(result.profileId, 'aux');
+    assert.equal(result.fallbackLabel, 'Backup');
+    assert.deepEqual(calls, [['main', 'own-model'], ['aux', '']], 'fallbacks skip the primary and never reuse its model override');
+    const replay = await runAgentModelStep({ ...context, providerScope: createProviderScope(context) },
+        { ...options, generate: () => assert.fail('A settled Agent was sent again') });
+    assert.equal(replay.text, 'Backup note');
+    assert.equal(calls.length, 2);
+});
+
+test('an empty Agent reply tries the fallback, and every connection failing keeps the last error', async t => {
+    const f = prepared(t);
+    const aux = { kind: 'profile', ...captureChatProfile(f.directories, 'aux') };
+    const base = { base: f.scope, account: f.account, identity: roleplayHash('empty'), binding: f.binding, maxTokens: 64, macros: {},
+        assertCurrent() {}, fallbacks: [{ binding: aux, profileLabel: 'Backup' }], buildMessages: () => [{ role: 'user', content: 'Write' }] };
+    const empty = await runAgentModelStep(f.context, { ...base, name: 'empty', generate: modelResponse(({ binding }) => ({ text: binding.profileId === 'main' ? '  ' : 'Filled' })) });
+    assert.equal(empty.text, 'Filled');
+    await assert.rejects(runAgentModelStep({ ...f.context, providerScope: createProviderScope(f.context) }, { ...base, name: 'broken',
+        generate: modelResponse(({ binding }) => { throw Object.assign(new Error(`${binding.profileId} refused`), { status: 400 }); }) }), /aux refused/);
+});
+
 test('Agent model inputs, macros and limited results are saved once and never invoke a fallback', async t => {
     const f = prepared(t);
     let builds = 0, calls = 0;

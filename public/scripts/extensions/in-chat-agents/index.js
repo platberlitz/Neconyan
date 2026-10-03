@@ -76,6 +76,7 @@ import {
     createDefaultGroup,
     reorderAgentsIntoOrderSlots,
     normalizeStringIdList,
+    MAX_AGENT_FALLBACK_CONNECTIONS,
 } from './agent-store.js';
 import {
     cancelAgentGeneration,
@@ -506,7 +507,12 @@ async function loadSelectedAgentSetup() {
         if (!canPersist()) return;
         if (!loaded) { setAgentSetupStatus('Setup load cancelled.'); return; }
         const profiles = buildConnectionProfileNameMap();
-        const references = [...preset.agents.map(agent => agent.connectionProfile), preset.globalSettings.connectionProfile, preset.globalSettings.companionConnectionProfile];
+        const references = [
+            ...preset.agents.map(agent => agent.connectionProfile),
+            preset.globalSettings.connectionProfile,
+            preset.globalSettings.companionConnectionProfile,
+            ...[preset.globalSettings.connectionFallbacks, preset.globalSettings.companionConnectionFallbacks].flatMap(list => Array.isArray(list) ? list : []),
+        ];
         const missing = new Set(references.filter(id => id && !profiles.has(id)));
         selectedAgentSetupId = preset.id;
         const remembered = await rememberAgentSetupSelection();
@@ -522,6 +528,7 @@ async function loadSelectedAgentSetup() {
         agentSetupOperationBusy = false;
         controls.forEach(([control, disabled]) => { if (control.isConnected) control.disabled = disabled; });
         if (canPersist()) syncToolAgentRegistrations();
+        populateProfileDropdown();
         renderAgentList();
         renderAgentSetupControls();
     }
@@ -5969,6 +5976,117 @@ function populateProfileDropdown() {
             selectedValue: getGlobalSettings().companionConnectionProfile || '',
         });
     }
+
+    document.querySelectorAll('#ica--settings .ica--fallback-list[data-ica-fallback-key]').forEach(renderConnectionFallbackList);
+}
+
+/**
+ * Renders the ordered fallback connections for one Agent kind.
+ * @param {HTMLElement} list
+ */
+function renderConnectionFallbackList(list) {
+    const key = list.dataset.icaFallbackKey;
+    if (key !== 'connectionFallbacks' && key !== 'companionConnectionFallbacks') return;
+    const noun = list.dataset.icaFallbackNoun || 'agent';
+    const fallbacks = getGlobalSettings()[key] || [];
+    const profiles = buildConnectionProfileNameMap();
+    const save = change => {
+        const next = [...(getGlobalSettings()[key] || [])];
+        change(next);
+        setGlobalSettings({ [key]: next });
+        persistExtensionState();
+        renderConnectionFallbackList(list);
+    };
+    const move = (profileId, offset) => next => {
+        const from = next.indexOf(profileId);
+        const to = from + offset;
+        if (from < 0 || to < 0 || to >= next.length) return;
+        next.splice(to, 0, ...next.splice(from, 1));
+    };
+
+    const heading = document.createElement('div');
+    heading.className = 'ica--fallback-heading';
+    const title = document.createElement('span');
+    title.textContent = 'Fallback connections';
+    const count = document.createElement('small');
+    count.className = 'ica--fallback-count';
+    count.textContent = `${fallbacks.length} of ${MAX_AGENT_FALLBACK_CONNECTIONS}`;
+    heading.append(title, count);
+
+    const rows = document.createElement('ol');
+    rows.className = 'ica--fallback-rows';
+    fallbacks.forEach((profileId, index) => {
+        const row = document.createElement('li');
+        row.className = 'ica--fallback-row';
+        row.dataset.profileId = profileId;
+        const name = document.createElement('span');
+        name.className = 'ica--fallback-name';
+        name.textContent = profiles.has(profileId) ? profiles.get(profileId) : `Missing profile (${profileId})`;
+        name.title = name.textContent;
+        if (!profiles.has(profileId)) row.classList.add('is-missing');
+        const actions = document.createElement('span');
+        actions.className = 'ica--fallback-actions';
+        const action = (icon, label, disabled, apply) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'menu_button menu_button_icon ica--fallback-action';
+            button.title = label;
+            button.setAttribute('aria-label', `${label}: ${name.textContent}`);
+            button.disabled = disabled;
+            button.innerHTML = `<i class="fa-solid ${icon}" aria-hidden="true"></i>`;
+            button.addEventListener('click', () => {
+                save(apply);
+                const sameRow = list.querySelector(`.ica--fallback-row[data-profile-id="${CSS.escape(profileId)}"]`);
+                const remaining = list.querySelectorAll('.ica--fallback-row');
+                const target = sameRow?.querySelector(`.ica--fallback-action[title="${label}"]:not(:disabled)`)
+                    ?? sameRow?.querySelector('.ica--fallback-action:not(:disabled)')
+                    ?? remaining[Math.min(index, remaining.length - 1)]?.querySelector('.ica--fallback-action[title="Remove"]')
+                    ?? list.querySelector('.ica--fallback-add');
+                target?.focus();
+            });
+            return button;
+        };
+        actions.append(
+            action('fa-arrow-up', 'Try earlier', index === 0, move(profileId, -1)),
+            action('fa-arrow-down', 'Try later', index === fallbacks.length - 1, move(profileId, 1)),
+            action('fa-xmark', 'Remove', false, next => { const at = next.indexOf(profileId); if (at >= 0) next.splice(at, 1); }),
+        );
+        row.append(name, actions);
+        rows.append(row);
+    });
+
+    const available = [...profiles].filter(([id]) => !fallbacks.includes(id));
+    const add = document.createElement('select');
+    add.className = 'text_pole ica--fallback-add';
+    add.setAttribute('aria-label', `Add a ${noun} fallback connection`);
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = fallbacks.length >= MAX_AGENT_FALLBACK_CONNECTIONS ? `All ${MAX_AGENT_FALLBACK_CONNECTIONS} fallbacks are in use`
+        : !profiles.size ? 'Save a connection profile first'
+            : !available.length ? 'Every saved connection is already listed'
+                : 'Add a fallback connection…';
+    add.append(placeholder);
+    if (fallbacks.length < MAX_AGENT_FALLBACK_CONNECTIONS) {
+        for (const [id, label] of available) {
+            const option = document.createElement('option');
+            option.value = id;
+            option.textContent = label;
+            add.append(option);
+        }
+    }
+    add.disabled = add.options.length < 2;
+    add.addEventListener('change', () => {
+        const profileId = add.value;
+        if (!profileId) return;
+        save(next => { if (!next.includes(profileId)) next.push(profileId); });
+        list.querySelector('.ica--fallback-add')?.focus();
+    });
+
+    const help = document.createElement('small');
+    help.className = 'ica--profile-help';
+    help.textContent = `Optional. If a ${noun} agent's connection fails or replies with nothing, these are tried in order. Fallbacks use each connection's own model.`;
+
+    list.replaceChildren(heading, ...(fallbacks.length ? [rows] : []), add, help);
 }
 
 function refreshConnectionProfileUi() {

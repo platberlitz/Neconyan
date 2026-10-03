@@ -59,6 +59,7 @@ const NN_STORAGE_KEYS = Object.freeze({
     characterDrawerRightLocked: 'sb-character-drawer-right-locked',
     theme: 'sb-theme',
     kittyless: 'sb-kittyless',
+    tourButtonsHidden: 'sb-tour-buttons-hidden',
     surfaceTransparency: 'sb-surface-transparency',
     topbarScaleDesktop: 'sb-topbar-scale-desktop',
     topbarScaleMobile: 'sb-topbar-scale-mobile',
@@ -499,7 +500,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261003-notes-controls4';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261003-notes-audit1';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -1417,6 +1418,7 @@ const nnState = {
     inlineDrawerAutoClose: normalizeStoredBoolean(safeGetItem(NN_STORAGE_KEYS.settingsDrawerAutoClose), false),
     theme: normalizeTheme(safeGetItem(NN_STORAGE_KEYS.theme)),
     kittyless: normalizeStoredBoolean(safeGetItem(NN_STORAGE_KEYS.kittyless), false),
+    tourButtonsHidden: normalizeStoredBoolean(safeGetItem(NN_STORAGE_KEYS.tourButtonsHidden), false),
     frontendIcon: normalizeFrontendIcon(safeGetItem(NN_STORAGE_KEYS.frontendIcon)),
     surfaceTransparency: normalizeSurfaceTransparency(safeGetItem(NN_STORAGE_KEYS.surfaceTransparency)),
     paperTextureEnabled: normalizeStoredBoolean(safeGetItem(NN_STORAGE_KEYS.paperTextureEnabled), false),
@@ -2181,6 +2183,7 @@ function restorePersistedTopbarState() {
     nnState.chatbar.visible = normalizeStoredBoolean(safeGetItem(NN_STORAGE_KEYS.chatbarVisible), nnState.chatbar.visible);
     nnState.chatbar.topbarOffset = normalizeTopbarOffset(safeGetItem(NN_STORAGE_KEYS.topbarOffset));
     nnState.compactMode = normalizeStoredBoolean(safeGetItem(NN_STORAGE_KEYS.compactMode), nnState.compactMode);
+    nnState.tourButtonsHidden = normalizeStoredBoolean(safeGetItem(NN_STORAGE_KEYS.tourButtonsHidden), nnState.tourButtonsHidden);
     nnState.topbarIconsOnly.desktop = normalizeStoredBoolean(safeGetItem(NN_STORAGE_KEYS.desktopTopbarIconsOnly), nnState.topbarIconsOnly.desktop);
     nnState.topbarIconsOnly.mobile = normalizeStoredBoolean(safeGetItem(NN_STORAGE_KEYS.mobileTopbarIconsOnly), nnState.topbarIconsOnly.mobile);
     nnState.bottomChatBar.visible = normalizeStoredBoolean(safeGetItem(NN_STORAGE_KEYS.bottomChatBarVisible), nnState.bottomChatBar.visible);
@@ -5329,6 +5332,32 @@ function setKittylessEnabled(enabled, { persist = true } = {}) {
 
     if (persist) {
         safeSetItem(NN_STORAGE_KEYS.kittyless, String(nnState.kittyless));
+    }
+
+    updateThemePickerUi();
+}
+
+// Tour buttons are created by several lazy modules, so one injected rule hides them wherever they appear.
+const NN_TOUR_BUTTON_SELECTOR = '.neconyan-tool-tour-button, .neconyan-lorebook-tour-button, .neconyan-tool-tour-invite, .neconyan-lorebook-tour-invite, [data-action="replay-tutorial"]';
+
+function setTourButtonsHidden(hidden, { persist = true } = {}) {
+    nnState.tourButtonsHidden = normalizeStoredBoolean(hidden, false);
+    let style = document.getElementById('sb-tour-buttons-hidden-style');
+    if (nnState.tourButtonsHidden) {
+        document.documentElement.dataset.sbTourButtonsHidden = 'true';
+        if (!style) {
+            style = document.createElement('style');
+            style.id = 'sb-tour-buttons-hidden-style';
+            style.textContent = `:root[data-sb-tour-buttons-hidden='true'] :is(${NN_TOUR_BUTTON_SELECTOR}) { display: none !important; }`;
+            document.head.append(style);
+        }
+    } else {
+        delete document.documentElement.dataset.sbTourButtonsHidden;
+        style?.remove();
+    }
+
+    if (persist) {
+        safeSetItem(NN_STORAGE_KEYS.tourButtonsHidden, String(nnState.tourButtonsHidden));
     }
 
     updateThemePickerUi();
@@ -15797,12 +15826,24 @@ function injectThemePicker() {
             tourInviteStatus.textContent = 'Could not restore tour invitations. Please try again.';
         }
     });
+    const hideTourButtonsChoice = createMobileNavChoice({
+        id: 'sb-hide-tour-buttons-input',
+        type: 'checkbox',
+        value: 'hide-tour-buttons',
+        label: 'Hide all tour buttons',
+        icon: 'fa-eye-slash',
+        onChange: input => setTourButtonsHidden(input.checked),
+    });
+    const hideTourButtonsCaption = createElement('p', {
+        className: 'sb-theme-slider-caption',
+        text: 'Hides the Tour button on every page, the tour invitations and Replay First paws tour on Home. Turn it off to bring them all back.',
+    });
     const tourSettingsGroup = createThemeSettingsDrawer({
         id: 'sb-page-tours-drawer',
         title: 'Page tours',
-        content: [createElement('p', {
+        content: [hideTourButtonsChoice, hideTourButtonsCaption, createElement('p', {
             className: 'sb-theme-slider-caption',
-            text: 'Restore page-tour invitations you hid or already tried. The Tour buttons on each page always remain available.',
+            text: 'Restore page-tour invitations you hid or already tried.',
         }), restoreTourInvites, tourInviteStatus],
     });
 
@@ -16142,6 +16183,12 @@ function updateThemePickerUi() {
         mobileNavReplacementSelect.value = normalizeMobileNavReplacementTarget(nnState.mobileNav.replacementTarget);
         mobileNavReplacementSelect.disabled = !nnState.mobileNav.replaceQuickActions;
         mobileNavReplacementSelect.closest('.sb-mobile-nav-replacement-field')?.classList.toggle('is-disabled', !nnState.mobileNav.replaceQuickActions);
+    }
+
+    const hideTourButtonsInput = document.getElementById('sb-hide-tour-buttons-input');
+    if (hideTourButtonsInput instanceof HTMLInputElement) {
+        hideTourButtonsInput.checked = nnState.tourButtonsHidden;
+        hideTourButtonsInput.closest('.sb-mobile-nav-choice')?.classList.toggle('is-selected', nnState.tourButtonsHidden);
     }
 
     const kittylessInput = document.getElementById('sb-kittyless-enabled-input');
@@ -20143,6 +20190,7 @@ function initAll() {
     setPaperTextureEnabled(nnState.paperTextureEnabled, { persist: false });
     setPaperTextureOpacity(nnState.paperTextureOpacity, { persist: false });
     setCompactMode(nnState.compactMode, { persist: false });
+    setTourButtonsHidden(nnState.tourButtonsHidden, { persist: false });
     setDesktopShellSnapToChatWidth(nnState.shellSizing.snapToChatWidth, { persist: false });
     setCharacterDrawerRightLock(nnState.characterDrawer.rightLocked, { persist: false });
     setTopbarScale('desktop', nnState.topbarScale.desktop, { persist: false });
