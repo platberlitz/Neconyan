@@ -269,13 +269,21 @@ describe('Neconyan Home', () => {
         }
     });
 
-    test('shows Home layout first', () => {
+    test('shows Home layout first and lets the assistant box collapse', () => {
         const render = Handlebars.compile(read('scripts/templates/welcomePanelOnboarding.html'));
         const assistantPersonalities = [{ id: 'miso', name: 'Miso', variants: [] }];
         const open = render({ welcomePanelMode: 'full', assistantPersonalities });
         expect(open.indexOf('neconyan-home-layout-bar')).toBeGreaterThan(-1);
         expect(open.indexOf('neconyan-home-layout-bar')).toBeLessThan(open.indexOf('neconyan-home-intro'));
         expect(open).not.toContain('<summary>Home layout</summary>');
+        expect(open).toContain('data-action="collapse-assistants" aria-expanded="true"');
+        const collapsed = render({ welcomePanelMode: 'full', assistantPersonalities, assistantsCollapsed: true });
+        expect(collapsed).toContain('neconyan-cat-panel is-collapsed');
+        expect(collapsed).toContain('data-action="collapse-assistants" aria-expanded="false"');
+        const script = read('scripts/welcome-screen.js');
+        expect(script).toContain("case 'collapse-assistants':");
+        expect(script).toContain('setWelcomeUiPreference(assistantsCollapsedKey, collapsed)');
+        expect(read('css/neconyan-home.css')).toContain('.neconyan-assistant-picker.is-collapsed:not(.is-expanded) :is(.neconyan-assistant-choices');
     });
 
     test('new accounts start pending, unfinished tours resume and dismissals stay closed', () => {

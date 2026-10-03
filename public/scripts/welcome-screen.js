@@ -22,6 +22,7 @@ const tutorialStatusKey = 'NeconyanTutorialStatus.v1';
 const tutorialIndexKey = 'NeconyanTutorialIndex.v1';
 const tutorialHiddenKey = 'NeconyanTutorialHidden.v1';
 const welcomePanelModeKey = 'WelcomePage_PanelMode';
+const assistantsCollapsedKey = 'WelcomePage_AssistantsCollapsed';
 
 let activeTutorialPanel = null;
 let welcomeRequestId = 0;
@@ -393,6 +394,7 @@ function buildWelcomeTemplateData(chats, assistantPersonalities = null) {
         version: displayVersion,
         more: chats.length > getRecentChatsSettings().collapsedDisplayed,
         welcomePanelMode,
+        assistantsCollapsed: getWelcomeUiPreference(assistantsCollapsedKey) === 'true',
         welcomePanelFull: welcomePanelMode === WELCOME_PANEL_MODES.full,
         welcomePanelCompact: welcomePanelMode === WELCOME_PANEL_MODES.compact,
         welcomePanelListOnly: welcomePanelMode === WELCOME_PANEL_MODES.list,
@@ -919,6 +921,17 @@ async function handleWelcomeAction(button) {
             const expanded = picker.classList.toggle('is-expanded');
             button.setAttribute('aria-expanded', String(expanded));
             button.textContent = expanded ? t`Hide assistants` : t`Show assistants`;
+            break;
+        }
+        case 'collapse-assistants': {
+            const picker = button.closest('[data-assistant-picker]');
+            if (!picker) break;
+            const collapsed = picker.classList.toggle('is-collapsed');
+            setWelcomeUiPreference(assistantsCollapsedKey, collapsed);
+            button.setAttribute('aria-expanded', String(!collapsed));
+            button.querySelector('i')?.classList.replace(collapsed ? 'fa-chevron-up' : 'fa-chevron-down', collapsed ? 'fa-chevron-down' : 'fa-chevron-up');
+            const label = button.querySelector('span');
+            if (label) label.textContent = collapsed ? t`Expand` : t`Collapse`;
             break;
         }
         case 'resume-chat':

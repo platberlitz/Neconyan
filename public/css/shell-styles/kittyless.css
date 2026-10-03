@@ -100,6 +100,7 @@
     color: var(--neco-ink);
 }
 :root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-assistant-picker:not(.is-expanded) .neconyan-assistant-choices { display: none; }
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-assistant-collapse { display: none; }
 :root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-assistant-picker.is-expanded .neconyan-assistant-list { margin-top: 18px; }
 :root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-assistant-row { background: var(--neco-raised); border-color: var(--kittyless-line); }
 :root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-home-footer { padding-top: 0; border: 0; }
