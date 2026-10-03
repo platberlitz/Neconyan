@@ -13,7 +13,7 @@ import { formatDiff } from './line-diff.js';
 
 const PREFS_KEY = 'neconyan_notes_prefs';
 const NOTES_STYLESHEET = 'css/neconyan-notes.css?v=13';
-const TOOL_PAGES_STYLESHEET = 'css/neconyan-tool-pages.css?v=20261003-notes-tour1';
+const TOOL_PAGES_STYLESHEET = 'css/neconyan-tool-pages.css?v=20261003-notes-controls2';
 const TOUR_PAGE_KEY = 'notes';
 const SAVE_DELAY_MS = 1200;
 const MAX_RETRY_MS = 60_000;

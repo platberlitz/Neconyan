@@ -145,7 +145,7 @@ body.neconyan :is(#left-nav-panel, #user-settings-block, #right-nav-panel) .neco
     color: var(--neco-ginger);
 }
 
-body.neconyan :is(#left-nav-panel, #user-settings-block, #right-nav-panel) .neconyan-tool-tour-invite .menu_button.neconyan-tour-invite-dismiss {
+.neconyan-tool-tour-invite .menu_button.neconyan-tour-invite-dismiss {
     grid-column: 3;
     grid-row: 1;
     align-self: start;
