@@ -807,7 +807,7 @@ body.neconyan #ai_response_configuration > #neconyan-model-presets-workspace {
     transition: transform 100ms var(--sb-ease-out);
 }
 
-:is(.menu_button, .menu_button_icon, .right_menu_button):is(.is-active, .active, .selected, .is-selected, .is-current, [aria-pressed='true'], [aria-selected='true'], [aria-current]):not(.disabled):not(.is-disabled):not([disabled]) {
+:is(.menu_button, .menu_button_icon, .right_menu_button):is(.is-active, .active, .selected, .is-selected, .is-current, [aria-pressed='true'], [aria-selected='true'], [aria-current]):not(.disabled):not(.is-disabled):not([disabled]):not(:where(.notes-button.menu_button_primary)) {
     position: relative;
     background: var(--sb-state-active-bg);
     border-color: var(--sb-state-active-border);

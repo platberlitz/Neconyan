@@ -3,6 +3,7 @@ import vm from 'node:vm';
 import { setImmediate as nextTurn } from 'node:timers/promises';
 import { expect, jest, test } from '@jest/globals';
 import { parsePropertyValue, propertyInput } from '../public/scripts/notebooks/property-values.js';
+import { setButtonPressed } from '../public/scripts/notebooks/dom.js';
 
 const source = fs.readFileSync(new URL('../public/scripts/notebooks/property-table.js', import.meta.url), 'utf8');
 const dialogSource = fs.readFileSync(new URL('../public/scripts/notebooks/notes-dialogs.js', import.meta.url), 'utf8');
@@ -41,6 +42,14 @@ function element(tag, attributes = {}, ...children) {
         if (key.startsWith('on')) result[key.slice(2)] = value;
         if (key.startsWith('data-')) result.dataset[key.slice(5).replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase())] = value;
     }
+    result.classList = {
+        contains: name => String(attributes.class ?? '').split(/\s+/).includes(name),
+        toggle(name, active) {
+            const classes = new Set(String(attributes.class ?? '').split(/\s+/).filter(Boolean));
+            if (active) classes.add(name); else classes.delete(name);
+            attributes.class = [...classes].join(' ');
+        },
+    };
     return result;
 }
 
@@ -54,7 +63,7 @@ function find(root, predicate) {
 }
 
 const helpers = {
-    h: element, clear: target => { target.childNodes = []; },
+    h: element, clear: target => { target.childNodes = []; }, setButtonPressed,
     button: (label, click, options = {}) => element('button', { ...options, text: label, onclick: click, 'aria-pressed': options.pressed }),
     field: (label, control) => element('label', { text: label }, control), parsePropertyValue, propertyInput,
 };

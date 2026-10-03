@@ -153,13 +153,6 @@ body.neconyan.neconyan-notes-beside #sheld {
     white-space: nowrap;
 }
 
-.notes-app .notes-button[aria-pressed="true"],
-.notes-app .notes-choice[aria-pressed="true"] {
-    background: var(--neco-ginger);
-    color: var(--neco-on-accent);
-    border-color: var(--neco-ginger);
-}
-
 .notes-app .notes-button:not([aria-pressed="true"]):not(.menu_button_primary) .fa-solid {
     color: var(--neco-ginger);
 }
@@ -197,18 +190,13 @@ body.neconyan.neconyan-notes-beside #sheld {
     border-radius: 10px;
 }
 
-.notes-app .notes-choice-group:is(.notes-pane-tabs, .notes-view-tabs, .notes-detail-tabs) .notes-choice {
+.notes-app .notes-choice-group:is(.notes-pane-tabs, .notes-view-tabs, .notes-detail-tabs) .notes-choice:not(.menu_button_primary) {
     border-color: transparent;
     background: transparent;
 }
 
-.notes-app .notes-choice-group:is(.notes-pane-tabs, .notes-view-tabs, .notes-detail-tabs) .notes-choice:hover {
+.notes-app .notes-choice-group:is(.notes-pane-tabs, .notes-view-tabs, .notes-detail-tabs) .notes-choice:not(.menu_button_primary):hover {
     background: var(--neco-raised);
-}
-
-.notes-app .notes-choice-group:is(.notes-pane-tabs, .notes-view-tabs, .notes-detail-tabs) .notes-choice[aria-pressed="true"] {
-    background: var(--neco-ginger);
-    color: var(--neco-on-accent);
 }
 
 .notes-columns {

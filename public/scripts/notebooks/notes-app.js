@@ -12,7 +12,7 @@ import { headingOutline, renderNoteInto } from './render.js';
 import { formatDiff } from './line-diff.js';
 
 const PREFS_KEY = 'neconyan_notes_prefs';
-const NOTES_STYLESHEET = 'css/neconyan-notes.css?v=12';
+const NOTES_STYLESHEET = 'css/neconyan-notes.css?v=13';
 const TOOL_PAGES_STYLESHEET = 'css/neconyan-tool-pages.css?v=20261003-notes-tour1';
 const TOUR_PAGE_KEY = 'notes';
 const SAVE_DELAY_MS = 1200;

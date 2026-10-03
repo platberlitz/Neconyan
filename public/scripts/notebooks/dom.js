@@ -33,7 +33,7 @@ export function clear(element) {
 }
 
 export function button(label, onClick, { icon = '', className = '', title = '', pressed = null, disabled = false } = {}) {
-    const primaryClass = className.split(/\s+/).includes('notes-primary') ? ' menu_button_primary' : '';
+    const primaryClass = pressed || className.split(/\s+/).includes('notes-primary') ? ' menu_button_primary' : '';
     const element = h('button', {
         type: 'button',
         class: `menu_button notes-button ${className}${primaryClass}`.trim(),
@@ -46,6 +46,11 @@ export function button(label, onClick, { icon = '', className = '', title = '', 
     if (label) element.append(h('span', { text: label }));
     if (!label && title) element.setAttribute('aria-label', title);
     return element;
+}
+
+export function setButtonPressed(element, pressed) {
+    element.setAttribute('aria-pressed', String(Boolean(pressed)));
+    element.classList.toggle('menu_button_primary', Boolean(pressed) || element.classList.contains('notes-primary'));
 }
 
 export function field(label, control, hint = '') {

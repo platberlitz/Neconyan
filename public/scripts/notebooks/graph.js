@@ -1,4 +1,4 @@
-import { button, clear, field, h } from './dom.js';
+import { button, clear, field, h, setButtonPressed } from './dom.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const NODE_ID = /^n_[a-f\d]{16}$/;
@@ -127,8 +127,8 @@ export function createGraphView(app, container) {
     function render() {
         if (!graphScopeCurrent(app, scope)) return;
         if (controlsScope !== scope || !output) buildControls();
-        for (const [value, control] of limitButtons) control.setAttribute('aria-pressed', String(limit === value));
-        for (const [value, control] of modeButtons) control.setAttribute('aria-pressed', String(mode === value));
+        for (const [value, control] of limitButtons) setButtonPressed(control, limit === value);
+        for (const [value, control] of modeButtons) setButtonPressed(control, mode === value);
         clear(output);
         if (!result) {
             output.append(h('p', { class: 'notes-hint', role: 'status', text: 'Loading notebook links…' }));

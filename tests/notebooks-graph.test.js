@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { describe, expect, jest, test } from '@jest/globals';
+import { setButtonPressed } from '../public/scripts/notebooks/dom.js';
 
 const source = fs.readFileSync(new URL('../public/scripts/notebooks/graph.js', import.meta.url), 'utf8');
 const appSource = fs.readFileSync(new URL('../public/scripts/notebooks/notes-app.js', import.meta.url), 'utf8');
@@ -29,6 +30,14 @@ function element(tag, attributes = {}, ...children) {
         if (key.startsWith('on')) result[key.slice(2)] = value;
         if (key.startsWith('data-')) result.dataset[key.slice(5).replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase())] = value;
     }
+    result.classList = {
+        contains: name => String(attributes.class ?? '').split(/\s+/).includes(name),
+        toggle(name, active) {
+            const classes = new Set(String(attributes.class ?? '').split(/\s+/).filter(Boolean));
+            if (active) classes.add(name); else classes.delete(name);
+            attributes.class = [...classes].join(' ');
+        },
+    };
     return result;
 }
 
@@ -45,7 +54,7 @@ function fixture(request = jest.fn(async () => response([node(1)]))) {
     const app = { state: { workspaceView: 'graph', account: 'owner', notebookId: 'first-book', workspaceVersion: 1,
         notebookSelectionVersion: 2, noteRequestVersion: 3, layout: 'full' }, request, openNote: jest.fn(), closeNotebookView: jest.fn() };
     const container = element('section');
-    const context = vm.createContext({ app, container, NODE_ID: /^n_[a-f\d]{16}$/, h: element,
+    const context = vm.createContext({ app, container, NODE_ID: /^n_[a-f\d]{16}$/, h: element, setButtonPressed,
         clear: target => { target.childNodes = []; }, graphDiagram: () => element('svg'),
         field: (label, control) => element('label', { text: label }, control),
         button: (label, click, options = {}) => element('button', { text: label, onclick: click, 'aria-pressed': options.pressed }),

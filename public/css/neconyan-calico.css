@@ -143,7 +143,7 @@ body.neconyan :is(#sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inner) { back
     border-color: color-mix(in oklch, var(--neco-border) 88%, var(--neco-ginger));
 }
 
-:root[data-neconyan-palette='calico'] body.neconyan :is(.sb-shell-tab.is-active, .sb-character-shell-tab.is-active, .sb-settings-tab-btn.active, [aria-pressed='true']) {
+:root[data-neconyan-palette='calico'] body.neconyan :is(.sb-shell-tab.is-active, .sb-character-shell-tab.is-active, .sb-settings-tab-btn.active, [aria-pressed='true']:not(:where(.notes-button.menu_button_primary))) {
     background: color-mix(in oklch, var(--neco-ginger) 15%, var(--neco-raised));
     border-color: color-mix(in oklch, var(--neco-accent-secondary) 50%, var(--neco-border));
 }

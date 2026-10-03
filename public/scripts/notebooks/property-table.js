@@ -1,4 +1,4 @@
-import { button, clear, field, h } from './dom.js';
+import { button, clear, field, h, setButtonPressed } from './dom.js';
 import { parsePropertyValue } from './property-values.js';
 
 export function propertyTableScopeCurrent(app, snapshot) {
@@ -150,7 +150,7 @@ export function createPropertyTableView(app, container) {
 
     function renderColumns() {
         const selected = columns ?? result?.columns ?? shownColumns;
-        for (const [key, control] of columnButtons) control.setAttribute('aria-pressed', String(selected.includes(key)));
+        for (const [key, control] of columnButtons) setButtonPressed(control, selected.includes(key));
         if (!result || result.status !== 'success') return;
         const controlScope = scope;
         const available = (result.availableColumns ?? []).slice(0, 128);
@@ -183,9 +183,9 @@ export function createPropertyTableView(app, container) {
     function render() {
         if (!scope || !current(scope)) return;
         buildControls();
-        for (const [value, control] of sortButtons) control.setAttribute('aria-pressed', String(sort.by === value));
-        for (const [value, control] of directionButtons) control.setAttribute('aria-pressed', String(sort.direction === value));
-        for (const [value, control] of sizeButtons) control.setAttribute('aria-pressed', String(limit === value));
+        for (const [value, control] of sortButtons) setButtonPressed(control, sort.by === value);
+        for (const [value, control] of directionButtons) setButtonPressed(control, sort.direction === value);
+        for (const [value, control] of sizeButtons) setButtonPressed(control, limit === value);
         clear(output);
         renderColumns();
         if (!result) { output.append(h('p', { class: 'notes-hint', role: 'status', text: 'Loading saved properties…' })); return; }

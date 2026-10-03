@@ -1,5 +1,5 @@
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
-import { button, field, h } from './dom.js';
+import { button, field, h, setButtonPressed } from './dom.js';
 import { newOperationId } from './api.js';
 import { changeCanvasDocument } from './canvas-format.js';
 
@@ -68,8 +68,7 @@ export async function chooseCanvasNote(app, notebookId, isCurrent) {
         for (const note of result.results ?? []) list.append(button(`${note.title} (${note.path})`, () => {
             if (!isCurrent() || closed || ticket !== version) return;
             selected = note;
-            for (const item of list.children) item.setAttribute('aria-pressed', 'false');
-            list.querySelector(`[data-canvas-note="${note.id}"]`)?.setAttribute('aria-pressed', 'true');
+            for (const item of list.children) setButtonPressed(item, item.dataset.canvasNote === note.id);
         }, { className: 'notes-canvas-note-choice' }));
         [...list.children].forEach((item, index) => item.setAttribute('data-canvas-note', result.results[index].id));
         if (!(result.results?.length)) error.textContent = 'No matching notes. Try another title or path.';
