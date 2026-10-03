@@ -12,8 +12,8 @@ import { headingOutline, renderNoteInto } from './render.js';
 import { formatDiff } from './line-diff.js';
 
 const PREFS_KEY = 'neconyan_notes_prefs';
-const NOTES_STYLESHEET = 'css/neconyan-notes.css?v=13';
-const TOOL_PAGES_STYLESHEET = 'css/neconyan-tool-pages.css?v=20261003-notes-controls2';
+const NOTES_STYLESHEET = 'css/neconyan-notes.css?v=14';
+const TOOL_PAGES_STYLESHEET = 'css/neconyan-tool-pages.css?v=20261003-notes-controls3';
 const TOUR_PAGE_KEY = 'notes';
 const SAVE_DELAY_MS = 1200;
 const MAX_RETRY_MS = 60_000;
@@ -90,6 +90,7 @@ const app = {
         retryMs: 0,
         saveTimer: null,
         layout: 'full',
+        writingFullscreen: false,
         pane: 'note',
         detailsTab: 'properties',
         view: 'write',
@@ -181,11 +182,14 @@ function buildRoot() {
     elements.outline = h('div', { class: 'notes-outline' });
     elements.toolbar = buildToolbar();
     elements.viewTabs = h('div', { class: 'notes-choice-group notes-view-tabs', role: 'group', 'aria-label': 'Editor view' });
+    elements.fullscreen = button('Full screen', () => setWritingFullscreen(!state.writingFullscreen), { icon: 'fa-expand', className: 'notes-fullscreen', title: 'Write in full screen' });
+    elements.fullscreen.setAttribute('aria-expanded', 'false');
+    elements.writingActions = h('div', { class: 'notes-writing-actions' }, elements.viewTabs, elements.fullscreen);
     elements.editorBody = h('div', { class: 'notes-editor-body' }, elements.source, elements.reader, elements.suggest);
     elements.empty = h('div', { class: 'notes-empty' });
     elements.editor = h('div', { class: 'notes-editor', hidden: true },
         h('div', { class: 'notes-editor-head' }, elements.title, elements.status),
-        elements.banner, elements.viewTabs, elements.toolbar, elements.foldControls, elements.foldSections, elements.editorBody);
+        elements.banner, elements.writingActions, elements.toolbar, elements.foldControls, elements.foldSections, elements.editorBody);
     elements.graph = h('section', { class: 'notes-graph', 'aria-label': 'Notebook graph', hidden: true });
     elements.propertyTable = h('section', { class: 'notes-table-view', 'aria-label': 'Notebook property table', hidden: true });
     elements.canvas = h('section', { class: 'notes-canvas-view', 'aria-label': 'Notebook planning canvases', hidden: true });
@@ -203,7 +207,7 @@ function buildRoot() {
         elements.back, h('span', { class: 'notes-spacer' }),
         elements.layoutButton, elements.close);
     elements.intro = h('div', { class: 'notes-intro' });
-    elements.root = h('section', { id: 'neconyan-notes', class: 'notes-app', 'aria-label': 'Notes', hidden: true },
+    elements.root = h('section', { id: 'neconyan-notes', class: 'notes-app', 'aria-label': 'Notes', hidden: true, onkeydown: onNotesKeydown },
         elements.resizer, elements.header, elements.intro, elements.paneTabs,
         h('div', { class: 'notes-columns' }, elements.nav, elements.editorPane, elements.details));
     document.body.append(elements.root);
@@ -247,8 +251,9 @@ function applyLayout() {
     const { elements, state } = app;
     if (!elements.root) return;
     const phone = isPhone();
-    const beside = !phone && state.layout === 'beside';
+    const beside = !phone && state.layout === 'beside' && !state.writingFullscreen;
     elements.root.dataset.layout = phone ? 'phone' : state.layout;
+    elements.root.dataset.writingFullscreen = String(state.writingFullscreen);
     elements.root.dataset.pane = state.pane;
     document.body.classList.toggle('neconyan-notes-beside', state.open && beside);
     document.body.classList.toggle('neconyan-notes-open', state.open);
@@ -262,6 +267,29 @@ function applyLayout() {
     renderPaneTabs();
     const width = Number(readPrefs().width) || 440;
     document.body.style.setProperty('--neco-notes-beside-width', `${clampWidth(width)}px`);
+}
+
+function setWritingFullscreen(enabled) {
+    const { state, elements } = app;
+    state.writingFullscreen = Boolean(enabled && state.open && state.note && state.workspaceView === 'note' && state.view === 'write');
+    if (state.writingFullscreen) state.pane = 'note';
+    applyLayout();
+    if (elements.fullscreen) {
+        const label = state.writingFullscreen ? 'Exit full screen' : 'Full screen';
+        elements.fullscreen.querySelector('span').textContent = label;
+        elements.fullscreen.querySelector('i').className = `fa-solid ${state.writingFullscreen ? 'fa-compress' : 'fa-expand'}`;
+        elements.fullscreen.title = state.writingFullscreen ? 'Exit full screen (Escape)' : 'Write in full screen';
+        elements.fullscreen.setAttribute('aria-label', label);
+        elements.fullscreen.setAttribute('aria-expanded', String(state.writingFullscreen));
+    }
+    if (state.open && state.view === 'write') elements.textarea?.focus({ preventScroll: true });
+}
+
+function onNotesKeydown(event) {
+    if (event.key === 'Escape' && !event.defaultPrevented && !event.isComposing && !app.sourceEditor?.composing && app.state.writingFullscreen) {
+        event.preventDefault();
+        setWritingFullscreen(false);
+    }
 }
 
 function clampWidth(width) {
@@ -340,6 +368,7 @@ export function hideNotes() {
     if (!state.open) return;
     if (state.dirty) void flushSave();
     state.open = false;
+    setWritingFullscreen(false);
     if (elements.root) elements.root.hidden = true;
     applyLayout();
 }
@@ -670,6 +699,7 @@ function renderEditor({ restorePosition = false, fragment = null } = {}) {
     const { elements, state } = app;
     elements.editorPane?.classList?.toggle('notes-table-pane', state.workspaceView === 'table' && Boolean(state.notebookId));
     if (!elements.root) return;
+    if (state.writingFullscreen && (!state.note || state.workspaceView !== 'note' || state.view !== 'write')) setWritingFullscreen(false);
     if (elements.root.dataset) elements.root.dataset.workspace = state.workspaceView;
     if (elements.paneTabs) renderPaneTabs();
     if (elements.graph) elements.graph.hidden = state.workspaceView !== 'graph' || !state.notebookId;
@@ -712,6 +742,7 @@ function renderEditor({ restorePosition = false, fragment = null } = {}) {
         elements.viewTabs.append(tab);
     }
     elements.toolbar.hidden = state.view !== 'write';
+    elements.fullscreen.hidden = state.view !== 'write';
     elements.foldControls.hidden = state.view !== 'write';
     elements.foldSections.hidden = state.view !== 'write' || !state.foldSectionsOpen;
     elements.textarea.hidden = state.view !== 'write';

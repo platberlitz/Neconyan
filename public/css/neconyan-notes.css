@@ -636,6 +636,36 @@ body.neconyan.neconyan-notes-beside #sheld {
     flex-direction: column;
 }
 
+.notes-writing-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.notes-app .notes-fullscreen {
+    min-height: 44px;
+}
+
+#neconyan-notes[data-writing-fullscreen="true"] {
+    inset: 0;
+    width: auto;
+    z-index: var(--sb-z-popout, 4000);
+}
+
+#neconyan-notes[data-writing-fullscreen="true"] :is(.notes-header, .notes-intro, .notes-pane-tabs, .notes-resizer, .notes-pane-nav, .notes-pane-details) {
+    display: none;
+}
+
+#neconyan-notes[data-writing-fullscreen="true"] .notes-columns {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+#neconyan-notes[data-writing-fullscreen="true"] .notes-pane-editor {
+    display: flex;
+}
+
 .notes-source {
     display: flex;
     flex: 1 1 auto;

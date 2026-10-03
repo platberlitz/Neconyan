@@ -44,6 +44,8 @@ On reopening a note, a device draft from the same saved version is restored. If 
 - **Outline** lists the headings so you can jump around a long note.
 - Ctrl+S (Cmd+S on a Mac) saves immediately.
 
+**Full screen** gives the writing area the whole window, hiding the sidebar and Notes navigation. Your note name, save status and writing controls stay available. **Exit full screen** or Escape returns to your previous layout without changing your text. Saving continues normally.
+
 In **Write**, **Sections** lists headings you can fold or show. **Fold all** hides the top-level sections; **Show all** opens everything. In **Read**, use **Fold section** or **Show section** beside a heading. These buttons also work with the keyboard.
 
 Folding only hides text on screen. It does not change or save the Markdown, move your selection or add an undo step. Choices are remembered for each note, separately for each notebook and account. If your insertion point is inside a folded section, returning to the editor opens that section before you type.
