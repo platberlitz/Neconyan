@@ -202,7 +202,9 @@
                         <div><h4 id="ica--connection-group-title">Connection profiles</h4><p>Choose the model connection used by inline passes and companions.</p></div>
                     </div>
                     <label class="ica--profile-label"><span>Default connection profile</span><select id="ica--connectionProfile" class="text_pole" title="Which connection profile to use when an agent does not have its own editor profile override. Leave this on the selected Connection Manager profile to follow the active profile."><option value="">Current connection</option></select></label>
+                    <div id="ica--connectionFallbacks" class="ica--fallback-list" data-ica-fallback-key="connectionFallbacks" data-ica-fallback-noun="post-generation"></div>
                     <label class="ica--profile-label"><span>Companion connection profile</span><select id="ica--companionConnectionProfile" class="text_pole" title="Which connection profile Companion agents use when they do not have their own editor profile override. Leave empty to share the default above."><option value="">Default connection</option></select><small class="ica--profile-help">Use a quick, inexpensive model for notes that run after replies.</small></label>
+                    <div id="ica--companionConnectionFallbacks" class="ica--fallback-list" data-ica-fallback-key="companionConnectionFallbacks" data-ica-fallback-noun="companion"></div>
                 </section>
 
                 <section class="ica--settings-group" aria-labelledby="ica--execution-group-title">

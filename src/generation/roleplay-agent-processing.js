@@ -137,7 +137,7 @@ async function modelRun(context, options, agent, text, name, intercept = false, 
     const { base, snapshot, macros, generationType, assertCurrent, generate } = options;
     const result = await runAgentModelStep(context, { base, account: snapshot.account, name,
         identity: roleplayHash({ intent: context.job.intent, agent: snapshot.agents.agents.find(item => item.id === agent.id), text, intercept, format, generationType }),
-        binding: agent.binding || options.binding, modelOverride: agent.binding ? agent.modelOverride : '',
+        binding: agent.binding || options.binding, modelOverride: agent.binding ? agent.modelOverride : '', fallbacks: agent.fallbacks,
         maxTokens: intercept ? agent.preProcess.maxTokens : agent.postProcess.promptTransformMaxTokens,
         macros, tokenizer: snapshot.tokenizer, fallbackContext: snapshot.maxContext, assertCurrent, generate,
         buildMessages: environment => {
@@ -147,7 +147,7 @@ async function modelRun(context, options, agent, text, name, intercept = false, 
         } });
     return { agentId: agent.id, agentName: agent.name, order: agent.injection.order,
         outputText: result.lengthLimited ? '' : unwrap(result.text), status: result.lengthLimited ? 'length-limited' : result.text.trim() ? 'done' : 'empty',
-        profileLabel: result.profileId || 'Main model', modelLabel: result.model, timestamp: result.completedAt, modelHash: result.hash };
+        profileLabel: result.fallbackLabel || result.profileId || 'Main model', modelLabel: result.model, timestamp: result.completedAt, modelHash: result.hash };
 }
 
 function interceptResult(original, output, agent, format) {

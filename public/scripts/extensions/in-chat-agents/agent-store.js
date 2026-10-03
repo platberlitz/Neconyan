@@ -159,6 +159,9 @@ export const AGENT_CHAT_SCOPES = Object.freeze({
 
 const AGENT_CHAT_SCOPE_KEYS = Object.values(AGENT_CHAT_SCOPES);
 
+/** Each Agent kind keeps at most this many fallback connections. */
+export const MAX_AGENT_FALLBACK_CONNECTIONS = 10;
+
 function createDefaultScopedEnabledAgentIds() {
     return {
         [AGENT_CHAT_SCOPES.INDIVIDUAL]: [],
@@ -175,6 +178,8 @@ const defaultGlobalSettings = {
     scopedEnabledAgentIdsInitialized: false,
     connectionProfile: '',
     companionConnectionProfile: '',
+    connectionFallbacks: [],
+    companionConnectionFallbacks: [],
     promptTransformShowNotifications: true,
     postMainInterceptShowMessageFirst: true,
     appendAgentsExecutionMode: 'parallel',
@@ -256,7 +261,7 @@ export function hasPendingAgentRecovery() {
 
 /**
  * Returns the global settings.
- * @returns {{ enabled: boolean, pathfinderEnabled: boolean, separateRecentChats: boolean, enabledAgentIdsByChatType: Record<string, string[]>, scopedEnabledAgentIdsInitialized: boolean, connectionProfile: string, promptTransformShowNotifications: boolean, postMainInterceptShowMessageFirst: boolean, appendAgentsExecutionMode: 'parallel'|'sequential', helperPrefillMessages: string, hiddenCompanionAgentIds: string[] }}
+ * @returns {{ enabled: boolean, pathfinderEnabled: boolean, separateRecentChats: boolean, enabledAgentIdsByChatType: Record<string, string[]>, scopedEnabledAgentIdsInitialized: boolean, connectionProfile: string, companionConnectionProfile: string, connectionFallbacks: string[], companionConnectionFallbacks: string[], promptTransformShowNotifications: boolean, postMainInterceptShowMessageFirst: boolean, appendAgentsExecutionMode: 'parallel'|'sequential', helperPrefillMessages: string, hiddenCompanionAgentIds: string[] }}
  */
 export function getGlobalSettings() {
     return globalSettings;
@@ -419,6 +424,8 @@ function normalizeGlobalSettingsRecord(settings, update) {
         ? settings.helperPrefillMessages
         : '';
     settings.hiddenCompanionAgentIds = normalizeAgentIdCollection(settings.hiddenCompanionAgentIds);
+    settings.connectionFallbacks = normalizeConnectionFallbacks(settings.connectionFallbacks);
+    settings.companionConnectionFallbacks = normalizeConnectionFallbacks(settings.companionConnectionFallbacks);
 
     if (!Object.hasOwn(update, 'scopedEnabledAgentIdsInitialized') && !settings.scopedEnabledAgentIdsInitialized) {
         const scopedSetting = update.enabledAgentIdsByChatType;
@@ -681,6 +688,34 @@ function removeAgentIdFromScopedEnabledAgentIds(id) {
 
 function normalizeConnectionProfileId(value) {
     return typeof value === 'string' ? value.trim() : '';
+}
+
+/**
+ * Keeps the saved fallback connection list as up to ten distinct profile ids, in the order
+ * the user chose them.
+ * @param {unknown} value
+ * @returns {string[]}
+ */
+export function normalizeConnectionFallbacks(value) {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return Array.from(new Set(value.map(normalizeConnectionProfileId).filter(Boolean)))
+        .slice(0, MAX_AGENT_FALLBACK_CONNECTIONS);
+}
+
+/**
+ * Lists the saved fallback connections for an Agent, in the order they are tried after its own
+ * connection fails or returns nothing. The Agent's own connection is never listed again.
+ * @param {InChatAgent} agent
+ * @param {string} [primaryProfileId] The connection the Agent resolves to first.
+ * @returns {string[]}
+ */
+export function getAgentConnectionFallbacks(agent, primaryProfileId = '') {
+    const primary = normalizeConnectionProfileId(primaryProfileId);
+    const saved = isCompanionAgent(agent) ? globalSettings.companionConnectionFallbacks : globalSettings.connectionFallbacks;
+    return normalizeConnectionFallbacks(saved).filter(profileId => profileId !== primary);
 }
 
 function getLiveConnectionManagerProfile() {

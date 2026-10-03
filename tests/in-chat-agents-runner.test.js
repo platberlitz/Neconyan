@@ -443,6 +443,11 @@ describe('in-chat agent post-processing runner', () => {
             getAgentRegexScripts: jest.fn(agent => Array.isArray(agent?.regexScripts) ? agent.regexScripts : []),
             getEnabledAgents: jest.fn(() => [...enabledAgents]),
             getEnabledToolAgents: jest.fn(() => [...enabledToolAgents, ...enabledAgents.filter(agent => agent.category === 'tool' && !enabledToolAgents.some(tool => tool.id === agent.id))]),
+            getAgentConnectionFallbacks: jest.fn((agent, primary = '') => {
+                const companion = agent?.execution === 'companion' || agent?.category === 'companion';
+                const saved = companion ? globalSettings.companionConnectionFallbacks : globalSettings.connectionFallbacks;
+                return (Array.isArray(saved) ? saved : []).filter(id => id && id !== primary);
+            }),
             getGlobalSettings: jest.fn(() => globalSettings),
             getHiddenAgentIds: jest.fn(() => new Set(globalSettings.hiddenCompanionAgentIds ?? [])),
             getPromptTransformMode: jest.fn(agent => agent?.postProcess?.promptTransformMode === 'append' ? 'append' : 'rewrite'),
@@ -7915,6 +7920,38 @@ describe('in-chat agent post-processing runner', () => {
         await requestPromptTransform(agent, messages, 100);
         expect(connectionManagerRequestService.sendRequest.mock.calls.map(call => call[0])).toEqual(['shared-a', 'shared-b', 'independent']);
         expect(agent.connectionProfile).toBe('independent');
+    });
+
+    test('saved fallback connections take over in order when an Agent connection fails or returns nothing', async () => {
+        globalSettings.connectionFallbacks = ['primary', 'empty', 'backup', 'unused'];
+        globalSettings.companionConnectionFallbacks = ['companion-backup'];
+        connectionManagerRequestService = {
+            constructPrompt: jest.fn(messages => messages),
+            sendRequest: jest.fn(async profileId => {
+                if (profileId === 'primary') throw Object.assign(new Error('Provider overloaded'), { status: 503 });
+                if (profileId === 'empty') return { content: '' };
+                return { content: `Reply from ${profileId}` };
+            }),
+        };
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        const { requestPromptTransform } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const messages = [{ role: 'user', content: 'Rewrite this.' }];
+        const calls = () => connectionManagerRequestService.sendRequest.mock.calls;
+
+        const response = await requestPromptTransform({ id: 'post', connectionProfile: 'primary', modelOverride: 'own-model' }, messages, 100);
+        expect(response).toEqual(expect.objectContaining({ output: 'Reply from backup', profileId: 'backup', fallbackIndex: 2, fallbackFrom: 'primary' }));
+        expect(calls().map(call => call[0])).toEqual(['primary', 'empty', 'backup']);
+        expect(calls()[0][3].modelOverride).toBe('own-model');
+        expect(calls()[2][3].modelOverride).toBeUndefined();
+
+        connectionManagerRequestService.sendRequest.mockClear();
+        const companion = await requestPromptTransform({ id: 'note', category: 'companion', connectionProfile: 'primary' }, messages, 100);
+        expect(companion.profileId).toBe('companion-backup');
+        expect(calls().map(call => call[0])).toEqual(['primary', 'companion-backup']);
+
+        globalSettings.connectionFallbacks = [];
+        await expect(requestPromptTransform({ id: 'post', connectionProfile: 'primary' }, messages, 100)).rejects.toThrow('Provider overloaded');
+        warn.mockRestore();
     });
 
     test('shows the resolved profile model in prompt-transform running toasts', async () => {

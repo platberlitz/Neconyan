@@ -90,6 +90,7 @@ beforeAll(async () => {
         DEFAULT_AGENT_MAX_TOKENS: 8192,
         MAX_AGENT_MAX_TOKENS: 64000,
         LEGACY_AGENT_MAX_TOKENS: 2048,
+        MAX_AGENT_FALLBACK_CONNECTIONS: 10,
         areAgentsGloballyEnabled: jest.fn(() => true),
         areAgentsLoaded: jest.fn(() => true),
         getAgentLibraryErrors: jest.fn(() => []),

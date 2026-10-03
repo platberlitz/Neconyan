@@ -6,7 +6,7 @@ import { agentCollectionDirectory, readAgentCollection, readAgentRecordLocked } 
 import { readRoleplayFile, roleplayError, roleplayHash, roleplayLease, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
 import { readRoleplayEntityLocked } from './roleplay-source.js';
 import { captureChatProfile } from './profiles.js';
-import { agentNeedsModel, isNativeCompanion, nativeAgentDefinition } from './agent-definition.js';
+import { MAX_AGENT_FALLBACK_CONNECTIONS, agentNeedsModel, isNativeCompanion, nativeAgentDefinition } from './agent-definition.js';
 
 const fail = message => roleplayError('ROLEPLAY_AGENT_SOURCE_CHANGED', message, 409);
 
@@ -45,7 +45,7 @@ export function captureRoleplayAgentSet(lease, settings, { group = false, server
         const stored = readAgentRecordLocked(lease, 'agent', raw.id);
         if (!stored || roleplayHash(stored.record) !== roleplayHash(raw)) throw fail('An enabled Agent changed.');
         const file = stored.file;
-        let binding = null;
+        let binding = null, fallbacks = [];
         if (enabled && (agentNeedsModel(agent) || forcedIds.includes(agent.id) && agent.prompt.trim())) {
             const profileId = agent.connectionProfile || (isNativeCompanion(agent) ? global.companionConnectionProfile : '')
                 || global.connectionProfile || extensions.connectionManager?.selectedProfile || '';
@@ -54,12 +54,16 @@ export function captureRoleplayAgentSet(lease, settings, { group = false, server
                 if (!bindings.has(profileId)) bindings.set(profileId, captureChatProfile(scope.directories, profileId));
                 binding = { kind: 'profile', ...bindings.get(profileId) };
             }
+            fallbacks = captureFallbackBindings(scope.directories, bindings,
+                isNativeCompanion(agent) ? global.companionConnectionFallbacks : global.connectionFallbacks, profileId);
         }
         const profile = extensions.connectionManager?.profiles?.find(item => item.id === binding?.profileId);
         const reference = { id: agent.id, revision: roleplayHash(raw), rawHash: file.rawHash, physical: file.physical, binding,
-            order: agent.injection.order, profileLabel: String(profile?.name || binding?.profileId || '') };
+            order: agent.injection.order, profileLabel: String(profile?.name || binding?.profileId || ''), ...(fallbacks.length ? { fallbacks } : {}) };
+        const fallbackDefinitions = fallbacks.map(fallback => ({ binding: fallback, profileLabel: String(extensions.connectionManager?.profiles
+            ?.find(item => item.id === fallback.profileId)?.name || fallback.profileId) }));
         if (enabled) agents.push(reference);
-        if (enabled) definitions.set(agent.id, { ...agent, binding, revision: reference.revision, profileLabel: reference.profileLabel });
+        if (enabled) definitions.set(agent.id, { ...agent, binding, fallbacks: fallbackDefinitions, revision: reference.revision, profileLabel: reference.profileLabel });
         if (historyAgentIds.includes(raw.id)) historyAgents.push(reference);
         if (enabled && getAgentTemplateId(agent) === CHATROOM_TEMPLATE_ID) {
             for (const avatar of companionExtraCharacterAvatars(agent.settings.chatroomExtraCharacterAvatars)) {
@@ -90,6 +94,20 @@ export function captureRoleplayAgentSet(lease, settings, { group = false, server
             .map(([, card]) => card);
         return agent;
     }) };
+}
+
+/** Up to ten saved fallback connections. A deleted profile is left out rather than stopping the reply. */
+function captureFallbackBindings(directories, bindings, ids, primaryId) {
+    if (!Array.isArray(ids)) return [];
+    const unique = [...new Set(ids.filter(id => typeof id === 'string' && id && id !== primaryId))].slice(0, MAX_AGENT_FALLBACK_CONNECTIONS);
+    return unique.flatMap(id => {
+        try {
+            if (!bindings.has(id)) bindings.set(id, captureChatProfile(directories, id));
+        } catch {
+            return [];
+        }
+        return [{ kind: 'profile', ...bindings.get(id) }];
+    });
 }
 
 export function readRoleplayAgentsLocked(lease, policy) {

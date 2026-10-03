@@ -30,6 +30,7 @@ import {
     getAgentRegexScripts,
     getEnabledAgents,
     getEnabledToolAgents,
+    getAgentConnectionFallbacks,
     getGlobalSettings,
     getPromptTransformMode,
     isAgentRuntimeAllowed,
@@ -3652,25 +3653,63 @@ export async function requestPromptTransform(agent, promptMessages, maxTokens, o
     activeAgentRequestAbortControllers.add(requestAbortController);
     options.signal?.addEventListener('abort', abortFromCaller, { once: true });
 
-    try {
-        let response;
-        if (profileId) {
+    const requestConnection = (attemptProfileId, attemptModelOverride) => {
+        if (attemptProfileId) {
             if (!CMRS || typeof CMRS.sendRequest !== 'function') {
-                throw new Error(`${describePromptTransformTarget(profileId, 'profile')} is set, but Connection Manager is unavailable.`);
+                throw new Error(`${describePromptTransformTarget(attemptProfileId, 'profile')} is set, but Connection Manager is unavailable.`);
             }
 
-            response = await runAllowedRequest(
-                () => requestProfilePromptTransform(isRuntimeAllowed, CMRS, profileId, promptMessages, maxTokens, modelOverride, requestAbortController.signal),
-            );
-        } else {
-            response = await runAllowedRequest(
-                () => requestMainModelPromptTransform(context, promptMessages, maxTokens, options, requestAbortController.signal),
+            return runAllowedRequest(
+                () => requestProfilePromptTransform(isRuntimeAllowed, CMRS, attemptProfileId, promptMessages, maxTokens, attemptModelOverride, requestAbortController.signal),
             );
         }
-        // A combined response can still serve its remaining allowed members. Each caller
-        // checks eligibility before applying its part; ownership cancellation rejects all.
+        return runAllowedRequest(
+            () => requestMainModelPromptTransform(context, promptMessages, maxTokens, options, requestAbortController.signal),
+        );
+    };
+    // Saved fallback connections are tried in order when the Agent's own connection fails or
+    // returns nothing. They use their own model, never the Agent's model override.
+    const attempts = [
+        { profileId, modelOverride },
+        ...getAgentConnectionFallbacks(agent, profileId).map(fallbackId => ({ profileId: fallbackId, modelOverride: '' })),
+    ];
+
+    // A combined response can still serve its remaining allowed members. Each caller
+    // checks eligibility before applying its part; ownership cancellation rejects all.
+    const settle = response => {
         if (!isRequestCurrent() || requestAbortController.signal.aborted) throw new DOMException('', 'AbortError');
         return response;
+    };
+
+    try {
+        let emptyResponse = null;
+        let lastError = null;
+        for (const [index, attempt] of attempts.entries()) {
+            const target = describePromptTransformTarget(attempt.profileId, attempt.profileId ? 'profile' : 'main');
+            let response;
+            try {
+                response = await requestConnection(attempt.profileId, attempt.modelOverride);
+            } catch (error) {
+                if (isAbortSignalTriggered(error, requestAbortController.signal) || !isRequestCurrent()) throw error;
+                lastError = error;
+                if (index < attempts.length - 1) {
+                    console.warn(`[InChatAgents] ${agent?.name || 'Agent'} failed on ${target}; trying the next fallback connection.`, error);
+                }
+                continue;
+            }
+            if (index > 0) {
+                response = { ...response, fallbackIndex: index, fallbackFrom: profileId };
+            }
+            if (String(response?.output ?? '').trim() || response?.lengthLimited) {
+                return settle(response);
+            }
+            emptyResponse ??= response;
+            if (index < attempts.length - 1) {
+                console.warn(`[InChatAgents] ${agent?.name || 'Agent'} returned nothing from ${target}; trying the next fallback connection.`);
+            }
+        }
+        if (emptyResponse) return settle(emptyResponse);
+        throw lastError;
     } finally {
         options.signal?.removeEventListener('abort', abortFromCaller);
         activeAgentRequestAbortControllers.delete(requestAbortController);

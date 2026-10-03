@@ -781,6 +781,26 @@ describe('in-chat agent scoped enabled state', () => {
         expect(store.resolveCompanionConnectionProfile('')).toBe('default-profile');
     });
 
+    test('keeps up to ten ordered fallback connections for each Agent kind', async () => {
+        const store = await importStore();
+        expect(store.getGlobalSettings()).toEqual(expect.objectContaining({ connectionFallbacks: [], companionConnectionFallbacks: [] }));
+
+        const many = Array.from({ length: 12 }, (_, index) => `profile-${index}`);
+        store.setGlobalSettings({
+            connectionFallbacks: [' backup ', '', 'backup', 42, 'spare', ...many],
+            companionConnectionFallbacks: 'not-a-list',
+        });
+        const { connectionFallbacks, companionConnectionFallbacks } = store.getGlobalSettings();
+        expect(connectionFallbacks).toEqual(['backup', 'spare', ...many.slice(0, 8)]);
+        expect(connectionFallbacks).toHaveLength(store.MAX_AGENT_FALLBACK_CONNECTIONS);
+        expect(companionConnectionFallbacks).toEqual([]);
+
+        store.setGlobalSettings({ connectionFallbacks: ['backup', 'spare'], companionConnectionFallbacks: ['cheap-backup', 'spare'] });
+        expect(store.getAgentConnectionFallbacks({ execution: 'post' }, 'backup')).toEqual(['spare']);
+        expect(store.getAgentConnectionFallbacks({ execution: 'companion' }, '')).toEqual(['cheap-backup', 'spare']);
+        expect(store.getAgentConnectionFallbacks({ execution: 'companion' }, 'spare')).toEqual(['cheap-backup']);
+    });
+
     test('restores the inline phase when converting a companion back', async () => {
         const store = await importStore();
         store.loadAgents([{

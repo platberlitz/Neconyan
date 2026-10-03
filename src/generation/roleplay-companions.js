@@ -82,6 +82,7 @@ function linkedContext(options, agent, sources, index, completed) {
 
 function units(agents, linked, binding) {
     const compatible = agent => roleplayHash({ binding: agent.binding ?? binding, model: agent.binding ? agent.modelOverride : '',
+        ...(agent.fallbacks?.length ? { fallbacks: agent.fallbacks.map(fallback => fallback.binding) } : {}),
         context: Object.fromEntries(['contextMessages', 'minContextTokens', 'includeCharacterCard', 'includePersona', 'includeWorldInfo',
             'includeAuthorsNote', 'includeSystemPrompt', 'includeHistory', 'historyDepth'].map(key => [key, agent.companion[key]])), linked: linked.get(agent.id) ?? [] });
     const ids = referenceMap(agents), edges = new Map(agents.map(agent => [agent.id, new Set()]));
@@ -134,7 +135,7 @@ async function worldInfoContext(context, options, agents, identity) {
 }
 
 function baseRecord(agent, model) {
-    return { agentName: agent.name, agentCategory: agent.category, icon: agent.icon, profileId: model?.profileId ?? '', profileLabel: agent.profileLabel || 'Main model',
+    return { agentName: agent.name, agentCategory: agent.category, icon: agent.icon, profileId: model?.profileId ?? '', profileLabel: model?.fallbackLabel || agent.profileLabel || 'Main model',
         modelLabel: model?.model ?? agent.modelOverride, format: agent.companion.format, displayMode: agent.companion.displayMode,
         includeInChatHistory: agent.companion.includeInChatHistory, chatHistoryDepth: agent.companion.chatHistoryDepth,
         includeAllChatHistory: agent.companion.includeAllChatHistory, keepInChatHistoryWhenHostHidden: agent.companion.keepInChatHistoryWhenHostHidden };
@@ -215,7 +216,7 @@ export async function runRoleplayCompanions(context, options) {
     };
     const runModel = (agent, name, prompt, maxTokens) => runAgentModelStep(shared, { base, account: snapshot.account, name,
         identity: roleplayHash({ identity, agents: name, messages: prompt.messages }), binding: agent.binding ?? binding,
-        modelOverride: agent.binding ? agent.modelOverride : '', maxTokens, macros: options.macros, tokenizer: snapshot.tokenizer,
+        modelOverride: agent.binding ? agent.modelOverride : '', fallbacks: agent.fallbacks, maxTokens, macros: options.macros, tokenizer: snapshot.tokenizer,
         fallbackContext: snapshot.maxContext, assertCurrent, generate, buildMessages: () => prompt.messages });
     const runSingle = async (agent, sections, suffix = '') => {
         const runIdentity = roleplayHash({ identity, agent: agent.id, sections, suffix });
