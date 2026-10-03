@@ -8,6 +8,7 @@
 - PR #6 (2026-10-02) `fix: log the Roleplay workflow routing decision and stream finish reason`
 - PR #7 (2026-10-02) `fix: use the configured reply length for Roleplay workflow generations`
 - PR #8 (2026-10-02) `fix: coerce numeric chat settings so a quoted context size cannot block the Roleplay workflow`
+- PR #10 (2026-10-03) `feat: add Notes notebooks with assistant edits and linked lore`
 
 ## v1.0.6
 
