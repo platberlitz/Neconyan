@@ -337,7 +337,7 @@ import { getSystemMessageByType, initSystemMessages, SAFETY_CHAT, sendSystemMess
 import { event_types, eventSource } from './scripts/events.js';
 import { initAccessibility } from './scripts/a11y.js';
 import { initQuickContextSizeEnhancer } from './scripts/quick-context-size-enhancer.js';
-import { applyStreamFadeIn } from './scripts/util/stream-fadein.js';
+import { applyStreamDomPatch, applyStreamFadeIn } from './scripts/util/stream-fadein.js';
 import { formatTokenCounterText, getPositiveTokenCount, updateReasoningTokenAccounting } from './scripts/reasoning-token-accounting.js';
 import { initDomHandlers } from './scripts/dom-handlers.js';
 import { SimpleMutex } from './scripts/util/SimpleMutex.js';
@@ -4473,11 +4473,11 @@ export async function sendTextareaMessage() {
 
 // Neconyan: Extracted message text preparation from messageFormatting for mobile streaming performance.
 // Allows plain-text preview rendering without full markdown/sanitizer pipeline on Android.
-function prepareMessageDisplayText(mes, ch_name, isSystem, isUser, messageId, isReasoning = false, updateGreeting = true) {
+function prepareMessageDisplayText(mes, ch_name, isSystem, isUser, messageId, isReasoning = false, updateGreeting = true, messageContext = null) {
     const resolvedMessageId = messageId !== null && messageId !== undefined && messageId !== ''
         ? Number(messageId)
         : NaN;
-    const chatMessage = Number.isFinite(resolvedMessageId) ? chat[resolvedMessageId] : null;
+    const chatMessage = messageContext ?? (Number.isFinite(resolvedMessageId) ? chat[resolvedMessageId] : null);
 
     if (resolvedMessageId === 0 && !isSystem && !isUser && !isReasoning) {
         const mesBeforeReplace = mes;
@@ -4518,7 +4518,7 @@ function prepareMessageDisplayText(mes, ch_name, isSystem, isUser, messageId, is
                 }
                 if (isUser) {
                     return regex_placement.USER_INPUT;
-                } else if (chat[messageId]?.extra?.type === 'narrator') {
+                } else if (chatMessage?.extra?.type === 'narrator') {
                     return regex_placement.SLASH_COMMAND;
                 } else {
                     return regex_placement.AI_OUTPUT;
@@ -4529,7 +4529,7 @@ function prepareMessageDisplayText(mes, ch_name, isSystem, isUser, messageId, is
         };
 
         const regexPlacement = getRegexPlacement();
-        const depth = getNonSystemMessageDepth(chat, resolvedMessageId);
+        const depth = messageContext ? 0 : getNonSystemMessageDepth(chat, resolvedMessageId);
         const agentRegexScripts = resolveRegexScriptsForSnapshot(chatMessage?.extra?.inChatAgents);
 
         if (!isUser && !isReasoning && agentRegexScripts.length > 0) {
@@ -4593,16 +4593,17 @@ function sanitizeMessageHtml(mes, sanitizerOverrides = {}) {
  * @param {Partial<DOMPurify.Config>} [sanitizerOverrides] DOMPurify sanitizer option overrides
  * @param {boolean} [isReasoning] If the message is reasoning output
  * @param {boolean} [updateGreeting=true] Persist greeting substitutions during normal message rendering
+ * @param {ChatMessage|null} [messageContext=null] Display-only draft, outside the saved chat array
  * @returns {string} HTML string
  */
-export function messageFormatting(mes, ch_name, isSystem, isUser, messageId, sanitizerOverrides = {}, isReasoning = false, updateGreeting = true) {
+export function messageFormatting(mes, ch_name, isSystem, isUser, messageId, sanitizerOverrides = {}, isReasoning = false, updateGreeting = true, messageContext = null) {
     if (!mes) {
         return '';
     }
 
     const originalMessageHtml = mes;
     const oocBlocks = [];
-    const preparedMessage = prepareMessageDisplayText(mes, ch_name, isSystem, isUser, messageId, isReasoning, updateGreeting);
+    const preparedMessage = prepareMessageDisplayText(mes, ch_name, isSystem, isUser, messageId, isReasoning, updateGreeting, messageContext);
     mes = preparedMessage.mes;
     isSystem = preparedMessage.isSystem;
     mesForShowdownParse = preparedMessage.showdownSource;
@@ -5471,9 +5472,10 @@ function updateMessageItemizedPromptButton(message, { messageId = chat.indexOf(m
  * @param {object} options Options
  * @param {number} [options.messageId] Message ID
  * @param {boolean} [options.updateGreeting=true] Whether to persist greeting substitutions
+ * @param {ChatMessage|null} [options.messageContext=null] Display-only draft outside the saved chat
  * @returns {string} Formatted message HTML
  */
-function getMessageTextHTML(message, { messageId = chat.indexOf(message), updateGreeting = true }) {
+function getMessageTextHTML(message, { messageId = chat.indexOf(message), updateGreeting = true, messageContext = null }) {
     // if mes.extra.uses_system_ui is true, set an override on the sanitizer options
     /** @type {Partial<DOMPurify.Config>} */
     const sanitizerOverrides = message.extra?.uses_system_ui ? { MESSAGE_ALLOW_SYSTEM_UI: true } : {};
@@ -5487,6 +5489,7 @@ function getMessageTextHTML(message, { messageId = chat.indexOf(message), update
         sanitizerOverrides,
         false,
         updateGreeting,
+        messageContext,
     );
 }
 
@@ -5714,9 +5717,10 @@ export function addOneMessage(mes, { type = undefined, insertAfter = null, scrol
  * @param {number} [options.messageId=chat.length - 1] Force the message ID
  * @param {JQuery<HTMLElement>} [options.messageElement=messageTemplate.clone()] This message element will be updated with the ChatMessage object.
  * @param {SCROLL_BEHAVIOR} [options.adjustMediaScroll=SCROLL_BEHAVIOR.NONE] Scroll behavior option passed to appendMediaToMessage.
+ * @param {boolean} [options.isPreview=false] Render an unsaved server draft with the normal message layout and no saved-message actions.
  * @returns {JQuery<HTMLElement>} Rendered HTMLElement.
  */
-export function updateMessageElement(mes, { messageId = chat.length - 1, messageElement = messageTemplate.clone(), adjustMediaScroll = SCROLL_BEHAVIOR.NONE } = {}) {
+export function updateMessageElement(mes, { messageId = chat.length - 1, messageElement = messageTemplate.clone(), adjustMediaScroll = SCROLL_BEHAVIOR.NONE, isPreview = false } = {}) {
     let avatarImg = getThumbnailUrl('persona', user_avatar);
     // Neconyan: Add mobile thumbnail tracking for viewport-aware avatar rendering (mobile performance).
     let mobileAvatarImg = getMobileThumbnailUrl('persona', user_avatar);
@@ -5752,7 +5756,7 @@ export function updateMessageElement(mes, { messageId = chat.length - 1, message
     }
     const momentDate = timestampToMoment(mes.send_date);
     const timestamp = momentDate.isValid() ? momentDate.format('LL LT') : '';
-    const messageHTML = getMessageTextHTML(mes, { messageId });
+    const messageHTML = getMessageTextHTML(mes, { messageId, updateGreeting: !isPreview, messageContext: isPreview ? mes : null });
     const bookmarkLink = mes?.extra?.bookmark_link;
     const tokenCount = mes.extra?.token_count;
     const { timerValue, timerTitle } = formatGenerationTimer(mes.gen_started, mes.gen_finished, tokenCount, mes.extra?.reasoning_duration, mes.extra?.time_to_first_token, mes.extra?.reasoning_tokens);
@@ -5813,7 +5817,7 @@ export function updateMessageElement(mes, { messageId = chat.length - 1, message
         messageElement.find('.mes_bias').html(bias);
     }
 
-    updateReasoningUI(messageElement);
+    updateReasoningUI(messageElement, { message: mes });
 
     if (power_user.timestamp_model_icon && mes.extra?.api) {
         insertSVGIcon(messageElement, mes.extra);
@@ -5842,17 +5846,26 @@ export function updateMessageElement(mes, { messageId = chat.length - 1, message
     renderMessageExpression(messageElement[0], mes, getMessageExpressionAvatar(mes));
 
     appendMediaToMessage(mes, messageElement, adjustMediaScroll);
-    messageElement.find('.mes_text').html(messageHTML);
-    notifyCardScriptStripped(messageElement, messageId);
+    if (isPreview) applyStreamDomPatch(messageElement.find('.mes_text')[0], messageHTML);
+    else messageElement.find('.mes_text').html(messageHTML);
+    if (!isPreview) notifyCardScriptStripped(messageElement, messageId);
     addCopyToCodeBlocks(messageElement);
-    prepareNeconyanMessageActions(messageElement);
+    if (!isPreview) prepareNeconyanMessageActions(messageElement);
 
     // Set the swipes counter for all non-user messages.
     if (!mes.is_user) {
         updateSwipeCounter(messageId, { message: mes, messageElement });
     }
 
-    observeChatMessageResize(messageElement);
+    if (isPreview) {
+        // A draft looks like a message, but cannot act on an unrelated saved index
+        // or enter the virtualised history window before the server publishes it.
+        messageElement.removeAttr('mesid swipeid').attr('data-roleplay-draft', 'true');
+        messageElement.find('.mes_buttons, .mes_edit_buttons, .mes_reasoning_actions, .swipe_left, .swipeRightBlock, .for_checkbox, .del_checkbox')
+            .addClass('displayNone').attr('inert', '');
+    } else {
+        observeChatMessageResize(messageElement);
+    }
     return messageElement;
 }
 

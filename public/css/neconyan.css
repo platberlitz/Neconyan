@@ -447,7 +447,7 @@ body.neconyan #chat .mes .mesAvatarWrapper > .mes_stats {
 
 body.neconyan #chat .mes .mesAvatarWrapper > .mes_stats:not(:has(> :is(body:not(.no-mesIDDisplay) .mesIDDisplay, body:not(.no-timer) .mes_timer, body:not(.no-tokenCount) .tokenCounterDisplay, .reasoning-tokens-badge, .agent-transform-badge):not(:empty))) { display: none; }
 
-body.neconyan #chat .mes[mesid] .mesAvatarWrapper > .mes_stats > :is(.mesIDDisplay, .mes_timer, .tokenCounterDisplay, .reasoning-tokens-badge) {
+body.neconyan #chat .mes:is([mesid], [data-roleplay-draft]) .mesAvatarWrapper > .mes_stats > :is(.mesIDDisplay, .mes_timer, .tokenCounterDisplay, .reasoning-tokens-badge) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -470,7 +470,7 @@ body.neconyan #chat .mes[mesid] .mesAvatarWrapper > .mes_stats > :is(.mesIDDispl
     white-space: nowrap;
 }
 
-body.neconyan #chat .mes[mesid] .mesAvatarWrapper > .mes_stats > .mesIDDisplay { color: var(--neco-ink); }
+body.neconyan #chat .mes:is([mesid], [data-roleplay-draft]) .mesAvatarWrapper > .mes_stats > .mesIDDisplay { color: var(--neco-ink); }
 
 body.neconyan #chat .mes .mesAvatarWrapper > .mes_stats > .agent-transform-badge {
     position: relative;
@@ -512,7 +512,7 @@ body.ripplestyle #chat .mes .mesAvatarWrapper .avatar.has-expression > :not(.nec
 body.ripplestyle #chat .mes .mesAvatarWrapper .avatar.has-expression > .neconyan-expression-avatar { display: block; object-fit: contain; mask-image: none; -webkit-mask-image: none; }
 body.neconyan.flatchat:not(.sbterm) #chat { padding: 24px max(var(--neco-gutter), calc((100% - var(--neco-reading-width)) / 2)); text-shadow: none; }
 /* Reserve room for the perched bodies, including first/history/Story/terminal rows. */
-body.neconyan #chat .mes.mes[mesid]:has(> .neconyan-message-sleeper:not([hidden])) {
+body.neconyan #chat .mes.mes:is([mesid], [data-roleplay-draft]):has(> .neconyan-message-sleeper:not([hidden])) {
     contain: layout style; margin-top: var(--neconyan-sleeper-space, 44px) !important; margin-bottom: 0 !important; overflow: visible;
 }
 body.neconyan #sheld .sb-conversation-message-bubble:has(> .neconyan-message-sleeper),

@@ -200,7 +200,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 const shared = { ...context, providerScope: createProviderScope(context) };
                 const settled = await Promise.allSettled([
                     runRoleplayAgentPostprocessing(shared, { ...options, value: intercepted.value }).then(post => {
-                        publishRoleplayPreview(context, { text: post.text, stage: 'companions' });
+                        publishRoleplayPreview(context, { text: post.text, inChatAgents: post.extra.inChatAgents, stage: 'companions' });
                         return post;
                     }),
                     runRoleplayCompanions(shared, { ...options, effect, value: roleplayAgentOutputBaseline(intercepted.value, pre) }),
@@ -210,7 +210,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 [post, companions] = settled.map(item => item.value);
             } else {
                 post = await runRoleplayAgentPostprocessing(context, { ...options, value: intercepted.value });
-                publishRoleplayPreview(context, { text: post.text, stage: 'companions' });
+                publishRoleplayPreview(context, { text: post.text, inChatAgents: post.extra.inChatAgents, stage: 'companions' });
                 companions = await runRoleplayCompanions(context, { ...options, effect, value: post.text });
             }
             if (effect === 'continue') output.continuedText = post.text;

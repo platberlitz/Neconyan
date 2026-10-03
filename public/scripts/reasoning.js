@@ -248,10 +248,11 @@ export function isHiddenReasoningModel() {
  * @param {number|JQuery<HTMLElement>|HTMLElement} messageIdOrElement The message ID or the message element
  * @param {Object} [options={}] - Optional arguments
  * @param {boolean} [options.reset=false] - Whether to reset state, and not take the current mess properties (for example when swiping)
+ * @param {object|null} [options.message=null] - Message being rendered, including an unsaved server draft
  */
-export function updateReasoningUI(messageIdOrElement, { reset = false } = {}) {
+export function updateReasoningUI(messageIdOrElement, { reset = false, message = null } = {}) {
     const handler = new ReasoningHandler();
-    handler.initHandleMessage(messageIdOrElement, { reset });
+    handler.initHandleMessage(messageIdOrElement, { reset, message });
 }
 
 
@@ -345,8 +346,9 @@ export class ReasoningHandler {
      * @param {number|JQuery<HTMLElement>|HTMLElement} messageIdOrElement - The message ID or the message element
      * @param {Object} [options={}] - Optional arguments
      * @param {boolean} [options.reset=false] - Whether to reset state of the handler, and not take the current mess properties (for example when swiping)
+     * @param {object|null} [options.message=null] - Message being rendered, including an unsaved server draft
      */
-    initHandleMessage(messageIdOrElement, { reset = false } = {}) {
+    initHandleMessage(messageIdOrElement, { reset = false, message = null } = {}) {
         /** @type {HTMLElement} */
         const messageElement = typeof messageIdOrElement === 'number'
             ? document.querySelector(`#chat [mesid="${messageIdOrElement}"]`)
@@ -355,12 +357,13 @@ export class ReasoningHandler {
                 : $(messageIdOrElement)[0];
         const messageId = Number(messageElement.getAttribute('mesid'));
 
-        if (isNaN(messageId) || !chat[messageId]) return;
+        message ??= chat[messageId];
+        if (isNaN(messageId) || !message) return;
 
-        if (!chat[messageId].extra) {
-            chat[messageId].extra = {};
+        if (!message.extra) {
+            message.extra = {};
         }
-        const extra = chat[messageId].extra;
+        const extra = message.extra;
 
         if (extra.reasoning) {
             this.state = ReasoningState.Done;
@@ -373,7 +376,7 @@ export class ReasoningHandler {
         this.reasoningDisplayText = extra?.reasoning_display_text ?? null;
 
         if (this.state !== ReasoningState.None) {
-            this.initialTime = new Date(chat[messageId].gen_started);
+            this.initialTime = new Date(message.gen_started);
             this.startTime = this.initialTime;
             this.endTime = new Date(this.startTime.getTime() + (extra?.reasoning_duration ?? 0));
         }

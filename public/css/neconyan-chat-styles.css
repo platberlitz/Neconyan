@@ -1854,7 +1854,7 @@ body.neconyan.big-avatars.flatchat.nnchat:not(.sbterm) #chat {
     --neco-avatar-height: calc(var(--avatar-base-width) * 4 / 3);
 }
 /* The sleeper module measures the actual bubble, including centred and reversed layouts. */
-body.neconyan.flatchat.nnchat:not(.sbterm):not(.sbstory) #chat .mes[mesid] > .neconyan-message-sleeper {
+body.neconyan.flatchat.nnchat:not(.sbterm):not(.sbstory) #chat .mes:is([mesid], [data-roleplay-draft]) > .neconyan-message-sleeper {
     top: var(--nnchat-sleeper-top, -41px);
     left: var(--nnchat-sleeper-left, 0px);
     right: auto;

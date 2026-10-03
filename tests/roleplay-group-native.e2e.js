@@ -71,19 +71,31 @@ for (const [viewport, phone, standalone] of [['desktop', false, false], ['iPhone
     const syncPhoneCss = phone ? applyIOSOnlyCss : async () => {};
     test(`a long group reply stays readable while Companions run on ${viewport}`, async ({ app }, info) => {
         const fixture = await prepare(app, phone, 1, 'auto', true, phone ? IPHONE_SAFARI_CONTEXT : {});
+        await fs.writeFile(path.join(app.directory, 'data/default-user/InChatAgents/group-display.json'), JSON.stringify({
+            id: 'group-display', name: 'Group display', enabled: true, phase: 'post',
+            regexScripts: [{ id: 'mood', scriptName: 'Mood display', findRegex: '/\\[MOOD\\|([^\\]]+)\\]/g',
+                replaceString: '<em class="mood-display">$1</em>', placement: [2], markdownOnly: true, promptOnly: false }],
+        }));
         await installPhone(fixture.account.context);
         const page = await openGroup(fixture);
-        await page.evaluate(() => {
+        await page.evaluate(async () => {
             window.jQuery('#chat_display').val('6').trigger('change');
             window.NeconyanShell.applyTheme('windows-98');
+            const { extension_settings } = await import('/scripts/extensions.js');
+            extension_settings.inChatAgents.globalSettings.enabledAgentIdsByChatType.group.push('group-display');
+            extension_settings.regex = [...(extension_settings.regex ?? []), {
+                id: 'group-scene-display', scriptName: 'Group scene display', disabled: false,
+                findRegex: '/\\[SCENE\\|([^\\]]+)\\]/g', replaceString: '<div class="scene-heading">$1</div>',
+                placement: [2], markdownOnly: true, promptOnly: false, trimStrings: [], substituteRegex: 0,
+            }];
         });
         await page.waitForFunction(() => document.querySelector('#neconyan-native-chat-styles')?.sheet
             && document.querySelector('link[data-sb-shell-style="windows-98"]')?.sheet);
         await syncPhoneCss(page);
         await acknowledgeActiveSettings(page);
-        const first = 'The reply has started.\n\n';
-        const rest = Array(50).fill('The traveller pauses by the fountain, then follows the music through the town square.').join(' ') + '\n\nThe reply ends here.';
-        app.provider.mode.streamReply = { first, rest };
+        const first = '[SCENE|Town square]\n\n**The reply has started.**\n\n';
+        const rest = '[MOOD|Curious]\n\n' + Array(50).fill('The traveller pauses by the fountain, then follows the music through the town square.').join(' ') + '\n\nThe reply ends here.';
+        app.provider.mode.streamReply = { first, rest, reasoning: 'Consider the **town square** before replying.' };
         const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit') && response.status() === 202);
         await page.locator('#send_textarea').fill('I enter the town and look around. What happens next?');
         await page.locator('#send_textarea').press('Enter');
@@ -92,19 +104,45 @@ for (const [viewport, phone, standalone] of [['desktop', false, false], ['iPhone
         const preview = page.getByLabel('Reply in progress');
         // The first preview module is loaded on demand in a fresh disposable account.
         await expect(preview).toBeVisible({ timeout: 15000 });
+        await expect(preview).toHaveClass(/\bmes\b/);
         await app.release();
-        await expect(preview.locator('.mes_text')).toHaveText(first);
+        await expect(preview.locator('.mes_text strong')).toHaveText('The reply has started.');
+        await expect(preview.locator('.custom-scene-heading')).toHaveText('Town square');
+        await expect(preview.locator('.mes_reasoning strong')).toHaveText('town square');
+        await preview.locator('.mes_reasoning_summary').click();
+        const reasoningOpen = await preview.locator('.mes_reasoning_details').evaluate(details => details.open);
+        await expect(preview.locator('.avatar img').first()).toHaveAttribute('src', new RegExp(encodeURIComponent(fixture.account.avatar)));
+        expect(await preview.getAttribute('mesid')).toBeNull();
+        expect(await page.evaluate(() => window.SillyTavern.getContext().chat.at(-1).is_user)).toBe(true);
+        const appearance = await page.evaluate(() => {
+            const read = node => [
+                [node, ['backgroundColor', 'color', 'borderRadius', 'padding', 'marginTop']],
+                [node.querySelector('.mes_text'), ['fontFamily', 'fontSize', 'color']],
+                [node.querySelector('.mesIDDisplay'), ['display', 'fontSize', 'padding', 'borderWidth', 'backgroundColor']],
+            ].map(([element, keys]) => {
+                const style = getComputedStyle(element);
+                return Object.fromEntries(keys.map(key => [key, style[key]]));
+            });
+            return { saved: read(document.querySelector('#chat .mes[mesid="0"]')), draft: read(document.querySelector('#neconyan-roleplay-preview')) };
+        });
+        expect(appearance.draft).toEqual(appearance.saved);
+        await page.screenshot({ path: info.outputPath('reply-formatted-stream.png') });
         await expect.poll(() => typeof app.provider.mode.finishStream).toBe('function');
         app.provider.mode.hold = ['conversation-fixture', 'unused-named-model'];
         app.provider.mode.finishStream();
         await expect.poll(() => app.provider.calls.length).toBe(2);
         await expect(preview.getByRole('status')).toHaveText('Running Companions…');
-        await expect(preview.locator('.mes_text')).toHaveText(first + rest);
+        await expect(preview.locator('.mes_text')).toContainText('The reply ends here.');
+        await expect(preview.locator('.custom-mood-display')).toHaveText('Curious');
+        await expect(preview.locator('.mes_text')).not.toContainText('[SCENE|');
+        await expect(preview.locator('.mes_text')).not.toContainText('[MOOD|');
+        expect(await preview.locator('.mes_reasoning_details').evaluate(details => details.open)).toBe(reasoningOpen);
+        expect(await preview.locator('.mes_buttons').evaluate(buttons => buttons.inert)).toBe(true);
         await page.screenshot({ path: info.outputPath('reply-awaiting-companion.png') });
-        const bounds = await preview.evaluate(node => ({ clientHeight: node.clientHeight, scrollHeight: node.scrollHeight,
+        const bounds = await preview.evaluate(node => ({ clientHeight: node.clientHeight, scrollHeight: node.scrollHeight, height: node.getBoundingClientRect().height,
             textBottom: node.querySelector('.mes_text').getBoundingClientRect().bottom - node.getBoundingClientRect().top }));
         expect(bounds.scrollHeight - bounds.clientHeight, JSON.stringify(bounds)).toBeLessThanOrEqual(1);
-        expect(bounds.textBottom).toBeLessThanOrEqual(bounds.clientHeight);
+        expect(bounds.textBottom).toBeLessThanOrEqual(bounds.height);
         expect((await readRows(fixture.file)).some(row => row.mes === first + rest)).toBe(false);
 
         const endVisible = await page.evaluate(() => {
@@ -112,8 +150,11 @@ for (const [viewport, phone, standalone] of [['desktop', false, false], ['iPhone
             chat.scrollTop = chat.scrollHeight;
             const text = document.querySelector('#neconyan-roleplay-preview .mes_text');
             const range = document.createRange();
-            range.setStart(text.firstChild, text.textContent.length - 10);
-            range.setEnd(text.firstChild, text.textContent.length);
+            const walker = document.createTreeWalker(text, NodeFilter.SHOW_TEXT);
+            let last;
+            while (walker.nextNode()) last = walker.currentNode;
+            range.setStart(last, last.textContent.length - 10);
+            range.setEnd(last, last.textContent.length);
             const end = range.getBoundingClientRect();
             const x = (end.left + end.right) / 2;
             const y = (end.top + end.bottom) / 2;
@@ -127,6 +168,8 @@ for (const [viewport, phone, standalone] of [['desktop', false, false], ['iPhone
         await fixture.account.settled(jobId);
         await expect(preview).toHaveCount(0);
         await expect(page.locator('#chat .mes').last()).toContainText('The reply ends here.');
+        await expect(page.locator('#chat .mes').last().locator('.custom-scene-heading')).toHaveText('Town square');
+        await expect(page.locator('#chat .mes').last().locator('.custom-mood-display')).toHaveText('Curious');
         const replies = (await readRows(fixture.file)).filter(row => row.mes?.includes('The reply ends here.'));
         expect(replies).toHaveLength(1);
         expect(replies[0].mes).toBe(first + rest);
