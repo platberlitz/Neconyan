@@ -871,6 +871,36 @@ describe('World Info lifecycle coordination', () => {
         expect(click).toHaveBeenCalledTimes(1);
     });
 
+    test('the embedded-lorebook summary gives each count to its own translatable phrase', async () => {
+        const host = createHost();
+        const context = host.context;
+        vm.runInContext(functionSource('importEmbeddedWorldInfoBatch'), context);
+        // Stand-in translations that move the count, as a translator may.
+        const phrases = { '${0} imported': 'Importiert: ${0}', '${0} overwrote existing': 'davon überschrieben: ${0}', '${0} skipped': 'übersprungen: ${0}' };
+        context.t = (strings, ...values) => {
+            const key = strings.reduce((text, part, index) => text + part + (index < values.length ? `\${${index}}` : ''), '');
+            return (phrases[key] ?? key).replace(/\$\{(\d+)\}/g, (_match, index) => values[index]);
+        };
+        const candidates = [
+            { chid: 0, characterName: 'Alice', bookName: 'Alice Lore', collision: true },
+            { chid: 1, characterName: 'Bob', bookName: 'Bob Lore', collision: false },
+        ];
+        const node = () => ({ style: {}, dataset: {}, classList: { add() {} }, appendChild() {}, addEventListener() {}, querySelectorAll: () => [] });
+        context.document.createElement = () => ({ ...node(), find: () => ({ each(callback) { for (const candidate of candidates) callback.call({ data: () => candidate.chid }); } }) });
+        context.getEntitiesList = () => candidates.map(candidate => ({ type: 'character', id: candidate.chid, item: { name: candidate.characterName, data: { character_book: { name: candidate.bookName } } } }));
+        context.detectEmbeddedLorebookCandidates = () => candidates;
+        context.POPUP_TYPE = { TEXT: 1, CONFIRM: 2 };
+        context.callGenericPopup = jest.fn(async () => true);
+        context.toastr.info = jest.fn();
+        // Alice replaces an existing book; Bob's card turns out to have none.
+        context.importEmbeddedWorldInfoForCharacter = async chid => chid === 0
+            ? { chid, characterName: 'Alice', bookName: 'Alice Lore', status: 'imported', collision: true }
+            : { chid, characterName: 'Bob', bookName: '', status: 'skipped', collision: false };
+        await context.importEmbeddedWorldInfoBatch();
+        const summary = context.callGenericPopup.mock.calls[1][0];
+        expect(summary).toContain('<div>Importiert: 1, davon überschrieben: 1, übersprungen: 1.</div>');
+    });
+
     test('converted card imports publish and cache the installed native data, not the old book', async () => {
         const host = createHost();
         await host.context.loadWorldInfo('Lore');
