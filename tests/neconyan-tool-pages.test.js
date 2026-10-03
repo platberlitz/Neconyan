@@ -188,6 +188,7 @@ describe('settings pages open as Neconyan pages with an assistant tour', () => {
         persona: 'miso',
         'character-library': 'nori',
         'group-library': 'miso',
+        'character-import': 'taro',
         'dialogue-colors': 'miso',
         background: 'miso',
         server: 'taro',
@@ -233,14 +234,18 @@ describe('settings pages open as Neconyan pages with an assistant tour', () => {
         expect(steps.find(step => step.id === 'description').tab).toBe('#persona_workspace_tab_edit');
     });
 
-    test('the Character menu tabs mount Nori and Miso tours on their own panels', () => {
-        expect(shell).toMatch(/NN_CHARACTER_NATIVE_PAGES = Object\.freeze\(\{\s*characters: 'character-library',\s*groups: 'group-library',\s*persona: 'persona',\s*\}\)/);
+    test('the Character menu tabs mount Nori, Miso and Taro tours on their own panels', () => {
+        expect(shell).toMatch(/NN_CHARACTER_NATIVE_PAGES = Object\.freeze\(\{\s*characters: 'character-library',\s*groups: 'group-library',\s*persona: 'persona',\s*import: 'character-import',?\s*\}\)/);
+        expect(shell).toContain('mountNeconyanNativePage(nativePage, document.getElementById(\'sb_character_import_panel\'))');
         expect(shell).toContain('mountNeconyanNativePage(nativePage, document.getElementById(\'rm_characters_block\'))');
         expect(shell).toContain('if (heading.dataset.toolPage !== key) return;');
         expect(getToolTourSteps('character-library', { isShown: () => true }).map(step => step.id))
             .toEqual(['welcome', 'search', 'create', 'archive', 'view', 'bulk', 'cards', 'filters', 'done']);
         expect(getToolTourSteps('group-library', { isShown: () => true }).map(step => step.id))
             .toEqual(['welcome', 'create', 'search', 'bulk', 'list', 'filters', 'done']);
+        expect(getToolTourSteps('character-import', { isShown: () => true }).map(step => step.id))
+            .toEqual(['welcome', 'file', 'url', 'online', 'done']);
+        expect(getToolTourSteps('character-import', { isShown: () => false }).map(step => step.id)).not.toContain('online');
         for (const key of ['character-library', 'group-library']) {
             const empty = getToolTourSteps(key, { isShown: () => true, empty: true }).find(step => ['cards', 'list'].includes(step.id));
             expect(empty.body).toContain('Create ');
