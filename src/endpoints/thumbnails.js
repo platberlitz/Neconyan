@@ -445,30 +445,32 @@ function normalisePortraitName(value) {
 
 /**
  * Finds the character avatar that best matches a name written in a message.
- * Order: exact file name, the current character when the written name is part of its
- * name, a loose name match, then a unique whole-word match.
+ * Order: the current character when the written name is part of its name,
+ * an exact file name, a loose name match, then a unique whole-word match.
  * @param {string[]} files Avatar file names in the characters folder
  * @param {string} name Name written in the message
  * @param {string} [currentChar] Name of the character in the open chat
+ * @param {string} [currentAvatar] Avatar file of the character in the open chat
  * @returns {string|null}
  */
-export function findPortraitFile(files, name, currentChar = '') {
+export function findPortraitFile(files, name, currentChar = '', currentAvatar = '') {
     const images = files.filter(file => ALLOWED_IMAGE_EXTENSIONS.has(path.extname(file).toLowerCase()));
     const stem = file => file.slice(0, -path.extname(file).length);
     const rawName = String(name || '').trim().toLowerCase();
     const looseName = normalisePortraitName(name);
     if (!rawName || !looseName) return null;
 
-    const exact = images.find(file => stem(file).toLowerCase() === rawName);
-    if (exact) return exact;
-
     const hasWords = (haystack, needle) => ` ${haystack} `.includes(` ${needle} `);
     const rawChar = String(currentChar || '').trim().toLowerCase();
     const looseChar = normalisePortraitName(currentChar);
     if (rawChar && looseChar && hasWords(looseChar, looseName)) {
+        if (images.includes(currentAvatar)) return currentAvatar;
         const charFile = images.find(file => stem(file).toLowerCase() === rawChar);
         if (charFile) return charFile;
     }
+
+    const exact = images.find(file => stem(file).toLowerCase() === rawName);
+    if (exact) return exact;
 
     const loose = images.filter(file => normalisePortraitName(stem(file)) === looseName);
     if (loose.length) {
@@ -485,10 +487,10 @@ export function findPortraitFile(files, name, currentChar = '') {
  */
 publicRouter.get('/portrait', async function (request, response) {
     try {
-        const { name, char, preset } = request.query;
+        const { name, char, avatar, preset } = request.query;
         if (typeof name !== 'string' || !name.trim() || name.length > 200) return response.sendStatus(400);
         const files = await fs.promises.readdir(request.user.directories.characters);
-        const file = findPortraitFile(files, name, typeof char === 'string' ? char : '');
+        const file = findPortraitFile(files, name, typeof char === 'string' ? char : '', typeof avatar === 'string' ? avatar : '');
         if (!file) return response.sendStatus(404);
         const query = new URLSearchParams({ type: 'avatar', file });
         if (preset === 'mobile') query.set('preset', 'mobile');
