@@ -1,4 +1,8 @@
 <div class="welcomePanel neconyan-home {{#if welcomePanelCompact}}welcomePanel--compact{{/if}}{{#if welcomePanelListOnly}} welcomePanel--listOnly{{/if}}" data-home-panel-mode="{{welcomePanelMode}}">
+    <section class="neconyan-home-layout-bar" aria-labelledby="neconyan-home-layout-title">
+        <h2 id="neconyan-home-layout-title"><i class="fa-solid fa-table-columns" aria-hidden="true"></i>Home layout</h2>
+        <div class="neconyan-home-layout" role="group" aria-labelledby="neconyan-home-layout-title"><button type="button" class="menu_button" data-welcome-panel-mode-target="full">Full home</button><button type="button" class="menu_button" data-welcome-panel-mode-target="compact">Compact</button><button type="button" class="menu_button" data-welcome-panel-mode-target="list">Recent chats only</button><button type="button" class="menu_button welcomeActionButton" data-action="replay-tutorial">Replay First paws tour</button></div>
+    </section>
     <section class="neconyan-home-intro welcomeHero neconyan-cat-panel" aria-labelledby="welcome-home-title">
         <div class="neconyan-home-cat">
             <img src="img/neconyan-pixel-cat.webp?v=20260913g" alt="A calico cat blinking, flicking its tail, and tumbling" width="208" height="192" data-neconyan-cat>
@@ -89,6 +93,5 @@
     </section>
     <div class="neconyan-home-footer welcomePanelPersistentControls">
         <button type="button" class="menu_button welcomeActionButton" data-action="open-global-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><span>Find a setting</span></button>
-        <details><summary>Home layout</summary><div class="neconyan-home-layout"><button type="button" class="menu_button" data-welcome-panel-mode-target="full">Full home</button><button type="button" class="menu_button" data-welcome-panel-mode-target="compact">Compact</button><button type="button" class="menu_button" data-welcome-panel-mode-target="list">Recent chats only</button><button type="button" class="menu_button welcomeActionButton" data-action="replay-tutorial">Replay First paws tour</button></div></details>
     </div>
 </div>

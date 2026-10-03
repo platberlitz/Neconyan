@@ -269,6 +269,15 @@ describe('Neconyan Home', () => {
         }
     });
 
+    test('shows Home layout first', () => {
+        const render = Handlebars.compile(read('scripts/templates/welcomePanelOnboarding.html'));
+        const assistantPersonalities = [{ id: 'miso', name: 'Miso', variants: [] }];
+        const open = render({ welcomePanelMode: 'full', assistantPersonalities });
+        expect(open.indexOf('neconyan-home-layout-bar')).toBeGreaterThan(-1);
+        expect(open.indexOf('neconyan-home-layout-bar')).toBeLessThan(open.indexOf('neconyan-home-intro'));
+        expect(open).not.toContain('<summary>Home layout</summary>');
+    });
+
     test('new accounts start pending, unfinished tours resume and dismissals stay closed', () => {
         const defaults = JSON.parse(readFileSync(new URL('../default/content/settings.json', import.meta.url), 'utf8'));
         const values = new Map(Object.entries(defaults.accountStorage));
