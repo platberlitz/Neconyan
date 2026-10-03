@@ -2112,8 +2112,8 @@
                                                 <option data-i18n="openai_reasoning_effort_xhigh" value="xhigh">Extra High</option>
                                                 <option data-i18n="openai_reasoning_effort_maximum" value="max">Maximum</option>
                                             </select>
-                                            <div class="toggle-description justifyLeft marginBot5" data-source="openai,custom,xai,aimlapi,openrouter,pollinations,perplexity,cometapi,electronhub,azure_openai,chutes" data-i18n="OpenAI-style options: low, medium, high, xhigh. Every effort is sent exactly as picked, aside from Minimum which is sent as 'minimal'. None is sent verbatim to GPT-5.1 and newer; other models get no effort level.">
-                                                OpenAI-style options: low, medium, high, xhigh. Every effort is sent exactly as picked, aside from Minimum which is sent as 'minimal'. None is sent verbatim to GPT-5.1 and newer; other models get no effort level.
+                                            <div class="toggle-description justifyLeft marginBot5" data-source="openai,custom,xai,aimlapi,openrouter,pollinations,perplexity,cometapi,electronhub,azure_openai,chutes" data-i18n="OpenAI-style options: low, medium, high, xhigh. Every effort is sent exactly as picked, aside from Minimum, which is sent as 'minimal'. None is sent verbatim to GPT-5.1 and newer. Other models get no effort level.">
+                                                OpenAI-style options: low, medium, high, xhigh. Every effort is sent exactly as picked, aside from Minimum, which is sent as 'minimal'. None is sent verbatim to GPT-5.1 and newer. Other models get no effort level.
                                             </div>
                                             <div class="toggle-description justifyLeft marginBot5" data-source="claude" data-i18n="Allocates a portion of the response length for thinking (min: 1024 tokens, low: 10%, medium: 25%, high: 50%, max: 95%), but minimum 1024 tokens. Auto does not request thinking.">
                                                 Allocates a portion of the response length for thinking (min: 1024 tokens, low: 10%, medium: 25%, high: 50%, max: 95%), but minimum 1024 tokens. Auto does not request thinking.
@@ -4094,9 +4094,9 @@
                             <select id="model_linkapi_select">
                                 <optgroup id="linkapi_other_models" label="From API"></optgroup>
                             </select>
-                            <small data-i18n="Models route automatically: Claude models use the Anthropic API, Gemini models use the Gemini API, everything else (including bracket-tagged per-request channels like [SP]) uses the OpenAI-compatible API. Keys are group-scoped on LinkAPI; the list shows only models your key's group can access.">
+                            <small data-i18n="Models route automatically: Claude models use the Anthropic API, Gemini models use the Gemini API, everything else (including bracket-tagged per-request channels like [SP]) uses the OpenAI-compatible API. Keys are group-scoped on LinkAPI, and the list shows only models your key's group can access.">
                                 Models route automatically: Claude models use the Anthropic API, Gemini models use the Gemini API, everything else (including bracket-tagged per-request channels like [SP]) uses the OpenAI-compatible API.
-                                Keys are group-scoped on LinkAPI; the list shows only models your key's group can access.
+                                Keys are group-scoped on LinkAPI, and the list shows only models your key's group can access.
                             </small>
                         </div>
                         <div id="azure_openai_settings" data-source="azure_openai">
@@ -5974,14 +5974,14 @@
                                 <div class="flex-container alignitemscenter gap10">
                                     <label for="ooc_context_depth" class="flex1" title="Keep OOC ((...)) blocks in prompt context. -1 keeps all messages, 0 keeps only the active turn, N keeps through depth N." data-i18n="[title]Keep OOC blocks in prompt context. -1 keeps all messages, 0 keeps only the active turn, N keeps through depth N.">
                                         <small data-i18n="OOC context depth">OOC context depth</small>
-                                        <small class="opacity50p" data-i18n="-1 keeps all OOC blocks; 0 keeps active turn only; N keeps through depth N.">-1 keeps all OOC blocks; 0 keeps active turn only; N keeps through depth N.</small>
+                                        <small class="opacity50p" data-i18n="-1 keeps all OOC blocks, 0 keeps the active turn only, N keeps through depth N.">-1 keeps all OOC blocks, 0 keeps the active turn only, N keeps through depth N.</small>
                                     </label>
                                     <input id="ooc_context_depth" class="text_pole widthUnset" type="number" min="-1" step="1" value="-1" />
                                 </div>
                                 <div class="flex-container alignitemscenter gap10">
                                     <label for="html_context_depth" class="flex1" title="Keep raw HTML tags in prompt context. -1 keeps all messages, 0 keeps only the active turn, N keeps through depth N." data-i18n="[title]Keep raw HTML tags in prompt context. -1 keeps all messages, 0 keeps only the active turn, N keeps through depth N.">
                                         <small data-i18n="HTML tag context depth">HTML tag context depth</small>
-                                        <small class="opacity50p" data-i18n="-1 keeps all HTML tags; 0 keeps active turn only; N keeps through depth N.">-1 keeps all HTML tags; 0 keeps active turn only; N keeps through depth N.</small>
+                                        <small class="opacity50p" data-i18n="-1 keeps all HTML tags, 0 keeps the active turn only, N keeps through depth N.">-1 keeps all HTML tags, 0 keeps the active turn only, N keeps through depth N.</small>
                                     </label>
                                     <input id="html_context_depth" class="text_pole widthUnset" type="number" min="-1" step="1" value="-1" />
                                 </div>
@@ -8842,7 +8842,7 @@
                         <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
                     </div>
                     <div class="inline-drawer-content">
-                        <small data-i18n="Saved for this character and added to the author's note. Keep several profiles and switch between them; group chats keep their own.">Saved for this character and added to the author's note. Keep several profiles and switch between them; group chats keep their own.</small>
+                        <small data-i18n="Saved for this character and added to the author's note. Keep several profiles and switch between them. Group chats keep their own.">Saved for this character and added to the author's note. Keep several profiles and switch between them. Group chats keep their own.</small>
                         <div><label for="extension_floating_chara_profile" data-i18n="Profile">Profile</label></div>
                         <div class="flex-container flexNoGap alignItemsCenter">
                             <select id="extension_floating_chara_profile" class="flex1 text_pole"></select>

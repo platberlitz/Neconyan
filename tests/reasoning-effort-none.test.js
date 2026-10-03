@@ -33,6 +33,6 @@ describe('reasoning effort \'none\'', () => {
     test('the UI no longer promises that None is never sent', () => {
         expect(indexSource).not.toContain('None (don\'t send)');
         expect(indexSource).not.toContain('None does not send an effort level.');
-        expect(indexSource).toContain('None is sent verbatim to GPT-5.1 and newer; other models get no effort level.');
+        expect(indexSource).toContain('None is sent verbatim to GPT-5.1 and newer. Other models get no effort level.');
     });
 });

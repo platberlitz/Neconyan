@@ -50,6 +50,7 @@ for (const [layout, viewport, hasTouch] of [
             await page.waitForFunction(() => document.querySelector('.vectors_settings'));
             await page.evaluate(label => window.NeconyanExtensions.focusUnit(label), german.Vectorization);
             await expect(page.locator('.vectors_settings')).toBeVisible();
+            await expect(page.locator('#vectors_force_chunk_delimiter')).toHaveJSProperty('placeholder', german['Optional separator, including line breaks']);
             await expect(page.locator('.vectors-title')).toHaveText(german['Find the relevant bits']);
             await expect(page.locator('[data-vectors-state]')).toHaveText(german['Retrieval is off. You can still index sources and try a search.']);
             await page.evaluate(() => window.NeconyanExtensions.focusUnit('Quick Image Gen'));

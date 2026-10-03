@@ -57,7 +57,7 @@
                             <label for="vectors_query">Recent messages used as query<input type="number" id="vectors_query" class="text_pole" min="1" max="1000" required></label>
                             <label for="vectors_score_threshold">Minimum similarity score<input type="number" id="vectors_score_threshold" class="text_pole" min="-1" max="1" step="any" required></label>
                         </div><p>Higher scores demand a closer match. Scores are not confidence percentages and vary by model. Try a search before raising the threshold.</p>
-                        <div class="vectors-field"><label for="vectors_force_chunk_delimiter">Preferred chunk boundary</label><textarea id="vectors_force_chunk_delimiter" class="text_pole" rows="2" placeholder="Optional separator, including line breaks"></textarea><p>A chunk is a piece of text searched on its own. Blank uses paragraph, line and word boundaries.</p></div>
+                        <div class="vectors-field"><label for="vectors_force_chunk_delimiter">Preferred chunk boundary</label><textarea id="vectors_force_chunk_delimiter" class="text_pole" rows="2" placeholder="Optional separator, including line breaks" data-i18n="[placeholder]Optional separator, including line breaks"></textarea><p>A chunk is a piece of text searched on its own. Blank uses paragraph, line and word boundaries.</p></div>
                         <label class="checkbox_label"><input id="vectors_include_wi" type="checkbox">Let retrieved text trigger lorebook keywords</label>
                     </div>
                     <p class="vectors-note"><i class="fa-solid fa-circle-info" aria-hidden="true"></i>Changing model, chunking or summaries? Rebuild the affected indexes in their source section.</p>
@@ -127,7 +127,7 @@
                                 <option value="world">Active lorebooks</option>
                             </select></div>
                         <div class="vectors-field"><label for="vectors_search_query">Search text</label>
-                            <textarea id="vectors_search_query" class="text_pole" rows="3" placeholder="e.g. What did we promise at the station?"></textarea></div>
+                            <textarea id="vectors_search_query" class="text_pole" rows="3" placeholder="e.g. What did we promise at the station?" data-i18n="[placeholder]e.g. What did we promise at the station?"></textarea></div>
                         <div class="vectors-fields">
                             <label for="vectors_search_count">Result limit<input id="vectors_search_count" type="number" class="text_pole" min="1" max="1000" value="5" required></label>
                             <label for="vectors_search_threshold">Minimum score for this search<input id="vectors_search_threshold" type="number" class="text_pole" min="-1" max="1" step="any" value="0.25" required></label>
