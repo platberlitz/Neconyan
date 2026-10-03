@@ -269,12 +269,14 @@ describe('Neconyan Home', () => {
         }
     });
 
-    test('shows Home layout first and lets the assistant box collapse', () => {
+    test('shows Home layout under the welcome box and lets the assistant box collapse', () => {
         const render = Handlebars.compile(read('scripts/templates/welcomePanelOnboarding.html'));
         const assistantPersonalities = [{ id: 'miso', name: 'Miso', variants: [] }];
         const open = render({ welcomePanelMode: 'full', assistantPersonalities });
         expect(open.indexOf('neconyan-home-layout-bar')).toBeGreaterThan(-1);
-        expect(open.indexOf('neconyan-home-layout-bar')).toBeLessThan(open.indexOf('neconyan-home-intro'));
+        expect(open.indexOf('neconyan-home-layout-bar')).toBeGreaterThan(open.indexOf('neconyan-home-intro'));
+        expect(open.indexOf('neconyan-home-layout-bar')).toBeLessThan(open.indexOf('neconyan-assistant-picker'));
+        expect(read('css/neconyan-home.css')).not.toMatch(/neconyan-home-layout[^{]*is-active[^{]*\{[^}]*background/);
         expect(open).not.toContain('<summary>Home layout</summary>');
         expect(open).toContain('data-action="collapse-assistants" aria-expanded="true"');
         const collapsed = render({ welcomePanelMode: 'full', assistantPersonalities, assistantsCollapsed: true });

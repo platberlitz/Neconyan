@@ -1,8 +1,4 @@
 <div class="welcomePanel neconyan-home {{#if welcomePanelCompact}}welcomePanel--compact{{/if}}{{#if welcomePanelListOnly}} welcomePanel--listOnly{{/if}}" data-home-panel-mode="{{welcomePanelMode}}">
-    <section class="neconyan-home-layout-bar" aria-labelledby="neconyan-home-layout-title">
-        <h2 id="neconyan-home-layout-title"><i class="fa-solid fa-table-columns" aria-hidden="true"></i>Home layout</h2>
-        <div class="neconyan-home-layout" role="group" aria-labelledby="neconyan-home-layout-title"><button type="button" class="menu_button" data-welcome-panel-mode-target="full">Full home</button><button type="button" class="menu_button" data-welcome-panel-mode-target="compact">Compact</button><button type="button" class="menu_button" data-welcome-panel-mode-target="list">Recent chats only</button><button type="button" class="menu_button welcomeActionButton" data-action="replay-tutorial">Replay First paws tour</button></div>
-    </section>
     <section class="neconyan-home-intro welcomeHero neconyan-cat-panel" aria-labelledby="welcome-home-title">
         <div class="neconyan-home-cat">
             <img src="img/neconyan-pixel-cat.webp?v=20260913g" alt="A calico cat blinking, flicking its tail, and tumbling" width="208" height="192" data-neconyan-cat>
@@ -18,6 +14,10 @@
             <button type="button" class="menu_button openTemporaryChat"><i class="fa-solid fa-pen" aria-hidden="true"></i><span>Start a temporary chat<small>Messages are not saved.</small></span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
             <button type="button" class="menu_button welcomeActionButton" data-action="open-tab" data-action-value="left:api"><i class="fa-solid fa-plug" aria-hidden="true"></i><span>Connect a model</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
         </div>
+    </section>
+    <section class="neconyan-home-layout-bar" aria-labelledby="neconyan-home-layout-title">
+        <h2 id="neconyan-home-layout-title"><i class="fa-solid fa-table-columns" aria-hidden="true"></i>Home layout</h2>
+        <div class="neconyan-home-layout" role="group" aria-labelledby="neconyan-home-layout-title"><button type="button" class="menu_button" data-welcome-panel-mode-target="full">Full home</button><button type="button" class="menu_button" data-welcome-panel-mode-target="compact">Compact</button><button type="button" class="menu_button" data-welcome-panel-mode-target="list">Recent chats only</button><button type="button" class="menu_button welcomeActionButton" data-action="replay-tutorial">Replay First paws tour</button></div>
     </section>
     {{#if assistantPersonalities}}
     <section class="neconyan-assistant-picker neconyan-cat-panel{{#if assistantsCollapsed}} is-collapsed{{/if}}" data-assistant-picker aria-labelledby="neconyan-assistant-picker-title">

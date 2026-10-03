@@ -35,11 +35,10 @@ body.neconyan .neconyan-home .recentChat .chatActions .deleteChat { color: var(-
 body.neconyan .neconyan-home .recentChat .chatActions .deleteChat:hover { color: var(--SmartThemeQuoteColor); }
 .neconyan-home-footer { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding-top: 16px; border-top: 1px solid var(--neco-border); }
 .neconyan-home-footer > button { align-self: flex-start; min-height: 44px; display: inline-flex; align-items: center; gap: 8px; }
-.neconyan-home-layout-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 14px 18px; border: 2px solid var(--neco-ginger); border-radius: 18px; background: var(--neco-panel-gradient); }
+.neconyan-home-layout-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 16px 20px; border: 1px solid color-mix(in oklch, var(--neco-border) 78%, var(--neco-ginger)); border-radius: 24px; background: var(--neco-panel-gradient); }
 .neconyan-home .neconyan-home-layout-bar h2 { display: flex; align-items: center; gap: 8px; font-size: 15px; }
 .neconyan-home-layout { display: flex; flex-wrap: wrap; gap: 6px; }
 .neconyan-home-layout button, .neconyan-assistant-collapse { min-height: 44px; margin: 0; }
-body.neconyan .neconyan-home .neconyan-home-layout .menu_button.is-active[aria-pressed='true'] { background: var(--neco-action-gradient); border-color: transparent; color: var(--neco-charcoal); font-weight: 600; }
 .neconyan-assistant-collapse { flex: none; display: inline-flex; align-items: center; gap: 6px; }
 .neconyan-assistant-picker.is-collapsed:not(.is-expanded) :is(.neconyan-assistant-choices, .neconyan-assistant-picker-heading p) { display: none; }
 .neconyan-assistant-picker.is-collapsed .neconyan-assistant-picker-heading { margin-bottom: 0; align-items: center; }
