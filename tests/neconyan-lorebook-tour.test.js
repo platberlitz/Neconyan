@@ -49,20 +49,23 @@ describe('Lorebooks tour steps', () => {
     test('walks the whole book when there is a book with entries', () => {
         const steps = getLorebookTourSteps({ hasBooks: true, hasEntries: true });
         expect(steps.map(step => step.id)).toEqual([
-            'welcome', 'folders', 'create', 'open', 'add-entry', 'edit-entry', 'keywords', 'content', 'health', 'switch-on', 'done',
+            'welcome', 'folders', 'create', 'open', 'add-entry', 'edit-entry', 'keywords', 'content',
+            'logic', 'placement', 'advanced', 'recursion', 'overrides', 'timing', 'sources',
+            'health', 'switch-on', 'global-budget', 'global-matching', 'done',
         ]);
         expect(steps.find(step => step.id === 'create').body).not.toContain('Make one now');
     });
 
     test('skips steps that need a book and asks for one when the library is empty', () => {
         const steps = getLorebookTourSteps({ hasBooks: false });
-        expect(steps.map(step => step.id)).toEqual(['welcome', 'folders', 'create', 'switch-on', 'done']);
+        expect(steps.map(step => step.id)).toEqual(['welcome', 'folders', 'create', 'switch-on', 'global-budget', 'global-matching', 'done']);
         expect(steps.find(step => step.id === 'create').body).toContain('Make one now');
     });
 
     test('skips entry steps and asks for an entry when the book is empty', () => {
         const steps = getLorebookTourSteps({ hasBooks: true, hasEntries: false });
         expect(steps.map(step => step.id)).not.toContain('keywords');
+        expect(steps.map(step => step.id)).not.toContain('advanced');
         expect(steps.find(step => step.id === 'add-entry').body).toContain('no entries yet');
     });
 
@@ -74,6 +77,24 @@ describe('Lorebooks tour steps', () => {
                 expect(text).not.toMatch(/\u2014/);
             }
         }
+    });
+});
+
+describe('Lorebooks tour advanced settings', () => {
+    test('advanced entry steps open the entry and its advanced drawer, global steps open the activation settings', () => {
+        const steps = getLorebookTourSteps({ hasBooks: true, hasEntries: true });
+        for (const id of ['advanced', 'recursion', 'overrides', 'timing', 'sources']) {
+            expect(steps.find(step => step.id === id)).toMatchObject({ open: 'entry', expand: 'advanced', needs: 'entry' });
+        }
+        for (const id of ['global-budget', 'global-matching']) {
+            expect(steps.find(step => step.id === id)).toMatchObject({ open: 'settings', expand: 'activation' });
+        }
+    });
+
+    test('the tour opens the drawers it points into', () => {
+        const source = read('../public/scripts/neconyan-lorebook-tour.js');
+        expect(source).toMatch(/step\.expand === 'advanced'[\s\S]*?\.neconyan-entry-advanced'\);[\s\S]*?advanced\.open = true/);
+        expect(source).toMatch(/step\.expand === 'activation'[\s\S]*?#wiActivationCard[\s\S]*?\.inline-drawer-toggle'\)\?\.click\(\)/);
     });
 });
 

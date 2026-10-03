@@ -18,7 +18,8 @@ describe('Neconyan settings theme drawers', () => {
         expect(settingsTabsSource).toContain('mainHeaderSpan.setAttribute(\'data-i18n\', \'UI Theme\');');
         expect(settingsTabsSource).toContain('parentAppearance.querySelector(\'#UI-presets-block > .sb-theme-presets\')');
         expect(settingsTabsSource).toContain('presetsDrawer.id = \'sb-theme-presets-drawer\';');
-        expect(settingsTabsSource).toContain('<span data-i18n="Presets">Presets</span>');
+        expect(settingsTabsSource).toContain('<span data-i18n="Accent Profiles">Accent Profiles</span>');
+        expect(settingsTabsSource).not.toContain('<span data-i18n="Presets">Presets</span>');
         expect(settingsTabsSource).toContain('presetsDrawer.querySelector(\'.inline-drawer-content\').appendChild(themePresets);');
         expect(settingsTabsSource).toContain('\'sb-theme-presets-drawer\': \'appearance\',');
     });
@@ -32,6 +33,18 @@ describe('Neconyan settings theme drawers', () => {
         expect(themeBlock).toContain('id="ui_preset_import_file"');
         expect(themeBlock).toContain('id="ui_preset_export_button"');
         expect(themeBlock).toContain('id="ui-preset-save-button"');
+    });
+
+    test('removes the empty shell card and duplicate inner UI Theme heading', () => {
+        expect(shellTabsSource).toContain("dataset.themePickerInitialized === 'true'");
+        expect(shellTabsSource).toContain('if (!card.hasChildNodes()) {\n        card.remove();\n    }');
+        expect(shellTabsSource).toContain("themeBlock.dataset.themePickerInitialized = 'true';");
+        const themeBlock = indexSource.match(/<div id="UI-presets-block"[^>]*>([\s\S]*?)<div class="sb-theme-presets">/)[1];
+        expect(themeBlock).toContain('class="sb-ui-theme-actions"');
+        expect(themeBlock).not.toContain('<h4');
+        expect(themeBlock).not.toContain('data-i18n="UI Theme"');
+        const themeCss = readSource('public', 'css', 'neconyan-theme.css');
+        expect(themeCss.match(/#UI-presets-block \{([^}]+)\}/)[1].trim()).toBe('gap: 12px;');
     });
 
     test('groups shell theme controls into persisted appearance drawers', () => {
@@ -56,6 +69,17 @@ describe('Neconyan settings theme drawers', () => {
         expect(shellTabsCssSource).toContain('.sb-theme-settings-drawer > .inline-drawer-header');
         expect(shellTabsCssSource).toContain('.sb-theme-settings-drawer > .sb-theme-settings-drawer-body');
         expect(shellTabsCssSource).toContain('.sb-interface-settings-group + .sb-interface-settings-group');
+    });
+
+    test('lifts shell theme drawers out of UI Theme as top-level appearance drawers', () => {
+        const neconyanCssSource = readSource('public', 'css', 'neconyan.css');
+        expect(shellTabsSource).toContain('placeThemeSettingsDrawers(themeBlock, card, themeSettingsDrawers);');
+        expect(shellTabsSource).toContain('const anchor = document.getElementById(\'sb-theme-presets-drawer\') || themeDrawer;');
+        expect(shellTabsSource).toContain('anchor.after(...drawers);');
+        expect(shellTabsSource).toContain('drawer.classList.remove(\'sb-theme-settings-drawer\');');
+        expect(shellTabsSource).toContain('header?.classList.add(\'userSettingsInnerExpandable\');');
+        expect(shellTabsSource).not.toContain('card.append(shellStyleSettingsGroup');
+        expect(neconyanCssSource).toContain('.sb-theme-lifted-drawer > .sb-settings-subdrawer-body[style*=\'display: block\']');
     });
 
     test('gives promoted settings drawers icons and separates STscript settings', () => {

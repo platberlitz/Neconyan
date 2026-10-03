@@ -11,6 +11,7 @@ let receiptHandler = null;
 let chatSaveHandler = null;
 const requests = [];
 const observers = new Map();
+const previews = new Map();
 const saved = [];
 const reloads = [];
 const activations = [];
@@ -39,12 +40,24 @@ jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHan
 jest.unstable_mockModule('../public/scripts/extensions/vectors/native.js', () => ({ serviceVectorBrowserWork }));
 jest.unstable_mockModule('../public/scripts/group-chats.js', () => ({ selected_group: null }));
 jest.unstable_mockModule('../public/scripts/chats.js', () => ({ hasPendingFileAttachment: () => false }));
+jest.unstable_mockModule('../public/scripts/neconyan-conversation/roleplay-preview.js', () => ({
+    observeRoleplayPreview: (id, options) => {
+        const stop = jest.fn();
+        previews.set(id, { ...options, stop });
+        return stop;
+    },
+}));
 jest.unstable_mockModule('../public/scripts/jobs.js', () => ({
     cancelJob,
     listJobs,
     observeJob: (id, options) => {
         observers.set(id, options);
-        return () => options.onStop('stopped');
+        let stopped = false;
+        return (reason = 'stopped') => {
+            if (stopped) return;
+            stopped = true;
+            return options.onStop(reason);
+        };
     },
     TERMINAL: new Set(['completed', 'cancelled', 'failed', 'interrupted', 'conflict']),
 }));
@@ -109,6 +122,8 @@ beforeEach(() => {
     reloads.length = 0;
     activations.length = 0;
     observers.clear();
+    previews.clear();
+    globalThis.toastr = { error: jest.fn() };
     listJobs.mockClear();
     cancelJob.mockClear();
     serviceVectorBrowserWork.mockClear();
@@ -125,6 +140,30 @@ async function waitFor(predicate, timeoutMs = 3000) {
         await new Promise(resolve => setTimeout(resolve, 20));
     }
 }
+
+test.each(['failed', 'interrupted', 'conflict', 'cancelled'].flatMap(state => [
+    [state, 'poll'], [state, 'preview'],
+]))('a %s reply releases Send when the %s finishes first, without waiting for a write', async (state, first) => {
+    const pending = workflows.submitRoleplayGroupTurn({ groupId: 'group-1', forcedAvatars: ['nova.png'], generationId: 1 });
+    await waitFor(() => previews.has('job-1'));
+    const message = state === 'cancelled' ? null : 'The connection to your model provider closed.';
+    const snapshot = { state, error: message ? { message } : null };
+    const preview = { state, error: message };
+    const observation = observers.get('job-1');
+    const display = previews.get('job-1');
+    if (first === 'poll') {
+        await observation.onSnapshot(snapshot);
+        display.onTerminal(preview);
+    } else {
+        display.onTerminal(preview);
+        await observation.onSnapshot(snapshot);
+    }
+    await expect(pending).resolves.toBeNull();
+    expect(requests.filter(entry => entry.url.includes('/workflow/receipt'))).toHaveLength(0);
+    expect(display.stop).toHaveBeenCalledTimes(1);
+    expect(globalThis.toastr.error).toHaveBeenCalledTimes(message ? 1 : 0);
+    expect(reloads).toHaveLength(0);
+});
 
 test('a named continuation anchors the last block, saves the chat first and resolves from the receipt', async () => {
     const pending = workflows.runNativeRoleplayGeneration('continue', { maxOutputTokens: 240 });
@@ -417,4 +456,22 @@ test('a call site the host will not serve keeps the browser path', async () => {
     accountStamp = null;
     expect(await workflows.runNativeRoleplayGeneration('normal')).toBeNull();
     expect(requests).toHaveLength(0);
+});
+
+test.each([
+    ['group-1', true],
+    ['another-group', false],
+    [null, false],
+])('a completed group reply reloads only its selected group (%s), even with a speaker avatar', async (selectedGroup, shouldReload) => {
+    jest.resetModules();
+    jest.unstable_mockModule('../public/scripts/group-chats.js', () => ({ selected_group: selectedGroup }));
+    const groupWorkflows = await import('../public/scripts/neconyan-conversation/roleplay-workflows.js');
+    // The avatar mock remains Nova, just as group sending temporarily selects its speaker.
+    const pending = groupWorkflows.submitRoleplayGroupTurn({ groupId: 'group-1', forcedAvatars: ['nova.png'], generationId: 'readback-turn' });
+    await settle();
+    expect(requests.find(entry => entry.url.endsWith('/group/submit')).body.source.locator)
+        .toEqual({ chat: 'roleplay', group: true, groupId: 'group-1' });
+    await observers.get('job-1').onStop('done');
+    expect(await pending).toMatchObject({ accepted: true, state: 'closed' });
+    expect(reloads).toEqual(shouldReload ? [2] : []);
 });

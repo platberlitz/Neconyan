@@ -104,6 +104,7 @@ import {
     buildChatCompletionSamplingSettingsSnapshot,
     buildCustomEndpointPresetForSave,
     buildReverseProxyPresetForSave,
+    coerceNumericPresetSetting,
     getChatCompletionSamplingProfileLookupKeys,
     getCustomEndpointFavoritesKey,
     migrateNanoGptProviderSettings,
@@ -3444,6 +3445,28 @@ function createOpenAISettingsDrawer(id, title, description) {
     return $drawer;
 }
 
+/**
+ * Turns a collapsible drawer inside a Parameters group into an always-open titled section,
+ * so each setting sits one click below the page instead of two.
+ * @param {HTMLElement} drawer
+ */
+function flattenOpenAISettingsSubdrawer(drawer) {
+    if (!(drawer instanceof HTMLElement) || !drawer.classList.contains('inline-drawer')) {
+        return;
+    }
+
+    const header = drawer.querySelector(':scope > .inline-drawer-header, :scope > .inline-drawer-toggle');
+    const content = drawer.querySelector(':scope > .inline-drawer-content');
+    drawer.classList.remove('inline-drawer', 'sb-settings-subdrawer', 'sb-openai-settings-subdrawer');
+    drawer.classList.add('sb-openai-settings-section');
+    header?.classList.remove('inline-drawer-toggle', 'inline-drawer-header');
+    header?.classList.add('sb-openai-settings-section-header');
+    header?.querySelector(':scope > .inline-drawer-icon')?.remove();
+    content?.classList.remove('inline-drawer-content', 'sb-settings-subdrawer-body');
+    content?.classList.add('sb-openai-settings-section-body');
+    content?.style.removeProperty('display');
+}
+
 function groupOpenAISettingsIntoDrawers() {
     const $rangeBlock = $('#range_block_openai');
 
@@ -3489,16 +3512,23 @@ function groupOpenAISettingsIntoDrawers() {
         {
             id: 'sb-openai-output',
             title: 'Output',
-            description: 'Streaming, prompt templates, names, and continue behavior',
+            description: 'Streaming, character names, and continue behavior',
             selectors: [
                 '#range_block_openai > .range-block:has(#stream_toggle)',
-                '#range_block_openai > .inline-drawer:has(#main_prompt_quick_edit_textarea)',
-                '#range_block_openai > .inline-drawer:has(#impersonation_prompt_textarea)',
                 '#openai_settings > div > .inline-drawer:has(#character_names_none)',
                 '#openai_settings > div > .inline-drawer:has(#continue_postfix_none)',
                 '#openai_settings > div > .range-block:has(#continue_prefill)',
                 '#openai_settings > div > .range-block:has(#squash_system_messages)',
                 '#openai_settings > div > .range-block:has(#use_sysprompt)',
+            ],
+        },
+        {
+            id: 'sb-openai-prompt-templates',
+            title: 'Prompt Templates',
+            description: 'Quick prompt edits, impersonation, formats, and nudges',
+            selectors: [
+                '#range_block_openai > .inline-drawer:has(#main_prompt_quick_edit_textarea)',
+                '#range_block_openai > .inline-drawer:has(#impersonation_prompt_textarea)',
             ],
         },
         {
@@ -3552,7 +3582,10 @@ function groupOpenAISettingsIntoDrawers() {
         const $drawer = createOpenAISettingsDrawer(group.id, group.title, group.description);
         const $content = $drawer.children('.inline-drawer-content');
 
-        group.blocks.forEach($block => $content.append($block));
+        group.blocks.forEach($block => {
+            flattenOpenAISettingsSubdrawer($block[0]);
+            $content.append($block);
+        });
         $rangeBlock.append($drawer);
     });
 
@@ -4138,6 +4171,7 @@ function buildServerChatCompletionConfigDrawer() {
     $drawer.children('.inline-drawer-content')
         .addClass('sb-settings-subdrawer-body')
         .append(buildServerChatCompletionConfigCard({ nested: true }));
+    flattenOpenAISettingsSubdrawer($drawer[0]);
 
     return $drawer;
 }
@@ -7590,7 +7624,7 @@ function onSettingsPresetChange() {
                 } else {
                     updateInput(selector, preset[key]);
                 }
-                oai_settings[setting] = preset[key];
+                oai_settings[setting] = coerceNumericPresetSetting(key, preset[key]);
             }
         }
 

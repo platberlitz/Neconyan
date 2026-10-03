@@ -101,6 +101,8 @@ function prepared(t, { text = 'Everyone, please answer.', forcedAvatars, disable
 test('saved whole-group turn completes speakers in order and retains each protected write across a restart', async t => {
     const f = prepared(t);
     assert.deepEqual(f.request.group.speakers.map(speaker => speaker.avatar), ['Nova.png', 'Other.png']);
+    assert.equal(f.request.capacity.companionTurns, 2);
+    assert.equal(f.request.capacity.maxTurns, 16);
     updateJob(f.dirs, f.jobId, { state: 'running' });
     assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
     const count = { value: 0 };
@@ -127,6 +129,12 @@ test('saved whole-group turn completes speakers in order and retains each protec
 test('saved group selection refuses disabled and forged speaker identities before paying', t => {
     const disabled = prepared(t, { disabled: ['Other.png'], forcedAvatars: ['Nova.png'] });
     assert.deepEqual(disabled.request.group.speakers.map(speaker => speaker.avatar), ['Nova.png']);
+    assert.equal(disabled.request.capacity.companionTurns, 1);
+    const forgedCapacity = { ...disabled.request.capacity, companionTurns: 2 };
+    delete forgedCapacity.hash;
+    assert.throws(() => admitRoleplayWorkflowJob(disabled.f.scope, disabled.account, { operationKey: 'forged-capacity',
+        source: disabled.source, request: { ...disabled.request, capacity: { ...forgedCapacity, hash: roleplayHash(forgedCapacity) } } }),
+    { code: 'ROLEPLAY_WORKFLOW_INVALID' });
     const changed = prepared(t, { disabled: ['Other.png'], forcedAvatars: ['Nova.png'] });
     changed.request.group.speakers[0].name = 'Other';
     assert.throws(() => admitRoleplayWorkflowJob(changed.f.scope, changed.account, { operationKey: 'forged-group',
@@ -138,6 +146,8 @@ test('saved group selection refuses disabled and forged speaker identities befor
 
 test('a group speaker completes bound tools before the next speaker receives the protected source', async t => {
     const f = prepared(t, { pathfinder: true });
+    assert.equal(f.request.capacity.maxTurns, 16);
+    assert.equal(f.request.capacity.companionTurns, 2);
     updateJob(f.dirs, f.jobId, { state: 'running' });
     assert.equal((await runRoleplayWorkflowJob(f.context())).waiting, true);
     const count = { value: 0 };
@@ -172,6 +182,7 @@ test('a group speaker completes bound tools before the next speaker receives the
 
 test('automatic group alternatives and continuations remain with their saved speaker', async t => {
     const f = prepared(t, { autoSwipe: true, autoContinue: true });
+    assert.equal(f.request.capacity.companionTurns, 16);
     updateJob(f.dirs, f.jobId, { state: 'running' });
     await runRoleplayWorkflowJob(f.context());
     const count = { value: 0 };

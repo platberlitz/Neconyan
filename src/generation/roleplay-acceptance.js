@@ -12,23 +12,23 @@
  * reserved under the same key, so a second submission returns the first
  * acceptance and later reads return its finished result.
  */
+import path from 'node:path';
 import sanitize from 'sanitize-filename';
-import { normalizeLocator } from '../mewmory/store.js';
+import { normalizeLocator, readJson } from '../mewmory/store.js';
 import { roleplayAccountBase, saveRoleplayAccount, withRoleplayAccount } from '../roleplay-store.js';
 import { getJob, releaseJob } from '../jobs/store.js';
 import { captureRoleplaySourceLocked, readRoleplayChatLocked } from './roleplay-source.js';
 import { captureGenerationBinding, getChatProfileContextLimit } from './profiles.js';
 import { readNativeMediaJobResultForOwner } from './media-jobs.js';
 import { captureRoleplayNamedWorkflow, ROLEPLAY_WORKFLOW_NAMES } from './roleplay-workflow-named.js';
-import { admitRoleplayWorkflowJob, captureRoleplayWorkflowRequest } from './roleplay-workflow.js';
+import { admitRoleplayWorkflowJob, captureRoleplayWorkflowRequest, MAX_WORKFLOW_TOKENS } from './roleplay-workflow.js';
 import { closeUnstartedRoleplayWorkflow } from './roleplay-workflow-cancellation.js';
 import { getRoleplaySourceMessageRevision } from '../../public/scripts/neconyan-conversation/roleplay-source.js';
 
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const MAX_KEY_LENGTH = 256;
 const MAX_REVISION_BYTES = 512 * 1024;
-const MAX_TOKENS = 8192;
-const DEFAULT_TOKENS = 512;
+const LEGACY_REPLY_BACKENDS = new Set(['kobold', 'novel', 'horde']);
 const SUBMISSION = ['key', 'name', 'intent', 'source', 'anchor', 'messageRevision', 'groupRevision', 'maxTokens', 'account', 'acknowledgement'];
 const ANCHOR_FIELDS = ['messageIndex', 'chosen'];
 
@@ -101,7 +101,7 @@ export function normalizeRoleplayWorkflowSubmission(body = {}) {
     const messageIndex = body.anchor.messageIndex;
     if (!Number.isSafeInteger(messageIndex) || messageIndex < 0) throw invalid('Invalid workflow message index.');
     const maxTokens = body.maxTokens === undefined || body.maxTokens === null ? null : body.maxTokens;
-    if (maxTokens !== null && (!Number.isSafeInteger(maxTokens) || maxTokens < 1 || maxTokens > MAX_TOKENS)) throw invalid('Invalid workflow token limit.');
+    if (maxTokens !== null && (!Number.isSafeInteger(maxTokens) || maxTokens < 1 || maxTokens > MAX_WORKFLOW_TOKENS)) throw invalid('Invalid workflow token limit.');
     const settingsRevision = body.acknowledgement?.settingsRevision;
     if (!Number.isSafeInteger(settingsRevision) || settingsRevision < 0) throw invalid('Invalid settings revision.');
     return { key, name, named, locator: { chat: chatName(body.source.locator.chat), avatar, group: false },
@@ -110,15 +110,36 @@ export function normalizeRoleplayWorkflowSubmission(body = {}) {
         acknowledgement: { account: identifier(body.acknowledgement?.account, 'account handle'), settingsRevision } };
 }
 
+/** The reply length the acknowledged connection declares, and the label for where it was read. */
+function configuredReplyLength(directories, binding) {
+    const settings = readJson(path.join(directories.root, 'settings.json'), {});
+    if (binding?.backend === 'text') return { raw: settings.amount_gen, source: 'text-connection' };
+    if (LEGACY_REPLY_BACKENDS.has(binding?.backend)) return { raw: settings.amount_gen, source: 'legacy' };
+    return { raw: settings.oai_settings?.openai_max_tokens, source: 'connection' };
+}
+
 /**
- * A workflow with no stated token limit still needs one the saved context can
- * hold, so the limit comes from the acknowledged connection rather than a guess.
+ * A workflow with no stated token limit takes the acknowledged connection's
+ * configured reply length as it is, lowered only by the accepted pipeline
+ * ceiling. There is no floor, no context window and no invented default: the
+ * existing acceptance check decides whether the budget fits the saved context
+ * and refuses it when it does not, and a connection with no usable length
+ * refuses with a named error instead of guessing a budget.
  */
-function workflowTokenLimit(directories, binding, requested) {
+export function workflowTokenLimit(directories, binding, requested) {
     if (requested !== null) return requested;
+    const { raw, source } = configuredReplyLength(directories, binding);
+    const configured = Number(raw);
+    if (!Number.isSafeInteger(configured) || configured < 1) {
+        throw invalid('This chat\'s connection has no reply length set. Set a reply length in the connection settings before using Roleplay workflows.',
+            'roleplay_workflow_budget_unset');
+    }
     const contextLimit = getChatProfileContextLimit(directories, binding);
-    if (!Number.isSafeInteger(contextLimit) || contextLimit <= 128) throw changed('The saved connection has no room for a Roleplay workflow.', 'roleplay_workflow_context');
-    return Math.max(64, Math.min(DEFAULT_TOKENS, Math.floor((contextLimit - 128) / 2)));
+    if (!Number.isSafeInteger(contextLimit)) throw changed('The saved context size is missing or not a usable number. Save a context size in the connection settings before using Roleplay workflows.', 'roleplay_workflow_context');
+    if (contextLimit <= 128) throw changed(`The saved context size (${contextLimit}) is too small for a Roleplay workflow.`, 'roleplay_workflow_context');
+    const budget = Math.min(configured, MAX_WORKFLOW_TOKENS);
+    console.info('Roleplay workflow reply length', { maxTokens: budget, source });
+    return budget;
 }
 
 function submissionScope(request) {
@@ -246,7 +267,7 @@ export function normalizeRoleplayGroupSubmission(body = {}) {
     }
     if (!Number.isSafeInteger(body.generationId) || body.generationId < 0) throw invalid('Invalid group generation id.');
     const maxTokens = body.maxTokens === undefined || body.maxTokens === null ? null : body.maxTokens;
-    if (maxTokens !== null && (!Number.isSafeInteger(maxTokens) || maxTokens < 1 || maxTokens > MAX_TOKENS)) throw invalid('Invalid workflow token limit.');
+    if (maxTokens !== null && (!Number.isSafeInteger(maxTokens) || maxTokens < 1 || maxTokens > MAX_WORKFLOW_TOKENS)) throw invalid('Invalid workflow token limit.');
     const settingsRevision = body.acknowledgement?.settingsRevision;
     if (!Number.isSafeInteger(settingsRevision) || settingsRevision < 0) throw invalid('Invalid settings revision.');
     return { key, locator: { chat: chatName(body.source.locator.chat), avatar: '', group: true }, groupId, messageCount,

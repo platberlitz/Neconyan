@@ -158,38 +158,41 @@ const NN_PANEL_STYLESHEETS = Object.freeze({
     ],
     'characters:persona': [
         { href: 'css/personas.css?v=20260912h', id: 'deferred-personas-css' },
-        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261002-agents-tour1', id: 'deferred-tool-pages-css' },
     ],
     'left:api': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261002-agents-tour1', id: 'deferred-tool-pages-css' },
     ],
     'left:presets': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261002-agents-tour1', id: 'deferred-tool-pages-css' },
     ],
     'left:sampling': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261002-agents-tour1', id: 'deferred-tool-pages-css' },
     ],
     'left:advanced-formatting': [
         { href: 'css/macros.css', id: 'deferred-macros-css' },
-        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261002-agents-tour1', id: 'deferred-tool-pages-css' },
     ],
     'left:mewmory': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261002-agents-tour1', id: 'deferred-tool-pages-css' },
+    ],
+    'left:agents': [
+        { href: 'css/neconyan-tool-pages.css?v=20261002-agents-tour1', id: 'deferred-tool-pages-css' },
     ],
     'right:extensions': [
         { href: 'css/extensions-panel.css?v=20260425a', id: 'deferred-extensions-panel-css' },
     ],
     'right:background': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261002-agents-tour1', id: 'deferred-tool-pages-css' },
     ],
     'right:server': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261002-agents-tour1', id: 'deferred-tool-pages-css' },
     ],
     'right:console-logs': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261002-agents-tour1', id: 'deferred-tool-pages-css' },
     ],
     'right:included-tool': [
-        { href: 'css/neconyan-tool-pages.css?v=20261001-header-tours1', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261002-agents-tour1', id: 'deferred-tool-pages-css' },
     ],
 });
 const NN_FRONTEND_ICON_DEFAULT = 'calico';
@@ -496,7 +499,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261002-tour-row1';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261003-notes-staging1';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -2883,9 +2886,18 @@ const NN_NATIVE_SHELL_PAGES = Object.freeze({
     'left:sampling': 'sampling',
     'left:advanced-formatting': 'formatting',
     'left:mewmory': 'mewmory',
+    'left:agents': 'agents',
     'right:background': 'background',
     'right:server': 'server',
     'right:console-logs': 'console-logs',
+});
+
+// Character drawer tabs with their own assistant tour. Characters and Groups share #rm_characters_block.
+const NN_CHARACTER_NATIVE_PAGES = Object.freeze({
+    characters: 'character-library',
+    groups: 'group-library',
+    persona: 'persona',
+    import: 'character-import',
 });
 
 /**
@@ -2907,6 +2919,7 @@ function mountNeconyanNativePage(key, host, headerHeading = null) {
     void import('./neconyan-tool-tour.js')
         .then(({ mountToolPage }) => {
             if (headerHeading && headerHeading.dataset.toolPage !== key) return;
+            if (heading.dataset.toolPage !== key) return;
             mountToolPage(key, heading, host, headerHeading);
         })
         .catch(error => console.warn('[Neconyan] Could not load the page tour:', error));
@@ -10253,8 +10266,11 @@ function syncCharacterShellTabs(activeTab = null) {
 
     syncCharacterHeaderCopy(normalizedTab);
     syncCharacterModeToggle();
-    if (panel instanceof HTMLElement) panel.dataset.neconyanNativePage = normalizedTab === 'persona' ? 'persona' : '';
+    const nativePage = NN_CHARACTER_NATIVE_PAGES[normalizedTab] ?? '';
+    if (panel instanceof HTMLElement) panel.dataset.neconyanNativePage = nativePage;
     if (normalizedTab === 'persona') mountNeconyanNativePage('persona', document.getElementById('sb_character_persona_panel'));
+    else if (normalizedTab === 'import') mountNeconyanNativePage(nativePage, document.getElementById('sb_character_import_panel'));
+    else if (nativePage) mountNeconyanNativePage(nativePage, document.getElementById('rm_characters_block'));
 
     panel?.querySelectorAll('[data-sb-character-tab]').forEach(tab => {
         if (!(tab instanceof HTMLElement)) {
@@ -15634,7 +15650,7 @@ function createTopbarLabelSettingsGroup() {
 }
 
 function injectThemePicker() {
-    if (document.getElementById('sb-theme-card')) {
+    if (document.getElementById('UI-presets-block')?.dataset.themePickerInitialized === 'true') {
         updateThemePickerUi();
         return;
     }
@@ -15819,7 +15835,7 @@ function injectThemePicker() {
         );
     }
 
-    card.append(shellStyleSettingsGroup, interfaceSettingsGroup, tourSettingsGroup, topbarLabelSettingsGroup, shortcutSettingsGroup);
+    const themeSettingsDrawers = [shellStyleSettingsGroup, interfaceSettingsGroup, topbarLabelSettingsGroup, shortcutSettingsGroup, tourSettingsGroup];
     if (!(desktopSettingsOutlet instanceof HTMLElement)) {
         card.append(
             desktopNavLayoutSettingsGroup,
@@ -15845,7 +15861,43 @@ function injectThemePicker() {
         );
     }
     themeBlock.append(card);
+    placeThemeSettingsDrawers(themeBlock, card, themeSettingsDrawers);
+    if (!card.hasChildNodes()) {
+        card.remove();
+    }
+    themeBlock.dataset.themePickerInitialized = 'true';
     updateThemePickerUi();
+}
+
+function placeThemeSettingsDrawers(themeBlock, card, drawers) {
+    const themeDrawer = themeBlock.closest('.inline-drawer');
+    const anchor = document.getElementById('sb-theme-presets-drawer') || themeDrawer;
+    if (!(anchor instanceof HTMLElement) || !(anchor.parentElement instanceof HTMLElement)) {
+        card.append(...drawers);
+        return;
+    }
+    const icons = {
+        'sb-shell-style-drawer': 'fa-paw',
+        'sb-interface-drawer': 'fa-sliders',
+        'sb-topbar-label-drawer': 'fa-heading',
+        'sb-quick-access-shortcuts-drawer': 'fa-bolt',
+        'sb-page-tours-drawer': 'fa-route',
+    };
+    for (const drawer of drawers) {
+        drawer.classList.remove('sb-theme-settings-drawer');
+        drawer.classList.add('wide100p', 'flexFlowColumn', 'sb-settings-subdrawer', 'sb-theme-lifted-drawer');
+        const header = drawer.querySelector(':scope > .inline-drawer-header');
+        header?.classList.add('userSettingsInnerExpandable');
+        const heading = header?.querySelector(':scope > strong');
+        if (heading) {
+            const label = createElement('b');
+            const glyph = createElement('i', { className: `fa-solid ${icons[drawer.id] || 'fa-gear'}`, attrs: { 'aria-hidden': 'true' } });
+            label.append(glyph, ' ', createElement('span', { text: heading.textContent || '' }));
+            heading.replaceWith(label);
+        }
+        drawer.querySelector(':scope > .sb-theme-settings-drawer-body')?.classList.add('sb-settings-subdrawer-body');
+    }
+    anchor.after(...drawers);
 }
 
 function updateThemePickerUi() {

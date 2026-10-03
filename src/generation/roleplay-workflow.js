@@ -20,15 +20,23 @@ import { captureRoleplayWorkflowCapacity, MAX_WORKFLOW_CHAT_BYTES } from './role
 import { assertRoleplayNamedWorkflow, ROLEPLAY_WORKFLOW_NAMES, roleplayWorkflowContributions, roleplayWorkflowResultFacts } from './roleplay-workflow-named.js';
 import { roleplayEffectTrigger } from './roleplay-prompt.js';
 import { registerHandler } from '../jobs/runner.js';
+import { releaseStoppedRoleplayWorkflow } from './roleplay-workflow-cancellation.js';
 
 const error = (message, code = 'ROLEPLAY_WORKFLOW_RECOVERY') => roleplayError(code, message, 409);
 const CHILD = 'roleplay-workflow-child';
 const FINAL = 'roleplay-workflow-final';
 const MAX_TURNS = 16;
+/** The accepted ceiling for one Roleplay workflow reply, aligned with the execution guard. */
+export const MAX_WORKFLOW_TOKENS = 64000;
 const childKey = turn => turn === 0 ? CHILD : `${CHILD}:${turn}`;
 const historyKey = turn => `roleplay-workflow-history:${turn}`;
 const decisionKey = turn => `roleplay-workflow-decision:${turn}`;
 const speakerKey = index => `roleplay-workflow-speaker:${index}`;
+
+// Tool-only turns do not run Companions. Without automatic retries, each speaker
+// produces at most one text candidate, while all sixteen model turns remain reserved.
+const companionTurnLimit = (group, automatic) => automatic?.swipe?.enabled || automatic?.continuation?.enabled
+    ? MAX_TURNS : group?.speakers?.length ?? 1;
 
 export function captureRoleplayWorkflowRequest(base, account, source, { avatar, binding, maxTokens = 128,
     effect = 'append', named = null, forcedAvatars, selectedSpeakerAvatar, random, generationId } = {}) {
@@ -38,7 +46,7 @@ export function captureRoleplayWorkflowRequest(base, account, source, { avatar, 
     }
     if (named && source.locator.group) throw error('A named workflow answers one speaker, not a group turn.', 'ROLEPLAY_WORKFLOW_INVALID');
     if (!['append', 'continue', 'swipe', 'alternative', 'replace'].includes(effect)
-        || !Number.isSafeInteger(maxTokens) || maxTokens < 1 || maxTokens > 8192 || !binding?.fingerprint) {
+        || !Number.isSafeInteger(maxTokens) || maxTokens < 1 || maxTokens > MAX_WORKFLOW_TOKENS || !binding?.fingerprint) {
         throw error('The saved workflow selection is invalid.', 'ROLEPLAY_WORKFLOW_INVALID');
     }
     const contextLimit = getChatProfileContextLimit(base.directories, binding);
@@ -63,7 +71,8 @@ export function captureRoleplayWorkflowRequest(base, account, source, { avatar, 
         : captureRoleplayWorkflowPolicy(base, account, source, worldInfo, { backend: binding.backend === 'text' ? 'text' : 'chat' });
     const companionBytes = Math.max(worldInfo.companionCapacity?.requiredBytes ?? 0,
         ...(speakers?.map(speaker => speaker.worldInfo.companionCapacity?.requiredBytes ?? 0) ?? []));
-    const capacity = captureRoleplayWorkflowCapacity(base, account, source, { companionBytes });
+    const capacity = captureRoleplayWorkflowCapacity(base, account, source,
+        { companionBytes, companionTurns: companionTurnLimit(group, automatic) });
     const stream = (!binding.backend || binding.backend === 'chat')
         && resolveGenerationProfile(base.directories, binding).active?.stream_openai === true;
     return { version: 1, avatar: selectedAvatar, effect, binding, maxTokens, worldInfo, stream,
@@ -80,6 +89,7 @@ export function admitRoleplayWorkflowJob(base, account, { operationKey, source, 
         Object.entries(request.capacity).filter(([key]) => key !== 'hash')))
         || request.capacity.version !== 1 || request.capacity.maxTurns !== MAX_TURNS
         || request.capacity.limitBytes !== MAX_WORKFLOW_CHAT_BYTES
+        || request.capacity.companionTurns !== companionTurnLimit(request.group, request.automatic)
         || request.capacity.companionBytes !== Math.max(request.worldInfo.companionCapacity?.requiredBytes ?? 0,
             ...(request.group?.speakers?.map(speaker => speaker.worldInfo?.companionCapacity?.requiredBytes ?? 0) ?? []))
         || request.capacity.sourceHash !== roleplayHash(source)
@@ -95,7 +105,7 @@ export function admitRoleplayWorkflowJob(base, account, { operationKey, source, 
         throw error('The saved workflow request changed before admission.', 'ROLEPLAY_WORKFLOW_INVALID');
     }
     if (roleplayHash(captureRoleplayWorkflowCapacity(base, account, source,
-        { companionBytes: request.capacity.companionBytes })) !== roleplayHash(request.capacity)) {
+        { companionBytes: request.capacity.companionBytes, companionTurns: request.capacity.companionTurns })) !== roleplayHash(request.capacity)) {
         throw error('The saved workflow chat capacity changed before admission.', 'ROLEPLAY_WORKFLOW_INVALID');
     }
     if (request.named !== undefined) {
@@ -105,8 +115,13 @@ export function admitRoleplayWorkflowJob(base, account, { operationKey, source, 
             throw error('This named workflow runs one bounded model turn.', 'ROLEPLAY_WORKFLOW_INVALID');
         }
     }
-    return admitNativeMediaJob(base, account, { operationKey, source, kind: 'roleplay-workflow', request,
-        target: { kind: 'chat', id: source.instanceId } });
+    try {
+        return admitNativeMediaJob(base, account, { operationKey, source, kind: 'roleplay-workflow', request,
+            target: { kind: 'chat', id: source.instanceId }, releaseStoppedTarget: releaseStoppedRoleplayWorkflow(base) });
+    } catch (cause) {
+        if (cause?.code !== 'MEDIA_TARGET_BUSY') throw cause;
+        throw roleplayError('MEDIA_TARGET_BUSY', 'Another reply for this chat is still being written. Wait for it to finish, then send again.', 409);
+    }
 }
 
 function root(context) {
@@ -401,6 +416,7 @@ function publishPlan(context, job, chosen, plan, { effectId = 'final', proof = n
     const saved = readRoleplayWorkflowRecords(context, job.intent.media, proof);
     if (saved.proof.recordsHash !== plan.recordsHash || saved.proof.digest !== plan.recordsDigest) throw error('The saved workflow chat changed.');
     return withNativeMediaReceipt(context, ({ lease, value, save }) => {
+        if (value.state === 'closed') throw error('This reply was released before its chat write.');
         if (context.signal?.aborted || getJob(context.directories, job.id)?.cancellation?.requested) {
             throw error('The saved workflow was cancelled before its protected chat write.');
         }
@@ -605,8 +621,13 @@ export function recoverWaitingRoleplayWorkflow({ job, directories, owner }) {
     }
     if (children.every(child => child.state === 'completed')) updateJob(directories, current.id, { state: 'queued', stage: 'children-completed' });
     else if (children.some(child => ['failed', 'interrupted', 'conflict', 'cancelled'].includes(child.state))) {
+        const child = children.find(child => ['failed', 'interrupted', 'conflict', 'cancelled'].includes(child.state));
+        const reason = typeof child.error?.message === 'string' && child.error.message.trim()
+            ? child.error.message.trim().slice(0, 500) : 'A reply step stopped before it finished.';
+        const uncertainty = child.recoverability === 'unknown-outcome'
+            ? ' The provider may still have processed this request, so it was not retried automatically.' : '';
         updateJob(directories, current.id, { state: 'interrupted', stage: 'child-needs-recovery',
-            error: { code: 'ROLEPLAY_WORKFLOW_CHILD', message: 'The saved workflow child needs a reviewed recovery.' } });
+            error: { code: 'ROLEPLAY_WORKFLOW_CHILD', message: reason + uncertainty } });
     }
 }
 

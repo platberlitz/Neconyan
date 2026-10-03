@@ -15,6 +15,7 @@ import { isMobile } from './RossAscends-mods.js';
 import { accountStorage } from './util/AccountStorage.js';
 import { getPromptDisplayTokenCounts, getPromptSourceTokenCounts, isCommentOnlyPromptContent, mergePromptTokenCounts } from './prompt-token-counts.js';
 import { getRenderedMarkerPrompt } from './prompt-manager-marker-preview.js';
+import { getPromptPreview } from './prompt-preview.js';
 import { clearPromptSetVariables } from './prompt-variable-cleanup.js';
 import { withReadOnlyVariables } from './variable-read-only.js';
 import { RUNTIME_AGENTS_IDENTIFIER, resolveInChatAgentTokenUsage } from './in-chat-agent-inspection.js';
@@ -2369,6 +2370,10 @@ class PromptManager {
             };
             const roleIcon = promptRoles[iconLookup]?.roleIcon || '';
             const roleTitle = promptRoles[iconLookup]?.roleTitle || '';
+            const promptPreview = prompt.marker ? null : getPromptPreview(prompt.content);
+            const previewHtml = promptPreview?.text
+                ? `<small class="prompt-manager-prompt-preview${promptPreview.isComment ? ' prompt-manager-prompt-preview-comment' : ''}" title="${escapeHtml(promptPreview.text)}">${escapeHtml(promptPreview.text)}</small>`
+                : '';
 
             listItemHtml += `
                 <li class="${prefix}prompt_manager_prompt ${draggableClass} ${enabledClass} ${markerClass} ${importantClass} ${selectedClass}" data-pm-identifier="${escapeHtml(prompt.identifier)}">
@@ -2394,6 +2399,7 @@ class PromptManager {
                     </span>
 
                     <span class="prompt_manager_prompt_tokens" data-pm-tokens="${calculatedTokens}"><span class="${warningClass}" title="${warningTitle}"> </span>${calculatedTokens}</span>
+                    ${previewHtml}
                 </li>
             `;
         });

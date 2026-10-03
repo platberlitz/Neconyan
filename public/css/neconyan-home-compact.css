@@ -1,0 +1,24 @@
+/* Compact Home (deferred, opt-in layout): same sections, tighter spacing, small cat beside the title and no explanatory text. */
+body.neconyan .welcomePanel--compact { gap: 14px; }
+body.neconyan .welcomePanel--compact :is(.neconyan-home-intro, .neconyan-assistant-picker) { padding: 14px 16px; box-shadow: none; }
+body.neconyan .welcomePanel--compact .neconyan-home-intro { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 0 14px; }
+body.neconyan .welcomePanel--compact .neconyan-home-cat { display: contents; }
+.welcomePanel--compact .neconyan-home-cat img { grid-row: span 2; width: 56px; }
+.welcomePanel--compact .neconyan-cat-toggle { order: 1; justify-self: start; align-self: start; padding: 0; }
+.welcomePanel--compact .neconyan-home-intro h1 { align-self: end; }
+.welcomePanel--compact :is(.neconyan-home-intro > p, .neconyan-home-actions small, .neconyan-assistant-picker-heading p, .neconyan-assistant-copy p:not(.neconyan-assistant-role, .neconyan-assistant-selection)) { display: none; }
+body.neconyan .welcomePanel--compact .neconyan-home-actions { order: 2; grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; margin: 10px 0 0; }
+body.neconyan .welcomePanel--compact .neconyan-home-actions > button { min-height: 44px; padding: 8px 14px; }
+.welcomePanel--compact .neconyan-home-layout-bar { padding: 8px 14px; }
+.welcomePanel--compact .neconyan-assistant-picker-heading { margin-bottom: 6px; }
+.welcomePanel--compact .neconyan-assistant-list { gap: 10px; padding-top: 4px; }
+.welcomePanel--compact .neconyan-assistant-row { grid-template-columns: 56px minmax(0, 1fr) minmax(190px, 240px); gap: 8px 12px; padding: 10px; }
+.welcomePanel--compact .neconyan-assistant-portrait-wrap { width: 56px; height: 76px; border-radius: 12px; }
+body.neconyan .welcomePanel--compact .welcomeRecentShell { padding: 12px 16px; }
+body.neconyan .welcomePanel--compact .recentChat { padding: 10px 0; }
+@container (max-width: 560px) {
+    .welcomePanel--compact .neconyan-assistant-row { grid-template-columns: 56px minmax(0, 1fr); }
+}
+@container (min-width: 760px) {
+    .welcomePanel--compact .neconyan-assistant-row { grid-template-columns: 56px minmax(0, 1fr) auto minmax(200px, 240px); grid-template-areas: 'portrait copy variants action'; }
+}

@@ -2,7 +2,7 @@
 
 @import url(css/animations.css);
 @import url(css/popup.css?v=20260911v);
-@import url(css/promptmanager.css?v=20260507a);
+@import url(css/promptmanager.css?v=20261002b);
 @import url(css/loader.css?v=20260913g);
 @import url(css/character-group-overlay.css);
 @import url(css/file-form.css);
@@ -7419,7 +7419,7 @@ body:not(.movingUI) .drawer-content.maximized {
     padding: 10px 12px;
     border-radius: 10px;
     border: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor, #444) 45%, transparent);
-    background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #222) 22%, transparent);
+    background: var(--neco-surface, var(--SmartThemeBlurTintColor, #222));
     white-space: pre-wrap;
     word-break: break-word;
     line-height: 1.55;
@@ -7431,18 +7431,20 @@ body:not(.movingUI) .drawer-content.maximized {
 }
 
 .ica-transform-diff-part--ins {
-    background: color-mix(in srgb, var(--color-success, var(--success, var(--SmartThemeQuoteColor))) 24%, transparent);
-    color: color-mix(in srgb, var(--color-success, var(--success, var(--SmartThemeQuoteColor))) 86%, var(--SmartThemeBodyColor));
+    background: color-mix(in srgb, #22c55e 30%, var(--neco-surface, var(--SmartThemeBlurTintColor)));
+    box-shadow: inset 0 -2px 0 #22c55e;
+    color: var(--sb-contrast-strong, var(--SmartThemeBodyColor));
     text-decoration: none;
     border-radius: 2px;
     padding: 0 1px;
 }
 
 .ica-transform-diff-part--del {
-    background: color-mix(in srgb, var(--color-danger, var(--SmartThemeUnderlineColor)) 28%, transparent);
-    color: color-mix(in srgb, var(--color-danger, var(--SmartThemeUnderlineColor)) 88%, var(--SmartThemeBodyColor));
+    background: color-mix(in srgb, #f43f5e 30%, var(--neco-surface, var(--SmartThemeBlurTintColor)));
+    color: var(--sb-contrast-strong, var(--SmartThemeBodyColor));
     text-decoration: line-through;
-    text-decoration-color: color-mix(in srgb, var(--color-danger, var(--SmartThemeUnderlineColor)) 62%, transparent);
+    text-decoration-color: #f43f5e;
+    text-decoration-thickness: 2px;
     border-radius: 2px;
     padding: 0 1px;
 }

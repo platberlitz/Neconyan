@@ -1,4 +1,4 @@
-import { getRequestHeaders } from '../../script.js';
+import { chat as messages, getRequestHeaders, getThumbnailUrl, updateMessageElement } from '../../script.js';
 
 const labels = {
     preparing: 'Preparing reply…', generating: 'Writing reply…', agents: 'Running Agents…',
@@ -11,31 +11,45 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal }
     const controller = new AbortController();
     let node = null;
     let latest = null;
+    let rendered = null;
+    let childId = null;
+    let startedAt = null;
     let stopped = false;
-    const remove = () => { node?.remove(); node = null; };
+    const remove = () => { node?.remove(); node = null; rendered = null; };
     const render = () => {
         if (!isCurrent()) { remove(); return; }
         if (!latest) return;
         const chat = document.querySelector('#chat');
         if (!chat) return;
+        if (node?.isConnected && latest === rendered) return;
         const nearBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 120;
+        if (childId !== latest.childId) {
+            remove();
+            childId = latest.childId;
+            startedAt = new Date(latest.updatedAt || Date.now()).toISOString();
+        }
+        const reasoningDetails = node?.querySelector('.mes_reasoning_details');
+        const message = { name: latest.name || 'Reply', is_user: false, is_system: false,
+            mes: latest.text || '', send_date: startedAt, gen_started: startedAt,
+            original_avatar: latest.avatar,
+            force_avatar: latest.avatar ? getThumbnailUrl('avatar', latest.avatar) : undefined,
+            extra: { reasoning: latest.reasoning || '', inChatAgents: latest.inChatAgents,
+                ...(reasoningDetails && node.classList.contains('reasoning') ? { reasoning_collapsed: !reasoningDetails.open } : {}) } };
+        const messageElement = updateMessageElement(message, { messageId: messages.length, isPreview: true,
+            ...(node?.isConnected ? { messageElement: globalThis.jQuery(node) } : {}) });
         if (!node?.isConnected) {
-            node = document.createElement('article');
+            node = messageElement[0];
             node.id = 'neconyan-roleplay-preview';
-            node.className = 'mes_block';
-            Object.assign(node.style, { padding: '12px', borderRadius: '8px', background: 'var(--neco-surface)',
-                color: 'var(--neco-ink)', overflowWrap: 'anywhere' });
+            node.style.flexShrink = '0';
             node.setAttribute('aria-label', 'Reply in progress');
-            node.innerHTML = '<div class="ch_name"><span class="name_text"></span></div><small role="status"></small><details><summary>Reasoning</summary><div></div></details><div class="mes_text"></div>';
-            node.querySelector('.mes_text').style.whiteSpace = 'pre-wrap';
-            node.querySelector('details div').style.whiteSpace = 'pre-wrap';
+            const status = document.createElement('small');
+            status.className = 'timestamp';
+            status.setAttribute('role', 'status');
+            node.querySelector('.name_text').parentElement.append(status);
             chat.append(node);
         }
-        node.querySelector('.name_text').textContent = latest.name || 'Reply';
         node.querySelector('[role="status"]').textContent = labels[latest.stage] || labels.preparing;
-        node.querySelector('.mes_text').textContent = latest.text || '';
-        node.querySelector('details').hidden = !latest.reasoning;
-        node.querySelector('details div').textContent = latest.reasoning || '';
+        rendered = latest;
         if (nearBottom) chat.scrollTop = chat.scrollHeight;
     };
     const timer = setInterval(render, 500);
@@ -61,7 +75,9 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal }
                             pending = pending.slice(boundary + 2);
                             if (!event.startsWith('data: ')) continue;
                             const value = JSON.parse(event.slice(6));
-                            if (value.preview) { latest = value.preview; render(); }
+                            // Use the regular display formatter at a bounded cadence, rather
+                            // than rebuilding a growing Markdown message for every token.
+                            if (value.preview) { latest = value.preview; if (!node) render(); }
                             if (value.state) { onTerminal(value); return; }
                         }
                     }

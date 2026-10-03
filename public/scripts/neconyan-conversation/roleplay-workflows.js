@@ -13,6 +13,7 @@
  */
 import { activateSendButtons, chat, deactivateSendButtons, extension_prompts, getActiveGenerationAcknowledgement, getCurrentChatId, getRequestHeaders, isChatSaving, isGenerating, reloadCurrentChat, saveChatConditional, saveSettings, substituteParams, willRunNativeRoleplayWorkflow } from '../../script.js';
 import { activeGenerationInterceptors } from '../extensions.js';
+import { selected_group } from '../group-chats.js';
 import { cancelJob, listJobs, observeJob, TERMINAL } from '../jobs.js';
 import { roleplayAccountStamp } from '../roleplay-save-chain.js';
 import { getCurrentUserHandle } from '../user.js';
@@ -32,6 +33,20 @@ const adopted = new Map();
 const reading = new Map();
 let busyName = null;
 let currentJobId = null;
+
+/**
+ * One DEBUG line per accepted submission, naming the workflow the server owns.
+ * Browsers hide DEBUG output behind the devtools filter by default, which is
+ * the wanted behaviour for lines the ordinary user never needs to see.
+ */
+function logRoleplayAccepted(name) {
+    console.debug('Roleplay workflow accepted', { name });
+}
+
+/** One DEBUG line per refusal, naming the single condition that refused it. */
+function logRoleplayRefusal(fields) {
+    console.debug('Roleplay workflow refused', fields);
+}
 
 /**
  * One promise per accepted key, resolved by whichever path reaches the durable
@@ -99,6 +114,14 @@ function currentLocator() {
     return { chat: chatName, avatar, group: false };
 }
 
+function matchesCurrentWorkflowLocator(locator) {
+    if (!locator || String(getCurrentChatId() || '').replace(/\.jsonl$/, '') !== locator.chat) return false;
+    // Sending a group message temporarily selects its speaker. That is still a
+    // group chat, so the speaker's avatar must not block its saved reply readback.
+    if (locator.group) return Boolean(selected_group) && String(selected_group) === locator.groupId;
+    return !selected_group && currentLocator()?.avatar === locator.avatar;
+}
+
 /** The last block the host would continue, whoever wrote it, skipping hidden system blocks. */
 export function finalBlockMessageIndex() {
     for (let index = chat.length - 1; index >= 0; index -= 1) {
@@ -163,9 +186,16 @@ const SETTINGS_PROOF_ATTEMPTS = 10;
  * a /inject note, a summary), resolved exactly as the browser prompt would have
  * used them. The server rebuilds everything else itself. Returns null when any
  * addition cannot be carried faithfully, so the caller keeps the browser path
- * instead of silently generating without it.
+ * instead of silently generating without it. Each refusal logs one DEBUG line
+ * naming the workflow and the refusing condition; a caller that is only probing
+ * the decision can pass a collector to take the reason instead of a log line.
  */
-export async function capturePagePrompts(name) {
+export async function capturePagePrompts(name, collector = null) {
+    const refuse = label => {
+        if (typeof collector === 'function') collector(label);
+        else logRoleplayRefusal({ name, reason: label });
+        return null;
+    };
     for (const interceptor of activeGenerationInterceptors()) {
         if (interceptor.key === 'DialogueColorsInterceptor') {
             await globalThis[interceptor.key]([], 0, () => {}, 'normal');
@@ -174,7 +204,7 @@ export async function capturePagePrompts(name) {
         if (interceptor.key === 'vectors_rearrangeChat') {
             continue;
         }
-        return null;
+        return refuse('interceptor');
     }
     const page = [];
     let bytes = 0;
@@ -184,13 +214,13 @@ export async function capturePagePrompts(name) {
         if (Number(entry.position) === -1) continue;
         if (SERVER_PROMPT_KEYS.has(key) || SERVER_PROMPT_PREFIXES.some(prefix => key.startsWith(prefix))) continue;
         if (name === 'story.passage' && (key === STORY_RULES_KEY || key === STORY_DIRECTION_KEY)) continue;
-        if (POLICY_PROMPT_PREFIXES.some(prefix => key.startsWith(prefix))) return null;
-        if (entry.scan) return null;
+        if (POLICY_PROMPT_PREFIXES.some(prefix => key.startsWith(prefix))) return refuse('policy-prefix');
+        if (entry.scan) return refuse('scan');
         if (typeof entry.filter === 'function') {
             try {
                 if (!await entry.filter()) continue;
             } catch {
-                return null;
+                return refuse('filter-error');
             }
         }
         const content = pagePromptText(key);
@@ -198,11 +228,14 @@ export async function capturePagePrompts(name) {
         const position = Number(entry.position);
         const depth = Number(entry.depth ?? 0);
         const role = PAGE_ROLES[Number(entry.role ?? 0)];
-        if (content.includes('{{') || !PAGE_KEY.test(key) || ![0, 1, 2].includes(position)
-            || !Number.isSafeInteger(depth) || depth < 0 || depth > 10000 || !role) return null;
+        if (content.includes('{{')) return refuse('macro');
+        if (!PAGE_KEY.test(key)) return refuse('key');
+        if (![0, 1, 2].includes(position)) return refuse('position');
+        if (!Number.isSafeInteger(depth) || depth < 0 || depth > 10000) return refuse('depth');
+        if (!role) return refuse('role');
         bytes += new TextEncoder().encode(content).length;
         page.push({ key, content, position, depth, role });
-        if (page.length > MAX_PAGE_PROMPTS || bytes > MAX_PAGE_BYTES) return null;
+        if (page.length > MAX_PAGE_PROMPTS || bytes > MAX_PAGE_BYTES) return refuse('size');
     }
     return page;
 }
@@ -296,10 +329,7 @@ async function readbackReceipt(key, name, options, id) {
             return null;
         }
         if (options.passive && (busyName || isGenerating() || isChatSaving)) return null;
-        const current = currentLocator();
-        const sameGroup = locator?.group && !getCurrentCharAvatar()
-            && String(getCurrentChatId() || '').replace(/\.jsonl$/, '') === locator.chat;
-        if (sameGroup || (current && locator && current.chat === locator.chat && current.avatar === locator.avatar)) {
+        if (matchesCurrentWorkflowLocator(locator)) {
             await reloadCurrentChat();
             adopted.set(id, receipt);
         }
@@ -316,9 +346,20 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, account 
     if (!jobId || observed.has(jobId)) return;
     let stopPreview = () => {};
     let ended = false;
+    const onTerminal = value => {
+        if (ended) return;
+        if (value.state !== 'completed') {
+            const message = typeof value.error === 'string' ? value.error : value.error?.message;
+            if (message) globalThis.toastr?.error?.(message, 'Reply stopped');
+            stop(value.state);
+        } else stop('done');
+    };
     const stop = observeJob(jobId, {
         account,
         onSnapshot: async root => {
+            // The ordinary poll can finish before the preview stream. A failed
+            // job has no completed write to wait for, so release Send immediately.
+            if (TERMINAL.has(root.state)) { onTerminal(root); return; }
             if (root.state !== 'waiting' || !root.children?.length) return;
             const jobs = new Map((await listJobs({ account })).map(job => [job.id, job]));
             const pending = [root];
@@ -360,13 +401,8 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, account 
         if (ended) return;
         stopPreview = observeRoleplayPreview(jobId, { account,
             isCurrent: () => account === getCurrentUserHandle()
-                && currentLocator()?.chat === locator?.chat && currentLocator()?.avatar === locator?.avatar,
-            onTerminal: value => {
-                if (value.state !== 'completed') {
-                    if (value.error) globalThis.toastr?.error?.(value.error, 'Reply stopped');
-                    stop(value.state);
-                } else stop('done');
-            },
+                && matchesCurrentWorkflowLocator(locator),
+            onTerminal,
         });
     }).catch(() => {});
 }
@@ -446,6 +482,7 @@ export async function submitRoleplayWorkflow({ name, intent: named = {}, page = 
         }
     }
     pending.delete(account);
+    logRoleplayAccepted(name);
     if (accepted?.jobId) observeRoleplayWorkflowJob(accepted.jobId, { key: payload.key, name, locator, account });
     if (accepted?.result) void readback(payload.key, name, { locator, account });
     return { ...accepted, key: payload.key, finished };
@@ -461,11 +498,11 @@ export async function submitRoleplayWorkflow({ name, intent: named = {}, page = 
 export async function submitRoleplayGroupTurn({ groupId, forcedAvatars, generationId, signal = null, account = getCurrentUserHandle() }) {
     const chatName = String(getCurrentChatId() || '').replace(/\.jsonl$/, '');
     if (!chatName || !groupId) throw new Error('Open a saved group chat before generating.');
-    const locator = { chat: chatName, group: true };
+    const locator = { chat: chatName, group: true, groupId: String(groupId) };
     const stamp = roleplayAccountStamp().account;
     const payload = {
         key: createKey('group.reply'),
-        source: { locator: { ...locator, groupId: String(groupId) } },
+        source: { locator },
         messageCount: chat.length,
         forcedAvatars,
         generationId,
@@ -486,6 +523,7 @@ export async function submitRoleplayGroupTurn({ groupId, forcedAvatars, generati
         signal?.throwIfAborted();
         accepted = await postSubmission({ ...payload, name: 'group.reply' }, account, '/api/roleplay/group/submit');
     }
+    logRoleplayAccepted('group.reply');
     const onAbort = () => { if (accepted?.jobId) void cancelJob(accepted.jobId, { reason: 'user_cancelled' }).catch(() => {}); };
     signal?.addEventListener('abort', onAbort, { once: true });
     try {
@@ -515,10 +553,14 @@ export async function runNativeRoleplayGeneration(type, { committed = false, pag
         return { native: true, name: null, key: null, jobId: null, state: 'refused', result: null, refused: true };
     };
     if (skipNativeRoleplay || !willRunNativeRoleplayWorkflow(type, { skipNativeRoleplay })) return null;
-    if (busyName) return committed ? refuse() : null;
+    if (busyName) {
+        logRoleplayRefusal({ type, reason: 'busy' });
+        return committed ? refuse() : null;
+    }
     const name = roleplayWorkflowNameFor(type);
     if (!name) return null;
     if (!isNativeRoleplayWorkflowReady()) {
+        logRoleplayRefusal({ type, reason: 'not-ready' });
         if (!committed) return null;
         globalThis.toastr?.error?.('Open a saved Roleplay chat before generating.', 'Nothing was generated');
         return { native: true, name, key: null, jobId: null, state: 'refused', result: null, refused: true };

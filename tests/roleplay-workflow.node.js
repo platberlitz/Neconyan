@@ -15,7 +15,8 @@ const { captureRoleplayWorkflowRequest, admitRoleplayWorkflowJob, runRoleplayWor
     recoverWaitingRoleplayWorkflow } = await import('../src/generation/roleplay-workflow.js');
 const { getJob, releaseJob, setJobState, updateJob, requestCancellation } = await import('../src/jobs/store.js');
 const { providerStep, readArtifact } = await import('../src/jobs/artifacts.js');
-const { readNativeMediaJobResult } = await import('../src/generation/media-jobs.js');
+const { readNativeMediaJobResult, readNativeMediaJobResultForOwner } = await import('../src/generation/media-jobs.js');
+const { releaseStoppedRoleplayWorkflow } = await import('../src/generation/roleplay-workflow-cancellation.js');
 const { roleplayHash } = await import('../src/roleplay-store.js');
 
 const controls = { prompts: [{ identifier: 'main', role: 'system', content: '', system_prompt: true },
@@ -23,7 +24,7 @@ const controls = { prompts: [{ identifier: 'main', role: 'system', content: '', 
 prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] }],
 function_calling: true };
 
-function prepared(t, effect = 'append', { assistant = false, pathfinder = false, autoSwipe = false, autoContinue = false } = {}) {
+function prepared(t, effect = 'append', { assistant = false, pathfinder = false, autoSwipe = false, autoContinue = false, continueTarget = 30 } = {}) {
     const f = fixture(t);
     const dirs = f.scope.directories;
     f.records[1].extra = {};
@@ -51,7 +52,7 @@ function prepared(t, effect = 'append', { assistant = false, pathfinder = false,
         world_info_settings: { world_info: { globalSelect: [] } },
         ...(autoSwipe || autoContinue ? { power_user: { ...(autoSwipe ? { auto_swipe: true,
             auto_swipe_minimum_length: 15, auto_swipe_blacklist: ['forbidden'], auto_swipe_blacklist_threshold: 2 } : {}),
-        ...(autoContinue ? { auto_continue: { enabled: true, allow_chat_completions: true, target_length: 30 } } : {}) } } : {}),
+        ...(autoContinue ? { auto_continue: { enabled: true, allow_chat_completions: true, target_length: continueTarget } } : {}) } } : {}),
         oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:18000/v1', function_calling: true },
         extension_settings: { connectionManager: { profiles: [{ id: 'main', api: 'custom', model: 'fixture', preset: 'Main',
             'api-url': 'http://127.0.0.1:18000/v1' }] },
@@ -97,8 +98,89 @@ function prepared(t, effect = 'append', { assistant = false, pathfinder = false,
     };
 }
 
+for (const uncertain of [false, true]) {
+    test(`a stopped workflow reports its child failure without repeating it (uncertain: ${uncertain})`, async t => {
+        const f = prepared(t);
+        updateJob(f.dirs, f.jobId, { state: 'running' });
+        const { childJobId } = await runRoleplayWorkflowJob(f.context());
+        const reason = uncertain ? 'The connection to your model provider closed before a complete reply was received.'
+            : 'The Roleplay source changed after this work was prepared.';
+        updateJob(f.dirs, childJobId, { state: uncertain ? 'interrupted' : 'failed',
+            error: { code: uncertain ? 'JOB_FAILED' : 'ROLEPLAY_SOURCE_CHANGED', message: reason, status: uncertain ? 502 : 409 },
+            recoverability: uncertain ? 'unknown-outcome' : 'resumable' });
+        const before = f.records();
+        recoverWaitingRoleplayWorkflow(f.context());
+        const root = getJob(f.dirs, f.jobId);
+        assert.equal(root.state, 'interrupted');
+        assert.equal(root.stage, 'child-needs-recovery');
+        assert.equal(root.error.code, 'ROLEPLAY_WORKFLOW_CHILD');
+        assert.equal(root.error.message, reason + (uncertain
+            ? ' The provider may still have processed this request, so it was not retried automatically.' : ''));
+        recoverWaitingRoleplayWorkflow(f.context());
+        assert.deepEqual(getJob(f.dirs, f.jobId).children, [childJobId]);
+        assert.deepEqual(f.records(), before);
+    });
+}
+
+test('a stopped workflow with no child explanation uses plain language', async t => {
+    const f = prepared(t);
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    const { childJobId } = await runRoleplayWorkflowJob(f.context());
+    updateJob(f.dirs, childJobId, { state: 'failed' });
+    recoverWaitingRoleplayWorkflow(f.context());
+    assert.equal(getJob(f.dirs, f.jobId).error.message, 'A reply step stopped before it finished.');
+});
+
+test('a reply that stopped after reaching the provider frees the chat for the next send', async t => {
+    const f = prepared(t);
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    const { childJobId } = await runRoleplayWorkflowJob(f.context());
+    const admitNext = operationKey => {
+        const source = f.f.source();
+        const request = captureRoleplayWorkflowRequest(f.f.scope, f.account, source, { avatar: 'Nova.png',
+            binding: { kind: 'profile', ...captureChatProfile(f.dirs, 'main') }, maxTokens: 32 });
+        return admitRoleplayWorkflowJob(f.f.scope, f.account, { operationKey, source, request });
+    };
+    assert.throws(() => admitNext('while-running'), { code: 'MEDIA_TARGET_BUSY',
+        message: 'Another reply for this chat is still being written. Wait for it to finish, then send again.' });
+    updateJob(f.dirs, childJobId, { state: 'interrupted', recoverability: 'unknown-outcome',
+        error: { code: 'JOB_FAILED', message: 'The connection closed.', status: 502 } });
+    recoverWaitingRoleplayWorkflow(f.context());
+    const before = f.records();
+    const next = admitNext('after-stop');
+    assert.equal(next.created, true);
+    assert.notEqual(next.jobId, f.jobId);
+    assert.deepEqual(readNativeMediaJobResultForOwner(f.f.scope, { operationKey: 'root-append' }),
+        { state: 'closed', jobId: f.jobId, result: { stopped: true, chatChanged: false } });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    assert.deepEqual(await runRoleplayWorkflowJob(f.context()), { result: { stopped: true, chatChanged: false } });
+    assert.deepEqual(getJob(f.dirs, f.jobId).children, [childJobId]);
+    assert.deepEqual(f.records(), before);
+});
+
+test('a stopped reply keeps the chat while a write or child step is unfinished', async t => {
+    const f = prepared(t);
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    const { childJobId } = await runRoleplayWorkflowJob(f.context());
+    const release = releaseStoppedRoleplayWorkflow({ owner: f.f.scope.owner, directories: f.dirs });
+    const receipt = effects => ({ state: 'accepted', jobId: f.jobId, effects });
+    updateJob(f.dirs, f.jobId, { state: 'interrupted' });
+    assert.equal(release(receipt({})), null, 'a running child still owns the chat');
+    updateJob(f.dirs, childJobId, { state: 'interrupted' });
+    assert.deepEqual(release(receipt({})), { stopped: true, chatChanged: false });
+    assert.deepEqual(release(receipt({ 'speaker:0': { state: 'done' } })), { stopped: true, chatChanged: true });
+    assert.equal(release(receipt({ final: { state: 'writing' } })), null, 'a half-written reply is never released');
+    assert.equal(release({ state: 'preparing', jobId: null, effects: {} }), null);
+    assert.equal(release({ ...receipt({}), jobId: null }), null);
+    assert.deepEqual(release({ ...receipt({}), jobId: 'pruned-job' }), { stopped: true, chatChanged: false });
+    updateJob(f.dirs, f.jobId, { state: 'completed' });
+    assert.equal(release(receipt({})), null);
+});
+
 test('a saved root parks for one child, keeps the old chat until durable completion and replays without paying', async t => {
     const f = prepared(t);
+    assert.equal(f.request.capacity.maxTurns, 16);
+    assert.equal(f.request.capacity.companionTurns, 1);
     updateJob(f.dirs, f.jobId, { state: 'running' });
     const waiting = await runRoleplayWorkflowJob(f.context());
     assert.equal(waiting.waiting, true);
@@ -121,6 +203,7 @@ test('a saved root parks for one child, keeps the old chat until durable complet
 
 test('an automatic alternative freezes its rejection before paying another model turn and retains old swipes', async t => {
     const f = prepared(t, 'swipe', { autoSwipe: true });
+    assert.equal(f.request.capacity.companionTurns, 16);
     updateJob(f.dirs, f.jobId, { state: 'running' });
     await runRoleplayWorkflowJob(f.context());
     const calls = { count: 0, check(options, turn) {
@@ -147,6 +230,13 @@ test('an automatic alternative freezes its rejection before paying another model
     assert.equal(calls.count, 2);
 });
 
+test('a zero-target automatic continuation cannot multiply Companion text turns', t => {
+    const f = prepared(t, 'append', { autoContinue: true, continueTarget: 0 });
+    assert.equal(f.request.automatic.continuation.enabled, false);
+    assert.equal(f.request.capacity.companionTurns, 1);
+    assert.equal(f.request.capacity.maxTurns, 16);
+});
+
 test('automatic alternatives to a continuation preserve the original selected swipe and unrelated alternatives', async t => {
     const f = prepared(t, 'continue', { autoSwipe: true });
     updateJob(f.dirs, f.jobId, { state: 'running' });
@@ -166,6 +256,7 @@ test('automatic alternatives to a continuation preserve the original selected sw
 
 test('automatic continuation saves chunks and publishes only the complete selected reply', async t => {
     const f = prepared(t, 'append', { autoContinue: true });
+    assert.equal(f.request.capacity.companionTurns, 16);
     updateJob(f.dirs, f.jobId, { state: 'running' });
     await runRoleplayWorkflowJob(f.context());
     const calls = { count: 0, check(options, turn) {

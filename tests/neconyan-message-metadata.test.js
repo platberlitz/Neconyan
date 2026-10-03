@@ -33,12 +33,12 @@ describe('Message statistics share one box under the avatar', () => {
     });
 
     test('Statistics inside the box are plain text rows, not separate boxes', () => {
-        const row = rule('body.neconyan #chat .mes[mesid] .mesAvatarWrapper > .mes_stats > :is(.mesIDDisplay, .mes_timer, .tokenCounterDisplay, .reasoning-tokens-badge) {');
+        const row = rule('body.neconyan #chat .mes:is([mesid], [data-roleplay-draft]) .mesAvatarWrapper > .mes_stats > :is(.mesIDDisplay, .mes_timer, .tokenCounterDisplay, .reasoning-tokens-badge) {');
         expect(row).toContain('border: 0;');
         expect(row).toContain('background: none;');
         expect(row).toContain('opacity: 1;');
         expect(row).toContain('transform: none;');
-        expect(rule('body.neconyan #chat .mes[mesid] .mesAvatarWrapper > .mes_stats > .mesIDDisplay {')).toContain('color: var(--neco-ink);');
+        expect(rule('body.neconyan #chat .mes:is([mesid], [data-roleplay-draft]) .mesAvatarWrapper > .mes_stats > .mesIDDisplay {')).toContain('color: var(--neco-ink);');
         expect(theme).toContain('#chat .mes .mesAvatarWrapper .mes_stats > :is(.mes_timer, .tokenCounterDisplay):empty {');
         expect(chatStyles).toContain('#chat .mes .mesAvatarWrapper .mes_stats > :is(.mesIDDisplay, .mes_timer, .tokenCounterDisplay) {');
         expect(`${theme}\n${chatStyles}`).not.toMatch(/\.mesAvatarWrapper > :is\(\.mesIDDisplay|\.mesAvatarWrapper > \.mesIDDisplay/);
@@ -59,7 +59,7 @@ describe('Message statistics share one box under the avatar', () => {
     });
 
     test('Windows 98 draws the box as a raised panel with a push button', () => {
-        const prefix = ":root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) #chat .mes .mesAvatarWrapper > .mes_stats";
+        const prefix = ':root[data-sb-theme=\'windows-98\'] body.neconyan:not(.sbterm) #chat .mes .mesAvatarWrapper > .mes_stats';
         const box = ruleIn(win98, `${prefix} {`);
         expect(box).toContain('border-radius: 0;');
         expect(box).toContain('box-shadow: var(--w98-raised);');

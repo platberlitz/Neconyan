@@ -11,6 +11,34 @@ const { runTextGeneration } = await import('../src/generation/service.js');
 
 const event = value => `data: ${JSON.stringify(value)}\n\n`;
 
+test('a dropped model connection retains a readable reason without runtime details', async () => {
+    let calls = 0;
+    await assert.rejects(runBackendRequest({ headers: {}, user: { directories: { root: '/tmp/opencode' } } },
+        handleChatCompletionsGenerate, { chat_completion_source: 'custom', custom_url: 'http://provider.invalid/v1',
+            model: 'fixture', messages: [{ role: 'user', content: 'Hello' }], stream: true },
+        { anonymousCustom: true, fetch: async () => {
+            calls++;
+            throw Object.assign(new Error('The socket connection was closed unexpectedly. Pass verbose: true to fetch().'),
+                { code: 'ECONNRESET', path: 'https://private.invalid/secret' });
+        } }), error => {
+        assert.equal(error.message, 'The connection to your model provider closed before a complete reply was received.');
+        assert.equal(error.status, 502);
+        assert.equal(error.providerStatus, 502);
+        return true;
+    });
+    assert.equal(calls, 1);
+});
+
+test('a provider rejection keeps its explanation and ignores non-text error details', async () => {
+    const refuse = body => (_request, response) => response.status(401).send(body);
+    await assert.rejects(runBackendRequest({}, refuse({ error: { message: 'The selected API key has expired.' } }), { stream: false }),
+        error => error.message === 'The selected API key has expired.' && error.status === 401);
+    await assert.rejects(runBackendRequest({}, refuse({ error: { message: { secret: 'not an explanation' } } }), { stream: false }),
+        error => error.message === 'The model provider could not complete the reply (HTTP 401).');
+    await assert.rejects(runBackendRequest({}, (_request, response) => response.sendStatus(503), { stream: false }),
+        error => error.message === 'The model provider could not complete the reply (HTTP 503).' && error.status === 502);
+});
+
 test('native streaming publishes the first text before the provider completes', async () => {
     const first = Promise.withResolvers(), finish = Promise.withResolvers();
     let completed = false;

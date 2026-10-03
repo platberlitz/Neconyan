@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, test } from '@jest/globals';
+import { settingsToUpdate } from '../public/scripts/chat-preset-mapping.js';
 import {
     buildChatCompletionPreset,
     buildChatCompletionPresetForSave,
@@ -6,6 +8,7 @@ import {
     buildChatCompletionSamplingSettingsSnapshot,
     buildCustomEndpointPresetForSave,
     buildReverseProxyPresetForSave,
+    coerceNumericPresetSetting,
     getChatCompletionConnectionPresetKeys,
     getChatCompletionSamplingProfileLookupKeys,
     getChatCompletionSamplingPresetKeys,
@@ -445,5 +448,55 @@ describe('Custom endpoint favorites keys', () => {
     test('keeps legacy Custom key for empty endpoint URLs', () => {
         expect(getCustomEndpointFavoritesKey('custom', '')).toBe('custom');
         expect(getCustomEndpointFavoritesKey('custom', '  ///  ')).toBe('custom');
+    });
+});
+
+const NUMERIC_PRESET_KEYS = [
+    'temperature',
+    'frequency_penalty',
+    'presence_penalty',
+    'top_p',
+    'top_k',
+    'top_a',
+    'min_p',
+    'typical_p',
+    'repetition_penalty',
+    'openai_max_context',
+    'openai_max_tokens',
+    'seed',
+    'n',
+    'tool_call_recurse_limit',
+];
+
+describe('Numeric preset setting coercion', () => {
+    test('coerces a quoted number for every pinned numeric preset key', () => {
+        for (const key of NUMERIC_PRESET_KEYS) {
+            expect(coerceNumericPresetSetting(key, '128000')).toBe(128000);
+        }
+    });
+
+    test('passes unparseable, blank, non-string and non-numeric-key values through unchanged', () => {
+        for (const key of NUMERIC_PRESET_KEYS) {
+            for (const value of ['abc', '', '  ', 0.72, 0, true, false, null, undefined]) {
+                expect(coerceNumericPresetSetting(key, value)).toBe(value);
+            }
+        }
+        expect(coerceNumericPresetSetting('chat_completion_source', '128000')).toBe('128000');
+        expect(coerceNumericPresetSetting('assistant_prefill', '128000')).toBe('128000');
+        expect(coerceNumericPresetSetting('openai_model', '42')).toBe('42');
+    });
+
+    test('every pinned key exists in the preset mapping and is driven by the same key the loop passes', () => {
+        for (const key of NUMERIC_PRESET_KEYS) {
+            expect(Object.hasOwn(settingsToUpdate, key)).toBe(true);
+            expect(coerceNumericPresetSetting(key, '128000')).toBe(128000);
+        }
+    });
+
+    test('the preset apply loop assigns live settings through the helper, with no raw assignment left', () => {
+        const source = readFileSync(new URL('../public/scripts/openai.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+        expect(source).toContain('oai_settings[setting] = coerceNumericPresetSetting(key, preset[key]);');
+        expect(source).not.toContain('oai_settings[setting] = preset[key];');
+        expect(source).toMatch(/import\s*\{[^}]*\bcoerceNumericPresetSetting\b[^}]*\}\s*from\s*'\.\/openai-preset-utils\.js';/);
     });
 });

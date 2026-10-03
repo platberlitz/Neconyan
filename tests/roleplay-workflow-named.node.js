@@ -38,7 +38,7 @@ function saved(t, { settingsRevision = 7, powerUser = null } = {}) {
         main_api: 'openai',
         active_generation: { api: 'openai', source: 'custom', model: 'fixture' },
         oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:18000/v1',
-            openai_max_context: 4096, function_calling: true },
+            openai_max_context: 4096, openai_max_tokens: 512, function_calling: true },
         extension_settings: { connectionManager: { profiles: [{ id: 'active', api: 'custom', model: 'fixture',
             preset: 'Main', 'api-url': 'http://127.0.0.1:18000/v1' }] } },
     }));
@@ -123,7 +123,7 @@ for (const prepared of [false, true]) {
     });
 }
 
-test('a cancelled candidate that started retains its receipt for reviewed recovery', async t => {
+test('a cancelled candidate that started keeps the chat busy until it stops, then the next reply is accepted', async t => {
     const f = saved(t);
     const accepted = await acceptRoleplayNamedWorkflow(f.request(), f.body('roleplay.reply'));
     updateJob(f.dirs, accepted.jobId, { state: 'running', attempt: 1 });
@@ -131,10 +131,15 @@ test('a cancelled candidate that started retains its receipt for reviewed recove
         signal: new AbortController().signal });
     updateJob(f.dirs, waiting.childJobId, { state: 'running', attempt: 1, startedAt: Date.now() });
     requestCancellation(f.dirs, accepted.jobId);
-    setJobState(f.dirs, waiting.childJobId, 'cancelled');
     assert.equal(f.readback(accepted.key).state, 'accepted');
-    await assert.rejects(acceptRoleplayNamedWorkflow(f.request(), f.body('roleplay.reply', { key: 'after-started-stop' })),
-        { code: 'MEDIA_TARGET_BUSY' });
+    await assert.rejects(acceptRoleplayNamedWorkflow(f.request(), f.body('roleplay.reply', { key: 'while-running' })),
+        { code: 'MEDIA_TARGET_BUSY', message: /Another reply for this chat is still being written/ });
+    setJobState(f.dirs, waiting.childJobId, 'cancelled');
+    const next = await acceptRoleplayNamedWorkflow(f.request(), f.body('roleplay.reply', { key: 'after-started-stop' }));
+    assert.equal(next.created, true);
+    const released = f.readback(accepted.key);
+    assert.equal(released.state, 'closed');
+    assert.deepEqual(released.result, { stopped: true, chatChanged: false });
 });
 
 test('a named reply appends one message, keeps the old chat until it is durable and replays without paying', async t => {
@@ -244,7 +249,7 @@ test('a named workflow refuses a changed anchor, an unknown name, a missing inst
     await refuse({ ...base, name: 'guided.nope' }, 400);
     await refuse({ ...base, intent: {} }, 400);
     await refuse({ ...base, source: { locator: { ...f.locator, group: true } } }, 400);
-    await refuse({ ...base, maxTokens: 9000 }, 400);
+    await refuse({ ...base, maxTokens: 64001 }, 400);
     await refuse({ ...base, key: 'x'.repeat(300) }, 400);
     await refuse({ ...base, extra: 1 }, 400);
     await refuse({ ...base, anchor: { messageIndex: 1, chosen: true, other: 2 } }, 400);

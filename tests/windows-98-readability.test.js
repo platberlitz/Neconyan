@@ -36,7 +36,20 @@ describe('Windows 98 shell style stays readable with custom colours', () => {
     });
 
     test('every caption text line uses the caption ink', () => {
-        expect(css).toMatch(/\.sb-shell-header :is\([^)]*\.sb-shell-description[^)]*\) \{\s*color: var\(--w98-title-ink\);/);
+        expect(css).toMatch(/\.sb-shell-header :is\([^)]*\.sb-shell-description, \.neconyan-tool-page-description[^)]*\):not\(:is\(\.menu_button, \.sb-shell-close\) \*\) \{\s*color: var\(--w98-title-ink\);/);
+    });
+
+    test('the selected tab icon follows the tab label instead of matching the caption fill', () => {
+        expect(css).toMatch(/:is\(\.sb-shell-tab\.is-active, \.sb-settings-tab-btn\.active, [^)]*\) i \{\s*color: inherit;/);
+    });
+
+    test('the header Tour button centres with translate, which the push-button transform reset leaves alone', () => {
+        const core = read('public/css/neconyan.css');
+        const rule = core.match(/\.sb-shell-header \.neconyan-page-intro-header > \.neconyan-tool-tour-button \{([^}]*)\}/);
+        expect(rule).not.toBeNull();
+        expect(rule[1]).toContain('translate: 0 -50%;');
+        expect(rule[1]).not.toContain('transform');
+        expect(css).toMatch(/:is\(\.menu_button,[^{]*\{[^}]*transform: none;/);
     });
 
     test('the phone drawer description beats the muted drawer rule', () => {

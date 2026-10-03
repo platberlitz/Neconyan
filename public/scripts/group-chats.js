@@ -1866,9 +1866,17 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
             if (ready && forcedAvatars.length === activatedMembers.length) {
                 deactivateSendButtons();
                 setGroupTypingIndicator(characters[activatedMembers[0]]?.name || '');
-                await eventSource.emit(event_types.GROUP_WRAPPER_STARTED, { selected_group, type });
-                textResult = await workflows.submitRoleplayGroupTurn({ groupId: selected_group, forcedAvatars,
-                    generationId: group_generation_id, signal: params?.signal ?? null });
+                await eventSource.emit(event_types.GROUP_WRAPPER_STARTED, { selected_group, type, nativeRoleplay: true });
+                try {
+                    textResult = await workflows.submitRoleplayGroupTurn({ groupId: selected_group, forcedAvatars,
+                        generationId: group_generation_id, signal: params?.signal ?? null });
+                } catch (error) {
+                    if (!params?.signal?.aborted && error?.name !== 'AbortError') {
+                        console.error('Group reply failed', error);
+                        toastr.error(error?.message || t`The group reply could not start. Please try again.`, t`Group reply failed`);
+                    }
+                    throw error;
+                }
                 if (selectedSpeakerChid !== -1 && !(params && typeof params.force_chid == 'number')) {
                     clearSelectedGroupSpeaker();
                 }

@@ -269,7 +269,14 @@ describe('Neconyan workspace rail behavior', () => {
         const names = ['workspace', 'advanced', 'quickActions', 'finer', 'modes', 'recent'];
         const panels = names.map(name => {
             const label = { textContent: name, replaceWith(button) { this.button = button; } };
-            return { previousElementSibling: { querySelector: () => label }, label };
+            const heading = {
+                classes: new Set(), appended: [],
+                classList: { add: className => heading.classes.add(className) },
+                querySelector: () => label,
+                querySelectorAll: () => (name === 'quickActions' ? ['edit'] : name === 'recent' ? ['archive', 'refresh'] : []),
+                append(...nodes) { this.appended.push(...nodes); },
+            };
+            return { previousElementSibling: heading, label, heading };
         });
         const tools = { open: false, addEventListener(_type, callback) { this.toggle = callback; } };
         const saved = new Map([['sections', '{"advanced":true,"workspace":false,"tools":false}']]);
@@ -277,7 +284,8 @@ describe('Neconyan workspace rail behavior', () => {
             NECONYAN_RAIL_SECTIONS_KEY: 'sections',
             accountStorage: { getItem: key => saved.get(key), setItem: (key, value) => saved.set(key, value) },
             document: { createElement: () => ({
-                dataset: {}, attributes: {}, label: {},
+                dataset: {}, attributes: {}, label: {}, children: [],
+                append(...nodes) { this.children.push(...nodes); },
                 setAttribute(key, value) { this.attributes[key] = value; },
                 querySelector() { return this.label; },
                 addEventListener(_type, callback) { this.click = callback; },
@@ -288,6 +296,15 @@ describe('Neconyan workspace rail behavior', () => {
         context.initializeNeconyanRailSections({ querySelector: () => panels[index++] || tools });
         expect(panels.map(panel => panel.hidden)).toEqual([false, true, false, false, false, false]);
         expect(tools.open).toBe(true);
+        expect(panels.every(panel => panel.heading.classes.has('neconyan-rail-section-collapsible'))).toBe(true);
+        const quickActionsGroup = panels[2].heading.appended[0];
+        expect(quickActionsGroup.className).toBe('neconyan-rail-section-actions');
+        expect(quickActionsGroup.children).toEqual(['edit']);
+        expect(panels[5].heading.appended[0].children).toEqual(['archive', 'refresh']);
+        expect(panels[0].heading.appended).toEqual([]);
+        const css = readSource('public', 'css', 'neconyan.css');
+        expect(css).toContain('body.neconyan .neconyan-rail-section-collapsible > * { grid-area: 1 / 1; }');
+        expect(css).toMatch(/\.neconyan-rail-section-actions \{[^}]*justify-self: end;[^}]*margin-right: 22px;/);
         panels[0].label.button.click();
         expect(panels[0].hidden).toBe(true);
         expect(panels[0].label.button.attributes['aria-expanded']).toBe('false');

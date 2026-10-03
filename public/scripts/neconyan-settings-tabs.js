@@ -152,7 +152,7 @@ import { accountStorage } from './util/AccountStorage.js';
                 presetsDrawer.className = 'inline-drawer wide100p flexFlowColumn sb-settings-subdrawer';
                 presetsDrawer.innerHTML = `
                     <div class="inline-drawer-toggle inline-drawer-header userSettingsInnerExpandable">
-                        <b><i class="fa-solid fa-swatchbook"></i> <span data-i18n="Presets">Presets</span></b>
+                        <b><i class="fa-solid fa-swatchbook"></i> <span data-i18n="Accent Profiles">Accent Profiles</span></b>
                         <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
                     </div>
                     <div class="inline-drawer-content sb-settings-subdrawer-body" style="display:none">

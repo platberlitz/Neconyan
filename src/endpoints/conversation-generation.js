@@ -548,6 +548,17 @@ export function getSafeConversationGenerationStatus(status) {
     return Number.isInteger(parsed) && parsed >= 400 && parsed < 500 ? parsed : 502;
 }
 
+/** Keep provider failures useful when the job stores only the Error message. */
+function generationFailureMessage(body, status) {
+    const code = body?.error?.code ?? body?.status;
+    if (code === 'ECONNRESET') {
+        return 'The connection to your model provider closed before a complete reply was received.';
+    }
+    const message = [body?.error?.message, body?.error, body?.message, body?.response]
+        .find(value => typeof value === 'string' && value.trim());
+    return message ? message.trim().slice(0, 500) : `The model provider could not complete the reply (HTTP ${status}).`;
+}
+
 /**
  * Run backend generation with error handling
  */
@@ -626,9 +637,10 @@ export async function runBackendRequest(request, handler, payload, { signal, fet
 
     const body = capture.body;
     if (capture.statusCode >= 400 || body?.error) {
-        const error = new Error('conversation generation failed');
         const reportedStatus = capture.statusCode >= 400 ? capture.statusCode : body?.status;
-        error.status = getSafeConversationGenerationStatus(reportedStatus);
+        const status = getSafeConversationGenerationStatus(reportedStatus);
+        const error = new Error(generationFailureMessage(body, Number.isInteger(reportedStatus) ? reportedStatus : status));
+        error.status = status;
         const upstreamStatus = Number(body?.provider_status ?? body?.status);
         error.providerStatus = Number.isInteger(upstreamStatus) && upstreamStatus >= 400 ? upstreamStatus : Number(reportedStatus) || null;
         error.body = body;

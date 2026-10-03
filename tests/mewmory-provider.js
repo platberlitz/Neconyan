@@ -30,6 +30,7 @@ export async function createMewmoryProvider(port = 0) {
         calls.push(call);
         if ([].concat(mode.hold).includes(name)) await new Promise(resolve => held.add(resolve));
         call.completedAt = Date.now();
+        if (mode.disconnect) return response.destroy();
         if (mode.redirect) {
             response.writeHead(mode.redirectStatus || 307, { Location: mode.redirect });
             return response.end('{}');
@@ -50,6 +51,7 @@ export async function createMewmoryProvider(port = 0) {
             call.completedAt = null;
             const event = content => 'data: ' + JSON.stringify({ choices: [{ delta: { content } }] }) + '\n\n';
             call.firstTokenAt = Date.now();
+            if (mode.streamReply.reasoning) response.write('data: ' + JSON.stringify({ choices: [{ delta: { reasoning_content: mode.streamReply.reasoning } }] }) + '\n\n');
             response.write(event(mode.streamReply.first));
             await new Promise(resolve => { mode.finishStream = resolve; });
             response.write(event(mode.streamReply.rest));

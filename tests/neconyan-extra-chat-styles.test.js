@@ -75,6 +75,14 @@ describe('extra Neconyan chat styles', () => {
         expect(placement(message, bubble, true)).toEqual({ top: -29, left: 301 });
     });
 
+    it('keeps sleeping cats above the phone Ripple portrait without changing their placement', () => {
+        const catRule = read('public/css/neconyan-calico.css').match(/body\.neconyan img\.neconyan-message-sleeper \{([^}]*)\}/);
+        expect(catRule).not.toBeNull();
+        expect(catRule[1]).toContain('z-index: 3;');
+        expect(catRule[1]).toContain('top: -41px; left: -17px;');
+        expect(catRule[1]).toContain('width: 96px; height: 77px;');
+    });
+
     it('lets Deep Swipe keep message borders and shadows that chat styles rely on', () => {
         const idleRule = deepSwipeSource.match(/\.mes \.mes_text,\s*\.mes \.mes_block\s*\{([^}]*)\}/);
         expect(idleRule).not.toBeNull();

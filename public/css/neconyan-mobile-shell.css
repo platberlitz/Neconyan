@@ -1,6 +1,13 @@
 /* Neconyan mobile shell foundation: final sheet contract for modal drawers.
  * Keep this at the end of the shell sheet so it beats older mobile drawer rules. */
 @media screen and (max-width: 768px) {
+    /* Wrapped agent changes scroll vertically, without Safari's sideways bounce. */
+    body.neconyan .ica-transform-history .ica-transform-diff {
+        overflow-x: hidden;
+        overscroll-behavior-x: none;
+        touch-action: pan-y;
+    }
+
     /* Story paragraphs open their editor on tap. Keep the idle action row out of the
        prose on touch screens, while revealing it when a keyboard user focuses it. */
     body.neconyan.sbstory #chat .mes:not(.smallSysMes) .ch_name:not(:focus-within) .mes_buttons {
@@ -1583,6 +1590,18 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         overflow: visible;
         text-overflow: clip;
         line-height: 1.2;
+    }
+
+    :root[data-sb-mobile-nav-mode='icon-only'] body.neconyan :is(.sb-shell-root, #right-nav-panel).openDrawer :is(.sb-shell-nav, .sb-character-shell-nav) > .sb-shell-tab {
+        width: var(--sb-mobile-touch-target, 44px);
+        min-width: var(--sb-mobile-touch-target, 44px);
+        max-width: var(--sb-mobile-touch-target, 44px);
+        padding: 0;
+        gap: 0;
+    }
+
+    :root[data-sb-mobile-nav-mode='icon-only'] body.neconyan :is(.sb-shell-root, #right-nav-panel).openDrawer :is(.sb-shell-nav, .sb-character-shell-nav) > .sb-shell-tab .sb-shell-tab-copy {
+        display: none;
     }
 
     .sb-shell-tab-copy small {

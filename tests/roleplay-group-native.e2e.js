@@ -3,18 +3,36 @@ import { expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { acknowledgeActiveSettings, test } from './neconyan-conversation-durable-fixture.js';
+import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 
 test.setTimeout(240000);
 
 const ANSWER = 'The group reply was written by the server.';
 
-async function prepare(app, phone) {
+async function prepare(app, phone, companionCount = 0, companionTrigger = 'manual', stream = false, contextOptions = {}) {
     app.provider.mode.hold = ['conversation-fixture'];
     app.provider.mode.reply = () => ({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: ANSWER } }] });
-    const account = await app.account({ phone, activeConnection: true, configureSettings(saved) {
+    const companions = Array.from({ length: companionCount }, (_, index) => ({ id: `group-note-${index}`,
+        name: `Group note ${index}`, enabled: true, category: 'companion', execution: 'companion',
+        prompt: 'Write a short note.', companion: { trigger: companionTrigger, includeWorldInfo: false } }));
+    for (const companion of companions) {
+        await fs.writeFile(path.join(app.directory, 'data/default-user/InChatAgents', `${companion.id}.json`), JSON.stringify(companion));
+    }
+    const account = await app.account({ phone, contextOptions, activeConnection: true, configureSettings(saved) {
         saved.oai_settings.openai_max_context = 8192;
         saved.oai_settings.openai_max_tokens = 256;
+        saved.oai_settings.stream_openai = stream;
+        saved.power_user.auto_swipe = false;
+        saved.power_user.auto_continue = { enabled: false, allow_chat_completions: false, target_length: 400 };
+        if (companionCount) {
+            saved.extension_settings.inChatAgents = { ...saved.extension_settings.inChatAgents, globalSettings: {
+                ...saved.extension_settings.inChatAgents?.globalSettings, enabled: true, hiddenCompanionAgentIds: [],
+                separateRecentChats: true, scopedEnabledAgentIdsInitialized: true,
+                enabledAgentIdsByChatType: { group: companions.map(companion => companion.id), individual: [] },
+            } };
+        }
     } });
     const probe = await account.context.request.post('/api/chats/get', { headers: account.headers,
         data: { avatar_url: account.avatar, file_name: 'Group account probe', allow_create: true } });
@@ -48,9 +66,168 @@ async function closeEveryPage(browser) {
     expect(browser.contexts().flatMap(context => context.pages())).toHaveLength(0);
 }
 
-for (const [viewport, phone, raceSettings] of [['desktop', false, false], ['phone', true, false], ['phone with a raced settings save', true, true]]) {
+for (const [viewport, phone, standalone] of [['desktop', false, false], ['iPhone browser', true, false], ['iPhone home screen', true, true]]) {
+    const installPhone = phone ? context => installIPhoneSafari(context, { standalone }) : async () => {};
+    const syncPhoneCss = phone ? applyIOSOnlyCss : async () => {};
+    test(`a long group reply stays readable while Companions run on ${viewport}`, async ({ app }, info) => {
+        const fixture = await prepare(app, phone, 1, 'auto', true, phone ? IPHONE_SAFARI_CONTEXT : {});
+        await fs.writeFile(path.join(app.directory, 'data/default-user/InChatAgents/group-display.json'), JSON.stringify({
+            id: 'group-display', name: 'Group display', enabled: true, phase: 'post',
+            regexScripts: [{ id: 'mood', scriptName: 'Mood display', findRegex: '/\\[MOOD\\|([^\\]]+)\\]/g',
+                replaceString: '<em class="mood-display">$1</em>', placement: [2], markdownOnly: true, promptOnly: false }],
+        }));
+        await installPhone(fixture.account.context);
+        const page = await openGroup(fixture);
+        await page.evaluate(async () => {
+            window.jQuery('#chat_display').val('6').trigger('change');
+            window.NeconyanShell.applyTheme('windows-98');
+            const { extension_settings } = await import('/scripts/extensions.js');
+            extension_settings.inChatAgents.globalSettings.enabledAgentIdsByChatType.group.push('group-display');
+            extension_settings.regex = [...(extension_settings.regex ?? []), {
+                id: 'group-scene-display', scriptName: 'Group scene display', disabled: false,
+                findRegex: '/\\[SCENE\\|([^\\]]+)\\]/g', replaceString: '<div class="scene-heading">$1</div>',
+                placement: [2], markdownOnly: true, promptOnly: false, trimStrings: [], substituteRegex: 0,
+            }];
+        });
+        await page.waitForFunction(() => document.querySelector('#neconyan-native-chat-styles')?.sheet
+            && document.querySelector('link[data-sb-shell-style="windows-98"]')?.sheet);
+        await syncPhoneCss(page);
+        await acknowledgeActiveSettings(page);
+        const first = '[SCENE|Town square]\n\n**The reply has started.**\n\n';
+        const rest = '[MOOD|Curious]\n\n' + Array(50).fill('The traveller pauses by the fountain, then follows the music through the town square.').join(' ') + '\n\nThe reply ends here.';
+        app.provider.mode.streamReply = { first, rest, reasoning: 'Consider the **town square** before replying.' };
+        const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit') && response.status() === 202);
+        await page.locator('#send_textarea').fill('I enter the town and look around. What happens next?');
+        await page.locator('#send_textarea').press('Enter');
+        const { jobId } = await (await submitted).json();
+        await expect.poll(() => app.provider.calls.length, { timeout: 30000 }).toBe(1);
+        const preview = page.getByLabel('Reply in progress');
+        // The first preview module is loaded on demand in a fresh disposable account.
+        await expect(preview).toBeVisible({ timeout: 15000 });
+        await expect(preview).toHaveClass(/\bmes\b/);
+        await app.release();
+        await expect(preview.locator('.mes_text strong')).toHaveText('The reply has started.');
+        await expect(preview.locator('.custom-scene-heading')).toHaveText('Town square');
+        await expect(preview.locator('.mes_reasoning strong')).toHaveText('town square');
+        await preview.locator('.mes_reasoning_summary').click();
+        const reasoningOpen = await preview.locator('.mes_reasoning_details').evaluate(details => details.open);
+        await expect(preview.locator('.avatar img').first()).toHaveAttribute('src', new RegExp(encodeURIComponent(fixture.account.avatar)));
+        expect(await preview.getAttribute('mesid')).toBeNull();
+        expect(await page.evaluate(() => window.SillyTavern.getContext().chat.at(-1).is_user)).toBe(true);
+        const appearance = await page.evaluate(() => {
+            const read = node => [
+                [node, ['backgroundColor', 'color', 'borderRadius', 'padding', 'marginTop']],
+                [node.querySelector('.mes_text'), ['fontFamily', 'fontSize', 'color']],
+                [node.querySelector('.mesIDDisplay'), ['display', 'fontSize', 'padding', 'borderWidth', 'backgroundColor']],
+            ].map(([element, keys]) => {
+                const style = getComputedStyle(element);
+                return Object.fromEntries(keys.map(key => [key, style[key]]));
+            });
+            return { saved: read(document.querySelector('#chat .mes[mesid="0"]')), draft: read(document.querySelector('#neconyan-roleplay-preview')) };
+        });
+        expect(appearance.draft).toEqual(appearance.saved);
+        await page.screenshot({ path: info.outputPath('reply-formatted-stream.png') });
+        await expect.poll(() => typeof app.provider.mode.finishStream).toBe('function');
+        app.provider.mode.hold = ['conversation-fixture', 'unused-named-model'];
+        app.provider.mode.finishStream();
+        await expect.poll(() => app.provider.calls.length).toBe(2);
+        await expect(preview.getByRole('status')).toHaveText('Running Companions…');
+        await expect(preview.locator('.mes_text')).toContainText('The reply ends here.');
+        await expect(preview.locator('.custom-mood-display')).toHaveText('Curious');
+        await expect(preview.locator('.mes_text')).not.toContainText('[SCENE|');
+        await expect(preview.locator('.mes_text')).not.toContainText('[MOOD|');
+        expect(await preview.locator('.mes_reasoning_details').evaluate(details => details.open)).toBe(reasoningOpen);
+        expect(await preview.locator('.mes_buttons').evaluate(buttons => buttons.inert)).toBe(true);
+        await page.screenshot({ path: info.outputPath('reply-awaiting-companion.png') });
+        const bounds = await preview.evaluate(node => ({ clientHeight: node.clientHeight, scrollHeight: node.scrollHeight, height: node.getBoundingClientRect().height,
+            textBottom: node.querySelector('.mes_text').getBoundingClientRect().bottom - node.getBoundingClientRect().top }));
+        expect(bounds.scrollHeight - bounds.clientHeight, JSON.stringify(bounds)).toBeLessThanOrEqual(1);
+        expect(bounds.textBottom).toBeLessThanOrEqual(bounds.height);
+        expect((await readRows(fixture.file)).some(row => row.mes === first + rest)).toBe(false);
+
+        const endVisible = await page.evaluate(() => {
+            const chat = document.querySelector('#chat');
+            chat.scrollTop = chat.scrollHeight;
+            const text = document.querySelector('#neconyan-roleplay-preview .mes_text');
+            const range = document.createRange();
+            const walker = document.createTreeWalker(text, NodeFilter.SHOW_TEXT);
+            let last;
+            while (walker.nextNode()) last = walker.currentNode;
+            range.setStart(last, last.textContent.length - 10);
+            range.setEnd(last, last.textContent.length);
+            const end = range.getBoundingClientRect();
+            const x = (end.left + end.right) / 2;
+            const y = (end.top + end.bottom) / 2;
+            return text.contains(document.elementFromPoint(x, y));
+        });
+        expect(endVisible).toBe(true);
+        await page.locator('#chat').evaluate(chat => { chat.scrollTop = 0; });
+        await delay(650); // Cross a preview refresh while the user is reading earlier messages.
+        expect(await page.locator('#chat').evaluate(chat => chat.scrollTop)).toBe(0);
+        await app.release();
+        await fixture.account.settled(jobId);
+        await expect(preview).toHaveCount(0);
+        await expect(page.locator('#chat .mes').last()).toContainText('The reply ends here.');
+        await expect(page.locator('#chat .mes').last().locator('.custom-scene-heading')).toHaveText('Town square');
+        await expect(page.locator('#chat .mes').last().locator('.custom-mood-display')).toHaveText('Curious');
+        const replies = (await readRows(fixture.file)).filter(row => row.mes?.includes('The reply ends here.'));
+        expect(replies).toHaveLength(1);
+        expect(replies[0].mes).toBe(first + rest);
+        expect(app.provider.calls).toHaveLength(2);
+    });
+}
+
+for (const [viewport, phone] of [['desktop', false], ['phone', true]]) {
+    test(`a dropped group provider connection shows its reason, is not retried and frees the chat on ${viewport}`, async ({ app }) => {
+        const setup = await prepare(app, phone, 0, 'manual', true);
+        const page = await openGroup(setup);
+        app.provider.mode.disconnect = true;
+        const accepted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit') && response.status() === 202);
+        await page.locator('#send_textarea').fill('Please answer this group message.');
+        await page.locator('#send_textarea').press('Enter');
+        const { jobId } = await (await accepted).json();
+        await expect.poll(() => app.provider.calls.length).toBe(1);
+        await app.release();
+        await setup.account.settled(jobId, 'interrupted');
+        await expect(page.locator('.toast-error')).toContainText('Reply stopped');
+        await expect(page.locator('.toast-error')).toContainText('The connection to your model provider closed before a complete reply was received.');
+        await expect(page.locator('.toast-error')).toContainText('not retried automatically');
+        await expect.poll(() => page.evaluate(async () => {
+            const core = await import('/script.js');
+            const groups = await import('/scripts/group-chats.js');
+            return core.is_send_press || groups.is_group_generating;
+        })).toBe(false);
+        app.provider.mode.disconnect = false;
+        app.provider.mode.streamReply = { first: 'The group reply was written', rest: ' by the server.' };
+        const resent = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit'));
+        await page.locator('#send_textarea').fill('Please try the group reply again.');
+        await page.locator('#send_textarea').press('Enter');
+        const response = await resent;
+        expect(response.status(), await response.text()).toBe(202);
+        const retry = await response.json();
+        await expect.poll(() => app.provider.calls.length).toBe(2);
+        await app.release();
+        await expect.poll(() => typeof app.provider.mode.finishStream).toBe('function');
+        app.provider.mode.finishStream();
+        await setup.account.settled(retry.jobId);
+        await expect(page.locator('#chat .mes').last()).toContainText(ANSWER);
+        await app.restart();
+        await delay(1200);
+        expect(app.provider.calls).toHaveLength(2);
+        expect(app.provider.calls[0].stream).toBe(true);
+        const rows = await readRows(setup.file);
+        expect(rows.filter(row => row.is_user)).toHaveLength(2);
+        expect(rows.filter(row => row.mes === ANSWER)).toHaveLength(1);
+        expect((await setup.account.job(jobId)).state).toBe('interrupted');
+    });
+}
+
+for (const [viewport, phone, raceSettings, companionCount] of [
+    ['desktop', false, false, 0], ['phone', true, false, 0], ['phone with a raced settings save', true, true, 0],
+    ['desktop with eleven Companions', false, false, 11], ['phone with eleven Companions', true, false, 11],
+]) {
     test(`${viewport} group turn finishes on the server after every page closes`, async ({ app, browser }) => {
-        const fixture = await prepare(app, phone);
+        const fixture = await prepare(app, phone, companionCount);
         const page = await openGroup(fixture);
         const submissions = [];
         if (raceSettings) {
@@ -92,3 +269,109 @@ for (const [viewport, phone, raceSettings] of [['desktop', false, false], ['phon
         expect(app.provider.calls).toHaveLength(1);
     });
 }
+
+for (const [viewport, phone] of [['desktop', false], ['phone', true]]) {
+    test(`${viewport} group reply with eleven Companions appears without reopening the chat`, async ({ app }) => {
+        const fixture = await prepare(app, phone, 11);
+        const page = await openGroup(fixture);
+        const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit'));
+        await page.locator('#send_textarea').fill('Keep this group chat open while replying.');
+        await page.locator('#send_textarea').press('Enter');
+        const response = await submitted;
+        expect(response.status(), await response.text()).toBe(202);
+        const accepted = await response.json();
+        await expect.poll(() => app.provider.calls.length).toBe(1);
+        await expect(page.getByLabel('Reply in progress')).toBeVisible();
+        await app.release();
+        await fixture.account.settled(accepted.jobId);
+        await expect(page.locator('#chat .mes').last()).toContainText(ANSWER);
+        await expect(page.getByLabel('Reply in progress')).toHaveCount(0);
+        expect((await readRows(fixture.file)).at(-1).mes).toBe(ANSWER);
+        expect(app.provider.calls).toHaveLength(1);
+    });
+
+    test(`${viewport} group refusal shows the server reason and allows a fresh send without duplicate requests`, async ({ app }) => {
+        const fixture = await prepare(app, phone);
+        const page = await openGroup(fixture);
+        const reason = 'This complete workflow cannot fit inside its protected chat capacity.';
+        let refusedRequests = 0;
+        await page.route('**/api/roleplay/group/submit', async route => {
+            refusedRequests++;
+            await route.fulfill({ status: 507, json: { error: reason, code: 'ROLEPLAY_WORKFLOW_CAPACITY' } });
+        });
+        const refusal = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit'));
+        await page.locator('#send_textarea').fill('This question is saved even if the reply is refused.');
+        await page.locator('#send_textarea').press('Enter');
+        expect((await refusal).status()).toBe(507);
+        await expect(page.locator('.toast-error')).toContainText(reason);
+        await expect(page.locator('.toast-error .toast-title')).toHaveText('Group reply failed');
+        await expect.poll(() => page.evaluate(async () => {
+            const core = await import('/script.js');
+            const groups = await import('/scripts/group-chats.js');
+            return core.is_send_press || groups.is_group_generating;
+        })).toBe(false);
+        expect(refusedRequests).toBe(1);
+        expect(app.provider.calls).toHaveLength(0);
+        expect((await readRows(fixture.file)).filter(row => row.is_user)).toHaveLength(1);
+
+        await page.unroute('**/api/roleplay/group/submit');
+        const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit'));
+        await page.locator('#send_textarea').fill('Please answer this new question.');
+        await page.locator('#send_textarea').press('Enter');
+        const response = await submitted;
+        expect(response.status(), await response.text()).toBe(202);
+        const accepted = await response.json();
+        await app.release();
+        await fixture.account.settled(accepted.jobId);
+        await expect(page.locator('#chat .mes').last()).toContainText(ANSWER);
+        const rows = await readRows(fixture.file);
+        expect(rows.filter(row => row.is_user)).toHaveLength(2);
+        expect(rows.at(-1).mes).toBe(ANSWER);
+        expect(app.provider.calls).toHaveLength(1);
+    });
+}
+
+test('stopping a group submission does not show a late refusal as a new error', async ({ app }) => {
+    const fixture = await prepare(app, false);
+    const page = await openGroup(fixture);
+    let releaseRefusal;
+    const held = new Promise(resolve => { releaseRefusal = resolve; });
+    await page.route('**/api/roleplay/group/submit', async route => {
+        await held;
+        await route.fulfill({ status: 507, json: { error: 'The cancelled submission was refused.' } });
+    });
+    const requested = page.waitForRequest(request => request.url().endsWith('/api/roleplay/group/submit'));
+    const response = page.waitForResponse(result => result.url().endsWith('/api/roleplay/group/submit'));
+    await page.locator('#send_textarea').fill('Stop before the refusal returns.');
+    await page.locator('#send_textarea').press('Enter');
+    await requested;
+    expect(await page.evaluate(async () => (await import('/script.js')).stopGeneration())).toBe(true);
+    releaseRefusal();
+    expect((await response).status()).toBe(507);
+    await expect.poll(() => page.evaluate(async () => (await import('/scripts/group-chats.js')).is_group_generating)).toBe(false);
+    await expect(page.locator('.toast-error')).toHaveCount(0);
+    expect(app.provider.calls).toHaveLength(0);
+    expect((await readRows(fixture.file)).filter(row => row.is_user)).toHaveLength(1);
+});
+
+test('a native group reply runs its automatic Companion once, not again in the browser', async ({ app }) => {
+    const fixture = await prepare(app, false, 1, 'auto');
+    const page = await openGroup(fixture);
+    const browserGenerations = [];
+    page.on('request', request => {
+        if (request.url().endsWith('/api/backends/chat-completions/generate')) browserGenerations.push(request.url());
+    });
+    const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit'));
+    await page.locator('#send_textarea').fill('Write one reply and one Companion note.');
+    await page.locator('#send_textarea').press('Enter');
+    const response = await submitted;
+    expect(response.status(), await response.text()).toBe(202);
+    const accepted = await response.json();
+    await app.release();
+    await fixture.account.settled(accepted.jobId);
+    await expect(page.locator('#chat .mes').last()).toContainText(ANSWER);
+    // Cross the normal post-generation recovery window, which must not rerun saved server work.
+    await delay(7200);
+    expect(browserGenerations).toHaveLength(0);
+    expect(app.provider.calls).toHaveLength(2);
+});

@@ -337,7 +337,7 @@ import { getSystemMessageByType, initSystemMessages, SAFETY_CHAT, sendSystemMess
 import { event_types, eventSource } from './scripts/events.js';
 import { initAccessibility } from './scripts/a11y.js';
 import { initQuickContextSizeEnhancer } from './scripts/quick-context-size-enhancer.js';
-import { applyStreamFadeIn } from './scripts/util/stream-fadein.js';
+import { applyStreamDomPatch, applyStreamFadeIn } from './scripts/util/stream-fadein.js';
 import { formatTokenCounterText, getPositiveTokenCount, updateReasoningTokenAccounting } from './scripts/reasoning-token-accounting.js';
 import { initDomHandlers } from './scripts/dom-handlers.js';
 import { SimpleMutex } from './scripts/util/SimpleMutex.js';
@@ -4473,11 +4473,11 @@ export async function sendTextareaMessage() {
 
 // Neconyan: Extracted message text preparation from messageFormatting for mobile streaming performance.
 // Allows plain-text preview rendering without full markdown/sanitizer pipeline on Android.
-function prepareMessageDisplayText(mes, ch_name, isSystem, isUser, messageId, isReasoning = false, updateGreeting = true) {
+function prepareMessageDisplayText(mes, ch_name, isSystem, isUser, messageId, isReasoning = false, updateGreeting = true, messageContext = null) {
     const resolvedMessageId = messageId !== null && messageId !== undefined && messageId !== ''
         ? Number(messageId)
         : NaN;
-    const chatMessage = Number.isFinite(resolvedMessageId) ? chat[resolvedMessageId] : null;
+    const chatMessage = messageContext ?? (Number.isFinite(resolvedMessageId) ? chat[resolvedMessageId] : null);
 
     if (resolvedMessageId === 0 && !isSystem && !isUser && !isReasoning) {
         const mesBeforeReplace = mes;
@@ -4518,7 +4518,7 @@ function prepareMessageDisplayText(mes, ch_name, isSystem, isUser, messageId, is
                 }
                 if (isUser) {
                     return regex_placement.USER_INPUT;
-                } else if (chat[messageId]?.extra?.type === 'narrator') {
+                } else if (chatMessage?.extra?.type === 'narrator') {
                     return regex_placement.SLASH_COMMAND;
                 } else {
                     return regex_placement.AI_OUTPUT;
@@ -4529,7 +4529,7 @@ function prepareMessageDisplayText(mes, ch_name, isSystem, isUser, messageId, is
         };
 
         const regexPlacement = getRegexPlacement();
-        const depth = getNonSystemMessageDepth(chat, resolvedMessageId);
+        const depth = messageContext ? 0 : getNonSystemMessageDepth(chat, resolvedMessageId);
         const agentRegexScripts = resolveRegexScriptsForSnapshot(chatMessage?.extra?.inChatAgents);
 
         if (!isUser && !isReasoning && agentRegexScripts.length > 0) {
@@ -4593,16 +4593,17 @@ function sanitizeMessageHtml(mes, sanitizerOverrides = {}) {
  * @param {Partial<DOMPurify.Config>} [sanitizerOverrides] DOMPurify sanitizer option overrides
  * @param {boolean} [isReasoning] If the message is reasoning output
  * @param {boolean} [updateGreeting=true] Persist greeting substitutions during normal message rendering
+ * @param {ChatMessage|null} [messageContext=null] Display-only draft, outside the saved chat array
  * @returns {string} HTML string
  */
-export function messageFormatting(mes, ch_name, isSystem, isUser, messageId, sanitizerOverrides = {}, isReasoning = false, updateGreeting = true) {
+export function messageFormatting(mes, ch_name, isSystem, isUser, messageId, sanitizerOverrides = {}, isReasoning = false, updateGreeting = true, messageContext = null) {
     if (!mes) {
         return '';
     }
 
     const originalMessageHtml = mes;
     const oocBlocks = [];
-    const preparedMessage = prepareMessageDisplayText(mes, ch_name, isSystem, isUser, messageId, isReasoning, updateGreeting);
+    const preparedMessage = prepareMessageDisplayText(mes, ch_name, isSystem, isUser, messageId, isReasoning, updateGreeting, messageContext);
     mes = preparedMessage.mes;
     isSystem = preparedMessage.isSystem;
     mesForShowdownParse = preparedMessage.showdownSource;
@@ -5471,9 +5472,10 @@ function updateMessageItemizedPromptButton(message, { messageId = chat.indexOf(m
  * @param {object} options Options
  * @param {number} [options.messageId] Message ID
  * @param {boolean} [options.updateGreeting=true] Whether to persist greeting substitutions
+ * @param {ChatMessage|null} [options.messageContext=null] Display-only draft outside the saved chat
  * @returns {string} Formatted message HTML
  */
-function getMessageTextHTML(message, { messageId = chat.indexOf(message), updateGreeting = true }) {
+function getMessageTextHTML(message, { messageId = chat.indexOf(message), updateGreeting = true, messageContext = null }) {
     // if mes.extra.uses_system_ui is true, set an override on the sanitizer options
     /** @type {Partial<DOMPurify.Config>} */
     const sanitizerOverrides = message.extra?.uses_system_ui ? { MESSAGE_ALLOW_SYSTEM_UI: true } : {};
@@ -5487,6 +5489,7 @@ function getMessageTextHTML(message, { messageId = chat.indexOf(message), update
         sanitizerOverrides,
         false,
         updateGreeting,
+        messageContext,
     );
 }
 
@@ -5714,9 +5717,10 @@ export function addOneMessage(mes, { type = undefined, insertAfter = null, scrol
  * @param {number} [options.messageId=chat.length - 1] Force the message ID
  * @param {JQuery<HTMLElement>} [options.messageElement=messageTemplate.clone()] This message element will be updated with the ChatMessage object.
  * @param {SCROLL_BEHAVIOR} [options.adjustMediaScroll=SCROLL_BEHAVIOR.NONE] Scroll behavior option passed to appendMediaToMessage.
+ * @param {boolean} [options.isPreview=false] Render an unsaved server draft with the normal message layout and no saved-message actions.
  * @returns {JQuery<HTMLElement>} Rendered HTMLElement.
  */
-export function updateMessageElement(mes, { messageId = chat.length - 1, messageElement = messageTemplate.clone(), adjustMediaScroll = SCROLL_BEHAVIOR.NONE } = {}) {
+export function updateMessageElement(mes, { messageId = chat.length - 1, messageElement = messageTemplate.clone(), adjustMediaScroll = SCROLL_BEHAVIOR.NONE, isPreview = false } = {}) {
     let avatarImg = getThumbnailUrl('persona', user_avatar);
     // Neconyan: Add mobile thumbnail tracking for viewport-aware avatar rendering (mobile performance).
     let mobileAvatarImg = getMobileThumbnailUrl('persona', user_avatar);
@@ -5752,7 +5756,7 @@ export function updateMessageElement(mes, { messageId = chat.length - 1, message
     }
     const momentDate = timestampToMoment(mes.send_date);
     const timestamp = momentDate.isValid() ? momentDate.format('LL LT') : '';
-    const messageHTML = getMessageTextHTML(mes, { messageId });
+    const messageHTML = getMessageTextHTML(mes, { messageId, updateGreeting: !isPreview, messageContext: isPreview ? mes : null });
     const bookmarkLink = mes?.extra?.bookmark_link;
     const tokenCount = mes.extra?.token_count;
     const { timerValue, timerTitle } = formatGenerationTimer(mes.gen_started, mes.gen_finished, tokenCount, mes.extra?.reasoning_duration, mes.extra?.time_to_first_token, mes.extra?.reasoning_tokens);
@@ -5813,7 +5817,7 @@ export function updateMessageElement(mes, { messageId = chat.length - 1, message
         messageElement.find('.mes_bias').html(bias);
     }
 
-    updateReasoningUI(messageElement);
+    updateReasoningUI(messageElement, { message: mes });
 
     if (power_user.timestamp_model_icon && mes.extra?.api) {
         insertSVGIcon(messageElement, mes.extra);
@@ -5842,17 +5846,26 @@ export function updateMessageElement(mes, { messageId = chat.length - 1, message
     renderMessageExpression(messageElement[0], mes, getMessageExpressionAvatar(mes));
 
     appendMediaToMessage(mes, messageElement, adjustMediaScroll);
-    messageElement.find('.mes_text').html(messageHTML);
-    notifyCardScriptStripped(messageElement, messageId);
+    if (isPreview) applyStreamDomPatch(messageElement.find('.mes_text')[0], messageHTML);
+    else messageElement.find('.mes_text').html(messageHTML);
+    if (!isPreview) notifyCardScriptStripped(messageElement, messageId);
     addCopyToCodeBlocks(messageElement);
-    prepareNeconyanMessageActions(messageElement);
+    if (!isPreview) prepareNeconyanMessageActions(messageElement);
 
     // Set the swipes counter for all non-user messages.
     if (!mes.is_user) {
         updateSwipeCounter(messageId, { message: mes, messageElement });
     }
 
-    observeChatMessageResize(messageElement);
+    if (isPreview) {
+        // A draft looks like a message, but cannot act on an unrelated saved index
+        // or enter the virtualised history window before the server publishes it.
+        messageElement.removeAttr('mesid swipeid').attr('data-roleplay-draft', 'true');
+        messageElement.find('.mes_buttons, .mes_edit_buttons, .mes_reasoning_actions, .swipe_left, .swipeRightBlock, .for_checkbox, .del_checkbox')
+            .addClass('displayNone').attr('inert', '');
+    } else {
+        observeChatMessageResize(messageElement);
+    }
     return messageElement;
 }
 
@@ -8091,26 +8104,38 @@ async function loadNativeRoleplayWorkflows() {
  *
  * @param {string} type Generation type.
  * @param {object} options The generation options this call site passed.
+ * @param {(reason: string) => void} [collector] Optional collector for the single refusing condition.
  * @returns {boolean} True when the named workflow may own this generation.
  */
-export function willRunNativeRoleplayWorkflow(type, options = {}) {
-    if (!['normal', 'continue', 'swipe', 'regenerate'].includes(type)) return false;
-    if (options.skipNativeRoleplay || options.automatic_trigger) return false;
-    if (options.jsonSchema || options.force_chid || options.force_name2 || options.quiet_prompt) return false;
-    if (options.depth > 0 || options.cacheScope || options.suppressUserMessage || options.preserveLastMessage) return false;
-    if (options.signal?.aborted) return false;
+export function willRunNativeRoleplayWorkflow(type, options = {}, collector = null) {
+    const refuse = reason => {
+        if (typeof collector === 'function') collector(reason);
+        return false;
+    };
+    if (!['normal', 'continue', 'swipe', 'regenerate'].includes(type)) return refuse('type');
+    if (options.skipNativeRoleplay) return refuse('skip-flag');
+    if (options.automatic_trigger) return refuse('automatic-trigger');
+    if (options.jsonSchema) return refuse('json-schema');
+    if (options.force_chid) return refuse('force-chid');
+    if (options.force_name2) return refuse('force-name2');
+    if (options.quiet_prompt) return refuse('quiet-prompt');
+    if (options.depth > 0) return refuse('depth');
+    if (options.cacheScope) return refuse('cache-scope');
+    if (options.suppressUserMessage) return refuse('suppress-user-message');
+    if (options.preserveLastMessage) return refuse('preserve-last-message');
+    if (options.signal?.aborted) return refuse('signal');
     // A group turn is a family of speakers and stays on the browser path until the
     // server owns the whole group workflow.
-    if (selected_group) return false;
+    if (selected_group) return refuse('group');
     // The built-in helper adds its help reference and its own tools in the page, and
     // the server prompt has neither, so its chats stay on the browser path.
-    if (isNeconyanAssistant(characters[this_chid])) return false;
+    if (isNeconyanAssistant(characters[this_chid])) return refuse('assistant');
     // Only a protected solo chat is server-owned, and the stamp proves the account
     // that owns it is the one making the request.
     try {
         roleplayAccountStamp();
     } catch {
-        return false;
+        return refuse('stamp');
     }
     // Composer text and a pending attachment stay with the host: Generate saves them
     // as the user's own message before the workflow is submitted.
@@ -8118,15 +8143,21 @@ export function willRunNativeRoleplayWorkflow(type, options = {}) {
 }
 
 /** The one decision for this call site, taken before any browser generation state changes. */
-async function nativeRoleplayWorkflowFor(type, options) {
-    if (!willRunNativeRoleplayWorkflow(type, options)) return null;
+async function nativeRoleplayWorkflowFor(type, options, collector = null) {
+    const report = typeof collector === 'function' ? collector
+        : reason => console.debug('Roleplay workflow refused', { type, reason });
+    if (!willRunNativeRoleplayWorkflow(type, options, report)) return null;
     const workflows = await loadNativeRoleplayWorkflows();
     const name = workflows?.roleplayWorkflowNameFor?.(type) ?? null;
-    if (!name) return null;
+    if (!workflows || !name) {
+        report('workflow-module');
+        return null;
+    }
     // A page prompt addition the server cannot carry faithfully keeps this call on
     // the browser path rather than generating without it. The workflow captures the
-    // additions again after the composer's commands have run.
-    return await workflows.capturePagePrompts(name) ? { name, workflows } : null;
+    // additions again after the composer's commands have run. A probing caller's
+    // collector is passed on, so only the emitting decision point writes the line.
+    return await workflows.capturePagePrompts(name, collector) ? { name, workflows } : null;
 }
 
 function consumePendingGeneratedMessageExtra(message) {
@@ -14554,7 +14585,7 @@ const CHAT_LABEL_JSON_SCHEMA = Object.freeze({
         },
     },
 });
-const CHAT_LABEL_TIMESTAMP_PATTERN = '\\d{4}-\\d{2}-\\d{2}@\\d{2}h\\d{2}m\\d{2}s\\d{3}ms';
+const CHAT_LABEL_TIMESTAMP_PATTERN = '\\d{4}-\\d{2}-\\d{2}(?:@\\d{2}h\\d{2}m\\d{2}s\\d{3}ms| \\d{2}-\\d{2}-\\d{2})';
 let chatHistoryToolsAbortController = null;
 
 function getChatBaseName(fileName) {
@@ -14627,8 +14658,9 @@ async function searchPastChats(searchQuery = '', groupId = selected_group, chara
 }
 
 function isDatedChatFileName(fileName, displayName = '', isGroupChat = false) {
-    const baseName = getChatBaseName(fileName);
-    const suffix = '(?:\\s+imported)?';
+    // Branches keep their source chat's date, with a numbered suffix (or a legacy prefix).
+    const baseName = getChatBaseName(fileName).replace(/^Branch #\d+ - /i, '');
+    const suffix = '(?:\\s+imported)?(?:\\s+-\\s+Branch #\\d+)?';
     const timestampOnly = new RegExp(`^${CHAT_LABEL_TIMESTAMP_PATTERN}${suffix}$`, 'i');
 
     if (timestampOnly.test(baseName)) {
@@ -17451,7 +17483,10 @@ export async function swipe(event, direction, { source, repeated, message = chat
                 chat[mesId].swipe_id = originalSwipeId;
                 const target = chat[mesId];
                 const generationAtStart = chatGeneration;
-                const native = mesId === chat.length - 1 ? await nativeRoleplayWorkflowFor('swipe', generationOptions ?? {}) : null;
+                // This probe only learns whether the swipe can run natively. When it
+                // refuses, Generate re-evaluates below and emits the one refusal line,
+                // so the probe collects silently instead of logging twice.
+                const native = mesId === chat.length - 1 ? await nativeRoleplayWorkflowFor('swipe', generationOptions ?? {}, () => {}) : null;
                 if (chat[mesId] !== target || chatGeneration !== generationAtStart) {
                     swipeState = SWIPE_STATE.NONE;
                     showSwipeButtons();

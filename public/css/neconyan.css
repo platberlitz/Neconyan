@@ -73,6 +73,33 @@ body.neconyan {
 }
 :root[data-sb-surface-tone='light'] body.neconyan { color-scheme: light; }
 :root[data-neconyan-accent='custom'] body.neconyan { --neco-accent-secondary: var(--SmartThemeUnderlineColor); }
+/* Primary colours keep the main actions; secondary colours identify navigation and selection. */
+:root[data-neconyan-accent='custom'] body.neconyan:not(.sbterm) {
+    --sb-shell-tab-active-bg: color-mix(in srgb, var(--neco-accent-secondary) 16%, var(--neco-surface));
+    --sb-state-active-bg: var(--sb-shell-tab-active-bg);
+    --sb-state-active-border: color-mix(in srgb, var(--neco-accent-secondary) 60%, var(--neco-border));
+}
+:root[data-neconyan-accent='custom'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail, #sb-mobile-nav-content) {
+    --sb-state-active-bg: color-mix(in srgb, var(--neco-accent-secondary) 16%, var(--neco-rail));
+}
+:root[data-neconyan-accent='custom']:not([data-sb-theme='windows-98']) body.neconyan:not(.sbterm) :is(
+    #neconyan-workspace-rail button:is([aria-current='page'], .is-active),
+    #sb-mobile-nav .sb-nav-item:is([aria-current='page'], .is-active),
+    .sb-shell-tab.is-active, .sb-character-shell-tab.is-active, .sb-settings-tab-btn.active,
+    #right-nav-panel .sb-character-editor-subtab.is-active,
+    .sb-conversation-settings-nav button[aria-current='page']
+) {
+    background: var(--sb-state-active-bg);
+    border-color: var(--sb-state-active-border);
+    color: var(--neco-ink);
+}
+:root[data-neconyan-accent='custom']:not([data-sb-theme='windows-98']) body.neconyan:not(.sbterm) #top-bar {
+    border-bottom-color: color-mix(in srgb, var(--neco-accent-secondary) 65%, var(--neco-border));
+}
+:root[data-neconyan-accent='custom']:not([data-sb-theme='windows-98']) body.neconyan:not(.sbterm) :is(.sb-shell-close, .sb-shell-tab, .sb-settings-tab-btn):hover {
+    background: color-mix(in srgb, var(--neco-accent-secondary) 12%, var(--neco-surface));
+    color: var(--neco-ink);
+}
 body.neconyan #bg-header-fixed .bg-header-row-1 > h3 { flex: 0 1 auto; padding: 0; border: 0; background: transparent; }
 body.neconyan #background_fitting { flex: 1 0 auto; width: auto; min-width: calc(7ch + 52px); max-width: none; }
 /* The built-in wallpaper follows the same fit as selected images. */
@@ -206,7 +233,11 @@ body.neconyan :is(.neconyan-rail-section-label, .neconyan-rail-section-heading) 
     margin: 0 10px 8px; color: var(--neco-muted); font-size: 11px; font-weight: 500;
 }
 body.neconyan .neconyan-rail-section-heading { display: flex; align-items: center; margin-right: 0; }
-body.neconyan #neconyan-workspace-rail .neconyan-rail-section-toggle { min-width: 0; padding: 0; font-size: 11px; font-weight: 500; }
+body.neconyan .neconyan-rail-section-collapsible { display: grid; margin-right: 0; }
+body.neconyan .neconyan-rail-section-collapsible > * { grid-area: 1 / 1; }
+body.neconyan .neconyan-rail-section-actions { display: flex; justify-self: end; align-self: center; margin-right: 22px; }
+body.neconyan #neconyan-workspace-rail .neconyan-rail-section-actions > .neconyan-rail-icon-button { margin-left: 0; }
+body.neconyan #neconyan-workspace-rail .neconyan-rail-section-toggle { min-width: 0; width: 100%; padding: 0; font-size: 11px; font-weight: 500; }
 body.neconyan .neconyan-rail-section-toggle > span { flex: 1; }
 body.neconyan .neconyan-rail-section-toggle[aria-expanded='false'] > i { transform: rotate(-90deg); }
 body.neconyan #neconyan-workspace-rail [hidden] { display: none; }
@@ -333,7 +364,7 @@ body.neconyan .sb-shell-header .neconyan-page-intro-header > .neconyan-tool-tour
     top: var(--neco-shell-close-top, 26px);
     right: 66px;
     margin: 0;
-    transform: translateY(-50%);
+    translate: 0 -50%;
 }
 body.neconyan #right-nav-panel :is(.sb-character-editor-identity, .sb-character-editor-field-box, .sb-character-creator-notes-preview, .sb-character-editor-subtabs) {
     background: transparent; box-shadow: none; border-color: var(--neco-border); border-radius: 6px;
@@ -360,6 +391,9 @@ body.neconyan :is(.inline-drawer-header, .sb-theme-settings-drawer > .inline-dra
     background: transparent; box-shadow: none; text-align: left;
 }
 body.neconyan #user-settings-block .sb-settings-subdrawer { margin-top: 0; }
+.sb-theme-lifted-drawer > .sb-settings-subdrawer-body[style*='display: block'] { display: flex !important; flex-direction: column; gap: var(--sb-shell-space-sm); min-width: 0; }
+.sb-theme-lifted-drawer > .sb-settings-subdrawer-body > p:first-child { margin-top: 0; }
+.sb-openai-settings-section:not(:first-child) > .sb-openai-settings-section-header { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--SmartThemeBorderColor); }
 body.neconyan #user-settings-block .sb-settings-subdrawer > .inline-drawer-header {
     height: auto; min-height: 46px; margin: 0; padding: 10px 32px 10px 4px !important;
     justify-content: flex-start; text-align: left; font-size: 13px;
@@ -413,7 +447,7 @@ body.neconyan #chat .mes .mesAvatarWrapper > .mes_stats {
 
 body.neconyan #chat .mes .mesAvatarWrapper > .mes_stats:not(:has(> :is(body:not(.no-mesIDDisplay) .mesIDDisplay, body:not(.no-timer) .mes_timer, body:not(.no-tokenCount) .tokenCounterDisplay, .reasoning-tokens-badge, .agent-transform-badge):not(:empty))) { display: none; }
 
-body.neconyan #chat .mes[mesid] .mesAvatarWrapper > .mes_stats > :is(.mesIDDisplay, .mes_timer, .tokenCounterDisplay, .reasoning-tokens-badge) {
+body.neconyan #chat .mes:is([mesid], [data-roleplay-draft]) .mesAvatarWrapper > .mes_stats > :is(.mesIDDisplay, .mes_timer, .tokenCounterDisplay, .reasoning-tokens-badge) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -436,7 +470,7 @@ body.neconyan #chat .mes[mesid] .mesAvatarWrapper > .mes_stats > :is(.mesIDDispl
     white-space: nowrap;
 }
 
-body.neconyan #chat .mes[mesid] .mesAvatarWrapper > .mes_stats > .mesIDDisplay { color: var(--neco-ink); }
+body.neconyan #chat .mes:is([mesid], [data-roleplay-draft]) .mesAvatarWrapper > .mes_stats > .mesIDDisplay { color: var(--neco-ink); }
 
 body.neconyan #chat .mes .mesAvatarWrapper > .mes_stats > .agent-transform-badge {
     position: relative;
@@ -478,7 +512,7 @@ body.ripplestyle #chat .mes .mesAvatarWrapper .avatar.has-expression > :not(.nec
 body.ripplestyle #chat .mes .mesAvatarWrapper .avatar.has-expression > .neconyan-expression-avatar { display: block; object-fit: contain; mask-image: none; -webkit-mask-image: none; }
 body.neconyan.flatchat:not(.sbterm) #chat { padding: 24px max(var(--neco-gutter), calc((100% - var(--neco-reading-width)) / 2)); text-shadow: none; }
 /* Reserve room for the perched bodies, including first/history/Story/terminal rows. */
-body.neconyan #chat .mes.mes[mesid]:has(> .neconyan-message-sleeper:not([hidden])) {
+body.neconyan #chat .mes.mes:is([mesid], [data-roleplay-draft]):has(> .neconyan-message-sleeper:not([hidden])) {
     contain: layout style; margin-top: var(--neconyan-sleeper-space, 44px) !important; margin-bottom: 0 !important; overflow: visible;
 }
 body.neconyan #sheld .sb-conversation-message-bubble:has(> .neconyan-message-sleeper),
@@ -526,7 +560,7 @@ body.neconyan #options_button { border-radius: 12px; border: 1px solid var(--nec
 body.neconyan :is(#send_but, #sb_conversation_send) { border-radius: var(--neconyan-control-radius, 12px) !important; background: var(--neco-ginger) !important; color: var(--neco-on-accent) !important; box-shadow: none; }
 body.neconyan :is(#send_form:focus-within, .sb-conversation-composer:focus-within) { border-color: var(--neco-ginger); box-shadow: none; }
 body.neconyan #send_form:focus-within :is(#nonQRFormItems, #send_textarea) { background: transparent; box-shadow: none; }
-body.neconyan #send_form.sb-generating-controls { border-color: var(--neco-ginger); box-shadow: inset 0 0 0 3px var(--neco-ginger); }
+body.neconyan #form_sheld #send_form.sb-generating-controls { border-color: var(--neco-accent-secondary); box-shadow: inset 0 0 0 3px var(--neco-accent-secondary); }
 
 body.neconyan #sheld[data-sb-conversation-mode='on'] { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'header' 'stage'; border: 0; border-radius: 0; }
 body.neconyan #sheld :is(#sb_conversation_header, #sb_conversation_stage) { background: var(--neco-canvas); border-color: var(--neco-border); }
@@ -770,6 +804,7 @@ body.neconyan #chat .mes_buttons {
 }
 body.neconyan #chat .mes_block > .ch_name { flex-direction: column; align-items: stretch; gap: 6px; }
 body.neconyan #chat :is(.neconyan-message-action, .extraMesButtons > *) {
+    aspect-ratio: auto;
     inline-size: auto;
     block-size: auto;
     min-inline-size: 44px;
@@ -874,6 +909,7 @@ body.neconyan #chat .extraMesButtons > * {
     max-width: 100%;
     white-space: normal;
     justify-content: flex-start;
+    text-align: left;
 }
 /* Fixed icon slot so every label starts at the same x inside its column. */
 body.neconyan #chat .extraMesButtons > *::before {
@@ -2039,7 +2075,7 @@ body.neconyan #right-nav-panel #rm_group_chats_block #rm_group_top_bar .avatar i
         flex-basis: auto;
     }
 
-    :root[data-sb-desktop-nav-layout='vertical'] body.neconyan .sb-shell-root.openDrawer .sb-shell-nav > .sb-shell-tab {
+    :root[data-sb-desktop-nav-layout='vertical']:not([data-sb-desktop-nav-mode='icon-only']) body.neconyan .sb-shell-root.openDrawer .sb-shell-nav > .sb-shell-tab {
         flex-direction: row;
         justify-content: flex-start;
         width: 100%;
@@ -2048,7 +2084,7 @@ body.neconyan #right-nav-panel #rm_group_chats_block #rm_group_top_bar .avatar i
         text-align: left;
     }
 
-    :root[data-sb-desktop-nav-layout='vertical'] body.neconyan .sb-shell-root.openDrawer .sb-shell-tab-copy {
+    :root[data-sb-desktop-nav-layout='vertical']:not([data-sb-desktop-nav-mode='icon-only']) body.neconyan .sb-shell-root.openDrawer .sb-shell-tab-copy {
         display: flex;
         flex: 1;
         align-items: flex-start;

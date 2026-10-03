@@ -4,22 +4,31 @@ Read `PRODUCT.md` (what it is, who it is for, tone) and `DESIGN.md` (tokens, typ
 
 ## Test and check commands
 
-- Unit tests (Jest, 300+ suites): `npm run test:unit --prefix tests`
+- Unit tests (Jest, 300+ suites): `npm run test:unit --prefix tests`. Use Node 24. On a small VM the full run can run out of memory, so cap it: `NODE_OPTIONS=--max-old-space-size=4096 npm run test:unit --prefix tests -- --maxWorkers=2 --workerIdleMemoryLimit=512MB`.
+- Single suites: `npm run test:unit --prefix tests -- <pattern>`. Plain `npx jest` fails every suite because it skips `--experimental-vm-modules`.
+- Run the full Jest suite, the Node suite and browser tests one after another, not at the same time. Running them together causes timeouts in unchanged tests. A timeout seen only in a combined run is not a regression until it also fails when run on its own. `tests/jobs-client.test.js` is timing-sensitive and can fail under load; rerun it alone before blaming a change.
 - Node tests for server modules: `node --test tests/*.node.js`
 - Lint: `npm run lint` (root), `npm run lint --prefix tests` (tests folder, not in CI)
 - Frontend budgets: `npm run check:frontend-budgets` (blocking CSS bytes, script count and size)
-- E2E (needs a running server): from `tests/`, `NECONYAN_TEST_BASE_URL=http://127.0.0.1:PORT npx playwright test <file> --reporter=line`. Several suites fail in a preview without an API key; compare against the baseline before blaming a change.
+- E2E (needs a running server): from `tests/`, `NECONYAN_TEST_BASE_URL=http://127.0.0.1:PORT npx playwright test <file> --reporter=line`. Several suites fail in a preview without an API key; compare against the baseline before blaming a change. Run `neconyan-agents-workspace.e2e.js` with `--workers=1` (its tests edit the same data). Suites built on `tests/neconyan-conversation-durable-fixture.js` start their own server and need `NECONYAN_CONVERSATION_TEST_DISPOSABLE=1` instead of a base URL.
+- Probing a running server that uses basic auth: use `node:http`/`node:https`, not built-in `fetch`. `fetch` sends a `Sec-Fetch-Mode` header, so the auth middleware returns 401 even with correct credentials.
 - Local preview that serves `public/` live: `node server.js --configPath <config> --dataRoot <data> --port <port> --browserLaunchEnabled false`. With `performance.frontendBuild.enabled: true` the server serves the hashed build in `dist/frontend` instead, so either run `npm run build:frontend` or disable that flag while iterating.
 - Translations: `node scripts/build-interface-locales.js` inventories UI strings; set `NECONYAN_TRANSLATION_COMMAND` to a translator command to fill `public/locales/neconyan/<lang>.json`. Coverage audit: `node --test tests/locale-coverage.node.js`.
 
 ## CSS shipping rules
 
-- Blocking stylesheets share a 1 MiB budget and sit within a couple of KiB of it. Delete dead rules before adding; the phone-gated sheets (`mobile-styles.css`, `neconyan-paper-theme.css`, `neconyan-mobile-shell.css`) do not count towards bytes.
+- Blocking stylesheets share a 1 MiB budget and sit within a couple of KiB of it. Delete dead rules before adding; the phone-gated sheets (`mobile-styles.css`, `neconyan-paper-theme.css`, `neconyan-mobile-shell.css`) do not count towards bytes. Non-critical styles can go in a deferred sheet instead (`<link rel="preload" as="style" data-sb-deferred-style data-sb-media="all">` in `public/index.html`, as `neconyan-menus.css` and `neconyan-help.css` do); budgets ignore it, but a new sheet with transitions must be listed in `tests/ui-motion-css-compliance.test.js`.
 - `!important` counts are capped per sheet by `tests/mobile-css-budgets.test.js` and are at the ceiling in `neconyan-mobile-shell.css`, `neconyan-tabs.css`, `neconyan-theme.css`, `neconyan-paper-theme.css` and `neconyan-chat-styles.css`. Win with specificity, not `!important`. `neconyan.css` and `neconyan-calico.css` are unbudgeted for the count but blocking for bytes.
 - No `//` comments in CSS. Use `/* */`.
 - Phone-only rules go in `neconyan-mobile-shell.css`; both-viewport rules in `neconyan.css`; Calico palette and cat decorations in `neconyan-calico.css`.
 - Some sheets load after the core ones: extension `style.css` files, `neconyan-conversation.css`, `world-info.css`, `personas.css`. Overrides need one more id or class than the rule they beat.
-- Every CSS change ships with a cache bump: `NN_SW_CACHE_VERSION` in `public/sw.js` and the `?v=` query on the five core stylesheet links in `public/index.html` (style.css, neconyan-tabs.css, neconyan.css, neconyan-home.css, neconyan-calico.css). Webfont and image `?v=` strings are pinned by tests; leave them.
+- Every CSS change ships with a cache bump: `NN_SW_CACHE_VERSION` in `public/sw.js` and the `?v=` query on the five core stylesheet links in `public/index.html` (style.css, neconyan-tabs.css, neconyan.css, neconyan-home.css, neconyan-calico.css). Webfont and image `?v=` strings are pinned by tests; leave them. Bump the other stylesheet `?v=` strings in `public/index.html` (theme, paper, mobile shell, shell-style and kittyless loaders) and `NN_SHELL_STYLE_STYLESHEET_VERSION` in `public/scripts/neconyan-tabs.js` to the same value.
+- After rebasing onto staging, compare `public/sw.js` with staging's copy. If staging already uses the same cache version, the rebase applies cleanly but your bump does nothing; bump again.
+- Known cascade traps:
+  - `public/css/shell-styles/windows-98.css` sets `transform: none` on every `.menu_button`. Position buttons with the separate `translate:` property, not `transform: translate...`.
+  - `#left-nav-panel select` has `z-index: var(--sb-z-raised)` (10). Dropdowns and popovers inside left-panel pages need 11 or more, or a select shows through them.
+  - Chat message HTML is sanitised by DOMPurify: every class gains a `custom-` prefix (except `fa-*`, `note-*`, `monospace`), so CSS targets `.custom-<class>`, and HTML that will be sanitised must use the plain class name.
+- A floating element appended to `document.body` beside a drawer (tour cards, popovers) closes that drawer when pressed unless its selector is in `forbiddenTargets` in `public/script.js`.
 - New `transition`/`animation` declarations need a reduced-motion guard.
 - Horizontal rails on phones need `touch-action: pan-x` plus an entry in `MOBILE_DOCUMENT_PAN_HORIZONTAL_SCROLL_SELECTOR` (`public/scripts/mobile-shell-lifecycle/index.js`) and the matching row in `tests/mobile-shell-lifecycle-wiring.test.js`.
 
@@ -33,9 +42,16 @@ Read `PRODUCT.md` (what it is, who it is for, tone) and `DESIGN.md` (tokens, typ
 
 ## Git and attribution
 
-- Commit only when asked, with a local `git commit`. Subject line in the imperative, `fix:`/`feat:`/`chore:` prefix as the history does.
+- Commit only when asked, with a local `git commit`. Subject line in the imperative, `fix:`/`feat:`/`chore:` prefix as the history does (`docs:` for documentation).
 - No `Co-Authored-By` trailers, no 'Generated with' footers, no web-flow commits. The owner writes PR titles and bodies.
 - Never commit `data/`, `.local-runtime/`, `dist/` or secrets. `default/config.yaml` is the template; real config lives outside the repo.
+- When several UI changes are requested together, make one commit per requested item.
+- Before pushing to staging, fetch the GitHub staging branch and check `git log <fetched>..HEAD`. If it lists commits that are not yours (a local staging branch can hold unpushed work), cherry-pick only your commits onto the fetched staging and push that.
+
+## Worktrees
+
+- Give every new worktree its own root `node_modules`. A symlink to another checkout's `node_modules` makes 3 tests fail (`persona-card.test.js` x2, `character-card-metadata-preservation.test.js` x1, 'Requested file path is outside of the server directory') because the PNG library loads its WASM file from outside the checkout and `src/fetch-patch.js` rejects it. Use a hardlinked copy: `cp -al <main checkout>/node_modules node_modules`. `tests/node_modules` may stay a symlink.
+- Those 3 failures always mean the worktree setup is wrong. They are never pre-existing app bugs, so do not report them as a baseline, and do not weaken `fetch-patch.js`. Check `ls -ld node_modules` before running tests.
 
 ## Reporting style
 

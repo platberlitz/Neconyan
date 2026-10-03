@@ -15,10 +15,15 @@
             <button type="button" class="menu_button welcomeActionButton" data-action="open-tab" data-action-value="left:api"><i class="fa-solid fa-plug" aria-hidden="true"></i><span>Connect a model</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
         </div>
     </section>
+    <section class="neconyan-home-layout-bar" aria-labelledby="neconyan-home-layout-title">
+        <h2 id="neconyan-home-layout-title"><i class="fa-solid fa-table-columns" aria-hidden="true"></i>Home layout</h2>
+        <div class="neconyan-home-layout" role="group" aria-labelledby="neconyan-home-layout-title"><button type="button" class="menu_button" data-welcome-panel-mode-target="full">Full home</button><button type="button" class="menu_button" data-welcome-panel-mode-target="compact">Compact</button><button type="button" class="menu_button" data-welcome-panel-mode-target="list">Recent chats only</button><button type="button" class="menu_button welcomeActionButton" data-action="replay-tutorial">Replay First paws tour</button></div>
+    </section>
     {{#if assistantPersonalities}}
-    <section class="neconyan-assistant-picker neconyan-cat-panel" data-assistant-picker aria-labelledby="neconyan-assistant-picker-title">
+    <section class="neconyan-assistant-picker neconyan-cat-panel{{#if assistantsCollapsed}} is-collapsed{{/if}}" data-assistant-picker aria-labelledby="neconyan-assistant-picker-title">
         <div class="neconyan-assistant-picker-heading">
             <div><h2 id="neconyan-assistant-picker-title">Choose an assistant</h2><p>Miso the tiger and Taro and Nori the cats! They know all about Neconyan, so don't be afraid to ask them anything. Do be mindful of hallucinations, though; double check everything!</p></div>
+            <button type="button" class="menu_button welcomeActionButton neconyan-assistant-collapse" data-action="collapse-assistants" aria-expanded="{{#if assistantsCollapsed}}false{{else}}true{{/if}}" aria-controls="neconyan-assistant-choices"><i class="fa-solid {{#if assistantsCollapsed}}fa-chevron-down{{else}}fa-chevron-up{{/if}}" aria-hidden="true"></i><span>{{#if assistantsCollapsed}}Expand{{else}}Collapse{{/if}}</span></button>
         </div>
         <button type="button" class="menu_button welcomeActionButton neconyan-assistant-disclosure" data-action="toggle-assistants" aria-expanded="false" aria-controls="neconyan-assistant-choices">Show assistants</button>
         <div id="neconyan-assistant-choices" class="neconyan-assistant-choices">
@@ -89,6 +94,5 @@
     </section>
     <div class="neconyan-home-footer welcomePanelPersistentControls">
         <button type="button" class="menu_button welcomeActionButton" data-action="open-global-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><span>Find a setting</span></button>
-        <details><summary>Home layout</summary><div class="neconyan-home-layout"><button type="button" class="menu_button" data-welcome-panel-mode-target="full">Full home</button><button type="button" class="menu_button" data-welcome-panel-mode-target="compact">Compact</button><button type="button" class="menu_button" data-welcome-panel-mode-target="list">Recent chats only</button><button type="button" class="menu_button welcomeActionButton" data-action="replay-tutorial">Replay First paws tour</button></div></details>
     </div>
 </div>
