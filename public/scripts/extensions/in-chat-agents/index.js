@@ -565,8 +565,25 @@ let templateLoadError = null;
 let templateRegexBundles = {};
 let autoSeededTemplateIds = new Set();
 
+// Seeded once per account, disabled. The trackers mirror the "Pura's Trackers
+// Only" kit in templates/groups.json; the Ethereality kit stays library-only.
 const DEFAULT_BUNDLED_TEMPLATE_IDS = new Set([
     'tpl-proofreader',
+    'tpl-achievements-tracker',
+    'tpl-cyoa-choices',
+    'tpl-cyoa-choices-skill-checks',
+    'tpl-direction-menu',
+    'tpl-event-tracker',
+    'tpl-item-tracker',
+    'tpl-npc-profiles',
+    'tpl-parallel-tracker',
+    'tpl-relationship-tracker',
+    'tpl-reputation-tracker',
+    'tpl-scene-tracker',
+    'tpl-secrets-tracker',
+    'tpl-status-tracker',
+    'tpl-time-tracker',
+    'tpl-world-detail',
 ]);
 
 // Internal bundled templates stay available for migrations/settings even when

@@ -776,6 +776,23 @@ describe('in-chat agent bundled templates', () => {
         expect(proofreader.prompt).toContain('Output ONLY the revised message.');
     });
 
+    test('installs Pura\'s trackers by default, disabled, and keeps the Ethereality kit library-only', () => {
+        const groups = readTemplate('groups.json');
+        const catalog = readTemplate('index.json');
+        const defaults = readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS');
+        const kit = id => groups.find(group => group.id === id).agentTemplateIds;
+        const puraTrackers = kit('grp-pura-trackers');
+
+        expect(puraTrackers.length).toBeGreaterThan(10);
+        for (const id of puraTrackers) {
+            expect(defaults).toContain(`'${id}'`);
+            expect(catalog.find(template => template.id === id)?.enabled).toBe(false);
+        }
+        for (const id of kit('grp-pura-ethereality-trackers')) {
+            expect(defaults).not.toContain(`'${id}'`);
+        }
+    });
+
     test('keeps every catalog template category renderable in the browser', async () => {
         const { AGENT_CATEGORIES } = await importAgentStore();
         const catalog = readTemplate('index.json');

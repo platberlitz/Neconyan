@@ -121,7 +121,7 @@ test('every best-matching reference section fits the default allowance intact', 
     }
 });
 
-test('tracker activation starts with template installation, including the logged Discord queries', async () => {
+test('tracker activation starts from the preinstalled agent, including the logged Discord queries', async () => {
     const questions = [
         'beau can you tell rid how to activate the relationship tracker?',
         'relationship tracker enable activate',
@@ -133,8 +133,9 @@ test('tracker activation starts with template installation, including the logged
         assert.equal(ids(question)[0], 'agents.install-trackers', `${question}: ${ids(question)}`);
         const result = await buildAssistantKnowledge({ character: marked('nori-neutral'), messages: [user(question)] });
         assert.equal(result.topicIds[0], 'agents.install-trackers', question);
+        assert.match(result.text, /already installed/);
+        assert.match(result.text, /Agents → Manage agents and find Relationship Tracker/);
         assert.match(result.text, /Agents → Manage agents → Browse library/);
-        assert.match(result.text, /Relationship Tracker/);
         assert.match(result.text, /Add agent/);
         assert.match(result.text, /disabled/);
         assert.match(result.text, /Agents On/);

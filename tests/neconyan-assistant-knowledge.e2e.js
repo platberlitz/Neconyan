@@ -227,12 +227,12 @@ for (const phone of [false, true]) {
             }
             return { revision: KNOWLEDGE_REVISION, results };
         }, refreshedKnowledgeCases);
-        expect(references.revision).toBe(8);
+        expect(references.revision).toBe(9);
         expect(references.results).toHaveLength((13 + refreshedKnowledgeCases.length) * 9);
         expect(references.results.filter(result => !result.found)).toEqual([]);
     });
 
-    test(`documented Relationship Tracker installation works on ${phone ? 'phone' : 'desktop'}`, async ({ app }, info) => {
+    test(`documented Relationship Tracker activation works on ${phone ? 'phone' : 'desktop'}`, async ({ app }, info) => {
         test.setTimeout(240000);
         const account = await app.account({ phone });
         const page = await account.open({ workspace: false });
@@ -245,8 +245,6 @@ for (const phone of [false, true]) {
         await page.getByRole('button', { name: 'Browse library', exact: true }).click();
         await page.getByRole('textbox', { name: 'Search templates', exact: true }).fill('Relationship Tracker');
         const template = page.locator('.ica--template-card[data-id="tpl-relationship-tracker"]');
-        await expect(template.getByRole('button', { name: 'Add agent', exact: true })).toBeVisible();
-        await template.getByRole('button', { name: 'Add agent', exact: true }).click();
         await expect(template.getByRole('button', { name: 'Add another', exact: true })).toBeVisible();
         await page.getByRole('button', { name: 'Close library', exact: true }).click();
         const enabled = page.getByRole('button', { name: 'Enable Relationship Tracker', exact: true });
