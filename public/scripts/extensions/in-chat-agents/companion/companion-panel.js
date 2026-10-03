@@ -88,6 +88,9 @@ let suppressHandleClickUntil = 0;
 let handleNode = null;
 let conversationModeObserver = null;
 let returnFocus = null;
+let panelDragActive = false;
+let pendingPanelReorders = 0;
+let panelReorderChain = Promise.resolve();
 
 // Neconyan divergence: Conversation Mode owns the shell while active, so the upstream companion panel must hide behind this DOM-state adapter.
 export function isConversationModeActive() {
@@ -860,6 +863,12 @@ export function buildPanelHtml() {
 }
 
 function renderPanel() {
+    // Replacing the sortable DOM cancels a live drag. Until its saves finish, the
+    // store also still contains the previous order, so keep the dropped rows visible.
+    if (panelDragActive || pendingPanelReorders > 0) {
+        return;
+    }
+
     const panelElement = $('#ica--tracker-panel');
     const panel = panelElement[0];
     const anchor = captureVisibleMessageAnchor(panel, PANEL_ANCHOR_OPTIONS);
@@ -885,12 +894,24 @@ function renderPanel() {
 
 /** Persists the panel's visual order onto injection.order so the agents page stays in step. */
 async function applyPanelReorder(orderedIds) {
-    const changed = await reorderAgentsIntoOrderSlots(orderedIds);
-    if (panelOpen) {
-        renderPanel();
-    }
-    if (changed && typeof panelHooks?.refreshAgentList === 'function') {
-        panelHooks.refreshAgentList();
+    pendingPanelReorders += 1;
+    // A second drop can arrive before the first save returns. Compute each store
+    // update after the preceding one commits, rather than from stale order slots.
+    const save = panelReorderChain.then(() => reorderAgentsIntoOrderSlots(orderedIds));
+    panelReorderChain = save.catch(() => {});
+    try {
+        const changed = await save;
+        if (changed && typeof panelHooks?.refreshAgentList === 'function') {
+            panelHooks.refreshAgentList();
+        }
+    } catch (error) {
+        console.error('[InChatAgents] Companion panel reorder failed:', error);
+        toastr.error('Could not save the companion order. Please try again.');
+    } finally {
+        pendingPanelReorders -= 1;
+        if (panelOpen) {
+            renderPanel();
+        }
     }
 }
 
@@ -917,10 +938,12 @@ function setupPanelSortable() {
         placeholder: 'ica--tpanel-agent-placeholder',
         forcePlaceholderSize: true,
         start: function (_event, ui) {
+            panelDragActive = true;
             ui.placeholder.height(ui.item.outerHeight());
         },
         stop: async function () {
             const orderedIds = body.children('.ica--tpanel-agent').map((_, el) => el.dataset.agentId).get().filter(Boolean);
+            panelDragActive = false;
             await applyPanelReorder(orderedIds);
         },
     });
