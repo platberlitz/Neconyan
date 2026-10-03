@@ -5872,7 +5872,42 @@ export function updateMessageElement(mes, { messageId = chat.length - 1, message
     } else {
         observeChatMessageResize(messageElement);
     }
+    if (!isPreview && messageId === 0) {
+        void ensureFirstMessageTokenCount(mes, messageElement);
+    }
     return messageElement;
+}
+
+const firstMessageTokenCounts = new WeakMap();
+
+async function ensureFirstMessageTokenCount(message, messageElement) {
+    if (!power_user.message_token_count_enabled || message !== chat[0] || message.is_user || message.is_system
+        || !message.mes || getPositiveTokenCount(message.extra?.token_count)) {
+        return;
+    }
+
+    // Rendering has already substituted greeting macros. Count that text without
+    // delaying the greeting or rewriting an existing chat just to fill its counter.
+    const text = message.mes;
+    const swipeId = message.swipe_id;
+    const isCurrent = captureChatRenderValidity();
+    let pending = firstMessageTokenCounts.get(message);
+    if (!pending || pending.text !== text || pending.swipeId !== swipeId) {
+        pending = { text, swipeId, promise: updateMessageTokenAccounting(message, { countReasoning: false }) };
+        firstMessageTokenCounts.set(message, pending);
+    }
+
+    try {
+        await pending.promise;
+        if (isCurrent() && power_user.message_token_count_enabled && chat[0] === message
+            && message.mes === text && message.swipe_id === swipeId) {
+            updateMessageMetaBadges(messageElement, message);
+        }
+    } catch (error) {
+        console.warn('Could not count greeting tokens', error);
+    } finally {
+        if (firstMessageTokenCounts.get(message) === pending) firstMessageTokenCounts.delete(message);
+    }
 }
 
 export function updateMessageMetaBadges(messageElement, message) {
