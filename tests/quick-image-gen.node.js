@@ -745,6 +745,80 @@ test('invalid ComfyUI workflow and reference paths refuse before a paid image re
     }
 });
 
+for (const variant of ['sunburst', 'flare']) {
+    test(`GPT Image ${variant} uses Responses and saves the paid result without repeating it`, async () => {
+        const directories = tempRoot();
+        const context = jobContext(directories);
+        const settings = { provider: 'gptimage', gptImageProxyUrl: 'https://proxy.example.test/openai',
+            gptImageProxyKey: 'private-image-key', gptImageModel: `gpt-image-2.5-${variant}`,
+            gptImageQuality: 'high', width: 768, height: 1024 };
+        saveImageSettings(directories, settings);
+        const input = { effectId: `responses:${variant}`, prompt: 'cat portrait', negative: 'blur',
+            settingsFingerprint: quickImageGenSettingsFingerprint(settings) };
+        let calls = 0;
+        const image = await generateQuickImageGenJobImage(context, { ...input, fetch: async (url, options) => {
+            calls++;
+            assert.equal(url, 'https://proxy.example.test/openai/responses');
+            assert.equal(options.headers.Authorization, 'Bearer private-image-key');
+            assert.equal(options.redirect, 'error');
+            const body = JSON.parse(options.body);
+            assert.equal(body.model, 'gpt-5.5');
+            assert.deepEqual(body.tools, [{ type: 'image_generation', model: settings.gptImageModel,
+                size: '1024x1536', quality: 'high', action: 'generate' }]);
+            assert.deepEqual(body.tool_choice, { type: 'image_generation' });
+            assert.match(body.input[0].content[0].text, /cat portrait.*\n\nAvoid in the image: blur/);
+            return jsonResponse({ object: 'response', status: 'completed', output: [
+                { type: 'image_generation_call', status: 'completed', result: PNG_BASE64 },
+            ] });
+        } });
+        assert.equal(image.base64, PNG_BASE64);
+        assert.equal(calls, 1);
+        assert.deepEqual(await generateQuickImageGenJobImage(context, { ...input,
+            fetch: () => assert.fail('Paid Responses image repeated') }), image);
+    });
+}
+
+test('Responses proxy sends frozen reference bytes and chat instructions without extended image fields', async () => {
+    const directories = tempRoot();
+    fs.writeFileSync(path.join(directories.userImages, 'reference.png'), Buffer.from(PNG_BASE64, 'base64'));
+    const settings = { provider: 'proxy', proxyUrl: 'https://proxy.example.test/openai/v1/chat/completions',
+        proxyModel: 'gpt-image-2.5-sunburst', proxyKey: 'reference-key', proxyChatImageMode: true,
+        proxyChatImageSystemPrompt: 'Keep the character recognisable.', proxyChatImageIncludePersonality: true,
+        proxyPayloadMode: 'extended', proxyRefImages: ['/user/images/reference.png'], proxyExtraInstructions: 'Keep the hat.',
+        width: 768, height: 1024, proxySse: 'on', proxySteps: 25, proxySeed: 7 };
+    saveImageSettings(directories, settings);
+    const image = await generateQuickImageGenJobImage(jobContext(directories), { effectId: 'responses:reference',
+        prompt: 'portrait', negative: 'blur', proxyContext: 'Nova has silver hair.',
+        settingsFingerprint: quickImageGenSettingsFingerprint(settings), fetch: async (url, options) => {
+            assert.equal(url, 'https://proxy.example.test/openai/v1/responses');
+            const body = JSON.parse(options.body);
+            assert.deepEqual(Object.keys(body).sort(), ['input', 'instructions', 'model', 'tool_choice', 'tools']);
+            assert.equal(body.input[0].content[1].image_url, PNG_DATA_URL);
+            assert.equal(body.tools[0].action, 'edit');
+            assert.match(body.input[0].content[0].text, /Keep the hat/);
+            assert.match(body.instructions, /Keep the character recognisable.*\n\nNova has silver hair/);
+            return jsonResponse({ output: [{ type: 'image_generation_call', result: PNG_BASE64 }] });
+        } });
+    assert.equal(image.base64, PNG_BASE64);
+});
+
+test('a failed Responses image request is never retried with another endpoint', async () => {
+    const directories = tempRoot();
+    const context = jobContext(directories);
+    const settings = { provider: 'gptimage', gptImageProxyUrl: 'https://proxy.example.test/v1',
+        gptImageProxyKey: 'private-key', gptImageModel: 'gpt-image-2.5-flare' };
+    saveImageSettings(directories, settings);
+    let calls = 0;
+    const input = { effectId: 'responses:failed', prompt: 'portrait', settingsFingerprint: quickImageGenSettingsFingerprint(settings) };
+    await assert.rejects(generateQuickImageGenJobImage(context, { ...input, fetch: async () => {
+        calls++;
+        return jsonResponse({ error: { message: 'unsupported' } }, 400);
+    } }), /HTTP 400/);
+    assert.equal(calls, 1);
+    await assert.rejects(generateQuickImageGenJobImage(context, { ...input,
+        fetch: () => assert.fail('Uncertain image request repeated') }), { code: 'QIG_RESULT_RECOVERY' });
+});
+
 test('image proxy saves its own seed and scopes credentials to its output origin', async () => {
     const directories = tempRoot();
     const context = jobContext(directories);

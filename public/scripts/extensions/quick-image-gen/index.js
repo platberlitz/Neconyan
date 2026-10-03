@@ -113,6 +113,9 @@ import {
 } from "./lib/chat-transaction.js";
 import {
     buildGptImagePayload,
+    buildImageResponsesPayload,
+    usesImageResponsesApi,
+    extractResponsesImageSource,
     buildNanobananaPayload,
     describeProviderImageSource,
     extractProviderErrorMessage,
@@ -2564,6 +2567,7 @@ function inferProxyEndpointMode(proxyUrl) {
 }
 
 function resolveProxyEndpointMode(proxyUrl, settings) {
+    if (usesImageResponsesApi(proxyUrl, settings?.proxyModel)) return "responses";
     const chatImageMode = getProxyChatImageEndpointMode(settings);
     if (chatImageMode === "chat_completions") return "chat_completions";
     const configured = normalizeProxyEndpointSetting(settings?.proxyEndpointMode);
@@ -7847,7 +7851,7 @@ async function genGptImage(prompt, negative, s, signal, options = {}) {
     const apiKey = s.gptImageProxyKey || s.gptImageKey;
     if (!apiKey) throw new Error("GPT Image API key required");
 
-    const apiUrl = getGptImageApiUrl(s.gptImageProxyUrl);
+    const apiUrl = getGptImageApiUrl(s.gptImageProxyUrl, s.gptImageModel);
     if (!apiUrl) throw new Error("GPT Image API URL is required");
     if (s.gptImageProxyUrl) assertSafeConfigurableEndpoint(apiUrl, "GPT Image proxy URL");
 
@@ -7856,7 +7860,8 @@ async function genGptImage(prompt, negative, s, signal, options = {}) {
     const quality = normalizeGptImageOption(s.gptImageQuality, ["auto", "low", "medium", "high"]);
     const background = normalizeGptImageOption(s.gptImageBackground, ["auto", "transparent", "opaque"]);
     const moderation = normalizeGptImageOption(s.gptImageModeration, ["auto", "low"]);
-    const payload = buildGptImagePayload({
+    const buildPayload = usesImageResponsesApi(s.gptImageProxyUrl, model) ? buildImageResponsesPayload : buildGptImagePayload;
+    const payload = buildPayload({
         model,
         prompt,
         negative,
@@ -7878,7 +7883,8 @@ async function genGptImage(prompt, negative, s, signal, options = {}) {
         "Content-Type": "application/json",
     };
     const requestImage = async (requestUrl) => {
-        log(`GPT Image request to ${describeProviderImageSource(requestUrl)}: model=${model}, size=${payload.size}, quality=${payload.quality || "auto"}, format=${payload.output_format || "png"}`);
+        const imageOptions = payload.tools?.[0] || payload;
+        log(`GPT Image request to ${describeProviderImageSource(requestUrl)}: model=${model}, size=${imageOptions.size}, quality=${imageOptions.quality || "auto"}, format=${imageOptions.output_format || "png"}`);
         const response = await fetch(requestUrl, {
             method: "POST",
             headers,
@@ -9361,7 +9367,7 @@ async function genProxy(prompt, negative, s, signal, options = {}) {
     const withEffectiveProxyRequest = (url) => ({
         url,
         effectiveRequest: {
-            parameters: payloadMode === "openai_strict"
+            parameters: payloadMode === "openai_strict" || endpointMode === "responses"
                 ? {}
                 : {
                     steps: Number(s.proxySteps ?? 25),
@@ -9393,7 +9399,11 @@ async function genProxy(prompt, negative, s, signal, options = {}) {
         const refImages = await normalizeProxyRefImages(rawRefImages, refMode, controller.signal);
         const requestPrompt = normalizedPrompt.promptText || getProxyPromptFallback(refImages.length > 0);
         log(`Proxy mode: endpoint=${endpointMode}, payload=${payloadMode}, refMode=${refMode}, sse=${sseEnabled}, refImages=${refImages.length}, runtimeRefs=${runtimeRefImages.length}, url=${redactUrlCredentials(requestUrl).substring(0, 80)}`);
-        const payload = endpointMode === "chat_completions"
+        const payload = endpointMode === "responses"
+            ? buildImageResponsesPayload({ model: s.proxyModel, prompt: [requestPrompt, s.proxyExtraInstructions || ""].filter(Boolean).join("\n"),
+                negative, size: getGptImageSize(s), references: refImages,
+                instructions: s.proxyChatImageMode ? buildProxyChatPayload(requestPrompt, negative, s, [], "openai_strict", proxySeed, options.context ?? undefined).messages.find(message => message.role === "system")?.content || "" : "" })
+            : endpointMode === "chat_completions"
             ? buildProxyChatPayload(requestPrompt, negative, s, refImages, payloadMode, proxySeed, options.context ?? undefined)
             : buildProxyImagesPayload(requestPrompt, negative, s, refImages, payloadMode, proxySeed, sseEnabled);
         log(`${endpointMode === "chat_completions" ? "Chat" : "Images"} endpoint payload keys: ${Object.keys(payload).join(", ")}`);
@@ -9489,7 +9499,8 @@ async function genProxy(prompt, negative, s, signal, options = {}) {
 
         const data = await readResponseJson(res);
         log(`Response keys: ${JSON.stringify(Object.keys(data || {}))}`);
-        const imageUrl = extractProxyImageFromJson(data, { trustedBaseUrl: responseBaseUrl });
+        const imageUrl = endpointMode === "responses" ? extractResponsesImageSource(data)
+            : extractProxyImageFromJson(data, { trustedBaseUrl: responseBaseUrl });
         if (imageUrl) return withEffectiveProxyRequest(await materializeProxyResult(imageUrl));
 
         if (endpointMode === "chat_completions") {
@@ -13665,7 +13676,7 @@ function getHostedProviderOutputRequest(provider, settings) {
             };
         case "gptimage":
             return {
-                requestUrl: getGptImageApiUrl(settings.gptImageProxyUrl),
+                requestUrl: getGptImageApiUrl(settings.gptImageProxyUrl, settings.gptImageModel),
                 headers: { Authorization: `Bearer ${settings.gptImageProxyKey || settings.gptImageKey}` },
             };
         case "arliai":
@@ -17830,7 +17841,9 @@ function updateProxyCompatibilityUI() {
         const endpointMode = resolveProxyEndpointMode(s.proxyUrl, s);
         const payloadMode = normalizeProxyPayloadSetting(s.proxyPayloadMode);
         const sseMode = normalizeProxySseSetting(s.proxySse);
-        const hintParts = [
+        const hintParts = endpointMode === "responses" ? [
+            "Using /responses with the selected image model. Reference images go to the image tool. Extra image parameters and streaming settings do not apply.",
+        ] : [
             endpointMode === "chat_completions"
                 ? "Using chat-completions style routing."
                 : "Using /images/generations style routing.",
@@ -20326,7 +20339,7 @@ function createUI() {
 
     bind("qig-proxy-url", "proxyUrl", () => updateProxyCompatibilityUI());
     bind("qig-proxy-key", "proxyKey");
-    bind("qig-proxy-model", "proxyModel");
+    bind("qig-proxy-model", "proxyModel", () => updateProxyCompatibilityUI());
     bind("qig-proxy-timeout", "proxyTimeout", true);
     bind("qig-proxy-endpoint-mode", "proxyEndpointMode", () => updateProxyCompatibilityUI());
     bind("qig-proxy-payload-mode", "proxyPayloadMode", () => updateProxyCompatibilityUI());

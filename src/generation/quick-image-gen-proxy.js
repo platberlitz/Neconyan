@@ -3,7 +3,8 @@ import { createHash } from 'node:crypto';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { roleplayHash } from '../roleplay-store.js';
 import { getOpenAICompatibleApiUrl, isOpenAIChatCompletionsEndpoint,
-    extractProviderImageSource } from '../../public/scripts/extensions/quick-image-gen/lib/provider-adapters.js';
+    extractProviderImageSource, buildImageResponsesPayload, usesImageResponsesApi,
+    extractResponsesImageSource } from '../../public/scripts/extensions/quick-image-gen/lib/provider-adapters.js';
 import { looksLikeSsePayload, readSseDataStream } from '../../public/scripts/extensions/quick-image-gen/lib/hosted-provider.js';
 import { assertSafeConfigurableEndpoint } from '../../public/scripts/extensions/quick-image-gen/lib/network-runtime.js';
 import { MAX_IMAGE_BYTES, MAX_PROVIDER_RESPONSE_BYTES, normalizeImageSource,
@@ -30,6 +31,7 @@ export function buildSavedProxyImageContext(snapshot) {
 }
 
 function endpointMode(settings) {
+    if (usesImageResponsesApi(settings.proxyUrl, settings.proxyModel)) return 'responses';
     if (settings.proxyChatImageMode && !settings.proxyChatImageAllowImagesEndpoint) return 'chat_completions';
     const configured = oneOf(settings.proxyEndpointMode, ['auto', 'chat_completions', 'images_generations'], 'auto');
     return configured === 'auto'
@@ -114,6 +116,14 @@ function proxyBody(request, settings, prompt, negative, refs, seed) {
     const text = String(prompt || '').trim() || fallback;
     const width = Number(settings.width) || 1024;
     const height = Number(settings.height) || 1024;
+    if (request.mode === 'responses') {
+        return buildImageResponsesPayload({ model: settings.proxyModel,
+            prompt: [text, settings.proxyExtraInstructions || ''].filter(Boolean).join('\n'), negative,
+            size: width === height ? '1024x1024' : width > height ? '1536x1024' : '1024x1536', references: refs,
+            instructions: settings.proxyChatImageMode
+                ? (String(settings.proxyChatImageSystemPrompt || imageInstruction).trim() || imageInstruction)
+                    + (settings.proxyChatImageIncludePersonality && settings.__qigProxyContext ? `\n\n${settings.__qigProxyContext}` : '') : '' });
+    }
     let body;
     if (request.mode === 'chat_completions') {
         const content = [
@@ -167,6 +177,15 @@ function sourceFromJson(value) {
 
 async function proxyResponse(response, request, signal) {
     if (!response.ok) throw fail(`The proxy image request failed with HTTP ${response.status}.`);
+    if (request.mode === 'responses') {
+        let data;
+        try { data = JSON.parse(await readResponseText(response, MAX_PROVIDER_RESPONSE_BYTES)); } catch {
+            throw fail('The image proxy returned an unreadable Responses result.', 'QIG_BAD_IMAGE');
+        }
+        const source = extractResponsesImageSource(data);
+        if (!source) throw fail('The image proxy returned no completed image.', 'QIG_BAD_IMAGE');
+        return source;
+    }
     const mime = (response.headers.get('content-type') || '').toLowerCase().split(';', 1)[0];
     if (mime.startsWith('image/') || mime === 'application/octet-stream') {
         return Buffer.from(await readResponseArrayBuffer(response, MAX_IMAGE_BYTES));

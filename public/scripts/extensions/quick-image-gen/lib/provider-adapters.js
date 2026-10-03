@@ -105,9 +105,20 @@ export function isNovelAICompatibleProxyUrl(value) {
     return /\/v1$/i.test(path) || /\/chat\/completions$/i.test(path);
 }
 
-export function getGptImageApiUrl(proxyUrl = '') {
+export function usesImageResponsesApi(proxyUrl, model) {
+    return /\/responses$/i.test(getUrlPath(proxyUrl))
+        || !!String(proxyUrl || '').trim() && /^gpt-image-2\.5-(?:sunburst|flare)(?:-\d{4}-\d{2}-\d{2})?$/i.test(String(model || '').trim());
+}
+
+export function getImageResponsesApiUrl(proxyUrl) {
+    return editUrlPath(proxyUrl, path => `${path.replace(/\/+$/, '')
+        .replace(/\/(?:images(?:\/generations)?|chat\/completions|responses)$/i, '')}/responses`);
+}
+
+export function getGptImageApiUrl(proxyUrl = '', model = '') {
     const endpoint = String(proxyUrl || '').trim();
     if (!endpoint) return 'https://api.openai.com/v1/images/generations';
+    if (usesImageResponsesApi(endpoint, model)) return getImageResponsesApiUrl(endpoint);
 
     const normalizedPath = getUrlPath(endpoint);
     if (/\/images\/generations$/i.test(normalizedPath)) return endpoint;
@@ -120,6 +131,7 @@ export function getGptImageApiUrl(proxyUrl = '') {
 export function getOpenAICompatibleApiUrl(value, endpointMode = 'images_generations') {
     const endpoint = String(value || '').trim();
     if (!endpoint) return '';
+    if (endpointMode === 'responses') return getImageResponsesApiUrl(endpoint);
     const path = getUrlPath(endpoint);
     if (endpointMode === 'chat_completions') {
         if (/\/chat\/completions$/i.test(path)) return endpoint;
@@ -177,7 +189,7 @@ export function getGptImageRouteRetryUrl(endpoint, responseData) {
     const value = String(endpoint || '').trim();
     if (!value) return '';
     const normalizedPath = getUrlPath(value);
-    if (!normalizedPath || /\/images\/generations$/i.test(normalizedPath)) return '';
+    if (!normalizedPath || /\/(?:images\/generations|responses)$/i.test(normalizedPath)) return '';
     return editUrlPath(value, path => `${path.replace(/\/+$/, '')}/images/generations`);
 }
 
@@ -266,6 +278,28 @@ export function buildGptImagePayload({
     }
     if (moderation !== 'auto') payload.moderation = moderation;
     return payload;
+}
+
+/** Sunburst/Flare proxies expose the image model as a Responses tool, not the outer model. */
+export function buildImageResponsesPayload({ references = [], instructions = '', ...options }) {
+    const { model, prompt, n: _count, ...imageOptions } = buildGptImagePayload(options);
+    return {
+        model: 'gpt-5.5',
+        input: [{ role: 'user', content: [
+            { type: 'input_text', text: prompt },
+            ...references.map(image_url => ({ type: 'input_image', image_url, detail: 'high' })),
+        ] }],
+        tools: [{ type: 'image_generation', model, ...imageOptions, action: references.length ? 'edit' : 'generate' }],
+        tool_choice: { type: 'image_generation' },
+        ...(instructions ? { instructions } : {}),
+    };
+}
+
+export function extractResponsesImageSource(data, defaultMime = 'image/png') {
+    if (data?.error || data?.status && data.status !== 'completed') return null;
+    const image = data?.output?.find?.(item => item?.type === 'image_generation_call'
+        && (!item.status || item.status === 'completed') && typeof item.result === 'string' && item.result);
+    return image ? `data:${defaultMime};base64,${image.result}` : null;
 }
 
 export function buildNanobananaPayload({ endpointUrl, model, parts, generationConfig, safetySettings }) {
@@ -367,6 +401,9 @@ function extractImageValue(candidate, defaultMime) {
 }
 
 export function extractProviderImageSource(data, { defaultMime = 'image/png', includeGeminiCandidates = true } = {}) {
+    if (data?.object === 'response' || data?.output?.some?.(item => item?.type === 'image_generation_call')) {
+        return extractResponsesImageSource(data, defaultMime);
+    }
     const directCandidates = [
         data?.data,
         data?.output,

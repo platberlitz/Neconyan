@@ -11,6 +11,8 @@ import { roleplayAccountBase, withRoleplayAccount } from '../roleplay-store.js';
 import {
     extractProviderImageSource,
     buildGptImagePayload,
+    buildImageResponsesPayload,
+    usesImageResponsesApi,
     getGptImageApiUrl,
     getNanobananaApiUrl,
     getNanobananaAuthHeaders,
@@ -234,7 +236,8 @@ const PROVIDER_GENERATORS = {
         const width = numberOr(s.width, 1024);
         const height = numberOr(s.height, 1024);
         const size = width === height ? '1024x1024' : width > height ? '1536x1024' : '1024x1536';
-        const payload = buildGptImagePayload({
+        const buildPayload = usesImageResponsesApi(s.gptImageProxyUrl, model) ? buildImageResponsesPayload : buildGptImagePayload;
+        const payload = buildPayload({
             model,
             prompt,
             negative,
@@ -244,7 +247,7 @@ const PROVIDER_GENERATORS = {
             background: ['auto', 'transparent', 'opaque'].includes(String(s.gptImageBackground)) ? s.gptImageBackground : 'auto',
             moderation: ['auto', 'low'].includes(String(s.gptImageModeration)) ? s.gptImageModeration : 'auto',
         });
-        const response = await fetchImpl(getGptImageApiUrl(s.gptImageProxyUrl), {
+        const response = await fetchImpl(getGptImageApiUrl(s.gptImageProxyUrl, model), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
             body: JSON.stringify(payload),
@@ -570,7 +573,7 @@ export async function generateQuickImageGenImage({ directories, prompt, negative
         let requestUrl = '';
         let key = '';
         if (provider === 'gptimage') {
-            requestUrl = getGptImageApiUrl(resolvedSettings.gptImageProxyUrl);
+            requestUrl = getGptImageApiUrl(resolvedSettings.gptImageProxyUrl, resolvedSettings.gptImageModel);
             key = resolvedSettings.gptImageProxyKey || resolvedSettings.gptImageKey;
         } else if (provider === 'proxy') {
             requestUrl = resolvedSettings.__qigProxyRequest?.request?.url || '';
