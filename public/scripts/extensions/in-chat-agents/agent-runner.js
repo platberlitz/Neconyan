@@ -127,6 +127,7 @@ const POST_MAIN_GENERATION_INTERCEPT_TIMING = 'post-main-generation';
 /** @type {{ generationType: string, activeAgentIds: string[], chatId: string } | null} */
 let pendingGenerationSnapshot = null;
 let internalPromptTransformDepth = 0;
+let companionPromptTransformDepth = 0;
 let isGenerationInProgress = false;
 // Retain ownership through saved-reply rendering; only the next main generation replaces it.
 let isNativeRoleplayGeneration = false;
@@ -142,10 +143,10 @@ let postGenerationRecoveryHooksInitialized = false;
 let postGenerationRecoveryObserver = null;
 const activePromptTransformToasts = new Set();
 const agentGenerationStateListeners = new Set();
-const manualAgentRunQueue = [];
-let manualAgentRunQueueProcessing = false;
-let manualAgentRunCancelRequested = false;
-let activeManualAgentRun = null;
+// Manual message rewrites must not wait behind Companions, including manually started ones.
+const manualAgentRunQueues = [false, true].map(companion => ({
+    companion, runs: [], processing: false, cancelRequested: false,
+}));
 let parallelManualRunCount = 0;
 let agentGenerationCancelRevision = 0;
 const promptTransformIdleResolvers = new Set();
@@ -290,7 +291,15 @@ const postProcessingInterruptionWarned = new WeakSet();
 let chatLoadRevision = 0;
 
 export function getAgentPostProcessingTarget(message) {
-    return postProcessingTargets.get(message);
+    if (!message) return undefined;
+    // Manual Companions need the same accepted-rewrite tracking as automatic stages.
+    let target = postProcessingTargets.get(message);
+    if (!target?.valid || !isMessageTargetCurrent(message, target.state)) {
+        if (target) target.valid = false;
+        target = { text: message.mes, valid: true, state: captureMessageTargetState(message) };
+        postProcessingTargets.set(message, target);
+    }
+    return target;
 }
 
 function setPostProcessingText(message, text, target = null) {
@@ -411,7 +420,7 @@ function escapeToastHtml(value) {
 }
 
 export function isAgentGenerationActive() {
-    return internalPromptTransformDepth > 0 || manualAgentRunQueueProcessing || manualAgentRunQueue.length > 0 || parallelManualRunCount > 0 || activePathfinderRetrievalAbortControllers.size > 0;
+    return internalPromptTransformDepth > 0 || manualAgentRunQueues.some(queue => queue.processing || queue.runs.length > 0) || parallelManualRunCount > 0 || activePathfinderRetrievalAbortControllers.size > 0;
 }
 
 export function onAgentGenerationStateChanged(listener) {
@@ -436,30 +445,32 @@ function notifyAgentGenerationStateChanged() {
 }
 
 function notifyPromptTransformIdle() {
-    if (internalPromptTransformDepth > 0) {
-        return;
+    for (const pending of promptTransformIdleResolvers) {
+        if (isPromptTransformIdle(pending.includeCompanions)) {
+            promptTransformIdleResolvers.delete(pending);
+            pending.resolve();
+        }
     }
 
-    const resolvers = [...promptTransformIdleResolvers];
-    promptTransformIdleResolvers.clear();
-
-    for (const resolve of resolvers) {
-        resolve();
+    if (internalPromptTransformDepth === 0) {
+        scheduleDeferredPostProcessingFlush(0);
     }
-
-    scheduleDeferredPostProcessingFlush(0);
 }
 
-function waitForPromptTransformIdle() {
-    if (internalPromptTransformDepth === 0) {
+function isPromptTransformIdle(includeCompanions) {
+    return internalPromptTransformDepth === (includeCompanions ? 0 : companionPromptTransformDepth);
+}
+
+function waitForPromptTransformIdle(includeCompanions) {
+    if (isPromptTransformIdle(includeCompanions)) {
         return Promise.resolve();
     }
 
-    return new Promise(resolve => promptTransformIdleResolvers.add(resolve));
+    return new Promise(resolve => promptTransformIdleResolvers.add({ resolve, includeCompanions }));
 }
 
-function clearManualAgentRunQueue() {
-    const queuedRuns = manualAgentRunQueue.splice(0);
+function clearManualAgentRunQueue(queue) {
+    const queuedRuns = queue.runs.splice(0);
 
     for (const queuedRun of queuedRuns) {
         queuedRun.resolve(null);
@@ -470,8 +481,10 @@ function clearManualAgentRunQueue() {
 
 export function cancelAgentGeneration() {
     const wasActive = isAgentGenerationActive();
-    const queuedCount = clearManualAgentRunQueue();
-    manualAgentRunCancelRequested = true;
+    const queuedCount = manualAgentRunQueues.reduce((count, queue) => {
+        queue.cancelRequested = true;
+        return count + clearManualAgentRunQueue(queue);
+    }, 0);
     agentGenerationCancelRevision++;
 
     generationStopRequested = true;
@@ -488,7 +501,7 @@ export function cancelAgentGeneration() {
     abortActivePathfinderRetrieval('Pawthfinder retrieval cancelled by user.');
     clearPathfinderExtensionPrompts();
 
-    const stopped = wasActive || activeManualAgentRun ? stopGeneration() : false;
+    const stopped = wasActive ? stopGeneration() : false;
     notifyAgentGenerationStateChanged();
 
     if (stopped || wasActive || queuedCount > 0) {
@@ -577,32 +590,31 @@ function shouldShowPathfinderRetrievalToast(pathfinderAgent) {
     return Boolean(settings.pipelineEnabled || settings.sidecarEnabled);
 }
 
-async function processManualAgentRunQueue() {
-    if (manualAgentRunQueueProcessing) {
+async function processManualAgentRunQueue(queue) {
+    if (queue.processing) {
         return;
     }
 
-    manualAgentRunQueueProcessing = true;
+    queue.processing = true;
     notifyAgentGenerationStateChanged();
 
     try {
-        while (manualAgentRunQueue.length > 0) {
-            if (manualAgentRunCancelRequested) {
+        while (queue.runs.length > 0) {
+            if (queue.cancelRequested) {
                 break;
             }
 
-            await waitForPromptTransformIdle();
+            await waitForPromptTransformIdle(queue.companion);
 
-            if (manualAgentRunCancelRequested) {
+            if (queue.cancelRequested) {
                 break;
             }
 
-            const queuedRun = manualAgentRunQueue.shift();
+            const queuedRun = queue.runs.shift();
             if (!queuedRun) {
                 continue;
             }
 
-            activeManualAgentRun = queuedRun;
             notifyAgentGenerationStateChanged();
 
             try {
@@ -611,15 +623,13 @@ async function processManualAgentRunQueue() {
             } catch (error) {
                 queuedRun.reject(error);
             } finally {
-                activeManualAgentRun = null;
                 notifyAgentGenerationStateChanged();
             }
         }
     } finally {
-        clearManualAgentRunQueue();
-        manualAgentRunCancelRequested = false;
-        manualAgentRunQueueProcessing = false;
-        activeManualAgentRun = null;
+        clearManualAgentRunQueue(queue);
+        queue.cancelRequested = false;
+        queue.processing = false;
         notifyAgentGenerationStateChanged();
     }
 }
@@ -656,7 +666,8 @@ function enqueueManualAgentRun(agentId, target) {
     target.composerText = submitted?.composerText ?? target.composer?.value;
     target.isCurrent = typeof submitted?.isCurrent === 'function' ? submitted.isCurrent : () => true;
     const wasAlreadyActive = isAgentGenerationActive();
-    manualAgentRunCancelRequested = false;
+    const queue = manualAgentRunQueues[isCompanionAgent(getAgentById(agentId)) ? 1 : 0];
+    queue.cancelRequested = false;
     if (!isGenerationInProgress) {
         generationStopRequested = false;
     }
@@ -683,7 +694,8 @@ function enqueueManualAgentRun(agentId, target) {
     }
 
     return new Promise((resolve, reject) => {
-        manualAgentRunQueue.push({
+        const mustWait = queue.processing || !isPromptTransformIdle(queue.companion);
+        queue.runs.push({
             agentId,
             target,
             cancelRevision,
@@ -691,12 +703,12 @@ function enqueueManualAgentRun(agentId, target) {
             reject,
         });
 
-        if (wasAlreadyActive) {
+        if (mustWait) {
             toastr.info('Queued agent run.');
         }
 
         notifyAgentGenerationStateChanged();
-        void processManualAgentRunQueue();
+        void processManualAgentRunQueue(queue);
     });
 }
 
@@ -3593,15 +3605,17 @@ async function requestProfilePromptTransform(isRuntimeAllowed, CMRS, profileId, 
     };
 }
 
-export async function runAsInternalPromptTransform(requestFn, signal = null) {
+export async function runAsInternalPromptTransform(requestFn, signal = null, { companion = false } = {}) {
     signal?.throwIfAborted();
     internalPromptTransformDepth++;
+    if (companion) companionPromptTransformDepth++;
     notifyAgentGenerationStateChanged();
     let active = true;
     const finish = () => {
         if (!active) return;
         active = false;
         internalPromptTransformDepth = Math.max(0, internalPromptTransformDepth - 1);
+        if (companion) companionPromptTransformDepth = Math.max(0, companionPromptTransformDepth - 1);
         notifyPromptTransformIdle();
         notifyAgentGenerationStateChanged();
     };
@@ -3632,7 +3646,9 @@ export async function requestPromptTransform(agent, promptMessages, maxTokens, o
     const runAllowedRequest = requestFn => runAsInternalPromptTransform(() => {
         if (!isRuntimeAllowed()) throw new DOMException('', 'AbortError');
         return requestFn();
-    }, requestAbortController.signal);
+    }, requestAbortController.signal, {
+        companion: isCompanionAgent(agent) || (options.runtimeAgents ?? []).some(isCompanionAgent),
+    });
     activeAgentRequestAbortControllers.add(requestAbortController);
     options.signal?.addEventListener('abort', abortFromCaller, { once: true });
 
@@ -6146,6 +6162,7 @@ async function executeManualAgentRun(agentId, target, cancelRevision = agentGene
     const generationType = 'normal';
     const beforeText = message.mes;
     const messageTarget = captureMessageTargetState(message);
+    const postProcessingTarget = getAgentPostProcessingTarget(message);
     const regexSnapshotChanged = refreshRegexSnapshotForAgentOnMessage(agent.id, messageIndex, {
         generationType,
         includeForcedAgent: true,
@@ -6170,7 +6187,8 @@ async function executeManualAgentRun(agentId, target, cancelRevision = agentGene
         result.changed = result.nextMessageText !== beforeText;
     }
     if (result.changed) {
-        message.mes = result.nextMessageText;
+        // Companions share accepted agent rewrites, but still reject edits and swipe changes.
+        if (!setPostProcessingText(message, result.nextMessageText, postProcessingTarget)) return null;
         recordAppliedTransformation(message, beforeText, [result]);
         reconcileTrackerMetadata();
         if (!await syncPromptTransformMessageStateAsync(message, messageIndex)) return null;

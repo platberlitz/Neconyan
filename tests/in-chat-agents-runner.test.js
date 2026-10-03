@@ -6532,6 +6532,73 @@ describe('in-chat agent post-processing runner', () => {
         expect(chat[0].mes).toBe('Original reply');
     });
 
+    test.each(['post', 'pre'].flatMap(phase => ['automatic', 'manual'].map(trigger => [phase, trigger])))(
+        'starts a manual %s agent before an active %s Companion finishes in sequential mode', async (phase, trigger) => {
+            useManualTransformAgents();
+            globalSettings.appendAgentsExecutionMode = 'sequential';
+            enabledAgents[0].phase = phase;
+            const companion = createCompanionAgent();
+            enabledAgents.push(companion);
+            chat.push({ name: 'Assistant', mes: 'Original reply', is_user: false, is_system: false, extra: {} });
+            const responses = [];
+            generateQuietPrompt.mockImplementation(() => new Promise(resolve => responses.push(resolve)));
+            const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+            const runtime = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+            runtime.initCompanionRunner();
+
+            const companionRun = trigger === 'manual' ? runner.runAgentOnMessage(companion.id, 0)
+                : runtime.runCompanionStage({ messageIndex: 0, message: chat[0], activeAgents: [companion] });
+            await waitFor(() => responses.length === 1);
+            const rewrite = runner.runAgentOnMessage('agent-manual-a', 0);
+            try {
+                await waitFor(() => responses.length === 2);
+                expect(responses).toHaveLength(2);
+                responses[1]('Rewritten reply');
+                await expect(rewrite).resolves.toMatchObject({ status: 'changed' });
+                expect(chat[0].mes).toBe('Rewritten reply');
+                expect(runtime.getCompanionResults(chat[0])[companion.id].status).toBe('pending');
+                expect(runner.isAgentGenerationActive()).toBe(true);
+                responses[0]('Companion note');
+                await companionRun;
+                expect(runtime.getCompanionResults(chat[0])[companion.id]).toMatchObject({ status: 'done', content: 'Companion note' });
+            } finally {
+                runner.cancelAgentGeneration();
+                responses.forEach(resolve => resolve('Cleanup'));
+                await Promise.all([companionRun, rewrite]);
+            }
+            expect(runner.isAgentGenerationActive()).toBe(false);
+        },
+    );
+
+    test('Stop cancels concurrent manual rewrites and Companions and clears both queues', async () => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'sequential';
+        const companion = createCompanionAgent();
+        enabledAgents.push(companion);
+        chat.push({ name: 'Assistant', mes: 'Original reply', is_user: false, is_system: false, extra: {} });
+        const responses = [];
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => responses.push(resolve)));
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const runtime = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        runtime.initCompanionRunner();
+        const companionRun = runner.runAgentOnMessage(companion.id, 0);
+        await waitFor(() => responses.length === 1);
+        const rewrite = runner.runAgentOnMessage('agent-manual-a', 0);
+        await waitFor(() => responses.length === 2);
+        const queuedRewrite = runner.runAgentOnMessage('agent-manual-b', 0);
+        const queuedCompanion = runner.runAgentOnMessage(companion.id, 0);
+        expect(responses).toHaveLength(2);
+        runner.cancelAgentGeneration();
+        await expect(queuedRewrite).resolves.toBeNull();
+        await expect(queuedCompanion).resolves.toBeNull();
+        responses.forEach(resolve => resolve('Cancelled output'));
+        await Promise.all([companionRun, rewrite]);
+        expect(responses).toHaveLength(2);
+        expect(chat[0].mes).toBe('Original reply');
+        expect(runtime.getCompanionResults(chat[0])[companion.id]?.status).not.toBe('done');
+        expect(runner.isAgentGenerationActive()).toBe(false);
+    });
+
     test('queues manual agent runs while another manual agent is active in sequential mode', async () => {
         useManualTransformAgents();
         globalSettings.appendAgentsExecutionMode = 'sequential';
