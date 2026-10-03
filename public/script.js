@@ -392,6 +392,7 @@ import {
     markCardScriptToastShown,
 } from './scripts/card-script-detection.js';
 import { configureCardScriptRuntime, initCardScriptRuntime } from './scripts/card-script-runtime.js';
+import { bindPortraitUrls } from './scripts/portrait-urls.js';
 
 const DEFERRED_STARTUP_STYLESHEETS = Object.freeze([
     { href: 'css/bright.min.css', id: 'deferred-highlight-theme-css' },
@@ -4578,6 +4579,7 @@ function sanitizeMessageHtml(mes, sanitizerOverrides = {}) {
         ADD_ATTR: ['style'], // Allow inline CSS effects from model-generated message spans.
         ...sanitizerOverrides,
     };
+    mes = bindPortraitUrls(mes, characters[this_chid]);
     mes = encodeStyleTags(mes);
     mes = DOMPurify.sanitize(mes, config);
     return decodeStyleTags(mes, { prefix: '.mes_text ' });

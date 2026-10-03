@@ -389,6 +389,23 @@ describe('portrait lookup by written name', () => {
         expect(findPortraitFile(files, 'Miso', 'Miso (Female)')).toBe('Miso (Female).png');
     });
 
+    test('prefers the open character file when duplicate cards have the same display name', () => {
+        expect(findPortraitFile(files, 'Alhaitham', 'Alhaitham', 'Alhaitham1.png')).toBe('Alhaitham1.png');
+        expect(findPortraitFile(files, 'Alex', 'Alex', 'Alex1.png')).toBe('Alex1.png');
+        expect(findPortraitFile(['Miso.png', 'Miso (Female).png'], 'Miso', 'Miso (Female)')).toBe('Miso (Female).png');
+    });
+
+    test('uses the open file even when its filename differs from the character name', () => {
+        expect(findPortraitFile(['Miso.png', 'import-42.png'], 'Miso', 'Miso (Female)', 'import-42.png')).toBe('import-42.png');
+    });
+
+    test('keeps other portraits and ignores missing or unsafe avatar hints', () => {
+        expect(findPortraitFile(files, 'Alex', 'Alhaitham', 'Alhaitham1.png')).toBe('Alex.png');
+        for (const avatar of ['missing.png', '../Alhaitham1.png', 'notes.txt']) {
+            expect(findPortraitFile(files, 'Alhaitham', 'Alhaitham', avatar)).toBe('Alhaitham.png');
+        }
+    });
+
     test('matches loosely without the current character', () => {
         expect(findPortraitFile(files, 'Miso')).toBe('Miso (Female).png');
         expect(findPortraitFile(files, 'Atlas Hughes')).toBe('ACTOR  Atlas Hughes.png');
@@ -406,6 +423,8 @@ describe('portrait lookup by written name', () => {
     test('redirects the endpoint to the avatar thumbnail', async () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'portrait-'));
         fs.writeFileSync(path.join(root, 'Miso (Female).png'), PNG_FIXTURE);
+        fs.writeFileSync(path.join(root, 'Miso.png'), PNG_FIXTURE);
+        fs.writeFileSync(path.join(root, 'Miso1.png'), PNG_FIXTURE);
         const app = express();
         app.use((request, _response, next) => {
             request.user = { profile: { handle: 'portrait-test' }, directories: { characters: root } };
@@ -420,6 +439,9 @@ describe('portrait lookup by written name', () => {
             const found = await nativeFetch(`${base}?name=Miso&char=${encodeURIComponent('Miso (Female)')}`, { redirect: 'manual' });
             expect(found.status).toBe(302);
             expect(found.headers.get('location')).toBe('/thumbnail?type=avatar&file=Miso+%28Female%29.png');
+            const duplicate = await nativeFetch(`${base}?name=Miso&char=Miso&avatar=Miso1.png&preset=mobile`, { redirect: 'manual' });
+            expect(duplicate.status).toBe(302);
+            expect(duplicate.headers.get('location')).toBe('/thumbnail?type=avatar&file=Miso1.png&preset=mobile');
             expect((await nativeFetch(`${base}?name=Nobody`, { redirect: 'manual' })).status).toBe(404);
             expect((await nativeFetch(base, { redirect: 'manual' })).status).toBe(400);
         } finally {
