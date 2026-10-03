@@ -16,7 +16,7 @@ const { getRegexScriptRevision } = await import('../public/scripts/extensions/in
 const { TRACKER_REPAIR_INSTRUCTION } = await import('../public/scripts/extensions/in-chat-agents/tracker-state.js');
 after(cancelAutoSaves);
 
-function prepared(t, agents, configure = () => {}) {
+function prepared(t, agents, configure = () => {}, globalSettings = {}) {
     const f = fixture(t), directories = f.scope.directories;
     directories.inChatAgents = path.join(directories.root, 'InChatAgents');
     directories.worlds = path.join(directories.root, 'worlds');
@@ -29,7 +29,7 @@ function prepared(t, agents, configure = () => {}) {
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
     const settings = { power_user: {}, oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:18000/v1' },
         extension_settings: { connectionManager: { profiles: [{ id: 'main', api: 'custom', model: 'fixture', 'api-url': 'http://127.0.0.1:18000/v1' }] },
-            inChatAgents: { globalSettings: { enabled: true, connectionProfile: 'main', hiddenCompanionAgentIds: ['side'] } } } };
+            inChatAgents: { globalSettings: { enabled: true, connectionProfile: 'main', hiddenCompanionAgentIds: ['side'], ...globalSettings } } } };
     fs.writeFileSync(path.join(directories.root, 'settings.json'), JSON.stringify(settings));
     for (const agent of agents) fs.writeFileSync(path.join(directories.inChatAgents, `${agent.id}.json`), JSON.stringify({ name: agent.id, prompt: '', ...agent }));
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
@@ -188,6 +188,25 @@ test('a manually selected hidden companion can repair its note on a user message
     assert.equal(saved[1].extra.inChatAgentCompanionResults.side.collapsed, true);
     assert.equal(saved[1].extra.inChatAgentCompanionResults.other.content, 'Keep this note');
     assert.deepEqual(saved[2], f.records[2]);
+});
+
+test('a saved manual Companion run cleans older copies atomically without touching another Companion or chat text', async t => {
+    const old = { side: { status: 'done', content: 'Old side note' }, other: { status: 'done', content: 'Keep other' } };
+    const f = prepared(t, [{ id: 'side', enabled: true, category: 'companion', prompt: 'SIDE' }], records => {
+        records[1].extra.inChatAgentCompanionResults = structuredClone(old);
+        records[1].is_user = false;
+        records[1].swipe_info = [{ extra: { inChatAgentCompanionResults: structuredClone(old) } }];
+    }, { companionAutoCleanupEnabled: true, companionAutoCleanupOlderNotes: 0 });
+    const operation = f.action('companions', ['side']);
+    await operation.run({ generate: paid('New readable note') });
+    const saved = f.saved();
+    assert.equal(saved[1].extra.inChatAgentCompanionResults.side, undefined);
+    assert.equal(saved[1].swipe_info[0].extra.inChatAgentCompanionResults.side, undefined);
+    assert.equal(saved[1].extra.inChatAgentCompanionResults.other.content, 'Keep other');
+    assert.equal(saved[2].extra.inChatAgentCompanionResults.side.content, 'New readable note');
+    assert.deepEqual(saved.map(record => record.mes), f.records.map(record => record.mes));
+    await operation.run({ generate: () => assert.fail('saved cleanup must not rerun paid work') });
+    assert.deepEqual(f.saved(), saved);
 });
 
 test('manual tracker repair writes a valid selected block while later assistant tracker state remains authoritative', async t => {

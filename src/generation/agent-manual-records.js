@@ -1,5 +1,6 @@
 import { readArtifact } from '../jobs/artifacts.js';
 import { roleplayError, roleplayHash } from '../roleplay-store.js';
+import { applyAutomaticCompanionNoteCleanup } from './companion-note-cleanup.js';
 
 const fail = () => roleplayError('ROLEPLAY_AGENT_RECOVERY', 'The saved manual Agent result no longer matches its accepted message.');
 const EXTRA_KEYS = new Set(['inChatAgents', 'inChatAgentPromptRuns', 'inChatAgentTransformHistory', 'inChatAgentTransformRedo', 'inChatAgentCompanionResults', 'token_count']);
@@ -14,11 +15,14 @@ export function applyManualAgentRecords(directories, job, records, output) {
         || hash !== output?.agentOutput || hash !== roleplayHash(data) || data.identity !== roleplayHash(job.intent)
         || data.recordsHash !== roleplayHash(records) || typeof data.text !== 'string' || Buffer.byteLength(data.text) > 256 * 1024
         || !data.extra || typeof data.extra !== 'object' || Array.isArray(data.extra)) throw fail();
+    let completedCompanions = {};
     for (const [name, expected] of Object.entries(data.proofs ?? {})) {
         if (!name.startsWith('roleplay-agent-post:manual') && name !== 'roleplay-companions') throw fail();
         const value = readArtifact(directories, job.id, name);
         const { hash: proofHash, ...proof } = value ?? {};
         if (proofHash !== expected || proofHash !== roleplayHash(proof)) throw fail();
+        if (name === 'roleplay-companions') completedCompanions = Object.fromEntries((proof.completed ?? [])
+            .map(id => [id, proof.results?.[id]]));
     }
     if (Object.keys(data.extra).some(key => !EXTRA_KEYS.has(key))) throw fail();
     const next = structuredClone(records);
@@ -50,5 +54,6 @@ export function applyManualAgentRecords(directories, job, records, output) {
         metadata.variables ??= {};
         if (value === null) delete metadata.variables[key]; else metadata.variables[key] = value;
     }
+    applyAutomaticCompanionNoteCleanup(next.slice(1), request.worldInfo?.agents?.companionAutoCleanup, completedCompanions, index);
     return next;
 }

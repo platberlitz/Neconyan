@@ -3703,6 +3703,91 @@ describe('in-chat agent post-processing runner', () => {
             expect([...mismatched].sort()).toEqual(['a', 'c']);
         });
 
+        async function seedAutomaticCleanup({ olderNotes = 0, enabled = true } = {}) {
+            const scene = createCompanionAgent({ id: 'scene', name: 'Scene' });
+            const mood = createCompanionAgent({ id: 'mood', name: 'Mood' });
+            enabledAgents = [scene, mood];
+            globalSettings.companionAutoCleanupEnabled = enabled;
+            globalSettings.companionAutoCleanupOlderNotes = olderNotes;
+            const runner = await import(runnerPath);
+            chat.push(...[0, 1, 2, 3].map(index => assistantMessage(`Reply ${index}`)));
+            Object.assign(chat[0], { swipe_id: 0, swipes: ['Reply 0', 'Alternative'], swipe_info: [{ extra: {} }, { extra: {} }] });
+            for (const index of [0, 1, 2]) {
+                runner.setCompanionResult(chat[index], scene, { status: 'done', content: `Scene ${index}` });
+                runner.setCompanionResult(chat[index], mood, { status: 'done', content: `Mood ${index}` });
+            }
+            switchToSwipe(chat[0], 1);
+            runner.setCompanionResult(chat[0], scene, { status: 'done', content: 'Alternative scene' });
+            switchToSwipe(chat[0], 0);
+            generateQuietPrompt.mockResolvedValue('Fresh note');
+            return { scene, mood, runner };
+        }
+
+        test('automatic cleanup is off by default', async () => {
+            const { scene, runner } = await seedAutomaticCleanup({ enabled: false });
+            delete globalSettings.companionAutoCleanupEnabled;
+            await runner.runCompanionAgentOnMessage(scene.id, 3);
+            expect(chat.map(message => runner.getCompanionResults(message).scene?.content)).toEqual(['Scene 0', 'Scene 1', 'Scene 2', 'Fresh note']);
+        });
+
+        test('successful individual runs retain the chosen older notes, remove every swipe copy and leave other agents alone', async () => {
+            const { scene, runner } = await seedAutomaticCleanup({ olderNotes: 1 });
+            await runner.runCompanionAgentOnMessage(scene.id, 3);
+            expect(chat.map(message => runner.getCompanionResults(message).scene?.content)).toEqual([undefined, undefined, 'Scene 2', 'Fresh note']);
+            expect(chat[0].swipe_info.every(swipe => !swipe.extra.inChatAgentCompanionResults?.scene)).toBe(true);
+            expect(runner.getCompanionResults(chat[0]).mood.content).toBe('Mood 0');
+            expect(enabledAgents.map(agent => agent.id)).toEqual(['scene', 'mood']);
+        });
+
+        test.each(['parallel', 'sequential'])('automatic multi-agent runs clean up each successful companion in %s mode', async mode => {
+            const { runner } = await seedAutomaticCleanup();
+            globalSettings.companionExecutionMode = mode;
+            await runner.runAutomaticCompanionsOnMessage(3);
+            expect(chat.slice(0, 3).every(message => Object.keys(runner.getCompanionResults(message)).length === 0)).toBe(true);
+            expect(Object.keys(runner.getCompanionResults(chat[3])).sort()).toEqual(['mood', 'scene']);
+        });
+
+        test('batched successful runs clean up all members', async () => {
+            const { scene, mood, runner } = await seedAutomaticCleanup();
+            scene.companion.batch = mood.companion.batch = true;
+            scene.companion.batchAgentIds = [mood.id];
+            mood.companion.batchAgentIds = [scene.id];
+            generateQuietPrompt.mockResolvedValue('<<<companion:scene>>>Fresh scene<<<end:scene>>>\n<<<companion:mood>>>Fresh mood<<<end:mood>>>');
+            await runner.runAutomaticCompanionsOnMessage(3);
+            expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+            expect(chat.slice(0, 3).every(message => Object.keys(runner.getCompanionResults(message)).length === 0)).toBe(true);
+        });
+
+        test.each(['failure', 'suppressed'])('%s runs do not trigger automatic deletion', async kind => {
+            const { scene, runner } = await seedAutomaticCleanup();
+            if (kind === 'failure') generateQuietPrompt.mockRejectedValueOnce(new Error('503 Service Unavailable'));
+            else generateQuietPrompt.mockResolvedValueOnce('tracker-none');
+            await runner.runCompanionAgentOnMessage(scene.id, 3);
+            expect(chat.slice(0, 3).map(message => runner.getCompanionResults(message).scene.content)).toEqual(['Scene 0', 'Scene 1', 'Scene 2']);
+        });
+
+        test('rerunning an older reply preserves the new result as well as the newest note', async () => {
+            const { scene, runner } = await seedAutomaticCleanup();
+            await runner.runCompanionAgentOnMessage(scene.id, 0);
+            expect(runner.getCompanionResults(chat[0]).scene.content).toBe('Fresh note');
+            expect(runner.getCompanionResults(chat[2]).scene.content).toBe('Scene 2');
+        });
+
+        test('successful runs cannot clean up another chat after navigation', async () => {
+            const { scene, runner } = await seedAutomaticCleanup();
+            const original = chat[0];
+            let resolveRun;
+            generateQuietPrompt.mockImplementationOnce(() => new Promise(resolve => { resolveRun = resolve; }));
+            const running = runner.runCompanionAgentOnMessage(scene.id, 3);
+            await waitFor(() => generateQuietPrompt.mock.calls.length === 1);
+            currentChatId = 'chat-b';
+            chat.splice(0, chat.length, assistantMessage('Another chat', structuredClone(original.extra)));
+            resolveRun('Late note');
+            await running;
+            expect(runner.getCompanionResults(chat[0]).scene.content).toBe('Scene 0');
+            expect(runner.getCompanionResults(original).scene.content).toBe('Scene 0');
+        });
+
         test('clean-up keeps each companion\'s newest note, reaches every swipe and undo survives a swipe', async () => {
             const scene = createCompanionAgent({ id: 'scene', name: 'Scene' });
             const mood = createCompanionAgent({ id: 'mood', name: 'Mood' });

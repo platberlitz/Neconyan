@@ -469,23 +469,27 @@ function isKeepableCompanionNote(agentId, result) {
 
 /**
  * Works out which saved companion notes a clean-up removes. With keepLatest, each companion keeps
- * the message holding its newest readable note and everything after it; only older messages lose
+ * the messages holding its newest readable notes and everything after them; only older messages lose
  * that companion's notes. Without it, every note from the chosen companions goes. A companion that
  * is running on a message is never touched there.
  * @param {object[]} messages
- * @param {{ agentIds?: Iterable<string>|null, keepLatest?: boolean }} [options]
+ * @param {{ agentIds?: Iterable<string>|null, keepLatest?: boolean, olderNotesToKeep?: number, protectedMessageIndex?: number }} [options]
  * @returns {{ targets: { messageIndex: number, agentIds: string[] }[], counts: Map<string, number>, names: Map<string, string>, total: number }}
  */
-export function planCompanionNoteCleanup(messages = [], { agentIds = null, keepLatest = true } = {}) {
+export function planCompanionNoteCleanup(messages = [], { agentIds = null, keepLatest = true, olderNotesToKeep = 0, protectedMessageIndex = -1 } = {}) {
     const chosen = agentIds ? new Set(agentIds) : null;
     const newestNoteIndex = new Map();
+    const readableCounts = new Map();
+    const keepCount = 1 + (Number.isFinite(olderNotesToKeep) ? Math.max(0, Math.trunc(olderNotesToKeep)) : 0);
     const names = new Map();
 
     if (keepLatest) {
         for (let index = messages.length - 1; index >= 0; index--) {
             for (const [agentId, result] of Object.entries(getActiveCompanionResults(messages[index]))) {
-                if (!newestNoteIndex.has(agentId) && isKeepableCompanionNote(agentId, result)) {
+                const count = readableCounts.get(agentId) ?? 0;
+                if (count < keepCount && isKeepableCompanionNote(agentId, result)) {
                     newestNoteIndex.set(agentId, index);
+                    readableCounts.set(agentId, count + 1);
                 }
             }
         }
@@ -494,6 +498,7 @@ export function planCompanionNoteCleanup(messages = [], { agentIds = null, keepL
     const targets = [];
     const counts = new Map();
     for (let index = 0; index < messages.length; index++) {
+        if (index === protectedMessageIndex) continue;
         const stores = getCompanionResultStores(messages[index]);
         const agentsHere = new Set(stores.flatMap(store => Object.keys(store)));
         const removable = [];

@@ -63,6 +63,7 @@ import {
     isAssistantMessage,
     isEmptyOutputSentinel,
     isRetryableCompanionFailure,
+    isSuppressedCompanionResult,
     isValidCompanionMessage,
     normalizePlotCompassObjective,
     planCompanionNoteCleanup,
@@ -717,7 +718,16 @@ function beginCompanionRun(message, agent, content = '') {
             const target = (message.swipe_id ?? 0) === swipe ? message
                 : message.swipe_info?.[swipe] === run.swipeInfo
                     ? { ...message, swipe_id: swipe, extra: {} } : null;
-            if (!target || getCompanionResults(target)[agent.id]?.status !== 'pending') return;
+            if (!target) return;
+            const result = getCompanionResults(target)[agent.id];
+            if (result?.status !== 'pending') {
+                if (target === message && isMessageCurrent() && result?.status === 'done'
+                    && !result.lastRunError && String(result.content ?? '').trim()
+                    && !isSuppressedCompanionResult(agent.id, result)) {
+                    await automaticallyCleanUpCompanionNotes(agent.id, messageIndex);
+                }
+                return;
+            }
             restoreCompanionResult(target, agent.id, previousResult);
             if (chat[messageIndex] === message && getCurrentChatId() === chatId && getChatGeneration() === generation) {
                 if (target === message) await emitCompanionResultsUpdated(messageIndex, agent.id);
@@ -2684,12 +2694,12 @@ export function getCompanionBatchGroups(agents = []) {
 /**
  * Deletes saved companion notes from the open chat, from the message and every swipe copy.
  * The returned undo puts the removed notes back while the same chat is still open.
- * @param {{ agentIds?: Iterable<string>|null, keepLatest?: boolean }} [options]
+ * @param {{ agentIds?: Iterable<string>|null, keepLatest?: boolean, olderNotesToKeep?: number, protectedMessageIndex?: number }} [options]
  * @returns {Promise<{ removed: number, messages: number, undo: () => Promise<number> }>}
  */
-export async function cleanUpCompanionNotes({ agentIds = null, keepLatest = true } = {}) {
+export async function cleanUpCompanionNotes({ agentIds = null, keepLatest = true, olderNotesToKeep = 0, protectedMessageIndex = -1 } = {}) {
     const chatId = getCurrentChatId();
-    const plan = planCompanionNoteCleanup(chat, { agentIds, keepLatest });
+    const plan = planCompanionNoteCleanup(chat, { agentIds, keepLatest, olderNotesToKeep, protectedMessageIndex });
     const removedCopies = [];
 
     for (const { messageIndex, agentIds: removeIds } of plan.targets) {
@@ -2764,6 +2774,18 @@ export async function cleanUpCompanionNotes({ agentIds = null, keepLatest = true
     };
 
     return { removed: plan.total, messages: plan.targets.length, undo };
+}
+
+async function automaticallyCleanUpCompanionNotes(agentId, messageIndex) {
+    const settings = getGlobalSettings();
+    if (settings.companionAutoCleanupEnabled !== true) return;
+    await cleanUpCompanionNotes({
+        agentIds: [agentId],
+        keepLatest: true,
+        olderNotesToKeep: settings.companionAutoCleanupOlderNotes,
+        // Rerunning an older reply must not delete the note that just finished.
+        protectedMessageIndex: messageIndex,
+    });
 }
 
 /**

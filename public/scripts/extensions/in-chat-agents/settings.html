@@ -218,6 +218,16 @@
                     <label class="checkbox_label" title="Run companion agents at the same time as post-generation passes instead of after them."><input type="checkbox" id="ica--companionConcurrent" /><span>Run companions alongside post-generation passes</span></label>
                 </section>
 
+                <section class="ica--settings-group" aria-labelledby="ica--cleanup-group-title">
+                    <div class="ica--settings-group-heading">
+                        <span class="ica--settings-group-icon"><i class="fa-solid fa-broom" aria-hidden="true"></i></span>
+                        <div><h4 id="ica--cleanup-group-title">Companion note clean-up</h4><p>Trim old notes in the open chat after each successful Companion run.</p></div>
+                    </div>
+                    <label class="checkbox_label"><input type="checkbox" id="ica--companionAutoCleanupEnabled" aria-describedby="ica--cleanup-help" /><span>Automatically clean up old Companion notes</span></label>
+                    <label class="ica--profile-label"><span>Older notes to keep per Companion</span><input type="number" id="ica--companionAutoCleanupOlderNotes" class="text_pole" min="0" max="1000" step="1" aria-describedby="ica--cleanup-help" /></label>
+                    <small id="ica--cleanup-help" class="ica--profile-help">Always keeps the newest readable note and leaves running notes alone. Set 0 to keep only the newest. Starts with the next successful run; switching this on does not delete anything immediately. Removed notes, including saved reply versions, cannot be restored here and are no longer available as model context. Your agents and chat messages stay.</small>
+                </section>
+
                 <section class="ica--settings-group" aria-labelledby="ica--context-group-title">
                     <div class="ica--settings-group-heading">
                         <span class="ica--settings-group-icon"><i class="fa-solid fa-layer-group" aria-hidden="true"></i></span>

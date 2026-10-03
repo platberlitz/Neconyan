@@ -72,6 +72,64 @@ async function chooseEditorSection(page, section) {
 
 const WIDTHS = [1280, 1024, 997, 768, 390, 393, 320];
 
+for (const width of [1280, 393]) {
+    test.describe(`Companion note clean-up at ${width}px`, () => {
+        test.use({ viewport: { width, height: width === 393 ? 852 : 900 }, isMobile: width === 393, hasTouch: width === 393 });
+        test('automatic clean-up is opt-in, configurable and saved without changing agents or notes', async ({ page }, info) => {
+            await openAgents(page);
+            const skipTour = page.getByRole('region', { name: 'Neconyan interactive tutorial' }).getByRole('button', { name: 'Skip', exact: true });
+            if (await skipTour.isVisible()) {
+                await skipTour.click();
+                await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
+                await expect(page.locator('#ica--settings')).toBeVisible();
+            }
+            await page.locator('.ica--workspace-tab[data-workspace-view="connections"]').click();
+            const enabled = page.locator('#ica--companionAutoCleanupEnabled');
+            const count = page.locator('#ica--companionAutoCleanupOlderNotes');
+            await expect(enabled).not.toBeChecked();
+            await expect(count).toBeDisabled();
+            await expect(count).toHaveValue('3');
+            const before = await page.evaluate(async () => {
+                const context = window.SillyTavern.getContext();
+                const { getAgents } = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+                return JSON.stringify({ chat: context.chat, agents: getAgents() });
+            });
+            await enabled.check();
+            await expect(count).toBeEnabled();
+            const savedSetting = page.waitForResponse(response => response.url().endsWith('/api/settings/save') && response.ok()
+                && response.request().postDataJSON()?.extension_settings?.inChatAgents?.globalSettings?.companionAutoCleanupOlderNotes === 0);
+            await count.fill('0');
+            await count.blur();
+            await expect(count).toHaveValue('0');
+            await expect(page.locator('#ica--cleanup-help')).toContainText('cannot');
+            await page.locator('#ica--cleanup-group-title').scrollIntoViewIfNeeded();
+            await count.scrollIntoViewIfNeeded();
+            await count.click();
+            const geometry = await count.evaluate(element => {
+                const box = element.getBoundingClientRect(), style = window.getComputedStyle(element);
+                return { left: box.left, right: box.right, width: box.width, visibility: style.visibility, viewport: window.innerWidth };
+            });
+            expect(geometry.left).toBeGreaterThanOrEqual(0);
+            expect(geometry.right).toBeLessThanOrEqual(geometry.viewport);
+            expect(geometry.width).toBeGreaterThan(40);
+            expect(geometry.visibility).toBe('visible');
+            await capture(page, info, 'companion-note-cleanup');
+            await savedSetting;
+            await openAgents(page);
+            await page.locator('.ica--workspace-tab[data-workspace-view="connections"]').click();
+            await expect(enabled).toBeChecked();
+            await expect(count).toHaveValue('0');
+            await enabled.uncheck();
+            await expect(count).toBeDisabled();
+            expect(await page.evaluate(async () => {
+                const context = window.SillyTavern.getContext();
+                const { getAgents } = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+                return JSON.stringify({ chat: context.chat, agents: getAgents() });
+            })).toBe(before);
+        });
+    });
+}
+
 test.describe('Agents navigation with an open chat', () => {
     // Every width opens and saves the same Miso chat, so run them one after another.
     test.describe.configure({ mode: 'default' });

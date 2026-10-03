@@ -128,6 +128,20 @@ describe('in-chat agent scoped enabled state', () => {
         expect(store.getGlobalSettings().helperPrefillMessages).toBe('');
     });
 
+    test('automatic note clean-up is opt-in, normalises retention and persists its settings', async () => {
+        const store = await importStore();
+        expect(store.getGlobalSettings()).toMatchObject({ companionAutoCleanupEnabled: false, companionAutoCleanupOlderNotes: 3 });
+        store.setGlobalSettings({ companionAutoCleanupEnabled: true, companionAutoCleanupOlderNotes: '0' });
+        store.persistAgentGlobalSettings();
+        expect(extensionSettings.inChatAgents.globalSettings).toMatchObject({ companionAutoCleanupEnabled: true, companionAutoCleanupOlderNotes: 0 });
+        for (const [input, expected] of [[-2, 0], [2.9, 2], [1001, 1000], ['bad', 3], ['', 3], [null, 3], [undefined, 3], [Infinity, 3]]) {
+            store.setGlobalSettings({ companionAutoCleanupOlderNotes: input });
+            expect(store.getGlobalSettings().companionAutoCleanupOlderNotes).toBe(expected);
+        }
+        store.setGlobalSettings({ companionAutoCleanupEnabled: 'false' });
+        expect(store.getGlobalSettings().companionAutoCleanupEnabled).toBe(false);
+    });
+
     test('stores hidden companion IDs in global settings', async () => {
         const store = await importStore();
 

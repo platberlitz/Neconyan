@@ -185,6 +185,8 @@ const defaultGlobalSettings = {
     appendAgentsExecutionMode: 'parallel',
     companionExecutionMode: 'parallel',
     companionConcurrentWithPostGen: false,
+    companionAutoCleanupEnabled: false,
+    companionAutoCleanupOlderNotes: 3,
     helperPrefillMessages: '',
     hiddenCompanionAgentIds: [],
 };
@@ -426,6 +428,11 @@ function normalizeGlobalSettingsRecord(settings, update) {
     settings.hiddenCompanionAgentIds = normalizeAgentIdCollection(settings.hiddenCompanionAgentIds);
     settings.connectionFallbacks = normalizeConnectionFallbacks(settings.connectionFallbacks);
     settings.companionConnectionFallbacks = normalizeConnectionFallbacks(settings.companionConnectionFallbacks);
+    settings.companionAutoCleanupEnabled = settings.companionAutoCleanupEnabled === true;
+    const olderNotes = settings.companionAutoCleanupOlderNotes;
+    settings.companionAutoCleanupOlderNotes = olderNotes !== '' && olderNotes !== null && Number.isFinite(Number(olderNotes))
+        ? Math.trunc(clampNumber(olderNotes, defaultGlobalSettings.companionAutoCleanupOlderNotes, 0, 1000))
+        : defaultGlobalSettings.companionAutoCleanupOlderNotes;
 
     if (!Object.hasOwn(update, 'scopedEnabledAgentIdsInitialized') && !settings.scopedEnabledAgentIdsInitialized) {
         const scopedSetting = update.enabledAgentIdsByChatType;

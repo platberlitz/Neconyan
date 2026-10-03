@@ -142,6 +142,27 @@ describe('planning a companion note clean-up', () => {
         expect(targetsOf(plan)).toEqual([[0, ['scene']]]);
     });
 
+    test('keeps the configured older readable notes per companion, counting messages rather than swipes', () => {
+        const messages = [
+            reply({ scene: note('Scene 0'), mood: note('Mood 0') }),
+            reply({ scene: note('Scene 1') }, { swipes: [{ scene: note('Scene 1') }, { scene: note('Alternative') }] }),
+            reply({ scene: note('tracker-none'), mood: note('Mood 2') }),
+            reply({ scene: note('Scene 3') }),
+            reply({ scene: note('Scene 4'), mood: note('Mood 4') }),
+        ];
+        expect(targetsOf(planCompanionNoteCleanup(messages, { olderNotesToKeep: 1 }))).toEqual([[0, ['mood', 'scene']], [1, ['scene']], [2, ['scene']]]);
+        expect(planCompanionNoteCleanup(messages, { olderNotesToKeep: 10 }).total).toBe(0);
+        expect(targetsOf(planCompanionNoteCleanup(messages, { olderNotesToKeep: 1, protectedMessageIndex: 1 }))).toEqual([[0, ['mood', 'scene']], [2, ['scene']]]);
+    });
+
+    test('retention never deletes a running result on an inactive swipe', () => {
+        const messages = [
+            reply({ scene: note('Old') }, { swipes: [{ scene: note('Old') }, { scene: { status: 'pending', content: '' } }] }),
+            reply({ scene: note('New') }),
+        ];
+        expect(planCompanionNoteCleanup(messages, { olderNotesToKeep: 0 }).total).toBe(0);
+    });
+
     test('a companion without any readable note keeps everything', () => {
         const messages = [
             reply({ tracker: { status: 'error', content: '', error: 'Bad gateway' } }),

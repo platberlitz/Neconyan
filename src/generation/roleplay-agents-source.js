@@ -88,6 +88,12 @@ export function captureRoleplayAgentSet(lease, settings, { group = false, server
         companionMode: global.companionExecutionMode === 'sequential' ? 'sequential' : 'parallel',
         concurrentCompanions: Boolean(global.companionConcurrentWithPostGen),
         reviewPostMain: global.postMainInterceptShowMessageFirst !== false, helperPrefill };
+    if (global.companionAutoCleanupEnabled === true) {
+        const value = global.companionAutoCleanupOlderNotes;
+        const count = value === '' || value === null || value === undefined ? 3 : Number(value);
+        policy.companionAutoCleanup = { enabled: true,
+            olderNotesToKeep: Number.isFinite(count) ? Math.max(0, Math.min(1000, Math.trunc(count))) : 3 };
+    }
     return { policy, definitions: agents.map(reference => {
         const agent = definitions.get(reference.id);
         agent.extraCharacterCards = [...cards].filter(([avatar]) => companionExtraCharacterAvatars(agent.settings.chatroomExtraCharacterAvatars).includes(avatar))

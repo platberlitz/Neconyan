@@ -22,10 +22,11 @@ const controls = { prompts: [{ identifier: 'main', role: 'system', system_prompt
     { identifier: 'chatHistory', marker: true, system_prompt: true }], prompt_order: [{ character_id: 100001,
     order: [{ identifier: 'main', enabled: true }, { identifier: 'worldInfoBefore', enabled: true }, { identifier: 'chatHistory', enabled: true }] }] };
 
-function prepared(t, agents, { effect = 'append', review = false, translation = false } = {}) {
+function prepared(t, agents, { effect = 'append', range = { start: 1, count: 1 }, review = false, translation = false, configure = () => {}, globalSettings = {} } = {}) {
     const f = fixture(t);
     const directories = f.scope.directories;
     f.records[1].extra = {};
+    configure(f.records);
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
     directories.worlds = path.join(directories.root, 'worlds');
     directories.inChatAgents = path.join(directories.root, 'InChatAgents');
@@ -39,7 +40,7 @@ function prepared(t, agents, { effect = 'append', review = false, translation = 
     const settings = { world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 200 },
         oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:18000/v1' },
         extension_settings: { connectionManager: { profiles: [{ id: 'main', api: 'custom', model: 'fixture', 'api-url': 'http://127.0.0.1:18000/v1' }] },
-            inChatAgents: { globalSettings: { enabled: true, appendAgentsExecutionMode: 'parallel', postMainInterceptShowMessageFirst: review } },
+            inChatAgents: { globalSettings: { enabled: true, appendAgentsExecutionMode: 'parallel', postMainInterceptShowMessageFirst: review, ...globalSettings } },
             ...(translation ? { translate: { provider: 'libre', auto_mode: 'responses', target_language: 'fr', internal_language: 'en' } } : {}) } };
     fs.writeFileSync(path.join(directories.root, 'settings.json'), JSON.stringify(settings));
     if (translation) {
@@ -47,9 +48,10 @@ function prepared(t, agents, { effect = 'append', review = false, translation = 
         writeSecret(directories, SECRET_KEYS.LIBRE_URL, 'https://translate.example/translate');
     }
     const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
-    const source = effect === 'append' ? f.source() : captureRoleplaySource(f.scope, { locator: f.locator, message: 1 });
+    const source = effect === 'append' ? f.source() : captureRoleplaySource(f.scope, { locator: f.locator,
+        ...(effect === 'replace' ? { range } : { message: 1 }) });
     const worldInfo = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 4000,
-        serverPrompt: true, trigger: { append: 'normal', continue: 'continue', swipe: 'swipe' }[effect] });
+        serverPrompt: true, trigger: { append: 'normal', replace: 'regenerate', continue: 'continue', swipe: 'swipe' }[effect] });
     const request = { binding: { kind: 'profile', ...captureChatProfile(directories, 'main') }, maxTokens: 32,
         characterName: 'Nova', serverPrompt: true, worldInfo, messages: [] };
     const { jobId } = admitRoleplayJob(f.scope, account, { operationKey: 'agent-pipeline', effect, source, request });
@@ -117,6 +119,41 @@ test('native Agent prompts, lore, complete-context interception and postprocessi
     assert.equal(readArtifact(f.directories, f.jobId, 'roleplay-prompt').agentsHash, readArtifact(f.directories, f.jobId, 'roleplay-agents-pre').hash);
     await f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Agent repeated') });
     assert.equal(f.saved().length, 4);
+});
+
+for (const effect of ['append', 'continue', 'swipe']) {
+    test(`a native ${effect} reply saves automatic Companion cleanup with its successful note`, async t => {
+        const f = prepared(t, [{ id: 'side', category: 'companion', prompt: 'SIDE',
+            conditions: { generationTypes: ['normal', 'continue', 'swipe'] } }], { effect,
+            globalSettings: { companionAutoCleanupEnabled: true, companionAutoCleanupOlderNotes: 0 },
+            configure: records => {
+                records[1].extra.inChatAgentCompanionResults = { side: { status: 'done', content: 'Old note' }, other: { status: 'done', content: 'Keep' } };
+            } });
+        await f.run({ generate: paid('main', () => 'New answer'), generateAgent: paid('side', () => 'New note') });
+        const saved = f.saved();
+        assert.equal(saved[1].extra.inChatAgentCompanionResults.side, undefined);
+        assert.equal(saved[1].extra.inChatAgentCompanionResults.other.content, 'Keep');
+        assert.equal(saved.at(-1).extra.inChatAgentCompanionResults.side.content, 'New note');
+        await f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Companion repeated') });
+        assert.deepEqual(f.saved(), saved);
+    });
+}
+
+test('a native range replacement counts only delivered notes towards automatic retention', async t => {
+    const f = prepared(t, [{ id: 'side', category: 'companion', prompt: 'SIDE',
+        conditions: { generationTypes: ['regenerate'] } }], { effect: 'replace',
+        range: { start: 2, count: 2 },
+        globalSettings: { companionAutoCleanupEnabled: true, companionAutoCleanupOlderNotes: 1 },
+        configure: records => {
+            records[2].extra = { inChatAgentCompanionResults: { side: { status: 'done', content: 'Keep older note' } } };
+            records.push(...['Replaced one', 'Replaced two'].map(content => ({ is_user: false, mes: content,
+                extra: { inChatAgentCompanionResults: { side: { status: 'done', content } } } })));
+        } });
+    await f.run({ generate: paid('main', () => 'New answer'), generateAgent: paid('side', () => 'New note') });
+    const saved = f.saved();
+    assert.equal(saved.length, 4);
+    assert.equal(saved[2].extra.inChatAgentCompanionResults.side.content, 'Keep older note');
+    assert.equal(saved[3].extra.inChatAgentCompanionResults.side.content, 'New note');
 });
 
 test('a post-main review resumes its saved main result and records only the reviewed Agent edit', async t => {

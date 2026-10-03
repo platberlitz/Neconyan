@@ -1,6 +1,7 @@
 import { readArtifact } from '../jobs/artifacts.js';
 import { roleplayError, roleplayHash } from '../roleplay-store.js';
 import { selectRoleplayPromptRecords } from './roleplay-prompt.js';
+import { applyAutomaticCompanionNoteCleanup } from './companion-note-cleanup.js';
 
 const failure = () => roleplayError('ROLEPLAY_AGENT_RECOVERY', 'The saved Agent completion does not match this reply.', 409);
 
@@ -61,5 +62,15 @@ export function applyAgentCompletionRecords(directories, job, records, output, b
         metadata.variables ??= {};
         if (value === null) delete metadata.variables[key];
         else metadata.variables[key] = value;
+    }
+    if (effect !== 'alternative') {
+        const messages = records.slice(1);
+        const index = effect === 'append' ? messages.length : effect === 'replace' ? source.range.start : source.message.index;
+        // Notes in the replaced range cannot count towards the delivered chat's retention limit.
+        if (effect === 'replace') messages.splice(index, source.range.count, ...output.messages);
+        messages[index] = { ...messages[index], ...message,
+            extra: { ...messages[index]?.extra, ...message.extra }, swipe_info: undefined };
+        const completed = Object.fromEntries(companions.completed.map(id => [id, companions.results[id]]));
+        applyAutomaticCompanionNoteCleanup(messages, request.worldInfo.agents.companionAutoCleanup, completed, index);
     }
 }

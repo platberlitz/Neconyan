@@ -6127,6 +6127,9 @@ function populateGlobalExecutionModeDropdown() {
     $('#ica--appendAgentsExecutionMode').val(getGlobalSettings().appendAgentsExecutionMode || 'parallel');
     $('#ica--companionExecutionMode').val(getGlobalSettings().companionExecutionMode || 'parallel');
     $('#ica--companionConcurrent').prop('checked', Boolean(getGlobalSettings().companionConcurrentWithPostGen));
+    $('#ica--companionAutoCleanupEnabled').prop('checked', getGlobalSettings().companionAutoCleanupEnabled === true);
+    $('#ica--companionAutoCleanupOlderNotes').val(getGlobalSettings().companionAutoCleanupOlderNotes ?? 3)
+        .prop('disabled', getGlobalSettings().companionAutoCleanupEnabled !== true);
     $('#ica--companionPanelLauncher').val(getCompanionPanelLauncher());
 }
 
@@ -6792,6 +6795,16 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
     });
     $('#ica--companionPanelLauncher').on('change', function () {
         $(this).val(setCompanionPanelLauncher(String($(this).val())));
+    });
+    $('#ica--companionAutoCleanupEnabled').on('change', function () {
+        setGlobalSettings({ companionAutoCleanupEnabled: $(this).prop('checked') });
+        populateGlobalExecutionModeDropdown();
+        persistExtensionState();
+    });
+    $('#ica--companionAutoCleanupOlderNotes').on('change', function () {
+        setGlobalSettings({ companionAutoCleanupOlderNotes: this.value });
+        $(this).val(getGlobalSettings().companionAutoCleanupOlderNotes);
+        persistExtensionState();
     });
     $('#ica--helperPrefillMessages').on('input', function () {
         setGlobalSettings({ helperPrefillMessages: this.value });
