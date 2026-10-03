@@ -58,6 +58,14 @@ Neconyan keeps your Markdown exactly as written. Opening and saving a note witho
 
 The **Properties** tab edits optional fields at the top of the note: tags, aliases (other names the note answers to), type and your own simple fields. You never have to fill them in. Fields that are too complex for the form stay in the source and are left untouched.
 
+### Talk about this note
+
+Press **Talk about this note** beside the editor's view tabs. Choose **Miso**, **Taro** or **Nori**, their gender, and **Roleplay** or **Conversation**, then press **Start chat**.
+
+A new chat opens with a copy of your current note in the message box. Review the message and press **Send** when you are ready. Nothing is sent automatically. Only this note's text is included, not linked notes, embedded notes or attachments; AI access settings stay unchanged. Existing chats are kept, and a new Conversation does not copy the previous conversation's memory summary.
+
+If there is an unsent message draft or a reply is running, finish or clear it first. If the account, note or chat changes while the assistant is opening, the discussion stops rather than sharing into the wrong chat.
+
 ## Links and backlinks
 
 Type `[[` to pick another note, or use **Link to note** on the toolbar (handy on a phone). These forms work:

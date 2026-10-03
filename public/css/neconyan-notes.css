@@ -648,6 +648,31 @@ body.neconyan.neconyan-notes-beside #sheld {
     min-height: 44px;
 }
 
+.notes-app .notes-discuss {
+    min-height: 44px;
+}
+
+.notes-assistant-choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-block: 12px;
+}
+
+.notes-assistant-choices .notes-assistant-choice {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 64px;
+    padding: 8px 12px;
+}
+
+.notes-assistant-choice img {
+    width: 48px;
+    height: 48px;
+    border-radius: 999px;
+}
+
 #neconyan-notes[data-writing-fullscreen="true"] {
     inset: 0;
     width: auto;

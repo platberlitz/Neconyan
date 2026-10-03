@@ -1051,7 +1051,7 @@ function setAssistantPickerStatus(root, message, error = false) {
 }
 
 function assertAssistantOpeningCurrent(origin) {
-    if (origin.account !== getCurrentUserHandle() || origin.generation !== getChatGeneration() || is_send_press || is_group_generating) {
+    if (origin.account !== getCurrentUserHandle() || origin.generation !== getChatGeneration() || is_send_press || is_group_generating || origin.isCurrent?.() === false) {
         throw new Error('The workspace changed. Your installed assistant is available in Characters.');
     }
 }
@@ -1085,13 +1085,16 @@ async function activateInstalledAssistant(assistantId, result, origin) {
         assertAssistantOpeningCurrent(origin);
         if (!await selectCharacterById(characterId, { switchMenu: false })) throw new Error('The assistant was installed, but its chat could not be opened.');
         opened = true;
-        if (origin.account !== getCurrentUserHandle() || characters[this_chid]?.avatar !== result.avatar) return;
+        if (origin.account !== getCurrentUserHandle() || characters[this_chid]?.avatar !== result.avatar || origin.isCurrent?.() === false) {
+            throw new Error('The workspace changed before the assistant finished opening.');
+        }
         setActiveCharacter(result.avatar);
         syncNeconyanAssistantTools();
         saveSettingsDebounced();
         globalThis.NeconyanShell?.closeWorkspace?.();
         hideWelcomeHome();
         focusSendTextarea(document.getElementById('send_textarea'), { skipIOS: true });
+        return result.avatar;
     } catch (error) {
         if (!opened && shortcutAssigned && origin.account === getCurrentUserHandle()
             && accountStorage.getItem(assistantAvatarKey) === result.avatar && accountStorage.getItem(assistantVariantKey) === assistantId) {
@@ -1105,6 +1108,32 @@ async function activateInstalledAssistant(assistantId, result, origin) {
             }
         }
         throw error;
+    }
+}
+
+/** Open a bundled assistant through the same guarded installation path as the Home picker. */
+export async function openBundledAssistant(assistantId, { isCurrent = () => true } = {}) {
+    if (!/^(miso|taro|nori)-(male|female|neutral)$/.test(assistantId)) throw new Error('Choose Miso, Taro or Nori.');
+    if (assistantSelectionPending) throw new Error('An assistant is still opening. Try again in a moment.');
+    const origin = { account: getCurrentUserHandle(), generation: getChatGeneration(), isCurrent };
+    assertAssistantOpeningCurrent(origin);
+    assistantSelectionPending = true;
+    try {
+        const previousVariant = getPermanentAssistantVariant();
+        const response = await fetch('/api/characters/assistants/install', {
+            method: 'POST', headers: { ...getRequestHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: assistantId, preferred_avatar: previousVariant === assistantId ? getPermanentAssistantAvatar() : undefined }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.avatar || !result.spriteFolder) throw new Error(result.error || 'The assistant could not be installed.');
+        assistantCatalogPromise = null;
+        return await activateInstalledAssistant(assistantId, result, origin);
+    } finally {
+        assistantSelectionPending = false;
+        document.querySelectorAll('[data-assistant-picker]').forEach(picker => {
+            setAssistantPickerBusy(picker, false);
+            picker.querySelectorAll('.neconyan-assistant-row').forEach(updateAssistantPickerRow);
+        });
     }
 }
 
@@ -1165,25 +1194,10 @@ async function openSelectedAssistant(root, row) {
     }
 
     const assistantId = selected.value;
-    const origin = { account: getCurrentUserHandle(), generation: getChatGeneration() };
-    const avatar = getPermanentAssistantAvatar();
-    const previousVariant = getPermanentAssistantVariant();
-    assistantSelectionPending = true;
     setAssistantPickerBusy(root, true);
     setAssistantPickerStatus(root, `Preparing ${row.dataset.assistantName || 'your assistant'}...`);
     try {
-        const response = await fetch('/api/characters/assistants/install', {
-            method: 'POST',
-            headers: { ...getRequestHeaders(), 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: assistantId, preferred_avatar: previousVariant === assistantId ? avatar : undefined }),
-        });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok || !result.avatar || !result.spriteFolder) {
-            throw new Error(result.error || 'The assistant could not be installed.');
-        }
-
-        assistantCatalogPromise = null;
-        await activateInstalledAssistant(assistantId, result, origin);
+        await openBundledAssistant(assistantId);
     } catch (error) {
         console.error('Neconyan assistant selection failed:', error);
         setAssistantPickerStatus(root, error instanceof Error ? error.message : 'The assistant could not be opened. Try again.', true);

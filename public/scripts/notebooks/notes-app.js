@@ -3,17 +3,17 @@ import { selected_group } from '../group-chats.js';
 import { getCurrentUserHandle } from '../user.js';
 import { accountStorage } from '../util/AccountStorage.js';
 import { loadStylesheetAsync } from '../dynamic-styles.js';
-import { getAssistantIconSrc } from '../neconyan-assistant-art.js';
+import { getAssistantGender, getAssistantIconSrc } from '../neconyan-assistant-art.js';
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
 import { attachmentUrl, newOperationId, notesRequest, subscribeNotes } from './api.js';
-import { append, button, clear, debounce, formatTime, h } from './dom.js';
+import { append, button, choiceRow, clear, debounce, formatTime, h } from './dom.js';
 import { clearDraft, readDraft, saveDraft } from './drafts.js';
 import { headingOutline, renderNoteInto } from './render.js';
 import { formatDiff } from './line-diff.js';
 
 const PREFS_KEY = 'neconyan_notes_prefs';
-const NOTES_STYLESHEET = 'css/neconyan-notes.css?v=14';
-const TOOL_PAGES_STYLESHEET = 'css/neconyan-tool-pages.css?v=20261003-notes-controls3';
+const NOTES_STYLESHEET = 'css/neconyan-notes.css?v=15';
+const TOOL_PAGES_STYLESHEET = 'css/neconyan-tool-pages.css?v=20261003-notes-controls4';
 const TOUR_PAGE_KEY = 'notes';
 const SAVE_DELAY_MS = 1200;
 const MAX_RETRY_MS = 60_000;
@@ -91,6 +91,7 @@ const app = {
         saveTimer: null,
         layout: 'full',
         writingFullscreen: false,
+        discussionPending: false,
         pane: 'note',
         detailsTab: 'properties',
         view: 'write',
@@ -184,7 +185,9 @@ function buildRoot() {
     elements.viewTabs = h('div', { class: 'notes-choice-group notes-view-tabs', role: 'group', 'aria-label': 'Editor view' });
     elements.fullscreen = button('Full screen', () => setWritingFullscreen(!state.writingFullscreen), { icon: 'fa-expand', className: 'notes-fullscreen', title: 'Write in full screen' });
     elements.fullscreen.setAttribute('aria-expanded', 'false');
-    elements.writingActions = h('div', { class: 'notes-writing-actions' }, elements.viewTabs, elements.fullscreen);
+    elements.discuss = button('Talk about this note', () => void discussNote(), { icon: 'fa-comments', className: 'notes-discuss' });
+    elements.writingActions = h('div', { class: 'notes-writing-actions' }, elements.viewTabs,
+        h('div', { class: 'notes-nav-actions' }, elements.discuss, elements.fullscreen));
     elements.editorBody = h('div', { class: 'notes-editor-body' }, elements.source, elements.reader, elements.suggest);
     elements.empty = h('div', { class: 'notes-empty' });
     elements.editor = h('div', { class: 'notes-editor', hidden: true },
@@ -289,6 +292,57 @@ function onNotesKeydown(event) {
     if (event.key === 'Escape' && !event.defaultPrevented && !event.isComposing && !app.sourceEditor?.composing && app.state.writingFullscreen) {
         event.preventDefault();
         setWritingFullscreen(false);
+    }
+}
+
+async function discussNote() {
+    const { state, elements } = app;
+    if (!state.note || state.discussionPending || app.sourceEditor?.composing) return;
+    state.discussionPending = true;
+    elements.discuss.disabled = true;
+    const snapshot = { account: state.account, notebookId: state.notebookId, noteId: state.note.id };
+    const isCurrent = () => getCurrentUserHandle() === snapshot.account && state.open && state.account === snapshot.account
+        && state.notebookId === snapshot.notebookId && state.note?.id === snapshot.noteId;
+    let personality = 'miso';
+    let gender = getAssistantGender(personality);
+    let mode = 'roleplay';
+    const assistants = h('div', { class: 'notes-assistant-choices', role: 'group', 'aria-label': 'Choose an assistant' });
+    const genders = h('div');
+    const modes = h('div');
+    function renderChoices() {
+        clear(assistants); clear(genders); clear(modes);
+        for (const name of ['miso', 'taro', 'nori']) {
+            const label = name[0].toUpperCase() + name.slice(1);
+            const choice = button(label, () => { personality = name; gender = getAssistantGender(name); renderChoices(); }, { pressed: personality === name, className: 'notes-assistant-choice' });
+            const portrait = getAssistantIconSrc(name).replace(`${name}-${getAssistantGender(name)}.png`, `${name}-${name === personality ? gender : getAssistantGender(name)}.png`);
+            choice.prepend(h('img', { src: portrait, alt: '', width: '48', height: '48' }));
+            assistants.append(choice);
+        }
+        genders.append(choiceRow('Gender', [['male', 'Male'], ['female', 'Female'], ['neutral', 'Neutral']], gender, value => { gender = value; renderChoices(); }));
+        modes.append(choiceRow('Chat mode', [['roleplay', 'Roleplay'], ['conversation', 'Conversation']], mode, value => { mode = value; renderChoices(); }));
+    }
+    renderChoices();
+    try {
+        const content = h('div', { class: 'notes-dialog notes-discussion-dialog' },
+            h('h3', { class: 'notes-heading', text: 'Talk about this note' }),
+            h('p', { text: elements.title.value || 'Untitled' }), assistants, genders, modes,
+            h('p', { class: 'notes-notice', text: 'A new chat will open with a copy of this note in the message box. Review it and press Send when you are ready. Existing chats are kept.' }),
+            h('p', { class: 'notes-hint', text: 'Only this note is included, not linked notes or attachments. Your AI access settings stay unchanged.' }));
+        const result = await callGenericPopup(content, POPUP_TYPE.CONFIRM, '', { wide: true, okButton: 'Start chat', cancelButton: 'Not now' });
+        if (result !== POPUP_RESULT.AFFIRMATIVE || !isCurrent()) return;
+        const note = { title: elements.title.value || 'Untitled', text: state.editorText ?? elements.textarea.value ?? '' };
+        const { prepareNoteDiscussion } = await import('./assistant-chat.js');
+        if (!isCurrent()) return;
+        const discussion = await prepareNoteDiscussion({ assistantId: `${personality}-${gender}`, mode, note, isCurrent });
+        if (!isCurrent()) return;
+        hideNotes();
+        discussion.composer.focus({ preventScroll: true });
+        toast('success', 'Your note is ready in a new chat. Review the message, then press Send.');
+    } catch (error) {
+        toast('error', error instanceof Error ? error.message : 'The note discussion could not start. Try again.');
+    } finally {
+        state.discussionPending = false;
+        elements.discuss.disabled = false;
     }
 }
 
