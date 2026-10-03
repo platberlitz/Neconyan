@@ -90,17 +90,6 @@ body.neconyan.neconyan-notes-beside #sheld {
     border-color: var(--neco-ginger);
 }
 
-#neconyan-notes .menu_button.notes-primary,
-.popup .notes-dialog .menu_button.notes-primary {
-    background: var(--neco-ginger);
-    color: var(--neco-on-accent);
-}
-
-#neconyan-notes .menu_button.notes-primary:hover,
-.popup .notes-dialog .menu_button.notes-primary:hover {
-    background: var(--neco-ginger-hover);
-}
-
 .notes-app .notes-quiet {
     background: transparent;
     border-color: transparent;

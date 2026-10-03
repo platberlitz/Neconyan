@@ -33,9 +33,10 @@ export function clear(element) {
 }
 
 export function button(label, onClick, { icon = '', className = '', title = '', pressed = null, disabled = false } = {}) {
+    const primaryClass = className.split(/\s+/).includes('notes-primary') ? ' menu_button_primary' : '';
     const element = h('button', {
         type: 'button',
-        class: `menu_button notes-button ${className}`.trim(),
+        class: `menu_button notes-button ${className}${primaryClass}`.trim(),
         title: title || null,
         'aria-pressed': pressed === null ? null : String(Boolean(pressed)),
         disabled,

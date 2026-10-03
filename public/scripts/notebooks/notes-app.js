@@ -288,7 +288,7 @@ async function ensureModules() {
 
 export async function openNotes(options = {}) {
     const { state } = app;
-    await loadStylesheetAsync('css/neconyan-notes.css?v=10', { id: 'neconyan-notes-css' }).catch(() => null);
+    await loadStylesheetAsync('css/neconyan-notes.css?v=11', { id: 'neconyan-notes-css' }).catch(() => null);
     await ensureModules();
     if (!state.built) buildRoot();
     accountChanged();
