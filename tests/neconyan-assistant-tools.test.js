@@ -146,7 +146,7 @@ test('real ToolManager list/read actions keep exact names and omit inaccessible 
 });
 
 test('character creation validates fields, honours review and uses fresh-file creation', async () => {
-    const { invoke, context } = await runtime();
+    const { invoke, context, getOneCharacter } = await runtime();
     expect(await invoke('CreateCharacter', { userConfirmed: true, character: { name: '../bad' } })).toMatchObject({ status: 'failure' });
     context.confirm = async () => 0;
     expect(await invoke('CreateCharacter', { userConfirmed: true, character: { name: 'New character' } })).toMatchObject({ status: 'cancelled' });
@@ -154,6 +154,7 @@ test('character creation validates fields, honours review and uses fresh-file cr
     context.confirm = async () => 1;
     expect(await invoke('CreateCharacter', { userConfirmed: true, character: { name: 'New character', description: 'A kind friend', first_mes: 'Hello!' } })).toMatchObject({ status: 'success', committed: true, avatar: 'New character.png' });
     expect(context.writes[0].payload).toEqual({ ch_name: 'New character', description: 'A kind friend', first_mes: 'Hello!' });
+    expect(getOneCharacter).toHaveBeenCalledWith('New character.png', { allowInsert: true, isCurrent: expect.any(Function) });
 });
 
 test('write tools refuse to act until the user confirmed the call in chat', async () => {

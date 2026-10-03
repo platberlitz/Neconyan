@@ -711,7 +711,7 @@ async function createCharacter(input, guard) {
         let refreshFailed = !guard.isCurrent();
         if (!refreshFailed) {
             try {
-                refreshFailed = await getOneCharacter(avatar, { isCurrent: guard.isCurrent }) === false;
+                refreshFailed = await getOneCharacter(avatar, { isCurrent: guard.isCurrent, allowInsert: true }) === false;
                 printCharactersDebounced();
             } catch { refreshFailed = true; }
         }

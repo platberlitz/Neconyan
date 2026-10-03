@@ -1870,7 +1870,7 @@ export function getEntitiesList({ doFilter = false, doSort = true } = {}) {
     return entities;
 }
 
-export async function getOneCharacter(avatarUrl, { isCurrent = () => true } = {}) {
+export async function getOneCharacter(avatarUrl, { isCurrent = () => true, allowInsert = false } = {}) {
     if (!isCurrent()) return false;
     const response = await fetch('/api/characters/get', {
         method: 'POST',
@@ -1891,6 +1891,10 @@ export async function getOneCharacter(avatarUrl, { isCurrent = () => true } = {}
 
         if (indexOf !== -1) {
             characters[indexOf] = getData;
+            return true;
+        } else if (allowInsert) {
+            // A newly created card is not in the list yet; append it without changing active character IDs.
+            characters.push(getData);
             return true;
         } else {
             toastr.error(t`Character ${avatarUrl} not found in the list`, t`Error`, { timeOut: 5000, preventDuplicates: true });
