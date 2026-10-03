@@ -187,6 +187,7 @@ describe('settings pages open as Neconyan pages with an assistant tour', () => {
         mewmory: 'taro',
         persona: 'miso',
         'character-library': 'nori',
+        'group-library': 'miso',
         'dialogue-colors': 'miso',
         background: 'miso',
         server: 'taro',
@@ -232,19 +233,21 @@ describe('settings pages open as Neconyan pages with an assistant tour', () => {
         expect(steps.find(step => step.id === 'description').tab).toBe('#persona_workspace_tab_edit');
     });
 
-    test('the Character menu tabs mount a Nori tour on the Characters panel', () => {
-        expect(shell).toMatch(/NN_CHARACTER_NATIVE_PAGES = Object\.freeze\(\{\s*characters: 'character-library',\s*persona: 'persona',\s*\}\)/);
+    test('the Character menu tabs mount Nori and Miso tours on their own panels', () => {
+        expect(shell).toMatch(/NN_CHARACTER_NATIVE_PAGES = Object\.freeze\(\{\s*characters: 'character-library',\s*groups: 'group-library',\s*persona: 'persona',\s*\}\)/);
         expect(shell).toContain('mountNeconyanNativePage(nativePage, document.getElementById(\'rm_characters_block\'))');
         expect(shell).toContain('if (heading.dataset.toolPage !== key) return;');
         expect(getToolTourSteps('character-library', { isShown: () => true }).map(step => step.id))
             .toEqual(['welcome', 'search', 'create', 'archive', 'view', 'bulk', 'cards', 'filters', 'done']);
-        for (const key of ['character-library']) {
-            const empty = getToolTourSteps(key, { isShown: () => true, empty: true }).find(step => step.id === 'cards');
+        expect(getToolTourSteps('group-library', { isShown: () => true }).map(step => step.id))
+            .toEqual(['welcome', 'create', 'search', 'bulk', 'list', 'filters', 'done']);
+        for (const key of ['character-library', 'group-library']) {
+            const empty = getToolTourSteps(key, { isShown: () => true, empty: true }).find(step => ['cards', 'list'].includes(step.id));
             expect(empty.body).toContain('Create ');
         }
     });
 
-    test('a tour on a Character panel ends when the tab changes, and skips the spacer in a clipped panel', () => {
+    test('a tour on a shared Character panel ends when the tab changes, and skips the spacer in a clipped panel', () => {
         const source = read('../public/scripts/neconyan-tool-tour.js');
         expect(source).toContain('(hostKey !== undefined && hostKey !== tour.key)');
         expect(source).toContain('/^(hidden|clip)$/.test(getComputedStyle(tour.root).overflowY)');

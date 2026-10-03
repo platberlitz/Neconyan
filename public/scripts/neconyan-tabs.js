@@ -2892,9 +2892,10 @@ const NN_NATIVE_SHELL_PAGES = Object.freeze({
     'right:console-logs': 'console-logs',
 });
 
-// Character drawer tabs with their own assistant tour.
+// Character drawer tabs with their own assistant tour. Characters and Groups share #rm_characters_block.
 const NN_CHARACTER_NATIVE_PAGES = Object.freeze({
     characters: 'character-library',
+    groups: 'group-library',
     persona: 'persona',
 });
 
