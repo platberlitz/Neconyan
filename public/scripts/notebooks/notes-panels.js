@@ -177,14 +177,9 @@ async function propertiesPanel(app) {
 /* ---------- Links ---------- */
 
 function jumpTo(app, offset) {
-    const textarea = app.elements.textarea;
-    app.setView?.('write');
+    if (app.sourceEditor?.composing) return;
     app.setPane('note');
-    textarea.focus();
-    textarea.setSelectionRange(offset, offset);
-    const line = textarea.value.slice(0, offset).split('\n').length;
-    const lineHeight = parseFloat(getComputedStyle(textarea).lineHeight) || 20;
-    textarea.scrollTop = Math.max(0, (line - 3) * lineHeight);
+    app.jumpToOffset(offset);
 }
 
 async function linksPanel(app) {

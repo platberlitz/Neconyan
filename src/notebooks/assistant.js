@@ -4,7 +4,7 @@ import path from 'node:path';
 import { roleplayHash } from '../roleplay-store.js';
 import { diffHunks } from '../../public/scripts/notebooks/line-diff.js';
 import { headingsOf, resolveSection, sectionBody } from './markdown.js';
-import { backlinksTo, outgoingLinks, searchEntries } from './note-index.js';
+import { backlinksTo, outgoingLinks, permissionAwareResolver, searchEntries } from './note-index.js';
 import { NotebookError, normaliseFolder, normaliseRelativePath, requireNotebookId, requireNoteId, sha256 } from './paths.js';
 import { assistantCan, assistantCanCreate, assistantCanPublish, effectiveAssistantAccess, requestedEditAllows } from './permissions.js';
 import {
@@ -369,7 +369,9 @@ function linksForAssistant(lease, args, at) {
     const { policies, state, entry, grantScope } = noteAccess(lease, { notebookId: args.notebookId, noteId: args.noteId, grant, need: 'read' });
     if (grantScope === 'selection') throw denied();
     const readable = item => assistantCan(policies, item.id, 'read');
-    const outgoing = outgoingLinks(state.entries, entry).map(link => {
+    const { entries: visible } = permissionAwareResolver(state.entries, readable);
+    if (!visible.some(item => item.id === entry.id)) visible.push(entry); // A whole-note grant covers this source, not its targets.
+    const outgoing = outgoingLinks(visible, entry).map(link => {
         if (link.status === 'resolved') {
             const target = state.byId.get(link.noteId);
             if (!target || !readable(target)) return { raw: link.raw, status: 'unavailable' };
@@ -379,9 +381,9 @@ function linksForAssistant(lease, args, at) {
             const candidates = (link.candidates ?? []).filter(candidate => readable(candidate)).map(candidate => ({ noteId: candidate.id, title: candidate.title }));
             return { raw: link.raw, status: 'ambiguous', candidates };
         }
-        return { raw: link.raw, status: link.status };
+        return { raw: link.raw, status: link.status === 'missing' ? 'unavailable' : link.status };
     });
-    const backlinks = backlinksTo(state.entries, entry, readable).map(item => ({
+    const backlinks = backlinksTo(visible, entry, readable).map(item => ({
         noteId: item.id, title: item.title, count: item.count, passages: item.passages.slice(0, 3).map(passage => passage.excerpt),
     }));
     return { notebookId: args.notebookId, noteId: entry.id, title: entry.title, outgoing, backlinks, notice: DATA_NOTICE };

@@ -484,10 +484,12 @@ app.get('/docs/:slug', (request, response, next) => {
 
 // Host frontend assets
 const webpackMiddleware = getWebpackServeMiddleware();
+const notesEditorMiddleware = getWebpackServeMiddleware({ bundle: 'notes-editor' });
 const frontendAssetMiddleware = getFrontendAssetMiddleware();
 app.use(redirectLegacyFrontendAsset);
 app.use(FRONTEND_ASSET_PREFIX, frontendAssetMiddleware.immutableAssets);
 app.use(webpackMiddleware);
+app.use(notesEditorMiddleware);
 app.use(userCssMiddleware);
 app.use((request, response, next) => {
     if (!shouldServeFrontendAssets()) {

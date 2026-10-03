@@ -1,7 +1,7 @@
 import path from 'node:path';
 
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
-import { withRoleplayAccount } from '../roleplay-store.js';
+import { withRoleplayAccount, roleplayAccountStamp } from '../roleplay-store.js';
 import { chunkNote, noteBody, resolveSection } from './markdown.js';
 import { contextPolicy, scopeMatches } from './permissions.js';
 import { NotebookError } from './paths.js';
@@ -12,6 +12,7 @@ import {
     readJsonLocked,
     readPoliciesLocked,
     writeJsonLocked,
+    prepareNotebook,
 } from './store.js';
 import { readBindingsLocked } from './lore.js';
 
@@ -138,7 +139,7 @@ export function collectNoteContextLocked(lease, { scope = {}, budgetTokens = DEF
             continue;
         }
         if (policies.admitted === false) continue;
-        const configured = Object.entries(policies.notes ?? {}).filter(([, value]) => value?.context && value.context.mode !== 'off');
+        const configured = Object.entries(policies.notes ?? {}).filter(([noteId, value]) => value?.context && value.context.mode !== 'off' && scopeMatches(contextPolicy(policies, noteId).scopes, active));
         if (!configured.length) continue;
         const state = loadNotebookLocked(lease, notebookId);
         const bindingFile = readBindingsLocked(lease, notebookId);
@@ -203,6 +204,30 @@ export function collectNoteContextLocked(lease, { scope = {}, budgetTokens = DEF
         withheld,
         content,
     };
+}
+
+/** Only owner-enabled, scope-matching notebooks are prepared for chat context. */
+export async function prepareNoteContextNotebooks(base, scope, { stamp = roleplayAccountStamp(base) } = {}) {
+    const active = normaliseScope(scope);
+    const ids = withRoleplayAccount(base, stamp, lease => listNotebookIdsLocked(lease).filter(id => {
+        let policies;
+        try { policies = readPoliciesLocked(lease, id); } catch { return false; }
+        return policies.admitted !== false && Object.keys(policies.notes ?? {}).some(noteId => {
+            const policy = contextPolicy(policies, noteId);
+            return policy.mode !== 'off' && scopeMatches(policy.scopes, active);
+        });
+    }));
+    for (const id of ids) await prepareNotebook(base, id, { stamp });
+}
+
+export async function prepareRoleplayNotebooks({ directories, job, base, account, source, snapshot }) {
+    if (readArtifact(directories, job.id, CONTEXT_ARTIFACT) !== undefined || readArtifact(directories, job.id, 'roleplay-history-input') !== undefined) return;
+    const scope = { chat: roleplayChatScope(source?.locator), character: source?.locator?.group ? snapshot?.avatar : source?.locator?.avatar ?? snapshot?.avatar,
+        lorebooks: Object.values(snapshot?.names ?? {}).flat().filter(name => typeof name === 'string') };
+    try { await prepareNoteContextNotebooks(base, scope, { stamp: account }); } catch (error) {
+        if (!(error instanceof NotebookError) && String(error?.code ?? '').startsWith('ROLEPLAY_')) throw error;
+        // The synchronous collector retains its existing damaged-notebook handling.
+    }
 }
 
 function logFile(lease) {

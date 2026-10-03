@@ -393,12 +393,14 @@ body.neconyan.neconyan-notes-beside #sheld {
 }
 
 .notes-source {
+    display: flex;
     flex: 1 1 auto;
     width: 100%;
     min-height: 240px;
     box-sizing: border-box;
     margin: 0;
-    padding: 12px;
+    padding: 0;
+    overflow: hidden;
     border: 1px solid var(--neco-border);
     border-radius: 10px;
     background: var(--neco-surface);
@@ -408,6 +410,90 @@ body.neconyan.neconyan-notes-beside #sheld {
     line-height: 1.55;
     resize: none;
     tab-size: 4;
+}
+
+.notes-app .notes-source .cm-editor {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+    font: inherit;
+    color: var(--neco-ink);
+    background: var(--neco-surface);
+}
+
+.notes-app .notes-source .cm-scroller {
+    overflow: auto;
+    font: inherit;
+    line-height: inherit;
+}
+
+.notes-app .notes-source .cm-content {
+    padding: 12px;
+    caret-color: var(--neco-ink);
+}
+
+.notes-app .notes-source .cm-line {
+    padding: 0;
+}
+
+.notes-app .notes-source .cm-editor.cm-focused {
+    outline: none;
+}
+
+.notes-source:focus-within {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+.notes-source ::selection {
+    background: color-mix(in srgb, var(--neco-ginger) 30%, var(--neco-surface));
+}
+
+.notes-fold-controls,
+.notes-read-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.notes-fold-sections {
+    display: flex;
+    flex-direction: column;
+    flex: 0 1 auto;
+    gap: 4px;
+    max-height: 160px;
+    overflow: auto;
+    padding: 8px;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-surface);
+}
+
+.notes-fold-sections > button {
+    margin-left: calc(var(--notes-outline-level, 0) * 6px);
+    justify-content: flex-start;
+    text-align: left;
+    white-space: normal;
+}
+
+.notes-app :is(.notes-fold-controls, .notes-fold-sections, .notes-read-heading) .notes-button,
+.notes-app .notes-fold-placeholder {
+    min-height: 44px;
+    font-family: var(--sb-font-main, 'Nunito', sans-serif);
+}
+
+.notes-app .notes-fold-placeholder {
+    display: inline-flex;
+    margin: 0 6px;
+    font-size: 0.85rem;
+    vertical-align: middle;
+}
+
+.notes-read-heading > :is(h1, h2, h3, h4, h5, h6) {
+    flex: 1 1 160px;
+    margin: 12px 0;
 }
 
 .notes-reader,
@@ -475,12 +561,215 @@ body.neconyan.neconyan-notes-beside #sheld {
     text-decoration: line-through;
 }
 
-.notes-embed-chip {
-    display: inline-block;
-    padding: 2px 8px;
-    border: 1px dashed var(--neco-border);
-    border-radius: 6px;
+.notes-embed {
+    margin: 8px 0;
+    padding: 8px;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+}
+
+.notes-embed-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.notes-reader .notes-embed-title {
+    flex: 1 1 160px;
+    margin: 0;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.notes-app .notes-embed-header .notes-button {
+    min-height: 44px;
+}
+
+.notes-embed-placeholder {
+    color: var(--neco-muted);
+}
+
+.notes-embed-body > :first-child {
+    margin-top: 0;
+}
+
+.notes-embed-body > :last-child {
+    margin-bottom: 0;
+}
+
+.notes-graph,
+.notes-graph-results {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.notes-graph-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.notes-graph-head .notes-heading {
+    flex: 1 1 180px;
+    margin: 0;
+}
+
+.notes-graph-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 12px;
+}
+
+.notes-graph-filters .notes-field {
+    flex: 1 1 180px;
+    min-width: 0;
+}
+
+.notes-graph .notes-button,
+.notes-graph .text_pole,
+.notes-graph-list .notes-note-link,
+.notes-app .notes-graph-open {
+    min-height: 44px;
+}
+
+.notes-graph-map {
+    padding: 8px;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-surface);
+}
+
+.notes-graph-map svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 460px;
+}
+
+.notes-graph-lines line {
+    stroke: var(--neco-border);
+    stroke-width: 1.5;
+}
+
+.notes-graph-lines .notes-graph-embed-edge {
+    stroke: var(--neco-ginger);
+}
+
+.notes-graph-node circle {
+    fill: var(--neco-raised);
+    stroke: var(--neco-ink);
+    stroke-width: 2;
+}
+
+.notes-graph-node.is-focused circle {
+    fill: var(--neco-ginger);
+    stroke: var(--neco-ginger);
+    stroke-width: 4;
+}
+
+.notes-graph-node text {
+    fill: var(--neco-ink);
+    font-family: var(--nn-font-body, 'Nunito', sans-serif);
+    font-size: 14px;
+}
+
+.notes-graph-list .notes-note-link {
+    display: flex;
+    width: 100%;
+}
+
+.notes-table-view,
+.notes-table-results,
+.notes-table-columns {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+}
+
+.notes-table-head,
+.notes-table-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+}
+
+.notes-table-head .notes-heading {
+    flex: 1 1 180px;
+    margin: 0;
+}
+
+.notes-table-filters .notes-field {
+    flex: 1 1 170px;
+    min-width: 0;
+}
+
+.notes-table-view .notes-button,
+.notes-table-view .text_pole,
+.notes-app .notes-table-open,
+.notes-property-dialog .notes-button,
+.notes-property-dialog .text_pole,
+.notes-table-column-picker > summary {
+    min-height: 44px;
+}
+
+.notes-table-column-picker > summary {
+    padding: 10px 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 10px;
+    background: var(--neco-surface);
+    color: var(--neco-ink);
     cursor: pointer;
+}
+
+.notes-table-column-picker > .notes-wrap {
+    margin-top: 8px;
+}
+
+.notes-property-table-scroll {
+    width: 100%;
+    overflow-x: auto;
+    touch-action: pan-x;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-surface);
+}
+
+.notes-property-table {
+    width: 100%;
+    min-width: 600px;
+    border-collapse: collapse;
+    color: var(--neco-ink);
+}
+
+.notes-property-table th,
+.notes-property-table td {
+    min-width: 160px;
+    max-width: 320px;
+    padding: 8px;
+    border-bottom: 1px solid var(--neco-border);
+    text-align: left;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+}
+
+.notes-property-table thead {
+    background: var(--neco-raised);
+}
+
+.notes-property-table .notes-button {
+    width: 100%;
+    justify-content: flex-start;
+    white-space: pre-wrap;
+    text-align: left;
 }
 
 .notes-task {
@@ -532,6 +821,211 @@ body.neconyan.neconyan-notes-beside #sheld {
 
 .notes-outline-item:hover {
     background: var(--neco-raised);
+}
+
+.notes-app[data-workspace="canvas"][data-layout="full"] .notes-columns {
+    grid-template-columns: 260px minmax(0, 1fr);
+}
+
+.notes-app[data-workspace="canvas"] .notes-pane-details {
+    display: none;
+}
+
+.notes-canvas-view,
+.notes-canvas-card-list,
+.notes-canvas-connections,
+.notes-canvas-note-choices,
+.notes-canvas-history {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+}
+
+.notes-canvas-header,
+.notes-canvas-actions,
+.notes-canvas-views,
+.notes-canvas-card-controls,
+.notes-canvas-connection,
+.notes-canvas-save-conflict,
+.notes-canvas-draft-conflict,
+.notes-canvas-recovery {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.notes-canvas-header h2,
+.notes-canvas-connections h3 {
+    font-family: var(--neco-display-font, 'Fredoka One', sans-serif);
+    font-size: 1.2rem;
+    font-weight: 400;
+    margin: 0;
+}
+
+.notes-canvas-title {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.notes-canvas-view .notes-button,
+.notes-canvas-dialog .notes-button,
+.notes-canvas-dialog input,
+.notes-canvas-dialog select,
+.notes-canvas-dialog textarea,
+.notes-canvas-files summary,
+.notes-canvas-history .notes-button {
+    min-height: 44px;
+    box-sizing: border-box;
+}
+
+.notes-canvas-files {
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    padding: 6px 8px;
+    background: var(--neco-surface);
+}
+
+.notes-canvas-files summary {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.notes-canvas-file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+.notes-canvas-card,
+.notes-canvas-stage {
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+}
+
+.notes-canvas-card.is-selected {
+    border-color: var(--neco-ginger);
+}
+
+.notes-canvas-excerpt,
+.notes-canvas-history-source {
+    margin: 12px 0;
+    max-height: 280px;
+    overflow-y: auto;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+    font-family: var(--monoFontFamily, ui-monospace, monospace);
+    font-size: 0.9rem;
+    line-height: 1.55;
+    color: var(--neco-ink);
+    background: var(--neco-surface);
+}
+
+.notes-canvas-diagram {
+    display: block;
+    width: 100%;
+    height: auto;
+    min-height: 240px;
+    max-height: 65vh;
+}
+
+.notes-canvas-node rect {
+    fill: var(--neco-surface);
+    stroke: var(--neco-border);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+}
+
+.notes-canvas-node text {
+    fill: var(--neco-ink);
+    font-family: var(--mainFontFamily, 'Nunito', sans-serif);
+    font-size: 16px;
+}
+
+.notes-canvas-node {
+    cursor: pointer;
+}
+
+.notes-canvas-node:is(.is-selected, :focus) rect {
+    stroke: var(--neco-ginger);
+    stroke-width: 3;
+}
+
+.notes-canvas-node:focus {
+    outline: none;
+}
+
+.notes-canvas-diagram[data-move="true"] {
+    touch-action: none;
+}
+
+.notes-canvas-diagram[data-move="true"] .notes-canvas-node {
+    cursor: move;
+}
+
+.notes-canvas-line {
+    stroke: var(--neco-ginger);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+}
+
+.notes-canvas-arrow {
+    fill: var(--neco-ginger);
+}
+
+.notes-obsidian-dialog {
+    padding: 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    color: var(--neco-ink);
+    background: var(--neco-surface);
+    text-align: left;
+}
+
+.notes-obsidian-dialog .notes-button,
+.notes-obsidian-dialog .text_pole,
+.notes-obsidian-confirm {
+    min-height: 44px;
+}
+
+.notes-obsidian-confirm,
+.notes-obsidian-history-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.notes-obsidian-confirm input {
+    width: 22px;
+    height: 22px;
+    flex: 0 0 22px;
+}
+
+.notes-obsidian-confirm span,
+.notes-obsidian-history-row > div {
+    flex: 1 1 160px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.notes-obsidian-history {
+    max-height: 280px;
+    overflow-y: auto;
+    padding: 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    color: var(--neco-ink);
+    background: var(--neco-surface);
 }
 
 .notes-detail-tabs {

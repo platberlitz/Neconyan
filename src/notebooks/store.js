@@ -6,8 +6,12 @@ import {
     readAuthoringFileLocked,
     writeAuthoringFileLocked,
     deleteAuthoringFileLocked,
+    authoringEvidence,
+    withAuthoringBatchLocked,
+    flushAuthoringPathLocked,
 } from '../authoring-store.js';
-import { createRoleplayDirectory, roleplayLease } from '../roleplay-store.js';
+import { createRoleplayDirectory, roleplayLease, roleplayAccountStamp, withRoleplayAccount } from '../roleplay-store.js';
+import { prepareInWorker, yieldNotebookWork } from './preparation.js';
 import {
     NOTEBOOK_ID,
     NOTE_ID,
@@ -171,6 +175,14 @@ export function writePoliciesLocked(lease, notebookId, policies) {
     return policies.revision;
 }
 
+function protectExternalImportsLocked(lease, notebookId, manifest, identities) {
+    if (manifest.externalImportsDeny !== true || !identities.length) return;
+    const policies = readPoliciesLocked(lease, notebookId);
+    for (const id of identities) policies.notes[id] = { ...(policies.notes[id] ?? {}), assistant: 'none', context: { mode: 'off' } };
+    // Finish this durable write before any new identity enters the manifest.
+    writePoliciesLocked(lease, notebookId, policies);
+}
+
 /* ---------- operation journal ---------- */
 
 function operationsFile(lease) {
@@ -188,9 +200,10 @@ function writeOperations(lease, journal) {
     const cutoff = Date.now() - OPERATION_RETENTION_MS;
     const kept = entries
         .filter(([, entry]) => entry.state === 'pending' || Date.parse(entry.at) >= cutoff)
-        .sort((a, b) => String(b[1].at).localeCompare(String(a[1].at)))
-        .slice(0, MAX_OPERATIONS);
-    journal.entries = Object.fromEntries(kept);
+        .sort((a, b) => String(b[1].at).localeCompare(String(a[1].at)));
+    const pending = kept.filter(([, entry]) => entry.state === 'pending');
+    const completed = kept.filter(([, entry]) => entry.state !== 'pending').slice(0, Math.max(0, MAX_OPERATIONS - pending.length));
+    journal.entries = Object.fromEntries([...pending, ...completed]);
     ensureDirectory(lease, path.dirname(operationsFile(lease)));
     writeJsonLocked(lease, operationsFile(lease), journal);
 }
@@ -210,6 +223,11 @@ export function readOperationLocked(lease, operationId) {
     return readOperations(lease).entries[operationId] ?? null;
 }
 
+export function pendingOperationsLocked(lease) {
+    return Object.entries(readOperations(lease).entries).filter(([, entry]) => entry.state === 'pending')
+        .map(([operationId, entry]) => ({ operationId, ...entry }));
+}
+
 /**
  * Runs a mutation once per operation ID. Replays return the stored result;
  * reusing an ID with different arguments fails.
@@ -225,14 +243,17 @@ export function runOperationLocked(lease, { operationId, kind, args }, execute) 
         }
         if (existing.state === 'done') return { ...existing.result, replayed: true };
     }
-    journal.entries[operationId] = { kind, argsHash: hash, state: 'pending', at: now(), plan: existing?.plan ?? null };
-    writeOperations(lease, journal);
+    if (!existing) {
+        journal.entries[operationId] = { kind, argsHash: hash, state: 'pending', at: now(), plan: null };
+        writeOperations(lease, journal);
+    }
     const setPlan = plan => {
         const current = readOperations(lease);
         current.entries[operationId] = { ...current.entries[operationId], plan };
         writeOperations(lease, current);
     };
     const result = execute({ setPlan, plan: existing?.plan ?? null });
+    if (result?.pending === true) return result;
     const finished = readOperations(lease);
     finished.entries[operationId] = { kind, argsHash: hash, state: 'done', at: now(), result };
     writeOperations(lease, finished);
@@ -301,11 +322,18 @@ function pruneBlobs(lease, notebookId, noteId, history) {
  * minutes collapse into one entry; every other kind of change keeps the
  * previous state as its own entry.
  */
-export function recordHistoryLocked(lease, notebookId, noteId, { bytes, previous, actor, origin, reason, operationId }) {
+export function recordHistoryLocked(lease, notebookId, noteId, { bytes, previous, actor, origin, reason, operationId, prepared }) {
     const history = readHistoryLocked(lease, notebookId, noteId);
+    const hash = sha256(bytes);
+    const prior = operationId && history.entries.find(entry => entry.revision === hash && entry.operationId === operationId);
+    if (prior) {
+        flushAuthoringPathLocked(lease, blobFile(rootOf(lease), notebookId, noteId, hash));
+        flushAuthoringPathLocked(lease, historyFile(rootOf(lease), notebookId, noteId));
+        return prior;
+    }
     const revision = writeBlob(lease, notebookId, noteId, bytes);
     const last = history.entries.at(-1);
-    const at = now();
+    const at = prepared?.at ?? now();
     const actorKey = JSON.stringify(actor ?? null);
     if (
         last && reason === 'autosave' && last.reason === 'autosave' && last.origin === origin
@@ -319,7 +347,7 @@ export function recordHistoryLocked(lease, notebookId, noteId, { bytes, previous
         last.saves = (last.saves ?? 1) + 1;
     } else {
         history.entries.push({
-            id: `h_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`,
+            id: prepared?.id ?? `h_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`,
             at,
             startedAt: at,
             revision,
@@ -453,7 +481,7 @@ export function renameNotebookLocked(lease, { operationId, notebookId, name }) {
 
 /* ---------- scanning and reconciliation ---------- */
 
-function walkContent(contentRoot) {
+export function walkContent(contentRoot) {
     const files = [];
     const attachments = [];
     const folders = [];
@@ -499,13 +527,168 @@ function walkContent(contentRoot) {
     return { files, attachments, folders, skipped };
 }
 
+const preparations = new Map();
+export const RECONCILE_BATCH_SIZE = 8;
+
+function reservedImportIdentities(lease, notebookId) {
+    const reserved = new Map();
+    for (const [operationId, entry] of Object.entries(readOperations(lease).entries)) {
+        if (entry.state !== 'pending' || entry.plan?.type !== 'import' || entry.plan.notebookId !== notebookId || !/^st_[a-f0-9]{32}$/.test(entry.plan.stageId)) continue;
+        const journal = readJsonLocked(lease, path.join(rootOf(lease), 'notebook-control', '_imports', entry.plan.stageId, 'commit.json'), null);
+        for (const item of journal?.items ?? []) if (item.type === 'note' && NOTE_ID.test(item.noteId)) reserved.set(foldKey(item.path), { ...item, operationId });
+    }
+    return reserved;
+}
+
+/** Prepare parsing/history metadata without a lease; publish bounded, replayable batches. */
+export async function prepareNotebook(base, notebookId, { stamp = roleplayAccountStamp(base), onBatch, fault, force = false } = {}) {
+    requireNotebookId(notebookId);
+    const key = `${base.directories.root}\0${notebookId}\0${JSON.stringify(stamp)}`;
+    if (preparations.has(key)) return preparations.get(key);
+    const job = (async () => {
+        const ready = withRoleplayAccount(base, stamp, lease => {
+            const manifest = readManifestLocked(lease, notebookId);
+            const cached = scanCache.get(cacheKey(lease, notebookId));
+            const fresh = cached?.structureRevision === manifest.structureRevision && Date.now() - cached.scannedAt < SCAN_TTL_MS;
+            if (fresh && !force) return { manifest, cached: { ...cached, manifest } };
+            const walk = walkContent(notebookContentRoot(base.directories.root, notebookId));
+            const unsettled = walk.files.filter(file => {
+                const prior = cached?.files.get(file.path);
+                return !prior || prior.size !== file.size || prior.mtimeMs !== file.mtimeMs || prior.ino !== file.ino;
+            }).length;
+            const paths = new Set(walk.files.map(file => foldKey(file.path)));
+            const missing = Object.values(manifest.notes).filter(note => !paths.has(foldKey(note.path))).length;
+            if (unsettled + missing <= RECONCILE_BATCH_SIZE * 4) {
+                return { manifest, cached: loadNotebookLocked(lease, notebookId, { force }) };
+            }
+            return { manifest, reserved: reservedImportIdentities(lease, notebookId), trash: readTrash(lease, notebookId).entries,
+                cached: !force && fresh ? { ...cached, manifest } : null };
+        });
+        if (ready.cached) return ready.cached;
+        const initial = ready.manifest;
+        const snapshot = await prepareInWorker('scan', { contentRoot: notebookContentRoot(base.directories.root, notebookId) });
+        const known = new Map(Object.values(initial.notes).map(note => [foldKey(note.path), note]));
+        const changedFiles = snapshot.files.filter(file => known.get(foldKey(file.path))?.hash !== file.hash);
+        const pendingOperation = withRoleplayAccount(base, stamp, lease => Object.entries(readOperations(lease).entries)
+            .find(([, entry]) => entry.state === 'pending' && entry.plan?.type === 'reconcile'
+                && entry.plan.notebookId === notebookId && entry.plan.hash === snapshot.hash)?.[0]);
+        // A crash resumes its original plan; a later identical snapshot is a new operation.
+        const operationId = pendingOperation ?? `reconcile:${notebookId}:${snapshot.hash.slice(0, 24)}:${sha256(initial.structureRevision).slice(0, 12)}`;
+        const planHash = sha256(operationId);
+        const planFile = path.join(notebookControlRoot(base.directories.root, notebookId), 'reconciliation', `${planHash}.json`);
+        const progressFile = path.join(path.dirname(planFile), `${planHash}.progress.json`);
+        const at = now();
+        // Build the identity/history plan outside the account lock, once, not per batch.
+        const used = new Set([...Object.keys(initial.notes), ...(ready.trash ?? []).map(item => item.noteId)]);
+        const initialPaths = new Map(Object.entries(initial.notes).map(([id, note]) => [foldKey(note.path), id]));
+        const present = new Set(snapshot.files.map(file => foldKey(file.path)));
+        const missing = Object.entries(initial.notes).filter(([, note]) => !present.has(foldKey(note.path)));
+        const movedIds = new Set();
+        const proposed = { schema: 1, operationId, notebookId, files: changedFiles.map(file => {
+            const imported = ready.reserved?.get(foldKey(file.path));
+            let id = initialPaths.get(foldKey(file.path));
+            if (!id && imported?.hash === file.hash) id = imported.noteId;
+            if (!id) {
+                const moved = missing.find(([noteId, note]) => note.hash === file.hash && !movedIds.has(noteId));
+                if (moved) { id = moved[0]; movedIds.add(id); }
+            }
+            if (!id) {
+                const hint = file.parsed.properties.neconyan_id;
+                id = typeof hint === 'string' && NOTE_ID.test(hint) && !used.has(hint) ? hint : `n_${sha256(`${operationId}:${file.path}`).slice(0, 16)}`;
+            }
+            used.add(id);
+            return { id, path: file.path, hash: file.hash, history: { id: `h_${sha256(`${operationId}:${file.path}`).slice(0, 16)}`, at },
+                imported: imported?.hash === file.hash ? { operationId: imported.operationId, preparedHistory: imported.preparedHistory } : null };
+        }) };
+        let recovery = proposed;
+        const pending = Boolean(pendingOperation);
+        if (changedFiles.length || pending) {
+            const planned = withRoleplayAccount(base, stamp, lease => runOperationLocked(lease, { operationId, kind: 'reconcile-notebook', args: { notebookId, hash: snapshot.hash } }, ({ plan, setPlan }) => {
+                if (!plan) {
+                    writeJsonLocked(lease, planFile, proposed);
+                    writeJsonLocked(lease, progressFile, { cursor: 0 });
+                    setPlan({ type: 'reconcile', notebookId, hash: snapshot.hash });
+                    fault?.('planned', { operationId });
+                }
+                return { pending: true, recovery: readJsonLocked(lease, planFile, null) };
+            }));
+            if (!planned.replayed) recovery = planned.recovery;
+            if (!recovery || recovery.operationId !== operationId) throw new NotebookError('NOTEBOOK_CONTROL_DAMAGED', 'The indexing recovery record is damaged.', 500);
+        }
+        const byPath = new Map(snapshot.files.map(file => [file.path, file]));
+        let cursor = 0;
+        while (cursor < recovery.files.length) {
+            const started = performance.now();
+            const result = withRoleplayAccount(base, stamp, lease => runOperationLocked(lease, {
+                operationId, kind: 'reconcile-notebook', args: { notebookId, hash: snapshot.hash },
+            }, () => {
+                const progress = readJsonLocked(lease, progressFile, { cursor: 0 });
+                cursor = progress.cursor;
+                const end = Math.min(cursor + RECONCILE_BATCH_SIZE, recovery.files.length);
+                const batch = recovery.files.slice(cursor, end);
+                const manifest = readManifestLocked(lease, notebookId);
+                const paths = new Map(Object.entries(manifest.notes).map(([id, note]) => [foldKey(note.path), id]));
+                let count = Object.keys(manifest.notes).length;
+                protectExternalImportsLocked(lease, notebookId, manifest, batch.filter(item => !manifest.notes[item.id]).map(item => item.id));
+                withAuthoringBatchLocked(lease, () => {
+                    let changed = false;
+                    for (let index = 0; index < batch.length; index++) {
+                        const item = batch[index];
+                        const file = byPath.get(item.path);
+                        if (!file || file.hash !== item.hash) continue;
+                        const source = readAuthoringFileLocked(lease, file.full, MAX_NOTE_BYTES);
+                        if (JSON.stringify(authoringEvidence(source)) !== JSON.stringify(file.evidence)) continue;
+                        const id = item.id;
+                        if (paths.has(foldKey(file.path)) && paths.get(foldKey(file.path)) !== id) continue;
+                        const prior = manifest.notes[id];
+                        if (!prior && count >= MAX_NOTES_PER_NOTEBOOK) continue;
+                        const imported = item.imported;
+                        recordHistoryLocked(lease, notebookId, id, { bytes: Buffer.from(file.bytes), previous: prior?.hash ?? null, actor: imported ? { kind: 'user' } : { kind: 'external' }, origin: imported ? 'import' : 'external', reason: imported ? 'import' : prior ? 'external-change' : 'external-create', operationId: imported?.operationId ?? operationId, prepared: imported?.preparedHistory ?? item.history });
+                        if (prior?.hash !== file.hash) {
+                            fault?.('history', { operationId, index });
+                        }
+                        if (!prior) count++;
+                        manifest.notes[id] = { ...(prior ?? { createdAt: at, favourite: false, adopted: true }), path: file.path, hash: file.hash, updatedAt: at };
+                        changed = true;
+                    }
+                    if (changed) { bumpStructure(manifest); writeManifest(lease, manifest); invalidateNotebookCache(lease, notebookId); }
+                    fault?.('manifest', { operationId });
+                });
+                cursor = end;
+                writeJsonLocked(lease, progressFile, { cursor });
+                fault?.('progress', { operationId, cursor });
+                return { status: cursor < recovery.files.length ? 'pending' : 'success', pending: cursor < recovery.files.length, notebookId };
+            }));
+            if (result.replayed) cursor = recovery.files.length;
+            onBatch?.({ count: Math.min(RECONCILE_BATCH_SIZE, recovery.files.length), lockMs: performance.now() - started });
+            await yieldNotebookWork();
+        }
+        return withRoleplayAccount(base, stamp, lease => {
+            const manifest = readManifestLocked(lease, notebookId);
+            const files = new Map(snapshot.files.map(file => [file.path, { ...file, bytes: Buffer.from(file.bytes) }]));
+            scanCache.set(cacheKey(lease, notebookId), { files, scannedAt: 0, structureRevision: manifest.structureRevision });
+            return loadNotebookLocked(lease, notebookId, { force: true });
+        });
+    })();
+    preparations.set(key, job);
+    try { return await job; } finally { preparations.delete(key); }
+}
+
 function cacheKey(lease, notebookId) {
     return `${rootOf(lease)}\0${notebookId}`;
 }
 
 export function invalidateNotebookCache(lease, notebookId) {
-    if (notebookId) scanCache.delete(cacheKey(lease, notebookId));
-    else for (const key of [...scanCache.keys()]) if (key.startsWith(`${rootOf(lease)}\0`)) scanCache.delete(key);
+    const invalidate = key => { const cached = scanCache.get(key); if (cached) { cached.scannedAt = 0; cached.structureRevision = null; } };
+    if (notebookId) invalidate(cacheKey(lease, notebookId));
+    else for (const key of scanCache.keys()) if (key.startsWith(`${rootOf(lease)}\0`)) invalidate(key);
+}
+
+/** A verified external byte change may retain its old size and modification time. */
+export function invalidateNotebookFiles(lease, notebookId, paths) {
+    const cached = scanCache.get(cacheKey(lease, notebookId));
+    for (const relative of paths) cached?.files.delete(normaliseRelativePath(relative));
+    invalidateNotebookCache(lease, notebookId);
 }
 
 function readNoteFile(lease, absolute) {
@@ -523,6 +706,7 @@ function identityHint(text) {
 function applyPendingOperations(lease, manifest, byPath) {
     const journal = readOperations(lease);
     let changed = false;
+    let journalChanged = false;
     for (const [operationId, entry] of Object.entries(journal.entries)) {
         const plan = entry.plan;
         if (entry.state !== 'pending' || !plan || plan.notebookId !== manifest.id) continue;
@@ -544,12 +728,14 @@ function applyPendingOperations(lease, manifest, byPath) {
                 changed = true;
                 entry.state = 'done';
                 entry.result = plan.result ?? { status: 'success', committed: true, recovered: true, noteId: plan.noteId, revision: plan.after };
+                journalChanged = true;
             } else {
                 delete journal.entries[operationId];
+                journalChanged = true;
             }
         }
     }
-    if (changed || Object.values(journal.entries).some(entry => entry.state === 'pending' && entry.plan?.notebookId === manifest.id)) {
+    if (journalChanged) {
         writeOperations(lease, journal);
     }
     return changed;
@@ -573,6 +759,13 @@ export function loadNotebookLocked(lease, notebookId, { force = false } = {}) {
     ensureDirectory(lease, contentRoot);
     const walk = walkContent(contentRoot);
     const previous = cached?.files ?? new Map();
+    const unsettled = walk.files.filter(record => { const prior = previous.get(record.path); return !prior || prior.size !== record.size || prior.mtimeMs !== record.mtimeMs || prior.ino !== record.ino; });
+    if (unsettled.length > RECONCILE_BATCH_SIZE * 4) {
+        const { scope } = roleplayLease(lease);
+        const stamp = { accountId: scope.accountId, dataEpoch: scope.dataEpoch };
+        setImmediate(() => void prepareNotebook(scope, notebookId, { stamp, force: true }).catch(error => console.warn('[notebooks] background preparation failed', error.code ?? error.name)));
+        throw new NotebookError('NOTEBOOK_RECONCILING', 'These notes are being indexed in the background. Try again shortly.', 503, { notebookId });
+    }
     const files = new Map();
     const unreadable = [];
     for (const record of walk.files) {
@@ -614,7 +807,9 @@ export function loadNotebookLocked(lease, notebookId, { force = false } = {}) {
         }
     }
     const unknown = [...files.values()].filter(file => !claimed.has(file.path));
+    let noteCount = Object.keys(manifest.notes).length;
     const trashedIds = unknown.length ? new Set(readTrash(lease, notebookId).entries.map(entry => entry.noteId)) : new Set();
+    const reserved = unknown.length ? reservedImportIdentities(lease, notebookId) : new Map();
     for (const file of unknown) {
         const moved = missing.findIndex(([, note]) => note.hash === file.hash);
         if (moved >= 0) {
@@ -625,16 +820,20 @@ export function loadNotebookLocked(lease, notebookId, { force = false } = {}) {
             changed = true;
             continue;
         }
-        if (Object.keys(manifest.notes).length >= MAX_NOTES_PER_NOTEBOOK) {
+        if (noteCount >= MAX_NOTES_PER_NOTEBOOK) {
             unreadable.push({ path: file.path, reason: 'too-many-notes' });
             continue;
         }
         const hint = identityHint(file.text);
         const hintFree = hint && !manifest.notes[hint] && !missing.some(([id]) => id === hint)
             && !trashedIds.has(hint);
-        const id = hintFree ? hint : `n_${sha256(`${notebookId}:${file.path}:${file.hash}:${crypto.randomUUID()}`).slice(0, 16)}`;
+        const imported = reserved.get(foldKey(file.path));
+        const retained = imported?.hash === file.hash ? imported : null;
+        const id = retained?.noteId ?? (hintFree ? hint : `n_${sha256(`${notebookId}:${file.path}:${file.hash}:${crypto.randomUUID()}`).slice(0, 16)}`);
+        protectExternalImportsLocked(lease, notebookId, manifest, [id]);
         manifest.notes[id] = { path: file.path, hash: file.hash, createdAt: now(), updatedAt: now(), favourite: false, adopted: true };
-        ensureRevisionKept(lease, notebookId, id, file.bytes, { actor: { kind: 'external' }, origin: 'external', reason: 'external-create' });
+        noteCount++;
+        ensureRevisionKept(lease, notebookId, id, file.bytes, { actor: retained ? { kind: 'user' } : { kind: 'external' }, origin: retained ? 'import' : 'external', reason: retained ? 'import' : 'external-create', operationId: retained?.operationId, prepared: retained?.preparedHistory });
         claimed.add(file.path);
         changed = true;
     }
@@ -665,7 +864,9 @@ export function loadNotebookLocked(lease, notebookId, { force = false } = {}) {
     }
     const entries = Object.entries(manifest.notes).map(([id, note]) => {
         const file = byPath.get(foldKey(note.path));
-        return buildEntry(id, note.path, file.text, file.hash, { createdAt: note.createdAt, updatedAt: note.updatedAt, favourite: Boolean(note.favourite) });
+        const prior = cached?.byId?.get(id);
+        const parsed = prior?.hash === file.hash && prior?.path === note.path ? prior : file.parsed;
+        return { ...(parsed ?? buildEntry(id, note.path, file.text, file.hash)), id, createdAt: note.createdAt, updatedAt: note.updatedAt, favourite: Boolean(note.favourite) };
     });
     const state = {
         notebookId,

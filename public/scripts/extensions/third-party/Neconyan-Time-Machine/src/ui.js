@@ -520,7 +520,7 @@ export async function openTimeMachine() {
             if (row.kind === 'character') {
                 await restoreCharacter(row.target, payload.data, current.data, payload.tags);
             } else if (row.kind === 'lorebook') {
-                await restoreLorebook(row.target, payload.data);
+                await restoreLorebook(row.target, payload.data, current?.data ?? null);
             } else {
                 const [apiId, ...rest] = row.target.split('/');
                 await restorePreset(apiId, rest.join('/'), payload.data);

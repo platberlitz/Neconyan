@@ -4,6 +4,10 @@ Notes is a notebook that lives inside Neconyan. Use it for ideas, drafts, world-
 
 Open it from **Notes** in the workspace rail (the sidebar on desktop, the drawer on a phone). It works with no chat open and with no AI connection.
 
+Notes stays highlighted while it is open, including beside the chat. **Back to chat** closes Notes and clears its highlight.
+
+Background updates do not switch the notebook you chose or replace its list with results from a notebook you left.
+
 ## The basics
 
 - **Notebook**: a collection of notes and files. You start with one called 'Notebook' that has an **Inbox** folder. Make more with **New notebook**.
@@ -21,9 +25,15 @@ The label next to the note name tells you where your writing is:
 | Saving | A save is on its way. |
 | Saved on this device only | The browser kept a copy, but the server does not have it yet (for example you are offline). Neconyan keeps retrying. |
 | Conflict | The note changed somewhere else since you opened it. Nothing was overwritten. Choose what to keep. |
-| Could not save | Neither the server nor the browser could store the change. Copy your text somewhere safe. |
+| Could not save | The save failed. If the browser could not keep a copy either, copy your text somewhere safe. |
 
 Browser copies are kept while you type, not only when you close the page, but clearing browser data or the browser running out of space can remove them. Only 'Saved on server' means the server has it.
+
+When a save conflicts, **Compare** shows both versions without changing either. **Use server version** replaces your draft with the saved text. **Save mine as a copy** saves a separate note and leaves the original server version alone. **Keep mine** explicitly saves your text over the current server version. The choices stay visible, and typing does not restart automatic saving until you resolve the conflict.
+
+If a recovery read fails, your device draft stays available for another attempt. A late reply cannot replace newer typing or the note you chose next. Saving a separate copy while you keep typing does not discard your newer draft.
+
+On reopening a note, a device draft from the same saved version is restored. If the server version changed, choose **Compare**, **Use draft**, **Save draft as a copy** or **Discard draft**. **Dismiss** only hides this draft notice; reopening the note offers the draft again.
 
 ### Writing
 
@@ -31,6 +41,12 @@ Browser copies are kept while you type, not only when you close the page, but cl
 - **Read** shows the formatted note. Links work here.
 - **Outline** lists the headings so you can jump around a long note.
 - Ctrl+S (Cmd+S on a Mac) saves immediately.
+
+In **Write**, **Sections** lists headings you can fold or show. **Fold all** hides the top-level sections; **Show all** opens everything. In **Read**, use **Fold section** or **Show section** beside a heading. These buttons also work with the keyboard.
+
+Folding only hides text on screen. It does not change or save the Markdown, move your selection or add an undo step. Choices are remembered for each note, separately for each notebook and account. If your insertion point is inside a folded section, returning to the editor opens that section before you type.
+
+While a keyboard is still composing a character, finish it before folding or changing notes. Unfinished characters are not autosaved.
 
 Neconyan keeps your Markdown exactly as written. Opening and saving a note without changing it does not rewrite it, and anything it does not understand (unusual properties, plugin syntax, comments) is left alone.
 
@@ -56,11 +72,66 @@ Type `[[` to pick another note, or use **Link to note** on the toolbar (handy on
 - A link to a note that does not exist stays marked as missing. You can create it on purpose from the **Links** tab or by clicking it.
 - The **Links** tab shows where this note links to and which notes link back to it, with the sentence around each link.
 - Renaming or moving a note updates links that clearly point to it. Examples inside code blocks are never changed.
-- `![[Another note]]` (embedding a whole note) is kept in the text and shown as a labelled chip. Neconyan does not paste the other note's content in yet.
+
+### Embedded notes
+
+In **Read**, these forms show another note's saved text inside the current note:
+
+```text
+![[Another note]]
+![[Another note#Heading]]
+![[Another note#^block-id]]
+```
+
+A block is a paragraph or list marked with `^block-id` at its end, or on the line after it. A heading can have a block marker too. **Open note** opens the original; **Fold embed** only hides the preview. Links and images inside a preview are resolved from the embedded note's own folder.
+
+Previews use the saved version of the other note, not an unsaved draft open elsewhere. Missing or ambiguous notes and sections show a generic notice rather than guessing. Circular links, too much nesting and oversized previews also stop with a notice. Reading a preview does not change either note, publish lore or share anything with AI. Assistants and roleplay replies never gain access to an embedded note merely because another note links to it.
 
 ## Search, folders and favourites
 
 Search looks at note names, aliases, tags and body text, and shows a snippet for each hit. It labels exact matches separately from looser ones. Folders, favourites and recent notes sit in the left-hand list.
+
+## Notebook graph
+
+Open **Graph** from the notebook's buttons to see its saved note links. Choose a folder or tag and press **Apply filters**; child folders and child tags are included. **Clear filters** shows the notebook again. Choose **Up to 50**, **Up to 100** or **Up to 300** notes; a notice explains when the result is limited.
+
+**Diagram** shows the connections. The note list is always available below it, and **List** hides the diagram. Press a note in the list, or focus it and press Enter, to open it. Phones start with the list. **Refresh graph** checks the saved links again; **Back to note** returns to your editor without changing its text or undo history.
+
+The graph does not include unsaved link edits, save a note, publish lore or change AI access. A connection is not permission to read the other note.
+
+## Property table
+
+Open **Property table** from the notebook's buttons to compare saved note fields. **Choose columns** keeps up to twelve fields visible. Use **Folder**, **Tag** and **Find notes**, or choose a property, comparison, value type and value, then press **Apply filters**. Folder and tag filters include their children. **Clear filters** removes them.
+
+Sort by note name, path, dates or a chosen property, in either direction. Numbers are sorted as numbers; text such as '002' stays text. Choose 25, 50 or 100 notes per page and use **Next page** or **Previous page**. Large values can make a page shorter. On a phone, swipe sideways to see other columns, or up and down to scroll the note rows.
+
+Press a simple cell to edit it. **Text**, **Number**, **True/false** and **List** explicitly choose what is saved. Lists use a JSON array:
+
+```json
+["one", 2, true]
+```
+
+**Remove property** deletes that field, not the note. An empty list also removes the field. **Save property** uses the same checked save as the note editor, keeping comments, untouched fields, nested data and the note's body.
+
+I keep this table to simple fields. Nested values, nulls, identity hints and unsupported or oversized values stay in the source, so a cell edit can't silently change what they mean. Open the note by pressing its name if you need to edit those.
+
+If another tab changes the note, your typed value stays in the dialog and nothing is overwritten. Copy it, choose **Not now**, refresh the table and check the new value before trying again. Save or resolve a draft in the current note before editing its cells. **Back to note** preserves your editor when you have only been reading or filtering the table. AI access and lore publication stay under their separate controls.
+
+## Planning canvases
+
+**Canvas** opens a spatial plan alongside the notebook's notes. I use portable `.canvas` files and the [JSON Canvas 1.0 format](https://jsoncanvas.org/spec/1.0/), so the files can also open in Obsidian without a plugin.
+
+Choose **New canvas**, then add text, note, web or group cards. **Board** shows their positions; **Card list** always gives you labelled controls and is the default on a phone. **Move cards** explicitly enables dragging on the board. Turn it off to return to ordinary scrolling. **Edit card** also lets you enter a position and size, including negative positions. Connections have a label, a side on each card and an optional arrow at either end. The six standard colours and custom six-digit colours are kept.
+
+Changes stay on this device until **Save canvas**. **Undo** and **Redo** change that working copy, not the saved file. Unknown fields and card types stay in the file when you edit recognised fields. **Download canvas** saves the current working copy as a portable file; it does not update the notebook.
+
+Note cards preview saved text, including a chosen heading or block. They do not expand links or embeds inside that text, and they do not grant assistant access or add anything to a roleplay prompt. **Open note** uses the normal note editor. Web links open only when you press them. Background images, embedded HTML and plugin commands never run inside the canvas.
+
+If another tab changes the file, nothing is overwritten. **Use saved canvas**, **Save my canvas as a copy** and **Keep my version** let you choose deliberately. The last choice checks the newly loaded saved version before writing. **Canvas history** shows exact earlier files; **Use version** puts one into your working copy, and you still press **Save canvas** to replace the current version.
+
+Device drafts are separate for each account, notebook and canvas. An older draft offers **Use device draft**, **Save device draft as a copy** or **Discard device draft**; it is not silently applied. If the browser cannot keep a copy, save the canvas or download it before leaving. After checking that the download was saved, **I've saved the download** lets you leave without updating the notebook. A later edit needs another saved copy. Interrupted server saves that meet an external change offer a recovery copy or an explicit discard; neither overwrites that external file.
+
+Files can be up to 2 MiB, with 500 cards and 2000 connections. Oversized, malformed or unsupported data is not executed or deleted. Import and export keep the original `.canvas` bytes until you actually change the canvas.
 
 ## History, Trash and undo
 
@@ -118,6 +189,8 @@ Publishing is manual by default: saving the note later does not change the lore.
 
 Published, enabled and used in this chat are three different things. Publishing writes text into a lorebook entry. Whether that entry is switched on, and whether the lorebook is attached to the current chat, are still controlled by World Info as usual. Publishing never attaches a lorebook to anything.
 
+An older World Info editor cannot overwrite a publication made in another tab or device. Its save is refused if the lorebook changed since that copy was loaded. The typed draft stays on screen; copy anything you want to keep, then reload before editing the current lorebook.
+
 ## Using notes as reference in chats
 
 Each note can also be used as background for roleplay replies. This is separate from assistant access.
@@ -138,12 +211,29 @@ Sections already published to lore are left out here, so the same text does not 
 - **Import** accepts a ZIP or a single `.md` file. You see a summary first: notes, files, anything excluded (for example `.obsidian` settings folders or unsupported file types) and anything renamed to avoid a clash. Importing creates a new, separate notebook.
 - Imported notebooks start with AI access off and no lore links, whatever the files say. Turn access on yourself in **AI access** if you want it.
 - **Compare with this notebook** lets you bring changes from an edited export back into an existing notebook, note by note.
+- New notes added through comparison still start with assistant access off, even if the existing notebook is shared. Existing notes keep their permissions.
+- Previews are saved privately on the server for 30 minutes. If you reload or the server restarts, **Unfinished imports** lets you continue without choosing the file again. Once an import starts, it stays there until it finishes, using the original choices and note identities. Notes already saved are not duplicated.
+- Large imports and newly discovered files are processed in small batches. You can still read and save chats between batches; the complete notebook takes time to prepare.
 
 Export and import are one-off copies, not continuous syncing.
 
+### Optional Obsidian Headless sync
+
+I keep this off by default. Obsidian isn't required for Notes, and Neconyan doesn't install Headless, sign you in, choose a remote vault or publish anything for you. The server owner must first prepare an already installed [official Obsidian Headless client](https://github.com/obsidianmd/obsidian-headless) for the notebook's existing content folder, then enable the adapter and approve its folder roots in the server configuration. Headless requires Node 22 or newer.
+
+Open **Obsidian sync** in the notebook list. **Content folder** must be this notebook's existing folder inside the approved roots; a different folder or a second synced copy is refused. Confirm that Headless is prepared and no other client syncs that folder, then press **Approve folder**. Approval doesn't start anything. **Start client** is a separate action; **Stop client** stops the managed client without deleting files or history. A server restart doesn't start it again.
+
+Use only one sync client for that folder. Neconyan permits one managed client and rejects a second folder claim, but it can't stop another program you started separately. Don't combine this with another desktop client, another Headless process or a different sync service on the same folder.
+
+New incoming notes start with assistant access and roleplay context off, whatever their properties say. Approval also blocks inherited assistant access on already discovered imported notes unless you've explicitly chosen their access. Existing notes you created and explicit sharing choices are kept. Sync never publishes live lore. A clean open note reloads after an observed external change; if you're typing, your draft stays and the change notice offers a comparison instead.
+
+**Check external changes** runs a file check without starting a client. **Refresh status** shows its current state. **Private file history** keeps exact snapshots of observed note, Canvas and supported attachment changes, including the last known bytes of deleted files; **Download snapshot** downloads a copy rather than restoring over a current file. Hidden settings and plugin folders aren't imported or executed.
+
+External programs don't use Neconyan's write lock. A very fast overwrite can disappear before it's observed, and a write during a save can still race. I wouldn't use this as your only backup. Check conflicts before replacing anything; the adapter pauses on unsafe files, a replaced folder or its history limits. Its browser and process tests use a local client stand-in, not an Obsidian Cloud account.
+
 ### What 'works with Obsidian' means here
 
-Supported: plain Markdown notes, folders, relative image links, the link forms listed above, aliases and YAML properties. Not supported: Obsidian plugins, Dataview, Bases, Canvas, themes, templating scripts and block embeds. Their files and syntax are kept but do not run inside Neconyan. Obsidian is never required.
+Supported: plain Markdown notes, folders, relative image links, the link and embed forms listed above, aliases, YAML properties and JSON Canvas files. Not supported: Obsidian plugins, Dataview, Bases, themes and templating scripts. Unknown syntax stays in your notes but does not run inside Neconyan. Obsidian is never required.
 
 ## Phones
 

@@ -4,6 +4,7 @@ import { newOperationId, notesDownload, notesUpload } from './api.js';
 import { button, choiceRow, clear, field, formatTime, h } from './dom.js';
 import { formatDiff } from './line-diff.js';
 import { NOTE_TEMPLATES, templateById } from './templates.js';
+import { parsePropertyValue, propertyInput } from './property-values.js';
 
 /* Small dialogs used by the Notes workspace. User text is always placed with textContent. */
 
@@ -28,6 +29,85 @@ async function confirm(message, okButton = 'Yes', cancelButton = 'Not now') {
     return result === POPUP_RESULT.AFFIRMATIVE;
 }
 
+/** Uses the revision of the displayed row, not a newer revision fetched while editing. */
+export async function editPropertyCell(app, row, key, cell, { isCurrent = () => true } = {}) {
+    if (!cell?.editable || key === 'neconyan_id') return false;
+    let kind = ['text', 'number', 'boolean', 'list'].includes(cell.kind) ? cell.kind : 'text';
+    let busy = false;
+    let saved = false;
+    let attempt = null;
+    const value = h('textarea', { class: 'text_pole notes-property-value', id: fieldId('property-value'), value: propertyInput(cell), rows: '4' });
+    const message = h('p', { class: 'notes-notice', role: 'status', hidden: true });
+    const kinds = h('div', { class: 'notes-wrap' });
+    const hint = h('p', { class: 'notes-hint' });
+    function renderTypes() {
+        clear(kinds);
+        for (const [name, label] of [['text', 'Text'], ['number', 'Number'], ['boolean', 'True / false'], ['list', 'List'], ['remove', 'Remove property']]) {
+            const choice = button(label, () => {
+                kind = name;
+                renderTypes();
+            }, { pressed: kind === name, disabled: busy });
+            kinds.append(choice);
+        }
+        value.hidden = kind === 'remove';
+        hint.textContent = kind === 'list' ? 'Use a list such as ["one", 2, true]. An empty list removes this property.'
+            : kind === 'remove' ? 'This removes the property, not the note.'
+                : 'Changing the type changes the saved property type. Text stays text, even when it looks like a number.';
+    }
+    function showError(text) { message.hidden = false; message.textContent = text; }
+    renderTypes();
+    const content = h('div', { class: 'notes-dialog notes-property-dialog' },
+        h('h3', { class: 'notes-heading', text: `Edit ${key}` }), h('p', { text: row.title }), kinds,
+        field('Value', value), hint, message,
+        h('p', { class: 'notes-hint', text: 'Other properties, comments and note text are kept. This does not share the note with AI or publish it.' }));
+    await dialog(content, {
+        okButton: 'Save property', cancelButton: 'Not now',
+        onClosing: async popup => {
+            const action = popup.result;
+            if (busy) return false;
+            if (action !== POPUP_RESULT.AFFIRMATIVE) return true;
+            if (!isCurrent()) { showError('The table changed while this editor was open. Close it and choose the cell again.'); return false; }
+            const current = app.state.note;
+            if (app.sourceEditor?.composing || (app.state.notebookId === row.notebookId && current?.id === row.id
+                && (app.state.dirty || app.state.saveConflict || app.state.saving))) {
+                showError('Save or resolve this note\'s draft before editing its properties. Go back to the note first.');
+                return false;
+            }
+            let next;
+            try { next = parsePropertyValue(kind, value.value); } catch (error) { showError(error.message); return false; }
+            if (kind === cell.kind && JSON.stringify(next) === JSON.stringify(cell.value)) return true;
+            const fingerprint = JSON.stringify([kind, next]);
+            if (attempt?.fingerprint !== fingerprint) attempt = { fingerprint, operationId: newOperationId('property') };
+            busy = true;
+            value.disabled = true;
+            renderTypes();
+            try {
+                const result = await app.request('/notes/update', { operationId: attempt.operationId, notebookId: row.notebookId, noteId: row.id,
+                    expectedRevision: row.revision, changes: [{ type: 'properties', set: { [key]: next } }], reason: 'edit' });
+                if (result?.status !== 'success' && result?.status !== 'no_change') {
+                    showError(result?.code === 'NOTE_CONFLICT'
+                        ? 'This note changed since the row was loaded. Nothing was overwritten. Keep a copy of your value, then close this editor and refresh the table.'
+                        : result?.message || 'The property could not be saved. Your value is still here; try again.');
+                    return false;
+                }
+                saved = true;
+                if (isCurrent() && app.state.note === current && app.state.notebookId === row.notebookId && current?.id === row.id) {
+                    await app.reloadNote();
+                }
+                return true;
+            } catch {
+                showError('The property could not be saved. Your value is still here; try again.');
+                return false;
+            } finally {
+                busy = false;
+                value.disabled = false;
+                renderTypes();
+            }
+        },
+    });
+    return saved;
+}
+
 /** Opens the system file chooser. Call before any await so the browser keeps the user's tap. */
 function pickFile(accept) {
     return new Promise(resolve => {
@@ -43,6 +123,16 @@ function textInput(id, value = '', placeholder = '') {
 }
 
 /* ---------- notebooks and folders ---------- */
+
+export async function obsidianSync(app) {
+    const snapshot = {
+        account: app.state.account, notebookId: app.state.notebookId, workspaceVersion: app.state.workspaceVersion,
+        notebookSelectionVersion: app.state.notebookSelectionVersion, noteRequestVersion: app.state.noteRequestVersion,
+    };
+    const module = await import('./obsidian-dialogs.js');
+    if (!module.obsidianDialogCurrent(app, snapshot)) return false;
+    return module.openObsidianSync(app, snapshot);
+}
 
 export async function newNotebook(app) {
     const name = await askText('Name the new notebook.', '', 'Create notebook');
@@ -282,6 +372,45 @@ export async function importNotes(app) {
     const staged = await notesUpload('/import/stage', {}, file);
     if (app.failed(staged, 'That file could not be imported.')) return;
     const stage = staged.stage;
+    await refreshImportStages(app);
+    await previewImport(app, stage);
+}
+
+async function refreshImportStages(app) {
+    const listed = await app.request('/import/list');
+    if (listed.status === 'success') { app.state.importStages = listed.stages ?? []; app.renderNav(); }
+}
+
+export async function unfinishedImports(app) {
+    await refreshImportStages(app);
+    const stages = app.state.importStages;
+    let popup;
+    const list = h('ul', { class: 'notes-list' });
+    for (const stage of stages) {
+        list.append(h('li', { class: 'notes-list-item' }, h('span', { class: 'notes-note-title', text: stage.name }),
+            h('span', { class: 'notes-note-meta', text: `${stage.totals.notes} notes - ${stage.recovery ? 'partly imported' : 'preview ready'}` }),
+            button('Continue', async () => { popup?.completeCancelled(); await previewImport(app, stage); }, { icon: 'fa-arrow-rotate-right' }),
+            stage.recovery ? null : button('Remove preview', async () => { await app.request('/import/cancel', { stageId: stage.stageId }); popup?.completeCancelled(); await refreshImportStages(app); }, { icon: 'fa-trash' })));
+    }
+    if (!stages.length) list.append(h('li', { class: 'notes-hint', text: 'No unfinished imports.' }));
+    await callGenericPopup(h('div', { class: 'notes-dialog' }, h('h3', { text: 'Unfinished imports' }),
+        h('p', { class: 'notes-hint', text: 'Previews survive a restart for 30 minutes. An import that has started stays here until it finishes.' }), list),
+    POPUP_TYPE.TEXT, '', { wide: true, okButton: 'Close', onOpen: opened => { popup = opened; } });
+}
+
+async function previewImport(app, stage) {
+    if (stage.recovery) {
+        const { ok } = await dialog(h('div', { class: 'notes-dialog' }, h('h3', { text: 'Continue import' }), ...stageSummary(stage),
+            h('p', { text: 'Continue with the original choices. Notes already saved are not imported twice.' })), { okButton: 'Continue import', cancelButton: 'Not now' });
+        if (!ok) return;
+        const recovery = stage.recovery;
+        const route = recovery.kind === 'import-update' ? '/import/update' : '/import/commit';
+        const committed = await app.request(route, { ...recovery, stageId: stage.stageId });
+        if (app.failed(committed, 'The import did not finish. It is still available under Unfinished imports.')) return;
+        await app.loadNotebooks(committed.notebook?.id ?? recovery.notebookId);
+        app.toast('success', 'Import finished.');
+        return;
+    }
     const nameId = fieldId('import-name');
     const name = textInput(nameId, stage.name ?? 'Imported notes');
     const content = h('div', { class: 'notes-dialog' }, h('h3', { text: 'Import notes' }), ...stageSummary(stage),
@@ -289,13 +418,14 @@ export async function importNotes(app) {
     const { ok, result } = await dialog(content, { okButton: 'Import as new notebook', cancelButton: 'Cancel', customButtons: app.state.notebookId ? ['Compare with this notebook'] : [] });
     if (ok) {
         const committed = await app.request('/import/commit', { operationId: newOperationId('import'), stageId: stage.stageId, name: name.value.trim() || stage.name });
-        if (app.failed(committed, 'The import did not finish.')) return;
+        if (app.failed(committed, 'The import did not finish. It is still available under Unfinished imports.')) { await refreshImportStages(app); return; }
         app.toast('success', `Imported ${committed.imported?.notes ?? 0} note(s) into '${committed.notebook?.name}'.`);
         await app.loadNotebooks(committed.notebook?.id);
         return;
     }
     if (result !== 2) {
         await app.request('/import/cancel', { stageId: stage.stageId });
+        await refreshImportStages(app);
         return;
     }
     await compareImport(app, stage);
@@ -319,13 +449,15 @@ async function compareImport(app, stage) {
     const { ok } = await dialog(content, { okButton: 'Update ticked notes', cancelButton: 'Cancel' });
     if (!ok || !chosen.size) {
         await app.request('/import/cancel', { stageId: stage.stageId });
+        await refreshImportStages(app);
         return;
     }
     const updated = await app.request('/import/update', { operationId: newOperationId('import-update'), stageId: stage.stageId, notebookId: app.state.notebookId, paths: [...chosen] });
-    if (app.failed(updated)) return;
+    if (app.failed(updated)) { await refreshImportStages(app); return; }
     const conflicts = (updated.results ?? []).filter(item => item.status === 'conflict').length;
     app.toast(conflicts ? 'warning' : 'success', conflicts ? `${conflicts} note(s) changed since the comparison and were left alone.` : 'Notes updated.');
     await app.refreshTree();
+    await refreshImportStages(app);
     if (app.state.note) await app.reloadNote();
 }
 
@@ -428,4 +560,3 @@ export async function captureFromChat(app, capture) {
     await app.refreshTree();
     if (result.noteId) await app.openNote(app.state.notebookId, result.noteId);
 }
-

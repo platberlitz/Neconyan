@@ -46,8 +46,9 @@ export function parseFrontmatterData(raw) {
 
 function plainValue(value) {
     if (value === null || value === undefined) return null;
-    if (['string', 'number', 'boolean'].includes(typeof value)) return value;
-    if (Array.isArray(value) && value.every(item => ['string', 'number', 'boolean'].includes(typeof item))) return value;
+    const primitive = item => typeof item === 'string' || typeof item === 'boolean' || (typeof item === 'number' && Number.isFinite(item));
+    if (primitive(value)) return value;
+    if (Array.isArray(value) && value.every(primitive)) return value;
     return undefined;
 }
 
@@ -58,7 +59,7 @@ export function noteProperties(data) {
     for (const [key, value] of Object.entries(data || {})) {
         const plain = plainValue(value);
         if (plain === undefined) complex.push(key);
-        else properties[key] = plain;
+        else Object.defineProperty(properties, key, { value: plain, enumerable: true, configurable: true, writable: true });
     }
     return { properties, complex };
 }
@@ -72,6 +73,25 @@ export function frontmatterTags(data) {
 
 export function frontmatterAliases(data) {
     return listOf(data?.aliases ?? data?.alias);
+}
+
+function propertyNode(document, existing, value) {
+    if (isScalar(existing) && !Array.isArray(value)) {
+        if (typeof existing.value !== typeof value) delete existing.tag;
+        existing.value = value;
+        return existing;
+    }
+    if (isSeq(existing) && Array.isArray(value)) {
+        existing.items = value.map((item, index) => propertyNode(document, existing.items[index], item));
+        return existing;
+    }
+    const replacement = document.createNode(value);
+    if (existing) {
+        for (const key of ['comment', 'commentBefore', 'spaceBefore']) {
+            if (Object.hasOwn(existing, key)) replacement[key] = existing[key];
+        }
+    }
+    return replacement;
 }
 
 /**
@@ -92,9 +112,7 @@ export function updateFrontmatter(text, changes) {
         }
         if (plainValue(value) === undefined) throw Object.assign(new Error('Properties can be text, numbers, yes/no values or lists.'), { code: 'NOTE_PROPERTIES_INVALID' });
         const existing = document.get(key, true);
-        if (isScalar(existing) && !Array.isArray(value)) existing.value = value;
-        else if (isSeq(existing) && Array.isArray(value)) existing.items = document.createNode(value).items;
-        else document.set(key, value);
+        document.set(key, propertyNode(document, existing, value));
     }
     const empty = !document.contents || (isMap(document.contents) && !document.contents.items.length);
     const yaml = empty ? '' : String(document);

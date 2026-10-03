@@ -63,7 +63,14 @@ const app = {
         built: false,
         open: false,
         notebooks: [],
+        importStages: [],
         notebookId: null,
+        notebookSelectionVersion: 0,
+        noteRequestVersion: 0,
+        notebookListVersion: 0,
+        notebookListAppliedVersion: 0,
+        treeRequestVersion: 0,
+        readerRequestVersion: 0,
         tree: null,
         folder: null,
         list: { notes: [], total: 0, offset: 0 },
@@ -71,6 +78,7 @@ const app = {
         search: null,
         note: null,
         dirty: false,
+        saveConflict: false,
         status: 'idle',
         pending: null,
         saving: false,
@@ -80,13 +88,23 @@ const app = {
         pane: 'note',
         detailsTab: 'properties',
         view: 'write',
+        workspaceView: 'note',
+        workspaceVersion: 0,
         back: [],
         unsubscribe: null,
         remoteChanged: false,
     },
     elements: {},
     panels: null,
+    editorModule: null,
+    sourceEditor: null,
     dialogs: null,
+    graphModule: null,
+    graphView: null,
+    tableModule: null,
+    tableView: null,
+    canvasModule: null,
+    canvasView: null,
 };
 
 /* ---------- requests and account guard ---------- */
@@ -104,8 +122,15 @@ function accountChanged() {
 function resetForAccount(handle) {
     const { state } = app;
     clearTimeout(state.saveTimer);
-    Object.assign(state, { account: handle, notebooks: [], notebookId: null, tree: null, note: null, dirty: false,
-        pending: null, saving: false, back: [], search: null, status: 'idle' });
+    state.notebookSelectionVersion++;
+    state.noteRequestVersion++;
+    state.treeRequestVersion++;
+    state.workspaceVersion++;
+    app.graphView?.clear();
+    app.tableView?.clear();
+    app.canvasView?.clear();
+    Object.assign(state, { account: handle, notebooks: [], importStages: [], notebookId: null, tree: null, note: null, dirty: false,
+        saveConflict: false, pending: null, saving: false, back: [], search: null, status: 'idle', workspaceView: 'note' });
     if (state.built) {
         renderEditor();
         void loadNotebooks();
@@ -134,20 +159,32 @@ function buildRoot() {
     elements.title = h('input', { class: 'text_pole notes-title-input', type: 'text', 'aria-label': 'Note name', maxlength: '160',
         placeholder: 'Untitled', onchange: () => void renameFromTitle() });
     elements.banner = h('div', { class: 'notes-banners' });
-    elements.textarea = h('textarea', { class: 'notes-source', 'aria-label': 'Note text (Markdown)', spellcheck: 'true',
-        autocapitalize: 'sentences', oninput: onEditorInput, onkeydown: onEditorKeydown, onscroll: debounce(rememberPosition, 400),
-        onselect: rememberPosition, onblur: () => hideSuggest() });
-    elements.reader = h('div', { class: 'notes-reader', tabindex: '0', onclick: onReaderClick, onkeydown: onReaderKeydown });
+    elements.source = h('div', { class: 'notes-source' });
+    app.sourceEditor = app.editorModule.createNotesEditor(elements.source, {
+        onChange: onEditorInput, onKeyDown: onEditorKeydown, onScroll: debounce(rememberPosition, 400),
+        onSelect: rememberPosition, onBlur: hideSuggest, onFolds: rememberFolds,
+        onComposition: composing => {
+            renderFoldControls();
+            if (!composing && app.state.dirty && !app.state.saveConflict) scheduleSave();
+        },
+    });
+    elements.textarea = app.sourceEditor.adapter;
+    elements.foldControls = h('div', { class: 'notes-fold-controls' });
+    elements.foldSections = h('div', { class: 'notes-fold-sections', hidden: true });
+    elements.reader = h('div', { class: 'notes-reader', tabindex: '0', onclick: onReaderClick });
     elements.suggest = h('ul', { class: 'notes-suggest', role: 'listbox', 'aria-label': 'Link suggestions', hidden: true });
     elements.outline = h('div', { class: 'notes-outline' });
     elements.toolbar = buildToolbar();
     elements.viewTabs = h('div', { class: 'notes-choice-group notes-view-tabs', role: 'group', 'aria-label': 'Editor view' });
-    elements.editorBody = h('div', { class: 'notes-editor-body' }, elements.textarea, elements.reader, elements.suggest);
+    elements.editorBody = h('div', { class: 'notes-editor-body' }, elements.source, elements.reader, elements.suggest);
     elements.empty = h('div', { class: 'notes-empty' });
     elements.editor = h('div', { class: 'notes-editor', hidden: true },
         h('div', { class: 'notes-editor-head' }, elements.title, elements.status),
-        elements.banner, elements.viewTabs, elements.toolbar, elements.editorBody);
-    elements.editorPane = h('section', { class: 'notes-pane notes-pane-editor', 'aria-label': 'Note' }, elements.empty, elements.editor);
+        elements.banner, elements.viewTabs, elements.toolbar, elements.foldControls, elements.foldSections, elements.editorBody);
+    elements.graph = h('section', { class: 'notes-graph', 'aria-label': 'Notebook graph', hidden: true });
+    elements.propertyTable = h('section', { class: 'notes-table-view', 'aria-label': 'Notebook property table', hidden: true });
+    elements.canvas = h('section', { class: 'notes-canvas-view', 'aria-label': 'Notebook planning canvases', hidden: true });
+    elements.editorPane = h('section', { class: 'notes-pane notes-pane-editor', 'aria-label': 'Note' }, elements.empty, elements.editor, elements.graph, elements.propertyTable, elements.canvas);
     elements.nav = h('nav', { class: 'notes-pane notes-pane-nav', 'aria-label': 'Notebooks and notes' });
     elements.details = h('aside', { class: 'notes-pane notes-pane-details', 'aria-label': 'Note details' });
     elements.paneTabs = h('div', { class: 'notes-choice-group notes-pane-tabs', role: 'group', 'aria-label': 'Notes sections' });
@@ -171,6 +208,7 @@ function renderPaneTabs() {
     const { elements, state } = app;
     clear(elements.paneTabs);
     for (const [pane, label] of [['nav', 'Notebooks'], ['note', 'Note'], ['details', 'Details']]) {
+        if (pane === 'details' && state.workspaceView === 'canvas') continue;
         elements.paneTabs.append(button(label, () => setPane(pane), { className: 'notes-choice', pressed: state.pane === pane }));
     }
 }
@@ -245,11 +283,12 @@ function resizeByKey(event) {
 async function ensureModules() {
     if (!app.panels) app.panels = await import('./notes-panels.js');
     if (!app.dialogs) app.dialogs = await import('./notes-dialogs.js');
+    if (!app.editorModule) app.editorModule = await import('../../notes-editor.js');
 }
 
 export async function openNotes(options = {}) {
     const { state } = app;
-    await loadStylesheetAsync('css/neconyan-notes.css?v=2', { id: 'neconyan-notes-css' }).catch(() => null);
+    await loadStylesheetAsync('css/neconyan-notes.css?v=10', { id: 'neconyan-notes-css' }).catch(() => null);
     await ensureModules();
     if (!state.built) buildRoot();
     accountChanged();
@@ -271,6 +310,7 @@ export async function openNotes(options = {}) {
 }
 
 export function hideNotes() {
+    if (!notebookCanvasCanLeave()) return;
     const { state, elements } = app;
     if (!state.open) return;
     if (state.dirty) void flushSave();
@@ -290,18 +330,40 @@ export function onWorkspaceRoute(route) {
 /* ---------- notebooks, tree and lists ---------- */
 
 async function loadNotebooks(preferred) {
+    const { state } = app;
+    const listVersion = ++state.notebookListVersion;
+    const selectionVersion = preferred ? ++state.notebookSelectionVersion : state.notebookSelectionVersion;
     const result = await request('/list');
     if (failed(result, 'Notes could not load your notebooks.')) return;
-    app.state.notebooks = result.notebooks ?? [];
-    const chosen = app.state.notebooks.find(item => item.id === preferred) ?? app.state.notebooks[0];
-    if (chosen) await selectNotebook(chosen.id);
+    if (listVersion >= state.notebookListAppliedVersion) {
+        state.notebookListAppliedVersion = listVersion;
+        state.notebooks = result.notebooks ?? [];
+        state.importStages = result.imports ?? [];
+    }
+    // A background notification or older request never changes a newer user choice.
+    if (selectionVersion !== state.notebookSelectionVersion) { renderNav(); return; }
+    const chosen = state.notebooks.find(item => item.id === preferred)
+        ?? state.notebooks.find(item => item.id === state.notebookId) ?? state.notebooks[0];
+    if (chosen?.id === state.notebookId) await refreshTree();
+    else if (chosen) await selectNotebook(chosen.id, { selectionVersion });
     else renderNav();
 }
 
-async function selectNotebook(notebookId) {
+async function selectNotebook(notebookId, { selectionVersion = null, noteRequestVersion = null } = {}) {
+    if (app.sourceEditor?.composing || !notebookCanvasCanLeave()) return false;
     const { state } = app;
+    selectionVersion ??= ++state.notebookSelectionVersion;
+    if (noteRequestVersion === null) state.noteRequestVersion = (state.noteRequestVersion ?? 0) + 1;
+    else if (noteRequestVersion !== state.noteRequestVersion) return;
+    const noteVersion = state.noteRequestVersion;
     if (state.dirty) await flushSave();
+    if (selectionVersion !== state.notebookSelectionVersion || noteVersion !== state.noteRequestVersion) return;
     if (state.notebookId !== notebookId) {
+        state.workspaceView = 'note';
+        state.workspaceVersion++;
+        app.graphView?.clear();
+        app.tableView?.clear();
+        app.canvasView?.clear();
         state.note = null;
         state.folder = null;
         state.search = null;
@@ -310,16 +372,20 @@ async function selectNotebook(notebookId) {
     state.notebookId = notebookId;
     writePrefs({ notebookId });
     await refreshTree();
+    if (selectionVersion !== state.notebookSelectionVersion || state.notebookId !== notebookId || noteVersion !== state.noteRequestVersion) return;
     renderEditor();
 }
 
 async function refreshTree() {
     const { state } = app;
     if (!state.notebookId) return;
+    const notebookId = state.notebookId;
+    const requestVersion = ++state.treeRequestVersion;
     const [tree, list] = await Promise.all([
-        request('/tree', { notebookId: state.notebookId }),
-        request('/notes/list', { notebookId: state.notebookId, folder: state.folder, offset: state.list.offset, limit: 200 }),
+        request('/tree', { notebookId }),
+        request('/notes/list', { notebookId, folder: state.folder, offset: state.list.offset, limit: 200 }),
     ]);
+    if (state.notebookId !== notebookId || requestVersion !== state.treeRequestVersion) return;
     if (tree.status === 'not_found') {
         state.notebookId = null;
         return loadNotebooks();
@@ -341,9 +407,10 @@ async function runSearch(query) {
         renderNav();
         return;
     }
-    const result = await request('/search', { notebookId: state.notebookId, query, limit: 50 });
+    const notebookId = state.notebookId;
+    const result = await request('/search', { notebookId, query, limit: 50 });
     if (failed(result)) return;
-    if (state.searchQuery !== query) return;
+    if (state.searchQuery !== query || state.notebookId !== notebookId) return;
     state.search = result;
     renderNav();
 }
@@ -425,9 +492,14 @@ function renderNav() {
         state.list.notes.length ? list : h('p', { class: 'notes-hint', text: 'No notes here yet. New note starts one.' }),
         h('div', { class: 'notes-nav-actions' }, less, more)));
     nav.append(section('Notebook', h('div', { class: 'notes-nav-actions notes-wrap' },
+        button('Graph', () => void openNotebookGraph(), { icon: 'fa-diagram-project', className: 'notes-graph-open' }),
+        button('Property table', () => void openNotebookTable(), { icon: 'fa-table', className: 'notes-table-open' }),
+        button('Canvas', () => void openNotebookCanvas(), { icon: 'fa-object-group', className: 'notes-canvas-open' }),
+        button('Obsidian sync', () => void app.dialogs.obsidianSync(app), { icon: 'fa-arrows-rotate', className: 'notes-quiet' }),
         button(`Trash (${tree?.trashCount ?? 0})`, () => void app.dialogs.trash(app), { icon: 'fa-trash-can', className: 'notes-quiet' }),
         button('Assistant changes', () => void app.dialogs.proposals(app), { icon: 'fa-wand-magic-sparkles', className: 'notes-quiet' }),
         button('Import', () => void app.dialogs.importNotes(app), { icon: 'fa-file-import', className: 'notes-quiet' }),
+        state.importStages.length ? button('Unfinished imports', () => void app.dialogs.unfinishedImports(app), { icon: 'fa-arrow-rotate-right', className: 'notes-quiet' }) : null,
         button('Export', () => void app.dialogs.exportNotebook(app), { icon: 'fa-file-export', className: 'notes-quiet' }),
         button('Rename notebook', () => void app.dialogs.renameNotebook(app), { icon: 'fa-pen', className: 'notes-quiet' }),
         button('Check notebook', () => void app.dialogs.diagnostics(app), { icon: 'fa-stethoscope', className: 'notes-quiet' }))));
@@ -459,9 +531,13 @@ function rememberPosition() {
 }
 
 async function openNote(notebookId, noteId, { pushBack = false, quiet = false, fragment = null } = {}) {
+    if (app.sourceEditor?.composing || !notebookCanvasCanLeave()) return false;
     const { state } = app;
+    const account = state.account;
+    const noteRequestVersion = state.noteRequestVersion = (state.noteRequestVersion ?? 0) + 1;
     if (state.dirty) {
         const saved = await flushSave();
+        if (state.noteRequestVersion !== noteRequestVersion || state.account !== account) return false;
         if (!saved && state.dirty) {
             toast('warning', 'This note still has unsaved changes on this device. They are kept as a draft.');
         }
@@ -470,8 +546,16 @@ async function openNote(notebookId, noteId, { pushBack = false, quiet = false, f
         state.back.push({ notebookId: state.notebookId, noteId: state.note.id });
         if (state.back.length > 30) state.back.shift();
     }
-    if (notebookId !== state.notebookId) await selectNotebook(notebookId);
+    if (notebookId !== state.notebookId) await selectNotebook(notebookId, { noteRequestVersion });
+    if (state.noteRequestVersion !== noteRequestVersion || state.account !== account || state.notebookId !== notebookId) return false;
+    const fromNote = state.note;
+    const revision = fromNote?.revision;
+    const editorText = state.editorText;
+    const value = app.elements.textarea.value;
+    const stale = () => state.noteRequestVersion !== noteRequestVersion || state.account !== account || state.notebookId !== notebookId
+        || state.note !== fromNote || fromNote?.revision !== revision || state.editorText !== editorText || app.elements.textarea.value !== value;
     const result = await request('/notes/read', { notebookId, noteId });
+    if (stale()) return false;
     if (result.status === 'not_found') {
         if (!quiet) toast('warning', 'That note is not available. It may have been moved to Trash.');
         state.note = null;
@@ -480,7 +564,10 @@ async function openNote(notebookId, noteId, { pushBack = false, quiet = false, f
     }
     if (failed(result)) return false;
     if (state.dirty) await flushSave();
+    if (stale()) return false;
     loadNoteDetail(result);
+    state.workspaceView = 'note';
+    state.workspaceVersion = (state.workspaceVersion ?? 0) + 1;
     if (isPhone() || state.layout === 'beside') state.pane = 'note';
     applyLayout();
     renderEditor({ restorePosition: true, fragment });
@@ -495,6 +582,7 @@ function loadNoteDetail(result) {
     state.note = { id: note.id, notebookId: result.notebookId, revision: note.revision, serverText: note.text, path: note.path,
         folder: note.folder, title: note.title, detail: note, associations: result.associations ?? [], provenance: result.provenance ?? [] };
     state.dirty = false;
+    state.saveConflict = false;
     state.pending = null;
     state.remoteChanged = false;
     state.retryMs = 0;
@@ -517,15 +605,23 @@ function loadNoteDetail(result) {
     setStatus(state.dirty ? 'device' : 'saved');
 }
 
-async function reloadNote({ keepView = true } = {}) {
+async function reloadNote({ keepView = true, discardDraft = false } = {}) {
     const { state } = app;
-    if (!state.note) return;
-    const result = await request('/notes/read', { notebookId: state.notebookId, noteId: state.note.id });
-    if (failed(result)) return;
+    const note = state.note;
+    if (!note || app.sourceEditor?.composing || ((state.dirty || state.saveConflict) && !discardDraft)) return false;
+    const { account, notebookId, editorText, dirty, noteRequestVersion, notebookSelectionVersion } = state;
+    const revision = note.revision;
+    const value = app.elements.textarea.value;
+    const result = await request('/notes/read', { notebookId, noteId: note.id });
+    if (failed(result) || state.note !== note || state.account !== account || state.notebookId !== notebookId
+        || state.noteRequestVersion !== noteRequestVersion || state.notebookSelectionVersion !== notebookSelectionVersion
+        || note.revision !== revision || state.editorText !== editorText || app.elements.textarea.value !== value || state.dirty !== dirty) return false;
     const view = state.view;
+    if (discardDraft) clearDraft(account, notebookId, note.id);
     loadNoteDetail(result);
     if (keepView) state.view = view;
     renderEditor({ restorePosition: true });
+    return true;
 }
 
 async function goBack() {
@@ -538,34 +634,54 @@ async function goBack() {
 
 function renderEditor({ restorePosition = false, fragment = null } = {}) {
     const { elements, state } = app;
+    elements.editorPane?.classList?.toggle('notes-table-pane', state.workspaceView === 'table' && Boolean(state.notebookId));
     if (!elements.root) return;
+    if (elements.root.dataset) elements.root.dataset.workspace = state.workspaceView;
+    if (elements.paneTabs) renderPaneTabs();
+    if (elements.graph) elements.graph.hidden = state.workspaceView !== 'graph' || !state.notebookId;
+    if (elements.propertyTable) elements.propertyTable.hidden = state.workspaceView !== 'table' || !state.notebookId;
+    if (elements.canvas) elements.canvas.hidden = state.workspaceView !== 'canvas' || !state.notebookId;
+    if (['graph', 'table', 'canvas'].includes(state.workspaceView) && state.notebookId) {
+        elements.editor.hidden = true;
+        elements.empty.hidden = true;
+        return;
+    }
     const note = state.note;
     elements.editor.hidden = !note;
     elements.empty.hidden = Boolean(note);
     if (!note) {
+        app.sourceEditor?.setDocument('', null, [], { force: true });
         clear(elements.empty);
         append(elements.empty, [
             h('p', { class: 'notes-empty-title', text: 'Notes keeps your ideas, drafts and references, with or without a chat.' }),
             state.notebookId ? h('div', { class: 'notes-nav-actions' },
                 button('New note', () => void app.dialogs.newNote(app), { icon: 'fa-file-circle-plus', className: 'notes-primary' }),
-                button('Quick note', () => void app.dialogs.quickNote(app), { icon: 'fa-bolt' })) : null,
+                button('Quick note', () => void app.dialogs.quickNote(app), { icon: 'fa-bolt' }),
+                button('Graph', () => void openNotebookGraph(), { icon: 'fa-diagram-project' }),
+                button('Property table', () => void openNotebookTable(), { icon: 'fa-table' }),
+                button('Canvas', () => void openNotebookCanvas(), { icon: 'fa-object-group' })) : null,
         ]);
         app.panels?.renderDetails(app);
         return;
     }
     elements.title.value = note.path.replace(/^.*\//, '').replace(/\.md$/i, '');
-    if (elements.textarea.value !== state.editorText) elements.textarea.value = state.editorText ?? '';
+    const documentKey = `${state.account}:${state.notebookId}:${note.id}`;
+    if (app.sourceEditor) app.sourceEditor.setDocument(state.editorText ?? '', documentKey, noteFolds());
+    else if (elements.textarea.value !== state.editorText) elements.textarea.value = state.editorText ?? '';
     clear(elements.viewTabs);
     for (const [view, label] of [['write', 'Write'], ['read', 'Read'], ['outline', 'Outline']]) {
         elements.viewTabs.append(button(label, () => setView(view), { className: 'notes-choice', pressed: state.view === view }));
     }
     elements.toolbar.hidden = state.view !== 'write';
+    elements.foldControls.hidden = state.view !== 'write';
+    elements.foldSections.hidden = state.view !== 'write' || !state.foldSectionsOpen;
     elements.textarea.hidden = state.view !== 'write';
     elements.reader.hidden = state.view !== 'read';
     elements.outline.hidden = state.view !== 'outline';
     if (!elements.outline.isConnected) elements.editorBody.append(elements.outline);
     if (state.view === 'read') renderReader();
     if (state.view === 'outline') renderOutline();
+    renderFoldControls();
     if (restorePosition && state.view === 'write') {
         const position = readPrefs().positions?.[note.id];
         if (position) {
@@ -586,13 +702,195 @@ function setView(view) {
     if (view === 'write') app.elements.textarea.focus({ preventScroll: true });
 }
 
-function renderReader() {
+function notebookWorkspaceCurrent(snapshot, view) {
+    const { state } = app;
+    return state.workspaceView === view && state.notebookId === snapshot.notebookId && state.account === snapshot.account
+        && state.workspaceVersion === snapshot.workspaceVersion && state.notebookSelectionVersion === snapshot.notebookSelectionVersion
+        && state.noteRequestVersion === snapshot.noteRequestVersion;
+}
+
+function notebookCanvasCanLeave() {
+    return app.state.workspaceView !== 'canvas' || app.canvasView?.canLeave() !== false;
+}
+
+async function openNotebookGraph() {
+    const { state, elements } = app;
+    if (!state.notebookId || app.sourceEditor?.composing || !notebookCanvasCanLeave()) return false;
+    const snapshot = { notebookId: state.notebookId, account: state.account, workspaceVersion: ++state.workspaceVersion,
+        notebookSelectionVersion: state.notebookSelectionVersion, noteRequestVersion: state.noteRequestVersion };
+    state.workspaceView = 'graph';
+    state.pane = 'note';
+    applyLayout();
+    renderEditor();
+    clear(elements.graph);
+    elements.graph.append(h('p', { class: 'notes-hint', role: 'status', text: 'Loading notebook links…' }));
+    try {
+        app.graphModule ??= await import('./graph.js');
+        if (!notebookWorkspaceCurrent(snapshot, 'graph')) return false;
+        app.graphView ??= app.graphModule.createGraphView(app, elements.graph);
+        await app.graphView.open();
+        return notebookWorkspaceCurrent(snapshot, 'graph');
+    } catch {
+        if (notebookWorkspaceCurrent(snapshot, 'graph')) {
+            clear(elements.graph);
+            elements.graph.append(h('p', { class: 'notes-notice', text: 'The graph could not be loaded. Go back to notes and try again.' }),
+                button('Back to note', closeNotebookView));
+        }
+        return false;
+    }
+}
+
+function closeNotebookView() {
+    if (!notebookCanvasCanLeave()) return;
+    app.state.workspaceView = 'note';
+    app.state.workspaceVersion++;
+    renderEditor();
+}
+
+async function openNotebookTable() {
+    const { state, elements } = app;
+    if (!state.notebookId || app.sourceEditor?.composing || !notebookCanvasCanLeave()) return false;
+    const snapshot = { account: state.account, notebookId: state.notebookId, workspaceVersion: ++state.workspaceVersion,
+        notebookSelectionVersion: state.notebookSelectionVersion, noteRequestVersion: state.noteRequestVersion };
+    state.workspaceView = 'table';
+    state.pane = 'note';
+    applyLayout();
+    renderEditor();
+    clear(elements.propertyTable);
+    elements.propertyTable.append(h('p', { class: 'notes-hint', role: 'status', text: 'Loading saved properties…' }));
+    try {
+        app.tableModule ??= await import('./property-table.js');
+        if (!notebookWorkspaceCurrent(snapshot, 'table')) return false;
+        app.tableView ??= app.tableModule.createPropertyTableView(app, elements.propertyTable);
+        await app.tableView.open();
+        return notebookWorkspaceCurrent(snapshot, 'table');
+    } catch {
+        if (notebookWorkspaceCurrent(snapshot, 'table')) {
+            clear(elements.propertyTable);
+            elements.propertyTable.append(h('p', { class: 'notes-notice', text: 'The table could not be loaded. Go back to notes and try again.' }),
+                button('Back to note', closeNotebookView));
+        }
+        return false;
+    }
+}
+
+async function openNotebookCanvas() {
+    const { state, elements } = app;
+    if (!state.notebookId || app.sourceEditor?.composing || !notebookCanvasCanLeave()) return false;
+    const snapshot = { account: state.account, notebookId: state.notebookId, workspaceVersion: ++state.workspaceVersion,
+        notebookSelectionVersion: state.notebookSelectionVersion, noteRequestVersion: state.noteRequestVersion };
+    state.workspaceView = 'canvas';
+    state.pane = 'note';
+    applyLayout();
+    renderEditor();
+    clear(elements.canvas);
+    elements.canvas.append(h('p', { class: 'notes-hint', role: 'status', text: 'Loading planning canvases...' }));
+    try {
+        app.canvasModule ??= await import('./canvas.js');
+        if (!notebookWorkspaceCurrent(snapshot, 'canvas')) return false;
+        app.canvasView ??= app.canvasModule.createCanvasView(app, elements.canvas);
+        await app.canvasView.open();
+        return notebookWorkspaceCurrent(snapshot, 'canvas');
+    } catch {
+        if (notebookWorkspaceCurrent(snapshot, 'canvas')) {
+            clear(elements.canvas);
+            elements.canvas.append(h('p', { class: 'notes-notice', text: 'Canvases could not be loaded. Go back to notes and try again.' }),
+                button('Back to note', closeNotebookView));
+        }
+        return false;
+    }
+}
+
+function readerPreviewCurrent(snapshot) {
+    const { state, elements } = app;
+    return state.view === 'read' && state.note === snapshot.note && state.account === snapshot.account
+        && state.notebookId === snapshot.notebookId && elements.textarea.value === snapshot.text
+        && state.noteRequestVersion === snapshot.noteRequestVersion && state.notebookSelectionVersion === snapshot.notebookSelectionVersion
+        && state.readerRequestVersion === snapshot.readerRequestVersion;
+}
+
+async function renderReader() {
     const { elements, state } = app;
-    renderNoteInto(elements.reader, elements.textarea.value, {
+    if (!state.note) return;
+    const snapshot = { note: state.note, account: state.account, notebookId: state.notebookId, text: elements.textarea.value,
+        noteRequestVersion: state.noteRequestVersion, notebookSelectionVersion: state.notebookSelectionVersion, readerRequestVersion: ++state.readerRequestVersion };
+    const options = {
         notebookId: state.notebookId,
+        noteId: state.note.id,
         notePath: state.note.path,
-        attachmentUrl: relative => attachmentUrl(state.notebookId, relative),
-    });
+        attachmentUrl,
+        foldedKeys: noteFolds(),
+        onFold: keys => {
+            if (!readerPreviewCurrent(snapshot)) return;
+            app.sourceEditor?.setFolds(keys);
+            rememberFolds(keys);
+        },
+    };
+    renderNoteInto(elements.reader, snapshot.text, { ...options, embedLoading: true });
+    if (!elements.reader.querySelector('.notes-embed-placeholder')) return;
+    let result;
+    try {
+        result = await request('/embeds', { notebookId: snapshot.notebookId, noteId: snapshot.note.id, text: snapshot.text });
+    } catch {
+        result = null;
+    }
+    if (!readerPreviewCurrent(snapshot)) return;
+    renderNoteInto(elements.reader, snapshot.text, { ...options, foldedKeys: noteFolds(), embeds: result?.status === 'success' ? result.embeds : [] });
+}
+
+function noteFolds() {
+    const { state } = app;
+    const keys = readPrefs().folds?.[`${state.notebookId}:${state.note?.id}`];
+    return Array.isArray(keys) ? keys.slice(0, 5000).filter(key => typeof key === 'string' && /^h_[a-f\d]{16}$/.test(key)) : [];
+}
+
+function rememberFolds(keys) {
+    const { state } = app;
+    if (!state.note || !Array.isArray(keys)) return;
+    const folds = { ...readPrefs().folds };
+    const key = `${state.notebookId}:${state.note.id}`;
+    delete folds[key];
+    folds[key] = keys.slice(0, 5000);
+    writePrefs({ folds: Object.fromEntries(Object.entries(folds).slice(-50)) });
+    renderFoldControls();
+}
+
+function renderFoldControls() {
+    const { elements, state, sourceEditor } = app;
+    if (!elements.foldControls || !sourceEditor || !state.note) return;
+    const headings = sourceEditor.headings().filter(heading => heading.to > heading.from);
+    clear(elements.foldControls);
+    if (!headings.length) {
+        elements.foldControls.hidden = true;
+        elements.foldSections.hidden = true;
+        return;
+    }
+    const sections = button('Sections', () => {
+        state.foldSectionsOpen = !state.foldSectionsOpen;
+        elements.foldSections.hidden = !state.foldSectionsOpen;
+        renderFoldControls();
+    }, { pressed: Boolean(state.foldSectionsOpen) });
+    sections.setAttribute('aria-expanded', String(Boolean(state.foldSectionsOpen)));
+    const foldAll = button('Fold all', () => sourceEditor.foldAll());
+    const showAll = button('Show all', () => sourceEditor.showAll());
+    foldAll.disabled = sourceEditor.composing;
+    showAll.disabled = sourceEditor.composing;
+    append(elements.foldControls, [sections, foldAll, showAll]);
+    clear(elements.foldSections);
+    if (!state.foldSectionsOpen) return;
+    const folded = new Set(sourceEditor.folds());
+    const limit = state.foldLimit ?? 100;
+    for (const heading of headings.slice(0, limit)) {
+        const control = button(`${folded.has(heading.key) ? 'Show' : 'Fold'} ${heading.text || 'Untitled heading'}`, () => sourceEditor.toggle(heading.key));
+        control.style.setProperty('--notes-outline-level', String(heading.level - 1));
+        control.setAttribute('aria-expanded', String(!folded.has(heading.key)));
+        control.disabled = sourceEditor.composing;
+        elements.foldSections.append(control);
+    }
+    if (headings.length > limit) elements.foldSections.append(button('More sections', () => {
+        state.foldLimit = limit + 100;
+        renderFoldControls();
+    }));
 }
 
 function renderOutline() {
@@ -612,14 +910,16 @@ function renderOutline() {
 }
 
 function jumpToOffset(offset) {
+    if (app.sourceEditor?.composing) return false;
     const { elements } = app;
     app.state.view = 'write';
     renderEditor();
     const textarea = elements.textarea;
     textarea.focus({ preventScroll: true });
     textarea.setSelectionRange(offset, offset);
+    if (textarea.scrollToOffset) return textarea.scrollToOffset(offset);
     const before = textarea.value.slice(0, offset).split('\n').length - 1;
-    const lineHeight = parseFloat(getComputedStyle(textarea).lineHeight) || 22;
+    const lineHeight = parseFloat(getComputedStyle(textarea.element ?? textarea).lineHeight) || 22;
     textarea.scrollTop = Math.max(0, before * lineHeight - 40);
 }
 
@@ -635,8 +935,9 @@ function jumpToHeading(fragment) {
 function onEditorInput() {
     const { state, elements } = app;
     if (!state.note) return;
+    const conflict = state.saveConflict || state.status === 'conflict';
     state.editorText = elements.textarea.value;
-    state.dirty = state.editorText !== lf(state.note.serverText);
+    state.dirty = state.editorText !== lf(state.note.serverText) || conflict;
     if (!state.dirty) {
         clearDraft(state.account, state.notebookId, state.note.id);
         if (!state.saving) setStatus('saved');
@@ -644,15 +945,16 @@ function onEditorInput() {
     }
     const stored = saveDraft(state.account, state.notebookId, state.note.id, { text: state.editorText, baseRevision: state.note.revision });
     if (!stored.ok) {
-        setStatus('error');
+        setStatus(conflict ? 'conflict' : 'error');
         showBanner('storage', stored.reason === 'too-large'
             ? 'This note is too large to keep a copy on this device. Keep this tab open until it says Saved on server.'
             : 'This browser would not keep a copy of your changes on this device. Keep this tab open until it says Saved on server.', []);
     } else if (!state.saving) {
-        setStatus('device');
+        setStatus(conflict ? 'conflict' : 'device');
     }
     maybeSuggest();
-    scheduleSave();
+    if (conflict) clearTimeout(state.saveTimer);
+    else scheduleSave();
 }
 
 function scheduleSave(delay = SAVE_DELAY_MS) {
@@ -667,12 +969,17 @@ async function saveNow() {
     clearTimeout(state.saveTimer);
     const note = state.note;
     if (!note || !state.dirty) return true;
-    if (state.status === 'conflict') return false;
+    if (state.saveConflict || state.status === 'conflict') return false;
+    if (app.sourceEditor?.composing) {
+        scheduleSave();
+        return false;
+    }
     if (state.saving) {
         scheduleSave(400);
         return false;
     }
     const text = state.editorText;
+    const { account, notebookId, noteRequestVersion, notebookSelectionVersion } = state;
     if (!state.pending || state.pending.text !== text || state.pending.noteId !== note.id || state.pending.baseRevision !== note.revision) {
         state.pending = { text, noteId: note.id, baseRevision: note.revision, operationId: newOperationId('save') };
     }
@@ -680,11 +987,12 @@ async function saveNow() {
     state.saving = true;
     setStatus('saving');
     const result = await request('/notes/update', {
-        operationId: pending.operationId, notebookId: state.notebookId, noteId: note.id, expectedRevision: pending.baseRevision,
+        operationId: pending.operationId, notebookId, noteId: note.id, expectedRevision: pending.baseRevision,
         changes: [{ type: 'replace_all', markdown: text }], reason: 'autosave',
     });
     state.saving = false;
-    if (state.note?.id !== note.id) return false;
+    if (state.note !== note || state.account !== account || state.notebookId !== notebookId
+        || state.noteRequestVersion !== noteRequestVersion || state.notebookSelectionVersion !== notebookSelectionVersion) return false;
     if (result.status === 'success' || result.status === 'no_change') {
         state.retryMs = 0;
         state.pending = null;
@@ -751,14 +1059,14 @@ function setStatus(status) {
 
 /* ---------- banners and conflicts ---------- */
 
-function showBanner(id, message, actions = []) {
+function showBanner(id, message, actions = [], { dismissible = true } = {}) {
     const host = app.elements.banner;
     if (!host) return;
     host.querySelector(`[data-banner="${id}"]`)?.remove();
     const row = h('div', { class: 'notes-banner', dataset: { banner: id }, role: 'alert' }, h('p', { text: message }));
     const buttons = h('div', { class: 'notes-nav-actions notes-wrap' });
     for (const [label, action] of actions) buttons.append(button(label, action, { className: 'notes-quiet' }));
-    buttons.append(button('Dismiss', () => row.remove(), { className: 'notes-quiet' }));
+    if (dismissible) buttons.append(button('Dismiss', () => row.remove(), { className: 'notes-quiet' }));
     row.append(buttons);
     host.append(row);
 }
@@ -777,41 +1085,65 @@ async function compareTexts(title, before, after) {
 
 async function fetchServerText() {
     const { state } = app;
-    const result = await request('/notes/read', { notebookId: state.notebookId, noteId: state.note.id });
-    return failed(result) ? null : result;
+    const note = state.note;
+    if (!note) return null;
+    const { account, notebookId, noteRequestVersion, notebookSelectionVersion } = state;
+    const revision = note.revision;
+    const result = await request('/notes/read', { notebookId, noteId: note.id });
+    return failed(result) || state.note !== note || state.account !== account || state.notebookId !== notebookId
+        || state.noteRequestVersion !== noteRequestVersion || state.notebookSelectionVersion !== notebookSelectionVersion
+        || note.revision !== revision ? null : result;
+}
+
+async function saveRecoveryCopy(text, suffix, { open = false } = {}) {
+    const { state, elements } = app;
+    const note = state.note;
+    if (!note) return false;
+    const { account, notebookId, editorText, noteRequestVersion, notebookSelectionVersion } = state;
+    const revision = note.revision;
+    const value = elements.textarea.value;
+    const created = await createNote({ folder: note.folder, title: `${note.title} (${suffix})`, text });
+    if (!created) return false;
+    if (state.note !== note || state.account !== account || state.notebookId !== notebookId
+        || state.noteRequestVersion !== noteRequestVersion || state.notebookSelectionVersion !== notebookSelectionVersion
+        || note.revision !== revision || state.editorText !== editorText || elements.textarea.value !== value) {
+        toast('success', 'A separate copy was saved. Your current note was left unchanged.');
+        return true;
+    }
+    if (open && !(await openNote(notebookId, created.noteId, { pushBack: true }))) return true;
+    const draft = readDraft(account, notebookId, note.id);
+    if (!draft || draft.text === text) clearDraft(account, notebookId, note.id);
+    if (!open) {
+        clearBanner('draft');
+        toast('success', 'A separate copy of the device draft was saved.');
+    }
+    return true;
 }
 
 function showSaveConflict() {
+    app.state.saveConflict = true;
+    clearTimeout(app.state.saveTimer);
+    clearBanner('remote');
     showBanner('conflict', 'This note changed somewhere else since you opened it. Your text is kept on this device. Choose what to keep.', [
         ['Compare', async () => {
             const server = await fetchServerText();
             if (server) await compareTexts('Server version (-) and your version (+)', server.note.text, app.elements.textarea.value);
         }],
-        ['Use server version', async () => {
-            clearBanner('conflict');
-            clearDraft(app.state.account, app.state.notebookId, app.state.note.id);
-            await reloadNote();
-        }],
-        ['Save mine as a copy', async () => {
-            const text = app.elements.textarea.value;
-            const created = await createNote({ folder: app.state.note.folder, title: `${app.state.note.title} (my copy)`, text });
-            if (created) {
-                clearDraft(app.state.account, app.state.notebookId, app.state.note.id);
-                clearBanner('conflict');
-                await openNote(app.state.notebookId, created.noteId, { pushBack: true });
-            }
-        }],
+        ['Use server version', () => reloadNote({ discardDraft: true })],
+        ['Save mine as a copy', () => saveRecoveryCopy(app.elements.textarea.value, 'my copy', { open: true })],
         ['Keep mine', async () => {
             const server = await fetchServerText();
             if (!server) return;
             clearBanner('conflict');
             app.state.note.revision = server.note.revision;
             app.state.note.serverText = server.note.text;
+            app.state.saveConflict = false;
             app.state.dirty = app.elements.textarea.value !== lf(server.note.text);
-            setStatus('device');
-            void saveNow();
+            setStatus(app.state.dirty ? 'device' : 'saved');
+            if (app.state.dirty) void saveNow();
+            else clearDraft(app.state.account, app.state.notebookId, app.state.note.id);
         }],
-    ]);
+    ], { dismissible: false });
 }
 
 function showDraftConflict(draft) {
@@ -822,13 +1154,7 @@ function showDraftConflict(draft) {
             app.elements.textarea.value = draft.text;
             onEditorInput();
         }],
-        ['Save draft as a copy', async () => {
-            const created = await createNote({ folder: app.state.note.folder, title: `${app.state.note.title} (draft)`, text: draft.text });
-            if (created) {
-                clearDraft(app.state.account, app.state.notebookId, app.state.note.id);
-                clearBanner('draft');
-            }
-        }],
+        ['Save draft as a copy', () => saveRecoveryCopy(draft.text, 'draft')],
         ['Discard draft', () => {
             clearDraft(app.state.account, app.state.notebookId, app.state.note.id);
             clearBanner('draft');
@@ -843,7 +1169,7 @@ const refreshTreeSoon = debounce(() => void refreshTree(), 500);
 function onRemoteChange(change) {
     const { state } = app;
     if (!state.open || change.notebookId !== state.notebookId) {
-        if (change.kind === 'notebook') void loadNotebooks(state.notebookId);
+        if (change.kind === 'notebook') void loadNotebooks();
         return;
     }
     refreshTreeSoon();
@@ -851,6 +1177,10 @@ function onRemoteChange(change) {
     const note = state.note;
     if (!note || change.noteId !== note.id || !change.revision || change.revision === note.revision) return;
     if ((state.ownRevisions ?? []).includes(change.revision) || state.saving) return;
+    if (state.saveConflict || state.status === 'conflict') {
+        showSaveConflict();
+        return;
+    }
     if (!state.dirty) {
         void reloadNote();
         return;
@@ -861,7 +1191,7 @@ function onRemoteChange(change) {
             const server = await fetchServerText();
             if (server) await compareTexts('Server version (-) and your version (+)', server.note.text, app.elements.textarea.value);
         }],
-        ['Use server version', async () => { clearBanner('remote'); clearDraft(state.account, state.notebookId, note.id); await reloadNote(); }],
+        ['Use server version', () => reloadNote({ discardDraft: true })],
     ]);
 }
 
@@ -905,6 +1235,11 @@ function insertText(text, { select = null } = {}) {
     const textarea = app.elements.textarea;
     textarea.focus({ preventScroll: true });
     const start = textarea.selectionStart;
+    if (textarea.insertText) {
+        textarea.insertText(text);
+        if (select) textarea.setSelectionRange(start + select[0], start + select[1]);
+        return;
+    }
     let done = false;
     try {
         done = document.execCommand?.('insertText', false, text) === true;
@@ -953,6 +1288,7 @@ function insertBlock(block) {
 }
 
 function onEditorKeydown(event) {
+    if (event.isComposing || event.keyCode === 229 || app.sourceEditor?.composing) return;
     if (!app.elements.suggest.hidden) {
         const items = [...app.elements.suggest.querySelectorAll('[role="option"]')];
         const index = items.findIndex(item => item.getAttribute('aria-selected') === 'true');
@@ -1040,18 +1376,25 @@ function hideSuggest() {
 
 /* ---------- reading view links ---------- */
 
-async function followLink({ target, kind, fragment }) {
+async function followLink({ target, kind, fragment, fromNoteId }) {
     const { state } = app;
-    const result = await request('/resolve', { notebookId: state.notebookId, fromNoteId: kind === 'wiki' ? state.note?.id : undefined, target, kind });
+    const notebookId = state.notebookId;
+    const note = state.note;
+    const noteRequestVersion = state.noteRequestVersion;
+    const notebookSelectionVersion = state.notebookSelectionVersion;
+    const current = () => state.note === note && state.notebookId === notebookId
+        && state.noteRequestVersion === noteRequestVersion && state.notebookSelectionVersion === notebookSelectionVersion;
+    const result = await request('/resolve', { notebookId, fromNoteId: kind === 'wiki' ? fromNoteId ?? note?.id : undefined, target, kind });
+    if (!current()) return;
     if (failed(result)) return;
     const jump = fragment || result.fragment || null;
     if (result.resolution === 'resolved') {
         if (result.note.id === state.note?.id) return jump && jumpToHeading(jump);
-        return openNote(state.notebookId, result.note.id, { pushBack: true, fragment: jump });
+        return openNote(notebookId, result.note.id, { pushBack: true, fragment: jump });
     }
     if (result.resolution === 'ambiguous') {
         const chosen = await app.dialogs.chooseNote(app, `More than one note matches '${target}'. Which one?`, result.candidates);
-        if (chosen) await openNote(state.notebookId, chosen.id, { pushBack: true, fragment: jump });
+        if (chosen && current()) await openNote(notebookId, chosen.id, { pushBack: true, fragment: jump });
         return;
     }
     if (result.resolution === 'attachment') {
@@ -1061,7 +1404,7 @@ async function followLink({ target, kind, fragment }) {
     if (result.resolution === 'missing') {
         const name = target.replace(/\.md$/i, '');
         const ok = await callGenericPopup(`There is no note called '${name}' yet. Create it?`, POPUP_TYPE.CONFIRM, '', { okButton: 'Create note', cancelButton: 'Not now' });
-        if (ok !== POPUP_RESULT.AFFIRMATIVE) return;
+        if (ok !== POPUP_RESULT.AFFIRMATIVE || !current()) return;
         const slash = name.lastIndexOf('/');
         const created = await createNote({ folder: slash >= 0 ? name.slice(0, slash) : state.note?.folder ?? 'Inbox', title: slash >= 0 ? name.slice(slash + 1) : name, text: '' });
         if (created) await openNote(state.notebookId, created.noteId, { pushBack: true });
@@ -1069,16 +1412,18 @@ async function followLink({ target, kind, fragment }) {
 }
 
 function onReaderClick(event) {
-    const link = event.target.closest?.('.notes-wikilink');
-    if (link) {
+    const open = event.target.closest?.('[data-note-open]');
+    if (open) {
         event.preventDefault();
-        if (link.dataset.notePath) void followLink({ target: link.dataset.notePath, kind: 'markdown', fragment: link.dataset.wikiFragment });
-        else void followLink({ target: [link.dataset.wikiTarget, link.dataset.wikiFragment].filter(Boolean).join('#'), kind: 'wiki' });
+        void openNote(app.state.notebookId, open.dataset.noteOpen, { pushBack: true, fragment: open.dataset.wikiFragment });
         return;
     }
-    const embed = event.target.closest?.('.notes-embed-chip');
-    if (embed) {
-        void followLink({ target: [embed.dataset.wikiTarget, embed.dataset.wikiFragment].filter(Boolean).join('#'), kind: 'wiki' });
+    const link = event.target.closest?.('.notes-wikilink');
+    if (link) {
+        if (!link.hasAttribute('data-wiki-target') && !link.hasAttribute('data-note-path')) return;
+        event.preventDefault();
+        if (link.dataset.notePath) void followLink({ target: link.dataset.notePath, kind: 'markdown', fragment: link.dataset.wikiFragment });
+        else void followLink({ target: [link.dataset.wikiTarget, link.dataset.wikiFragment].filter(Boolean).join('#'), kind: 'wiki', fromNoteId: link.dataset.noteFromId });
         return;
     }
     const external = event.target.closest?.('.notes-external-image');
@@ -1092,14 +1437,9 @@ function onReaderClick(event) {
     const heading = event.target.closest?.('[data-heading-target]');
     if (heading) {
         event.preventDefault();
-        jumpToHeading(heading.dataset.headingTarget);
-    }
-}
-
-function onReaderKeydown(event) {
-    if ((event.key === 'Enter' || event.key === ' ') && event.target.classList?.contains('notes-embed-chip')) {
-        event.preventDefault();
-        onReaderClick(event);
+        if (heading.dataset.noteFromId && heading.dataset.noteFromId !== app.state.note?.id) {
+            void openNote(app.state.notebookId, heading.dataset.noteFromId, { pushBack: true, fragment: heading.dataset.headingTarget });
+        } else jumpToHeading(heading.dataset.headingTarget);
     }
 }
 
@@ -1162,9 +1502,9 @@ async function changeNote(changes, reason = 'edit') {
 }
 
 Object.assign(app, {
-    request, failed, toast, refreshTree, loadNotebooks, selectNotebook, openNote, reloadNote, flushSave, insertText, setStatus,
+    request, failed, toast, isPhone, refreshTree, loadNotebooks, selectNotebook, openNote, reloadNote, flushSave, insertText, setStatus,
     createNote, moveNote, changeNote, compareTexts, showBanner, clearBanner, renderNav, renderEditor, applyLayout, setPane,
-    chatScope: currentChatScope, lf, readPrefs, writePrefs, hide: hideNotes, setView,
+    chatScope: currentChatScope, lf, readPrefs, writePrefs, hide: hideNotes, setView, jumpToOffset, closeNotebookView, openNotebookGraph, openNotebookTable, openNotebookCanvas,
 });
 
 export function notesApp() {
@@ -1178,4 +1518,3 @@ export async function captureFromChat(capture) {
 }
 
 globalThis.NeconyanNotes = Object.freeze({ open: openNotes, hide: hideNotes, onRoute: onWorkspaceRoute, captureFromChat });
-

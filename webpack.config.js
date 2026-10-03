@@ -24,10 +24,13 @@ function hashFileIfPresent(hasher, filePath) {
     hasher.update(fs.readFileSync(filePath));
 }
 
-function getPublicLibInputsSignature() {
+function getPublicLibInputsSignature(bundle = 'lib') {
     const hasher = crypto.createHash('sha256');
 
-    hashFileIfPresent(hasher, path.join(serverDirectory, 'public', 'lib.js'));
+    hashFileIfPresent(hasher, path.join(serverDirectory, 'public', `${bundle}.js`));
+    if (bundle === 'notes-editor') {
+        hashFileIfPresent(hasher, path.join(serverDirectory, 'public', 'scripts', 'notebooks', 'folding.js'));
+    }
     hashFileIfPresent(hasher, path.join(serverDirectory, 'package.json'));
     hashFileIfPresent(hasher, path.join(serverDirectory, 'package-lock.json'));
     hashFileIfPresent(hasher, path.join(serverDirectory, 'bun.lock'));
@@ -39,14 +42,15 @@ function getPublicLibInputsSignature() {
  * Generate a cache version string based on the application version, Webpack version, runtime, and public lib inputs.
  * @returns {string} The cache version string.
  */
-function getWebpackCacheVersion() {
+function getWebpackCacheVersion(bundle = 'lib') {
     return crypto.createHash('shake256', { outputLength: 8 })
         .update(JSON.stringify([
             appVersion.pkgVersion,
             webpack.version,
             PUBLIC_LIB_CONFIG_SIGNATURE,
             isBunRuntime() ? BUN_LIB_BUNDLE_SIGNATURE : 'default',
-            getPublicLibInputsSignature(),
+            bundle,
+            getPublicLibInputsSignature(bundle),
         ]))
         .digest('hex');
 }
@@ -65,7 +69,7 @@ function pruneWebpackCache(webpackRoot, currentCacheVersion, { keepCount = WEBPA
         }
 
         const cacheDirectories = fs.readdirSync(webpackRoot, { withFileTypes: true })
-            .filter(dirent => dirent.isDirectory())
+            .filter(dirent => dirent.isDirectory() && /^[a-f0-9]{16}$/.test(dirent.name))
             .map((dirent) => {
                 const dirPath = path.join(webpackRoot, dirent.name);
                 return {
@@ -126,14 +130,17 @@ function getOutputDirectory(webpackRoot, cacheVersion) {
  * Get the resolved output paths for the public lib bundle.
  * @param {object} options Configuration options.
  * @param {boolean} [options.forceDist=false] Whether to force the use the /dist folder.
+ * @param {'lib'|'notes-editor'} [options.bundle='lib'] The separately compiled frontend bundle.
  * @returns {{ webpackRoot: string, cacheVersion: string, cacheDirectory: string, outputDirectory: string, outputFile: string, outputFilePath: string }}
  */
-export function getPublicLibCacheInfo({ forceDist = false } = {}) {
-    const webpackRoot = getWebpackRoot({ forceDist });
-    const cacheVersion = getWebpackCacheVersion();
+export function getPublicLibCacheInfo({ forceDist = false, bundle = 'lib' } = {}) {
+    if (!['lib', 'notes-editor'].includes(bundle)) throw new Error('Unknown frontend bundle.');
+    const root = getWebpackRoot({ forceDist });
+    const webpackRoot = bundle === 'lib' ? root : path.join(root, bundle);
+    const cacheVersion = getWebpackCacheVersion(bundle);
     const cacheDirectory = getCacheDirectory(webpackRoot, cacheVersion);
     const outputDirectory = getOutputDirectory(webpackRoot, cacheVersion);
-    const outputFile = PUBLIC_LIB_FILENAME;
+    const outputFile = bundle === 'lib' ? PUBLIC_LIB_FILENAME : `${bundle}.js`;
     const outputFilePath = path.join(outputDirectory, outputFile);
 
     return {
@@ -150,13 +157,14 @@ export function getPublicLibCacheInfo({ forceDist = false } = {}) {
  * Prune older public lib cache directories after a successful compile.
  * @param {object} options Options.
  * @param {boolean} [options.forceDist=false] Whether to force the use the /dist folder.
+ * @param {'lib'|'notes-editor'} [options.bundle='lib'] The separately compiled frontend bundle.
  * @param {string} [options.currentCacheVersion] Cache version to preserve.
  * @param {number} [options.keepCount=WEBPACK_CACHE_KEEP_COUNT] Number of recent cache directories to keep.
  * @returns {void}
  */
-export function prunePublicLibCache({ forceDist = false, currentCacheVersion = undefined, keepCount = WEBPACK_CACHE_KEEP_COUNT } = {}) {
-    const webpackRoot = getWebpackRoot({ forceDist });
-    const cacheVersion = currentCacheVersion ?? getWebpackCacheVersion();
+export function prunePublicLibCache({ forceDist = false, bundle = 'lib', currentCacheVersion = undefined, keepCount = WEBPACK_CACHE_KEEP_COUNT } = {}) {
+    const { webpackRoot, cacheVersion: resolvedVersion } = getPublicLibCacheInfo({ forceDist, bundle });
+    const cacheVersion = currentCacheVersion ?? resolvedVersion;
     pruneWebpackCache(webpackRoot, cacheVersion, { keepCount });
 }
 
@@ -166,18 +174,20 @@ export function prunePublicLibCache({ forceDist = false, currentCacheVersion = u
  * 2. Non-Docker environments use the global DATA_ROOT variable to determine the cache and output directories.
  * @param {object} options Configuration options.
  * @param {boolean} [options.forceDist=false] Whether to force the use the /dist folder.
+ * @param {'lib'|'notes-editor'} [options.bundle='lib'] The separately compiled frontend bundle.
  * @param {boolean} [options.pruneCache=false] Whether to prune old cache directories.
  * @param {string} [options.outputPath] Override for the Webpack output directory.
  * @returns {import('webpack').Configuration}
  * @throws {Error} If the DATA_ROOT variable is not set.
  * */
-export default function getPublicLibConfig({ forceDist = false, pruneCache = false, outputPath = undefined } = {}) {
+export default function getPublicLibConfig({ forceDist = false, bundle = 'lib', pruneCache = false, outputPath = undefined } = {}) {
     const {
         webpackRoot,
         cacheVersion,
         cacheDirectory,
         outputDirectory,
-    } = getPublicLibCacheInfo({ forceDist });
+        outputFile,
+    } = getPublicLibCacheInfo({ forceDist, bundle });
 
     if (pruneCache) {
         pruneWebpackCache(webpackRoot, cacheVersion);
@@ -185,7 +195,7 @@ export default function getPublicLibConfig({ forceDist = false, pruneCache = fal
 
     return {
         mode: 'production',
-        entry: path.join(serverDirectory, 'public/lib.js'),
+        entry: path.join(serverDirectory, 'public', `${bundle}.js`),
         cache: isBunRuntime() ? false : {
             type: 'filesystem',
             cacheDirectory: cacheDirectory,
@@ -220,7 +230,7 @@ export default function getPublicLibConfig({ forceDist = false, pruneCache = fal
         plugins: [new ValidatedMinificationPlugin()],
         output: {
             path: outputPath ?? outputDirectory,
-            filename: PUBLIC_LIB_FILENAME,
+            filename: outputFile,
             libraryTarget: 'module',
         },
     };

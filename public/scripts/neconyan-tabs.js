@@ -9181,26 +9181,27 @@ function syncTopbarPageButtonStates() {
 }
 
 function syncNeconyanRailSelection() {
-    let route = isCharacterPanelOpen()
-        ? ({
-            'world-info': 'lorebooks',
-            persona: 'persona',
-        }[getActiveCharacterPanelTab()] ?? 'characters')
-        : isShellOpen('left') ? ({
-            presets: 'presets',
-            sampling: 'sampling',
-            'advanced-formatting': 'formatting',
-            agents: 'agents',
-            mewmory: 'mewmory',
-        }[getShellState('left')?.activeTabId] ?? 'model')
-            : isShellOpen('right') ? ({
-                extensions: 'extensions',
-                background: 'background',
-                server: 'server',
-                'console-logs': 'console-logs',
-                'included-tool': getIncludedToolRailRoute(),
-            }[getShellState('right')?.activeTabId] ?? 'settings')
-                : isLandingPageVisible() ? 'home' : '';
+    const route = document.body.classList.contains('neconyan-notes-open') ? 'notes'
+        : isCharacterPanelOpen()
+            ? ({
+                'world-info': 'lorebooks',
+                persona: 'persona',
+            }[getActiveCharacterPanelTab()] ?? 'characters')
+            : isShellOpen('left') ? ({
+                presets: 'presets',
+                sampling: 'sampling',
+                'advanced-formatting': 'formatting',
+                agents: 'agents',
+                mewmory: 'mewmory',
+            }[getShellState('left')?.activeTabId] ?? 'model')
+                : isShellOpen('right') ? ({
+                    extensions: 'extensions',
+                    background: 'background',
+                    server: 'server',
+                    'console-logs': 'console-logs',
+                    'included-tool': getIncludedToolRailRoute(),
+                }[getShellState('right')?.activeTabId] ?? 'settings')
+                    : isLandingPageVisible() ? 'home' : '';
     for (const button of document.querySelectorAll('#neconyan-workspace-rail [data-neconyan-route]')) {
         if (button.dataset.neconyanRoute === route) {
             button.setAttribute('aria-current', 'page');

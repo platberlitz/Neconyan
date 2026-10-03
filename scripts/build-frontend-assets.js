@@ -102,16 +102,17 @@ async function runWebpackCompiler(config) {
     });
 }
 
-async function buildPublicLibBundle() {
+async function buildPublicLibBundle(bundle = 'lib') {
     const temporaryOutputPath = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-public-lib-'));
     const config = getPublicLibConfig({
         forceDist: true,
+        bundle,
         outputPath: temporaryOutputPath,
     });
 
     try {
         await runWebpackCompiler(config);
-        return await fs.readFile(path.join(temporaryOutputPath, 'lib.js'));
+        return await fs.readFile(path.join(temporaryOutputPath, `${bundle}.js`));
     } finally {
         await fs.rm(temporaryOutputPath, { recursive: true, force: true });
     }
@@ -135,7 +136,7 @@ async function optimizeAsset(inputPath, relativePath, ext, warnings, sourceBuffe
         const source = buffer.toString('utf8');
         try {
             const result = await minify(source, {
-                module: ext === '.mjs' || relativePath.includes(`${path.sep}scripts${path.sep}`) || relativePath === 'script.js' || relativePath === 'lib.js',
+                module: ext === '.mjs' || relativePath.includes(`${path.sep}scripts${path.sep}`) || ['script.js', 'lib.js', 'notes-editor.js'].includes(relativePath),
                 compress: {
                     passes: 1,
                 },
@@ -188,6 +189,7 @@ async function build() {
     const files = await walk(publicRoot);
     const assetSourceBuffers = new Map([
         ['lib.js', await buildPublicLibBundle()],
+        ['notes-editor.js', await buildPublicLibBundle('notes-editor')],
     ]);
     const assets = {};
     const skipped = [];

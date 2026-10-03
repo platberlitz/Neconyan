@@ -20,7 +20,7 @@ function prepared(t, owner = 'transfer-owner') {
     const f = fixture(t, false, owner);
     const run = operation => withRoleplayAccount(f.scope, f.scope, operation);
     const notebook = run(lease => store.ensureDefaultNotebookLocked(lease));
-    return { f, run, owner: f.scope.owner, notebookId: notebook.id, root: f.scope.directories.root };
+    return { f, base: f.scope, run, owner: f.scope.owner, notebookId: notebook.id, root: f.scope.directories.root };
 }
 
 /** Minimal ZIP writer so tests can build archives no honest tool would make. */
@@ -70,7 +70,8 @@ function zip(entries) {
 }
 
 function rejects(owner, archive, code) {
-    assert.throws(() => transfer.stageImport(owner, { filename: 'evil.zip', bytes: archive }), error => error.code === code);
+    assert.ok(owner);
+    assert.throws(() => transfer.prepareImport({ filename: 'evil.zip', bytes: archive }), error => error.code === code);
 }
 
 test('unsafe archives are rejected before anything is written', t => {
@@ -91,9 +92,9 @@ test('unsafe archives are rejected before anything is written', t => {
     assert.equal(fs.existsSync(path.join(root, 'notebooks')) ? fs.readdirSync(path.join(root, 'notebooks')).length : 0, 1);
 });
 
-test('import excludes application folders, hidden files and unknown types and reports collisions', t => {
-    const { owner } = prepared(t);
-    const summary = transfer.stageImport(owner, {
+test('import excludes application folders, hidden files and unknown types and reports collisions', async t => {
+    const { base } = prepared(t);
+    const summary = await transfer.stageImport(base, {
         filename: 'vault.zip',
         bytes: zip([
             { name: 'Vault/Inbox/Idea.md', data: '# Idea\n' },
@@ -120,8 +121,8 @@ test('import excludes application folders, hidden files and unknown types and re
     assert.deepEqual(summary.renamed, [{ from: 'Inbox/idea.md', to: 'Inbox/idea 2.md', reason: 'name-collision' }]);
 });
 
-test('export and import round-trip content while imported permissions stay inactive', t => {
-    const { owner, run, notebookId } = prepared(t);
+test('export and import round-trip content while imported permissions stay inactive', async t => {
+    const { base, run, notebookId } = prepared(t);
     run(lease => store.writePoliciesLocked(lease, notebookId, { ...store.readPoliciesLocked(lease, notebookId), assistant: 'edit', assistantPublish: true }));
     const source = '---\ntitle: Magic system\nneconyan_id: n_0123456789abcdef\ncustom:\n  nested: [1, 2]\n---\n# Magic system\n\n```js\nconst link = "[[Not a link]]";\n```\n\n%% obsidian comment %%\n![Harbour](../attachments/pic.png)\n';
     const note = run(lease => store.createNoteLocked(lease, { operationId: op('note'), notebookId, folder: 'Worldbuilding', title: 'Magic system', text: source }));
@@ -137,9 +138,9 @@ test('export and import round-trip content while imported permissions stay inact
     assert.ok(!names.some(name => /policies|manifest|history|provenance|notebook-control/.test(name)));
     assert.equal(Buffer.from(unpacked['Notebook/Worldbuilding/Magic system.md']).toString('utf8'), source);
 
-    const summary = transfer.stageImport(owner, { filename: 'Notebook.zip', bytes: archive });
+    const summary = await transfer.stageImport(base, { filename: 'Notebook.zip', bytes: archive });
     assert.equal(summary.notes[0].identityHint, 'n_0123456789abcdef');
-    const committed = run(lease => transfer.commitImportLocked(lease, { operationId: op('import'), stageId: summary.stageId, name: 'Imported copy' }));
+    const committed = await transfer.commitImport(base, { operationId: op('import'), stageId: summary.stageId, name: 'Imported copy' });
     assert.equal(committed.permissions, 'inactive');
     assert.notEqual(committed.notebook.id, notebookId);
     const importedId = committed.notebook.id;
@@ -160,15 +161,15 @@ test('export and import round-trip content while imported permissions stay inact
     assert.equal(run(lease => store.listNotebooksLocked(lease)).length, 2);
 });
 
-test('duplicate identity hints never claim an existing note', t => {
-    const { owner, run } = prepared(t);
+test('duplicate identity hints never claim an existing note', async t => {
+    const { base, run } = prepared(t);
     const hint = '---\nneconyan_id: n_aaaaaaaaaaaaaaaa\n---\n';
-    const summary = transfer.stageImport(owner, {
+    const summary = await transfer.stageImport(base, {
         filename: 'copies.zip',
         bytes: zip([{ name: 'A.md', data: `${hint}a` }, { name: 'B.md', data: `${hint}b` }]),
     });
     assert.ok(summary.notes.every(note => note.duplicateHint));
-    const committed = run(lease => transfer.commitImportLocked(lease, { operationId: op('dup'), stageId: summary.stageId }));
+    const committed = await transfer.commitImport(base, { operationId: op('dup'), stageId: summary.stageId });
     assert.equal(committed.reassigned.length, 2);
     const state = run(lease => store.loadNotebookLocked(lease, committed.notebook.id, { force: true }));
     const ids = state.entries.map(entry => entry.id);
@@ -176,10 +177,11 @@ test('duplicate identity hints never claim an existing note', t => {
     assert.ok(!ids.includes('n_aaaaaaaaaaaaaaaa'));
 });
 
-test('reimporting a changed export updates only selected notes with revision checks', t => {
-    const { owner, run, notebookId } = prepared(t);
+test('reimporting a changed export updates only selected notes with revision checks', async t => {
+    const { base, run, notebookId } = prepared(t);
     const note = run(lease => store.createNoteLocked(lease, { operationId: op('n'), notebookId, folder: 'Inbox', title: 'Draft', text: 'one\n' }));
-    const summary = transfer.stageImport(owner, {
+    run(lease => store.writePoliciesLocked(lease, notebookId, { ...store.readPoliciesLocked(lease, notebookId), assistant: 'edit', assistantPublish: true }));
+    const summary = await transfer.stageImport(base, {
         filename: 'Notebook.zip',
         bytes: zip([{ name: 'Notebook/Inbox/Draft.md', data: 'two\n' }, { name: 'Notebook/Inbox/New.md', data: 'new\n' }]),
     });
@@ -188,14 +190,22 @@ test('reimporting a changed export updates only selected notes with revision che
     run(lease => store.updateNoteLocked(lease, {
         operationId: op('edit'), notebookId, noteId: note.noteId, expectedRevision: note.revision, changes: [{ type: 'replace_all', markdown: 'edited meanwhile\n' }],
     }));
-    const result = run(lease => transfer.commitStageUpdateLocked(lease, {
+    const batches = [];
+    const result = await transfer.commitStageUpdate(base, {
         operationId: op('update'), stageId: summary.stageId, notebookId, paths: ['Inbox/Draft.md', 'Inbox/New.md'],
-    }));
+    }, { onBatch: ({ result: batch }) => batches.push(batch) });
+    assert.equal(batches[0].processed, 1, 'existing-note saves release the lock before the next file');
+    assert.equal(batches.length, 2);
     const byPath = Object.fromEntries(result.results.map(item => [item.path, item.status]));
     assert.equal(byPath['Inbox/Draft.md'], 'conflict');
     assert.equal(byPath['Inbox/New.md'], 'created');
     const current = run(lease => store.readNoteLocked(lease, { notebookId, noteId: note.noteId }));
     assert.equal(current.entry.text, 'edited meanwhile\n');
+    const imported = run(lease => store.loadNotebookLocked(lease, notebookId)).entries.find(entry => entry.path === 'Inbox/New.md');
+    const policy = run(lease => store.readPoliciesLocked(lease, notebookId));
+    assert.equal(effectiveAssistantAccess(policy, note.noteId), 'edit', 'existing choices stay unchanged');
+    assert.equal(effectiveAssistantAccess(policy, imported.id), 'none', 'new imports do not inherit notebook sharing');
+    assert.equal(contextPolicy(policy, imported.id).mode, 'off');
 });
 
 test('attachments are validated, collision-safe and protected while referenced', t => {

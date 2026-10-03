@@ -1,6 +1,8 @@
 import { DOMPurify, showdown } from '../../lib.js';
+import { headingSections, splitNoteFrontmatter } from './folding.js';
 
 const ESCAPED_OPEN = '\uE000';
+const ESCAPED_EMBED = '\uE001';
 const SAFE_SCHEMES = /^(?:https?:|mailto:)/i;
 const WIKI = /(!?)\[\[([^\]\n]{1,400})\]\]/g;
 
@@ -23,11 +25,8 @@ function markdownConverter() {
 }
 
 export function splitFrontmatterText(text) {
-    const source = String(text ?? '');
-    const offset = source.startsWith('\uFEFF') ? 1 : 0;
-    const match = /^---\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(source.slice(offset));
-    if (!match) return { frontmatter: '', body: source.slice(offset), bodyStart: offset };
-    return { frontmatter: match[1], body: source.slice(offset + match[0].length), bodyStart: offset + match[0].length };
+    const { frontmatter, body, bodyStart } = splitNoteFrontmatter(text);
+    return { frontmatter, body, bodyStart };
 }
 
 export function parseWikiInner(inner) {
@@ -66,10 +65,10 @@ export function resolveRelativePath(fromPath, href) {
 }
 
 function protectEscapes(markdown) {
-    return markdown.replace(/\\\[\[/g, ESCAPED_OPEN);
+    return markdown.replace(/\\(!?)\[\[/g, (_match, embed) => embed ? ESCAPED_EMBED : ESCAPED_OPEN);
 }
 
-function wikiNodes(text, documentRef) {
+function wikiNodes(text, documentRef, { embedLoading = false, noteId } = {}) {
     const fragment = documentRef.createDocumentFragment();
     let last = 0;
     let found = false;
@@ -79,18 +78,18 @@ function wikiNodes(text, documentRef) {
         const link = parseWikiInner(match[2]);
         const element = documentRef.createElement(match[1] ? 'span' : 'a');
         if (match[1]) {
-            element.className = 'notes-embed-chip';
-            element.textContent = `Embedded note: ${link.target}${link.fragment ? ` # ${link.fragment}` : ''}`;
-            element.title = 'Embedded notes are shown as a link here. Open it to read the embedded text.';
-            element.setAttribute('role', 'button');
-            element.tabIndex = 0;
+            element.className = 'notes-embed-placeholder';
+            element.textContent = embedLoading ? 'Loading embedded note...' : 'Embedded note unavailable.';
         } else {
             element.className = 'notes-wikilink';
             element.href = '#';
             element.textContent = link.label || (link.fragment ? `${link.target} › ${link.fragment}` : link.target);
         }
-        element.dataset.wikiTarget = link.target;
-        element.dataset.wikiFragment = link.fragment;
+        if (!match[1]) {
+            element.dataset.wikiTarget = link.target;
+            element.dataset.wikiFragment = link.fragment;
+            if (noteId) element.dataset.noteFromId = noteId;
+        }
         fragment.append(element);
         last = match.index + match[0].length;
     }
@@ -99,32 +98,36 @@ function wikiNodes(text, documentRef) {
     return fragment;
 }
 
-function decorateWikiLinks(root) {
+function decorateWikiLinks(root, options) {
     const documentRef = root.ownerDocument;
     const walker = documentRef.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
         acceptNode(node) {
-            if (node.parentElement?.closest('code, pre, a, .notes-embed-chip')) return NodeFilter.FILTER_REJECT;
+            if (node.parentElement?.closest('code, pre, a, .notes-embed-placeholder')) return NodeFilter.FILTER_REJECT;
             return node.nodeValue.includes('[[') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
         },
     });
     const targets = [];
     while (walker.nextNode()) targets.push(walker.currentNode);
     for (const node of targets) {
-        const replacement = wikiNodes(node.nodeValue, documentRef);
+        const replacement = wikiNodes(node.nodeValue, documentRef, options);
         if (replacement) node.replaceWith(replacement);
     }
     const restore = documentRef.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     while (restore.nextNode()) {
         const node = restore.currentNode;
-        if (node.nodeValue.includes(ESCAPED_OPEN)) {
-            const literal = node.parentElement?.closest('code, pre') ? '\\[[' : '[[';
-            node.nodeValue = node.nodeValue.replaceAll(ESCAPED_OPEN, literal);
-        }
+        const code = node.parentElement?.closest('code, pre');
+        node.nodeValue = node.nodeValue.replaceAll(ESCAPED_OPEN, code ? '\\[[' : '[[')
+            .replaceAll(ESCAPED_EMBED, code ? '\\![[' : '![[');
     }
 }
 
-function fixLinksAndImages(root, { notebookId, notePath, attachmentUrl }) {
+function decodedFragment(fragment) {
+    try { return decodeURIComponent(fragment); } catch { return ''; }
+}
+
+function fixLinksAndImages(root, { notebookId, noteId, notePath, attachmentUrl }) {
     for (const anchor of root.querySelectorAll('a[href]')) {
+        if (noteId) anchor.dataset.noteFromId = noteId;
         if (anchor.classList.contains('notes-wikilink')) continue;
         const href = anchor.getAttribute('href') ?? '';
         if (SAFE_SCHEMES.test(href)) {
@@ -139,7 +142,7 @@ function fixLinksAndImages(root, { notebookId, notePath, attachmentUrl }) {
             continue;
         }
         if (href.startsWith('#')) {
-            anchor.dataset.headingTarget = decodeURIComponent(href.slice(1));
+            anchor.dataset.headingTarget = decodedFragment(href.slice(1));
             continue;
         }
         const relative = resolveRelativePath(notePath, href);
@@ -149,7 +152,7 @@ function fixLinksAndImages(root, { notebookId, notePath, attachmentUrl }) {
         }
         if (/\.md$/i.test(relative)) {
             anchor.dataset.notePath = relative;
-            anchor.dataset.wikiFragment = href.includes('#') ? decodeURIComponent(href.slice(href.indexOf('#') + 1)) : '';
+            anchor.dataset.wikiFragment = href.includes('#') ? decodedFragment(href.slice(href.indexOf('#') + 1)) : '';
             anchor.classList.add('notes-wikilink');
             anchor.href = '#';
         } else {
@@ -190,24 +193,203 @@ function fixLinksAndImages(root, { notebookId, notePath, attachmentUrl }) {
     }
 }
 
+/** Only server-selected source ranges become preview tokens; note-authored HTML cannot make a preview control. */
+export function prepareEmbedMarkdown(text, embeds, nonce = crypto.randomUUID().replaceAll('-', '')) {
+    const source = String(text);
+    const tokens = new Map();
+    const ranges = (Array.isArray(embeds) ? embeds.slice(0, 32) : []).filter(node => Number.isInteger(node?.start) && Number.isInteger(node.end)
+        && node.start >= 0 && node.end > node.start && node.end <= source.length && node.end - node.start <= 1024
+        && /^!\[\[[^\]\n]+\]\]$/.test(source.slice(node.start, node.end))).sort((a, b) => a.start - b.start);
+    let markdown = '';
+    let offset = 0;
+    for (const node of ranges) {
+        if (node.start < offset) continue;
+        const token = `\uE100NNembed${nonce}${tokens.size}NN\uE101`;
+        tokens.set(token, node);
+        markdown += source.slice(offset, node.start) + token;
+        offset = node.end;
+    }
+    return { markdown: markdown + source.slice(offset), tokens };
+}
+
+function embedWidget(documentRef, node, options, budget) {
+    const section = documentRef.createElement('section');
+    section.className = 'notes-embed';
+    const textBytes = typeof node.text === 'string' ? new TextEncoder().encode(node.text).length : 0;
+    const available = node.status === 'rendered' && /^n_[a-f\d]{16}$/.test(node.noteId ?? '') && typeof node.path === 'string'
+        && typeof node.text === 'string' && textBytes <= 64 * 1024 && budget.count < 32 && budget.depth <= 5 && budget.bytes + textBytes <= 256 * 1024;
+    budget.count++;
+    if (!available) {
+        section.classList.add('notes-embed-placeholder');
+        section.textContent = node.status === 'limited' || node.status === 'rendered' ? 'Embedded note preview limit reached.' : 'Embedded note unavailable.';
+        return section;
+    }
+    budget.bytes += textBytes;
+    section.dataset.embedNoteId = node.noteId;
+    const header = documentRef.createElement('div');
+    header.className = 'notes-embed-header';
+    const title = documentRef.createElement('p');
+    title.className = 'notes-embed-title';
+    title.textContent = `${String(node.title ?? 'Note').slice(0, 200)}${node.section ? `: ${String(node.section).slice(0, 200)}` : ''}`;
+    const open = documentRef.createElement('button');
+    open.type = 'button';
+    open.className = 'menu_button notes-button';
+    open.textContent = 'Open note';
+    open.dataset.noteOpen = node.noteId;
+    open.dataset.wikiFragment = String(node.fragment ?? '');
+    const fold = documentRef.createElement('button');
+    fold.type = 'button';
+    fold.className = 'menu_button notes-button';
+    fold.textContent = 'Fold embed';
+    fold.setAttribute('aria-expanded', 'true');
+    const body = documentRef.createElement('div');
+    body.className = 'notes-embed-body';
+    fold.addEventListener('click', () => {
+        body.hidden = !body.hidden;
+        fold.textContent = body.hidden ? 'Show embed' : 'Fold embed';
+        fold.setAttribute('aria-expanded', String(!body.hidden));
+    });
+    header.append(title, open, fold);
+    section.append(header, body);
+    budget.depth++;
+    renderNoteInto(body, node.text, { ...options, noteId: node.noteId, notePath: node.path, embeds: node.embeds,
+        bodyOnly: true, embedLoading: false, onFold: null, foldedKeys: [], embedBudget: budget });
+    budget.depth--;
+    return section;
+}
+
+function liftEmbedFromParagraph(section) {
+    while (section.parentElement?.closest('p')) {
+        const parent = section.parentElement;
+        const after = parent.cloneNode(false);
+        while (section.nextSibling) after.append(section.nextSibling);
+        parent.after(section, after);
+        if (!parent.childNodes.length) parent.remove();
+        if (!after.childNodes.length) after.remove();
+    }
+}
+
+function restoreEmbedTokens(value, tokens, source) {
+    let result = value;
+    for (const [token, node] of tokens) result = result.replaceAll(token, source.slice(node.start, node.end));
+    return result;
+}
+
+function hydrateEmbeds(container, tokens, options, source) {
+    if (!tokens.size) return;
+    const documentRef = container.ownerDocument;
+    const walker = documentRef.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+        acceptNode: node => node.parentElement?.closest('code, pre, a') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+    });
+    const targets = [];
+    while (walker.nextNode()) if ([...tokens.keys()].some(token => walker.currentNode.nodeValue.includes(token))) targets.push(walker.currentNode);
+    const budget = options.embedBudget ?? { count: 0, bytes: 0, depth: 1 };
+    for (const textNode of targets) {
+        const replacement = documentRef.createDocumentFragment();
+        const widgets = [];
+        let remainder = textNode.nodeValue;
+        while (remainder) {
+            let chosen = null;
+            let position = remainder.length;
+            for (const [token, node] of tokens) {
+                const index = remainder.indexOf(token);
+                if (index >= 0 && index < position) { chosen = { token, node }; position = index; }
+            }
+            if (!chosen) { replacement.append(documentRef.createTextNode(remainder)); break; }
+            const widget = embedWidget(documentRef, chosen.node, options, budget);
+            widgets.push(widget);
+            replacement.append(documentRef.createTextNode(remainder.slice(0, position)), widget);
+            remainder = remainder.slice(position + chosen.token.length);
+        }
+        textNode.replaceWith(replacement);
+        for (const widget of widgets) liftEmbedFromParagraph(widget);
+    }
+    const restore = documentRef.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    while (restore.nextNode()) restore.currentNode.nodeValue = restoreEmbedTokens(restore.currentNode.nodeValue, tokens, source);
+}
+
 export function renderNoteInto(container, text, options) {
-    const { body } = splitFrontmatterText(text);
+    const { markdown, tokens } = prepareEmbedMarkdown(text, options.embeds);
+    const body = options.bodyOnly ? markdown : splitFrontmatterText(markdown).body;
     const html = markdownConverter().makeHtml(protectEscapes(body));
     const clean = DOMPurify.sanitize(html, {
         USE_PROFILES: { html: true },
         FORBID_TAGS: ['style', 'script', 'iframe', 'object', 'embed', 'form', 'input', 'button', 'textarea', 'select', 'svg', 'math', 'video', 'audio', 'source', 'link', 'meta', 'base'],
-        FORBID_ATTR: ['style', 'srcset', 'action', 'formaction', 'id', 'name'],
+        FORBID_ATTR: ['style', 'srcset', 'action', 'formaction', 'id', 'name', 'background', 'ping'],
+        ALLOW_DATA_ATTR: false,
         ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
         ADD_TAGS: [],
         RETURN_DOM_FRAGMENT: true,
     });
-    container.replaceChildren(clean);
-    restoreTaskBoxes(container, body);
-    decorateWikiLinks(container);
-    fixLinksAndImages(container, options);
-    container.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach((heading, index) => {
+    // Keep the sanitiser's inert document until all resource URLs have been checked.
+    // Adopting an image into the page first can start a request even if it is immediately removed.
+    if (tokens.size) {
+        for (const element of clean.querySelectorAll('*')) {
+            for (const attribute of [...element.attributes]) {
+                if (attribute.value.includes('\uE100NNembed')) element.setAttribute(attribute.name, restoreEmbedTokens(attribute.value, tokens, String(text)));
+            }
+        }
+    }
+    restoreTaskBoxes(clean, body);
+    decorateWikiLinks(clean, options);
+    fixLinksAndImages(clean, options);
+    clean.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach((heading, index) => {
         heading.dataset.headingIndex = String(index);
     });
+    if (options.onFold) decorateHeadingFolds(clean, text, options);
+    hydrateEmbeds(clean, tokens, options, String(text));
+    container.replaceChildren(clean);
+}
+
+/** Only real, top-level Markdown headings receive folding controls. */
+export function decorateHeadingFolds(container, text, { foldedKeys = [], onFold }) {
+    const headings = headingSections(text);
+    const rendered = [...container.children].filter(node => /^H[1-6]$/.test(node.tagName));
+    if (rendered.length !== headings.length || rendered.some((node, index) => Number(node.tagName[1]) !== headings[index].level)) return;
+    const nodes = [...container.childNodes];
+    const folded = new Set(foldedKeys);
+    const stack = [];
+    let index = 0;
+    container.replaceChildren();
+    for (const node of nodes) {
+        if (node !== rendered[index]) {
+            (stack.at(-1)?.body ?? container).append(node);
+            continue;
+        }
+        const heading = headings[index++];
+        while (stack.length && stack.at(-1).level >= heading.level) stack.pop();
+        const section = container.ownerDocument.createElement('section');
+        section.className = 'notes-read-section';
+        section.dataset.foldKey = heading.key;
+        const row = container.ownerDocument.createElement('div');
+        row.className = 'notes-read-heading';
+        row.append(node);
+        const body = container.ownerDocument.createElement('div');
+        body.className = 'notes-section-body';
+        body.hidden = folded.has(heading.key);
+        if (heading.to > heading.from) {
+            const control = container.ownerDocument.createElement('button');
+            control.type = 'button';
+            control.className = 'menu_button notes-button notes-read-fold';
+            const describe = () => {
+                control.textContent = body.hidden ? 'Show section' : 'Fold section';
+                control.setAttribute('aria-label', `${body.hidden ? 'Show' : 'Fold'} ${heading.text || 'Untitled heading'}`);
+                control.setAttribute('aria-expanded', String(!body.hidden));
+            };
+            describe();
+            control.addEventListener('click', () => {
+                body.hidden = !body.hidden;
+                if (body.hidden) folded.add(heading.key);
+                else folded.delete(heading.key);
+                describe();
+                onFold([...folded]);
+            });
+            row.append(control);
+        }
+        section.append(row, body);
+        (stack.at(-1)?.body ?? container).append(section);
+        stack.push({ level: heading.level, body });
+    }
 }
 
 function restoreTaskBoxes(container, body) {
@@ -229,21 +411,5 @@ function restoreTaskBoxes(container, body) {
 }
 
 export function headingOutline(text) {
-    const { body, bodyStart } = splitFrontmatterText(text);
-    const outline = [];
-    let fence = null;
-    let offset = bodyStart;
-    for (const line of body.split('\n')) {
-        const fenceMatch = /^ {0,3}(`{3,}|~{3,})/.exec(line);
-        if (fence) {
-            if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length) fence = null;
-        } else if (fenceMatch) {
-            fence = fenceMatch[1];
-        } else {
-            const heading = /^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$/.exec(line);
-            if (heading) outline.push({ level: heading[1].length, text: heading[2].replace(/\s+\^[A-Za-z0-9-]+$/, ''), offset });
-        }
-        offset += line.length + 1;
-    }
-    return outline;
+    return headingSections(text);
 }

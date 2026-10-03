@@ -1,0 +1,13 @@
+import { setConfigFilePath } from '../src/util.js';
+setConfigFilePath(new URL('../default/config.yaml', import.meta.url).pathname);
+const { roleplayAccountBase } = await import('../src/roleplay-store.js');
+const transfer = await import('../src/notebooks/transfer.js');
+const store = await import('../src/notebooks/store.js');
+const { directories, input, phase, kind = 'import', after = 0 } = JSON.parse(process.argv[2]);
+const base = roleplayAccountBase(directories);
+let calls = 0;
+const options = { fault: current => { if (current === phase && calls++ >= after) process.kill(process.pid, 'SIGKILL'); } };
+if (kind === 'reconcile') await store.prepareNotebook(base, input.notebookId, options);
+else if (kind === 'update') await transfer.commitStageUpdate(base, input, options);
+else await transfer.commitImport(base, input, options);
+throw new Error('The requested crash point was not reached.');

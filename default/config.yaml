@@ -1,6 +1,16 @@
 # -- DATA CONFIGURATION --
 # Root directory for user data storage
 dataRoot: ./data
+# Optional Obsidian Headless support. It never installs a client or logs in.
+notebooks:
+  obsidianHeadless:
+    enabled: false
+    # Absolute path to an already installed, administrator-approved 'ob' client.
+    executable: ''
+    # Only existing owned notebook content folders can be selected. An approved
+    # root may use '$ACCOUNT_ROOT', which is expanded to the authenticated account.
+    allowedRoots: []
+    pollIntervalMs: 5000
 # -- SERVER CONFIGURATION --
 # Listen for incoming connections
 listen: false

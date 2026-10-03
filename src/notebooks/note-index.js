@@ -136,6 +136,13 @@ export function resolveLink(entries, link, fromPath = '') {
     return { status: 'missing' };
 }
 
+/** Access is decided before lookup, ambiguity, titles or counts are calculated. */
+export function permissionAwareResolver(entries, canRead) {
+    if (typeof canRead !== 'function') throw new TypeError('A note visibility check is required.');
+    const visible = entries.filter(canRead);
+    return { entries: visible, resolve: (link, fromPath = '') => resolveLink(visible, link, fromPath) };
+}
+
 /** The line a link sits on, cut down to a readable excerpt. */
 export function excerptAround(text, start, end) {
     const lineStart = text.lastIndexOf('\n', start - 1) + 1;

@@ -1,10 +1,13 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 
 import { zipSync } from 'fflate';
 
-import { readAuthoringFileLocked, writeAuthoringFileLocked } from '../authoring-store.js';
+import { deleteAuthoringFileLocked, readAuthoringFileLocked, writeAuthoringFileLocked, withAuthoringBatchLocked, flushAuthoringPathLocked } from '../authoring-store.js';
+import { roleplayAccountStamp, withRoleplayAccount } from '../roleplay-store.js';
+import { prepareInWorker, yieldNotebookWork } from './preparation.js';
 import {
     MAX_DEPTH, NotebookError, foldKey, normaliseRelativePath, parentFolder, sha256, uniquePath,
 } from './paths.js';
@@ -12,8 +15,8 @@ import { splitFrontmatter } from './markdown.js';
 import { importedPolicies } from './permissions.js';
 import {
     MAX_NOTE_BYTES, MAX_NOTES_PER_NOTEBOOK, accountRootOf, createNotebookRecordLocked, emptyPolicies,
-    loadNotebookLocked, notebookContentRoot, notebookSummary, ownerOf, readManifestLocked,
-    recordHistoryLocked, runOperationLocked, updateManifestLocked, updateNoteLocked,
+    loadNotebookLocked, notebookContentRoot, notebookSummary, ownerOf, readManifestLocked, readPoliciesLocked, writePoliciesLocked,
+    recordHistoryLocked, listTrashLocked, runOperationLocked, updateManifestLocked, updateNoteLocked, readJsonLocked, writeJsonLocked,
 } from './store.js';
 import { MAX_ATTACHMENT_BYTES, attachmentType, validateAttachment } from './attachments.js';
 
@@ -24,6 +27,8 @@ export const MAX_EXPORT_BYTES = 512 * 1024 * 1024;
 export const MAX_COMPRESSION_RATIO = 200;
 export const STAGE_TTL_MS = 30 * 60 * 1000;
 export const MAX_STAGES_PER_OWNER = 3;
+export const IMPORT_BATCH_SIZE = 8;
+const STAGE_CHUNK_BYTES = 8 * 1024 * 1024;
 
 const APPLICATION_FOLDERS = new Set(['.obsidian', '.trash', '__macosx', '.git', '.github', '.vscode', '.idea', '.neconyan']);
 const ARCHIVE_EXTENSIONS = /\.(zip|7z|rar|tar|gz|tgz|bz2|xz|zst|jar|apk)$/i;
@@ -160,15 +165,9 @@ function archivePath(name) {
 
 /* ---------- staging ---------- */
 
-const stages = new Map();
-
-function pruneStages() {
-    const cutoff = Date.now() - STAGE_TTL_MS;
-    for (const [key, stage] of stages) if (stage.createdAt < cutoff) stages.delete(key);
-}
-
-function stageKey(owner, stageId) {
-    return `${owner}\0${stageId}`;
+function stageRoot(lease, stageId) {
+    if (!/^st_[a-f0-9]{32}$/.test(String(stageId))) throw new NotebookError('IMPORT_STAGE_EXPIRED', 'That import could not be found. Choose the file again.', 404);
+    return path.join(accountRootOf(lease), 'notebook-control', '_imports', stageId);
 }
 
 function stageSummary(stage) {
@@ -180,19 +179,20 @@ function stageSummary(stage) {
         createdAt: new Date(stage.createdAt).toISOString(),
         expiresAt: new Date(stage.createdAt + STAGE_TTL_MS).toISOString(),
         notes: stage.notes.map(note => ({
-            path: note.path, size: note.bytes.length, identityHint: note.hint, duplicateHint: note.duplicateHint ?? false,
+            path: note.path, size: note.size ?? note.bytes.length, identityHint: note.hint, duplicateHint: note.duplicateHint ?? false,
             match: note.match ?? null,
         })),
-        attachments: stage.attachments.map(item => ({ path: item.path, size: item.bytes.length })),
+        attachments: stage.attachments.map(item => ({ path: item.path, size: item.size ?? item.bytes.length })),
         excluded: stage.excluded,
         renamed: stage.renamed,
         totals: {
             notes: stage.notes.length,
             attachments: stage.attachments.length,
             excluded: stage.excluded.length,
-            bytes: stage.notes.reduce((sum, note) => sum + note.bytes.length, 0) + stage.attachments.reduce((sum, item) => sum + item.bytes.length, 0),
+            bytes: [...stage.notes, ...stage.attachments].reduce((sum, item) => sum + (item.size ?? item.bytes.length), 0),
         },
         hash: stage.hash,
+        recovery: stage.recovery ?? null,
     };
 }
 
@@ -202,18 +202,9 @@ function defaultNameFor(filename) {
 }
 
 /**
- * Validates a ZIP archive (or a single Markdown file) and holds the result
- * in memory until it is committed or expires. Nothing touches the account
- * folder here; this runs outside the account lock.
+ * Pure preparation, run in a worker before taking any account lock.
  */
-export function stageImport(owner, { filename, bytes }) {
-    pruneStages();
-    if (typeof owner !== 'string' || !owner) throw archiveError('No account is selected.', 'IMPORT_ACCOUNT', 409);
-    const owned = [...stages.values()].filter(stage => stage.owner === owner);
-    if (owned.length >= MAX_STAGES_PER_OWNER) {
-        const oldest = owned.sort((a, b) => a.createdAt - b.createdAt)[0];
-        stages.delete(stageKey(owner, oldest.stageId));
-    }
+export function prepareImport({ filename, bytes }) {
     const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes ?? []);
     const excluded = [];
     const renamed = [];
@@ -328,7 +319,6 @@ export function stageImport(owner, { filename, bytes }) {
     const hash = sha256(JSON.stringify([...notes, ...attachments].map(item => [item.path, item.hash]).sort()));
     const stage = {
         stageId,
-        owner,
         createdAt: Date.now(),
         source: /\.md$/i.test(String(filename ?? '')) ? 'markdown' : 'zip',
         name: stripTop || defaultNameFor(filename),
@@ -338,23 +328,105 @@ export function stageImport(owner, { filename, bytes }) {
         renamed,
         hash,
     };
-    stages.set(stageKey(owner, stageId), stage);
-    return stageSummary(stage);
-}
-
-function takeStage(owner, stageId) {
-    pruneStages();
-    const stage = stages.get(stageKey(owner, String(stageId ?? '')));
-    if (!stage) throw new NotebookError('IMPORT_STAGE_EXPIRED', 'That import has expired. Choose the file again.', 404);
+    const at = new Date(stage.createdAt).toISOString();
+    for (const note of notes) note.preparedHistory = { id: `h_${sha256(`${stageId}:${note.path}`).slice(0, 16)}`, at };
     return stage;
 }
 
-export function readStage(owner, stageId) {
-    return stageSummary(takeStage(owner, stageId));
+function takeStage(lease, stageId) {
+    const stage = readJsonLocked(lease, path.join(stageRoot(lease, stageId), 'stage.json'), null);
+    if (!stage || stage.cancelled || !stage.ready || (!stage.committing && stage.createdAt + STAGE_TTL_MS < Date.now())) {
+        throw new NotebookError('IMPORT_STAGE_EXPIRED', 'That import has expired. Choose the file again.', 404);
+    }
+    return stage;
 }
 
-export function cancelStage(owner, stageId) {
-    return stages.delete(stageKey(owner, String(stageId ?? '')));
+export function readStage(lease, stageId) {
+    return stageSummary(takeStage(lease, stageId));
+}
+
+export function listStagesLocked(lease) {
+    const parent = path.join(accountRootOf(lease), 'notebook-control', '_imports');
+    if (!fs.existsSync(parent)) return [];
+    return fs.readdirSync(parent).filter(id => /^st_[a-f0-9]{32}$/.test(id))
+        .map(id => readJsonLocked(lease, path.join(stageRoot(lease, id), 'stage.json'), null))
+        .filter(stage => stage?.ready && !stage.completed && !stage.cancelled && (stage.committing || stage.createdAt + STAGE_TTL_MS >= Date.now()))
+        .map(stageSummary);
+}
+
+function deleteStageLocked(lease, stageId) {
+    const root = stageRoot(lease, stageId);
+    const stage = readJsonLocked(lease, path.join(root, 'stage.json'), null);
+    if (!stage) return false;
+    if (stage.committing && !stage.completed) throw new NotebookError('IMPORT_IN_PROGRESS', 'This import has started. Resume it before removing its preview.', 409);
+    for (const chunk of stage.chunks ?? []) deleteAuthoringFileLocked(lease, path.join(root, chunk.name));
+    deleteAuthoringFileLocked(lease, path.join(root, 'commit.json'));
+    deleteAuthoringFileLocked(lease, path.join(root, 'commit-progress.json'));
+    deleteAuthoringFileLocked(lease, path.join(root, 'stage.json'));
+    return true;
+}
+
+export function cancelStage(lease, stageId) {
+    return runOperationLocked(lease, { operationId: `cancel:${stageId}`, kind: 'import-cancel', args: { stageId } }, () => ({ cancelled: deleteStageLocked(lease, stageId) })).cancelled;
+}
+
+/** Preview bytes are private account control data, not adopted notes. */
+export async function stageImport(base, input, { stamp = roleplayAccountStamp(base), onBatch } = {}) {
+    const prepared = await prepareInWorker('import', input);
+    const chunks = [];
+    let parts = [];
+    let size = 0;
+    const flush = () => { if (parts.length) { const bytes = Buffer.concat(parts); chunks.push({ name: `chunk-${chunks.length}.bin`, bytes, hash: sha256(bytes) }); parts = []; size = 0; } };
+    const stage = { ...prepared, schema: 1, ready: false, notes: [], attachments: [] };
+    for (const [kind, items] of [['notes', prepared.notes], ['attachments', prepared.attachments]]) {
+        for (const item of items) {
+            const bytes = Buffer.from(item.bytes);
+            if (size + bytes.length > STAGE_CHUNK_BYTES) flush();
+            const metadata = { ...item };
+            delete metadata.bytes;
+            stage[kind].push({ ...metadata, size: bytes.length, chunk: chunks.length, offset: size });
+            parts.push(bytes);
+            size += bytes.length;
+        }
+    }
+    flush();
+    stage.chunks = chunks.map(({ name, hash, bytes }) => ({ name, hash, size: bytes.length }));
+    withRoleplayAccount(base, stamp, lease => runOperationLocked(lease, { operationId: `stage:${stage.stageId}`, kind: 'import-stage', args: { hash: stage.hash } }, () => {
+        const parent = path.dirname(stageRoot(lease, stage.stageId));
+        const owned = fs.existsSync(parent) ? fs.readdirSync(parent).filter(id => /^st_[a-f0-9]{32}$/.test(id)).map(id => readJsonLocked(lease, path.join(stageRoot(lease, id), 'stage.json'), null)).filter(Boolean) : [];
+        const removable = owned.filter(item => !item.committing || item.completed).sort((a, b) => a.createdAt - b.createdAt);
+        while (owned.length >= MAX_STAGES_PER_OWNER && removable.length) { const item = removable.shift(); deleteStageLocked(lease, item.stageId); owned.splice(owned.indexOf(item), 1); }
+        if (owned.length >= MAX_STAGES_PER_OWNER) throw new NotebookError('IMPORT_STAGE_LIMIT', 'Resume the unfinished imports before choosing another file.', 409);
+        writeJsonLocked(lease, path.join(stageRoot(lease, stage.stageId), 'stage.json'), stage);
+        return { status: 'success' };
+    }));
+    for (const chunk of chunks) {
+        const started = performance.now();
+        withRoleplayAccount(base, stamp, lease => runOperationLocked(lease, { operationId: `stage:${stage.stageId}:${chunk.name}`, kind: 'import-stage-chunk', args: { hash: chunk.hash } }, () => {
+            writeAuthoringFileLocked(lease, path.join(stageRoot(lease, stage.stageId), chunk.name), chunk.bytes, { expected: null, limit: MAX_ATTACHMENT_BYTES });
+            return { status: 'success' };
+        }));
+        onBatch?.({ count: 1, lockMs: performance.now() - started });
+        await yieldNotebookWork();
+    }
+    return withRoleplayAccount(base, stamp, lease => runOperationLocked(lease, { operationId: `ready:${stage.stageId}`, kind: 'import-stage-ready', args: { hash: stage.hash } }, () => {
+        stage.ready = true;
+        writeJsonLocked(lease, path.join(stageRoot(lease, stage.stageId), 'stage.json'), stage);
+        return stageSummary(stage);
+    }));
+}
+
+function stageBytes(lease, stage, item, cache) {
+    const chunk = stage.chunks[item.chunk];
+    if (!chunk || !/^chunk-\d+\.bin$/.test(chunk.name)) throw new NotebookError('IMPORT_STAGE_DAMAGED', 'The import preview is damaged. Choose the file again.', 409);
+    if (!cache.has(item.chunk)) {
+        const file = readAuthoringFileLocked(lease, path.join(stageRoot(lease, stage.stageId), chunk.name), MAX_ATTACHMENT_BYTES);
+        if (!file || file.rawHash !== chunk.hash) throw new NotebookError('IMPORT_STAGE_DAMAGED', 'The import preview changed. Choose the file again.', 409);
+        cache.set(item.chunk, file.bytes);
+    }
+    const bytes = cache.get(item.chunk).subarray(item.offset, item.offset + item.size);
+    if (bytes.length !== item.size || sha256(bytes) !== item.hash) throw new NotebookError('IMPORT_STAGE_DAMAGED', 'The import preview is damaged. Choose the file again.', 409);
+    return bytes;
 }
 
 /**
@@ -362,7 +434,8 @@ export function cancelStage(owner, stageId) {
  * choose which changed notes to update. Matching is by path only.
  */
 export function compareStageLocked(lease, { stageId, notebookId }) {
-    const stage = takeStage(ownerOf(lease), stageId);
+    const stage = takeStage(lease, stageId);
+    if (stage.committing) throw new NotebookError('IMPORT_IN_PROGRESS', 'This import has started. Resume it with the same choices.', 409);
     const state = loadNotebookLocked(lease, notebookId, { force: true });
     const byPath = new Map(state.entries.map(entry => [foldKey(entry.path), entry]));
     for (const note of stage.notes) {
@@ -372,6 +445,10 @@ export function compareStageLocked(lease, { stageId, notebookId }) {
             : { state: 'new' };
     }
     stage.target = notebookId;
+    runOperationLocked(lease, { operationId: `compare:${stageId}:${state.structureRevision}`, kind: 'import-compare', args: { notebookId } }, () => {
+        writeJsonLocked(lease, path.join(stageRoot(lease, stageId), 'stage.json'), stage);
+        return { status: 'success' };
+    });
     return stageSummary(stage);
 }
 
@@ -392,63 +469,7 @@ function writeNewFile(lease, absolute, bytes) {
  */
 export function commitImportLocked(lease, { operationId, stageId, name, actor = { kind: 'user' } }) {
     const owner = ownerOf(lease);
-    return runOperationLocked(lease, { operationId, kind: 'import-commit', args: { stageId, name: name ?? null } }, () => {
-        const stage = takeStage(owner, stageId);
-        const id = `nb_${sha256(`import:${owner}:${operationId}`).slice(0, 16)}`;
-        const root = accountRootOf(lease);
-        let manifest;
-        try {
-            manifest = readManifestLocked(lease, id);
-        } catch (error) {
-            if (error.code !== 'NOTEBOOK_NOT_FOUND') throw error;
-            manifest = createNotebookRecordLocked(lease, {
-                id, name: name || stage.name, origin: 'import', policies: importedPolicies(emptyPolicies()), folders: [],
-            });
-        }
-        const content = notebookContentRoot(root, id);
-        const identities = new Map();
-        const usedIds = new Set(Object.keys(manifest.notes));
-        const reassigned = [];
-        for (const note of stage.notes) {
-            let noteId = note.hint && !note.duplicateHint && !usedIds.has(note.hint) ? note.hint : null;
-            if (!noteId) {
-                noteId = `n_${sha256(`import-note:${operationId}:${note.path}`).slice(0, 16)}`;
-                if (note.hint) reassigned.push({ path: note.path, identityHint: note.hint, reason: note.duplicateHint ? 'duplicate' : 'in-use' });
-            }
-            usedIds.add(noteId);
-            identities.set(note.path, noteId);
-        }
-        for (const item of [...stage.notes, ...stage.attachments]) {
-            writeNewFile(lease, path.join(content, ...item.path.split('/')), item.bytes);
-        }
-        const at = new Date().toISOString();
-        updateManifestLocked(lease, id, current => {
-            for (const note of stage.notes) {
-                const noteId = identities.get(note.path);
-                current.notes[noteId] ??= { path: note.path, hash: note.hash, createdAt: at, updatedAt: at, favourite: false, imported: true };
-            }
-            current.importReport = {
-                at, source: stage.source, excluded: stage.excluded.length, renamed: stage.renamed.length, reassigned: reassigned.length,
-            };
-        });
-        for (const note of stage.notes) {
-            recordHistoryLocked(lease, id, identities.get(note.path), {
-                bytes: note.bytes, previous: null, actor, origin: 'import', reason: 'import', operationId,
-            });
-        }
-        stages.delete(stageKey(owner, stageId));
-        return {
-            status: 'success',
-            committed: true,
-            operationId,
-            notebook: notebookSummary(lease, readManifestLocked(lease, id)),
-            imported: { notes: stage.notes.length, attachments: stage.attachments.length },
-            excluded: stage.excluded,
-            renamed: stage.renamed,
-            reassigned,
-            permissions: 'inactive',
-        };
-    });
+    return commitTransferBatchLocked(lease, { operationId, stageId, name, actor, kind: 'import-commit', notebookId: `nb_${sha256(`import:${owner}:${operationId}`).slice(0, 16)}` });
 }
 
 /**
@@ -457,52 +478,146 @@ export function commitImportLocked(lease, { operationId, stageId, name, actor = 
  * the selected new notes. Conflicts are reported, never overwritten.
  */
 export function commitStageUpdateLocked(lease, { operationId, stageId, notebookId, paths, actor = { kind: 'user' } }) {
-    const owner = ownerOf(lease);
+    return commitTransferBatchLocked(lease, { operationId, stageId, notebookId, paths, actor, kind: 'import-update' });
+}
+
+function commitTransferBatchLocked(lease, { operationId, stageId, notebookId, name, paths, actor, kind, fault }) {
     const selected = new Set((Array.isArray(paths) ? paths : []).map(value => foldKey(String(value))));
-    return runOperationLocked(lease, { operationId, kind: 'import-update', args: { stageId, notebookId, paths: [...selected].sort() } }, () => {
-        const stage = takeStage(owner, stageId);
-        if (stage.target !== notebookId) throw new NotebookError('IMPORT_STAGE_MISMATCH', 'Compare the import with this notebook first.', 409);
-        const results = [];
-        const root = accountRootOf(lease);
-        for (const note of stage.notes) {
-            if (!selected.has(foldKey(note.path)) || !note.match || note.match.state === 'same') continue;
-            const suffix = sha256(note.path).slice(0, 12);
-            try {
-                if (note.match.state === 'changed') {
-                    const result = updateNoteLocked(lease, {
-                        operationId: `${operationId}:u:${suffix}`,
-                        notebookId,
-                        noteId: note.match.noteId,
-                        expectedRevision: note.match.revision,
-                        changes: [{ type: 'replace_all', markdown: note.bytes.toString('utf8') }],
-                        actor,
-                        origin: 'import',
-                        reason: 'import-update',
-                    });
-                    results.push({ path: note.path, status: result.status, noteId: note.match.noteId, revision: result.revision });
-                } else {
-                    writeNewFile(lease, path.join(notebookContentRoot(root, notebookId), ...note.path.split('/')), note.bytes);
-                    results.push({ path: note.path, status: 'created' });
+    const args = kind === 'import-commit' ? { stageId, name: name ?? null } : { stageId, notebookId, paths: [...selected].sort() };
+    return runOperationLocked(lease, { operationId, kind, args }, ({ plan, setPlan }) => {
+        const stage = takeStage(lease, stageId);
+        const journalFile = path.join(stageRoot(lease, stageId), 'commit.json');
+        const progressFile = path.join(stageRoot(lease, stageId), 'commit-progress.json');
+        let journal = readJsonLocked(lease, journalFile, null);
+        if (stage.committing && stage.committing !== operationId) throw new NotebookError('IMPORT_IN_PROGRESS', 'This preview is already being imported. Resume the original change.', 409);
+        if (!plan) {
+            if (kind === 'import-update' && stage.target !== notebookId) throw new NotebookError('IMPORT_STAGE_MISMATCH', 'Compare the import with this notebook first.', 409);
+            const existing = kind === 'import-update' ? readManifestLocked(lease, notebookId) : null;
+            const used = new Set([...Object.keys(existing?.notes ?? {}), ...(existing ? listTrashLocked(lease, notebookId).map(item => item.noteId) : [])]);
+            const reassigned = [];
+            const items = [];
+            for (const note of stage.notes) {
+                if (kind === 'import-update' && (!selected.has(foldKey(note.path)) || !note.match || note.match.state === 'same')) continue;
+                let noteId = note.match?.state === 'changed' && kind === 'import-update' ? note.match.noteId : null;
+                if (!noteId) {
+                    noteId = note.hint && !note.duplicateHint && !used.has(note.hint) ? note.hint : `n_${sha256(`import-note:${operationId}:${note.path}`).slice(0, 16)}`;
+                    if (note.hint && noteId !== note.hint) reassigned.push({ path: note.path, identityHint: note.hint, reason: note.duplicateHint ? 'duplicate' : 'in-use' });
                 }
-            } catch (error) {
-                results.push({ path: note.path, status: error.code === 'NOTE_CONFLICT' ? 'conflict' : 'failure', code: error.code ?? 'FAILURE' });
+                used.add(noteId);
+                items.push({ ...note, noteId, type: kind === 'import-update' && note.match.state === 'changed' ? 'update' : 'note' });
+            }
+            for (const item of stage.attachments) if (kind === 'import-commit' || selected.has(foldKey(item.path))) items.push({ ...item, type: 'attachment' });
+            journal = { schema: 1, kind, args, operationId, notebookId, stageId, at: new Date().toISOString(), cursor: 0, items, reassigned, results: [] };
+            // Stable identities and decisions are durable BEFORE content or notebook creation.
+            writeJsonLocked(lease, journalFile, journal);
+            writeJsonLocked(lease, progressFile, { cursor: 0, results: [] });
+            stage.committing = operationId;
+            stage.recovery = { operationId, notebookId, kind, ...args };
+            writeJsonLocked(lease, path.join(stageRoot(lease, stageId), 'stage.json'), stage);
+            plan = { type: 'import', notebookId, stageId, journal: path.relative(accountRootOf(lease), journalFile) };
+            setPlan(plan);
+            fault?.('planned', { notebookId });
+        }
+        if (!journal || journal.operationId !== operationId) throw new NotebookError('IMPORT_STAGE_DAMAGED', 'The import recovery record is missing.', 409);
+        const progress = readJsonLocked(lease, progressFile, { cursor: journal.cursor ?? 0, results: journal.results ?? [] });
+        journal.cursor = progress.cursor;
+        journal.results = progress.results;
+        if (kind === 'import-commit') {
+            try { readManifestLocked(lease, notebookId); } catch (error) {
+                if (error.code !== 'NOTEBOOK_NOT_FOUND') throw error;
+                createNotebookRecordLocked(lease, { id: notebookId, name: name || stage.name, origin: 'import', policies: importedPolicies(emptyPolicies()), folders: [] });
             }
         }
-        for (const item of stage.attachments) {
-            if (!selected.has(foldKey(item.path))) continue;
+        let end = Math.min(journal.items.length, journal.cursor + IMPORT_BATCH_SIZE);
+        // An existing-note save checks the whole index; keep it in its own short lease.
+        const nextUpdate = journal.items.findIndex((item, index) => index >= journal.cursor && index < end && item.type === 'update');
+        if (nextUpdate >= 0) end = nextUpdate === journal.cursor ? journal.cursor + 1 : nextUpdate;
+        const cache = new Map();
+        // Do not defer the independent revision-checked save's operation journal flushes.
+        for (let index = journal.cursor; index < end; index++) {
+            const item = journal.items[index];
+            if (item.type !== 'update') continue;
+            const bytes = stageBytes(lease, stage, item, cache);
             try {
-                const created = writeNewFile(lease, path.join(notebookContentRoot(root, notebookId), ...item.path.split('/')), item.bytes);
-                results.push({ path: item.path, status: created ? 'created' : 'no_change' });
+                const result = updateNoteLocked(lease, { operationId: `${operationId}:u:${sha256(item.path).slice(0, 12)}`, notebookId, noteId: item.noteId, expectedRevision: item.match.revision, changes: [{ type: 'replace_all', markdown: bytes.toString('utf8') }], actor, origin: 'import', reason: 'import-update' });
+                journal.results.push({ path: item.path, status: result.status, noteId: item.noteId, revision: result.revision });
             } catch (error) {
-                results.push({ path: item.path, status: 'conflict', code: error.code ?? 'FAILURE' });
+                if (!error.code || error.status >= 500) throw error;
+                journal.results.push({ path: item.path, status: error.status === 409 ? 'conflict' : 'failure', code: error.code });
             }
         }
-        updateManifestLocked(lease, notebookId, () => null);
-        loadNotebookLocked(lease, notebookId, { force: true });
-        stages.delete(stageKey(owner, stageId));
-        return { status: 'success', committed: true, operationId, notebookId, results };
+        // A new imported note must not inherit an existing notebook's AI access.
+        // Flush the deny policy before any content can become visible after a crash.
+        if (kind === 'import-update' && journal.items.slice(journal.cursor, end).some(item => item.type === 'note')) {
+            const manifest = readManifestLocked(lease, notebookId);
+            const policies = readPoliciesLocked(lease, notebookId);
+            let changed = false;
+            for (const item of journal.items.slice(journal.cursor, end)) {
+                if (item.type !== 'note' || manifest.notes[item.noteId] || policies.notes[item.noteId]) continue;
+                policies.notes[item.noteId] = { assistant: 'none' };
+                changed = true;
+            }
+            if (changed) writePoliciesLocked(lease, notebookId, policies);
+        }
+        withAuthoringBatchLocked(lease, () => {
+            const manifest = readManifestLocked(lease, notebookId);
+            const taken = new Map(Object.entries(manifest.notes).map(([id, note]) => [foldKey(note.path), id]));
+            for (let index = journal.cursor; index < end; index++) {
+                const item = journal.items[index];
+                if (item.type === 'update') continue;
+                const bytes = stageBytes(lease, stage, item, cache);
+                try {
+                    if (item.type === 'note' && taken.has(foldKey(item.path)) && taken.get(foldKey(item.path)) !== item.noteId) throw new NotebookError('IMPORT_PATH_TAKEN', 'A note now exists at this path.', 409);
+                    const current = manifest.notes[item.noteId];
+                    const absolute = path.join(notebookContentRoot(accountRootOf(lease), notebookId), ...item.path.split('/'));
+                    const created = (!current || item.type === 'attachment') && writeNewFile(lease, absolute, bytes);
+                    if (!created) flushAuthoringPathLocked(lease, absolute);
+                    fault?.('content', { notebookId, index });
+                    if (item.type === 'note') {
+                        recordHistoryLocked(lease, notebookId, item.noteId, { bytes, previous: null, actor, origin: 'import', reason: 'import', operationId, prepared: item.preparedHistory });
+                        manifest.notes[item.noteId] ??= { path: item.path, hash: item.hash, createdAt: journal.at, updatedAt: journal.at, favourite: false, imported: true };
+                        taken.set(foldKey(item.path), item.noteId);
+                        fault?.('history', { notebookId, index });
+                    }
+                    journal.results.push({ path: item.path, status: 'created', noteId: item.noteId, revision: item.hash });
+                } catch (error) {
+                    if (kind === 'import-commit' || !error.code || error.status >= 500) throw error;
+                    journal.results.push({ path: item.path, status: error.status === 409 ? 'conflict' : 'failure', code: error.code });
+                }
+            }
+            // Changed-note saves already changed the manifest. Merge only new identities, never old revisions.
+            updateManifestLocked(lease, notebookId, latest => {
+                for (const item of journal.items.slice(journal.cursor, end)) if (item.type === 'note' && manifest.notes[item.noteId]) latest.notes[item.noteId] ??= manifest.notes[item.noteId];
+                if (kind === 'import-commit') latest.importReport = { at: journal.at, source: stage.source, excluded: stage.excluded.length, renamed: stage.renamed.length, reassigned: journal.reassigned.length };
+            });
+            fault?.('manifest', { notebookId, cursor: journal.cursor });
+        });
+        // Progress cannot become durable until the preceding content/history/manifest batch is durable.
+        journal.cursor = end;
+        writeJsonLocked(lease, progressFile, { cursor: journal.cursor, results: journal.results });
+        fault?.('progress', { notebookId, cursor: journal.cursor });
+        if (end < journal.items.length) return { status: 'pending', pending: true, operationId, notebookId, processed: end, total: journal.items.length };
+        stage.completed = true;
+        writeJsonLocked(lease, path.join(stageRoot(lease, stageId), 'stage.json'), stage);
+        return kind === 'import-update'
+            ? { status: 'success', committed: true, operationId, notebookId, results: journal.results }
+            : { status: 'success', committed: true, operationId, notebook: notebookSummary(lease, readManifestLocked(lease, notebookId)), imported: { notes: stage.notes.length, attachments: stage.attachments.length }, excluded: stage.excluded, renamed: stage.renamed, reassigned: journal.reassigned, permissions: 'inactive' };
     });
 }
+
+async function commitTransfer(base, input, kind, { stamp = roleplayAccountStamp(base), onBatch, fault } = {}) {
+    let result;
+    do {
+        const started = performance.now();
+        result = withRoleplayAccount(base, stamp, lease => commitTransferBatchLocked(lease, { ...input, kind, notebookId: kind === 'import-commit' ? `nb_${sha256(`import:${ownerOf(lease)}:${input.operationId}`).slice(0, 16)}` : input.notebookId, fault }));
+        onBatch?.({ lockMs: performance.now() - started, result });
+        await yieldNotebookWork();
+    } while (result.pending);
+    return result;
+}
+
+export const commitImport = (base, input, options) => commitTransfer(base, input, 'import-commit', options);
+export const commitStageUpdate = (base, input, options) => commitTransfer(base, input, 'import-update', options);
 
 /* ---------- export ---------- */
 

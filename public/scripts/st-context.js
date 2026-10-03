@@ -114,7 +114,7 @@ import { ToolManager } from './tool-calling.js';
 import { accountStorage } from './util/AccountStorage.js';
 import { timestampToMoment, uuidv4, importFromExternalUrl } from './utils.js';
 import { addGlobalVariable, addLocalVariable, decrementGlobalVariable, decrementLocalVariable, deleteGlobalVariable, deleteLocalVariable, existsGlobalVariable, existsLocalVariable, getGlobalVariable, getLocalVariable, incrementGlobalVariable, incrementLocalVariable, setGlobalVariable, setLocalVariable } from './variables.js';
-import { charUpdateAddAuxWorld, convertCharacterBook, createNewWorldInfo, createWorldInfoEntry, getWorldInfoPrompt, loadWorldInfo, reloadEditor, saveWorldInfo, syncWIOriginalDataEntry, updateWorldInfoList, world_info, world_names } from './world-info.js';
+import { charUpdateAddAuxWorld, convertCharacterBook, createNewWorldInfo, createWorldInfoEntry, getWorldInfoLoadedRevision, getWorldInfoPrompt, loadWorldInfo, reloadEditor, saveWorldInfo, syncWIOriginalDataEntry, updateWorldInfoList, world_info, world_names } from './world-info.js';
 import { ChatCompletionService, TextCompletionService } from './custom-request.js';
 import { ConnectionManagerRequestService } from './extensions/shared.js';
 import { updateReasoningUI, parseReasoningFromString, getReasoningTemplateByName } from './reasoning.js';
@@ -303,6 +303,7 @@ export function getContext() {
         },
         // Neconyan: Pathfinder and Companion lorebook writes use the core APIs through extension context.
         loadWorldInfo,
+        getWorldInfoLoadedRevision,
         charUpdateAddAuxWorld,
         createNewWorldInfo,
         createWorldInfoEntry,

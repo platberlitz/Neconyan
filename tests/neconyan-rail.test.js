@@ -54,6 +54,40 @@ function createWelcomeRuntime(overrides = {}) {
 }
 
 describe('Neconyan workspace rail behavior', () => {
+    test('Notes selection follows its open state, including beside-chat and direct opens', () => {
+        const attributes = [new Map(), new Map(), new Map()];
+        const buttons = ['notes', 'home', 'model'].map((route, index) => ({
+            dataset: { neconyanRoute: route },
+            setAttribute: (name, value) => attributes[index].set(name, value),
+            removeAttribute: name => attributes[index].delete(name),
+        }));
+        let notesOpen = false;
+        let modelOpen = false;
+        const runtime = vm.createContext({
+            document: { body: { classList: { contains: () => notesOpen } }, querySelectorAll: () => buttons },
+            isCharacterPanelOpen: () => false,
+            isShellOpen: side => side === 'left' && modelOpen,
+            getShellState: () => ({ activeTabId: 'api' }),
+            isLandingPageVisible: () => true,
+            syncNeconyanModeControls() {},
+        });
+        vm.runInContext(tabsSource.match(/^function syncNeconyanRailSelection\([\s\S]*?^}/m)[0], runtime);
+        const current = () => buttons.filter((_button, index) => attributes[index].has('aria-current')).map(button => button.dataset.neconyanRoute);
+        runtime.syncNeconyanRailSelection();
+        expect(current()).toEqual(['home']);
+        notesOpen = true;
+        runtime.syncNeconyanRailSelection();
+        expect(current()).toEqual(['notes']);
+        modelOpen = true;
+        runtime.syncNeconyanRailSelection();
+        expect(current()).toEqual(['notes']);
+        notesOpen = false;
+        runtime.syncNeconyanRailSelection();
+        expect(current()).toEqual(['model']);
+        // Notes visibility changes already run through the shared body observer.
+        expect(tabsSource).toMatch(/observer\.observe\(document\.body, \{\s*attributes: true,\s*attributeFilter: \['class'\]/);
+    });
+
     test('Fine-tuning waits for loaded controls and sends disabled tools to Manage extensions', async () => {
         class HTMLElement {}
         const element = new HTMLElement();

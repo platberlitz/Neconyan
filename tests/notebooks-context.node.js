@@ -57,6 +57,22 @@ test('notes are not used in context by default', t => {
     assert.equal(result.usedTokens, 0);
 });
 
+test('pinned and reference context never expands embedded notes outside their own explicit scopes', t => {
+    const { create, policy, collect } = prepared(t);
+    const source = create('Reference source', '# Source\nHarbour healer ![[Private target#Secret]]');
+    const target = create('Private target', '# Secret\nUnshared secret material.');
+    for (const mode of ['pinned', 'reference']) {
+        policy({ notes: { [source]: { context: { mode, scopes: [{ kind: 'chat', id: chatA.chat }] } } } });
+        const result = collect(chatA, { query: 'harbour healer' });
+        assert.equal(result.items.length, 1);
+        assert.equal(result.items[0].noteId, source);
+        assert.match(result.content, /!\[\[Private target#Secret\]\]/);
+        assert.doesNotMatch(result.content, /Unshared secret material/);
+        assert.ok(!JSON.stringify(result).includes(target));
+        assert.equal(collect(chatB, { query: 'harbour healer' }).items.length, 0);
+    }
+});
+
 test('reference notes are retrieved only inside their scope', t => {
     const { create, policy, collect } = prepared(t);
     const noteId = create('Magic system', MAGIC);
@@ -149,4 +165,24 @@ test('roleplay helpers derive scope ids and budgets', () => {
     assert.equal(context.roleplayContextBudget(100000, 1000), 2000);
     assert.equal(context.roleplayContextBudget(500, 1000), 0);
     assert.equal(context.estimateTokens('abcdefgh'), 2);
+});
+
+test('cold large notebooks are prepared only for an admitted matching context scope', async t => {
+    const { f, create, policy, notebookId, root, collect, run } = prepared(t);
+    const noteId = create('Pinned', 'This pinned text must survive background preparation.');
+    const contentRoot = path.join(root, 'notebooks', notebookId);
+    for (let index = 0; index < 40; index++) fs.writeFileSync(path.join(contentRoot, `External ${index}.md`), `# External ${index}\n`);
+    policy({ notes: { [noteId]: { context: { mode: 'pinned', scopes: [{ kind: 'chat', id: chatA.chat }] } } } });
+    await context.prepareNoteContextNotebooks(f.scope, chatB);
+    assert.equal(run(lease => store.readManifestLocked(lease, notebookId)).notes[noteId].path, 'Inbox/Pinned.md');
+    assert.equal(Object.keys(run(lease => store.readManifestLocked(lease, notebookId)).notes).length, 1, 'non-matching scopes do not adopt unshared content');
+    await context.prepareNoteContextNotebooks(f.scope, chatA);
+    assert.equal(Object.keys(run(lease => store.readManifestLocked(lease, notebookId)).notes).length, 41);
+    assert.match(collect(chatA).content, /must survive background preparation/);
+    assert.equal(collect(chatB).items.length, 0);
+    policy({ admitted: false });
+    fs.writeFileSync(path.join(contentRoot, 'Unadmitted.md'), '# Do not share\n');
+    await context.prepareNoteContextNotebooks(f.scope, chatA);
+    assert.equal(Object.keys(run(lease => store.readManifestLocked(lease, notebookId)).notes).length, 41);
+    assert.equal(collect(chatA).items.length, 0);
 });

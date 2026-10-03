@@ -105,6 +105,48 @@ describe('World Info endpoints', () => {
         expect(response.status).toBe(404);
     });
 
+    test('a null revision creates only an absent book and reads expose its exact revision', async () => {
+        const data = { entries: { 0: { uid: 0, content: 'First writer' } } };
+        const created = await postJson('/api/worldinfo/edit', { name: 'Guarded creation', data, revision: null });
+        expect(created.status).toBe(200);
+        const saved = await created.json();
+        expect(saved.revision).toMatch(/^[a-f0-9]{64}$/);
+        const loaded = await postJson('/api/worldinfo/get', { name: 'Guarded creation' });
+        expect(loaded.headers.get('X-World-Info-Revision')).toBe(saved.revision);
+        expect(await loaded.json()).toEqual(data);
+        expect((await postJson('/api/worldinfo/edit', { name: 'Guarded creation', data: { entries: {} }, revision: null })).status).toBe(409);
+        expect(JSON.parse(fs.readFileSync(path.join(directories.worlds, 'Guarded creation.json'), 'utf8'))).toEqual(data);
+    });
+
+    test('guarded renames reject a stale loaded copy without changing either path', async () => {
+        const original = { entries: { 0: { uid: 0, content: 'Loaded copy' } } };
+        const first = await (await postJson('/api/worldinfo/edit', { name: 'Before rename', data: original })).json();
+        const current = { entries: { 0: { uid: 0, content: 'Newer publication' } } };
+        const updated = await (await postJson('/api/worldinfo/edit', { name: 'Before rename', data: current, revision: first.revision })).json();
+        expect((await postJson('/api/worldinfo/rename', { oldName: 'Before rename', newName: 'After rename', data: original, revision: first.revision })).status).toBe(409);
+        expect(JSON.parse(fs.readFileSync(path.join(directories.worlds, 'Before rename.json'), 'utf8'))).toEqual(current);
+        expect(fs.existsSync(path.join(directories.worlds, 'After rename.json'))).toBe(false);
+        const renamed = await postJson('/api/worldinfo/rename', { oldName: 'Before rename', newName: 'After rename', data: current, revision: updated.revision });
+        expect(renamed.status).toBe(200);
+        expect((await renamed.json()).revision).toBe(updated.revision);
+    });
+
+    test('guarded file imports reject stale replacements and absent-only collisions', async () => {
+        const original = { entries: { 0: { uid: 0, content: 'First' } } };
+        const created = await postImport({ filename: 'Guarded import.json', contents: JSON.stringify(original), revision: '' });
+        expect(created.status).toBe(200);
+        const initial = await created.json();
+        const current = { entries: { 0: { uid: 0, content: 'Published after preview' } } };
+        const updated = await (await postJson('/api/worldinfo/edit', { name: 'Guarded import', data: current, revision: initial.revision })).json();
+        expect((await postImport({ filename: 'Guarded import.json', contents: JSON.stringify(original), revision: initial.revision })).status).toBe(409);
+        expect((await postImport({ filename: 'Guarded import.json', contents: JSON.stringify(original), revision: '' })).status).toBe(409);
+        expect(JSON.parse(fs.readFileSync(path.join(directories.worlds, 'Guarded import.json'), 'utf8'))).toEqual(current);
+        const replacement = await postImport({ filename: 'Guarded import.json', contents: JSON.stringify(original), revision: updated.revision });
+        expect(replacement.status).toBe(200);
+        expect((await replacement.json()).revision).toBe(initial.revision);
+        expect(fs.readdirSync(uploadsPath)).toEqual([]);
+    });
+
     test('renames a world without leaving the source file behind', async () => {
         await postJson('/api/worldinfo/edit', { name: 'Old', data: { entries: {} } });
         const response = await postJson('/api/worldinfo/rename', { oldName: 'Old', newName: 'New', data: { entries: {} } });
@@ -137,7 +179,7 @@ describe('World Info endpoints', () => {
         const contents = JSON.stringify({ entries: { 0: { uid: 0, content: 'hello' } } });
         const response = await postImport({ filename: 'My World.json', contents });
         expect(response.status).toBe(200);
-        expect(await response.json()).toEqual({ name: 'My World' });
+        expect(await response.json()).toEqual({ name: 'My World', revision: expect.stringMatching(/^[a-f0-9]{64}$/) });
         expect(fs.readFileSync(path.join(directories.worlds, 'My World.json'), 'utf8')).toBe(contents);
         expect(fs.readdirSync(uploadsPath)).toEqual([]);
     });
@@ -146,7 +188,7 @@ describe('World Info endpoints', () => {
         const contents = JSON.stringify({ entries: {} });
         const response = await postImport({ filename: 'Ignored.json', contents, name: 'Renamed' });
         expect(response.status).toBe(200);
-        expect(await response.json()).toEqual({ name: 'Renamed' });
+        expect(await response.json()).toEqual({ name: 'Renamed', revision: expect.stringMatching(/^[a-f0-9]{64}$/) });
         expect(fs.existsSync(path.join(directories.worlds, 'Renamed.json'))).toBe(true);
         expect(fs.existsSync(path.join(directories.worlds, 'Ignored.json'))).toBe(false);
     });
@@ -304,7 +346,7 @@ describe('World Info endpoints', () => {
         expect((await (await postJson('/api/worldinfo/history', { name: 'Failed restore' })).json()).history).toEqual(staged.history);
     });
 
-    function postImport({ filename, contents, name, convertedData, history }) {
+    function postImport({ filename, contents, name, convertedData, history, revision }) {
         const formData = new FormData();
         formData.append('avatar', new Blob([contents], { type: 'application/json' }), filename);
         if (name !== undefined) {
@@ -314,6 +356,7 @@ describe('World Info endpoints', () => {
             formData.set('convertedData', convertedData);
         }
         if (history !== undefined) formData.set('history', JSON.stringify(history));
+        if (revision !== undefined) formData.set('revision', revision);
         return fetch(`${baseUrl}/api/worldinfo/import`, { method: 'POST', body: formData });
     }
 

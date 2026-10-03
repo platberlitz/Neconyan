@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { assertUntrackedRoleplayFiles, createRoleplayDirectory, readRoleplayFile, roleplayAccountBase, roleplayAccountStamp, roleplayError, roleplayHash, roleplayLease, withRoleplayAccount } from './roleplay-store.js';
-import { fsyncDirectorySync, tryWriteFileSync } from './util.js';
+import { fsyncDirectorySync, tryWriteFileSync, withDirectoryFlushBatchSync } from './util.js';
 
 export const AUTHORING_FILE_LIMIT = 32 * 1024 * 1024;
 export const authoringEvidence = file => file ? { rawHash: file.rawHash, physical: file.physical } : null;
@@ -39,7 +39,8 @@ export function stageAuthoringFileLocked(lease, filename, data, { expected, limi
     const temporary = path.join(path.dirname(target), `.author-${randomUUID()}.tmp`);
     ownedPath(lease, temporary);
     tryWriteFileSync(temporary, bytes, {}, { expectedFileAbsent: true, durable: true });
-    const prepared = readRoleplayFile(temporary, limit, { flush: true });
+    // tryWriteFileSync already flushed these exact bytes. Keep the physical/content proof.
+    const prepared = readRoleplayFile(temporary, limit);
     if (!prepared?.bytes.equals(bytes)) throw roleplayError('AUTHORING_RECOVERY_REQUIRED', 'The prepared authoring file could not be verified.', 409);
     return { relative, before, after: authoringEvidence(prepared), temporary: path.relative(root, temporary), limit };
 }
@@ -63,11 +64,14 @@ export function publishAuthoringFileLocked(lease, staged) {
 
 export function writeAuthoringFileLocked(lease, filename, data, options = {}) {
     const staged = stageAuthoringFileLocked(lease, filename, data, options);
+    let published = false;
     try {
         options.beforePublish?.(staged);
-        return publishAuthoringFileLocked(lease, staged);
+        const result = publishAuthoringFileLocked(lease, staged);
+        published = true;
+        return result;
     } finally {
-        if (staged.temporary) {
+        if (!published && staged.temporary) {
             const { scope } = roleplayLease(lease);
             const filename = path.join(scope.directories.root, staged.temporary);
             const file = readAuthoringFileLocked(lease, filename, staged.limit);
@@ -77,6 +81,19 @@ export function writeAuthoringFileLocked(lease, filename, data, options = {}) {
             }
         }
     }
+}
+
+/** The operation's durable recovery plan must be saved before entering this batch. */
+export function withAuthoringBatchLocked(lease, operation) {
+    roleplayLease(lease);
+    return withDirectoryFlushBatchSync(operation);
+}
+
+/** Replays folder durability when a previous batch stopped before its progress was flushed. */
+export function flushAuthoringPathLocked(lease, filename) {
+    const { root, target } = ownedPath(lease, filename);
+    createRoleplayDirectory(path.dirname(target), root);
+    fsyncDirectorySync(path.dirname(target));
 }
 
 export function deleteAuthoringFileLocked(lease, filename, expected) {

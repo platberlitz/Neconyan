@@ -14,6 +14,13 @@ import * as attachments from '../notebooks/attachments.js';
 import * as transfer from '../notebooks/transfer.js';
 import * as assistant from '../notebooks/assistant.js';
 import * as context from '../notebooks/context.js';
+import { buildNoteEmbeds } from '../notebooks/embeds.js';
+import { buildNoteGraph, GRAPH_LIMITS } from '../notebooks/graph.js';
+import { queryPropertyTable, PROPERTY_TABLE_LIMITS } from '../notebooks/property-table.js';
+import * as canvasStore from '../notebooks/canvas-store.js';
+import * as obsidian from '../notebooks/obsidian.js';
+import { projectCanvas } from '../notebooks/canvas-projection.js';
+import { validateCanvasDocument } from '../../public/scripts/notebooks/canvas-format.js';
 import { applyPolicyPatch, publicPolicy } from '../notebooks/permissions.js';
 
 export const router = express.Router();
@@ -73,11 +80,30 @@ function sendError(response, error) {
  * lock is released.
  */
 function route(handler) {
-    return (request, response) => {
+    return asyncRoute(async ({ request, body, base, actor, owner, stamp }) => {
+        const notebookId = body.notebookId;
+        if (notebookId && request.path !== '/assistant/tool') await store.prepareNotebook(base, notebookId, { stamp });
+        if (request.path.startsWith('/context/')) await context.prepareNoteContextNotebooks(base, body.scope, { stamp });
+        for (let attempt = 0; ; attempt++) {
+            try {
+                return withRoleplayAccount(base, stamp, lease => handler({ request, body, lease, base, actor, owner }));
+            } catch (error) {
+                // Assistant permission checks run first; only an authorised load can request preparation.
+                if (error.code !== 'NOTEBOOK_RECONCILING' || !error.notebookId || attempt >= store.MAX_NOTEBOOKS) throw error;
+                await store.prepareNotebook(base, error.notebookId, { stamp, force: true });
+            }
+        }
+    });
+}
+
+/** Await preparation between short synchronous leases, never while holding one. */
+function asyncRoute(handler) {
+    return async (request, response) => {
         try {
             const base = accountBase(request);
             const body = request.body && typeof request.body === 'object' ? request.body : {};
-            const result = locked(base, lease => handler({ request, body, lease, base, actor: actorFor(base), owner: base.owner }));
+            const stamp = roleplayAccountStamp(base);
+            const result = await handler({ request, body, base, stamp, actor: actorFor(base), owner: base.owner });
             const wrapped = result?.[ROUTE_RESULT] === true;
             const payload = wrapped ? result.payload : result;
             for (const change of wrapped ? result.changes : []) notifyNotebookChanged({ owner: base.owner, ...change });
@@ -124,9 +150,32 @@ function discardUpload(request) {
 
 /* ---------- notebooks ---------- */
 
+/* The optional client is never started by a read, import or server startup. */
+router.post('/obsidian/status', asyncRoute(({ base, stamp, body }) => withRoleplayAccount(base, stamp, lease => obsidian.obsidianStatusLocked(lease, body.notebookId))));
+
+router.post('/obsidian/configure', asyncRoute(async ({ base, stamp, body, actor }) => {
+    // The incoming-file policy must be durable BEFORE the first adoption.
+    withRoleplayAccount(base, stamp, lease => obsidian.configureObsidianLocked(lease, { notebookId: body.notebookId, operationId: body.operationId, expectedRevision: body.expectedRevision, folder: body.folder, singleMechanism: body.singleMechanism, actor }));
+    return obsidian.reconcileObsidian(base, body.notebookId, { stamp });
+}));
+
+router.post('/obsidian/start', asyncRoute(({ base, stamp, body }) => obsidian.startObsidian(base, { notebookId: body.notebookId, operationId: body.operationId, expectedRevision: body.expectedRevision }, { stamp })));
+router.post('/obsidian/stop', asyncRoute(({ base, stamp, body }) => obsidian.stopObsidian(base, body.notebookId, { stamp })));
+router.post('/obsidian/reconcile', asyncRoute(({ base, stamp, body }) => obsidian.reconcileObsidian(base, body.notebookId, { stamp })));
+router.post('/obsidian/history', asyncRoute(({ base, stamp, body }) => withRoleplayAccount(base, stamp, lease => obsidian.obsidianHistoryLocked(lease, { notebookId: body.notebookId, limit: intOf(body.limit, 50, 100) }))));
+
+router.post('/obsidian/history/file', (request, response) => {
+    try {
+        const base = accountBase(request);
+        const file = locked(base, lease => obsidian.obsidianHistoryFileLocked(lease, { notebookId: request.body.notebookId, historyId: request.body.historyId }));
+        response.set({ 'Cache-Control': 'no-store', 'Content-Security-Policy': 'sandbox; default-src \'none\'', 'X-Content-Type-Options': 'nosniff' });
+        response.type('application/octet-stream').attachment(path.basename(file.path)).send(file.bytes);
+    } catch (error) { sendError(response, error); }
+});
+
 router.post('/list', route(({ lease }) => {
     store.ensureDefaultNotebookLocked(lease);
-    return { status: 'success', notebooks: store.listNotebooksLocked(lease) };
+    return { status: 'success', notebooks: store.listNotebooksLocked(lease), imports: transfer.listStagesLocked(lease) };
 }));
 
 router.post('/create', route(({ lease, body, actor }) => {
@@ -367,7 +416,68 @@ router.post('/notes/history/restore', route(({ lease, body, actor }) => {
     return changed(result, noteChange('note', result, body.notebookId));
 }));
 
+/* ---------- portable planning canvases ---------- */
+
+router.post('/canvas/list', route(({ lease, body }) => canvasStore.listCanvasesLocked(lease, body.notebookId)));
+
+router.post('/canvas/read', route(({ lease, body }) => {
+    const result = canvasStore.readCanvasLocked(lease, body);
+    const state = store.loadNotebookLocked(lease, body.notebookId);
+    // Only the authenticated owner uses these routes. Canvas references never grant model access.
+    return { ...result, preview: projectCanvas(result.canvas.document, state.entries, { canRead: () => true, path: result.canvas.path }) };
+}));
+
+router.post('/canvas/preview', route(({ lease, body }) => {
+    const result = canvasStore.readCanvasLocked(lease, body);
+    const document = body.document !== undefined ? validateCanvasDocument(body.document) : result.canvas.document;
+    return { status: 'success', revision: result.canvas.revision,
+        preview: projectCanvas(document, store.loadNotebookLocked(lease, body.notebookId).entries, { canRead: () => true, path: result.canvas.path }) };
+}));
+
+router.post('/canvas/create', route(({ lease, body, actor }) => {
+    const result = canvasStore.createCanvasLocked(lease, { ...body, actor });
+    return changed(result, { kind: 'structure', notebookId: body.notebookId, operationId: body.operationId });
+}));
+
+router.post('/canvas/update', route(({ lease, body, actor }) => {
+    const result = canvasStore.updateCanvasLocked(lease, { ...body, actor });
+    return changed(result, { kind: 'structure', notebookId: body.notebookId, operationId: body.operationId });
+}));
+
+router.post('/canvas/history', route(({ lease, body }) => canvasStore.canvasHistoryLocked(lease, body)));
+router.post('/canvas/history/read', route(({ lease, body }) => canvasStore.canvasHistoryReadLocked(lease, body)));
+router.post('/canvas/history/restore', route(({ lease, body, actor }) => {
+    const version = canvasStore.canvasHistoryReadLocked(lease, body);
+    const result = canvasStore.updateCanvasLocked(lease, { ...body, document: version.document, changes: undefined, reason: 'canvas-restore', actor });
+    return changed(result, { kind: 'structure', notebookId: body.notebookId, operationId: body.operationId });
+}));
+router.post('/canvas/recovery/read', route(({ lease, body }) => canvasStore.canvasRecoveryReadLocked(lease, body)));
+router.post('/canvas/recovery/decide', route(({ lease, body, actor }) => {
+    const result = canvasStore.decideCanvasRecoveryLocked(lease, { ...body, actor });
+    return changed(result, { kind: 'structure', notebookId: body.notebookId, operationId: body.operationId });
+}));
+
 /* ---------- search and links ---------- */
+
+router.post('/properties/table', route(({ lease, body }) => {
+    const state = store.loadNotebookLocked(lease, requireNotebookId(body.notebookId));
+    // This is the authenticated owner's projection; assistant tools have separate permission checks.
+    return queryPropertyTable(state.entries, { canRead: () => true,
+        folder: typeof body.folder === 'string' ? normaliseFolder(body.folder) : null,
+        tag: typeof body.tag === 'string' ? body.tag.slice(0, 100) : null,
+        query: typeof body.query === 'string' ? body.query : '',
+        columns: body.columns, filter: body.filter, sort: body.sort,
+        offset: intOf(body.offset, 0, 100000), limit: intOf(body.limit, 50, PROPERTY_TABLE_LIMITS.rows) || 50 });
+}));
+
+router.post('/graph', route(({ lease, body }) => {
+    const state = store.loadNotebookLocked(lease, requireNotebookId(body.notebookId));
+    // The authenticated owner can see their notebook; assistant tools never call this route.
+    return buildNoteGraph(state.entries, { canRead: () => true,
+        folder: typeof body.folder === 'string' ? normaliseFolder(body.folder) : null,
+        tag: typeof body.tag === 'string' ? body.tag : null,
+        limit: intOf(body.limit, GRAPH_LIMITS.nodes, GRAPH_LIMITS.nodes) || GRAPH_LIMITS.nodes });
+}));
 
 router.post('/search', route(({ lease, body }) => {
     const notebookId = requireNotebookId(body.notebookId);
@@ -383,6 +493,18 @@ router.post('/search', route(({ lease, body }) => {
         limit: intOf(body.limit, 30, 50) || 30,
     });
     return { status: 'success', ...result };
+}));
+
+router.post('/embeds', route(({ lease, body }) => {
+    const { state, entry } = store.readNoteLocked(lease, body);
+    if (body.text !== undefined && (typeof body.text !== 'string' || body.text.includes('\0'))) {
+        throw new NotebookError('NOTE_TEXT_INVALID', 'The preview text must be Markdown.', 400);
+    }
+    if (body.text !== undefined && Buffer.byteLength(body.text, 'utf8') > store.MAX_NOTE_BYTES) {
+        throw new NotebookError('NOTE_TOO_LARGE', 'This note is too large to preview.', 413);
+    }
+    // This route is the authenticated owner's view, not an assistant or roleplay context route.
+    return buildNoteEmbeds(state.entries, { sourceId: entry.id, text: body.text, canRead: () => true });
 }));
 
 router.post('/links', route(({ lease, body }) => {
@@ -733,9 +855,10 @@ router.post('/attachments/restore', route(({ lease, body }) => {
 
 /* ---------- import and export ---------- */
 
-router.post('/export', (request, response) => {
+router.post('/export', async (request, response) => {
     try {
         const base = accountBase(request);
+        await store.prepareNotebook(base, request.body?.notebookId);
         const collected = locked(base, lease => transfer.collectExportLocked(lease, { notebookId: request.body?.notebookId }));
         const zip = transfer.buildExportZip(collected);
         response.set({
@@ -753,13 +876,13 @@ router.post('/export', (request, response) => {
 
 /**
  * Validates an uploaded ZIP or Markdown file outside the account lock and
- * returns a summary. Nothing is written until /import/commit or /import/update.
+ * saves a private, restart-safe preview. Notebook content is untouched until commit.
  */
-router.post('/import/stage', (request, response) => {
+router.post('/import/stage', async (request, response) => {
     try {
         const base = accountBase(request);
         const { name, bytes } = uploadedFile(request, transfer.MAX_IMPORT_ARCHIVE_BYTES);
-        const summary = transfer.stageImport(base.owner, { filename: name, bytes });
+        const summary = await transfer.stageImport(base, { filename: name, bytes });
         return response.json({ status: 'success', stage: summary });
     } catch (error) {
         discardUpload(request);
@@ -769,17 +892,21 @@ router.post('/import/stage', (request, response) => {
 
 router.post('/import/compare', route(({ lease, body }) => ({ status: 'success', stage: transfer.compareStageLocked(lease, { stageId: body.stageId, notebookId: body.notebookId }) })));
 
-router.post('/import/commit', route(({ lease, body, actor }) => {
-    const result = transfer.commitImportLocked(lease, { operationId: body.operationId, stageId: body.stageId, name: body.name, actor });
+router.post('/import/list', route(({ lease }) => ({ status: 'success', stages: transfer.listStagesLocked(lease) })));
+router.post('/import/read', route(({ lease, body }) => ({ status: 'success', stage: transfer.readStage(lease, body.stageId) })));
+
+router.post('/import/commit', asyncRoute(async ({ base, stamp, body, actor }) => {
+    const result = await transfer.commitImport(base, { operationId: body.operationId, stageId: body.stageId, name: body.name, actor }, { stamp });
     return changed(result, { kind: 'notebook', notebookId: result.notebook?.id });
 }));
 
-router.post('/import/update', route(({ lease, body, actor }) => {
-    const result = transfer.commitStageUpdateLocked(lease, { operationId: body.operationId, stageId: body.stageId, notebookId: body.notebookId, paths: body.paths, actor });
+router.post('/import/update', asyncRoute(async ({ base, stamp, body, actor }) => {
+    await store.prepareNotebook(base, body.notebookId, { stamp });
+    const result = await transfer.commitStageUpdate(base, { operationId: body.operationId, stageId: body.stageId, notebookId: body.notebookId, paths: body.paths, actor }, { stamp });
     return changed(result, { kind: 'structure', notebookId: body.notebookId });
 }));
 
-router.post('/import/cancel', route(({ owner, body }) => ({ status: 'success', cancelled: transfer.cancelStage(owner, body.stageId) })));
+router.post('/import/cancel', route(({ lease, body }) => ({ status: 'success', cancelled: transfer.cancelStage(lease, body.stageId) })));
 
 /* ---------- context (scoped reference and pinned notes) ---------- */
 

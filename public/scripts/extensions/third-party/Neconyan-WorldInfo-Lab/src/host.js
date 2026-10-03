@@ -9,6 +9,7 @@ const SCRIPT_URL = '/script.js';
 let loaded = null;
 let loading = null;
 const worldInfoWrites = new Map();
+const freshWorldInfoRevisions = new WeakMap();
 
 export function getContext() {
     return globalThis.SillyTavern?.getContext?.() ?? null;
@@ -120,7 +121,13 @@ export async function loadWorldInfoFresh(name, { signal } = {}) {
     if (!response.ok) {
         throw new Error(`"${name}" could not be reloaded from the server (HTTP ${response.status}). Nothing was saved; check the server and preview again.`);
     }
-    return response.json();
+    const revision = response.headers?.get?.('X-World-Info-Revision');
+    if (!revision) {
+        throw new Error('World Info Lab could not verify this lorebook revision. Nothing was saved; reload Neconyan and try again.');
+    }
+    const data = await response.json();
+    freshWorldInfoRevisions.set(data, revision);
+    return data;
 }
 
 function checkAbort(signal) {
@@ -164,7 +171,7 @@ async function mutateWorldInfoNow(name, mutation, signal) {
     if (JSON.stringify(cachedAgain) !== baseline || JSON.stringify(freshAgain) !== baseline) {
         throw new Error(`"${name}" changed while the update was being checked. Nothing was saved; reload it and try again.`);
     }
-    await context.saveWorldInfo(name, next, true);
+    await context.saveWorldInfo(name, next, true, { revision: freshWorldInfoRevisions.get(fresh) });
     return result;
 }
 

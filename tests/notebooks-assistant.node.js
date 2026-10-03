@@ -205,6 +205,22 @@ test('notes denied per note stay invisible in search, links and backlinks', t =>
     assert.equal(capture('notebooks', {}).response.notebooks[0].readableNotes, 1);
 });
 
+test('link resolution filters hidden candidates before deciding ambiguity or availability', t => {
+    const { notebookId, create, policy, capture } = prepared(t);
+    const source = create('Public', '![[Target]]\n![[Hidden]]\n![[Missing]]');
+    const visible = create('Target', 'Visible target.', 'Allowed');
+    const duplicate = create('Target', 'Private duplicate.', 'Private');
+    const hidden = create('Hidden', 'Private words.');
+    policy({ assistant: 'none', notes: { [source]: { assistant: 'read' }, [visible]: { assistant: 'read' } } });
+    const links = capture('note-links', { notebookId, noteId: source }).response;
+    assert.equal(links.outgoing[0].status, 'resolved');
+    assert.equal(links.outgoing[0].noteId, visible);
+    assert.deepEqual(links.outgoing[1], { raw: '![[Hidden]]', status: 'unavailable' });
+    assert.deepEqual(links.outgoing[2], { raw: '![[Missing]]', status: 'unavailable' });
+    assert.ok(!JSON.stringify(links).includes(duplicate));
+    assert.ok(!JSON.stringify(links).includes(hidden));
+});
+
 test('requested-edit mode saves allowed edits directly but never publishes lore', t => {
     const { f, run, notebookId, create, policy, capture, read } = prepared(t);
     const noteId = create('Magic system', MAGIC);
@@ -240,4 +256,21 @@ test('instructions inside note text grant no capabilities', t => {
     assert.equal(code(() => capture('publish-note-lore', { notebookId, noteId: ordersId, book: 'Test World', userConfirmed: true })).status, 403);
     const policies = run(lease => store.readPoliciesLocked(lease, notebookId));
     assert.equal(policies.assistantPublish, false);
+});
+
+test('assistant reads and single-note grants never expand embedded target data', t => {
+    const { run, notebookId, create, policy, capture } = prepared(t);
+    const target = create('Linked private', '# Secret heading\nA hidden body must not be expanded.');
+    const source = create('Shared reference', 'Read this only. ![[Linked private#Secret heading]]');
+    policy({ notes: { [source]: { assistant: 'read' } } });
+    const read = capture('read-note', { notebookId, noteId: source }).response;
+    assert.match(read.text, /!\[\[Linked private#Secret heading\]\]/);
+    assert.doesNotMatch(JSON.stringify(read), /A hidden body|embeds/);
+    assert.equal(code(() => capture('read-note', { notebookId, noteId: target })).status, 404);
+    policy({ notes: { [source]: { assistant: 'none' } } });
+    const grant = run(lease => assistant.createGrantLocked(lease, { notebookId, noteId: source, scope: 'note', operations: ['read'] }));
+    const links = capture('note-links', { notebookId, noteId: source, grantId: grant.id }).response;
+    assert.deepEqual(links.outgoing[0], { raw: '![[Linked private#Secret heading]]', status: 'unavailable' });
+    assert.ok(!JSON.stringify(links).includes(target));
+    assert.doesNotMatch(JSON.stringify(links), /A hidden body/);
 });

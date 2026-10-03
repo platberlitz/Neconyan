@@ -318,6 +318,12 @@ router.post('/import', authoringRoute((request, response, lease) => {
         if (migrateLegacyWorldNames(worldContent)) fileContents = JSON.stringify(worldContent, null, 4);
 
         const pathToNewFile = path.join(request.user.directories.worlds, filename);
+        if (request.body.revision !== undefined) {
+            const expectedRevision = request.body.revision === '' ? null : request.body.revision;
+            const currentFile = readAuthoringFileLocked(lease, pathToNewFile);
+            const currentRevision = currentFile ? worldInfoRevision(JSON.parse(currentFile.bytes.toString('utf8'))) : null;
+            if (currentRevision !== expectedRevision) return response.sendStatus(409);
+        }
         if (request.body.history !== undefined) {
             const importedHistory = tryParse(request.body.history);
             if (!validateWorldInfoHistory(importedHistory)) return response.sendStatus(400);
@@ -328,7 +334,7 @@ router.post('/import', authoringRoute((request, response, lease) => {
         } else {
             writeWorldInfoFile(pathToNewFile, fileContents, lease);
         }
-        return response.send({ name: path.parse(pathToNewFile).name });
+        return response.send({ name: path.parse(pathToNewFile).name, revision: worldInfoRevision(worldContent) });
     } catch (err) {
         console.error('World Info import failed:', err);
         return response.sendStatus(err.status || 500);
@@ -367,8 +373,8 @@ router.post('/edit', authoringRoute((request, response, lease) => {
 
     if (request.body.revision !== undefined) {
         const currentFile = readAuthoringFileLocked(lease, pathToFile);
-        const current = currentFile ? JSON.parse(currentFile.bytes.toString('utf8')) : null;
-        if (!current || worldInfoRevision(current) !== request.body.revision) return response.sendStatus(409);
+        const currentRevision = currentFile ? worldInfoRevision(JSON.parse(currentFile.bytes.toString('utf8'))) : null;
+        if (currentRevision !== request.body.revision) return response.sendStatus(409);
     }
 
     writeWorldInfoFile(pathToFile, JSON.stringify(request.body.data, null, 4), lease);
@@ -393,6 +399,10 @@ router.post('/rename', authoringRoute((request, response, lease) => {
     const newPath = path.join(request.user.directories.worlds, newFilename);
     assertNativeMediaTargetIdle(lease, { kind: 'lorebook', id: oldFilename });
     assertNativeMediaTargetIdle(lease, { kind: 'lorebook', id: newFilename });
+    if (request.body.revision !== undefined) {
+        const current = readAuthoringFileLocked(lease, oldPath);
+        if (!current || worldInfoRevision(JSON.parse(current.bytes.toString('utf8'))) !== request.body.revision) return response.sendStatus(409);
+    }
     const existingTargetFilename = getExistingWorldInfoFilename(request.user.directories, newName);
     if (existingTargetFilename || fs.existsSync(newPath)) {
         return response.sendStatus(409);
@@ -413,7 +423,7 @@ router.post('/rename', authoringRoute((request, response, lease) => {
             fsyncDirectorySync(path.dirname(oldPath));
             throw error;
         }
-        return response.send({ ok: true, name: canonicalName });
+        return response.send({ ok: true, name: canonicalName, revision: worldInfoRevision(data) });
     } catch (err) {
         console.error('World Info rename failed:', err);
         return response.sendStatus(err.status || 500);
