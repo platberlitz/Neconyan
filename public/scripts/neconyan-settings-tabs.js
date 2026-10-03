@@ -2,6 +2,7 @@ import { extensionNames, findExtension, getExtensionManifest, getExtensionType }
 import { eventSource, event_types } from './events.js';
 import { getRequestHeaders } from '../script.js';
 import { accountStorage } from './util/AccountStorage.js';
+import { t } from './i18n.js';
 
 /**
  * Neconyan Settings Tabs Overhaul
@@ -1301,7 +1302,7 @@ import { accountStorage } from './util/AccountStorage.js';
             const pinned = state.pinnedKeys.has(info.key);
             pin.dataset.extensionId = info.key;
             pin.setAttribute('aria-pressed', String(pinned));
-            const label = `${pinned ? 'Unpin' : 'Pin'} ${info.name}`;
+            const label = pinned ? t`Unpin ${info.name}` : t`Pin ${info.name}`;
             pin.setAttribute('aria-label', label);
             pin.title = label;
         };
@@ -1370,7 +1371,7 @@ import { accountStorage } from './util/AccountStorage.js';
                 selection.setAttribute('aria-current', String(info.key === state.selectedKey));
                 pin.dataset.extensionId = info.key;
                 pin.setAttribute('aria-pressed', String(state.pinnedKeys.has(info.key)));
-                pin.setAttribute('aria-label', `${state.pinnedKeys.has(info.key) ? 'Unpin' : 'Pin'} ${info.name}`);
+                pin.setAttribute('aria-label', state.pinnedKeys.has(info.key) ? t`Unpin ${info.name}` : t`Pin ${info.name}`);
                 pin.title = pin.getAttribute('aria-label');
                 if (!pin.firstChild) pin.innerHTML = '<i class="fa-solid fa-thumbtack" aria-hidden="true"></i>';
                 return row;
@@ -1390,7 +1391,7 @@ import { accountStorage } from './util/AccountStorage.js';
             const selectedPinned = state.pinnedKeys.has(state.selectedKey);
             mobilePin.disabled = !state.selectedKey;
             mobilePin.setAttribute('aria-pressed', String(selectedPinned));
-            mobilePin.setAttribute('aria-label', state.selectedKey ? `${selectedPinned ? 'Unpin' : 'Pin'} selected extension` : 'Pin selected extension');
+            mobilePin.setAttribute('aria-label', state.selectedKey && selectedPinned ? t`Unpin selected extension` : t`Pin selected extension`);
             mobilePin.title = mobilePin.getAttribute('aria-label');
             if (!mobilePin.firstChild) mobilePin.innerHTML = '<i class="fa-solid fa-thumbtack" aria-hidden="true"></i>';
             count.textContent = `${filtered.length} ${state.scope === 'third-party' ? 'third-party' : 'built-in'} extension${filtered.length === 1 ? '' : 's'}`;

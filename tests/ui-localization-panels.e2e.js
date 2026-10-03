@@ -57,6 +57,31 @@ for (const [layout, viewport, hasTouch] of [
             await expect(page.locator('#qig-status-meta')).toContainText(german['Review off']);
             await expect(page.locator('#qig-prompt-help')).toHaveText(german['Not used while Chat scene is selected; the selected chat messages become the scene.']);
 
+            // Labels made of a phrase and a name are one translated phrase, written after the locale has loaded.
+            const phrase = (key, name) => german[key].replace('${0}', german[name]);
+            await page.evaluate(() => window.NeconyanShell.openTab('right', 'extensions'));
+            await page.evaluate(label => window.NeconyanExtensions.focusUnit(label), german.Vectorization);
+            const vectorsHeader = page.locator('.vectors_settings > .inline-drawer > .inline-drawer-header');
+            const vectorsIcon = vectorsHeader.locator('.inline-drawer-icon');
+            await expect(vectorsHeader).toBeVisible();
+            await expect(vectorsIcon).toHaveAttribute('aria-label', phrase('Collapse ${0}', 'Vectorization'));
+            await vectorsHeader.evaluate(header => header.click());
+            await expect(vectorsIcon).toHaveAttribute('aria-label', phrase('Expand ${0}', 'Vectorization'));
+            await vectorsHeader.evaluate(header => header.click());
+            await expect(vectorsIcon).toHaveAttribute('aria-label', phrase('Collapse ${0}', 'Vectorization'));
+            await expect(vectorsHeader.locator('.sb-extension-unit-pin')).toHaveAttribute('aria-label', phrase('Pin ${0}', 'Vectorization'));
+            await expect(vectorsHeader.locator('.sb-extension-unit-pin')).toHaveAttribute('title', phrase('Pin ${0}', 'Vectorization'));
+            const settingsShell = page.locator('#user-settings-block');
+            await expect(settingsShell.locator('.sb-shell-close')).toHaveAttribute('aria-label', phrase('Close ${0}', 'Settings'));
+            await expect(settingsShell.locator('.sb-shell-close')).toHaveAttribute('title', phrase('Close ${0}', 'Settings'));
+            await expect(settingsShell.locator('.sb-shell-nav-scroll-left')).toHaveAttribute('aria-label', phrase('Scroll ${0} sections left', 'Settings'));
+            await expect(settingsShell.locator('.sb-shell-nav-scroll-right')).toHaveAttribute('aria-label', phrase('Scroll ${0} sections right', 'Settings'));
+            const modeButton = mode => page.locator(`#neconyan-workspace-rail [data-neconyan-chat-mode="${mode}"]`);
+            await expect(modeButton('roleplay')).toHaveAttribute('title', phrase('${0} is active', 'Roleplay'));
+            await expect(modeButton('story')).toHaveAttribute('title', phrase('Use ${0}', 'Story Mode'));
+            await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
+            await expect(page.locator('#left-nav-panel .sb-shell-close')).toHaveAttribute('aria-label', phrase('Close ${0}', 'Agents'));
+
             await page.evaluate(async () => {
                 const { openTimeMachine } = await import('/scripts/extensions/third-party/Neconyan-Time-Machine/src/ui.js');
                 void openTimeMachine();

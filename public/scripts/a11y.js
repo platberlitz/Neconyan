@@ -61,6 +61,16 @@ const tabItemSelectors = [
 ].join(', ');
 
 let generatedDrawerContentId = 0;
+// Neconyan: the main app swaps in a translated phrase, so this file stays free of app imports.
+let formatToggleLabel = (expanded, label) => `${expanded ? 'Collapse' : 'Expand'} ${label}`;
+
+/**
+ * Sets how a drawer toggle is labelled, so the caller can translate the whole phrase.
+ * @param {(expanded: boolean, label: string) => string} formatter Returns the label for an expanded or a collapsed drawer.
+ */
+export function setToggleLabelFormatter(formatter) {
+    formatToggleLabel = formatter;
+}
 
 function getInlineDrawerLabel(icon) {
     const header = icon.closest('.inline-drawer-header');
@@ -99,7 +109,7 @@ function updateInlineDrawerAccessibility(drawer, expanded = null) {
     icon.setAttribute('role', 'button');
     icon.setAttribute('aria-controls', content.id);
     icon.setAttribute('aria-expanded', String(isExpanded));
-    icon.setAttribute('aria-label', `${isExpanded ? 'Collapse' : 'Expand'} ${label}`);
+    icon.setAttribute('aria-label', formatToggleLabel(isExpanded, label));
 }
 
 /** @type {Record<string, (element: Element) => void>} */

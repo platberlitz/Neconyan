@@ -717,7 +717,7 @@ function syncNeconyanModeControls() {
         button.classList.toggle('is-active', isActive);
         button.setAttribute('aria-pressed', String(isActive));
         button.title = buttonDefinition
-            ? isActive ? t`${definition.label} is active` : t`Use ${buttonDefinition.label}`
+            ? isActive ? t`${translate(definition.label)} is active` : t`Use ${translate(buttonDefinition.label)}`
             : t`Unavailable mode`;
     });
 
@@ -977,7 +977,7 @@ function createNeconyanModeButton(mode, mobile = false) {
             'data-neconyan-chat-mode': definition.id,
             'aria-pressed': String(getActualNeconyanMode() === definition.id),
             'aria-label': definition.label,
-            title: t`Use ${definition.label}`,
+            title: t`Use ${translate(definition.label)}`,
         },
     });
     button.append(
@@ -17013,7 +17013,7 @@ function setActiveTab(shellKey, tabId, { focusButton = false } = {}) {
     if (shellRoot instanceof HTMLElement) {
         shellRoot.dataset.sbActiveTab = tabId;
         const closeButton = shellRoot.querySelector('.sb-shell-close');
-        const closeLabel = `Close ${tabId === 'agents' ? 'Agents' : shellConfig.title}`;
+        const closeLabel = t`Close ${translate(tabId === 'agents' ? 'Agents' : shellConfig.title)}`;
         closeButton?.setAttribute('aria-label', closeLabel);
         closeButton?.setAttribute('title', closeLabel);
     }
@@ -17158,7 +17158,7 @@ function buildShell(shellKey) {
         className: 'sb-shell-nav-scroll sb-shell-nav-scroll-left',
         attrs: {
             type: 'button',
-            'aria-label': `Scroll ${shellConfig.title} sections left`,
+            'aria-label': t`Scroll ${translate(shellConfig.title)} sections left`,
         },
     });
     const nav = createElement('nav', {
@@ -17173,7 +17173,7 @@ function buildShell(shellKey) {
         className: 'sb-shell-nav-scroll sb-shell-nav-scroll-right',
         attrs: {
             type: 'button',
-            'aria-label': `Scroll ${shellConfig.title} sections right`,
+            'aria-label': t`Scroll ${translate(shellConfig.title)} sections right`,
         },
     });
     navScrollLeft.innerHTML = '<i class="fa-solid fa-chevron-left" aria-hidden="true"></i>';
@@ -17302,8 +17302,8 @@ function buildShell(shellKey) {
         className: 'sb-shell-close',
         attrs: {
             type: 'button',
-            title: `Close ${shellConfig.title}`,
-            'aria-label': `Close ${shellConfig.title}`,
+            title: t`Close ${translate(shellConfig.title)}`,
+            'aria-label': t`Close ${translate(shellConfig.title)}`,
         },
     });
     const eyebrow = createElement('div', { className: 'sb-shell-kicker', text: shellConfig.title });
