@@ -123,6 +123,12 @@ test('an exact entry wins over a ${0} pattern that would otherwise catch the cap
         ['it-it', 'Pin ${0}', 'Pin message'],
         ['it-it', 'Unpin ${0}', 'Unpin message'],
         ['de-de', 'Unpin ${0}', 'Unpin message'],
+        ['de-de', 'Close ${0}', 'Close Home and return to the current mode'],
+        ['de-de', 'Close ${0}', 'Close reasoning'],
+        ['de-de', 'Close ${0}', 'Close source'],
+        ['it-it', 'Close ${0}', 'Close Home and return to the current mode'],
+        ['it-it', 'Close ${0}', 'Close reasoning'],
+        ['it-it', 'Close ${0}', 'Close source'],
     ];
     for (const [lang, pattern, caption] of pairs) {
         expect(dictionaries[lang][pattern], `${lang} ${pattern}`).toMatch(/\$\{0\}/);
