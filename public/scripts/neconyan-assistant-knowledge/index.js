@@ -4,8 +4,9 @@ import modes from './modes.js';
 import memory from './memory.js';
 import tools from './tools.js';
 import connections from './connections.js';
+import notes from './notes.js';
 
 // Knowledge revisions are independent of the assistant cards and artwork.
-export const KNOWLEDGE_REVISION = 7;
-export const topics = Object.freeze([...core, ...appearance, ...modes, ...memory, ...tools, ...connections]
+export const KNOWLEDGE_REVISION = 8;
+export const topics = Object.freeze([...core, ...appearance, ...modes, ...memory, ...tools, ...connections, ...notes]
     .map(topic => Object.freeze({ ...topic, verification: 'source' })));

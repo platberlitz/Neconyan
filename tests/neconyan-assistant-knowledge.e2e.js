@@ -2,6 +2,8 @@
 import { readFileSync } from 'node:fs';
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { refreshedKnowledgeCases } from './neconyan-assistant-knowledge-cases.js';
+import { fillSource } from './notebooks-browser-fixture.js';
 
 test.use({ serviceWorkers: 'block', reducedMotion: 'reduce' });
 test.describe.configure({ mode: 'default' });
@@ -10,7 +12,7 @@ test.afterEach(async ({ page }) => {
     await page.unrouteAll({ behavior: 'wait' });
 });
 
-async function fixture(page, tone = 'dark') {
+async function fixture(page, tone, baseURL) {
     let initial = true;
     const requests = [];
     await page.route(/https?:\/\/(?!127\.0\.0\.1(?::|\/))/, route => route.abort());
@@ -35,7 +37,7 @@ async function fixture(page, tone = 'dark') {
         return route.fulfill({ json: { choices: [{ message: { role: 'assistant', content: 'Verified help fixture reply.' }, text: 'Verified help fixture reply.', finish_reason: 'stop' }] } });
     });
     const ready = async () => {
-        await page.goto('/', { waitUntil: 'domcontentloaded' });
+        await page.goto(baseURL, { waitUntil: 'domcontentloaded' });
         await expect.poll(() => page.evaluate(async () => !document.getElementById('preloader') && (await import('/script.js')).settingsReady && typeof window.NeconyanShell?.showHome === 'function'), { timeout: 60000 }).toBe(true);
     };
     await ready();
@@ -76,11 +78,13 @@ async function dialogue(page) {
 }
 
 for (const { width, height, tone } of [{ width: 1280, height: 900, tone: 'dark' }, { width: 393, height: 852, tone: 'light' }]) {
-    test(`documented colour routes save and reload at ${width}px in ${tone} theme`, async ({ page }, info) => {
+    test(`documented colour routes save and reload at ${width}px in ${tone} theme`, async ({ app }, info) => {
+        const account = await app.account({ phone: width < 768 });
+        const page = await account.context.newPage();
         await page.setViewportSize({ width, height });
         const cdp = await page.context().newCDPSession(page);
         await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: width < 768 });
-        const { ready } = await fixture(page, tone);
+        const { ready } = await fixture(page, tone, app.url);
         await assistant(page);
         await dialogue(page);
         const name = `Help ${width} ${Date.now()}`;
@@ -111,6 +115,25 @@ for (const { width, height, tone } of [{ width: 1280, height: 900, tone: 'dark' 
         await expect(page.getByLabel(`Color for ${name}`, { exact: true })).toHaveValue('#aa3377');
         const workspace = await rail(page);
         await workspace.locator('[data-neconyan-route="settings"]').click();
+        for (const [id, label] of [
+            ['sb-theme-presets-drawer', 'Custom RGB Accent'],
+            ['sb-shell-style-drawer', 'Hide cats (Kittyless)'],
+            ['sb-interface-drawer', 'Background Visibility'],
+            ['sb-page-tours-drawer', 'Hide all tour buttons'],
+        ]) {
+            const drawer = page.locator(`#${id}`);
+            const control = drawer.getByText(label, { exact: true });
+            if (!await control.isVisible()) await drawer.locator(':scope > .inline-drawer-header').click();
+            await expect(control).toBeVisible();
+            expect(await drawer.evaluate(element => element.parentElement === document.getElementById('sb-theme-presets-drawer').parentElement)).toBe(true);
+            await drawer.locator(':scope > .inline-drawer-header').click();
+        }
+        const accents = page.locator('#sb-theme-presets-drawer');
+        await accents.locator(':scope > .inline-drawer-header').click();
+        await accents.getByRole('checkbox', { name: 'Custom RGB Accent', exact: true }).check();
+        await expect(accents.getByText('Primary Accent', { exact: true })).toBeVisible();
+        await expect(accents.getByText('Secondary Accent', { exact: true })).toBeVisible();
+        await accents.locator(':scope > .inline-drawer-header').click();
         const quote = page.locator('#quote-color-picker');
         if (!await quote.getByRole('button', { name: 'Select Color' }).isVisible()) await page.getByText('Theme Colors', { exact: true }).click();
         await quote.getByRole('button', { name: 'Select Color' }).click();
@@ -127,17 +150,61 @@ for (const { width, height, tone } of [{ width: 1280, height: 900, tone: 'dark' 
 }
 
 for (const phone of [false, true]) {
+    test(`documented Notes save and assistant hand-off work on ${phone ? 'phone' : 'desktop'}`, async ({ app }, info) => {
+        test.setTimeout(240000);
+        const account = await app.account({ phone });
+        const page = await account.open({ workspace: false });
+        const workspace = await rail(page);
+        await workspace.locator('[data-neconyan-route="notes"]').click();
+        const notes = page.locator('#neconyan-notes');
+        await expect(notes).toBeVisible({ timeout: 60000 });
+        if (phone) await notes.getByRole('button', { name: 'Notebooks', exact: true }).click();
+        await notes.getByRole('button', { name: 'Quick note', exact: true }).first().click();
+        const quickNote = page.locator('.popup');
+        await quickNote.getByRole('textbox', { name: 'Into the Inbox', exact: true }).fill('Knowledge check\n\nQuick capture.');
+        await quickNote.getByRole('button', { name: 'Save to Inbox', exact: true }).click();
+        await notes.locator('[data-section="list"] .notes-note-link').filter({ hasText: 'Knowledge check' }).click();
+        const text = '# Knowledge check\n\nPlease discuss this draft. [[Another note]]';
+        await fillSource(page, text);
+        await expect(notes.locator('.notes-status')).toHaveText('Saved on server', { timeout: 15000 });
+        await notes.getByRole('button', { name: 'Read', exact: true }).click();
+        await expect(notes.getByRole('heading', { name: 'Knowledge check', exact: true })).toBeVisible();
+        await notes.getByRole('button', { name: 'Talk about this note', exact: true }).click();
+        const dialog = page.locator('.notes-discussion-dialog');
+        await dialog.getByRole('button', { name: 'Miso', exact: true }).click();
+        await dialog.getByRole('button', { name: 'Neutral', exact: true }).click();
+        await dialog.getByRole('button', { name: 'Roleplay', exact: true }).click();
+        await page.locator('.popup').getByRole('button', { name: 'Start chat', exact: true }).click();
+        await expect(notes).toBeHidden({ timeout: 60000 });
+        const composer = page.locator('#send_textarea');
+        await expect(composer).toBeVisible();
+        await expect(composer).toHaveValue(/Please discuss this draft/);
+        expect(await page.evaluate(async () => (await import('/script.js')).chat.filter(message => message.is_user).length)).toBe(0);
+        expect(app.provider.calls).toHaveLength(0);
+        const geometry = await composer.evaluate(element => ({
+            width: element.getBoundingClientRect().width,
+            height: element.getBoundingClientRect().height,
+            display: window.getComputedStyle(element).display,
+        }));
+        expect(geometry.width).toBeGreaterThan(100);
+        expect(geometry.width).toBeLessThanOrEqual(phone ? 393 : 1280);
+        expect(geometry.height).toBeGreaterThanOrEqual(phone ? 44 : 30);
+        await info.attach('note-hand-off-geometry', { body: JSON.stringify(geometry), contentType: 'application/json' });
+        await page.screenshot({ path: info.outputPath('note-ready-to-discuss.png') });
+    });
+
     test(`refreshed help loads for all assistants on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
         test.setTimeout(240000);
         const account = await app.account({ phone });
         const page = await account.open({ workspace: false });
-        const references = await page.evaluate(async () => {
+        const references = await page.evaluate(async cases => {
             const { buildAssistantKnowledge } = await import('/scripts/neconyan-assistant-knowledge.js');
             const { KNOWLEDGE_REVISION } = await import('/scripts/neconyan-assistant-knowledge/index.js');
             const results = [];
             for (const name of ['miso', 'taro', 'nori']) {
                 for (const variant of ['male', 'female', 'neutral']) {
                     for (const [question, fact] of [
+                        ...cases.map(([question, , fact]) => [question, fact]),
                         ['How do I retry failed companions?', 'Successful companions are not rerun'],
                         ['How do I import a SillyBunny persona backup JSON?', 'no picture bytes'],
                         ['Can I try a Vectorization search without a reply?', 'one embedding query'],
@@ -159,9 +226,9 @@ for (const phone of [false, true]) {
                 }
             }
             return { revision: KNOWLEDGE_REVISION, results };
-        });
-        expect(references.revision).toBe(7);
-        expect(references.results).toHaveLength(117);
+        }, refreshedKnowledgeCases);
+        expect(references.revision).toBe(8);
+        expect(references.results).toHaveLength((13 + refreshedKnowledgeCases.length) * 9);
         expect(references.results.filter(result => !result.found)).toEqual([]);
     });
 
@@ -218,12 +285,12 @@ test('normal chat sends shared reference through chat and text completion withou
     await expect.poll(() => page.evaluate(async () => (await import('/script.js')).online_status)).not.toBe('no_connection');
     expect(await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }))).toBe(true);
     await page.evaluate(() => window.NeconyanShell.closeWorkspace());
-    await page.locator('#send_textarea').fill('Can Mewmory use native Vectorization?');
+    await page.locator('#send_textarea').fill('How do I use Talk about this note?');
     await page.locator('#send_but').click();
     await expect(page.locator('#chat')).toContainText('Verified help fixture reply.', { timeout: 60000 });
     const chat = requests.find(request => JSON.stringify(request.messages).includes('[Neconyan help reference'));
     expect(chat).toBeTruthy();
-    expect(chat.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')).toContain('Use chat retrieval in replies can stay off');
+    expect(chat.messages.filter(message => message.role === 'system').map(message => message.content).join('\n')).toContain('nothing is sent automatically');
     expect(chat.tools).toBeUndefined();
     await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
     await page.locator('#main_api').selectOption('textgenerationwebui');
@@ -241,6 +308,6 @@ test('normal chat sends shared reference through chat and text completion withou
         await (await import('/script.js')).Generate('normal', { suppressUserMessage: true });
     }, app.provider.url);
     const text = requests.find(request => request.prompt?.includes('[Neconyan help reference'));
-    expect(text?.prompt).toContain('Use chat retrieval in replies can stay off');
+    expect(text?.prompt).toContain('nothing is sent automatically');
     expect(await page.evaluate(async () => JSON.stringify((await import('/script.js')).chat))).not.toContain('[Neconyan help reference');
 });

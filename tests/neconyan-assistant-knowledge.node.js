@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import { topics } from '../public/scripts/neconyan-assistant-knowledge/index.js';
 import { buildAssistantKnowledge, selectAssistantKnowledge, isNeconyanAssistant, getAssistantKnowledgeBudget, estimateKnowledgeTokens } from '../public/scripts/neconyan-assistant-knowledge.js';
 import { lexicalSearch as sharedSearch } from '../public/scripts/util/lexical-search.js';
+import { refreshedKnowledgeCases } from './neconyan-assistant-knowledge-cases.js';
 
 const root = new URL('../', import.meta.url);
 const marked = id => ({ name: 'Renamed assistant', data: { extensions: { neconyan_assistant: { id, version: 0 } } } });
@@ -147,6 +148,7 @@ test('tracker activation starts with template installation, including the logged
 
 test('current feature questions supply complete, actionable references to older assistant copies', async () => {
     const questions = [
+        ...refreshedKnowledgeCases,
         ['How do I install Neconyan on Windows?', 'start.desktop-install', 'Start.bat'],
         ['How do I update my source ZIP installation?', 'start.updates', 'copy your data folder'],
         ['Does the Android APK need Termux?', 'start.android', 'without Termux or a computer'],

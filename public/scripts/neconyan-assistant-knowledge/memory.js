@@ -6,8 +6,13 @@ const mewmoryUi = 'public/scripts/mewmory/ui.js';
 export default [
     {
         id: 'lorebooks.tour', title: 'Nori’s guided Lorebook tour', keys: ['lorebook tour', 'Nori tour', 'learn lorebooks', 'one fact one entry'],
-        sources: ['public/scripts/neconyan-lorebook-tour.js'], anchors: ['One fact, one entry', 'Primary Keywords', 'Character Lore'],
-        content: 'Open Lorebooks and use Tour for Nori\'s guided introduction. Back and Next move through the library, books and entries; using the highlighted controls also advances the relevant steps. The tour explains Primary Keywords, Content, Normal versus Constant entries, Health and the token footprint. Keep one fact per entry so keywords and retrieval stay precise. A book must be activated globally or linked through Character Lore before normal Roleplay can use it. The tour explains and opens controls; it does not write a lorebook for you or make model requests.',
+        sources: ['public/scripts/neconyan-lorebook-tour.js'], anchors: ['One fact, one entry', 'Primary Keywords', 'Character Lore', 'Advanced entry settings'],
+        content: 'Open Lorebooks and use Tour for Nori\'s walkthrough. Back and Next cover the library, books, entries, Primary Keywords, Content, Normal versus Constant, Health and token footprint. Advanced entry settings are opened and explained: Activation rules, Inclusion and timing, Additional matching sources, recursion, per-entry overrides, timing and book-wide budgets. Keep one fact per entry so keywords and retrieval stay precise. A book needs an active global, character, chat or persona attachment for normal Roleplay use; Character Lore is one route. The tour opens and explains controls without writing lore or making model requests.',
+    },
+    {
+        id: 'agents.tour', title: 'Taro’s guided Agents page tour', keys: ['Agents tour', 'Taro Agents tour', 'agent walkthrough', 'advanced agent settings'],
+        sources: ['public/scripts/neconyan-tool-tour.js'], anchors: ['Helpers beside the chat', 'Connections & defaults', 'Agents On'],
+        content: 'Open Agents → Tour for Taro\'s walkthrough, including advanced settings. It explains Agents On, Manage agents, the library, Connections & defaults, More tools and Activity & companions. It opens relevant sections and dialogs without saving changes, running agents or making model requests. ICA glossary is a separate searchable reference. To actually use a library tracker, add it, enable it and turn Agents On; watching the tour does not install or enable one. Page invitations and Tour buttons can be restored or hidden in Settings → Appearance → Page tours.',
     },
     {
         id: 'agents.glossary', title: 'Taro’s searchable Agents glossary', keys: ['ICA glossary', 'Agents glossary', 'Taro glossary', 'agent terminology', 'Search glossary'],
@@ -183,6 +188,11 @@ export default [
         id: 'agents.companion-cleanup', title: 'Cleaning up old companion notes', keys: ['Clean up notes', 'delete companion notes', 'remove companion notes', 'Old notes', 'Every note', 'undo cleanup'],
         sources: [agents + 'companion/companion-dashboard.js'], anchors: ['Old notes', 'Every note', 'Remove notes', 'Removing them loses those summaries.'],
         content: 'Agents → More tools → Activity & companions → Clean up notes removes saved companion notes from the current chat. Choose companions, then Old notes to retain each companion\'s newest note, or Every note to remove all their notes. Review the count and press Remove notes. Removed notes stop being sent with later prompts; this does not delete the assistant reply or the companion definition. Undo is available only for a few seconds and may fail if the chat changed. If a companion summarised messages you hid, removing its notes loses those summaries; it does not restore the hidden messages. Select → Clean up notes starts with the selected companions. Cleanup makes no model request.',
+    },
+    {
+        id: 'agents.automatic-cleanup', title: 'Automatically retaining fewer old Companion notes', keys: ['Automatically clean up old Companion notes', 'automatic Companion clean-up', 'auto cleanup companions', 'Older notes to keep per Companion', 'Companion note clean-up'],
+        sources: [agents + 'settings.html', agents + 'agent-store.js', agents + 'companion/companion-shared.js', 'src/generation/companion-note-cleanup.js'], anchors: ['Automatically clean up old Companion notes', 'Older notes to keep per Companion'],
+        content: 'Agents → Connections & defaults → Companion note clean-up offers Automatically clean up old Companion notes. It starts off. Older notes to keep per Companion defaults to 3, with 0–1000 allowed, in addition to the newest note. Cleanup happens after that Companion next produces a successful readable note; switching it on does not immediately purge the chat. Failed, empty or suppressed results do not delete older notes, and active work is protected. Removed notes, including stored reply versions, stop being available for later context; this automatic action has no short Undo control. Chat messages and Companion definitions remain. Deleting summaries loses their information. Cleanup itself makes no extra model request; running the Companion still does.',
     },
     {
         id: 'agents.companion-panel', title: 'Companion Panel button and hiding it', keys: ['Companion Panel', 'hide floating button', 'companion handle', 'companion button', 'Top bar button'],
