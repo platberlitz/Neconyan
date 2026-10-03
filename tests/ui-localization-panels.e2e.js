@@ -69,6 +69,8 @@ for (const [layout, viewport, hasTouch] of [
             await expect(vectorsIcon).toHaveAttribute('aria-label', phrase('Expand ${0}', 'Vectorization'));
             await vectorsHeader.evaluate(header => header.click());
             await expect(vectorsIcon).toHaveAttribute('aria-label', phrase('Collapse ${0}', 'Vectorization'));
+            await expect(vectorsHeader.locator('.sb-extension-unit-pin')).toHaveAttribute('aria-label', phrase('Pin ${0}', 'Vectorization'));
+            await expect(vectorsHeader.locator('.sb-extension-unit-pin')).toHaveAttribute('title', phrase('Pin ${0}', 'Vectorization'));
 
             await page.evaluate(async () => {
                 const { openTimeMachine } = await import('/scripts/extensions/third-party/Neconyan-Time-Machine/src/ui.js');
