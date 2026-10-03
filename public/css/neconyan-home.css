@@ -45,7 +45,6 @@ body.neconyan .neconyan-home .recentChat .chatActions .deleteChat:hover { color:
 .neconyan-home :is(button, summary):focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 3px; }
 body.neconyan .neconyan-home [hidden] { display: none !important; }
 body.neconyan .neconyan-home.welcomePanel--listOnly > .welcomeHero { display: none; }
-body.neconyan .neconyan-home.welcomePanel--compact .neconyan-home-cat img { width: 90px; height: auto; }
 @media (prefers-reduced-motion: reduce) { .neconyan-cat-toggle { display: none; } }
 @media (max-width: 768px) {
     body.neconyan .neconyan-home { padding: 20px 16px 32px; gap: 28px; }

@@ -288,6 +288,18 @@ describe('Neconyan Home', () => {
         expect(read('css/neconyan-home.css')).toContain('.neconyan-assistant-picker.is-collapsed:not(.is-expanded) :is(.neconyan-assistant-choices');
     });
 
+    test('Compact Home tightens every section from a deferred sheet', () => {
+        const html = read('index.html');
+        const css = read('css/neconyan-home-compact.css');
+        expect(html).toMatch(/<link href="css\/neconyan-home-compact\.css\?v=[^"]+" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">/);
+        expect(css).toContain('.welcomePanel--compact .neconyan-home-cat img { grid-row: span 2; width: 56px; }');
+        expect(css).toContain('.welcomePanel--compact .neconyan-cat-toggle { order: 1;');
+        expect(css).toContain("grid-template-areas: 'portrait copy variants action'");
+        expect(css).toContain('.neconyan-home-intro > p, .neconyan-home-actions small, .neconyan-assistant-picker-heading p');
+        expect(css).toContain('.welcomePanel--compact .neconyan-assistant-portrait-wrap { width: 56px; height: 76px;');
+        expect(css).toMatch(/@container \(max-width: 560px\) \{\s*\.welcomePanel--compact \.neconyan-assistant-row \{ grid-template-columns: 56px minmax\(0, 1fr\); \}/);
+    });
+
     test('new accounts start pending, unfinished tours resume and dismissals stay closed', () => {
         const defaults = JSON.parse(readFileSync(new URL('../default/content/settings.json', import.meta.url), 'utf8'));
         const values = new Map(Object.entries(defaults.accountStorage));
