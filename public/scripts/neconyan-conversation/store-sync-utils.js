@@ -300,7 +300,9 @@ export function mergeConversationStore(serverStore, localStore, savedStore) {
     for (const key of keys) {
         const serverValue = serverStore[key];
         const localValue = localStore[key];
-        const savedValue = savedStore[key];
+        // A store absent at first login has not migrated browser storage yet.
+        // The server adding its default false is not a competing migration.
+        const savedValue = key === 'localStorageMigrated' && savedStore[key] === undefined ? false : savedStore[key];
         const localChanged = !conversationValuesEqual(localValue, savedValue);
         const serverChanged = !conversationValuesEqual(serverValue, savedValue);
         if (!localChanged) {
