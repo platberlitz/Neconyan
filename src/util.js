@@ -2266,8 +2266,32 @@ function hashFileWriteData(data) {
     return crypto.createHash('sha256').update(data).digest('hex');
 }
 
+let directoryFlushBatch = null;
+
+/** Coalesces folder flushes in one synchronous, journalled publication batch. */
+export function withDirectoryFlushBatchSync(operation) {
+    if (util.types.isAsyncFunction(operation)) throw new TypeError('A folder flush batch must be synchronous.');
+    if (directoryFlushBatch) return operation();
+    const directories = new Set();
+    directoryFlushBatch = directories;
+    try {
+        const result = operation();
+        if (result && typeof result.then === 'function') throw new TypeError('A folder flush batch must be synchronous.');
+        return result;
+    } finally {
+        directoryFlushBatch = null;
+        // Children before parents: both file renames and new folders are durable on return.
+        for (const directory of [...directories].sort((a, b) => b.length - a.length)) fsyncDirectorySync(directory);
+    }
+}
+
 export function fsyncDirectorySync(directory) {
     if (process.platform === 'win32') {
+        return;
+    }
+
+    if (directoryFlushBatch) {
+        directoryFlushBatch.add(directory);
         return;
     }
 

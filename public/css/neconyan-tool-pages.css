@@ -145,7 +145,7 @@ body.neconyan :is(#left-nav-panel, #user-settings-block, #right-nav-panel) .neco
     color: var(--neco-ginger);
 }
 
-body.neconyan :is(#left-nav-panel, #user-settings-block, #right-nav-panel) .neconyan-tool-tour-invite .menu_button.neconyan-tour-invite-dismiss {
+.neconyan-tool-tour-invite .menu_button.neconyan-tour-invite-dismiss {
     grid-column: 3;
     grid-row: 1;
     align-self: start;
@@ -188,6 +188,11 @@ body.neconyan :is(#left-nav-panel, #user-settings-block, #right-nav-panel) .neco
     font-family: var(--mainFontFamily, inherit);
     text-shadow: none;
     box-shadow: 0 8px 32px color-mix(in oklch, var(--neco-charcoal, black) 30%, transparent);
+}
+
+#neconyan-tool-tour.neconyan-tool-tour[data-dock='left'] {
+    right: auto;
+    left: var(--neconyan-tour-dock-left, 24px);
 }
 
 #neconyan-tool-tour:focus-visible,

@@ -97,7 +97,7 @@ export let world_info_use_group_scoring = false;
 export let world_info_character_strategy = world_info_insertion_strategy.character_first;
 export let world_info_budget_cap = 0;
 export let world_info_max_recursion_steps = 0;
-/** @type {Map<string, {timer: ReturnType<typeof setTimeout>, data: object, snapshot: object}>} */
+/** @type {Map<string, {timer: ReturnType<typeof setTimeout>, data: object, snapshot: object, revision?: string|null}>} */
 const pendingWorldInfoSaves = new Map();
 /** @type {Map<string, Promise<string>>} */
 const worldInfoSaveQueues = new Map();
@@ -106,10 +106,14 @@ const worldInfoSaveBlocks = new Map();
 let neconyanLorebookFolderSaveChain = Promise.resolve();
 // Neconyan: retain load baselines so independent same-tab editors save changes, not stale books.
 const worldInfoDataSnapshots = new WeakMap();
+// Revision metadata belongs to the loaded copy, never to serialised lorebook data.
+const worldInfoDataRevisions = new WeakMap();
+// Only successful writes from this tab can advance a queued draft's original guard.
+const worldInfoLocalRevisions = new Map();
 const worldInfoEntryInstances = new WeakMap();
 const worldInfoCommittedEntryInstances = new Map();
 const worldInfoCacheVersions = new Map();
-// Neconyan: the newest server revision this client has seen per book, for conditional saves.
+// The newest observed revision is informational, not proof that an older draft is current.
 const worldInfoKnownRevisions = new Map();
 let worldInfoEditor = null;
 const saveSettingsDebounced = debounce(() => {
@@ -2195,8 +2199,17 @@ export async function showWorldEditor(name) {
         const baseline = worldInfoDataSnapshots.get(draft);
         const loadedSnapshot = worldInfoDataSnapshots.get(wiData);
         if (baseline) {
-            wiData = mergeWorldInfoData(baseline.data, draft, wiData) ?? wiData;
-            worldInfoDataSnapshots.set(wiData, loadedSnapshot);
+            const merged = mergeWorldInfoData(baseline.data, draft, wiData);
+            if (merged) {
+                const hasDraftChanges = JSON.stringify(baseline.data) !== JSON.stringify(draft);
+                const localRevision = advanceWorldInfoLocalRevision(name, baseline.revision);
+                // Refreshing the display must not certify unsaved older text as current.
+                const revision = hasDraftChanges && localRevision !== loadedSnapshot?.revision
+                    ? baseline.revision : loadedSnapshot?.revision;
+                wiData = merged;
+                worldInfoDataSnapshots.set(wiData, { ...loadedSnapshot, revision });
+                worldInfoDataRevisions.set(wiData, { name, revision });
+            }
         }
     }
     worldInfoEditor = wiData ? { name, data: wiData } : null;
@@ -2219,7 +2232,7 @@ export async function loadWorldInfo(name) {
 
     if (worldInfoCache.has(name)) {
         const data = getWorldInfoCachedData(name);
-        if (data && typeof data === 'object') worldInfoDataSnapshots.set(data, { name, data: cloneWorldInfoData(data), committed: true });
+        if (data && typeof data === 'object') worldInfoDataSnapshots.set(data, { name, data: cloneWorldInfoData(data), revision: getWorldInfoLoadedRevision(data), committed: true });
         return data;
     }
 
@@ -2238,11 +2251,13 @@ export async function loadWorldInfo(name) {
         }
         const loadedRevision = response.headers?.get?.('X-World-Info-Revision');
         if (loadedRevision) worldInfoKnownRevisions.set(name, loadedRevision);
+        else worldInfoKnownRevisions.delete(name);
         data = cloneWorldInfoData(data, worldInfoCommittedEntryInstances.get(name));
+        worldInfoDataRevisions.set(data, { name, revision: loadedRevision || undefined });
         worldInfoCommittedEntryInstances.set(name, worldInfoEntryInstances.get(data));
         worldInfoCache.set(name, data);
         data = cloneWorldInfoData(data);
-        if (data && typeof data === 'object') worldInfoDataSnapshots.set(data, { name, data: cloneWorldInfoData(data), committed: true });
+        if (data && typeof data === 'object') worldInfoDataSnapshots.set(data, { name, data: cloneWorldInfoData(data), revision: getWorldInfoLoadedRevision(data), committed: true });
         return data;
     }
 
@@ -4723,6 +4738,8 @@ function appendWIOriginalDataEntry(data, entry, originalEntry = undefined) {
 
 function cloneWorldInfoData(data, instances = worldInfoEntryInstances.get(data)) {
     const copy = structuredClone(data);
+    const revision = worldInfoDataRevisions.get(data);
+    if (revision && copy && typeof copy === 'object') worldInfoDataRevisions.set(copy, revision);
     if (lodash.isPlainObject(copy?.entries)) {
         const copiedInstances = new Map(Object.keys(copy.entries).map(uid => [uid, instances?.get(uid) ?? Symbol()]));
         worldInfoEntryInstances.set(copy, copiedInstances);
@@ -4834,26 +4851,64 @@ export function getWorldInfoKnownRevision(name) {
     return worldInfoKnownRevisions.get(name);
 }
 
-async function _save(name, data, { snapshot, notify = true, revision, conditional = false } = {}) {
+/** Returns the server revision belonging to this loaded copy, not the latest observed book. */
+export function getWorldInfoLoadedRevision(data) {
+    return worldInfoDataRevisions.get(data)?.revision;
+}
+
+function worldInfoRevisionError() {
+    const error = new Error('The saved version of this copy could not be checked. Nothing was overwritten; copy your draft, then reload the lorebook before saving.');
+    error.status = 409;
+    error.code = 'WORLD_INFO_CONFLICT';
+    return error;
+}
+
+function getWorldInfoTargetRevision(data) {
+    if (!data) return null;
+    const revision = getWorldInfoLoadedRevision(data);
+    if (revision === undefined) throw worldInfoRevisionError();
+    return revision;
+}
+
+function advanceWorldInfoLocalRevision(name, revision) {
+    const changes = worldInfoLocalRevisions.get(name);
+    const seen = new Set();
+    while (changes?.has(revision) && !seen.has(revision)) {
+        seen.add(revision);
+        revision = changes.get(revision);
+    }
+    return revision;
+}
+
+function recordWorldInfoLocalRevision(name, before, after) {
+    if (typeof before !== 'string' || before === after) return;
+    const changes = worldInfoLocalRevisions.get(name) ?? new Map();
+    changes.set(before, after);
+    while (changes.size > 256) changes.delete(changes.keys().next().value);
+    worldInfoLocalRevisions.set(name, changes);
+}
+
+async function _save(name, data, { snapshot, notify = true, revision } = {}) {
     const previousSave = worldInfoSaveQueues.get(name) ?? Promise.resolve();
     const save = previousSave.catch(() => undefined).then(async () => {
         let savedName;
         try {
-            // Resolve the guard revision after queued saves settle so this client's own writes never conflict with it.
-            const guardRevision = revision !== undefined ? revision : (conditional ? worldInfoKnownRevisions.get(name) : undefined);
-            if (conditional && guardRevision === undefined) {
-                const error = new Error('Reload the lorebook before saving; its server revision is unavailable.');
-                error.status = 409;
-                throw error;
-            }
+            // Earlier successful local writes are already included by the same-tab merge.
+            // A revision learned from a separate reload never advances an older draft.
+            const guardRevision = revision !== undefined ? revision
+                : advanceWorldInfoLocalRevision(name, snapshot?.revision ?? getWorldInfoLoadedRevision(data));
+            if (guardRevision === undefined) throw worldInfoRevisionError();
             const response = await fetch('/api/worldinfo/edit', {
                 method: 'POST',
                 headers: getRequestHeaders(),
-                body: JSON.stringify({ name: name, data: data, ...(guardRevision === undefined ? {} : { revision: guardRevision }) }),
+                body: JSON.stringify({ name: name, data: data, revision: guardRevision }),
             });
             if (!response.ok) {
-                const error = new Error(`World Info save failed with status ${response.status}`);
+                const error = new Error(response.status === 409
+                    ? 'This lorebook has changed since you opened it. Nothing was overwritten; copy your draft, then reload before saving again.'
+                    : `World Info save failed with status ${response.status}`);
                 error.status = response.status;
+                if (response.status === 409) error.code = 'WORLD_INFO_CONFLICT';
                 throw error;
             }
             const saved = await response.json();
@@ -4861,6 +4916,15 @@ async function _save(name, data, { snapshot, notify = true, revision, conditiona
             if (typeof saved.revision === 'string' && saved.revision) {
                 if (savedName !== name) worldInfoKnownRevisions.delete(name);
                 worldInfoKnownRevisions.set(savedName, saved.revision);
+                worldInfoDataRevisions.set(data, { name: savedName, revision: saved.revision });
+                if (snapshot) {
+                    recordWorldInfoLocalRevision(savedName, guardRevision, saved.revision);
+                    snapshot.revision = saved.revision;
+                    worldInfoDataRevisions.set(snapshot.data, { name: savedName, revision: saved.revision });
+                    if (worldInfoDataSnapshots.get(snapshot.source) === snapshot) {
+                        worldInfoDataRevisions.set(snapshot.source, { name: savedName, revision: saved.revision });
+                    }
+                }
             }
         } catch (error) {
             // Compare identity without StructuredCloneMap's cloning getter; a later save owns its cache.
@@ -4918,7 +4982,7 @@ async function settleWorldInfoSave(name) {
     while (true) {
         const pending = cancelPendingWorldInfoSave(name);
         if (pending) {
-            await _save(name, pending.data, { snapshot: pending.snapshot, conditional: pending.conditional });
+            await _save(name, pending.data, { snapshot: pending.snapshot, revision: pending.revision });
         }
         const pendingSave = worldInfoSaveQueues.get(name);
         if (!pendingSave) {
@@ -4966,18 +5030,20 @@ async function getCanonicalWorldInfoName(name) {
  * Saves the world info
  *
  * This will also refresh the `worldInfoCache`.
- * Pass the object returned by loadWorldInfo to merge changes against its load baseline; untracked objects are full-book writes.
+ * Pass the object returned by loadWorldInfo to merge changes against its load baseline.
+ * Independently cloned full-book writes must retain and pass their original loaded revision.
  * Later changes to the caller's object do not change a queued write.
  *
  * @param {string} name - The name of the world info
  * @param {any} data - The data to be saved
  * @param {boolean} [immediately=false] - Whether to save immediately or use debouncing
  * @param {object} [options]
- * @param {boolean} [options.conditional=false] - Send the last known server revision so a stale copy is rejected (409) instead of overwriting another client's edit.
+ * @param {string|null} [options.revision] - The revision of the loaded copy when saving an independently cloned book. Null means create only if absent.
+ * @param {boolean} [options.conditional] - Retained for compatibility; revision checks are always enabled.
  * @return {Promise<string|null|undefined>} Immediate saves resolve to the committed name, or null if invalid/discarded.
  * Debounced saves resolve to undefined when scheduled (not committed), or null if invalid/discarded; failures are reported by toast.
  */
-export async function saveWorldInfo(name, data, immediately = false, { conditional = false } = {}) {
+export async function saveWorldInfo(name, data, immediately = false, { revision } = {}) {
     if (typeof name !== 'string' || !name.trim() || !lodash.isPlainObject(data) || !lodash.isPlainObject(data.entries)
         || !Object.values(data.entries).every(lodash.isPlainObject)) {
         return null;
@@ -4985,6 +5051,10 @@ export async function saveWorldInfo(name, data, immediately = false, { condition
 
     const source = data;
     const baseline = worldInfoDataSnapshots.get(source);
+    let loadedRevision = revision !== undefined ? revision : baseline?.revision ?? getWorldInfoLoadedRevision(source);
+    if (loadedRevision === undefined && !worldInfoCache.has(name) && !worldInfoKnownRevisions.has(name) && !world_names.includes(name)) {
+        loadedRevision = null;
+    }
     const requestedName = name;
     const draft = cloneWorldInfoData(data, worldInfoEntryInstances.get(data) ?? worldInfoEntryInstances.get(Map.prototype.get.call(worldInfoCache, name)));
     while (true) {
@@ -5009,7 +5079,7 @@ export async function saveWorldInfo(name, data, immediately = false, { condition
     const pending = cancelPendingWorldInfoSave(name);
     if (pending && pending.snapshot.source !== source) {
         // Another writer's draft must reach disk even if this replacement snapshot fails.
-        _save(name, pending.data, { snapshot: pending.snapshot, conditional: pending.conditional }).catch(error => {
+        _save(name, pending.data, { snapshot: pending.snapshot, revision: pending.revision }).catch(error => {
             console.error(`Failed to save World Info ${name}:`, error);
             toastr.error(String(error), t`World Info Save Failed`);
         });
@@ -5018,25 +5088,26 @@ export async function saveWorldInfo(name, data, immediately = false, { condition
     }
     let previous = baseline;
     while (previous?.cancelled) previous = previous.previous;
-    const snapshot = { name, source, data: draft, previous, committed: false };
+    const snapshot = { name, source, data: draft, revision: loadedRevision, previous, committed: false };
     worldInfoDataSnapshots.set(source, snapshot);
+    worldInfoDataRevisions.set(data, { name, revision: loadedRevision });
     worldInfoEntryInstances.set(source, new Map(worldInfoEntryInstances.get(draft)));
     // Update cache immediately, so any future call can pull from this
     worldInfoCache.set(name, data);
     worldInfoCacheVersions.set(name, data);
 
     if (immediately) {
-        return await _save(name, data, { snapshot, conditional });
+        return await _save(name, data, { snapshot, revision });
     }
 
     const timer = setTimeout(() => {
         pendingWorldInfoSaves.delete(name);
-        _save(name, data, { snapshot, conditional }).catch(error => {
+        _save(name, data, { snapshot, revision }).catch(error => {
             console.error(`Failed to save World Info ${name}:`, error);
             toastr.error(String(error), t`World Info Save Failed`);
         });
     }, debounce_timeout.relaxed);
-    pendingWorldInfoSaves.set(name, { timer, data, snapshot, conditional });
+    pendingWorldInfoSaves.set(name, { timer, data, snapshot, revision });
 }
 
 export async function replaceWorldInfoData(name, data, revision) {
@@ -5045,9 +5116,12 @@ export async function replaceWorldInfoData(name, data, revision) {
     let savedName;
     data = cloneWorldInfoData(data, new Map());
     try {
+        const loadedRevision = revision !== undefined ? revision : getWorldInfoTargetRevision(await loadWorldInfo(name));
         await settleWorldInfoSave(name);
-        savedName = await _save(name, data, { notify: false, revision });
+        const guardRevision = revision !== undefined ? revision : advanceWorldInfoLocalRevision(name, loadedRevision);
+        savedName = await _save(name, data, { notify: false, revision: guardRevision });
         saveTarget = null;
+        worldInfoLocalRevisions.delete(name);
         invalidateWorldInfoCache(name);
         worldInfoCache.set(savedName, data);
         worldInfoCacheVersions.set(savedName, data);
@@ -5073,6 +5147,9 @@ export async function restoreWorldInfoCommit(name, { revision, headCommitId, com
         if (!response.ok) throw new Error(`World Info save failed with status ${response.status}`);
         result = await response.json();
         result.data = cloneWorldInfoData(result.data, new Map());
+        worldInfoDataRevisions.set(result.data, { name, revision: result.revision });
+        if (result.revision) worldInfoKnownRevisions.set(name, result.revision);
+        worldInfoLocalRevisions.delete(name);
         invalidateWorldInfoCache(name);
         worldInfoCache.set(name, result.data);
         worldInfoCacheVersions.set(name, result.data);
@@ -5115,19 +5192,28 @@ async function renameWorldInfo(name, data) {
     try {
         await settleWorldInfoSave(oldName);
         const baseline = worldInfoDataSnapshots.get(data);
+        const revision = advanceWorldInfoLocalRevision(oldName, baseline?.revision ?? getWorldInfoLoadedRevision(data));
+        if (revision === undefined) throw worldInfoRevisionError();
         const latest = getWorldInfoCachedData(oldName);
         data = baseline && latest ? mergeWorldInfoData(baseline.data, data, latest) : cloneWorldInfoData(data);
         if (!data) return;
         const response = await fetch('/api/worldinfo/rename', {
             method: 'POST',
             headers: getRequestHeaders(),
-            body: JSON.stringify({ oldName, newName, data }),
+            body: JSON.stringify({ oldName, newName, data, revision }),
         });
         if (!response.ok) {
             toastr.error(t`World Info could not be renamed.`, t`Rename World Info`);
             return;
         }
         saveTarget = newName;
+        const renamed = await response.json();
+        const changes = worldInfoLocalRevisions.get(oldName);
+        if (changes) worldInfoLocalRevisions.set(newName, changes);
+        worldInfoLocalRevisions.delete(oldName);
+        worldInfoKnownRevisions.delete(oldName);
+        worldInfoKnownRevisions.set(newName, renamed.revision);
+        worldInfoDataRevisions.set(data, { name: newName, revision: renamed.revision });
 
         invalidateWorldInfoCache(oldName);
         worldInfoCommittedEntryInstances.delete(oldName);
@@ -6850,6 +6936,7 @@ export async function importWorldInfo(file, { notify = true } = {}) {
     }
     const existingWorldName = findMatchingLorebookName(world_names, sanitizedWorldName);
     const persistedWorldName = existingWorldName ?? sanitizedWorldName;
+    const loadedTargetRevision = getWorldInfoTargetRevision(await loadWorldInfo(persistedWorldName));
     const allowed = await checkOverwriteExistingData('World Info', world_names, sanitizedWorldName, {
         interactive: true,
         actionName: 'Import',
@@ -6865,6 +6952,7 @@ export async function importWorldInfo(file, { notify = true } = {}) {
 
     try {
         await settleWorldInfoSave(persistedWorldName);
+        formData.set('revision', advanceWorldInfoLocalRevision(persistedWorldName, loadedTargetRevision) ?? '');
         const result = await fetch('/api/worldinfo/import', {
             method: 'POST',
             headers: getRequestHeaders({ omitContentType: true }),
@@ -6883,6 +6971,9 @@ export async function importWorldInfo(file, { notify = true } = {}) {
         if (data.name) {
             importedName = data.name;
             importedData = cloneWorldInfoData(formData.has('convertedData') ? JSON.parse(String(formData.get('convertedData'))) : jsonData, new Map());
+            worldInfoDataRevisions.set(importedData, { name: data.name, revision: data.revision });
+            if (data.revision) worldInfoKnownRevisions.set(data.name, data.revision);
+            worldInfoLocalRevisions.delete(data.name);
             worldInfoCommittedEntryInstances.set(data.name, worldInfoEntryInstances.get(importedData));
             invalidateWorldInfoCache(data.name);
             worldInfoCache.set(data.name, importedData);

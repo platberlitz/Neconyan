@@ -12,7 +12,10 @@ import { captureQuickImageReferenceSources } from './quick-image-gen-reference.j
 import { quickImageGenSettingsFingerprint } from './quick-image-gen-job.js';
 import { assertRoleplaySourceLocked, readRoleplayEntityLocked } from './roleplay-source.js';
 import { assertConversationAssistantSourceLocked } from './conversation-assistant-source.js';
-import { EDITABLE_AGENT_FIELDS, EDITABLE_CHARACTER_FIELDS, PRESET_FIELDS, assistantToolName,
+import { captureNoteToolLocked, isNoteTool } from '../notebooks/assistant.js';
+import { NotebookError } from '../notebooks/paths.js';
+import { formatDiff } from '../../public/scripts/notebooks/line-diff.js';
+import { EDITABLE_AGENT_FIELDS, EDITABLE_CHARACTER_FIELDS, PRESET_FIELDS, assistantToolMutates, assistantToolName,
     projectAssistantAgent, projectAssistantCharacter, projectAssistantPreset, validateAssistantPresetValue } from './assistant-tool-data.js';
 
 const invalid = message => roleplayError('ASSISTANT_TOOL_INVALID', message, 409);
@@ -159,6 +162,40 @@ function validateAgentEdit(input, current, settings) {
     return { field, before: projectAssistantAgent(current)[field], after: next };
 }
 
+const NOTE_STATUS_BY_HTTP = Object.freeze({ 403: 'denied', 404: 'not_found', 409: 'conflict' });
+const MAX_NOTE_REQUEST = 1536 * 1024;
+
+/**
+ * Notebook tools use the notebook service's own permission checks. Mutations become proposals that the
+ * native job either applies under a requested-edit grant or holds for the owner's review; the model's own
+ * confirmation flag is never consulted.
+ */
+function captureNoteSource(lease, source, result) {
+    const readTarget = { kind: 'assistant-read', id: source.instanceId };
+    let captured;
+    try {
+        captured = captureNoteToolLocked(lease, { tool: result.tool, args: result.args });
+    } catch (error) {
+        if (!(error instanceof NotebookError)) throw error;
+        return { ...result, mutating: false, response: { status: NOTE_STATUS_BY_HTTP[error.status] ?? 'failure',
+            code: error.code, message: error.message }, target: readTarget };
+    }
+    if (captured.response) return { ...result, mutating: false, response: toResult(captured.response), target: readTarget };
+    const proposal = { ...captured.proposal };
+    delete proposal.before;
+    delete proposal.after;
+    const diff = captured.proposal.before !== undefined || captured.proposal.after !== undefined
+        ? formatDiff(captured.proposal.before ?? '', captured.proposal.after ?? '').slice(0, 256 * 1024) : '';
+    const request = { ...result, resource: { kind: 'notebook', id: proposal.notebookId }, proposal,
+        proposalHash: captured.proposalHash, direct: captured.direct === true, diff,
+        target: proposal.noteId ? { kind: 'note', id: `${proposal.notebookId}:${proposal.noteId}` }
+            : { kind: 'note-create', id: `${proposal.notebookId}:${result.callId}` } };
+    if (Buffer.byteLength(JSON.stringify(request)) > MAX_NOTE_REQUEST) return { ...result, mutating: false,
+        response: { status: 'failure', code: 'ASSISTANT_ARGUMENT_INVALID',
+            message: 'That change is too large to review in one step. Split it into smaller edits.' }, target: readTarget };
+    return request;
+}
+
 /** Resolve an assistant tool against the protected saved assistant card and selected account records. */
 export function captureAssistantToolSourceLocked(lease, source, { avatar, name, args = {}, callId } = {}) {
     const { scope } = roleplayLease(lease), dirs = scope.directories;
@@ -167,7 +204,8 @@ export function captureAssistantToolSourceLocked(lease, source, { avatar, name, 
         || typeof callId !== 'string' || !callId || callId.length > 256) throw invalid('The assistant tool call is incomplete.');
     const { assistant, assistantId, settings, settingsEvidence, settingsHash } = readBoundAssistantContextLocked(lease, source, avatar);
     const result = { tool, name, callId, avatar, assistant, assistantId, settingsHash, settingsEvidence,
-        args: structuredClone(args), mutating: tool.startsWith('edit-') || tool === 'create-character' };
+        args: structuredClone(args), mutating: assistantToolMutates(tool) };
+    if (isNoteTool(tool)) return captureNoteSource(lease, source, result);
     let resource = null, response = null, change = null;
     if (tool === 'lorebooks') response = toResult({ books: lorebooks(lease).map(item => ({ name: item.name })) });
     else if (tool === 'lorebook-entries' || tool === 'lorebook-entry' || tool === 'edit-lorebook-entry') {

@@ -1,7 +1,7 @@
 import { getJobApproval, decideJobApproval, listJobs } from './jobs.js';
 import { getCurrentUserHandle } from './user.js';
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
-import { buildAssistantReview } from './neconyan-assistant-review.js';
+import { buildAssistantReview, buildNoteProposalReview } from './neconyan-assistant-review.js';
 
 const pending = new Map();
 let queue = Promise.resolve();
@@ -9,12 +9,15 @@ let queue = Promise.resolve();
 async function review(job, account) {
     if (account !== getCurrentUserHandle()) return;
     const approval = await getJobApproval(job.id, job.result.approval.id, { account });
-    if (account !== getCurrentUserHandle() || approval.decision !== null || approval.proposal?.kind !== 'neconyan-assistant-edit') return;
+    const kind = approval.proposal?.kind;
+    if (account !== getCurrentUserHandle() || approval.decision !== null || !['neconyan-assistant-edit', 'neconyan-note-proposal'].includes(kind)) return;
     const proposal = approval.proposal;
     const args = proposal.arguments;
-    const node = buildAssistantReview({ resource: proposal.resource.kind, target: proposal.resource.id,
-        field: args.field || 'Character and optional generated avatar', before: proposal.before,
-        after: Object.hasOwn(args, 'value') ? args.value : args });
+    const node = kind === 'neconyan-note-proposal'
+        ? buildNoteProposalReview({ summary: proposal.summary, diff: proposal.diff })
+        : buildAssistantReview({ resource: proposal.resource.kind, target: proposal.resource.id,
+            field: args.field || 'Character and optional generated avatar', before: proposal.before,
+            after: Object.hasOwn(args, 'value') ? args.value : args });
     const result = await callGenericPopup(node, POPUP_TYPE.CONFIRM, '', { wide: true, large: true });
     if (account !== getCurrentUserHandle()) return;
     await decideJobApproval(job.id, { ...approval, decision: result === POPUP_RESULT.AFFIRMATIVE ? 'allow' : 'deny' }, { account });

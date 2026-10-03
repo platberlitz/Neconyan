@@ -26,6 +26,7 @@ const RESERVED_EXTENSION_KEYS = new Set([
 ]);
 
 const captureSuppressions = new Map();
+const liveLorebookRevisions = new WeakMap();
 const PRESET_CHANGE_APIS = new Set(['kobold', 'novel', 'openai', 'textgenerationwebui']);
 const NAMED_PRESET_APIS = new Set(['instruct', 'context', 'sysprompt', 'reasoning']);
 
@@ -339,12 +340,18 @@ export async function liveCharacterCard(avatar) {
 }
 
 export async function liveLorebook(name) {
-    const cached = await ctx().loadWorldInfo?.(name);
+    const context = ctx();
+    const cached = await context.loadWorldInfo?.(name);
     if (cached !== null && cached !== undefined) {
         if (!isPlainObject(cached)) {
             throw new Error(`Neconyan returned a malformed lorebook for ${name}`);
         }
-        return structuredClone(cached);
+        const revision = context.getWorldInfoLoadedRevision?.(cached);
+        if (revision !== undefined) {
+            const copy = structuredClone(cached);
+            liveLorebookRevisions.set(copy, revision);
+            return copy;
+        }
     }
     try {
         const response = await post('/api/worldinfo/get', { name });
@@ -352,6 +359,9 @@ export async function liveLorebook(name) {
         if (!isPlainObject(book)) {
             throw new Error(`Neconyan returned a malformed lorebook for ${name}`);
         }
+        const revision = response.headers?.get?.('X-World-Info-Revision');
+        if (!revision) throw new Error('The lorebook revision is unavailable. Reload Neconyan before restoring it.');
+        liveLorebookRevisions.set(book, revision);
         return book;
     } catch (error) {
         if (error.status === 404) {
@@ -401,21 +411,24 @@ export async function restoreCharacter(avatar, card, live, tags) {
     });
 }
 
-export async function restoreLorebook(name, book) {
+export async function restoreLorebook(name, book, live) {
     // `immediately`: the ordinary path debounces by several seconds, which races
     // the editor if the book being restored is the one on screen.
     if (!isPlainObject(book)) {
         throw new TypeError('Invalid lorebook snapshot');
     }
+    const revision = live === null ? null : liveLorebookRevisions.get(live);
+    if (revision === undefined) throw new Error('Read the current lorebook before restoring it; nothing was saved.');
     return suppressCapture('lorebook', name, async () => {
         let started = false;
         try {
             const context = ctx();
             started = true;
-            await context.saveWorldInfo(name, book, true);
+            await context.saveWorldInfo(name, book, true, { revision });
             await context.updateWorldInfoList?.();
             await context.reloadWorldInfoEditor?.(name);
         } catch (error) {
+            if (error.status === 409) throw error;
             throw started ? partialRestore(error) : error;
         }
     });

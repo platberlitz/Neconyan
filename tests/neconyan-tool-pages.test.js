@@ -336,3 +336,60 @@ describe('Agents page tour led by Taro', () => {
         expect(source).toMatch(/export function endToolTour[\s\S]*?closeTourDialog\(\);/);
     });
 });
+
+describe('Notes opens as a page led by Miso', () => {
+    const source = read('../public/scripts/neconyan-tool-tour.js');
+    const notesApp = read('../public/scripts/notebooks/notes-app.js');
+    const notesPanels = read('../public/scripts/notebooks/notes-panels.js');
+    const css = read('../public/css/neconyan-notes.css');
+
+    test('the page exists, answers to notebooks and starts and ends on the page chrome', () => {
+        const page = getToolPage('notes');
+        expect(page.assistant).toBe('miso');
+        expect(page.name).toBe('Notes');
+        expect(getToolPageKey('notebooks')).toBe('notes');
+        expect(page.kicker).toBeTruthy();
+        expect(page.description).toBeTruthy();
+        expect(page.invite).toBeTruthy();
+        const steps = getToolTourSteps('notes', { isShown: () => true });
+        expect(steps.map(step => step.id)).toEqual(['welcome', 'notebooks', 'create', 'find', 'editor', 'views', 'links', 'details', 'ai', 'tools', 'layout', 'done']);
+        expect(steps[0].targets).toContain('.neconyan-tool-page-intro');
+        expect(steps.at(-1).targets).toContain('.neconyan-tool-tour-button');
+    });
+
+    test('without a notebook the tour keeps the notebook step and changes its copy', () => {
+        expect(getToolPage('notes').emptyWhen).toBe('.notes-nav-empty');
+        expect(notesApp).toContain('class: \'notes-hint notes-nav-empty\'');
+        const steps = getToolTourSteps('notes', { isShown: () => false, empty: true });
+        expect(steps.map(step => step.id)).toEqual(['welcome', 'notebooks', 'done']);
+        const { emptyBody } = getToolPage('notes').steps.find(step => step.id === 'notebooks');
+        expect(emptyBody).toBeTruthy();
+        expect(steps[1].body).toBe(emptyBody);
+    });
+
+    test('phone steps switch the Notebooks, Note and Details panes instead of skipping', () => {
+        const steps = getToolTourSteps('notes', { isShown: () => true });
+        const paneOf = id => steps.find(step => step.id === id).tab;
+        for (const id of ['notebooks', 'create', 'find', 'tools']) expect(paneOf(id)).toBe('.notes-pane-tabs [data-pane="nav"]');
+        for (const id of ['editor', 'views', 'links']) expect(paneOf(id)).toBe('.notes-pane-tabs [data-pane="note"]');
+        for (const id of ['details', 'ai']) expect(paneOf(id)).toBe('.notes-pane-tabs [data-pane="details"]');
+        expect(steps.find(step => step.id === 'ai').open).toEqual(['.notes-pane-tabs [data-pane="details"]', '.notes-detail-tabs [data-tab="ai"]']);
+        expect(notesApp).toContain('tab.dataset.pane = pane;');
+        expect(notesPanels).toContain('choice.dataset.tab = id;');
+    });
+
+    test('the Notes app mounts the tour on its own root and re-finds targets after the panes rebuild', () => {
+        expect(notesApp).toContain('tour.mountToolPage(TOUR_PAGE_KEY, elements.intro, elements.root)');
+        expect(notesApp).toContain('TOUR_PAGE_KEY = \'notes\'');
+        expect(getToolPage('notes').rebuilds).toBe(true);
+        expect(source).toContain('if (page.key === \'mewmory\' || page.rebuilds) {');
+        expect(css).toMatch(/\.notes-app \{[^}]*overflow: hidden;/);
+    });
+
+    test('tour steps only ever press pane and detail tabs, never save, delete or import controls', () => {
+        for (const step of getToolPage('notes').steps) {
+            const opens = [].concat(step.open ?? []).concat(step.tab ?? []);
+            for (const selector of opens) expect(selector).toMatch(/^\.notes-(pane|detail)-tabs \[data-(pane|tab)="[a-z]+"\]$/);
+        }
+    });
+});

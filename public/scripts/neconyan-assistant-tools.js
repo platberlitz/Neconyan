@@ -14,7 +14,9 @@ import {
 import { selected_group } from './group-chats.js';
 import { ToolManager } from './tool-calling.js';
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
-import { buildAssistantReview } from './neconyan-assistant-review.js';
+import { buildAssistantReview, buildNoteProposalReview } from './neconyan-assistant-review.js';
+import { NOTE_TOOL_DEFINITIONS } from './notebooks/assistant-note-tools.js';
+import { formatDiff } from './notebooks/line-diff.js';
 import { loadWorldInfo, world_names } from './world-info.js';
 import { updateEntry } from './extensions/in-chat-agents/pathfinder/entry-manager.js';
 import {
@@ -226,7 +228,9 @@ function createGuard(registration, invocationContext = {}) {
     const assert = () => {
         if (!isCurrent()) throw new AssistantContextError();
     };
-    return { signal, isCurrent, invocation, assert };
+    const supplied = invocationContext?.callId;
+    const callId = typeof supplied === 'string' && supplied.length > 0 && supplied.length <= 200 ? supplied : crypto.randomUUID();
+    return { signal, isCurrent, invocation, assert, callId };
 }
 
 function runTool(registration, handler, askFirst) {
@@ -271,6 +275,49 @@ async function confirmEdit(review, guard) {
     const result = await callGenericPopup(buildAssistantReview(review), POPUP_TYPE.CONFIRM, '', { wide: true, large: true });
     guard.assert();
     return result === POPUP_RESULT.AFFIRMATIVE;
+}
+
+function shortHash(value) {
+    let hash = 0x811c9dc5;
+    for (const character of String(value)) {
+        hash ^= character.codePointAt(0);
+        hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    return hash.toString(16).padStart(8, '0');
+}
+
+async function postNotebook(route, body) {
+    const response = await fetch(`/api/notebooks${route}`, {
+        method: 'POST',
+        headers: { ...jsonHeaders(), 'X-Neconyan-Account': getCurrentUserHandle() },
+        body: JSON.stringify(body),
+    });
+    const payload = await response.json().catch(() => null);
+    if (payload && typeof payload === 'object' && typeof payload.status === 'string') return payload;
+    return { status: 'failure', message: `Notes could not be reached (${response.status}). Nothing was saved.` };
+}
+
+function noteTool(kind) {
+    return async (parameters, guard) => {
+        const invocation = guard.invocation ?? {};
+        const callId = `browser:${shortHash(`${invocation.account}:${invocation.chatId}`)}:${invocation.generation ?? 0}:${guard.callId}`;
+        const args = { ...(parameters ?? {}) };
+        const result = await postNotebook('/assistant/tool', { callId, tool: kind, args });
+        guard.assert();
+        if (result.status !== 'needs_approval' || !result.proposalId) return result;
+        const proposal = await postNotebook('/assistant/proposal', { proposalId: result.proposalId, full: true });
+        guard.assert();
+        if (proposal.status !== 'success') return result;
+        const diff = typeof proposal.before === 'string' && typeof proposal.after === 'string'
+            ? formatDiff(proposal.before, proposal.after) : '';
+        const choice = await callGenericPopup(buildNoteProposalReview({ summary: proposal.summary ?? result.summary, diff }),
+            POPUP_TYPE.CONFIRM, '', { wide: true, large: true, okButton: 'Save change', cancelButton: 'Not now' });
+        guard.assert();
+        if (choice !== POPUP_RESULT.AFFIRMATIVE) {
+            return { ...result, message: 'Not saved yet. The change is waiting under Notes > Assistant changes.' };
+        }
+        return postNotebook('/assistant/decide', { proposalId: result.proposalId, proposalHash: proposal.proposalHash, decision: 'allow' });
+    };
 }
 
 function bookNames() {
@@ -775,6 +822,9 @@ function registerAll(registration) {
     register(`${TOOL_PREFIX}ReadCharacter`, 'Read character', 'Read one known character by exact avatar filename.', { type: 'object', required: ['avatar'], properties: { avatar } }, registration, readCharacter);
     // ponytail: the Character Note is not editable here because /api/characters/edit-attribute only writes flat fields; add a dedicated route if that is ever needed.
     register(`${TOOL_PREFIX}EditCharacter`, 'Edit character', 'Edit exactly one safe character field after review.', { type: 'object', required: ['avatar', 'field', 'value'], properties: { avatar, field: field(editableCharacterFields), value: { type: 'string' } } }, registration, editCharacter, ASK_FIRST.editCharacter);
+    for (const [name, definition] of Object.entries(NOTE_TOOL_DEFINITIONS)) {
+        register(`${TOOL_PREFIX}${name}`, definition.displayName, definition.description, definition.schema, registration, noteTool(definition.kind));
+    }
 }
 
 export function unregisterNeconyanAssistantTools() {

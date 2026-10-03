@@ -1,4 +1,5 @@
 import { roleplayError } from '../roleplay-store.js';
+import { NOTE_MUTATING_KINDS, NOTE_TOOL_KINDS } from '../../public/scripts/notebooks/assistant-note-tools.js';
 
 export const ASSISTANT_PREFIX = 'Neconyan_Assistant_';
 export const ASSISTANT_TOOLS = Object.freeze({
@@ -6,8 +7,10 @@ export const ASSISTANT_TOOLS = Object.freeze({
     EditLorebookEntry: 'edit-lorebook-entry', ListAgents: 'agents', ReadAgent: 'agent', EditAgent: 'edit-agent',
     ListModelPresets: 'presets', ReadModelPreset: 'preset', EditModelPreset: 'edit-preset',
     ListCharacters: 'characters', ReadCharacter: 'character', EditCharacter: 'edit-character',
-    CreateCharacter: 'create-character',
+    CreateCharacter: 'create-character', ...NOTE_TOOL_KINDS,
 });
+export const assistantToolMutates = tool => typeof tool === 'string'
+    && (tool.startsWith('edit-') || tool === 'create-character' || NOTE_MUTATING_KINDS.includes(tool));
 
 export const EDITABLE_CHARACTER_FIELDS = Object.freeze(['name', 'description', 'personality', 'scenario', 'first_mes',
     'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions']);

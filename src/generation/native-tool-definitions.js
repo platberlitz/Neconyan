@@ -1,6 +1,7 @@
 import { roleplayError } from '../roleplay-store.js';
 import { ASK_FIRST, CONFIRM_PROTOCOL, CREATE_CHARACTER_GUIDE, USER_CONFIRMED_DESCRIPTION } from '../../public/scripts/neconyan-assistant-tool-guidance.js';
 import { EDITABLE_AGENT_FIELDS, EDITABLE_CHARACTER_FIELDS } from './assistant-tool-data.js';
+import { NOTE_TOOL_DEFINITIONS } from '../../public/scripts/notebooks/assistant-note-tools.js';
 
 const invalid = message => roleplayError('ROLEPLAY_TOOL_INVALID', message, 409);
 const string = { type: 'string' };
@@ -39,6 +40,8 @@ const assistant = Object.freeze({
     Neconyan_Assistant_ReadCharacter: ['Read one known character by exact avatar filename.', object(['avatar'], { avatar: avatarName })],
     Neconyan_Assistant_EditCharacter: ['Edit exactly one safe character field after review.', reviewed(object(
         ['avatar', 'field', 'value'], { avatar: avatarName, field: { type: 'string', enum: EDITABLE_CHARACTER_FIELDS }, value: string }))],
+    ...Object.fromEntries(Object.entries(NOTE_TOOL_DEFINITIONS)
+        .map(([name, definition]) => [`Neconyan_Assistant_${name}`, [definition.description, definition.schema]])),
 });
 
 const assistantGuides = Object.freeze({

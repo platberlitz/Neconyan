@@ -16,7 +16,7 @@
             background-color: #141514;
         }
     </style>
-    <link rel="preload" as="style" href="style.css?v=20261003i">
+    <link rel="preload" as="style" href="style.css?v=20261003-notes-audit1">
     <script type="importmap">
         { "imports": { "#macro-vendor": "./lib.js" } }
     </script>
@@ -41,18 +41,18 @@
     <link rel="icon" type="image/png" sizes="192x192" href="img/neconyan-icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="img/neconyan-icon-512.png">
     <link rel="apple-touch-icon" sizes="180x180" href="img/neconyan-icon-180.png" />
-    <link rel="stylesheet" type="text/css" href="style.css?v=20261003i">
+    <link rel="stylesheet" type="text/css" href="style.css?v=20261003-notes-audit1">
     <link rel="stylesheet" type="text/css" href="css/st-tailwind.css">
     <link rel="stylesheet" type="text/css" href="css/toggle-dependent.css">
     <link rel="stylesheet" type="text/css" href="css/select2-overrides.css?v=20260609a">
     <link rel="stylesheet" type="text/css" href="css/mobile-styles.css?v=20260916p" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-theme.css?v=20261003i">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-paper-theme.css?v=20261003i" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-tabs.css?v=20261003i">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-mobile-shell.css?v=20261003i" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan.css?v=20261003i">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-home.css?v=20261003i">
-    <link id="neconyan-calico-stylesheet" rel="stylesheet" type="text/css" href="css/neconyan-calico.css?v=20261003i">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-theme.css?v=20261003-notes-audit1">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-paper-theme.css?v=20261003-notes-audit1" media="(max-width: 768px)">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-tabs.css?v=20261003-notes-audit1">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-mobile-shell.css?v=20261003-notes-audit1" media="(max-width: 768px)">
+    <link rel="stylesheet" type="text/css" href="css/neconyan.css?v=20261003-notes-audit1">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-home.css?v=20261003-notes-audit1">
+    <link id="neconyan-calico-stylesheet" rel="stylesheet" type="text/css" href="css/neconyan-calico.css?v=20261003-notes-audit1">
     <link href="css/neconyan-menus.css?v=20260926a" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <link href="css/neconyan-help.css?v=20260929b" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <link href="css/neconyan-home-compact.css?v=20261003g" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
@@ -63,7 +63,7 @@
                 if (['kittyless', 'windows-aero', 'windows-98', 'clean-minimal', 'macos-minimal', 'cozy-warm', 'hypr-glow', 'slate-flat'].indexOf(shellStyle) !== -1) {
                     var link = document.createElement('link');
                     link.rel = 'stylesheet';
-                    link.href = 'css/shell-styles/' + shellStyle + '.css?v=20261003i';
+                    link.href = 'css/shell-styles/' + shellStyle + '.css?v=20261003-notes-audit1';
                     link.setAttribute('data-sb-shell-style', shellStyle);
                     document.documentElement.setAttribute('data-sb-theme', shellStyle);
                     document.head.appendChild(link);
@@ -71,7 +71,7 @@
                 if (shellStyle === 'kittyless' || localStorage.getItem('sb-kittyless') === 'true') {
                     var catless = document.createElement('link');
                     catless.rel = 'stylesheet';
-                    catless.href = 'css/neconyan-kittyless.css?v=20261003i';
+                    catless.href = 'css/neconyan-kittyless.css?v=20261003-notes-audit1';
                     catless.setAttribute('data-sb-kittyless', 'true');
                     document.documentElement.setAttribute('data-sb-kittyless', 'true');
                     document.head.appendChild(catless);
@@ -8407,6 +8407,7 @@
                                 <div title="Create checkpoint" class="mes_button mes_create_bookmark fa-regular fa-solid fa-flag-checkered" data-i18n="[title]Create checkpoint"></div>
                                 <div title="Create branch" class="mes_button mes_create_branch fa-regular fa-code-branch" data-i18n="[title]Create Branch"></div>
                                 <div title="Screenshot message(s)" class="mes_button mes_screenshot fa-solid fa-camera" data-i18n="[title]Screenshot message(s)"></div>
+                                <div title="Save to note" class="mes_button mes_save_note fa-solid fa-note-sticky" data-i18n="[title]Save to note" role="button" tabindex="0"></div>
                             </div>
                             <div data-tooltip="Click to open checkpoint chat&#10;Shift+Click to replace the existing checkpoint with a new one" class="mes_button neconyan-message-action neconyan-labelled-control mes_bookmark fa-solid fa-flag" role="button" tabindex="0" aria-label="Open checkpoint chat" data-i18n="[data-tooltip]Open checkpoint chat&#10;Shift+Click to replace the existing checkpoint with a new one;[aria-label]Open checkpoint chat">
                                 <span class="neconyan-action-label" data-i18n="Checkpoint">Checkpoint</span>

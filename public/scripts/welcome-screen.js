@@ -1,6 +1,6 @@
 import { initializeNeconyanHome, NECONYAN_WHISKERS } from './neconyan-home.js';
 import { characters, chat, deleteCharacterChatByName, displayVersion, doNewChat, event_types, eventSource, flushCharacterSaveDebounced, getCharacters, getChatGeneration, getCurrentChatId, getRequestHeaders, getThumbnailUrl, is_send_press, newAssistantChat, openCharacterChat, printCharactersDebounced, renameGroupOrCharacterChat, saveSettings, saveSettingsDebounced, selectCharacterById, setActiveCharacter, setActiveGroup, system_avatar, this_chid } from '../script.js';
-import { deleteGroupChatByName, getGroupAvatar, groups, is_group_generating, openGroupById, openGroupChat } from './group-chats.js';
+import { deleteGroupChatByName, getGroupAvatar, groups, is_group_generating, openGroupById, openGroupChat, selected_group } from './group-chats.js';
 import { extension_settings } from './extensions.js';
 import { t, translate } from './i18n.js';
 import { getCurrentUserHandle } from './user.js';
@@ -1051,7 +1051,7 @@ function setAssistantPickerStatus(root, message, error = false) {
 }
 
 function assertAssistantOpeningCurrent(origin) {
-    if (origin.account !== getCurrentUserHandle() || origin.generation !== getChatGeneration() || is_send_press || is_group_generating) {
+    if (origin.account !== getCurrentUserHandle() || origin.generation !== getChatGeneration() || is_send_press || is_group_generating || origin.isCurrent?.() === false) {
         throw new Error('The workspace changed. Your installed assistant is available in Characters.');
     }
 }
@@ -1085,13 +1085,16 @@ async function activateInstalledAssistant(assistantId, result, origin) {
         assertAssistantOpeningCurrent(origin);
         if (!await selectCharacterById(characterId, { switchMenu: false })) throw new Error('The assistant was installed, but its chat could not be opened.');
         opened = true;
-        if (origin.account !== getCurrentUserHandle() || characters[this_chid]?.avatar !== result.avatar) return;
+        if (origin.account !== getCurrentUserHandle() || characters[this_chid]?.avatar !== result.avatar || origin.isCurrent?.() === false) {
+            throw new Error('The workspace changed before the assistant finished opening.');
+        }
         setActiveCharacter(result.avatar);
         syncNeconyanAssistantTools();
         saveSettingsDebounced();
         globalThis.NeconyanShell?.closeWorkspace?.();
         hideWelcomeHome();
         focusSendTextarea(document.getElementById('send_textarea'), { skipIOS: true });
+        return result.avatar;
     } catch (error) {
         if (!opened && shortcutAssigned && origin.account === getCurrentUserHandle()
             && accountStorage.getItem(assistantAvatarKey) === result.avatar && accountStorage.getItem(assistantVariantKey) === assistantId) {
@@ -1105,6 +1108,32 @@ async function activateInstalledAssistant(assistantId, result, origin) {
             }
         }
         throw error;
+    }
+}
+
+/** Open a bundled assistant through the same guarded installation path as the Home picker. */
+export async function openBundledAssistant(assistantId, { isCurrent = () => true } = {}) {
+    if (!/^(miso|taro|nori)-(male|female|neutral)$/.test(assistantId)) throw new Error('Choose Miso, Taro or Nori.');
+    if (assistantSelectionPending) throw new Error('An assistant is still opening. Try again in a moment.');
+    const origin = { account: getCurrentUserHandle(), generation: getChatGeneration(), isCurrent };
+    assertAssistantOpeningCurrent(origin);
+    assistantSelectionPending = true;
+    try {
+        const previousVariant = getPermanentAssistantVariant();
+        const response = await fetch('/api/characters/assistants/install', {
+            method: 'POST', headers: { ...getRequestHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: assistantId, preferred_avatar: previousVariant === assistantId ? getPermanentAssistantAvatar() : undefined }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.avatar || !result.spriteFolder) throw new Error(result.error || 'The assistant could not be installed.');
+        assistantCatalogPromise = null;
+        return await activateInstalledAssistant(assistantId, result, origin);
+    } finally {
+        assistantSelectionPending = false;
+        document.querySelectorAll('[data-assistant-picker]').forEach(picker => {
+            setAssistantPickerBusy(picker, false);
+            picker.querySelectorAll('.neconyan-assistant-row').forEach(updateAssistantPickerRow);
+        });
     }
 }
 
@@ -1165,25 +1194,10 @@ async function openSelectedAssistant(root, row) {
     }
 
     const assistantId = selected.value;
-    const origin = { account: getCurrentUserHandle(), generation: getChatGeneration() };
-    const avatar = getPermanentAssistantAvatar();
-    const previousVariant = getPermanentAssistantVariant();
-    assistantSelectionPending = true;
     setAssistantPickerBusy(root, true);
     setAssistantPickerStatus(root, `Preparing ${row.dataset.assistantName || 'your assistant'}...`);
     try {
-        const response = await fetch('/api/characters/assistants/install', {
-            method: 'POST',
-            headers: { ...getRequestHeaders(), 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: assistantId, preferred_avatar: previousVariant === assistantId ? avatar : undefined }),
-        });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok || !result.avatar || !result.spriteFolder) {
-            throw new Error(result.error || 'The assistant could not be installed.');
-        }
-
-        assistantCatalogPromise = null;
-        await activateInstalledAssistant(assistantId, result, origin);
+        await openBundledAssistant(assistantId);
     } catch (error) {
         console.error('Neconyan assistant selection failed:', error);
         setAssistantPickerStatus(root, error instanceof Error ? error.message : 'The assistant could not be opened. Try again.', true);
@@ -1690,7 +1704,16 @@ async function openNeconyanRecentChat(recentChat) {
 
 function activateNeconyanRailRoute(route) {
     const shell = globalThis.NeconyanShell;
+    globalThis.NeconyanNotes?.onRoute?.(route);
     switch (route) {
+        case 'notes':
+            void import('./notebooks/notes-app.js')
+                .then(module => module.openNotes())
+                .catch(error => {
+                    console.error('[Neconyan] Notes could not open', error);
+                    globalThis.toastr?.error?.(t`Notes could not open. Try reloading the page.`);
+                });
+            break;
         case 'home':
             if (shell?.showHome) {
                 return shell.showHome();
@@ -1888,6 +1911,7 @@ function ensureNeconyanRail() {
         ['agents', 'Agents', 'fa-cat'],
         ['mewmory', 'Mewmory', 'fa-brain'],
         ['lorebooks', 'Lorebooks', 'fa-book-atlas'],
+        ['notes', 'Notes', 'fa-note-sticky'],
         ['extensions', 'Extensions', 'fa-cubes'],
     ];
     for (const [route, label, icon] of primaryRoutes) {
@@ -2637,10 +2661,61 @@ function releaseChromeAfterBootSkeleton() {
     observer.observe(chatElement, { childList: true });
 }
 
+async function sha256Hex(text) {
+    try {
+        const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+        return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+    } catch {
+        return undefined;
+    }
+}
+
+async function saveChatMessageToNote(control) {
+    const messageElement = control.closest('.mes');
+    const messageId = Number(messageElement?.getAttribute('mesid'));
+    const message = Number.isInteger(messageId) ? chat[messageId] : null;
+    if (!message || typeof message.mes !== 'string') {
+        return;
+    }
+    const selection = window.getSelection?.();
+    const selected = selection && !selection.isCollapsed
+        && messageElement.querySelector('.mes_text')?.contains(selection.anchorNode)
+        ? selection.toString() : '';
+    const text = selected.trim() ? selected : message.mes;
+    const group = groups.find(item => String(item.id) === String(selected_group ?? ''));
+    const avatar = characters[this_chid]?.avatar;
+    const source = {
+        chat: getCurrentChatId(),
+        character: group ? `group:${group.id}` : avatar,
+        speaker: message.name,
+        messageId,
+        messageSendDate: message.send_date === undefined || message.send_date === null ? undefined : String(message.send_date),
+        swipe: Number.isInteger(message.swipe_id) ? message.swipe_id : undefined,
+        messageHash: await sha256Hex(message.mes),
+    };
+    const notes = await import('./notebooks/notes-app.js');
+    await notes.captureFromChat({ text, title: '', source, selection: Boolean(selected.trim()) });
+}
+
+function installChatNoteCapture() {
+    document.addEventListener('click', event => {
+        const control = event.target instanceof Element ? event.target.closest('.mes_save_note') : null;
+        if (!control) {
+            return;
+        }
+        event.preventDefault();
+        void saveChatMessageToNote(control).catch(error => {
+            console.error('[Neconyan] Could not save the message to a note', error);
+            globalThis.toastr?.error?.(t`That message could not be saved to a note.`);
+        });
+    });
+}
+
 export function initWelcomeScreen() {
     releaseChromeAfterBootSkeleton();
     PinnedChatsManager.init();
     ensureNeconyanRail();
+    installChatNoteCapture();
     window.addEventListener('sb:conversation-workspace-state-changed', concealWelcomeHome);
     eventSource.on(event_types.APP_READY, async () => {
         resumeTutorial();

@@ -5,7 +5,7 @@ import test from 'node:test';
 import { fixture } from './roleplay-transactions-fixture.js';
 
 const { withRoleplayAccount } = await import('../src/roleplay-store.js');
-const { authoringEvidence, publishAuthoringFileLocked, readAuthoringFileLocked, stageAuthoringFileLocked, writeAuthoringFileLocked } = await import('../src/authoring-store.js');
+const { authoringEvidence, publishAuthoringFileLocked, readAuthoringFileLocked, stageAuthoringFileLocked, writeAuthoringFileLocked, withAuthoringBatchLocked } = await import('../src/authoring-store.js');
 
 function prepared(t) {
     const f = fixture(t);
@@ -51,4 +51,20 @@ test('known pre-publication failure retains the old file and cleans only its own
     fs.symlinkSync(outside, path.join(f.directory, 'Alias.json'));
     assert.throws(() => f.locked(lease => writeAuthoringFileLocked(lease, path.join(f.directory, 'Alias.json'), 'bad')));
     assert.equal(fs.readFileSync(outside, 'utf8'), 'private');
+});
+
+test('a synchronous authoring batch coalesces folder flushes but still flushes and checks every file', t => {
+    const f = prepared(t);
+    const original = fs.fsyncSync;
+    let files = 0, directories = 0;
+    fs.fsyncSync = fd => { if (fs.fstatSync(fd).isDirectory()) directories++; else files++; return original(fd); };
+    try {
+        f.locked(lease => withAuthoringBatchLocked(lease, () => {
+            for (let index = 0; index < 8; index++) writeAuthoringFileLocked(lease, path.join(f.directory, `Batch ${index}.json`), String(index), { expected: null });
+        }));
+    } finally { fs.fsyncSync = original; }
+    assert.equal(files, 8, 'each exact temporary file is flushed once');
+    assert.ok(directories < 16, `${directories} folder flushes`);
+    for (let index = 0; index < 8; index++) assert.equal(fs.readFileSync(path.join(f.directory, `Batch ${index}.json`), 'utf8'), String(index));
+    assert.throws(() => f.locked(lease => withAuthoringBatchLocked(lease, async () => {})), /must be synchronous/);
 });

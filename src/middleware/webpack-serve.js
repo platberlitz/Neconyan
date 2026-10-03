@@ -6,9 +6,9 @@ import getPublicLibConfig, {
     prunePublicLibCache,
 } from '../../webpack.config.js';
 
-export default function getWebpackServeMiddleware({ forceDist = false } = {}) {
+export default function getWebpackServeMiddleware({ forceDist = false, bundle = 'lib' } = {}) {
     const resolvePublicLibConfig = ({ forceDist: overrideForceDist = forceDist, pruneCache = false } = {}) =>
-        getPublicLibConfig({ forceDist: overrideForceDist, pruneCache });
+        getPublicLibConfig({ forceDist: overrideForceDist, bundle, pruneCache });
     /** @type {import('webpack').Configuration | null} */
     let activePublicLibConfig = null;
     /** @type {Promise<void> | null} */
@@ -81,7 +81,7 @@ export default function getWebpackServeMiddleware({ forceDist = false } = {}) {
      * @returns {Promise<void>}
      */
     function compilePublicLib({ forceDist: overrideForceDist = forceDist, pruneCache = false } = {}) {
-        const cacheInfo = getPublicLibCacheInfo({ forceDist: overrideForceDist });
+        const cacheInfo = getPublicLibCacheInfo({ forceDist: overrideForceDist, bundle });
         const publicLibConfig = resolvePublicLibConfig({ forceDist: overrideForceDist });
         const compiledOutputPath = getCompiledOutputPath(publicLibConfig);
 
@@ -90,7 +90,7 @@ export default function getWebpackServeMiddleware({ forceDist = false } = {}) {
             console.log('Reusing precompiled frontend libraries...');
             activePublicLibConfig = publicLibConfig;
             if (pruneCache) {
-                prunePublicLibCache({ forceDist: overrideForceDist, currentCacheVersion: cacheInfo.cacheVersion });
+                prunePublicLibCache({ forceDist: overrideForceDist, bundle, currentCacheVersion: cacheInfo.cacheVersion });
             }
             return Promise.resolve();
         }
@@ -99,6 +99,7 @@ export default function getWebpackServeMiddleware({ forceDist = false } = {}) {
         const temporaryOutputFilePath = path.join(temporaryOutputPath, cacheInfo.outputFile);
         const temporaryPublicLibConfig = getPublicLibConfig({
             forceDist: overrideForceDist,
+            bundle,
             outputPath: temporaryOutputPath,
         });
 
@@ -142,7 +143,7 @@ export default function getWebpackServeMiddleware({ forceDist = false } = {}) {
 
                         activePublicLibConfig = publicLibConfig;
                         if (pruneCache) {
-                            prunePublicLibCache({ forceDist: overrideForceDist, currentCacheVersion: cacheInfo.cacheVersion });
+                            prunePublicLibCache({ forceDist: overrideForceDist, bundle, currentCacheVersion: cacheInfo.cacheVersion });
                         }
                         resolve();
                     } catch (error) {

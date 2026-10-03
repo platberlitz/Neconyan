@@ -741,7 +741,7 @@ export class ToolManager {
             const toast = message && toastr.info(message, 'Tool Calling', { timeOut: 0 });
             let toolResult;
             try {
-                toolResult = await ToolManager.invokeFunctionTool(name, parameters, { signal, isCurrent });
+                toolResult = await ToolManager.invokeFunctionTool(name, parameters, { signal, isCurrent, callId: typeof id === 'string' ? id : undefined });
             } finally {
                 toastr.clear(toast);
             }

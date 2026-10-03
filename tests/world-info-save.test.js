@@ -109,7 +109,7 @@ function createHost(initialBook = book()) {
                 return { ok: Boolean(readData), json: async () => readData, headers: { get: () => readData ? JSON.stringify(readData) : null } };
             case '/api/worldinfo/edit': {
                 const name = body.name.replace(/[/?]/g, '');
-                if (body.revision !== undefined && body.revision !== JSON.stringify(books.get(name))) return { ok: false, status: 409 };
+                if (body.revision !== undefined && body.revision !== (books.has(name) ? JSON.stringify(books.get(name)) : null)) return { ok: false, status: 409 };
                 books.set(name, structuredClone(body.data));
                 result = { ok: true, name, revision: JSON.stringify(body.data) };
                 break;
@@ -117,7 +117,7 @@ function createHost(initialBook = book()) {
             case '/api/worldinfo/rename':
                 books.delete(body.oldName);
                 books.set(body.newName, structuredClone(body.data));
-                result = { ok: true, name: body.newName };
+                result = { ok: true, name: body.newName, revision: JSON.stringify(body.data) };
                 break;
             case '/api/worldinfo/delete':
                 books.delete(body.name);
@@ -125,7 +125,7 @@ function createHost(initialBook = book()) {
             case '/api/worldinfo/import': {
                 const name = String(body.get('name'));
                 books.set(name, JSON.parse(String(body.get('convertedData') ?? await body.get('avatar').text())));
-                result = { name };
+                result = { name, revision: JSON.stringify(books.get(name)) };
                 break;
             }
             default: throw new Error(`Unexpected request ${url}`);
@@ -136,6 +136,7 @@ function createHost(initialBook = book()) {
     const functions = [
         'reloadEditor', 'showWorldEditor', 'hideWorldEditor', 'loadWorldInfo',
         'cloneWorldInfoData', 'getWorldInfoCachedData', 'mergeWorldInfoData', 'mergeWorldInfoChanges', 'trackWorldInfoEntryRender', 'invalidateWorldInfoCache', '_save', 'cancelPendingWorldInfoSave',
+        'getWorldInfoLoadedRevision', 'worldInfoRevisionError', 'getWorldInfoTargetRevision', 'advanceWorldInfoLocalRevision', 'recordWorldInfoLocalRevision',
         'settleWorldInfoSave', 'blockWorldInfoSaves', 'getCanonicalWorldInfoName', 'saveWorldInfo',
         'replaceWorldInfoData', 'renameWorldInfo', 'deleteWorldInfo', 'reviewLorebookRepair', 'importWorldInfo', 'importWorldInfoFiles', 'importWorldInfoBatch',
         'getNeconyanLorebookFolders', 'updateNeconyanLorebookFolders', 'warnNeconyanFolderSaveFailure',
@@ -184,6 +185,28 @@ afterEach(() => {
 });
 
 describe('shared World Info saves', () => {
+    test('ordinary saves reject another tab changing a loaded book', async () => {
+        const { context, books } = createHost();
+        const original = await context.loadWorldInfo('Lore');
+        original.entries[0].content = 'Unsaved local draft';
+        books.get('Lore').entries[0].content = 'Newer linked note publication';
+        await expect(context.saveWorldInfo('Lore', original, true)).rejects.toMatchObject({ status: 409,
+            message: 'This lorebook has changed since you opened it. Nothing was overwritten; copy your draft, then reload before saving again.' });
+        expect(books.get('Lore').entries[0].content).toBe('Newer linked note publication');
+    });
+
+    test('refreshing the known revision cannot make an older draft safe to save', async () => {
+        const { context, books } = createHost();
+        const original = await context.loadWorldInfo('Lore');
+        original.entries[0].content = 'Unsaved local draft';
+        books.get('Lore').entries[0].content = 'Another tab saved this';
+        context.invalidateWorldInfoCache('Lore');
+        const latest = await context.loadWorldInfo('Lore');
+        expect(latest.entries[0].content).toBe('Another tab saved this');
+        await expect(context.saveWorldInfo('Lore', original, true, { conditional: true })).rejects.toMatchObject({ status: 409 });
+        expect(books.get('Lore').entries[0].content).toBe('Another tab saved this');
+    });
+
     test('conditional saves reject missing revisions and changes from another client', async () => {
         const { context, books } = createHost();
         const original = await context.loadWorldInfo('Lore');
@@ -195,11 +218,43 @@ describe('shared World Info saves', () => {
 
         const refreshed = await context.loadWorldInfo('Lore');
         refreshed.entries[0].content = 'New attempt';
-        vm.runInContext('worldInfoKnownRevisions.clear()', context);
+        context.invalidateWorldInfoCache('Lore');
+        const fetch = context.fetch;
+        context.fetch = jest.fn(async (...args) => {
+            const response = await fetch(...args);
+            if (args[0] === '/api/worldinfo/get') response.headers = { get: () => null };
+            return response;
+        });
+        const missingRevision = await context.loadWorldInfo('Lore');
+        missingRevision.entries[0].content = 'Unsafe without a loaded revision';
         context.fetch.mockClear();
-        await expect(context.saveWorldInfo('Lore', refreshed, true, { conditional: true })).rejects.toMatchObject({ status: 409 });
+        await expect(context.saveWorldInfo('Lore', missingRevision, true, { conditional: true })).rejects.toMatchObject({ status: 409 });
         expect(context.fetch).not.toHaveBeenCalled();
         expect(books.get('Lore').entries[0].content).toBe('Original');
+    });
+
+    test('a cloned full-book write must carry its original loaded revision', async () => {
+        const { context, books } = createHost();
+        const loaded = await context.loadWorldInfo('Lore');
+        const draft = structuredClone(loaded);
+        draft.entries[0].content = 'Cloned draft';
+        await expect(context.saveWorldInfo('Lore', draft, true)).rejects.toMatchObject({ status: 409 });
+        expect(books.get('Lore')).toEqual(book());
+        const revision = context.getWorldInfoLoadedRevision(loaded);
+        books.get('Lore').entries[0].content = 'Another client';
+        await expect(context.saveWorldInfo('Lore', draft, true, { revision })).rejects.toMatchObject({ status: 409 });
+        expect(books.get('Lore').entries[0].content).toBe('Another client');
+    });
+
+    test('clearing the newest-known revision does not discard a loaded copy\'s guard', async () => {
+        const { context, books } = createHost();
+        const loaded = await context.loadWorldInfo('Lore');
+        loaded.entries[0].content = 'Guarded draft';
+        vm.runInContext('worldInfoKnownRevisions.clear()', context);
+        await context.saveWorldInfo('Lore', loaded, true);
+        expect(books.get('Lore').entries[0].content).toBe('Guarded draft');
+        const edit = JSON.parse(context.fetch.mock.calls.find(([url]) => url === '/api/worldinfo/edit')[1].body);
+        expect(edit.revision).toBe(JSON.stringify(book()));
     });
 
     test('sending a companion entry retains the load baseline and preserves a concurrent native edit', async () => {
@@ -457,10 +512,39 @@ describe('shared World Info saves', () => {
         expect(host.editorData.entries).not.toHaveProperty('0');
     });
 
+    test('refreshing an open editor cannot give its unsaved text the revision of a newer publication', async () => {
+        const host = createHost();
+        await host.context.showWorldEditor('Lore');
+        const originalRevision = host.context.getWorldInfoLoadedRevision(host.editorData);
+        host.editorData.entries[0].content = 'Unsaved older editor text';
+        host.books.get('Lore').entries[0].content = 'Newer note publication';
+        host.context.invalidateWorldInfoCache('Lore');
+        await host.context.showWorldEditor('Lore');
+        expect(host.editorData.entries[0].content).toBe('Unsaved older editor text');
+        await expect(host.context.saveWorldInfo('Lore', host.editorData, true)).rejects.toMatchObject({ status: 409 });
+        expect(host.context.getWorldInfoLoadedRevision(host.editorData)).toBe(originalRevision);
+        expect(host.books.get('Lore').entries[0].content).toBe('Newer note publication');
+    });
+
+    test('a clean editor refresh adopts the newer loaded revision without a false conflict', async () => {
+        const host = createHost();
+        await host.context.showWorldEditor('Lore');
+        host.books.get('Lore').entries[0].content = 'Newer note publication';
+        const revision = JSON.stringify(host.books.get('Lore'));
+        host.context.invalidateWorldInfoCache('Lore');
+        await host.context.showWorldEditor('Lore');
+        expect(host.editorData.entries[0].content).toBe('Newer note publication');
+        host.editorData.entries[0].depth = 7;
+        await host.context.saveWorldInfo('Lore', host.editorData, true);
+        expect(host.books.get('Lore').entries[0]).toMatchObject({ content: 'Newer note publication', depth: 7 });
+        const edits = host.context.fetch.mock.calls.filter(([url]) => url === '/api/worldinfo/edit');
+        expect(JSON.parse(edits[0][1].body).revision).toBe(revision);
+    });
+
     test('background saves do not select a lorebook when the native editor has no selection', async () => {
         const host = createHost();
         host.context.$('#world_editor_select').val('');
-        await host.context.saveWorldInfo('Lore', book(), true);
+        await host.context.saveWorldInfo('Lore', await host.context.loadWorldInfo('Lore'), true);
         await host.render();
         expect(host.context.displayWorldEntries).not.toHaveBeenCalled();
         host.context.reloadEditor('Lore', true);
@@ -557,9 +641,10 @@ describe('shared World Info saves', () => {
     test('native saves preserve independently cloned external data and unchanged event identity', async () => {
         const host = createHost();
         const native = await host.context.loadWorldInfo('Lore');
-        const external = structuredClone(await host.context.loadWorldInfo('Lore'));
+        const loadedExternal = await host.context.loadWorldInfo('Lore');
+        const external = structuredClone(loadedExternal);
         external.entries[2].content = 'External content';
-        await host.context.saveWorldInfo('Lore', external, true);
+        await host.context.saveWorldInfo('Lore', external, true, { revision: host.context.getWorldInfoLoadedRevision(loadedExternal) });
         expect(host.context.eventSource.emit.mock.calls[0][2]).toBe(external);
         native.entries[0].depth = 12;
         await host.context.saveWorldInfo('Lore', native, true);

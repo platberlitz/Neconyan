@@ -776,6 +776,7 @@ const MOBILE_DOCUMENT_PAN_GUARD_SELECTOR = [
     '#ica--tracker-panel-handle',
     'dialog.popup',
     '.popup',
+    '.notes-table-pane',
     '.sb-shell-root',
     '.sb-shell-header',
     '.ica--tpanel',
@@ -814,6 +815,7 @@ const MOBILE_DOCUMENT_PAN_HORIZONTAL_SCROLL_SELECTOR = [
     '.img_enlarged_holder',
     '.img_enlarged_container pre code',
     '.select2-results__options',
+    '.notes-property-table-scroll',
 ].join(', ');
 
 const MOBILE_DOCUMENT_PAN_EDITABLE_SELECTOR = [

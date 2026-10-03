@@ -70,6 +70,25 @@ afterEach(() => {
 });
 
 describe('conversation store synchronisation', () => {
+    test('the first Conversation branch saves after the server initialises an absent store', async () => {
+        seed({}, 0);
+        const local = store({ 'nori.png': thread([]) }, { localStorageMigrated: true });
+        extension_settings[KEY] = local;
+        const saves = [];
+        globalThis.fetch = async (url, options) => {
+            if (url.endsWith('/get')) return jsonResponse(200, { store: store({}), version: 1 });
+            const body = JSON.parse(options.body);
+            saves.push(body);
+            if (saves.length === 1) return jsonResponse(409, { error: 'settings_conflict', version: 1 });
+            return jsonResponse(200, { store: body.store, version: 2 });
+        };
+        expect(await storeSync.persistConversationStoreNow()).toBe(true);
+        expect(saves).toHaveLength(2);
+        expect(saves[1]).toEqual({ store: local, version: 1 });
+        expect(storeSync.getConversationSavedSnapshot()).toEqual(local);
+        expect(storeSync.getConversationSavedVersion()).toBe(2);
+    });
+
     test('ownership capture persists the timezone and acknowledged settings once', async () => {
         const saved = store({});
         seed(saved, 7);
