@@ -57,6 +57,19 @@ for (const [layout, viewport, hasTouch] of [
             await expect(page.locator('#qig-status-meta')).toContainText(german['Review off']);
             await expect(page.locator('#qig-prompt-help')).toHaveText(german['Not used while Chat scene is selected; the selected chat messages become the scene.']);
 
+            // Labels made of a phrase and a name are one translated phrase, written after the locale has loaded.
+            const phrase = (key, name) => german[key].replace('${0}', german[name]);
+            await page.evaluate(() => window.NeconyanShell.openTab('right', 'extensions'));
+            await page.evaluate(label => window.NeconyanExtensions.focusUnit(label), german.Vectorization);
+            const vectorsHeader = page.locator('.vectors_settings > .inline-drawer > .inline-drawer-header');
+            const vectorsIcon = vectorsHeader.locator('.inline-drawer-icon');
+            await expect(vectorsHeader).toBeVisible();
+            await expect(vectorsIcon).toHaveAttribute('aria-label', phrase('Collapse ${0}', 'Vectorization'));
+            await vectorsHeader.evaluate(header => header.click());
+            await expect(vectorsIcon).toHaveAttribute('aria-label', phrase('Expand ${0}', 'Vectorization'));
+            await vectorsHeader.evaluate(header => header.click());
+            await expect(vectorsIcon).toHaveAttribute('aria-label', phrase('Collapse ${0}', 'Vectorization'));
+
             await page.evaluate(async () => {
                 const { openTimeMachine } = await import('/scripts/extensions/third-party/Neconyan-Time-Machine/src/ui.js');
                 void openTimeMachine();

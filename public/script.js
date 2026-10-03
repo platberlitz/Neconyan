@@ -335,7 +335,7 @@ import { buildAssistantKnowledge, getAssistantKnowledgeBudget, isNeconyanAssista
 import { clearItemizedPrompts, deleteItemizedPromptForMessage, deleteItemizedPrompts, findItemizedPromptSet, restoreItemizedPrompts, initItemizedPrompts, itemizedParams, itemizedPrompts, loadItemizedPrompts, promptItemize, replaceItemizedPromptText, saveItemizedPrompts, swapItemizedPrompts } from './scripts/itemized-prompts.js';
 import { getSystemMessageByType, initSystemMessages, SAFETY_CHAT, sendSystemMessage, system_message_types, system_messages } from './scripts/system-messages.js';
 import { event_types, eventSource } from './scripts/events.js';
-import { initAccessibility } from './scripts/a11y.js';
+import { initAccessibility, setToggleLabelFormatter } from './scripts/a11y.js';
 import { initQuickContextSizeEnhancer } from './scripts/quick-context-size-enhancer.js';
 import { applyStreamDomPatch, applyStreamFadeIn } from './scripts/util/stream-fadein.js';
 import { formatTokenCounterText, getPositiveTokenCount, updateReasoningTokenAccounting } from './scripts/reasoning-token-accounting.js';
@@ -1339,6 +1339,7 @@ async function firstLoadInit() {
         initCustomSelectedSamplers();
         initDataMaid();
         initItemizedPrompts();
+        setToggleLabelFormatter((expanded, label) => expanded ? t`Collapse ${label}` : t`Expand ${label}`);
         initAccessibility();
         initSwipePicker();
         addDebugFunctions();

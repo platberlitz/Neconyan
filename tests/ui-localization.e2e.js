@@ -71,3 +71,65 @@ test('captions filled in before the locale loaded still match their template key
     });
     expect(result).toEqual(['Schnellzugriff: Agents', 'Schnellzugriff: Agents', '9 Schritte, Schritt 2', 'Roleplay ist aktiv', 'Nori']);
 });
+
+test('drawer toggles are labelled with the phrase the app supplies, before and after a toggle', async ({ page }) => {
+    const source = await readFile(new URL('../public/scripts/a11y.js', import.meta.url), 'utf8');
+    await page.setContent(`
+        <div class="inline-drawer" id="drawer">
+            <div class="inline-drawer-toggle inline-drawer-header"><b>Einstellungen</b><div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div></div>
+            <div class="inline-drawer-content">Text</div>
+        </div>`);
+    await page.addScriptTag({ type: 'module', content: `${source}\nwindow.drawerLabels = { initAccessibility, setToggleLabelFormatter };` });
+    await page.waitForFunction(() => typeof window.drawerLabels?.setToggleLabelFormatter === 'function');
+    const result = await page.evaluate(() => {
+        const drawer = document.getElementById('drawer');
+        const icon = drawer.querySelector('.inline-drawer-icon');
+        const toggled = () => {
+            drawer.dispatchEvent(new CustomEvent('inline-drawer-toggle', { bubbles: true }));
+            return [icon.getAttribute('aria-label'), icon.getAttribute('aria-expanded')];
+        };
+        // Without a formatter (the login page, or English) the label is the English phrase.
+        window.drawerLabels.initAccessibility();
+        const english = [icon.getAttribute('aria-label'), icon.getAttribute('aria-expanded')];
+        // script.js passes t`Collapse ${label}` and t`Expand ${label}`; German puts the verb last.
+        window.drawerLabels.setToggleLabelFormatter((expanded, label) => expanded ? `${label} einklappen` : `${label} ausklappen`);
+        const collapsed = toggled();
+        icon.classList.replace('down', 'up');
+        return { english, collapsed, expanded: toggled() };
+    });
+    expect(result).toEqual({
+        english: ['Expand Einstellungen', 'false'],
+        collapsed: ['Einstellungen ausklappen', 'false'],
+        expanded: ['Einstellungen einklappen', 'true'],
+    });
+});
+
+test('an exact entry wins over a ${0} pattern that would otherwise catch the caption', async ({ page }) => {
+    const source = await readFile(new URL('../public/scripts/ui-localization.js', import.meta.url), 'utf8');
+    const readJson = async path => JSON.parse(await readFile(new URL(path, import.meta.url), 'utf8'));
+    const dictionaries = {};
+    for (const lang of ['de-de', 'it-it']) dictionaries[lang] = { ...await readJson(`../public/locales/${lang}.json`), ...await readJson(`../public/locales/neconyan/${lang}.json`) };
+    // Each caption matches the ${0} pattern beside it; the exact entry is what the page must show.
+    const pairs = [
+        ['de-de', 'Expand ${0}', 'Expand sidebar'],
+        ['de-de', 'Expand ${0}', 'Expand the selection with more detail'],
+        ['de-de', 'Collapse ${0}', 'Collapse extra blank lines'],
+        ['it-it', 'Expand ${0}', 'Expand sidebar'],
+        ['it-it', 'Expand ${0}', 'Expand the selection with more detail'],
+        ['it-it', 'Collapse ${0}', 'Collapse extra blank lines'],
+    ];
+    for (const [lang, pattern, caption] of pairs) {
+        expect(dictionaries[lang][pattern], `${lang} ${pattern}`).toMatch(/\$\{0\}/);
+        expect(dictionaries[lang][caption], `${lang} ${caption}`).toBeTruthy();
+        expect(new RegExp(`^${pattern.replace('${0}', '(.+)')}$`).test(caption), `${lang} ${caption} matches ${pattern}`).toBe(true);
+    }
+    await page.setContent(`<main>${pairs.map(([, , caption], index) => `<p id="caption-${index}" title="${caption}">${caption}</p>`).join('')}</main>`);
+    await page.addScriptTag({ type: 'module', content: `${source}\nwindow.localizeControls = localizeControls;` });
+    await page.waitForFunction(() => typeof window.localizeControls === 'function');
+    const shown = await page.evaluate(([dictionaries, pairs]) => pairs.map(([lang], index) => {
+        const element = document.getElementById(`caption-${index}`);
+        window.localizeControls(element, dictionaries[lang]);
+        return [element.textContent, element.title];
+    }), [dictionaries, pairs]);
+    expect(shown).toEqual(pairs.map(([lang, , caption]) => [dictionaries[lang][caption], dictionaries[lang][caption]]));
+});
