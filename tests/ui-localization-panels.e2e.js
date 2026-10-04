@@ -23,6 +23,10 @@ for (const [layout, viewport, hasTouch] of [
             const skip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
             if (await skip.isVisible()) await skip.click();
 
+            const checkpoint = page.locator('#message_template .mes_bookmark');
+            await expect(checkpoint).toHaveAttribute('data-tooltip', german['Open checkpoint chat\nShift+Click to replace the existing checkpoint with a new one']);
+            await expect(checkpoint.locator('.neconyan-action-label')).toHaveCount(1);
+
             const header = selector => page.locator(`#right-nav-panel > .sb-character-shell-header ${selector}`);
             const title = () => header('.sb-shell-title').evaluate(element => element.firstChild?.textContent?.trim());
             // The header copy is rewritten on every tab switch, after the page was first translated.

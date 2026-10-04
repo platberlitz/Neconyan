@@ -27,7 +27,28 @@ describe('Neconyan native workspace module', () => {
         expect(element.textContent).toBe('Translated [SP] caption.');
         expect(element.setAttribute).not.toHaveBeenCalled();
         // translateElement and getMissingTranslations must parse a spec the same way.
-        expect(source.split('key.match(/^\\[([^\\]]+)\\](.+)$/)')).toHaveLength(3);
+        expect(source.split('key.match(/^\\[([^\\]]+)\\](.+)$/s)')).toHaveLength(3);
+    });
+    test('multiline tooltips do not replace the control label', () => {
+        const source = readFileSync(new URL('../public/scripts/i18n.js', import.meta.url), 'utf8');
+        const translate = source.match(/^function translateElement\([\s\S]*?^}/m)[0];
+        const key = 'Open checkpoint chat\nShift+Click to replace the existing checkpoint with a new one';
+        const tooltip = 'Checkpoint-Chat öffnen\nUmschalt+Klick ersetzt den vorhandenen Checkpoint durch einen neuen';
+        const context = vm.createContext({ localeData: {
+            [key]: tooltip,
+            [`[data-tooltip]${key}`]: 'Checkpoint',
+            'Open checkpoint chat': 'Checkpoint-Chat öffnen',
+        } });
+        vm.runInContext(translate, context);
+        const element = {
+            getAttribute: () => `[data-tooltip]${key};[aria-label]Open checkpoint chat`,
+            setAttribute: jest.fn(),
+            textContent: 'Original label',
+        };
+        context.translateElement(element);
+        expect(element.setAttribute).toHaveBeenCalledWith('data-tooltip', tooltip);
+        expect(element.setAttribute).toHaveBeenCalledWith('aria-label', 'Checkpoint-Chat öffnen');
+        expect(element.textContent).toBe('Original label');
     });
     test('links its folder helpers and exposes all native mount points', async () => {
         jest.resetModules();
