@@ -214,6 +214,11 @@ describe('Neconyan settings and extension controllers', () => {
         expect([...context.readPinnedExtensionKeys()]).toEqual([]);
         expect(source).toContain('row.className = \'sb-extension-master-row\';');
         expect(source).toContain('pin.className = \'sb-extension-pin\';');
+        // Both states are whole phrases for the translator, and the extension name is passed through unchanged.
+        expect(source).toContain('import { t } from \'./i18n.js\';');
+        expect(source).toContain('const label = pinned ? t`Unpin ${info.name}` : t`Pin ${info.name}`;');
+        expect(source).toContain('pin.setAttribute(\'aria-label\', state.pinnedKeys.has(info.key) ? t`Unpin ${info.name}` : t`Pin ${info.name}`);');
+        expect(source).toContain('state.selectedKey && selectedPinned ? t`Unpin selected extension` : t`Pin selected extension`');
         expect(source).toContain('state.mountedUnits');
         expect(cssSource).toContain('.sb-extension-master-row');
         expect(cssSource).toContain('.sb-extension-pin');

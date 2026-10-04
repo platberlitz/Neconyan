@@ -6714,14 +6714,14 @@ export async function importEmbeddedWorldInfoBatch() {
     const collisions = imported.filter(r => r.collision);
 
     let summary = `<h3>${t`Batch import complete`}</h3>`;
-    summary += `<div>${imported.length} ${t`imported`}`;
+    summary += `<div>${t`${imported.length} imported`}`;
 
     if (collisions.length > 0) {
-        summary += `, ${collisions.length} ${t`overwrote existing`}`;
+        summary += `, ${t`${collisions.length} overwrote existing`}`;
     }
 
     if (skipped.length > 0) {
-        summary += `, ${skipped.length} ${t`skipped`}`;
+        summary += `, ${t`${skipped.length} skipped`}`;
     }
 
     summary += '.</div>';
