@@ -1,5 +1,12 @@
 // Questions and distinguishing facts shared by Node and real-browser retrieval checks.
 export const refreshedKnowledgeCases = [
+    ['My Termux chats disappeared after I copied folders and reloaded', 'recovery.transferred-data', 'Check transferred data'],
+    ['How do I fix ROLEPLAY_SOURCE_CHANGED?', 'recovery.transferred-data', 'Reload repaired account'],
+    ['I removed _roleplay and old chats return ROLEPLAY_FOREIGN_SOURCE', 'recovery.transferred-data', 'Keep tracking records and chat markers intact'],
+    ['Can Repair transferred data reconstruct corrupt chats?', 'recovery.transferred-data', 'Missing or corrupt content cannot be reconstructed'],
+    ['What does ROLEPLAY_RECOVERY_REQUIRED mean?', 'recovery.pending-operation', 'Refreshing the browser alone does not run startup recovery'],
+    ['An earlier Roleplay transaction must be reconciled first and I cannot create chats', 'recovery.pending-operation', 'first startup error'],
+    ['Why do two local installations show Invalid CSRF token?', 'troubleshooting.browser-session', 'distinct names for their data folders and configured ports'],
     ['How do I create a new notebook?', 'notes.start', 'Save to Inbox'],
     ['How do I fold sections in a note?', 'notes.editing', 'Folding hides sections only on screen'],
     ['My note says Saved on this device. Is it saved?', 'notes.saving', 'Conflict stops autosaving'],
