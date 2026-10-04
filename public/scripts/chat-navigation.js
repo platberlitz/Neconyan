@@ -125,12 +125,12 @@ function captureVisibleTarget() {
         const indexed = branch.navigationId && saved?.navigationTargets?.[branch.navigationId];
         const enrolled = indexed?.branchId === branch.id && isConversationThreadKeyForPersona(indexed.threadKey, personaId)
             && (indexed.threadKey === getRawConversationThreadKey(avatar, groupId, personaId)
-                || (groupId && saved.characters[indexed.threadKey]?.groupId === groupId)) ? indexed : null;
+                || (groupId && saved.characters?.[indexed.threadKey]?.groupId === groupId)) ? indexed : null;
         const thread = saved?.characters?.[getRawConversationThreadKey(avatar, groupId, personaId)];
         const exists = enrolled || (thread?.branches?.[branch.id]?.lifetimeSeed === branch.lifetimeSeed
             && thread.branches?.[branch.id]?.createdAt === branch.createdAt && thread.threadAvatar === avatar && String(thread.groupId || '') === groupId);
         if (!exists) return { kind: 'other' };
-        return { mode, target: { avatar: enrolled ? saved.characters[enrolled.threadKey].threadAvatar : avatar, groupId, personaId, branchId: branch.id },
+        return { mode, target: { avatar: (enrolled && saved.characters?.[enrolled.threadKey]?.threadAvatar) || avatar, groupId, personaId, branchId: branch.id },
             expectedBranch: { navigationId: branch.navigationId || null, lifetimeSeed: branch.lifetimeSeed || '', createdAt: String(branch.createdAt || '') } };
     }
     const chatName = getCurrentChatId();

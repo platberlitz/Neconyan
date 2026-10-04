@@ -342,7 +342,7 @@ function redirectToHome() {
 
     // Set the pathname to root and keep the updated query string
     // Keep a reverse proxy's installation prefix. No user-controlled return URL.
-    currentUrl.pathname = currentUrl.pathname.replace(/\/login\/?$/, '/') || '/';
+    currentUrl.pathname = currentUrl.pathname.replace(/\/login(?:\.html)?\/?$/, '/') || '/';
 
     // Redirect to the new URL
     window.location.href = currentUrl.toString();

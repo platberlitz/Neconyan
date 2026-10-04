@@ -329,6 +329,34 @@ test('saved Conversation groups retain an exact canonical move, but not a recrea
     assert.notEqual(replacement.body.id, destination.id);
 });
 
+test('a deleted Conversation group thread reports the link as gone and lets a stale pointer clear', async t => {
+    const f = await fixture(t);
+    fs.writeFileSync(path.join(f.users.alice.directories.characters, 'Kit.png'), writeCard(png, JSON.stringify({ name: 'Kit', description: 'Saved member' })));
+    const threadKey = 'persona:User.png:group:cg:Nova.png';
+    f.change(settings => {
+        const store = settings.extension_settings.neconyan_conversation;
+        store.groups.push({ id: 'cg', personaId: 'User.png', members: ['Nova.png', 'Kit.png'], disabled_members: [], createdAt: 1, lifetimeSeed: 'group-life' });
+        store.characters[threadKey] = { ...structuredClone(store.characters[f.users.alice.threadKey]), groupId: 'cg' };
+    });
+    const established = await f.post('establish', { account: f.account, mode: 'conversation', target: { avatar: 'Nova.png', groupId: 'cg', personaId: 'User.png', branchId: 'main' } });
+    assert.equal(established.status, 200, JSON.stringify(established.body));
+    const destination = { id: established.body.id, mode: 'conversation' };
+    f.change(settings => { settings.power_user.auto_load_chat = true; });
+    const remembered = await f.post('remember', { account: f.account, destination, clientId: randomUUID(), sequence: 1 });
+    assert.equal(remembered.body.accepted, true);
+    f.change(settings => {
+        const store = settings.extension_settings.neconyan_conversation;
+        delete store.characters[threadKey];
+        store.groups = [];
+    });
+    const resolved = await f.post('resolve', { destination });
+    assert.equal(resolved.status, 404, JSON.stringify(resolved.body));
+    const cleared = await f.post('clear-stale', { account: f.account, revision: remembered.body.pointer.revision });
+    assert.equal(cleared.status, 200, JSON.stringify(cleared.body));
+    assert.equal(cleared.body.cleared, true);
+    assert.equal((await f.post('state')).body.pointer, null);
+});
+
 test('Conversation group replacement during metadata enrolment cannot bind or corrupt the old identity', async t => {
     const f = await fixture(t);
     fs.writeFileSync(path.join(f.users.alice.directories.characters, 'Kit.png'), writeCard(png, JSON.stringify({ name: 'Kit', description: 'Saved member' })));

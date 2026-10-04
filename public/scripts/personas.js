@@ -2037,6 +2037,8 @@ async function deletePersona(avatarId, { silent = false } = {}) {
         return true;
     }
 
+    console.warn(`Could not delete persona ${avatarId}: ${request.status}`);
+    if (!silent) toastr.error(t`The persona was not deleted. Try again in a moment.`, t`Could not delete persona`);
     return false;
 }
 

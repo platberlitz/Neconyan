@@ -124,6 +124,7 @@ function resolve(request, lease, document, destination, { allowDisabled = false 
     const index = store?.navigationTargets?.[destination.id];
     const currentThread = index && store?.characters?.[index.threadKey];
     const avatar = alias.target.groupId ? currentThread?.threadAvatar : owner.locator.avatar;
+    if (typeof avatar !== 'string') throw navigationUnavailable();
     const target = conversationTarget(request, { ...alias.target, avatar }, { lease, document, allowDisabled, snapshot });
     if (target.branch.navigationId !== destination.id || target.persona !== alias.persona
         || target.store.navigationTargets?.[destination.id]?.threadKey !== target.threadKey

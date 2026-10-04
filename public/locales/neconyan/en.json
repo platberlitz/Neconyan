@@ -11902,5 +11902,7 @@
   "Only a saved conversation has a chat link.": "Only a saved conversation has a chat link.",
   "Chat link copied.": "Chat link copied.",
   "Only saved chats have links. A link opens this chat in your account; it does not share it.": "Only saved chats have links. A link opens this chat in your account; it does not share it.",
-  "The chat opened, but its link could not be prepared. Open it again to retry.": "The chat opened, but its link could not be prepared. Open it again to retry."
+  "The chat opened, but its link could not be prepared. Open it again to retry.": "The chat opened, but its link could not be prepared. Open it again to retry.",
+  "The persona was not deleted. Try again in a moment.": "The persona was not deleted. Try again in a moment.",
+  "Could not delete persona": "Could not delete persona"
 }
