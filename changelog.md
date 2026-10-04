@@ -9,6 +9,7 @@
 - PR #7 (2026-10-02) `fix: use the configured reply length for Roleplay workflow generations`
 - PR #8 (2026-10-02) `fix: coerce numeric chat settings so a quoted context size cannot block the Roleplay workflow`
 - PR #10 (2026-10-03) `feat: add Notes notebooks with assistant edits and linked lore`
+- PR #11 (2026-10-04) `fix: correct three runtime localisation faults in the settings screens`
 
 ## v1.0.6
 
