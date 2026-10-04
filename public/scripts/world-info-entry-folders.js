@@ -46,6 +46,19 @@ export function renameEntryFolder(data, oldName, newName) {
     return changed;
 }
 
+/** A folder heading under the pointer wins; otherwise the entry joins the folder whose heading sits above it. */
+export function resolveEntryFolderDrop({ hovered = null, preceding = null } = {}) {
+    return normalizeEntryFolder(hovered ?? preceding ?? '');
+}
+
+export function findEntryFolderHeadingAt(headings, x, y) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return [...headings].find(heading => {
+        const box = heading.getBoundingClientRect();
+        return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
+    }) ?? null;
+}
+
 /** Stable folder grouping preserves the selected sort order inside every folder. */
 export function groupEntriesByFolder(entries, data, filter = null) {
     const rank = new Map(['', ...getEntryFolders(data)].map((name, index) => [name, index]));

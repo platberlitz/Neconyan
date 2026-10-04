@@ -1,5 +1,6 @@
 import { describe, expect, test } from '@jest/globals';
-import { ENTRY_FOLDER_KEY, ENTRY_FOLDERS_KEY, addEntryFolder, getEntryFolder, getEntryFolders, groupEntriesByFolder, renameEntryFolder, setEntryFolder } from '../public/scripts/world-info-entry-folders.js';
+import { readFileSync } from 'node:fs';
+import { ENTRY_FOLDER_KEY, ENTRY_FOLDERS_KEY, addEntryFolder, findEntryFolderHeadingAt, getEntryFolder, getEntryFolders, groupEntriesByFolder, renameEntryFolder, resolveEntryFolderDrop, setEntryFolder } from '../public/scripts/world-info-entry-folders.js';
 import { serializeWorldInfoEntry } from '../public/scripts/world-info-character-book.js';
 
 const entry = (uid, folder = '') => ({ uid, key: ['key'], content: 'Content', order: 17, group: 'Activation group', extensions: { custom: true, [ENTRY_FOLDER_KEY]: folder } });
@@ -34,6 +35,24 @@ describe('lorebook entry folders', () => {
         expect(entries.map(e => e.uid)).toEqual([3, 2, 1, 0]);
     });
 
+    test('a dragged entry joins the hovered heading, else the folder heading above it, else Unfiled', () => {
+        expect(resolveEntryFolderDrop({ hovered: 'Places', preceding: 'People' })).toBe('Places');
+        expect(resolveEntryFolderDrop({ hovered: '', preceding: 'People' })).toBe('');
+        expect(resolveEntryFolderDrop({ hovered: null, preceding: ' People ' })).toBe('People');
+        expect(resolveEntryFolderDrop({ hovered: null, preceding: null })).toBe('');
+        expect(resolveEntryFolderDrop()).toBe('');
+    });
+
+    test('finds the folder heading under the pointer', () => {
+        const heading = (folder, top) => ({ folder, getBoundingClientRect: () => ({ left: 0, right: 300, top, bottom: top + 44 }) });
+        const headings = [heading('', 0), heading('People', 100), heading('Places', 300)];
+        expect(findEntryFolderHeadingAt(headings, 150, 120)?.folder).toBe('People');
+        expect(findEntryFolderHeadingAt(headings, 10, 300)?.folder).toBe('Places');
+        expect(findEntryFolderHeadingAt(headings, 150, 200)).toBeNull();
+        expect(findEntryFolderHeadingAt(headings, 400, 120)).toBeNull();
+        expect(findEntryFolderHeadingAt(headings, undefined, 120)).toBeNull();
+    });
+
     test('preserves and clears entry folders when serialising an embedded character book', () => {
         const source = entry(0, 'Characters');
         const positions = { before: 0, after: 1 };
@@ -43,5 +62,16 @@ describe('lorebook entry folders', () => {
         const cleared = serializeWorldInfoEntry(source, positions, saved);
         expect(cleared.extensions[ENTRY_FOLDER_KEY]).toBe('');
         expect(cleared.extensions.custom).toBe(true);
+    });
+
+    test('wires the entry list drag to folder moves and holds the list height while an entry is lifted', () => {
+        const source = readFileSync(new URL('../public/scripts/world-info.js', import.meta.url), 'utf8');
+        const sortable = source.slice(source.indexOf('worldEntriesList.sortable({'), source.indexOf('//$("#world_popup_entries_list").disableSelection();'));
+        expect(sortable).toContain('folderUI?.dragStart(worldEntriesList[0])');
+        expect(sortable).toContain('folderUI?.dragOver(worldEntriesList[0], event)');
+        expect(sortable).toMatch(/stop: async function \(_event, ui\) \{\s*releaseListHeight\(\);\s*const folderMove = folderUI\?\.dragEnd\(worldEntriesList\[0\], ui\.item\[0\]\)/);
+        expect(sortable).toContain('worldEntriesList.sortable(\'cancel\');');
+        expect(source).toMatch(/on\('pointerdown\.necoDragHeight', '\.drag-handle'[\s\S]{0,300}css\('min-height'/);
+        expect(source).toMatch(/pointerup\.necoDragHeight pointercancel\.necoDragHeight[\s\S]{0,200}ui-sortable-placeholder[\s\S]{0,60}releaseListHeight\(\)/);
     });
 });

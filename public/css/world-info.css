@@ -2558,6 +2558,8 @@ body.neconyan #WorldInfo.sb-shell-embedded-content #world_popup_entries_list .wo
 #world_popup_entries_list > .neco-entry-folder-heading > button { margin: 0; min-height: 44px; min-width: 44px; }
 #world_popup_entries_list > .neco-entry-folder-heading > button:first-child { flex: 1; min-width: 0; justify-content: flex-start; white-space: normal; text-align: left; overflow-wrap: anywhere; }
 #world_popup_entries_list > .neco-entry-folder-hidden { display: none !important; }
+#world_popup_entries_list.neco-entry-folder-dragging > .neco-entry-folder-heading { outline: 2px dashed var(--neco-border); outline-offset: -2px; }
+#world_popup_entries_list.neco-entry-folder-dragging > .neco-entry-folder-heading.neco-entry-folder-drop-target { outline: 2px solid var(--neco-ginger); background: color-mix(in srgb, var(--neco-ginger) 18%, var(--neco-raised)); }
 .neco-entry-folder-picker { display: flex; flex-direction: column; gap: 8px; text-align: left; min-width: 0; }
 .neco-entry-folder-picks { max-height: 45dvh; overflow-y: auto; }
 .neco-entry-folder-picks > label { min-height: 44px; overflow-wrap: anywhere; }

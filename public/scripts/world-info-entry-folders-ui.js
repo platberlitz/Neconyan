@@ -1,7 +1,7 @@
 import { t } from './i18n.js';
 import { Popup, POPUP_TYPE } from './popup.js';
 import { accountStorage } from './util/AccountStorage.js';
-import { ENTRY_FOLDER_KEY, addEntryFolder, getEntryFolder, getEntryFolders, groupEntriesByFolder, normalizeEntryFolder, renameEntryFolder, setEntryFolder } from './world-info-entry-folders.js';
+import { ENTRY_FOLDER_KEY, addEntryFolder, findEntryFolderHeadingAt, getEntryFolder, getEntryFolders, groupEntriesByFolder, normalizeEntryFolder, renameEntryFolder, resolveEntryFolderDrop, setEntryFolder } from './world-info-entry-folders.js';
 
 const views = new Map();
 
@@ -53,10 +53,24 @@ export function createEntryFolderUI({ name, data, save, refresh, syncOriginal, r
         if (view.filter !== null && view.filter !== folder) view.filter = null;
     }
 
-    async function commit(changed = []) {
+    async function commit(changed = [], navigation = undefined) {
         changed.forEach(entry => syncOriginal(entry.uid, `extensions.${ENTRY_FOLDER_KEY}`, getEntryFolder(entry)));
         await save();
-        await refresh();
+        await refresh(navigation);
+    }
+
+    let dropHeading = null;
+    function setDropHeading(heading) {
+        if (dropHeading === heading) return;
+        dropHeading?.classList.remove('neco-entry-folder-drop-target');
+        dropHeading = heading;
+        dropHeading?.classList.add('neco-entry-folder-drop-target');
+    }
+    function precedingHeading(node) {
+        for (let sibling = node?.previousElementSibling; sibling; sibling = sibling.previousElementSibling) {
+            if (sibling.classList.contains('neco-entry-folder-heading')) return sibling;
+        }
+        return null;
     }
 
     async function moveEntries(initialEntries = null) {
@@ -129,7 +143,39 @@ export function createEntryFolderUI({ name, data, save, refresh, syncOriginal, r
     }), button('Move entries', 'fa-folder-open', () => moveEntries()));
 
     return {
+        hasFolders: folders.length > 0,
         filter: entries => groupEntriesByFolder(entries, data, view.filter),
+        dragStart(list) {
+            if (!folders.length) return;
+            setDropHeading(null);
+            list.classList.add('neco-entry-folder-dragging');
+        },
+        dragOver(list, event) {
+            if (!folders.length) return;
+            // Highlight where the entry will land: the heading under the pointer, else the folder holding the gap.
+            const hovered = findEntryFolderHeadingAt(list.querySelectorAll(':scope > .neco-entry-folder-heading'), event?.clientX, event?.clientY);
+            setDropHeading(hovered ?? precedingHeading(list.querySelector(':scope > .ui-sortable-placeholder')));
+        },
+        /** Returns the entry and its new folder, or null when the drop leaves the folder unchanged. */
+        dragEnd(list, item) {
+            const heading = dropHeading?.isConnected ? dropHeading : null;
+            setDropHeading(null);
+            list.classList.remove('neco-entry-folder-dragging');
+            if (!folders.length) return null;
+            const entry = data.entries[item?.getAttribute('uid')];
+            if (!entry) return null;
+            const preceding = precedingHeading(item);
+            const folder = resolveEntryFolderDrop({
+                hovered: heading ? heading.dataset.folder ?? '' : null,
+                preceding: preceding ? preceding.dataset.folder ?? '' : null,
+            });
+            return folder === getEntryFolder(entry) ? null : { entry, folder };
+        },
+        async moveEntry(entry, folder) {
+            setEntryFolder(entry, folder);
+            view.closed.delete(folder);
+            await commit([entry], entry.uid);
+        },
         fileNewEntry(entry) {
             if (view.filter) {
                 setEntryFolder(entry, view.filter);

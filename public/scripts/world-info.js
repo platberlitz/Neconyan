@@ -2780,7 +2780,7 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
     entryFolderUI = createEntryFolderUI({
         name, data, requestedUid,
         save: () => saveWorldInfo(name, data, true),
-        refresh: () => updateEditor(),
+        refresh: navigation => updateEditor(navigation),
         syncOriginal: (uid, path, value) => setWIOriginalDataValue(data, uid, path, value),
     });
     const folderUI = entryFolderUI;
@@ -2911,10 +2911,13 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
                 }
 
                 const isCustomOrder = $('#world_info_sort_order').find(':selected').data('rule') === 'custom';
-                if (!isCustomOrder) {
+                if (!isCustomOrder && !folderUI?.hasFolders) {
                     blocks.forEach(block => {
                         block.find('.drag-handle').remove();
                     });
+                } else if (folderUI?.hasFolders) {
+                    const hint = isCustomOrder ? 'Drag to reorder or move into a folder' : 'Drag into a folder';
+                    blocks.forEach(block => block.find('.drag-handle').attr('title', hint));
                 }
 
                 if (folderUI) {
@@ -3097,11 +3100,33 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
         worldEntriesList.sortable('destroy');
     }
 
+    // Lifting an entry briefly shortens the list; at the bottom of the scroll that pulls the end of the list out of reach.
+    const releaseListHeight = () => worldEntriesList.css('min-height', '');
+    worldEntriesList.off('pointerdown.necoDragHeight').on('pointerdown.necoDragHeight', '.drag-handle', () => {
+        const borderBox = worldEntriesList.css('box-sizing') === 'border-box';
+        worldEntriesList.css('min-height', `${borderBox ? worldEntriesList.outerHeight() : worldEntriesList.height()}px`);
+        $(document).off('.necoDragHeight').on('pointerup.necoDragHeight pointercancel.necoDragHeight', () => {
+            $(document).off('.necoDragHeight');
+            if (!worldEntriesList.children('.ui-sortable-placeholder').length) releaseListHeight();
+        });
+    });
+
     worldEntriesList.sortable({
         items: '.world_entry',
         delay: getSortableDelay(),
         handle: '.drag-handle',
-        stop: async function (_event, _ui) {
+        start: () => folderUI?.dragStart(worldEntriesList[0]),
+        sort: event => folderUI?.dragOver(worldEntriesList[0], event),
+        stop: async function (_event, ui) {
+            releaseListHeight();
+            const folderMove = folderUI?.dragEnd(worldEntriesList[0], ui.item[0]) ?? null;
+            const isCustomOrder = $('#world_info_sort_order').find(':selected').data('rule') === 'custom';
+            if (!isCustomOrder) {
+                worldEntriesList.sortable('cancel');
+                if (folderMove) await folderUI.moveEntry(folderMove.entry, folderMove.folder);
+                return;
+            }
+
             const firstEntryUid = $('#world_popup_entries_list .world_entry').first().data('uid');
             const minDisplayIndex = data?.entries[firstEntryUid]?.displayIndex ?? 0;
             $('#world_popup_entries_list .world_entry').each(function (index) {
@@ -3121,6 +3146,10 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
 
             console.table(Object.keys(data.entries).map(uid => data.entries[uid]).map(x => ({ uid: x.uid, key: x.key.join(','), displayIndex: x.displayIndex })));
 
+            if (folderMove) {
+                await folderUI.moveEntry(folderMove.entry, folderMove.folder);
+                return;
+            }
             await saveWorldInfo(name, data);
         },
     });
