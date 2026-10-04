@@ -46,6 +46,11 @@ for (const width of [393, 1280]) {
                 const end = i === 0 || i === 4;
                 await expect(rows.nth(i)).toHaveCSS('margin-top', end ? '44px' : '0px');
                 await expect(rows.nth(i).locator(':scope > .neconyan-message-sleeper')).toHaveCSS('display', end ? 'block' : 'none');
+                // Manuscript paragraphs drop the chat bubble frame from flat chat styles.
+                const block = rows.nth(i).locator('.mes_block');
+                await expect(block).toHaveCSS('border-top-width', '0px');
+                await expect(block).toHaveCSS('border-top-left-radius', '0px');
+                await expect(block).toHaveCSS('box-shadow', 'none');
             }
             const gap = await rows.evaluateAll(elements => elements[2].getBoundingClientRect().top - elements[1].getBoundingClientRect().bottom);
             expect(Math.abs(gap)).toBeLessThan(1);

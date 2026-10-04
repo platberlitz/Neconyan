@@ -290,6 +290,9 @@ body.sbstory #chat .mes:not(.smallSysMes) .mes_block {
     max-width: 100% !important;
     width: 100% !important;
     background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
 }
 
 /* Message controls float beside the opening line instead of covering manuscript text.
