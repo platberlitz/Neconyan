@@ -121,6 +121,7 @@ for (const phone of [false, true]) {
             await page.locator(toggle('workspace')).click();
             await page.screenshot({ path: info.outputPath('sidebar-sections.png') });
             await checkIconSidebar(page, phone);
+            await page.unrouteAll({ behavior: 'ignoreErrors' });
         });
     });
 }

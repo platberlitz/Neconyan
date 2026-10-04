@@ -37,7 +37,7 @@ for (const phone of [false, true]) test(`${phone ? 'phone' : 'desktop'} relative
         if (response.url().includes('/api/settings/get') && !response.ok()) failedSettings.push(response.status());
     }));
     const page = await account.open({ workspace: false });
-    await expect(page.getByRole('region', { name: 'Home' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Home', exact: true })).toBeVisible();
     expect(failedSettings).toEqual([]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath('relative-data-root.png') });

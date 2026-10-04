@@ -29,6 +29,15 @@ async function openAgentChat(page, longText = false) {
     }, longText);
 }
 
+async function openMessageAction(scope, selector) {
+    const action = scope.locator(selector);
+    await expect(async () => {
+        if (!await action.isVisible()) await scope.locator('.extraMesButtonsHint').click();
+        await expect(action).toBeVisible({ timeout: 2000 });
+    }).toPass({ timeout: 20000 });
+    return action;
+}
+
 async function checkPhoneAgentDiffScrolling(page, diff, context) {
     await applyIOSOnlyCss(page);
     await expect(diff).toHaveCSS('overflow-x', 'hidden');
@@ -76,8 +85,7 @@ for (const phone of [false, true]) {
 
         test('keeps View agent changes compact before and after editing', async ({ page }, testInfo) => {
             const message = page.locator('#chat .mes[mesid="0"]');
-            const action = message.locator('.mes_view_agent_changes');
-            await message.locator('.extraMesButtonsHint').click();
+            const action = await openMessageAction(message, '.mes_view_agent_changes');
             const checkSize = async () => {
                 await expect(action).toBeVisible();
                 await expect(action).toHaveCSS('aspect-ratio', 'auto');
@@ -90,7 +98,7 @@ for (const phone of [false, true]) {
             await message.locator('.mes_edit').click();
             await message.locator('.edit_textarea').fill('Edited reply');
             await message.locator('.mes_edit_done').click();
-            await message.locator('.extraMesButtonsHint').click();
+            await openMessageAction(message, '.mes_view_agent_changes');
             await checkSize();
             await page.screenshot({ path: testInfo.outputPath('agent-action-size.png') });
             await action.click();
@@ -99,9 +107,7 @@ for (const phone of [false, true]) {
 
         test('left-aligns the wrapped Quick Image Gen message label', async ({ page }, testInfo) => {
             const message = page.locator('#chat .mes[mesid="0"]');
-            await message.locator('.extraMesButtonsHint').click();
-            const action = message.locator('.qig-message-generate');
-            await expect(action).toBeVisible();
+            const action = await openMessageAction(message, '.qig-message-generate');
             await expect(action).toHaveCSS('justify-content', 'flex-start');
             await expect(action).toHaveCSS('text-align', 'left');
             const label = action.locator('.neconyan-action-label');
@@ -117,8 +123,7 @@ for (const phone of [false, true]) {
         });
 
         test('keeps inserted and deleted agent text readable in light and dark themes', async ({ page }, testInfo) => {
-            await page.locator('#chat .extraMesButtonsHint').click();
-            await page.locator('#chat .mes_view_agent_changes').click();
+            await (await openMessageAction(page.locator('#chat .mes[mesid="0"]'), '.mes_view_agent_changes')).click();
             const diff = page.locator('dialog[open] .ica-transform-diff');
             await expect(diff).toBeVisible();
             for (const theme of ['Neconyan Calico', 'Nord Light', 'Solarized Light', 'Neconyan Calico Dark']) {
@@ -156,8 +161,7 @@ for (const phone of [false, true]) {
         });
 
         test('keeps long agent changes vertically scrollable without sideways overflow', async ({ page, context }, testInfo) => {
-            await page.locator('#chat .extraMesButtonsHint').click();
-            await page.locator('#chat .mes_view_agent_changes').click();
+            await (await openMessageAction(page.locator('#chat .mes[mesid="0"]'), '.mes_view_agent_changes')).click();
             const diff = page.locator('dialog[open] .ica-transform-diff');
             await page.locator('#themes').evaluate(el => window.jQuery(el).val('Neconyan Calico').trigger('change'));
             for (const theme of ['calico', 'windows-98']) {

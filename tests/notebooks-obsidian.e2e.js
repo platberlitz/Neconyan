@@ -1,9 +1,102 @@
 /* global getComputedStyle */
-import { expect, test } from '@playwright/test';
+import { expect, test as base } from '@playwright/test';
+import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { once } from 'node:events';
 import fs from 'node:fs/promises';
+import { createServer } from 'node:net';
+import os from 'node:os';
 import path from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
+import YAML from 'yaml';
 import { expectSourceText, fillSource, notesApi, openNotes, showNotebooks, sourceText } from './notebooks-browser-fixture.js';
+
+const root = fileURLToPath(new URL('../', import.meta.url));
+// An owned local stand-in for the 'ob' client; it never connects to a network or an Obsidian account.
+const CLIENT = `const fs = require('node:fs');
+const path = require('node:path');
+const args = process.argv.slice(2);
+const folder = args[args.indexOf('--path') + 1];
+if (!folder || !['sync-status', 'sync'].includes(args[0])) process.exit(10);
+const record = path.join(path.dirname(folder), '.obsidian-test-' + path.basename(folder) + '.ndjson');
+fs.appendFileSync(record, JSON.stringify({ args, pid: process.pid }) + '\\n');
+if (args[0] === 'sync-status') {
+    if (fs.existsSync(path.join(folder, '.fixture-status-hangs'))) {
+        process.on('SIGTERM', () => {});
+        setInterval(() => {}, 1000);
+    } else {
+        process.stdout.write(JSON.stringify({ configured: true, secret: 'PRIVATE-CLIENT-OUTPUT' }));
+        process.exit(fs.existsSync(path.join(folder, '.fixture-not-prepared')) ? 2 : 0);
+    }
+} else {
+    if (!args.includes('--continuous')) process.exit(11);
+    fs.writeFileSync(path.join(folder, '.fixture-client-pid'), String(process.pid));
+    process.stdout.write('PRIVATE-CLIENT-OUTPUT');
+    process.stderr.write('PRIVATE-CLIENT-ERROR');
+    setInterval(() => {}, 1000);
+    process.on('SIGTERM', () => process.exit(0));
+}
+`;
+
+let app;
+const test = base.extend({
+    obsidianApp: [async ({}, use) => {
+        if (process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1') {
+            throw new Error('Set NECONYAN_CONVERSATION_TEST_DISPOSABLE=1 to run this owned, disposable fixture.');
+        }
+        const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'notebooks-obsidian-')));
+        const executable = path.join(directory, 'headless-fixture');
+        await fs.writeFile(executable, `#!${process.execPath}\n${CLIENT}`, { mode: 0o755 });
+        const reservation = createServer();
+        reservation.listen(0, '127.0.0.1');
+        await once(reservation, 'listening');
+        const port = reservation.address().port;
+        await new Promise(resolve => reservation.close(resolve));
+        const config = YAML.parse(await fs.readFile(path.join(root, 'default/config.yaml'), 'utf8'));
+        Object.assign(config, {
+            dataRoot: path.join(directory, 'data'), port, listen: false,
+            enableDownloadableTokenizers: false, enableServerPlugins: false, enableServerPluginsAutoUpdate: false,
+        });
+        config.browserLaunch.enabled = false;
+        config.extensions.autoUpdate = false;
+        config.extensions.models.autoDownload = false;
+        config.performance.frontendBuild.enabled = process.env.NECONYAN_TEST_FRONTEND_BUILD === '1';
+        config.notebooks.obsidianHeadless = { ...config.notebooks.obsidianHeadless,
+            enabled: true, executable, allowedRoots: ['$ACCOUNT_ROOT/notebooks'], pollIntervalMs: 1000 };
+        await fs.mkdir(config.dataRoot);
+        if (process.env.NECONYAN_TEST_LIBRARY_CACHE) await fs.cp(process.env.NECONYAN_TEST_LIBRARY_CACHE, path.join(config.dataRoot, '_webpack'), { recursive: true });
+        const configPath = path.join(directory, 'config.yaml');
+        await fs.writeFile(configPath, YAML.stringify(config));
+        let output = '';
+        const child = spawn(process.execPath, ['server.js', '--configPath', configPath, '--dataRoot', config.dataRoot,
+            '--port', String(port), '--browserLaunchEnabled', 'false'], {
+            cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, NECONYAN_SUPERVISED: '1' },
+        });
+        child.stdout.on('data', data => { output += data; });
+        child.stderr.on('data', data => { output += data; });
+        const url = `http://127.0.0.1:${port}`;
+        try {
+            const deadline = Date.now() + 120000;
+            while (!await fetch(url + '/csrf-token').then(response => response.ok).catch(() => false)) {
+                if (child.exitCode !== null || child.signalCode !== null) throw new Error(`Disposable server exited: ${output}`);
+                if (Date.now() > deadline) throw new Error(`Disposable server did not become ready: ${output}`);
+                await delay(250);
+            }
+            app = { url, directory, dataRoot: config.dataRoot };
+            await use(app);
+        } finally {
+            if (child.exitCode === null && child.signalCode === null) {
+                const exited = once(child, 'exit');
+                child.kill('SIGTERM');
+                const timer = setTimeout(() => child.kill('SIGKILL'), 10000);
+                try { await exited; } finally { clearTimeout(timer); }
+            }
+            await fs.rm(directory, { recursive: true, force: true });
+        }
+    }, { scope: 'worker' }],
+    baseURL: async ({ obsidianApp }, use) => use(obsidianApp.url),
+});
 
 test.use({ hasTouch: true, serviceWorkers: 'block' });
 test.setTimeout(180000);
@@ -32,7 +125,7 @@ async function setup(page, viewport) {
     await page.locator('.notes-pane-nav .notes-note-title').getByText('Original', { exact: true }).first().click();
     await expectSourceText(page, text.replace(/\r\n/g, '\n'));
     const account = await page.evaluate(async () => (await import('/scripts/notebooks/notes-app.js')).notesApp().state.account);
-    const folder = path.join('/tmp/opencode/notebooks-preview/obsidian-data', account, 'notebooks', notebookId);
+    const folder = path.join(app.dataRoot, account, 'notebooks', notebookId);
     expect(await fs.realpath(folder)).toBe(folder);
     return { notebookId, folder, noteId: note.noteId, text };
 }
@@ -138,10 +231,10 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
         const f = await setup(page, viewport);
         const popup = await openSync(page, viewport);
         await popup.getByRole('checkbox').check();
-        await popup.getByRole('textbox', { name: 'Content folder', exact: true }).fill('/tmp/opencode/not-a-notebook');
+        await popup.getByRole('textbox', { name: 'Content folder', exact: true }).fill(path.join(app.directory, 'not-a-notebook'));
         await popup.getByRole('button', { name: 'Approve folder', exact: true }).click();
         await expect(popup).toContainText('this notebook', { timeout: 30000 });
-        await expect(popup.getByRole('textbox', { name: 'Content folder', exact: true })).toHaveValue('/tmp/opencode/not-a-notebook');
+        await expect(popup.getByRole('textbox', { name: 'Content folder', exact: true })).toHaveValue(path.join(app.directory, 'not-a-notebook'));
         expect(await commands(f.folder)).toEqual([]);
         await popup.getByRole('textbox', { name: 'Content folder', exact: true }).fill(f.folder);
         await approve(popup);

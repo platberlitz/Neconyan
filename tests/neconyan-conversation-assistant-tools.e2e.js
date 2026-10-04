@@ -31,7 +31,7 @@ for (const phone of [false, true]) {
         await expect(review.locator('pre').first()).toHaveText('Before');
         await expect(review.locator('pre').last()).toHaveText('After');
         expect(app.provider.calls).toHaveLength(2);
-        expect(app.provider.calls[0].tools).toHaveLength(14);
+        expect(app.provider.calls[0].tools).toHaveLength(25);
         expect(JSON.stringify(app.provider.calls[0].messages)).toContain('appearance.shell-style');
         await page.close();
         const reopened = await account.open({ workspace: false });
