@@ -23,6 +23,10 @@ for (const [layout, viewport, hasTouch] of [
             const skip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
             if (await skip.isVisible()) await skip.click();
 
+            const checkpoint = page.locator('#message_template .mes_bookmark');
+            await expect(checkpoint).toHaveAttribute('data-tooltip', german['Open checkpoint chat\nShift+Click to replace the existing checkpoint with a new one']);
+            await expect(checkpoint.locator('.neconyan-action-label')).toHaveCount(1);
+
             const header = selector => page.locator(`#right-nav-panel > .sb-character-shell-header ${selector}`);
             const title = () => header('.sb-shell-title').evaluate(element => element.firstChild?.textContent?.trim());
             // The header copy is rewritten on every tab switch, after the page was first translated.
@@ -50,6 +54,7 @@ for (const [layout, viewport, hasTouch] of [
             await page.waitForFunction(() => document.querySelector('.vectors_settings'));
             await page.evaluate(label => window.NeconyanExtensions.focusUnit(label), german.Vectorization);
             await expect(page.locator('.vectors_settings')).toBeVisible();
+            await expect(page.locator('#vectors_force_chunk_delimiter')).toHaveJSProperty('placeholder', german['Optional separator, including line breaks']);
             await expect(page.locator('.vectors-title')).toHaveText(german['Find the relevant bits']);
             await expect(page.locator('[data-vectors-state]')).toHaveText(german['Retrieval is off. You can still index sources and try a search.']);
             await page.evaluate(() => window.NeconyanExtensions.focusUnit('Quick Image Gen'));
