@@ -138,7 +138,7 @@ export function loadKoboldSettings(data, preset, settings) {
     });
 
     $('#settings_preset').empty();
-    $('#settings_preset').append('<option value="gui">GUI KoboldAI Settings</option>');
+    $('#settings_preset').append('<option value="gui" data-i18n="guikoboldaisettings">GUI KoboldAI Settings</option>');
     const names = {};
     koboldai_setting_names.forEach(function (item, i, arr) {
         names[item] = i;
