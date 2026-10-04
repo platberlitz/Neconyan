@@ -227,7 +227,7 @@ export function createCanvasView(app, container) {
     }
 
     async function selectCanvas(id, { discardDraft = false } = {}) {
-        if (!usable() || saving || (!discardDraft && !draftSafe && dirty && confirmedDownloadVersion !== documentVersion)) { app.toast('Save or download your canvas draft before switching.', 'warning'); return false; }
+        if (!usable() || saving || (!discardDraft && !draftSafe && dirty && confirmedDownloadVersion !== documentVersion)) { app.toast('warning', 'Save or download your canvas draft before switching.'); return false; }
         const captured = scope;
         const ticket = ++requestVersion;
         const previousVersion = documentVersion;
@@ -515,8 +515,8 @@ export function createCanvasView(app, container) {
             else render();
         },
         canLeave() {
-            if (saving) { app.toast('The canvas is still saving. Wait for the result before switching.', 'warning'); return false; }
-            if (dirty && !draftSafe && confirmedDownloadVersion !== documentVersion) { app.toast('Save or download your canvas draft before leaving. This browser could not keep it.', 'warning'); return false; }
+            if (saving) { app.toast('warning', 'The canvas is still saving. Wait for the result before switching.'); return false; }
+            if (dirty && !draftSafe && confirmedDownloadVersion !== documentVersion) { app.toast('warning', 'Save or download your canvas draft before leaving. This browser could not keep it.'); return false; }
             return true;
         },
         clear() {
