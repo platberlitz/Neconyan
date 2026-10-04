@@ -4,8 +4,9 @@ import { tryWriteFileSync } from './util.js';
 import { MAX_THREAD_MESSAGES } from '../public/scripts/neconyan-conversation/constants.js';
 import { countConversationUnread } from '../public/scripts/neconyan-conversation/notification-utils.js';
 import { isAutomaticConversationMessage, repairConversationBranchMessageIds, seedConversationReadBoundary, validateStoreStructure } from './endpoints/conversation-utils.js';
+import { protectConversationNavigation } from './conversation-navigation-identity.js';
 
-const PROTECTED_STORE_KEYS = ['serverOperations', 'groupAsideLastSent', 'runtimeStatusOverrides', 'automation'];
+const PROTECTED_STORE_KEYS = ['serverOperations', 'groupAsideLastSent', 'runtimeStatusOverrides', 'automation', 'navigationTargets'];
 const REMINDER_STATUS_KEYS = ['fired', 'firedAt', 'skippedAt', 'invalidAt', 'invalidReason', 'retryAfter'];
 const MEMORY_FIELDS = ['memorySummary', 'memoryMessageCount', 'memoryUpdatedAt', 'memorySummaryThrough'];
 
@@ -150,6 +151,7 @@ function stripProtectedConversationState(conversation) {
             delete rest.unread;
             delete rest.messageEditRevision;
             delete rest.messageContentHash;
+            delete rest.navigationId;
             branches[id] = rest;
         }
         nextCharacters[key] = { ...thread, branches };
@@ -359,7 +361,7 @@ function restoreProtectedConversationState(conversation, currentConversation, { 
  *   `trustedConversationEffects` - server-owned Conversation effect write; Conversation may change freely.
  *   `conversationOnly` - explicit version-checked Conversation store save; message content may change but server records are restored.
  */
-export function prepareSettingsSave(incomingSettings, currentSettings = {}, { trustedConversationEffects = false, conversationOnly = false, trustedConversationAppend = false, restoreSnapshot = false, acknowledgeAccount = '' } = {}) {
+export function prepareSettingsSave(incomingSettings, currentSettings = {}, { trustedConversationEffects = false, conversationOnly = false, trustedConversationAppend = false, restoreSnapshot = false, acknowledgeAccount = '', navigationEnrolment = null, navigationMoves = [], navigationRetirePersona = '' } = {}) {
     const incomingVersion = getSettingsVersion(incomingSettings);
     const currentVersion = getSettingsVersion(currentSettings);
     const currentRevision = getSettingsRevision(currentSettings);
@@ -448,7 +450,7 @@ export function prepareSettingsSave(incomingSettings, currentSettings = {}, { tr
     const conversation = settings.extension_settings?.neconyan_conversation;
     if (conversation && conversation !== currentConversation) {
         settings = { ...settings, extension_settings: { ...settings.extension_settings,
-            neconyan_conversation: stampConversationMessages(conversation, currentConversation, trustedConversationEffects || trustedConversationAppend, version) } };
+            neconyan_conversation: protectConversationNavigation(stampConversationMessages(conversation, currentConversation, trustedConversationEffects || trustedConversationAppend, version), currentConversation, { enrol: navigationEnrolment, restoreSnapshot, moves: navigationMoves, retirePersona: navigationRetirePersona }) } };
         const validation = validateStoreStructure(settings.extension_settings.neconyan_conversation, { strictMessages: false });
         if (!validation.valid) throw Object.assign(new Error(validation.error), { status: 400 });
     }

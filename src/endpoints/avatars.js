@@ -12,6 +12,7 @@ import { getFileNameValidationFunction } from '../middleware/validateFileName.js
 import { applyAvatarCropResize } from './characters.js';
 import { invalidateThumbnail } from './thumbnails.js';
 import { createPersonaCard, decodePersonaImport, encodePersonaCard, MAX_PERSONA_CARD_BYTES } from '../persona-card.js';
+import { retireNavigationPersona } from './chat-navigation.js';
 
 export const router = express.Router();
 
@@ -81,7 +82,7 @@ router.post('/delete', getFileNameValidationFunction('avatar'), function (reques
     const fileName = path.join(request.user.directories.avatars, sanitize(request.body.avatar));
 
     if (fs.existsSync(fileName)) {
-        fs.unlinkSync(fileName);
+        retireNavigationPersona(request, request.body.avatar, () => fs.unlinkSync(fileName));
         invalidateThumbnail(request.user.directories, 'persona', sanitize(request.body.avatar));
         return response.send({ result: 'ok' });
     }

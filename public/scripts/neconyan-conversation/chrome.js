@@ -12,6 +12,7 @@ import {
     createConversationBranchForAvatar,
     deleteConversationBranch,
     getConversationBranches,
+    getActiveConversationBranch,
     getConversationGroupIdForAvatar,
     getConversationPersonaId,
     getConversationStore,
@@ -355,20 +356,30 @@ function showConversationZoomedAvatar(target) {
     }
 }
 
-export async function selectConversationThread(avatar, { branchId = '', groupId = null, personaId = getConversationPersonaId(), showToast = false } = {}) {
+export async function selectConversationThread(avatar, { branchId = '', groupId = null, personaId = getConversationPersonaId(), showToast = false, savedOnly = false, expectedNavigationId = '', navigationGuard = () => true } = {}) {
     if (!avatar) {
         return false;
     }
 
-    if (personaId && !await switchConversationPersona(personaId)) {
+    if (!navigationGuard()) return false;
+    if (savedOnly) {
+        const branch = getActiveConversationBranch(avatar, { branchId, groupId, personaId, create: false });
+        if (!branch?.navigationId || (expectedNavigationId && branch.navigationId !== expectedNavigationId) || !getCharacterForAvatar(avatar)) return false;
+        // Persona events must not refresh the old workspace under the new persona.
+        conversationState.conversationWorkspaceOpen = false;
+    }
+    if (personaId && !await switchConversationPersona(personaId, { readOnlyRoute: savedOnly, navigationGuard })) {
         return false;
     }
 
     const normalizedGroupId = groupId ? String(groupId) : '';
+    if (!navigationGuard()) return false;
     return openConversationWorkspaceForAvatar(avatar, {
         branchId,
         groupId: normalizedGroupId || null,
         showToast,
+        savedOnly,
+        expectedNavigationId,
     });
 }
 
@@ -1052,17 +1063,18 @@ function emitConversationWorkspaceStateChange() {
     }));
 }
 
-export function openConversationWorkspaceForAvatar(avatar, { branchId = '', groupId = null, showToast = true, enable = false } = {}) {
+export function openConversationWorkspaceForAvatar(avatar, { branchId = '', groupId = null, showToast = true, enable = false, savedOnly = false, expectedNavigationId = '' } = {}) {
     closeConversationSettings();
     const character = avatar ? getCharacterForAvatar(avatar) : null;
     const targetAvatar = character?.avatar || null;
     const targetGroupId = groupId && targetAvatar && isAvatarInConversationGroup(targetAvatar, groupId) ? String(groupId) : null;
+    if (expectedNavigationId && getActiveConversationBranch(targetAvatar, { branchId, groupId: targetGroupId, create: false })?.navigationId !== expectedNavigationId) return false;
+    if (savedOnly && (!targetAvatar || (groupId && !targetGroupId) || !getSettings(targetAvatar, { groupId: targetGroupId }).enabled)) return false;
     if (branchId && targetAvatar && !getConversationBranches(targetAvatar, { groupId: targetGroupId }).some(branch => branch.id === String(branchId))) {
         return false;
     }
     const threadChanged = conversationState.conversationSelectedAvatar !== targetAvatar || conversationState.conversationSelectedGroupId !== targetGroupId;
     conversationState.conversationWorkspaceOpen = true;
-    emitConversationWorkspaceStateChange();
     conversationState.conversationSelectedAvatar = targetAvatar;
     conversationState.conversationSelectedGroupId = targetGroupId;
     conversationState.conversationUnavailableGroupId = null;
@@ -1074,6 +1086,7 @@ export function openConversationWorkspaceForAvatar(avatar, { branchId = '', grou
     ensureConversationStylesheet();
 
     if (!targetAvatar) {
+        emitConversationWorkspaceStateChange();
         scheduleInterfaceRefresh({ syncControls: false });
         setTimeout(() => {
             document.getElementById(CHROME_IDS.input)?.focus?.({ preventScroll: true });
@@ -1083,7 +1096,7 @@ export function openConversationWorkspaceForAvatar(avatar, { branchId = '', grou
     }
 
     if (branchId) {
-        setActiveConversationBranch(targetAvatar, String(branchId), { groupId: targetGroupId });
+        setActiveConversationBranch(targetAvatar, String(branchId), { groupId: targetGroupId, persist: !savedOnly });
     }
 
     const settings = getSettings(targetAvatar, { groupId: targetGroupId });
@@ -1092,13 +1105,14 @@ export function openConversationWorkspaceForAvatar(avatar, { branchId = '', grou
         settings.enabled = true;
         saveSettings(targetAvatar, settings, { groupId: targetGroupId });
     }
-    requestConversationRuntimeStart();
+    emitConversationWorkspaceStateChange();
+    if (!savedOnly) requestConversationRuntimeStart();
     applySettingsToPanel(settings);
     scheduleInterfaceRefresh({ syncControls: true });
     if (showToast && enable && !wasEnabled) {
         toastr.info(`Conversation Mode activated for ${character.name || 'Character'}.`);
     }
-    setTimeout(() => {
+    if (!savedOnly) setTimeout(() => {
         document.getElementById(CHROME_IDS.input)?.focus?.({ preventScroll: true });
     }, 100);
     return true;

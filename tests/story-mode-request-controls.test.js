@@ -16,6 +16,7 @@ import { event_types } from '../public/scripts/events.js';
 import { OVERSWIPE_BEHAVIOR, SWIPE_DIRECTION, SWIPE_SOURCE, SWIPE_STATE } from '../public/scripts/constants.js';
 import { buildAssistantKnowledge, getAssistantKnowledgeBudget } from '../public/scripts/neconyan-assistant-knowledge.js';
 import { combineRoleplayTextPrompt } from '../public/scripts/roleplay-text-format.js';
+import { isChatNavigationBlocked } from '../public/scripts/chat-navigation-flight.js';
 
 const sources = Object.fromEntries(['script.js', 'scripts/openai.js', 'scripts/reasoning.js', 'scripts/generation-format.js', 'scripts/group-chats.js', 'scripts/utils.js', 'scripts/sentence-boundaries.js', 'scripts/st-context.js', 'scripts/sse-stream.js', 'scripts/textgen-settings.js'].map(file => {
     const source = readFileSync(new URL(`../public/${file}`, import.meta.url), 'utf8');
@@ -52,6 +53,7 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
         trigger: jest.fn(),
     };
     const context = vm.createContext({
+        isChatNavigationBlocked,
         combineRoleplayTextPrompt, formatPromptReasoning,
         // This harness runs the host generation flow without the Neconyan server
         // lane, so the Stage 9 funnel reports that it has no named workflow.

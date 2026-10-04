@@ -15,6 +15,7 @@ import {
 } from './lib.js';
 
 import { favsToHotswap, getMessageTimeStamp, dragElement, isMobile, initRossMods } from './scripts/RossAscends-mods.js';
+import { isChatNavigationBlocked, setChatNavigationBlocked } from './scripts/chat-navigation-flight.js';
 import { readMessageExpression, writeMessageExpression, renderMessageExpression } from './scripts/expression-history.js';
 import './scripts/neconyan-message-sleepers.js';
 import './scripts/neconyan-send-nya.js';
@@ -1228,6 +1229,7 @@ function scheduleDeferredStartupStylesheets() {
 
 //MARK: firstLoadInit
 async function firstLoadInit() {
+    setChatNavigationBlocked(true);
     const scheduleStartupLoaderCleanup = (reason) => {
         cleanupActionLoaderArtifacts({ removePreloader: true, reason });
         requestAnimationFrame(() => cleanupActionLoaderArtifacts({ removePreloader: true, reason: `${reason} (raf)` }));
@@ -1352,6 +1354,8 @@ async function firstLoadInit() {
         await eventSource.emit(event_types.APP_INITIALIZED);
         await fixViewport();
         await eventSource.emit(event_types.APP_READY);
+        const { initChatNavigation } = await import('./scripts/chat-navigation.js');
+        await initChatNavigation();
         initMewmory();
         window.dispatchEvent(new Event('neconyan:ready'));
         scheduleStartupLoaderCleanup('app ready');
@@ -3692,7 +3696,8 @@ function rememberQueuedChatIntegrity(integrityKey, integrity) {
  * @param {object} [options] Options
  * @param {boolean} [options.clearData=false] Optionally clear the chat array's contents.
  */
-export async function clearChat({ clearData = false } = {}) {
+export async function clearChat({ clearData = false, navigationGuard = () => true } = {}) {
+    if (!navigationGuard()) return;
     dismissUndo();
     cancelDebouncedChatSave();
     cancelDebouncedMetadataSave();
@@ -3712,6 +3717,7 @@ export async function clearChat({ clearData = false } = {}) {
     } else { console.debug('saw no avatars'); }
 
     await saveItemizedPrompts(getCurrentChatId());
+    if (!navigationGuard()) return;
     itemizedPrompts.length = 0;
 
     if (clearData) {
@@ -8225,6 +8231,7 @@ function consumePendingUserMessageExtra(message) {
 }
 
 export async function Generate(type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, quietName, jsonSchema = null, depth = 0, suppressUserMessage = false, cacheScope = null, preserveLastMessage = false, companionHistoryTarget = null, suppressAutoContinue = false, maxOutputTokens = 0, responseLength = null, preserveReasoningBudget = false, skipNativeRoleplay = false, preparedNativeRoleplay = null } = {}, dryRun = false) {
+    if (!dryRun && isChatNavigationBlocked()) return;
     if (!dryRun && signal?.aborted) return;
 
     // Neconyan: keep cancellation and terminal cleanup attached to this invocation,
@@ -10352,6 +10359,7 @@ export function removeMacros(str) {
  * @returns {Promise<any>} A promise that resolves to the message when it is inserted.
  */
 export async function sendMessageAsUser(messageText, messageBias, insertAt = null, compact = false, name = name1, avatar = user_avatar) {
+    if (isChatNavigationBlocked()) return;
     messageText = getRegexedString(messageText, regex_placement.USER_INPUT);
 
     const message = {
@@ -12637,17 +12645,24 @@ export async function unshallowCharacter(characterId) {
     await getOneCharacter(avatar);
 }
 
-export async function getChat({ allowMissingPersisted = false, switchMenu = true } = {}) {
+export async function getChat({ allowMissingPersisted = false, switchMenu = true, exactChat = '', navigationGuard = () => true, expectedSourceId = '', verifyTarget = () => true } = {}) {
     try {
         incrementChatGeneration();
         const generation = chatGeneration;
         const characterId = this_chid;
         await unshallowCharacter(characterId);
-        const resolvedChat = await resolveCharacterChatForLoad(characterId, { allowCreate: true, allowMissingPersisted });
+        if (!navigationGuard()) return false;
+        const resolvedChat = exactChat ? { chatName: exactChat, created: false }
+            : await resolveCharacterChatForLoad(characterId, { allowCreate: true, allowMissingPersisted });
         if (this_chid !== characterId || chatGeneration !== generation || selected_group) return false;
         const locator = { group: false, avatar: characters[characterId].avatar, chat: resolvedChat.chatName };
         const { records: data, evidence } = await loadRoleplayChat(locator, { allowCreate: resolvedChat.created });
+        if (!navigationGuard()) return false;
+        if (expectedSourceId && evidence?.source?.instanceId !== expectedSourceId) throw Object.assign(new Error('The saved chat changed while opening.'), { status: 409 });
+        if (exactChat && !await verifyTarget()) return false;
+        if (!navigationGuard()) return false;
         if (this_chid !== characterId || chatGeneration !== generation || selected_group) return false;
+        if (exactChat) characters[characterId].chat = exactChat;
         if (!rememberRoleplayRead(locator, evidence)) throw new Error('A chat save is still unsettled. Keep the current edits.');
         if (Array.isArray(data) && data.length > 0) {
             /** @type {ChatHeader} */
@@ -12663,11 +12678,12 @@ export async function getChat({ allowMissingPersisted = false, switchMenu = true
         // Neconyan: a chat with no integrity slug is treated as intact by the server, which mints
         // one on the first real save. Stamping one in here only dirtied legacy chats on load, and a
         // dirty chat is one that gets rewritten to disk for no reason.
-        await getChatResult({ emitCreated: resolvedChat.created, switchMenu });
+        await getChatResult({ emitCreated: resolvedChat.created, switchMenu, readOnlyRoute: Boolean(exactChat), navigationGuard });
+        if (!navigationGuard()) return false;
         eventSource.emit(event_types.CHAT_LOADED, { detail: { id: this_chid, character: characters[this_chid] } });
 
         // Focus on the textarea if not already focused on a visible text input
-        delay(debounce_timeout.short).then(() => {
+        if (!exactChat) delay(debounce_timeout.short).then(() => {
             if ($(document.activeElement).is('input:visible, textarea:visible')) {
                 return;
             }
@@ -12675,6 +12691,7 @@ export async function getChat({ allowMissingPersisted = false, switchMenu = true
         });
         return true;
     } catch (error) {
+        if (exactChat) throw error;
         // Neconyan: a failed strict load must not be replaced with a newly saved greeting.
         console.log(error);
         toastr.error(roleplayLoadErrorMessage(error));
@@ -12682,10 +12699,11 @@ export async function getChat({ allowMissingPersisted = false, switchMenu = true
     }
 }
 
-async function getChatResult({ emitCreated = false, switchMenu = true } = {}) {
+async function getChatResult({ emitCreated = false, switchMenu = true, readOnlyRoute = false, navigationGuard = () => true } = {}) {
+    if (!navigationGuard()) return;
     name2 = characters[this_chid].name;
     let freshChat = false;
-    if (chat.length === 0) {
+    if (chat.length === 0 && !readOnlyRoute) {
         const message = getFirstMessage();
         if (message.mes) {
             chat.push(message);
@@ -12698,17 +12716,35 @@ async function getChatResult({ emitCreated = false, switchMenu = true } = {}) {
         }
     }
     await loadItemizedPrompts(getCurrentChatId());
+    if (!navigationGuard()) return;
     await printMessages();
+    if (!navigationGuard()) return;
     select_selected_character(this_chid, { switchMenu });
 
     await eventSource.emit(event_types.CHAT_CHANGED, (getCurrentChatId()));
     if (freshChat && emitCreated) await eventSource.emit(event_types.CHAT_CREATED);
 
-    if (chat.length === 1) {
+    if (chat.length === 1 && !readOnlyRoute) {
         const chat_id = (chat.length - 1);
         await eventSource.emit(event_types.MESSAGE_RECEIVED, chat_id, 'first_message');
         await eventSource.emit(event_types.CHARACTER_MESSAGE_RENDERED, chat_id, 'first_message');
     }
+}
+
+/** Open precisely one saved chat, without touching the character's default chat on disk. */
+export async function openSavedCharacterChat(avatar, chatName, navigationGuard = () => true, { expectedSourceId = '', verifyTarget = () => true } = {}) {
+    const id = characters.findIndex(character => character.avatar === avatar);
+    if (id < 0 || is_send_press || is_group_generating || !navigationGuard()) return false;
+    if (!await flushPendingChatSavesForNavigation() || !navigationGuard()) return false;
+    setCharacterId(undefined);
+    setCharacterName('');
+    resetSelectedGroup();
+    await clearChat({ clearData: true, navigationGuard });
+    if (!navigationGuard()) return false;
+    cancelTtsPlay();
+    setCharacterId(id);
+    chat_metadata = {};
+    return getChat({ switchMenu: false, exactChat: chatName, navigationGuard, expectedSourceId, verifyTarget });
 }
 
 function getFirstMessage() {
@@ -19645,6 +19681,7 @@ jQuery(async function () {
             '#neconyan-lorebook-tour',
             // The same goes for the assistant tours on full-page tools.
             '#neconyan-tool-tour',
+            '#neconyan-chat-route',
             '#world_popup',
             '.ui-widget',
             '.text_pole',

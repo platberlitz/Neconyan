@@ -19,7 +19,7 @@ let modeLifecycle = null;
 function registerModeLifecycle() {
     const lifecycles = globalThis.NeconyanModeLifecycle || {};
     modeLifecycle = {
-        setEnabled: enabled => setEnabled(enabled, { renderDrawer: true }),
+        setEnabled: (enabled, options = {}) => setEnabled(enabled, { renderDrawer: true, ...options }),
         isBusy: () => api.isBusy(),
     };
     lifecycles.story = modeLifecycle;
@@ -118,7 +118,8 @@ function apply({ renderDrawer = true } = {}) {
     }
 }
 
-async function setEnabled(enabled, { renderDrawer = false } = {}) {
+async function setEnabled(enabled, { renderDrawer = false, presentationOnly = false, navigationGuard = () => true } = {}) {
+    if (!navigationGuard()) return false;
     if (!active || changingMode) return false;
     if (api.isBusy()) {
         api.toast('info', 'Let the current reply finish before changing Story Mode.');
@@ -131,7 +132,9 @@ async function setEnabled(enabled, { renderDrawer = false } = {}) {
     }
     changingMode = true;
     try {
-        if (!await api.setChatFlag(enabled)) return false;
+        if (presentationOnly) {
+            if (!api.presentChat(enabled)) return false;
+        } else if (!await api.setChatFlag(enabled)) return false;
     } catch (error) {
         console.error('[Story Mode] mode preference was not saved', error);
         api.toast('error', 'Story Mode could not save this chat preference. Try again.');
@@ -140,6 +143,7 @@ async function setEnabled(enabled, { renderDrawer = false } = {}) {
     } finally {
         changingMode = false;
     }
+    if (!navigationGuard()) return false;
     if (enabled && document.body.classList.contains('neconyan')) {
         window.dispatchEvent(new CustomEvent('sb:close-conversation-workspace'));
         window.dispatchEvent(new CustomEvent('neconyan:open-story'));

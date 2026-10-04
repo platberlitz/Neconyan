@@ -1094,6 +1094,7 @@ async function openAdminPanel() {
  * @returns {Promise<void>}
  */
 async function logout() {
+    window.dispatchEvent(new CustomEvent('neconyan:account-changing'));
     let signedOut = false;
 
     try {

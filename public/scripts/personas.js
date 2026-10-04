@@ -385,7 +385,8 @@ export function initUserAvatar(avatar) {
  * @param {boolean} [options.toastPersonaNameChange=true] Whether to show a toast when the persona name is changed
  * @param {boolean} [options.navigateToCurrent=false] Whether to navigate to the current persona after setting the avatar
  */
-export async function setUserAvatar(imgfile, { toastPersonaNameChange = true, navigateToCurrent = false } = {}) {
+export async function setUserAvatar(imgfile, { toastPersonaNameChange = true, navigateToCurrent = false, readOnlyRoute = false, navigationGuard = () => true } = {}) {
+    if (!navigationGuard()) return;
     const currentUserAvatar = user_avatar;
     user_avatar = imgfile && typeof imgfile === 'string' ? imgfile : $(this).attr('data-avatar-id');
     if (currentUserAvatar === user_avatar) {
@@ -394,8 +395,11 @@ export async function setUserAvatar(imgfile, { toastPersonaNameChange = true, na
     reloadUserAvatar();
     updatePersonaUIStates({ navigateToCurrent: navigateToCurrent });
     selectCurrentPersona({ toastPersonaNameChange: toastPersonaNameChange });
-    await retriggerFirstMessageOnEmptyChat();
-    saveSettingsDebounced();
+    if (!readOnlyRoute) {
+        await retriggerFirstMessageOnEmptyChat();
+        if (!navigationGuard()) return;
+        saveSettingsDebounced();
+    }
     $('.zoomed_avatar[forchar]').remove();
     await eventSource.emit(event_types.PERSONA_CHANGED, user_avatar);
 }

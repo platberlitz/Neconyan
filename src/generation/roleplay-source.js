@@ -210,10 +210,13 @@ function inspectEntity(lease, kind, id, { storage = false } = {}) {
     return { kind, locator, file, contentHash, data };
 }
 
-export function readRoleplayEntityLocked(lease, kind, id, { storage = false } = {}) {
+export function readRoleplayEntityLocked(lease, kind, id, { storage = false, enrolMissing = true } = {}) {
     const { state } = roleplayLease(lease);
     if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay transaction must be reconciled first.');
     const { locator, file, contentHash, data } = inspectEntity(lease, kind, id, { storage });
+    if (!enrolMissing && !state.paths[roleplayPathKey(state, kind, locator)]?.instanceId) {
+        throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'The saved resource is unavailable.', 404);
+    }
     const entry = enrol(lease, kind, locator, file, contentHash);
     return { ...descriptor(state, entry), kind, contentHash, physical: file.physical, data, changed: entry.changed };
 }
@@ -287,10 +290,13 @@ export function captureRoleplayDependenciesLocked(lease, locator, groupId) {
     return { dependencies, changed: changed || dependencies.some(item => item.changed) };
 }
 
-export function readRoleplayChatLocked(lease, input) {
+export function readRoleplayChatLocked(lease, input, { enrolMissing = true } = {}) {
     const { scope, state } = roleplayLease(lease);
     if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay transaction must be reconciled first.');
     const locator = normaliseRoleplayLocator(input);
+    if (!enrolMissing && !state.paths[roleplayPathKey(state, 'chat', locator)]?.instanceId) {
+        throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'The saved chat is unavailable.', 404);
+    }
     const filename = roleplayChatPath(scope, locator);
     // Reading does not run recovery: only a journalled lifecycle operation may restore tracked bytes.
     const initial = readRoleplayFile(filename, 64 * 1024 * 1024);

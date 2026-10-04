@@ -4,6 +4,7 @@
  * Functions for managing conversation threads and branches.
  */
 
+import { randomUUID } from 'node:crypto';
 import {
     DEFAULT_BRANCH_ID,
     MAX_THREAD_MESSAGES,
@@ -37,6 +38,7 @@ export function createConversationBranch(name = 'Main', id = DEFAULT_BRANCH_ID) 
     const safeId = getSafeBranchId(id);
     return {
         id: safeId,
+        lifetimeSeed: randomUUID(),
         name,
         messages: [],
         preview: 'Conversation ready',
