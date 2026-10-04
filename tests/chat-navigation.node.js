@@ -1,6 +1,7 @@
 /* eslint playwright/expect-expect: off -- Assertions use the Node test runner. */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { once } from 'node:events';
 import { randomUUID } from 'node:crypto';
@@ -21,7 +22,7 @@ const { write: writeCard } = await import('../src/character-card-parser.js');
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64');
 
 async function fixture(t) {
-    const root = fs.mkdtempSync('/tmp/opencode/chat-navigation-test-');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'chat-navigation-test-'));
     const users = {};
     for (const handle of ['alice', 'bob']) {
         const home = path.join(root, handle);
