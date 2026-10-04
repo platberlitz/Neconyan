@@ -573,6 +573,7 @@ function buildCompanionCard(agentId, result, message) {
                 <span class="ica--companion-status">${escapeHtml(getStatusLabel(status))}</span>
                 <span class="ica--companion-actions">
                     ${runnable ? `<button type="button" class="ica--companion-action" data-action="regenerate" title="Regenerate companion note" aria-label="Regenerate companion note"${runDisabled}><i class="fa-solid fa-rotate-right"></i></button>` : ''}
+                    ${runnable ? `<button type="button" class="ica--companion-action" data-action="fix" title="Fix this companion note with strict output enforcement" aria-label="Fix companion note"${runDisabled}><i class="fa-solid fa-wrench"></i></button>` : ''}
                     <button type="button" class="ica--companion-action" data-action="edit" title="Edit companion note" aria-label="Edit companion note"><i class="fa-solid fa-pen-to-square"></i></button>
                     ${lorebookButton}
                     <button type="button" class="ica--companion-action" data-action="copy" title="Copy companion note" aria-label="Copy companion note"><i class="fa-solid fa-copy"></i></button>
@@ -870,6 +871,18 @@ async function handleCompanionAction(event) {
     if (action === 'regenerate') {
         await runCompanionAgentOnMessage(agentId, messageIndex);
         renderCompanionResultsForMessage(messageIndex);
+        return;
+    }
+
+    if (action === 'fix') {
+        const button = $(event.currentTarget);
+        button.prop('disabled', true);
+        try {
+            await runCompanionAgentOnMessage(agentId, messageIndex, { repair: true });
+        } finally {
+            button.prop('disabled', false);
+            renderCompanionResultsForMessage(messageIndex);
+        }
         return;
     }
 

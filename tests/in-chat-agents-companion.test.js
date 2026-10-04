@@ -201,7 +201,7 @@ describe('companion card ui', () => {
         expect(sanitize).toHaveBeenCalled();
     });
 
-    // Inline companion cards keep general actions small; tagged agents may add one purpose-built action.
+    // Inline companion cards keep regenerate, repair, edit, copy and delete; tagged agents may add one purpose-built action.
     // Hiding an agent lives in the companion panel; agent settings live behind Workspace.
     test('keeps inline card actions within the documented vocabulary', () => {
         const source = fs.readFileSync(new URL('../public/scripts/extensions/in-chat-agents/companion/companion-ui.js', import.meta.url), 'utf8');
@@ -238,6 +238,73 @@ describe('companion card ui', () => {
         agents[0].tags = ['notes'];
         ui.renderCompanionResultsForMessage(0);
         expect(jqueryObject.html).toHaveBeenLastCalledWith(expect.not.stringContaining('data-action="send-to-lorebook"'));
+    });
+
+    test('adds a repair wrench beside the four existing note actions', async () => {
+        const result = { status: 'done', content: 'Saved tracker', agentName: 'Status Companion', displayMode: 'card' };
+        chat.push({ is_user: false, is_system: false, name: 'Aria', extra: { inChatAgentCompanionResults: { 'companion-tracker': result } } });
+        const ui = await importCompanionUi();
+        const store = await import('../public/scripts/extensions/in-chat-agents/agent-store.js');
+        jqueryObject.length = 1;
+
+        ui.renderCompanionResultsForMessage(0);
+        const html = jqueryObject.html.mock.calls.at(-1)[0];
+        expect(html.match(/class="ica--companion-action(?: caution)?"/g)).toHaveLength(5);
+        expect(html).toContain('data-action="fix"');
+        expect(html).toContain('aria-label="Fix companion note"');
+        expect(html).toContain('fa-solid fa-wrench');
+
+        result.status = 'pending';
+        ui.renderCompanionResultsForMessage(0);
+        expect(jqueryObject.html.mock.calls.at(-1)[0]).toMatch(/data-action="fix"[^>]* disabled/);
+
+        result.status = 'done';
+        store.areAgentsGloballyEnabled.mockReturnValue(false);
+        ui.renderCompanionResultsForMessage(0);
+        expect(jqueryObject.html.mock.calls.at(-1)[0]).toMatch(/data-action="fix"[^>]* disabled/);
+
+        agents.length = 0;
+        ui.renderCompanionResultsForMessage(0);
+        expect(jqueryObject.html.mock.calls.at(-1)[0]).not.toContain('data-action="fix"');
+    });
+
+    test.each([false, true])('repairs only the clicked note and releases its button after failure=%s', async fail => {
+        chat.push({
+            name: 'Assistant', mes: 'Main reply stays intact', is_user: false, is_system: false,
+            extra: { inChatAgentCompanionResults: { 'companion-tracker': { status: 'done', content: 'Saved tracker', agentName: 'Status Companion' } } },
+        });
+        const { initCompanionCardUi } = await importCompanionUi();
+        const runner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const actionButton = { dataset: {} };
+        const docElement = { on: jest.fn(() => docElement) };
+        const mesElement = { attr: jest.fn(name => name === 'mesid' ? '0' : '') };
+        const cardElement = { attr: jest.fn(name => name === 'data-agent-id' ? 'companion-tracker' : '') };
+        const buttonElement = {
+            attr: jest.fn(name => name === 'data-action' ? 'fix' : ''),
+            closest: jest.fn(selector => selector === '.mes' ? mesElement : cardElement),
+            prop: jest.fn(() => buttonElement),
+        };
+        globalThis.$ = jest.fn(arg => arg === globalThis.document ? docElement : arg === actionButton ? buttonElement : jqueryObject);
+        let finish;
+        runner.runCompanionAgentOnMessage.mockImplementation(() => new Promise((resolve, reject) => { finish = fail ? reject : resolve; }));
+        initCompanionCardUi();
+        const actionHandler = docElement.on.mock.calls.find(([, selector]) => selector === '.ica--companion-action, .ica--companion-control-action')[2];
+        const event = { preventDefault: jest.fn(), stopPropagation: jest.fn(), currentTarget: actionButton };
+        const running = actionHandler(event);
+        const completion = running.then(value => ({ value }), error => ({ error: error.message }));
+
+        expect(runner.runCompanionAgentOnMessage).toHaveBeenCalledWith('companion-tracker', 0, { repair: true });
+        expect(buttonElement.prop).toHaveBeenCalledWith('disabled', true);
+        expect(event.preventDefault).toHaveBeenCalled();
+        expect(event.stopPropagation).toHaveBeenCalled();
+        await actionHandler(event);
+        expect(runner.runCompanionAgentOnMessage).toHaveBeenCalledTimes(1);
+        finish(fail ? new Error('Repair failed') : { status: 'done' });
+        expect(await completion).toEqual(fail ? { error: 'Repair failed' } : { value: undefined });
+
+        expect(buttonElement.prop).toHaveBeenLastCalledWith('disabled', false);
+        expect(actionButton.dataset.icaBusy).toBeUndefined();
+        expect(chat[0].mes).toBe('Main reply stays intact');
     });
 
     test('beautifies Chat Only transcript speaker turns before markdown conversion', async () => {

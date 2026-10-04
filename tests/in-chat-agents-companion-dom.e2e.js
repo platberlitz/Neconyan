@@ -108,5 +108,76 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
             await expect(page.locator('#content ol button')).toHaveCount(2);
             await expect(page.getByRole('button', { name: 'Go outside' })).toBeVisible();
         });
+
+        test('inline repair wrench fits the action row and repairs only its own note', async ({ page }) => {
+            await page.addStyleTag({ content: read('../public/scripts/extensions/in-chat-agents/style.css') });
+            await page.addStyleTag({ content: 'body { margin: 0; font: 15px sans-serif; --mainFontSize: 15px; } #chat { padding: 12px; }' });
+            await page.addScriptTag({ content: declarations(`${companionPath}companion-ui.js`, [
+                'getResultStatus', 'getStatusLabel', 'RAW_ID_LABEL_RE', 'TRAILING_ID_IN_NAME_RE', 'cleanCompanionAgentName', 'isReadableLabel',
+                'buildCompanionCard', 'getMessageIndexFromElement', 'getCompanionActionContext', 'handleCompanionAction',
+            ]) });
+            await page.evaluate(() => {
+                window.chat = [{ mes: 'Main reply stays intact', extra: { inChatAgentCompanionResults: {
+                    tracker: { agentName: 'Scene Tracker', status: 'done', content: 'Saved tracker' },
+                } } }];
+                window.areAgentsGloballyEnabled = () => true;
+                window.getAgentById = id => id === 'tracker' ? { id } : null;
+                window.isValidCompanionMessage = () => true;
+                window.isLorebookAgent = () => false;
+                window.buildCompanionBody = (id, result) => result.content;
+                window.buildCompanionCardControls = () => '';
+                window.holdsReadableCompanionResults = message => Boolean(message);
+                window.getCompanionResults = message => message.extra.inChatAgentCompanionResults;
+                document.getElementById('root').innerHTML = '<div id="chat"><div class="mes" mesid="0"><div class="ica--companion-ledger"></div></div></div>';
+                window.renderCompanionResultsForMessage = () => window.replaceCompanionView(window.$('.ica--companion-ledger'),
+                    window.buildCompanionCard('tracker', window.getCompanionResults(window.chat[0]).tracker, window.chat[0]), () => true);
+                window.renderCompanionResultsForMessage();
+                window.repairCalls = [];
+                window.runCompanionAgentOnMessage = async (...args) => {
+                    window.repairCalls.push(args);
+                    window.getCompanionResults(window.chat[0]).tracker.status = 'pending';
+                    window.renderCompanionResultsForMessage();
+                    await new Promise(resolve => { window.finishRepair = resolve; });
+                    Object.assign(window.getCompanionResults(window.chat[0]).tracker, { status: 'done', content: 'Repaired tracker' });
+                };
+                window.$(document).on('click', '.ica--companion-action', event => {
+                    window.repairRunning = window.runCompanionViewAction(event.currentTarget, () => window.handleCompanionAction(event));
+                });
+            });
+
+            const repair = page.getByRole('button', { name: 'Fix companion note', exact: true });
+            await expect(page.locator('.ica--companion-actions button')).toHaveCount(5);
+            await expect(repair).toBeVisible();
+            await expect(repair.locator('.fa-wrench')).toHaveCount(1);
+            const geometry = await page.locator('.ica--companion-actions').evaluate(row => ({
+                right: row.getBoundingClientRect().right,
+                buttons: [...row.children].map(button => {
+                    const rect = button.getBoundingClientRect();
+                    return { left: rect.left, right: rect.right, top: rect.top, width: rect.width, height: rect.height };
+                }),
+            }));
+            expect(geometry.right).toBeLessThanOrEqual(viewport.width);
+            expect(new Set(geometry.buttons.map(button => button.top)).size).toBe(1);
+            for (const button of geometry.buttons) {
+                expect(button.width).toBe(viewport.width === 393 ? 44 : 30);
+                expect(button.height).toBe(viewport.width === 393 ? 44 : 30);
+            }
+            for (const [index, button] of geometry.buttons.slice(1).entries()) {
+                expect(button.left).toBeGreaterThanOrEqual(geometry.buttons[index].right);
+            }
+
+            await repair.click();
+            await expect(repair).toBeDisabled();
+            await expect(page.locator('.ica--companion-card')).toHaveAttribute('open', '');
+            await page.evaluate(() => {
+                window.renderCompanionResultsForMessage();
+                document.querySelector('[data-action="fix"]').click();
+            });
+            expect(await page.evaluate(() => window.repairCalls)).toEqual([['tracker', 0, { repair: true }]]);
+            await page.evaluate(async () => { window.finishRepair(); await window.repairRunning; });
+            await expect(repair).toBeEnabled();
+            await expect(page.locator('#chat .ica--companion-body')).toHaveText('Repaired tracker');
+            expect(await page.evaluate(() => window.chat[0].mes)).toBe('Main reply stays intact');
+        });
     });
 }
