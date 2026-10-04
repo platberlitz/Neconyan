@@ -10,6 +10,7 @@
 - PR #8 (2026-10-02) `fix: coerce numeric chat settings so a quoted context size cannot block the Roleplay workflow`
 - PR #10 (2026-10-03) `feat: add Notes notebooks with assistant edits and linked lore`
 - PR #11 (2026-10-04) `fix: correct three runtime localisation faults in the settings screens`
+- PR #12 (2026-10-04) `fix: build accessibility labels and import counts so translations can replace them`
 
 ## v1.0.6
 
