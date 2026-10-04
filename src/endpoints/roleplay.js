@@ -2,8 +2,18 @@ import express from 'express';
 import { validateOwner } from '../jobs/store.js';
 import { noteOwner } from '../jobs/runner.js';
 import { acceptRoleplayGroupTurn, acceptRoleplayNamedWorkflow, readRoleplayWorkflowReceipt } from '../generation/roleplay-acceptance.js';
+import { inspectTransferredRoleplay, repairTransferredRoleplay } from '../roleplay-transfer-recovery.js';
 
 export const router = express.Router();
+
+// These remain reachable when protected chats or groups cannot be loaded.
+router.post('/recovery/check', (request, response) => {
+    try { return response.json(inspectTransferredRoleplay(scope(request))); } catch (error) { return fail(response, error); }
+});
+
+router.post('/recovery/repair', (request, response) => {
+    try { return response.json(repairTransferredRoleplay(scope(request), request.body?.token)); } catch (error) { return fail(response, error); }
+});
 
 /**
  * The native acceptance surface for named Roleplay workflows. The generic job

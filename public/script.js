@@ -1,4 +1,5 @@
 import { formatRoleplayTextMessage, combineRoleplayTextPrompt } from './scripts/roleplay-text-format.js';
+import { roleplayLoadErrorMessage } from './scripts/roleplay-load-error.js';
 import {
     showdown,
     moment,
@@ -1101,7 +1102,10 @@ function requestRoleplayChat(locator, stamp, allowCreate) {
 export async function loadRoleplayChat(locator, { allowCreate = false } = {}) {
     const stamp = roleplayAccountStamp();
     const response = await requestRoleplayChat(locator, stamp, allowCreate);
-    if (!response.ok) throw new Error('Chat could not be loaded');
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw Object.assign(new Error(roleplayLoadErrorMessage(error)), { code: error.code });
+    }
     const records = await response.json();
     if (!Array.isArray(records)) throw new Error('Invalid chat data');
     roleplayRequestHeaders(stamp);
@@ -12673,7 +12677,7 @@ export async function getChat({ allowMissingPersisted = false, switchMenu = true
     } catch (error) {
         // Neconyan: a failed strict load must not be replaced with a newly saved greeting.
         console.log(error);
-        toastr.error(t`Could not load chat data. Try reloading the page.`);
+        toastr.error(roleplayLoadErrorMessage(error));
         return false;
     }
 }

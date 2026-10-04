@@ -199,8 +199,9 @@ if (isSessionAuthEnabled()) {
     });
 }
 
+const cookieSessionName = getCookieSessionName(globalThis.DATA_ROOT, cliArgs.port);
 app.use(cookieSession({
-    name: getCookieSessionName(),
+    name: cookieSessionName,
     sameSite: 'lax',
     httpOnly: true,
     maxAge: isBunRuntime() ? undefined : getSessionCookieAge(),
@@ -287,7 +288,7 @@ function isSecureCookieRequest(request) {
 
 // Neconyan: Clear cookies & cache must also expire HttpOnly cookie-session data.
 app.post('/api/cookies/clear', express.json(), (request, response) => {
-    const sessionName = getCookieSessionName();
+    const sessionName = cookieSessionName;
     const cookieNames = new Set([
         ...parseCookieHeaderNames(request.headers.cookie),
         sessionName,

@@ -613,10 +613,11 @@ export function getPasswordSalt() {
  * Get the session name for the current server.
  * @returns {string} The session name
  */
-export function getCookieSessionName() {
-    // Get server hostname and hash it to generate a session suffix
+export function getCookieSessionName(dataRoot = globalThis.DATA_ROOT, port = '') {
+    // Cookies ignore ports. Separate copies (even with a copied signing secret)
+    // must not replace each other's login and CSRF session on the same host.
     const hostname = os.hostname() || 'localhost';
-    const suffix = crypto.createHash('sha256').update(hostname).digest('hex').slice(0, 8);
+    const suffix = crypto.createHash('sha256').update(JSON.stringify([hostname, path.resolve(dataRoot ?? '.'), String(port)])).digest('hex').slice(0, 16);
     return `session-neconyan-${suffix}`;
 }
 

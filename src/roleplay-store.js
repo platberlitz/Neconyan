@@ -347,6 +347,17 @@ function validateState(state, identity) {
                 || value.intentHash !== resetIntentHash(value)) throw damaged();
         }
     }
+    if (state.transferRecovery !== undefined) {
+        const value = state.transferRecovery;
+        if (!object(value) || !HASH.test(value.token) || typeof value.backup !== 'string'
+            || !integer(value.dataEpoch) || value.dataEpoch > state.dataEpoch || !Array.isArray(value.journals)) throw damaged();
+        for (const journal of value.journals) {
+            if (!object(journal) || !['characters', 'groups', 'chats', 'groupChats'].includes(journal.library)
+                || typeof journal.relative !== 'string' || !journal.relative.startsWith(journal.library + '/')
+                || journal.relative.split('/').some(part => !part || part === '.' || part === '..' || /[\\\0]/.test(part))
+                || !journal.relative.endsWith(FILE_WRITE_RECOVERY_SUFFIX) || !HASH.test(journal.rawHash) || !validPhysical(journal.physical)) throw damaged();
+        }
+    }
     for (const [key, value] of Object.entries(state.resources)) {
         if (!UUID.test(key) || !object(value) || !UUID.test(value.accountId) || !integer(value.dataEpoch)
             || !['chat', 'character', 'group'].includes(value.kind) || !isStoredLocator(value.kind, value.locator)
@@ -1080,7 +1091,8 @@ export function withRoleplayAccount(base, expected, operation) {
         const scope = stamp(base, loaded.state);
         assertRoleplayAccountCurrent(scope, loaded.state);
         const lease = Object.freeze({});
-        const held = { ...loaded, scope, persistedRevision: loaded.state.revision, failure: null };
+        const held = { ...loaded, scope, persistedRevision: loaded.state.revision,
+            persistedTransferRecovery: loaded.state.transferRecovery ? structuredClone(loaded.state.transferRecovery) : null, failure: null };
         leases.set(lease, held);
         activeAccountLeases.set(path.resolve(scope.directories.root), lease);
         try {
@@ -1226,6 +1238,16 @@ export function confirmRoleplayAccount(lease) {
     try {
         assertSameFile(readRoleplayFile(path.join(held.root, 'identity.json'), 4096, { flush: true }), held.identityFile);
         assertSameFile(readRoleplayFile(path.join(held.root, 'state.json'), ROLEPLAY_STORE_MAX_BYTES, { flush: true }), held.stateFile);
+        // An explicit transfer repair archived these exact journals before adopting
+        // current bytes. Finish their retirement after a crash, never replay them.
+        const recovery = held.persistedTransferRecovery;
+        if (recovery?.dataEpoch === held.state.dataEpoch) for (const journal of recovery.journals) {
+            const filename = path.join(held.scope.directories[journal.library], ...journal.relative.split('/').slice(1));
+            const current = readRoleplayFile(filename, FILE_WRITE_RECOVERY_MAX_BYTES, { allowMissingParent: true });
+            if (!current || current.rawHash !== journal.rawHash || !isDeepStrictEqual(current.physical, journal.physical)) continue;
+            fs.unlinkSync(filename);
+            fsyncDirectorySync(path.dirname(filename));
+        }
     } catch (failure) {
         held.failure = failure;
         throw failure;
@@ -1240,6 +1262,8 @@ export function saveRoleplayAccount(lease) {
         held.stateFile = save(held.root, held.identity, candidate, held.stateFile);
         held.persistedRevision = candidate.revision;
         held.state.revision = candidate.revision;
+        held.persistedTransferRecovery = candidate.transferRecovery ? structuredClone(candidate.transferRecovery) : null;
+        observedAccounts.set(path.resolve(held.scope.directories.root), stamp(held.scope, held.state));
         return candidate.revision;
     } catch (failure) {
         held.failure = failure;

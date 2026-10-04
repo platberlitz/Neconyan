@@ -1,5 +1,6 @@
 import { Fuse } from '../lib.js';
 
+import { roleplayLoadErrorMessage } from './roleplay-load-error.js';
 import {
     shuffle,
     onlyUnique,
@@ -918,7 +919,7 @@ export async function getGroupChat(groupId, reload = false, { switchMenu = true,
         data = loaded.records;
     } catch (error) {
         console.error(error);
-        toastr.error(t`Could not load chat data. Try reloading the page.`);
+        toastr.error(roleplayLoadErrorMessage(error));
         return;
     }
     const metadata = data?.[0]?.chat_metadata ?? {};
@@ -1508,6 +1509,16 @@ async function getGroups() {
         method: 'POST',
         headers: getRequestHeaders({ omitContentType: true }),
     });
+
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        try {
+            if (readGeneration !== groupListReadGeneration || getCurrentUserHandle() !== account.owner
+                || roleplayAccountStamp() !== account) return;
+        } catch { return; }
+        toastr.error(roleplayLoadErrorMessage({ code: error.code ?? error.error }));
+        return;
+    }
 
     if (response.ok) {
         /** @type {Group[]} */

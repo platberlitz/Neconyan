@@ -14762,6 +14762,9 @@ function injectSillyTavernImportCard() {
     card.append(header, choicesTitle, hintRow, grid, progressLabel, progress, note, report);
     cardHost.prepend(card);
 
+    void import('./roleplay-recovery-ui.js').then(module => module.mountRoleplayRecovery(cardHost))
+        .catch(error => console.error('Could not load transferred-data repair:', error));
+
     getImporterState().refs = {
         progress,
         progressLabel,
