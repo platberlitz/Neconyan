@@ -18,6 +18,7 @@ If you want SillyTavern with everything working exactly like upstream, use [Sill
 - **Four ways to chat.** Classic Roleplay, messenger-style Conversation, a social timeline called Meower, and Story Mode for long-form writing.
 - **Story memory.** [Mewmory](docs/mewmory.md) keeps track of your story, the NPCs you've met and what they said, so you're not re-explaining everything 200 messages later.
 - **The good stuff comes built in.** Agents, Chat Archive, Quick Image Gen, Guided Generations, BotSearcher and a few more, each with their own settings. [Here's the full list and who made them.](docs/neconyan-native-tools.md)
+- **Somewhere to keep notes.** [Notes](docs/notebooks.md) gives you notebooks for character drafts, places, scene plans and session journals, right next to your chats. Notes link to each other and to your lorebooks, and the assistants can edit them if you let them.
 - **Little helpers.** Miso, Taro and Nori can use tool calls to create characters with portraits, edit lorebooks and adjust presets or agents. The short First paws tour walks you through the basics.
 - **It's cute.** Calico themes, cats napping on your messages and a pixel cat on Home. That was the whole point, really.
 - **Your files are still your files.** It reads the same character cards, chats, lorebooks and presets as SillyTavern, and there's no telemetry.
@@ -26,7 +27,7 @@ If you want SillyTavern with everything working exactly like upstream, use [Sill
   <img src="docs/readme/banner-modes.webp" alt="Modes">
 </p>
 
-These are staged demo chats with the bundled assistants, so don't read too much into the replies.
+These are staged demo chats and notes with the bundled assistants, so don't read too much into the replies.
 
 ### Home
 
@@ -83,6 +84,17 @@ The chat turned into continuous prose, for when you'd rather read a story than s
   </tr>
 </table>
 
+### Notes
+
+A notebook that lives next to your chats, for the character drafts and scene plans you'd otherwise lose in a text file somewhere. It has templates, folders, properties and a read view, and you can open it beside a chat. [More on Notes.](docs/notebooks.md)
+
+<table>
+  <tr>
+    <td width="72%"><img src="docs/readme/desktop-notes.webp" alt="Notes on desktop"></td>
+    <td width="28%"><img src="docs/readme/phone-notes.webp" alt="Notes on a phone"></td>
+  </tr>
+</table>
+
 <p align="center">
   <img src="docs/readme/banner-getting-started.webp" alt="Getting Started">
 </p>
@@ -108,7 +120,7 @@ Everything runs on the phone, so there's no Termux or computer involved. Leave a
 
 1. **Get Neconyan.** There are two ways, and the second one keeps itself up to date.
 
-   - **Download it.** Grab the file ending in `-source.zip` from the [latest release](https://github.com/platberlitz/Neconyan/releases/latest) and unzip it somewhere easy to find, like your Documents folder. On Windows, right-click the zip and choose **Extract All** first, because running the launcher from inside the zip won't work. You'll end up with a folder named after the version, like `Neconyan-1.0.4`.
+   - **Download it.** Grab the file ending in `-source.zip` from the [latest release](https://github.com/platberlitz/Neconyan/releases/latest) and unzip it somewhere easy to find, like your Documents folder. On Windows, right-click the zip and choose **Extract All** first, because running the launcher from inside the zip won't work. You'll end up with a folder named after the version, like `Neconyan-1.1.0`.
    - **Clone it with [Git](https://git-scm.com/downloads).** Open a terminal where you want the folder and run the line below. The launcher then checks for a new version every time you start it and updates before opening, which is why I'd go this way.
 
      ```sh
