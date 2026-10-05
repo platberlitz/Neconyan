@@ -2,6 +2,7 @@ import { roleplayError } from '../roleplay-store.js';
 import { ASK_FIRST, CONFIRM_PROTOCOL, CREATE_CHARACTER_GUIDE, USER_CONFIRMED_DESCRIPTION } from '../../public/scripts/neconyan-assistant-tool-guidance.js';
 import { EDITABLE_AGENT_FIELDS, EDITABLE_CHARACTER_FIELDS } from './assistant-tool-data.js';
 import { NOTE_TOOL_DEFINITIONS } from '../../public/scripts/notebooks/assistant-note-tools.js';
+import { CREATE_AGENT_GUIDE, CREATE_AGENT_SCHEMA } from '../../public/scripts/neconyan-assistant-agent.js';
 
 const invalid = message => roleplayError('ROLEPLAY_TOOL_INVALID', message, 409);
 const string = { type: 'string' };
@@ -25,6 +26,7 @@ const assistant = Object.freeze({
             value: string, expected: { type: 'object' } }))],
     Neconyan_Assistant_ListAgents: ['List the current profile in-chat agents.', object([], {})],
     Neconyan_Assistant_ReadAgent: ['Read one in-chat agent by exact ID.', object(['id'], { id: agentId })],
+    Neconyan_Assistant_CreateAgent: [CREATE_AGENT_GUIDE, reviewed(CREATE_AGENT_SCHEMA)],
     Neconyan_Assistant_EditAgent: ['Edit exactly one safe agent field after review.', reviewed(object(
         ['id', 'field', 'value'], { id: agentId, field: { type: 'string', enum: EDITABLE_AGENT_FIELDS }, value: {} }))],
     Neconyan_Assistant_ListModelPresets: ['List supported saved model presets without connection secrets.', object(['apiId'], { apiId: { type: 'string', enum: ['kobold', 'novel', 'openai', 'textgenerationwebui'] } })],
@@ -47,6 +49,7 @@ const assistant = Object.freeze({
 const assistantGuides = Object.freeze({
     Neconyan_Assistant_EditLorebookEntry: ASK_FIRST.editLorebookEntry,
     Neconyan_Assistant_EditAgent: ASK_FIRST.editAgent,
+    Neconyan_Assistant_CreateAgent: ASK_FIRST.createAgent,
     Neconyan_Assistant_EditModelPreset: ASK_FIRST.editModelPreset,
     Neconyan_Assistant_CreateCharacter: ASK_FIRST.createCharacter,
     Neconyan_Assistant_EditCharacter: ASK_FIRST.editCharacter,

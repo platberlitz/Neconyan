@@ -28,9 +28,11 @@ import {
 import { extension_settings } from './extensions.js';
 import { getPresetManager } from './preset-manager.js';
 import { getCurrentUserHandle } from './user.js';
+import { uuidv4 } from './utils.js';
 import { getExtensionCapability } from './neconyan-conversation/extension-capabilities.js';
 import { isNeconyanAssistant } from './neconyan-assistant-knowledge.js';
 import { ASK_FIRST, CONFIRM_PROTOCOL, CREATE_CHARACTER_GUIDE, USER_CONFIRMED_DESCRIPTION } from './neconyan-assistant-tool-guidance.js';
+import { CREATE_AGENT_GUIDE, CREATE_AGENT_SCHEMA, buildAssistantAgent, assistantAgentCreated } from './neconyan-assistant-agent.js';
 
 const TOOL_PREFIX = 'Neconyan_Assistant_';
 const registeredTools = new Set();
@@ -482,6 +484,30 @@ function agentEditorOpen() {
         .some(editor => editor.getClientRects().length > 0 && getComputedStyle(editor).visibility !== 'hidden');
 }
 
+async function createAgent(input, guard) {
+    requireAgentsReady();
+    guard.assert();
+    const id = uuidv4();
+    const agent = buildAssistantAgent(input?.agent, id, liveConnectionProfileIds());
+    if (!await confirmEdit({ resource: 'agent', target: agent.name, field: 'new agent (switched off)', before: '', after: reviewValue(agent) }, guard)) {
+        return { status: 'cancelled', reason: 'The creation was declined.' };
+    }
+    return enqueueAssistantEdit(async () => {
+        guard.assert();
+        const saved = await saveAgent(id, { isCurrent: guard.isCurrent, update: latest => {
+            guard.assert();
+            if (latest) throw new AssistantConflictError('An agent already uses the new ID. Nothing was replaced.');
+            return buildAssistantAgent(input.agent, id, liveConnectionProfileIds());
+        } });
+        if (!saved) throw new Error('The new agent was not saved.');
+        const refreshFailed = !guard.isCurrent();
+        if (!refreshFailed && typeof globalThis.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+            globalThis.dispatchEvent(new CustomEvent('neconyan:assistant-agent-updated', { detail: { id } }));
+        }
+        return { ...assistantAgentCreated(saved), refreshFailed };
+    });
+}
+
 async function editAgent(input, guard) {
     requireAgentsReady();
     const { isAgentGenerationActive } = await import('./extensions/in-chat-agents/agent-runner.js');
@@ -808,6 +834,7 @@ function registerAll(registration) {
     register(`${TOOL_PREFIX}EditLorebookEntry`, 'Edit lorebook entry', 'Edit exactly one lorebook title or content field after review.', { type: 'object', required: ['book', 'uid', 'field', 'value'], properties: { book, uid, field: field(editableLorebookFields), value: { type: 'string' }, expected: { type: 'object' } } }, registration, editLorebookEntry, ASK_FIRST.editLorebookEntry);
     register(`${TOOL_PREFIX}ListAgents`, 'List in-chat agents', 'List the current profile in-chat agents.', { type: 'object', properties: {} }, registration, listAgents);
     register(`${TOOL_PREFIX}ReadAgent`, 'Read in-chat agent', 'Read one in-chat agent by exact ID.', { type: 'object', required: ['id'], properties: { id: agentId } }, registration, readAgent);
+    register(`${TOOL_PREFIX}CreateAgent`, 'Create in-chat agent', CREATE_AGENT_GUIDE, CREATE_AGENT_SCHEMA, registration, createAgent, ASK_FIRST.createAgent);
     register(`${TOOL_PREFIX}EditAgent`, 'Edit in-chat agent', 'Edit exactly one safe agent field after review.', { type: 'object', required: ['id', 'field', 'value'], properties: { id: agentId, field: field(editableAgentFields), value: {} } }, registration, editAgent, ASK_FIRST.editAgent);
     register(`${TOOL_PREFIX}ListModelPresets`, 'List model presets', 'List supported saved model presets without connection secrets.', { type: 'object', required: ['apiId'], properties: { apiId } }, registration, listPresets);
     register(`${TOOL_PREFIX}ReadModelPreset`, 'Read model preset', 'Read only safe editable fields from one model preset.', { type: 'object', required: ['apiId', 'name'], properties: { apiId, name: preset } }, registration, readPreset);

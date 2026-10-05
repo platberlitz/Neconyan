@@ -34,7 +34,8 @@ async function edit(page, name, input, before, after, { cancel = false } = {}) {
     const popup = page.locator('dialog.popup[open]').filter({ has: page.locator('.neconyan-assistant-review') });
     await expect(popup).toBeVisible();
     await expect(popup.locator('pre').nth(0)).toHaveText(before);
-    await expect(popup.locator('pre').nth(1)).toHaveText(after);
+    if (typeof after === 'function') after(JSON.parse(await popup.locator('pre').nth(1).textContent()));
+    else await expect(popup.locator('pre').nth(1)).toHaveText(after);
     await expect(popup.locator('.neconyan-assistant-review img')).toHaveCount(0);
     await popup.locator(cancel ? '.popup-button-cancel' : '.popup-button-ok').click();
     return page.evaluate(async () => JSON.parse(await window.assistantToolResult));
@@ -47,7 +48,7 @@ test('an active assistant reviews and persists real lorebook, agent, preset and 
     page.setDefaultTimeout(20000);
     const { errors, navigate } = trackNavigationErrors(page);
     await page.route(/\/api\/.*\/(?:generate|generate-quiet)(?:\?|$)/, route => route.fulfill({ status: 503, json: { error: 'Model generation is disabled in this fixture.' } }));
-    await page.setViewportSize({ width: 1024, height: 900 });
+    await page.setViewportSize({ width: 1280, height: 900 });
     await ready(page, navigate);
     const api = page.request;
     const headers = await page.evaluate(() => window.SillyTavern.getContext().getRequestHeaders());
@@ -88,7 +89,7 @@ test('an active assistant reviews and persists real lorebook, agent, preset and 
         });
         await expect.poll(toolNames).toEqual(expect.arrayContaining([
             'ListLorebooks', 'ListLorebookEntries', 'ReadLorebookEntry', 'EditLorebookEntry',
-            'ListAgents', 'ReadAgent', 'EditAgent', 'ListModelPresets', 'ReadModelPreset', 'EditModelPreset',
+            'ListAgents', 'ReadAgent', 'CreateAgent', 'EditAgent', 'ListModelPresets', 'ReadModelPreset', 'EditModelPreset',
             'ListCharacters', 'CreateCharacter', 'ReadCharacter', 'EditCharacter',
         ].map(name => `Neconyan_Assistant_${name}`)));
         expect(await invoke(page, 'ListLorebooks')).toMatchObject({ books: expect.arrayContaining([{ name: book }]) });
@@ -104,6 +105,11 @@ test('an active assistant reviews and persists real lorebook, agent, preset and 
         expect(savedBook).toMatchObject({ foreign: 'book metadata', entries: { 0: { content: literal, disable: true, foreign: 'entry metadata' } } });
         expect(await edit(page, 'EditAgent', { id: agentId, field: 'prompt', value: 'New agent instructions' }, 'Old agent', 'New agent instructions')).toMatchObject({ status: 'success', committed: true });
         expect((await readSettings()).inChatAgents.find(agent => agent.id === agentId)).toMatchObject({ prompt: 'New agent instructions', foreign: { keep: true }, enabled: false });
+        const createdAgent = await edit(page, 'CreateAgent', { agent: { name: 'Created helper', kind: 'after-reply', prompt: literal, afterReplyMode: 'append' } }, '',
+            agent => expect(agent).toMatchObject({ name: 'Created helper', prompt: literal, enabled: false, phase: 'post', postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMode: 'append' } }));
+        expect(createdAgent).toMatchObject({ status: 'success', committed: true, enabled: false, refreshFailed: false });
+        expect((await readSettings()).inChatAgents.find(agent => agent.id === createdAgent.id)).toMatchObject({ prompt: literal, enabled: false });
+        expect(await invoke(page, 'ReadAgent', { id: createdAgent.id })).toMatchObject({ agent: { name: 'Created helper', prompt: literal } });
         await page.evaluate(async ({ baselineName, presetName }) => {
             const { getPresetManager } = await import('/scripts/preset-manager.js');
             const manager = getPresetManager('openai');
@@ -126,7 +132,7 @@ test('an active assistant reviews and persists real lorebook, agent, preset and 
         await expect(page.locator('#description_textarea')).toHaveValue('New character instructions');
         const savedCard = await (await api.post('/api/characters/get', { headers, data: { avatar_url: avatar } })).json();
         expect(savedCard.data).toMatchObject({ description: 'New character instructions', extensions: { foreign: 'card metadata', neconyan_assistant: { id: 'miso-male' } } });
-        await page.screenshot({ path: info.outputPath('assistant-edited-card-1024.png') });
+        await page.screenshot({ path: info.outputPath('assistant-edited-card-1280.png') });
         await page.evaluate(async () => (await import('/script.js')).saveSettings(0, { returnResult: true }));
         await ready(page, navigate);
         const persistedPreset = await page.evaluate(async name => (await import('/scripts/preset-manager.js')).getPresetManager('openai').getCompletionPresetByName(name), presetName);

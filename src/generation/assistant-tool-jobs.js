@@ -5,6 +5,8 @@ import { readAuthoringFileLocked, authoringEvidence } from '../authoring-store.j
 import { getTool, invokeTool, registerTool } from '../tools/registry.js';
 import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
 import { syncLorebookOriginalEntry } from '../../public/scripts/neconyan-lorebook-tools-core.js';
+import { assistantAgentCreated } from '../../public/scripts/neconyan-assistant-agent.js';
+import { assertAgentWriteCapacityLocked } from '../in-chat-agent-storage.js';
 import { ASSISTANT_PREFIX, ASSISTANT_TOOLS, assistantToolMutates, projectAssistantAgent } from './assistant-tool-data.js';
 import { applyNoteProposalLocked, checkProposalLocked, proposalIsDirectLocked, proposalSummary } from '../notebooks/assistant.js';
 import { notifyNotebookChanged } from '../notebooks/events.js';
@@ -47,7 +49,7 @@ const registered = new Map(Object.entries(ASSISTANT_TOOLS).map(([name, tool]) =>
     run: (_args, { target }) => target.execute(),
 })]));
 
-function verifiedSource(context, request, { after = null } = {}) {
+function verifiedSource(context, request, { after = null, prepared = false } = {}) {
     return withNativeMediaReceipt(context, ({ lease }) => {
         if (!after) {
             const current = captureAssistantToolSourceLocked(lease, context.job.intent.source,
@@ -61,7 +63,8 @@ function verifiedSource(context, request, { after = null } = {}) {
             throw invalid('The assistant or its saved account settings changed.');
         }
         const file = readAuthoringFileLocked(lease, path.join(context.directories.root, request.resource.relative), 8 * 1024 * 1024);
-        if (roleplayHash(authoringEvidence(file)) !== roleplayHash(after)) throw invalid('The completed assistant edit changed after publication.');
+        const evidence = roleplayHash(authoringEvidence(file));
+        if (evidence !== roleplayHash(after) && !(prepared && evidence === roleplayHash(request.resource.evidence))) throw invalid('The completed assistant edit changed after publication.');
     });
 }
 
@@ -91,11 +94,13 @@ function plannedChange(context, request) {
         if (roleplayHash(current) !== roleplayHash(request)) throw invalid('The assistant edit changed before review.');
         const full = path.join(directories.root, request.resource.relative);
         const file = readAuthoringFileLocked(lease, full, 8 * 1024 * 1024);
-        if (!file || roleplayHash(authoringEvidence(file)) !== roleplayHash(request.resource.evidence)) throw invalid('The edited file changed before review.');
+        if ((!file && request.tool !== 'create-agent') || roleplayHash(authoringEvidence(file)) !== roleplayHash(request.resource.evidence)) throw invalid('The edited file changed before review.');
         let data;
-        try { data = JSON.parse(file.bytes.toString('utf8')); } catch { throw invalid('The saved assistant edit target is unreadable.'); }
+        try { data = file ? JSON.parse(file.bytes.toString('utf8')) : structuredClone(request.change.agent); } catch { throw invalid('The saved assistant edit target is unreadable.'); }
         let visible;
-        if (request.tool === 'edit-lorebook-entry') {
+        if (request.tool === 'create-agent') {
+            visible = assistantAgentCreated(data);
+        } else if (request.tool === 'edit-lorebook-entry') {
             const entry = Object.values(data.entries ?? {}).find(item => item?.uid === request.change.uid);
             if (!entry || entry.agentBlacklisted || roleplayHash(entry) !== request.change.entryHash) throw invalid('The selected lorebook entry changed.');
             const field = request.change.field === 'title' ? 'comment' : 'content';
@@ -239,8 +244,8 @@ export async function runAssistantToolJob(context, { beforePublish, afterCommit,
     const execute = request.resource.kind === 'character'
         ? () => executeApprovedCharacterAction(context, { request, plan, beforePublish, afterCommit, fetchImpl })
         : () => {
-            const after = withNativeMediaReceipt(context, ({ value }) => value.effects[effectKey]?.staged?.after ?? null);
-            if (after) verifiedSource(context, request, { after });
+            const effect = withNativeMediaReceipt(context, ({ value }) => value.effects[effectKey] ?? null);
+            if (effect?.staged?.after) verifiedSource(context, request, { after: effect.staged.after, prepared: effect.state === 'prepared' });
             else verifiedSource(context, request);
             const published = publishNativeAuthoringFile(context, { relative, before: request.resource.evidence,
                 bytes: Buffer.from(plan.bytes), beforePublish, checkLocked: (lease, value) => {
@@ -254,6 +259,7 @@ export async function runAssistantToolJob(context, { beforePublish, afterCommit,
                     const currentEvidence = authoringEvidence(file);
                     if (roleplayHash(currentEvidence) !== roleplayHash(request.resource.evidence)
                         && (!proof || roleplayHash(currentEvidence) !== roleplayHash(proof))) throw invalid('The edited resource changed outside the accepted write.');
+                    if (request.tool === 'create-agent') assertAgentWriteCapacityLocked(lease, 'agent', request.change.agent);
                 } });
             return { ...plan.visible, effect: published };
         };

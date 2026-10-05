@@ -2081,6 +2081,31 @@ export function deleteAgentBatch(ids) {
     });
 }
 
+/** Read back a server-created agent without replacing other agents or unsaved editor values. */
+export async function loadCreatedAgent(id, { account, isCurrent = () => true } = {}) {
+    const context = storageContext;
+    const load = agentSaveChain.then(async () => {
+        assertStorageContext(context);
+        if (!isCurrent() || context.account !== account) throw new DOMException('The active account changed.', 'AbortError');
+        if (getAgentById(id)) return;
+        const response = await fetch('/api/in-chat-agents/list', { method: 'POST',
+            headers: { ...getRequestHeaders(), 'X-Neconyan-Account': account }, body: JSON.stringify({ withDiagnostics: true }) });
+        if (!response.ok) throw new Error('The new agent could not be loaded.');
+        const data = await response.json();
+        assertStorageContext(context);
+        if (!isCurrent() || response.headers.get('X-Neconyan-Account') !== account) throw new DOMException('The active account changed.', 'AbortError');
+        const record = data.records?.find(agent => agent.id === id);
+        // The user may have deleted it after creation; never recreate it here.
+        if (!record) return;
+        const agent = normalizeAgent(record);
+        storedRecords.agent.set(id, structuredClone(record));
+        agents.push(agent);
+        cacheAgentRegexScriptsForAgent(agent);
+    });
+    agentSaveChain = load.catch(() => {});
+    return load;
+}
+
 /**
  * Saves an agent to the server. Updates local array.
  * @param {InChatAgent|string} agent Agent snapshot, or ID when updating the latest saved state
