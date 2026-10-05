@@ -93,6 +93,75 @@ function showRouteState(kind, { transient = false, link = '' } = {}) {
     }
 }
 
+const linkSwitches = [
+    { source: 'chat-links-checkbox', setting: 'chat_links', label: 'Chat links in the address bar', hint: 'The address follows your saved chat, so Back, Forward and bookmarks open exact chats.' },
+    { source: 'auto-load-chat-checkbox', setting: 'auto_load_chat', label: 'Resume last chat on launch', hint: 'Opening Neconyan returns to the last saved chat you opened on this account.' },
+];
+
+function syncLinkSwitches() {
+    for (const input of document.querySelectorAll('[data-link-setting]')) input.checked = Boolean(power_user[input.dataset.linkSetting]);
+}
+
+// Shortcuts to the two User Settings checkboxes, so their saving and side effects stay in one place.
+function fillLinkSwitches() {
+    for (const container of document.querySelectorAll('[data-chat-link-switches]:empty')) {
+        for (const { source, setting, label, hint } of linkSwitches) {
+            const id = `${container.dataset.chatLinkSwitches}-${setting}`;
+            const row = document.createElement('label');
+            row.className = 'checkbox_label neconyan-link-switch';
+            row.htmlFor = id;
+            const input = document.createElement('input');
+            Object.assign(input, { type: 'checkbox', id });
+            input.dataset.linkSetting = setting;
+            input.setAttribute('aria-describedby', `${id}-hint`);
+            const name = document.createElement('span');
+            name.textContent = label;
+            const note = document.createElement('small');
+            note.id = `${id}-hint`;
+            note.textContent = hint;
+            const text = document.createElement('span');
+            text.append(name, note);
+            row.append(input, text);
+            input.addEventListener('change', () => {
+                const target = document.getElementById(source);
+                if (!target) return;
+                target.checked = input.checked;
+                target.dispatchEvent(new Event('input', { bubbles: true }));
+            });
+            container.append(row);
+        }
+    }
+    syncLinkSwitches();
+}
+
+function linkSettingsDialog() {
+    let element = document.getElementById('neconyan-chat-link-settings');
+    if (!element) {
+        element = document.createElement('dialog');
+        element.id = 'neconyan-chat-link-settings';
+        element.setAttribute('aria-labelledby', 'neconyan-chat-link-settings-title');
+        element.innerHTML = '<h2 id="neconyan-chat-link-settings-title" tabindex="-1">Chat links</h2><p>A chat link reopens this saved chat in your account on this installation. It does not share the chat with anyone.</p><button type="button" class="menu_button" data-chat-link-copy aria-disabled="true" disabled><i class="fa-solid fa-link" aria-hidden="true"></i> Copy chat link</button><div data-chat-link-switches="neconyan-chat-link-settings"></div><div class="neconyan-route-actions"><button type="button" class="menu_button" data-link-settings-close>Close</button></div>';
+        element.querySelector('[data-chat-link-copy]').addEventListener('click', () => void copyChatLink());
+        element.querySelector('[data-link-settings-close]').addEventListener('click', () => element.close());
+        element.addEventListener('click', event => {
+            const box = element.getBoundingClientRect();
+            const outside = event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom;
+            if (event.target === element && outside) element.close();
+        });
+        document.body.append(element);
+        fillLinkSwitches();
+    }
+    return element;
+}
+
+function openLinkSettings() {
+    const element = linkSettingsDialog();
+    copyAvailability();
+    syncLinkSwitches();
+    if (!element.open) element.showModal();
+    element.querySelector('h2').focus({ preventScroll: true });
+}
+
 function writeHistory(destination, reason) {
     const next = chatNavigationUrl(location.href, destination);
     const action = chatHistoryAction({ current: parseChatNavigation(location.href), next: destination || { kind: 'root' }, linksEnabled: Boolean(power_user.chat_links), reason });
@@ -335,7 +404,11 @@ async function copyChatLink() {
         if (!globalThis.isSecureContext || typeof navigator.clipboard?.writeText !== 'function') throw new Error('Clipboard unavailable.');
         await navigator.clipboard.writeText(link);
         if (currentAccount()) toastr.success('Chat link copied.');
-    } catch { if (currentAccount()) showRouteState('copy', { link }); }
+    } catch {
+        if (!currentAccount()) return;
+        document.getElementById('neconyan-chat-link-settings')?.close();
+        showRouteState('copy', { link });
+    }
 }
 
 function legacyTarget() {
@@ -364,7 +437,11 @@ export async function initChatNavigation() {
         if (getActualNeconyanMode() === 'conversation' && visible.kind !== 'chat') void observeForeground();
     });
     window.addEventListener('neconyan:navigate-home', () => void observeForeground({ homeRequested: true }));
-    window.addEventListener('neconyan:chat-tools-ready', copyAvailability);
+    window.addEventListener('neconyan:chat-tools-ready', () => { copyAvailability(); fillLinkSwitches(); });
+    document.addEventListener('input', event => { if (linkSwitches.some(item => item.source === event.target?.id)) syncLinkSwitches(); });
+    const settingsItem = document.getElementById('option_chat_link_settings');
+    settingsItem?.addEventListener('click', openLinkSettings);
+    settingsItem?.addEventListener('keydown', event => { if (['Enter', ' '].includes(event.key)) { event.preventDefault(); settingsItem.click(); } });
     window.addEventListener('popstate', () => void requestNavigation(parseChatNavigation(location.href), { reason: 'popstate' }));
     window.addEventListener('pageshow', event => {
         if (!event.persisted) return;
@@ -382,6 +459,7 @@ export async function initChatNavigation() {
     });
     window.addEventListener('neconyan:resume-preference', () => { if (power_user.auto_load_chat && visible.kind === 'chat') remember(visible); });
     copyAvailability();
+    fillLinkSwitches();
     // Explicit existing actions retain priority; there is no second late autoload.
     if (launch.searchParams.has('neconyanView') || (launch.searchParams.has('source') && launch.searchParams.has('query'))) {
         routing = true;

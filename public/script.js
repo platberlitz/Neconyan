@@ -19682,6 +19682,7 @@ jQuery(async function () {
             // The same goes for the assistant tours on full-page tools.
             '#neconyan-tool-tour',
             '#neconyan-chat-route',
+            '#neconyan-chat-link-settings',
             '#world_popup',
             '.ui-widget',
             '.text_pole',

@@ -474,6 +474,86 @@ test('desktop clipboard success uses the real labelled control and expired sign-
     expect(new URL(page.url()).searchParams.has('noauto')).toBe(false);
 });
 
+test('link switches beside Copy chat link drive the saved preferences on desktop and phones', async ({ app }) => {
+    const account = await app.account();
+    const { a } = await roleplayFixtures(app, account);
+    const page = await account.open({ workspace: false });
+    await ready(page);
+    await navigateInPage(page, a);
+    await page.evaluate(() => window.NeconyanShell.openChatTools());
+    const links = page.locator('#sb-desktop-chat-chat_links');
+    await expect(links).toBeVisible();
+    await expect(links).not.toBeChecked();
+    await expect(page.locator('#sb-desktop-chat-auto_load_chat')).not.toBeChecked();
+    await links.check();
+    await expect.poll(() => new URL(page.url()).searchParams.get('chat')).toBe(a.id);
+    await expect(page.locator('#chat-links-checkbox')).toBeChecked();
+    await page.evaluate(() => {
+        const source = document.getElementById('chat-links-checkbox');
+        source.checked = false;
+        source.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await expect(links).not.toBeChecked();
+    await expect(page.locator('#sb-mobile-chat-chat_links')).not.toBeChecked();
+    await links.check();
+    await page.locator('#sb-desktop-chat-auto_load_chat').check();
+    await expect(page.locator('#auto-load-chat-checkbox')).toBeChecked();
+    await page.reload();
+    await ready(page);
+    expect(await page.evaluate(async () => {
+        const { power_user } = await import('/scripts/power-user.js');
+        return [power_user.chat_links, power_user.auto_load_chat];
+    })).toEqual([true, true]);
+
+    const phone = await app.account({ phone: true, contextOptions: IPHONE_SAFARI_CONTEXT });
+    await installIPhoneSafari(phone.context, { standalone: true });
+    const phonePage = await phone.open({ workspace: false });
+    await ready(phonePage);
+    await phonePage.goto(`${app.url}/?chat=${a.id}&mode=roleplay`);
+    await assertRoleplay(phonePage, 'Nav A');
+    await applyIOSOnlyCss(phonePage);
+    await phonePage.locator('#options_button').click();
+    const item = phonePage.locator('#option_chat_link_settings');
+    await expect(item).toBeVisible();
+    expect((await item.boundingBox()).height).toBeGreaterThanOrEqual(44);
+    await item.focus();
+    await item.press('Enter');
+    const dialog = phonePage.locator('#neconyan-chat-link-settings');
+    await expect(dialog).toBeVisible();
+    await expect(phonePage.locator('#options')).toBeHidden();
+    await expect(dialog.locator('h2')).toBeFocused();
+    await expect(dialog.locator('[data-chat-link-copy]')).toBeEnabled();
+    await expect(phonePage.locator('#neconyan-chat-link-settings-chat_links')).toBeChecked();
+    const geometry = await dialog.evaluate(element => {
+        const box = element.getBoundingClientRect();
+        return { left: box.left, right: box.right, bottom: box.bottom, width: window.innerWidth, height: window.innerHeight,
+            rows: [...element.querySelectorAll('.neconyan-link-switch')].map(row => row.getBoundingClientRect().height) };
+    });
+    expect(geometry.left).toBeGreaterThanOrEqual(0);
+    expect(geometry.right).toBeLessThanOrEqual(geometry.width);
+    expect(geometry.bottom).toBeLessThanOrEqual(geometry.height);
+    expect(geometry.rows).toHaveLength(2);
+    for (const row of geometry.rows) expect(row).toBeGreaterThanOrEqual(44);
+    await phonePage.locator('#neconyan-chat-link-settings-chat_links').uncheck();
+    await expect.poll(() => new URL(phonePage.url()).searchParams.has('chat')).toBe(false);
+    await expect(phonePage.locator('#chat-links-checkbox')).not.toBeChecked();
+    await dialog.locator('[data-link-settings-close]').click();
+    await expect(dialog).toBeHidden();
+    await phonePage.locator('#options_button').click();
+    await item.click();
+    await phonePage.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await phonePage.locator('#options_button').click();
+    await item.click();
+    await phonePage.evaluate(() => {
+        Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: { writeText: async () => { throw new Error('Test denied clipboard'); } } });
+    });
+    await dialog.locator('[data-chat-link-copy]').click();
+    await expect(dialog).toBeHidden();
+    await expect(phonePage.locator('#neconyan-chat-route')).toBeVisible();
+    await expect(phonePage.locator('[data-route-link]')).toHaveValue(`${app.url}/?chat=${a.id}&mode=roleplay`);
+});
+
 test('foreground link preparation never exposes a different editable chat under the previous link', async ({ app }) => {
     const account = await app.account();
     const { a, b } = await roleplayFixtures(app, account);

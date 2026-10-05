@@ -4,9 +4,11 @@ I kept this opt-in. You can bookmark an exact saved conversation without making 
 
 ## Using it
 
-In Preferences, 'Chat links' keeps the address bar on the saved chat you're viewing. It's off by default. 'Resume last chat on launch' is separate: it uses your account's last successfully opened saved conversation when you open Neconyan without a destination. Your previous auto-load choice is kept.
+Both switches sit next to 'Copy chat link', so you don't have to dig through settings to find them. On desktop they're in the Recent Chats panel, under the copy button. On phones, the chat tools menu has a 'Chat link settings' row that opens a small panel with the copy button and both switches. They're also the first two options under Chat/Message Handling in User Settings. Every copy stays in sync.
 
-The existing chat tools menu has a labelled 'Copy chat link' action on desktop and phones. It works with both preferences off. A link opens the same saved conversation for the same account on the same installation. It doesn't publish a chat or give another person access.
+'Chat links in the address bar' keeps the address bar on the saved chat you're viewing. It's off by default. 'Resume last chat on launch' is separate: it uses your account's last successfully opened saved conversation when you open Neconyan without a destination. Your previous auto-load choice is kept.
+
+The existing chat tools menu has a labelled 'Copy chat link' action on desktop and phones. It works with both switches off. A link opens the same saved conversation for the same account on the same installation. It doesn't publish a chat or give another person access.
 
 Temporary chats and unsaved Conversation branches don't have links. Copying doesn't save them for you. If your browser refuses clipboard access, you get a selectable link instead of a false 'Copied' message.
 
@@ -16,7 +18,7 @@ Saved single-character and group Roleplay chats are supported. Conversation link
 
 An explicit chat link wins over launch restoration, even with both preferences off. Existing import and workspace startup actions keep their priority. An explicit Home destination stays Home on refresh and doesn't erase the remembered chat.
 
-With 'Chat links' on, choosing another saved conversation adds a history entry. Startup, preference changes and address cleanup replace the current entry. Messages, renamed titles and settings don't add entries. With it off, an explicit link can remain while that chat is visible; moving elsewhere removes its stale chat parameters.
+With 'Chat links in the address bar' on, choosing another saved conversation adds a history entry. Startup, preference changes and address cleanup replace the current entry. Messages, renamed titles and settings don't add entries. With it off, an explicit link can remain while that chat is visible; moving elsewhere removes its stale chat parameters.
 
 Back and Forward use the address itself, including entries without browser state. Pending edits finish before a switch. An unsent draft, selected attachments or an active reply can refuse navigation; the current address is restored rather than putting one editable chat under another chat's link. Loading or failure blocks new sends. Missing links never create a chat, greeting, branch or model request.
 

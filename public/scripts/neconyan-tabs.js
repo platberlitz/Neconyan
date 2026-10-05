@@ -501,7 +501,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261004-chat-links3';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261005-chat-links4';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -7733,7 +7733,8 @@ function buildChatSidebar() {
     copyButton.disabled = true;
     copyButton.addEventListener('click', () => { document.getElementById('option_copy_chat_link')?.click(); setChatSidebarOpenState(false); });
     const copyNote = createElement('small', { id: 'sb-desktop-chat-copy-note', text: 'Only saved chats have links. A link opens this chat in your account; it does not share it.' });
-    body.append(copyButton, copyNote, list);
+    const linkSwitches = createElement('div', { className: 'sb-chat-link-switches', attrs: { 'data-chat-link-switches': 'sb-desktop-chat' } });
+    body.append(copyButton, copyNote, linkSwitches, list);
     root.appendChild(body);
 
     closeButton.addEventListener('click', () => setChatSidebarOpenState(false));
@@ -7883,7 +7884,8 @@ function buildMobileChatTools() {
     copyButton.disabled = true;
     copyButton.addEventListener('click', () => { document.getElementById('option_copy_chat_link')?.click(); closeMobileChatTools(); });
     const copyNote = createElement('small', { id: 'sb-mobile-chat-copy-note', text: 'Only saved chats have links. A link opens this chat in your account; it does not share it.' });
-    panel.append(header, chatSelectField, actions, copyButton, copyNote, connectionSection, recentSection);
+    const linkSwitches = createElement('div', { className: 'sb-chat-link-switches', attrs: { 'data-chat-link-switches': 'sb-mobile-chat' } });
+    panel.append(header, chatSelectField, actions, copyButton, copyNote, linkSwitches, connectionSection, recentSection);
     overlay.appendChild(panel);
 
     overlay.addEventListener('click', event => {
