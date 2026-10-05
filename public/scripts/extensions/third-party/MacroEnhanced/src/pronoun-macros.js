@@ -43,6 +43,35 @@ const SLOT_DOCS = Object.freeze({
 
 const PRESET_HINT = 'she/her, he/him, they/them, it/its, or all five forms separated by "/"';
 
+// ---------- change notices ----------
+
+// The settings drawer and the Persona page both edit the same saved value, so
+// every write announces itself here and each view redraws from storage.
+const changeListeners = new Set();
+
+/**
+ * Calls `listener({ subject, source })` after any pronoun value is saved or a
+ * chat override changes. `source` is whatever the writer passed, so a view can
+ * skip redrawing itself while someone is typing in it.
+ *
+ * @param {(change: { subject: string, source: unknown }) => void} listener
+ * @returns {() => void} Unsubscribe.
+ */
+export function onPronounsChanged(listener) {
+    changeListeners.add(listener);
+    return () => changeListeners.delete(listener);
+}
+
+function notifyPronounsChanged(subject, source) {
+    for (const listener of [...changeListeners]) {
+        try {
+            listener({ subject, source });
+        } catch (error) {
+            console.error('[MacroEnhanced] pronoun change listener failed', error);
+        }
+    }
+}
+
 // ---------- storage ----------
 
 /** Sandboxed state (Workbench overlay) when present, else the real chat state. */
@@ -71,13 +100,21 @@ export function getPersonaSpec() {
     return String(getSettings().pronouns.personas[ctx.userAvatar] ?? '');
 }
 
-export function savePersonaSpec(spec) {
+export function savePersonaSpec(spec, { source, avatarId } = {}) {
     const ctx = SillyTavern.getContext();
-    if (!ctx.userAvatar) {
+    const avatar = avatarId ?? ctx.userAvatar;
+    if (!avatar) {
         throw new Error('No persona is selected.');
     }
-    getSettings().pronouns.personas[ctx.userAvatar] = String(spec ?? '').trim();
+    const personas = getSettings().pronouns.personas;
+    const next = String(spec ?? '').trim();
+    if (next) {
+        personas[avatar] = next;
+    } else {
+        delete personas[avatar];
+    }
     saveSettings();
+    notifyPronounsChanged(SUBJECTS.user.key, source);
 }
 
 /** The spec saved on the active character's card, or '' when none is set. */
@@ -87,7 +124,7 @@ export function getCharacterSpec() {
     return String(character?.data?.extensions?.[MODULE_NAME]?.pronouns ?? '');
 }
 
-export async function saveCharacterSpec(spec) {
+export async function saveCharacterSpec(spec, { source } = {}) {
     const ctx = SillyTavern.getContext();
     if (ctx.characterId === undefined || ctx.characterId === null) {
         throw new Error('No character selected.');
@@ -97,6 +134,7 @@ export async function saveCharacterSpec(spec) {
     // the card's custom macros.
     const existing = ctx.characters?.[ctx.characterId]?.data?.extensions?.[MODULE_NAME] ?? {};
     await ctx.writeExtensionField(ctx.characterId, MODULE_NAME, { ...existing, pronouns: String(spec ?? '').trim() });
+    notifyPronounsChanged(SUBJECTS.char.key, source);
 }
 
 /** The saved spec for a subject, ignoring any chat override. */
@@ -110,11 +148,12 @@ export function getOverrideSpec(subject) {
 }
 
 /** Clears a chat override, so the saved setting applies again. */
-export function clearOverride(subject) {
+export function clearOverride(subject, { source } = {}) {
     const map = overrides(getChatState());
     if (map) {
         map[subject.key] = '';
         touchChatState();
+        notifyPronounsChanged(subject.key, source);
     }
 }
 
@@ -219,9 +258,13 @@ export function registerPronounMacros() {
                     ctx.warn(`{{${setterName}}}: no chat is loaded, so there is nowhere to store it.`);
                     return '';
                 }
+                const changed = String(map[subject.key] ?? '') !== spec;
                 map[subject.key] = spec;
                 if (!sandboxed) {
                     touchChatState();
+                    if (changed) {
+                        notifyPronounsChanged(subject.key, 'macro');
+                    }
                 }
                 return '';
             },

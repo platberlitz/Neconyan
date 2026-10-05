@@ -14,6 +14,9 @@ import {
     savePersonaSpec,
 } from './pronoun-macros.js';
 
+/** Marks writes made here, so the drawer does not redraw itself twice. */
+export const DRAWER_PRONOUN_SOURCE = 'drawer';
+
 /** Who each subject currently is, and why its controls might be unavailable. */
 function subjectTarget(subject) {
     const ctx = SillyTavern.getContext();
@@ -30,9 +33,9 @@ function subjectTarget(subject) {
 
 async function persist(subject, spec) {
     if (subject.key === 'user') {
-        savePersonaSpec(spec);
+        savePersonaSpec(spec, { source: DRAWER_PRONOUN_SOURCE });
     } else {
-        await saveCharacterSpec(spec);
+        await saveCharacterSpec(spec, { source: DRAWER_PRONOUN_SOURCE });
     }
 }
 
@@ -105,6 +108,11 @@ function renderSubject(host, subject, rerender) {
     host.appendChild(problem);
     host.appendChild(preview);
 
+    if (subject.key === 'user') {
+        host.appendChild(el('div', 'me-drawer-hint',
+            'Also on the Persona page, under the description. Changing either changes both.'));
+    }
+
     // A {{setpronouns}} override silently outranks the box above it, so say so
     // rather than leaving someone editing a value that has no effect.
     if (override) {
@@ -112,7 +120,7 @@ function renderSubject(host, subject, rerender) {
         notice.appendChild(document.createTextNode(
             `This chat is overriding the setting with ${override}. set by {{set${subject.prefix}pronouns}}. `));
         notice.appendChild(button('menu_button me-custom-button', 'Use the saved setting', () => {
-            clearOverride(subject);
+            clearOverride(subject, { source: DRAWER_PRONOUN_SOURCE });
             rerender();
         }));
         host.appendChild(notice);

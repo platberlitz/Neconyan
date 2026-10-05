@@ -131,7 +131,7 @@ export const TOPICS = Object.freeze([
             'The five names are the JanitorAI ones: {{sub}} (she, he, they), {{obj}} (her, him, them), {{poss}} (her, his, their), {{poss_p}} (hers, his, theirs) and {{ref}} (herself, himself, themself). They follow your persona. The same five with a "char" in front. {{charsub}}, {{charposs}} and so on. follow the character instead.',
             'Capitalize the macro to capitalize the word: {{Sub}} gives "She" where {{sub}} gives "she". Handy at the start of a sentence.',
             'Verbs are the part that quietly breaks: text written for she/her reads wrong the moment a they/them persona loads it. {{pverb::is::are}} picks the form that agrees, and there is a {{charpverb}} for the character.',
-            'Pronouns are set in the Macro Enhanced settings panel. yours against the persona, the character\'s onto its card, so they travel with it when you share it. {{setpronouns::he/him}} overrides either one for the current chat only.',
+            'Pronouns are set in the Macro Enhanced settings panel, and yours also on the Persona page under the description. both edit the same value. Yours are saved against the persona, the character\'s onto its card, so they travel with it when you share it. {{setpronouns::he/him}} overrides either one for the current chat only.',
             'Anything left unset is they/them. Beyond the four presets you can write all five forms out: xe/xem/xyr/xyrs/xemself. Add "/plural" or "/singular" on the end if the verb agreement comes out wrong.',
         ],
         see: ['sub', 'obj', 'poss', 'poss_p', 'ref', 'charsub', 'pverb', 'pronouns', 'setpronouns'],

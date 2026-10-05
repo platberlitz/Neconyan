@@ -10,7 +10,9 @@ import { disableCompatMode, registerCompatMacros, syncCompatMode } from './src/c
 import { disableImportFixes, syncImportFixes } from './src/import-fixes.js';
 import { registerDateMacros } from './src/date-macros.js';
 import { registerLorebookMacros } from './src/lorebook-macros.js';
-import { registerPronounMacros } from './src/pronoun-macros.js';
+import { onPronounsChanged, registerPronounMacros } from './src/pronoun-macros.js';
+import { DRAWER_PRONOUN_SOURCE } from './src/pronoun-ui.js';
+import { mountPersonaPronounField, renderPersonaPronounField, unmountPersonaPronounField } from './src/persona-pronoun-field.js';
 import { clearCache, prewarm, indexBook, setActiveEntries } from './src/lorebook-cache.js';
 import { syncRegistrations, teardownCustomRegistrations } from './src/custom/registrar.js';
 import { registerCommands, setCommandsActive } from './src/commands.js';
@@ -19,6 +21,8 @@ import { closeWorkbench } from './src/workbench/panel.js';
 
 const subscriptions = [];
 let initialized = false;
+/** @type {(() => void)|null} stops the drawer following pronoun writes */
+let stopPronounSync = null;
 let macrosRegistered = false;
 /** @type {boolean|null} engine availability at the last drawer render */
 let lastRenderedAvailability = null;
@@ -59,12 +63,28 @@ function activateMacros() {
     prewarm(ctx);
 }
 
+/**
+ * The drawer and the Persona page edit the same persona pronouns. A write from
+ * either side (or from {{setpronouns}}) redraws the other.
+ */
+function startPronounSync() {
+    mountPersonaPronounField();
+    if (!stopPronounSync) {
+        stopPronounSync = onPronounsChanged(({ source }) => {
+            if (initialized && source !== DRAWER_PRONOUN_SOURCE) {
+                renderDrawerTracked();
+            }
+        });
+    }
+}
+
 export function init() {
     if (initialized) {
         setCommandsActive(true);
         activateMacros();
         registerCommands();
         renderDrawerTracked();
+        startPronounSync();
         return;
     }
 
@@ -77,6 +97,18 @@ export function init() {
     activateMacros();
     registerCommands();
     renderDrawerTracked();
+    startPronounSync();
+
+    // The drawer and the Persona page both show the selected persona's pronouns.
+    for (const personaEvent of [events.PERSONA_CHANGED, events.PERSONA_CREATED, events.PERSONA_DELETED]) {
+        subscribe(personaEvent, () => {
+            if (!initialized) {
+                return;
+            }
+            renderPersonaPronounField();
+            renderDrawerTracked();
+        });
+    }
 
     subscribe(events.APP_READY, () => {
         if (!initialized) {
@@ -107,7 +139,12 @@ export function init() {
     });
 
     subscribe(events.CHAT_CHANGED, () => {
-        if (!initialized || !macrosRegistered) {
+        if (!initialized) {
+            return;
+        }
+        // A {{setpronouns}} override belongs to one chat, so its notice follows the chat.
+        renderPersonaPronounField();
+        if (!macrosRegistered) {
             return;
         }
         closeWorkbench();
@@ -181,6 +218,9 @@ export function deactivate() {
     lastRenderedAvailability = null;
     clearCache();
     removeDrawer();
+    stopPronounSync?.();
+    stopPronounSync = null;
+    unmountPersonaPronounField();
 
     const { eventSource } = SillyTavern.getContext();
     while (subscriptions.length) {
