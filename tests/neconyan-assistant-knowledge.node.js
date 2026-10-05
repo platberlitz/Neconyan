@@ -89,6 +89,7 @@ test('real help questions retrieve the appropriate topic', () => {
         ['Where is the Story Mode edit button on my phone?', 'story.manuscript'],
         ['Why are the story swipe arrows hidden on older passages?', 'story.manuscript'],
         ['How do I change Shell Style to Windows Aero?', 'appearance.shell-style'],
+        ['How do I get the black Windows XP colours?', 'appearance.windows-xp'],
         ['Where do I save an accent profile?', 'appearance.accent'],
         ['How do I start the Nori lorebook tour?', 'lorebooks.tour'],
         ['Where is the ICA glossary with Taro?', 'agents.glossary'],

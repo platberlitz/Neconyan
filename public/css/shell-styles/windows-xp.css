@@ -1,0 +1,484 @@
+/* Shell Style: Windows XP. Loaded at runtime only while this style is active.
+   Keeps the Calico palette tokens, fonts and message tints, and lays the Luna look on top:
+   rounded blue caption bars, beige window faces, soft push buttons with the orange hover
+   rim, Explorer task-pane rails and the green Start button. The bundled Windows XP UI themes
+   switch the caption colours to the other XP schemes (Olive Green, Silver, Royale, Zune and
+   Royale Noir); any other custom accent recolours the captions from that accent. */
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) {
+    --xp-hue-light: color-mix(in srgb, var(--xp-hue) 30%, #fff);
+    --xp-face: color-mix(in srgb, var(--neco-canvas) 55%, #ece9d8);
+    --xp-field: color-mix(in srgb, var(--neco-surface) 35%, #fff);
+    --xp-button: linear-gradient(180deg, #fff 0, color-mix(in srgb, var(--xp-face) 45%, #fff) 70%, color-mix(in srgb, var(--xp-face) 90%, #000) 100%);
+    --xp-button-down: linear-gradient(180deg, color-mix(in srgb, var(--xp-face) 85%, #000) 0, color-mix(in srgb, var(--xp-face) 60%, #fff) 100%);
+    --xp-button-edge: #003c74;
+    --xp-group-edge: color-mix(in srgb, var(--xp-face) 78%, #000);
+    --xp-tab: linear-gradient(180deg, #fff 0, color-mix(in srgb, var(--xp-face) 55%, #fff) 80%, var(--xp-face) 100%);
+    --xp-tab-edge: #919b9c;
+    --xp-scroll-thumb: color-mix(in srgb, var(--xp-hue-light) 70%, #fff);
+    --xp-scroll-track: color-mix(in srgb, var(--xp-face) 40%, #fff);
+    --xp-pane: linear-gradient(180deg, color-mix(in srgb, var(--xp-face) 58%, var(--xp-pane-top)) 0, color-mix(in srgb, var(--xp-face) 58%, var(--xp-pane-bottom)) 100%);
+    --neco-rail: var(--xp-face);
+    --neco-raised: color-mix(in srgb, var(--xp-face) 70%, #fff);
+    --neco-panel-gradient: var(--xp-face);
+    --sb-radius-button: 3px;
+    --sb-radius-sm: 3px;
+    --sb-radius-md: 4px;
+    --sb-radius-lg: 6px;
+    --sb-radius-xl: 8px;
+    --sb-message-radius: 6px;
+}
+
+/* Bright text on a light surface would vanish on the beige faces, so the faces go dark instead. */
+:root[data-sb-theme='windows-xp'][data-sb-surface-tone='light'][data-sb-text-tone='light'] body.neconyan:not(.sbterm),
+:root[data-sb-theme='windows-xp'][data-sb-surface-tone='dark'] body.neconyan:not(.sbterm) {
+    --xp-face: color-mix(in srgb, var(--neco-canvas) 86%, #5a6378);
+    --xp-field: color-mix(in srgb, var(--neco-canvas) 82%, #000);
+    --xp-button: linear-gradient(180deg, color-mix(in srgb, var(--xp-face) 70%, #fff) 0, color-mix(in srgb, var(--xp-face) 88%, #fff) 70%, var(--xp-face) 100%);
+    --xp-button-down: linear-gradient(180deg, color-mix(in srgb, var(--xp-face) 80%, #000) 0, var(--xp-face) 100%);
+    --xp-button-edge: color-mix(in srgb, var(--xp-face) 35%, #000);
+    --xp-group-edge: color-mix(in srgb, var(--xp-face) 70%, #fff);
+    --xp-tab: linear-gradient(180deg, color-mix(in srgb, var(--xp-face) 72%, #fff) 0, var(--xp-face) 100%);
+    --xp-tab-edge: color-mix(in srgb, var(--xp-face) 50%, #000);
+    --xp-scroll-thumb: color-mix(in srgb, var(--xp-face) 65%, #fff);
+    --xp-scroll-track: color-mix(in srgb, var(--xp-face) 80%, #000);
+    --xp-pane: linear-gradient(180deg, color-mix(in srgb, var(--xp-face) 82%, var(--xp-pane-top)) 0, color-mix(in srgb, var(--xp-face) 82%, var(--xp-pane-bottom)) 100%);
+}
+
+:root[data-sb-theme='windows-xp'][data-sb-surface-tone='light'][data-sb-text-tone='light'] body.neconyan:not(.sbterm) {
+    --xp-face: #3c3c3c;
+    --xp-field: #1e1e1e;
+}
+
+/* Dark text on a dark surface would vanish on the dark faces, so it is lifted just enough to read. */
+:root[data-sb-theme='windows-xp'][data-sb-surface-tone='dark'][data-sb-text-tone='dark'] body.neconyan:not(.sbterm) {
+    --neco-ink: var(--neco-ink-on-face, #f0f0f0);
+    --SmartThemeBodyColor: var(--neco-ink-on-face, #f0f0f0);
+}
+
+/* A chosen accent recolours the caption bars and highlights, darkened as far as their white
+   text needs; the second accent becomes the hover rim and the selected-tab line. */
+:root[data-sb-theme='windows-xp'][data-neconyan-accent='custom'] body.neconyan:not(.sbterm) {
+    --xp-hue: var(--neco-ginger);
+    --xp-deep: var(--neco-accent-deep, color-mix(in srgb, var(--neco-ginger) 70%, #000));
+    --xp-caption: linear-gradient(180deg, color-mix(in srgb, var(--xp-deep) 45%, #fff) 0, var(--xp-deep) 9%, var(--xp-deep) 42%, color-mix(in srgb, var(--xp-deep) 82%, #fff) 88%, color-mix(in srgb, var(--xp-deep) 72%, #000) 100%);
+    --xp-caption-ink: #fff;
+    --xp-frame: color-mix(in srgb, var(--xp-deep) 80%, #000);
+    --xp-select: var(--xp-deep);
+    --xp-select-ink: #fff;
+    --xp-hot: color-mix(in srgb, var(--neco-accent-secondary) 75%, #fff);
+    --xp-pane-top: color-mix(in srgb, var(--neco-ginger) 45%, #fff);
+    --xp-pane-bottom: var(--neco-ginger);
+    --xp-field-edge: color-mix(in srgb, var(--neco-ginger) 45%, #7f7f7f);
+}
+
+/* Luna Blue: the default scheme, and the one the Windows XP Blue theme asks for. */
+:root[data-sb-theme='windows-xp']:not([data-neconyan-accent='custom']) body.neconyan:not(.sbterm),
+:root[data-sb-theme='windows-xp'][data-neconyan-ui-theme='windows-xp-blue'] body.neconyan:not(.sbterm) {
+    --xp-hue: #0054e3;
+    --xp-caption: linear-gradient(180deg, #0997ff 0, #0053ee 8%, #0050ee 40%, #0066ff 88%, #0066ff 93%, #005bff 95%, #003dd7 96%, #003dd7 100%);
+    --xp-caption-ink: #fff;
+    --xp-frame: #0831d9;
+    --xp-select: #316ac5;
+    --xp-select-ink: #fff;
+    --xp-hot: #f8b636;
+    --xp-pane-top: #7ba2e7;
+    --xp-pane-bottom: #6375d6;
+    --xp-field-edge: #7f9db9;
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) {
+    --xp-start: linear-gradient(180deg, #5eac56 0, #3f9a3f 12%, #389538 45%, #2f8a2f 80%, #2a7d2a 100%);
+    --xp-start-ink: #fff;
+    --xp-start-edge: #1e5e1e;
+}
+
+:root[data-sb-theme='windows-xp'][data-neconyan-ui-theme='windows-xp-olive-green'] body.neconyan:not(.sbterm) {
+    --xp-hue: #6b7f3e;
+    --xp-caption: linear-gradient(180deg, #c9d6a3 0, #93a663 8%, #7a8e4b 40%, #6d8142 88%, #61733a 96%, #4f5f2e 100%);
+    --xp-caption-ink: #fff;
+    --xp-frame: #6d8142;
+    --xp-select: #6f8246;
+    --xp-select-ink: #fff;
+    --xp-hot: #f8b636;
+    --xp-pane-top: #cbd8ac;
+    --xp-pane-bottom: #a8bf86;
+    --xp-field-edge: #a4b97f;
+}
+
+:root[data-sb-theme='windows-xp'][data-neconyan-ui-theme='windows-xp-silver'] body.neconyan:not(.sbterm) {
+    --xp-hue: #6d7290;
+    --xp-caption: linear-gradient(180deg, #fff 0, #e6e7ef 8%, #d3d4df 40%, #c0c2d1 88%, #b2b4c6 96%, #9a9cb0 100%);
+    --xp-caption-ink: #0a0a2a;
+    --xp-frame: #8e90a6;
+    --xp-select: #b2b4bf;
+    --xp-select-ink: #000;
+    --xp-hot: #f8b636;
+    --xp-pane-top: #e6e7ee;
+    --xp-pane-bottom: #c6c8d6;
+    --xp-field-edge: #a5acb5;
+}
+
+:root[data-sb-theme='windows-xp'][data-neconyan-ui-theme='windows-xp-royale'] body.neconyan:not(.sbterm) {
+    --xp-hue: #2a5bc8;
+    --xp-caption: linear-gradient(180deg, #6e9be8 0, #2f63cf 8%, #1f4ea9 42%, #1a4398 85%, #13337a 95%, #0d2559 100%);
+    --xp-caption-ink: #fff;
+    --xp-frame: #1c3f8a;
+    --xp-select: #316ac5;
+    --xp-select-ink: #fff;
+    --xp-hot: #f8b636;
+    --xp-start: linear-gradient(180deg, #7cc46c 0, #45a03a 12%, #368a2d 50%, #2a7224 88%, #1e5a1a 100%);
+    --xp-pane-top: #c4d3f6;
+    --xp-pane-bottom: #9fb7ea;
+    --xp-field-edge: #7f9db9;
+}
+
+:root[data-sb-theme='windows-xp'][data-neconyan-ui-theme='windows-xp-zune'] body.neconyan:not(.sbterm) {
+    --xp-hue: #f78c1e;
+    --xp-caption: linear-gradient(180deg, #6a6a6a 0, #353535 8%, #222 42%, #161616 88%, #0d0d0d 96%, #000 100%);
+    --xp-caption-ink: #fff;
+    --xp-frame: #000;
+    --xp-select: #f78c1e;
+    --xp-select-ink: #111;
+    --xp-hot: #f78c1e;
+    --xp-start: linear-gradient(180deg, #ffc27a 0, #fb9a35 12%, #f2851a 50%, #dd700c 88%, #b85a05 100%);
+    --xp-start-ink: #1a1a1a;
+    --xp-start-edge: #7a3c00;
+    --xp-pane-top: #3a3a3a;
+    --xp-pane-bottom: #262626;
+    --xp-field-edge: #5a5a5a;
+}
+
+:root[data-sb-theme='windows-xp'][data-neconyan-ui-theme='windows-xp-royale-noir'] body.neconyan:not(.sbterm) {
+    --xp-hue: #3d6db5;
+    --xp-caption: linear-gradient(180deg, #5c6470 0, #2c3138 8%, #1c2025 42%, #121518 88%, #0a0b0d 96%, #000 100%);
+    --xp-caption-ink: #fff;
+    --xp-frame: #0a0b0d;
+    --xp-select: #3d6db5;
+    --xp-select-ink: #fff;
+    --xp-hot: #4f8fe8;
+    --xp-start: linear-gradient(180deg, #78b864 0, #3f8a32 12%, #2f6f26 50%, #22561c 88%, #163d12 100%);
+    --xp-start-edge: #0d2a0a;
+    --xp-pane-top: #3a3f46;
+    --xp-pane-bottom: #24282d;
+    --xp-field-edge: #555c66;
+}
+
+/* Wallpaper: a Bliss-style green hill with the calico asleep on its crest. */
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm)::before {
+    background-image: url('../../img/neconyan/shell-windows-xp.webp?v=20261005a');
+    /* The cat sleeps at the right-hand edge, so narrow screens crop towards it. */
+    --neconyan-wallpaper-focus: 100% 50%;
+    opacity: .78;
+}
+
+/* Top bar: the window caption bar. */
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) #top-bar {
+    background: var(--xp-caption);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-bottom: 1px solid var(--xp-frame);
+    box-shadow: 0 2px 6px rgb(0 0 0 / 0.25);
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(#sb-topbar-stack, #sb-topbar-primary, #sb-topbar-inner) {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(.sb-topbar-brand, #sb-topbar-title, #sb-topbar-clock) {
+    color: var(--xp-caption-ink);
+    text-shadow: none;
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) #sb-topbar-inner :is(button, .sb-proxy-button) {
+    color: var(--xp-caption-ink);
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) #sb-topbar-inner :is(button, .sb-proxy-button):is(:hover, [aria-pressed='true']) {
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.3), rgb(255 255 255 / 0.05)), color-mix(in srgb, var(--xp-caption-ink) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--xp-caption-ink) 70%, transparent);
+    border-radius: 3px;
+}
+
+/* Workspace rail: the Explorer task pane. */
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) #neconyan-workspace-rail {
+    background: var(--xp-pane);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-right: 1px solid var(--xp-frame);
+    box-shadow: none;
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) #sb-mobile-nav-content {
+    background: var(--xp-pane);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 1px solid var(--xp-frame);
+    border-radius: 8px;
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #neconyan-workspace-rail .neconyan-rail-footer-action, #sb-mobile-nav .sb-nav-item) {
+    border-radius: 3px;
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #neconyan-workspace-rail .neconyan-rail-footer-action, #sb-mobile-nav .sb-nav-item):is(:hover, :focus-visible) {
+    background: color-mix(in srgb, var(--xp-select) 20%, var(--xp-face));
+}
+
+/* The selected item gets the solid highlight XP uses for selected list entries. */
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #sb-mobile-nav .sb-nav-item):is([aria-current='page'], .is-active),
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) .neconyan-mode-button[aria-pressed='true'] {
+    background: var(--xp-select);
+    color: var(--xp-select-ink);
+    box-shadow: none;
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(#neconyan-workspace-rail .neconyan-rail-button, #sb-mobile-nav .sb-nav-item):is([aria-current='page'], .is-active) :is(i, span, .fa-solid) {
+    color: inherit;
+}
+
+/* Push buttons: white-to-beige with a navy edge, the orange rim on hover and a sunk press. */
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button, #neconyan-workspace-rail .neconyan-rail-new):not(#sb-topbar-inner *):not(.neconyan-cat-control, .menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset) {
+    background: var(--xp-button);
+    color: var(--neco-ink);
+    border: 1px solid var(--xp-button-edge);
+    border-radius: 3px;
+    box-shadow: none;
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button, #neconyan-workspace-rail .neconyan-rail-new):not(#sb-topbar-inner *):not(.neconyan-cat-control, .menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset):hover {
+    background: var(--xp-button);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--xp-hot) 45%, #fff), inset 0 -2px 0 1px var(--xp-hot);
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button, #neconyan-workspace-rail .neconyan-rail-new):not(#sb-topbar-inner *):not(.neconyan-cat-control, .menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset):active {
+    background: var(--xp-button-down);
+    box-shadow: none;
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) .neconyan-cat-control:not(.neconyan-home-primary) {
+    background: var(--xp-button);
+    border: 1px solid var(--xp-button-edge);
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) .neconyan-cat-control:not(.neconyan-home-primary):hover {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--xp-hot) 45%, #fff), inset 0 -2px 0 1px var(--xp-hot);
+}
+
+/* Accent-filled buttons keep their fill and label colour, with the Luna sheen on top. */
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]),
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]):hover {
+    background-image: linear-gradient(180deg, rgb(255 255 255 / 0.32) 0, rgb(255 255 255 / 0.08) 45%, rgb(0 0 0 / 0.1) 100%);
+    border: 1px solid color-mix(in srgb, var(--color-primary, var(--sb-accent)) 50%, #000);
+    border-radius: 3px;
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]):hover {
+    box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--xp-hot) 80%, transparent);
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) .neconyan-home-actions > .neconyan-home-primary,
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) .neconyan-home-actions > .neconyan-home-primary:is(:hover, :focus-visible) {
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.32) 0, rgb(255 255 255 / 0.08) 45%, rgb(0 0 0 / 0.1) 100%), var(--neco-action-gradient);
+    border: 1px solid color-mix(in srgb, var(--neco-ginger) 50%, #000);
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button, .neconyan-cat-control, .neconyan-home-primary):focus-visible {
+    outline: 1px dotted var(--neco-ink);
+    outline-offset: -4px;
+}
+
+/* Edit fields: square white wells with the pale blue XP edge. */
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']), select, textarea:not(#send_textarea)) {
+    background-color: var(--xp-field);
+    border: 1px solid var(--xp-field-edge);
+    border-radius: 0;
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']), select, textarea:not(#send_textarea)):focus {
+    border-color: var(--xp-hue);
+}
+
+/* Home: each block is a small window with a caption bar drawn along its top edge. */
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(.neconyan-home-intro, .neconyan-assistant-picker, .welcomeRecentShell) {
+    padding-top: 36px;
+    background: var(--xp-caption) 0 0 / 100% 26px no-repeat, var(--xp-face);
+    border: 1px solid var(--xp-frame);
+    border-radius: 8px 8px 3px 3px;
+    box-shadow: 0 4px 14px rgb(0 0 0 / 0.22);
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) .neconyan-assistant-row {
+    background: var(--xp-field);
+    border: 1px solid var(--xp-field-edge);
+    border-radius: 3px;
+}
+
+/* Drawers and dialogs: an XP window with a rounded caption bar and the red close button. */
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(.sb-shell-root, #right-nav-panel).openDrawer {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) .sb-shell-frame {
+    background: var(--xp-face);
+    border: 1px solid var(--xp-frame);
+    border-radius: 8px 8px 3px 3px;
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(.sb-shell-main, .sb-shell-nav, .sb-character-shell-nav) {
+    background: transparent;
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) .sb-shell-header {
+    background: var(--xp-caption);
+    color: var(--xp-caption-ink);
+    border: 0;
+    border-radius: 7px 7px 0 0;
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) .sb-shell-header :is(.sb-shell-title, .sb-shell-kicker, .sb-shell-subtitle, .sb-shell-description, .neconyan-tool-page-description, h1, h2, h3, i):not(:is(.menu_button, .sb-shell-close) *) {
+    color: var(--xp-caption-ink);
+    text-shadow: none;
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(#left-nav-panel, #user-settings-block).openDrawer .sb-shell-header .sb-shell-description {
+    color: var(--xp-caption-ink);
+    opacity: .85;
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) .sb-shell-close {
+    background: radial-gradient(circle at 90% 90%, #cc4600 0, #dc6527 55%, #cd7546 70%, #ffccb2 90%, #fff 100%);
+    color: #fff;
+    border: 1px solid #fff;
+    border-radius: 3px;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--xp-frame) 60%, transparent);
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) .sb-shell-close:hover {
+    background: radial-gradient(circle at 90% 90%, #e45a14 0, #f07a3c 55%, #e68b5e 70%, #ffd9c6 90%, #fff 100%);
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) .sb-shell-close:active {
+    background: radial-gradient(circle at 10% 10%, #cc4600 0, #dc6527 55%, #cd7546 70%, #ffccb2 90%, #fff 100%);
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) .sb-shell-panel-scroller {
+    background: var(--xp-face);
+    border: 0;
+    border-radius: 0;
+}
+
+/* Property-sheet tabs: the selected tab joins the page and carries the orange top line. */
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(.sb-shell-tab, .sb-settings-tab-btn, #right-nav-panel .sb-character-editor-subtab) {
+    background: var(--xp-tab);
+    border: 1px solid var(--xp-tab-edge);
+    border-radius: 3px 3px 0 0;
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(.sb-shell-tab, .sb-settings-tab-btn, #right-nav-panel .sb-character-editor-subtab):hover {
+    box-shadow: inset 0 2px 0 var(--xp-hot);
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(.sb-shell-tab.is-active, .sb-settings-tab-btn.active, #right-nav-panel .sb-character-editor-subtab.is-active) {
+    background: var(--xp-field);
+    color: var(--neco-ink);
+    box-shadow: inset 0 3px 0 var(--xp-hot);
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(.sb-shell-tab.is-active, .sb-settings-tab-btn.active, #right-nav-panel .sb-character-editor-subtab.is-active) i {
+    color: inherit;
+}
+
+/* Settings groups and cards: rounded group boxes. */
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(.sb-theme-card, .sb-settings-group, .sb-shell-callout, .sb-admin-card, .sb-agent-card) {
+    background: color-mix(in srgb, var(--xp-face) 60%, var(--xp-field));
+    border: 1px solid var(--xp-group-edge);
+    border-radius: 4px;
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) dialog.popup {
+    padding-top: 34px;
+    background: var(--xp-caption) 0 0 / 100% 26px no-repeat, var(--xp-face);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 1px solid var(--xp-frame);
+    border-radius: 8px 8px 3px 3px;
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.4);
+}
+
+/* Chat tools menu: the white Start menu column with the blue highlight. */
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(#options > .options-content, #extensionsMenu) {
+    background: var(--xp-field);
+    border: 1px solid var(--xp-frame);
+    border-radius: 6px;
+    box-shadow: 0 6px 18px rgb(0 0 0 / 0.3);
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(#options .options-content > a, #extensionsMenu > .extension_container > div, #extensionsMenu > :not(.extension_container)):is(:hover, :focus-visible) {
+    background: var(--xp-select);
+    color: var(--xp-select-ink);
+}
+
+/* Composer: an XP window face, with the send button as the green Start button. */
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) :is(#send_form, #sb-bottom-chat-bar) {
+    --neco-surface: var(--xp-face);
+    background-image: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 1px solid var(--xp-frame);
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgb(0 0 0 / 0.22);
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) #send_form:focus-within {
+    border-color: var(--xp-hue);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--xp-hue) 45%, transparent), 0 4px 14px rgb(0 0 0 / 0.22);
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) .sb-conversation-composer.neconyan-cat-panel {
+    background: var(--xp-face);
+    border: 1px solid var(--xp-frame);
+    border-radius: 6px;
+}
+
+/* Core sheets pin the send button's border and corners with !important, so the Start-button
+   edge is an inset ring and the corner shape rides on the radius variable they read. */
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) #send_but {
+    --sb-send-bg: var(--xp-start);
+    --sb-send-ink: var(--xp-start-ink);
+    --neconyan-control-radius: 4px 14px 14px 4px;
+    box-shadow: inset 0 0 0 1px var(--xp-start-edge), inset 0 2px 0 rgb(255 255 255 / 0.4), inset 0 -3px 3px rgb(0 0 0 / 0.2);
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) #send_but:active {
+    box-shadow: inset 0 0 0 1px var(--xp-start-edge), inset 0 2px 4px rgb(0 0 0 / 0.35);
+}
+
+:root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) * {
+    scrollbar-color: var(--xp-scroll-thumb) var(--xp-scroll-track);
+}
+
+/* Phones: the whole bottom bar is one box (see neconyan-calico.css), so this style dresses that
+   outer box and the chat-name row inside it drops its own frame instead of doubling the edge. */
+@media (max-width: 768px) {
+    :root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel {
+        --neco-surface: var(--xp-face);
+        background-image: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        border: 0;
+        border-top: 1px solid var(--xp-frame);
+        border-radius: 8px 8px 0 0;
+        box-shadow: 0 -4px 14px rgb(0 0 0 / 0.22);
+    }
+    :root[data-sb-theme='windows-xp'] body.neconyan:not(.sbterm) #form_sheld.neconyan-cat-panel #sb-bottom-chat-bar {
+        background-image: none;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+    }
+}

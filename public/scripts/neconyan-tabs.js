@@ -156,7 +156,7 @@ const NN_SHORTCUT_LABELS = Object.freeze({
 });
 const NN_PANEL_STYLESHEETS = Object.freeze({
     'characters:world-info': [
-        { href: 'css/world-info.css?v=20261004-story-borders1', id: 'deferred-world-info-css' },
+        { href: 'css/world-info.css?v=20261005-windows-xp1', id: 'deferred-world-info-css' },
     ],
     'characters:persona': [
         { href: 'css/personas.css?v=20260912h', id: 'deferred-personas-css' },
@@ -501,7 +501,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261005-chat-links4';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261005-windows-xp1';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -514,6 +514,10 @@ const NN_THEMES = Object.freeze([
     {
         id: 'windows-aero',
         label: 'Windows Aero',
+    },
+    {
+        id: 'windows-xp',
+        label: 'Windows XP',
     },
     {
         id: 'windows-98',

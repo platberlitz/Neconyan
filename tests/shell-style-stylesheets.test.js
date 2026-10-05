@@ -165,7 +165,7 @@ describe('shell style runtime stylesheets', () => {
     }
 
     test('every style, Calico included, follows the chosen accent colour', () => {
-        const signatureHues = { kittyless: '--kittyless-primary:', 'windows-aero': '--aero-hue:', 'windows-98': '--w98-title:', 'cozy-warm': '--cozy-amber:', 'hypr-glow': '--hypr-b:', 'slate-flat': '--slate-cool:', 'clean-minimal': '--clean-line-strong:' };
+        const signatureHues = { kittyless: '--kittyless-primary:', 'windows-aero': '--aero-hue:', 'windows-xp': '--xp-hue:', 'windows-98': '--w98-title:', 'cozy-warm': '--cozy-amber:', 'hypr-glow': '--hypr-b:', 'slate-flat': '--slate-cool:', 'clean-minimal': '--clean-line-strong:' };
         for (const [id, hueVar] of Object.entries(signatureHues)) {
             const source = stripCssBlockComments(readSource('public', 'css', 'shell-styles', `${id}.css`));
             const customBlock = source.match(new RegExp(`:root\\[data-sb-theme='${id}'\\]\\[data-neconyan-accent='custom'\\] body\\.neconyan:not\\(\\.sbterm\\) \\{([^}]*)\\}`));

@@ -1748,6 +1748,8 @@ function syncNeconyanPaletteAttribute() {
     document.documentElement.dataset.neconyanPalette = isCalico ? 'calico' : 'custom';
     document.documentElement.dataset.neconyanCalicoTone = isDarkCalico ? 'dark' : isLightCalico ? 'light' : 'custom';
     document.documentElement.dataset.neconyanAccent = isThemeAccent ? 'theme' : 'custom';
+    // Shell styles key bundled colour schemes on this slug, e.g. 'windows-xp-silver' for 'Windows XP Silver'.
+    document.documentElement.dataset.neconyanUiTheme = activeThemeName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
 function markNeconyanPaletteCustom() {

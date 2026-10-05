@@ -232,6 +232,30 @@
         "type": "theme"
     },
     {
+        "filename": "themes/Windows XP Blue.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Windows XP Olive Green.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Windows XP Silver.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Windows XP Royale.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Windows XP Zune.json",
+        "type": "theme"
+    },
+    {
+        "filename": "themes/Windows XP Royale Noir.json",
+        "type": "theme"
+    },
+    {
         "filename": "themes/Windows Aero.json",
         "type": "theme"
     },

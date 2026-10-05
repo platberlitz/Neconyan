@@ -70,10 +70,22 @@
       "processing": "Converted to RGB WebP at quality 88; the application controls backdrop opacity in CSS."
     },
     {
+      "path": "output/imagegen/neconyan-shell-styles/windows-aero-aurora-sunburst.png",
+      "sha256": "885db75e9a672fce0d6f6d9bcae95bee2f9108a22d52965ccf7dc825f3a4213d",
+      "generated_at": "2026-10-05",
+      "model": "gpt-image-2.5-sunburst",
+      "references": [
+        "public/img/neconyan/kitty-clouds.webp",
+        "public/img/neconyan/sleeping-calico-left.webp"
+      ],
+      "prompt": "Desktop wallpaper, 3:2 landscape. Recreate the mood of the classic Windows Vista and Windows 7 default wallpapers: a deep blue background glowing from the centre, with luminous flowing aurora ribbons and soft glass light streaks in cyan, teal, aqua and a touch of green sweeping diagonally across the image, with tiny sparkling light particles and a gentle bokeh glow. On the right side, a gigantic sleepy calico cat (white body with large orange and dark grey-brown patches, pink inner ears, closed eyes, tiny smile) is curled up asleep, softly lit by the glowing light ribbons, with its tail curling into one of the light streaks, as if it were part of the glow. Painted in the same soft, gentle illustrated style as the first reference image (the cloud cats); the calico's markings follow the second reference image. Keep the centre-left of the image calm, darker blue and empty so text can sit over it. No text, no logo, no Windows flag, no watermark, no borders."
+    },
+    {
       "path": "output/imagegen/neconyan-shell-styles/windows-aero-sunburst.png",
       "sha256": "d00171a8ff2aa5a1329c59043ff3d326d89f4c21279cfcf1ee322f91db2a1925",
       "generated_at": "2026-09-29",
       "model": "gpt-image-2.5-sunburst",
+      "usedBy": "public/img/neconyan/shell-windows-xp.webp",
       "references": [
         "public/img/neconyan/kitty-clouds.webp",
         "public/img/neconyan/sleeping-calico-left.webp"
@@ -699,10 +711,19 @@
       "path": "public/img/neconyan/shell-windows-aero.webp",
       "size": [1536, 1024],
       "frames": 1,
-      "sha256": "68e68ca10b98811739b9ee719a2d0e089c541e470ca0c1c7d74b2a09dd382e3d",
+      "sha256": "e8a38d5a598132ab1f8c5b1782349f3cd42f2b5cd8e6bfcf1436adb9d031bccf",
       "model": "gpt-image-2.5-sunburst",
       "processing": "Lossy WebP quality 78 from the generated PNG, no crop.",
-      "visualBrief": "Default wallpaper for the windows-aero Shell Style: a giant sleepy calico resting in a scene that matches the style, with a calm centre for chat text."
+      "visualBrief": "Default wallpaper for the windows-aero Shell Style: a giant sleepy calico curled on glowing Vista and Windows 7 style aurora ribbons over deep blue, with a calm centre-left for chat text."
+    },
+    {
+      "path": "public/img/neconyan/shell-windows-xp.webp",
+      "size": [1536, 1024],
+      "frames": 1,
+      "sha256": "68e68ca10b98811739b9ee719a2d0e089c541e470ca0c1c7d74b2a09dd382e3d",
+      "model": "gpt-image-2.5-sunburst",
+      "processing": "Lossy WebP quality 78 from the generated PNG, no crop. First shipped as the windows-aero wallpaper.",
+      "visualBrief": "Default wallpaper for the windows-xp Shell Style: a giant sleepy calico on the crest of a Bliss-style green hill under a blue sky, with a calm centre for chat text."
     },
     {
       "path": "public/img/neconyan/shell-macos-minimal.webp",
