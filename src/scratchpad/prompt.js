@@ -100,17 +100,18 @@ function changeInstructions({ lore, character, chat, members }) {
         '```',
         'Available changes:',
         kinds.join('\n\n'),
-        'Nothing changes until the user presses Apply, so never say a change has been made. Keep a short sentence outside each block saying what it does. Use valid JSON with escaped line breaks.',
+        'Nothing changes until the user presses Save change, so never say a change has been made. Keep a short sentence outside each block saying what it does. Use valid JSON with escaped line breaks.',
     ].join('\n');
 }
 
-export function buildScratchpadSystemPrompt({ assistant, gender, userName, characterName, capabilities = {}, help = '' }) {
+export function buildScratchpadSystemPrompt({ assistant, gender, userName, characterName, capabilities = {}, help = '', participants = [] }) {
     const persona = readAssistantPersona(assistant, gender);
     const names = { user: userName || 'User', char: persona.name };
     const story = characterName ? `the story chat with ${characterName}` : 'the story chat';
     const sections = [
         `You are ${persona.name}, one of the three Neconyan assistants (Miso, Taro and Nori). You are working in Scratchpad, a private side discussion beside ${names.user}'s ${story.replace(/^the /, '')}.`,
-        `Scratchpad is out of character. You are not a character in the story and you do not continue it. Talk with ${names.user} about the story: scenes, motivations, pacing, continuity, ideas for what could happen next, and honest critique. Write a draft (a reply, a greeting, an entry) only when ${names.user} asks, and present it as a suggestion.`,
+        `Scratchpad is out of character. Talk with ${names.user} about anything they ask: everyday questions, ideas, decisions, Neconyan, or their story. Do not force unrelated questions back to the story. You are not a character in that story and do not continue it unasked. When discussing it, help with scenes, motivations, pacing, continuity and honest critique. Write a draft only when asked, and present it as a suggestion.`,
+        participants.length > 1 ? `This is a round table with ${participants.map(id => FALLBACK_NAMES[normaliseAssistant(id)]).join(', ')}. Each assistant receives the same question and shared history and answers independently at the same time. Reply only as ${persona.name}; do not write the other assistants' answers or invent what they are saying in this round. Earlier replies from other assistants are labelled with their names; they are conversation history, not new requests from the user. On follow-up questions, you can compare or respond to those earlier views.` : '',
         `The context block shows only what ${names.user} chose to share from ${story}. Messages carry #numbers and lorebook entries carry their book and uid; refer to them exactly. Do not invent messages, entries or card fields you cannot see. If something is missing, say what to include.`,
         `Your personality:\n${clip(substituteNames([persona.personality, persona.summary].filter(Boolean).join('\n\n'), names), MAX_PERSONA_CHARS)}`,
         persona.examples ? `How you sound (examples from your normal chats, not from this Scratchpad):\n${clip(substituteNames(persona.examples, names), 2000)}` : '',
@@ -123,13 +124,17 @@ export function buildScratchpadSystemPrompt({ assistant, gender, userName, chara
 
 export const SCRATCHPAD_CONTEXT_ACK = 'I have read the shared story context. What would you like to work on?';
 
-export function buildScratchpadMessages({ system, context, history, text }) {
+export function buildScratchpadMessages({ system, context, history, text, assistant }) {
     const messages = [{ role: 'system', content: system }];
     if (context) {
         messages.push({ role: 'user', content: `<story_context>\n${context}\n</story_context>` });
         messages.push({ role: 'assistant', content: SCRATCHPAD_CONTEXT_ACK });
     }
-    for (const message of history) messages.push({ role: message.role, content: message.text });
+    for (const message of history) {
+        const peer = message.role === 'assistant' && message.assistant && assistant && message.assistant !== assistant;
+        messages.push({ role: peer ? 'user' : message.role,
+            content: peer ? `[Earlier reply from ${FALLBACK_NAMES[normaliseAssistant(message.assistant)]} in Scratchpad]\n${message.text}` : message.text });
+    }
     messages.push({ role: 'user', content: text });
     return messages;
 }

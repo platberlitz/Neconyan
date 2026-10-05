@@ -2,7 +2,7 @@ import { runChatProfile, validateActiveGenerationContext } from '../generation/s
 import { captureGenerationBinding, resolveGenerationProfile } from '../generation/profiles.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { hash } from '../mewmory/core.js';
-import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
+import { createProviderScope, readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { acceptJob, canonical, getJob, listJobs, releaseJob, requestCancellation, updateJob } from '../jobs/store.js';
 import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { roleplayAccountBase } from '../roleplay-store.js';
@@ -10,16 +10,19 @@ import {
     MAX_MESSAGE_BYTES,
     MAX_MESSAGES,
     MAX_REASONING_BYTES,
+    ASSISTANT_IDS,
     ScratchpadError,
     assistantConnection,
     findSession,
     newScratchpadId,
+    normaliseGender,
     normaliseSource,
     projectPending,
     publicBucket,
     readBucketLocked,
     requireId,
     scratchpadAccountBase,
+    sessionAssistants,
     withScratchpad,
     writeBucketLocked,
 } from './store.js';
@@ -81,6 +84,7 @@ export function normaliseReplyRequest(body = {}) {
         capabilities: normaliseCapabilities(body.capabilities),
         names: normaliseNames(body.names),
         chatProfileId: source.kind === 'conversation' ? boundedText(body.chatProfileId, 256, 'The chat connection profile').trim() : '',
+        genders: Object.fromEntries(ASSISTANT_IDS.filter(id => Object.hasOwn(body.genders ?? {}, id)).map(id => [id, normaliseGender(body.genders[id])])),
     };
 }
 
@@ -96,7 +100,7 @@ function historyFrom(messages) {
         const size = bytes(usable[index].text);
         if (total + size > MAX_HISTORY_BYTES) break;
         total += size;
-        history.unshift({ role: usable[index].role, text: usable[index].text });
+        history.unshift({ role: usable[index].role, text: usable[index].text, ...(usable[index].assistant ? { assistant: usable[index].assistant } : {}) });
     }
     while (history.length && history[0].role !== 'user') history.shift();
     return history;
@@ -107,15 +111,17 @@ export function planReply(session, request) {
     if (hasPending(session)) throw fail('SCRATCHPAD_REPLY_PENDING', 'This session is still replying. Wait for it or press Stop.', 409);
     const messages = session.messages;
     if (!request.regenerate) {
-        if (messages.length >= MAX_MESSAGES - 1) throw fail('SCRATCHPAD_SESSION_FULL', 'This session is full. Start a new session to keep talking.', 409);
-        return { prompt: request.text, history: historyFrom(messages), replace: null, anchor: messages.at(-1)?.id ?? null };
+        const assistants = sessionAssistants(session);
+        if (messages.length + 1 + assistants.length > MAX_MESSAGES) throw fail('SCRATCHPAD_SESSION_FULL', 'This session is full. Start a new session to keep talking.', 409);
+        return { prompt: request.text, history: historyFrom(messages), replace: null, assistants };
     }
-    const last = messages.at(-1);
-    const previous = messages.at(-2);
-    if (!last || last.id !== request.regenerate || last.role !== 'assistant' || previous?.role !== 'user') {
-        throw fail('SCRATCHPAD_REGENERATE_INVALID', 'Only the latest reply can be regenerated.', 409);
+    const userIndex = messages.findLastIndex(message => message.role === 'user');
+    const replyIndex = messages.findIndex(message => message.id === request.regenerate && message.role === 'assistant');
+    if (userIndex < 0 || replyIndex <= userIndex) {
+        throw fail('SCRATCHPAD_REGENERATE_INVALID', 'Only replies to the latest message can be regenerated.', 409);
     }
-    return { prompt: previous.text, history: historyFrom(messages.slice(0, -2)), replace: last.id, anchor: last.id };
+    const reply = messages[replyIndex];
+    return { prompt: messages[userIndex].text, history: historyFrom(messages.slice(0, userIndex)), replace: reply.id, assistants: [reply.assistant || session.assistant] };
 }
 
 function existingSubmission(directories, owner, request, requestHash) {
@@ -140,7 +146,7 @@ export async function acceptScratchpadReply(request, body = {}) {
     const { directories, owner } = base;
     const input = normaliseReplyRequest(body);
     const requestHash = hash({ source: input.source, sessionId: input.sessionId, regenerate: input.regenerate, text: input.text,
-        context: input.context, help: input.help, capabilities: input.capabilities, names: input.names, chatProfileId: input.chatProfileId });
+        context: input.context, help: input.help, capabilities: input.capabilities, names: input.names, chatProfileId: input.chatProfileId, genders: input.genders });
     const duplicate = existingSubmission(directories, owner, input, requestHash);
     if (duplicate) return { created: false, job: duplicate, bucket: readProjectedBucket(base, input.source) };
 
@@ -150,22 +156,26 @@ export async function acceptScratchpadReply(request, body = {}) {
         const session = findSession(bucket, input.sessionId);
         const plan = planReply(session, input);
         writeBucketLocked(lease, bucket);
-        return { ...plan, revision: hash(canonical(session)), assistant: session.assistant, gender: session.gender, connection: assistantConnection(session.settings, session.assistant), maxTokens: session.settings.maxTokens };
+        return { ...plan, revision: hash(canonical(session)), maxTokens: session.settings.maxTokens,
+            participants: sessionAssistants(session),
+            speakers: plan.assistants.map(assistant => ({ assistant, gender: input.genders[assistant] ?? (assistant === session.assistant ? session.gender : 'neutral'), connection: assistantConnection(session.settings, assistant) })) };
     });
 
-    const profileId = planned.connection.kind === 'profile' ? planned.connection.profileId : input.chatProfileId;
-    const selection = profileId ? { kind: 'profile', profileId } : { kind: 'active' };
-    const binding = captureGenerationBinding(directories, selection, body.acknowledgement);
-    const system = buildScratchpadSystemPrompt({ assistant: planned.assistant, gender: planned.gender, userName: input.names.user,
-        characterName: input.names.character, capabilities: input.capabilities, help: input.help });
-    const messages = buildScratchpadMessages({ system: system.text, context: input.context, history: planned.history, text: planned.prompt });
-    const rawOptions = binding.kind === 'active' ? { trimNames: false } : {};
-    const preparedMessages = !binding.backend || binding.backend === 'chat';
-    const names = { user: input.names.user, char: system.persona.name };
-    await validateActiveGenerationContext(resolveGenerationProfile(directories, binding), createMacroEnvironment({ names }, {}, { readOnly: true }),
-        messages, rawOptions, { maxTokens: planned.maxTokens, preparedMessages });
-
-    const replyId = newScratchpadId();
+    const replies = await Promise.all(planned.speakers.map(async speaker => {
+        const profileId = speaker.connection.kind === 'profile' ? speaker.connection.profileId : input.chatProfileId;
+        const selection = profileId ? { kind: 'profile', profileId } : { kind: 'active' };
+        const binding = captureGenerationBinding(directories, selection, body.acknowledgement);
+        const system = buildScratchpadSystemPrompt({ ...speaker, userName: input.names.user, participants: planned.participants,
+            characterName: input.names.character, capabilities: input.capabilities, help: input.help });
+        const messages = buildScratchpadMessages({ system: system.text, context: input.context, history: planned.history, text: planned.prompt, assistant: speaker.assistant });
+        const rawOptions = binding.kind === 'active' ? { trimNames: false } : {};
+        const preparedMessages = !binding.backend || binding.backend === 'chat';
+        const names = { user: input.names.user, char: system.persona.name };
+        await validateActiveGenerationContext(resolveGenerationProfile(directories, binding), createMacroEnvironment({ names }, {}, { readOnly: true }),
+            messages, rawOptions, { maxTokens: planned.maxTokens, preparedMessages });
+        return { replyId: newScratchpadId(), assistant: speaker.assistant, gender: speaker.gender, binding, messages, maxTokens: planned.maxTokens,
+            userName: names.user, characterName: names.char, rawOptions, preparedMessages };
+    }));
     const { job, created } = acceptJob(directories, {
         owner,
         type: SCRATCHPAD_JOB_TYPE,
@@ -175,9 +185,9 @@ export async function acceptScratchpadReply(request, body = {}) {
         paused: true,
         coalesce: { deadline: 0, members: [] },
         target: { kind: 'scratchpad', id: input.sessionId },
-        credentialRef: binding,
+        credentialRef: replies.length === 1 ? replies[0].binding : { participants: replies.map(reply => ({ assistant: reply.assistant, binding: reply.binding })) },
         config: { requestHash },
-        label: `Scratchpad reply from ${system.persona.name}`,
+        label: `Scratchpad ${replies.length > 1 ? 'round table' : 'reply'} from ${replies.map(reply => reply.characterName).join(', ')}`,
     });
     noteOwner(owner);
     if (!created) return { created: false, job, bucket: readProjectedBucket(base, input.source) };
@@ -190,19 +200,18 @@ export async function acceptScratchpadReply(request, body = {}) {
             if (hasPending(session) || hash(canonical(session)) !== planned.revision) {
                 throw fail('SCRATCHPAD_CHANGED', 'This session changed while the message was being sent. Try again.', 409);
             }
-            if (planned.replace) session.messages = session.messages.filter(message => message.id !== planned.replace);
             const created = new Date().toISOString();
             if (!input.regenerate) session.messages.push({ id: newScratchpadId(), role: 'user', text: input.text, created });
-            session.messages.push({ id: replyId, role: 'assistant', text: '', created, state: 'pending', jobId: job.id, assistant: planned.assistant });
+            const pending = replies.map(reply => ({ id: reply.replyId, role: 'assistant', text: '', created, state: 'pending', jobId: job.id, assistant: reply.assistant, gender: reply.gender }));
+            if (planned.replace) session.messages.splice(session.messages.findIndex(message => message.id === planned.replace), 1, ...pending);
+            else session.messages.push(...pending);
             session.updated = created;
             current.activeSessionId = session.id;
             writeBucketLocked(lease, current);
             return publicBucket(current);
         });
-        writeArtifact(directories, job.id, 'request', {
-            source: input.source, sessionId: input.sessionId, replyId, binding, messages, maxTokens: planned.maxTokens,
-            userName: names.user, characterName: names.char, rawOptions, preparedMessages,
-        });
+        writeArtifact(directories, job.id, 'request', { source: input.source, sessionId: input.sessionId,
+            ...(replies.length === 1 ? replies[0] : { replies }) });
     } catch (error) {
         requestCancellation(directories, job.id, { reason: 'scratchpad-preparation-failed' });
         updateJob(directories, job.id, current => ['cancelled', 'completed', 'failed'].includes(current.state) ? current : {
@@ -248,12 +257,34 @@ function reasoningFrom(response, streamed) {
 }
 
 async function runScratchpadReply(context, { generate }) {
-    const { directories, job, signal } = context;
-    const owner = job.owner;
+    const { directories, job } = context;
     const request = readArtifact(directories, job.id, 'request');
     if (!request) throw fail('SCRATCHPAD_REQUEST_MISSING', 'The saved Scratchpad request is missing.', 409);
     const saved = readArtifact(directories, job.id, 'result');
     if (saved) return { artifact: true };
+    try {
+        if (!request.replies) {
+            await runParticipant(context, request, { generate });
+            writeArtifact(directories, job.id, 'result', { replyId: request.replyId, sessionId: request.sessionId });
+        } else {
+            const scoped = { ...context, providerScope: createProviderScope(context) };
+            const results = await Promise.allSettled(request.replies.map(reply => runParticipant(scoped,
+                { source: request.source, sessionId: request.sessionId, ...reply }, { generate, grouped: true })));
+            const failed = results.find(result => result.status === 'rejected');
+            if (failed) throw failed.reason;
+            writeArtifact(directories, job.id, 'result', { replyIds: request.replies.map(reply => reply.replyId), sessionId: request.sessionId });
+        }
+        return { artifact: true };
+    } finally {
+        setTimeout(() => clearScratchpadPreview(job.owner, job.id), 30 * 1000).unref?.();
+    }
+}
+
+async function runParticipant(context, request, { generate, grouped = false }) {
+    const { directories, job, signal } = context;
+    const artifact = grouped ? `reply:${request.replyId}` : 'reply';
+    const outcome = grouped ? `outcome:${request.replyId}` : 'outcome';
+    const publish = patch => publishScratchpadPreview(job.owner, job.id, { ...patch, ...(grouped ? { replyId: request.replyId } : {}) });
     let streamedReasoning = '';
     const stopped = () => signal?.aborted || getJob(directories, job.id)?.cancellation?.requested;
     const requireRunning = () => {
@@ -261,9 +292,11 @@ async function runScratchpadReply(context, { generate }) {
     };
     try {
         requireRunning();
-        let reply = readArtifact(directories, job.id, 'reply');
+        const failure = readArtifact(directories, job.id, outcome);
+        if (failure?.error) throw fail('SCRATCHPAD_REPLY_FAILED', failure.error, 502);
+        let reply = readArtifact(directories, job.id, artifact);
         if (!reply) {
-            publishScratchpadPreview(owner, job.id, { stage: 'generating', text: '', reasoning: '' });
+            publish({ stage: 'generating', text: '', reasoning: '' });
             const response = await generate({
                 binding: request.binding,
                 messages: request.messages,
@@ -275,9 +308,10 @@ async function runScratchpadReply(context, { generate }) {
                 rawOptions: request.rawOptions,
                 preparedMessages: request.preparedMessages,
                 stream: true,
+                stepNamespace: grouped ? `scratchpad:${request.replyId}` : '',
                 onStream: value => {
                     if (typeof value?.reasoning === 'string' && value.reasoning) streamedReasoning = value.reasoning;
-                    publishScratchpadPreview(owner, job.id, { stage: 'generating', text: value?.text ?? '', reasoning: value?.reasoning ?? '' });
+                    publish({ stage: 'generating', text: value?.text ?? '', reasoning: value?.reasoning ?? '' });
                 },
                 context,
                 jobContext: context,
@@ -286,26 +320,24 @@ async function runScratchpadReply(context, { generate }) {
             const text = String(response?.text ?? '').trim();
             if (!text) throw fail('SCRATCHPAD_EMPTY_REPLY', 'The model returned no text. Try again or pick another connection.', 502);
             reply = { text: clipBytes(text, MAX_MESSAGE_BYTES), reasoning: reasoningFrom(response?.response, streamedReasoning) };
-            writeArtifact(directories, job.id, 'reply', reply);
+            writeArtifact(directories, job.id, artifact, reply);
         }
         requireRunning();
         if (!settleReply(context, request, { state: 'done', text: reply.text, reasoning: reply.reasoning })) {
             throw fail('SCRATCHPAD_CHANGED', 'The saved reply changed before this result could be saved.', 409);
         }
-        writeArtifact(directories, job.id, 'result', { replyId: request.replyId, sessionId: request.sessionId });
-        publishScratchpadPreview(owner, job.id, { stage: 'done', text: reply.text, reasoning: reply.reasoning });
-        return { artifact: true };
+        publish({ stage: 'done', text: reply.text, reasoning: reply.reasoning });
     } catch (error) {
         const cancelled = stopped();
+        const message = cancelled ? 'Stopped before it finished.' : (error?.message || 'The reply failed.');
         try {
-            settleReply(context, request, { state: 'failed', error: cancelled ? 'Stopped before it finished.' : (error?.message || 'The reply failed.') });
+            settleReply(context, request, { state: 'failed', error: message });
+            writeArtifact(directories, job.id, outcome, { error: message });
         } catch {
             // The job state still reports the failure if the session file cannot be updated.
         }
-        publishScratchpadPreview(owner, job.id, { stage: 'failed', error: cancelled ? 'Stopped.' : (error?.message || 'The reply failed.') });
+        publish({ stage: 'failed', error: message });
         throw error;
-    } finally {
-        setTimeout(() => clearScratchpadPreview(owner, job.id), 30 * 1000).unref?.();
     }
 }
 

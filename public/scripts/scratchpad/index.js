@@ -68,6 +68,8 @@ const DEFAULT_SETTINGS = Object.freeze({
     loreOverrides: {},
     connection: { kind: 'current' },
     assistantConnections: {},
+    roundTable: false,
+    participants: ['miso', 'taro', 'nori'],
     maxTokens: 16000,
 });
 
@@ -137,6 +139,10 @@ function currentSettings() {
 
 function assistantConnection(settings, assistant) {
     return settings.assistantConnections?.[assistant] ?? settings.connection ?? { kind: 'current' };
+}
+
+function sessionAssistants(session = activeSession()) {
+    return session?.settings.roundTable ? session.settings.participants : [session?.assistant ?? app.assistant];
 }
 
 function pendingReply(session = activeSession()) {
@@ -287,6 +293,8 @@ function build() {
 
 function buildChatPanel() {
     const el = app.el;
+    el.roundTable = iconButton(t`Round table`, () => void updateSettings(settings => ({ roundTable: !settings.roundTable })),
+        { icon: 'fa-users', pressed: false, className: 'scratchpad-round-table', title: t`Ask up to three assistants together` });
     el.assistantPicker = h('div', { class: 'scratchpad-assistants', role: 'group', 'aria-label': t`Talking with` });
     el.summary = h('div', { class: 'scratchpad-summary' });
     el.messages = h('div', { class: 'scratchpad-messages', role: 'log', 'aria-live': 'polite', 'aria-relevant': 'additions' });
@@ -295,7 +303,7 @@ function buildChatPanel() {
     el.composer = h('textarea', {
         class: 'text_pole scratchpad-composer',
         rows: '3',
-        placeholder: t`Ask about the story, plan a scene or request a change...`,
+        placeholder: t`Ask anything, compare ideas or plan the story...`,
         'aria-label': t`Message for Scratchpad`,
         onkeydown: onComposerKey,
     });
@@ -317,7 +325,7 @@ function buildChatPanel() {
         onclick: toggleOverview,
     });
     el.overview = h('div', { id: 'scratchpad-overview', class: 'scratchpad-overview' },
-        h('div', { class: 'scratchpad-chat-top' }, el.overviewToggle, el.assistantPicker),
+        h('div', { class: 'scratchpad-chat-top' }, el.overviewToggle, el.roundTable, el.assistantPicker),
         el.summary);
     append(el.panels.chat, [
         el.overviewBar,
@@ -477,8 +485,10 @@ function syncWatchers() {
         if (app.watchers.has(jobId)) continue;
         const stop = api.watchReply(jobId, {
             onPreview: preview => {
+                const previous = app.previews.get(jobId);
                 app.previews.set(jobId, preview);
                 updateStream(jobId);
+                if (Object.entries(preview.replies ?? {}).some(([id, reply]) => ['done', 'failed'].includes(reply.stage) && previous?.replies?.[id]?.stage !== reply.stage)) void reload();
             },
             onDone: result => {
                 app.watchers.get(jobId)?.();
@@ -541,11 +551,14 @@ async function send({ regenerate = '' } = {}) {
         const settings = session.settings;
         const chatProfileId = sourceConnectionProfile(source);
         const lastUser = [...session.messages].reverse().find(item => item.role === 'user');
+        const retried = regenerate ? session.messages.find(message => message.id === regenerate) : null;
+        const assistants = retried ? [retried.assistant || session.assistant] : sessionAssistants(session);
+        const genders = Object.fromEntries(ASSISTANTS.map(item => [item.id, getAssistantGender(item.id)]));
         const query = regenerate ? (lastUser?.text ?? '') : text;
         const context = await buildContext({ source, settings, pendingText: query, sessionText: sessionText(session) });
-        const help = await buildHelp({ assistant: session.assistant, gender: session.gender, text: query });
+        const help = [...new Set(await Promise.all(assistants.map(assistant => buildHelp({ assistant, gender: genders[assistant], text: query }))))].filter(Boolean).join('\n\n');
         requireScope(source, session.id);
-        const acknowledgement = assistantConnection(settings, session.assistant).kind === 'profile' || chatProfileId ? undefined : await acknowledge();
+        const acknowledgement = chatProfileId || assistants.every(assistant => assistantConnection(settings, assistant).kind === 'profile') ? undefined : await acknowledge();
         await app.queue;
         requireScope(source, session.id);
         if (JSON.stringify(activeSession()) !== snapshot || sourceConnectionProfile(source) !== chatProfileId) {
@@ -562,6 +575,7 @@ async function send({ regenerate = '' } = {}) {
             capabilities: context.capabilities,
             names: context.names,
             chatProfileId,
+            genders,
             acknowledgement,
         });
         if (!regenerate) {
@@ -624,15 +638,20 @@ function renderHeader() {
     const assistant = session?.assistant ?? app.assistant;
     app.el.portrait.src = getAssistantIconSrc(assistant);
     app.el.sourceLabel.textContent = app.source ? app.source.label : t`No chat open`;
+    const participants = sessionAssistants(session);
+    const roundTable = session?.settings.roundTable === true;
+    app.el.roundTable.setAttribute('aria-pressed', String(roundTable));
+    app.el.roundTable.classList.toggle('menu_button_primary', roundTable);
+    app.el.roundTable.disabled = !app.source || app.sending || Boolean(pendingReply());
     clear(app.el.assistantPicker);
     for (const item of ASSISTANTS) {
-        const selected = item.id === assistant;
+        const selected = participants.includes(item.id);
         const choice = h('button', {
             type: 'button',
             class: `scratchpad-assistant${selected ? ' is-selected' : ''}`,
             'aria-pressed': String(selected),
             title: assistantRole(item.id),
-            disabled: !app.source || Boolean(pendingReply()),
+            disabled: !app.source || app.sending || Boolean(pendingReply()) || (roundTable && selected && participants.length === 1),
             onclick: () => chooseAssistant(item.id),
         }, h('img', { src: getAssistantIconSrc(item.id), alt: '', width: 32, height: 32 }), h('span', { text: item.name }));
         app.el.assistantPicker.append(choice);
@@ -641,6 +660,11 @@ function renderHeader() {
 }
 
 async function chooseAssistant(id) {
+    if (activeSession()?.settings.roundTable) {
+        await updateSettings(settings => ({ participants: settings.participants.includes(id)
+            ? settings.participants.filter(item => item !== id) : [...settings.participants, id] }));
+        return;
+    }
     app.assistant = id;
     writePrefs();
     const session = activeSession();
@@ -670,7 +694,7 @@ function renderOverview() {
     clear(el.overviewBar);
     append(el.overviewBar, [
         h('i', { class: 'fa-solid fa-chevron-right', 'aria-hidden': 'true' }),
-        h('img', { src: getAssistantIconSrc(assistant.id), alt: '', width: 24, height: 24 }),
+        ...sessionAssistants(session).map(id => h('img', { src: getAssistantIconSrc(id), alt: assistantInfo(id).name, width: 24, height: 24 })),
         h('span', { class: 'scratchpad-overview-name', text: name }),
         session?.temporary ? h('span', { class: 'scratchpad-badge', text: t`Temporary` }) : null,
         app.source ? h('span', { class: 'scratchpad-overview-context', text: contextSummary(currentSettings()) }) : null,
@@ -696,6 +720,7 @@ function renderChat() {
         const assistant = assistantInfo(session?.assistant ?? app.assistant);
         append(el.summary, [
             h('span', { text: session ? session.name : t`New session with ${assistant.name}` }),
+            settings.roundTable ? h('span', { class: 'scratchpad-badge', text: t`Round table: ${sessionAssistants(session).length}` }) : null,
             session?.temporary ? h('span', { class: 'scratchpad-badge', text: t`Temporary` }) : null,
             h('span', { class: 'scratchpad-summary-context', text: contextSummary(settings) }),
             iconButton(t`Change`, () => selectTab('context'), { className: 'scratchpad-link' }),
@@ -724,42 +749,51 @@ function renderMessages() {
     clear(list);
     if (!app.source) {
         list.append(h('div', { class: 'scratchpad-empty' },
-            h('p', { text: t`Open a Roleplay or Conversation chat, then come back here to plan it with Miso, Taro or Nori.` })));
+            h('p', { text: t`Open a Roleplay or Conversation chat, then come back here to talk with Miso, Taro or Nori.` })));
         return;
     }
     const session = activeSession();
     if (!session?.messages.length) {
         const assistant = assistantInfo(session?.assistant ?? app.assistant);
+        const names = sessionAssistants(session).map(id => assistantInfo(id).name).join(', ');
         list.append(h('div', { class: 'scratchpad-empty' },
             h('img', { src: getAssistantIconSrc(assistant.id), alt: '', width: 72, height: 72 }),
-            h('p', { text: t`Talk through this chat with ${assistant.name}. Nothing you write here goes into the story.` }),
+            h('p', { text: t`Ask ${names} anything. Nothing you write here goes into the story.` }),
             h('p', { text: t`Suggested changes to lorebooks, characters or messages appear as cards you can review before anything is saved.` })));
         return;
     }
-    const lastAssistant = [...session.messages].reverse().find(item => item.role === 'assistant');
-    const latestId = session.messages.at(-1)?.id;
-    for (const message of session.messages) {
+    const lastUserIndex = session.messages.findLastIndex(item => item.role === 'user');
+    for (const [index, message] of session.messages.entries()) {
         list.append(renderMessage(session, message, {
-            latest: message.id === latestId && message.id === lastAssistant?.id,
+            latest: lastUserIndex >= 0 && index > lastUserIndex && message.role === 'assistant',
         }));
     }
     if (stick) scrollMessages(true);
 }
 
 function stageLabel(preview) {
+    if (preview?.stage === 'done') return t`Reply saved`;
+    if (preview?.stage === 'failed') return preview.error || t`This reply did not finish.`;
     if (!preview || preview.stage === 'queued') return t`Waiting for the model...`;
     if (!preview.text && preview.reasoning) return t`Thinking...`;
     return t`Writing...`;
 }
 
 function updateStream(jobId) {
-    const node = app.el.messages?.querySelector(`.scratchpad-message[data-job-id="${CSS.escape(jobId)}"]`);
-    if (!node) return;
-    const preview = app.previews.get(jobId);
+    const nodes = app.el.messages?.querySelectorAll(`.scratchpad-message.is-pending[data-job-id="${CSS.escape(jobId)}"]`);
+    if (!nodes?.length) return;
     const stick = nearBottom(app.el.messages);
-    node.querySelector('.scratchpad-stage').textContent = stageLabel(preview);
-    node.querySelector('.scratchpad-stream').textContent = preview?.text ?? '';
+    for (const node of nodes) {
+        const preview = replyPreview({ jobId, id: node.dataset.messageId });
+        node.querySelector('.scratchpad-stage').textContent = stageLabel(preview);
+        node.querySelector('.scratchpad-stream').textContent = preview?.text ?? '';
+    }
     if (stick) scrollMessages(true);
+}
+
+function replyPreview(message) {
+    const preview = app.previews.get(message.jobId);
+    return preview?.replies ? preview.replies[message.id] : preview;
 }
 
 function renderMessage(session, message, { latest }) {
@@ -781,11 +815,11 @@ function renderMessage(session, message, { latest }) {
     if (message.role === 'user') {
         article.append(h('p', { class: 'scratchpad-plain', text: message.text }));
     } else if (message.state === 'pending') {
-        const preview = app.previews.get(message.jobId);
+        const preview = replyPreview(message);
         article.append(
             h('p', { class: 'scratchpad-stage', text: stageLabel(preview) }),
             h('p', { class: 'scratchpad-plain scratchpad-stream', text: preview?.text ?? '' }),
-            iconButton(t`Stop`, () => void stopReply(), { icon: 'fa-stop', className: 'scratchpad-stop' }));
+            iconButton(session.settings.roundTable ? t`Stop all` : t`Stop`, () => void stopReply(), { icon: 'fa-stop', className: 'scratchpad-stop' }));
         return article;
     } else {
         if (message.reasoning) {
@@ -965,7 +999,9 @@ function renderComposer() {
     const disabled = !app.source || !app.bucket || app.sending;
     el.composer.disabled = !app.source || !app.bucket;
     el.send.disabled = disabled && !pending;
-    el.send.querySelector('span').textContent = pending ? t`Stop` : (app.sending ? t`Sending...` : t`Send`);
+    const count = sessionAssistants().length;
+    el.send.querySelector('span').textContent = pending ? (activeSession()?.settings.roundTable ? t`Stop all` : t`Stop`)
+        : (app.sending ? t`Sending...` : count > 1 ? t`Ask ${count}` : t`Send`);
     el.send.querySelector('i').className = `fa-solid ${pending ? 'fa-stop' : 'fa-paper-plane'}`;
     for (const chip of el.quick.querySelectorAll('button')) chip.disabled = !app.source;
 }
@@ -1235,7 +1271,7 @@ function exportSession(session) {
             assistant: session.assistant,
             gender: session.gender,
             settings: session.settings,
-            messages: session.messages.filter(item => item.state !== 'pending').map(item => ({ role: item.role, text: item.text, created: item.created, assistant: item.assistant })),
+            messages: session.messages.filter(item => item.state !== 'pending').map(item => ({ role: item.role, text: item.text, created: item.created, assistant: item.assistant, gender: item.gender })),
         },
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });

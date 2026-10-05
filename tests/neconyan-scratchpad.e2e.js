@@ -65,6 +65,76 @@ test('assistant connection choices survive reopening and route each speaker to i
 });
 
 for (const phone of [false, true]) {
+    test(`${phone ? 'iPhone stand-in' : 'desktop'} round table streams three models independently and keeps the group after reopening`, async ({ app }) => {
+        test.setTimeout(150000);
+        const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings: saved => {
+            const profiles = saved.extension_settings.connectionManager.profiles;
+            for (const assistant of ['miso', 'taro', 'nori']) profiles.push({ ...profiles[0], id: `table-${assistant}`, name: assistant, model: `table-${assistant}` });
+        } });
+        if (phone) await installIPhoneSafari(account.context, { standalone: true });
+        app.provider.mode.streamReply = body => ({ first: `${body.model} suggests `, rest: 'an approach to learning languages.' });
+        const page = await account.open();
+        const source = await openScratchpad(page);
+        if (phone) await applyIOSOnlyCss(page);
+        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        for (const assistant of ['miso', 'taro', 'nori']) await page.locator(`#scratchpad-connection-${assistant}`).selectOption(`table-${assistant}`);
+        await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+        await page.locator('.scratchpad-round-table').click();
+        await expect(page.locator('.scratchpad-round-table')).toHaveAttribute('aria-pressed', 'true');
+        const people = page.locator('.scratchpad-assistants');
+        await people.getByRole('button', { name: 'Nori', exact: true }).click();
+        await expect(page.locator('.scratchpad-send')).toHaveText('Ask 2');
+        await people.getByRole('button', { name: 'Taro', exact: true }).click();
+        await expect(people.getByRole('button', { name: 'Miso', exact: true })).toBeDisabled();
+        await people.getByRole('button', { name: 'Taro', exact: true }).click();
+        await people.getByRole('button', { name: 'Nori', exact: true }).click();
+        await expect(page.locator('.scratchpad-send')).toHaveText('Ask 3');
+        const controls = await page.locator('.scratchpad-round-table, .scratchpad-assistant').evaluateAll(elements => elements.map(element => {
+            const rect = element.getBoundingClientRect();
+            return Math.min(rect.width, rect.height);
+        }));
+        expect(Math.min(...controls)).toBeGreaterThanOrEqual(phone ? 44 : 32);
+        await page.locator('.scratchpad-composer').fill('How should I learn another language?');
+        const accepted = page.waitForResponse('**/api/scratchpad/send');
+        await page.locator('.scratchpad-send').click();
+        const response = await accepted;
+        expect(response.ok(), await response.text()).toBe(true);
+        const result = await response.json();
+        await expect(page.locator('.scratchpad-stream')).toHaveCount(3);
+        await expect.poll(() => app.provider.calls.filter(call => call.messages?.at(-1)?.content === 'How should I learn another language?').length).toBe(3);
+        const calls = app.provider.calls.filter(call => call.messages?.at(-1)?.content === 'How should I learn another language?');
+        expect(calls.map(call => call.model).sort()).toEqual(['table-miso', 'table-nori', 'table-taro']);
+        for (const assistant of ['Miso', 'Taro', 'Nori']) {
+            await expect(page.locator('.scratchpad-message.is-assistant').filter({ has: page.locator('.scratchpad-author', { hasText: assistant }) }).locator('.scratchpad-stream')).toContainText(`table-${assistant.toLowerCase()} suggests`);
+        }
+        calls.find(call => call.model === 'table-miso').finishStream();
+        await expect(page.locator('.scratchpad-message.is-done')).toHaveCount(1);
+        await expect(page.locator('.scratchpad-message.is-pending')).toHaveCount(2);
+        await page.close();
+        for (const call of calls.filter(call => call.model !== 'table-miso')) call.finishStream();
+        await account.settled(result.job.id);
+
+        const reopened = await account.open();
+        await openScratchpad(reopened);
+        if (phone) await applyIOSOnlyCss(reopened);
+        await expect(reopened.locator('.scratchpad-round-table')).toHaveAttribute('aria-pressed', 'true');
+        await expect(reopened.locator('.scratchpad-message.is-done')).toHaveCount(3);
+        await expect(reopened.locator('.scratchpad-message.is-user')).toHaveCount(1);
+        expect(await reopened.evaluate(() => document.documentElement.scrollWidth)).toBe(phone ? 393 : 1280);
+        await reopened.screenshot({ path: test.info().outputPath('round-table.png') });
+        const before = (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0].messages;
+        const retry = reopened.waitForResponse('**/api/scratchpad/send');
+        await reopened.locator('.scratchpad-message.is-assistant').filter({ has: reopened.locator('.scratchpad-author', { hasText: 'Taro' }) }).getByRole('button', { name: 'Try again', exact: true }).click();
+        const retried = await retry;
+        expect(retried.ok(), await retried.text()).toBe(true);
+        await expect(reopened.locator('.scratchpad-stream')).toContainText('table-taro suggests');
+        expect(app.provider.calls.at(-1).model).toBe('table-taro');
+        app.provider.calls.at(-1).finishStream();
+        await account.settled((await retried.json()).job.id);
+        const after = (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0].messages;
+        expect(after.filter(message => message.assistant !== 'taro')).toEqual(before.filter(message => message.assistant !== 'taro'));
+    });
+
     test(`${phone ? 'iPhone stand-in' : 'desktop'} Scratchpad sends the preview with the chat connection and preserves new drafts`, async ({ app }) => {
         test.setTimeout(120000);
         const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, settings: { lorebook_override: 'Scratchpad Garden' } });

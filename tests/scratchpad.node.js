@@ -208,6 +208,96 @@ test('changing session settings while a send is prepared refuses the stale reque
     assert.equal(a.read(SOURCE).sessions[0].messages.length, 0);
 });
 
+test('round tables run all selected assistants together, keep successful replies and retry only the chosen speaker', { timeout: 10000 }, async t => {
+    const a = account(t);
+    const session = startSession(a, { roundTable: true, participants: ['miso', 'taro', 'nori'] });
+    const started = Promise.withResolvers();
+    const gates = new Map();
+    registerScratchpadJobs({ generate: async options => {
+        const gate = Promise.withResolvers();
+        gates.set(options.characterName, gate);
+        options.onStream({ text: `${options.characterName} thinking` });
+        if (gates.size === 3) started.resolve();
+        return gate.promise;
+    } });
+    const body = sendBody(session, { text: 'Compare ways to learn a language.', genders: { miso: 'female', taro: 'male', nori: 'neutral' } });
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    assert.deepEqual(accepted.bucket.sessions[0].messages.slice(1).map(message => [message.assistant, message.gender]), [['miso', 'female'], ['taro', 'male'], ['nori', 'neutral']]);
+    const running = runJob(getJob(a.directories, accepted.job.id));
+    await started.promise;
+    const preview = readScratchpadPreview(a.f.scope.owner, accepted.job.id);
+    assert.deepEqual(Object.values(preview.replies).map(reply => reply.text), ['Miso thinking', 'Taro thinking', 'Nori thinking']);
+    gates.get('Miso').resolve({ text: 'Miso suggests reading.' });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(a.read(SOURCE).sessions[0].messages[1].state, 'done', 'one answer is saved while the others are still running');
+    gates.get('Taro').resolve({ text: 'Taro suggests practice.' });
+    gates.get('Nori').reject(new Error('Nori could not connect.'));
+    await running;
+    const before = a.read(SOURCE).sessions[0].messages;
+    assert.deepEqual(before.slice(1).map(message => message.state), ['done', 'done', 'failed']);
+    assert.equal(getJob(a.directories, accepted.job.id).state, 'failed');
+    assert.equal((await acceptScratchpadReply(a.request(body), body)).job.id, accepted.job.id, 'a repeated acceptance never starts a second round');
+
+    const called = [];
+    registerScratchpadJobs({ generate: async options => {
+        called.push(options.characterName);
+        return { text: 'Nori suggests a film.' };
+    } });
+    a.mutate(SOURCE, bucket => store.updateSession(bucket, session.id, { assistant: 'miso' }));
+    const retry = sendBody(session, { regenerate: before[3].id });
+    const retried = await acceptScratchpadReply(a.request(retry), retry);
+    await runJob(getJob(a.directories, retried.job.id));
+    const after = a.read(SOURCE).sessions[0].messages;
+    assert.deepEqual(called, ['Nori']);
+    assert.deepEqual(after.slice(0, 3), before.slice(0, 3), 'redoing one answer preserves the question and both other answers');
+    assert.equal(after[3].text, 'Nori suggests a film.');
+
+    const followUp = sendBody(session, { text: 'Compare those three approaches.' });
+    const following = await acceptScratchpadReply(a.request(followUp), followUp);
+    const requests = readArtifact(a.directories, following.job.id, 'request').replies;
+    for (const request of requests) {
+        assert.match(request.messages[0].content, /about anything/);
+        assert.match(request.messages[0].content, /answers independently at the same time/);
+        for (const peer of ['Miso', 'Taro', 'Nori'].filter(name => name !== request.characterName)) {
+            assert.ok(request.messages.some(message => message.role === 'user' && message.content.startsWith(`[Earlier reply from ${peer} in Scratchpad]`)));
+        }
+    }
+});
+
+test('stopping a round table retains finished answers and stops all remaining speakers', { timeout: 10000 }, async t => {
+    const a = account(t);
+    const session = startSession(a, { roundTable: true });
+    const started = Promise.withResolvers();
+    const gates = new Map();
+    registerScratchpadJobs({ generate: async options => {
+        const gate = Promise.withResolvers();
+        gates.set(options.characterName, gate);
+        if (gates.size === 3) started.resolve();
+        return gate.promise;
+    } });
+    const body = sendBody(session);
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    const running = runJob(getJob(a.directories, accepted.job.id));
+    await started.promise;
+    gates.get('Miso').resolve({ text: 'Already saved.' });
+    await new Promise(resolve => setImmediate(resolve));
+    requestCancellation(a.directories, accepted.job.id, { reason: 'stop-all' });
+    gates.get('Taro').resolve({ text: 'Too late.' });
+    gates.get('Nori').resolve({ text: 'Too late.' });
+    await running;
+    const messages = a.read(SOURCE).sessions[0].messages.slice(1);
+    assert.deepEqual(messages.map(message => [message.state, message.text]), [['done', 'Already saved.'], ['failed', ''], ['failed', '']]);
+    assert.equal(getJob(a.directories, accepted.job.id).state, 'cancelled');
+});
+
+test('round tables require a recognised speaker and reserve room for every answer', () => {
+    assert.throws(() => store.normaliseSettings({ participants: [] }), error => error.code === 'SCRATCHPAD_PARTICIPANTS_INVALID');
+    const settings = store.normaliseSettings({ roundTable: true, participants: ['nori', 'other', 'taro', 'miso', 'taro'] });
+    assert.deepEqual(settings.participants, ['miso', 'taro', 'nori']);
+    const messages = Array.from({ length: store.MAX_MESSAGES - 2 }, (_, index) => ({ id: String(index), role: 'user', text: 'Hi' }));
+    assert.throws(() => jobs.planReply({ settings, messages }, { text: 'Question' }), error => error.code === 'SCRATCHPAD_SESSION_FULL');
+});
+
 test('a provider response arriving after Stop is not saved as a completed reply', async t => {
     const a = account(t);
     const session = startSession(a);

@@ -88,6 +88,10 @@ export function assistantConnection(settings, assistant) {
     return normaliseConnection(settings.assistantConnections?.[normaliseAssistant(assistant)] ?? settings.connection);
 }
 
+export function sessionAssistants(session) {
+    return session.settings.roundTable ? session.settings.participants : [session.assistant];
+}
+
 export function normaliseMaxTokens(value) {
     const number = Math.round(Number(value));
     if (!Number.isFinite(number)) return DEFAULT_MAX_TOKENS;
@@ -102,6 +106,8 @@ export function defaultSettings() {
         loreOverrides: {},
         connection: { kind: 'current' },
         assistantConnections: {},
+        roundTable: false,
+        participants: [...ASSISTANT_IDS],
         maxTokens: DEFAULT_MAX_TOKENS,
     };
 }
@@ -142,6 +148,12 @@ export function normaliseSettings(input, previous = defaultSettings()) {
         }
     }
     if (source.maxTokens !== undefined) settings.maxTokens = normaliseMaxTokens(source.maxTokens);
+    if (typeof source.roundTable === 'boolean') settings.roundTable = source.roundTable;
+    if (source.participants !== undefined) {
+        const participants = Array.isArray(source.participants) ? ASSISTANT_IDS.filter(id => source.participants.includes(id)) : [];
+        if (!participants.length) throw fail('SCRATCHPAD_PARTICIPANTS_INVALID', 'Choose at least one assistant for the round table.');
+        settings.participants = participants;
+    }
     return settings;
 }
 
@@ -172,6 +184,7 @@ function normaliseMessage(input) {
         if (typeof input.error === 'string' && input.error) message.error = input.error.slice(0, 1000);
         if (typeof input.reasoning === 'string' && input.reasoning && byteLength(input.reasoning) <= MAX_REASONING_BYTES) message.reasoning = input.reasoning;
         if (typeof input.assistant === 'string') message.assistant = normaliseAssistant(input.assistant);
+        if (typeof input.gender === 'string') message.gender = normaliseGender(input.gender);
         const proposals = normaliseProposals(input.proposals);
         if (Object.keys(proposals).length) message.proposals = proposals;
     }

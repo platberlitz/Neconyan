@@ -1,6 +1,6 @@
 # Scratchpad
 
-Scratchpad is a side conversation with Miso, Taro or Nori about the chat you have open. Talk through a scene, ask what a character wants, get plot ideas, check continuity or ask for lorebook entries. Nothing you write there goes into the story, and the characters in the chat never see it.
+Scratchpad is a side conversation with Miso, Taro or Nori. Ask about anything, compare ideas, or use the chat you have open to talk through a scene, check continuity or ask for lorebook entries. Nothing you write there goes into the story, and the characters in the chat never see it.
 
 All three assistants can do the same things in Scratchpad. They keep their own personalities: Miso is the cheerful guide, Taro the careful troubleshooter and Nori the playful writing partner. Each uses the Male, Female or Neutral version you picked for that assistant elsewhere in Neconyan.
 
@@ -18,6 +18,10 @@ Scratchpad follows the chat you have open. Switch chats and it shows that chat's
 
 Pick who you are talking to under **Talking with**, type in the box at the bottom and press **Send** (or Enter on desktop; Shift+Enter adds a new line). **Quick prompts** fill the box with a ready-made request you can edit before sending: **Read the scene**, **Plot ideas**, **Catch me up**, **Continuity check** and **Lore gaps**.
 
+Turn on **Round table** to ask up to three assistants together. Press their portraits to include or exclude them; keep at least one selected. **Ask 2** or **Ask 3** sends one question to everyone selected, using each assistant's own connection profile and personality. Each answer is labelled and saved separately in the same session. The reply limit applies to each assistant.
+
+Round-table assistants answer at the same time. They share your question and the earlier conversation, but do not see the other answers being written in that round. Ask a follow-up to compare their views or have them respond to one another. **Stop all** stops unfinished replies and keeps answers already saved. If one connection fails, the other answers are kept and you can retry just the failed assistant.
+
 To give the conversation more room, press **Talking with** (just the arrow on phones) and the assistant picker and session line fold into one slim bar. Press the bar to bring them back. Scratchpad remembers which way you left it.
 
 Replies are written on the server. They keep going if you close Scratchpad, reload the page or close the browser, and the finished reply is there when you come back. **Stop** ends a reply early. While a reply is being written you cannot send another message in the same session.
@@ -27,7 +31,7 @@ Each message has a few buttons:
 - **Copy** copies the text.
 - **Edit message** lets you correct either side of the conversation. The assistant sees the edited text next time.
 - **Use as draft in the chat box** copies an assistant reply (without any change cards) into the story's message box. Nothing is sent; you decide what to do with it.
-- **Try again** asks for a new version of the latest reply. Only the latest reply can be redone.
+- **Try again** asks that assistant for a new version of its answer to your latest message. In a round table it keeps the other assistants' answers.
 - **Delete** removes the message from Scratchpad. The story is not affected.
 
 When you ask how something in Neconyan works, the assistant also gets the same help reference that assistant chats use.

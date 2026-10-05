@@ -7,10 +7,15 @@ const MAX_PREVIEWS = 64;
 
 export function publishScratchpadPreview(owner, id, update) {
     const key = keyFor(owner, id);
-    const value = { ...previews.get(key), ...update, updatedAt: Date.now() };
+    const previous = previews.get(key);
+    const { replyId, ...patch } = update;
+    const value = replyId
+        ? { ...previous, replies: { ...previous?.replies, [replyId]: { ...previous?.replies?.[replyId], ...patch } }, updatedAt: Date.now() }
+        : { ...previous, ...patch, updatedAt: Date.now() };
+    const text = replyId ? value.replies[replyId] : value;
     for (const field of ['text', 'reasoning']) {
-        if (typeof value[field] !== 'string') value[field] = '';
-        if (value[field].length > MAX_TEXT) value[field] = value[field].slice(0, MAX_TEXT);
+        if (typeof text[field] !== 'string') text[field] = '';
+        if (text[field].length > MAX_TEXT) text[field] = text[field].slice(0, MAX_TEXT);
     }
     previews.delete(key);
     previews.set(key, value);
