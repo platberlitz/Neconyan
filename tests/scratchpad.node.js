@@ -88,6 +88,7 @@ test('a reply runs as a server job, streams a preview and settles into the saved
     assert.equal(reply.assistant, 'taro');
     assert.equal(seen.binding.kind, 'profile');
     assert.equal(seen.stream, true);
+    assert.equal(seen.maxTokens, 16000, 'new sessions send the new reply limit to the model');
     assert.equal(seen.preparedMessages, true);
     assert.equal(seen.characterName, 'Taro');
     assert.match(seen.messages[0].content, /You are Taro/);
@@ -157,6 +158,8 @@ test('sessions are kept per source chat and temporary sessions disappear when an
     assert.equal(a.read(OTHER).sessions[0].assistant, 'miso');
     assert.equal(a.read(SOURCE).sessions[0].assistant, 'taro');
     assert.notEqual(store.scratchpadFile(a.directories.root, SOURCE), store.scratchpadFile(a.directories.root, OTHER));
+    a.mutate(SOURCE, bucket => store.updateSession(bucket, kept.id, { settings: { maxTokens: 4096 } }));
+    assert.equal(a.read(SOURCE).sessions[0].settings.maxTokens, 4096, 'a saved reply limit is not replaced by a new default');
 });
 
 test('Conversation uses its saved chat connection without changing the session default', async t => {

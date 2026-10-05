@@ -68,7 +68,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     loreOverrides: {},
     connection: { kind: 'current' },
     assistantConnections: {},
-    maxTokens: 4096,
+    maxTokens: 16000,
 });
 
 const app = {

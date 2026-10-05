@@ -41,7 +41,7 @@ Scratchpad rebuilds the story context from the open chat every time you send, so
 - **Also share**: **Character cards** (description, personality and scenario of everyone in the chat), **Your persona**, **Author's Note** (Roleplay only) and **Lorebook entries**.
 - **Lorebook entries**: entries from the lorebooks active in this chat are shared when they are always active, when one of their keywords appears in the last five shared messages, the recent Scratchpad conversation or what you are sending, or when you set them to **Always**. **Never** keeps an entry out. **Auto** goes back to the normal rules. Entries hidden from agents are never shared. At most 40 entries go in at once.
 - **Assistant connections**: choose a saved connection profile for Miso, Taro and Nori separately. Each profile includes its model and connection settings. **Same connection as the chat** uses whatever the chat uses. Switching assistants keeps each assistant's choice, and a new session inherits those choices. A model with tool calling is not needed.
-- **Longest reply (tokens)**: the reply length limit (4096 to start with).
+- **Longest reply (tokens)**: the reply length limit (16000 to start with). Existing sessions keep their saved limit.
 
 **Show preview** under **What Scratchpad will read** shows the exact context that goes with your next message and an estimate of its size in tokens.
 
