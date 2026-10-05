@@ -32,7 +32,7 @@ async function dialog(content, options = {}) {
 }
 
 function notice(text, kind = '') {
-    return h('p', { class: `notes-notice${kind ? ` notes-notice-${kind}` : ''}`, text });
+    return h('p', { class: `notes-notice${kind ? ` notes-notice-${kind}` : ''}` }, text);
 }
 
 function section(title, ...children) {
@@ -131,7 +131,7 @@ async function propertiesPanel(app) {
         if (RESERVED_PROPERTIES.has(key.toLowerCase())) continue;
         const input = h('input', { id: `notes-prop-${custom.length}`, class: 'text_pole notes-input', value: listText(value) });
         custom.push({ key, input, list: Array.isArray(value) });
-        customRows.append(field(key, input, Array.isArray(value) ? 'A list: separate items with commas.' : null));
+        customRows.append(field(key, input, Array.isArray(value) ? 'A list: separate items with commas.' : null, { userLabel: true }));
     }
     const newKey = h('input', { id: 'notes-prop-new-key', class: 'text_pole notes-input', placeholder: 'Field name' });
     const newValue = h('input', { id: 'notes-prop-new-value', class: 'text_pole notes-input', placeholder: 'Value' });
@@ -154,20 +154,24 @@ async function propertiesPanel(app) {
         field('Tags', tags, 'Separate tags with commas.'), field('Other names', aliases, 'Links using these names find this note.'), field('Type', type),
         customRows,
         h('div', { class: 'notes-prop-new' }, field('New field', newKey), field('Value', newValue)),
-        detail.complexProperties?.length ? notice(`Kept exactly as written (edit in Write view): ${detail.complexProperties.join(', ')}.`) : null,
+        detail.complexProperties?.length ? notice(userPhrase`Kept exactly as written (edit in Write view): ${detail.complexProperties.join(', ')}.`) : null,
         button('Save properties', save, { icon: 'fa-floppy-disk', className: 'notes-primary' })));
 
     if (note.provenance?.length) {
         out.push(section('Where this came from', h('ul', { class: 'notes-plain-list' },
-            ...note.provenance.map(item => h('li', { text: item.kind === 'chat'
-                ? `Saved from a chat${item.speaker ? ` (${item.speaker})` : ''} on ${formatTime(item.capturedAt ?? item.at)}. The copy here stays even if the message changes.`
-                : `${item.kind ?? 'Source'} on ${formatTime(item.at)}` })))));
+            ...note.provenance.map(item => h('li', {}, item.kind === 'chat' && item.speaker
+                ? userPhrase`Saved from a chat (${item.speaker}) on ${formatTime(item.capturedAt ?? item.at)}. The copy here stays even if the message changes.`
+                : item.kind === 'chat'
+                    ? `Saved from a chat on ${formatTime(item.capturedAt ?? item.at)}. The copy here stays even if the message changes.`
+                    : `${item.kind ?? 'Source'} on ${formatTime(item.at)}`)))));
     }
 
     const files = await app.request('/attachments/list', { notebookId: state.notebookId });
     if (!app.failed(files) && files.attachments?.length) {
         out.push(section('Files in this notebook', h('ul', { class: 'notes-plain-list' }, ...files.attachments.map(file => h('li', { class: 'notes-file-row' },
-            h('span', { text: `${file.name ?? file.path} (${formatBytes(file.size)})${file.references ? `, used by ${file.references} note(s)` : ''}` }),
+            h('span', {}, file.references
+                ? userPhrase`${file.name ?? file.path} (${formatBytes(file.size)}), used by ${file.references} note(s)`
+                : userPhrase`${file.name ?? file.path} (${formatBytes(file.size)})`),
             button('Remove', async () => {
                 const result = await app.request('/attachments/trash', { operationId: newOperationId('att'), notebookId: state.notebookId, path: file.path });
                 if (result.code === 'ATTACHMENT_IN_USE') return app.toast('warning', 'That file is still used by a note, so it was kept.');
@@ -220,8 +224,8 @@ async function linksPanel(app) {
                 if (created) await app.openNote(state.notebookId, created.noteId, { pushBack: true });
             }, { icon: 'fa-file-circle-plus' }));
         }
-        if (link.status === 'external') return h('li', { text: `Web link: ${link.target ?? label}` });
-        if (link.status === 'attachment') return h('li', { text: `File: ${link.path ?? label}` });
+        if (link.status === 'external') return h('li', {}, userPhrase`Web link: ${link.target ?? label}`);
+        if (link.status === 'attachment') return h('li', {}, userPhrase`File: ${link.path ?? label}`);
         return h('li', { text: label, 'data-i18n-ignore': '' });
     })) : notice('This note does not link to anything yet. Type [[ to link a note.')));
 
@@ -246,7 +250,7 @@ async function pickBook(app, message) {
     let ref = null;
     const list = h('ul', { class: 'notes-plain-list notes-link-results' });
     for (const name of books.books) {
-        list.append(h('li', {}, button(name, () => { chosen = name; ref?.completeAffirmative(); }, { icon: 'fa-book-atlas', className: 'notes-quiet' })));
+        list.append(h('li', {}, button(name, () => { chosen = name; ref?.completeAffirmative(); }, { icon: 'fa-book-atlas', className: 'notes-quiet', userText: true })));
     }
     await callGenericPopup(h('div', { class: 'notes-dialog' }, h('p', { text: message }), list), POPUP_TYPE.TEXT, '',
         { wide: true, okButton: 'Close', onOpen: value => { ref = value; } });
@@ -261,12 +265,14 @@ async function pickEntry(app, book, { allowNew = false } = {}) {
     const list = h('ul', { class: 'notes-plain-list notes-link-results' });
     if (allowNew) list.append(h('li', {}, button('New entry', () => { chosen = { uid: null }; ref?.completeAffirmative(); }, { icon: 'fa-plus', className: 'notes-primary' })));
     for (const entry of entries.entries ?? []) {
-        list.append(h('li', {}, button(`${entry.title || `Entry ${entry.uid}`}${entry.disabled ? ' (disabled)' : ''}`, () => {
+        const name = entry.title || `Entry ${entry.uid}`;
+        const label = entry.title && entry.disabled ? userPhrase`${entry.title} (disabled)` : `${name}${entry.disabled ? ' (disabled)' : ''}`;
+        list.append(h('li', {}, button(label, () => {
             chosen = entry;
             ref?.completeAffirmative();
-        }, { className: 'notes-quiet' })));
+        }, { className: 'notes-quiet', userText: Boolean(entry.title) && !entry.disabled })));
     }
-    await callGenericPopup(h('div', { class: 'notes-dialog' }, h('p', { text: `Choose an entry in ${book}.` }), list), POPUP_TYPE.TEXT, '',
+    await callGenericPopup(h('div', { class: 'notes-dialog' }, h('p', {}, userPhrase`Choose an entry in ${book}.`), list), POPUP_TYPE.TEXT, '',
         { wide: true, okButton: 'Close', onOpen: value => { ref = value; } });
     return chosen;
 }
@@ -307,8 +313,8 @@ async function publishFlow(app, { selector = null, book = null, uid = undefined,
     if (app.failed(previewResult, 'The preview could not be made.')) return;
     const preview = previewResult.preview;
     const view = h('div', { class: 'notes-dialog notes-publish-preview' },
-        h('h3', { text: preview.createsEntry ? `Create "${preview.entryTitle}" in ${preview.book}` : `Update "${preview.entryTitle}" in ${preview.book}` }),
-        h('p', { text: `From: ${preview.noteTitle}, ${preview.selectorLabel}` }),
+        h('h3', {}, preview.createsEntry ? userPhrase`Create "${preview.entryTitle}" in ${preview.book}` : userPhrase`Update "${preview.entryTitle}" in ${preview.book}`),
+        h('p', {}, userPhrase`From: ${preview.noteTitle}, ${regionLabel(preview.selector, preview.selectorLabel)}`),
         h('p', { class: 'notes-hint', text: 'Exactly this text becomes the entry\'s content:' }),
         h('pre', { class: 'notes-diff', text: preview.after || '(empty)' }),
         preview.before && !preview.createsEntry ? h('details', {}, h('summary', { text: 'Current entry text' }), h('pre', { class: 'notes-diff', text: preview.before })) : null,
@@ -346,9 +352,11 @@ async function entryPage(app, book, uid) {
         await refreshWorldInfo(book);
     };
     const view = h('div', { class: 'notes-dialog notes-entry-page' },
-        h('p', { class: 'notes-live-badge', text: `Live World Info: ${book}` }),
+        h('p', { class: 'notes-live-badge' }, userPhrase`Live World Info: ${book}`),
         notice('You are editing the real lorebook entry, not a copy. Keywords and activation settings stay as they are; change them in the lorebook editor.'),
-        h('p', { class: 'notes-hint', text: `Keywords: ${(page.keys ?? []).join(', ') || 'none'}. ${page.enabled ? 'Enabled' : 'Disabled'}${page.constant ? ', always on' : ''}.` }),
+        // Two sentences: the keywords are the user's; the state after them stays with the run-time localiser.
+        h('p', { class: 'notes-hint' }, (page.keys ?? []).join(', ') ? userPhrase`Keywords: ${(page.keys ?? []).join(', ')}.` : 'Keywords: none.',
+            ' ', `${page.enabled ? 'Enabled' : 'Disabled'}${page.constant ? ', always on' : ''}.`),
         field('Entry name', comment), field('Entry text', content), status,
         h('div', { class: 'notes-nav-actions' },
             button('Save entry', save, { icon: 'fa-floppy-disk', className: 'notes-primary' }),
@@ -390,8 +398,10 @@ async function lorePanel(app) {
         notice('Related items are for finding things. They do not share this note with AI, publish it, or put it into any prompt.'),
         associations.length ? h('ul', { class: 'notes-plain-list' }, ...associations.map((item, index) => h('li', { class: 'notes-file-row' },
             item.kind === 'lore-entry'
-                ? button(`Lore entry: ${item.label || item.id}`, () => void entryPage(app, item.id, item.uid), { className: 'notes-quiet' })
-                : h('span', { text: `${{ lorebook: 'Lorebook', character: 'Character', chat: 'Chat' }[item.kind] ?? item.kind}: ${item.label || item.id}` }),
+                ? button(userPhrase`Lore entry: ${item.label || item.id}`, () => void entryPage(app, item.id, item.uid), { className: 'notes-quiet' })
+                : h('span', {}, item.kind === 'lorebook' ? userPhrase`Lorebook: ${item.label || item.id}`
+                    : item.kind === 'character' ? userPhrase`Character: ${item.label || item.id}`
+                        : item.kind === 'chat' ? userPhrase`Chat: ${item.label || item.id}` : userPhrase`${item.kind}: ${item.label || item.id}`),
             button('Remove', () => void saveAssociations(associations.filter((_, at) => at !== index)), { icon: 'fa-xmark', title: 'Remove this link' }))))
             : null,
         h('div', { class: 'notes-nav-actions notes-wrap' },
@@ -467,7 +477,9 @@ function bindingRow(app, binding) {
         if (ok.ok) await act('/lore/detach', {}, 'Detached. Nothing was deleted.');
     }, { icon: 'fa-link-slash' }));
     return h('li', { class: 'notes-binding', dataset: { status: binding.status } },
-        h('p', { class: 'notes-binding-title', text: `${binding.selectorLabel} → ${binding.book}: ${binding.entryTitle ?? `entry ${binding.uid}`}` }),
+        h('p', { class: 'notes-binding-title' }, binding.entryTitle === undefined || binding.entryTitle === null
+            ? userPhrase`${regionLabel(binding.selector, binding.selectorLabel)} → ${binding.book}: entry ${binding.uid}`
+            : userPhrase`${regionLabel(binding.selector, binding.selectorLabel)} → ${binding.book}: ${binding.entryTitle}`),
         h('p', { class: 'notes-binding-status', text: `${label}. ${explanation}` }),
         h('p', { class: 'notes-hint', text: [binding.publishedAt ? `Published ${formatTime(binding.publishedAt)}` : null,
             binding.enabled === false ? 'entry disabled' : binding.enabled ? 'entry enabled' : null,
@@ -546,7 +558,7 @@ function contextSection(app, note, context, update) {
         void update({ notes: { [note.id]: { context: mode === 'off' ? null : { mode, scopes: nextScopes, order: context.order ?? 0 } } } });
     };
     const scopeBox = (label, kind, id) => h('label', { class: 'notes-check' }, h('input', { type: 'checkbox', checked: has(kind, id),
-        onChange: event => setContext(context.mode === 'off' ? 'reference' : context.mode, toggle(kind, id, event.target.checked)) }), h('span', { text: label }));
+        onChange: event => setContext(context.mode === 'off' ? 'reference' : context.mode, toggle(kind, id, event.target.checked)) }), h('span', {}, label));
     return section('Use in roleplay replies',
         choiceRow('This note is', [['off', 'Not used'], ['reference', 'Available as reference'], ['pinned', 'Pinned']], context.mode ?? 'off',
             value => setContext(value, scopes)),
@@ -557,12 +569,30 @@ function contextSection(app, note, context, update) {
                 : 'Never sent to the roleplay model, memory tools or any other AI.'),
         context.mode !== 'off' ? h('div', { class: 'notes-scope-list' },
             scope ? scopeBox('This chat', 'chat', scope.chat) : null,
-            scope?.character ? scopeBox(`This character (${scope.characterName ?? scope.character})`, 'character', scope.character) : null,
+            scope?.character ? scopeBox(userPhrase`This character (${scope.characterName ?? scope.character})`, 'character', scope.character) : null,
             scopeBox('Everywhere', 'global', '*'),
             ...scopes.filter(item => !(scope && ((item.kind === 'chat' && item.id === scope.chat) || (item.kind === 'character' && item.id === scope.character))) && item.kind !== 'global')
-                .map(item => scopeBox(`${item.kind}: ${item.id}`, item.kind, item.id))) : null,
+                .map(item => scopeBox(item.kind === 'chat' ? userPhrase`chat: ${item.id}` : item.kind === 'character' ? userPhrase`character: ${item.id}`
+                    : userPhrase`${item.kind}: ${item.id}`, item.kind, item.id))) : null,
         notice('Parts of this note already published as lore reach replies through the lorebook only, never twice.'),
         scope ? button('Preview for this chat', () => void contextPreview(app, scope), { icon: 'fa-magnifying-glass' }) : null);
+}
+
+/** A context preview row. The note's title and section are the user's; the mode is interface wording. */
+function contextItem(item) {
+    // The section is a heading path the server sends as text (src/notebooks/context.js), so it is shown as written.
+    const name = item.section ? userPhrase`${item.title} (${item.section})` : item.title;
+    if (item.mode === 'pinned') return userPhrase`${name}: pinned, about ${item.tokens} tokens`;
+    if (item.mode === 'reference') return userPhrase`${name}: reference, about ${item.tokens} tokens`;
+    return userPhrase`${name}: ${item.mode}, about ${item.tokens} tokens`;
+}
+
+/** A note named in 'Used in recent replies'. */
+function usedItem(item) {
+    const revision = String(item.revision).slice(0, 8);
+    if (item.mode === 'pinned') return userPhrase`${item.title} (pinned, revision ${revision})`;
+    if (item.mode === 'reference') return userPhrase`${item.title} (reference, revision ${revision})`;
+    return userPhrase`${item.title} (${item.mode}, revision ${revision})`;
 }
 
 async function contextPreview(app, scope) {
@@ -573,12 +603,14 @@ async function contextPreview(app, scope) {
     if (app.failed(preview)) return;
     const view = h('div', { class: 'notes-dialog' },
         h('p', { text: `Pinned notes for this chat use about ${preview.usedTokens} of ${preview.budgetTokens} tokens (estimated as characters divided by 4). Reference notes are matched against the latest messages when a reply is written.` }),
-        preview.items?.length ? h('ul', { class: 'notes-plain-list' }, ...preview.items.map(item => h('li', { text: `${item.title}${item.section ? ` (${item.section})` : ''}: ${item.mode}, about ${item.tokens} tokens` }))) : h('p', { text: 'Nothing pinned would be added right now.' }),
-        preview.overflow?.length ? notice(`Left out because they do not fit: ${preview.overflow.map(item => item.title).join(', ')}.`, 'warning') : null,
-        preview.withheld?.length ? notice(`Held back because they are linked to lore that needs repair: ${preview.withheld.map(item => item.title).join(', ')}.`) : null,
-        preview.excludedBound?.length ? h('p', { class: 'notes-hint', text: `Sent through the lorebook instead: ${preview.excludedBound.map(item => `${item.title} (${item.regions.join(', ')})`).join('; ')}.` }) : null,
+        preview.items?.length ? h('ul', { class: 'notes-plain-list' }, ...preview.items.map(item => h('li', {}, contextItem(item)))) : h('p', { text: 'Nothing pinned would be added right now.' }),
+        preview.overflow?.length ? notice(userPhrase`Left out because they do not fit: ${preview.overflow.map(item => item.title).join(', ')}.`, 'warning') : null,
+        preview.withheld?.length ? notice(userPhrase`Held back because they are linked to lore that needs repair: ${preview.withheld.map(item => item.title).join(', ')}.`) : null,
+        preview.excludedBound?.length ? h('p', { class: 'notes-hint' }, userPhrase`Sent through the lorebook instead: ${preview.excludedBound
+            .map(item => `${item.title} (${item.regions.join(', ')})`).join('; ')}.`) : null,
         !app.failed(inspect) && inspect.records?.length ? h('details', {}, h('summary', { text: 'Used in recent replies' }),
-            h('ul', { class: 'notes-plain-list' }, ...inspect.records.map(record => h('li', { text: `${formatTime(record.at)}: ${(record.items ?? []).map(item => `${item.title} (${item.mode}, revision ${String(item.revision).slice(0, 8)})`).join(', ') || 'no notes'}` }))))
+            h('ul', { class: 'notes-plain-list' }, ...inspect.records.map(record => h('li', {}, `${formatTime(record.at)}: `,
+                (record.items ?? []).length ? (record.items ?? []).flatMap((item, index) => [index ? ', ' : '', usedItem(item)]) : 'no notes'))))
             : null);
     await callGenericPopup(view, POPUP_TYPE.TEXT, '', { wide: true, okButton: 'Close' });
 }

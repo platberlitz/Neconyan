@@ -59,13 +59,14 @@ export function setButtonPressed(element, pressed) {
     element.classList.toggle('menu_button_primary', Boolean(pressed) || element.classList.contains('notes-primary'));
 }
 
-export function field(label, control, hint = '') {
+/** With userLabel, the label is the user's own text (a property name), so the run-time localiser leaves it alone. A hint may be a node from userPhrase. */
+export function field(label, control, hint = '', { userLabel = false } = {}) {
     const id = control.id || `notes-field-${Math.random().toString(36).slice(2, 10)}`;
     control.id = id;
     return h('div', { class: 'notes-field' },
-        h('label', { for: id, text: label }),
+        h('label', { for: id, text: label, 'data-i18n-ignore': userLabel ? '' : null }),
         control,
-        hint ? h('p', { class: 'notes-hint', text: hint }) : null);
+        hint !== null && typeof hint === 'object' ? h('p', { class: 'notes-hint' }, hint) : hint ? h('p', { class: 'notes-hint', text: hint }) : null);
 }
 
 export function choiceRow(label, options, current, onChoose) {

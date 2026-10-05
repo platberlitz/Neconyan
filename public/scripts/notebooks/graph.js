@@ -166,7 +166,8 @@ export function createGraphView(app, container) {
             const control = h('button', { type: 'button', class: 'notes-note-link', 'data-graph-note': node.id,
                 onclick: () => { if (listCurrent()) void app.openNote(listScope.notebookId, node.id, { pushBack: true }); },
                 onfocus: () => focusNode(node.id) }, h('span', { class: 'notes-note-title', text: node.title || 'Untitled', 'data-i18n-ignore': node.title ? '' : null }),
-            h('span', { class: 'notes-note-meta', text: `${node.path} · ${connections} connection${connections === 1 ? '' : 's'}` }));
+            // The path is the user's; the rest of the line stays with the run-time localiser, as before.
+            h('span', { class: 'notes-note-meta' }, h('span', { text: node.path, 'data-i18n-ignore': '' }), ` · ${connections} connection${connections === 1 ? '' : 's'}`));
             list.append(h('li', { class: 'notes-list-item' }, control));
         }
         output.append(diagram, h('h3', { class: 'notes-nav-heading', text: 'Notes in this graph' }), list);

@@ -51,9 +51,18 @@ async function openNotes(page) {
     await page.waitForFunction(() => Boolean(window.notesModules));
     const app = await readFile(new URL('public/scripts/notebooks/notes-app.js', root), 'utf8');
     const panels = await readFile(new URL('public/scripts/notebooks/notes-panels.js', root), 'utf8');
+    const table = await readFile(new URL('public/scripts/notebooks/property-table.js', root), 'utf8');
+    const canvas = await readFile(new URL('public/scripts/notebooks/canvas.js', root), 'utf8');
     return {
         list: `${functionSource(app, 'noteButton')}\n${app.includes('function searchSnippet(') ? functionSource(app, 'searchSnippet') : 'const searchSnippet = () => null;'}\nreturn { noteButton, searchSnippet };`,
         links: ['section', 'notice', 'linksPanel'].map(name => functionSource(panels, name)).join('\n') + '\nreturn linksPanel;',
+        entries: `${functionSource(panels, 'pickEntry')}\nreturn pickEntry;`,
+        property: `${functionSource(await readFile(new URL('public/scripts/notebooks/notes-dialogs.js', root), 'utf8'), 'editPropertyCell')}\nreturn editPropertyCell;`,
+        table: ['propertyTableScopeCurrent', 'bindPropertyTableTouchScroll', 'createPropertyTableView']
+            .map(name => functionSource(table, name)).join('\n') + '\nreturn createPropertyTableView;',
+        lore: ['notice', 'publishFlow', 'bindingRow', 'contextItem', 'usedItem', 'contextPreview'].map(name => functionSource(panels, name)).join('\n')
+            + '\nreturn { publishFlow, bindingRow, contextPreview };',
+        canvas: ['canvasBounds', 'canvasEdgePoint', 'svgElement', 'canvasColor', 'canvasDiagram'].map(name => functionSource(canvas, name)).join('\n') + '\nreturn canvasDiagram;',
     };
 }
 
@@ -244,5 +253,181 @@ test('an embedded note inside an element the note gave a title keeps its control
         first: [card(true, 'Recolher incorporação'), card(false, 'Recolher incorporação')],
         folded: [card(true, 'Mostrar incorporação'), card(false, 'Mostrar incorporação')],
         divTitle: 'Home',
+    });
+});
+
+test('Notes leaves the names it shows alone: folders, notebook buttons and property names', async ({ page }) => {
+    const sources = await openNotes(page);
+    const result = await page.evaluate(async ([dictionary, listSource]) => {
+        const { h, button, field, formatTime } = window.notesModules;
+        const { noteButton } = new Function('h', 'button', 'formatTime', 'translate', 'app', listSource)(h, button, formatTime, text => text, { state: {} });
+        window.observeNotes(dictionary);
+        const main = document.getElementById('notes');
+        main.append(
+            h('ul', {}, noteButton({ id: 'a', title: 'Plan', folder: 'Home', favourite: true, updatedAt: 0 }), noteButton({ id: 'b', title: 'Plan', folder: '', updatedAt: 0 })),
+            button('Close the door (2)', () => {}, { userText: true, title: 'Close the door (2 notes)' }),
+            button('Home', () => {}),
+            field('Home', h('input'), '', { userLabel: true }),
+            field('Home', h('input')));
+        await new Promise(resolve => setTimeout(resolve, 0));
+        const meta = [...main.querySelectorAll('.notes-note-meta')].map(element => element.textContent);
+        return {
+            folders: meta.map(value => value.split(' · ')[0]),
+            favourite: meta[0].includes(' · Favourite · '),
+            buttons: [...main.querySelectorAll(':scope > button')].map(control => [control.textContent, control.title]),
+            labels: [...main.querySelectorAll('label')].map(label => label.textContent),
+        };
+    }, [{ ...dictionary, 'Top level': 'Nível superior' }, sources.list]);
+    expect(result).toEqual({
+        folders: ['Home', 'Nível superior'],
+        favourite: true,
+        buttons: [['Close the door (2)', 'Close the door (2 notes)'], ['Início', '']],
+        labels: ['Home', 'Início'],
+    });
+});
+
+test('the Codex review\'s mixed captions translate their wording and keep a name that is also an interface word', async ({ page }) => {
+    const sources = await openNotes(page);
+    const result = await page.evaluate(async sources => {
+        const { h, button, field, headingOutline, userPhrase, localizeControls } = window.notesModules;
+        const { parsePropertyValue, propertyInput } = await import('/public/scripts/notebooks/property-values.js');
+        // Hypothetical entries for the three instructions (German word order for one of them); 'Home' and 'Close ${0}' as in pt-pt.json.
+        const dictionary = { Home: 'Início', 'Close ${0}': 'Fechar ${0}', 'Edit ${0}': '${0} bearbeiten',
+            'Choose an entry in ${0}.': 'Escolha uma entrada em ${0}.', 'Web link: ${0}': 'Ligação web: ${0}' };
+        window.notesDictionary = dictionary;
+        window.observeNotes(dictionary);
+        const main = document.getElementById('notes');
+        const shown = [];
+        const show = content => { shown.push(content); main.append(content); return new Promise(() => {}); };
+        const clear = element => element.replaceChildren();
+        const editPropertyCell = new Function('h', 'button', 'field', 'clear', 'propertyInput', 'parsePropertyValue', 'fieldId', 'dialog', 'userPhrase', sources.property)(
+            h, button, field, clear, propertyInput, parsePropertyValue, name => `notes-${name}`, show, userPhrase);
+        void editPropertyCell({}, { title: 'Plan' }, 'Home', { editable: true, kind: 'text', value: 'x', display: 'x' });
+        const pickEntry = new Function('h', 'button', 'callGenericPopup', 'POPUP_TYPE', 'userPhrase', sources.entries)(h, button, show, { TEXT: 1 }, userPhrase);
+        void pickEntry({ request: async () => ({ entries: [] }), failed: () => false }, 'Home');
+        const linksPanel = new Function('h', 'button', 'headingOutline', 'userPhrase', 'jumpTo', sources.links)(h, button, headingOutline, userPhrase, () => {});
+        main.append(...await linksPanel({ state: { notebookId: 'book', note: { id: 'n_0000000000000001', folder: '' } }, elements: { textarea: { value: '' } },
+            failed: () => false, request: async () => ({ outgoing: [{ status: 'external', label: 'Home', target: 'Home' }], backlinks: [] }) }));
+        await new Promise(resolve => setTimeout(resolve, 0));
+        localizeControls(main, dictionary);
+        return [main.querySelector('.notes-property-dialog h3').textContent, shown[1].querySelector('p').textContent,
+            [...main.querySelectorAll('li')].at(-1).textContent];
+    }, sources);
+    expect(result).toEqual(['Home bearbeiten', 'Escolha uma entrada em Home.', 'Ligação web: Home']);
+});
+
+test('a property cell with no value translates Not set and its instruction and keeps the names, before and after an edit', async ({ page }) => {
+    const sources = await openNotes(page);
+    const result = await page.evaluate(async source => {
+        const { h, button, field, localizeControls } = window.notesModules;
+        const { clear, setButtonPressed } = await import('/public/scripts/notebooks/dom.js');
+        const { parsePropertyValue } = await import('/public/scripts/notebooks/property-values.js');
+        const { t, translate } = await import('/public/scripts/i18n.js');
+        // 'Home' and 'Not set' as in pt-pt.json; the instruction entry is hypothetical, with the names in another order.
+        const dictionary = { Home: 'Início', 'Not set': 'Não definido', 'Close ${0}': 'Fechar ${0}', 'Edit ${0} for ${1}': 'Editar ${0} de ${1}' };
+        window.notesDictionary = dictionary;
+        window.observeNotes(dictionary);
+        const row = cell => ({ id: 'n_0000000000000001', title: 'Home', path: 'Home.md', revision: 'r', cells: { Home: cell } });
+        const replies = [{ kind: 'missing', editable: true, display: 'Not set' }, { kind: 'text', value: 'Close the door', editable: true, display: 'Close the door' }]
+            .map(cell => ({ status: 'success', rows: [row(cell)], columns: ['Home'], availableColumns: ['Home'], offset: 0, total: 1, nextOffset: null, limited: {} }));
+        let edited;
+        const app = { state: { workspaceView: 'table', account: 'owner', notebookId: 'book', workspaceVersion: 1, notebookSelectionVersion: 1, noteRequestVersion: 1 },
+            request: async () => replies[Math.min(edited ? 1 : 0, 1)], openNote: () => {}, toast: () => {}, closeNotebookView: () => {},
+            refreshTree: async () => {}, dialogs: { editPropertyCell: async () => { edited = true; return true; } } };
+        const container = h('section');
+        document.getElementById('notes').append(container);
+        const createPropertyTableView = new Function('h', 'button', 'field', 'clear', 'setButtonPressed', 'parsePropertyValue', 't', 'translate', source)(
+            h, button, field, clear, setButtonPressed, parsePropertyValue, t, translate);
+        const settle = async () => {
+            for (let turn = 0; turn < 5; turn++) await new Promise(resolve => setTimeout(resolve, 0));
+            localizeControls(document.getElementById('notes'), dictionary);
+        };
+        const read = () => {
+            const cell = container.querySelector('td[data-property-key="Home"] > *');
+            return { heading: [...container.querySelectorAll('thead th')].map(cell => cell.textContent), note: container.querySelector('.notes-table-note').textContent,
+                cell: cell.textContent, label: cell.getAttribute('aria-label') };
+        };
+        await createPropertyTableView(app, container).open();
+        await settle();
+        const first = read();
+        container.querySelector('td[data-property-key="Home"] > button').click();
+        await settle();
+        return { first, updated: read() };
+    }, sources.table);
+    expect(result).toEqual({
+        first: { heading: ['Note', 'Home'], note: 'Home', cell: 'Não definido', label: 'Editar Home de Home' },
+        updated: { heading: ['Note', 'Home'], note: 'Home', cell: 'Close the door', label: 'Editar Home de Home' },
+    });
+});
+
+test('a canvas card the user labelled translates its label through Select card and keeps the name', async ({ page }) => {
+    const sources = await openNotes(page);
+    const result = await page.evaluate(async source => {
+        const { localizeControls } = window.notesModules;
+        const { t } = await import('/public/scripts/i18n.js');
+        // 'Home' as in pt-pt.json; the 'Select card: ${0}' and 'Text card' entries are hypothetical.
+        const dictionary = { Home: 'Início', 'Select card: ${0}': 'Selecionar cartão: ${0}', 'Text card': 'Cartão de texto' };
+        window.notesDictionary = dictionary;
+        window.observeNotes(dictionary);
+        const canvasDiagram = new Function('t', source)(t);
+        const card = (id, label, user, x) => ({ id, type: user ? 'file' : 'text', x, y: 0, width: 200, height: 80, label, user });
+        document.getElementById('notes').append(canvasDiagram([card('a', 'Home', true, 0), card('b', 'Text card', false, 300)], [], { viewportWidth: 800 }));
+        await new Promise(resolve => setTimeout(resolve, 0));
+        localizeControls(document.getElementById('notes'), dictionary);
+        return [...document.querySelectorAll('[data-canvas-node]')].map(group => [group.getAttribute('aria-label'), group.querySelector('text').textContent,
+            group.querySelector(':scope > title').textContent]);
+    }, sources.canvas);
+    expect(result).toEqual([['Selecionar cartão: Home', 'Home', 'Home'], ['Selecionar cartão: Cartão de texto', 'Cartão de texto', 'Cartão de texto']]);
+});
+
+test('Whole note translates only for a whole-note selection; a heading the user named Whole note stays as written', async ({ page }) => {
+    const sources = await openNotes(page);
+    const result = await page.evaluate(async source => {
+        const { h, button, localizeControls, userPhrase, regionLabel, proposalLabel } = window.notesModules;
+        const { formatTime } = await import('/public/scripts/notebooks/dom.js');
+        // A hypothetical 'Whole note' entry (no language has one), and 'Home' as in pt-pt.json.
+        const dictionary = { 'Whole note': 'Nota inteira', Home: 'Início', 'Close ${0}': 'Fechar ${0}' };
+        window.notesDictionary = dictionary;
+        window.observeNotes(dictionary);
+        const main = document.getElementById('notes');
+        const shown = [];
+        const show = content => { shown.push(content); main.append(content); return new Promise(() => {}); };
+        const { publishFlow, bindingRow, contextPreview } = new Function('h', 'button', 'formatTime', 'userPhrase', 'regionLabel', 'proposalLabel', 'dialog',
+            'callGenericPopup', 'POPUP_TYPE', 'LORE_STATUS', 'newOperationId', 'refreshWorldInfo', 'renderDetails', source)(h, button, formatTime, userPhrase,
+            regionLabel, proposalLabel, show, show, { TEXT: 1 }, {}, () => 'operation', async () => {}, () => {});
+        // As src/notebooks/lore.js sends them: the same label for a whole-note selection and for a heading named 'Whole note'.
+        const whole = { kind: 'note' };
+        const heading = { kind: 'heading', path: ['Whole note'] };
+        const preview = selector => ({ selector, selectorLabel: 'Whole note', noteTitle: 'Plan', book: 'Book', entryTitle: 'Entry', createsEntry: true, after: 'Text', enabled: true });
+        const app = selector => ({ state: { notebookId: 'book', note: { id: 'n_0000000000000001', revision: 'r', title: 'Plan' } }, flushSave: async () => true,
+            failed: () => false, request: async () => ({ preview: preview(selector) }), toast: () => {}, compareTexts: () => {} });
+        // Publish preview ('From: …'), notes-panels.js publishFlow.
+        for (const selector of [whole, heading]) void publishFlow(app(selector), { selector, book: 'Book', uid: null, title: 'Entry' });
+        // Binding title and, from its 'Copy lore into note' button, the replace confirmation, notes-panels.js bindingRow.
+        const rows = [whole, heading].map(selector => bindingRow(app(selector), { id: 'b', status: 'lore_changed', selector, selectorLabel: 'Whole note',
+            book: 'Book', uid: 1, entryTitle: 'Entry', policy: 'manual' }));
+        main.append(...rows);
+        for (const row of rows) [...row.querySelectorAll('button')].find(control => control.textContent === 'Copy lore into note').click();
+        // Context preview, notes-panels.js contextPreview: the server sends heading paths, and lore-bound regions, as text.
+        void contextPreview({ failed: value => !value, request: async route => (route === '/context/preview'
+            ? { usedTokens: 1, budgetTokens: 2, items: [{ title: 'Plan', section: 'Whole note', mode: 'reference', tokens: 3 }], excludedBound: [{ title: 'Plan', regions: ['Whole note'] }] }
+            : null) }, { chat: 'chat' });
+        for (let turn = 0; turn < 5; turn++) await new Promise(resolve => setTimeout(resolve, 0));
+        // A later pass, as applyLocale makes over the whole page.
+        localizeControls(main, dictionary);
+        const text = element => element.textContent.trim();
+        return {
+            // Each dialog is recognised by its content, as they open in whatever order their requests settle.
+            from: shown.filter(content => content.matches('.notes-publish-preview')).map(content => text(content.querySelector('h3 + p'))).sort(),
+            titles: rows.map(row => text(row.querySelector('.notes-binding-title'))),
+            replace: shown.filter(content => content.matches('p')).map(content => text(content).slice(0, 22)).sort(),
+            context: [...shown.find(content => content.querySelector('li')).querySelectorAll('li, .notes-hint')].map(text),
+        };
+    }, sources.lore);
+    expect(result).toEqual({
+        from: ['From: Plan, Nota inteira', 'From: Plan, Whole note'].sort(),
+        titles: ['Nota inteira → Book: Entry', 'Whole note → Book: Entry'],
+        replace: ['Replace "Nota inteira"', 'Replace "Whole note" i'].sort(),
+        context: ['Plan (Whole note): reference, about 3 tokens', 'Sent through the lorebook instead: Plan (Whole note).'],
     });
 });

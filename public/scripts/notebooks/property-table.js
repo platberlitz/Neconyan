@@ -1,3 +1,4 @@
+import { t, translate } from '../i18n.js';
 import { button, clear, field, h, setButtonPressed } from './dom.js';
 import { parsePropertyValue } from './property-values.js';
 
@@ -172,7 +173,7 @@ export function createPropertyTableView(app, container) {
                 else { app.toast('info', 'Choose up to 12 property columns.'); return; }
                 columns = [...next];
                 void refresh();
-            }, { pressed: selected.includes(key) });
+            }, { pressed: selected.includes(key), userText: true });
             columnButtons.set(key, control);
             list.append(control);
         }
@@ -199,20 +200,24 @@ export function createPropertyTableView(app, container) {
         const rowVersion = requestVersion;
         const usable = () => current(rowScope) && rowVersion === requestVersion;
         const table = h('table', { class: 'notes-property-table' }, h('caption', { class: 'notes-hint', text: 'Saved note properties' }),
-            h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: 'Note' }), ...shown.map(key => h('th', { scope: 'col', text: key })))));
+            h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: 'Note' }), ...shown.map(key => h('th', { scope: 'col', text: key, 'data-i18n-ignore': '' })))));
         const body = h('tbody');
         for (const row of rows) {
             const link = button(row.title, () => { if (usable()) void app.openNote(rowScope.notebookId, row.id, { pushBack: true }); }, { className: 'notes-table-note', userText: true });
-            const line = h('tr', { 'data-table-note': row.id }, h('th', { scope: 'row' }, link, h('p', { class: 'notes-muted', text: row.path })));
+            const line = h('tr', { 'data-table-note': row.id }, h('th', { scope: 'row' }, link, h('p', { class: 'notes-muted', text: row.path, 'data-i18n-ignore': '' })));
             for (const key of shown) {
                 const cell = Object.hasOwn(row.cells ?? {}, key) ? row.cells[key] : { display: 'Not set', editable: false };
-                const content = cell?.editable === true ? button(String(cell.display ?? 'Not set'), async () => {
+                // A saved value is the user's; a read-only cell's wording ('Not set', '... Edit in source.') stays with the run-time localiser.
+                const value = ['text', 'list', 'number', 'boolean'].includes(cell?.kind);
+                // An editable cell's label holds the property and note names, and an attribute cannot be split. So the cell is kept from
+                // the run-time localiser: its label and, when it shows no value, its 'Not set' are translated here, and the names go in as written.
+                const content = cell?.editable === true ? button(value ? String(cell.display ?? 'Not set') : translate(String(cell.display ?? 'Not set')), async () => {
                     if (!usable()) return;
                     const saved = await app.dialogs.editPropertyCell(app, { ...row, notebookId: rowScope.notebookId }, key, cell, { isCurrent: usable });
                     if (saved && usable()) { await app.refreshTree(); if (usable()) await refresh(); }
-                }, { className: 'notes-property-cell' })
-                    : h('span', { class: 'notes-muted', text: String(cell?.display ?? 'Edit in source.') });
-                if (cell?.editable === true) content.setAttribute('aria-label', `Edit ${key} for ${row.title}`);
+                }, { className: 'notes-property-cell', userText: true })
+                    : h('span', { class: 'notes-muted', text: String(cell?.display ?? 'Edit in source.'), 'data-i18n-ignore': value ? '' : null });
+                if (cell?.editable === true) content.setAttribute('aria-label', t`Edit ${key} for ${row.title}`);
                 line.append(h('td', { 'data-property-key': key }, content));
             }
             body.append(line);

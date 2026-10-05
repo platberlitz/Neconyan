@@ -1,6 +1,6 @@
 import { characters, getCurrentChatId, this_chid } from '../../script.js';
 import { selected_group } from '../group-chats.js';
-import { translate } from '../i18n.js';
+import { t, translate } from '../i18n.js';
 import { getCurrentUserHandle } from '../user.js';
 import { accountStorage } from '../util/AccountStorage.js';
 import { loadStylesheetAsync } from '../dynamic-styles.js';
@@ -531,7 +531,10 @@ function noteButton(summary, extra = null) {
         h('button', { type: 'button', class: `notes-note-link${current ? ' is-current' : ''}`, 'aria-current': current ? 'true' : null,
             onclick: () => void openNote(app.state.notebookId, summary.id, { pushBack: true }) },
         h('span', { class: 'notes-note-title', text: summary.title || 'Untitled', 'data-i18n-ignore': summary.title ? '' : null }),
-        h('span', { class: 'notes-note-meta', text: [summary.folder || 'Top level', summary.favourite ? 'Favourite' : '', formatTime(summary.updatedAt)].filter(Boolean).join(' · ') }),
+        // The folder is the user's; 'Top level' and the rest of the line stay with the run-time localiser, as before.
+        h('span', { class: 'notes-note-meta' },
+            summary.folder ? h('span', { text: summary.folder, 'data-i18n-ignore': '' }) : 'Top level',
+            [summary.favourite ? 'Favourite' : '', formatTime(summary.updatedAt)].filter(Boolean).map(part => ` · ${part}`).join('')),
         extra));
 }
 
@@ -561,9 +564,10 @@ function renderNav() {
     clear(nav);
     const notebookRow = h('div', { class: 'notes-notebook-row', role: 'group', 'aria-label': 'Notebooks' });
     for (const notebook of state.notebooks) {
+        // The title is translated here, because userText keeps the run-time localiser off the whole button.
         notebookRow.append(button(notebook.name, () => void selectNotebook(notebook.id), {
-            className: 'notes-choice notes-notebook', pressed: notebook.id === state.notebookId,
-            title: `${notebook.name} (${notebook.noteCount} notes${notebook.origin === 'import' ? ', imported' : ''})`,
+            className: 'notes-choice notes-notebook', pressed: notebook.id === state.notebookId, userText: true,
+            title: notebook.origin === 'import' ? t`${notebook.name} (${notebook.noteCount} notes, imported)` : t`${notebook.name} (${notebook.noteCount} notes)`,
         }));
     }
     notebookRow.append(button('New notebook', () => void app.dialogs.newNotebook(app), { icon: 'fa-plus', className: 'notes-quiet' }));
@@ -603,7 +607,7 @@ function renderNav() {
     folders.append(button(`All notes (${tree?.noteCount ?? 0})`, () => void chooseFolder(null), { className: 'notes-choice', pressed: state.folder === null }));
     folders.append(button(`Top level (${tree?.rootCount ?? 0})`, () => void chooseFolder(''), { className: 'notes-choice', pressed: state.folder === '' }));
     for (const folder of tree?.folders ?? []) {
-        folders.append(button(`${folder.path} (${folder.count})`, () => void chooseFolder(folder.path), { className: 'notes-choice', pressed: state.folder === folder.path }));
+        folders.append(button(`${folder.path} (${folder.count})`, () => void chooseFolder(folder.path), { className: 'notes-choice', pressed: state.folder === folder.path, userText: true }));
     }
     nav.append(keyed('folders', section('Folders', folders, h('div', { class: 'notes-nav-actions' },
         button('New folder', () => void app.dialogs.newFolder(app), { icon: 'fa-folder-plus', className: 'notes-quiet' }),
@@ -613,9 +617,11 @@ function renderNav() {
     const more = state.list.total > state.list.offset + state.list.notes.length
         ? button('Show more', () => void pageList(200), { className: 'notes-quiet' }) : null;
     const less = state.list.offset > 0 ? button('Show earlier', () => void pageList(-200), { className: 'notes-quiet' }) : null;
-    nav.append(keyed('list', section(state.folder === null ? 'All notes' : state.folder || 'Top level',
+    const listSection = section(state.folder === null ? 'All notes' : state.folder || 'Top level',
         state.list.notes.length ? list : h('p', { class: 'notes-hint', text: 'No notes here yet. New note starts one.' }),
-        h('div', { class: 'notes-nav-actions' }, less, more))));
+        h('div', { class: 'notes-nav-actions' }, less, more));
+    if (state.folder) listSection.firstChild.setAttribute('data-i18n-ignore', '');
+    nav.append(keyed('list', listSection));
     const tool = (label, onClick, icon, className = '') => button(label, onClick, { icon, className: `notes-notebook-tool ${className}`.trim() });
     nav.append(keyed('views', section('Notebook views', h('div', { class: 'notes-notebook-tools' },
         tool('Graph', () => void openNotebookGraph(), 'fa-diagram-project', 'notes-graph-open'),
@@ -1499,7 +1505,7 @@ function showSuggestions(notes, found) {
                 textarea.setSelectionRange(found.start, textarea.selectionStart);
                 insertText(`${linkTextFor(note, notes)}]]`);
                 hideSuggest();
-            } }, h('span', { text: note.title, 'data-i18n-ignore': '' }), h('span', { class: 'notes-note-meta', text: note.folder || 'Top level' })));
+            } }, h('span', { text: note.title, 'data-i18n-ignore': '' }), h('span', { class: 'notes-note-meta', text: note.folder || 'Top level', 'data-i18n-ignore': note.folder ? '' : null })));
     });
     list.hidden = false;
     app.elements.textarea.setAttribute('aria-activedescendant', 'notes-suggest-0');
