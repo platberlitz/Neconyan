@@ -16,6 +16,7 @@
 - PR #24 (2026-10-05) `fix: slim the bottom chat bar on phone and desktop`
 - PR #25 (2026-10-05) `feat: the assistants can make agents for you`
 - PR #26 (2026-10-05) `feat: fit more character cards on screen in the phone list`
+- PR #27 (2026-10-05) `feat: add an AMOLED black theme`
 
 ## v1.1.0
 
