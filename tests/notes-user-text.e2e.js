@@ -54,10 +54,15 @@ async function openNotes(page) {
     const table = await readFile(new URL('public/scripts/notebooks/property-table.js', root), 'utf8');
     const canvas = await readFile(new URL('public/scripts/notebooks/canvas.js', root), 'utf8');
     return {
+        // userToast is new in this change; on older code a toast is shown as it was, through toastr directly.
+        toast: `${app.includes('function userToast(') ? functionSource(app, 'userToast') : 'const userToast = (kind, message) => globalThis.toastr[kind](message);'}\nreturn userToast;`,
         list: `${functionSource(app, 'noteButton')}\n${app.includes('function searchSnippet(') ? functionSource(app, 'searchSnippet') : 'const searchSnippet = () => null;'}\nreturn { noteButton, searchSnippet };`,
         links: ['section', 'notice', 'linksPanel'].map(name => functionSource(panels, name)).join('\n') + '\nreturn linksPanel;',
         entries: `${functionSource(panels, 'pickEntry')}\nreturn pickEntry;`,
         property: `${functionSource(await readFile(new URL('public/scripts/notebooks/notes-dialogs.js', root), 'utf8'), 'editPropertyCell')}\nreturn editPropertyCell;`,
+        review: `${functionSource(await readFile(new URL('public/scripts/notebooks/notes-dialogs.js', root), 'utf8'), 'reviewProposal')}\nreturn reviewProposal;`,
+        tool: `${functionSource(await readFile(new URL('public/scripts/neconyan-assistant-tools.js', root), 'utf8'), 'noteTool')}\nreturn noteTool;`,
+        job: `${functionSource(await readFile(new URL('public/scripts/neconyan-assistant-job-review.js', root), 'utf8'), 'review')}\nreturn review;`,
         table: ['propertyTableScopeCurrent', 'bindPropertyTableTouchScroll', 'createPropertyTableView']
             .map(name => functionSource(table, name)).join('\n') + '\nreturn createPropertyTableView;',
         lore: ['notice', 'publishFlow', 'bindingRow', 'contextItem', 'usedItem', 'contextPreview'].map(name => functionSource(panels, name)).join('\n')
@@ -430,4 +435,85 @@ test('Whole note translates only for a whole-note selection; a heading the user 
         replace: ['Replace "Nota inteira"', 'Replace "Whole note" i'].sort(),
         context: ['Plan (Whole note): reference, about 3 tokens', 'Sent through the lorebook instead: Plan (Whole note).'],
     });
+});
+
+test('a Notes toast carrying a name translates its message whole and shows the name exactly, through the observer and a later pass', async ({ page }) => {
+    const sources = await openNotes(page);
+    await page.addScriptTag({ url: '/public/lib/jquery-3.5.1.min.js' });
+    await page.addScriptTag({ url: '/public/lib/toastr.min.js' });
+    const book = 'Home';
+    const entry = '"<b>Close</b> the door" & \'it\'';
+    const result = await page.evaluate(async ([source, book, entry]) => {
+        const { localizeControls } = window.notesModules;
+        const { t } = await import('/public/scripts/i18n.js');
+        // As script.js sets it for the whole app.
+        window.toastr.options = { ...window.toastr.options, escapeHtml: true, timeOut: 0, extendedTimeOut: 0 };
+        const userToast = new Function(source)();
+        const notesApp = await fetch('/public/scripts/notebooks/notes-app.js').then(response => response.text());
+        const show = async dictionary => {
+            window.notesDictionary = dictionary;
+            // The site in notes-panels.js publishFlow, as it is written: t`` on new code, a plain template before.
+            userToast('success', notesApp.includes('function userToast(') ? t`Published to ${book}: ${entry}` : `Published to ${book}: ${entry}`);
+            await new Promise(resolve => setTimeout(resolve, 0));
+            localizeControls(document.body, dictionary);
+            const toast = document.querySelector('#toast-container .toast:first-child');
+            return { message: toast.querySelector('.toast-message').textContent, html: toast.querySelector('.toast-message b') !== null,
+                messageMarked: toast.querySelector('.toast-message').hasAttribute('data-i18n-ignore'),
+                toastMarked: toast.hasAttribute('data-i18n-ignore'), kind: toast.className };
+        };
+        // pt-pt as shipped: 'Home' is 'Início' and has 'Close ${0}'; no language has the toast's own key yet.
+        const shipped = { Home: 'Início', 'Close ${0}': 'Fechar ${0}' };
+        window.observeNotes(shipped);
+        const missing = await show(shipped);
+        const supplied = await show({ ...shipped, 'Published to ${0}: ${1}': 'Publicado em ${0}: ${1}' });
+        return { missing, supplied };
+    }, [sources.toast, book, entry]);
+    expect(result).toEqual({
+        missing: { message: `Published to Home: ${entry}`, html: false, messageMarked: true, toastMarked: false, kind: 'toast toast-success' },
+        supplied: { message: `Publicado em Home: ${entry}`, html: false, messageMarked: true, toastMarked: false, kind: 'toast toast-success' },
+    });
+});
+
+test('the assistant\'s proposal review, from Notes and from both chat routes, translates its wording and keeps the note title and sections as written', async ({ page }) => {
+    const sources = await openNotes(page);
+    const result = await page.evaluate(async sources => {
+        const { localizeControls } = window.notesModules;
+        // 'Home' as in pt-pt.json; the other entries are hypothetical.
+        const dictionary = { Home: 'Início', 'Allow this change? ${0}': 'Permitir esta alteração? ${0}', 'Create note: ${0}': 'Criar nota: ${0}',
+            'Sections: ${0}': 'Secções: ${0}', 'Whole note': 'Nota inteira' };
+        window.notesDictionary = dictionary;
+        window.observeNotes(dictionary);
+        const { buildAssistantReview, buildNoteProposalReview } = await import('/public/scripts/neconyan-assistant-review.js');
+        const { formatDiff } = await import('/public/scripts/notebooks/line-diff.js');
+        // A section named 'Home' alone is what the run-time localiser's 'Sections: ${0}' pattern would turn into 'Início'.
+        const summary = { operation: 'create', label: 'Create note: Home', noteTitle: 'Home', changedRegions: ['Home'] };
+        const notesSummary = { ...summary, changedRegions: ['Whole note', 'Home'] };
+        const main = document.getElementById('notes');
+        const shown = {};
+        // The popup is replaced: it shows each route's review in the page and never answers.
+        const popup = route => content => { shown[route] = content; main.append(content); return new Promise(() => {}); };
+        // Notes: the real reviewProposal from notes-dialogs.js.
+        const reviewProposal = new Function('buildNoteProposalReview', 'formatDiff', 'callGenericPopup', 'POPUP_TYPE', sources.review)(
+            buildNoteProposalReview, formatDiff, popup('notes'), { CONFIRM: 2 });
+        void reviewProposal({ request: async () => ({ state: 'waiting', summary: notesSummary, before: '', after: 'Home' }), failed: () => false }, 'p1');
+        // Chat, assistant tools: the real noteTool from neconyan-assistant-tools.js.
+        const noteTool = new Function('postNotebook', 'shortHash', 'formatDiff', 'callGenericPopup', 'POPUP_TYPE', 'POPUP_RESULT', 'buildNoteProposalReview', sources.tool)(
+            async route => (route === '/assistant/tool' ? { status: 'needs_approval', proposalId: 'p2', summary } : { status: 'success', summary, before: '', after: 'Home' }),
+            text => text, formatDiff, popup('tools'), { CONFIRM: 2 }, { AFFIRMATIVE: 1 }, buildNoteProposalReview);
+        void noteTool('create')({}, { invocation: {}, callId: 'call', assert: () => {} });
+        // Chat, background jobs: the real review from neconyan-assistant-job-review.js.
+        const reviewJob = new Function('getCurrentUserHandle', 'getJobApproval', 'decideJobApproval', 'callGenericPopup', 'POPUP_RESULT', 'POPUP_TYPE',
+            'buildNoteProposalReview', 'buildAssistantReview', sources.job)(() => 'owner',
+            async () => ({ decision: null, proposal: { kind: 'neconyan-note-proposal', summary, diff: '+ Home' } }),
+            async () => {}, popup('jobs'), { AFFIRMATIVE: 1 }, { CONFIRM: 2 }, buildNoteProposalReview, buildAssistantReview);
+        void reviewJob({ id: 'job', result: { approval: { id: 'approval' } } }, 'owner');
+        for (let turn = 0; turn < 5; turn++) await new Promise(resolve => setTimeout(resolve, 0));
+        // A later pass, as applyLocale makes over the whole page.
+        localizeControls(main, dictionary);
+        const lines = route => [...shown[route].querySelectorAll('p')].map(line => line.textContent).filter(line => /Home/.test(line));
+        return { notes: lines('notes'), tools: lines('tools'), jobs: lines('jobs') };
+    }, sources);
+    const chat = ['Permitir esta alteração? Criar nota: Home', 'Secções: Home'];
+    // The sections arrive as text, so 'Whole note' is shown as written even with an entry: it may be a heading the user named so.
+    expect(result).toEqual({ notes: ['Permitir esta alteração? Criar nota: Home', 'Secções: Whole note, Home'], tools: chat, jobs: chat });
 });

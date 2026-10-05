@@ -33,6 +33,16 @@ const lf = text => String(text ?? '').replace(/\r\n?/g, '\n');
 const isPhone = () => globalThis.matchMedia?.(PHONE_QUERY).matches === true;
 const toast = (kind, message) => globalThis.toastr?.[kind]?.(message);
 
+/**
+ * A toast whose message holds the user's words and was translated whole with t``. toastr shows it as text (escapeHtml), and only
+ * the message is marked, before the page's observer runs, so the run-time localiser leaves it alone. The toast itself is unchanged.
+ */
+function userToast(kind, message) {
+    const shown = globalThis.toastr?.[kind]?.(message);
+    shown?.find?.('.toast-message').attr('data-i18n-ignore', '');
+    return shown;
+}
+
 function readPrefs() {
     try {
         const value = JSON.parse(accountStorage.getItem(PREFS_KEY) ?? '{}');
@@ -1645,7 +1655,7 @@ async function changeNote(changes, reason = 'edit') {
 }
 
 Object.assign(app, {
-    request, failed, toast, isPhone, refreshTree, loadNotebooks, selectNotebook, openNote, reloadNote, flushSave, insertText, setStatus,
+    request, failed, toast, userToast, isPhone, refreshTree, loadNotebooks, selectNotebook, openNote, reloadNote, flushSave, insertText, setStatus,
     createNote, moveNote, changeNote, compareTexts, showBanner, clearBanner, renderNav, renderEditor, applyLayout, setPane,
     chatScope: currentChatScope, lf, readPrefs, writePrefs, hide: hideNotes, setView, jumpToOffset, closeNotebookView, openNotebookGraph, openNotebookTable, openNotebookCanvas,
 });

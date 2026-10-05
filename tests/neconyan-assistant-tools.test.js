@@ -78,6 +78,9 @@ async function runtime({ assistant = 'miso-male', group = null } = {}) {
         POPUP_TYPE: { CONFIRM: 1 }, POPUP_RESULT: { AFFIRMATIVE: 1 },
         callGenericPopup: async node => { context.reviews.push(node); return context.confirm(node); },
     }));
+    // The proposal review translates its wording (neconyan-assistant-review.js); English here, as with no locale loaded.
+    jest.unstable_mockModule('../public/scripts/i18n.js', () => ({ translate: text => text,
+        t: (strings, ...values) => strings.reduce((text, part, index) => text + part + (index < values.length ? values[index] : ''), '') }));
     jest.unstable_mockModule('../public/scripts/world-info.js', () => ({ world_names: [...context.books.keys()], loadWorldInfo: async name => structuredClone(context.books.get(name)) }));
     jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/pathfinder/entry-manager.js', () => ({
         updateEntry: async (book, uid, content, title, expected, options) => {

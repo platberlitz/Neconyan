@@ -6,6 +6,7 @@ import { append, button, choiceRow, clear, field, formatBytes, formatTime, h } f
 import { formatDiff } from './line-diff.js';
 import { headingOutline } from './render.js';
 import { proposalLabel, regionLabel, userPhrase } from './user-text.js';
+import { t } from '../i18n.js';
 
 const TABS = [['properties', 'Properties'], ['links', 'Links'], ['lore', 'Lore'], ['ai', 'AI access'], ['history', 'History']];
 const RESERVED_PROPERTIES = new Set(['title', 'tags', 'tag', 'aliases', 'alias', 'type', 'neconyan_id']);
@@ -327,7 +328,7 @@ async function publishFlow(app, { selector = null, book = null, uid = undefined,
     const result = await app.request('/lore/publish', { operationId: newOperationId('publish'), notebookId: state.notebookId, noteId: state.note.id,
         selector, book, uid: preview.uid ?? uid, title, expectedSourceHash: preview.sourceHash, expectedTargetHash: preview.targetHash });
     if (app.failed(result, 'Publishing did not finish. Nothing was overwritten.')) return;
-    app.toast('success', `Published to ${result.book}: ${result.entryTitle}`);
+    app.userToast('success', t`Published to ${result.book}: ${result.entryTitle}`);
     await refreshWorldInfo(result.book);
     void renderDetails(app);
 }

@@ -6,6 +6,7 @@ import { formatDiff } from './line-diff.js';
 import { NOTE_TEMPLATES, templateById } from './templates.js';
 import { parsePropertyValue, propertyInput } from './property-values.js';
 import { proposalLabel, userPhrase } from './user-text.js';
+import { t } from '../i18n.js';
 
 /* Small dialogs used by the Notes workspace. User text is always placed with textContent. */
 
@@ -207,7 +208,7 @@ export async function quickNote(app) {
     const text = area.value;
     if (!ok || !text.trim()) return;
     const created = await app.createNote({ folder: 'Inbox', title: '', text });
-    if (created) app.toast('success', `Saved to Inbox as '${created.title}'.`);
+    if (created) app.userToast('success', t`Saved to Inbox as '${created.title}'.`);
 }
 
 /* ---------- choosing and linking ---------- */
@@ -265,7 +266,7 @@ export async function uploadAttachment(app) {
     const file = await picked;
     if (!file) return;
     if (!app.state.note) return;
-    app.toast('info', `Uploading ${file.name}...`);
+    app.userToast('info', t`Uploading ${file.name}...`);
     const result = await notesUpload('/attachments/upload', { operationId: newOperationId('attach'), notebookId: app.state.notebookId, name: file.name, folder: 'attachments' }, file);
     if (app.failed(result, 'The file could not be added.')) return;
     const notePath = app.state.note.folder ? app.state.note.folder.split('/').map(() => '..').join('/') + '/' : '';
@@ -371,7 +372,7 @@ export async function importNotes(app) {
     const picked = pickFile('.zip,.md,.markdown,application/zip,text/markdown');
     const file = await picked;
     if (!file) return;
-    app.toast('info', `Checking ${file.name}...`);
+    app.userToast('info', t`Checking ${file.name}...`);
     const staged = await notesUpload('/import/stage', {}, file);
     if (app.failed(staged, 'That file could not be imported.')) return;
     const stage = staged.stage;
@@ -422,7 +423,7 @@ async function previewImport(app, stage) {
     if (ok) {
         const committed = await app.request('/import/commit', { operationId: newOperationId('import'), stageId: stage.stageId, name: name.value.trim() || stage.name });
         if (app.failed(committed, 'The import did not finish. It is still available under Unfinished imports.')) { await refreshImportStages(app); return; }
-        app.toast('success', `Imported ${committed.imported?.notes ?? 0} note(s) into '${committed.notebook?.name}'.`);
+        app.userToast('success', t`Imported ${committed.imported?.notes ?? 0} note(s) into '${committed.notebook?.name}'.`);
         await app.loadNotebooks(committed.notebook?.id);
         return;
     }
@@ -561,7 +562,7 @@ export async function captureFromChat(app, capture) {
     }
     const result = await app.request('/notes/capture', body);
     if (app.failed(result, 'The passage could not be saved.')) return;
-    app.toast('success', `Saved to '${result.title ?? target?.title ?? 'note'}'.`);
+    app.userToast('success', t`Saved to '${result.title ?? target?.title ?? 'note'}'.`);
     await app.refreshTree();
     if (result.noteId) await app.openNote(app.state.notebookId, result.noteId);
 }
