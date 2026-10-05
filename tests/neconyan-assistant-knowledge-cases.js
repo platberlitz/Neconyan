@@ -53,5 +53,6 @@ export const refreshedKnowledgeCases = [
     ['How do I choose which messages Scratchpad reads?', 'scratchpad.context', 'Picked messages and swipes replace the recent setting'],
     ['How do I compare swipes in Scratchpad?', 'scratchpad.context', 'picking alternatives does not change the story\'s selected swipe'],
     ['How do I save a lorebook entry Scratchpad suggested?', 'scratchpad.changes', 'nothing changes until saved'],
+    ['How do I add alternate greetings in Scratchpad?', 'scratchpad.changes', 'action append and only the new texts'],
     ['What is a Scratchpad Temporary session?', 'scratchpad.sessions', 'disappears when another session is opened or started'],
 ];

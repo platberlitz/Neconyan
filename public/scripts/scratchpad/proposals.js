@@ -99,6 +99,9 @@ export function normaliseChange(value) {
         const character = text(value.character, 200).trim();
         const field = String(value.field ?? '');
         if (!character) fail('This character change does not say which character.');
+        const append = value.action === 'append' || value.action === 'add';
+        if (append && field !== 'alternate_greetings') fail('Scratchpad can only append alternate greetings.');
+        if (!append && ![undefined, 'replace', 'edit'].includes(value.action)) fail('This character change has an unknown action.');
         if (Object.hasOwn(TEXT_FIELDS, field)) {
             if (typeof value.value !== 'string') fail('This character change has no new text.');
             return { type: 'character', character, field, value: text(value.value), reason };
@@ -107,7 +110,8 @@ export function normaliseChange(value) {
             const list = Array.isArray(value.value)
                 ? value.value.map(item => String(item ?? '')).filter(item => item.trim())
                 : field === 'tags' ? stringList(value.value) : String(value.value ?? '').split(/\n\s*---\s*\n/).filter(item => item.trim());
-            return { type: 'character', character, field, value: list.slice(0, 200), reason };
+            if (append && !list.length) fail('This addition has no new greetings.');
+            return { type: 'character', character, field, value: list.slice(0, 200), reason, ...(append ? { action: 'append' } : {}) };
         }
         fail('Scratchpad cannot change that character field.');
     }
@@ -169,6 +173,7 @@ export function describeChange(change) {
         return `Delete lorebook entry ${change.uid} from ${change.book}`;
     }
     if (change.type === 'character') {
+        if (change.action === 'append') return `Add alternate greetings to ${change.character}`;
         const label = TEXT_FIELDS[change.field] || LIST_FIELDS[change.field];
         return `Change ${change.character}'s ${label}`;
     }

@@ -75,9 +75,13 @@ function changeInstructions({ lore, character, chat, members }) {
     if (character) {
         kinds.push([
             'Character card fields:',
-            '{"type":"character","character":"<character name>","field":"<field>","value":"<the complete new text>","reason":"<why>"}',
+            '{"type":"character","action":"replace","character":"<character name>","field":"<field>","value":"<the complete new text>","reason":"<why>"}',
             '- field is one of description, personality, scenario, first_mes, mes_example, creator_notes, system_prompt, post_history_instructions, alternate_greetings (value is a list of strings) or tags (value is a list of strings).',
-            '- value replaces the whole field, so include every part that should stay.',
+            '- For replacements, value replaces the whole field, so include every part that should stay.',
+            'Adding alternate greetings:',
+            '{"type":"character","action":"append","character":"<character name>","field":"alternate_greetings","value":["<new greeting>"],"reason":"<why>"}',
+            '- To add alternate greetings, always use action append and include only the new greetings. Scratchpad adds them after the last existing alternate greeting, preserving all existing greetings and the first message. You do not need to read or reproduce the existing list.',
+            '- Use action replace for alternate_greetings only when the user asks to replace or edit the existing list.',
             members ? `- In this group chat, name the member you mean: ${members}.` : '',
         ].filter(Boolean).join('\n'));
     }

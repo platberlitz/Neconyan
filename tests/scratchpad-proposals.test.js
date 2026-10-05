@@ -68,6 +68,18 @@ describe('Scratchpad reply parsing', () => {
         expect(describeChange({ type: 'chat', action: 'insert', after: 2 })).toBe('Add a message after #2');
     });
 
+    test.each(['append', 'add'])('keeps the %s operation for new alternate greetings', action => {
+        const change = normaliseChange({ type: 'character', action, character: 'Nova', field: 'alternate_greetings', value: ['Another meeting.'] });
+        expect(change).toMatchObject({ action: 'append', value: ['Another meeting.'] });
+        expect(describeChange(change)).toBe('Add alternate greetings to Nova');
+    });
+
+    test('rejects empty greeting additions and unsupported character operations', () => {
+        expect(() => normaliseChange({ type: 'character', action: 'append', character: 'Nova', field: 'alternate_greetings', value: [' '] })).toThrow('no new greetings');
+        expect(() => normaliseChange({ type: 'character', action: 'append', character: 'Nova', field: 'description', value: 'More.' })).toThrow('only append alternate greetings');
+        expect(() => normaliseChange({ type: 'character', action: 'delete', character: 'Nova', field: 'alternate_greetings', value: ['Hi.'] })).toThrow('unknown action');
+    });
+
     test.each([undefined, null, '', ' ', '#', '# ', [], [0], false, {}, -1, 1.5, '1e2', Number.MAX_SAFE_INTEGER + 1])('rejects missing or malformed targets: %p', target => {
         expect(() => normaliseChange({ type: 'chat', action: 'delete', message: target })).toThrow('which message');
         expect(() => normaliseChange({ type: 'chat', action: 'insert', after: target, text: 'Hello.' })).toThrow('where it goes');

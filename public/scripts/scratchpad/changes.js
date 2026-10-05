@@ -152,17 +152,24 @@ async function characterPlan(change, source) {
     if (!/^[a-f0-9]{64}$/.test(revision ?? '')) fail('The character revision could not be checked. Reload the page and try again.');
     const character = await snapshot.json();
     requireSource(source);
-    const before = formatField(change.field, readCharacterField(character, change.field));
+    const current = readCharacterField(character, change.field);
+    const append = change.action === 'append';
+    const before = formatField(change.field, current);
     return {
         target: character.name,
-        field: TEXT_FIELDS[change.field] || LIST_FIELDS[change.field],
+        field: append ? 'Add alternate greetings' : TEXT_FIELDS[change.field] || LIST_FIELDS[change.field],
         before,
+        beforeLabel: append ? 'Existing greetings (kept)' : undefined,
         after: formatField(change.field, change.value),
+        afterLabel: append ? 'New greetings to append' : undefined,
         editable: true,
-        hint: change.field === 'alternate_greetings' ? 'Separate greetings with a line containing only ---.' : change.field === 'tags' ? 'Separate tags with commas.' : '',
+        hint: append ? 'New greetings go after the last existing alternate greeting. Separate new greetings with a line containing only ---.'
+            : change.field === 'alternate_greetings' ? 'Separate greetings with a line containing only ---.' : change.field === 'tags' ? 'Separate tags with commas.' : '',
         async commit(edited) {
             requireSource(source);
-            const value = parseField(change.field, edited);
+            const proposed = parseField(change.field, edited);
+            if (append && !proposed.length) fail('This addition has no new greetings.');
+            const value = append ? [...current, ...proposed] : proposed;
             const body = { avatar, expected_revision: revision, data: { [change.field]: value } };
             if (TOP_LEVEL_FIELDS[change.field]) body[TOP_LEVEL_FIELDS[change.field]] = value;
             const response = await fetch('/api/characters/merge-attributes', {

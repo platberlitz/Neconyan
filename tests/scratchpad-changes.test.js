@@ -1,9 +1,11 @@
-import { beforeEach, describe, expect, jest, test } from '@jest/globals';
+/* global globalThis */
+import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 
 const source = { kind: 'roleplay', key: 'original' };
 const chat = [];
 let current = true;
 let book;
+let character;
 const saveChatConditional = jest.fn(async () => true);
 const updateMessageBlock = jest.fn();
 const emit = jest.fn();
@@ -28,7 +30,7 @@ jest.unstable_mockModule('../public/scripts/world-info.js', () => ({
     createWorldInfoEntry: (_name, data) => (data.entries[1] = { uid: 1 }),
     deleteWorldInfoEntry: async (data, uid) => { delete data.entries[uid]; },
 }));
-jest.unstable_mockModule('../public/scripts/scratchpad/context.js', () => ({ isCurrentSource: () => current, sourceCharacters: () => [{ name: 'Nova' }] }));
+jest.unstable_mockModule('../public/scripts/scratchpad/context.js', () => ({ isCurrentSource: () => current, sourceCharacters: () => [{ name: 'Nova', avatar: 'Nova.png' }] }));
 
 const { prepareChange } = await import('../public/scripts/scratchpad/changes.js');
 
@@ -39,9 +41,36 @@ beforeEach(() => {
     current = true;
     chat.splice(0, chat.length, { name: 'Nova', mes: 'Original message.', is_system: false });
     book = { entries: { 0: { uid: 0, comment: 'Flower', key: ['flower'], content: 'Original lore.' } } };
+    character = { name: 'Nova', data: { alternate_greetings: ['  Original greeting.  ', 'Another scene.\n\n---\n\nThe same greeting continues.'] } };
+    jest.spyOn(globalThis, 'fetch').mockImplementation(async () => ({ ok: true, headers: { get: () => 'a'.repeat(64) }, json: async () => structuredClone(character) }));
 });
 
+afterEach(() => jest.restoreAllMocks());
+
 describe('Scratchpad reviewed saves', () => {
+    test.each([false, true])('appends reviewed greetings after the saved list, empty=%s', async empty => {
+        character.data.alternate_greetings = empty ? [] : character.data.alternate_greetings;
+        const existing = structuredClone(character.data.alternate_greetings);
+        const plan = await prepareChange({ type: 'character', action: 'append', character: 'Nova', field: 'alternate_greetings', value: ['Proposed greeting.'] }, source);
+        expect(plan.after).toBe('Proposed greeting.');
+        await plan.commit('Reviewed greeting.\n\n---\n\nOne more greeting.');
+        const body = JSON.parse(globalThis.fetch.mock.calls[1][1].body);
+        expect(body).toEqual({ avatar: 'Nova.png', expected_revision: 'a'.repeat(64), data: { alternate_greetings: [...existing, 'Reviewed greeting.', 'One more greeting.'] } });
+        expect(character.data.alternate_greetings).toEqual(existing);
+    });
+
+    test('does not save an empty greeting addition after editing the review', async () => {
+        const plan = await prepareChange({ type: 'character', action: 'append', character: 'Nova', field: 'alternate_greetings', value: ['Proposed greeting.'] }, source);
+        await expect(plan.commit('   ')).rejects.toThrow('no new greetings');
+        expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    test('keeps whole-list replacement available for older greeting changes', async () => {
+        const plan = await prepareChange({ type: 'character', character: 'Nova', field: 'alternate_greetings', value: ['Replacement.'] }, source);
+        await plan.commit(plan.after);
+        expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body).data.alternate_greetings).toEqual(['Replacement.']);
+    });
+
     test.each(['add', 'edit', 'delete'])('refuses a lorebook %s after switching chats during the review', async action => {
         const plan = await prepareChange({ type: 'lorebook', action, book: 'Garden', uid: 0, content: 'New lore.' }, source);
         current = false;

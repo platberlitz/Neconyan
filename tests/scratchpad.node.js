@@ -350,6 +350,10 @@ test('the system prompt keeps each assistant identity and only offers the change
     }
     const messages = buildScratchpadMessages({ system: 'S', context: '', history: [], text: 'Hi' });
     assert.deepEqual(messages.map(message => message.role), ['system', 'user']);
+    const characterPrompt = buildScratchpadSystemPrompt({ assistant: 'miso', capabilities: { character: true } }).text;
+    assert.match(characterPrompt, /"action":"append"[^\n]+"field":"alternate_greetings"/);
+    assert.match(characterPrompt, /include only the new greetings/);
+    assert.match(characterPrompt, /after the last existing alternate greeting/);
 });
 
 test('the endpoint checks the account and answers with the saved Scratchpad', async t => {

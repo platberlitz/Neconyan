@@ -892,15 +892,15 @@ async function reviewChange(session, message, part) {
         return;
     }
     const editor = plan.editable
-        ? h('textarea', { class: 'text_pole scratchpad-review-editor', rows: '12', value: plan.after, 'aria-label': t`Proposed text` })
+        ? h('textarea', { class: 'text_pole scratchpad-review-editor', rows: '12', value: plan.after, 'aria-label': plan.afterLabel || t`Proposed text` })
         : null;
     const content = h('div', { class: 'neconyan-assistant-review scratchpad-review' },
         h('p', { text: t`Check this change before it is saved. You can edit the proposed text first.` }),
         h('p', {}, h('strong', { text: t`Where: ` }), plan.target),
         h('p', {}, h('strong', { text: t`What: ` }), plan.field),
-        h('strong', { text: t`Now` }),
+        h('strong', { text: plan.beforeLabel || t`Now` }),
         h('pre', { class: 'scratchpad-review-before', text: plan.before || t`(empty)` }),
-        h('strong', { text: t`Proposed` }),
+        h('strong', { text: plan.afterLabel || t`Proposed` }),
         editor ?? h('pre', { class: 'scratchpad-review-after', text: plan.after }),
         plan.hint ? h('p', { class: 'scratchpad-review-hint', text: plan.hint }) : null);
     const result = await callGenericPopup(content, POPUP_TYPE.CONFIRM, '', {
