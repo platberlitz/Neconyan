@@ -30,7 +30,7 @@ import {
 } from './context.js';
 import { describeChange, splitReply } from './proposals.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261005-scratchpad5';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261005-scratchpad6';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;

@@ -1,9 +1,10 @@
 import { test, expect } from '@playwright/test';
-import { openNotes } from './notebooks-browser-fixture.js';
+import { enterNotes, openNotes } from './notebooks-browser-fixture.js';
 import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 
 for (const phone of [false, true]) {
-    test(`Miso's Notes invitation X stays at the top right on ${phone ? 'iPhone-emulated' : 'desktop'} layouts`, async ({ browser }, info) => {
+    test(`Miso's Notes invitation X stays at the top right and remembers dismissal on ${phone ? 'iPhone-emulated' : 'desktop'} layouts`, async ({ browser }, info) => {
+        test.setTimeout(120000);
         const viewport = phone ? { width: 393, height: 852 } : { width: 1280, height: 900 };
         const context = await browser.newContext({ ...(phone ? IPHONE_SAFARI_CONTEXT : { viewport }), baseURL: info.project.use.baseURL, serviceWorkers: 'block', reducedMotion: 'reduce' });
         try {
@@ -30,6 +31,20 @@ for (const phone of [false, true]) {
             await close.click();
             await expect(invite).toBeHidden();
             expect(await page.evaluate(async () => (await import('/scripts/util/AccountStorage.js')).accountStorage.getItem('neconyanToolTourInvite.notes'))).toBe('seen');
-        } finally { await context.close(); }
+            expect(await page.evaluate(async () => {
+                const { saveSettings } = await import('/script.js');
+                return saveSettings(0, { returnResult: true });
+            })).toBe(true);
+            await page.reload({ waitUntil: 'domcontentloaded' });
+            await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 60000 });
+            await enterNotes(page, viewport);
+            if (phone) await applyIOSOnlyCss(page);
+            await expect(invite).toBeAttached();
+            await expect(invite).toBeHidden();
+            await expect(page.locator('#neconyan-notes .neconyan-tool-tour-button')).toBeVisible();
+        } finally {
+            for (const page of context.pages()) await page.unrouteAll({ behavior: 'wait' });
+            await context.close();
+        }
     });
 }

@@ -90,7 +90,7 @@ test('a previously accepted prompt keeps its original source and tool definition
     assert.equal(Object.hasOwn(legacy, 'nativeBindingVersion'), false);
     assert.equal(Object.hasOwn(legacy, 'tools'), false);
     assert.doesNotThrow(() => assertRoleplayWorldInfoCurrent(f.f.scope, legacy));
-    assert.ok(f.snapshot.nativeBindingVersion === 1 && f.snapshot.tools.definitions.length === 25);
+    assert.ok(f.snapshot.nativeBindingVersion === 1 && f.snapshot.tools.definitions.length === 26);
     const request = { binding: { kind: 'profile', ...captureChatProfile(f.dirs, 'main') }, worldInfo: legacy,
         serverPrompt: true, characterName: 'Nova', maxTokens: 32, messages: [] };
     const { jobId } = admitRoleplayJob(f.f.scope, legacy.account,

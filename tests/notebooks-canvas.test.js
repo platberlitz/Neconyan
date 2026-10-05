@@ -11,6 +11,7 @@ const source = fs.readFileSync(new URL('../public/scripts/notebooks/canvas.js', 
 const dialogs = fs.readFileSync(new URL('../public/scripts/notebooks/canvas-dialogs.js', import.meta.url), 'utf8');
 const appSource = fs.readFileSync(new URL('../public/scripts/notebooks/notes-app.js', import.meta.url), 'utf8');
 const domSource = fs.readFileSync(new URL('../public/scripts/notebooks/dom.js', import.meta.url), 'utf8');
+const userTextSource = fs.readFileSync(new URL('../public/scripts/notebooks/user-text.js', import.meta.url), 'utf8');
 const functionSource = (text, name) => text.match(new RegExp(`(?:export )?(?:async )?function ${name}\\([^]*?\\n}`, 'm'))[0].replace(/^export /, '');
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { resolve, promise }; };
 const account = 'owner';
@@ -82,8 +83,10 @@ function fixture() {
         validateCanvasDocument: value => validateCanvasDocument(cloned(value)),
         changeCanvasDocument: changed,
         saveCanvasDraft: (...args) => saveCanvasDraft(...args.slice(0, 3), cloned(args[3]), args[4]), readCanvasDraft, clearCanvasDraft,
-        editCanvasNode, editCanvasEdge: jest.fn(), chooseCanvasNote: jest.fn(), canvasTextPrompt: jest.fn(), downloadCanvas, popupModule, console });
-    vm.runInContext(functionSource(domSource, 'button') + '\n' + functionSource(source, 'canvasScopeCurrent') + '\n'
+        editCanvasNode, editCanvasEdge: jest.fn(), chooseCanvasNote: jest.fn(), canvasTextPrompt: jest.fn(), downloadCanvas, popupModule, console,
+        translate: text => text });
+    vm.runInContext(functionSource(domSource, 'button') + '\n' + functionSource(userTextSource, 'userWords') + '\n' + functionSource(userTextSource, 'userPhrase') + '\n'
+        + functionSource(source, 'canvasScopeCurrent') + '\n'
         + functionSource(source, 'createCanvasView').replace('await import(\'../popup.js\')', 'await popupModule()'), context);
     const view = vm.runInContext('createCanvasView(app, container)', context);
     const edit = async () => {

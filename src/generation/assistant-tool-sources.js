@@ -4,7 +4,7 @@ import sanitize from 'sanitize-filename';
 import { isNeconyanAssistant } from '../../public/scripts/neconyan-assistant-knowledge.js';
 import { getExistingWorldInfoFilename, isValidWorldInfoData } from '../endpoints/worldinfo.js';
 import { getPresetSettingsByAPI } from '../endpoints/presets.js';
-import { agentCollectionDirectory, readAgentCollection, readAgentRecordLocked } from '../in-chat-agent-storage.js';
+import { agentCollectionDirectory, assertAgentWriteCapacityLocked, readAgentCollection, readAgentRecordLocked } from '../in-chat-agent-storage.js';
 import { authoringEvidence, readAuthoringFileLocked } from '../authoring-store.js';
 import { readRoleplayFile, roleplayError, roleplayHash, roleplayLease, validRoleplayAvatar } from '../roleplay-store.js';
 import { assertQuickImageGenConfigured, readQuickImageGenSettings } from './quick-image-gen.js';
@@ -15,6 +15,7 @@ import { assertConversationAssistantSourceLocked } from './conversation-assistan
 import { captureNoteToolLocked, isNoteTool } from '../notebooks/assistant.js';
 import { NotebookError } from '../notebooks/paths.js';
 import { formatDiff } from '../../public/scripts/notebooks/line-diff.js';
+import { buildAssistantAgent } from '../../public/scripts/neconyan-assistant-agent.js';
 import { EDITABLE_AGENT_FIELDS, EDITABLE_CHARACTER_FIELDS, PRESET_FIELDS, assistantToolMutates, assistantToolName,
     projectAssistantAgent, projectAssistantCharacter, projectAssistantPreset, validateAssistantPresetValue } from './assistant-tool-data.js';
 
@@ -238,6 +239,19 @@ export function captureAssistantToolSourceLocked(lease, source, { avatar, name, 
         const library = readAgentCollection(agentCollectionDirectory(dirs));
         if (library.errors.length) throw invalid('The saved Agent library needs recovery.');
         response = toResult({ agents: library.records.map(agent => ({ id: agent.id, name: String(agent.name ?? '') })) });
+    } else if (tool === 'create-agent') {
+        // Stable across recapture and recovery, unique to this accepted call and source.
+        const id = `assistant-${roleplayHash([source, avatar, callId, args]).slice(0, 40)}`;
+        let agent;
+        try {
+            agent = buildAssistantAgent(args.agent, id,
+                new Set((settings.extension_settings?.connectionManager?.profiles ?? []).map(profile => profile?.id)));
+        } catch (error) { throw invalid(error.message); }
+        const full = path.join(agentCollectionDirectory(dirs), `${id}.json`);
+        if (readAuthoringFileLocked(lease, full)) throw invalid('An agent already uses the new ID. Nothing was replaced.');
+        assertAgentWriteCapacityLocked(lease, 'agent', agent);
+        resource = { kind: 'agent', id, relative: relative(dirs, full), evidence: null };
+        change = { before: null, agent };
     } else if (tool === 'agent' || tool === 'edit-agent') {
         const selected = agentResource(lease, args.id);
         resource = selected.resource;

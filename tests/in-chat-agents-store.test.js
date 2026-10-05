@@ -59,6 +59,31 @@ describe('in-chat agent scoped enabled state', () => {
         ]);
     }
 
+    test('created-agent readback preserves unsaved agents, normalises defaults and never writes', async () => {
+        const store = await importStore();
+        store.loadAgents([{ id: 'existing', name: 'Existing', prompt: 'Saved' }], { account: 'alice' });
+        store.getAgentById('existing').prompt = 'Unsaved local edit';
+        const record = { id: 'created', name: 'Notes', prompt: 'Keep notes', execution: 'companion', enabled: false };
+        globalThis.fetch = jest.fn(async () => ({ ok: true, headers: new Headers({ 'X-Neconyan-Account': 'alice' }),
+            json: async () => ({ records: [{ id: 'existing', name: 'Existing', prompt: 'Saved' }, record] }) }));
+        await Promise.all([store.loadCreatedAgent('created', { account: 'alice' }), store.loadCreatedAgent('created', { account: 'alice' })]);
+        expect(store.getAgentById('existing').prompt).toBe('Unsaved local edit');
+        expect(store.getAgentById('created')).toMatchObject({ ...record, companion: { maxTokens: 64000, trigger: 'auto' } });
+        expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+        expect(globalThis.fetch.mock.calls[0][0]).toBe('/api/in-chat-agents/list');
+    });
+
+    test('created-agent readback refuses an account switch during the request', async () => {
+        const store = await importStore();
+        store.loadAgents([], { account: 'alice' });
+        globalThis.fetch = jest.fn(async () => ({ ok: true, headers: new Headers({ 'X-Neconyan-Account': 'alice' }), json: async () => {
+            store.loadAgents([], { account: 'bob' });
+            return { records: [{ id: 'created', name: 'Private', prompt: 'Alice only' }] };
+        } }));
+        await expect(store.loadCreatedAgent('created', { account: 'alice' })).rejects.toThrow('account changed');
+        expect(store.getAgents()).toEqual([]);
+    });
+
     test('deleting an agent waits for its pending save so it cannot reappear locally or on the server', async () => {
         const store = await importStore();
         useAgents(store);

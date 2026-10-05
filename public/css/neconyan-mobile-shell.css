@@ -99,18 +99,20 @@
         block-size: 2px;
     }
 
-    /* The composer's text column is roughly 130px on a 360px phone, so this string cannot fit
-       on one line at any readable size. Upstream sets white-space: nowrap, which clipped it. */
+    /* One line keeps the empty composer slim. The hint is about 187px at 14px and the text
+       column narrows with the screen, so the size eases down to 12px on a 360px screen. */
     #send_textarea::placeholder {
-        font-size: 14px;
-        white-space: normal;
+        font-size: clamp(12px, calc(7.4vw - 15px), 14px);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     #nonQRFormItems {
-        --sb-mobile-composer-input-height: clamp(40px, calc(44px * var(--sb-bottom-bar-scale, 1)), 56px);
-        --sb-composer-action-size: clamp(40px, calc(44px * var(--sb-bottom-bar-scale, 1)), 44px);
+        --sb-mobile-composer-input-height: clamp(34px, calc(38px * var(--sb-bottom-bar-scale, 1)), 56px);
+        --sb-composer-action-size: clamp(34px, calc(38px * var(--sb-bottom-bar-scale, 1)), 44px);
         --sb-composer-send-width: var(--sb-composer-action-size);
-        --sb-composer-action-icon-size: clamp(13px, calc(16px * var(--sb-bottom-bar-scale, 1)), 18px);
+        --sb-composer-action-icon-size: clamp(12px, calc(15px * var(--sb-bottom-bar-scale, 1)), 18px);
         --sb-composer-left-rail-width: calc(var(--sb-composer-action-size) * 2 + 3px);
         --sb-composer-right-rail-width: calc(var(--sb-composer-action-size) + var(--sb-composer-send-width) + 3px);
         display: grid !important;
@@ -118,7 +120,7 @@
         grid-template-rows: minmax(var(--sb-mobile-composer-input-height), auto) !important;
         grid-template-areas: 'tools input action' !important;
         align-items: center !important;
-        gap: 0 clamp(8px, 2vw, 10px) !important;
+        gap: 0 6px !important;
         min-height: calc(var(--sb-mobile-composer-input-height) + 4px) !important;
         padding: 2px 4px !important;
         box-sizing: border-box !important;
@@ -126,13 +128,13 @@
     }
 
     :root[data-sb-compact-mode='true'] #nonQRFormItems {
-        --sb-mobile-composer-input-height: clamp(34px, calc(38px * var(--sb-bottom-bar-scale, 1)), 44px);
-        --sb-composer-action-size: clamp(34px, calc(38px * var(--sb-bottom-bar-scale, 1)), 40px);
+        --sb-mobile-composer-input-height: clamp(30px, calc(34px * var(--sb-bottom-bar-scale, 1)), 44px);
+        --sb-composer-action-size: clamp(30px, calc(34px * var(--sb-bottom-bar-scale, 1)), 40px);
         --sb-composer-send-width: var(--sb-composer-action-size);
         --sb-composer-action-icon-size: clamp(11px, calc(14px * var(--sb-bottom-bar-scale, 1)), 16px);
         --sb-composer-left-rail-width: calc(var(--sb-composer-action-size) * 2 + 4px);
         --sb-composer-right-rail-width: calc(var(--sb-composer-action-size) + var(--sb-composer-send-width) + 4px);
-        gap: 0 clamp(8px, 2vw, 10px) !important;
+        gap: 0 6px !important;
     }
 
     #leftSendForm {
@@ -2498,7 +2500,7 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
     }
 
     #right-nav-panel.openDrawer #rm_print_characters_block {
-        --sb-character-list-avatar-size: 56px;
+        --sb-character-list-avatar-size: 48px;
         gap: 8px;
         width: 100%;
         min-width: 0;
@@ -2516,7 +2518,7 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         width: 100%;
         min-width: 0;
         overflow: hidden;
-        padding: 9px 8px;
+        padding: 8px;
         border-radius: 14px;
         box-sizing: border-box;
     }
@@ -2531,10 +2533,6 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
 
     #right-nav-panel.openDrawer #rm_print_characters_block:not(.group_overlay_mode_select) > :is(.character_select, .group_select).is-active-entity:not(.inline_avatar) :is(.ch_name, .group_select_counter) {
         color: var(--color-primary, var(--sb-accent)) !important;
-    }
-
-    #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) {
-        min-height: calc(var(--sb-character-list-avatar-size) + 46px);
     }
 
     #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) > :is(.avatar, .missing-avatar) {
@@ -2564,6 +2562,70 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         width: 100%;
         min-width: 0;
         overflow: hidden;
+    }
+
+    /* List density: in the flat list the two labelled buttons become a compact icon
+       rail on the right, so name, one description line, creator and tags share one
+       short stack instead of four stacked rows. Grid tiles and bulk edit keep the
+       flowing layout. */
+    body:not(.charListGrid) #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) > :is(.character_select_container, .group_select_container) {
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        column-gap: 8px;
+        row-gap: 2px;
+    }
+
+    body:not(.charListGrid) #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) > :is(.character_select_container, .group_select_container) > :is(.character_name_block, .group_name_block) {
+        grid-column: 1;
+        grid-row: 1;
+    }
+
+    body:not(.charListGrid) #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) > :is(.character_select_container, .group_select_container) > :is(.ch_description, .group_select_block_list) {
+        grid-column: 1;
+        grid-row: 2;
+        -webkit-line-clamp: 1;
+        line-clamp: 1;
+    }
+
+    body:not(.charListGrid) #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) > :is(.character_select_container, .group_select_container) > .sb-entity-meta {
+        grid-column: 1;
+        grid-row: 3;
+    }
+
+    body:not(.charListGrid) #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) > :is(.character_select_container, .group_select_container) > .tags_inline {
+        grid-row: 4;
+    }
+
+    body:not(.charListGrid) #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) > :is(.character_select_container, .group_select_container) > .sb-entity-actions {
+        grid-column: 2;
+        grid-row: 1 / span 4;
+        display: flex;
+        flex-flow: row nowrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 4px;
+        margin: 0;
+    }
+
+    body:not(.charListGrid) #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) > :is(.character_select_container, .group_select_container) > .sb-entity-actions > .sb-entity-action {
+        flex: 0 0 auto;
+        min-width: 44px;
+        min-height: 44px;
+        padding: 0;
+    }
+
+    /* The button keeps its label as the accessible name; the phone only shows the icon. */
+    body:not(.charListGrid) #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) > :is(.character_select_container, .group_select_container) > .sb-entity-actions > .sb-entity-action > span {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        padding: 0;
+        border: 0;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        clip-path: inset(50%);
+        white-space: nowrap;
     }
 
     #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) .tags_inline {
@@ -2955,9 +3017,9 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         --sb-bottom-chat-mobile-gap: clamp(2px, calc(3px * var(--sb-bottom-bar-scale)), 5px);
         --sb-bottom-chat-mobile-padding-block: clamp(2px, calc(3px * var(--sb-bottom-bar-scale)), 4px);
         --sb-bottom-chat-mobile-padding-inline: clamp(3px, calc(4px * var(--sb-bottom-bar-scale)), 6px);
-        --sb-bottom-chat-mobile-button-size: clamp(30px, calc(40px * var(--sb-bottom-bar-scale)), 48px);
-        --sb-bottom-chat-mobile-select-height: clamp(30px, calc(40px * var(--sb-bottom-bar-scale)), 48px);
-        --sb-bottom-chat-mobile-persona-size: clamp(30px, calc(40px * var(--sb-bottom-bar-scale)), 48px);
+        --sb-bottom-chat-mobile-button-size: clamp(26px, calc(34px * var(--sb-bottom-bar-scale)), 48px);
+        --sb-bottom-chat-mobile-select-height: clamp(26px, calc(34px * var(--sb-bottom-bar-scale)), 48px);
+        --sb-bottom-chat-mobile-persona-size: clamp(26px, calc(34px * var(--sb-bottom-bar-scale)), 48px);
         --sb-bottom-chat-mobile-radius: 0px;
         /* Keep vertical drags on the band between #chat and the composer from
            becoming visual-viewport pans; its only owned gesture is the
@@ -3014,20 +3076,20 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
     }
 
     #nonQRFormItems {
-        --sb-mobile-composer-input-height: clamp(40px, calc(44px * var(--sb-bottom-bar-scale, 1)), 52px);
-        --sb-composer-action-size: clamp(40px, calc(44px * var(--sb-bottom-bar-scale, 1)), 44px);
+        --sb-mobile-composer-input-height: clamp(34px, calc(38px * var(--sb-bottom-bar-scale, 1)), 52px);
+        --sb-composer-action-size: clamp(34px, calc(38px * var(--sb-bottom-bar-scale, 1)), 44px);
         --sb-composer-send-width: var(--sb-composer-action-size);
-        --sb-composer-action-icon-size: clamp(13px, calc(16px * var(--sb-bottom-bar-scale, 1)), 18px);
+        --sb-composer-action-icon-size: clamp(12px, calc(15px * var(--sb-bottom-bar-scale, 1)), 18px);
         --sb-composer-left-rail-width: calc(var(--sb-composer-action-size) * 2 + 4px);
         --sb-composer-right-rail-width: calc(var(--sb-composer-action-size) + var(--sb-composer-send-width) + 4px);
-        gap: 0 clamp(8px, 2vw, 10px) !important;
+        gap: 0 6px !important;
         min-height: calc(var(--sb-mobile-composer-input-height) + 3px) !important;
-        padding: 6px 4px !important;
+        padding: 3px 4px !important;
     }
 
     :root[data-sb-compact-mode='true'] #nonQRFormItems {
-        --sb-mobile-composer-input-height: clamp(34px, calc(38px * var(--sb-bottom-bar-scale, 1)), 44px);
-        --sb-composer-action-size: clamp(34px, calc(38px * var(--sb-bottom-bar-scale, 1)), 40px);
+        --sb-mobile-composer-input-height: clamp(30px, calc(34px * var(--sb-bottom-bar-scale, 1)), 44px);
+        --sb-composer-action-size: clamp(30px, calc(34px * var(--sb-bottom-bar-scale, 1)), 40px);
         --sb-composer-send-width: var(--sb-composer-action-size);
         --sb-composer-action-icon-size: clamp(11px, calc(14px * var(--sb-bottom-bar-scale, 1)), 16px);
         --sb-composer-left-rail-width: calc(var(--sb-composer-action-size) * 2 + 4px);

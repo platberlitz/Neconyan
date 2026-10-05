@@ -54,7 +54,7 @@ export async function openObsidianSync(app, snapshot) {
         for (const event of (result.history ?? []).slice(0, 30)) {
             if (!/^oh_[a-f\d]{16}$/.test(event.id ?? '') || typeof event.path !== 'string') continue;
             const row = h('div', { class: 'notes-obsidian-history-row' },
-                h('div', {}, h('strong', { text: event.path }), h('p', { class: 'notes-hint', text: `${event.kind}: ${formatTime(event.at)}` })));
+                h('div', {}, h('strong', { text: event.path, 'data-i18n-ignore': '' }), h('p', { class: 'notes-hint', text: `${event.kind}: ${formatTime(event.at)}` })));
             row.append(button('Download snapshot', async () => {
                 if (!current() || busy || ticket !== requestVersion) return;
                 busy = true;

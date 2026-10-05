@@ -1,8 +1,10 @@
+import { t } from '../i18n.js';
 import { button, clear, formatTime, h } from './dom.js';
 import { attachmentUrl, newOperationId } from './api.js';
 import { CANVAS_LIMITS, changeCanvasDocument, serializeCanvasDocument, validateCanvasDocument } from './canvas-format.js';
 import { clearCanvasDraft, readCanvasDraft, saveCanvasDraft } from './canvas-drafts.js';
 import { canvasTextPrompt, chooseCanvasNote, editCanvasEdge, editCanvasNode } from './canvas-dialogs.js';
+import { userPhrase } from './user-text.js';
 
 export function canvasScopeCurrent(app, snapshot) {
     const state = app.state;
@@ -67,12 +69,14 @@ export function canvasDiagram(nodes, edges, { selectedId, move = false, viewport
             ...(edge.fromEnd === 'arrow' ? { 'marker-start': `url(#${arrowId})` } : {}),
             ...(edge.toEnd !== 'none' ? { 'marker-end': `url(#${arrowId})` } : {}) });
         if (canvasColor(edge.color)) line.style.stroke = canvasColor(edge.color);
-        if (edge.label) line.append(svgElement('title', {}, edge.label));
+        if (edge.label) line.append(svgElement('title', { 'data-i18n-ignore': '' }, edge.label));
         svg.append(line);
     }
     for (const node of nodes) {
+        // A card labelled by the user is kept from the run-time localiser, so its label is translated here.
         const group = svgElement('g', { class: `notes-canvas-node ${node.id === selectedId ? 'is-selected' : ''}`, tabindex: 0,
-            role: 'button', 'aria-label': `Select card: ${node.label}`, 'data-canvas-node': node.id });
+            role: 'button', 'aria-label': node.user ? t`Select card: ${node.label}` : `Select card: ${node.label}`, 'data-canvas-node': node.id,
+            ...(node.user ? { 'data-i18n-ignore': '' } : {}) });
         const drawnWidth = Math.max(node.width, 44);
         const drawnHeight = Math.max(node.height, 44);
         const box = svgElement('rect', { x: node.x, y: node.y, width: drawnWidth, height: drawnHeight, rx: 8, 'vector-effect': 'non-scaling-stroke' });
@@ -200,8 +204,13 @@ export function createCanvasView(app, container) {
         try { return apply(changeCanvasDocument(document, changes)); } catch (error) { notice = error.message; render(); return false; }
     };
     const nodeLabel = node => preview?.nodes?.find(item => item.id === node.id)?.label ?? (node.type === 'text' ? 'Text card' : node.type === 'group' ? node.label || 'Group' : node.type === 'file' ? 'Note preview pending.' : node.type === 'link' ? 'Web link' : 'Unsupported card type');
+    // A card's label is the user's when it is a note title, a web address or a group name they gave.
+    const labelIsUser = node => {
+        const status = preview?.nodes?.find(item => item.id === node.id)?.status;
+        return status ? ['note', 'link'].includes(status) || (status === 'group' && Boolean(node.label)) : node.type === 'group' && Boolean(node.label);
+    };
     const localPreview = () => (document?.nodes ?? []).map(node => ({ id: node.id, type: node.type, x: node.x, y: node.y, width: node.width, height: node.height,
-        color: node.color, label: nodeLabel(node), excerpt: node.type === 'text' ? node.text.slice(0, 1200) : preview?.nodes?.find(item => item.id === node.id)?.excerpt ?? '' }));
+        color: node.color, label: nodeLabel(node), user: labelIsUser(node), excerpt: node.type === 'text' ? node.text.slice(0, 1200) : preview?.nodes?.find(item => item.id === node.id)?.excerpt ?? '' }));
 
     async function refreshPreview() {
         if (!usable() || !canvas || !document) return;
@@ -423,7 +432,7 @@ export function createCanvasView(app, container) {
         container.append(h('p', { class: 'notes-hint', text: 'Portable .canvas files live in this notebook. Cards do not change note access or publish lore. Background images and plugins are not run.' }));
         const gallery = h('details', { class: 'notes-canvas-files' }, h('summary', { text: `Canvases in this notebook (${canvases.length})` }));
         const files = h('div', { class: 'notes-canvas-file-list' });
-        for (const item of canvases) files.append(button(item.path, () => { if (usable(captured.scope)) void selectCanvas(item.id); }, { pressed: canvas?.id === item.id, className: 'notes-canvas-file' }));
+        for (const item of canvases) files.append(button(item.path, () => { if (usable(captured.scope)) void selectCanvas(item.id); }, { pressed: canvas?.id === item.id, className: 'notes-canvas-file', userText: true }));
         gallery.append(files);
         container.append(gallery);
         for (const warning of warnings) container.append(h('div', { class: 'notes-notice notes-canvas-recovery' },
@@ -433,10 +442,10 @@ export function createCanvasView(app, container) {
         if (notice) container.append(h('p', { class: 'notes-notice', role: 'status', text: notice }));
         if (!canvas || !document) {
             container.append(h('p', { class: 'notes-hint', text: canvases.length ? 'Choose a .canvas file to open it.' : 'Create a canvas, or import a notebook ZIP containing .canvas files.' }));
-            for (const item of canvases) container.append(h('a', { class: 'notes-button notes-canvas-download-original', href: attachmentUrl(scope.notebookId, item.path), download: item.path.split('/').at(-1), text: `Download original: ${item.path}` }));
+            for (const item of canvases) container.append(h('a', { class: 'notes-button notes-canvas-download-original', href: attachmentUrl(scope.notebookId, item.path), download: item.path.split('/').at(-1) }, userPhrase`Download original: ${item.path}`));
             return;
         }
-        container.append(h('h3', { class: 'notes-canvas-title', text: canvas.path }), h('p', { class: 'notes-hint', 'data-canvas-status': '', text: saving ? 'Saving canvas...' : conflict ? 'Needs your choice' : dirty ? draftSafe ? 'Draft saved on this device. Not saved to the notebook yet.' : 'Draft is only in this window.' : 'Saved canvas' }));
+        container.append(h('h3', { class: 'notes-canvas-title', text: canvas.path, 'data-i18n-ignore': '' }), h('p', { class: 'notes-hint', 'data-canvas-status': '', text: saving ? 'Saving canvas...' : conflict ? 'Needs your choice' : dirty ? draftSafe ? 'Draft saved on this device. Not saved to the notebook yet.' : 'Draft is only in this window.' : 'Saved canvas' }));
         if (staleDraft) container.append(h('div', { class: 'notes-notice notes-canvas-draft-conflict' },
             h('p', { text: 'This device has an older canvas draft. Keep it as a copy, use it deliberately, or discard it; the saved canvas stays unchanged until you save.' }),
             button('Use device draft', () => { if (current()) { const draft = staleDraft; staleDraft = null; apply(draft.document); } }),
@@ -483,7 +492,7 @@ export function createCanvasView(app, container) {
         const list = h('div', { class: 'notes-canvas-card-list', 'aria-label': 'Canvas cards' });
         for (const node of document.nodes ?? []) {
             const item = h('section', { class: `notes-canvas-card ${node.id === selectedId ? 'is-selected' : ''}`, 'data-canvas-card': node.id });
-            item.append(button(nodeLabel(node), () => { if (current()) { selectedId = node.id; render(); } }, { pressed: selectedId === node.id, className: 'notes-canvas-card-select' }));
+            item.append(button(nodeLabel(node), () => { if (current()) { selectedId = node.id; render(); } }, { pressed: selectedId === node.id, className: 'notes-canvas-card-select', userText: labelIsUser(node) }));
             const body = node.type === 'text' ? node.text.slice(0, 1200) : preview?.nodes?.find(data => data.id === node.id)?.excerpt;
             if (body) item.append(h('pre', { class: 'notes-canvas-excerpt', text: body }));
             const metadata = preview?.nodes?.find(data => data.id === node.id);
@@ -497,7 +506,7 @@ export function createCanvasView(app, container) {
         container.append(list);
         if (document.edges?.length) {
             const connections = h('div', { class: 'notes-canvas-connections' }, h('h3', { text: 'Connections' }));
-            for (const edge of document.edges) connections.append(h('div', { class: 'notes-canvas-connection' }, h('span', { text: edge.label || 'Connection' }),
+            for (const edge of document.edges) connections.append(h('div', { class: 'notes-canvas-connection' }, h('span', { text: edge.label || 'Connection', 'data-i18n-ignore': edge.label ? '' : null }),
                 button('Edit connection', () => { if (current()) void edgeEditor(edge); }, { disabled: saving }),
                 button('Remove connection', () => { if (current()) change([{ type: 'remove-edge', id: edge.id }]); }, { disabled: saving })));
             container.append(connections);

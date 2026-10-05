@@ -1,5 +1,6 @@
 import { t } from './i18n.js';
 import { accountStorage } from './util/AccountStorage.js';
+import { eventSource, event_types } from './events.js';
 
 export const TOOL_TOUR_INVITE_PREFIX = 'neconyanToolTourInvite.';
 export const LOREBOOK_TOUR_INVITE_KEY = 'neconyanLorebookTourInvite';
@@ -15,7 +16,11 @@ export function dismissTourInvitation(key) {
 /** Add the persistent X to a page invitation, with the same state as Not now. */
 export function addTourInvitationDismiss(invite, key, root) {
     invite.dataset.neconyanTourInviteKey = key;
-    invite.hidden = accountStorage.getItem(key) === 'seen';
+    const update = () => { invite.hidden = !accountStorage.isReady || accountStorage.getItem(key) === 'seen'; };
+    update();
+    // Saved pages can mount before account settings arrive. Do not show an
+    // invitation until its dismissal state is known, then apply the saved choice.
+    if (!accountStorage.isReady) eventSource.once(event_types.SETTINGS_LOADED, update);
     const close = document.createElement('button');
     close.type = 'button';
     close.className = 'menu_button neconyan-tour-invite-dismiss';

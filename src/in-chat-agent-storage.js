@@ -96,6 +96,25 @@ export function readAgentCollection(directory, kind = 'agent', base = null) {
     return { records, errors, revisions };
 }
 
+/** Check native staged writes against the same record and collection limits as ordinary saves. */
+export function assertAgentWriteCapacityLocked(lease, kind, record) {
+    const { scope } = roleplayLease(lease);
+    const directory = agentCollectionDirectory(scope.directories, kind);
+    if (!validate(record, kind)) throw storageError(400, 'Invalid agent, kit or setup data.');
+    const size = Buffer.byteLength(JSON.stringify(record));
+    if (size > AGENT_STORAGE_LIMITS[`${kind}Bytes`]) throw storageError(413, 'Record storage size limit exceeded.');
+    readRoleplayFile(path.join(directory, '.agent-path-check'), 1, { allowMissingParent: true });
+    const { files, overflow } = fs.existsSync(directory) ? listRecordFiles(directory, kind) : { files: [], overflow: false };
+    if (overflow) throw storageError(413, 'The collection exceeds its loading limit. Existing files were kept.');
+    if (!files.includes(`${record.id}.json`) && files.length >= AGENT_STORAGE_LIMITS[`${kind}Count`]) throw storageError(413, 'Collection item limit exceeded.');
+    const total = files.filter(name => name !== `${record.id}.json`).reduce((sum, name) => {
+        const file = readRoleplayFile(path.join(directory, name), AGENT_STORAGE_LIMITS[`${kind}Bytes`]);
+        if (!file) throw storageError(409, 'The agent collection changed.');
+        return sum + file.bytes.length;
+    }, size);
+    if (total > AGENT_STORAGE_LIMITS.collectionBytes) throw storageError(413, 'Collection storage limit exceeded.');
+}
+
 /** Account-first, physical compare-and-write shared by HTTP and native tool actions. */
 export function writeAgentRecordLocked(lease, kind, record, { remove = false, expectedRevision, expectedFile, beforePublish } = {}) {
     const { scope } = roleplayLease(lease);
@@ -124,15 +143,7 @@ export function writeAgentRecordLocked(lease, kind, record, { remove = false, ex
         return 'missing';
     }
     createRoleplayDirectory(directory, scope.directories.root);
-    const { files, overflow } = listRecordFiles(directory, kind);
-    if (overflow) throw storageError(413, 'The collection exceeds its loading limit. Existing files were kept.');
-    if (!files.includes(`${id}.json`) && files.length >= AGENT_STORAGE_LIMITS[`${kind}Count`]) throw storageError(413, 'Collection item limit exceeded.');
-    const total = files.filter(name => name !== `${id}.json`).reduce((sum, name) => {
-        const file = readRoleplayFile(path.join(directory, name), AGENT_STORAGE_LIMITS[`${kind}Bytes`]);
-        if (!file) throw storageError(409, 'The agent collection changed.');
-        return sum + file.bytes.length;
-    }, size);
-    if (total > AGENT_STORAGE_LIMITS.collectionBytes) throw storageError(413, 'Collection storage limit exceeded.');
+    assertAgentWriteCapacityLocked(lease, kind, record);
     beforePublish?.();
     validateCurrent();
     if (previous?.file.rawHash === crypto.createHash('sha256').update(text).digest('hex')) return agentRecordRevision(record);

@@ -78,6 +78,9 @@ async function runtime({ assistant = 'miso-male', group = null } = {}) {
         POPUP_TYPE: { CONFIRM: 1 }, POPUP_RESULT: { AFFIRMATIVE: 1 },
         callGenericPopup: async node => { context.reviews.push(node); return context.confirm(node); },
     }));
+    // The proposal review translates its wording (neconyan-assistant-review.js); English here, as with no locale loaded.
+    jest.unstable_mockModule('../public/scripts/i18n.js', () => ({ translate: text => text,
+        t: (strings, ...values) => strings.reduce((text, part, index) => text + part + (index < values.length ? values[index] : ''), '') }));
     jest.unstable_mockModule('../public/scripts/world-info.js', () => ({ world_names: [...context.books.keys()], loadWorldInfo: async name => structuredClone(context.books.get(name)) }));
     jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/pathfinder/entry-manager.js', () => ({
         updateEntry: async (book, uid, content, title, expected, options) => {
@@ -103,6 +106,7 @@ async function runtime({ assistant = 'miso-male', group = null } = {}) {
     jest.unstable_mockModule('../public/scripts/extensions.js', () => ({ extension_settings: { connectionManager: { profiles: [{ id: 'profile' }] } } }));
     jest.unstable_mockModule('../public/scripts/preset-manager.js', () => ({ getPresetManager: () => presetManager }));
     jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => context.account }));
+    jest.unstable_mockModule('../public/scripts/utils.js', () => ({ uuidv4: () => globalThis.crypto.randomUUID() }));
     const tools = await import('../public/scripts/neconyan-assistant-tools.js');
     tools.syncNeconyanAssistantTools();
     const invoke = async (name, input = {}, options) => JSON.parse(await manager.invokeFunctionTool(`Neconyan_Assistant_${name}`, JSON.stringify(input), options));
@@ -112,7 +116,7 @@ async function runtime({ assistant = 'miso-male', group = null } = {}) {
 test('only supported active individual-chat assistant metadata registers tools', async () => {
     for (const options of [{}, { assistant: 'ordinary' }, { group: 'group' }]) {
         const { manager } = await runtime(options);
-        expect(manager.tools.length).toBe(Object.keys(options).length ? 0 : 25);
+        expect(manager.tools.length).toBe(Object.keys(options).length ? 0 : 26);
     }
 });
 
@@ -161,6 +165,7 @@ test('write tools refuse to act until the user confirmed the call in chat', asyn
     const { invoke, context, manager } = await runtime();
     for (const [name, input] of [
         ['CreateCharacter', { character: { name: 'New character' } }],
+        ['CreateAgent', { agent: { name: 'New agent', prompt: 'Keep notes.', kind: 'companion' } }],
         ['EditCharacter', { avatar: ' Card.png', field: 'description', value: 'Changed' }],
         ['EditLorebookEntry', { book: ' Notes', uid: 0, field: 'content', value: 'Changed' }],
         ['EditAgent', { id: 'agent', field: 'prompt', value: 'Changed' }],
@@ -300,4 +305,40 @@ test('a committed character edit cannot refresh another account after the reques
     expect(result.committed).toBe(true);
     expect(getOneCharacter).toHaveBeenCalledTimes(2);
     expect(context.events).toEqual([]);
+});
+
+test('agent creation saves each supported kind with separate identities and no automatic activation', async () => {
+    const { invoke, context } = await runtime();
+    const original = structuredClone(context.agents.get('agent'));
+    for (const [kind, configuration] of [
+        ['before-reply', { execution: 'inline', phase: 'pre', preProcess: { mode: 'inject' } }],
+        ['after-reply', { execution: 'inline', phase: 'post', postProcess: { promptTransformEnabled: true, promptTransformMode: 'append' } }],
+        ['companion', { execution: 'companion', companion: { trigger: 'auto', displayMode: 'panel' } }],
+    ]) {
+        const input = { name: ' Agent ', prompt: '<img src=x>\nKeep exact instructions.', kind, connectionProfile: 'profile', tags: [' notes '],
+            ...(kind === 'after-reply' ? { afterReplyMode: 'append' } : {}) };
+        const result = await invoke('CreateAgent', { userConfirmed: true, agent: input });
+        expect(result).toMatchObject({ status: 'success', committed: true, enabled: false, refreshFailed: false });
+        expect(context.agents.get(result.id)).toMatchObject({ ...configuration, name: 'Agent', prompt: input.prompt, tags: ['notes'], enabled: false });
+        expect(context.events.at(-1).type).toBe('neconyan:assistant-agent-updated');
+    }
+    expect(context.agents.size).toBe(4);
+    expect(context.agents.get('agent')).toEqual(original);
+});
+
+test('invalid, declined and stale agent creation leaves the library untouched', async () => {
+    const { invoke, context } = await runtime();
+    const agent = { name: 'Notes', prompt: 'Keep notes.', kind: 'companion' };
+    for (const invalid of [{ name: ' ' }, { prompt: '' }, { prompt: 'x'.repeat(16001) }, { kind: 'unknown' },
+        { tags: ['a', ' a '] }, { connectionProfile: 'missing' }, { enabled: true }, { id: 'agent' }, { tools: [] }, { afterReplyMode: 'append' }]) {
+        expect(await invoke('CreateAgent', { userConfirmed: true, agent: { ...agent, ...invalid } })).toMatchObject({ status: 'failure' });
+    }
+    expect(context.reviews).toHaveLength(0);
+    context.confirm = async () => 0;
+    expect(await invoke('CreateAgent', { userConfirmed: true, agent })).toMatchObject({ status: 'cancelled' });
+    context.confirm = async () => 1;
+    context.beforeAgentWrite = async () => { context.account = 'two'; };
+    expect(await invoke('CreateAgent', { userConfirmed: true, agent })).toMatchObject({ status: 'cancelled' });
+    expect(context.writes).toEqual([]);
+    expect(context.agents.size).toBe(1);
 });

@@ -14,6 +14,7 @@ const { decideJobApproval, readJobApproval, requireJobApproval } = await import(
 const { router: agentRouter } = await import('../src/endpoints/in-chat-agents.js');
 const { router: presetRouter } = await import('../src/endpoints/presets.js');
 const { router: characterRouter } = await import('../src/endpoints/characters.js');
+const { nativeAgentDefinition, agentNeedsModel } = await import('../src/generation/agent-definition.js');
 
 async function authoringServer(t, f) {
     const app = express();
@@ -111,6 +112,82 @@ test('the assistant cannot treat model confirmation as approval for an Agent edi
     assert.equal(JSON.parse(fs.readFileSync(path.join(f.dirs.inChatAgents, 'tool-agent.json'))).prompt, 'After');
     const repeated = await runAssistantToolJob(context());
     assert.deepEqual(repeated, finished);
+});
+
+test('agent creation requires approval, survives a staged-write interruption and publishes once', async t => {
+    const f = prepared(t);
+    const args = { userConfirmed: true, agent: { name: 'Notes', prompt: 'Keep notes.', kind: 'companion' } };
+    const request = f.capture('CreateAgent', args, 'create-agent');
+    assert.deepEqual(f.capture('CreateAgent', args, 'create-agent'), request);
+    const { context } = f.admit(request);
+    const filename = path.join(f.dirs.root, request.resource.relative);
+    const pending = await runAssistantToolJob(context());
+    assert.equal(pending.waiting, true);
+    assert.equal(fs.existsSync(filename), false);
+    decideJobApproval(context(), { id: pending.approval.id, proposalHash: pending.approval.proposalHash, decision: 'allow' });
+    await assert.rejects(runAssistantToolJob(context(), { beforePublish: () => { throw Error('Interrupted before publication'); } }), /Interrupted/);
+    assert.equal(fs.existsSync(filename), false);
+    const finished = await runAssistantToolJob(context());
+    assert.equal(finished.result.result.id, request.resource.id);
+    assert.equal(finished.result.result.committed, true);
+    const saved = JSON.parse(fs.readFileSync(filename));
+    assert.equal(saved.enabled, false);
+    assert.equal(saved.execution, 'companion');
+    assert.equal(saved.prompt, 'Keep notes.');
+    const identity = fs.statSync(filename, { bigint: true }).ino;
+    assert.deepEqual(await runAssistantToolJob(context()), finished);
+    assert.equal(fs.statSync(filename, { bigint: true }).ino, identity);
+    assert.equal(f.capture('ReadAgent', { id: saved.id }).response.agent.prompt, saved.prompt);
+    assert.throws(() => f.capture('CreateAgent', args, 'create-agent'), /already uses/);
+});
+
+test('agent creation refuses invalid configuration, missing confirmation, decline and a competing file', async t => {
+    const f = prepared(t);
+    const agent = { name: 'Agent', prompt: 'Keep notes.', kind: 'after-reply', afterReplyMode: 'append' };
+    for (const changes of [{ enabled: true }, { id: 'tool-agent' }, { connectionProfile: 'missing' }, { prompt: ' ' }, { kind: 'unknown' }]) {
+        assert.throws(() => f.capture('CreateAgent', { userConfirmed: true, agent: { ...agent, ...changes } }), { code: 'ASSISTANT_TOOL_INVALID' });
+    }
+    const ask = f.admit(f.capture('CreateAgent', { agent }, 'ask-create'));
+    assert.equal((await runAssistantToolJob(ask.context())).result.result.status, 'needs_confirmation');
+    const declined = f.capture('CreateAgent', { userConfirmed: true, agent }, 'decline-create');
+    const denied = f.admit(declined);
+    const pending = await runAssistantToolJob(denied.context());
+    decideJobApproval(denied.context(), { id: pending.approval.id, proposalHash: pending.approval.proposalHash, decision: 'deny' });
+    await runAssistantToolJob(denied.context());
+    assert.equal(fs.existsSync(path.join(f.dirs.root, declined.resource.relative)), false);
+    const request = f.capture('CreateAgent', { userConfirmed: true, agent }, 'race-create');
+    const race = f.admit(request);
+    const review = await runAssistantToolJob(race.context());
+    decideJobApproval(race.context(), { id: review.approval.id, proposalHash: review.approval.proposalHash, decision: 'allow' });
+    const filename = path.join(f.dirs.root, request.resource.relative);
+    fs.writeFileSync(filename, JSON.stringify({ id: request.resource.id, name: 'Keep this other agent' }));
+    await assert.rejects(runAssistantToolJob(race.context()), /already uses/);
+    assert.equal(JSON.parse(fs.readFileSync(filename)).name, 'Keep this other agent');
+});
+
+test('created agent kinds have usable runtime settings and respect the library capacity after review', async t => {
+    const f = prepared(t);
+    for (const kind of ['before-reply', 'after-reply', 'companion']) {
+        const request = f.capture('CreateAgent', { userConfirmed: true, agent: { name: kind, prompt: 'Keep notes.', kind } }, kind);
+        const { context } = f.admit(request);
+        const pending = await runAssistantToolJob(context());
+        decideJobApproval(context(), { id: pending.approval.id, proposalHash: pending.approval.proposalHash, decision: 'allow' });
+        await runAssistantToolJob(context());
+        const agent = nativeAgentDefinition(JSON.parse(fs.readFileSync(path.join(f.dirs.root, request.resource.relative))));
+        assert.equal(agentNeedsModel(agent), kind !== 'before-reply');
+        if (kind === 'after-reply') assert.equal(agent.postProcess.promptTransformMode, 'rewrite');
+        if (kind === 'before-reply') assert.equal(agent.preProcess.mode, 'inject');
+    }
+    const request = f.capture('CreateAgent', { userConfirmed: true, agent: { name: 'Full library', prompt: 'Notes', kind: 'companion' } }, 'capacity');
+    const { context } = f.admit(request);
+    const pending = await runAssistantToolJob(context());
+    decideJobApproval(context(), { id: pending.approval.id, proposalHash: pending.approval.proposalHash, decision: 'allow' });
+    for (let i = fs.readdirSync(f.dirs.inChatAgents).length; i < 512; i++) {
+        const id = `filler-${i}`;
+        fs.writeFileSync(path.join(f.dirs.inChatAgents, `${id}.json`), JSON.stringify({ id, name: id, prompt: '' }));
+    }
+    await assert.rejects(runAssistantToolJob(context()), /limit/i);
+    assert.equal(fs.existsSync(path.join(f.dirs.root, request.resource.relative)), false);
 });
 
 test('lorebook and preset edits preserve unselected fields and refuse unsupported preset values', async t => {

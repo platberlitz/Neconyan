@@ -46,7 +46,7 @@
     --sb-section-gap: 14px;
     --sb-settings-card-padding: var(--spacing-md) 14px;
     --sb-message-icon-size: clamp(24px, calc(var(--bottomFormBlockSize, 36px) * 0.78), 30px);
-    --sb-composer-action-size: clamp(34px, calc(var(--bottomFormBlockSize, 36px) * 0.94), 38px);
+    --sb-composer-action-size: clamp(30px, calc(var(--bottomFormBlockSize, 54px) * 0.63), 34px);
     --sb-composer-send-width: var(--sb-composer-action-size);
     --sb-composer-action-icon-size: clamp(14px, calc(var(--bottomFormIconSize, 20px) * 0.72), 17px);
     --sb-message-meta-line-height: 1.18;
@@ -250,7 +250,7 @@ input[type="submit"] {
     --sb-icon-control-size: 1.85rem;
     --sb-inline-drawer-icon-size: 1.85rem;
     --sb-message-icon-size: clamp(20px, calc(var(--bottomFormBlockSize, 34px) * 0.68), 26px);
-    --sb-composer-action-size: clamp(30px, calc(var(--bottomFormBlockSize, 34px) * 0.88), 34px);
+    --sb-composer-action-size: clamp(28px, calc(var(--bottomFormBlockSize, 34px) * 0.88), 30px);
     --sb-composer-send-width: var(--sb-composer-action-size);
     --sb-composer-action-icon-size: clamp(12px, calc(var(--bottomFormIconSize, 18px) * 0.7), 15px);
 }
@@ -1189,7 +1189,7 @@ select.text_pole:where(:not([multiple]):not([size]):not(.select2-hidden-accessib
     min-width: 0;
     width: auto;
     flex: 1 1 0;
-    min-height: 46px;
+    min-height: 36px;
     height: auto;
     field-sizing: content;
     max-height: min(50vh, 28rem);

@@ -9,6 +9,7 @@ const source = fs.readFileSync(new URL('../public/scripts/notebooks/property-tab
 const dialogSource = fs.readFileSync(new URL('../public/scripts/notebooks/notes-dialogs.js', import.meta.url), 'utf8');
 const appSource = fs.readFileSync(new URL('../public/scripts/notebooks/notes-app.js', import.meta.url), 'utf8');
 const domSource = fs.readFileSync(new URL('../public/scripts/notebooks/dom.js', import.meta.url), 'utf8');
+const userTextSource = fs.readFileSync(new URL('../public/scripts/notebooks/user-text.js', import.meta.url), 'utf8');
 const id = number => `n_${number.toString(16).padStart(16, '0')}`;
 const row = (number = 1, title = 'Original row') => ({ id: id(number), title, path: `${title}.md`, revision: 'loaded-revision',
     cells: { score: { kind: 'number', value: 2, display: '2', editable: true } } });
@@ -66,6 +67,8 @@ const helpers = {
     h: element, clear: target => { target.childNodes = []; }, setButtonPressed,
     button: (label, click, options = {}) => element('button', { ...options, text: label, onclick: click, 'aria-pressed': options.pressed }),
     field: (label, control) => element('label', { text: label }, control), parsePropertyValue, propertyInput,
+    // i18n.js's translate() and t() with no dictionary loaded, as in English.
+    translate: text => text, t: (strings, ...values) => strings.reduce((text, part, index) => text + part + (index < values.length ? values[index] : ''), ''),
 };
 
 function tableFixture(request = jest.fn(async () => response())) {
@@ -95,7 +98,8 @@ function dialogFixture(cell = row().cells.score, request = jest.fn(async () => (
     const context = vm.createContext({ ...helpers, app, savedRow, cell, isCurrent, POPUP_RESULT: { AFFIRMATIVE: 1 },
         fieldId: () => 'test-property', newOperationId: () => `property:test:${++operations}`,
         dialog: (node, settings) => { content = node; options = settings; return ending.promise; } });
-    vm.runInContext(functionSource(domSource, 'field') + '\n' + functionSource(dialogSource, 'editPropertyCell'), context);
+    vm.runInContext(functionSource(domSource, 'field') + '\n' + functionSource(userTextSource, 'userWords') + '\n' + functionSource(userTextSource, 'userPhrase') + '\n'
+        + functionSource(dialogSource, 'editPropertyCell'), context);
     const finished = vm.runInContext('editPropertyCell(app, savedRow, "score", cell, { isCurrent })', context);
     return { app, savedRow, currentNote, finished, ending, get content() { return content; },
         value: () => find(content, node => node.tagName === 'TEXTAREA'),

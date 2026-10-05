@@ -4908,9 +4908,9 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
         --sb-bottom-chat-mobile-gap: clamp(2px, calc(4px * var(--sb-bottom-bar-scale)), 6px);
         --sb-bottom-chat-mobile-padding-block: clamp(2px, calc(3px * var(--sb-bottom-bar-scale)), 5px);
         --sb-bottom-chat-mobile-padding-inline: clamp(4px, calc(6px * var(--sb-bottom-bar-scale)), 9px);
-        --sb-bottom-chat-mobile-button-size: clamp(30px, calc(40px * var(--sb-bottom-bar-scale)), 60px);
-        --sb-bottom-chat-mobile-select-height: clamp(30px, calc(40px * var(--sb-bottom-bar-scale)), 60px);
-        --sb-bottom-chat-mobile-persona-size: clamp(30px, calc(40px * var(--sb-bottom-bar-scale)), 60px);
+        --sb-bottom-chat-mobile-button-size: clamp(26px, calc(34px * var(--sb-bottom-bar-scale)), 60px);
+        --sb-bottom-chat-mobile-select-height: clamp(26px, calc(34px * var(--sb-bottom-bar-scale)), 60px);
+        --sb-bottom-chat-mobile-persona-size: clamp(26px, calc(34px * var(--sb-bottom-bar-scale)), 60px);
         --sb-bottom-chat-mobile-radius: clamp(10px, calc(14px * var(--sb-bottom-bar-scale)), 20px);
         width: min(var(--sb-bottom-chat-mobile-width), calc(100% - (var(--sb-bottom-chat-mobile-gutter) * 2)));
         max-width: calc(100% - (var(--sb-bottom-chat-mobile-gutter) * 2));
@@ -5065,9 +5065,9 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
         --sb-bottom-chat-mobile-gap: clamp(2px, calc(3px * var(--sb-bottom-bar-scale)), 5px);
         --sb-bottom-chat-mobile-padding-block: clamp(2px, calc(3px * var(--sb-bottom-bar-scale)), 4px);
         --sb-bottom-chat-mobile-padding-inline: clamp(3px, calc(4px * var(--sb-bottom-bar-scale)), 6px);
-        --sb-bottom-chat-mobile-button-size: clamp(30px, calc(40px * var(--sb-bottom-bar-scale)), 48px);
-        --sb-bottom-chat-mobile-select-height: clamp(30px, calc(40px * var(--sb-bottom-bar-scale)), 48px);
-        --sb-bottom-chat-mobile-persona-size: clamp(30px, calc(40px * var(--sb-bottom-bar-scale)), 48px);
+        --sb-bottom-chat-mobile-button-size: clamp(26px, calc(34px * var(--sb-bottom-bar-scale)), 48px);
+        --sb-bottom-chat-mobile-select-height: clamp(26px, calc(34px * var(--sb-bottom-bar-scale)), 48px);
+        --sb-bottom-chat-mobile-persona-size: clamp(26px, calc(34px * var(--sb-bottom-bar-scale)), 48px);
         --sb-bottom-chat-mobile-radius: clamp(8px, calc(10px * var(--sb-bottom-bar-scale)), 13px);
     }
 
@@ -5267,10 +5267,10 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 
 /* Persona quick-access bubble */
 #sb-persona-bubble {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
-    min-height: 44px;
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
     aspect-ratio: 1;
     border-radius: 50%;
     border: 2px solid color-mix(in srgb, var(--SmartThemeBorderColor) 50%, transparent);
@@ -5300,22 +5300,22 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 @media screen and (max-width: 1000px) {
     #sb-persona-bubble {
         flex: 0 0 var(--sb-bottom-chat-mobile-persona-size, 36px);
-        width: var(--sb-bottom-chat-mobile-persona-size, 44px);
-        height: var(--sb-bottom-chat-mobile-persona-size, 44px);
-        min-width: var(--sb-bottom-chat-mobile-persona-size, 44px);
-        min-height: var(--sb-bottom-chat-mobile-persona-size, 44px);
-        max-width: var(--sb-bottom-chat-mobile-persona-size, 44px);
-        max-height: var(--sb-bottom-chat-mobile-persona-size, 44px);
+        width: var(--sb-bottom-chat-mobile-persona-size, 36px);
+        height: var(--sb-bottom-chat-mobile-persona-size, 36px);
+        min-width: var(--sb-bottom-chat-mobile-persona-size, 36px);
+        min-height: var(--sb-bottom-chat-mobile-persona-size, 36px);
+        max-width: var(--sb-bottom-chat-mobile-persona-size, 36px);
+        max-height: var(--sb-bottom-chat-mobile-persona-size, 36px);
         border-width: 1px;
     }
 }
 
 @media screen and (max-width: 420px) {
     #sb-persona-bubble {
-        width: var(--sb-bottom-chat-mobile-persona-size, 44px);
-        height: var(--sb-bottom-chat-mobile-persona-size, 44px);
-        min-width: var(--sb-bottom-chat-mobile-persona-size, 44px);
-        min-height: var(--sb-bottom-chat-mobile-persona-size, 44px);
+        width: var(--sb-bottom-chat-mobile-persona-size, 36px);
+        height: var(--sb-bottom-chat-mobile-persona-size, 36px);
+        min-width: var(--sb-bottom-chat-mobile-persona-size, 36px);
+        min-height: var(--sb-bottom-chat-mobile-persona-size, 36px);
     }
 }
 

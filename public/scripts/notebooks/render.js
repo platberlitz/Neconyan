@@ -1,10 +1,22 @@
 import { DOMPurify, showdown } from '../../lib.js';
+import { t, translate } from '../i18n.js';
 import { headingSections, splitNoteFrontmatter } from './folding.js';
+import { userPhrase } from './user-text.js';
 
 const ESCAPED_OPEN = '\uE000';
 const ESCAPED_EMBED = '\uE001';
 const SAFE_SCHEMES = /^(?:https?:|mailto:)/i;
 const WIKI = /(!?)\[\[([^\]\n]{1,400})\]\]/g;
+const CAPTION_ATTRIBUTES = ['title', 'aria-label', 'placeholder'];
+// What the reader adds itself: its own controls, and caption attributes it writes onto the note's elements. Everything else in a
+// rendered note is the note's own. The note's HTML keeps its classes, so a class name cannot tell the two apart.
+const readerControls = new WeakSet();
+const readerAttributes = new WeakMap();
+
+function readerControl(element) {
+    readerControls.add(element);
+    return element;
+}
 
 let converter = null;
 
@@ -80,6 +92,7 @@ function wikiNodes(text, documentRef, { embedLoading = false, noteId } = {}) {
         if (match[1]) {
             element.className = 'notes-embed-placeholder';
             element.textContent = embedLoading ? 'Loading embedded note...' : 'Embedded note unavailable.';
+            readerControl(element);
         } else {
             element.className = 'notes-wikilink';
             element.href = '#';
@@ -139,6 +152,7 @@ function fixLinksAndImages(root, { notebookId, noteId, notePath, attachmentUrl }
             anchor.removeAttribute('href');
             anchor.classList.add('notes-link-blocked');
             anchor.title = 'This link type is not opened from notes.';
+            readerAttributes.set(anchor, ['title']);
             continue;
         }
         if (href.startsWith('#')) {
@@ -169,8 +183,10 @@ function fixLinksAndImages(root, { notebookId, noteId, notePath, attachmentUrl }
             button.className = 'menu_button notes-external-image';
             button.dataset.externalSource = source;
             button.dataset.alt = image.getAttribute('alt') ?? '';
-            button.textContent = `Load external image${image.alt ? `: ${image.alt}` : ''}`;
+            if (image.alt) button.append(userPhrase`Load external image: ${image.alt}`);
+            else button.textContent = 'Load external image';
             button.title = 'Loading this image contacts another website.';
+            readerControl(button);
             image.replaceWith(button);
             continue;
         }
@@ -222,7 +238,7 @@ function embedWidget(documentRef, node, options, budget) {
     if (!available) {
         section.classList.add('notes-embed-placeholder');
         section.textContent = node.status === 'limited' || node.status === 'rendered' ? 'Embedded note preview limit reached.' : 'Embedded note unavailable.';
-        return section;
+        return readerControl(section);
     }
     budget.bytes += textBytes;
     section.dataset.embedNoteId = node.noteId;
@@ -230,14 +246,18 @@ function embedWidget(documentRef, node, options, budget) {
     header.className = 'notes-embed-header';
     const title = documentRef.createElement('p');
     title.className = 'notes-embed-title';
-    title.textContent = `${String(node.title ?? 'Note').slice(0, 200)}${node.section ? `: ${String(node.section).slice(0, 200)}` : ''}`;
-    const open = documentRef.createElement('button');
+    const part = node.section ? String(node.section).slice(0, 200) : '';
+    // The embedded note's title and section are the user's; the 'Note' fallback is the reader's own wording.
+    if (node.title !== undefined && node.title !== null) title.textContent = `${String(node.title).slice(0, 200)}${part ? `: ${part}` : ''}`;
+    else if (part) title.append(userPhrase`Note: ${part}`);
+    else readerControl(title).textContent = 'Note';
+    const open = readerControl(documentRef.createElement('button'));
     open.type = 'button';
     open.className = 'menu_button notes-button';
     open.textContent = 'Open note';
     open.dataset.noteOpen = node.noteId;
     open.dataset.wikiFragment = String(node.fragment ?? '');
-    const fold = documentRef.createElement('button');
+    const fold = readerControl(documentRef.createElement('button'));
     fold.type = 'button';
     fold.className = 'menu_button notes-button';
     fold.textContent = 'Fold embed';
@@ -246,7 +266,7 @@ function embedWidget(documentRef, node, options, budget) {
     body.className = 'notes-embed-body';
     fold.addEventListener('click', () => {
         body.hidden = !body.hidden;
-        fold.textContent = body.hidden ? 'Show embed' : 'Fold embed';
+        fold.textContent = readerCaption(fold, body.hidden ? 'Show embed' : 'Fold embed');
         fold.setAttribute('aria-expanded', String(!body.hidden));
     });
     header.append(title, open, fold);
@@ -308,6 +328,60 @@ function hydrateEmbeds(container, tokens, options, source) {
     while (restore.nextNode()) restore.currentNode.nodeValue = restoreEmbedTokens(restore.currentNode.nodeValue, tokens, source);
 }
 
+/** A reader control's wording, translated here when the note's element around it is out of the run-time localiser's reach. */
+function readerCaption(control, text) {
+    return control.parentElement?.closest('[data-i18n-ignore]') ? translate(text) : text;
+}
+
+function translateWords(value) {
+    const key = value.trim();
+    return key ? value.replace(key, () => translate(key)) : value;
+}
+
+/** Translates the reader's own wording inside an element that is about to be marked as the note's. */
+function translateReaderWords(element) {
+    for (const item of [element, ...element.querySelectorAll('*')]) {
+        if (item.parentElement?.closest('[data-i18n-ignore]')) continue;
+        for (const name of readerAttributes.get(item) ?? []) item.setAttribute(name, translateWords(item.getAttribute(name)));
+        if (!readerControls.has(item)) continue;
+        for (const node of item.childNodes) if (node.nodeType === Node.TEXT_NODE) node.nodeValue = translateWords(node.nodeValue);
+        for (const name of CAPTION_ATTRIBUTES) if (item.hasAttribute(name)) item.setAttribute(name, translateWords(item.getAttribute(name)));
+    }
+}
+
+function insideReaderControl(node) {
+    for (let element = node.parentElement; element; element = element.parentElement) if (readerControls.has(element)) return true;
+    return false;
+}
+
+/**
+ * Leaves the note's own words alone: each of its text nodes goes in a marked span, and each element carrying a title, aria-label or
+ * placeholder the note wrote is marked, so the run-time localiser skips them. The reader's controls stay translatable; one inside
+ * such an element is translated here instead.
+ */
+function protectNoteText(root) {
+    const documentRef = root.ownerDocument;
+    const walker = documentRef.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const texts = [];
+    while (walker.nextNode()) {
+        const node = walker.currentNode;
+        if (node.nodeValue.trim() && !node.parentElement?.closest('[data-i18n-ignore], pre, code') && !insideReaderControl(node)) texts.push(node);
+    }
+    for (const node of texts) {
+        const words = documentRef.createElement('span');
+        words.setAttribute('data-i18n-ignore', '');
+        node.replaceWith(words);
+        words.append(node);
+    }
+    for (const element of root.querySelectorAll(CAPTION_ATTRIBUTES.map(name => `[${name}]`).join(', '))) {
+        const written = readerAttributes.get(element) ?? [];
+        if (readerControls.has(element) || insideReaderControl(element) || element.closest('[data-i18n-ignore]')
+            || !CAPTION_ATTRIBUTES.some(name => element.hasAttribute(name) && !written.includes(name))) continue;
+        translateReaderWords(element);
+        element.setAttribute('data-i18n-ignore', '');
+    }
+}
+
 export function renderNoteInto(container, text, options) {
     const { markdown, tokens } = prepareEmbedMarkdown(text, options.embeds);
     const body = options.bodyOnly ? markdown : splitFrontmatterText(markdown).body;
@@ -336,13 +410,15 @@ export function renderNoteInto(container, text, options) {
     clean.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach((heading, index) => {
         heading.dataset.headingIndex = String(index);
     });
-    if (options.onFold) decorateHeadingFolds(clean, text, options);
+    if (options.onFold) decorateHeadingFolds(clean, text, { ...options, register: readerControl, translate, t });
     hydrateEmbeds(clean, tokens, options, String(text));
+    protectNoteText(clean);
     container.replaceChildren(clean);
 }
 
 /** Only real, top-level Markdown headings receive folding controls. */
-export function decorateHeadingFolds(container, text, { foldedKeys = [], onFold }) {
+export function decorateHeadingFolds(container, text, { foldedKeys = [], onFold, register = control => control, translate: translateText = caption => caption,
+    t: label = (strings, ...values) => strings.reduce((caption, part, index) => caption + part + (index < values.length ? values[index] : ''), '') }) {
     const headings = headingSections(text);
     const rendered = [...container.children].filter(node => /^H[1-6]$/.test(node.tagName));
     if (rendered.length !== headings.length || rendered.some((node, index) => Number(node.tagName[1]) !== headings[index].level)) return;
@@ -368,12 +444,21 @@ export function decorateHeadingFolds(container, text, { foldedKeys = [], onFold 
         body.className = 'notes-section-body';
         body.hidden = folded.has(heading.key);
         if (heading.to > heading.from) {
-            const control = container.ownerDocument.createElement('button');
+            const control = register(container.ownerDocument.createElement('button'));
             control.type = 'button';
             control.className = 'menu_button notes-button notes-read-fold';
             const describe = () => {
-                control.textContent = body.hidden ? 'Show section' : 'Fold section';
-                control.setAttribute('aria-label', `${body.hidden ? 'Show' : 'Fold'} ${heading.text || 'Untitled heading'}`);
+                const caption = body.hidden ? 'Show section' : 'Fold section';
+                if (heading.text) {
+                    // The label holds the user's heading, and an attribute cannot be split. So the control's wording is translated
+                    // here, the heading goes in as written, and the control is marked so the run-time localiser leaves both alone.
+                    control.textContent = translateText(caption);
+                    control.setAttribute('aria-label', body.hidden ? label`Show ${heading.text}` : label`Fold ${heading.text}`);
+                    control.setAttribute('data-i18n-ignore', '');
+                } else {
+                    control.textContent = caption;
+                    control.setAttribute('aria-label', [body.hidden ? 'Show' : 'Fold', 'Untitled heading'].join(' '));
+                }
                 control.setAttribute('aria-expanded', String(!body.hidden));
             };
             describe();
@@ -398,7 +483,7 @@ function restoreTaskBoxes(container, body) {
     for (const item of container.querySelectorAll('li')) {
         const text = item.firstChild;
         if (!(text?.nodeType === 3 && /^\s*\[( |x|X)\]\s/.test(text.nodeValue)) && !item.classList.contains('task-list-item')) continue;
-        const box = container.ownerDocument.createElement('input');
+        const box = readerControl(container.ownerDocument.createElement('input'));
         box.type = 'checkbox';
         box.checked = tasks[index] ?? /\[(x|X)\]/.test(text?.nodeValue ?? '');
         box.disabled = true;

@@ -15,8 +15,8 @@ function calls(node, found = []) {
     return found;
 }
 
-const isToast = callee => (callee.type === 'Identifier' && callee.name === 'toast')
-    || (callee.type === 'MemberExpression' && !callee.computed && callee.property.type === 'Identifier' && callee.property.name === 'toast');
+const isToast = callee => (callee.type === 'Identifier' && ['toast', 'userToast'].includes(callee.name))
+    || (callee.type === 'MemberExpression' && !callee.computed && callee.property.type === 'Identifier' && ['toast', 'userToast'].includes(callee.property.name));
 const isKind = node => node.type === 'Literal' && kinds.has(node.value);
 const validKind = node => isKind(node) || (node.type === 'ConditionalExpression' && isKind(node.consequent) && isKind(node.alternate));
 
