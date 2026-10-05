@@ -73,6 +73,31 @@ test('captions filled in before the locale loaded still match their template key
     expect(result).toEqual(['Schnellzugriff: Agents', 'Schnellzugriff: Agents', '9 Schritte, Schritt 2', 'Roleplay ist aktiv', 'Nori']);
 });
 
+test('text that is already a translation is not translated again by a ${n} key', async ({ page }) => {
+    const source = await readFile(new URL('../public/scripts/ui-localization.js', import.meta.url), 'utf8');
+    await page.setContent(`
+        <main id="root">
+            <p id="placed" title=" Use o tokenizador AI21 ">  Use o tokenizador AI21  </p>
+            <p id="twice">Use AI21 Tokenizer</p>
+            <p id="english">Use Claude</p>
+        </main>`);
+    await page.addScriptTag({ type: 'module', content: `${source}\nwindow.localizeControls = localizeControls;` });
+    await page.waitForFunction(() => typeof window.localizeControls === 'function');
+    const result = await page.evaluate(() => {
+        // Portuguese values that begin with the English word 'Use' beside the 'Use ${0}' key, as in pt-pt.json.
+        const dictionary = { 'Use ${0}': 'Usar ${0}', 'Use AI21 Tokenizer': 'Use o tokenizador AI21' };
+        const root = document.getElementById('root');
+        const read = () => ['placed', 'twice', 'english'].map(id => document.getElementById(id)).map(element => [element.textContent, element.title]);
+        window.localizeControls(root, dictionary);
+        const first = read();
+        // A template localised as a string and then again when the page inserts it, as renderTemplateAsync and the observer do.
+        window.localizeControls(root, dictionary);
+        return { first, second: read() };
+    });
+    const expected = [['  Use o tokenizador AI21  ', ' Use o tokenizador AI21 '], ['Use o tokenizador AI21', ''], ['Usar Claude', '']];
+    expect(result).toEqual({ first: expected, second: expected });
+});
+
 test('drawer toggles are labelled with the phrase the app supplies, before and after a toggle', async ({ page }) => {
     const source = await readFile(new URL('../public/scripts/a11y.js', import.meta.url), 'utf8');
     await page.setContent(`

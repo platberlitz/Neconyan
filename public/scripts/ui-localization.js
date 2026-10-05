@@ -22,8 +22,9 @@ const placeholder = /\$\{(\d+)\}/g;
 function templateIndex(dictionary) {
     let index = templateIndexes.get(dictionary);
     if (index) return index;
-    index = { byPrefix: new Map(), leading: [] };
+    index = { byPrefix: new Map(), leading: [], values: new Set() };
     for (const [key, value] of Object.entries(dictionary)) {
+        if (typeof value === 'string' && value !== key && value.trim()) index.values.add(value.trim());
         if (!key.includes('${') || value === key || typeof value !== 'string') continue;
         const parts = key.split(placeholder);
         if (parts.length < 3 || parts.filter((_, i) => i % 2 === 0).join('').replace(/\s/g, '').length < 3) continue;
@@ -42,6 +43,8 @@ function lookup(key, dictionary) {
     if (Object.hasOwn(dictionary, key)) return dictionary[key] !== key ? dictionary[key] : null;
     if (!key.length) return null;
     const index = templateIndex(dictionary);
+    // Text that is already one of this language's translations (from t``, or localised once already) is not translated again.
+    if (index.values.has(key)) return null;
     for (const template of [...(index.byPrefix.get(key.slice(0, 2)) || []), ...index.leading]) {
         const match = template.expression.exec(key);
         if (!match) continue;
