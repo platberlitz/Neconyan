@@ -62,6 +62,25 @@ describe('mobile character drawer entity row css', () => {
         expect(mobileShellCss).not.toContain('#rm_print_characters_block:not(.group_overlay_mode_select) > :is(.character_select, .group_select, .bogus_folder_select)');
     });
 
+    test('keeps the phone list compact with an icon action rail', () => {
+        const rowSelector = '#right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar)';
+        const containerSelector = `body:not(.charListGrid) ${rowSelector} > :is(.character_select_container, .group_select_container)`;
+        const containerRule = getRuleBody(mobileShellCss, containerSelector);
+        const descriptionRule = getRuleBody(mobileShellCss, `${containerSelector} > :is(.ch_description, .group_select_block_list)`);
+        const actionsRule = getRuleBody(mobileShellCss, `${containerSelector} > .sb-entity-actions`);
+        const actionRule = getRuleBody(mobileShellCss, `${containerSelector} > .sb-entity-actions > .sb-entity-action`);
+        const actionLabelRule = getRuleBody(mobileShellCss, `${containerSelector} > .sb-entity-actions > .sb-entity-action > span`);
+
+        expect(containerRule).toContain('grid-template-columns: minmax(0, 1fr) auto;');
+        expect(containerRule).toContain('align-items: center;');
+        expect(descriptionRule).toContain('-webkit-line-clamp: 1;');
+        expect(actionsRule).toContain('grid-column: 2;');
+        expect(actionsRule).toContain('grid-row: 1 / span 4;');
+        expect(actionRule).toContain('min-width: 44px;');
+        expect(actionRule).toContain('min-height: 44px;');
+        expect(actionLabelRule).toContain('clip-path: inset(50%);');
+    });
+
     test('keeps bulk-edit rows from shrinking inside the scroller', () => {
         const bulkEntityRowRule = getRuleBody(mobileStylesCss, '#rm_print_characters_block.bulk_select > :is(.character_select, .group_select)');
 
