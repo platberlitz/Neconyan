@@ -3,8 +3,9 @@
     align-items: center;
     flex-wrap: wrap;
     gap: 6px;
-    padding: 0 8px 6px;
+    padding: 0 4px 4px;
     width: 100%;
+    --sb-control-icon-physical-size: 32px;
     box-sizing: border-box;
     overflow: hidden;
 }

@@ -542,11 +542,11 @@ body.neconyan.flatchat:not(.sbterm) #chat .mes :is(.mes_button, .extraMesButtons
 body.neconyan #form_sheld { width: 100%; max-width: max(420px, calc(860px * var(--neconyanPageWidthScale, 1))); margin: 0 auto; padding: 0 24px max(18px, env(safe-area-inset-bottom)); }
 body.neconyan :is(#send_form, #sb-bottom-chat-bar) { background: var(--neco-surface); }
 body.neconyan #sb-bottom-chat-bar { padding-inline: 0; }
-body.neconyan #send_form { padding: 6px; border: 1px solid var(--neco-border); border-radius: 10px; box-shadow: none; }
+body.neconyan #send_form { padding: 4px; border: 1px solid var(--neco-border); border-radius: 10px; box-shadow: none; }
 body.neconyan #nonQRFormItems { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 body.neconyan #send_textarea {
     max-height: min(35dvh, 360px);
-    padding: 12px; background: transparent; color: var(--neco-ink); border: 0; border-radius: 5px; box-shadow: none; font-size: 14px; line-height: 1.5;
+    padding: 7px 10px; background: transparent; color: var(--neco-ink); border: 0; border-radius: 5px; box-shadow: none; font-size: 14px; line-height: 1.5;
     /* style.css clips the top 5px to hide its STscript progress border; with border: 0 that clip only cuts the focus ring. */
     clip-path: none;
 }
@@ -1006,14 +1006,14 @@ body.neconyan .neconyan-chat-row-actions .neconyan-current-chat-export[aria-hidd
     /* Guided Generations and Input History share one row above the composer. Both groups keep
        the same tight internal gap so the row reads as one even line of buttons. */
     body.neconyan #send_form > #gg-action-button-container {
-        --gg-mobile-action-size: 36px;
-        --gg-mobile-action-icon-size: 16px;
+        --gg-mobile-action-size: 32px;
+        --gg-mobile-action-icon-size: 14px;
         gap: 4px;
-        padding: 4px 4px 0;
+        padding: 2px 4px 0;
     }
     body.neconyan #send_form > #gg-action-button-container > .stih--buttons {
-        --stih-mobile-action-size: 36px;
-        --stih-mobile-action-icon-size: 16px;
+        --stih-mobile-action-size: 32px;
+        --stih-mobile-action-icon-size: 14px;
         flex: 3 1 0;
         justify-content: center;
         margin-right: 0;

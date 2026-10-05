@@ -69,11 +69,11 @@ describe('touch-friendly bottom chat bar', () => {
     const sizes = css => [...css.matchAll(/--sb-bottom-chat-mobile-button-size: clamp\((\d+)px, calc\((\d+)px \* var\(--sb-bottom-bar-scale\)\), (\d+)px\);/g)]
         .map(([, min, base, max]) => ({ min: Number(min), base: Number(base), max: Number(max) }));
 
-    test('buttons start at a touch-sized 40px and still follow the Bottom Bar Size setting', () => {
+    test('buttons start at a slim 34px and still follow the Bottom Bar Size setting', () => {
         const all = [...sizes(tabsCss), ...sizes(mobileShellCss)];
         expect(all.length).toBeGreaterThanOrEqual(3);
         for (const { min, base, max } of all) {
-            expect(base).toBeGreaterThanOrEqual(40);
+            expect(base).toBe(34);
             expect(min).toBeLessThan(base * 0.8);
             expect(max).toBeGreaterThanOrEqual(base * 1.2);
         }
