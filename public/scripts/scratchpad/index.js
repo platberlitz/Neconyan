@@ -67,6 +67,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     include: { card: true, persona: true, authorsNote: true, lore: true, hidden: false },
     loreOverrides: {},
     connection: { kind: 'current' },
+    assistantConnections: {},
     maxTokens: 4096,
 });
 
@@ -132,6 +133,10 @@ function activeSession() {
 
 function currentSettings() {
     return activeSession()?.settings ?? structuredClone(DEFAULT_SETTINGS);
+}
+
+function assistantConnection(settings, assistant) {
+    return settings.assistantConnections?.[assistant] ?? settings.connection ?? { kind: 'current' };
 }
 
 function pendingReply(session = activeSession()) {
@@ -540,7 +545,7 @@ async function send({ regenerate = '' } = {}) {
         const context = await buildContext({ source, settings, pendingText: query, sessionText: sessionText(session) });
         const help = await buildHelp({ assistant: session.assistant, gender: session.gender, text: query });
         requireScope(source, session.id);
-        const acknowledgement = settings.connection?.kind === 'profile' || chatProfileId ? undefined : await acknowledge();
+        const acknowledgement = assistantConnection(settings, session.assistant).kind === 'profile' || chatProfileId ? undefined : await acknowledge();
         await app.queue;
         requireScope(source, session.id);
         if (JSON.stringify(activeSession()) !== snapshot || sourceConnectionProfile(source) !== chatProfileId) {
@@ -1001,15 +1006,25 @@ function renderContext({ force = true } = {}) {
         id: 'scratchpad-max-tokens',
         onchange: event => void updateSettings({ maxTokens: Number(event.currentTarget.value) }),
     });
-    const connection = h('select', {
-        class: 'text_pole', id: 'scratchpad-connection',
-        onchange: event => {
-            const value = event.currentTarget.value;
-            void updateSettings({ connection: value ? { kind: 'profile', profileId: value } : { kind: 'current' } });
-        },
-    }, h('option', { value: '', text: t`Same connection as the chat` }),
-    connectionProfiles().map(profile => h('option', { value: profile.id, text: profile.name || profile.id })));
-    connection.value = settings.connection?.kind === 'profile' ? settings.connection.profileId : '';
+    const profiles = connectionProfiles();
+    const connections = ASSISTANTS.map(assistant => {
+        const id = `scratchpad-connection-${assistant.id}`;
+        const selected = assistantConnection(settings, assistant.id);
+        const value = selected.kind === 'profile' ? selected.profileId : '';
+        const connection = h('select', {
+            class: 'text_pole', id,
+            onchange: event => {
+                const profileId = event.currentTarget.value;
+                void updateSettings({ assistantConnections: { [assistant.id]: profileId ? { kind: 'profile', profileId } : { kind: 'current' } } });
+            },
+        }, h('option', { value: '', text: t`Same connection as the chat` }),
+        profiles.map(profile => h('option', { value: profile.id, text: [profile.name || profile.id, profile.model].filter(Boolean).join(' · ') })));
+        if (value && !profiles.some(profile => profile.id === value)) {
+            connection.append(h('option', { value, text: t`Unavailable profile: ${value}` }));
+        }
+        connection.value = value;
+        return h('div', { class: 'scratchpad-field' }, h('label', { for: id, text: t`${assistant.name}'s connection` }), connection);
+    });
 
     const include = settings.include;
     const setInclude = (name, value) => void updateSettings({ include: { [name]: value } });
@@ -1029,8 +1044,9 @@ function renderContext({ force = true } = {}) {
             roleplay ? checkbox(t`Author's Note`, include.authorsNote, value => setInclude('authorsNote', value)) : null,
             checkbox(t`Lorebook entries`, include.lore, value => setInclude('lore', value), t`Entries are shared when their keywords appear, or when you set them to Always below.`)),
         h('section', { class: 'scratchpad-section' },
-            h('h3', { class: 'scratchpad-section-title', text: t`Connection` }),
-            h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-connection', text: t`Model connection` }), connection),
+            h('h3', { class: 'scratchpad-section-title', text: t`Assistant connections` }),
+            h('p', { class: 'scratchpad-muted', text: t`Choose a saved profile for each assistant. Profiles include the model and connection settings.` }),
+            ...connections,
             h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-max-tokens', text: t`Longest reply (tokens)` }), maxTokens)),
         renderPicks(settings),
         renderLore(settings),

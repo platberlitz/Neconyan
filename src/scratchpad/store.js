@@ -84,6 +84,10 @@ export function normaliseConnection(value) {
     return { kind: 'current' };
 }
 
+export function assistantConnection(settings, assistant) {
+    return normaliseConnection(settings.assistantConnections?.[normaliseAssistant(assistant)] ?? settings.connection);
+}
+
 export function normaliseMaxTokens(value) {
     const number = Math.round(Number(value));
     if (!Number.isFinite(number)) return DEFAULT_MAX_TOKENS;
@@ -97,6 +101,7 @@ export function defaultSettings() {
         include: { card: true, persona: true, authorsNote: true, lore: true, hidden: false },
         loreOverrides: {},
         connection: { kind: 'current' },
+        assistantConnections: {},
         maxTokens: DEFAULT_MAX_TOKENS,
     };
 }
@@ -128,6 +133,14 @@ export function normaliseSettings(input, previous = defaultSettings()) {
         settings.loreOverrides = overrides;
     }
     if (source.connection !== undefined) settings.connection = normaliseConnection(source.connection);
+    if (isPlainObject(source.assistantConnections)) {
+        settings.assistantConnections ??= {};
+        for (const assistant of ASSISTANT_IDS) {
+            if (Object.hasOwn(source.assistantConnections, assistant)) {
+                settings.assistantConnections[assistant] = normaliseConnection(source.assistantConnections[assistant]);
+            }
+        }
+    }
     if (source.maxTokens !== undefined) settings.maxTokens = normaliseMaxTokens(source.maxTokens);
     return settings;
 }

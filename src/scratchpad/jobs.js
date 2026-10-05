@@ -11,6 +11,7 @@ import {
     MAX_MESSAGES,
     MAX_REASONING_BYTES,
     ScratchpadError,
+    assistantConnection,
     findSession,
     newScratchpadId,
     normaliseSource,
@@ -149,7 +150,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         const session = findSession(bucket, input.sessionId);
         const plan = planReply(session, input);
         writeBucketLocked(lease, bucket);
-        return { ...plan, revision: hash(canonical(session)), assistant: session.assistant, gender: session.gender, connection: session.settings.connection, maxTokens: session.settings.maxTokens };
+        return { ...plan, revision: hash(canonical(session)), assistant: session.assistant, gender: session.gender, connection: assistantConnection(session.settings, session.assistant), maxTokens: session.settings.maxTokens };
     });
 
     const profileId = planned.connection.kind === 'profile' ? planned.connection.profileId : input.chatProfileId;

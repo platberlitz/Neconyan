@@ -24,6 +24,45 @@ async function selectConversation(page, avatar) {
     await openScratchpad(page);
 }
 
+test('assistant connection choices survive reopening and route each speaker to its own model', async ({ app }) => {
+    test.setTimeout(150000);
+    const account = await app.account({ configureSettings: saved => {
+        const profiles = saved.extension_settings.connectionManager.profiles;
+        for (const assistant of ['miso', 'taro', 'nori']) profiles.push({ ...profiles[0], id: `scratch-${assistant}`, name: assistant, model: `model-${assistant}` });
+    } });
+    const page = await account.open();
+    const source = await openScratchpad(page);
+    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+    for (const assistant of ['miso', 'taro', 'nori']) {
+        await page.locator(`#scratchpad-connection-${assistant}`).selectOption(`scratch-${assistant}`);
+    }
+    await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0]?.settings.assistantConnections).toEqual({
+        miso: { kind: 'profile', profileId: 'scratch-miso' }, taro: { kind: 'profile', profileId: 'scratch-taro' }, nori: { kind: 'profile', profileId: 'scratch-nori' },
+    });
+    await page.close();
+    const reopened = await account.open();
+    await openScratchpad(reopened);
+    await reopened.getByRole('tab', { name: 'Context', exact: true }).click();
+    for (const assistant of ['miso', 'taro', 'nori']) await expect(reopened.locator(`#scratchpad-connection-${assistant}`)).toHaveValue(`scratch-${assistant}`);
+    await reopened.getByRole('tab', { name: 'Chat', exact: true }).click();
+    for (const assistant of ['Miso', 'Taro', 'Nori']) {
+        await reopened.locator('.scratchpad-assistants').getByRole('button', { name: assistant, exact: true }).click();
+        await expect(reopened.locator('.scratchpad-assistants').getByRole('button', { name: assistant, exact: true })).toHaveAttribute('aria-pressed', 'true');
+        const question = `Which model, ${assistant}?`;
+        app.provider.mode.streamReply = { first: `${assistant} answers`, rest: ' with its chosen model.' };
+        await reopened.locator('.scratchpad-composer').fill(question);
+        const accepted = reopened.waitForResponse('**/api/scratchpad/send');
+        await reopened.locator('.scratchpad-send').click();
+        const response = await accepted;
+        expect(response.ok(), await response.text()).toBe(true);
+        await expect(reopened.locator('.scratchpad-stream')).toContainText(`${assistant} answers`);
+        app.provider.mode.finishStream();
+        await account.settled((await response.json()).job.id);
+        await expect(reopened.locator('.scratchpad-message.is-pending')).toHaveCount(0);
+        expect(app.provider.calls.filter(call => call.messages?.at(-1)?.content === question).map(call => call.model)).toEqual([`model-${assistant.toLowerCase()}`]);
+    }
+});
+
 for (const phone of [false, true]) {
     test(`${phone ? 'iPhone stand-in' : 'desktop'} Scratchpad sends the preview with the chat connection and preserves new drafts`, async ({ app }) => {
         test.setTimeout(120000);

@@ -169,6 +169,32 @@ test('Conversation uses its saved chat connection without changing the session d
     assert.equal(a.read(OTHER).sessions[0].settings.connection.kind, 'current');
 });
 
+test('each assistant keeps its own connection when switching speakers and starting another session', async t => {
+    const a = account(t);
+    const file = path.join(a.directories.root, SETTINGS_FILE);
+    const settings = JSON.parse(fs.readFileSync(file, 'utf8'));
+    settings.extension_settings.connectionManager.profiles.push({ id: 'other', api: 'openai', model: 'gpt-4o-mini' });
+    fs.writeFileSync(file, JSON.stringify(settings));
+    const session = startSession(a);
+    a.mutate(SOURCE, bucket => store.updateSession(bucket, session.id, { settings: { assistantConnections: { miso: { kind: 'profile', profileId: 'other' } } } }));
+    a.mutate(SOURCE, bucket => store.updateSession(bucket, session.id, { settings: { assistantConnections: { nori: { kind: 'current' } } } }));
+    assert.equal(store.assistantConnection(a.read(SOURCE).sessions[0].settings, 'taro').profileId, 'saved', 'existing session choices remain the fallback');
+    const used = [];
+    registerScratchpadJobs({ generate: async options => {
+        used.push([options.characterName, options.binding.profileId]);
+        return { text: 'A reply.' };
+    } });
+    for (const assistant of ['miso', 'taro', 'miso']) {
+        a.mutate(SOURCE, bucket => store.updateSession(bucket, session.id, { assistant }));
+        const body = sendBody(session);
+        const accepted = await acceptScratchpadReply(a.request(body), body);
+        await runJob(getJob(a.directories, accepted.job.id));
+    }
+    assert.deepEqual(used, [['Miso', 'other'], ['Taro', 'saved'], ['Miso', 'other']]);
+    const inherited = a.mutate(SOURCE, bucket => store.createSession(bucket, { assistant: 'nori' }));
+    assert.deepEqual(inherited.settings.assistantConnections, { miso: { kind: 'profile', profileId: 'other' }, nori: { kind: 'current' } });
+});
+
 test('changing session settings while a send is prepared refuses the stale request', async t => {
     const a = account(t);
     const session = startSession(a);
