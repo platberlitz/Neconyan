@@ -1330,6 +1330,23 @@ describe('in-chat agent scoped enabled state', () => {
         expect(body).toContain('await saveAgentBatch(changes, \'Bundled agent credits\');');
         expect(body).not.toContain('saveAgent(');
     });
+
+    test('moves only the untouched old Parallel prompt to the "Person: thing" wording', async () => {
+        const { getStringHash } = await import('../public/scripts/macro-primitives.js');
+        const source = readFileSync(new URL('../public/scripts/extensions/in-chat-agents/index.js', import.meta.url), 'utf8');
+        const template = JSON.parse(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/parallel-tracker.json', import.meta.url), 'utf8'));
+        const legacy = source.match(/LEGACY_PARALLEL_TRACKER_PROMPT = Object\.freeze\(\{ templateId: '([^']+)', hash: (\d+), length: (\d+) \}\)/);
+        const start = source.indexOf('async function migrateLegacyParallelTrackerPromptToSavedAgents()');
+        const body = source.slice(start, source.indexOf('\n}\n', start));
+        const initialisation = source.slice(source.indexOf('async function finishAgentLibraryInitialization()'), source.indexOf('async function retryAgentSetupLoading'));
+
+        expect(legacy?.[1]).toBe(template.id);
+        expect(getStringHash(template.prompt) === Number(legacy[2]) && template.prompt.length === Number(legacy[3])).toBe(false);
+        expect(body).toContain('getStringHash(prompt) !== LEGACY_PARALLEL_TRACKER_PROMPT.hash');
+        expect(body).toContain('await saveAgentBatch(changes, \'Parallel tracker prompt\');');
+        expect(body).not.toContain('saveAgent(');
+        expect(initialisation).toContain('await migrateLegacyParallelTrackerPromptToSavedAgents()');
+    });
 });
 
 describe('legacy kit migration keeps its source until every write is acknowledged', () => {

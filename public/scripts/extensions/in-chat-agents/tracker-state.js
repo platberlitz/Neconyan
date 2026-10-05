@@ -130,6 +130,41 @@ export function repairTrackerFieldOrder(agent, text) {
     return result;
 }
 
+const TRACKER_BULLET_LINE = /^[ \t]*[-*•](?:[ \t]|$)/;
+const TRACKER_LABELLED_BULLET_LINE = /^[ \t]*[-*•][ \t]*[^:\s][^:\n]*:[ \t]*\S/;
+
+function getTrackerBlockVariant(block) {
+    return block.text.split('\n')[0].split('|')[0].trim().toUpperCase();
+}
+
+function getTrackerBlockBulletLines(block) {
+    return block.text.split('\n').slice(1, -1).filter(line => TRACKER_BULLET_LINE.test(line));
+}
+
+/**
+ * True when the agent's own format example labels every bullet ("- Name: what they do")
+ * but a complete block in the text has bullets without a label. Such blocks close
+ * correctly yet cannot be displayed, so repair must rewrite them.
+ * @param {object} agent
+ * @param {string} text
+ */
+export function hasUnlabelledTrackerBullets(agent = {}, text = '') {
+    const source = normalizeText(text);
+    const tag = getTrackerTag(agent, source);
+    const labelledVariants = new Set(findTrackerBlocks(agent?.prompt, tag)
+        .filter(block => block.complete)
+        .filter(block => {
+            const body = block.text.split('\n').slice(1, -1).filter(line => line.trim());
+            return body.length > 0 && body.every(line => TRACKER_LABELLED_BULLET_LINE.test(line));
+        })
+        .map(getTrackerBlockVariant));
+    if (labelledVariants.size === 0) return false;
+
+    return findTrackerBlocks(source, tag).some(block => block.complete
+        && labelledVariants.has(getTrackerBlockVariant(block))
+        && getTrackerBlockBulletLines(block).some(line => !TRACKER_LABELLED_BULLET_LINE.test(line)));
+}
+
 export function getTrackerMetadataKey(agent = {}) {
     const variable = String(agent?.postProcess?.extractVariable ?? '').trim();
     return variable ? `agent_${variable}` : '';
@@ -243,7 +278,7 @@ export function normalizeCompanionTrackerRepairPayload(agent = {}, text = '') {
     const source = normalizeText(text);
     const inspection = getTrackerRepairPayload(agent, source);
     if (inspection.payload) {
-        return inspection;
+        return rejectUnlabelledTrackerBullets(agent, inspection);
     }
 
     const malformedBlocks = inspection.blocks.filter(block => !block.complete);
@@ -262,7 +297,12 @@ export function normalizeCompanionTrackerRepairPayload(agent = {}, text = '') {
         normalized = `${normalized}\n[/${inspection.tag}]`;
     }
 
-    return getTrackerRepairPayload(agent, normalized);
+    return rejectUnlabelledTrackerBullets(agent, getTrackerRepairPayload(agent, normalized));
+}
+
+function rejectUnlabelledTrackerBullets(agent, inspection) {
+    if (!inspection.payload || !hasUnlabelledTrackerBullets(agent, inspection.payload)) return inspection;
+    return { ...inspection, status: 'unlabelled', payload: '' };
 }
 
 /**

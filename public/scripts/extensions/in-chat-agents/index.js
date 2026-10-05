@@ -3,6 +3,7 @@ import { extension_settings, renderExtensionTemplateAsync, getContext } from '..
 import { Popup, POPUP_TYPE, POPUP_RESULT } from '../../popup.js';
 import { accountStorage } from '../../util/AccountStorage.js';
 import { download, escapeHtml, escapeRegex, getSortableDelay, uuidv4 } from '../../utils.js';
+import { getStringHash } from '../../macro-primitives.js';
 import { activateSendButtons, CLIENT_VERSION, chat, getChatGeneration, getCurrentChatId, getRequestHeaders, is_send_press, normalizeContentText, saveChatDebounced, saveSettings, saveSettingsDebounced, substituteParams } from '../../../script.js';
 import { getCurrentUserHandle } from '../../user.js';
 import { eventSource, event_types } from '../../events.js';
@@ -373,6 +374,11 @@ async function finishAgentLibraryInitialization() {
     const migratedTemplateMetadataCount = await migrateBundledTemplateMetadataToSavedAgents();
     if (migratedTemplateMetadataCount > 0) {
         toastr.success(`Updated ${migratedTemplateMetadataCount} bundled agent credit${migratedTemplateMetadataCount !== 1 ? 's' : ''}.`);
+    }
+
+    const migratedParallelPromptCount = await migrateLegacyParallelTrackerPromptToSavedAgents();
+    if (migratedParallelPromptCount > 0) {
+        toastr.success('Parallel Off-Screen now asks for "Person: what they are doing" lines.');
     }
 
     const migratedTrackerPromptPassCount = await migrateBundledTrackerPromptPassesToSavedAgents();
@@ -2179,6 +2185,36 @@ async function migrateBundledTemplateMetadataToSavedAgents() {
 
     // One write for the whole library instead of one per agent.
     await saveAgentBatch(changes, 'Bundled agent credits');
+    return changes.length;
+}
+
+// Fingerprint of the stock Parallel Off-Screen prompt before it required "- Person: what they are doing" bullets.
+const LEGACY_PARALLEL_TRACKER_PROMPT = Object.freeze({ templateId: 'tpl-parallel-tracker', hash: 7446099834460269, length: 1336 });
+
+/**
+ * Untouched copies of the old stock Parallel prompt take the new wording. Customised
+ * prompts never match the fingerprint, so this runs even for locked bundled agents.
+ */
+async function migrateLegacyParallelTrackerPromptToSavedAgents() {
+    const changes = [];
+
+    for (const agent of getAgents().map(agent => structuredClone(agent))) {
+        const prompt = String(agent?.prompt ?? '');
+        if (prompt.length !== LEGACY_PARALLEL_TRACKER_PROMPT.length || getStringHash(prompt) !== LEGACY_PARALLEL_TRACKER_PROMPT.hash) {
+            continue;
+        }
+
+        const template = findTemplateForAgent(agent);
+        if (template?.id !== LEGACY_PARALLEL_TRACKER_PROMPT.templateId || !template.prompt || template.prompt === prompt) {
+            continue;
+        }
+
+        agent.prompt = template.prompt;
+        agent.sourceTemplateId = agent.sourceTemplateId || template.id;
+        changes.push(agent);
+    }
+
+    await saveAgentBatch(changes, 'Parallel tracker prompt');
     return changes.length;
 }
 

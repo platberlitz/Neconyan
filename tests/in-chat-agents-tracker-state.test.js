@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, jest, test } from '@jest/globals';
 
 await jest.unstable_mockModule('../public/scripts/utils.js', () => ({
@@ -7,6 +8,7 @@ await jest.unstable_mockModule('../public/scripts/utils.js', () => ({
 const {
     findTrackerBlocks,
     getTrackerRepairPayload,
+    hasUnlabelledTrackerBullets,
     inspectTrackerState,
     mergeTrackerRepairPayload,
     normalizeCompanionTrackerRepairPayload,
@@ -205,6 +207,21 @@ describe('in-chat agent tracker state', () => {
 
         expect(result.text).toBe(`Story remains.\n\n${repaired}`);
         expect(getTrackerRepairPayload(statusAgent, result.text).payload).toBe(repaired);
+    });
+
+    test('Companion card repair rewrites Parallel bullets that have no "Name:" label', () => {
+        const parallelAgent = JSON.parse(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/parallel-tracker.json', import.meta.url), 'utf8'));
+        const unlabelled = '[PARALLEL|Multiple locations|regularities]\n- The student is recopying notes.\n- At Lambad\u2019s, the bar matron is boiling stew.\n- In Inazuma, Masayoshi practises iaido.\n[/PARALLEL]';
+        const labelled = '[PARALLEL|Multiple locations|regularities]\n- Student: recopying notes.\n- Bar matron: boiling stew at Lambad\u2019s.\n- Masayoshi: practising iaido in Inazuma.\n[/PARALLEL]';
+
+        expect(parallelAgent.prompt).toContain('- Person: what they are doing');
+        expect(inspectTrackerState(parallelAgent, unlabelled).status).toBe('valid');
+        expect(hasUnlabelledTrackerBullets(parallelAgent, unlabelled)).toBe(true);
+        expect(normalizeCompanionTrackerRepairPayload(parallelAgent, unlabelled))
+            .toEqual(expect.objectContaining({ status: 'unlabelled', payload: '' }));
+        expect(hasUnlabelledTrackerBullets(parallelAgent, labelled)).toBe(false);
+        expect(normalizeCompanionTrackerRepairPayload(parallelAgent, labelled).payload).toBe(labelled);
+        expect(hasUnlabelledTrackerBullets(statusAgent, '[STATUS|A|Ready|Mild]\n- note\n[/STATUS]')).toBe(false);
     });
 });
 
