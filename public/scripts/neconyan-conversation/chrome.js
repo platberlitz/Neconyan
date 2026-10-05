@@ -775,6 +775,11 @@ export function bindConversationChromeControls(sheld) {
             case 'quick-summarize':
                 await quickConversationSummarize();
                 break;
+            case 'scratchpad': {
+                const { openScratchpad } = await import('../scratchpad/index.js');
+                await openScratchpad();
+                break;
+            }
             case 'force-response': {
                 const avatar = getCurrentCharAvatar();
                 if (avatar) {

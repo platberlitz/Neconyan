@@ -1,0 +1,320 @@
+import { runChatProfile, validateActiveGenerationContext } from '../generation/service.js';
+import { captureGenerationBinding, resolveGenerationProfile } from '../generation/profiles.js';
+import { createMacroEnvironment } from '../macros/index.js';
+import { hash } from '../mewmory/core.js';
+import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
+import { acceptJob, getJob, listJobs, releaseJob, requestCancellation, updateJob } from '../jobs/store.js';
+import { noteOwner, registerHandler } from '../jobs/runner.js';
+import { roleplayAccountBase } from '../roleplay-store.js';
+import {
+    MAX_MESSAGE_BYTES,
+    MAX_MESSAGES,
+    MAX_REASONING_BYTES,
+    ScratchpadError,
+    findSession,
+    newScratchpadId,
+    normaliseSource,
+    projectPending,
+    publicBucket,
+    readBucketLocked,
+    requireId,
+    scratchpadAccountBase,
+    withScratchpad,
+    writeBucketLocked,
+} from './store.js';
+import { buildScratchpadMessages, buildScratchpadSystemPrompt } from './prompt.js';
+import { clearScratchpadPreview, publishScratchpadPreview } from './preview.js';
+
+export const SCRATCHPAD_JOB_TYPE = 'scratchpad.reply';
+const MAX_CONTEXT_BYTES = 1536 * 1024;
+const MAX_HELP_BYTES = 96 * 1024;
+const MAX_HISTORY_MESSAGES = 50;
+const MAX_HISTORY_BYTES = 512 * 1024;
+const PREPARE_TIMEOUT_MS = 60 * 1000;
+
+const fail = (code, message, status = 400) => new ScratchpadError(code, message, status);
+const bytes = value => Buffer.byteLength(String(value ?? ''), 'utf8');
+
+function boundedText(value, max, label, { required = false } = {}) {
+    if (value === undefined || value === null || value === '') {
+        if (required) throw fail('SCRATCHPAD_TEXT_REQUIRED', `${label} is empty.`);
+        return '';
+    }
+    if (typeof value !== 'string') throw fail('SCRATCHPAD_REQUEST_INVALID', `${label} is not text.`);
+    if (bytes(value) > max) throw fail('SCRATCHPAD_TEXT_TOO_LARGE', `${label} is too long.`, 413);
+    return value;
+}
+
+function normaliseCapabilities(input) {
+    const value = input && typeof input === 'object' ? input : {};
+    const members = Array.isArray(value.members)
+        ? value.members.filter(name => typeof name === 'string' && name.trim()).map(name => name.trim().slice(0, 200)).slice(0, 2000)
+        : [];
+    return { lore: value.lore === true, character: value.character === true, chat: value.chat === true, members };
+}
+
+function normaliseNames(input) {
+    const value = input && typeof input === 'object' ? input : {};
+    const user = typeof value.user === 'string' ? value.user.trim().slice(0, 100) : '';
+    const character = typeof value.character === 'string' ? value.character.trim().slice(0, 200) : '';
+    return { user: user || 'User', character };
+}
+
+/** Validate the browser request without touching storage. */
+export function normaliseReplyRequest(body = {}) {
+    const submissionKey = typeof body.submissionKey === 'string' ? body.submissionKey.trim() : '';
+    if (!submissionKey || submissionKey.length > 256) throw fail('SCRATCHPAD_REQUEST_INVALID', 'The send request is missing its identity. Reload the page and try again.');
+    const source = normaliseSource(body.source);
+    const sessionId = requireId(body.sessionId, 'session');
+    const regenerate = body.regenerate ? requireId(body.regenerate, 'reply') : null;
+    const text = regenerate ? '' : boundedText(body.text, MAX_MESSAGE_BYTES, 'The message', { required: true });
+    if (!regenerate && !text.trim()) throw fail('SCRATCHPAD_TEXT_REQUIRED', 'Write a message first.');
+    return {
+        submissionKey,
+        source,
+        sessionId,
+        regenerate,
+        text,
+        context: boundedText(body.context, MAX_CONTEXT_BYTES, 'The shared context'),
+        help: boundedText(body.help, MAX_HELP_BYTES, 'The help reference'),
+        capabilities: normaliseCapabilities(body.capabilities),
+        names: normaliseNames(body.names),
+    };
+}
+
+function hasPending(session) {
+    return session.messages.some(message => message.state === 'pending');
+}
+
+function historyFrom(messages) {
+    const usable = messages.filter(message => message.role === 'user' || (message.state === 'done' && message.text.trim()));
+    const history = [];
+    let total = 0;
+    for (let index = usable.length - 1; index >= 0 && history.length < MAX_HISTORY_MESSAGES; index--) {
+        const size = bytes(usable[index].text);
+        if (total + size > MAX_HISTORY_BYTES) break;
+        total += size;
+        history.unshift({ role: usable[index].role, text: usable[index].text });
+    }
+    while (history.length && history[0].role !== 'user') history.shift();
+    return history;
+}
+
+/** Work out what the model sees for a new message or a regenerated reply. */
+export function planReply(session, request) {
+    if (hasPending(session)) throw fail('SCRATCHPAD_REPLY_PENDING', 'This session is still replying. Wait for it or press Stop.', 409);
+    const messages = session.messages;
+    if (!request.regenerate) {
+        if (messages.length >= MAX_MESSAGES - 1) throw fail('SCRATCHPAD_SESSION_FULL', 'This session is full. Start a new session to keep talking.', 409);
+        return { prompt: request.text, history: historyFrom(messages), replace: null, anchor: messages.at(-1)?.id ?? null };
+    }
+    const last = messages.at(-1);
+    const previous = messages.at(-2);
+    if (!last || last.id !== request.regenerate || last.role !== 'assistant' || previous?.role !== 'user') {
+        throw fail('SCRATCHPAD_REGENERATE_INVALID', 'Only the latest reply can be regenerated.', 409);
+    }
+    return { prompt: previous.text, history: historyFrom(messages.slice(0, -2)), replace: last.id, anchor: last.id };
+}
+
+function existingSubmission(directories, owner, request, requestHash) {
+    const job = listJobs(directories, { owner, includeDismissed: true }).find(item => item.submissionKey === request.submissionKey);
+    if (!job) return null;
+    if (job.type !== SCRATCHPAD_JOB_TYPE || job.intent?.requestHash !== requestHash) {
+        throw fail('JOB_SUBMISSION_CONFLICT', 'This submission key already belongs to another operation.', 409);
+    }
+    return job;
+}
+
+function readProjectedBucket(base, source) {
+    return withScratchpad(base, lease => {
+        const bucket = readBucketLocked(lease, source);
+        return publicBucket(projectPending(bucket, id => getJob(base.directories, id)));
+    });
+}
+
+/** Accept one Scratchpad reply as a server job. The reply keeps running if the page closes. */
+export async function acceptScratchpadReply(request, body = {}) {
+    const base = scratchpadAccountBase(request);
+    const { directories, owner } = base;
+    const input = normaliseReplyRequest(body);
+    const requestHash = hash({ source: input.source, sessionId: input.sessionId, regenerate: input.regenerate, text: input.text,
+        context: input.context, help: input.help, capabilities: input.capabilities, names: input.names });
+    const duplicate = existingSubmission(directories, owner, input, requestHash);
+    if (duplicate) return { created: false, job: duplicate, bucket: readProjectedBucket(base, input.source) };
+
+    const planned = withScratchpad(base, lease => {
+        const bucket = readBucketLocked(lease, input.source);
+        projectPending(bucket, id => getJob(directories, id));
+        const session = findSession(bucket, input.sessionId);
+        const plan = planReply(session, input);
+        writeBucketLocked(lease, bucket);
+        return { ...plan, assistant: session.assistant, gender: session.gender, connection: session.settings.connection, maxTokens: session.settings.maxTokens };
+    });
+
+    const selection = planned.connection.kind === 'profile' ? { kind: 'profile', profileId: planned.connection.profileId } : { kind: 'active' };
+    const binding = captureGenerationBinding(directories, selection, body.acknowledgement);
+    const system = buildScratchpadSystemPrompt({ assistant: planned.assistant, gender: planned.gender, userName: input.names.user,
+        characterName: input.names.character, capabilities: input.capabilities, help: input.help });
+    const messages = buildScratchpadMessages({ system: system.text, context: input.context, history: planned.history, text: planned.prompt });
+    const rawOptions = binding.kind === 'active' ? { trimNames: false } : {};
+    const preparedMessages = !binding.backend || binding.backend === 'chat';
+    const names = { user: input.names.user, char: system.persona.name };
+    await validateActiveGenerationContext(resolveGenerationProfile(directories, binding), createMacroEnvironment({ names }, {}, { readOnly: true }),
+        messages, rawOptions, { maxTokens: planned.maxTokens, preparedMessages });
+
+    const replyId = newScratchpadId();
+    const { job, created } = acceptJob(directories, {
+        owner,
+        type: SCRATCHPAD_JOB_TYPE,
+        submissionKey: input.submissionKey,
+        intent: { kind: 'scratchpad', source: { kind: input.source.kind, key: input.source.key }, sessionId: input.sessionId, requestHash },
+        automatic: false,
+        paused: true,
+        coalesce: { deadline: 0, members: [] },
+        target: { kind: 'scratchpad', id: input.sessionId },
+        credentialRef: binding,
+        config: { requestHash },
+        label: `Scratchpad reply from ${system.persona.name}`,
+    });
+    noteOwner(owner);
+    if (!created) return { created: false, job, bucket: readProjectedBucket(base, input.source) };
+
+    let bucket;
+    try {
+        bucket = withScratchpad(base, lease => {
+            const current = readBucketLocked(lease, input.source);
+            const session = findSession(current, input.sessionId);
+            if (hasPending(session) || (session.messages.at(-1)?.id ?? null) !== planned.anchor) {
+                throw fail('SCRATCHPAD_CHANGED', 'This session changed while the message was being sent. Try again.', 409);
+            }
+            if (planned.replace) session.messages = session.messages.filter(message => message.id !== planned.replace);
+            const created = new Date().toISOString();
+            if (!input.regenerate) session.messages.push({ id: newScratchpadId(), role: 'user', text: input.text, created });
+            session.messages.push({ id: replyId, role: 'assistant', text: '', created, state: 'pending', jobId: job.id, assistant: planned.assistant });
+            session.updated = created;
+            current.activeSessionId = session.id;
+            writeBucketLocked(lease, current);
+            return publicBucket(current);
+        });
+        writeArtifact(directories, job.id, 'request', {
+            source: input.source, sessionId: input.sessionId, replyId, binding, messages, maxTokens: planned.maxTokens,
+            userName: names.user, characterName: names.char, rawOptions, preparedMessages,
+        });
+    } catch (error) {
+        requestCancellation(directories, job.id, { reason: 'scratchpad-preparation-failed' });
+        updateJob(directories, job.id, current => ['cancelled', 'completed', 'failed'].includes(current.state) ? current : {
+            ...current, state: 'failed', stage: null, finishedAt: Date.now(),
+            error: { message: error.message || 'The reply could not be prepared.', code: error.code || 'SCRATCHPAD_PREPARE_FAILED' }, recoverability: 'needs-retry',
+        });
+        throw error;
+    }
+    releaseJob(directories, job.id);
+    return { created: true, job: getJob(directories, job.id) ?? job, bucket };
+}
+
+function settleReply(context, request, patch) {
+    const base = roleplayAccountBase(context.directories);
+    if (!base) return false;
+    return withScratchpad(base, lease => {
+        const bucket = readBucketLocked(lease, request.source);
+        const session = bucket.sessions.find(item => item.id === request.sessionId);
+        const message = session?.messages.find(item => item.id === request.replyId && item.jobId === context.job.id);
+        if (!message) return false;
+        if (message.state !== 'pending' && patch.state === 'failed') return false;
+        Object.assign(message, patch);
+        if (patch.state === 'done') delete message.error;
+        if (!message.reasoning) delete message.reasoning;
+        session.updated = new Date().toISOString();
+        writeBucketLocked(lease, bucket);
+        return true;
+    });
+}
+
+function clipBytes(text, max) {
+    const value = String(text ?? '');
+    if (bytes(value) <= max) return value;
+    return Buffer.from(value, 'utf8').subarray(0, max).toString('utf8').replace(/\uFFFD+$/, '');
+}
+
+function reasoningFrom(response, streamed) {
+    const message = response?.choices?.[0]?.message;
+    const value = message?.reasoning_content || message?.reasoning || response?.thinking || streamed || '';
+    return typeof value === 'string' ? clipBytes(value, MAX_REASONING_BYTES) : '';
+}
+
+async function runScratchpadReply(context, { generate }) {
+    const { directories, job, signal } = context;
+    const owner = job.owner;
+    const request = readArtifact(directories, job.id, 'request');
+    if (!request) throw fail('SCRATCHPAD_REQUEST_MISSING', 'The saved Scratchpad request is missing.', 409);
+    const saved = readArtifact(directories, job.id, 'result');
+    if (saved) return { artifact: true };
+    let streamedReasoning = '';
+    try {
+        let reply = readArtifact(directories, job.id, 'reply');
+        if (!reply) {
+            publishScratchpadPreview(owner, job.id, { stage: 'generating', text: '', reasoning: '' });
+            const response = await generate({
+                binding: request.binding,
+                messages: request.messages,
+                maxTokens: request.maxTokens,
+                macroEnvironment: createMacroEnvironment({ names: { user: request.userName, char: request.characterName } }, {}, { readOnly: true }),
+                userName: request.userName,
+                characterName: request.characterName,
+                groupNames: [],
+                rawOptions: request.rawOptions,
+                preparedMessages: request.preparedMessages,
+                stream: true,
+                onStream: value => {
+                    if (typeof value?.reasoning === 'string' && value.reasoning) streamedReasoning = value.reasoning;
+                    publishScratchpadPreview(owner, job.id, { stage: 'generating', text: value?.text ?? '', reasoning: value?.reasoning ?? '' });
+                },
+                context,
+                jobContext: context,
+            });
+            const text = String(response?.text ?? '').trim();
+            if (!text) throw fail('SCRATCHPAD_EMPTY_REPLY', 'The model returned no text. Try again or pick another connection.', 502);
+            reply = { text: clipBytes(text, MAX_MESSAGE_BYTES), reasoning: reasoningFrom(response?.response, streamedReasoning) };
+            writeArtifact(directories, job.id, 'reply', reply);
+        }
+        settleReply(context, request, { state: 'done', text: reply.text, reasoning: reply.reasoning });
+        writeArtifact(directories, job.id, 'result', { replyId: request.replyId, sessionId: request.sessionId });
+        publishScratchpadPreview(owner, job.id, { stage: 'done', text: reply.text, reasoning: reply.reasoning });
+        return { artifact: true };
+    } catch (error) {
+        const stopped = signal?.aborted || job.cancellation?.requested;
+        try {
+            settleReply(context, request, { state: 'failed', error: stopped ? 'Stopped before it finished.' : (error?.message || 'The reply failed.') });
+        } catch {
+            // The job state still reports the failure if the session file cannot be updated.
+        }
+        publishScratchpadPreview(owner, job.id, { stage: 'failed', error: stopped ? 'Stopped.' : (error?.message || 'The reply failed.') });
+        throw error;
+    } finally {
+        setTimeout(() => clearScratchpadPreview(owner, job.id), 30 * 1000).unref?.();
+    }
+}
+
+/** Release a reply whose request was saved before a restart, or fail one that never finished preparing. */
+export function finalizeScratchpadSubmission(context) {
+    const { directories, job } = context;
+    if (job.type !== SCRATCHPAD_JOB_TYPE || job.state !== 'waiting' || job.stage !== 'preparing' || job.cancellation?.requested) return false;
+    if (readArtifact(directories, job.id, 'request')) {
+        releaseJob(directories, job.id);
+        return true;
+    }
+    if (Date.now() - Number(job.createdAt || 0) < PREPARE_TIMEOUT_MS) return false;
+    updateJob(directories, job.id, current => current.state !== 'waiting' ? current : {
+        ...current, state: 'failed', stage: null, finishedAt: Date.now(),
+        error: { message: 'The reply could not be prepared. Send it again.', code: 'SCRATCHPAD_PREPARE_FAILED' }, recoverability: 'needs-retry',
+    });
+    return true;
+}
+
+export function registerScratchpadJobs({ generate = runChatProfile } = {}) {
+    registerHandler(SCRATCHPAD_JOB_TYPE, context => runScratchpadReply(context, { generate }));
+}
+
+registerScratchpadJobs();
+
+export const testExports = { historyFrom, planReply, normaliseReplyRequest, runScratchpadReply, settleReply };

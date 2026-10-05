@@ -48,4 +48,9 @@ export const refreshedKnowledgeCases = [
     ['Does Remove folder delete my lorebook entries?', 'lorebooks.entry-folders', 'moves its entries to Unfiled'],
     ['Do lorebook entry folders change activation?', 'lorebooks.entry-folders', 'Folders are organisation only'],
     ['Why does Story Mode show bubble borders around passages?', 'story.manuscript', 'no chat-bubble border'],
+    ['How do I open Scratchpad?', 'scratchpad.start', 'Nothing written there goes into the story'],
+    ['Does a Scratchpad reply keep going if I close the browser?', 'scratchpad.replies', 'keep going after closing Scratchpad'],
+    ['How do I choose which messages Scratchpad reads?', 'scratchpad.context', 'Pick specific messages replaces the recent setting'],
+    ['How do I save a lorebook entry Scratchpad suggested?', 'scratchpad.changes', 'nothing changes until saved'],
+    ['What is a Scratchpad Temporary session?', 'scratchpad.sessions', 'disappears when another session is opened or started'],
 ];

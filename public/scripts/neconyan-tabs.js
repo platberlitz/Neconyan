@@ -156,7 +156,7 @@ const NN_SHORTCUT_LABELS = Object.freeze({
 });
 const NN_PANEL_STYLESHEETS = Object.freeze({
     'characters:world-info': [
-        { href: 'css/world-info.css?v=20261005-companion-actions1', id: 'deferred-world-info-css' },
+        { href: 'css/world-info.css?v=20261005-scratchpad1', id: 'deferred-world-info-css' },
     ],
     'characters:persona': [
         { href: 'css/personas.css?v=20260912h', id: 'deferred-personas-css' },
@@ -501,7 +501,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261005-companion-actions1';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261005-scratchpad1';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -19251,13 +19251,18 @@ function buildBottomChatBar() {
     const massDeleteBtn = createBottomChatButton({ icon: 'fa-list-check', title: 'Mass delete chats', className: 'sb-advanced-only' }, () => { void handleMassDeleteChats(); });
     const autoNameBtn = createBottomChatButton({ icon: 'fa-wand-magic-sparkles', title: 'Ask the LLM to name this chat', className: 'sb-advanced-only' }, () => { void handleAutoNameChat(); });
     const renameBtn = createBottomChatButton({ icon: 'fa-pencil', title: 'Rename chat' }, () => { void handleRenameChat(); });
+    const scratchpadBtn = createBottomChatButton({ icon: 'fa-clipboard-list', title: 'Scratchpad', className: 'sb-bottom-chat-scratchpad' }, () => {
+        void import('./scratchpad/index.js')
+            .then(module => module.toggleScratchpad())
+            .catch(() => toastr.error(t`Scratchpad could not open. Try reloading the page.`));
+    });
     const hideBtn = createBottomChatButton({ icon: 'fa-eye-slash', title: 'Hide bottom chat bar' }, () => {
         setBottomChatBarVisible(false);
     });
     const deleteBtn = createBottomChatButton({ icon: 'fa-trash', title: 'Delete chat' }, () => { void handleDeleteChat(); });
 
     navCluster.append(topBtn, bottomBtn);
-    managementCluster.append(regenerateBtn, chatManagerBtn, newBtn, massDeleteBtn, autoNameBtn, renameBtn, searchToggleBtn, hideBtn, deleteBtn);
+    managementCluster.append(regenerateBtn, scratchpadBtn, chatManagerBtn, newBtn, massDeleteBtn, autoNameBtn, renameBtn, searchToggleBtn, hideBtn, deleteBtn);
     secondaryRow.append(managementCluster);
     container.append(personaBubble, reasoningButton, chatSelect, search.field, navCluster, collapseToggleBtn, secondaryRow);
 

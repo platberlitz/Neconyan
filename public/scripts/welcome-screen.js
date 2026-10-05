@@ -1705,6 +1705,7 @@ async function openNeconyanRecentChat(recentChat) {
 function activateNeconyanRailRoute(route) {
     const shell = globalThis.NeconyanShell;
     globalThis.NeconyanNotes?.onRoute?.(route);
+    globalThis.NeconyanScratchpad?.onRoute?.(route);
     switch (route) {
         case 'notes':
             void import('./notebooks/notes-app.js')

@@ -133,6 +133,7 @@ app.use('/api/jobs', express.json({ limit: JOB_INTENT_LIMIT_BYTES }), express.ur
 // and the chat revisions it answers, so it stays far below the job intent size.
 app.use('/api/roleplay', express.json({ limit: '256kb' }), express.urlencoded({ extended: false, limit: '256kb' }));
 app.use('/api/notebooks', express.json({ limit: '8mb' }), express.urlencoded({ extended: false, limit: '256kb' }));
+app.use('/api/scratchpad', express.json({ limit: '4mb' }), express.urlencoded({ extended: false, limit: '256kb' }));
 app.use('/api/meower', express.json({ limit: '32kb' }), express.urlencoded({ extended: false, limit: '32kb' }));
 app.use('/api/labs', express.json({ limit: '32mb' }), express.urlencoded({ extended: false, limit: '32mb' }));
 app.use('/api/operations', express.json({ limit: '32mb' }), express.urlencoded({ extended: false, limit: '32mb' }));
@@ -804,6 +805,7 @@ async function postSetupTasks(result) {
     const { finalizeLabSubmission } = await import('./labs/store.js');
     const { finalizeOperation } = await import('./operations/store.js');
     const { finalizeBrowserWork } = await import('./operations/browser-work.js');
+    const { finalizeScratchpadSubmission } = await import('./scratchpad/jobs.js');
     await import('./operations/translation.js');
     await import('./operations/vectors.js');
     await import('./operations/vector-purge.js');
@@ -836,6 +838,7 @@ async function postSetupTasks(result) {
             finalizeLabSubmission(context);
             finalizeOperation(context);
             finalizeBrowserWork(context);
+            finalizeScratchpadSubmission(context);
         },
     });
     const { startConversationWorker } = await import('./generation/conversation-worker.js');

@@ -186,7 +186,7 @@ router.post('/:id/approval/:approval', (request, response) => {
 // Source-bound work needs native preparation and permanent acceptance receipts.
 // The generic route cannot create that authority from browser-supplied intent.
 const RESERVED_JOB_TYPES = new Set(['conversation.reply', 'conversation.participant', 'conversation.summary', 'conversation.schedule',
-    'conversation.rewrite', 'conversation.selfie', 'meower.refresh', 'meower.profile']);
+    'conversation.rewrite', 'conversation.selfie', 'meower.refresh', 'meower.profile', 'scratchpad.reply']);
 
 router.post('/submit', (request, response) => {
     try {

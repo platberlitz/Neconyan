@@ -1,0 +1,135 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
+import { serverDirectory } from '../server-directory.js';
+import { normaliseAssistant, normaliseGender } from './store.js';
+
+export const CHANGE_FENCE = 'scratchpad-change';
+const CARD_CACHE = new Map();
+const MAX_PERSONA_CHARS = 6000;
+
+const FALLBACK_NAMES = { miso: 'Miso', taro: 'Taro', nori: 'Nori' };
+const FALLBACK_ROLES = {
+    miso: 'a cheerful, welcoming guide who explains clearly and loves a good surprise in a story',
+    taro: 'a dry, methodical troubleshooter who checks evidence before drawing conclusions',
+    nori: 'a cheeky, theatrical writing partner who notices habits, contradictions and consequences',
+};
+
+function plainName(name, fallback) {
+    const text = String(name || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
+    return text || fallback;
+}
+
+/** The bundled card for one assistant variant. Users' own edited copies never change Scratchpad. */
+export function readAssistantPersona(assistant, gender) {
+    const id = normaliseAssistant(assistant);
+    const variant = `${id}-${normaliseGender(gender)}`;
+    if (CARD_CACHE.has(variant)) return CARD_CACHE.get(variant);
+    let persona;
+    try {
+        const file = path.join(serverDirectory, 'default', 'content', 'assistants', variant, 'card.json');
+        const data = JSON.parse(fs.readFileSync(file, 'utf8'))?.data ?? {};
+        persona = {
+            id,
+            name: plainName(data.name, FALLBACK_NAMES[id]),
+            personality: String(data.personality || ''),
+            summary: String(data.extensions?.depth_prompt?.prompt || ''),
+            examples: String(data.mes_example || ''),
+        };
+    } catch {
+        persona = { id, name: FALLBACK_NAMES[id], personality: `${FALLBACK_NAMES[id]} is ${FALLBACK_ROLES[id]}.`, summary: '', examples: '' };
+    }
+    CARD_CACHE.set(variant, persona);
+    return persona;
+}
+
+function substituteNames(text, { user, char }) {
+    return String(text || '')
+        .replace(/\{\{\s*user\s*\}\}/gi, user)
+        .replace(/\{\{\s*char\s*\}\}/gi, char)
+        .replace(/<START>/g, '')
+        .trim();
+}
+
+function clip(text, max) {
+    return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
+const LORE_RULES = [
+    'Keep one concept, place, item or character per entry. Split a crowded entry rather than adding to it.',
+    'Use the subject\'s own name and aliases as keywords. Avoid short common words that would match ordinary sentences.',
+    'Write entries as in-world facts, not as instructions to the writer.',
+];
+
+function changeInstructions({ lore, character, chat, members }) {
+    const kinds = [];
+    if (lore) {
+        kinds.push([
+            'Lorebook entries (only books listed in the context):',
+            '{"type":"lorebook","action":"add","book":"<book name>","title":"<entry title>","keys":["<keyword>"],"content":"<entry text>","constant":false,"reason":"<why>"}',
+            '{"type":"lorebook","action":"edit","book":"<book name>","uid":<entry uid>,"title":"<optional new title>","keys":["<optional new keywords>"],"content":"<optional new text>","reason":"<why>"}',
+            '{"type":"lorebook","action":"delete","book":"<book name>","uid":<entry uid>,"reason":"<why>"}',
+            ...LORE_RULES.map(rule => `- ${rule}`),
+        ].join('\n'));
+    }
+    if (character) {
+        kinds.push([
+            'Character card fields:',
+            '{"type":"character","character":"<character name>","field":"<field>","value":"<the complete new text>","reason":"<why>"}',
+            '- field is one of description, personality, scenario, first_mes, mes_example, creator_notes, system_prompt, post_history_instructions, alternate_greetings (value is a list of strings) or tags (value is a list of strings).',
+            '- value replaces the whole field, so include every part that should stay.',
+            members ? `- In this group chat, name the member you mean: ${members}.` : '',
+        ].filter(Boolean).join('\n'));
+    }
+    if (chat) {
+        kinds.push([
+            'Story chat messages (use the #numbers from the context):',
+            '{"type":"chat","action":"edit","message":<#number>,"text":"<the complete new message text>","reason":"<why>"}',
+            '{"type":"chat","action":"insert","after":<#number>,"speaker":"user" or "character","name":"<optional speaker name>","text":"<message text>","reason":"<why>"}',
+            '{"type":"chat","action":"hide","message":<#number>,"reason":"<why>"} (also "unhide" and "delete")',
+        ].join('\n'));
+    }
+    if (!kinds.length) {
+        return 'You cannot propose changes from this Scratchpad. Offer drafts as plain text instead.';
+    }
+    return [
+        'When the user asks you to change something, or a change would clearly help, propose it as a change block the user can apply with one press.',
+        `Write each change as its own fenced block with the language "${CHANGE_FENCE}" containing one JSON object, like this:`,
+        '```' + CHANGE_FENCE,
+        '{"type":"...", "...": "..."}',
+        '```',
+        'Available changes:',
+        kinds.join('\n\n'),
+        'Nothing changes until the user presses Apply, so never say a change has been made. Keep a short sentence outside each block saying what it does. Use valid JSON with escaped line breaks.',
+    ].join('\n');
+}
+
+export function buildScratchpadSystemPrompt({ assistant, gender, userName, characterName, capabilities = {}, help = '' }) {
+    const persona = readAssistantPersona(assistant, gender);
+    const names = { user: userName || 'User', char: persona.name };
+    const story = characterName ? `the story chat with ${characterName}` : 'the story chat';
+    const sections = [
+        `You are ${persona.name}, one of the three Neconyan assistants (Miso, Taro and Nori). You are working in Scratchpad, a private side discussion beside ${names.user}'s ${story.replace(/^the /, '')}.`,
+        `Scratchpad is out of character. You are not a character in the story and you do not continue it. Talk with ${names.user} about the story: scenes, motivations, pacing, continuity, ideas for what could happen next, and honest critique. Write a draft (a reply, a greeting, an entry) only when ${names.user} asks, and present it as a suggestion.`,
+        `The context block shows only what ${names.user} chose to share from ${story}. Messages carry #numbers and lorebook entries carry their book and uid; refer to them exactly. Do not invent messages, entries or card fields you cannot see. If something is missing, say what to include.`,
+        `Your personality:\n${clip(substituteNames([persona.personality, persona.summary].filter(Boolean).join('\n\n'), names), MAX_PERSONA_CHARS)}`,
+        persona.examples ? `How you sound (examples from your normal chats, not from this Scratchpad):\n${clip(substituteNames(persona.examples, names), 2000)}` : '',
+        `Voice: stay in your own personality and talk to ${names.user} directly. Use British English and connected sentences. Do not use em dashes. Keep cat puns rare. Be specific and keep replies focused; use short lists only to compare options.`,
+        changeInstructions(capabilities),
+        help ? `Neconyan reference for app questions (use it only when ${names.user} asks how something in Neconyan works):\n${help}` : '',
+    ];
+    return { text: sections.filter(Boolean).join('\n\n'), persona };
+}
+
+export const SCRATCHPAD_CONTEXT_ACK = 'I have read the shared story context. What would you like to work on?';
+
+export function buildScratchpadMessages({ system, context, history, text }) {
+    const messages = [{ role: 'system', content: system }];
+    if (context) {
+        messages.push({ role: 'user', content: `<story_context>\n${context}\n</story_context>` });
+        messages.push({ role: 'assistant', content: SCRATCHPAD_CONTEXT_ACK });
+    }
+    for (const message of history) messages.push({ role: message.role, content: message.text });
+    messages.push({ role: 'user', content: text });
+    return messages;
+}
