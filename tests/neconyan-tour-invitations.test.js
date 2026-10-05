@@ -7,6 +7,8 @@ let invites;
 let addTourInvitationDismiss;
 let dismissTourInvitation;
 let restoreTourInvitations;
+let ready;
+let settingsLoaded;
 
 function node() {
     return { dataset: {}, hidden: false, children: [], attrs: {}, events: {},
@@ -19,21 +21,55 @@ function node() {
 beforeAll(async () => {
     await jest.unstable_mockModule('../public/scripts/i18n.js', () => ({ t: strings => strings[0] }));
     await jest.unstable_mockModule('../public/scripts/util/AccountStorage.js', () => ({ accountStorage: {
+        get isReady() { return ready; },
         getItem: key => state[key] ?? null,
         setItem: (key, value) => { state[key] = value; },
         removeItem: key => { delete state[key]; },
         getState: () => ({ ...state }),
     } }));
+    await jest.unstable_mockModule('../public/scripts/events.js', () => ({
+        event_types: { SETTINGS_LOADED: 'settings_loaded' },
+        eventSource: { once: (_event, callback) => { settingsLoaded.push(callback); } },
+    }));
     ({ addTourInvitationDismiss, dismissTourInvitation, restoreTourInvitations } = await import('../public/scripts/neconyan-tour-invitations.js'));
 });
 
 beforeEach(() => {
     state = {};
     invites = [];
+    ready = true;
+    settingsLoaded = [];
     globalThis.document = { createElement: () => node(), querySelectorAll: () => invites };
 });
 
 describe('page-tour invitation dismissal', () => {
+    test.each(['neconyanToolTourInvite.connections', 'neconyanToolTourInvite.character-library', 'neconyanLorebookTourInvite'])('restores dismissal after settings arrive for an early-mounted %s invitation', key => {
+        ready = false;
+        const invite = node();
+        addTourInvitationDismiss(invite, key, null);
+        state[key] = 'seen';
+        ready = true;
+        settingsLoaded.forEach(callback => callback());
+        expect(invite.hidden).toBe(true);
+        expect(state).toEqual({ [key]: 'seen' });
+    });
+
+    test('keeps invitations hidden while settings load, then shows only undismissed pages', () => {
+        ready = false;
+        const dismissed = node();
+        const fresh = node();
+        addTourInvitationDismiss(dismissed, 'neconyanToolTourInvite.sampling', null);
+        addTourInvitationDismiss(fresh, 'neconyanToolTourInvite.persona', null);
+        expect(dismissed.hidden).toBe(true);
+        expect(fresh.hidden).toBe(true);
+        state['neconyanToolTourInvite.sampling'] = 'seen';
+        ready = true;
+        settingsLoaded.forEach(callback => callback());
+        expect(dismissed.hidden).toBe(true);
+        expect(fresh.hidden).toBe(false);
+        expect(state).toEqual({ 'neconyanToolTourInvite.sampling': 'seen' });
+    });
+
     test('X hides only that page, persists across remount and leaves the manual Tour available', () => {
         const invite = node();
         const other = node();
