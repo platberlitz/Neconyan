@@ -30,7 +30,7 @@ import {
 } from './context.js';
 import { describeChange, splitReply } from './proposals.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261005-scratchpad3';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261005-scratchpad4';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -302,8 +302,8 @@ function buildChatPanel() {
         quickPrompts().map(prompt => iconButton(prompt.label, () => usePrompt(prompt.text), { className: 'scratchpad-chip' })));
     el.composer = h('textarea', {
         class: 'text_pole scratchpad-composer',
-        rows: '3',
-        placeholder: t`Ask anything, compare ideas or plan the story...`,
+        rows: '1',
+        placeholder: t`Ask anything...`,
         'aria-label': t`Message for Scratchpad`,
         onkeydown: onComposerKey,
     });

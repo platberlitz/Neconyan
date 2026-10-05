@@ -18,6 +18,8 @@ Scratchpad follows the chat you have open. Switch chats and it shows that chat's
 
 Pick who you are talking to under **Talking with**, type in the box at the bottom and press **Send** (or Enter on desktop; Shift+Enter adds a new line). **Quick prompts** fill the box with a ready-made request you can edit before sending: **Read the scene**, **Plot ideas**, **Catch me up**, **Continuity check** and **Lore gaps**.
 
+The input stays one line high so replies have more room. Longer drafts scroll inside it, and pasted text keeps its line breaks.
+
 Turn on **Round table** to ask up to three assistants together. Press their portraits to include or exclude them; keep at least one selected. **Ask 2** or **Ask 3** sends one question to everyone selected, using each assistant's own connection profile and personality. Each answer is labelled and saved separately in the same session. The reply limit applies to each assistant.
 
 Round-table assistants answer at the same time. They share your question and the earlier conversation, but do not see the other answers being written in that round. Ask a follow-up to compare their views or have them respond to one another. **Stop all** stops unfinished replies and keeps answers already saved. If one connection fails, the other answers are kept and you can retry just the failed assistant.
