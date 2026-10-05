@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.1
+
+### Merged Staging PRs
+- PR #15 (2026-10-05) `feat: add exact chat links and account-wide launch resume`
+
 ## v1.1.0
 
 ### Merged Staging PRs
