@@ -88,6 +88,36 @@ describe('Neconyan workspace rail behavior', () => {
         expect(tabsSource).toMatch(/observer\.observe\(document\.body, \{\s*attributes: true,\s*attributeFilter: \['class'\]/);
     });
 
+    test('Scratchpad sits under Notes, opens from the rail and shows as selected while open', () => {
+        expect(welcomeSource).toMatch(/\['notes', 'Notes', 'fa-note-sticky'\],\s*\['scratchpad', 'Scratchpad', 'fa-clipboard-list'\],/);
+        expect(getWelcomeFunctionSource('activateNeconyanRailRoute'))
+            .toMatch(/case 'scratchpad':[\s\S]*?import\('\.\/scratchpad\/index\.js'\)[\s\S]*?openScratchpad\(\)/);
+
+        const attributes = [new Map(), new Map(), new Map()];
+        const buttons = ['notes', 'scratchpad', 'home'].map((route, index) => ({
+            dataset: { neconyanRoute: route },
+            setAttribute: (name, value) => attributes[index].set(name, value),
+            removeAttribute: name => attributes[index].delete(name),
+        }));
+        const open = new Set();
+        const runtime = vm.createContext({
+            document: { body: { classList: { contains: name => open.has(name) } }, querySelectorAll: () => buttons },
+            isCharacterPanelOpen: () => false,
+            isShellOpen: () => false,
+            getShellState: () => ({}),
+            isLandingPageVisible: () => true,
+            syncNeconyanModeControls() {},
+        });
+        vm.runInContext(tabsSource.match(/^function syncNeconyanRailSelection\([\s\S]*?^}/m)[0], runtime);
+        const current = () => buttons.filter((_button, index) => attributes[index].has('aria-current')).map(button => button.dataset.neconyanRoute);
+        open.add('neconyan-scratchpad-open');
+        runtime.syncNeconyanRailSelection();
+        expect(current()).toEqual(['scratchpad']);
+        open.delete('neconyan-scratchpad-open');
+        runtime.syncNeconyanRailSelection();
+        expect(current()).toEqual(['home']);
+    });
+
     test('Fine-tuning waits for loaded controls and sends disabled tools to Manage extensions', async () => {
         class HTMLElement {}
         const element = new HTMLElement();
@@ -111,12 +141,16 @@ describe('Neconyan workspace rail behavior', () => {
         expect(await runtime.openExtensionSettings('unknown')).toBe(false);
     });
 
-    test('restores only known unique destinations and appends newly added destinations', () => {
+    test('restores only known unique destinations and adds new ones between their neighbours or last', () => {
         const context = vm.createContext({});
         vm.runInContext(getWelcomeFunctionSource('normalizeNeconyanRailOrder'), context);
         const defaults = ['home', 'characters', 'model', 'agents'];
         expect(context.normalizeNeconyanRailOrder(['model', 'removed', 'model', 'home', 'story'], defaults))
             .toEqual(['model', 'home', 'characters', 'agents']);
+        // An order saved before Scratchpad existed gains it just under Notes.
+        const primary = ['home', 'characters', 'model', 'agents', 'mewmory', 'lorebooks', 'notes', 'scratchpad', 'extensions'];
+        expect(context.normalizeNeconyanRailOrder(['notes', 'home', 'characters', 'model', 'agents', 'mewmory', 'lorebooks', 'extensions'], primary))
+            .toEqual(['notes', 'scratchpad', 'home', 'characters', 'model', 'agents', 'mewmory', 'lorebooks', 'extensions']);
         for (const invalid of [null, undefined, 'model', {}, 123]) {
             expect(context.normalizeNeconyanRailOrder(invalid, defaults)).toEqual(defaults);
         }

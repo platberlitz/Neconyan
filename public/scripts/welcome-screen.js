@@ -1466,7 +1466,16 @@ let neconyanRailRefreshId = 0;
 let neconyanRailRefreshTimer = 0;
 
 function normalizeNeconyanRailOrder(saved, defaults) {
-    return [...new Set([...(Array.isArray(saved) ? saved : []).filter(id => defaults.includes(id)), ...defaults])];
+    const order = [...new Set((Array.isArray(saved) ? saved : []).filter(id => defaults.includes(id)))];
+    // A destination added in an update slots in between its default neighbours when both are saved; anything else goes last.
+    defaults.forEach((id, index) => {
+        if (order.includes(id)) return;
+        const before = defaults[index - 1];
+        const after = defaults[index + 1];
+        if (order.includes(before) && order.includes(after)) order.splice(order.indexOf(before) + 1, 0, id);
+        else order.push(id);
+    });
+    return order;
 }
 
 function saveNeconyanRailOrder() {
@@ -1715,6 +1724,14 @@ function activateNeconyanRailRoute(route) {
                     globalThis.toastr?.error?.(t`Notes could not open. Try reloading the page.`);
                 });
             break;
+        case 'scratchpad':
+            void import('./scratchpad/index.js')
+                .then(module => module.openScratchpad())
+                .catch(error => {
+                    console.error('[Neconyan] Scratchpad could not open', error);
+                    globalThis.toastr?.error?.(t`Scratchpad could not open. Try reloading the page.`);
+                });
+            break;
         case 'home':
             if (shell?.showHome) {
                 return shell.showHome();
@@ -1913,6 +1930,7 @@ function ensureNeconyanRail() {
         ['mewmory', 'Mewmory', 'fa-brain'],
         ['lorebooks', 'Lorebooks', 'fa-book-atlas'],
         ['notes', 'Notes', 'fa-note-sticky'],
+        ['scratchpad', 'Scratchpad', 'fa-clipboard-list'],
         ['extensions', 'Extensions', 'fa-cubes'],
     ];
     for (const [route, label, icon] of primaryRoutes) {

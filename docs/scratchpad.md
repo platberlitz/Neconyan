@@ -6,6 +6,7 @@ All three assistants can do the same things in Scratchpad. They keep their own p
 
 ## Opening it
 
+- **Anywhere**: choose **Scratchpad** in the desktop sidebar or the phone menu, just under **Notes**.
 - **Roleplay**: press the clipboard button labelled **Scratchpad** in the bottom chat bar, or open **Chat tools** (the menu beside the message box) and choose **Scratchpad**.
 - **Conversation**: press **Scratchpad** in the quick tools row.
 

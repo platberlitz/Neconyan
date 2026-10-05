@@ -9242,7 +9242,8 @@ function syncTopbarPageButtonStates() {
 }
 
 function syncNeconyanRailSelection() {
-    const route = document.body.classList.contains('neconyan-notes-open') ? 'notes'
+    const openPanel = ['notes', 'scratchpad'].find(name => document.body.classList.contains(`neconyan-${name}-open`));
+    const route = openPanel ? openPanel
         : isCharacterPanelOpen()
             ? ({
                 'world-info': 'lorebooks',

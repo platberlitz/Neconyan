@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
 
 const key = 'NeconyanWorkspaceRailOrder.v1';
 const groups = {
-    primary: ['home', 'characters', 'model', 'agents', 'mewmory', 'lorebooks', 'notes', 'extensions'],
+    primary: ['home', 'characters', 'model', 'agents', 'mewmory', 'lorebooks', 'notes', 'scratchpad', 'extensions'],
     advanced: ['presets', 'sampling', 'formatting', 'regex', 'expressions', 'persona', 'pathfinder', 'dialogue-colors', 'quick-image-gen', 'background'],
     modes: ['roleplay', 'conversation', 'meower', 'story'],
 };
@@ -105,7 +105,7 @@ for (const phone of [false, true]) {
                 } });
             });
             await ready(page);
-            expect(await order(page, 'primary')).toEqual(['model', 'home', 'characters', 'agents', 'mewmory', 'lorebooks', 'notes', 'extensions']);
+            expect(await order(page, 'primary')).toEqual(['model', 'home', 'characters', 'agents', 'mewmory', 'lorebooks', 'notes', 'scratchpad', 'extensions']);
             let checkbox = await settings(page, phone);
             const reset = page.locator(`[data-sb-rail-order-reset="${phone ? 'mobile' : 'desktop'}"]`);
             await expect(checkbox).not.toBeChecked();

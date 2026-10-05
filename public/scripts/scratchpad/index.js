@@ -1244,7 +1244,7 @@ export function isScratchpadOpen() {
 
 /** Workspace rail navigation hides a full-width or phone Scratchpad, and Notes always replaces it. */
 export function onWorkspaceRoute(route) {
-    if (!app.open) return;
+    if (!app.open || route === 'scratchpad') return;
     if (route === 'notes' || isPhone() || app.layout === 'full') hideScratchpad();
 }
 
