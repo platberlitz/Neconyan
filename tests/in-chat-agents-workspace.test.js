@@ -137,6 +137,17 @@ describe('in-chat agents workspace redesign', () => {
         expect(dashboardSource).toContain('buildRowActionHtml(\'edit\', \'fa-pen-to-square\', \'Edit\'');
         expect(dashboardSource).toContain('Latest results');
     });
+
+    test('keeps companion card buttons inside the card border on phones', () => {
+        const phoneStart = styleSource.indexOf('@media (max-width: 768px)');
+        const ruleStart = styleSource.indexOf('.ica--companion-actions {', phoneStart);
+        const rule = styleSource.slice(ruleStart, styleSource.indexOf('}', ruleStart));
+        expect(phoneStart).toBeGreaterThan(-1);
+        expect(ruleStart).toBeGreaterThan(phoneStart);
+        expect(rule).toContain('flex-wrap: wrap;');
+        expect(rule).toContain('gap: 0;');
+        expect(rule).toContain('max-width: 100%;');
+    });
 });
 
 const getFunction = name => indexSource.match(new RegExp(`^function ${name}\\([\\s\\S]*?^}`, 'm'))[0];

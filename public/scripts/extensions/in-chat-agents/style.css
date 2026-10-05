@@ -360,7 +360,13 @@ button.ica--card-pill--version-update {
         max-width: 100%;
     }
 
+    /* Five 44px touch targets plus gaps overflowed narrow cards and pushed the delete
+       button past the right border. The transparent targets abut instead, and wrap last. */
     .ica--companion-actions {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 0;
+        max-width: 100%;
         margin-left: auto;
     }
 
