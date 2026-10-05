@@ -85,7 +85,10 @@ describe('extra Neconyan chat styles', () => {
     });
 
     it('gives swipe controls their own footer row instead of covering the last lines of text', () => {
-        expect(chatStylesSource).toContain('body:is(.whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes):is(.last_mes, :has(.deep-swipe-right, .deep-swipe-counter)),');
+        expect(chatStylesSource).toContain('body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes):is(.last_mes, :has(.deep-swipe-right, .deep-swipe-counter)),');
+        expect(chatStylesSource).toContain('body.ripplestyle #chat .mes:not(.smallSysMes):has(> .mes_block > .ica--companion-ledger):is(.last_mes, :has(.deep-swipe-right, .deep-swipe-counter)),');
+        // Notes and Compact's full-width box get the footer row on every screen size, not only phones.
+        expect(chatStylesSource).toContain('body:is(.flatchat, .documentstyle):not(.sbterm, .nnchat-messenger) #chat .mes:not(.smallSysMes):is(:has(> .mes_block > .ica--companion-ledger), body.nnchat-compact *):is(.last_mes, :has(.deep-swipe-right)),');
         expect(chatStylesSource).toContain('padding-bottom: calc(var(--moonlit-sb-swipe-control-size) + (var(--moonlit-sb-swipe-edge-offset) * 2)) !important;');
         const narrowFooter = chatStylesSource.match(/@media screen and \(max-width: 1000px\) \{\s*body:is\(\.flatchat:not\(\.nnchat\), \.bubblechat, \.documentstyle, \.nnchat-script, \.nnchat-storybook\)[^]*?\n\}/);
         expect(narrowFooter).not.toBeNull();
@@ -104,6 +107,19 @@ describe('extra Neconyan chat styles', () => {
         expect(chatStylesSource).not.toContain('border-right: 3.5px solid var(--SmartThemeBodyColor);');
         expect(chatStylesSource).toMatch(/\.tidestyle\) #chat \.mes:not\(\.smallSysMes\) \.mes_block \.ch_name \{\s*align-items: flex-start;/);
         expect(chatStylesSource).toMatch(/body:is\(\.whisperstyle, \.hushstyle\) #chat \.mes\[is_user="true"\]:not\(\.smallSysMes\) \.mesAvatarWrapper \{\s*flex-direction: row;/);
+        // The general outline on the user's own messages would be a second frame inside these cards.
+        expect(chatStylesSource).toMatch(/body:is\(\.echostyle, \.whisperstyle, \.hushstyle, \.tidestyle\) #chat \.mes\[is_user="true"\]:not\(\.smallSysMes\) \.mes_block \{\s*border: 0;/);
+    });
+
+    it('puts Echo and Tide headers and controls on solid plates over the wallpaper', () => {
+        expect(chatStylesSource).toMatch(/body:is\(\.echostyle, \.tidestyle\) #chat \.mes:not\(\.smallSysMes\) \{\s*--moonlit-sb-header-plate: color-mix\(in oklch, var\(--neco-surface\) 90%, transparent\);/);
+        expect(chatStylesSource).toMatch(/body:is\(\.echostyle, \.tidestyle\) #chat \.mes:not\(\.smallSysMes\) \.ch_name \.alignItemsBaseline \{[^}]*background: var\(--moonlit-sb-header-plate\);/);
+        expect(chatStylesSource).toMatch(/body:is\(\.echostyle, \.tidestyle\) #chat \.mes:not\(\.smallSysMes\) \.mes_buttons \.neconyan-message-action:not\(:hover, :focus-visible\) \{\s*background: var\(--moonlit-sb-header-plate\);/);
+        expect(chatStylesSource).toMatch(/body:is\(\.echostyle, \.tidestyle\) #chat \.mes:not\(\.smallSysMes\) :is\(\.swipes-counter, [^{]*\{[^}]*background-color: var\(--moonlit-sb-header-plate\);/);
+    });
+
+    it('widens the Compact avatar column only while the stats box shows', () => {
+        expect(chatStylesSource).toMatch(/\.nnchat-compact:not\(\.sbterm\) #chat \.mes:not\(\.smallSysMes\):has\(> \.mesAvatarWrapper > \.mes_stats > :is\([^{]*\.mesAvatarWrapper \{\s*min-inline-size: calc\(var\(--mainFontSize\) \* 3\.4\);/);
     });
 
     it('moves Echo-family names past a showing stats box on wide screens', () => {
@@ -114,7 +130,6 @@ describe('extra Neconyan chat styles', () => {
     it('keeps Companion Notes inside Echo and Tide messages', () => {
         expect(chatStylesSource).toMatch(/body\.echostyle #chat \.mes:not\(\.smallSysMes\) \.mes_text \+ \.ica--companion-ledger \{[^}]*background-color: var\(--moonlit-sb-bot-message-bg\);/);
         expect(chatStylesSource).toMatch(/body\.echostyle #chat \.mes:not\(\.smallSysMes\) \.mes_text:has\(\+ \.ica--companion-ledger\) \{[^}]*margin-bottom: 0;/);
-        expect(chatStylesSource).toMatch(/body\.echostyle #chat \.mes:not\(\.smallSysMes\):has\(> \.mes_block > \.ica--companion-ledger\):is\(\.last_mes, [^{]*\{\s*padding-bottom: calc\(var\(--moonlit-sb-swipe-control-size\)/);
         expect(chatStylesSource).toMatch(/body\.tidestyle #chat \.mes:not\(\.smallSysMes\) \.ica--companion-ledger > \.ica--companion-card \{\s*background: var\(--moonlit-sb-bot-message-bg\);/);
         expect(chatStylesSource).toMatch(/body\.tidestyle #chat \.mes\[is_user="true"\]:not\(\.smallSysMes\) \.ica--companion-ledger \{\s*clear: both;\s*margin-inline-start: auto;/);
     });

@@ -1215,6 +1215,31 @@ body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes .ch_name .
     }
 }
 
+/* These four draw their own card or bubble, so the general outline on the user's own messages would show as a faint second frame inside it. */
+body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes[is_user="true"]:not(.smallSysMes) .mes_block {
+    border: 0;
+}
+
+/* Echo and Tide put the header and controls straight on the wallpaper, so each one sits on its own solid plate. */
+body:is(.echostyle, .tidestyle) #chat .mes:not(.smallSysMes) {
+    --moonlit-sb-header-plate: color-mix(in oklch, var(--neco-surface) 90%, transparent);
+}
+
+body:is(.echostyle, .tidestyle) #chat .mes:not(.smallSysMes) .ch_name .alignItemsBaseline {
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: var(--moonlit-sb-header-plate);
+}
+
+body:is(.echostyle, .tidestyle) #chat .mes:not(.smallSysMes) .mes_buttons .neconyan-message-action:not(:hover, :focus-visible) {
+    background: var(--moonlit-sb-header-plate);
+}
+
+body:is(.echostyle, .tidestyle) #chat .mes:not(.smallSysMes) :is(.swipes-counter, .swipe_left, .swipe_right, .deep-swipe-left-outer, .assistant-swipe-arrow) {
+    border-radius: 999px;
+    background-color: var(--moonlit-sb-header-plate);
+}
+
 @media screen and (min-width: 1001px) {
     body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes) .mesAvatarWrapper {
         flex: 0 0 auto;
@@ -1433,21 +1458,18 @@ body:is(.echostyle, .whisperstyle, .hushstyle, .ripplestyle, .tidestyle) #chat .
     width: var(--moonlit-sb-swipe-counter-width) !important;
 }
 
-/* The swipe cluster is pinned bottom-right; give it its own footer row so it never sits on the last line of text. */
-body:is(.whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes):is(.last_mes, :has(.deep-swipe-right, .deep-swipe-counter)),
-body:is(.whisperstyle, .hushstyle, .tidestyle).swipeAllMessages #chat .mes:not(.smallSysMes) {
+/* The swipe cluster is pinned bottom-right; give it its own footer row so it never sits on the last line of text.
+   Ripple only needs the row under Companion Notes, which run the full width of its card. */
+body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes):is(.last_mes, :has(.deep-swipe-right, .deep-swipe-counter)),
+body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle).swipeAllMessages #chat .mes:not(.smallSysMes),
+body.ripplestyle #chat .mes:not(.smallSysMes):has(> .mes_block > .ica--companion-ledger):is(.last_mes, :has(.deep-swipe-right, .deep-swipe-counter)),
+body.ripplestyle.swipeAllMessages #chat .mes:not(.smallSysMes):has(> .mes_block > .ica--companion-ledger) {
     padding-bottom: calc(var(--moonlit-sb-swipe-control-size) + (var(--moonlit-sb-swipe-edge-offset) * 2)) !important;
 }
 
 @media screen and (max-width: 1000px) {
     body:is(.echostyle, .whisperstyle, .hushstyle, .ripplestyle, .tidestyle) #chat .last_mes {
         position: relative !important;
-    }
-
-    /* Echo's notes reach the bottom of the message, so the swipe cluster gets its own row beneath them. */
-    body.echostyle #chat .mes:not(.smallSysMes):has(> .mes_block > .ica--companion-ledger):is(.last_mes, :has(.deep-swipe-right, .deep-swipe-counter)),
-    body.echostyle.swipeAllMessages #chat .mes:not(.smallSysMes):has(> .mes_block > .ica--companion-ledger) {
-        padding-bottom: calc(var(--moonlit-sb-swipe-control-size) + (var(--moonlit-sb-swipe-edge-offset) * 2)) !important;
     }
 
     body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes) .mesAvatarWrapper {
@@ -1699,6 +1721,30 @@ body:is(.whisperstyle, .hushstyle, .tidestyle).swipeAllMessages #chat .mes:not(.
     }
 }
 
+/* Companion Notes run the full width of the message, and Compact's box always does, so on every
+   screen size those messages get the same footer row and their swipe controls never touch a card. */
+body:is(.flatchat, .documentstyle):not(.sbterm, .nnchat-messenger) #chat .mes:not(.smallSysMes):is(:has(> .mes_block > .ica--companion-ledger), body.nnchat-compact *):is(.last_mes, :has(.deep-swipe-right)),
+body:is(.flatchat, .documentstyle).swipeAllMessages:not(.sbterm, .nnchat-messenger) #chat .mes:not(.smallSysMes):is(:has(> .mes_block > .ica--companion-ledger), body.nnchat-compact *) {
+    padding-bottom: calc(var(--sb-message-icon-size, 30px) + 6px) !important;
+}
+body:is(.flatchat, .documentstyle):not(.sbterm, .nnchat-messenger) #chat .mes:is(:has(> .mes_block > .ica--companion-ledger), body.nnchat-compact *) .swipeRightBlock {
+    flex-direction: row-reverse;
+    align-items: center;
+    gap: 2px;
+    inline-size: auto;
+    right: 4px;
+    bottom: 3px;
+}
+body:is(.flatchat, .documentstyle):not(.sbterm, .nnchat-messenger) #chat .mes:is(:has(> .mes_block > .ica--companion-ledger), body.nnchat-compact *) .assistant-swipe-arrow {
+    right: 4px;
+    bottom: 3px;
+    inline-size: var(--sb-message-icon-size, 30px);
+    block-size: var(--sb-message-icon-size, 30px);
+}
+body:is(.flatchat, .documentstyle):not(.sbterm, .nnchat-messenger) #chat .mes:is(:has(> .mes_block > .ica--companion-ledger), body.nnchat-compact *) :is(.swipe_left, .deep-swipe-left-outer) {
+    bottom: 3px;
+}
+
 /* --- Neconyan chat styles: Messenger, Notebook, Screenplay, Compact, Storybook ---
    Each one keeps the flatchat body class (avatars, ears, sleeping animals and phone rules
    still apply) and adds its own class on top, so selectors carry one extra class to win. */
@@ -1861,6 +1907,11 @@ body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes {
     margin-bottom: 2px;
     padding: 6px calc(8px * var(--messageMarginScale, 1));
     border-radius: 8px;
+}
+/* The small avatar column is too narrow for the stats box, so it widens only while stats are showing. */
+body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes:not(.smallSysMes):has(> .mesAvatarWrapper > .mes_stats > :is(body:not(.no-mesIDDisplay) .mesIDDisplay, body:not(.no-timer) .mes_timer, body:not(.no-tokenCount) .tokenCounterDisplay, .reasoning-tokens-badge, .agent-transform-badge):not(:empty)) .mesAvatarWrapper {
+    min-inline-size: calc(var(--mainFontSize) * 3.4);
+    align-items: center;
 }
 body.neconyan.flatchat.nnchat-compact:not(.sbterm) #chat .mes:hover {
     background: color-mix(in srgb, var(--neco-raised) 70%, transparent);
