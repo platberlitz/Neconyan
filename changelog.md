@@ -3,6 +3,7 @@
 ## v1.1.1
 
 ### Merged Staging PRs
+- PR #13 (2026-10-05) `fix: review and improve the Portuguese translation and fill selected gaps`
 - PR #15 (2026-10-05) `feat: add exact chat links and account-wide launch resume`
 
 ## v1.1.0
