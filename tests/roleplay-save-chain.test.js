@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
 import {
     beginRoleplaySave, bindRoleplayAccount, confirmRoleplayOverwrite, finishRoleplaySave,
-    parseRoleplayRead, rememberRoleplayRead, roleplayAccountStamp, sendRoleplaySave,
+    getRoleplaySourceId, parseRoleplayRead, rememberRoleplayRead, roleplayAccountStamp, sendRoleplaySave,
 } from '../public/scripts/roleplay-save-chain.js';
 
 const account = { accountId: '11111111-1111-4111-8111-111111111111', dataEpoch: 1 };
@@ -27,6 +27,13 @@ beforeEach(() => {
 });
 
 describe('protected browser save authority', () => {
+    test('link evidence is the exact applied editor identity and does not establish missing authority', () => {
+        expect(getRoleplaySourceId(locator)).toBeNull();
+        rememberRoleplayRead(locator, evidence);
+        expect(getRoleplaySourceId(locator)).toBe(source.instanceId);
+        expect(getRoleplaySourceId({ ...locator, chat: 'Other' })).toBeNull();
+        expect(getRoleplaySourceId({ ...locator, avatar: 'Other.png' })).toBeNull();
+    });
     test('validates the read account and exact locator without normalising Unicode names', () => {
         const unicode = { group: true, chat: 'お話 🐾' };
         const read = readResponse({ account, locator: unicode, vacancy: 0 });

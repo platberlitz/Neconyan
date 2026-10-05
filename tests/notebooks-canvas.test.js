@@ -286,6 +286,7 @@ test('a pending Canvas save keeps navigation blocked until its result is handled
         f.requests.mockImplementation(route => route === '/canvas/update' ? pending.promise : Promise.resolve({ status: 'success', canvases: [] }));
         buttonNamed(f.container, 'Save canvas').onclick();
         expect(f.view.canLeave()).toBe(false);
+        expect(f.app.toast).toHaveBeenCalledWith('warning', 'The canvas is still saving. Wait for the result before switching.');
         pending.resolve({ status: 'success', revision: 'b'.repeat(64) });
         await nextTurn();
         expect(f.view.canLeave()).toBe(true);
@@ -500,6 +501,12 @@ test('an owner-confirmed download can release an unsafe window draft, but a late
         globalThis.localStorage.setItem = () => { throw new Error('No device storage.'); };
         await f.edit();
         expect(f.view.canLeave()).toBe(false);
+        expect(f.app.toast).toHaveBeenLastCalledWith('warning', 'Save or download your canvas draft before leaving. This browser could not keep it.');
+        const reads = () => f.requests.mock.calls.filter(([route]) => route === '/canvas/read').length;
+        const readsBefore = reads();
+        buttonNamed(f.container, 'Plan.canvas').onclick();
+        expect(f.app.toast).toHaveBeenLastCalledWith('warning', 'Save or download your canvas draft before switching.');
+        expect(reads()).toBe(readsBefore);
         buttonNamed(f.container, 'Download canvas').onclick();
         expect(f.downloadCanvas).toHaveBeenCalledTimes(1);
         expect(f.view.canLeave()).toBe(false);

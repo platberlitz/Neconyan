@@ -12,6 +12,7 @@ import { getFileNameValidationFunction } from '../middleware/validateFileName.js
 import { applyAvatarCropResize } from './characters.js';
 import { invalidateThumbnail } from './thumbnails.js';
 import { createPersonaCard, decodePersonaImport, encodePersonaCard, MAX_PERSONA_CARD_BYTES } from '../persona-card.js';
+import { retireNavigationPersona } from './chat-navigation.js';
 
 export const router = express.Router();
 
@@ -81,7 +82,12 @@ router.post('/delete', getFileNameValidationFunction('avatar'), function (reques
     const fileName = path.join(request.user.directories.avatars, sanitize(request.body.avatar));
 
     if (fs.existsSync(fileName)) {
-        fs.unlinkSync(fileName);
+        try {
+            retireNavigationPersona(request, request.body.avatar, () => fs.unlinkSync(fileName));
+        } catch (error) {
+            console.warn('Could not delete persona:', error.message);
+            return response.status(Number.isInteger(error?.status) ? error.status : 500).send({ error: error?.code || 'persona_delete_failed' });
+        }
         invalidateThumbnail(request.user.directories, 'persona', sanitize(request.body.avatar));
         return response.send({ result: 'ok' });
     }

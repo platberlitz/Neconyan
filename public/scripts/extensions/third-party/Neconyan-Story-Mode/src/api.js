@@ -29,6 +29,7 @@ const IN_CHAT = 1;
 const ROLE_SYSTEM = 0;
 const RULES_DEPTH = 1;
 const DIRECTION_DEPTH = 0;
+let presentation = null;
 
 export function ctx() {
     return globalThis.SillyTavern.getContext();
@@ -100,6 +101,15 @@ export async function setChatFlag(enabled) {
         }
         throw error;
     }
+    presentation = null;
+    return true;
+}
+
+/** A link chooses this page's presentation without changing the saved chat. */
+export function presentChat(enabled) {
+    if (!hasChat()) return false;
+    const context = ctx();
+    presentation = { metadata: context.chatMetadata, chatId: context.chatId, enabled: Boolean(enabled) };
     return true;
 }
 
@@ -167,6 +177,8 @@ export function isEnabled() {
     if (!hasChat()) {
         return false;
     }
+    const context = ctx();
+    if (presentation?.metadata === context.chatMetadata && presentation.chatId === context.chatId) return presentation.enabled;
     return resolveEnabled({
         chatFlag: getChatFlag(),
         cardDefault: getCardConfig()?.default,

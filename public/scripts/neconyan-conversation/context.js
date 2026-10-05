@@ -868,6 +868,8 @@ export function createConversationBranch(name = 'Main', id = `br_${Date.now()}_$
     return {
         id,
         name,
+        // A reset can reuse 'main', even in the same millisecond. This is not a link ID.
+        lifetimeSeed: globalThis.crypto?.randomUUID?.() || `${Date.now()}_${Math.random()}`,
         messages: [],
         preview: 'Conversation ready',
         unread: 0,
@@ -1019,14 +1021,14 @@ export function getConversationBranches(avatar, { groupId = getConversationGroup
     });
 }
 
-export function setActiveConversationBranch(avatar, branchId, { groupId = getConversationGroupIdForAvatar(avatar) } = {}) {
-    const characterStore = getConversationThreadStore(avatar, { groupId });
+export function setActiveConversationBranch(avatar, branchId, { groupId = getConversationGroupIdForAvatar(avatar), persist = true } = {}) {
+    const characterStore = getConversationThreadStore(avatar, { groupId, create: false });
     if (!characterStore?.branches?.[branchId]) {
         return;
     }
 
     characterStore.activeBranchId = branchId;
-    persistConversationStore();
+    if (persist) persistConversationStore();
 }
 
 export function createConversationBranchForAvatar(avatar, name = 'New chat', { groupId = getConversationGroupIdForAvatar(avatar), copyMemory = null } = {}) {

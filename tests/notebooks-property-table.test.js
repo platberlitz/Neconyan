@@ -129,6 +129,18 @@ function touchFixture() {
     return { pane, rail, touch };
 }
 
+test('choosing a thirteenth property column tells the owner about the limit and does not refresh', async () => {
+    const twelve = Array.from({ length: 12 }, (_item, index) => `p${index + 1}`);
+    const request = jest.fn(async () => response([row()], { columns: twelve, availableColumns: [...twelve, 'p13'] }));
+    const fixture = tableFixture(request);
+    await fixture.view.open();
+    const calls = request.mock.calls.length;
+    fixture.control('p13').click();
+    await nextTurn();
+    expect(fixture.app.toast).toHaveBeenCalledWith('info', 'Choose up to 12 property columns.');
+    expect(request).toHaveBeenCalledTimes(calls);
+});
+
 test('vertical table swipes move only the owned table pane, and remain bounded', () => {
     const fixture = touchFixture();
     fixture.touch('touchstart', 100, 200);

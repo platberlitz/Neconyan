@@ -23,10 +23,11 @@ prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: tr
 function_calling: true };
 
 /** Every named workflow here uses a saved active connection, because that is what a browser names. */
-function saved(t, { settingsRevision = 7, powerUser = null } = {}) {
+function saved(t, { settingsRevision = 7, powerUser = null, mutate = null } = {}) {
     const f = fixture(t);
     const dirs = f.scope.directories;
     f.records[1].extra = {};
+    mutate?.(f.records);
     fs.writeFileSync(f.filename, f.records.map(record => JSON.stringify(record)).join('\n'));
     dirs.openAI_Settings = path.join(dirs.root, 'openai-presets');
     fs.mkdirSync(dirs.openAI_Settings);
@@ -238,6 +239,28 @@ test('a named Story passage contributes its saved rules and direction, and Guide
     assert.deepEqual(extensions.map(prompt => [prompt.key, prompt.position, prompt.depth, prompt.role, prompt.scan]),
         [['guided_prompt', 1, 2, 'assistant', true]]);
     assert.equal(f.records().at(-1).mes, 'A list.');
+});
+
+test('saved message bookkeeping from the page and extensions does not stop a reply, but a legacy attachment field still does', async t => {
+    const bookkeeping = records => {
+        for (const record of records.slice(1)) {
+            Object.assign(record, { continueHistory: [{ mes: record.mes, swipes: [record.mes] }], continueSwipeId: 0, continueSwipe: [record.mes], present: [1] });
+            record.extra = { ...record.extra, reasoning: 'A thought.', reasoning_type: 'parsed', reasoning_collapsed: true,
+                qvink_memory: { remember: true }, rpg_companion_swipes: {} };
+        }
+    };
+    const guide = { prompt: { text: 'Reply as a list.', depth: 2, role: 'system', scan: true } };
+    for (const [name, intent] of [['roleplay.reply', {}], ['guided.response', guide], ['guided.swipe', guide]]) {
+        const f = saved(t, { mutate: bookkeeping });
+        const { calls } = await f.run(name, { intent, text: 'A list.', key: `named-bookkeeping-${name}` });
+        assert.equal(calls.count, 1, name);
+        assert.ok(calls.prompts[0].some(message => message.role === 'user' && message.content === 'Original'), name);
+    }
+    const legacy = saved(t, { mutate: records => { records[2].extra = { ...records[2].extra, image: 'data:image/png;base64,AAAA' }; } });
+    const calls = { count: 0, prompts: [] };
+    await assert.rejects(legacy.run('guided.response', { intent: guide, calls, key: 'named-legacy-image' }),
+        { code: 'ROLEPLAY_INVALID', message: /non-text content/ });
+    assert.equal(calls.count, 0);
 });
 
 test('a named workflow refuses a changed anchor, an unknown name, a missing instruction, a group turn and a stale key', async t => {

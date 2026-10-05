@@ -1,4 +1,5 @@
 import { getRequestHeaders, is_send_press } from '../../script.js';
+import { isChatNavigationBlocked } from '../chat-navigation-flight.js';
 import { getCurrentUserHandle } from '../user.js';
 import { MEDIA_DISPLAY } from '../constants.js';
 import {
@@ -223,6 +224,7 @@ export function focusConversationInput() {
 }
 
 export async function submitConversationInput() {
+    if (isChatNavigationBlocked()) return;
     const account = getCurrentUserHandle();
     if (is_send_press || conversationState.conversationUploadActive) {
         return;

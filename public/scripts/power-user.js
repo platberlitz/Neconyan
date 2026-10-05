@@ -642,6 +642,7 @@ export const power_user = {
     show_swipe_num_all_messages: false,
     auto_connect: false,
     auto_load_chat: false,
+    chat_links: false,
     forbid_external_media: true,
     allow_card_scripts: false,
     external_media_allowed_overrides: [],
@@ -2855,6 +2856,7 @@ export async function loadPowerUserSettings(settings, data) {
     $('#reduced_motion').prop('checked', power_user.reduced_motion);
     $('#auto-connect-checkbox').prop('checked', power_user.auto_connect);
     $('#auto-load-chat-checkbox').prop('checked', power_user.auto_load_chat);
+    $('#chat-links-checkbox').prop('checked', power_user.chat_links);
     $('#forbid_external_media').prop('checked', power_user.forbid_external_media);
     $('#allow_card_scripts').prop('checked', !!power_user.allow_card_scripts);
     $('#pin_styles').prop('checked', power_user.pin_styles);
@@ -5279,9 +5281,15 @@ jQuery(async () => {
         saveSettingsDebounced();
     });
 
-    $('#auto-load-chat-checkbox').on('input', function () {
+    $('#auto-load-chat-checkbox').on('input', async function () {
         power_user.auto_load_chat = !!$(this).prop('checked');
+        if (await saveSettings(0, { returnResult: true })) window.dispatchEvent(new CustomEvent('neconyan:resume-preference'));
+    });
+
+    $('#chat-links-checkbox').on('input', function () {
+        power_user.chat_links = !!$(this).prop('checked');
         saveSettingsDebounced();
+        window.dispatchEvent(new CustomEvent('neconyan:chat-links-preference'));
     });
 
     $('#forbid_external_media').on('input', function () {

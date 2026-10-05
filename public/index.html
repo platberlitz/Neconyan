@@ -16,7 +16,7 @@
             background-color: #141514;
         }
     </style>
-    <link rel="preload" as="style" href="style.css?v=20261004-story-borders1">
+    <link rel="preload" as="style" href="style.css?v=20261005-chat-links4">
     <script type="importmap">
         { "imports": { "#macro-vendor": "./lib.js" } }
     </script>
@@ -41,19 +41,19 @@
     <link rel="icon" type="image/png" sizes="192x192" href="img/neconyan-icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="img/neconyan-icon-512.png">
     <link rel="apple-touch-icon" sizes="180x180" href="img/neconyan-icon-180.png" />
-    <link rel="stylesheet" type="text/css" href="style.css?v=20261004-story-borders1">
+    <link rel="stylesheet" type="text/css" href="style.css?v=20261005-chat-links4">
     <link rel="stylesheet" type="text/css" href="css/st-tailwind.css">
     <link rel="stylesheet" type="text/css" href="css/toggle-dependent.css">
     <link rel="stylesheet" type="text/css" href="css/select2-overrides.css?v=20260609a">
     <link rel="stylesheet" type="text/css" href="css/mobile-styles.css?v=20260916p" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-theme.css?v=20261004-story-borders1">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-paper-theme.css?v=20261004-story-borders1" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-tabs.css?v=20261004-story-borders1">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-mobile-shell.css?v=20261004-story-borders1" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan.css?v=20261004-story-borders1">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-home.css?v=20261004-story-borders1">
-    <link id="neconyan-calico-stylesheet" rel="stylesheet" type="text/css" href="css/neconyan-calico.css?v=20261004-story-borders1">
-    <link href="css/neconyan-menus.css?v=20260926a" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-theme.css?v=20261005-chat-links4">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-paper-theme.css?v=20261005-chat-links4" media="(max-width: 768px)">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-tabs.css?v=20261005-chat-links4">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-mobile-shell.css?v=20261005-chat-links4" media="(max-width: 768px)">
+    <link rel="stylesheet" type="text/css" href="css/neconyan.css?v=20261005-chat-links4">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-home.css?v=20261005-chat-links4">
+    <link id="neconyan-calico-stylesheet" rel="stylesheet" type="text/css" href="css/neconyan-calico.css?v=20261005-chat-links4">
+    <link href="css/neconyan-menus.css?v=20261005-chat-links4" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <link href="css/neconyan-help.css?v=20260929b" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <link href="css/neconyan-home-compact.css?v=20261003g" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <script>
@@ -63,7 +63,7 @@
                 if (['kittyless', 'windows-aero', 'windows-98', 'clean-minimal', 'macos-minimal', 'cozy-warm', 'hypr-glow', 'slate-flat'].indexOf(shellStyle) !== -1) {
                     var link = document.createElement('link');
                     link.rel = 'stylesheet';
-                    link.href = 'css/shell-styles/' + shellStyle + '.css?v=20261004-story-borders1';
+                    link.href = 'css/shell-styles/' + shellStyle + '.css?v=20261005-chat-links4';
                     link.setAttribute('data-sb-shell-style', shellStyle);
                     document.documentElement.setAttribute('data-sb-theme', shellStyle);
                     document.head.appendChild(link);
@@ -71,7 +71,7 @@
                 if (shellStyle === 'kittyless' || localStorage.getItem('sb-kittyless') === 'true') {
                     var catless = document.createElement('link');
                     catless.rel = 'stylesheet';
-                    catless.href = 'css/neconyan-kittyless.css?v=20261004-story-borders1';
+                    catless.href = 'css/neconyan-kittyless.css?v=20261005-chat-links4';
                     catless.setAttribute('data-sb-kittyless', 'true');
                     document.documentElement.setAttribute('data-sb-kittyless', 'true');
                     document.head.appendChild(catless);
@@ -117,7 +117,7 @@
                         <div id="respective-presets-block" class="width100p">
                             <div id="kobold_api-presets">
                                 <div class="flex-container flexNoGap sb-non-chat-preset-row">
-                                    <select id="settings_preset" data-preset-manager-for="kobold" class="flex1 text_pole">
+                                    <select id="settings_preset" data-preset-manager-for="kobold" data-i18n-ignore class="flex1 text_pole">
                                         <option value="gui" data-i18n="guikoboldaisettings">GUI KoboldAI Settings</option>
                                     </select>
                                     <div class="flex-container marginLeft5 gap3px sb-non-chat-preset-actions">
@@ -148,7 +148,7 @@
                             </div>
                             <div id="novel_api-presets">
                                 <div class="flex-container flexNoGap sb-non-chat-preset-row">
-                                    <select id="settings_preset_novel" class="flex1 text_pole" data-preset-manager-for="novel">
+                                    <select id="settings_preset_novel" class="flex1 text_pole" data-preset-manager-for="novel" data-i18n-ignore>
                                         <option value="gui" data-i18n="Default">Default</option>
                                     </select>
                                     <div class="flex-container marginLeft5 gap3px sb-non-chat-preset-actions">
@@ -201,7 +201,7 @@
                                     </div>
 
                                     <div class="flex-container flexNoGap">
-                                        <select id="settings_preset_openai" class="flex1 text_pole" data-preset-manager-for="openai" aria-label="Chat Completion Preset" data-i18n="[aria-label]Chat Completion Preset">
+                                        <select id="settings_preset_openai" class="flex1 text_pole" data-preset-manager-for="openai" data-i18n-ignore aria-label="Chat Completion Preset" data-i18n="[aria-label]Chat Completion Preset">
                                             <option value="gui" data-i18n="Default">Default</option>
                                         </select>
                                         <div class="flex-container marginLeft5 gap3px">
@@ -273,7 +273,7 @@
                             <div id="textgenerationwebui_api-presets">
                                 <div>
                                     <div class="flex-container flexNoGap sb-non-chat-preset-row">
-                                        <select id="settings_preset_textgenerationwebui" class="flex1 text_pole" data-preset-manager-for="textgenerationwebui">
+                                        <select id="settings_preset_textgenerationwebui" class="flex1 text_pole" data-preset-manager-for="textgenerationwebui" data-i18n-ignore>
                                         </select>
                                         <div class="flex-container marginLeft5 gap3px sb-non-chat-preset-actions">
                                             <input type="file" hidden data-preset-manager-file="textgenerationwebui" accept=".json, .settings">
@@ -4246,7 +4246,7 @@
                                 </div>
                             </div>
                             <div class="flex-container flexNoGap" title="Select your current Context Template" data-i18n="[title]Select your current Context Template" data-cc-null>
-                                <select id="context_presets" data-preset-manager-for="context" class="flex1 text_pole"></select>
+                                <select id="context_presets" data-preset-manager-for="context" data-i18n-ignore class="flex1 text_pole"></select>
                                 <div class="flex-container marginLeft5 gap3px">
                                     <input type="file" hidden data-preset-manager-file="context" accept=".json, .settings">
                                     <div data-preset-manager-update="context" class="menu_button menu_button_icon" title="Update current template" data-i18n="[title]Update current template">
@@ -4399,7 +4399,7 @@
 
 
                             <div class="flex-container flexNoGap" title="Select your current Instruct Template" data-i18n="[title]Select your current Instruct Template">
-                                <select id="instruct_presets" data-preset-manager-for="instruct" class="flex1 text_pole"></select>
+                                <select id="instruct_presets" data-preset-manager-for="instruct" data-i18n-ignore class="flex1 text_pole"></select>
                                 <div class="flex-container marginLeft5 gap3px">
                                     <input type="file" hidden data-preset-manager-file="instruct" accept=".json, .settings">
                                     <div data-preset-manager-update="instruct" class="menu_button menu_button_icon" title="Update current template" data-i18n="[title]Update current template">
@@ -4593,7 +4593,7 @@
                         </div>
                         <div id="SystemPromptBlock" class="marginBot10" data-cc-null>
                             <div class="flex-container flexNoGap" title="Select your current System Prompt" data-i18n="[title]Select your current System Prompt">
-                                <select id="sysprompt_select" data-preset-manager-for="sysprompt" class="flex1 text_pole"></select>
+                                <select id="sysprompt_select" data-preset-manager-for="sysprompt" data-i18n-ignore class="flex1 text_pole"></select>
                                 <div class="flex-container marginLeft5 gap3px">
                                     <input type="file" hidden data-preset-manager-file="sysprompt" accept=".json, .settings">
                                     <div data-preset-manager-update="sysprompt" class="menu_button menu_button_icon" title="Update current prompt" data-i18n="[title]Update current prompt">
@@ -4734,7 +4734,7 @@
                                         Reasoning Formatting
                                     </summary>
                                     <div class="flex-container flexNoGap" title="Select your current Reasoning Template" data-i18n="[title]Select your current Reasoning Template">
-                                        <select id="reasoning_select" data-preset-manager-for="reasoning" class="flex1 text_pole" aria-label="Reasoning Template" data-i18n="[aria-label]Reasoning Template"></select>
+                                        <select id="reasoning_select" data-preset-manager-for="reasoning" data-i18n-ignore class="flex1 text_pole" aria-label="Reasoning Template" data-i18n="[aria-label]Reasoning Template"></select>
                                         <div class="flex-container marginLeft5 gap3px">
                                             <input type="file" hidden data-preset-manager-file="reasoning" accept=".json, .settings">
                                             <div data-preset-manager-update="reasoning" class="menu_button menu_button_icon" title="Update current template" data-i18n="[title]Update current template">
@@ -5848,6 +5848,14 @@
                                     <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
                                 </div>
                                 <div class="inline-drawer-content sb-settings-subdrawer-body" style="display:none">
+                                <label class="checkbox_label" for="chat-links-checkbox" title="Back, Forward and bookmarks then open exact saved chats. Links work only for the same account on this installation, not public sharing.">
+                                    <input id="chat-links-checkbox" type="checkbox" />
+                                    <small data-i18n="Chat links in the address bar">Chat links in the address bar</small>
+                                </label>
+                                <label class="checkbox_label" for="auto-load-chat-checkbox" title="Opening Neconyan returns to the last saved chat you opened on this account.">
+                                    <input id="auto-load-chat-checkbox" type="checkbox" />
+                                    <small data-i18n="Resume last chat on launch">Resume last chat on launch</small>
+                                </label>
                                 <div class="flex-container">
                                     <div class="alignitemscenter flex-container flexFlowColumn flexBasis48p flexGrow flexShrink gap0">
                                         <small>
@@ -5931,10 +5939,6 @@
                                         <i class="fa-solid fa-mobile-screen-button"></i>
                                     </label>
                                 </div>
-                                <label class="checkbox_label" for="auto-load-chat-checkbox">
-                                    <input id="auto-load-chat-checkbox" type="checkbox" />
-                                    <small data-i18n="Auto-load Last Chat">Auto-load Last Chat</small>
-                                </label>
                                 <label for="auto_scroll_chat_to_bottom" class="checkbox_label">
                                     <input id="auto_scroll_chat_to_bottom" type="checkbox" />
                                     <small data-i18n="Auto-scroll Chat">Auto-scroll Chat</small>
@@ -9309,6 +9313,14 @@
             <a id="option_select_chat">
                 <i class="fa-lg fa-solid fa-address-book"></i>
                 <span data-i18n="Manage chat files">Manage chat files</span>
+            </a>
+            <a id="option_copy_chat_link" role="button" tabindex="0" aria-disabled="true">
+                <i class="fa-lg fa-solid fa-link" aria-hidden="true"></i>
+                <span data-i18n="Copy chat link">Copy chat link</span>
+            </a>
+            <a id="option_chat_link_settings" role="button" tabindex="0" aria-haspopup="dialog">
+                <i class="fa-lg fa-solid fa-sliders" aria-hidden="true"></i>
+                <span data-i18n="Chat link settings">Chat link settings</span>
             </a>
             <hr>
             <a id="option_delete_mes">

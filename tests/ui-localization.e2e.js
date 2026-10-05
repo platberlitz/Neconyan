@@ -146,3 +146,66 @@ test('an exact entry wins over a ${0} pattern that would otherwise catch the cap
     }), [dictionaries, pairs]);
     expect(shown).toEqual(pairs.map(([lang, , caption]) => [dictionaries[lang][caption], dictionaries[lang][caption]]));
 });
+
+test('preset selectors marked as data keep their option names, however the options arrive', async ({ page }) => {
+    // This calls localizeControls() the way i18n.js does (whole document at load, then each added option
+    // through the MutationObserver). It does not load i18n.js itself; the real observer is covered by a browser check.
+    const source = await readFile(new URL('../public/scripts/ui-localization.js', import.meta.url), 'utf8');
+    await page.setContent(`
+        <main id="root">
+            <div id="home">
+                <select id="marked" data-preset-manager-for="context" data-i18n-ignore aria-label="Chat Completion Preset">
+                    <option value="Default">Default</option>
+                    <option value="Neutral">Neutral</option>
+                </select>
+            </div>
+            <div id="elsewhere"></div>
+            <select id="control"><option>Default</option><option>Neutral</option></select>
+        </main>`);
+    await page.addScriptTag({ type: 'module', content: `${source}\nwindow.localizeControls = localizeControls;` });
+    await page.waitForFunction(() => typeof window.localizeControls === 'function');
+    const result = await page.evaluate(() => {
+        const dictionary = { Default: 'Padrão', Neutral: 'Neutro', 'Chat Completion Preset': 'Predefinição' };
+        const marked = document.getElementById('marked');
+        const texts = select => [...select.options].map(option => option.text);
+        const shown = {};
+
+        // 1. Whole-document pass at load; the unmarked control proves the dictionary is live.
+        window.localizeControls(document, dictionary);
+        shown.atLoad = texts(marked);
+        shown.control = texts(document.getElementById('control'));
+
+        // 2. An option appended later and passed as the root, as the observer does.
+        const appended = document.createElement('option');
+        appended.value = 'Default';
+        appended.textContent = 'Default';
+        marked.append(appended);
+        window.localizeControls(appended, dictionary);
+        shown.appended = appended.text;
+
+        // 3. An option whose text is set after it was appended.
+        const late = document.createElement('option');
+        marked.append(late);
+        late.textContent = 'Neutral';
+        window.localizeControls(late, dictionary);
+        shown.late = late.text;
+
+        // 4. The marked select moved to another parent and localised again.
+        document.getElementById('elsewhere').append(marked);
+        window.localizeControls(document.getElementById('elsewhere'), dictionary);
+        window.localizeControls(marked, dictionary);
+        shown.moved = texts(marked);
+
+        // 5. The select's own aria-label is not touched by this path.
+        shown.ariaLabel = marked.getAttribute('aria-label');
+        return shown;
+    });
+    expect(result).toEqual({
+        atLoad: ['Default', 'Neutral'],
+        control: ['Padrão', 'Neutro'],
+        appended: 'Default',
+        late: 'Neutral',
+        moved: ['Default', 'Neutral', 'Default', 'Neutral'],
+        ariaLabel: 'Chat Completion Preset',
+    });
+});
