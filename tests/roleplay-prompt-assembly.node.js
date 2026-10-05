@@ -59,6 +59,55 @@ async function promptFor(t, prompts, order, settings = {}) {
 const main = { identifier: 'main', role: 'system', system_prompt: true, content: 'Main' };
 const history = { identifier: 'chatHistory', marker: true, system_prompt: true };
 
+test('empty Main Prompt markers retain history and relative Author notes', async t => {
+    const messages = await promptFor(t, [{ ...main, marker: true, content: '' }, history], ['main', 'chatHistory'], {
+        extension_settings: { note: { default: 'Remember the rain', defaultInterval: 1, defaultPosition: 0 } },
+    });
+    assert.deepEqual(messages, [{ role: 'system', content: 'Remember the rain' },
+        { role: 'user', content: 'Original' }, { role: 'assistant', content: 'Answer' }]);
+});
+
+test('empty Main Prompt markers respect character overrides and forbid-overrides', async t => {
+    for (const forbid_overrides of [false, true]) {
+        const job = promptJob(t, [{ ...main, marker: true, content: '', forbid_overrides }, history], ['main', 'chatHistory'], {}, f => {
+            fs.writeFileSync(path.join(f.scope.directories.characters, 'Nova.png'), writeCard(png, JSON.stringify({
+                name: 'Nova', system_prompt: 'Card prompt for {{char}}',
+            })));
+        });
+        await job.run(async ({ messages, beforeDispatch }) => {
+            beforeDispatch();
+            assert.deepEqual(messages.map(message => message.content),
+                forbid_overrides ? ['Original', 'Answer'] : ['Card prompt for Nova', 'Original', 'Answer']);
+            return { text: 'Saved result' };
+        });
+    }
+});
+
+test('disabled Main Prompt markers retain relative notes without enabling character overrides', async t => {
+    const job = promptJob(t, [{ ...main, marker: true, content: '' }, history], ['main', 'chatHistory'], {
+        extension_settings: { note: { default: 'Remember the rain', defaultInterval: 1, defaultPosition: 0 } },
+    }, f => {
+        fs.writeFileSync(path.join(f.scope.directories.characters, 'Nova.png'), writeCard(png, JSON.stringify({
+            name: 'Nova', system_prompt: 'Disabled card prompt',
+        })));
+    });
+    const material = job.options.promptBackend();
+    material.active.prompt_order[0].order[0].enabled = false;
+    job.options.promptBackend = () => material;
+    await job.run(async ({ messages, beforeDispatch }) => {
+        beforeDispatch();
+        assert.deepEqual(messages.map(message => message.content), ['Remember the rain', 'Original', 'Answer']);
+        return { text: 'Saved result' };
+    });
+});
+
+test('unknown saved markers still refuse before provider dispatch', async t => {
+    const job = promptJob(t, [main, history, { identifier: 'unknown', marker: true, role: 'system', content: 'Saved text' }],
+        ['main', 'unknown', 'chatHistory']);
+    await assert.rejects(job.run(async () => assert.fail('Provider must stay idle')),
+        /This saved prompt marker has no server content\./);
+});
+
 test('saved custom prompts keep their roles and positions on both sides of history', async t => {
     const messages = await promptFor(t, [main, history,
         { identifier: 'before', role: 'assistant', system_prompt: false, content: 'Before {{char}}' },

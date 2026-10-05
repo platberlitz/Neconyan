@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from './neconyan-conversation-durable-fixture.js';
+import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 import { setConfigFilePath } from '../src/util.js';
 import { USER_DIRECTORY_TEMPLATE } from '../src/constants.js';
 
@@ -42,6 +43,41 @@ function submitPrivateFollowup(app, account, chatName) {
 }
 
 for (const phone of [false, true]) {
+    test(`${phone ? 'phone' : 'desktop'} Roleplay Send accepts an empty Main Prompt marker`, async ({ app }, info) => {
+        const account = await app.account({ phone, activeConnection: true, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {},
+            configureSettings: settings => {
+                Object.assign(settings.oai_settings.prompts.find(prompt => prompt.identifier === 'main'), { marker: true, content: '' });
+                for (const order of settings.oai_settings.prompt_order) {
+                    for (const prompt of order.order) prompt.enabled = ['main', 'chatHistory'].includes(prompt.identifier);
+                }
+                Object.assign(settings.oai_settings, { squash_system_messages: false, new_chat_prompt: '', names_behavior: -1,
+                    send_if_empty: '', custom_prompt_post_processing: '' });
+                settings.extension_settings.note.default = '';
+                settings.extension_settings.disabledExtensions.push('third-party/sillytavern-character-colors');
+            } });
+        if (phone) await installIPhoneSafari(account.context);
+        const page = await account.open({ workspace: false });
+        await page.evaluate(async avatar => {
+            const context = window.SillyTavern.getContext();
+            await context.getCharacters();
+            await (await import('/script.js')).selectCharacterById(context.characters.findIndex(character => character.avatar === avatar),
+                { switchMenu: false });
+        }, account.avatar);
+        if (phone) await applyIOSOnlyCss(page);
+        await page.locator('#send_textarea').fill('Empty main question');
+        await page.locator('#send_but').click();
+        await expect(page.locator('#chat .mes').last()).toContainText('Durable first reply.', { timeout: 60000 });
+        expect(app.provider.calls).toHaveLength(1);
+        expect(app.provider.calls[0].messages).toEqual([
+            { role: 'assistant', content: 'Hello.' }, { role: 'user', content: 'Empty main question' },
+        ]);
+        const bounds = await page.locator('#send_textarea').boundingBox();
+        expect(bounds.width).toBeGreaterThan(100);
+        expect(bounds.x).toBeGreaterThanOrEqual(0);
+        expect(bounds.x + bounds.width).toBeLessThanOrEqual(phone ? 393 : 1280);
+        await page.screenshot({ path: info.outputPath('empty-main-reply.png') });
+    });
+
     test(`${phone ? 'phone' : 'desktop'} text Roleplay uses shared instruct formatting before and after every page closes`, async ({ app }) => {
         app.provider.mode.reply = { content: 'Text fixture reply' };
         const account = await app.account({ phone, textProfile: true, activeConnection: true, configureSettings: settings => {
