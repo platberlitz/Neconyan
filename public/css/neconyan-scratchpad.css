@@ -539,6 +539,38 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     gap: 2px;
 }
 
+.scratchpad-message-menu {
+    position: relative;
+    margin-inline-start: auto;
+    flex-shrink: 0;
+}
+
+.scratchpad-message-menu > summary {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    cursor: pointer;
+    list-style: none;
+    border-radius: 10px;
+}
+
+.scratchpad-message-menu > summary::-webkit-details-marker {
+    display: none;
+}
+
+.scratchpad-message-menu[open] > .scratchpad-message-actions {
+    position: absolute;
+    inset-inline-end: 0;
+    top: 100%;
+    z-index: 2;
+    width: max-content;
+    padding: 6px;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    background: var(--neco-surface);
+}
+
 .scratchpad-app .scratchpad-message-actions .scratchpad-button {
     min-width: 36px;
     padding: 4px 8px;

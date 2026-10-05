@@ -30,6 +30,22 @@ for (const phone of [false, true]) {
         app.provider.mode.finishStream();
         await account.settled((await response.json()).job.id);
         expect(app.provider.calls.at(-1).messages[0].content).toContain('PROMPT-TEST');
+        const reply = page.locator('.scratchpad-message.is-assistant.is-done');
+        const actions = reply.locator('.scratchpad-message-actions');
+        await expect(actions).toBeHidden();
+        const toggle = reply.locator('summary[aria-label="Message actions"]');
+        await toggle.click();
+        await expect(actions).toBeVisible();
+        await expect(actions.getByRole('button', { name: 'Copy', exact: true })).toBeVisible();
+        const bounds = await toggle.boundingBox();
+        const card = await reply.boundingBox();
+        expect(bounds.width).toBeGreaterThanOrEqual(44);
+        expect(bounds.x).toBeGreaterThan(card.x + card.width / 2);
+        await toggle.press('Escape');
+        await expect(actions).toBeHidden();
+        await toggle.click();
+        await actions.getByRole('button', { name: 'Edit', exact: true }).click();
+        await expect(page.getByRole('textbox', { name: 'Edit message', exact: true })).toBeVisible();
         await page.reload();
         await page.locator('body.neconyan-rail-ready').waitFor();
         await page.evaluate(async avatar => {

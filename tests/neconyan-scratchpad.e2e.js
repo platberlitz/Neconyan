@@ -184,7 +184,9 @@ for (const phone of [false, true]) {
         await reopened.screenshot({ path: test.info().outputPath('round-table.png') });
         const before = (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0].messages;
         const retry = reopened.waitForResponse('**/api/scratchpad/send');
-        await reopened.locator('.scratchpad-message.is-assistant').filter({ has: reopened.locator('.scratchpad-author', { hasText: 'Taro' }) }).getByRole('button', { name: 'Try again', exact: true }).click();
+        const taroReply = reopened.locator('.scratchpad-message.is-assistant').filter({ has: reopened.locator('.scratchpad-author', { hasText: 'Taro' }) });
+        await taroReply.locator('summary[aria-label="Message actions"]').click();
+        await taroReply.getByRole('button', { name: 'Try again', exact: true }).click();
         const retried = await retry;
         expect(retried.ok(), await retried.text()).toBe(true);
         await expect(reopened.locator('.scratchpad-stream')).toContainText('table-taro suggests');

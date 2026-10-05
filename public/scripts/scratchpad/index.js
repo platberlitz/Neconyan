@@ -30,7 +30,7 @@ import {
 } from './context.js';
 import { describeChange, splitReply } from './proposals.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261005-scratchpad4';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261005-scratchpad5';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -832,7 +832,21 @@ function renderMessage(session, message, { latest }) {
             article.append(h('p', { class: 'scratchpad-error', role: 'status', text: message.error || t`This reply did not finish.` }));
         }
     }
-    article.append(renderMessageActions(session, message, { latest }));
+    const actions = renderMessageActions(session, message, { latest });
+    const menu = h('details', { class: 'scratchpad-message-menu' },
+        h('summary', { 'aria-label': t`Message actions`, title: t`Message actions` },
+            h('i', { class: 'fa-solid fa-ellipsis', 'aria-hidden': 'true' })), actions);
+    menu.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+            menu.open = false;
+            menu.querySelector('summary').focus();
+            event.stopPropagation();
+        }
+    });
+    actions.addEventListener('click', event => {
+        if (event.target.closest('button:not(:disabled)')) menu.open = false;
+    });
+    author.append(menu);
     return article;
 }
 
