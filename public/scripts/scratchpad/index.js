@@ -28,7 +28,7 @@ import {
 } from './context.js';
 import { describeChange, splitReply } from './proposals.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261005-scratchpad1';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261005-scratchpad2';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -75,6 +75,7 @@ const app = {
     width: DEFAULT_WIDTH,
     assistant: 'miso',
     tab: 'chat',
+    overviewCollapsed: false,
     source: null,
     bucket: null,
     ticket: 0,
@@ -100,13 +101,19 @@ function readPrefs() {
         if (saved.layout === 'full' || saved.layout === 'beside') app.layout = saved.layout;
         if (Number.isFinite(saved.width)) app.width = saved.width;
         if (ASSISTANTS.some(item => item.id === saved.assistant)) app.assistant = saved.assistant;
+        if (typeof saved.collapsed === 'boolean') app.overviewCollapsed = saved.collapsed;
     } catch {
         /* Defaults are fine when the saved preferences cannot be read. */
     }
 }
 
 function writePrefs() {
-    accountStorage.setItem(PREFS_KEY, JSON.stringify({ layout: app.layout, width: app.width, assistant: app.assistant }));
+    accountStorage.setItem(PREFS_KEY, JSON.stringify({
+        layout: app.layout,
+        width: app.width,
+        assistant: app.assistant,
+        collapsed: app.overviewCollapsed,
+    }));
 }
 
 function assistantInfo(id) {
@@ -284,9 +291,28 @@ function buildChatPanel() {
         onkeydown: onComposerKey,
     });
     el.send = iconButton(t`Send`, () => onSendButton(), { icon: 'fa-paper-plane', className: 'scratchpad-send', primary: true });
+    el.overviewToggle = h('button', {
+        type: 'button',
+        class: 'scratchpad-overview-toggle',
+        'aria-controls': 'scratchpad-overview',
+        'aria-expanded': 'true',
+        title: t`Hide details`,
+        onclick: toggleOverview,
+    }, h('i', { class: 'fa-solid fa-chevron-down', 'aria-hidden': 'true' }), h('span', { text: t`Talking with` }));
+    el.overviewBar = h('button', {
+        type: 'button',
+        class: 'scratchpad-overview-bar',
+        'aria-controls': 'scratchpad-overview',
+        'aria-expanded': 'false',
+        title: t`Show details`,
+        onclick: toggleOverview,
+    });
+    el.overview = h('div', { id: 'scratchpad-overview', class: 'scratchpad-overview' },
+        h('div', { class: 'scratchpad-chat-top' }, el.overviewToggle, el.assistantPicker),
+        el.summary);
     append(el.panels.chat, [
-        h('div', { class: 'scratchpad-chat-top' }, h('span', { class: 'scratchpad-label', text: t`Talking with` }), el.assistantPicker),
-        el.summary,
+        el.overviewBar,
+        el.overview,
         el.messages,
         h('div', { class: 'scratchpad-compose' }, el.quick, h('div', { class: 'scratchpad-compose-row' }, el.composer, el.send)),
     ]);
@@ -558,6 +584,7 @@ function renderHeader() {
         }, h('img', { src: getAssistantIconSrc(item.id), alt: '', width: 32, height: 32 }), h('span', { text: item.name }));
         app.el.assistantPicker.append(choice);
     }
+    renderOverview();
 }
 
 async function chooseAssistant(id) {
@@ -577,6 +604,36 @@ function contextSummary(settings) {
     return t`Reading the latest ${settings.depth} messages`;
 }
 
+function renderOverview() {
+    const el = app.el;
+    const collapsed = app.overviewCollapsed;
+    el.overview.hidden = collapsed;
+    el.overviewBar.hidden = !collapsed;
+    if (!collapsed) return;
+    const session = activeSession();
+    const assistant = assistantInfo(session?.assistant ?? app.assistant);
+    let name = t`No chat open`;
+    if (app.source) name = session ? session.name : t`New session with ${assistant.name}`;
+    clear(el.overviewBar);
+    append(el.overviewBar, [
+        h('i', { class: 'fa-solid fa-chevron-right', 'aria-hidden': 'true' }),
+        h('img', { src: getAssistantIconSrc(assistant.id), alt: '', width: 24, height: 24 }),
+        h('span', { class: 'scratchpad-overview-name', text: name }),
+        session?.temporary ? h('span', { class: 'scratchpad-badge', text: t`Temporary` }) : null,
+        app.source ? h('span', { class: 'scratchpad-overview-context', text: contextSummary(currentSettings()) }) : null,
+    ]);
+}
+
+function toggleOverview() {
+    const stick = nearBottom(app.el.messages);
+    app.overviewCollapsed = !app.overviewCollapsed;
+    writePrefs();
+    renderOverview();
+    const target = app.overviewCollapsed ? app.el.overviewBar : app.el.overviewToggle;
+    target.focus({ preventScroll: true });
+    if (stick) scrollMessages(true);
+}
+
 function renderChat() {
     const el = app.el;
     const session = activeSession();
@@ -591,6 +648,7 @@ function renderChat() {
             iconButton(t`Change`, () => selectTab('context'), { className: 'scratchpad-link' }),
         ]);
     }
+    renderOverview();
     renderMessages();
     renderComposer();
 }

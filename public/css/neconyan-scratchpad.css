@@ -208,10 +208,80 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     padding: 10px 14px 4px;
 }
 
-.scratchpad-label {
+.scratchpad-app .scratchpad-overview-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 32px;
+    margin-left: -6px;
+    padding: 4px 6px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
     color: var(--neco-muted);
+    font: inherit;
     font-size: 0.85rem;
     font-weight: 700;
+    cursor: pointer;
+}
+
+.scratchpad-app .scratchpad-overview-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 40px;
+    padding: 6px 14px;
+    border: 0;
+    border-bottom: 1px solid var(--neco-border);
+    background: transparent;
+    color: var(--neco-ink);
+    font: inherit;
+    font-size: 0.88rem;
+    text-align: left;
+    cursor: pointer;
+}
+
+.scratchpad-overview-toggle i,
+.scratchpad-overview-bar i {
+    width: 12px;
+    color: var(--neco-muted);
+    font-size: 0.75rem;
+}
+
+.scratchpad-overview-toggle:hover,
+.scratchpad-overview-bar:hover {
+    background: var(--neco-raised);
+}
+
+.scratchpad-overview-bar img {
+    flex: 0 0 auto;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.scratchpad-overview-name,
+.scratchpad-overview-context {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.scratchpad-overview-name {
+    flex: 0 1 auto;
+    font-weight: 700;
+}
+
+.scratchpad-overview-context {
+    flex: 1 1 auto;
+    color: var(--neco-muted);
+}
+
+.scratchpad-overview-bar .scratchpad-badge {
+    flex: 0 0 auto;
 }
 
 .scratchpad-assistants {
@@ -758,6 +828,17 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     }
 }
 
+@container scratchpad (max-width: 400px) {
+    .scratchpad-app .scratchpad-overview-toggle {
+        justify-content: center;
+        min-width: 32px;
+    }
+
+    .scratchpad-app .scratchpad-overview-toggle span {
+        display: none;
+    }
+}
+
 @container scratchpad (max-width: 380px) {
     .scratchpad-assistant span {
         display: none;
@@ -772,6 +853,8 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     .scratchpad-app .scratchpad-button,
     .scratchpad-app .scratchpad-chip,
     .scratchpad-app .scratchpad-link,
+    .scratchpad-app .scratchpad-overview-toggle,
+    .scratchpad-app .scratchpad-overview-bar,
     .scratchpad-tab,
     .scratchpad-assistant,
     .scratchpad-check,
@@ -780,7 +863,8 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
         min-height: 44px;
     }
 
-    .scratchpad-app .scratchpad-message-actions .scratchpad-button {
+    .scratchpad-app .scratchpad-message-actions .scratchpad-button,
+    .scratchpad-app .scratchpad-overview-toggle {
         min-width: 44px;
     }
 
@@ -819,6 +903,8 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
 @media (prefers-reduced-motion: no-preference) {
     .scratchpad-tab,
     .scratchpad-assistant,
+    .scratchpad-overview-toggle,
+    .scratchpad-overview-bar,
     .scratchpad-segment-choice {
         transition: background-color 120ms ease-out, border-color 120ms ease-out;
     }

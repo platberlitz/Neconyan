@@ -18,6 +18,8 @@ Scratchpad follows the chat you have open. Switch chats and it shows that chat's
 
 Pick who you are talking to under **Talking with**, type in the box at the bottom and press **Send** (or Enter on desktop; Shift+Enter adds a new line). **Quick prompts** fill the box with a ready-made request you can edit before sending: **Read the scene**, **Plot ideas**, **Catch me up**, **Continuity check** and **Lore gaps**.
 
+To give the conversation more room, press **Talking with** (just the arrow on phones) and the assistant picker and session line fold into one slim bar. Press the bar to bring them back. Scratchpad remembers which way you left it.
+
 Replies are written on the server. They keep going if you close Scratchpad, reload the page or close the browser, and the finished reply is there when you come back. **Stop** ends a reply early. While a reply is being written you cannot send another message in the same session.
 
 Each message has a few buttons:
