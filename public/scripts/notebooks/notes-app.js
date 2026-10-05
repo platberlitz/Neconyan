@@ -1,5 +1,6 @@
 import { characters, getCurrentChatId, this_chid } from '../../script.js';
 import { selected_group } from '../group-chats.js';
+import { t, translate } from '../i18n.js';
 import { getCurrentUserHandle } from '../user.js';
 import { accountStorage } from '../util/AccountStorage.js';
 import { loadStylesheetAsync } from '../dynamic-styles.js';
@@ -10,6 +11,7 @@ import { append, button, choiceRow, clear, debounce, formatTime, h } from './dom
 import { clearDraft, readDraft, saveDraft } from './drafts.js';
 import { headingOutline, renderNoteInto } from './render.js';
 import { formatDiff } from './line-diff.js';
+import { userPhrase } from './user-text.js';
 
 const PREFS_KEY = 'neconyan_notes_prefs';
 const NOTES_STYLESHEET = 'css/neconyan-notes.css?v=15';
@@ -30,6 +32,16 @@ const STATUS_TEXT = Object.freeze({
 const lf = text => String(text ?? '').replace(/\r\n?/g, '\n');
 const isPhone = () => globalThis.matchMedia?.(PHONE_QUERY).matches === true;
 const toast = (kind, message) => globalThis.toastr?.[kind]?.(message);
+
+/**
+ * A toast whose message holds the user's words and was translated whole with t``. toastr shows it as text (escapeHtml), and only
+ * the message is marked, before the page's observer runs, so the run-time localiser leaves it alone. The toast itself is unchanged.
+ */
+function userToast(kind, message) {
+    const shown = globalThis.toastr?.[kind]?.(message);
+    shown?.find?.('.toast-message').attr('data-i18n-ignore', '');
+    return shown;
+}
 
 function readPrefs() {
     try {
@@ -325,7 +337,7 @@ async function discussNote() {
     try {
         const content = h('div', { class: 'notes-dialog notes-discussion-dialog' },
             h('h3', { class: 'notes-heading', text: 'Talk about this note' }),
-            h('p', { text: elements.title.value || 'Untitled' }), assistants, genders, modes,
+            h('p', { text: elements.title.value || 'Untitled', 'data-i18n-ignore': elements.title.value ? '' : null }), assistants, genders, modes,
             h('p', { class: 'notes-notice', text: 'A new chat will open with a copy of this note in the message box. Review it and press Send when you are ready. Existing chats are kept.' }),
             h('p', { class: 'notes-hint', text: 'Only this note is included, not linked notes or attachments. Your AI access settings stay unchanged.' }));
         const result = await callGenericPopup(content, POPUP_TYPE.CONFIRM, '', { wide: true, okButton: 'Start chat', cancelButton: 'Not now' });
@@ -528,13 +540,24 @@ function noteButton(summary, extra = null) {
     return h('li', { class: 'notes-list-item' },
         h('button', { type: 'button', class: `notes-note-link${current ? ' is-current' : ''}`, 'aria-current': current ? 'true' : null,
             onclick: () => void openNote(app.state.notebookId, summary.id, { pushBack: true }) },
-        h('span', { class: 'notes-note-title', text: summary.title || 'Untitled' }),
-        h('span', { class: 'notes-note-meta', text: [summary.folder || 'Top level', summary.favourite ? 'Favourite' : '', formatTime(summary.updatedAt)].filter(Boolean).join(' · ') }),
+        h('span', { class: 'notes-note-title', text: summary.title || 'Untitled', 'data-i18n-ignore': summary.title ? '' : null }),
+        // The folder is the user's; 'Top level' and the rest of the line stay with the run-time localiser, as before.
+        h('span', { class: 'notes-note-meta' },
+            summary.folder ? h('span', { text: summary.folder, 'data-i18n-ignore': '' }) : 'Top level',
+            [summary.favourite ? 'Favourite' : '', formatTime(summary.updatedAt)].filter(Boolean).map(part => ` · ${part}`).join('')),
         extra));
 }
 
 function section(title, ...children) {
     return h('section', { class: 'notes-nav-section' }, h('h3', { class: 'notes-nav-heading', text: title }), ...children);
+}
+
+/** A fuzzy match keeps its prefix apart from the excerpt. The prefix is translated here and kept from a second, automatic pass; the note's words are left alone. */
+function searchSnippet(result) {
+    if (!result.snippet) return null;
+    return h('span', { class: 'notes-snippet' },
+        result.exact ? null : h('span', { text: `${translate('Close match:')} `, 'data-i18n-ignore': '' }),
+        h('span', { text: result.snippet, 'data-i18n-ignore': '' }));
 }
 
 /** Tags a nav section so the tour and styles can find it after the list is rebuilt. */
@@ -551,9 +574,10 @@ function renderNav() {
     clear(nav);
     const notebookRow = h('div', { class: 'notes-notebook-row', role: 'group', 'aria-label': 'Notebooks' });
     for (const notebook of state.notebooks) {
+        // The title is translated here, because userText keeps the run-time localiser off the whole button.
         notebookRow.append(button(notebook.name, () => void selectNotebook(notebook.id), {
-            className: 'notes-choice notes-notebook', pressed: notebook.id === state.notebookId,
-            title: `${notebook.name} (${notebook.noteCount} notes${notebook.origin === 'import' ? ', imported' : ''})`,
+            className: 'notes-choice notes-notebook', pressed: notebook.id === state.notebookId, userText: true,
+            title: notebook.origin === 'import' ? t`${notebook.name} (${notebook.noteCount} notes, imported)` : t`${notebook.name} (${notebook.noteCount} notes)`,
         }));
     }
     notebookRow.append(button('New notebook', () => void app.dialogs.newNotebook(app), { icon: 'fa-plus', className: 'notes-quiet' }));
@@ -572,7 +596,7 @@ function renderNav() {
     if (state.search) {
         const list = h('ul', { class: 'notes-list' });
         for (const result of state.search.results ?? []) {
-            list.append(noteButton(result, result.snippet ? h('span', { class: 'notes-snippet', text: `${result.exact ? '' : 'Close match: '}${result.snippet}` }) : null));
+            list.append(noteButton(result, searchSnippet(result)));
         }
         nav.append(section(`Search results (${state.search.total})`, state.search.total ? list : h('p', { class: 'notes-hint', text: 'Nothing matched. Try fewer words.' })));
         return;
@@ -593,7 +617,7 @@ function renderNav() {
     folders.append(button(`All notes (${tree?.noteCount ?? 0})`, () => void chooseFolder(null), { className: 'notes-choice', pressed: state.folder === null }));
     folders.append(button(`Top level (${tree?.rootCount ?? 0})`, () => void chooseFolder(''), { className: 'notes-choice', pressed: state.folder === '' }));
     for (const folder of tree?.folders ?? []) {
-        folders.append(button(`${folder.path} (${folder.count})`, () => void chooseFolder(folder.path), { className: 'notes-choice', pressed: state.folder === folder.path }));
+        folders.append(button(`${folder.path} (${folder.count})`, () => void chooseFolder(folder.path), { className: 'notes-choice', pressed: state.folder === folder.path, userText: true }));
     }
     nav.append(keyed('folders', section('Folders', folders, h('div', { class: 'notes-nav-actions' },
         button('New folder', () => void app.dialogs.newFolder(app), { icon: 'fa-folder-plus', className: 'notes-quiet' }),
@@ -603,9 +627,11 @@ function renderNav() {
     const more = state.list.total > state.list.offset + state.list.notes.length
         ? button('Show more', () => void pageList(200), { className: 'notes-quiet' }) : null;
     const less = state.list.offset > 0 ? button('Show earlier', () => void pageList(-200), { className: 'notes-quiet' }) : null;
-    nav.append(keyed('list', section(state.folder === null ? 'All notes' : state.folder || 'Top level',
+    const listSection = section(state.folder === null ? 'All notes' : state.folder || 'Top level',
         state.list.notes.length ? list : h('p', { class: 'notes-hint', text: 'No notes here yet. New note starts one.' }),
-        h('div', { class: 'notes-nav-actions' }, less, more))));
+        h('div', { class: 'notes-nav-actions' }, less, more));
+    if (state.folder) listSection.firstChild.setAttribute('data-i18n-ignore', '');
+    nav.append(keyed('list', listSection));
     const tool = (label, onClick, icon, className = '') => button(label, onClick, { icon, className: `notes-notebook-tool ${className}`.trim() });
     nav.append(keyed('views', section('Notebook views', h('div', { class: 'notes-notebook-tools' },
         tool('Graph', () => void openNotebookGraph(), 'fa-diagram-project', 'notes-graph-open'),
@@ -1005,7 +1031,10 @@ function renderFoldControls() {
     const folded = new Set(sourceEditor.folds());
     const limit = state.foldLimit ?? 100;
     for (const heading of headings.slice(0, limit)) {
-        const control = button(`${folded.has(heading.key) ? 'Show' : 'Fold'} ${heading.text || 'Untitled heading'}`, () => sourceEditor.toggle(heading.key));
+        const label = heading.text
+            ? folded.has(heading.key) ? userPhrase`Show ${heading.text}` : userPhrase`Fold ${heading.text}`
+            : [folded.has(heading.key) ? 'Show' : 'Fold', 'Untitled heading'].join(' ');
+        const control = button(label, () => sourceEditor.toggle(heading.key));
         control.style.setProperty('--notes-outline-level', String(heading.level - 1));
         control.setAttribute('aria-expanded', String(!folded.has(heading.key)));
         control.disabled = sourceEditor.composing;
@@ -1028,7 +1057,7 @@ function renderOutline() {
     const list = h('ul', { class: 'notes-outline-list' });
     for (const heading of headings) {
         list.append(h('li', { style: `--notes-outline-level:${heading.level - 1}` },
-            h('button', { type: 'button', class: 'notes-outline-item', text: heading.text, onclick: () => jumpToOffset(heading.offset) })));
+            h('button', { type: 'button', class: 'notes-outline-item', text: heading.text, 'data-i18n-ignore': '', onclick: () => jumpToOffset(heading.offset) })));
     }
     elements.outline.append(list);
 }
@@ -1486,7 +1515,7 @@ function showSuggestions(notes, found) {
                 textarea.setSelectionRange(found.start, textarea.selectionStart);
                 insertText(`${linkTextFor(note, notes)}]]`);
                 hideSuggest();
-            } }, h('span', { text: note.title }), h('span', { class: 'notes-note-meta', text: note.folder || 'Top level' })));
+            } }, h('span', { text: note.title, 'data-i18n-ignore': '' }), h('span', { class: 'notes-note-meta', text: note.folder || 'Top level', 'data-i18n-ignore': note.folder ? '' : null })));
     });
     list.hidden = false;
     app.elements.textarea.setAttribute('aria-activedescendant', 'notes-suggest-0');
@@ -1517,7 +1546,7 @@ async function followLink({ target, kind, fragment, fromNoteId }) {
         return openNote(notebookId, result.note.id, { pushBack: true, fragment: jump });
     }
     if (result.resolution === 'ambiguous') {
-        const chosen = await app.dialogs.chooseNote(app, `More than one note matches '${target}'. Which one?`, result.candidates);
+        const chosen = await app.dialogs.chooseNote(app, userPhrase`More than one note matches '${target}'. Which one?`, result.candidates);
         if (chosen && current()) await openNote(notebookId, chosen.id, { pushBack: true, fragment: jump });
         return;
     }
@@ -1527,7 +1556,7 @@ async function followLink({ target, kind, fragment, fromNoteId }) {
     }
     if (result.resolution === 'missing') {
         const name = target.replace(/\.md$/i, '');
-        const ok = await callGenericPopup(`There is no note called '${name}' yet. Create it?`, POPUP_TYPE.CONFIRM, '', { okButton: 'Create note', cancelButton: 'Not now' });
+        const ok = await callGenericPopup(h('span', {}, userPhrase`There is no note called '${name}' yet. Create it?`), POPUP_TYPE.CONFIRM, '', { okButton: 'Create note', cancelButton: 'Not now' });
         if (ok !== POPUP_RESULT.AFFIRMATIVE || !current()) return;
         const slash = name.lastIndexOf('/');
         const created = await createNote({ folder: slash >= 0 ? name.slice(0, slash) : state.note?.folder ?? 'Inbox', title: slash >= 0 ? name.slice(slash + 1) : name, text: '' });
@@ -1626,7 +1655,7 @@ async function changeNote(changes, reason = 'edit') {
 }
 
 Object.assign(app, {
-    request, failed, toast, isPhone, refreshTree, loadNotebooks, selectNotebook, openNote, reloadNote, flushSave, insertText, setStatus,
+    request, failed, toast, userToast, isPhone, refreshTree, loadNotebooks, selectNotebook, openNote, reloadNote, flushSave, insertText, setStatus,
     createNote, moveNote, changeNote, compareTexts, showBanner, clearBanner, renderNav, renderEditor, applyLayout, setPane,
     chatScope: currentChatScope, lf, readPrefs, writePrefs, hide: hideNotes, setView, jumpToOffset, closeNotebookView, openNotebookGraph, openNotebookTable, openNotebookCanvas,
 });

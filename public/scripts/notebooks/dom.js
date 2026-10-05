@@ -32,18 +32,24 @@ export function clear(element) {
     return element;
 }
 
-export function button(label, onClick, { icon = '', className = '', title = '', pressed = null, disabled = false } = {}) {
+/**
+ * With userText, the label and title are the user's own words (or were translated already), so the run-time localiser leaves the
+ * whole button alone. A label may also be a node from userPhrase (user-text.js).
+ */
+export function button(label, onClick, { icon = '', className = '', title = '', pressed = null, disabled = false, userText = false } = {}) {
     const primaryClass = pressed || className.split(/\s+/).includes('notes-primary') ? ' menu_button_primary' : '';
     const element = h('button', {
         type: 'button',
         class: `menu_button notes-button ${className}${primaryClass}`.trim(),
         title: title || null,
+        'data-i18n-ignore': userText ? '' : null,
         'aria-pressed': pressed === null ? null : String(Boolean(pressed)),
         disabled,
         onclick: onClick,
     });
     if (icon) element.append(h('i', { class: `fa-solid ${icon}`, 'aria-hidden': 'true' }));
-    if (label) element.append(h('span', { text: label }));
+    if (label !== null && typeof label === 'object') element.append(h('span', {}, label));
+    else if (label) element.append(h('span', { text: label }));
     if (!label && title) element.setAttribute('aria-label', title);
     return element;
 }
@@ -53,13 +59,14 @@ export function setButtonPressed(element, pressed) {
     element.classList.toggle('menu_button_primary', Boolean(pressed) || element.classList.contains('notes-primary'));
 }
 
-export function field(label, control, hint = '') {
+/** With userLabel, the label is the user's own text (a property name), so the run-time localiser leaves it alone. A hint may be a node from userPhrase. */
+export function field(label, control, hint = '', { userLabel = false } = {}) {
     const id = control.id || `notes-field-${Math.random().toString(36).slice(2, 10)}`;
     control.id = id;
     return h('div', { class: 'notes-field' },
-        h('label', { for: id, text: label }),
+        h('label', { for: id, text: label, 'data-i18n-ignore': userLabel ? '' : null }),
         control,
-        hint ? h('p', { class: 'notes-hint', text: hint }) : null);
+        hint !== null && typeof hint === 'object' ? h('p', { class: 'notes-hint' }, hint) : hint ? h('p', { class: 'notes-hint', text: hint }) : null);
 }
 
 export function choiceRow(label, options, current, onChoose) {
