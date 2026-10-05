@@ -65,6 +65,66 @@ test('assistant connection choices survive reopening and route each speaker to i
 });
 
 for (const phone of [false, true]) {
+    test(`${phone ? 'iPhone stand-in' : 'desktop'} swipe picks share only the selected versions without switching the story`, async ({ app }) => {
+        test.setTimeout(120000);
+        const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {} });
+        if (phone) await installIPhoneSafari(account.context, { standalone: true });
+        const page = await account.open({ workspace: false });
+        const versions = ['A quiet meeting in the garden.', 'The current version in the library.', 'A surprising meeting by the sea.'];
+        const chatId = await page.evaluate(async ({ avatar, versions }) => {
+            const context = window.SillyTavern.getContext();
+            await context.getCharacters();
+            await context.selectCharacterById(context.characters.findIndex(character => character.avatar === avatar), { switchMenu: false });
+            const message = context.chat[0];
+            message.swipes = versions;
+            message.swipe_id = 1;
+            message.mes = versions[1];
+            message.swipe_info = versions.map(() => ({ send_date: message.send_date, extra: structuredClone(message.extra || {}) }));
+            await context.saveChat({ throwOnError: true });
+            await (await import('/script.js')).reloadCurrentChat();
+            return context.getCurrentChatId();
+        }, { avatar: account.avatar, versions });
+        const source = await openScratchpad(page);
+        if (phone) await applyIOSOnlyCss(page);
+        await page.locator('.scratchpad-composer').fill('Compare the first and third swipes.');
+        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await page.locator('#scratchpad-connection-miso').selectOption('durable');
+        await page.locator('.scratchpad-swipes > summary').click();
+        await expect(page.locator('.scratchpad-swipes')).toContainText('Swipe 2 of 3 (current)');
+        await page.getByRole('checkbox', { name: 'Pick message #0, swipe 1', exact: true }).check();
+        await page.getByRole('checkbox', { name: 'Pick message #0, swipe 3', exact: true }).check();
+        await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0].settings.picked).toEqual(['0:swipe:0', '0:swipe:2']);
+        await openScratchpad(page);
+        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await expect(page.getByRole('checkbox', { name: 'Pick message #0, swipe 1', exact: true })).toBeChecked();
+        await expect(page.getByRole('checkbox', { name: 'Pick message #0, swipe 3', exact: true })).toBeChecked();
+        const target = await page.locator('.scratchpad-swipes > summary').boundingBox();
+        expect(target.height).toBeGreaterThanOrEqual(44);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(phone ? 393 : 1280);
+        await page.locator('.scratchpad-swipes').screenshot({ path: test.info().outputPath('swipes.png') });
+        await page.getByRole('button', { name: 'Show preview', exact: true }).click();
+        const preview = page.locator('.scratchpad-preview-text');
+        await expect(preview).toContainText('[swipe 1 of 3; alternative]');
+        await expect(preview).toContainText('[swipe 3 of 3; alternative]');
+        await expect(preview).toContainText(versions[0]);
+        await expect(preview).toContainText(versions[2]);
+        await expect(preview).not.toContainText(versions[1]);
+        const text = await preview.textContent();
+        await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+        app.provider.mode.streamReply = { first: 'The two versions ', rest: 'have different pacing.' };
+        const accepted = page.waitForResponse('**/api/scratchpad/send');
+        await page.locator('.scratchpad-send').click();
+        const response = await accepted;
+        expect(response.ok(), await response.text()).toBe(true);
+        expect(response.request().postDataJSON().context).toBe(text);
+        await expect(page.locator('.scratchpad-stream')).toContainText('The two versions');
+        app.provider.mode.finishStream();
+        await account.settled((await response.json()).job.id);
+        const saved = (await account.post('/api/chats/get', { avatar_url: account.avatar, file_name: chatId })).find(record => typeof record.mes === 'string');
+        expect(saved).toMatchObject({ swipe_id: 1, mes: versions[1], swipes: versions });
+        expect(await page.evaluate(() => window.SillyTavern.getContext().chat[0].swipe_id)).toBe(1);
+    });
+
     test(`${phone ? 'iPhone stand-in' : 'desktop'} round table streams three models independently and keeps the group after reopening`, async ({ app }) => {
         test.setTimeout(150000);
         const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings: saved => {

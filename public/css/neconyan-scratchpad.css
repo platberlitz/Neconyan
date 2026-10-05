@@ -681,6 +681,21 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     overflow-wrap: anywhere;
 }
 
+.scratchpad-swipes {
+    margin: 2px 0 8px 18px;
+    padding-inline-start: 6px;
+    border-inline-start: 2px solid var(--neco-border);
+}
+
+.scratchpad-swipes > summary {
+    min-height: 44px;
+    padding: 10px 8px;
+    color: var(--neco-muted);
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
 .scratchpad-lore {
     display: flex;
     flex-direction: column;

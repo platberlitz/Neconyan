@@ -37,7 +37,7 @@ jest.unstable_mockModule('../public/scripts/world-info.js', () => ({
     loadWorldInfo, selected_world_info: ['Global lore'], world_info: { charLore: [{ name: 'Nova', extraBooks: ['Extra lore'] }] },
 }));
 
-const { buildContext, collectLore, currentSource } = await import('../public/scripts/scratchpad/context.js');
+const { buildContext, collectLore, currentSource, sourceMessages } = await import('../public/scripts/scratchpad/context.js');
 const settings = { depth: 15, include: { lore: true, card: true, persona: true } };
 
 beforeEach(() => {
@@ -52,6 +52,68 @@ beforeEach(() => {
     }
     books.set('Empty lore', { entries: {} });
     loadWorldInfo.mockClear();
+});
+
+describe('Scratchpad swipe comparison', () => {
+    beforeEach(() => {
+        conversationState.conversationWorkspaceOpen = false;
+        chat.push({ name: 'Roleplay', mes: 'The current ending, edited.', swipe_id: 1,
+            swipes: ['The quiet ending.', 'The current ending.', 'The surprise ending.'] });
+    });
+
+    test('recent messages share only the current version, including its latest edits', async () => {
+        const context = await buildContext({ source: currentSource(), settings: { depth: 1 } });
+        expect(context.text).toContain('The current ending, edited.');
+        expect(context.text).not.toContain('The quiet ending.');
+        expect(context.text).not.toContain('The surprise ending.');
+        expect(context.swipeCount).toBe(0);
+    });
+
+    test('shares selected alternatives with labels and leaves the current chat untouched', async () => {
+        const before = structuredClone(chat);
+        const choices = sourceMessages(currentSource())[0].swipes;
+        const context = await buildContext({ source: currentSource(), settings: { depth: 15, picked: [choices[0].ref, choices[1].ref] } });
+        expect(context.text).toContain('#0 Roleplay [swipe 1 of 3; alternative]:\nThe quiet ending.');
+        expect(context.text).toContain('#0 Roleplay [swipe 2 of 3; current]:\nThe current ending, edited.');
+        expect(context.text).not.toContain('The surprise ending.');
+        expect(context.text).toContain('do not treat alternatives as consecutive events');
+        expect(context.messageCount).toBe(1);
+        expect(context.swipeCount).toBe(2);
+        expect(chat).toEqual(before);
+    });
+
+    test('does not repeat a current message picked both directly and through its swipe', async () => {
+        const context = await buildContext({ source: currentSource(), settings: { picked: ['0', '0:swipe:1'] } });
+        expect(context.text.match(/The current ending, edited\./g)).toHaveLength(1);
+        expect(context.messageCount).toBe(1);
+        expect(context.swipeCount).toBe(1);
+    });
+
+    test('explicit alternatives can be shared with other messages, even when hidden', async () => {
+        chat[0].is_system = true;
+        chat.push({ name: 'User', is_user: true, mes: 'Compare the pacing.' });
+        const context = await buildContext({ source: currentSource(), settings: { picked: ['0:swipe:2', '1'] } });
+        expect(context.text).toContain('[swipe 3 of 3; alternative] (hidden)');
+        expect(context.text).toContain('Compare the pacing.');
+        expect(context.text).not.toContain('The current ending, edited.');
+        expect(context.messageCount).toBe(2);
+    });
+
+    test('scans the selected swipe for lore keywords without sharing unselected alternatives', async () => {
+        chat[0].swipes[0] = 'The lighthouse ending.';
+        const ordinary = await buildContext({ source: currentSource(), settings });
+        expect(ordinary.lore.entries.some(entry => entry.included)).toBe(false);
+        const comparison = await buildContext({ source: currentSource(), settings: { ...settings, picked: ['0:swipe:0'] } });
+        expect(comparison.lore.entries.some(entry => entry.included)).toBe(true);
+        expect(comparison.text).not.toContain('The surprise ending.');
+    });
+
+    test('missing swipe picks never fall back to sharing recent messages', async () => {
+        const context = await buildContext({ source: currentSource(), settings: { depth: 15, picked: ['0:swipe:8'] } });
+        expect(context.messageCount).toBe(0);
+        expect(context.text).not.toContain('The current ending, edited.');
+        expect(context.picked).toBe(true);
+    });
 });
 
 describe('Scratchpad source context', () => {

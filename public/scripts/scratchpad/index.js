@@ -30,7 +30,7 @@ import {
 } from './context.js';
 import { describeChange, splitReply } from './proposals.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261005-scratchpad2';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261005-scratchpad3';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -1091,38 +1091,53 @@ function renderContext({ force = true } = {}) {
 }
 
 function renderPicks(settings) {
-    const section = h('section', { class: 'scratchpad-section' }, h('h3', { class: 'scratchpad-section-title', text: t`Pick specific messages` }));
+    const section = h('section', { class: 'scratchpad-section' }, h('h3', { class: 'scratchpad-section-title', text: t`Pick specific messages and swipes` }));
     const messages = sourceMessages(app.source);
     if (!messages.length) {
         section.append(h('p', { class: 'scratchpad-muted', text: t`This chat has no messages yet.` }));
         return section;
     }
     const picked = new Set(settings.picked);
-    section.append(h('p', { class: 'scratchpad-muted', text: t`Picked messages replace the recent messages above.` }));
+    section.append(h('p', { class: 'scratchpad-muted', text: t`Picked messages and swipes replace the recent messages above. Expand Swipes to compare versions without changing the story.` }));
     if (picked.size) {
         section.append(iconButton(t`Clear picks (${picked.size})`, () => void updateSettings({ picked: [] }, { rerenderContext: true }), { icon: 'fa-eraser' }));
     }
     const list = h('ul', { class: 'scratchpad-picks' });
     const latestFirst = [...messages].reverse();
-    for (const item of latestFirst.slice(0, app.pickLimit)) {
+    const choices = messages.flatMap(item => [item, ...(item.swipes ?? [])]);
+    const pick = item => {
         const input = h('input', {
             type: 'checkbox',
+            'aria-label': item.swipe ? t`Pick message #${item.number}, swipe ${item.swipe}` : t`Pick message #${item.number}`,
             checked: picked.has(item.ref),
             onchange: event => {
                 const checked = event.currentTarget.checked;
                 void updateSettings(latest => {
                     const next = new Set(latest.picked);
-                    if (checked) next.add(item.ref);
-                    else next.delete(item.ref);
-                    return { picked: messages.map(entry => entry.ref).filter(ref => next.has(ref)) };
+                    if (checked) {
+                        next.add(item.ref);
+                        if (item.swipe && item.current) next.delete(item.messageRef);
+                        else if (!item.swipe) for (const swipe of item.swipes ?? []) if (swipe.current) next.delete(swipe.ref);
+                    } else next.delete(item.ref);
+                    return { picked: choices.map(entry => entry.ref).filter(ref => next.has(ref)) };
                 }, { rerenderContext: true });
             },
         });
         const preview = item.text.length > 140 ? `${item.text.slice(0, 140)}...` : item.text;
-        list.append(h('li', {}, h('label', { class: 'scratchpad-pick' },
+        const label = item.swipe ? t`Swipe ${item.swipe} of ${item.swipeCount}` : `#${item.number} ${item.name}`;
+        return h('label', { class: 'scratchpad-pick' },
             input,
-            h('span', { class: 'scratchpad-pick-meta', text: `#${item.number} ${item.name}${item.hidden ? ` (${t`hidden`})` : ''}` }),
-            h('span', { class: 'scratchpad-pick-text', text: preview }))));
+            h('span', { class: 'scratchpad-pick-meta', text: `${label}${item.current ? ` (${t`current`})` : ''}${item.hidden ? ` (${t`hidden`})` : ''}` }),
+            h('span', { class: 'scratchpad-pick-text', text: preview }));
+    };
+    for (const item of latestFirst.slice(0, app.pickLimit)) {
+        const row = h('li', {}, pick(item));
+        if (item.swipes?.length > 1) {
+            row.append(h('details', { class: 'scratchpad-swipes', open: item.swipes.some(swipe => picked.has(swipe.ref)) },
+                h('summary', { text: t`Swipes (${item.swipes.length})` }),
+                h('ul', { class: 'scratchpad-picks' }, item.swipes.map(swipe => h('li', {}, pick(swipe))))));
+        }
+        list.append(row);
     }
     section.append(list);
     if (latestFirst.length > app.pickLimit) {
@@ -1201,6 +1216,7 @@ function renderPreview() {
             clear(output);
             append(output, [
                 h('p', { text: t`About ${tokens} tokens. Chat messages: ${context.messageCount} of ${context.totalMessages}. Lorebook entries: ${context.lore.entries.filter(entry => entry.included).length}.` }),
+                context.swipeCount ? h('p', { text: t`Swipes shared for comparison: ${context.swipeCount}.` }) : null,
                 h('pre', { class: 'scratchpad-preview-text', text: context.text }),
             ]);
         } catch (error) {

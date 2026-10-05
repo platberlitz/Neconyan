@@ -142,21 +142,35 @@ export function sourceMessages(source) {
             isUser: message?.role === 'user',
         }));
     }
-    return chat.map((message, index) => ({
-        ref: String(index),
-        number: index,
-        name: message?.name || (message?.is_user ? name1 : 'Character'),
-        text: String(message?.mes ?? ''),
-        hidden: Boolean(message?.is_system),
-        isUser: Boolean(message?.is_user),
-    }));
+    return chat.map((message, index) => {
+        const item = {
+            ref: String(index),
+            number: index,
+            name: message?.name || (message?.is_user ? name1 : 'Character'),
+            text: String(message?.mes ?? ''),
+            hidden: Boolean(message?.is_system),
+            isUser: Boolean(message?.is_user),
+        };
+        const swipes = Array.isArray(message?.swipes) ? message.swipes : [];
+        const current = Number.isInteger(message?.swipe_id) && message.swipe_id >= 0 && message.swipe_id < swipes.length
+            ? message.swipe_id : swipes.indexOf(item.text);
+        return { ...item, swipes: swipes.flatMap((text, swipe) => typeof text !== 'string' ? [] : [{
+            ...item, ref: `${item.ref}:swipe:${swipe}`, messageRef: item.ref,
+            swipe: swipe + 1, swipeCount: swipes.length, current: swipe === current,
+            text: swipe === current ? item.text : text,
+        }]) };
+    });
 }
 
 function selectMessages(messages, settings) {
     const picked = Array.isArray(settings?.picked) ? settings.picked : [];
     if (picked.length) {
         const wanted = new Set(picked);
-        return { messages: messages.filter(item => wanted.has(item.ref)), picked: true };
+        return { messages: messages.flatMap(item => {
+            const swipes = (item.swipes ?? []).filter(swipe => wanted.has(swipe.ref));
+            const current = wanted.has(item.ref) && !swipes.some(swipe => swipe.current);
+            return [...(current ? [item] : []), ...swipes];
+        }), picked: true };
     }
     const depth = Math.max(0, Number(settings?.depth) || 0);
     const pool = settings?.include?.hidden ? messages : messages.filter(item => !item.hidden);
@@ -339,11 +353,16 @@ export async function buildContext({ source, settings, pendingText = '', session
         if (text) sections.push(`## Lorebooks\n${text}`);
     }
 
+    const messageCount = new Set(selection.messages.map(item => item.messageRef ?? item.ref)).size;
+    const swipeCount = selection.messages.filter(item => item.swipe).length;
     const heading = selection.picked
-        ? `## Picked messages (${selection.messages.length} of ${all.length})`
+        ? (swipeCount ? `## Picked messages and swipes (${selection.messages.length} versions from ${messageCount} of ${all.length} messages)` : `## Picked messages (${messageCount} of ${all.length})`)
         : `## Latest messages (${selection.messages.length} of ${all.length})`;
-    const lines = selection.messages.map(item => `#${item.number} ${item.name}${item.hidden ? ' (hidden)' : ''}:\n${clip(item.text, MAX_MESSAGE_CHARS)}`);
-    sections.push([heading, ...lines].join('\n\n'));
+    const lines = selection.messages.map(item => {
+        const swipe = item.swipe ? ` [swipe ${item.swipe} of ${item.swipeCount}; ${item.current ? 'current' : 'alternative'}]` : '';
+        return `#${item.number} ${item.name}${swipe}${item.hidden ? ' (hidden)' : ''}:\n${clip(item.text, MAX_MESSAGE_CHARS)}`;
+    });
+    sections.push([heading, ...(swipeCount ? ['Swipes are alternative versions of the same message, shared for comparison. Only the current version belongs to the active story; do not treat alternatives as consecutive events.'] : []), ...lines].join('\n\n'));
 
     let text = sections.join('\n\n');
     const encoded = new TextEncoder().encode(text);
@@ -355,7 +374,8 @@ export async function buildContext({ source, settings, pendingText = '', session
         text,
         names,
         lore,
-        messageCount: selection.messages.length,
+        messageCount,
+        swipeCount,
         totalMessages: all.length,
         picked: selection.picked,
         capabilities: {
