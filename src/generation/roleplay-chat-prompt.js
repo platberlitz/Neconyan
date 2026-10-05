@@ -49,7 +49,8 @@ export async function assembleRoleplayChatPrompt(history, snapshot, material, wo
             if (!saved.marker || saved.injection_position === 1) fail('A saved history or example marker is invalid.');
             return [{ ...saved }];
         }
-        if (saved.marker && !Object.hasOwn(values, item.identifier)) fail('This saved prompt marker has no server content.');
+        // Main uses saved text or a character override, even when imported as a marker.
+        if (saved.marker && item.identifier !== 'main' && !Object.hasOwn(values, item.identifier)) fail('This saved prompt marker has no server content.');
         const role = saved.role ?? 'system';
         if (!roles.includes(role) || ![0, 1].includes(saved.injection_position ?? 0)) fail('A saved prompt position or role is invalid.');
         let content = Object.hasOwn(values, item.identifier) ? values[item.identifier] : saved.content;
