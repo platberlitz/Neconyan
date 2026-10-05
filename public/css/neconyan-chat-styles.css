@@ -183,9 +183,9 @@ body.echostyle #chat {
                 flex-direction: row-reverse;
                 float: right;
                 clear: both;
-                margin-right: calc(var(--custom-echo-avatar) + 5px + 8px);
+                margin-right: calc(var(--custom-echo-avatar) + 5px + 8px + var(--moonlit-sb-stats-room, 0px));
                 margin-left: 0;
-                width: calc(100% - (var(--custom-echo-avatar) + 5px + 8px));
+                width: calc(100% - (var(--custom-echo-avatar) + 5px + 8px + var(--moonlit-sb-stats-room, 0px)));
 
                 .flex-container {
                     flex-direction: row-reverse;
@@ -988,9 +988,9 @@ body.tidestyle #chat {
                 flex-direction: row-reverse;
                 float: right;
                 clear: both;
-                margin-right: calc(var(--custom-echo-avatar) + 5px + 8px);
+                margin-right: calc(var(--custom-echo-avatar) + 5px + 8px + var(--moonlit-sb-stats-room, 0px));
                 margin-left: 0;
-                width: calc(100% - (var(--custom-echo-avatar) + 5px + 8px));
+                width: calc(100% - (var(--custom-echo-avatar) + 5px + 8px + var(--moonlit-sb-stats-room, 0px)));
 
                 .flex-container {
                     flex-direction: row-reverse;
@@ -1202,7 +1202,7 @@ body.hushstyle,
 body.tidestyle {
     #chat .ch_name {
         margin-top: 3px;
-        margin-left: calc(var(--custom-echo-avatar) + 8px);
+        margin-left: calc(var(--custom-echo-avatar) + 8px + var(--moonlit-sb-stats-room, 0px));
 
         @media screen and (max-width: 1000px) {
             margin-left: calc(var(--custom-echo-avatar) + 11px)
@@ -1241,6 +1241,60 @@ body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes .ch_name .
     body:is(.echostyle, .tidestyle) #chat .mes[is_user="true"]:not(.smallSysMes) .mes_block .mes_buttons {
         justify-content: flex-end;
     }
+
+    /* The stats box sits beside the avatar here, so a showing box pushes the name and buttons past it too. */
+    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes) .mesAvatarWrapper > .mes_stats {
+        inline-size: calc(var(--mainFontSize) * 3.4);
+        margin-inline: 2px;
+    }
+
+    body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes):has(> .mesAvatarWrapper > .mes_stats > :is(body:not(.no-mesIDDisplay) .mesIDDisplay, body:not(.no-timer) .mes_timer, body:not(.no-tokenCount) .tokenCounterDisplay, .reasoning-tokens-badge, .agent-transform-badge):not(:empty)) {
+        --moonlit-sb-stats-room: calc(var(--mainFontSize) * 3.4 + 4px);
+    }
+
+    body.echostyle #chat .mes:not(.smallSysMes) .mes_text:has(+ .ica--companion-ledger)::before {
+        border-end-start-radius: 0;
+        border-end-end-radius: 0;
+    }
+}
+
+/* Echo draws its bubble on the text box, so Companion Notes continue that bubble instead of floating under it. */
+body.echostyle #chat .mes:not(.smallSysMes) .mes_text:has(+ .ica--companion-ledger) {
+    vertical-align: top;
+    margin-bottom: 0;
+    border-end-start-radius: 0;
+    border-end-end-radius: 0;
+}
+
+body.echostyle #chat .mes:not(.smallSysMes) .mes_text + .ica--companion-ledger {
+    box-sizing: border-box;
+    width: 100%;
+    margin-top: 0;
+    padding: 6px 14px 12px;
+    border-radius: 0 0 10px 10px;
+    background-color: var(--moonlit-sb-bot-message-bg);
+    box-shadow: 3px 3px 8px rgba(0, 0, 0, 3%);
+    backdrop-filter: var(--SmartThemeBackdropFilter);
+    -webkit-backdrop-filter: var(--SmartThemeBackdropFilter);
+}
+
+body.echostyle #chat .mes[is_user="true"]:not(.smallSysMes) .mes_text + .ica--companion-ledger {
+    background-color: var(--moonlit-sb-user-message-bg);
+}
+
+/* Tide has no card behind a message, so its notes wear the same bubble colour as the reply. */
+body.tidestyle #chat .mes:not(.smallSysMes) .ica--companion-ledger > .ica--companion-card {
+    background: var(--moonlit-sb-bot-message-bg);
+}
+
+body.tidestyle #chat .mes[is_user="true"]:not(.smallSysMes) .ica--companion-ledger > .ica--companion-card {
+    background: var(--moonlit-sb-user-message-bg);
+}
+
+/* The user's replies sit on the right, so their notes line up under them. */
+body.tidestyle #chat .mes[is_user="true"]:not(.smallSysMes) .ica--companion-ledger {
+    clear: both;
+    margin-inline-start: auto;
 }
 
 body.big-avatars.echostyle #chat {
@@ -1275,7 +1329,7 @@ body.big-avatars.tidestyle:not(.hideChatAvatars) #chat {
         transform: unset !important;
     }
     .ch_name {
-        margin-left: calc(var(--custom-echo-avatar) + 18px);
+        margin-left: calc(var(--custom-echo-avatar) + 18px + var(--moonlit-sb-stats-room, 0px));
         margin-bottom: 10px;
     }
 }
@@ -1388,6 +1442,12 @@ body:is(.whisperstyle, .hushstyle, .tidestyle).swipeAllMessages #chat .mes:not(.
 @media screen and (max-width: 1000px) {
     body:is(.echostyle, .whisperstyle, .hushstyle, .ripplestyle, .tidestyle) #chat .last_mes {
         position: relative !important;
+    }
+
+    /* Echo's notes reach the bottom of the message, so the swipe cluster gets its own row beneath them. */
+    body.echostyle #chat .mes:not(.smallSysMes):has(> .mes_block > .ica--companion-ledger):is(.last_mes, :has(.deep-swipe-right, .deep-swipe-counter)),
+    body.echostyle.swipeAllMessages #chat .mes:not(.smallSysMes):has(> .mes_block > .ica--companion-ledger) {
+        padding-bottom: calc(var(--moonlit-sb-swipe-control-size) + (var(--moonlit-sb-swipe-edge-offset) * 2)) !important;
     }
 
     body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes) .mesAvatarWrapper {

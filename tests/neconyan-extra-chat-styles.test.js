@@ -13,6 +13,7 @@ const powerUserSource = read('public/scripts/power-user.js');
 const chatStylesSource = read('public/css/neconyan-chat-styles.css');
 const paperThemeSource = read('public/css/neconyan-paper-theme.css');
 const deepSwipeSource = read('public/scripts/extensions/third-party/Neconyan-Deep-Swipe/style.css');
+const companionStyleSource = read('public/scripts/extensions/in-chat-agents/style.css');
 
 const EXTRA_STYLES = [
     { value: 8, key: 'MESSENGER', label: 'Messenger', className: 'nnchat-messenger' },
@@ -103,6 +104,24 @@ describe('extra Neconyan chat styles', () => {
         expect(chatStylesSource).not.toContain('border-right: 3.5px solid var(--SmartThemeBodyColor);');
         expect(chatStylesSource).toMatch(/\.tidestyle\) #chat \.mes:not\(\.smallSysMes\) \.mes_block \.ch_name \{\s*align-items: flex-start;/);
         expect(chatStylesSource).toMatch(/body:is\(\.whisperstyle, \.hushstyle\) #chat \.mes\[is_user="true"\]:not\(\.smallSysMes\) \.mesAvatarWrapper \{\s*flex-direction: row;/);
+    });
+
+    it('moves Echo-family names past a showing stats box on wide screens', () => {
+        expect(chatStylesSource).toContain('margin-left: calc(var(--custom-echo-avatar) + 8px + var(--moonlit-sb-stats-room, 0px));');
+        expect(chatStylesSource).toMatch(/\.tidestyle\) #chat \.mes:not\(\.smallSysMes\):has\(> \.mesAvatarWrapper > \.mes_stats > :is\([^{]*\.mes_timer[^{]*\{\s*--moonlit-sb-stats-room: calc\(var\(--mainFontSize\) \* 3\.4 \+ 4px\);/);
+    });
+
+    it('keeps Companion Notes inside Echo and Tide messages', () => {
+        expect(chatStylesSource).toMatch(/body\.echostyle #chat \.mes:not\(\.smallSysMes\) \.mes_text \+ \.ica--companion-ledger \{[^}]*background-color: var\(--moonlit-sb-bot-message-bg\);/);
+        expect(chatStylesSource).toMatch(/body\.echostyle #chat \.mes:not\(\.smallSysMes\) \.mes_text:has\(\+ \.ica--companion-ledger\) \{[^}]*margin-bottom: 0;/);
+        expect(chatStylesSource).toMatch(/body\.echostyle #chat \.mes:not\(\.smallSysMes\):has\(> \.mes_block > \.ica--companion-ledger\):is\(\.last_mes, [^{]*\{\s*padding-bottom: calc\(var\(--moonlit-sb-swipe-control-size\)/);
+        expect(chatStylesSource).toMatch(/body\.tidestyle #chat \.mes:not\(\.smallSysMes\) \.ica--companion-ledger > \.ica--companion-card \{\s*background: var\(--moonlit-sb-bot-message-bg\);/);
+        expect(chatStylesSource).toMatch(/body\.tidestyle #chat \.mes\[is_user="true"\]:not\(\.smallSysMes\) \.ica--companion-ledger \{\s*clear: both;\s*margin-inline-start: auto;/);
+    });
+
+    it('lets Companion Note headers wrap instead of cutting the title short', () => {
+        expect(companionStyleSource).toMatch(/\.ica--companion-summary \{\s*display: flex;\s*flex-wrap: wrap;/);
+        expect(companionStyleSource).toMatch(/\.ica--companion-actions \{[^}]*margin-left: auto;/);
     });
 
     it('sets Storybook text flush left on phones', () => {

@@ -846,6 +846,7 @@ button.ica--card-pill--version-update {
 
 .ica--companion-summary {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     min-height: 40px;
@@ -905,11 +906,13 @@ button.ica--card-pill--version-update {
     opacity: 0.78;
 }
 
+/* In a narrow message column the buttons drop to their own row instead of cutting the note's title short. */
 .ica--companion-actions {
     display: inline-flex;
     align-items: center;
     gap: 4px;
     flex: 0 0 auto;
+    margin-left: auto;
 }
 
 /* The #chat-scoped variant outranks theme rules like `#chat .mes button { … }`. */
