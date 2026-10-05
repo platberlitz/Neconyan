@@ -47,15 +47,16 @@ export async function createMewmoryProvider(port = 0) {
             return response.end(wav);
         }
         if (body.stream && mode.streamReply) {
+            const reply = typeof mode.streamReply === 'function' ? mode.streamReply(body) : mode.streamReply;
             response.setHeader('Content-Type', 'text/event-stream');
             call.completedAt = null;
             const event = content => 'data: ' + JSON.stringify({ choices: [{ delta: { content } }] }) + '\n\n';
             call.firstTokenAt = Date.now();
-            if (mode.streamReply.reasoning) response.write('data: ' + JSON.stringify({ choices: [{ delta: { reasoning_content: mode.streamReply.reasoning } }] }) + '\n\n');
-            if (mode.streamReply.holdReasoning) await new Promise(resolve => { mode.finishReasoning = resolve; });
-            response.write(event(mode.streamReply.first));
-            await new Promise(resolve => { mode.finishStream = resolve; });
-            response.write(event(mode.streamReply.rest));
+            if (reply.reasoning) response.write('data: ' + JSON.stringify({ choices: [{ delta: { reasoning_content: reply.reasoning } }] }) + '\n\n');
+            if (reply.holdReasoning) await new Promise(resolve => { mode.finishReasoning = resolve; });
+            response.write(event(reply.first));
+            await new Promise(resolve => { mode.finishStream = resolve; call.finishStream = resolve; });
+            response.write(event(reply.rest));
             call.completedAt = Date.now();
             return response.end('data: [DONE]\n\n');
         }

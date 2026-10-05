@@ -1770,6 +1770,9 @@ export function ensureConversationChrome() {
                     <button type="button" class="sb-conversation-tool-button" data-sb-conversation-action="force-response" title="Ask for reply even if the character is DND or offline">
                         <i class="fa-solid fa-bolt" aria-hidden="true"></i><span>Ask for reply</span>
                     </button>
+                    <button type="button" class="sb-conversation-tool-button" data-sb-conversation-action="scratchpad" title="Plan this chat with Miso, Taro or Nori">
+                        <i class="fa-solid fa-clipboard-list" aria-hidden="true"></i><span>Scratchpad</span>
+                    </button>
                 </div>
                 <label class="sb-conversation-search-wrap" for="${CHROME_IDS.search}">
                     <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>

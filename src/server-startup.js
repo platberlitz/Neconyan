@@ -32,6 +32,7 @@ import { router as chatArchiveRouter } from './endpoints/chat-archive.js';
 import { router as groupsRouter } from './endpoints/groups.js';
 import { router as worldInfoRouter } from './endpoints/worldinfo.js';
 import { router as notebooksRouter } from './endpoints/notebooks.js';
+import { router as scratchpadRouter } from './endpoints/scratchpad.js';
 import { router as statsRouter } from './endpoints/stats.js';
 import { router as contentManagerRouter } from './endpoints/content-manager.js';
 import { router as settingsRouter } from './endpoints/settings.js';
@@ -112,6 +113,7 @@ export function setupPrivateEndpoints(app) {
     app.use('/api/groups', groupsRouter);
     app.use('/api/worldinfo', worldInfoRouter);
     app.use('/api/notebooks', notebooksRouter);
+    app.use('/api/scratchpad', scratchpadRouter);
     app.use('/api/stats', statsRouter);
     app.use('/api/backgrounds', backgroundsRouter);
     app.use('/api/sprites', spritesRouter);

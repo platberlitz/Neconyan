@@ -19110,6 +19110,10 @@ jQuery(async function () {
             setTimeout(() => openMessageDelete(fromSlashCommand), animation_duration);
         } else if (id == 'option_close_chat') {
             await closeCurrentChat();
+        } else if (id === 'option_scratchpad') {
+            void import('./scripts/scratchpad/index.js')
+                .then(module => module.openScratchpad())
+                .catch(() => toastr.error(t`Scratchpad could not open. Try reloading the page.`));
         } else if (id === 'option_settings') {
             //var checkBox = document.getElementById("waifuMode");
             var topBar = document.getElementById('top-bar');
