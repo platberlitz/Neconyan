@@ -54,8 +54,8 @@ function graphDiagram(nodes, edges) {
     for (const node of nodes) {
         const point = positions.get(node.id);
         const group = svgElement('g', { 'data-graph-node': node.id, class: 'notes-graph-node' });
-        group.append(svgElement('circle', { cx: point.x, cy: point.y, r: nodes.length > 100 ? 8 : 12 }), svgElement('title', {}, `${node.title}\n${node.path}`));
-        if (nodes.length <= 50) group.append(svgElement('text', { x: point.x, y: point.y + 27, 'text-anchor': 'middle' }, node.title.length > 22 ? `${node.title.slice(0, 21)}…` : node.title));
+        group.append(svgElement('circle', { cx: point.x, cy: point.y, r: nodes.length > 100 ? 8 : 12 }), svgElement('title', { 'data-i18n-ignore': '' }, `${node.title}\n${node.path}`));
+        if (nodes.length <= 50) group.append(svgElement('text', { x: point.x, y: point.y + 27, 'text-anchor': 'middle', 'data-i18n-ignore': '' }, node.title.length > 22 ? `${node.title.slice(0, 21)}…` : node.title));
         svg.append(group);
     }
     return svg;
@@ -165,7 +165,7 @@ export function createGraphView(app, container) {
             const connections = neighbours.get(node.id).length;
             const control = h('button', { type: 'button', class: 'notes-note-link', 'data-graph-note': node.id,
                 onclick: () => { if (listCurrent()) void app.openNote(listScope.notebookId, node.id, { pushBack: true }); },
-                onfocus: () => focusNode(node.id) }, h('span', { class: 'notes-note-title', text: node.title || 'Untitled' }),
+                onfocus: () => focusNode(node.id) }, h('span', { class: 'notes-note-title', text: node.title || 'Untitled', 'data-i18n-ignore': node.title ? '' : null }),
             h('span', { class: 'notes-note-meta', text: `${node.path} · ${connections} connection${connections === 1 ? '' : 's'}` }));
             list.append(h('li', { class: 'notes-list-item' }, control));
         }

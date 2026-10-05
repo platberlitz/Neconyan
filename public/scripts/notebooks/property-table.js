@@ -202,7 +202,7 @@ export function createPropertyTableView(app, container) {
             h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: 'Note' }), ...shown.map(key => h('th', { scope: 'col', text: key })))));
         const body = h('tbody');
         for (const row of rows) {
-            const link = button(row.title, () => { if (usable()) void app.openNote(rowScope.notebookId, row.id, { pushBack: true }); }, { className: 'notes-table-note' });
+            const link = button(row.title, () => { if (usable()) void app.openNote(rowScope.notebookId, row.id, { pushBack: true }); }, { className: 'notes-table-note', userText: true });
             const line = h('tr', { 'data-table-note': row.id }, h('th', { scope: 'row' }, link, h('p', { class: 'notes-muted', text: row.path })));
             for (const key of shown) {
                 const cell = Object.hasOwn(row.cells ?? {}, key) ? row.cells[key] : { display: 'Not set', editable: false };

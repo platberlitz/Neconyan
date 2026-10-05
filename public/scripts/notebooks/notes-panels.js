@@ -5,6 +5,7 @@ import { newOperationId } from './api.js';
 import { append, button, choiceRow, clear, field, formatBytes, formatTime, h } from './dom.js';
 import { formatDiff } from './line-diff.js';
 import { headingOutline } from './render.js';
+import { proposalLabel, regionLabel, userPhrase } from './user-text.js';
 
 const TABS = [['properties', 'Properties'], ['links', 'Links'], ['lore', 'Lore'], ['ai', 'AI access'], ['history', 'History']];
 const RESERVED_PROPERTIES = new Set(['title', 'tags', 'tag', 'aliases', 'alias', 'type', 'neconyan_id']);
@@ -193,7 +194,7 @@ async function linksPanel(app) {
     const outline = headingOutline(app.elements.textarea?.value ?? '');
     out.push(section('Outline', outline.length
         ? h('ul', { class: 'notes-outline-list' }, ...outline.map(item => h('li', { style: `--notes-outline-level: ${item.level - 1}` },
-            button(item.text || '(untitled heading)', () => jumpTo(app, item.offset), { className: 'notes-outline-item notes-quiet' }))))
+            button(item.text || '(untitled heading)', () => jumpTo(app, item.offset), { className: 'notes-outline-item notes-quiet', userText: Boolean(item.text) }))))
         : notice('Add headings (start a line with #) to see an outline here.')));
 
     const links = await app.request('/links', { notebookId: state.notebookId, noteId: note.id });
@@ -203,16 +204,16 @@ async function linksPanel(app) {
         const label = link.label || link.target || link.raw;
         if (link.status === 'resolved') {
             return h('li', {}, button(link.title || label, () => void app.openNote(state.notebookId, link.noteId, { pushBack: true, fragment: link.fragment }),
-                { icon: link.embed ? 'fa-paperclip' : 'fa-link', className: 'notes-quiet' }));
+                { icon: link.embed ? 'fa-paperclip' : 'fa-link', className: 'notes-quiet', userText: true }));
         }
         if (link.status === 'ambiguous') {
-            return h('li', {}, h('span', { text: `${label}: more than one note matches. ` }), button('Choose', async () => {
-                const choice = await app.dialogs.chooseNote(app, `Which note does "${label}" mean?`, link.candidates ?? []);
+            return h('li', {}, h('span', {}, userPhrase`${label}: more than one note matches. `), button('Choose', async () => {
+                const choice = await app.dialogs.chooseNote(app, userPhrase`Which note does "${label}" mean?`, link.candidates ?? []);
                 if (choice) await app.openNote(state.notebookId, choice.id, { pushBack: true });
             }));
         }
         if (link.status === 'missing') {
-            return h('li', { class: 'notes-link-broken' }, h('span', { text: `${label}: no note with this name yet. ` }), button('Create it', async () => {
+            return h('li', { class: 'notes-link-broken' }, h('span', {}, userPhrase`${label}: no note with this name yet. `), button('Create it', async () => {
                 const parts = String(link.target ?? label).split('/');
                 const title = parts.pop();
                 const created = await app.createNote({ folder: parts.length ? parts.join('/') : (note.folder || 'Inbox'), title });
@@ -221,13 +222,13 @@ async function linksPanel(app) {
         }
         if (link.status === 'external') return h('li', { text: `Web link: ${link.target ?? label}` });
         if (link.status === 'attachment') return h('li', { text: `File: ${link.path ?? label}` });
-        return h('li', { text: label });
+        return h('li', { text: label, 'data-i18n-ignore': '' });
     })) : notice('This note does not link to anything yet. Type [[ to link a note.')));
 
     const backlinks = links.backlinks ?? [];
     out.push(section('Notes that link here', backlinks.length ? h('ul', { class: 'notes-plain-list' }, ...backlinks.map(item => h('li', { class: 'notes-backlink' },
-        button(item.title, () => void app.openNote(state.notebookId, item.id, { pushBack: true }), { icon: 'fa-arrow-left-long', className: 'notes-quiet' }),
-        ...(item.passages ?? []).slice(0, 3).map(passage => h('blockquote', { class: 'notes-excerpt', text: passage.excerpt })))))
+        button(item.title, () => void app.openNote(state.notebookId, item.id, { pushBack: true }), { icon: 'fa-arrow-left-long', className: 'notes-quiet', userText: true }),
+        ...(item.passages ?? []).slice(0, 3).map(passage => h('blockquote', { class: 'notes-excerpt', text: passage.excerpt, 'data-i18n-ignore': '' })))))
         : notice('No other note links here yet.')));
     return out;
 }
@@ -273,7 +274,7 @@ async function pickEntry(app, book, { allowNew = false } = {}) {
 function selectorChoices(app) {
     const headings = app.state.note.detail?.headings ?? [];
     return [{ label: 'Whole note', selector: { kind: 'note' } },
-        ...headings.map(heading => ({ label: `${'  '.repeat(Math.max(0, heading.level - 1))}${heading.text}`,
+        ...headings.map(heading => ({ label: `${'  '.repeat(Math.max(0, heading.level - 1))}${heading.text}`, user: true,
             selector: heading.blockId ? { kind: 'block', id: heading.blockId } : { kind: 'heading', path: heading.path } }))];
 }
 
@@ -282,7 +283,7 @@ async function chooseSelector(app, message) {
     let ref = null;
     const list = h('ul', { class: 'notes-plain-list notes-link-results' });
     for (const choice of selectorChoices(app)) {
-        list.append(h('li', {}, button(choice.label, () => { chosen = choice.selector; ref?.completeAffirmative(); }, { className: 'notes-quiet notes-pre' })));
+        list.append(h('li', {}, button(choice.label, () => { chosen = choice.selector; ref?.completeAffirmative(); }, { className: 'notes-quiet notes-pre', userText: Boolean(choice.user) })));
     }
     await callGenericPopup(h('div', { class: 'notes-dialog' }, h('p', { text: message }), list), POPUP_TYPE.TEXT, '',
         { wide: true, okButton: 'Close', onOpen: value => { ref = value; } });
@@ -443,7 +444,7 @@ function bindingRow(app, binding) {
         actions.push(button('See lore edits', () => compare('Last published (-) and the lore entry now (+)', binding.publishedTargetText, binding.loreText), { icon: 'fa-code-compare' }));
         actions.push(button('Copy lore into note', async () => {
             if (!(await app.flushSave())) return app.toast('warning', 'Save the note first.');
-            const ok = await dialog(h('p', { text: `Replace "${binding.selectorLabel}" in this note with the lore entry's text? Other sections are not touched, and history keeps the old text.` }),
+            const ok = await dialog(h('p', {}, userPhrase`Replace "${regionLabel(binding.selector, binding.selectorLabel)}" in this note with the lore entry's text? Other sections are not touched, and history keeps the old text.`),
                 { okButton: 'Copy into note', cancelButton: 'Not now' });
             if (ok.ok) await act('/lore/pull', { expectedRevision: state.note.revision, expectedLoreHash: binding.loreHash }, 'The note section now matches the lore entry.');
         }, { icon: 'fa-download' }));
@@ -521,7 +522,7 @@ async function aiPanel(app) {
     const proposals = app.failed(waiting) ? [] : waiting.proposals ?? [];
     out.push(section('Assistant changes waiting for you', proposals.length
         ? h('ul', { class: 'notes-plain-list' }, ...proposals.map(item => h('li', { class: 'notes-file-row' },
-            h('span', { text: `${item.summary?.label ?? 'Change'} (not saved yet)` }),
+            h('span', {}, item.summary?.label ? userPhrase`${proposalLabel(item.summary)} (not saved yet)` : `${item.summary?.label ?? 'Change'} (not saved yet)`),
             button('Review', async () => { await app.dialogs.reviewProposal(app, item.id); void renderDetails(app); }, { icon: 'fa-eye' }))))
         : notice('Nothing is waiting.')));
     out.push(notice('Turning access off stops future use. It cannot take back text an AI has already been sent, and files on the server are not encrypted.'));

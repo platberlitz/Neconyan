@@ -5,6 +5,7 @@ import { button, choiceRow, clear, field, formatTime, h } from './dom.js';
 import { formatDiff } from './line-diff.js';
 import { NOTE_TEMPLATES, templateById } from './templates.js';
 import { parsePropertyValue, propertyInput } from './property-values.js';
+import { proposalLabel, userPhrase } from './user-text.js';
 
 /* Small dialogs used by the Notes workspace. User text is always placed with textContent. */
 
@@ -25,7 +26,7 @@ async function askText(message, value = '', okButton = 'Save') {
 }
 
 async function confirm(message, okButton = 'Yes', cancelButton = 'Not now') {
-    const result = await callGenericPopup(h('div', { class: 'notes-dialog' }, h('p', { text: message })), POPUP_TYPE.CONFIRM, '', { okButton, cancelButton });
+    const result = await callGenericPopup(h('div', { class: 'notes-dialog' }, h('p', {}, message)), POPUP_TYPE.CONFIRM, '', { okButton, cancelButton });
     return result === POPUP_RESULT.AFFIRMATIVE;
 }
 
@@ -57,7 +58,7 @@ export async function editPropertyCell(app, row, key, cell, { isCurrent = () => 
     function showError(text) { message.hidden = false; message.textContent = text; }
     renderTypes();
     const content = h('div', { class: 'notes-dialog notes-property-dialog' },
-        h('h3', { class: 'notes-heading', text: `Edit ${key}` }), h('p', { text: row.title }), kinds,
+        h('h3', { class: 'notes-heading', text: `Edit ${key}` }), h('p', { text: row.title, 'data-i18n-ignore': '' }), kinds,
         field('Value', value), hint, message,
         h('p', { class: 'notes-hint', text: 'Other properties, comments and note text are kept. This does not share the note with AI or publish it.' }));
     await dialog(content, {
@@ -216,9 +217,9 @@ export async function chooseNote(app, message, candidates = []) {
     let popup = null;
     const list = h('ul', { class: 'notes-list' }, ...candidates.map(candidate => h('li', { class: 'notes-list-item' },
         h('button', { type: 'button', class: 'menu_button notes-note-link', onclick: () => { chosen = candidate; popup?.completeAffirmative(); } },
-            h('span', { class: 'notes-note-title', text: candidate.title ?? candidate.path }),
+            h('span', { class: 'notes-note-title', text: candidate.title ?? candidate.path, 'data-i18n-ignore': '' }),
             h('span', { class: 'notes-note-meta', text: candidate.path ?? '' })))));
-    const content = h('div', { class: 'notes-dialog' }, h('p', { text: message }), list);
+    const content = h('div', { class: 'notes-dialog' }, h('p', {}, message), list);
     await callGenericPopup(content, POPUP_TYPE.TEXT, '', { wide: true, okButton: 'Cancel', onOpen: opened => { popup = opened; } });
     return chosen;
 }
@@ -249,7 +250,7 @@ export async function linkPicker(app) {
         if (!found.length) results.append(h('li', { class: 'notes-hint', text: search.value ? 'No note has that name. Type [[Name]] in the note to link to a note you will create later.' : 'No notes yet.' }));
         for (const note of found) {
             results.append(h('li', { class: 'notes-list-item' }, h('button', { type: 'button', class: 'menu_button notes-note-link', onclick: () => insert(note) },
-                h('span', { class: 'notes-note-title', text: note.title }), h('span', { class: 'notes-note-meta', text: note.path }))));
+                h('span', { class: 'notes-note-title', text: note.title, 'data-i18n-ignore': '' }), h('span', { class: 'notes-note-meta', text: note.path }))));
         }
     };
     let timer = 0;
@@ -287,7 +288,7 @@ export async function trash(app) {
     if (!items.length) list.append(h('li', { class: 'notes-hint', text: 'Trash is empty.' }));
     for (const item of items) {
         const row = h('li', { class: 'notes-list-item notes-trash-item' },
-            h('span', { class: 'notes-note-title', text: item.title ?? item.path }),
+            h('span', { class: 'notes-note-title', text: item.title ?? item.path, 'data-i18n-ignore': '' }),
             h('span', { class: 'notes-note-meta', text: `${item.path} - deleted ${formatTime(item.deletedAt)}${item.origin === 'external' ? ' outside Neconyan' : ''}` }),
             h('div', { class: 'notes-wrap' },
                 button('Restore', async () => {
@@ -298,7 +299,7 @@ export async function trash(app) {
                     if (restored.restoredAs ?? restored.noteId) await app.openNote(app.state.notebookId, restored.restoredAs ?? restored.noteId);
                 }, { icon: 'fa-rotate-left' }),
                 button('Delete forever', async () => {
-                    if (!(await confirm(`Delete '${item.title ?? item.path}' for good? Its saved history is removed too. Backups made outside Neconyan may still contain it.`, 'Delete forever'))) return;
+                    if (!(await confirm(userPhrase`Delete '${item.title ?? item.path}' for good? Its saved history is removed too. Backups made outside Neconyan may still contain it.`, 'Delete forever'))) return;
                     const removed = await app.request('/trash/delete', { operationId: newOperationId('purge'), notebookId: app.state.notebookId, trashId: item.id, confirm: 'delete-permanently' });
                     if (app.failed(removed, 'The note could not be deleted.')) return;
                     row.remove();
@@ -339,7 +340,7 @@ export async function proposals(app) {
     if (!items.length) list.append(h('li', { class: 'notes-hint', text: 'No assistant changes are waiting for you.' }));
     for (const item of items) {
         list.append(h('li', { class: 'notes-list-item' },
-            h('span', { class: 'notes-note-title', text: item.summary?.label ?? 'Assistant change' }),
+            h('span', { class: 'notes-note-title' }, item.summary?.label ? proposalLabel(item.summary) : item.summary?.label ?? 'Assistant change'),
             h('span', { class: 'notes-note-meta', text: `Not saved yet - asked ${formatTime(item.createdAt)}${item.summary?.affectsLiveLore ? ' - changes live lore' : ''}` }),
             button('Review', async () => { popup?.completeCancelled(); await reviewProposal(app, item.id); }, { icon: 'fa-eye' })));
     }
@@ -525,8 +526,8 @@ export async function captureFromChat(app, capture) {
         const response = await app.request('/suggest', { notebookId: app.state.notebookId, query: search.value });
         clear(results);
         for (const note of response.notes ?? []) {
-            results.append(h('li', { class: 'notes-list-item' }, h('button', { type: 'button', class: 'menu_button notes-note-link', onclick: () => { target = note; picked.textContent = `Adding to: ${note.title}`; } },
-                h('span', { class: 'notes-note-title', text: note.title }), h('span', { class: 'notes-note-meta', text: note.path }))));
+            results.append(h('li', { class: 'notes-list-item' }, h('button', { type: 'button', class: 'menu_button notes-note-link', onclick: () => { target = note; picked.replaceChildren(userPhrase`Adding to: ${note.title}`); } },
+                h('span', { class: 'notes-note-title', text: note.title, 'data-i18n-ignore': '' }), h('span', { class: 'notes-note-meta', text: note.path }))));
         }
     };
     let timer = 0;
@@ -537,7 +538,7 @@ export async function captureFromChat(app, capture) {
         existingBox.hidden = value !== 'existing';
         if (value === 'existing') void refresh();
     });
-    const preview = h('blockquote', { class: 'notes-capture-preview', text: capture.text.length > 1200 ? `${capture.text.slice(0, 1200)}...` : capture.text });
+    const preview = h('blockquote', { class: 'notes-capture-preview', text: capture.text.length > 1200 ? `${capture.text.slice(0, 1200)}...` : capture.text, 'data-i18n-ignore': '' });
     const notebook = app.state.notebooks.find(item => item.id === app.state.notebookId);
     const content = h('div', { class: 'notes-dialog' }, h('h3', { text: 'Save to note' }),
         h('p', { class: 'notes-hint', text: `The exact passage is copied into ${notebook?.name ?? 'your notebook'} with a note of where it came from. It stays even if the message changes later.` }),

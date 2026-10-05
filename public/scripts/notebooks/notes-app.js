@@ -1,5 +1,6 @@
 import { characters, getCurrentChatId, this_chid } from '../../script.js';
 import { selected_group } from '../group-chats.js';
+import { translate } from '../i18n.js';
 import { getCurrentUserHandle } from '../user.js';
 import { accountStorage } from '../util/AccountStorage.js';
 import { loadStylesheetAsync } from '../dynamic-styles.js';
@@ -10,6 +11,7 @@ import { append, button, choiceRow, clear, debounce, formatTime, h } from './dom
 import { clearDraft, readDraft, saveDraft } from './drafts.js';
 import { headingOutline, renderNoteInto } from './render.js';
 import { formatDiff } from './line-diff.js';
+import { userPhrase } from './user-text.js';
 
 const PREFS_KEY = 'neconyan_notes_prefs';
 const NOTES_STYLESHEET = 'css/neconyan-notes.css?v=15';
@@ -325,7 +327,7 @@ async function discussNote() {
     try {
         const content = h('div', { class: 'notes-dialog notes-discussion-dialog' },
             h('h3', { class: 'notes-heading', text: 'Talk about this note' }),
-            h('p', { text: elements.title.value || 'Untitled' }), assistants, genders, modes,
+            h('p', { text: elements.title.value || 'Untitled', 'data-i18n-ignore': elements.title.value ? '' : null }), assistants, genders, modes,
             h('p', { class: 'notes-notice', text: 'A new chat will open with a copy of this note in the message box. Review it and press Send when you are ready. Existing chats are kept.' }),
             h('p', { class: 'notes-hint', text: 'Only this note is included, not linked notes or attachments. Your AI access settings stay unchanged.' }));
         const result = await callGenericPopup(content, POPUP_TYPE.CONFIRM, '', { wide: true, okButton: 'Start chat', cancelButton: 'Not now' });
@@ -528,13 +530,21 @@ function noteButton(summary, extra = null) {
     return h('li', { class: 'notes-list-item' },
         h('button', { type: 'button', class: `notes-note-link${current ? ' is-current' : ''}`, 'aria-current': current ? 'true' : null,
             onclick: () => void openNote(app.state.notebookId, summary.id, { pushBack: true }) },
-        h('span', { class: 'notes-note-title', text: summary.title || 'Untitled' }),
+        h('span', { class: 'notes-note-title', text: summary.title || 'Untitled', 'data-i18n-ignore': summary.title ? '' : null }),
         h('span', { class: 'notes-note-meta', text: [summary.folder || 'Top level', summary.favourite ? 'Favourite' : '', formatTime(summary.updatedAt)].filter(Boolean).join(' · ') }),
         extra));
 }
 
 function section(title, ...children) {
     return h('section', { class: 'notes-nav-section' }, h('h3', { class: 'notes-nav-heading', text: title }), ...children);
+}
+
+/** A fuzzy match keeps its prefix apart from the excerpt. The prefix is translated here and kept from a second, automatic pass; the note's words are left alone. */
+function searchSnippet(result) {
+    if (!result.snippet) return null;
+    return h('span', { class: 'notes-snippet' },
+        result.exact ? null : h('span', { text: `${translate('Close match:')} `, 'data-i18n-ignore': '' }),
+        h('span', { text: result.snippet, 'data-i18n-ignore': '' }));
 }
 
 /** Tags a nav section so the tour and styles can find it after the list is rebuilt. */
@@ -572,7 +582,7 @@ function renderNav() {
     if (state.search) {
         const list = h('ul', { class: 'notes-list' });
         for (const result of state.search.results ?? []) {
-            list.append(noteButton(result, result.snippet ? h('span', { class: 'notes-snippet', text: `${result.exact ? '' : 'Close match: '}${result.snippet}` }) : null));
+            list.append(noteButton(result, searchSnippet(result)));
         }
         nav.append(section(`Search results (${state.search.total})`, state.search.total ? list : h('p', { class: 'notes-hint', text: 'Nothing matched. Try fewer words.' })));
         return;
@@ -1005,7 +1015,10 @@ function renderFoldControls() {
     const folded = new Set(sourceEditor.folds());
     const limit = state.foldLimit ?? 100;
     for (const heading of headings.slice(0, limit)) {
-        const control = button(`${folded.has(heading.key) ? 'Show' : 'Fold'} ${heading.text || 'Untitled heading'}`, () => sourceEditor.toggle(heading.key));
+        const label = heading.text
+            ? folded.has(heading.key) ? userPhrase`Show ${heading.text}` : userPhrase`Fold ${heading.text}`
+            : [folded.has(heading.key) ? 'Show' : 'Fold', 'Untitled heading'].join(' ');
+        const control = button(label, () => sourceEditor.toggle(heading.key));
         control.style.setProperty('--notes-outline-level', String(heading.level - 1));
         control.setAttribute('aria-expanded', String(!folded.has(heading.key)));
         control.disabled = sourceEditor.composing;
@@ -1028,7 +1041,7 @@ function renderOutline() {
     const list = h('ul', { class: 'notes-outline-list' });
     for (const heading of headings) {
         list.append(h('li', { style: `--notes-outline-level:${heading.level - 1}` },
-            h('button', { type: 'button', class: 'notes-outline-item', text: heading.text, onclick: () => jumpToOffset(heading.offset) })));
+            h('button', { type: 'button', class: 'notes-outline-item', text: heading.text, 'data-i18n-ignore': '', onclick: () => jumpToOffset(heading.offset) })));
     }
     elements.outline.append(list);
 }
@@ -1486,7 +1499,7 @@ function showSuggestions(notes, found) {
                 textarea.setSelectionRange(found.start, textarea.selectionStart);
                 insertText(`${linkTextFor(note, notes)}]]`);
                 hideSuggest();
-            } }, h('span', { text: note.title }), h('span', { class: 'notes-note-meta', text: note.folder || 'Top level' })));
+            } }, h('span', { text: note.title, 'data-i18n-ignore': '' }), h('span', { class: 'notes-note-meta', text: note.folder || 'Top level' })));
     });
     list.hidden = false;
     app.elements.textarea.setAttribute('aria-activedescendant', 'notes-suggest-0');
@@ -1517,7 +1530,7 @@ async function followLink({ target, kind, fragment, fromNoteId }) {
         return openNote(notebookId, result.note.id, { pushBack: true, fragment: jump });
     }
     if (result.resolution === 'ambiguous') {
-        const chosen = await app.dialogs.chooseNote(app, `More than one note matches '${target}'. Which one?`, result.candidates);
+        const chosen = await app.dialogs.chooseNote(app, userPhrase`More than one note matches '${target}'. Which one?`, result.candidates);
         if (chosen && current()) await openNote(notebookId, chosen.id, { pushBack: true, fragment: jump });
         return;
     }
@@ -1527,7 +1540,7 @@ async function followLink({ target, kind, fragment, fromNoteId }) {
     }
     if (result.resolution === 'missing') {
         const name = target.replace(/\.md$/i, '');
-        const ok = await callGenericPopup(`There is no note called '${name}' yet. Create it?`, POPUP_TYPE.CONFIRM, '', { okButton: 'Create note', cancelButton: 'Not now' });
+        const ok = await callGenericPopup(h('span', {}, userPhrase`There is no note called '${name}' yet. Create it?`), POPUP_TYPE.CONFIRM, '', { okButton: 'Create note', cancelButton: 'Not now' });
         if (ok !== POPUP_RESULT.AFFIRMATIVE || !current()) return;
         const slash = name.lastIndexOf('/');
         const created = await createNote({ folder: slash >= 0 ? name.slice(0, slash) : state.note?.folder ?? 'Inbox', title: slash >= 0 ? name.slice(slash + 1) : name, text: '' });

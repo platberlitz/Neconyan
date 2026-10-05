@@ -69,7 +69,7 @@ export async function chooseCanvasNote(app, notebookId, isCurrent) {
             if (!isCurrent() || closed || ticket !== version) return;
             selected = note;
             for (const item of list.children) setButtonPressed(item, item.dataset.canvasNote === note.id);
-        }, { className: 'notes-canvas-note-choice' }));
+        }, { className: 'notes-canvas-note-choice', userText: true }));
         [...list.children].forEach((item, index) => item.setAttribute('data-canvas-note', result.results[index].id));
         if (!(result.results?.length)) error.textContent = 'No matching notes. Try another title or path.';
         else error.textContent = '';
