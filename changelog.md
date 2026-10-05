@@ -12,6 +12,7 @@
 - PR #21 (2026-10-05) `fix: allow empty main prompt placeholders`
 - PR #22 (2026-10-05) `fix: stop the run-time localiser translating user text and finished translations`
 - PR #23 (2026-10-05) `fix: keep dismissed tour invitations closed after reload`
+- PR #25 (2026-10-05) `feat: the assistants can make agents for you`
 
 ## v1.1.0
 
