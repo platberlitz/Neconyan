@@ -106,6 +106,7 @@ export function defaultSettings() {
         loreOverrides: {},
         connection: { kind: 'current' },
         assistantConnections: {},
+        assistantPrompts: {},
         roundTable: false,
         participants: [...ASSISTANT_IDS],
         maxTokens: DEFAULT_MAX_TOKENS,
@@ -148,6 +149,17 @@ export function normaliseSettings(input, previous = defaultSettings()) {
         }
     }
     if (source.maxTokens !== undefined) settings.maxTokens = normaliseMaxTokens(source.maxTokens);
+    if (isPlainObject(source.assistantPrompts)) {
+        settings.assistantPrompts ??= {};
+        for (const assistant of ASSISTANT_IDS) {
+            if (!Object.hasOwn(source.assistantPrompts, assistant)) continue;
+            const text = source.assistantPrompts[assistant];
+            if (text === null) delete settings.assistantPrompts[assistant];
+            else if (typeof text !== 'string' || !text.trim() || byteLength(text) > 64000) {
+                throw fail('SCRATCHPAD_PROMPT_INVALID', 'Write a prompt between 1 and 64000 bytes, or reset it to the default.');
+            } else settings.assistantPrompts[assistant] = text;
+        }
+    }
     if (typeof source.roundTable === 'boolean') settings.roundTable = source.roundTable;
     if (source.participants !== undefined) {
         const participants = Array.isArray(source.participants) ? ASSISTANT_IDS.filter(id => source.participants.includes(id)) : [];

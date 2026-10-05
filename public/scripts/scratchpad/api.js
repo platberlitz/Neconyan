@@ -53,6 +53,7 @@ async function post(path, body, { signal } = {}) {
 }
 
 export const readBucket = (source, options) => post('/bucket', { source }, options);
+export const readPrompt = body => post('/prompt', body);
 export const createSession = (source, input) => post('/session/create', { source, ...input });
 export const importSession = (source, session) => post('/session/import', { source, session });
 export const updateSession = (source, sessionId, changes) => post('/session/update', { source, sessionId, changes });

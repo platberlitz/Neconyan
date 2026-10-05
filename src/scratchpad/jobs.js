@@ -158,7 +158,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         writeBucketLocked(lease, bucket);
         return { ...plan, revision: hash(canonical(session)), maxTokens: session.settings.maxTokens,
             participants: sessionAssistants(session),
-            speakers: plan.assistants.map(assistant => ({ assistant, gender: input.genders[assistant] ?? (assistant === session.assistant ? session.gender : 'neutral'), connection: assistantConnection(session.settings, assistant) })) };
+            speakers: plan.assistants.map(assistant => ({ assistant, customPrompt: session.settings.assistantPrompts?.[assistant], gender: input.genders[assistant] ?? (assistant === session.assistant ? session.gender : 'neutral'), connection: assistantConnection(session.settings, assistant) })) };
     });
 
     const replies = await Promise.all(planned.speakers.map(async speaker => {

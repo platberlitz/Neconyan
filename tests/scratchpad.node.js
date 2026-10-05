@@ -97,6 +97,27 @@ test('a reply runs as a server job, streams a preview and settles into the saved
     assert.deepEqual(readArtifact(a.directories, accepted.job.id, 'result'), { replyId: reply.id, sessionId: session.id });
 });
 
+test('custom assistant prompts persist independently, reach the provider and reset to defaults', async t => {
+    const a = account(t);
+    const session = startSession(a, { assistantPrompts: { taro: 'Answer as a concise editor.', miso: 'Offer three ideas.' } });
+    const prompts = [];
+    registerScratchpadJobs({ generate: async options => { prompts.push(options.messages[0].content); return { text: 'A reply.' }; } });
+    const body = sendBody(session, { help: 'Application reference.' });
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    await runJob(getJob(a.directories, accepted.job.id));
+    assert.match(prompts[0], /^Answer as a concise editor\./);
+    assert.match(prompts[0], /Application reference\./);
+    a.mutate(SOURCE, bucket => store.updateSession(bucket, session.id, { settings: { assistantPrompts: { taro: null } } }));
+    assert.deepEqual(a.read(SOURCE).sessions[0].settings.assistantPrompts, { miso: 'Offer three ideas.' });
+    const next = sendBody(session);
+    const reset = await acceptScratchpadReply(a.request(next), next);
+    await runJob(getJob(a.directories, reset.job.id));
+    assert.match(prompts[1], /You are Taro/);
+    assert.doesNotMatch(prompts[1], /concise editor/);
+    assert.throws(() => store.normaliseSettings({ assistantPrompts: { miso: ' ' } }), /Write a prompt/);
+    assert.throws(() => store.normaliseSettings({ assistantPrompts: { miso: '字'.repeat(22000) } }), /Write a prompt/);
+});
+
 test('regenerating replaces only the latest reply and keeps earlier turns as history', async t => {
     const a = account(t);
     const session = startSession(a);

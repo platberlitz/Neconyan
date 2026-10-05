@@ -16,6 +16,8 @@ Scratchpad follows the chat you have open. Switch chats and it shows that chat's
 
 ## Talking
 
+Under **Context → Assistant prompts**, choose **View or edit Miso's prompt** (or Taro's or Nori's) to read and edit the complete instructions, including personality and change-card formats. **Save prompt** applies your text to that assistant in the current session. New sessions in the same chat inherit your choices. **Reset to default**, followed by **Save prompt**, restores the built-in instructions. App-reference knowledge is appended automatically. Defaults reflect the current chat and round-table selection; saved custom text is used as written.
+
 Pick who you are talking to under **Talking with**, type in the box at the bottom and press **Send** (or Enter on desktop; Shift+Enter adds a new line). **Quick prompts** fill the box with a ready-made request you can edit before sending: **Read the scene**, **Plot ideas**, **Catch me up**, **Continuity check** and **Lore gaps**.
 
 The input stays one line high so replies have more room. Longer drafts scroll inside it, and pasted text keeps its line breaks.

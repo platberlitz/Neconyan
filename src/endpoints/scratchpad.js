@@ -20,6 +20,7 @@ import {
 } from '../scratchpad/store.js';
 import { SCRATCHPAD_JOB_TYPE, acceptScratchpadReply } from '../scratchpad/jobs.js';
 import { readScratchpadPreview, subscribeScratchpadPreview } from '../scratchpad/preview.js';
+import { buildScratchpadSystemPrompt } from '../scratchpad/prompt.js';
 
 export const router = express.Router();
 
@@ -66,6 +67,18 @@ router.post('/bucket', (request, response) => {
 router.post('/session/create', (request, response) => change(request, response, (bucket, body) => {
     createSession(bucket, { assistant: body.assistant, gender: body.gender, name: body.name, temporary: body.temporary, settings: body.settings });
 }));
+
+router.post('/prompt', (request, response) => {
+    try {
+        scratchpadAccountBase(request);
+        const body = request.body ?? {};
+        response.json(buildScratchpadSystemPrompt({ assistant: body.assistant, gender: body.gender,
+            userName: body.names?.user, characterName: body.names?.character, capabilities: body.capabilities ?? {},
+            participants: Array.isArray(body.participants) ? body.participants.slice(0, 3) : [] }));
+    } catch (error) {
+        sendError(response, error);
+    }
+});
 
 router.post('/session/import', (request, response) => change(request, response, (bucket, body) => {
     const session = body.session && typeof body.session === 'object' ? body.session : {};

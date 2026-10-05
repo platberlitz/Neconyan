@@ -1018,6 +1018,36 @@ function checkbox(label, checked, onChange, hint = '') {
     return h('label', { class: 'scratchpad-check' }, input, h('span', { text: label }), hint ? h('small', { text: hint }) : null);
 }
 
+async function editAssistantPrompt(assistant) {
+    const source = app.source;
+    try {
+        await app.queue;
+        requireScope(source);
+        const session = await ensureSession(source);
+        requireScope(source, session.id);
+        const previous = session.settings.assistantPrompts?.[assistant.id];
+        const context = await buildContext({ source, settings: session.settings });
+        const defaults = await api.readPrompt({ assistant: assistant.id, gender: getAssistantGender(assistant.id),
+            names: context.names, capabilities: context.capabilities, participants: sessionAssistants(session) });
+        requireScope(source, session.id);
+        const editor = h('textarea', { class: 'text_pole scratchpad-review-editor', rows: '16', value: previous ?? defaults.text, 'aria-label': t`Assistant prompt` });
+        let reset = false;
+        editor.addEventListener('input', () => { reset = false; });
+        const content = h('div', { class: 'scratchpad-review' },
+            h('h3', { text: t`${assistant.name}'s prompt` }),
+            h('p', { text: t`These instructions are saved for this session and inherited by new sessions in this chat. App reference is added automatically. The default reflects the current chat and round-table selection.` }),
+            editor,
+            iconButton(t`Reset to default`, () => { editor.value = defaults.text; reset = true; }, { icon: 'fa-rotate-left' }));
+        const result = await callGenericPopup(content, POPUP_TYPE.CONFIRM, '', { wide: true, large: true, okButton: t`Save prompt`, cancelButton: t`Cancel` });
+        if (result !== POPUP_RESULT.AFFIRMATIVE) return;
+        requireScope(source, session.id);
+        if (activeSession().settings.assistantPrompts?.[assistant.id] !== previous) throw new Error(t`The prompt changed while the editor was open. Open it again.`);
+        await updateSettings({ assistantPrompts: { [assistant.id]: reset ? null : editor.value } });
+    } catch (error) {
+        reportError(error, t`The assistant prompt could not be saved.`);
+    }
+}
+
 function renderContext({ force = true } = {}) {
     const panel = app.el.panels.context;
     const key = `${app.source?.key ?? ''}|${activeSession()?.id ?? ''}`;
@@ -1083,6 +1113,8 @@ function renderContext({ force = true } = {}) {
             h('h3', { class: 'scratchpad-section-title', text: t`Assistant connections` }),
             h('p', { class: 'scratchpad-muted', text: t`Choose a saved profile for each assistant. Profiles include the model and connection settings.` }),
             ...connections,
+            h('h3', { class: 'scratchpad-section-title', text: t`Assistant prompts` }),
+            ...ASSISTANTS.map(assistant => iconButton(t`View or edit ${assistant.name}'s prompt`, () => void editAssistantPrompt(assistant), { icon: 'fa-pen' })),
             h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-max-tokens', text: t`Longest reply (tokens)` }), maxTokens)),
         renderPicks(settings),
         renderLore(settings),

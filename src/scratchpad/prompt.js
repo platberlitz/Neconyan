@@ -108,7 +108,7 @@ function changeInstructions({ lore, character, chat, members }) {
     ].join('\n');
 }
 
-export function buildScratchpadSystemPrompt({ assistant, gender, userName, characterName, capabilities = {}, help = '', participants = [] }) {
+export function buildScratchpadSystemPrompt({ assistant, gender, userName, characterName, capabilities = {}, help = '', participants = [], customPrompt }) {
     const persona = readAssistantPersona(assistant, gender);
     const names = { user: userName || 'User', char: persona.name };
     const story = characterName ? `the story chat with ${characterName}` : 'the story chat';
@@ -121,9 +121,10 @@ export function buildScratchpadSystemPrompt({ assistant, gender, userName, chara
         persona.examples ? `How you sound (examples from your normal chats, not from this Scratchpad):\n${clip(substituteNames(persona.examples, names), 2000)}` : '',
         `Voice: stay in your own personality and talk to ${names.user} directly. Use British English and connected sentences. Do not use em dashes. Keep cat puns rare. Be specific and keep replies focused; use short lists only to compare options.`,
         changeInstructions(capabilities),
-        help ? `Neconyan reference for app questions (use it only when ${names.user} asks how something in Neconyan works):\n${help}` : '',
     ];
-    return { text: sections.filter(Boolean).join('\n\n'), persona };
+    const instructions = typeof customPrompt === 'string' && customPrompt.trim() ? customPrompt : sections.filter(Boolean).join('\n\n');
+    const reference = help ? `Neconyan reference for app questions (use it only when ${names.user} asks how something in Neconyan works):\n${help}` : '';
+    return { text: [instructions, reference].filter(Boolean).join('\n\n'), persona };
 }
 
 export const SCRATCHPAD_CONTEXT_ACK = 'I have read the shared story context. What would you like to work on?';
