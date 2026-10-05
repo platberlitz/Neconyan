@@ -348,6 +348,12 @@ export function assertWorldInfoDepthHistory(records, messages, historyStart, opt
     }
 }
 
+/**
+ * Pre-array attachment fields the page migrates into files/media before prompting. Other unknown
+ * message fields are display or extension bookkeeping and never reach the prompt, so they are ignored.
+ */
+const LEGACY_PROMPT_CONTENT_EXTRA_KEYS = Object.freeze(['file', 'image', 'image_swipes', 'video']);
+
 function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = null, regex = [], characterName,
     group = false, userName = records[0]?.user_name, namesBehavior, attachments = [], images = [], imageDetail = 'auto', mediaDisplay = 'list', toolHistory = false, toolSource = '', toolModel = '', signaturePolicy, preparedContent, companionHostIndex } = {}) {
     if (preparedContent !== undefined && (!Array.isArray(preparedContent) || preparedContent.length !== records.length - 1
@@ -413,15 +419,8 @@ function buildPromptHistory(records, { reasoningInPrompt = false, reasoning = nu
         if (typeof record.mes !== 'string' || typeof record.is_user !== 'boolean'
             || group && (typeof record.name !== 'string' || !record.name)
             || record.is_system !== undefined && typeof record.is_system !== 'boolean'
-            || Object.keys(record).some(key => !['name', 'is_user', 'is_system', 'is_name', 'mes', 'swipes', 'swipe_id', 'swipe_info',
-                'extra', 'send_date', 'title', 'gen_started', 'gen_finished', 'mewmory_id', 'force_avatar', 'original_avatar'].includes(key))
             || (record.extra && (typeof record.extra !== 'object' || Array.isArray(record.extra)
-                 || Object.keys(record.extra).some(key => !['token_count', 'isSmallSys', 'reasoning', 'files', 'fileLength',
-                     'media', 'media_index', 'media_display', 'inline_image', 'api', 'model', 'reasoning_effort',
-                     'reasoning_duration', 'reasoning_signature', 'reasoning_tokens', 'time_to_first_token', 'gen_id', 'type',
-                     'inChatAgentPostRuns', 'inChatAgents', 'inChatAgentPromptRuns', 'inChatAgentTransformHistory', 'inChatAgentTransformRedo',
-                     'inChatAgentPreGenerationInterceptHistory', 'inChatAgentCompanionResults',
-                     'title', 'append_title', 'bias', 'display_text', 'reasoning_display_text', 'server_narration'].includes(key))
+                 || LEGACY_PROMPT_CONTENT_EXTRA_KEYS.some(key => Object.hasOwn(record.extra, key))
                  || record.extra.bias != null && typeof record.extra.bias !== 'string'
                  || record.extra.title != null && typeof record.extra.title !== 'string'
                   || record.extra.append_title != null && typeof record.extra.append_title !== 'boolean'
