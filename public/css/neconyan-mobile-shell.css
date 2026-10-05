@@ -2498,7 +2498,7 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
     }
 
     #right-nav-panel.openDrawer #rm_print_characters_block {
-        --sb-character-list-avatar-size: 56px;
+        --sb-character-list-avatar-size: 48px;
         gap: 8px;
         width: 100%;
         min-width: 0;
@@ -2516,7 +2516,7 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         width: 100%;
         min-width: 0;
         overflow: hidden;
-        padding: 9px 8px;
+        padding: 8px;
         border-radius: 14px;
         box-sizing: border-box;
     }
@@ -2531,10 +2531,6 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
 
     #right-nav-panel.openDrawer #rm_print_characters_block:not(.group_overlay_mode_select) > :is(.character_select, .group_select).is-active-entity:not(.inline_avatar) :is(.ch_name, .group_select_counter) {
         color: var(--color-primary, var(--sb-accent)) !important;
-    }
-
-    #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) {
-        min-height: calc(var(--sb-character-list-avatar-size) + 46px);
     }
 
     #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) > :is(.avatar, .missing-avatar) {
@@ -2564,6 +2560,70 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         width: 100%;
         min-width: 0;
         overflow: hidden;
+    }
+
+    /* List density: in the flat list the two labelled buttons become a compact icon
+       rail on the right, so name, one description line, creator and tags share one
+       short stack instead of four stacked rows. Grid tiles and bulk edit keep the
+       flowing layout. */
+    body:not(.charListGrid) #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) > :is(.character_select_container, .group_select_container) {
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        column-gap: 8px;
+        row-gap: 2px;
+    }
+
+    body:not(.charListGrid) #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) > :is(.character_select_container, .group_select_container) > :is(.character_name_block, .group_name_block) {
+        grid-column: 1;
+        grid-row: 1;
+    }
+
+    body:not(.charListGrid) #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) > :is(.character_select_container, .group_select_container) > :is(.ch_description, .group_select_block_list) {
+        grid-column: 1;
+        grid-row: 2;
+        -webkit-line-clamp: 1;
+        line-clamp: 1;
+    }
+
+    body:not(.charListGrid) #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) > :is(.character_select_container, .group_select_container) > .sb-entity-meta {
+        grid-column: 1;
+        grid-row: 3;
+    }
+
+    body:not(.charListGrid) #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) > :is(.character_select_container, .group_select_container) > .tags_inline {
+        grid-row: 4;
+    }
+
+    body:not(.charListGrid) #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) > :is(.character_select_container, .group_select_container) > .sb-entity-actions {
+        grid-column: 2;
+        grid-row: 1 / span 4;
+        display: flex;
+        flex-flow: row nowrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 4px;
+        margin: 0;
+    }
+
+    body:not(.charListGrid) #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) > :is(.character_select_container, .group_select_container) > .sb-entity-actions > .sb-entity-action {
+        flex: 0 0 auto;
+        min-width: 44px;
+        min-height: 44px;
+        padding: 0;
+    }
+
+    /* The button keeps its label as the accessible name; the phone only shows the icon. */
+    body:not(.charListGrid) #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) > :is(.character_select_container, .group_select_container) > .sb-entity-actions > .sb-entity-action > span {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        padding: 0;
+        border: 0;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        clip-path: inset(50%);
+        white-space: nowrap;
     }
 
     #right-nav-panel.openDrawer #rm_print_characters_block > :is(.character_select, .group_select, .bogus_folder_select).flex-container:not(.inline_avatar) .tags_inline {
