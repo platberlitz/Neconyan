@@ -57,8 +57,18 @@ export async function runTextGeneration({ context, backend, payload, signal, ano
         return (fetchImpl || fetch)(url, options);
     } : fetchImpl;
     let response;
+    const startedAt = Date.now();
+    let reasoningFinishedAt = null;
+    let hasReasoning = false;
+    const observe = value => {
+        hasReasoning ||= Boolean(value.reasoning);
+        if (value.text && reasoningFinishedAt === null) reasoningFinishedAt = Date.now();
+        onStream?.({ ...value, gen_started: new Date(startedAt).toISOString(),
+            reasoning_duration: hasReasoning ? Math.max(0, (reasoningFinishedAt ?? Date.now()) - startedAt) : undefined,
+            reasoning_finished: hasReasoning && reasoningFinishedAt !== null });
+    };
     try {
-        response = await runBackendGeneration(request, resolvedBackend, payload, { signal, fetch: send, anonymousCustom, boundProfile, onStream });
+        response = await runBackendGeneration(request, resolvedBackend, payload, { signal, fetch: send, anonymousCustom, boundProfile, onStream: observe });
     } catch (error) {
         if (validationError) throw validationError;
         throw isDefiniteProviderRefusal(error?.providerStatus) ? providerRefused(error) : error;
@@ -67,7 +77,8 @@ export async function runTextGeneration({ context, backend, payload, signal, ano
         ? normalizeContentText(typeof response === 'string' ? response : response?.choices?.[0]?.text ?? response?.choices?.[0]?.message?.content ?? response?.content ?? response?.response ?? response?.[0]?.content ?? '', { excludeReasoning: true })
         : extractMessageFromData(response, 'openai', { excludeReasoning: true })
             || normalizeContentText(response?.content ?? response?.response, { excludeReasoning: true });
-    return { response, text };
+    return { response, text, timing: { gen_started: new Date(startedAt).toISOString(), gen_finished: new Date(Date.now()).toISOString(),
+        ...(hasReasoning ? { reasoning_duration: Math.max(0, (reasoningFinishedAt ?? Date.now()) - startedAt) } : {}) } };
 }
 
 export { buildGenerationRequestBody, extractGeneratedText, normalizeGenerationBackend };
@@ -233,12 +244,16 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
         const current = resolveGenerationProfile(context.directories, binding);
         payload = restoreTransport(payload, current);
         await validatePrompt?.(payload, material);
+        const generation = { backend: binding.backend || 'chat', source: material.source,
+            model: payload.model || modelOverride || material.profile.model,
+            showThoughts: Boolean(material.active.show_thoughts || material.active.auto_append_reasoning_tags) };
         const call = async () => {
             try { await beforeDispatch?.(); } catch (error) { throw providerNotDispatched(error); }
             const requestPayload = payload;
-            const result = await runTextGeneration({ context, backend: binding.backend, payload: requestPayload, signal, fetch: fetchImpl, validatePrompt, onStream,
+            const result = await runTextGeneration({ context, backend: binding.backend, payload: requestPayload, signal, fetch: fetchImpl, validatePrompt,
+                onStream: onStream && (value => onStream({ ...value, generation })),
                 anonymousCustom: binding.backend === 'text' ? !material.secretId : payload.chat_completion_source === 'custom' && !payload.secret_id && !payload.reverse_proxy, boundProfile: true });
-            if (raw && rawOptions.jsonSchema) return { ...result, text: extractJsonFromData(result.response, {
+            if (raw && rawOptions.jsonSchema) return { ...result, generation: { ...generation, ...result.timing }, text: extractJsonFromData(result.response, {
                 mainApi: 'openai', chatCompletionSource: material.source, returnInvalidJson: rawOptions.jsonSchema.returnInvalid,
             }) };
             const rawText = raw ? extractMessageFromData(result.response, binding.backend === 'text' ? 'textgenerationwebui' : 'openai') : result.text;
@@ -248,8 +263,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
                 trimWrongNames: rawOptions.trimNames !== false, displayIncompleteSentences: true,
             }) : cleanScopedTextResponse(result.text, payload.stopping_strings, rawOptions.includeInstruct !== false && material.instruct.enabled ? material.instruct : undefined);
             if (raw && !text && !functionTools.length) fail('No message generated.', 502);
-            return { ...result, text, generation: { backend: binding.backend || 'chat', source: material.source,
-                showThoughts: Boolean(material.active.show_thoughts || material.active.auto_append_reasoning_tags) } };
+            return { ...result, text, generation: { ...generation, ...result.timing } };
         };
         if (jobContext) await onProviderStep?.('provider:' + key);
         return jobContext ? providerStep(jobContext, key, call) : call();
@@ -270,15 +284,18 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
     }
     payload = { ...restoreTransport(payload, material), stream: stream === true };
     await validatePrompt?.(payload, material);
+    const generation = { backend: 'chat', source: material.source,
+        model: payload.model || modelOverride || material.profile.model,
+        showThoughts: Boolean(material.active.show_thoughts || material.active.auto_append_reasoning_tags) };
     const call = async () => {
         try { await beforeDispatch?.(); } catch (error) { throw providerNotDispatched(error); }
-        return runTextGeneration({ context, backend: 'chat', payload, signal, fetch: fetchImpl, validatePrompt, onStream,
+        return runTextGeneration({ context, backend: 'chat', payload, signal, fetch: fetchImpl, validatePrompt,
+            onStream: onStream && (value => onStream({ ...value, generation })),
             anonymousCustom: payload.chat_completion_source === 'custom' && !payload.secret_id && !payload.reverse_proxy, boundProfile: true })
             .then(result => ({ ...result, text: cleanGeneratedText(removePartialStops(result.text,
                 Array.isArray(payload.stop) ? payload.stop : []), { power: material.power,
                 mainApi: 'openai', name1: userName, name2: characterName, groupNames, displayIncompleteSentences: true }),
-            generation: { backend: 'chat', source: material.source,
-                showThoughts: Boolean(material.active.show_thoughts || material.active.auto_append_reasoning_tags) } }));
+            generation: { ...generation, ...result.timing } }));
     };
     if (jobContext) await onProviderStep?.('provider:' + key);
     return jobContext ? providerStep(jobContext, key, call) : call();

@@ -74,11 +74,14 @@ for (const phone of [false, true]) {
     const viewport = phone ? 'phone' : 'desktop';
 
     test(`${viewport} live Roleplay text appears before completion and remains visible while Companions run`, async ({ app }, info) => {
-        app.provider.mode.streamReply = { first: 'First words', rest: ' and the finished reply.' };
+        app.provider.mode.streamReply = { first: 'First words', rest: ' and the finished reply.', reasoning: 'Considering the answer.', holdReasoning: true };
         app.provider.mode.reply = { choices: [{ message: { content: 'A saved Companion note.' }, finish_reason: 'stop' }] };
         app.provider.mode.hold = 'unused-named-model';
         const account = await app.account({ phone, activeConnection: true, configureSettings(saved) {
             saved.oai_settings.stream_openai = true;
+            saved.power_user.message_token_count_enabled = true;
+            saved.power_user.timestamp_model_name = true;
+            saved.power_user.timestamp_model_icon = false;
             saved.extension_settings.inChatAgents = { globalSettings: { enabled: true, separateRecentChats: false,
                 connectionProfile: 'durable', companionConcurrentWithPostGen: true } };
         } });
@@ -97,8 +100,22 @@ for (const phone of [false, true]) {
         expect(response.status(), await response.text()).toBe(202);
         const { jobId } = await response.json();
         const preview = page.locator('#neconyan-roleplay-preview');
+        let firstCount;
+        let thinkingSeconds;
         try {
+            const thinking = preview.locator('.mes_reasoning_header_title');
+            await expect(thinking).toBeVisible({ timeout: 60000 });
+            await expect.poll(async () => Number(await thinking.getAttribute('data-duration'))).toBeGreaterThan(1);
+            const initialSeconds = Number(await thinking.getAttribute('data-duration'));
+            await expect.poll(async () => Number(await thinking.getAttribute('data-duration'))).toBeGreaterThan(initialSeconds);
+            app.provider.mode.finishReasoning();
             await expect(preview).toContainText('First words', { timeout: 60000 });
+            thinkingSeconds = Number(await thinking.getAttribute('data-duration'));
+            await expect(preview.locator('.tokenCounterDisplay')).toHaveText(/^[1-9]\d*t$/);
+            await expect(preview.locator('.tokenCounterDisplay')).toBeVisible();
+            firstCount = parseInt(await preview.locator('.tokenCounterDisplay').textContent());
+            await expect(preview.locator('.timestamp-model')).toHaveCount(1);
+            await expect(preview.locator('.timestamp-model')).toBeVisible();
             expect(app.provider.calls[0].stream).toBe(true);
             expect(app.provider.calls[0].completedAt).toBeNull();
             expect(readRoleplayChat(native.scope, locator).records.at(-1).is_user).toBe(true);
@@ -109,6 +126,8 @@ for (const phone of [false, true]) {
             app.provider.mode.finishStream();
             await expect(preview).toContainText('First words and the finished reply.', { timeout: 30000 });
             await expect.poll(() => app.provider.calls.length, { timeout: 30000 }).toBe(2);
+            await expect.poll(async () => parseInt(await preview.locator('.tokenCounterDisplay').textContent())).toBeGreaterThan(firstCount);
+            await expect(thinking).toHaveAttribute('data-duration', String(thinkingSeconds));
             expect(app.provider.calls[1].completedAt).toBeNull();
             expect(readRoleplayChat(native.scope, locator).records.at(-1).is_user).toBe(true);
             await page.screenshot({ path: info.outputPath('live-reply-with-companion-pending.png') });
@@ -120,6 +139,7 @@ for (const phone of [false, true]) {
             await expect(preview).toContainText('First words and the finished reply.', { timeout: 30000 });
             expect(app.provider.calls).toHaveLength(2);
         } finally {
+            app.provider.mode.finishReasoning?.();
             app.provider.mode.finishStream?.();
             await app.release();
         }
@@ -129,6 +149,12 @@ for (const phone of [false, true]) {
         const records = readRoleplayChat(native.scope, locator).records;
         expect(records.filter(row => row.mes === 'First words and the finished reply.')).toHaveLength(1);
         expect(records.at(-1).extra.inChatAgentCompanionResults['live-note'].status).toBe('done');
+        expect(records.at(-1).extra.token_count).toBeGreaterThan(firstCount);
+        expect(records.at(-1).extra.model).toBe(app.provider.calls[0].model);
+        expect(records.at(-1).extra.reasoning_duration / 1000).toBe(thinkingSeconds);
+        await expect(page.locator('#chat .mes').last().locator('.mes_reasoning_header_title')).toHaveAttribute('data-duration', String(thinkingSeconds));
+        await expect(page.locator('#chat .mes').last().locator('.tokenCounterDisplay')).toHaveText(`${records.at(-1).extra.token_count}t`);
+        await expect(page.locator('#chat .mes').last().locator('.timestamp-model')).toHaveCount(1);
         expect(app.provider.calls).toHaveLength(2);
     });
 
@@ -222,8 +248,11 @@ for (const phone of [false, true]) {
         // accepts and completes its replacement, including after a tab resume.
         for (const action of ['regenerate', 'swipe']) {
             let beforeSubmission;
-            await page.route('**/api/roleplay/workflow/submit', route => {
+            let releaseSubmission;
+            const gate = new Promise(resolve => { releaseSubmission = resolve; });
+            await page.route('**/api/roleplay/workflow/submit', async route => {
                 beforeSubmission = readRoleplayChat(native.scope, locator).records.at(-1);
+                await gate;
                 return route.continue();
             });
             const replacement = page.waitForResponse(acceptedSubmission);
@@ -231,6 +260,13 @@ for (const phone of [false, true]) {
                 await page.evaluate(() => document.querySelector('#option_regenerate').click());
             } else {
                 await page.locator('#chat .mes').last().locator('.swipe_right').click();
+            }
+            try {
+                await expect(page.locator('#chat [data-roleplay-replacement]')).toHaveCount(1);
+                await expect(page.locator('#chat .mes').filter({ hasText: ANSWER })).toHaveCount(0);
+                expect(await page.evaluate(() => window.SillyTavern.getContext().chat.at(-1).mes)).toBe(ANSWER);
+            } finally {
+                releaseSubmission();
             }
             const response = await replacement;
             expect(response.status(), await response.text()).toBe(202);
@@ -241,9 +277,64 @@ for (const phone of [false, true]) {
             await expect(page.locator('#chat .mes').last()).toContainText(ANSWER, { timeout: 30000 });
             await expect.poll(() => page.evaluate(async () => (await import('/script.js')).isGenerating()), { timeout: 30000 }).toBe(false);
             expect(beforeSubmission.mes).toBe(ANSWER);
+            await expect(page.locator('#chat [data-roleplay-replacement]')).toHaveCount(0);
             await page.unroute('**/api/roleplay/workflow/submit');
         }
         expect(app.provider.calls).toHaveLength(3);
+    });
+
+    test(`${viewport} replacement previews recover after refusal, cancellation and reopening`, async ({ app }) => {
+        app.provider.mode.reply = { choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: ANSWER } }] };
+        const account = await app.account({ phone, activeConnection: true, configureSettings(saved) {
+            saved.oai_settings.stream_openai = false;
+        } });
+        const native = owned(app);
+        const locator = await savedChat(account, `Replacement recovery ${viewport}`);
+        const page = await account.open({ workspace: false, readyTimeout: 120000 });
+        await openChat(page, locator);
+        const submitted = page.waitForResponse(acceptedSubmission);
+        await page.locator('#send_textarea').fill('Write the original reply.');
+        await page.locator('#send_textarea').press('Enter');
+        await account.settled((await (await submitted).json()).jobId);
+        await expect(page.locator('#chat .mes').last()).toContainText(ANSWER, { timeout: 30000 });
+        await expect.poll(() => page.evaluate(async () => (await import('/script.js')).isGenerating())).toBe(false);
+
+        await page.evaluate(async () => { (await import('/scripts/openai.js')).oai_settings.stream_openai = true; });
+        app.provider.mode.streamReply = { first: 'Replacement in progress', rest: ' must not be saved.' };
+        const replacement = page.waitForResponse(acceptedSubmission);
+        await page.evaluate(() => document.querySelector('#option_regenerate').click());
+        const { jobId } = await (await replacement).json();
+        const preview = page.locator('#neconyan-roleplay-preview');
+        try {
+            await expect(preview).toContainText('Replacement in progress', { timeout: 60000 });
+            await expect(page.locator('#chat .mes').filter({ hasText: ANSWER })).toHaveCount(0);
+            expect(readRoleplayChat(native.scope, locator).records.at(-1).mes).toBe(ANSWER);
+            await page.reload({ waitUntil: 'domcontentloaded' });
+            await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'), undefined, { timeout: 120000 });
+            await openChat(page, locator);
+            await page.evaluate(async () => (await import('/scripts/neconyan-conversation/roleplay-workflows.js')).resumeNativeRoleplayWorkflowObservation());
+            await expect(preview).toContainText('Replacement in progress', { timeout: 30000 });
+            await expect(page.locator('#chat .mes').filter({ hasText: ANSWER })).toHaveCount(0);
+            await account.post(`/api/jobs/${jobId}/cancel`);
+            expect((await terminal(account, jobId)).state).toBe('cancelled');
+            await expect(preview).toHaveCount(0);
+            await expect(page.locator('#chat [data-roleplay-replacement]')).toHaveCount(0);
+            await expect(page.locator('#chat .mes').last()).toContainText(ANSWER);
+            expect(readRoleplayChat(native.scope, locator).records.at(-1).mes).toBe(ANSWER);
+        } finally {
+            app.provider.mode.finishStream?.();
+            await app.release();
+        }
+        await page.route('**/api/roleplay/workflow/submit', route => route.fulfill({
+            status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'Test refusal' }),
+        }));
+        const refused = page.waitForResponse(acceptedSubmission);
+        await page.locator('#chat .mes').last().locator('.swipe_right').click();
+        expect((await refused).status()).toBe(400);
+        await expect(page.locator('#chat [data-roleplay-replacement]')).toHaveCount(0);
+        await expect(page.locator('#chat .mes').last()).toContainText(ANSWER);
+        expect(readRoleplayChat(native.scope, locator).records.at(-1).mes).toBe(ANSWER);
+        expect(app.provider.calls).toHaveLength(2);
     });
 
     test(`${viewport} hidden Companions do not block a named Roleplay reply with a false capacity error`, async ({ app }, info) => {

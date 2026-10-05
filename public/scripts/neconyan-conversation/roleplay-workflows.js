@@ -19,6 +19,7 @@ import { roleplayAccountStamp } from '../roleplay-save-chain.js';
 import { getCurrentUserHandle } from '../user.js';
 import { getCurrentCharAvatar } from './context.js';
 import { getRoleplaySourceMessageRevision } from './roleplay-source.js';
+import { beginRoleplayReplacement } from './roleplay-replacement.js';
 
 const WORKFLOW_EVENT = 'neconyan:roleplay-workflow-finished';
 const STORY_RULES_KEY = 'sbstory_rules';
@@ -342,8 +343,10 @@ async function readbackReceipt(key, name, options, id) {
 }
 
 /** Watch an accepted root job and read its receipt back once it settles. */
-export function observeRoleplayWorkflowJob(jobId, { key, name, locator, account = getCurrentUserHandle() }) {
+export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageIndex = finalModelMessageIndex(), account = getCurrentUserHandle() }) {
     if (!jobId || observed.has(jobId)) return;
+    const isCurrent = () => account === getCurrentUserHandle() && matchesCurrentWorkflowLocator(locator);
+    const restore = beginRoleplayReplacement(name, messageIndex, isCurrent);
     let stopPreview = () => {};
     let ended = false;
     const onTerminal = value => {
@@ -380,6 +383,7 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, account 
             observed.delete(jobId);
             if (reason !== 'done' && reason !== 'stopped') {
                 stopPreview();
+                restore();
                 announce({ key, name, state: reason, result: null, jobId });
                 // A refused or lost job must not leave a caller waiting for a write
                 // that will never arrive.
@@ -393,15 +397,15 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, account 
                 settleFinished(key, null);
             } finally {
                 stopPreview();
+                restore();
             }
         },
     });
     observed.set(jobId, { account, stop });
     void import('./roleplay-preview.js').then(({ observeRoleplayPreview }) => {
         if (ended) return;
-        stopPreview = observeRoleplayPreview(jobId, { account,
-            isCurrent: () => account === getCurrentUserHandle()
-                && matchesCurrentWorkflowLocator(locator),
+        stopPreview = observeRoleplayPreview(jobId, { account, name, messageIndex,
+            isCurrent,
             onTerminal,
         });
     }).catch(() => {});
@@ -445,6 +449,19 @@ export async function submitRoleplayWorkflow({ name, intent: named = {}, page = 
         : anchorKind === 'end' ? chat.length - 1
             : anchorKind === 'block' ? finalBlockMessageIndex() : finalModelMessageIndex();
     if (!Number.isSafeInteger(anchorIndex) || anchorIndex < 0) throw new Error('The saved Roleplay chat has no message to answer.');
+    const restore = beginRoleplayReplacement(name, anchorIndex,
+        () => account === getCurrentUserHandle() && matchesCurrentWorkflowLocator(locator));
+    try {
+        const accepted = await submitRoleplayWorkflowRequest({ name, intent, locator, anchorIndex, chosen, maxTokens, account });
+        void accepted.finished.then(restore);
+        return accepted;
+    } catch (error) {
+        restore();
+        throw error;
+    }
+}
+
+async function submitRoleplayWorkflowRequest({ name, intent, locator, anchorIndex, chosen, maxTokens, account }) {
     const stamp = roleplayAccountStamp().account;
     const signature = JSON.stringify([account, name, intent, anchorIndex, chosen, maxTokens, locator, stamp]);
     const known = pending.get(account);
@@ -483,7 +500,7 @@ export async function submitRoleplayWorkflow({ name, intent: named = {}, page = 
     }
     pending.delete(account);
     logRoleplayAccepted(name);
-    if (accepted?.jobId) observeRoleplayWorkflowJob(accepted.jobId, { key: payload.key, name, locator, account });
+    if (accepted?.jobId) observeRoleplayWorkflowJob(accepted.jobId, { key: payload.key, name, locator, account, messageIndex: anchorIndex });
     if (accepted?.result) void readback(payload.key, name, { locator, account });
     return { ...accepted, key: payload.key, finished };
 }
@@ -624,7 +641,8 @@ export async function resumeNativeRoleplayWorkflowObservation() {
         if (source.chat !== locator?.chat || source.avatar !== locator?.avatar) continue;
         const name = job.intent?.request?.named?.name ?? null;
         if (!TERMINAL.has(job.state)) {
-            observeRoleplayWorkflowJob(job.id, { key, name, locator, account });
+            observeRoleplayWorkflowJob(job.id, { key, name, locator, account,
+                messageIndex: job.intent?.source?.message?.index ?? job.intent?.source?.range?.start });
         } else if (!finished) {
             finished = { key, name, locator };
         }

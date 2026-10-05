@@ -34,7 +34,36 @@ export function publishRoleplayPreview(context, update) {
 }
 
 export function readRoleplayPreview({ owner, directories, job }) {
-    return previews.get(keyFor(owner, job.id)) ?? readArtifact(directories, job.id, 'roleplay-preview') ?? null;
+    const value = previews.get(keyFor(owner, job.id)) ?? readArtifact(directories, job.id, 'roleplay-preview') ?? null;
+    const startedAt = Date.parse(value?.gen_started);
+    if (value?.stage === 'generating' && value.reasoning && !value.reasoning_finished && Number.isFinite(startedAt)) {
+        return { ...value, reasoning_duration: Math.max(0, Date.now() - startedAt) };
+    }
+    return value;
+}
+
+/** Count with the accepted reply's tokenizer, at most twice a second, including a paused stream's last chunk. */
+export function createRoleplayStreamPreview(context, count) {
+    let latest;
+    let timer;
+    let countedAt = 0;
+    const flush = () => {
+        clearTimeout(timer);
+        timer = null;
+        if (!latest || context.signal.aborted) return;
+        countedAt = Date.now();
+        publishRoleplayPreview(context, { ...latest, stage: 'generating',
+            token_count: count(latest.text || ''), reasoning_tokens: count(latest.reasoning || '') });
+    };
+    return {
+        publish(value) {
+            latest = value;
+            const remaining = 500 - (Date.now() - countedAt);
+            if (remaining <= 0) flush();
+            else if (!timer) timer = setTimeout(flush, remaining);
+        },
+        stop() { clearTimeout(timer); latest = null; },
+    };
 }
 
 export function subscribeRoleplayPreview(owner, id, listener) {

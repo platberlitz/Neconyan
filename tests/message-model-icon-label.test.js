@@ -105,7 +105,8 @@ return getMessageIconLabel;`)(settings);
     }
 
     insertModelLabel(messageElement, mes.extra);`);
-        expect(scriptJs).toContain('insertAfter(icon.length ? icon : mes.find(\'.timestamp\'))');
+        // Live replies also have a status timestamp; write the model label only once.
+        expect(scriptJs).toContain('insertAfter(icon.length ? icon : mes.find(\'.timestamp\').first())');
     });
 
     test('the label is cleared before messages are repainted', () => {
