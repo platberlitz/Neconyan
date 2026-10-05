@@ -59,6 +59,7 @@ import { router as serverAdminRouter } from './endpoints/server-admin.js';
 import { router as inChatAgentsRouter } from './endpoints/in-chat-agents.js';
 // Neconyan divergence: keep Conversation REST mounted here only; endpoint behavior stays isolated in its fork-owned router for upstream syncs.
 import { router as neconyanConversationRouter } from './endpoints/neconyan-conversation.js';
+import { router as chatNavigationRouter } from './endpoints/chat-navigation.js';
 import { router as mewmoryRouter } from './endpoints/mewmory.js';
 // Neconyan divergence: durable server-side job dispatcher for work that must finish without an open tab.
 import { router as jobsRouter } from './endpoints/jobs.js';
@@ -137,6 +138,7 @@ export function setupPrivateEndpoints(app) {
     app.use('/api/server-admin', serverAdminRouter);
     app.use('/api/in-chat-agents', inChatAgentsRouter);
     app.use('/api/neconyan-conversation', neconyanConversationRouter);
+    app.use('/api/chat-navigation', chatNavigationRouter);
     app.use('/api/mewmory', mewmoryRouter);
     app.use('/api/jobs', jobsRouter);
     app.use('/api/meower', meowerRouter);

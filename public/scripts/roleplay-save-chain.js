@@ -88,6 +88,13 @@ export function rememberRoleplayRead(locator, evidence) {
     return true;
 }
 
+/** Return the identity already applied to this editor; never read or enrol a file. */
+export function getRoleplaySourceId(locator) {
+    if (!binding?.available) return null;
+    const entry = binding.chains.get(locatorKey(locator));
+    return entry && !entry.blocked ? entry.head?.source?.instanceId || null : null;
+}
+
 /** Existing solo/group queues schedule these tokens; they are not a second task queue. */
 export function beginRoleplaySave(locator, { operationKey, owner = roleplayAccountStamp().owner, create = false, evidence = null, after = null } = {}) {
     const stamp = roleplayAccountStamp();

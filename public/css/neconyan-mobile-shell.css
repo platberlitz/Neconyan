@@ -3480,3 +3480,9 @@ body.neconyan #open_chat_expressions #expressions_stop_sprite_generation { grid-
         right: 54px;
     }
 }
+/* The labelled link action belongs to the existing phone chat tools. */
+#sb-mobile-chat-tools-panel .sb-mobile-chat-copy-link {
+    min-height: 44px;
+    width: 100%;
+    justify-content: center;
+}

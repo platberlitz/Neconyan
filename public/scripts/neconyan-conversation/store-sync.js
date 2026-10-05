@@ -185,6 +185,7 @@ function absorbSaveResult(body, submitted) {
         setLocalStore(reconciled);
     }
     captureConversationStore(stored, body?.version);
+    globalThis.window?.dispatchEvent(new CustomEvent('neconyan:conversation-store-saved'));
     return true;
 }
 
@@ -275,6 +276,16 @@ export function persistConversationStoreDebounced(account = getCurrentUserHandle
 export async function flushConversationStore(account = getCurrentUserHandle()) {
     await scheduleConversationStoreSave(account);
     return persistConversationStoreNow(account);
+}
+
+/** Navigation waits for real edits, but must not force a save just to view a link. */
+export async function waitForConversationEdits(account = getCurrentUserHandle()) {
+    await Promise.resolve();
+    checkAccount(account);
+    if (pendingSave && await pendingSave === false) return false;
+    await syncQueue;
+    checkAccount(account);
+    return true;
 }
 
 export function initConversationStoreSync() {

@@ -1,4 +1,4 @@
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, jest, test } from '@jest/globals';
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import vm from 'node:vm';
@@ -213,6 +213,7 @@ describe('Neconyan Home', () => {
         const errors = [];
         const context = vm.createContext({
             document: { getElementById: () => early, createElement: () => ({}) },
+            setChatNavigationBlocked: jest.fn(),
             loader: {
                 createOverlay: () => ({ classList: { add() {} }, setAttribute() {}, prepend() {} }),
                 ToastMode: { NONE: 'none' },
@@ -225,6 +226,7 @@ describe('Neconyan Home', () => {
         });
         vm.runInContext(read('script.js').match(/^async function firstLoadInit\(\) {[\s\S]*?^}/m)[0], context);
         await expect(context.firstLoadInit()).rejects.toThrow('popup setup failed');
+        expect(context.setChatNavigationBlocked).toHaveBeenCalledWith(true);
         expect(early.hidden).toBe(false);
         expect(errors).toHaveLength(1);
         expect(early.isConnected).toBe(true);

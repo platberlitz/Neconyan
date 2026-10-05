@@ -2,6 +2,39 @@
    Loaded as a deferred sheet after the core ones, so the ids plus body.neconyan beat
    the upstream rules in style.css without !important. Terminal UI keeps its own look. */
 
+body.neconyan :is(#neconyan-chat-route, #neconyan-chat-link-settings) {
+    width: min(460px, calc(100vw - 32px));
+    max-height: calc(100dvh - 48px);
+    padding: 24px;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    overflow: auto;
+}
+
+body.neconyan :is(#neconyan-chat-route, #neconyan-chat-link-settings)::backdrop {
+    background: rgb(0 0 0 / 65%);
+}
+
+body.neconyan :is(#neconyan-chat-route, #neconyan-chat-link-settings) h2 { margin-top: 0; }
+body.neconyan #neconyan-chat-route input { width: 100%; min-height: 44px; }
+body.neconyan :is(#neconyan-chat-route, #neconyan-chat-link-settings) .neconyan-route-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+body.neconyan :is(#neconyan-chat-route, #neconyan-chat-link-settings) button { min-height: 44px; padding: 8px 16px; }
+body.neconyan :is(#neconyan-chat-route, #neconyan-chat-link-settings) [hidden] { display: none; }
+body.neconyan :is(#neconyan-chat-route, #neconyan-chat-link-settings) :is(button, input):focus-visible { outline: 2px solid var(--neco-accent); outline-offset: 3px; }
+body.neconyan #option_copy_chat_link,
+body.neconyan [data-chat-link-copy] { min-height: 44px; }
+body.neconyan #option_copy_chat_link[aria-disabled='true'],
+body.neconyan [data-chat-link-copy][aria-disabled='true'] { opacity: 0.65; }
+body.neconyan #neconyan-chat-link-settings [data-chat-link-copy] { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
+body.neconyan [data-chat-link-switches] { display: flex; flex-direction: column; gap: 4px; margin: 12px 0 16px; }
+body.neconyan [data-chat-link-switches]:empty { display: none; }
+body.neconyan .neconyan-link-switch { align-items: flex-start; min-height: 44px; padding: 6px 0; cursor: pointer; }
+body.neconyan .neconyan-link-switch input { flex: none; margin-top: 3px; }
+body.neconyan .neconyan-link-switch > span { display: flex; flex-direction: column; gap: 2px; color: var(--neco-ink); }
+body.neconyan .neconyan-link-switch small { color: var(--neco-muted); line-height: 1.35; }
+
 body.neconyan:not(.sbterm) #options {
     padding: 0;
     background: none;

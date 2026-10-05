@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { addChatNavigationCharacterRenameSteps, assertChatNavigationCharacterRename, finishChatNavigationCharacterRename } from './chat-navigation-lifecycle.js';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import sanitize from 'sanitize-filename';
@@ -1170,6 +1171,7 @@ function applyPendingLifecycle(lease, host = {}) {
         saveRoleplayAccount(lease);
     }
     for (const task of pending.auxiliary) applyLifecycleTask(scope, task, host);
+    finishChatNavigationCharacterRename(lease);
     Object.assign(state, finishedLifecycle(state, pending));
     saveRoleplayAccount(lease);
     cleanupRoleplayReceiptsLocked(lease, pending.operationKeyHash);
@@ -1220,7 +1222,10 @@ export function commitRoleplayLifecycleLocked(lease, { operationKey, action, int
         if (state.pending.intentHash !== intentHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'The pending lifecycle operation has different contents.');
         return applyPendingLifecycle(lease, host);
     }
+    steps = addChatNavigationCharacterRenameSteps(lease, action, steps);
+    if (steps.length > ROLEPLAY_LIFECYCLE_MAX_STEPS) throw roleplayError('ROLEPLAY_INVALID', 'Too many linked group updates for one rename.', 400);
     const planned = steps.map((step, index) => planLifecycleStep(lease, step, index)).filter(Boolean);
+    assertChatNavigationCharacterRename(lease, { action, steps: planned });
     if (!planned.some(step => step.op !== 'discard')) throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'There is no protected file to change.', 404);
     for (const step of planned) {
         if (step.op === 'move' && step.kind === 'chat' && chatMemoryExists(roleplayLease(lease).scope.directories, step.destination)) {

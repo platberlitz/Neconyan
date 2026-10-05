@@ -1,4 +1,5 @@
 import { DOMPurify, Bowser } from '../lib.js';
+import { CHAT_NAVIGATION_OWNS_LAUNCH } from './chat-navigation-flight.js';
 
 import {
     characters,
@@ -800,7 +801,7 @@ export function initRossMods() {
     // initial status check
     checkStatusDebounced();
 
-    if (power_user.auto_load_chat) {
+    if (power_user.auto_load_chat && !CHAT_NAVIGATION_OWNS_LAUNCH) {
         RA_autoloadchat();
     }
 

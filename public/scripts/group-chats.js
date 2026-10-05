@@ -876,7 +876,7 @@ async function validateGroup(group, { trustActiveChat = false } = {}) {
  * @param {boolean} [options.newlyCreated=false] Whether the active group chat was created before loading.
  * @returns {Promise<void>} A promise that resolves when the chat messages have been loaded.
  */
-export async function getGroupChat(groupId, reload = false, { switchMenu = true, newlyCreated = false } = {}) {
+export async function getGroupChat(groupId, reload = false, { switchMenu = true, newlyCreated = false, readOnlyRoute = false, navigationGuard = () => true, expectedSourceId = '', verifyTarget = () => true } = {}) {
     incrementChatGeneration();
     const generation = getChatGeneration();
     const account = roleplayAccountStamp();
@@ -888,18 +888,19 @@ export async function getGroupChat(groupId, reload = false, { switchMenu = true,
     }
     const stillCurrent = (chatId = group.chat_id) => {
         try {
-            return generation === getChatGeneration() && selected_group === groupId && groups.find(x => x.id === groupId) === group
+            return navigationGuard() && generation === getChatGeneration() && selected_group === groupId && groups.find(x => x.id === groupId) === group
                 && group.chat_id === chatId && getCurrentUserHandle() === account.owner && roleplayAccountStamp() === account;
         } catch { return false; }
     };
 
     // Run validation before any loading
-    await validateGroup(group, { trustActiveChat: newlyCreated });
+    if (!readOnlyRoute) await validateGroup(group, { trustActiveChat: newlyCreated });
     if (!stillCurrent()) return;
     await unshallowGroupMembers(groupId);
     if (!stillCurrent()) return;
 
     if (!group.chat_id) {
+        if (readOnlyRoute) return false;
         const freshChatId = humanizedDateTime();
         group.chat_id = freshChatId;
         group.chats = Array.isArray(group.chats) ? group.chats : [];
@@ -914,10 +915,12 @@ export async function getGroupChat(groupId, reload = false, { switchMenu = true,
     try {
         // A listed chat with no file yet (API-created group, or never saved) opens as an empty vacancy;
         // the server only offers one when no live record owns that name.
-        loaded = await loadGroupChat(chat_id, true);
+        loaded = await loadGroupChat(chat_id, !readOnlyRoute);
         if (!stillCurrent(chat_id)) return;
+        if (expectedSourceId && loaded.evidence?.source?.instanceId !== expectedSourceId) throw Object.assign(new Error('The saved chat changed while opening.'), { status: 409 });
         data = loaded.records;
     } catch (error) {
+        if (readOnlyRoute) throw error;
         console.error(error);
         toastr.error(roleplayLoadErrorMessage(error));
         return;
@@ -930,12 +933,14 @@ export async function getGroupChat(groupId, reload = false, { switchMenu = true,
     }
 
     // Neconyan: initialize empty, untainted group chats even when the chat id was created before this load.
-    const freshChat = !metadata.tainted && (!Array.isArray(data) || !data.length);
+    const freshChat = !readOnlyRoute && !metadata.tainted && (!Array.isArray(data) || !data.length);
 
     // Neconyan: no integrity slug means the server treats the file as intact and mints one on the
     // first real save. Stamping one in on load only dirtied legacy chats into a needless rewrite.
     await loadItemizedPrompts(chat_id);
     if (!stillCurrent(chat_id)) return;
+    if (readOnlyRoute && !await verifyTarget()) return false;
+    if (!stillCurrent(chat_id)) return false;
     if (!rememberRoleplayRead({ group: true, chat: String(chat_id) }, loaded.evidence)) {
         toastr.error(t`A chat save is still unsettled. Keep the current edits.`);
         return;
@@ -977,6 +982,24 @@ export async function getGroupChat(groupId, reload = false, { switchMenu = true,
     if (freshChat) await eventSource.emit(event_types.GROUP_CHAT_CREATED);
     if (!stillCurrent(chat_id)) return;
     if (freshGroupGreetingMessageId !== -1) await emitGroupGreetingMessageEvents(freshGroupGreetingMessageId, greetingStillCurrent);
+    return stillCurrent(chat_id);
+}
+
+/** The saved-only adapter skips group repair, vacancy creation and greetings. */
+export async function openSavedGroupChat(groupId, chatName, navigationGuard = () => true, { expectedSourceId = '', verifyTarget = () => true } = {}) {
+    const group = groups.find(item => String(item.id) === groupId);
+    if (!group || !group.chats?.map(String).includes(chatName) || is_send_press || is_group_generating || !navigationGuard()) return false;
+    if (!await flushPendingChatSavesForNavigation() || !navigationGuard()) return false;
+    setCharacterId(undefined);
+    setCharacterName('');
+    resetSelectedGroup();
+    await clearChat({ clearData: true, navigationGuard });
+    if (!navigationGuard()) return false;
+    cancelTtsPlay();
+    selected_group = group.id;
+    group.chat_id = chatName;
+    updateChatMetadata({}, true);
+    return getGroupChat(group.id, false, { switchMenu: false, readOnlyRoute: true, navigationGuard, expectedSourceId, verifyTarget });
 }
 
 /**

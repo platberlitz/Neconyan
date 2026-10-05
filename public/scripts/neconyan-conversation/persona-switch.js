@@ -2,7 +2,7 @@ import { setUserAvatar } from '../personas.js';
 import { getConversationPersonaId } from './context.js';
 import { closeConversationSettings } from './settings-panel.js';
 
-export async function switchConversationPersona(personaId) {
+export async function switchConversationPersona(personaId, options = {}) {
     const targetPersonaId = getConversationPersonaId(personaId);
     if (!targetPersonaId) {
         return false;
@@ -10,7 +10,7 @@ export async function switchConversationPersona(personaId) {
 
     closeConversationSettings();
     if (targetPersonaId !== getConversationPersonaId()) {
-        await setUserAvatar(targetPersonaId, { toastPersonaNameChange: false });
+        await setUserAvatar(targetPersonaId, { toastPersonaNameChange: false, ...options });
     }
     return targetPersonaId === getConversationPersonaId();
 }

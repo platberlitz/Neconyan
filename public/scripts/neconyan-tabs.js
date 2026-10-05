@@ -7,6 +7,7 @@ import {
     normalizeMobileShellText as normalizeText,
 } from './mobile-shell-lifecycle/index.js';
 import { isIOSWebKitPlatform, isLegacyIOSWebKitPlatform } from './mobile-send-button.js';
+import { hasChatNavigationDraft } from './chat-navigation-flight.js';
 import { createPresetApiSyncLifecycle } from './preset-api-sync-lifecycle/index.js';
 import { fetchWithCsrfRetry } from './csrf-token-refresh.js';
 import { hasServerReturnedAfterRestart } from './server-restart-monitor.js';
@@ -27,7 +28,7 @@ import { power_user, setCharacterSpoilerFreeFieldsHidden } from './power-user.js
 import { escapeRegex } from './util/escape-regex.js';
 import { hasChangedAttributeValue } from './util/attribute-mutations.js';
 import { copyText, flashHighlight, showFontAwesomePicker } from './utils.js';
-import { characters, chat, flushCharacterSaveDebounced, getChatGeneration, getCurrentChatId, getGeneratingModel, getOneCharacter, getShortModelName, getThumbnailUrl, is_send_press, parseAvatarSource, refreshCsrfToken, saveSettingsDebounced, scrollReopenedChatToBottom, selectCharacterById, selectRightMenuWithAnimation, this_chid } from '../script.js';
+import { characters, chat, flushCharacterSaveDebounced, flushPendingChatSavesForNavigation, getChatGeneration, getCurrentChatId, getGeneratingModel, getOneCharacter, getShortModelName, getThumbnailUrl, is_send_press, parseAvatarSource, refreshCsrfToken, saveSettingsDebounced, scrollReopenedChatToBottom, selectCharacterById, selectRightMenuWithAnimation, this_chid } from '../script.js';
 import { is_group_generating } from './group-chats.js';
 import { eventSource, event_types } from './events.js';
 import { extensionNames, findExtension, getExtensionManifest, getExtensionType } from './extensions.js';
@@ -500,7 +501,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261004-story-borders1';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261005-chat-links4';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -610,7 +611,7 @@ function getNeconyanModeDefinition(mode) {
     return NECONYAN_MODE_DEFINITIONS.find(item => item.id === normalizedMode) || null;
 }
 
-function getActualNeconyanMode() {
+export function getActualNeconyanMode() {
     const sheld = document.getElementById('sheld');
     if (document.body?.classList.contains('sbstory') || document.getElementById('sbstory-bar')?.hidden === false) {
         return 'story';
@@ -629,7 +630,7 @@ function getNeconyanModeLifecycle(mode) {
     return normalizedMode ? globalThis.NeconyanModeLifecycle?.[normalizedMode] || null : null;
 }
 
-function isNeconyanModeBusy() {
+export function isNeconyanModeBusy() {
     const lifecycles = Object.values(globalThis.NeconyanModeLifecycle || {});
     return Boolean(
         is_send_press
@@ -784,7 +785,7 @@ function queueReopenedChatBottomScroll() {
     });
 }
 
-async function closeActiveNeconyanMode(targetMode, expectedContext) {
+async function closeActiveNeconyanMode(targetMode, expectedContext, { presentationOnly = false, navigationGuard = () => true } = {}) {
     if (!isNeconyanModeContextCurrent(expectedContext)) {
         return false;
     }
@@ -809,7 +810,7 @@ async function closeActiveNeconyanMode(targetMode, expectedContext) {
                 globalThis.toastr?.warning?.('Story Mode could not be closed right now.', 'Story Mode');
                 return false;
             }
-            const closed = (await lifecycle.setEnabled(false)) !== false;
+            const closed = (await lifecycle.setEnabled(false, { presentationOnly, navigationGuard })) !== false;
             return closed && isNeconyanModeContextCurrent(expectedContext);
         } catch (error) {
             console.error('Could not close Story Mode.', error);
@@ -7727,7 +7728,13 @@ function buildChatSidebar() {
 
     const body = createElement('div', { className: 'sb-chat-sidebar-body' });
     const list = createElement('div', { className: 'sb-chat-sidebar-list' });
-    body.appendChild(list);
+    const copyButton = createElement('button', { id: 'sb-desktop-chat-copy-link', className: 'menu_button', text: 'Copy chat link',
+        attrs: { type: 'button', 'data-chat-link-copy': '', 'aria-disabled': 'true', 'aria-describedby': 'sb-desktop-chat-copy-note' } });
+    copyButton.disabled = true;
+    copyButton.addEventListener('click', () => { document.getElementById('option_copy_chat_link')?.click(); setChatSidebarOpenState(false); });
+    const copyNote = createElement('small', { id: 'sb-desktop-chat-copy-note', text: 'Only saved chats have links. A link opens this chat in your account; it does not share it.' });
+    const linkSwitches = createElement('div', { className: 'sb-chat-link-switches', attrs: { 'data-chat-link-switches': 'sb-desktop-chat' } });
+    body.append(copyButton, copyNote, linkSwitches, list);
     root.appendChild(body);
 
     closeButton.addEventListener('click', () => setChatSidebarOpenState(false));
@@ -7735,6 +7742,7 @@ function buildChatSidebar() {
     movingDivs.appendChild(root);
 
     getChatbarState().sidebar = { root, title, list };
+    window.dispatchEvent(new CustomEvent('neconyan:chat-tools-ready'));
     return getChatbarState().sidebar;
 }
 
@@ -7871,7 +7879,13 @@ function buildMobileChatTools() {
     );
 
     recentSection.append(recentTitle, recentList);
-    panel.append(header, chatSelectField, actions, connectionSection, recentSection);
+    const copyButton = createElement('button', { id: 'sb-mobile-chat-copy-link', className: 'menu_button sb-mobile-chat-copy-link', text: 'Copy chat link',
+        attrs: { type: 'button', 'data-chat-link-copy': '', 'aria-disabled': 'true', 'aria-describedby': 'sb-mobile-chat-copy-note' } });
+    copyButton.disabled = true;
+    copyButton.addEventListener('click', () => { document.getElementById('option_copy_chat_link')?.click(); closeMobileChatTools(); });
+    const copyNote = createElement('small', { id: 'sb-mobile-chat-copy-note', text: 'Only saved chats have links. A link opens this chat in your account; it does not share it.' });
+    const linkSwitches = createElement('div', { className: 'sb-chat-link-switches', attrs: { 'data-chat-link-switches': 'sb-mobile-chat' } });
+    panel.append(header, chatSelectField, actions, copyButton, copyNote, linkSwitches, connectionSection, recentSection);
     overlay.appendChild(panel);
 
     overlay.addEventListener('click', event => {
@@ -7902,6 +7916,7 @@ function buildMobileChatTools() {
         connectionStatus,
         ...buttons,
     };
+    window.dispatchEvent(new CustomEvent('neconyan:chat-tools-ready'));
 
     return getChatbarState().mobileTools;
 }
@@ -10919,6 +10934,17 @@ function bindLandingPageObserver() {
 }
 
 async function returnToLandingPage() {
+    if (hasChatNavigationDraft(getActualNeconyanMode())) {
+        toastr.warning('Send or clear the current draft before switching chats.');
+        return;
+    }
+    if (isNeconyanModeBusy()) {
+        toastr.warning('Finish the current reply or save before switching chats.');
+        return;
+    }
+    if (!await flushPendingChatSavesForNavigation()) return;
+    const sync = await import('./neconyan-conversation/store-sync.js');
+    if (!await sync.waitForConversationEdits(getCurrentUserHandle())) return;
     setUniversalSearchOpenState(false);
     closeShell('left');
     closeShell('right');
@@ -10933,12 +10959,14 @@ async function returnToLandingPage() {
             top: 0,
             behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
         });
+        window.dispatchEvent(new CustomEvent('neconyan:navigate-home'));
         return;
     }
 
     const welcomeScreen = await import('./welcome-screen.js');
     await welcomeScreen.openWelcomeScreen({ force: true });
     queueLandingPageStateSync();
+    window.dispatchEvent(new CustomEvent('neconyan:navigate-home'));
 }
 
 function syncProxyButtonState(proxyButton, sourceIcon) {
@@ -20418,7 +20446,7 @@ function initAll() {
     });
 }
 
-async function consumeNeconyanRoute() {
+export async function consumeNeconyanRoute() {
     if (!nnState.initialized) {
         return;
     }
@@ -20468,7 +20496,7 @@ async function consumeNeconyanRoute() {
         params.delete(key);
     }
     const nextQuery = params.toString();
-    window.history.replaceState({}, '', `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}${window.location.hash}`);
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}${window.location.hash}`);
 }
 
 // Init shell UI as soon as DOM is ready.
@@ -20496,9 +20524,29 @@ if (ctx?.eventSource && ctx?.event_types) {
 
 // Run links after every APP_READY listener, including async Home and extension setup.
 window.addEventListener('neconyan:ready', () => {
-    void consumeNeconyanRoute().catch(error => {
-        console.error('Failed to open Neconyan workspace link.', error);
-        toastr.warning('This workspace link could not be opened. Try again from Home.');
-    });
     startNeconyanUpdateToast();
 });
+
+/** Close presentations through their existing lifecycle; never load a default chat. */
+export async function prepareSavedChatMode(mode, navigationGuard = () => true) {
+    if (isNeconyanModeBusy() || !navigationGuard()) return false;
+    if (mode === 'story') {
+        const definition = getNeconyanModeDefinition('story');
+        if (!findExtension(definition?.extension)?.enabled || typeof getNeconyanModeLifecycle('story')?.setEnabled !== 'function') return false;
+    }
+    const context = getNeconyanModeContext();
+    return await closeActiveNeconyanMode(mode === 'story' ? 'roleplay' : mode, context, { presentationOnly: true, navigationGuard }) && navigationGuard();
+}
+
+export async function presentSavedStory(navigationGuard = () => true) {
+    if (!navigationGuard()) return false;
+    const lifecycle = getNeconyanModeLifecycle('story');
+    return typeof lifecycle?.setEnabled === 'function' && await lifecycle.setEnabled(true, { presentationOnly: true, navigationGuard }) !== false && navigationGuard();
+}
+
+export async function presentSavedRoleplay(navigationGuard = () => true) {
+    if (!navigationGuard()) return false;
+    if (getActualNeconyanMode() !== 'story') return true;
+    const lifecycle = getNeconyanModeLifecycle('story');
+    return typeof lifecycle?.setEnabled === 'function' && await lifecycle.setEnabled(false, { presentationOnly: true, navigationGuard }) !== false && navigationGuard();
+}
