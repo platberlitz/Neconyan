@@ -7,6 +7,7 @@
 - PR #15 (2026-10-05) `feat: add exact chat links and account-wide launch resume`
 - PR #17 (2026-10-05) `fix: stop refusing saved chats over extension message fields`
 - PR #18 (2026-10-05) `fix: show the Notes canvas and property-table warnings that never appeared`
+- PR #19 (2026-10-05) `fix: keep preset names untranslated so selecting, renaming and deleting presets works in every language`
 
 ## v1.1.0
 
