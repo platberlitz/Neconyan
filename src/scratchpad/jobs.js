@@ -3,7 +3,7 @@ import { captureGenerationBinding, resolveGenerationProfile } from '../generatio
 import { createMacroEnvironment } from '../macros/index.js';
 import { hash } from '../mewmory/core.js';
 import { readArtifact, writeArtifact } from '../jobs/artifacts.js';
-import { acceptJob, getJob, listJobs, releaseJob, requestCancellation, updateJob } from '../jobs/store.js';
+import { acceptJob, canonical, getJob, listJobs, releaseJob, requestCancellation, updateJob } from '../jobs/store.js';
 import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { roleplayAccountBase } from '../roleplay-store.js';
 import {
@@ -79,6 +79,7 @@ export function normaliseReplyRequest(body = {}) {
         help: boundedText(body.help, MAX_HELP_BYTES, 'The help reference'),
         capabilities: normaliseCapabilities(body.capabilities),
         names: normaliseNames(body.names),
+        chatProfileId: source.kind === 'conversation' ? boundedText(body.chatProfileId, 256, 'The chat connection profile').trim() : '',
     };
 }
 
@@ -138,7 +139,7 @@ export async function acceptScratchpadReply(request, body = {}) {
     const { directories, owner } = base;
     const input = normaliseReplyRequest(body);
     const requestHash = hash({ source: input.source, sessionId: input.sessionId, regenerate: input.regenerate, text: input.text,
-        context: input.context, help: input.help, capabilities: input.capabilities, names: input.names });
+        context: input.context, help: input.help, capabilities: input.capabilities, names: input.names, chatProfileId: input.chatProfileId });
     const duplicate = existingSubmission(directories, owner, input, requestHash);
     if (duplicate) return { created: false, job: duplicate, bucket: readProjectedBucket(base, input.source) };
 
@@ -148,10 +149,11 @@ export async function acceptScratchpadReply(request, body = {}) {
         const session = findSession(bucket, input.sessionId);
         const plan = planReply(session, input);
         writeBucketLocked(lease, bucket);
-        return { ...plan, assistant: session.assistant, gender: session.gender, connection: session.settings.connection, maxTokens: session.settings.maxTokens };
+        return { ...plan, revision: hash(canonical(session)), assistant: session.assistant, gender: session.gender, connection: session.settings.connection, maxTokens: session.settings.maxTokens };
     });
 
-    const selection = planned.connection.kind === 'profile' ? { kind: 'profile', profileId: planned.connection.profileId } : { kind: 'active' };
+    const profileId = planned.connection.kind === 'profile' ? planned.connection.profileId : input.chatProfileId;
+    const selection = profileId ? { kind: 'profile', profileId } : { kind: 'active' };
     const binding = captureGenerationBinding(directories, selection, body.acknowledgement);
     const system = buildScratchpadSystemPrompt({ assistant: planned.assistant, gender: planned.gender, userName: input.names.user,
         characterName: input.names.character, capabilities: input.capabilities, help: input.help });
@@ -184,7 +186,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         bucket = withScratchpad(base, lease => {
             const current = readBucketLocked(lease, input.source);
             const session = findSession(current, input.sessionId);
-            if (hasPending(session) || (session.messages.at(-1)?.id ?? null) !== planned.anchor) {
+            if (hasPending(session) || hash(canonical(session)) !== planned.revision) {
                 throw fail('SCRATCHPAD_CHANGED', 'This session changed while the message was being sent. Try again.', 409);
             }
             if (planned.replace) session.messages = session.messages.filter(message => message.id !== planned.replace);
@@ -220,7 +222,9 @@ function settleReply(context, request, patch) {
         const session = bucket.sessions.find(item => item.id === request.sessionId);
         const message = session?.messages.find(item => item.id === request.replyId && item.jobId === context.job.id);
         if (!message) return false;
-        if (message.state !== 'pending' && patch.state === 'failed') return false;
+        if (message.state !== 'pending') {
+            return patch.state === 'done' && message.state === 'done' && message.text === patch.text && (message.reasoning || '') === (patch.reasoning || '');
+        }
         Object.assign(message, patch);
         if (patch.state === 'done') delete message.error;
         if (!message.reasoning) delete message.reasoning;
@@ -250,7 +254,12 @@ async function runScratchpadReply(context, { generate }) {
     const saved = readArtifact(directories, job.id, 'result');
     if (saved) return { artifact: true };
     let streamedReasoning = '';
+    const stopped = () => signal?.aborted || getJob(directories, job.id)?.cancellation?.requested;
+    const requireRunning = () => {
+        if (stopped()) throw fail('SCRATCHPAD_STOPPED', 'Stopped before it finished.', 409);
+    };
     try {
+        requireRunning();
         let reply = readArtifact(directories, job.id, 'reply');
         if (!reply) {
             publishScratchpadPreview(owner, job.id, { stage: 'generating', text: '', reasoning: '' });
@@ -272,23 +281,27 @@ async function runScratchpadReply(context, { generate }) {
                 context,
                 jobContext: context,
             });
+            requireRunning();
             const text = String(response?.text ?? '').trim();
             if (!text) throw fail('SCRATCHPAD_EMPTY_REPLY', 'The model returned no text. Try again or pick another connection.', 502);
             reply = { text: clipBytes(text, MAX_MESSAGE_BYTES), reasoning: reasoningFrom(response?.response, streamedReasoning) };
             writeArtifact(directories, job.id, 'reply', reply);
         }
-        settleReply(context, request, { state: 'done', text: reply.text, reasoning: reply.reasoning });
+        requireRunning();
+        if (!settleReply(context, request, { state: 'done', text: reply.text, reasoning: reply.reasoning })) {
+            throw fail('SCRATCHPAD_CHANGED', 'The saved reply changed before this result could be saved.', 409);
+        }
         writeArtifact(directories, job.id, 'result', { replyId: request.replyId, sessionId: request.sessionId });
         publishScratchpadPreview(owner, job.id, { stage: 'done', text: reply.text, reasoning: reply.reasoning });
         return { artifact: true };
     } catch (error) {
-        const stopped = signal?.aborted || job.cancellation?.requested;
+        const cancelled = stopped();
         try {
-            settleReply(context, request, { state: 'failed', error: stopped ? 'Stopped before it finished.' : (error?.message || 'The reply failed.') });
+            settleReply(context, request, { state: 'failed', error: cancelled ? 'Stopped before it finished.' : (error?.message || 'The reply failed.') });
         } catch {
             // The job state still reports the failure if the session file cannot be updated.
         }
-        publishScratchpadPreview(owner, job.id, { stage: 'failed', error: stopped ? 'Stopped.' : (error?.message || 'The reply failed.') });
+        publishScratchpadPreview(owner, job.id, { stage: 'failed', error: cancelled ? 'Stopped.' : (error?.message || 'The reply failed.') });
         throw error;
     } finally {
         setTimeout(() => clearScratchpadPreview(owner, job.id), 30 * 1000).unref?.();

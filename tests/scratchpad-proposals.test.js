@@ -68,6 +68,20 @@ describe('Scratchpad reply parsing', () => {
         expect(describeChange({ type: 'chat', action: 'insert', after: 2 })).toBe('Add a message after #2');
     });
 
+    test.each([undefined, null, '', ' ', '#', '# ', [], [0], false, {}, -1, 1.5, '1e2', Number.MAX_SAFE_INTEGER + 1])('rejects missing or malformed targets: %p', target => {
+        expect(() => normaliseChange({ type: 'chat', action: 'delete', message: target })).toThrow('which message');
+        expect(() => normaliseChange({ type: 'chat', action: 'insert', after: target, text: 'Hello.' })).toThrow('where it goes');
+        expect(() => normaliseChange({ type: 'lorebook', action: 'delete', book: 'B', uid: target })).toThrow('which entry');
+    });
+
+    test.each([0, '0', '#0', ' #12 '])('accepts explicit numbered targets: %p', target => {
+        expect(normaliseChange({ type: 'chat', action: 'hide', message: target }).message).toBe(Number(String(target).trim().replace('#', '')));
+    });
+
+    test.each(['constructor', '__proto__', 'toString'])('rejects inherited character fields: %s', field => {
+        expect(() => normaliseChange({ type: 'character', character: 'Ayla', field, value: 'x' })).toThrow('cannot change that character field');
+    });
+
     test('review text round-trips for entries and list fields', () => {
         const entry = { title: 'Old lighthouse', keys: ['lighthouse', 'beacon'], constant: true, content: 'Line one\n\nLine two' };
         expect(parseEntry(formatEntry(entry), {})).toEqual(entry);

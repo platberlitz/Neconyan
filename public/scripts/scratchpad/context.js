@@ -5,15 +5,18 @@ import {
     getActiveConversationBranch,
     getConversationGroupById,
     getConversationGroupIdForAvatar,
+    getConversationPersonaId,
     getConversationThreadKey,
     getCurrentCharAvatar,
 } from '../neconyan-conversation/context.js';
+import { composeConversationPersonaDescription, getConversationPersonaName } from '../neconyan-conversation/personas.js';
+import { getSettings as getConversationSettings } from '../neconyan-conversation/settings-store.js';
 import { conversationState } from '../neconyan-conversation/state.js';
 import { power_user } from '../power-user.js';
 import { getTokenCountAsync } from '../tokenizers.js';
-import { getSortedEntries } from '../world-info.js';
+import { loadWorldInfo, selected_world_info, world_info } from '../world-info.js';
 
-const MAX_CONTEXT_CHARS = 1_400_000;
+const MAX_CONTEXT_BYTES = 1_400_000;
 const MAX_CARD_FIELD = 8_000;
 const MAX_MESSAGE_CHARS = 16_000;
 const MAX_LORE_ENTRIES = 40;
@@ -59,6 +62,7 @@ export function currentSource() {
             avatar,
             groupId,
             branchId: branch.id,
+            personaId: getConversationPersonaId(),
         };
     }
 
@@ -94,6 +98,21 @@ export function isCurrentSource(source) {
     return Boolean(source && live && live.key === source.key);
 }
 
+function requireCurrentSource(source) {
+    if (!isCurrentSource(source)) throw new Error('Open the chat this Scratchpad belongs to before sending.');
+}
+
+export function sourceUserName(source) {
+    return source?.kind === 'conversation' ? getConversationPersonaName(source.personaId, name1) : name1;
+}
+
+/** An empty name means the chat uses the active connection rather than a saved profile. */
+export function sourceConnectionProfile(source) {
+    return source?.kind === 'conversation'
+        ? String(getConversationSettings(source.avatar, source).connection_profile || '').trim()
+        : '';
+}
+
 /** Characters taking part in the source chat, as full character objects. */
 export function sourceCharacters(source) {
     if (!source) return [];
@@ -112,12 +131,12 @@ export function sourceCharacters(source) {
 export function sourceMessages(source) {
     if (!source) return [];
     if (source.kind === 'conversation') {
-        const branch = getActiveConversationBranch(source.avatar, { create: false, groupId: source.groupId, branchId: source.branchId });
+        const branch = getActiveConversationBranch(source.avatar, { ...source, create: false });
         const list = Array.isArray(branch?.messages) ? branch.messages : [];
         return list.map((message, index) => ({
             ref: String(message?.id ?? `i${index}`),
             number: index,
-            name: message?.role === 'user' ? (message?.name || name1) : (message?.name || (message?.role === 'system' ? 'System' : 'Character')),
+            name: message?.role === 'user' ? (message?.name || sourceUserName(source)) : (message?.name || (message?.role === 'system' ? 'System' : 'Character')),
             text: String(message?.mes ?? message?.content ?? ''),
             hidden: false,
             isUser: message?.role === 'user',
@@ -162,21 +181,53 @@ export function loreOverrideKey(entry) {
     return `${entry.world}::${entry.uid}`;
 }
 
+function sourceLorebooks(source) {
+    const books = [];
+    for (const character of sourceCharacters(source)) {
+        books.push(character?.data?.extensions?.world);
+        const filename = character.avatar?.replace(/\.[^.]+$/, '');
+        const extra = world_info.charLore?.find(item => item.name === filename)?.extraBooks;
+        if (Array.isArray(extra)) books.push(...extra);
+    }
+    books.push(...selected_world_info, power_user.persona_description_lorebook);
+    books.push(source?.kind === 'conversation'
+        ? getConversationSettings(source.avatar, source).lorebook_override
+        : chat_metadata.world_info);
+    return [...new Set(books.filter(book => typeof book === 'string' && book.trim()))];
+}
+
+export function loreScanText({ source, settings, pendingText = '', sessionText = '' }) {
+    return [
+        ...selectMessages(sourceMessages(source), settings).messages.slice(-LORE_SCAN_MESSAGES).map(item => item.text),
+        sessionText,
+        pendingText,
+    ].join('\n');
+}
+
 /**
  * Picks the lorebook entries to share: entries marked 'always', constant
  * entries, and entries whose keywords appear in the recent chat or the
  * user's new message. Entries marked 'never' are left out.
  */
-export async function collectLore({ settings, scanText }) {
-    let entries = [];
-    try {
-        entries = await getSortedEntries();
-    } catch (error) {
-        console.warn('Scratchpad could not read lorebooks', error);
-    }
-    const usable = (Array.isArray(entries) ? entries : [])
+export async function collectLore({ source, settings, scanText = '' }) {
+    requireCurrentSource(source);
+    const loaded = await Promise.all(sourceLorebooks(source).map(async world => {
+        try {
+            const data = await loadWorldInfo(world);
+            if (!data?.entries || typeof data.entries !== 'object' || Array.isArray(data.entries)) return null;
+            const entries = Object.entries(data.entries)
+                .filter(([, entry]) => entry && typeof entry === 'object' && !Array.isArray(entry))
+                .map(([uid, entry]) => ({ ...entry, uid: entry.uid ?? uid, world }));
+            return { world, entries };
+        } catch (error) {
+            console.warn('Scratchpad could not read lorebook', world, error);
+            return null;
+        }
+    }));
+    requireCurrentSource(source);
+    const books = loaded.filter(Boolean).map(book => book.world);
+    const usable = loaded.filter(Boolean).flatMap(book => book.entries)
         .filter(entry => entry && !entry.disable && !entry.agentBlacklisted && entry.world !== undefined && entry.uid !== undefined);
-    const books = [...new Set(usable.map(entry => String(entry.world)))];
     const overrides = settings?.loreOverrides || {};
     const lower = scanText.toLowerCase();
     const listed = usable.map(entry => {
@@ -186,7 +237,8 @@ export async function collectLore({ settings, scanText }) {
         if (override === 'always') reason = 'always';
         else if (override === 'never') reason = null;
         else if (entry.constant) reason = 'constant';
-        else if ((entry.key || []).some(item => keyMatches(item, scanText, lower))) reason = 'keyword';
+        else if (Array.isArray(entry.key) && entry.key.some(item => keyMatches(item, scanText, lower))) reason = 'keyword';
+        if (settings?.include?.lore === false) reason = null;
         return {
             key,
             world: String(entry.world),
@@ -215,26 +267,26 @@ export async function collectLore({ settings, scanText }) {
     return { books, entries: listed };
 }
 
-function formatLore(lore) {
+function formatLore(lore, macros) {
     const lines = [];
     if (lore.books.length) lines.push(`Lorebooks active in this chat: ${lore.books.join(', ')}`);
     for (const entry of lore.entries.filter(item => item.included)) {
         lines.push([
             `### ${entry.title}`,
             `book: ${entry.world} | uid: ${entry.uid}${entry.keys.length ? ` | keys: ${entry.keys.join(', ')}` : ''}${entry.constant ? ' | always active' : ''}`,
-            substituteParams(entry.content),
+            substituteParams(entry.content, macros),
         ].join('\n'));
     }
     return lines.join('\n\n');
 }
 
-function formatCharacter(character, source) {
+function formatCharacter(character, source, macros) {
     const name = character.name || 'Character';
     const fields = CARD_FIELDS
         .map(([field, label]) => {
             const raw = String(character?.data?.[field] ?? character?.[field] ?? '').trim();
             if (!raw) return '';
-            const text = substituteParams(raw, { name2Override: name, replaceCharacterCard: false });
+            const text = substituteParams(raw, { ...macros, name2Override: name });
             return `${label}:\n${clip(text, MAX_CARD_FIELD)}`;
         })
         .filter(Boolean);
@@ -247,44 +299,43 @@ function formatCharacter(character, source) {
  * saved; the text is rebuilt from the open chat each time.
  */
 export async function buildContext({ source, settings, pendingText = '', sessionText = '' }) {
-    if (!isCurrentSource(source)) {
-        throw new Error('Open the chat this Scratchpad belongs to before sending.');
-    }
+    requireCurrentSource(source);
     const include = settings?.include || {};
     const all = sourceMessages(source);
     const selection = selectMessages(all, settings);
     const people = sourceCharacters(source);
+    const names = { user: sourceUserName(source), character: people.map(item => item.name).filter(Boolean).join(', ') };
+    const macros = { name1Override: names.user, name2Override: names.character, replaceCharacterCard: false };
     const sections = [];
 
     sections.push([
         `Chat: ${source.label}`,
         `Mode: ${source.kind === 'conversation' ? 'Conversation (messaging-style chat)' : 'Roleplay'}`,
-        `User: ${name1}`,
+        `User: ${names.user}`,
     ].join('\n'));
 
     if (include.persona) {
-        const persona = substituteParams(String(power_user.persona_description ?? '').trim());
-        if (persona) sections.push(`## ${name1} (the user's persona)\n${clip(persona, MAX_CARD_FIELD)}`);
+        const description = source.kind === 'conversation'
+            ? composeConversationPersonaDescription(source.personaId, source)
+            : power_user.persona_description;
+        const persona = substituteParams(String(description ?? '').trim(), macros);
+        if (persona) sections.push(`## ${names.user} (the user's persona)\n${clip(persona, MAX_CARD_FIELD)}`);
     }
 
     if (include.card) {
-        for (const character of people) sections.push(formatCharacter(character, source));
+        for (const character of people) sections.push(formatCharacter(character, source, macros));
     }
 
     if (include.authorsNote && source.kind === 'roleplay') {
-        const note = substituteParams(String(chat_metadata?.note_prompt ?? '').trim());
+        const note = substituteParams(String(chat_metadata?.note_prompt ?? '').trim(), macros);
         if (note) sections.push(`## Author's Note\n${clip(note, MAX_CARD_FIELD)}`);
     }
 
     let lore = { books: [], entries: [] };
     if (include.lore) {
-        const scanText = [
-            ...selection.messages.slice(-LORE_SCAN_MESSAGES).map(item => item.text),
-            sessionText,
-            pendingText,
-        ].join('\n');
-        lore = await collectLore({ settings, scanText });
-        const text = formatLore(lore);
+        const scanText = loreScanText({ source, settings, sessionText, pendingText });
+        lore = await collectLore({ source, settings, scanText });
+        const text = formatLore(lore, macros);
         if (text) sections.push(`## Lorebooks\n${text}`);
     }
 
@@ -295,11 +346,14 @@ export async function buildContext({ source, settings, pendingText = '', session
     sections.push([heading, ...lines].join('\n\n'));
 
     let text = sections.join('\n\n');
-    if (text.length > MAX_CONTEXT_CHARS) text = `${text.slice(0, MAX_CONTEXT_CHARS)}\n[...]`;
+    const encoded = new TextEncoder().encode(text);
+    if (encoded.length > MAX_CONTEXT_BYTES) text = `${new TextDecoder().decode(encoded.subarray(0, MAX_CONTEXT_BYTES - 10)).replace(/\uFFFD$/, '')}\n[...]`;
+    requireCurrentSource(source);
 
     const loreBooks = include.lore ? lore.books : [];
     return {
         text,
+        names,
         lore,
         messageCount: selection.messages.length,
         totalMessages: all.length,

@@ -159,6 +159,43 @@ test('sessions are kept per source chat and temporary sessions disappear when an
     assert.notEqual(store.scratchpadFile(a.directories.root, SOURCE), store.scratchpadFile(a.directories.root, OTHER));
 });
 
+test('Conversation uses its saved chat connection without changing the session default', async t => {
+    const a = account(t);
+    const session = a.mutate(OTHER, bucket => store.createSession(bucket, { assistant: 'miso' }));
+    const body = sendBody(session, { source: OTHER, chatProfileId: 'saved' });
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    assert.equal(accepted.job.credentialRef.kind, 'profile');
+    assert.equal(accepted.job.credentialRef.profileId, 'saved');
+    assert.equal(a.read(OTHER).sessions[0].settings.connection.kind, 'current');
+});
+
+test('changing session settings while a send is prepared refuses the stale request', async t => {
+    const a = account(t);
+    const session = startSession(a);
+    const body = sendBody(session);
+    const sending = acceptScratchpadReply(a.request(body), body);
+    a.mutate(SOURCE, bucket => store.updateSession(bucket, session.id, { settings: { depth: 0 } }));
+    await assert.rejects(sending, error => error.code === 'SCRATCHPAD_CHANGED');
+    assert.equal(a.read(SOURCE).sessions[0].messages.length, 0);
+});
+
+test('a provider response arriving after Stop is not saved as a completed reply', async t => {
+    const a = account(t);
+    const session = startSession(a);
+    registerScratchpadJobs({ generate: async options => {
+        requestCancellation(a.directories, options.jobContext.job.id, { reason: 'stopped-during-response' });
+        return { text: 'This arrived too late.' };
+    } });
+    const body = sendBody(session);
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    await runJob(getJob(a.directories, accepted.job.id));
+    const reply = a.read(SOURCE).sessions[0].messages.at(-1);
+    assert.equal(reply.state, 'failed');
+    assert.equal(reply.text, '');
+    assert.equal(getJob(a.directories, accepted.job.id).state, 'cancelled');
+    assert.equal(readArtifact(a.directories, accepted.job.id, 'result'), undefined);
+});
+
 test('a reply that never finished preparing is failed after a restart, and a saved one is released', async t => {
     const a = account(t);
     const session = startSession(a);

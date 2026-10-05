@@ -3,7 +3,7 @@
  * the story. Nothing written here goes into the chat unless the user presses
  * Save change on a reviewed suggestion.
  */
-import { getActiveGenerationAcknowledgement, messageFormatting, name1, saveSettings } from '../../script.js';
+import { getActiveGenerationAcknowledgement, messageFormatting, saveSettings } from '../../script.js';
 import { loadStylesheetAsync } from '../dynamic-styles.js';
 import { event_types, eventSource } from '../events.js';
 import { extension_settings } from '../extensions.js';
@@ -22,8 +22,10 @@ import {
     estimateTokens,
     isCurrentSource,
     loreOverrideKey,
-    sourceCharacters,
+    loreScanText,
+    sourceConnectionProfile,
     sourceMessages,
+    sourceUserName,
     wireSource,
 } from './context.js';
 import { describeChange, splitReply } from './proposals.js';
@@ -81,6 +83,8 @@ const app = {
     ticket: 0,
     sending: false,
     editing: '',
+    drafts: new Map(),
+    draftKey: '',
     previews: new Map(),
     watchers: new Map(),
     pickLimit: PICK_PAGE,
@@ -326,7 +330,7 @@ function selectTab(key) {
         tab.tabIndex = selected ? 0 : -1;
         app.el.panels[name].hidden = !selected;
     }
-    if (key === 'context') renderContext({ force: false });
+    if (key === 'context') renderContext();
     if (key === 'sessions') renderSessions();
     if (key === 'chat') scrollMessages(true);
 }
@@ -336,11 +340,32 @@ function selectTab(key) {
 function applyBucket(bucket, { ticket = null } = {}) {
     if (ticket !== null && ticket !== app.ticket) return;
     if (!bucket || bucket.source?.key !== app.source?.key) return;
+    const firstSession = app.bucket?.sessions.length === 0 && bucket.sessions.length > 0;
     app.bucket = bucket;
+    syncDraft({ carry: firstSession });
     const session = activeSession();
     if (session) app.assistant = session.assistant;
     render();
     syncWatchers();
+}
+
+function syncDraft({ carry = false } = {}) {
+    const key = JSON.stringify([app.source?.kind, app.source?.key, activeSession()?.id]);
+    if (key === app.draftKey) return;
+    const draft = app.el.composer.value;
+    const emptyKey = JSON.stringify([app.source?.kind, app.source?.key, null]);
+    const firstSession = key !== emptyKey && app.draftKey === emptyKey;
+    if (firstSession) app.drafts.delete(emptyKey);
+    else if (app.draftKey) app.drafts.set(app.draftKey, draft);
+    app.draftKey = key;
+    app.el.composer.value = app.drafts.get(key) ?? (carry || firstSession ? draft : '');
+}
+
+function requireScope(source, sessionId) {
+    if (!source || source.key !== app.source?.key || !isCurrentSource(source)
+        || (sessionId !== undefined && activeSession()?.id !== sessionId)) {
+        throw new Error(t`The chat or Scratchpad session changed. Return to it and try again.`);
+    }
 }
 
 async function reload() {
@@ -376,11 +401,10 @@ function checkSource() {
 }
 
 /** Runs bucket changes one after another so a slow request cannot overwrite a newer one. */
-function change(operation, fallback) {
-    const source = app.source;
+function change(operation, fallback, source = app.source) {
     const run = async () => {
-        if (!source || source.key !== app.source?.key) return null;
         try {
+            requireScope(source);
             const result = await operation(wireSource(source));
             if (result?.bucket && source.key === app.source?.key) {
                 app.ticket += 1;
@@ -397,14 +421,13 @@ function change(operation, fallback) {
     return next;
 }
 
-async function ensureSession() {
-    const session = activeSession();
-    if (session) return session;
-    const result = await change(source => api.createSession(source, {
-        assistant: app.assistant,
-        gender: getAssistantGender(app.assistant),
-    }), t`Scratchpad could not start a session.`);
-    return result ? activeSession() : null;
+async function ensureSession(source) {
+    const result = await change(wire => activeSession() ? { bucket: app.bucket } : api.createSession(wire, {
+        assistant: app.assistant, gender: getAssistantGender(app.assistant),
+    }), t`Scratchpad could not start a session.`, source);
+    if (!result) return null;
+    requireScope(source);
+    return activeSession();
 }
 
 /**
@@ -412,14 +435,21 @@ async function ensureSession() {
  * queue, so quick clicks build on each other instead of on a stale copy.
  */
 async function updateSettings(patch, { rerenderContext = false } = {}) {
-    const session = await ensureSession();
-    if (!session) return;
-    await change(source => {
-        const latest = activeSession()?.settings ?? session.settings;
+    const source = app.source;
+    const sessionId = activeSession()?.id;
+    await change(async wire => {
+        if (!activeSession()) {
+            const result = await api.createSession(wire, { assistant: app.assistant, gender: getAssistantGender(app.assistant) });
+            requireScope(source);
+            applyBucket(result.bucket);
+        }
+        const session = app.bucket.sessions.find(item => item.id === (sessionId || activeSession()?.id));
+        if (!session) throw new Error(t`This Scratchpad session is no longer available.`);
+        const latest = session.settings;
         const settings = typeof patch === 'function' ? patch(latest) : patch;
-        return api.updateSession(source, session.id, { settings });
-    }, t`Scratchpad could not save that setting.`);
-    if (rerenderContext) renderContext({ force: true });
+        return api.updateSession(wire, session.id, { settings });
+    }, t`Scratchpad could not save that setting.`, source);
+    if (rerenderContext && source?.key === app.source?.key) renderContext();
 }
 
 /* Replies */
@@ -487,7 +517,9 @@ async function send({ regenerate = '' } = {}) {
         toastr.warning(t`Open the chat this Scratchpad belongs to before sending.`);
         return;
     }
-    const text = regenerate ? '' : app.el.composer.value.trim();
+    const draft = app.el.composer.value;
+    const initialSessionId = activeSession()?.id;
+    const text = regenerate ? '' : draft.trim();
     if (!regenerate && !text) {
         app.el.composer.focus();
         return;
@@ -495,15 +527,25 @@ async function send({ regenerate = '' } = {}) {
     app.sending = true;
     renderComposer();
     try {
-        const session = await ensureSession();
+        await app.queue;
+        requireScope(source, initialSessionId);
+        const session = await ensureSession(source);
         if (!session) return;
+        const draftKey = app.draftKey;
+        const snapshot = JSON.stringify(session);
         const settings = session.settings;
+        const chatProfileId = sourceConnectionProfile(source);
         const lastUser = [...session.messages].reverse().find(item => item.role === 'user');
         const query = regenerate ? (lastUser?.text ?? '') : text;
         const context = await buildContext({ source, settings, pendingText: query, sessionText: sessionText(session) });
         const help = await buildHelp({ assistant: session.assistant, gender: session.gender, text: query });
-        const acknowledgement = settings.connection?.kind === 'profile' ? undefined : await acknowledge();
-        const names = sourceCharacters(source).map(item => item.name).filter(Boolean).join(', ');
+        requireScope(source, session.id);
+        const acknowledgement = settings.connection?.kind === 'profile' || chatProfileId ? undefined : await acknowledge();
+        await app.queue;
+        requireScope(source, session.id);
+        if (JSON.stringify(activeSession()) !== snapshot || sourceConnectionProfile(source) !== chatProfileId) {
+            throw new Error(t`The Scratchpad settings or messages changed. Try sending again.`);
+        }
         const result = await api.sendReply({
             submissionKey: api.newSubmissionKey(),
             source: wireSource(source),
@@ -513,13 +555,19 @@ async function send({ regenerate = '' } = {}) {
             context: context.text,
             help,
             capabilities: context.capabilities,
-            names: { user: name1, character: names },
+            names: context.names,
+            chatProfileId,
             acknowledgement,
         });
-        if (!regenerate) app.el.composer.value = '';
-        app.ticket += 1;
-        applyBucket(result.bucket);
-        scrollMessages(true);
+        if (!regenerate) {
+            if ((app.draftKey === draftKey || (source.key === app.source?.key && activeSession()?.id === session.id)) && app.el.composer.value === draft) app.el.composer.value = '';
+            else if (app.drafts.get(draftKey) === draft) app.drafts.set(draftKey, '');
+        }
+        if (source.key === app.source?.key && activeSession()?.id === session.id) {
+            app.ticket += 1;
+            applyBucket(result.bucket);
+            scrollMessages(true);
+        }
     } catch (error) {
         reportError(error, t`Scratchpad could not send that.`);
     } finally {
@@ -532,7 +580,7 @@ async function stopReply() {
     const pending = pendingReply();
     if (!pending?.jobId) return;
     try {
-        await api.cancelReply(pending.jobId);
+        if (!await api.cancelReply(pending.jobId)) throw new Error(t`Scratchpad could not stop the reply. Try again.`);
     } catch (error) {
         reportError(error, t`Scratchpad could not stop the reply.`);
     }
@@ -717,7 +765,7 @@ function renderMessage(session, message, { latest }) {
     });
     const author = assistant
         ? h('div', { class: 'scratchpad-author' }, h('img', { src: getAssistantIconSrc(assistant.id), alt: '', width: 24, height: 24 }), h('span', { text: assistant.name }))
-        : h('div', { class: 'scratchpad-author' }, h('span', { text: name1 || t`You` }));
+        : h('div', { class: 'scratchpad-author' }, h('span', { text: sourceUserName(app.source) || t`You` }));
     article.append(author);
 
     if (app.editing === message.id) {
@@ -790,14 +838,16 @@ function renderChangeCard(session, message, part) {
     return card;
 }
 
-function markChange(session, message, index, state) {
-    return change(source => api.markProposal(source, session.id, message.id, index, state), t`Scratchpad could not update that suggestion.`);
+function markChange(session, message, index, state, source = app.source) {
+    return change(wire => api.markProposal(wire, session.id, message.id, index, state), t`Scratchpad could not update that suggestion.`, source);
 }
 
 async function reviewChange(session, message, part) {
+    const source = app.source;
     let plan;
     try {
-        plan = await prepareChange(part.change, app.source);
+        plan = await prepareChange(part.change, source);
+        requireScope(source, session.id);
     } catch (error) {
         reportError(error, t`That change cannot be reviewed right now.`);
         return;
@@ -822,13 +872,14 @@ async function reviewChange(session, message, part) {
     });
     if (result !== POPUP_RESULT.AFFIRMATIVE) return;
     try {
+        requireScope(source, session.id);
         await plan.commit(editor ? editor.value : plan.after);
     } catch (error) {
         reportError(error, t`That change could not be saved.`);
         return;
     }
     toastr.success(t`Change saved.`);
-    await markChange(session, message, part.index, 'applied');
+    await markChange(session, message, part.index, 'applied', source);
 }
 
 function replyDraft(text) {
@@ -858,9 +909,10 @@ async function copyMessage(message) {
 }
 
 async function removeMessage(session, message) {
+    const scope = app.source;
     const ok = await callGenericPopup(t`Delete this Scratchpad message? The story is not affected.`, POPUP_TYPE.CONFIRM, '', { okButton: t`Delete`, cancelButton: t`Keep` });
     if (ok !== POPUP_RESULT.AFFIRMATIVE) return;
-    await change(source => api.deleteMessage(source, session.id, message.id), t`Scratchpad could not delete that message.`);
+    await change(source => api.deleteMessage(source, session.id, message.id), t`Scratchpad could not delete that message.`, scope);
 }
 
 function renderMessageActions(session, message, { latest }) {
@@ -902,10 +954,11 @@ function renderEditor(session, message) {
 }
 
 function renderComposer() {
+    syncDraft();
     const el = app.el;
     const pending = pendingReply();
-    const disabled = !app.source || app.sending;
-    el.composer.disabled = !app.source;
+    const disabled = !app.source || !app.bucket || app.sending;
+    el.composer.disabled = !app.source || !app.bucket;
     el.send.disabled = disabled && !pending;
     el.send.querySelector('span').textContent = pending ? t`Stop` : (app.sending ? t`Sending...` : t`Send`);
     el.send.querySelector('i').className = `fa-solid ${pending ? 'fa-stop' : 'fa-paper-plane'}`;
@@ -1034,8 +1087,9 @@ function renderLore(settings) {
     const list = h('div', { class: 'scratchpad-lore' }, h('p', { class: 'scratchpad-muted', text: t`Loading lorebook entries...` }));
     section.append(list);
     const key = app.contextKey;
-    const scanText = sourceMessages(app.source).slice(-5).map(item => item.text).join('\n');
-    collectLore({ settings, scanText }).then(lore => {
+    const source = app.source;
+    const scanText = loreScanText({ source, settings, pendingText: app.el.composer.value, sessionText: sessionText(activeSession()) });
+    collectLore({ source, settings, scanText }).then(lore => {
         if (key !== app.contextKey || !list.isConnected) return;
         clear(list);
         if (!lore.entries.length) {
@@ -1087,7 +1141,10 @@ function renderPreview() {
         clear(output);
         output.append(h('p', { class: 'scratchpad-muted', text: t`Building the preview...` }));
         try {
-            const context = await buildContext({ source: app.source, settings: currentSettings(), sessionText: sessionText(activeSession()) });
+            const source = app.source;
+            await app.queue;
+            requireScope(source);
+            const context = await buildContext({ source, settings: currentSettings(), pendingText: app.el.composer.value, sessionText: sessionText(activeSession()) });
             const tokens = await estimateTokens(context.text);
             clear(output);
             append(output, [
@@ -1132,21 +1189,24 @@ async function newSession(temporary) {
 }
 
 async function renameSession(session) {
+    const scope = app.source;
     const name = await callGenericPopup(`<h3>${t`New name:`}</h3>`, POPUP_TYPE.INPUT, session.name);
     if (!name || !String(name).trim()) return;
-    await change(source => api.updateSession(source, session.id, { name: String(name).trim() }), t`Scratchpad could not rename that session.`);
+    await change(source => api.updateSession(source, session.id, { name: String(name).trim() }), t`Scratchpad could not rename that session.`, scope);
 }
 
 async function clearSessionMessages(session) {
+    const scope = app.source;
     const ok = await callGenericPopup(t`Clear every message in '${session.name}'? Its context settings stay.`, POPUP_TYPE.CONFIRM, '', { okButton: t`Clear`, cancelButton: t`Keep` });
     if (ok !== POPUP_RESULT.AFFIRMATIVE) return;
-    await change(source => api.clearSession(source, session.id), t`Scratchpad could not clear that session.`);
+    await change(source => api.clearSession(source, session.id), t`Scratchpad could not clear that session.`, scope);
 }
 
 async function removeSession(session) {
+    const scope = app.source;
     const ok = await callGenericPopup(t`Delete '${session.name}'? This cannot be undone. The story is not affected.`, POPUP_TYPE.CONFIRM, '', { okButton: t`Delete`, cancelButton: t`Keep` });
     if (ok !== POPUP_RESULT.AFFIRMATIVE) return;
-    await change(source => api.deleteSession(source, session.id), t`Scratchpad could not delete that session.`);
+    await change(source => api.deleteSession(source, session.id), t`Scratchpad could not delete that session.`, scope);
 }
 
 function exportSession(session) {
@@ -1172,6 +1232,7 @@ function exportSession(session) {
 }
 
 function importSessionFile() {
+    const scope = app.source;
     const input = h('input', { type: 'file', accept: '.json,application/json', hidden: true });
     input.addEventListener('change', async () => {
         const file = input.files?.[0];
@@ -1180,7 +1241,7 @@ function importSessionFile() {
         try {
             const parsed = JSON.parse(await file.text());
             if (parsed?.format !== 'neconyan-scratchpad' || !parsed.session) throw new Error(t`That file is not a Scratchpad export.`);
-            await change(source => api.importSession(source, parsed.session), t`Scratchpad could not import that session.`);
+            await change(source => api.importSession(source, parsed.session), t`Scratchpad could not import that session.`, scope);
             selectTab('chat');
         } catch (error) {
             reportError(error, t`That file could not be imported.`);
@@ -1273,8 +1334,9 @@ export async function openScratchpad({ tab = '' } = {}) {
         await reload();
     } else {
         app.source = next;
+        app.contextKey = '';
         render();
-        syncWatchers();
+        await reload();
     }
     clearInterval(app.timer);
     app.timer = setInterval(checkSource, SOURCE_POLL_MS);

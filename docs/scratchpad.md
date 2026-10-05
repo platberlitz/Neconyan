@@ -77,6 +77,5 @@ Sessions are saved on the server under your account, separately from the chat it
 ## Limits and known gaps
 
 - Message changes only work in Roleplay chats.
-- In Conversation mode the lorebook list comes from the lorebooks Neconyan has active for the character selected in Roleplay, which may not match the Conversation character.
 - Scratchpad shares what you choose in the Context tab and nothing else. It does not read Notes, Mewmory or Companion notes.
 - A reply that is still being written keeps its session busy. Press **Stop** if it seems stuck.

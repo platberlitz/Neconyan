@@ -47,8 +47,11 @@ function text(value, limit = 200_000) {
 }
 
 function messageNumber(value) {
-    const number = Number(String(value ?? '').replace(/^#/, '').trim());
-    return Number.isInteger(number) && number >= 0 ? number : null;
+    if (typeof value !== 'number' && typeof value !== 'string') return null;
+    const target = String(value).trim().replace(/^#/, '');
+    if (!/^\d+$/.test(target)) return null;
+    const number = Number(target);
+    return Number.isSafeInteger(number) && number >= 0 ? number : null;
 }
 
 export function stringList(value) {
@@ -96,11 +99,11 @@ export function normaliseChange(value) {
         const character = text(value.character, 200).trim();
         const field = String(value.field ?? '');
         if (!character) fail('This character change does not say which character.');
-        if (field in TEXT_FIELDS) {
+        if (Object.hasOwn(TEXT_FIELDS, field)) {
             if (typeof value.value !== 'string') fail('This character change has no new text.');
             return { type: 'character', character, field, value: text(value.value), reason };
         }
-        if (field in LIST_FIELDS) {
+        if (Object.hasOwn(LIST_FIELDS, field)) {
             const list = Array.isArray(value.value)
                 ? value.value.map(item => String(item ?? '')).filter(item => item.trim())
                 : field === 'tags' ? stringList(value.value) : String(value.value ?? '').split(/\n\s*---\s*\n/).filter(item => item.trim());

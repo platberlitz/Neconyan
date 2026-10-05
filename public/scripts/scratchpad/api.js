@@ -2,6 +2,8 @@ import { getRequestHeaders } from '../../script.js';
 import { getCurrentUserHandle } from '../user.js';
 
 const BASE = '/api/scratchpad';
+const unconfirmedSends = new Map();
+const MAX_UNCONFIRMED_SENDS = 32;
 
 export class ScratchpadRequestError extends Error {
     constructor(message, { status = 0, code = '', network = false } = {}) {
@@ -60,7 +62,32 @@ export const clearSession = (source, sessionId) => post('/session/clear', { sour
 export const updateMessage = (source, sessionId, messageId, text) => post('/message/update', { source, sessionId, messageId, text });
 export const deleteMessage = (source, sessionId, messageId) => post('/message/delete', { source, sessionId, messageId });
 export const markProposal = (source, sessionId, messageId, index, state) => post('/proposal/mark', { source, sessionId, messageId, index, state });
-export const sendReply = body => post('/send', body);
+/** Retry an uncertain acceptance with its original identity and context. */
+export async function sendReply(body) {
+    const key = JSON.stringify([getCurrentUserHandle(), body.source?.kind, body.source?.key, body.sessionId, body.regenerate || '', body.text || '']);
+    let request = unconfirmedSends.get(key);
+    if (!request) {
+        if (unconfirmedSends.size >= MAX_UNCONFIRMED_SENDS) {
+            throw new ScratchpadRequestError('Several replies could not be confirmed. Reload the page and check those sessions before sending more.');
+        }
+        request = structuredClone(body);
+        unconfirmedSends.set(key, request);
+    }
+    const forget = () => {
+        if (unconfirmedSends.get(key) === request) unconfirmedSends.delete(key);
+    };
+    try {
+        const result = await post('/send', request);
+        if (!result?.job?.id || !result?.bucket) {
+            throw new ScratchpadRequestError('Scratchpad could not confirm the reply. Try sending again to check the original request.', { network: true });
+        }
+        forget();
+        return result;
+    } catch (error) {
+        if (error.status >= 400 && error.status < 500) forget();
+        throw error;
+    }
+}
 
 export async function cancelReply(jobId) {
     const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, {

@@ -22,7 +22,7 @@ import { getMessageTimeStamp } from '../RossAscends-mods.js';
 import { getNameAndAvatarForMessage } from '../slash-commands.js';
 import { createWorldInfoEntry, deleteWorldInfoEntry, loadWorldInfo, saveWorldInfo, updateWorldInfoList, world_names } from '../world-info.js';
 import { isCurrentSource, sourceCharacters } from './context.js';
-import { LIST_FIELDS, TEXT_FIELDS, TOP_LEVEL_FIELDS, fail, formatEntry, formatField, parseEntry, parseField, stringList } from './proposals.js';
+import { LIST_FIELDS, TEXT_FIELDS, TOP_LEVEL_FIELDS, fail, formatEntry, formatField, normaliseChange, parseEntry, parseField, stringList } from './proposals.js';
 
 function entryView(entry) {
     return {
@@ -53,8 +53,19 @@ function conflict() {
     fail('This changed while the review was open, so nothing was saved. Ask again to get a fresh suggestion.');
 }
 
-async function lorebookPlan(change) {
+function requireSource(source) {
+    if (!isCurrentSource(source)) conflict();
+}
+
+async function saveBook(book, data, source) {
+    requireSource(source);
+    const saved = await saveWorldInfo(book, data, true);
+    if (!saved) fail('The lorebook change was not saved. Review it again before retrying.');
+}
+
+async function lorebookPlan(change, source) {
     const data = await readBook(change.book);
+    requireSource(source);
     if (change.action === 'add') {
         const after = { title: change.title, keys: change.keys, content: change.content, constant: change.constant };
         return {
@@ -65,11 +76,12 @@ async function lorebookPlan(change) {
             editable: true,
             async commit(edited) {
                 const fresh = await readBook(change.book);
+                requireSource(source);
                 const entry = createWorldInfoEntry(change.book, fresh);
                 if (!entry) fail('A new entry could not be added to this lorebook.');
                 const value = parseEntry(edited, after);
                 Object.assign(entry, { comment: value.title, key: value.keys, content: value.content, constant: value.constant });
-                await saveWorldInfo(change.book, fresh, true);
+                await saveBook(change.book, fresh, source);
             },
         };
     }
@@ -84,9 +96,10 @@ async function lorebookPlan(change) {
             editable: false,
             async commit() {
                 const fresh = await readBook(change.book);
+                requireSource(source);
                 if (formatEntry(entryView(readEntry(fresh, change))) !== before) conflict();
                 await deleteWorldInfoEntry(fresh, change.uid, { silent: true });
-                await saveWorldInfo(change.book, fresh, true);
+                await saveBook(change.book, fresh, source);
             },
         };
     }
@@ -104,11 +117,12 @@ async function lorebookPlan(change) {
         editable: true,
         async commit(edited) {
             const fresh = await readBook(change.book);
+            requireSource(source);
             const entry = readEntry(fresh, change);
             if (formatEntry(entryView(entry)) !== before) conflict();
             const value = parseEntry(edited, proposed);
             Object.assign(entry, { comment: value.title, key: value.keys, content: value.content, constant: value.constant });
-            await saveWorldInfo(change.book, fresh, true);
+            await saveBook(change.book, fresh, source);
         },
     };
 }
@@ -128,9 +142,16 @@ function findCharacter(source, name) {
     return match;
 }
 
-function characterPlan(change, source) {
-    const character = findCharacter(source, change.character);
-    const avatar = character.avatar;
+async function characterPlan(change, source) {
+    const avatar = findCharacter(source, change.character).avatar;
+    const snapshot = await fetch('/api/characters/get', {
+        method: 'POST', headers: getRequestHeaders(), body: JSON.stringify({ avatar_url: avatar, with_revision: true }),
+    });
+    if (!snapshot.ok) fail('This character could not be read.');
+    const revision = snapshot.headers.get('X-Character-Revision');
+    if (!/^[a-f0-9]{64}$/.test(revision ?? '')) fail('The character revision could not be checked. Reload the page and try again.');
+    const character = await snapshot.json();
+    requireSource(source);
     const before = formatField(change.field, readCharacterField(character, change.field));
     return {
         target: character.name,
@@ -140,11 +161,9 @@ function characterPlan(change, source) {
         editable: true,
         hint: change.field === 'alternate_greetings' ? 'Separate greetings with a line containing only ---.' : change.field === 'tags' ? 'Separate tags with commas.' : '',
         async commit(edited) {
-            const live = characters.find(item => item?.avatar === avatar);
-            if (!live) fail('This character is no longer available.');
-            if (formatField(change.field, readCharacterField(live, change.field)) !== before) conflict();
+            requireSource(source);
             const value = parseField(change.field, edited);
-            const body = { avatar, data: { [change.field]: value } };
+            const body = { avatar, expected_revision: revision, data: { [change.field]: value } };
             if (TOP_LEVEL_FIELDS[change.field]) body[TOP_LEVEL_FIELDS[change.field]] = value;
             const response = await fetch('/api/characters/merge-attributes', {
                 method: 'POST',
@@ -152,6 +171,7 @@ function characterPlan(change, source) {
                 body: JSON.stringify(body),
             });
             if (!response.ok) {
+                if (response.status === 409) conflict();
                 const payload = await response.json().catch(() => ({}));
                 fail(payload?.message || 'The character could not be saved.');
             }
@@ -175,6 +195,13 @@ function requireMessage(index) {
     const message = chat[index];
     if (!message) fail(`Message #${index} is no longer in this chat.`);
     return message;
+}
+
+async function saveMessages(source, options = {}) {
+    requireSource(source);
+    if (await saveChatConditional({ ...options, throwOnError: true }) !== true) {
+        fail('The message change was not saved. Review it again before retrying.');
+    }
 }
 
 function buildInsertedMessage(change, source, edited) {
@@ -216,7 +243,8 @@ function chatPlan(change, source) {
                 const message = buildInsertedMessage(change, source, edited);
                 chat_metadata.tainted = true;
                 chat.splice(change.after + 1, 0, message);
-                await saveChatConditional();
+                await saveMessages(source);
+                requireSource(source);
                 await reloadCurrentChat();
             },
         };
@@ -237,9 +265,12 @@ function chatPlan(change, source) {
                 live.mes = edited;
                 syncMesToSwipe(change.message);
                 await eventSource.emit(event_types.MESSAGE_EDITED, change.message);
+                if (!isCurrentSource(source) || chat[change.message] !== live) conflict();
                 await updateMessageBlock(change.message, live);
+                if (!isCurrentSource(source) || chat[change.message] !== live) conflict();
                 await eventSource.emit(event_types.MESSAGE_UPDATED, change.message);
-                await saveChatConditional();
+                if (chat[change.message] !== live) conflict();
+                await saveMessages(source);
             },
         };
     }
@@ -253,7 +284,9 @@ function chatPlan(change, source) {
             editable: false,
             async commit() {
                 if (!isCurrentSource(source) || messageSnapshot(change.message) !== before) conflict();
-                await hideChatMessageRange(change.message, change.message, unhide);
+                if (!await hideChatMessageRange(change.message, change.message, unhide)) {
+                    fail('The message visibility change was not saved. Review it again before retrying.');
+                }
             },
         };
     }
@@ -265,7 +298,11 @@ function chatPlan(change, source) {
         editable: false,
         async commit() {
             if (!isCurrentSource(source) || messageSnapshot(change.message) !== before) conflict();
+            const live = requireMessage(change.message);
             await deleteMessage(change.message, undefined, false);
+            requireSource(source);
+            if (chat.includes(live)) fail('The message deletion was not saved. Review it again before retrying.');
+            await saveMessages(source, { allowShrink: true });
         },
     };
 }
@@ -276,7 +313,8 @@ function chatPlan(change, source) {
  */
 export async function prepareChange(change, source) {
     if (!isCurrentSource(source)) fail('Open the chat this Scratchpad belongs to before applying changes.');
-    if (change.type === 'lorebook') return lorebookPlan(change);
+    change = normaliseChange(change);
+    if (change.type === 'lorebook') return lorebookPlan(change, source);
     if (change.type === 'character') return characterPlan(change, source);
     return chatPlan(change, source);
 }
