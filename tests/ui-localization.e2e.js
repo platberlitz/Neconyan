@@ -48,6 +48,25 @@ test('interface text is localised everywhere except user-authored content', asyn
     });
 });
 
+test('regex script names, chat names and group member names stay as the user wrote them', async ({ page }) => {
+    const source = await readFile(new URL('../public/scripts/ui-localization.js', import.meta.url), 'utf8');
+    await page.setContent(`
+        <main id="root">
+            <div class="regex_script_name" title="Close the door">Close the door</div>
+            <span class="chat_name">Home</span>
+            <label><input type="checkbox"><span class="sb-conversation-group-member-name">Open Sesame</span></label>
+            <p>Home</p>
+        </main>`);
+    await page.addScriptTag({ type: 'module', content: `${source}\nwindow.localizeControls = localizeControls;` });
+    await page.waitForFunction(() => typeof window.localizeControls === 'function');
+    const result = await page.evaluate(() => {
+        window.localizeControls(document.getElementById('root'), { 'Close ${0}': 'Fechar ${0}', 'Open ${0}': 'Abrir ${0}', Home: 'Início' });
+        const script = document.querySelector('.regex_script_name');
+        return [script.textContent, script.title, ...['.chat_name', '.sb-conversation-group-member-name', 'p'].map(selector => document.querySelector(selector).textContent)];
+    });
+    expect(result).toEqual(['Close the door', 'Close the door', 'Home', 'Open Sesame', 'Início']);
+});
+
 test('captions filled in before the locale loaded still match their template keys', async ({ page }) => {
     const source = await readFile(new URL('../public/scripts/ui-localization.js', import.meta.url), 'utf8');
     await page.setContent(`

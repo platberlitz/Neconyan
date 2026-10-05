@@ -3,8 +3,9 @@ const userText = [
     '[data-i18n-ignore]', '[translate="no"]', '.notranslate', '[contenteditable="true"]',
     'script', 'style', 'pre', 'code', 'textarea',
     '#chat .mes', '.mes_text', '.mes_reasoning', '.sb-conversation-message', '.sb-conversation-message-text',
-    '.ch_name', '.name_text', '.characterName', '.chatName', '.chatMessage', '.tag', '.tag_name',
+    '.ch_name', '.name_text', '.characterName', '.chatName', '.chat_name', '.chatMessage', '.tag', '.tag_name', '.regex_script_name',
     '.persona_name', '#persona_selected_name', '.sb-persona-option-name', '.sb-conversation-persona-option-name', '.sb-conversation-reply-name',
+    '.sb-conversation-group-member-name',
     '.sb-chat-file-preview', '.sb-conversation-file-name', '.sb-import-file-name',
 ].join(',');
 const attributes = ['title', 'placeholder', 'aria-label'];
