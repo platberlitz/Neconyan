@@ -416,6 +416,7 @@ describe('mobile shell lifecycle wiring', () => {
             ['#top-bar', '.sb-topbar-group-left'],
             ['#sheld', '.sb-conversation-channel-tabs'],
             ['#sheld', '.sb-conversation-quick-actions'],
+            ['#neconyan-scratchpad', '.scratchpad-quick'],
             ['#right-nav-panel', '.sb-character-create-bar'],
             ['#right-nav-panel', '#HotSwapWrapper .hotswap'],
             ['#right-nav-panel', '#right-nav-panel .rm_tag_controls'],

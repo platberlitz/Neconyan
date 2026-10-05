@@ -890,7 +890,7 @@ async function writeCharacterData(inputFile, data, outputFile, request, crop = u
         }
         return true;
     } catch (err) {
-        if (request[importCreatesCard] !== undefined && String(err?.code).startsWith('ROLEPLAY_')) throw err;
+        if ((request[importCreatesCard] !== undefined || request.body?.expected_revision !== undefined) && String(err?.code).startsWith('ROLEPLAY_')) throw err;
         console.error(err);
         return false;
     }
@@ -943,6 +943,7 @@ async function mergeCharacterUpdate(avatarPath, avatar, updateData, request, sho
     const update = structuredClone(updateData);
     _.unset(update, 'json_data');
     _.unset(update, 'avatar');
+    _.unset(update, 'expected_revision');
     _.unset(character, 'json_data');
 
     const beforeMerge = structuredClone(character);
@@ -953,6 +954,9 @@ async function mergeCharacterUpdate(avatarPath, avatar, updateData, request, sho
     // Neconyan: writing re-encodes the whole PNG and drops the character caches,
     // so a merge that changed nothing must not touch the file.
     if (_.isEqual(character, beforeMerge)) {
+        if (request.body?.expected_revision !== undefined) {
+            withRoleplayAccount(characterBase(request), null, () => assertExpectedCardRevision(request, avatarPath));
+        }
         return { ok: true, unchanged: true };
     }
 
@@ -2285,6 +2289,7 @@ router.post('/merge-attributes', getFileNameValidationFunction('avatar'), async 
             response.status(400).send({ message: `Validation failed for ${update.avatar}`, error: result.error });
         }
     } catch (exception) {
+        if (exception?.roleplayWritePending || String(exception?.code).startsWith('ROLEPLAY_')) return sendCharacterRoleplayError(response, exception);
         response.status(500).send({ message: 'Unexpected error while saving character.', error: exception.toString() });
     }
 });
@@ -2525,6 +2530,19 @@ router.post('/get', validateAvatarUrlMiddleware, async function (request, respon
 
         if (!fs.existsSync(filePath)) {
             return response.sendStatus(404);
+        }
+
+        // A review needs the data and revision from the same bytes, without the browser or card caches.
+        if (request.body.with_revision === true) {
+            const snapshot = withRoleplayAccount(characterBase(request), null, () => {
+                recoverFileWriteSync(filePath);
+                const bytes = fs.readFileSync(filePath);
+                return {
+                    character: { ...getCharaCardV2(JSON.parse(read(bytes)), request.user.directories, false), avatar: item },
+                    revision: createHash('sha256').update(bytes).digest('hex'),
+                };
+            });
+            return response.set('X-Character-Revision', snapshot.revision).send(snapshot.character);
         }
 
         const data = await processCharacter(item, request.user.directories, { shallow: false });

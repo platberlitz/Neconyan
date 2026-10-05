@@ -415,6 +415,7 @@ export async function openNotes(options = {}) {
     if (!state.open) state.layout = options.layout ?? (prefs.layout === 'beside' ? 'beside' : 'full');
     if (options.layout) state.layout = options.layout;
     state.open = true;
+    globalThis.NeconyanScratchpad?.hide?.();
     app.elements.root.hidden = false;
     if (isPhone()) globalThis.NeconyanShell?.closeWorkspace?.();
     if (!state.unsubscribe) state.unsubscribe = subscribeNotes(onRemoteChange);
