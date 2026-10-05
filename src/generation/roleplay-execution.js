@@ -40,7 +40,7 @@ import { prepareRoleplayAgentContributions, runRoleplayAgentInterceptors, runRol
 import { runRoleplayCompanions } from './roleplay-companions.js';
 import { createProviderScope } from '../jobs/artifacts.js';
 import { stageBoundModelToolCalls } from './roleplay-tool-dispatch.js';
-import { publishRoleplayPreview } from './roleplay-preview.js';
+import { createRoleplayStreamPreview, publishRoleplayPreview } from './roleplay-preview.js';
 import { applyRoleplayVectorFiles, prepareRoleplayVectors } from './roleplay-vectors.js';
 import { prepareRoleplayNoteContext, prepareRoleplayNotebooks } from '../notebooks/context.js';
 
@@ -79,10 +79,16 @@ function replyOutput(result, effect, name, material) {
     if (typeof signature === 'string' && Buffer.byteLength(signature) > MAX_REPLY_BYTES) {
         throw roleplayError('ROLEPLAY_INVALID', 'The generated Roleplay signature is too large.', 502);
     }
-    const extra = { ...(typeof reasoning === 'string' && reasoning ? { reasoning } : {}), ...(signature ? { reasoning_signature: signature } : {}) };
-    if (effect === 'append') return { message: { name, is_user: false, mes: text, extra } };
-    if (effect === 'replace') return { messages: [{ name, is_user: false, mes: text, extra }] };
-    return { text, extra };
+    const extra = { ...(typeof reasoning === 'string' && reasoning ? { reasoning } : {}), ...(signature ? { reasoning_signature: signature } : {}),
+        ...(material?.model ? { model: material.model } : {}), ...(material?.source ? { api: material.source } : {}) };
+    const timing = material?.gen_started && material?.gen_finished
+        ? { gen_started: material.gen_started, gen_finished: material.gen_finished } : {};
+    if (reasoning && timing.gen_started) {
+        extra.reasoning_duration = material.reasoning_duration ?? Math.max(0, Date.parse(timing.gen_finished) - Date.parse(timing.gen_started));
+    }
+    if (effect === 'append') return { message: { name, is_user: false, mes: text, extra, ...timing } };
+    if (effect === 'replace') return { messages: [{ name, is_user: false, mes: text, extra, ...timing }] };
+    return { text, extra, ...timing };
 }
 
 /** A private worker for a fully admitted, paused Roleplay job; browser cutover is a later stage. */
@@ -142,7 +148,12 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             throw roleplayError('ROLEPLAY_TOOLS_PENDING', 'The saved provider result needs the native tool workflow before a reply can be written.', 409);
         }
         const output = replyOutput(result, effect, request.characterName, result.generation);
-        publishRoleplayPreview(context, { text: result.text, reasoning: output.extra?.reasoning ?? output.message?.extra?.reasoning ?? '', stage: 'agents' });
+        const reply = output.message ?? output.messages?.[0] ?? output;
+        const { count } = await getCounter(request.worldInfo?.tokenizer);
+        const publishTextPreview = (text, update) => publishRoleplayPreview(context, { ...update, text,
+            token_count: count(text), reasoning_tokens: count(reply.extra.reasoning ?? '') });
+        publishTextPreview(result.text, { reasoning: reply.extra.reasoning ?? '', generation: result.generation,
+            gen_started: reply.gen_started, reasoning_duration: reply.extra.reasoning_duration, reasoning_finished: true, stage: 'agents' });
         if (request.worldInfo?.captions?.persist) {
             const { hash, ...captions } = readArtifact(directories, job.id, 'roleplay-captions') ?? {};
             if (hash !== roleplayHash(captions) || !Array.isArray(captions.results)) {
@@ -201,7 +212,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 const shared = { ...context, providerScope: createProviderScope(context) };
                 const settled = await Promise.allSettled([
                     runRoleplayAgentPostprocessing(shared, { ...options, value: intercepted.value }).then(post => {
-                        publishRoleplayPreview(context, { text: post.text, inChatAgents: post.extra.inChatAgents, stage: 'companions' });
+                        publishTextPreview(post.text, { inChatAgents: post.extra.inChatAgents, stage: 'companions' });
                         return post;
                     }),
                     runRoleplayCompanions(shared, { ...options, effect, value: roleplayAgentOutputBaseline(intercepted.value, pre) }),
@@ -211,7 +222,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 [post, companions] = settled.map(item => item.value);
             } else {
                 post = await runRoleplayAgentPostprocessing(context, { ...options, value: intercepted.value });
-                publishRoleplayPreview(context, { text: post.text, inChatAgents: post.extra.inChatAgents, stage: 'companions' });
+                publishTextPreview(post.text, { inChatAgents: post.extra.inChatAgents, stage: 'companions' });
                 companions = await runRoleplayCompanions(context, { ...options, effect, value: post.text });
             }
             if (effect === 'continue') output.continuedText = post.text;
@@ -245,7 +256,13 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             output.timedBaseline = selection.timedBaseline;
             output.timedChatLength = request.worldInfo.savedChatLength ?? selection.chatLength;
         }
-        publishRoleplayPreview(context, { text: output.continuedText ?? output.text ?? output.message?.mes ?? output.messages?.[0]?.mes, stage: 'saving' });
+        const finalText = effect === 'continue'
+            ? output.continuedText ?? String(assertSource().records[source.message.index + 1].mes ?? '') + output.text
+            : reply.mes ?? output.text;
+        reply.extra.token_count = count(finalText);
+        if (reply.extra.reasoning) reply.extra.reasoning_tokens = count(reply.extra.reasoning);
+        publishRoleplayPreview(context, { text: finalText, token_count: reply.extra.token_count,
+            reasoning_tokens: reply.extra.reasoning_tokens, stage: 'saving' });
         if (job.type === 'roleplay.candidate') return saveCandidate('text', { output });
         writeArtifact(directories, job.id, 'roleplay-output', output);
         setJobResume(directories, job.id, 'roleplay-delivery');
@@ -868,8 +885,10 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         if (previous === undefined) writeArtifact(directories, job.id, 'roleplay-prompt', prepared);
     }
     publishRoleplayPreview(context, { stage: 'generating' });
-    const result = await generate({ context: base, jobContext: context, binding: request.binding, messages,
-        onStream: value => publishRoleplayPreview(context, { ...value, stage: 'generating' }),
+    const { count: countPreview } = await getCounter(request.worldInfo?.tokenizer);
+    const preview = createRoleplayStreamPreview(context, countPreview);
+    const result = await Promise.resolve().then(() => generate({ context: base, jobContext: context, binding: request.binding, messages,
+        onStream: preview.publish,
         maxTokens: request.maxTokens, userName, characterName: request.characterName,
         generationType: request.serverPrompt ? request.worldInfo.global.trigger : 'quiet',
         groupNames, macroEnvironment, preparedText, cfgValues, preparedMessages: Boolean(request.serverPrompt && countChat), functionTools,
@@ -899,7 +918,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             beforeDispatch();
         } : undefined,
         beforeDispatch,
-        modelOverride: request.modelOverride || '', overridePayload, stream: request.stream === true && !functionTools.length });
+        modelOverride: request.modelOverride || '', overridePayload, stream: request.stream === true && !functionTools.length })).finally(preview.stop);
     return finish(result, worldInfo);
 }
 

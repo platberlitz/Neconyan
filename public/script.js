@@ -4889,7 +4889,7 @@ function insertModelLabel(mes, extra) {
     }
 
     const icon = mes.find('.timestamp-icon').first();
-    $('<small class="timestamp-model"></small>').text(label).insertAfter(icon.length ? icon : mes.find('.timestamp'));
+    $('<small class="timestamp-model"></small>').text(label).insertAfter(icon.length ? icon : mes.find('.timestamp').first());
 }
 
 /**

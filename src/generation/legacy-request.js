@@ -26,7 +26,8 @@ async function pollHorde({ context, jobContext, key, taskId, cleanup, signal, fe
             if (typeof rawText !== 'string' || !rawText.trim()) fail('Horde completed without a text result.', 502);
             const text = cleanGeneratedText(removePartialStops(rawText, cleanup.stops), { power: cleanup.power, mainApi: 'koboldhorde',
                 name1: userName, name2: characterName, groupNames, trimNames, trimWrongNames: trimNames, displayIncompleteSentences: true });
-            const result = { response: { text: rawText }, text, generation: { backend: 'horde', source: 'koboldhorde', showThoughts: false } };
+            const result = { response: { text: rawText }, text, generation: { backend: 'horde', source: 'koboldhorde',
+                model: status.generations?.[0]?.model, showThoughts: false } };
             writeArtifact(context.directories, jobContext.job.id, 'horde-result:' + key, result);
             return result;
         }
@@ -204,7 +205,8 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
             name1: userName, name2: characterName, groupNames, trimNames: rawOptions.trimNames !== false,
             trimWrongNames: rawOptions.trimNames !== false, displayIncompleteSentences: true });
         if (!text) fail('No message generated.', 502);
-        return { response, text, generation: { backend: material.backend, source: material.source, showThoughts: false } };
+        return { response, text, generation: { backend: material.backend, source: material.source,
+            model: payload.model || material.profile?.model, showThoughts: false } };
     };
     if (jobContext) await onProviderStep?.('provider:' + key);
     return jobContext ? providerStep(jobContext, key, call) : call();

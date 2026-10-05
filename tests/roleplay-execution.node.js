@@ -119,6 +119,11 @@ test('a saved active Custom request runs through the real provider transport and
     await runRoleplayReplyJob(context, { generate });
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Real bound reply');
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).extra.reasoning, 'Private thought');
+    const extra = readRoleplayChat(f.scope, f.locator).records.at(-1).extra;
+    assert.equal(extra.model, 'fixture');
+    assert.equal(extra.api, 'custom');
+    assert.ok(extra.token_count > 0);
+    assert.ok(extra.reasoning_tokens > 0);
     assert.equal(calls, 1);
     const artifacts = path.join(f.scope.directories.root, 'jobs', 'artifacts');
     for (const entry of fs.readdirSync(artifacts, { recursive: true })) {
@@ -157,6 +162,7 @@ test('a bound custom request applies safe controls and refuses connection or aut
     });
     assert.equal(calls, 1);
     assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).mes, 'Bound answer');
+    assert.equal(readRoleplayChat(f.scope, f.locator).records.at(-1).extra.model, 'second-model');
 
     for (const overridePayload of [{ custom_include_headers: 'Authorization: Bearer private' },
         { chat_completion_source: 'openai' }, { api_server: 'https://other.invalid' }, { max_tokens: 9999 }]) {
@@ -190,7 +196,9 @@ test('a bound Custom stream completes before a Roleplay effect and refuses a tru
     const generate = options => runChatProfile({ ...options, fetch: async (_, config) => {
         assert.equal(JSON.parse(config.body).stream, true);
         return { ok: true, status: 200, statusText: 'OK', body: Readable.from((async function* () {
-            yield 'data: {"choices":[{"delta":{"reasoning_content":"Thought ","content":"Part "}}]}\n\n';
+            yield 'data: {"choices":[{"delta":{"reasoning_content":"Thought "}}]}\n\n';
+            await new Promise(resolve => setTimeout(resolve, 10));
+            yield 'data: {"choices":[{"delta":{"content":"Part "}}]}\n\n';
             await new Promise(resolve => setTimeout(resolve, 10));
             assert.equal(readRoleplayChat(f.scope, f.locator).records.length, f.records.length);
             yield 'data: {"choices":[{"delta":{"content":"two"},"finish_reason":"stop"}]}\n\n';
@@ -203,6 +211,12 @@ test('a bound Custom stream completes before a Roleplay effect and refuses a tru
     const last = readRoleplayChat(f.scope, f.locator).records.at(-1);
     assert.equal(last.mes, 'Part two');
     assert.equal(last.extra.reasoning, 'Thought ');
+    assert.ok(last.extra.reasoning_duration > 0);
+    assert.ok(last.extra.reasoning_duration < Date.parse(last.gen_finished) - Date.parse(last.gen_started));
+    assert.equal(last.extra.model, 'fixture');
+    assert.equal(last.extra.api, 'custom');
+    assert.ok(last.extra.token_count > 0);
+    assert.ok(last.extra.reasoning_tokens > 0);
     assert.equal(readArtifact(f.scope.directories, jobId, 'roleplay-output').message.mes, last.mes);
 });
 
@@ -313,11 +327,20 @@ test('a saved answer does not repeat provider work when the chat changes before 
 
 test('a swipe keeps reasoning with its selected version', async t => {
     const { f, context } = accepted(t, 'swipe', { message: 1 });
-    await runRoleplayReplyJob(context, { generate: async () => ({ text: 'Another', response: { content: [{ type: 'thinking', thinking: 'Why' }] } }) });
+    const timing = { gen_started: '2026-10-05T12:00:00.000Z', gen_finished: '2026-10-05T12:00:05.000Z' };
+    await runRoleplayReplyJob(context, { generate: async () => ({ text: 'Another',
+        response: { choices: [{ message: { reasoning_content: 'Why' } }] },
+        generation: { backend: 'chat', source: 'custom', model: 'thinking-model', showThoughts: true,
+            ...timing, reasoning_duration: 3000 } }) });
     const message = readRoleplayChat(f.scope, f.locator).records[2];
     assert.equal(message.swipe_id, 2);
     assert.equal(message.swipe_info[2].extra.reasoning, 'Why');
     assert.equal(message.extra.reasoning, 'Why');
+    for (const version of [message, message.swipe_info[2]]) {
+        assert.equal(version.extra.reasoning_duration, 3000);
+        assert.equal(version.gen_started, timing.gen_started);
+        assert.equal(version.gen_finished, timing.gen_finished);
+    }
 });
 
 test('a result larger than the saved message limit is refused without modifying the chat', async t => {

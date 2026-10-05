@@ -1,4 +1,5 @@
 import { chat as messages, getRequestHeaders, getThumbnailUrl, updateMessageElement } from '../../script.js';
+import { beginRoleplayReplacement } from './roleplay-replacement.js';
 
 const labels = {
     preparing: 'Preparing reply…', generating: 'Writing reply…', agents: 'Running Agents…',
@@ -7,21 +8,27 @@ const labels = {
 };
 
 /** Display only: partial output never enters the chat array or a chat save. */
-export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal }) {
+export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, name, messageIndex }) {
     const controller = new AbortController();
     let node = null;
     let latest = null;
+    let receivedAt = 0;
     let rendered = null;
     let childId = null;
     let startedAt = null;
     let stopped = false;
+    let restoreReplacement = () => {};
     const remove = () => { node?.remove(); node = null; rendered = null; };
     const render = () => {
-        if (!isCurrent()) { remove(); return; }
+        if (!isCurrent()) { remove(); restoreReplacement(); return; }
         if (!latest) return;
         const chat = document.querySelector('#chat');
         if (!chat) return;
-        if (node?.isConnected && latest === rendered) return;
+        if (!chat.querySelector('[data-roleplay-replacement]')) {
+            restoreReplacement = beginRoleplayReplacement(name, messageIndex, isCurrent);
+        }
+        const thinking = latest.stage === 'generating' && latest.reasoning && !latest.reasoning_finished;
+        if (node?.isConnected && latest === rendered && !thinking) return;
         const nearBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 120;
         if (childId !== latest.childId) {
             remove();
@@ -30,12 +37,17 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal }
         }
         const reasoningDetails = node?.querySelector('.mes_reasoning_details');
         const message = { name: latest.name || 'Reply', is_user: false, is_system: false,
-            mes: latest.text || '', send_date: startedAt, gen_started: startedAt,
+            mes: latest.text || '', send_date: startedAt, gen_started: latest.gen_started || startedAt,
             original_avatar: latest.avatar,
             force_avatar: latest.avatar ? getThumbnailUrl('avatar', latest.avatar) : undefined,
             extra: { reasoning: latest.reasoning || '', inChatAgents: latest.inChatAgents,
+                api: latest.generation?.source, model: latest.generation?.model,
+                token_count: latest.token_count, reasoning_tokens: latest.reasoning_tokens,
+                reasoning_duration: typeof latest.reasoning_duration === 'number'
+                    ? latest.reasoning_duration + (thinking ? Math.max(0, Date.now() - receivedAt) : 0) : undefined,
                 ...(reasoningDetails && node.classList.contains('reasoning') ? { reasoning_collapsed: !reasoningDetails.open } : {}) } };
-        const messageElement = updateMessageElement(message, { messageId: messages.length, isPreview: true,
+        const replacement = chat.querySelector('[data-roleplay-replacement]');
+        const messageElement = updateMessageElement(message, { messageId: replacement ? Number(replacement.dataset.roleplayReplacement) : messages.length, isPreview: true,
             ...(node?.isConnected ? { messageElement: globalThis.jQuery(node) } : {}) });
         if (!node?.isConnected) {
             node = messageElement[0];
@@ -46,7 +58,8 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal }
             status.className = 'timestamp';
             status.setAttribute('role', 'status');
             node.querySelector('.name_text').parentElement.append(status);
-            chat.append(node);
+            if (replacement) replacement.before(node);
+            else chat.append(node);
         }
         node.querySelector('[role="status"]').textContent = labels[latest.stage] || labels.preparing;
         rendered = latest;
@@ -77,7 +90,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal }
                             const value = JSON.parse(event.slice(6));
                             // Use the regular display formatter at a bounded cadence, rather
                             // than rebuilding a growing Markdown message for every token.
-                            if (value.preview) { latest = value.preview; if (!node) render(); }
+                            if (value.preview) { latest = value.preview; receivedAt = Date.now(); if (!node) render(); }
                             if (value.state) { onTerminal(value); return; }
                         }
                     }
@@ -87,5 +100,5 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal }
         }
     };
     void run();
-    return () => { stopped = true; controller.abort(); clearInterval(timer); remove(); };
+    return () => { stopped = true; controller.abort(); clearInterval(timer); remove(); restoreReplacement(); };
 }

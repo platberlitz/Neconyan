@@ -144,6 +144,8 @@ function effectRecords(records, source, effect, output, request, job, directorie
     }
     if (typeof output?.text !== 'string') throw invalid('A Roleplay job output needs text.');
     const message = next[source.message.index + 1];
+    const timing = output.gen_started && output.gen_finished
+        ? { gen_started: output.gen_started, gen_finished: output.gen_finished } : {};
     const swipes = Array.isArray(message.swipes) && message.swipes.length ? message.swipes : [message.mes];
     if (effect === 'alternative') {
         // A named alternative adds one more unselected swipe. The selected text,
@@ -151,17 +153,19 @@ function effectRecords(records, source, effect, output, request, job, directorie
         const info = Array.isArray(message.swipe_info) ? message.swipe_info.slice(0, swipes.length) : [];
         while (info.length < swipes.length) info.push({});
         message.swipes = [...swipes, output.text];
-        message.swipe_info = [...info, { ...(output.extra ? { extra: output.extra } : {}) }];
+        message.swipe_info = [...info, { ...timing, ...(output.extra ? { extra: output.extra } : {}) }];
         return next;
     }
     const selected = Number(message.swipe_id ?? 0);
     if (!Number.isInteger(selected) || selected < 0 || selected >= swipes.length) throw invalid('The anchored message has an unreadable swipe selection.');
     if (effect === 'continue') {
         message.mes = output.continuedText ?? message.mes + output.text;
+        Object.assign(message, timing);
         if (output.extra) message.extra = { ...message.extra, ...output.extra };
         if (Array.isArray(message.swipes) && message.swipes.length) message.swipes[selected] = message.mes;
         if (output.extra && Array.isArray(message.swipe_info) && message.swipe_info[selected]) {
             message.swipe_info[selected].extra = { ...message.swipe_info[selected].extra, ...output.extra };
+            Object.assign(message.swipe_info[selected], timing);
         }
         if (message.swipe_id !== undefined) message.swipe_id = selected;
         return next;
@@ -169,9 +173,10 @@ function effectRecords(records, source, effect, output, request, job, directorie
     const info = Array.isArray(message.swipe_info) ? message.swipe_info.slice(0, swipes.length) : [];
     while (info.length < swipes.length) info.push({});
     message.swipes = [...swipes, output.text];
-    message.swipe_info = [...info, { ...(output.extra ? { extra: output.extra } : {}) }];
+    message.swipe_info = [...info, { ...timing, ...(output.extra ? { extra: output.extra } : {}) }];
     message.swipe_id = message.swipes.length - 1;
     message.mes = output.text;
+    Object.assign(message, timing);
     if (output.extra) message.extra = { ...message.extra, ...output.extra };
     return next;
 }

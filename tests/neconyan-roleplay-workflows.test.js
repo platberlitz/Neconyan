@@ -28,6 +28,9 @@ const serviceVectorBrowserWork = jest.fn(async () => {});
 const extensionPrompts = {};
 const extensionSettings = {};
 const interceptors = [];
+const restoreDisplay = jest.fn();
+const beginRoleplayReplacement = jest.fn(() => restoreDisplay);
+jest.unstable_mockModule('../public/scripts/neconyan-conversation/roleplay-replacement.js', () => ({ beginRoleplayReplacement }));
 
 globalThis.dispatchEvent = jest.fn();
 
@@ -100,6 +103,8 @@ const response = (status, body) => ({ ok: status >= 200 && status < 300, status,
 const workflows = await import('../public/scripts/neconyan-conversation/roleplay-workflows.js');
 
 beforeEach(() => {
+    restoreDisplay.mockClear();
+    beginRoleplayReplacement.mockClear();
     account = 'alice';
     // The module holds this array, so the fixture edits it in place.
     chat.length = 0;
@@ -133,6 +138,29 @@ beforeEach(() => {
 });
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+
+test.each(['roleplay.swipe', 'roleplay.correct', 'guided.swipe', 'guided.correction'])('%s clears the display before saving and restores it after cancellation', async name => {
+    const pending = workflows.submitRoleplayWorkflow({ name });
+    expect(beginRoleplayReplacement).toHaveBeenCalledWith(name, 1, expect.any(Function));
+    expect(saved).toHaveLength(0);
+    expect(chat[1].mes).toBe('Answer');
+    const accepted = await pending;
+    expect(restoreDisplay).not.toHaveBeenCalled();
+    await observers.get(accepted.jobId).onSnapshot({ state: 'cancelled' });
+    await accepted.finished;
+    await settle();
+    expect(restoreDisplay).toHaveBeenCalled();
+});
+
+test('a refused replacement restores the same display without changing the saved source', async () => {
+    submitHandler = async () => response(400, { error: 'Refused' });
+    const pending = workflows.submitRoleplayWorkflow({ name: 'roleplay.swipe' });
+    expect(restoreDisplay).not.toHaveBeenCalled();
+    await expect(pending).rejects.toThrow();
+    expect(restoreDisplay).toHaveBeenCalled();
+    expect(chat[1].mes).toBe('Answer');
+});
+
 async function waitFor(predicate, timeoutMs = 3000) {
     const started = Date.now();
     while (!predicate()) {

@@ -53,6 +53,7 @@ export async function createMewmoryProvider(port = 0) {
             const event = content => 'data: ' + JSON.stringify({ choices: [{ delta: { content } }] }) + '\n\n';
             call.firstTokenAt = Date.now();
             if (reply.reasoning) response.write('data: ' + JSON.stringify({ choices: [{ delta: { reasoning_content: reply.reasoning } }] }) + '\n\n');
+            if (reply.holdReasoning) await new Promise(resolve => { mode.finishReasoning = resolve; });
             response.write(event(reply.first));
             await new Promise(resolve => { mode.finishStream = resolve; call.finishStream = resolve; });
             response.write(event(reply.rest));
