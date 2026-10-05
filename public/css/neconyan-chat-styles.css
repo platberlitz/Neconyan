@@ -27,8 +27,8 @@
     --customlastInContext: 1px solid var(--customThemeColor);
     --custom-EchoAvatarWidth: 22%;
     --custom-EchoAvatarHeight: 300px;
-    --custom-EchoAvatarMobileWidth: 22%;
-    --custom-EchoAvatarMobileHeight: 250px;
+    --custom-EchoAvatarMobileWidth: 30%;
+    --custom-EchoAvatarMobileHeight: 140px;
     --customWhisperAvatarWidth: 50%;
     --customWhisperAvatarAlign: center;
     --customRippleAvatarWidth: 180px;
@@ -151,6 +151,10 @@ body.echostyle #chat {
             min-height: 200px;
             overflow: hidden;
             margin-top: calc(var(--custom-ChatAvatar) * 0.35);
+
+            @media screen and (max-width: 1000px) {
+                min-height: 0;
+            }
             border-radius: 10px;
             backdrop-filter: var(--SmartThemeBackdropFilter);
             -webkit-backdrop-filter: var(--SmartThemeBackdropFilter);
@@ -224,9 +228,15 @@ body.echostyle #chat {
                     border-radius: 10px 0 0 10px;
                     z-index: 3;
 
+                    /* Narrow screens: a corner portrait the text wraps around, then runs underneath. */
                     @media screen and (max-width: 1000px) {
-                        width: var(--custom-EchoAvatarMobileWidth, 25%);
-                        height: var(--custom-EchoAvatarMobileHeight, 250px);
+                        position: relative;
+                        float: left;
+                        width: var(--custom-EchoAvatarMobileWidth, 30%);
+                        height: var(--custom-EchoAvatarMobileHeight, 140px);
+                        margin: -8px 10px 4px -14px;
+                        background-attachment: scroll;
+                        background-position: center top;
                     }
                 }
             }
@@ -241,7 +251,7 @@ body.echostyle #chat {
                 background-color: var(--moonlit-sb-user-message-bg);
 
                 @media screen and (max-width: 1000px) {
-                    padding: 8px 14px 8px var(--custom-EchoAvatarMobileWidth, 22%) !important;
+                    padding: 8px 14px !important;
                 }
             }
         }
@@ -277,8 +287,13 @@ body.echostyle #chat {
                     z-index: 3;
 
                     @media screen and (max-width: 1000px) {
-                        width: var(--custom-EchoAvatarMobileWidth, 25%);
-                        height: var(--custom-EchoAvatarMobileHeight, 250px);
+                        position: relative;
+                        float: right;
+                        width: var(--custom-EchoAvatarMobileWidth, 30%);
+                        height: var(--custom-EchoAvatarMobileHeight, 140px);
+                        margin: -8px -14px 4px 10px;
+                        background-attachment: scroll;
+                        background-position: center top;
                     }
                 }
             }
@@ -287,7 +302,7 @@ body.echostyle #chat {
                 padding: 8px var(--custom-EchoAvatarWidth, 22%) 8px 14px !important;
 
                 @media screen and (max-width: 1000px) {
-                    padding: 8px var(--custom-EchoAvatarMobileWidth, 22%) 8px 14px !important;
+                    padding: 8px 14px !important;
                 }
             }
         }
@@ -335,10 +350,6 @@ body.echostyle #chat {
         .swipe_left {
             opacity: 0.6;
             transform: scale(0.8);
-        }
-        .swipe_left,
-        .swipeRightBlock {
-            bottom: 10px !important;
         }
         .swipeRightBlock {
             position: absolute;
@@ -395,15 +406,17 @@ body.whisperstyle #chat {
             height: 100px;
             background: var(--mes-avatar-url, var(--sb-message-avatar)) var(--customWhisperAvatarAlign) no-repeat;
             background-size: cover;
-            mask-image: linear-gradient(to bottom, black 60%, rgba(0, 0, 0, 0) 100%);
+            mask-image: linear-gradient(to bottom, black 45%, transparent), linear-gradient(to left, black 40%, transparent);
+            mask-composite: intersect;
             mask-size: 100% 100%;
             mask-repeat: no-repeat;
-            -webkit-mask-image: linear-gradient(to left, black 60%, rgba(0, 0, 0, 0) 100%);
+            -webkit-mask-image: linear-gradient(to bottom, black 45%, transparent), linear-gradient(to left, black 40%, transparent);
+            -webkit-mask-composite: source-in;
             -webkit-mask-size: 100% 100%;
             -webkit-mask-repeat: no-repeat;
             z-index: 0;
             border-radius: 0 15px 0 0 !important;
-            opacity: 0.8;
+            opacity: 0.5;
         }
         &.last_mes::before {
             filter: none;
@@ -444,7 +457,7 @@ body.whisperstyle #chat {
             background-color: var(--moonlit-sb-bot-message-bg) !important;
 
             &::after {
-                border-right: 3.5px solid var(--SmartThemeBodyColor);
+                border-right: 3.5px solid color-mix(in srgb, var(--SmartThemeBodyColor) 30%, transparent);
             }
         }
 
@@ -521,8 +534,6 @@ body.whisperstyle #chat {
     }
 
     .last_mes {
-        padding-bottom: 5px !important;
-
         .mesAvatarWrapper {
             padding-bottom: unset;
         }
@@ -533,10 +544,6 @@ body.whisperstyle #chat {
             transform: scale(0.8);
         }
 
-        .swipe_left,
-        .swipeRightBlock {
-            bottom: 10px !important;
-        }
         .swipeRightBlock {
             position: absolute;
             display: flex;
@@ -608,7 +615,7 @@ body.hushstyle #chat {
             background-color: var(--moonlit-sb-bot-message-bg) !important;
 
             &::after {
-                border-right: 3.5px solid var(--SmartThemeBodyColor);
+                border-right: 3.5px solid color-mix(in srgb, var(--SmartThemeBodyColor) 30%, transparent);
             }
         }
 
@@ -692,10 +699,6 @@ body.hushstyle #chat {
         .swipe_left {
             opacity: 0.6;
             transform: scale(0.8);
-        }
-        .swipe_left,
-        .swipeRightBlock {
-            bottom: 10px !important;
         }
         .swipeRightBlock {
             position: absolute;
@@ -800,13 +803,6 @@ body.ripplestyle #chat {
                 margin-bottom: 5px;
                 opacity: 0.45;
             }
-        }
-    }
-
-    .last_mes {
-        .swipeRightBlock,
-        .swipe_left {
-            bottom: 10px !important;
         }
     }
 
@@ -1073,10 +1069,6 @@ body.tidestyle #chat {
             opacity: 0.6;
             transform: scale(0.8);
         }
-        .swipe_left,
-        .swipeRightBlock {
-            bottom: 8px !important;
-        }
         .swipeRightBlock {
             position: absolute;
             display: flex;
@@ -1235,8 +1227,19 @@ body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes .ch_name .
         flex-direction: row;
     }
 
+    /* Headers read from the avatar: the name starts beside it, directly above the action buttons. */
     body:is(.echostyle, .whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes) .mes_block .ch_name {
-        align-items: center;
+        align-items: flex-start;
+    }
+
+    /* Whisper and Hush keep every avatar on the left, as on phones, so it never lands on the name. */
+    body:is(.whisperstyle, .hushstyle) #chat .mes[is_user="true"]:not(.smallSysMes) .mesAvatarWrapper {
+        flex-direction: row;
+    }
+
+    /* Echo and Tide mirror the user's messages, so their buttons line up under the right-hand name. */
+    body:is(.echostyle, .tidestyle) #chat .mes[is_user="true"]:not(.smallSysMes) .mes_block .mes_buttons {
+        justify-content: flex-end;
     }
 }
 
@@ -1352,10 +1355,14 @@ body:is(.echostyle, .whisperstyle, .hushstyle, .ripplestyle, .tidestyle) #chat .
     line-height: 1;
     min-width: var(--moonlit-sb-swipe-control-size);
     pointer-events: auto;
-    position: relative !important;
-    right: auto !important;
     transform: none !important;
     width: var(--moonlit-sb-swipe-control-size);
+}
+
+/* Only the right arrow sits inside the cluster; the left arrow keeps its absolute spot beside it. */
+body:is(.echostyle, .whisperstyle, .hushstyle, .ripplestyle, .tidestyle) #chat .last_mes .swipe_right {
+    position: relative !important;
+    right: auto !important;
 }
 
 body:is(.echostyle, .whisperstyle, .hushstyle, .ripplestyle, .tidestyle) #chat .last_mes .swipes-counter {
@@ -1370,6 +1377,12 @@ body:is(.echostyle, .whisperstyle, .hushstyle, .ripplestyle, .tidestyle) #chat .
     pointer-events: auto;
     text-overflow: ellipsis;
     width: var(--moonlit-sb-swipe-counter-width) !important;
+}
+
+/* The swipe cluster is pinned bottom-right; give it its own footer row so it never sits on the last line of text. */
+body:is(.whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes):is(.last_mes, :has(.deep-swipe-right, .deep-swipe-counter)),
+body:is(.whisperstyle, .hushstyle, .tidestyle).swipeAllMessages #chat .mes:not(.smallSysMes) {
+    padding-bottom: calc(var(--moonlit-sb-swipe-control-size) + (var(--moonlit-sb-swipe-edge-offset) * 2)) !important;
 }
 
 @media screen and (max-width: 1000px) {
@@ -1597,6 +1610,32 @@ body:is(.echostyle, .whisperstyle, .hushstyle, .ripplestyle, .tidestyle) #chat .
     body.ripplestyle #chat .mes:not(.smallSysMes) .mes_text {
         margin-top: 0 !important;
         padding-top: 0 !important;
+    }
+}
+
+/* Flat, Bubbles, Document, Screenplay and Storybook on phones and tablets: the swipe arrows and counter share one row
+   along the bottom edge, in space reserved below the text, instead of stacking over its last lines. */
+@media screen and (max-width: 1000px) {
+    body:is(.flatchat:not(.nnchat), .bubblechat, .documentstyle, .nnchat-script, .nnchat-storybook):not(.sbterm) #chat .mes:not(.smallSysMes):is(.last_mes, :has(.deep-swipe-right)),
+    body:is(.flatchat:not(.nnchat), .bubblechat, .documentstyle, .nnchat-script, .nnchat-storybook).swipeAllMessages:not(.sbterm) #chat .mes:not(.smallSysMes) {
+        padding-bottom: calc(var(--sb-message-icon-size, 30px) + 6px) !important;
+    }
+    body:is(.flatchat:not(.nnchat), .bubblechat, .documentstyle, .nnchat-script, .nnchat-storybook):not(.sbterm) #chat .mes .swipeRightBlock {
+        flex-direction: row-reverse;
+        align-items: center;
+        gap: 2px;
+        inline-size: auto;
+        right: 4px;
+        bottom: 3px;
+    }
+    body:is(.flatchat:not(.nnchat), .bubblechat, .documentstyle, .nnchat-script, .nnchat-storybook):not(.sbterm) #chat .mes .assistant-swipe-arrow {
+        right: 4px;
+        bottom: 3px;
+        inline-size: var(--sb-message-icon-size, 30px);
+        block-size: var(--sb-message-icon-size, 30px);
+    }
+    body:is(.flatchat:not(.nnchat), .bubblechat, .documentstyle, .nnchat-script, .nnchat-storybook):not(.sbterm) #chat .mes :is(.swipe_left, .deep-swipe-left-outer) {
+        bottom: 3px;
     }
 }
 
@@ -1869,5 +1908,9 @@ body.neconyan.flatchat.nnchat:not(.sbterm):not(.sbstory) #chat .mes:is([mesid], 
     }
     body.neconyan.flatchat.nnchat:is(.nnchat-notebook, .nnchat-script, .nnchat-compact, .nnchat-storybook):not(.sbterm) #chat .mes .mes_text {
         padding-inline-end: 26px;
+    }
+    /* Justified lines open wide gaps between words in a phone-width column. */
+    body.neconyan.flatchat.nnchat-storybook:not(.sbterm) #chat .mes .mes_text {
+        text-align: start;
     }
 }

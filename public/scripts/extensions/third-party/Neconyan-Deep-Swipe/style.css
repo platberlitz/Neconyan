@@ -393,8 +393,9 @@ body:not(.swipeAllMessages) .mes:not(.last_mes) .deep-swipe-left.disabled {
 
 /* Show the swipe counter on non-last messages. User messages get the one we
    inject; assistant messages reuse the native counter from the message template,
-   which updateMessageSwipeUI() writes into. */
-body:not(.swipeAllMessages) .mes:not(.last_mes) .swipeRightBlock .swipes-counter {
+   which updateMessageSwipeUI() writes into. Only messages we gave arrows to:
+   system messages are skipped, and a bare counter there just covers the text. */
+body:not(.swipeAllMessages) .mes:not(.last_mes):has(.deep-swipe-right) .swipeRightBlock .swipes-counter {
     opacity: 0.5 !important;
     visibility: visible !important;
     display: flex !important;
@@ -402,7 +403,7 @@ body:not(.swipeAllMessages) .mes:not(.last_mes) .swipeRightBlock .swipes-counter
 
 /* Except the template's own counter on messages where we injected one, or the
    rule above renders both side by side. */
-.mes:not(.last_mes):has(.deep-swipe-counter) .swipeRightBlock:not(.deep-swipe-right-block) .swipes-counter {
+body .mes:not(.last_mes):has(.deep-swipe-counter) .swipeRightBlock:not(.deep-swipe-right-block) .swipes-counter {
     opacity: 0 !important;
     visibility: hidden !important;
     display: none !important;

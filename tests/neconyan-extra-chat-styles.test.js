@@ -83,6 +83,36 @@ describe('extra Neconyan chat styles', () => {
         expect(catRule[1]).toContain('width: 96px; height: 77px;');
     });
 
+    it('gives swipe controls their own footer row instead of covering the last lines of text', () => {
+        expect(chatStylesSource).toContain('body:is(.whisperstyle, .hushstyle, .tidestyle) #chat .mes:not(.smallSysMes):is(.last_mes, :has(.deep-swipe-right, .deep-swipe-counter)),');
+        expect(chatStylesSource).toContain('padding-bottom: calc(var(--moonlit-sb-swipe-control-size) + (var(--moonlit-sb-swipe-edge-offset) * 2)) !important;');
+        const narrowFooter = chatStylesSource.match(/@media screen and \(max-width: 1000px\) \{\s*body:is\(\.flatchat:not\(\.nnchat\), \.bubblechat, \.documentstyle, \.nnchat-script, \.nnchat-storybook\)[^]*?\n\}/);
+        expect(narrowFooter).not.toBeNull();
+        expect(narrowFooter[0]).toContain('padding-bottom: calc(var(--sb-message-icon-size, 30px) + 6px) !important;');
+        expect(narrowFooter[0]).toMatch(/\.swipeRightBlock \{\s*flex-direction: row-reverse;/);
+        // Only the right arrow joins the cluster; a relative left arrow falls into the header on desktop.
+        expect(chatStylesSource).toMatch(/\.tidestyle\) #chat \.last_mes \.swipe_right \{\s*position: relative !important;/);
+        expect(chatStylesSource).not.toMatch(/#chat \.last_mes :is\(\.swipe_left, \.swipe_right\) \{[^}]*position: relative/);
+    });
+
+    it('keeps Echo-family headers readable', () => {
+        expect(chatStylesSource).toContain('--custom-EchoAvatarMobileWidth: 30%;');
+        expect(chatStylesSource).toContain('--custom-EchoAvatarMobileHeight: 140px;');
+        expect(chatStylesSource).not.toContain('var(--custom-EchoAvatarMobileWidth, 22%) !important');
+        expect(chatStylesSource).toContain('mask-composite: intersect;');
+        expect(chatStylesSource).not.toContain('border-right: 3.5px solid var(--SmartThemeBodyColor);');
+        expect(chatStylesSource).toMatch(/\.tidestyle\) #chat \.mes:not\(\.smallSysMes\) \.mes_block \.ch_name \{\s*align-items: flex-start;/);
+        expect(chatStylesSource).toMatch(/body:is\(\.whisperstyle, \.hushstyle\) #chat \.mes\[is_user="true"\]:not\(\.smallSysMes\) \.mesAvatarWrapper \{\s*flex-direction: row;/);
+    });
+
+    it('sets Storybook text flush left on phones', () => {
+        expect(chatStylesSource).toMatch(/nnchat-storybook:not\(\.sbterm\) #chat \.mes \.mes_text \{\s*text-align: start;/);
+    });
+
+    it('shows the Deep Swipe counter only on messages that got Deep Swipe arrows', () => {
+        expect(deepSwipeSource).toContain('body:not(.swipeAllMessages) .mes:not(.last_mes):has(.deep-swipe-right) .swipeRightBlock .swipes-counter {');
+    });
+
     it('lets Deep Swipe keep message borders and shadows that chat styles rely on', () => {
         const idleRule = deepSwipeSource.match(/\.mes \.mes_text,\s*\.mes \.mes_block\s*\{([^}]*)\}/);
         expect(idleRule).not.toBeNull();
