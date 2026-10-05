@@ -101,6 +101,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
         });
         await editText(page, 'text', 'Window-only planning change.');
         await canvasView(page).getByRole('button', { name: 'Back to note', exact: true }).click();
+        await expect(page.locator('#toast-container .toast-warning')).toContainText('Save or download your canvas draft before leaving');
         await expect(canvasView(page)).toBeVisible();
         await expect(canvasView(page).getByRole('button', { name: 'I\'ve saved the download', exact: true })).toHaveCount(0);
         const download = page.waitForEvent('download');

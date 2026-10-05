@@ -169,7 +169,7 @@ export function createPropertyTableView(app, container) {
                 const next = new Set(columns ?? shownColumns);
                 if (next.has(key)) next.delete(key);
                 else if (next.size < 12) next.add(key);
-                else { app.toast('Choose up to 12 property columns.', 'info'); return; }
+                else { app.toast('info', 'Choose up to 12 property columns.'); return; }
                 columns = [...next];
                 void refresh();
             }, { pressed: selected.includes(key) });
