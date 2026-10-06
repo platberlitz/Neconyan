@@ -1472,6 +1472,47 @@ body.neconyan.neconyan-notes-beside #sheld {
     min-height: 44px;
 }
 
+.notes-export-folder,
+.notes-export-notes {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.notes-export-list {
+    max-height: 40vh;
+    overflow: auto;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    padding: 4px 8px;
+}
+
+.notes-export-check {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    padding: 6px 0;
+    text-align: left;
+}
+
+.notes-export-check > span {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.notes-export-check small {
+    color: var(--neco-muted);
+}
+
+.notes-export-folder[hidden],
+.notes-export-notes[hidden],
+.notes-app .notes-outline-tree[hidden] {
+    display: none;
+}
+
 .notes-backlink,
 .notes-binding,
 .notes-history > li,

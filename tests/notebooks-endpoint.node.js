@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import express from 'express';
 import multer from 'multer';
+import { unzipSync } from 'fflate';
 import { fixture } from './roleplay-transactions-fixture.js';
 import { splitFrontmatter } from '../src/notebooks/markdown.js';
 import { getConfig } from '../src/util.js';
@@ -525,4 +526,48 @@ test('known property names stay owner-only without returning values or granting 
     assert.equal((await first.post('/assistant/tool', { callId: 'known-keys-do-not-share', tool: 'read-note', args: { notebookId, noteId: note.noteId } })).http, 404);
     assert.deepEqual((await first.post('/policies/get', { notebookId })).body, policies);
     assert.deepEqual((await first.post('/notes/history', { notebookId, noteId: note.noteId })).body, history);
+});
+
+test('selected export routes reject foreign or empty choices and include only chosen notes and direct files', async t => {
+    const first = await server(t, 'selected-export-owner');
+    const other = await server(t, 'selected-export-other');
+    const notebookId = (await first.post('/list', {})).body.notebooks[0].id;
+    const used = await first.upload('/attachments/upload', { notebookId, operationId: op('selected-file') }, 'used.png', PNG);
+    const unused = await first.upload('/attachments/upload', { notebookId, operationId: op('unselected-file') }, 'unused.png', PNG);
+    assert.equal(used.http, 200);
+    assert.equal(unused.http, 200);
+    const source = `# Picked\n\n![Used](../${used.body.path})\n\n[[../Hidden/Unpicked]]\n`;
+    const picked = (await first.post('/notes/create', { notebookId, operationId: op('selected-note'), folder: 'Inbox', title: 'Picked', text: source })).body;
+    await first.post('/notes/create', { notebookId, operationId: op('unselected-note'), folder: 'Hidden', title: 'Unpicked', text: 'PRIVATE-UNSELECTED-CONTENT' });
+    const policies = (await first.post('/policies/get', { notebookId })).body;
+    const exportRequest = (endpoint, body, account = endpoint.owner) => fetch(`${endpoint.url}/export`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Neconyan-Account': account, Connection: 'close' }, body: JSON.stringify(body),
+    });
+    const response = await exportRequest(first, { notebookId, selection: { mode: 'notes', noteIds: [picked.noteId] } });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'application/zip');
+    assert.equal(response.headers.get('cache-control'), 'private, no-store');
+    assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+    const files = unzipSync(new Uint8Array(await response.arrayBuffer()));
+    const names = Object.keys(files);
+    const markdown = names.filter(name => name.endsWith('.md'));
+    assert.equal(markdown.length, 1);
+    assert.ok(markdown[0].endsWith('/Inbox/Picked.md'));
+    assert.equal(Buffer.from(files[markdown[0]]).toString('utf8'), source);
+    assert.ok(names.some(name => name.endsWith('/attachments/used.png')));
+    assert.ok(!names.some(name => /Hidden\/|unused\.png|Unpicked\.md|_neconyan|policies|history/.test(name)));
+    for (const selection of [null, { mode: 'notes', noteIds: [] }, { mode: 'folder', folder: '../outside' }, { mode: 'all', noteIds: [picked.noteId] }]) {
+        const invalid = await exportRequest(first, { notebookId, selection });
+        assert.equal(invalid.status, 400);
+        assert.equal(invalid.headers.get('content-type'), 'application/json; charset=utf-8');
+    }
+    const missing = await exportRequest(first, { notebookId, selection: { mode: 'notes', noteIds: ['n_0000000000000000'] } });
+    assert.equal(missing.status, 404);
+    const foreign = await exportRequest(other, { notebookId, selection: { mode: 'notes', noteIds: [picked.noteId] } });
+    assert.equal(foreign.status, 404);
+    const changedAccount = await exportRequest(first, { notebookId, selection: { mode: 'all' } }, other.owner);
+    assert.equal(changedAccount.status, 409);
+    assert.deepEqual((await first.post('/policies/get', { notebookId })).body, policies);
+    assert.equal((await first.post('/notes/read', { notebookId, noteId: picked.noteId })).body.note.revision, picked.revision);
+    assert.equal((await first.post('/assistant/tool', { callId: 'export-does-not-share', tool: 'read-note', args: { notebookId, noteId: picked.noteId } })).http, 404);
 });

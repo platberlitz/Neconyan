@@ -161,6 +161,52 @@ test('export and import round-trip content while imported permissions stay inact
     assert.equal(run(lease => store.listNotebooksLocked(lease)).length, 2);
 });
 
+test('a chosen-note export includes only its direct files, not linked notes or unused attachments', t => {
+    const { run, notebookId } = prepared(t);
+    const chosen = run(lease => store.createNoteLocked(lease, { operationId: op('chosen'), notebookId, folder: 'Plans', title: 'Keep',
+        text: '# Keep\n\n[[Hidden note]]\n![Used](../attachments/used.png)\n' }));
+    run(lease => store.createNoteLocked(lease, { operationId: op('hidden'), notebookId, folder: 'Private', title: 'Hidden note', text: 'Unselected private text.' }));
+    run(lease => attachments.saveAttachmentLocked(lease, { operationId: op('used'), notebookId, name: 'used.png', bytes: PNG }));
+    run(lease => attachments.saveAttachmentLocked(lease, { operationId: op('unused'), notebookId, name: 'unused.png', bytes: PNG }));
+    const collected = run(lease => transfer.collectExportLocked(lease, { notebookId, selection: { mode: 'notes', noteIds: [chosen.noteId] } }));
+    assert.deepEqual(collected.files.map(file => file.path).sort(), ['Plans/Keep.md', 'attachments/used.png']);
+    assert.deepEqual(collected.folders.sort(), ['Plans', 'attachments']);
+    const archive = unzipSync(new Uint8Array(transfer.buildExportZip(collected)));
+    assert.ok(!Object.keys(archive).some(name => /Private|Hidden note|unused|history|policies|provenance/.test(name)));
+    assert.match(Buffer.from(archive['Notebook/Plans/Keep.md']).toString('utf8'), /\[\[Hidden note\]\]/);
+});
+
+test('folder exports use path boundaries and offer exact-folder or recursive selection', t => {
+    const { run, notebookId } = prepared(t);
+    for (const [folder, title] of [['Plans', 'First'], ['Plans/Sub', 'Child'], ['Plans-extra', 'Unselected'], ['', 'Root']]) {
+        run(lease => store.createNoteLocked(lease, { operationId: op(title), notebookId, folder, title, text: `# ${title}` }));
+    }
+    run(lease => store.createFolderLocked(lease, { operationId: op('empty'), notebookId, folder: 'Plans/Empty' }));
+    const collect = selection => run(lease => transfer.collectExportLocked(lease, { notebookId, selection }));
+    const exact = collect({ mode: 'folder', folder: 'Plans', includeSubfolders: false });
+    assert.deepEqual(exact.files.map(file => file.path), ['Plans/First.md']);
+    assert.deepEqual(exact.folders, ['Plans']);
+    const recursive = collect({ mode: 'folder', folder: 'Plans', includeSubfolders: true });
+    assert.deepEqual(recursive.files.map(file => file.path).sort(), ['Plans/First.md', 'Plans/Sub/Child.md']);
+    assert.ok(recursive.folders.includes('Plans/Empty'));
+    assert.ok(!recursive.folders.includes('Plans-extra'));
+    const root = collect({ mode: 'folder', folder: '', includeSubfolders: false });
+    assert.deepEqual(root.files.map(file => file.path), ['Root.md']);
+    assert.deepEqual(root.folders, []);
+});
+
+test('empty, malformed, foreign and unsafe export choices fail rather than exporting everything', t => {
+    const { run, notebookId } = prepared(t);
+    run(lease => store.createNoteLocked(lease, { operationId: op('keep'), notebookId, title: 'Keep', text: 'Kept.' }));
+    for (const selection of [null, {}, [], { mode: 'notes', noteIds: [] }, { mode: 'notes', noteIds: ['foreign-note'] },
+        { mode: 'notes', noteIds: [42] }, { mode: 'all', noteIds: [] }, { mode: 'folder', folder: '../Private' },
+        { mode: 'folder', folder: 'Missing' }, { mode: 'folder', folder: 'Inbox', includeSubfolders: 'false' }]) {
+        assert.throws(() => run(lease => transfer.collectExportLocked(lease, { notebookId, selection })), error => [400, 404].includes(error.status));
+    }
+    const whole = run(lease => transfer.collectExportLocked(lease, { notebookId, selection: { mode: 'all' } }));
+    assert.equal(whole.files.length, 1);
+});
+
 test('duplicate identity hints never claim an existing note', async t => {
     const { base, run } = prepared(t);
     const hint = '---\nneconyan_id: n_aaaaaaaaaaaaaaaa\n---\n';

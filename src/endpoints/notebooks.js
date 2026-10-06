@@ -869,7 +869,7 @@ router.post('/export', async (request, response) => {
     try {
         const base = accountBase(request);
         await store.prepareNotebook(base, request.body?.notebookId);
-        const collected = locked(base, lease => transfer.collectExportLocked(lease, { notebookId: request.body?.notebookId }));
+        const collected = locked(base, lease => transfer.collectExportLocked(lease, { notebookId: request.body?.notebookId, selection: request.body?.selection }));
         const zip = transfer.buildExportZip(collected);
         response.set({
             'Content-Type': 'application/zip',
