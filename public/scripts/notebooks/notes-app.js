@@ -13,6 +13,7 @@ import { headingOutline, renderNoteInto } from './render.js';
 import { formatDiff } from './line-diff.js';
 import { userPhrase } from './user-text.js';
 import { formatList, indentLines } from './list-editing.js';
+import { renderHeadingOutline } from './outline.js';
 
 const PREFS_KEY = 'neconyan_notes_prefs';
 const NOTES_STYLESHEET = 'css/neconyan-notes.css?v=17';
@@ -1113,12 +1114,13 @@ function renderOutline() {
         elements.outline.append(h('p', { class: 'notes-hint', text: 'No headings yet. Lines starting with # become headings.' }));
         return;
     }
-    const list = h('ul', { class: 'notes-outline-list' });
-    for (const heading of headings) {
-        list.append(h('li', { style: `--notes-outline-level:${heading.level - 1}` },
-            h('button', { type: 'button', class: 'notes-outline-item', text: heading.text, 'data-i18n-ignore': '', onclick: () => jumpToOffset(heading.offset) })));
-    }
-    elements.outline.append(list);
+    elements.outline.append(renderHeadingOutline(headings, { onJump: jumpToOffset, collapsed: outlineCollapsed() }));
+}
+
+function outlineCollapsed() {
+    const key = `${app.state.account}:${app.state.notebookId}:${app.state.note?.id}`;
+    if (app.state.outlineKey !== key) { app.state.outlineKey = key; app.state.outlineCollapsed = new Set(); }
+    return app.state.outlineCollapsed;
 }
 
 function jumpToOffset(offset) {
@@ -1144,11 +1146,14 @@ function jumpToHeading(fragment) {
     if (heading) jumpToOffset(heading.offset);
 }
 
+const refreshLiveOutline = debounce(() => app.panels?.refreshLinksOutline?.(app), 150);
+
 function onEditorInput() {
     const { state, elements } = app;
     if (!state.note) return;
     const conflict = state.saveConflict || state.status === 'conflict';
     state.editorText = elements.textarea.value;
+    refreshLiveOutline();
     state.dirty = state.editorText !== lf(state.note.serverText) || conflict;
     if (!state.dirty) {
         clearDraft(state.account, state.notebookId, state.note.id);
@@ -1736,6 +1741,7 @@ async function changeNote(changes, reason = 'edit') {
 }
 
 Object.assign(app, {
+    outlineCollapsed,
     request, failed, toast, userToast, isPhone, refreshTree, loadNotebooks, selectNotebook, openNote, reloadNote, flushSave, insertText, setStatus,
     createNote, moveNote, changeNote, compareTexts, showBanner, clearBanner, renderNav, renderEditor, applyLayout, setPane,
     chatScope: currentChatScope, lf, readPrefs, writePrefs, hide: hideNotes, setView, jumpToOffset, closeNotebookView, openNotebookGraph, openNotebookTable, openNotebookCanvas,

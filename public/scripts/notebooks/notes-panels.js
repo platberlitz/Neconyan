@@ -5,6 +5,7 @@ import { newOperationId } from './api.js';
 import { append, button, choiceRow, clear, field, formatBytes, formatTime, h } from './dom.js';
 import { formatDiff } from './line-diff.js';
 import { headingOutline } from './render.js';
+import { renderHeadingOutline } from './outline.js';
 import { proposalLabel, regionLabel, userPhrase } from './user-text.js';
 import { t } from '../i18n.js';
 
@@ -83,6 +84,7 @@ export async function renderDetails(app) {
     append(body, content);
     clear(target);
     target.append(tabs, body);
+    if (tab === 'links') refreshLinksOutline(app);
 }
 
 async function buildTab(app, tab) {
@@ -192,15 +194,21 @@ function jumpTo(app, offset) {
     app.jumpToOffset(offset);
 }
 
+export function refreshLinksOutline(app) {
+    const target = app.elements.details?.querySelector('.notes-links-outline');
+    if (!target || app.state.detailsTab !== 'links' || !app.state.note) return;
+    const headings = headingOutline(app.elements.textarea?.value ?? '');
+    clear(target);
+    target.append(headings.length
+        ? renderHeadingOutline(headings, { onJump: offset => jumpTo(app, offset), collapsed: app.outlineCollapsed() })
+        : notice('Add headings (start a line with #) to see an outline here.'));
+}
+
 async function linksPanel(app) {
     const { state } = app;
     const note = state.note;
     const out = [];
-    const outline = headingOutline(app.elements.textarea?.value ?? '');
-    out.push(section('Outline', outline.length
-        ? h('ul', { class: 'notes-outline-list' }, ...outline.map(item => h('li', { style: `--notes-outline-level: ${item.level - 1}` },
-            button(item.text || '(untitled heading)', () => jumpTo(app, item.offset), { className: 'notes-outline-item notes-quiet', userText: Boolean(item.text) }))))
-        : notice('Add headings (start a line with #) to see an outline here.')));
+    out.push(section('Outline', h('div', { class: 'notes-links-outline' })));
 
     const links = await app.request('/links', { notebookId: state.notebookId, noteId: note.id });
     if (app.failed(links)) return out;

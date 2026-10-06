@@ -21,7 +21,7 @@ function runtime(overrides = {}, functions = ['showBanner', 'clearBanner', 'show
     const context = vm.createContext({ app, h, button: (label, action) => ({ label, action }), request: jest.fn(),
         failed: result => result.status !== 'success', clearDraft: jest.fn(), loadNoteDetail: jest.fn(), renderEditor: jest.fn(),
         lf: text => text, createNote: jest.fn(), openNote: jest.fn(async () => true), compareTexts: jest.fn(), setStatus: jest.fn(), saveNow: jest.fn(),
-        readDraft: () => ({ text: 'My draft.' }), formatTime: () => 'Today', onEditorInput: jest.fn(), toast: jest.fn(),
+        readDraft: () => ({ text: 'My draft.' }), formatTime: () => 'Today', onEditorInput: jest.fn(), refreshLiveOutline: jest.fn(), toast: jest.fn(),
         flushSave: async () => true, selectNotebook: jest.fn(), renderNav: jest.fn(), writePrefs: jest.fn(), applyLayout: jest.fn(), isPhone: () => false, clearTimeout, ...overrides });
     vm.runInContext(functionSource('notebookCanvasCanLeave') + '\n' + functions.map(functionSource).join('\n'), context);
     const actions = () => rows.at(-1).children[1].children;
@@ -218,6 +218,7 @@ describe('Notes conflict and recovery safety', () => {
         context.onEditorInput();
         expect(context.setStatus).toHaveBeenCalledWith('conflict');
         expect(context.scheduleSave).not.toHaveBeenCalled();
+        expect(context.refreshLiveOutline).toHaveBeenCalledTimes(1);
     });
 
     test('typing the old opened text is still a draft after the server version changed', () => {
