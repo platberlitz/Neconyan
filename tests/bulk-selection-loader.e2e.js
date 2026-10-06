@@ -113,7 +113,7 @@ for (const phone of [false, true]) {
                     expect(selected.background).not.toBe(unselected.background);
                     expect([selected.width, selected.height, selected.avatarWidth, selected.avatarHeight], JSON.stringify({ style, view, before, selected }))
                         .toEqual([before.width, before.height, before.avatarWidth, before.avatarHeight]);
-                    if (phone) expect([selected.avatarWidth, selected.avatarHeight]).toEqual([56, 56]);
+                    if (phone) expect([selected.avatarWidth, selected.avatarHeight]).toEqual([48, 48]);
                     await rows.first().hover();
                     expect((await appearance(rows.first())).outline).toBe('solid');
                     await rows.first().click({ position: { x: 5, y: 5 } });

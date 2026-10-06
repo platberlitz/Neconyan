@@ -40,11 +40,11 @@ test('a saved note embedded inside an element with its own title keeps its words
     expect(plan.status).toBe('success');
     created.plan = { notebookId, noteId: plan.noteId };
 
-    // pt-pt as shipped: 'Home' is 'Início', and 'Open ${0}' half-translates 'Open note' outside the titled block.
+    // pt-pt as shipped: 'Home' is 'Início', yet the note's own title and words stay as written while its controls are translated.
     await showReader(page, created.plan);
     const shipped = await cards(page);
     expect(shipped.map(card => [card.inside, card.title, card.body])).toEqual([[true, 'Home', 'Close the door.'], [false, 'Home', 'Close the door.']]);
-    expect(shipped[0].buttons).toEqual(['Open note', 'Fold embed']);
+    expect(shipped.map(card => card.buttons)).toEqual([['Abrir nota', 'Recolher incorporação'], ['Abrir nota', 'Recolher incorporação']]);
     await expect(page.locator('.notes-reader div[title]')).toHaveAttribute('title', 'Home');
 
     // Complete translations supplied for the embed's own wording: both cards show them, inside the titled block as well.

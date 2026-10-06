@@ -838,7 +838,8 @@ test('Included tool settings have their own pages and preserve late settings nod
         await openTool(label);
         await page.screenshot({ path: info.outputPath(`tool-${label.replace(/[^a-z0-9]+/gi, '-')}.png`) });
     }
-    await openTool('Debugger', true);
+    // Debugger is on by default now; mockNativeSettings keeps Time Machine off for the unavailable page.
+    await openTool('Card & Lorebook Time Machine', true);
     await page.evaluate(() => window.NeconyanShell.openTab('right', 'extensions'));
     await expect(page.locator('button[data-extensions-scope="third-party"]')).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('#extensions_settings2 #neconyan-tool-late-probe')).toBeAttached();

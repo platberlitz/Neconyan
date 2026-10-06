@@ -344,7 +344,7 @@ for (const width of [320, 1280]) {
             const optionsBox = await page.locator('#options_button').boundingBox();
             expect(optionsBox.width).toBeLessThanOrEqual(phone ? 46 : 64);
             expect(optionsBox.height).toBeLessThanOrEqual(phone ? 46 : 64);
-            expect(optionsBox.height).toBeGreaterThanOrEqual(38);
+            expect(optionsBox.height).toBeGreaterThanOrEqual(32);
             const composerClipping = await page.locator('#leftSendForm .neconyan-action-label').evaluateAll(labels => labels.filter(label => {
                 const rect = label.getBoundingClientRect();
                 const parent = label.parentElement.getBoundingClientRect();

@@ -131,9 +131,9 @@ test('Lorebooks and Personas preserve edits, controls, and narrow layouts', asyn
 
     await openWorkspace(page, 'persona');
     await openPersonaEditor(page);
-    await expect(page.locator('#persona_editor_panel_prompt #persona_selected_avatar')).toBeVisible();
-    await expect(page.locator('#persona_editor_panel_prompt #persona_rename_button')).toBeVisible();
-    await expect(page.locator('#persona_editor_panel_prompt #persona_set_image_button')).toBeVisible();
+    await expect(page.locator('#persona_selected_masthead #persona_selected_avatar')).toBeVisible();
+    await expect(page.locator('#persona_selected_masthead #persona_rename_button')).toBeVisible();
+    await expect(page.locator('#persona_selected_masthead #persona_set_image_button')).toBeVisible();
     const description = page.locator('#persona_description');
     await description.fill(`Repairs radios. ${marker}`);
     await page.locator('#persona_description_position').selectOption('4');
@@ -201,10 +201,12 @@ test('Lorebooks and Personas preserve edits, controls, and narrow layouts', asyn
                 await openPersonaEditor(page);
                 if (width < 769) await page.getByRole('tab', { name: 'Browse', exact: true }).click();
                 await expect(page.locator('#create_dummy_persona > span')).toBeVisible();
-                for (const selector of ['#create_dummy_persona', '#persona_search_bar', '#persona_sort_order']) {
+                // The rebuilt library keeps search, sort and the grid toggle on one row; touch screens raise the 40px controls to 44px.
+                for (const selector of ['#create_dummy_persona', '#persona_search_bar', '#persona_sort_order', '#persona_grid_toggle']) {
                     const control = await page.locator(selector).boundingBox();
-                    expect(control.width).toBeGreaterThanOrEqual(180);
-                    expect(control.height).toBeGreaterThanOrEqual(44);
+                    expect(control.width).toBeGreaterThanOrEqual(selector === '#persona_search_bar' ? 100 : 40);
+                    expect(control.height).toBeGreaterThanOrEqual(40);
+                    expect(control.x + control.width).toBeLessThanOrEqual(width);
                 }
                 await page.screenshot({ path: testInfo.outputPath(`persona-library-${width}.png`) });
                 await openPersonaEditor(page);
@@ -245,7 +247,8 @@ test('Lorebooks and Personas preserve edits, controls, and narrow layouts', asyn
             }
             if (tab === 'persona') {
                 await expect(page.locator('#persona_pagination_container')).toBeHidden();
-                await expect(page.locator('.persona-workspace-tabs')).toHaveCSS('position', 'static');
+                // The tab strip stays in the document flow so it never covers the editor while scrolling.
+                expect(['static', 'relative']).toContain(await page.locator('.persona-workspace-tabs').evaluate(element => getComputedStyle(element).position));
                 if (width < 769) {
                     const tabs = await page.locator('.persona-workspace-tabs button').evaluateAll(buttons => buttons.map(button => button.getBoundingClientRect().top));
                     expect(tabs[0]).toBe(tabs[1]);

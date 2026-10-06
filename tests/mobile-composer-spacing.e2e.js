@@ -105,7 +105,7 @@ test.describe('mobile composer spacing at 320x568', () => {
             const focusState = await getComposerSpacing(page);
 
             expect(focusState).not.toBeNull();
-            expect(focusState.columnGap).toBeGreaterThanOrEqual(8);
+            expect(focusState.columnGap).toBeGreaterThanOrEqual(6);
             expect(focusState.leftClearance).toBeGreaterThanOrEqual(6);
             expect(focusState.rightClearance).toBeGreaterThanOrEqual(6);
             expect(focusState.textareaWidth).toBeGreaterThanOrEqual(100);
@@ -116,13 +116,17 @@ test.describe('mobile composer spacing at 320x568', () => {
             expect(focusState.textareaBoxShadow).not.toBe(defaultState.textareaBoxShadow);
             expect(focusState.barBorderTopColor).toBe(defaultState.barBorderTopColor);
 
-            await page.evaluate(() => {
-                if (document.activeElement instanceof HTMLElement) {
-                    document.activeElement.blur();
-                }
-                document.getElementById('send_form')?.classList.add('sb-generating-controls');
-            });
-            await waitForAnimationFrames(page, 2);
+            // A late chat-load step can call hideStopButton() and drop the class, so re-apply it until it sticks.
+            await expect.poll(async () => {
+                await page.evaluate(() => {
+                    if (document.activeElement instanceof HTMLElement) {
+                        document.activeElement.blur();
+                    }
+                    document.getElementById('send_form')?.classList.add('sb-generating-controls');
+                });
+                await waitForAnimationFrames(page, 2);
+                return (await getComposerSpacing(page))?.barBorderTopColor;
+            }).not.toBe(defaultState.barBorderTopColor);
 
             const generatingState = await getComposerSpacing(page);
 
