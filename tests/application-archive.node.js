@@ -36,6 +36,22 @@ test('archive metadata is retained after source deletion and job pruning without
     assert.deepEqual(duplicate.record.result, saved.result);
 });
 
+test('archive inventory keeps chat settings and long messages out of the saved plan and result', async t => {
+    const p = setup(t);
+    const header = { chat_metadata: { variables: { notes: 'v'.repeat(2 * 1024 * 1024) } } };
+    fs.writeFileSync(p.f.filename, `${JSON.stringify(header)}\n${JSON.stringify({ mes: `  Opening   line\n${'word '.repeat(400)}`, send_date: 'June 2, 2026' })}\n`);
+    const saved = await p.run('inventory', 'archive-inventory', { scope: 'archive' });
+    assert.ok(Buffer.byteLength(JSON.stringify(saved.plan)) < 4096);
+    assert.equal(Object.hasOwn(saved.plan.files[0].row, 'file_name'), false);
+    const [row] = saved.result.rows;
+    assert.equal(Object.hasOwn(row, 'chat_metadata'), false);
+    assert.equal(row.mes.length, 180);
+    assert.match(row.mes, /^Opening line word word .*\.\.\.$/);
+    assert.deepEqual({ source: row._source, id: row.file_id, name: row.file_name, hash: row.archive_hash, items: row.chat_items },
+        { source: 'archive-inventory', id: 'Source', name: 'Source.jsonl', hash: saved.plan.files[0].hash, items: 1 });
+    assert.match(readArchiveFile(p.base, saved.key, row.archive_hash).bytes.toString(), /"variables"/);
+});
+
 test('saved orphan reads reject later file replacements and another account', async t => {
     const alice = setup(t, 'alice'); const bob = setup(t, 'bob');
     for (const p of [alice, bob]) {
