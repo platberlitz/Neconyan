@@ -769,7 +769,7 @@
   "Click to lock your selected persona to the current chat. Click again to remove the lock.": "Click to lock your selected persona to the current chat. Click again to remove the lock.",
   "Click to set user name for all messages": "Click to set user name for all messages",
   "Persona Description": "Persona Description",
-  "Example: [{{user}} is a 28-year-old Romanian cat girl.]": "Example:\n[{{user}} is a 28-year-old Romanian cat girl.]",
+  "Example: {{user}} is a 7’5” catperson who can’t stop meowing and mrrping.": "Example:\n{{user}} is a 7’5” catperson who can’t stop meowing and mrrping.",
   "Tokens persona description": "Tokens",
   "Position:": "Position:",
   "In Story String / Prompt Manager": "In Story String / Prompt Manager",
