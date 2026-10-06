@@ -69,8 +69,9 @@ export function createNotesEditor(parent, options = {}) {
         history(),
         keymap.of([
             { key: 'Enter', run: view => listCommand(view, continueList) },
-            { key: 'Tab', run: view => listCommand(view, (text, from, to) => indentLines(text, from, to, false, { listsOnly: true })),
-                shift: view => listCommand(view, (text, from, to) => indentLines(text, from, to, true, { listsOnly: true })) },
+            // Tab steps aside while link suggestions are open, so the keydown handler below can accept one.
+            { key: 'Tab', run: view => !options.isSuggesting?.() && listCommand(view, (text, from, to) => indentLines(text, from, to, false, { listsOnly: true })),
+                shift: view => !options.isSuggesting?.() && listCommand(view, (text, from, to) => indentLines(text, from, to, true, { listsOnly: true })) },
         ]),
         keymap.of([...historyKeymap, ...defaultKeymap]),
         EditorView.lineWrapping,
