@@ -3,7 +3,8 @@ import { buildNoteProposalReview } from '../neconyan-assistant-review.js';
 import { newOperationId, notesDownload, notesUpload } from './api.js';
 import { button, choiceRow, clear, field, formatTime, h } from './dom.js';
 import { formatDiff } from './line-diff.js';
-import { NOTE_TEMPLATES, templateById } from './templates.js';
+import { templateById } from './templates.js';
+import { savedTemplates } from './template-settings.js';
 import { parsePropertyValue, propertyInput } from './property-values.js';
 import { proposalLabel, userPhrase } from './user-text.js';
 import { t } from '../i18n.js';
@@ -184,18 +185,35 @@ export async function deleteFolder(app, folder) {
 /* ---------- creating notes ---------- */
 
 export async function newNote(app) {
+    const account = app.state.account;
+    const notebookId = app.state.notebookId;
+    let saved;
+    try { saved = savedTemplates(); } catch (error) { app.toast('error', error.message); return; }
     const titleId = fieldId('title');
     const title = textInput(titleId, '', 'Untitled');
     let template = 'blank';
-    const templates = choiceRow('Start from', NOTE_TEMPLATES.map(item => [item.id, item.label]), template, value => { template = value; });
+    const templates = h('div');
+    function refreshTemplates() {
+        clear(templates);
+        templates.append(choiceRow('Start from', saved.map(item => [item.id, item.label]), template, value => { template = value; }));
+    }
+    refreshTemplates();
+    const manage = button('Manage templates', async () => {
+        const { manageTemplates } = await import('./template-manager.js');
+        if (app.state.account !== account || app.state.notebookId !== notebookId) return;
+        if (!(await manageTemplates(app))) return;
+        saved = savedTemplates();
+        if (!saved.some(item => item.id === template)) template = 'blank';
+        refreshTemplates();
+    }, { icon: 'fa-pen-to-square' });
     const folder = app.state.folder ?? 'Inbox';
     const content = h('div', { class: 'notes-dialog' },
         h('h3', { text: 'New note' }),
         field('Name', title, userPhrase`It goes in ${folder}. You can rename or move it later.`),
-        templates);
+        templates, manage);
     const { ok } = await dialog(content, { okButton: 'Create note', cancelButton: 'Cancel', onOpen: () => title.focus() });
-    if (!ok) return;
-    const chosen = templateById(template);
+    if (!ok || app.state.account !== account || app.state.notebookId !== notebookId) return;
+    const chosen = templateById(template, saved);
     const created = await app.createNote({ folder, title: title.value.trim() || chosen?.title || '', text: chosen?.text ?? '', template });
     if (created) await app.openNote(app.state.notebookId, created.noteId, { pushBack: Boolean(app.state.note) });
 }

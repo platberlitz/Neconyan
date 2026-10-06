@@ -32,7 +32,7 @@ import {
 import { describeChange, splitReply } from './proposals.js';
 import { chooseNote, sessionNoteText } from './notebooks.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261006-scratchpad-notes2';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261006-notebook-feedback1';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;

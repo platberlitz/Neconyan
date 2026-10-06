@@ -14,7 +14,7 @@ import { formatDiff } from './line-diff.js';
 import { userPhrase } from './user-text.js';
 
 const PREFS_KEY = 'neconyan_notes_prefs';
-const NOTES_STYLESHEET = 'css/neconyan-notes.css?v=16';
+const NOTES_STYLESHEET = 'css/neconyan-notes.css?v=17';
 const TOOL_PAGES_STYLESHEET = 'css/neconyan-tool-pages.css?v=20261003-notes-controls4';
 const TOUR_PAGE_KEY = 'notes';
 const SAVE_DELAY_MS = 1200;

@@ -1372,6 +1372,31 @@ body.neconyan.neconyan-notes-beside #sheld {
     margin-bottom: 6px;
 }
 
+.notes-property-row .notes-input,
+.notes-template-manager .notes-input {
+    min-width: 0;
+    width: 100%;
+}
+
+.notes-template-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.notes-template-text {
+    min-height: 180px;
+    max-height: 40vh;
+    resize: vertical;
+    font-family: var(--sb-font-mono, monospace);
+    tab-size: 4;
+}
+
+.notes-template-manager .notes-button,
+.notes-export-notes .notes-button {
+    min-height: 44px;
+}
+
 .notes-backlink,
 .notes-binding,
 .notes-history > li,
