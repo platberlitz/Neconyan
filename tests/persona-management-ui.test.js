@@ -34,6 +34,27 @@ describe('Persona Management mobile layout', () => {
     });
 });
 
+describe('Persona stylesheet loading', () => {
+    const dynamicStylesJs = readFileSync(path.join(repoRoot, 'public', 'scripts', 'dynamic-styles.js'), 'utf8').replace(/\r\n/g, '\n');
+    const shellTabsCss = readFileSync(path.join(repoRoot, 'public', 'css', 'neconyan-tabs.css'), 'utf8').replace(/\r\n/g, '\n');
+
+    test('fetches the persona sheets at high priority once the app is idle', () => {
+        expect(tabsJs).toContain('const NN_IDLE_WARM_PANEL_STYLESHEETS = Object.freeze([[\'characters\', \'persona\']]);');
+        expect(tabsJs).toMatch(/syncMobileViewportState\(\);\n\s*scheduleIdlePanelStylesheetWarmup\(\);/);
+        expect(dynamicStylesJs).toMatch(/if \(priority === 'high'\) \{\n\s*stylesheet\.fetchPriority = 'high';\n\s*stylesheet\.media = media;/);
+    });
+
+    test('keeps Persona Management invisible until its sheets apply, with a fallback', () => {
+        expect(tabsJs).toContain('const personaStylesReady = preloadPanelStylesheets(\'characters\', \'persona\', { priority: \'high\' });');
+        expect(tabsJs).toContain('holdPanelUntilStyled(document.getElementById(\'PersonaManagement\'), personaStylesReady);');
+        expect(tabsJs).toContain('window.setTimeout(reveal, NN_PANEL_STYLE_HOLD_TIMEOUT_MS);');
+        // The hold is an attribute because ensureCharacterPersonaPanel() strips inline styles.
+        const holdRule = getRuleBodies(shellTabsCss, '#PersonaManagement[data-nn-styles-pending]').join('\n');
+        expect(holdRule).toContain('opacity: 0;');
+        expect(holdRule).toContain('pointer-events: none;');
+    });
+});
+
 describe('Scenario Notes disclosure', () => {
     test('starts collapsed with a plain final-prompt preview', () => {
         expect(indexHtml).toMatch(/<details class="persona-appendices-block"[^>]*>\s*<summary id="persona_appendices_heading"/);

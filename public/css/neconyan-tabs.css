@@ -2655,6 +2655,11 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     width: 100% !important;
 }
 
+#PersonaManagement[data-nn-styles-pending] {
+    opacity: 0;
+    pointer-events: none;
+}
+
 .sb-character-import-panel[hidden] {
     display: none !important;
 }

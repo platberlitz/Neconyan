@@ -269,7 +269,11 @@ body.neconyan #PersonaManagement .persona-maintenance-actions > button { min-hei
 .persona-selected-avatar {
     grid-area: avatar;
     width: 48px;
+    min-width: 48px;
+    max-width: 48px;
     height: 48px;
+    min-height: 48px;
+    max-height: 48px;
     border-radius: 50%;
     object-fit: cover;
     border: 1px solid color-mix(in srgb, var(--sb-shell-border) 86%, transparent);

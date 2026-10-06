@@ -181,25 +181,6 @@ input[type="submit"] {
     z-index: calc(var(--sb-z-modal-content) + 5) !important;
 }
 
-#PersonaManagement .persona-selected-masthead {
-    display: grid;
-    grid-template-columns: 48px minmax(0, 1fr);
-    align-items: center;
-    gap: 6px 10px;
-    min-width: 0;
-}
-
-#PersonaManagement .persona-selected-avatar {
-    width: 48px;
-    min-width: 48px;
-    max-width: 48px;
-    height: 48px;
-    min-height: 48px;
-    max-height: 48px;
-    border-radius: 50%;
-    object-fit: cover;
-}
-
 .zoomed_avatar > :is(.zoomed_avatar_container, .avatar_zoom_container) {
     position: relative;
     z-index: 0 !important;

@@ -198,6 +198,8 @@ const NN_PANEL_STYLESHEETS = Object.freeze({
         { href: 'css/neconyan-tool-pages.css?v=20261003-notes-controls4', id: 'deferred-tool-pages-css' },
     ],
 });
+const NN_PANEL_STYLE_HOLD_TIMEOUT_MS = 1500;
+let nnPanelStyleHoldCounter = 0;
 const NN_FRONTEND_ICON_DEFAULT = 'calico';
 const NN_FRONTEND_ICONS = Object.freeze([
     {
@@ -502,7 +504,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261006-folders1';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261006-personaload1';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -10111,7 +10113,8 @@ function openCharacterPersonaTab() {
     const panel = getCharacterPanel();
     nnState.characterDrawer.lastTab = 'persona';
 
-    preloadPanelStylesheets('characters', 'persona');
+    const personaStylesReady = preloadPanelStylesheets('characters', 'persona', { priority: 'high' });
+    holdPanelUntilStyled(document.getElementById('PersonaManagement'), personaStylesReady);
     setCharacterPanelMenuType(panel, 'persona');
     setCharacterEditorEmptyState(false);
     setCharacterImportPanelVisible(false);
@@ -10862,7 +10865,13 @@ function toggleShellPanel(shellKey, tabId = null) {
     window.requestAnimationFrame(() => openShell(shellKey, tabId));
 }
 
-function preloadPanelStylesheets(shellKey, tabId = null) {
+/**
+ * @param {string} shellKey
+ * @param {string|null} [tabId]
+ * @param {{ priority?: 'auto'|'high' }} [options]
+ * @returns {Promise<void>|null} Settles once every sheet has loaded or failed; null when the panel has none.
+ */
+function preloadPanelStylesheets(shellKey, tabId = null, { priority = 'auto' } = {}) {
     // Neconyan: old saved/configured left-shell World Info routes should only
     // preload assets for the relocated Characters tab, never recreate a left tab.
     const normalizedTabId = shellKey === 'left' && tabId === 'world-info' ? 'world-info' : tabId;
@@ -10872,14 +10881,55 @@ function preloadPanelStylesheets(shellKey, tabId = null) {
     const stylesheets = NN_PANEL_STYLESHEETS[normalizedKey] ?? NN_PANEL_STYLESHEETS[key];
 
     if (!stylesheets || !window.NeconyanAssets?.loadStylesheetAsync) {
+        return null;
+    }
+
+    return Promise.all(stylesheets.map(stylesheet => window.NeconyanAssets.loadStylesheetAsync(stylesheet.href, { id: stylesheet.id, priority }).catch(error => {
+        console.warn('Failed to load panel stylesheet:', stylesheet.href, error);
+    }))).then(() => undefined);
+}
+
+/**
+ * Keeps a panel invisible until its stylesheets apply, so it never shows unstyled.
+ * A timeout reveals it anyway if a sheet is slow or fails.
+ * @param {Element|null} element
+ * @param {Promise<void>|null} stylesheetsReady
+ */
+function holdPanelUntilStyled(element, stylesheetsReady) {
+    if (!(element instanceof HTMLElement) || !stylesheetsReady) {
         return;
     }
 
-    for (const stylesheet of stylesheets) {
-        window.NeconyanAssets.loadStylesheetAsync(stylesheet.href, { id: stylesheet.id }).catch(error => {
-            console.warn('Failed to load panel stylesheet:', stylesheet.href, error);
-        });
+    // An attribute, not an inline style: ensureCharacterPersonaPanel() strips the style attribute.
+    const token = String(++nnPanelStyleHoldCounter);
+    element.dataset.nnStylesPending = token;
+
+    const reveal = () => {
+        if (element.dataset.nnStylesPending === token) {
+            delete element.dataset.nnStylesPending;
+        }
+    };
+
+    stylesheetsReady.finally(reveal);
+    window.setTimeout(reveal, NN_PANEL_STYLE_HOLD_TIMEOUT_MS);
+}
+
+// Panels whose sheets are fetched once the app is idle, before anyone opens them.
+const NN_IDLE_WARM_PANEL_STYLESHEETS = Object.freeze([['characters', 'persona']]);
+
+function scheduleIdlePanelStylesheetWarmup() {
+    const warm = () => {
+        for (const [shellKey, tabId] of NN_IDLE_WARM_PANEL_STYLESHEETS) {
+            preloadPanelStylesheets(shellKey, tabId, { priority: 'high' });
+        }
+    };
+
+    if ('requestIdleCallback' in window) {
+        window.requestIdleCallback(warm, { timeout: 4000 });
+        return;
     }
+
+    window.setTimeout(warm, 2000);
 }
 
 function isLandingPageVisible() {
@@ -20316,6 +20366,7 @@ function initAll() {
     applyDefaultDrawerStates();
     bindInlineDrawerAutoCloseToggle();
     syncMobileViewportState();
+    scheduleIdlePanelStylesheetWarmup();
 
     window.addEventListener('resize', queueMobileViewportStateSync, { passive: true });
     window.addEventListener('orientationchange', queueMobileViewportStateSync);
