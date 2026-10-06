@@ -16,8 +16,10 @@ export function prepareActiveRegex(material, macroEnvironment) {
         if (policy.presetAllowed[policy.preset.api]?.includes(policy.preset.name)) lists.push(policy.presetScripts);
     }
     const avatar = macroEnvironment?.extra?.characterAvatar;
-    if (policy.characterAllowed.length && !avatar) fail('This request needs its captured character before applying output transformations.', 409);
-    if (policy.characterAllowed.includes(avatar)) {
+    // Requests that never speak as a character declare it, so character scripts are skipped rather than guessed.
+    const characterless = macroEnvironment?.extra?.characterScope === 'none';
+    if (!characterless && policy.characterAllowed.length && !avatar) fail('This request needs its captured character before applying output transformations.', 409);
+    if (!characterless && policy.characterAllowed.includes(avatar)) {
         const character = macroEnvironment?.extra?.character;
         if (!character) fail('The captured character transformations are unavailable.', 409);
         lists.push(character.extensions?.regex_scripts || []);

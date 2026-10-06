@@ -37,6 +37,8 @@ const MAX_HISTORY_BYTES = 512 * 1024;
 const PREPARE_TIMEOUT_MS = 60 * 1000;
 
 const fail = (code, message, status = 400) => new ScratchpadError(code, message, status);
+// Scratchpad assistants never speak as the chat character, so its output scripts do not apply.
+const scratchpadMacroEnvironment = names => createMacroEnvironment({ names, extra: { characterScope: 'none' } }, {}, { readOnly: true });
 const bytes = value => Buffer.byteLength(String(value ?? ''), 'utf8');
 
 function boundedText(value, max, label, { required = false } = {}) {
@@ -171,7 +173,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         const rawOptions = binding.kind === 'active' ? { trimNames: false } : {};
         const preparedMessages = !binding.backend || binding.backend === 'chat';
         const names = { user: input.names.user, char: system.persona.name };
-        await validateActiveGenerationContext(resolveGenerationProfile(directories, binding), createMacroEnvironment({ names }, {}, { readOnly: true }),
+        await validateActiveGenerationContext(resolveGenerationProfile(directories, binding), scratchpadMacroEnvironment(names),
             messages, rawOptions, { maxTokens: planned.maxTokens, preparedMessages });
         return { replyId: newScratchpadId(), assistant: speaker.assistant, gender: speaker.gender, binding, messages, maxTokens: planned.maxTokens,
             userName: names.user, characterName: names.char, rawOptions, preparedMessages };
@@ -301,7 +303,7 @@ async function runParticipant(context, request, { generate, grouped = false }) {
                 binding: request.binding,
                 messages: request.messages,
                 maxTokens: request.maxTokens,
-                macroEnvironment: createMacroEnvironment({ names: { user: request.userName, char: request.characterName } }, {}, { readOnly: true }),
+                macroEnvironment: scratchpadMacroEnvironment({ user: request.userName, char: request.characterName }),
                 userName: request.userName,
                 characterName: request.characterName,
                 groupNames: [],

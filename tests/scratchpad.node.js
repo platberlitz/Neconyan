@@ -91,6 +91,7 @@ test('a reply runs as a server job, streams a preview and settles into the saved
     assert.equal(seen.maxTokens, 16000, 'new sessions send the new reply limit to the model');
     assert.equal(seen.preparedMessages, true);
     assert.equal(seen.characterName, 'Taro');
+    assert.equal(seen.macroEnvironment.extra.characterScope, 'none', 'Scratchpad never speaks as a chat character, so character output rules are skipped');
     assert.match(seen.messages[0].content, /You are Taro/);
     assert.match(seen.messages[1].content, /<story_context>\n#1 User: Original/);
     assert.equal(seen.messages.at(-1).content, 'What is Nova hiding in this scene?');
