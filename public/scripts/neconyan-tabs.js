@@ -7,7 +7,6 @@ import {
     normalizeMobileShellText as normalizeText,
 } from './mobile-shell-lifecycle/index.js';
 import { isIOSWebKitPlatform, isLegacyIOSWebKitPlatform } from './mobile-send-button.js';
-import { hasChatNavigationDraft } from './chat-navigation-flight.js';
 import { createPresetApiSyncLifecycle } from './preset-api-sync-lifecycle/index.js';
 import { fetchWithCsrfRetry } from './csrf-token-refresh.js';
 import { hasServerReturnedAfterRestart } from './server-restart-monitor.js';
@@ -10987,10 +10986,6 @@ function bindLandingPageObserver() {
 }
 
 async function returnToLandingPage() {
-    if (hasChatNavigationDraft(getActualNeconyanMode())) {
-        toastr.warning('Send or clear the current draft before switching chats.');
-        return;
-    }
     if (isNeconyanModeBusy()) {
         toastr.warning('Finish the current reply or save before switching chats.');
         return;
