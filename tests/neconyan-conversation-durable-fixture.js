@@ -205,9 +205,15 @@ export const test = base.extend({
                             runtimeStatusOverrides: store.runtimeStatusOverrides };
                     },
                     async changeStore(change) {
-                        const saved = await post('/api/neconyan-conversation/store/get');
-                        change(saved.store);
-                        return post('/api/neconyan-conversation/store/save', saved);
+                        // The open page may save at the same moment; reread and reapply on a version conflict.
+                        for (let attempt = 1; ; attempt++) {
+                            const saved = await post('/api/neconyan-conversation/store/get');
+                            change(saved.store);
+                            const response = await context.request.post('/api/neconyan-conversation/store/save', { headers, data: saved });
+                            if (response.ok()) return response.json();
+                            const text = await response.text();
+                            expect(attempt < 5 && text.includes('settings_conflict'), '/api/neconyan-conversation/store/save: ' + text).toBe(true);
+                        }
                     },
                     async branch(id) {
                         const slot = (await account.store()).characters[thread.threadKey];

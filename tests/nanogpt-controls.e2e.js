@@ -70,7 +70,8 @@ async function installRoutes(page, baseURL) {
             return route.fulfill({ json: { balance: 0, credits: 0 } });
         }
         // Only local data APIs reach the temporary server; all inference and unknown APIs are blocked.
-        if (url.pathname.startsWith('/api/') && !/^\/api\/(settings|secrets|presets|characters|chats|groups|avatars|backgrounds|worldinfo|content|themes|quick-replies|users|stats|tokenizers)\//.test(url.pathname)
+        // Chat navigation is checked on every launch; blocking it opens a 'Chat could not be opened' dialog over the page.
+        if (url.pathname.startsWith('/api/') && !/^\/api\/(settings|secrets|presets|characters|chats|groups|avatars|backgrounds|worldinfo|content|themes|quick-replies|users|stats|tokenizers|chat-navigation)\//.test(url.pathname)
             && !['/api/ping', '/api/extensions/discover'].includes(url.pathname)) {
             return route.abort();
         }
