@@ -183,7 +183,7 @@ const NN_PANEL_STYLESHEETS = Object.freeze({
         { href: 'css/neconyan-tool-pages.css?v=20261003-notes-controls4', id: 'deferred-tool-pages-css' },
     ],
     'right:extensions': [
-        { href: 'css/extensions-panel.css?v=20260425a', id: 'deferred-extensions-panel-css' },
+        { href: 'css/extensions-panel.css?v=20261006a', id: 'deferred-extensions-panel-css' },
     ],
     'right:background': [
         { href: 'css/neconyan-tool-pages.css?v=20261003-notes-controls4', id: 'deferred-tool-pages-css' },
@@ -502,7 +502,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261006-railmenu1';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261006-extmgr1';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',

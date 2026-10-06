@@ -19,6 +19,12 @@ import {
     sortExtensionBootEntries,
 } from './extension-boot-lifecycle/index.js';
 import { NECONYAN_COMPATIBLE_ST_VERSION } from './neconyan-version-map.js';
+import {
+    bindExtensionManager,
+    getExtensionManagerDescription,
+    getExtensionManagerGroup,
+    syncExtensionToggleState,
+} from './extensions-manager.js';
 
 export {
     SimpleMutex as ModuleWorkerWrapper,
@@ -73,6 +79,9 @@ const activatingExtensionDedupKeys = new Set();
  * @type {Set<string>}
  */
 const extensionLoadErrors = new Set();
+
+/** Styles for the 'Manage extensions' window; keep the version in step with neconyan-tabs.js. */
+const EXTENSIONS_PANEL_STYLESHEET = 'css/extensions-panel.css?v=20261006a';
 
 // Neconyan: extensions append settings UI into shared columns; keep that surface resilient.
 const extensionSettingsHostIds = ['extensions_settings', 'extensions_settings2'];
@@ -596,14 +605,19 @@ async function discoverExtensions() {
     }
 }
 
-function onDisableExtensionClick() {
+/**
+ * Turns an extension on or off to match its switch in the 'Manage extensions' window.
+ * The switch's own checked state decides, so turning one off and on again works.
+ * @this {HTMLInputElement}
+ */
+function onExtensionToggleChange() {
     const name = $(this).data('name');
-    disableExtension(name, false);
-}
-
-function onEnableExtensionClick() {
-    const name = $(this).data('name');
-    enableExtension(name, false);
+    syncExtensionToggleState(this, { on: t`On`, off: t`Off` });
+    if (this.checked) {
+        enableExtension(name, false);
+    } else {
+        disableExtension(name, false);
+    }
 }
 
 /**
@@ -1298,9 +1312,25 @@ function generateExtensionHtml(name, manifest, isActive, isDisabled, isExternal,
             : '<a>';
     }
 
-    let toggleElement = isActive || isDisabled ?
-        '<input type="checkbox" title="' + t`Click to toggle` + `" data-name="${name}" class="${isActive ? 'toggle_disable' : 'toggle_enable'} ${checkboxClass}" ${isActive ? 'checked' : ''}>` :
-        `<input type="checkbox" title="Cannot enable extension" data-name="${name}" class="extension_missing ${checkboxClass}" disabled>`;
+    const safeDisplayName = DOMPurify.sanitize(displayName);
+    const toggleLabel = escapeHtml(t`Turn ${displayName} on or off`);
+    const toggleElement = isActive || isDisabled
+        ? `<label class="extension_toggle" title="${toggleLabel}">
+            <input type="checkbox" role="switch" aria-label="${toggleLabel}" data-name="${name}" class="${isActive ? 'toggle_disable' : 'toggle_enable'} ${checkboxClass}" ${isActive ? 'checked' : ''}>
+            <span class="extension_toggle_state" aria-hidden="true">${isActive ? t`On` : t`Off`}</span>
+        </label>`
+        : `<label class="extension_toggle" title="${escapeHtml(t`This extension could not be loaded, so it cannot be turned on.`)}">
+            <input type="checkbox" role="switch" aria-label="${escapeHtml(t`${displayName} could not be loaded`)}" data-name="${name}" class="extension_missing ${checkboxClass}" disabled>
+            <span class="extension_toggle_state" aria-hidden="true">${t`Unavailable`}</span>
+        </label>`;
+    const description = getExtensionManagerDescription(name, manifest);
+    const descriptionHtml = description
+        ? `<span class="extension_description">${DOMPurify.sanitize(t([description]))}</span>`
+        : '';
+    const extensionType = getExtensionType(name);
+    const installedLabel = extensionType === 'global'
+        ? t`Installed for everyone on this server`
+        : extensionType === 'local' ? t`Installed for you` : '';
 
     let deleteButton = isExternal ? `<button class="btn_delete menu_button" data-name="${externalId}" data-i18n="[title]Delete" title="Delete"><i class="fa-fw fa-solid fa-trash-can"></i></button>` : '';
     let cleanButton = (isExternal || isNative) && hasExtensionHook(externalId, 'clean') ? `<button class="btn_clean menu_button" data-name="${externalId}" data-i18n="[title]Clean extension data" title="Clean extension data"><i class="fa-fw fa-solid fa-broom"></i></button>` : '';
@@ -1311,33 +1341,19 @@ function generateExtensionHtml(name, manifest, isActive, isDisabled, isExternal,
     let syncButton = manifest.auto_update === true && !isExternal && !isNative && isUserAdmin ? `<button class="btn_sync menu_button" data-name="${externalId}" title="Sync from upstream"><i class="fa-solid fa-arrows-rotate fa-fw"></i></button>` : '';
     // if external, wrap the name in a link to the repo
 
-    let extensionHtml = `
-        <div class="extension_block${isNative ? ' extension_native' : ''}" data-name="${externalId}" data-extension-type="${DOMPurify.sanitize(getExtensionType(name))}">
-            <div class="extension_toggle">
-                ${toggleElement}
-            </div>
-            <div class="extension_icon">
-                ${extensionIcon}
-            </div>
-            <div class="flexGrow extension_text_block">
-                ${originHtml}
-                <span class="${isActive ? 'extension_enabled' : isDisabled ? 'extension_disabled' : 'extension_missing'}">
-                    <span class="extension_name">${DOMPurify.sanitize(displayName)}</span>
-                    <span class="extension_version">${DOMPurify.sanitize(displayVersion)}</span>
-                </span>
-                ${isExternal || isNative ? '</a>' : ''}
-                ${isNative ? `<span class="extension_origin">${t`Included with Neconyan`}${authorAttribution}${licenseLink}</span>` : ''}
-            </div>
+    const actionsHtml = [updateButton, syncButton, branchButton, moveButton, cleanButton, reinstallButton, deleteButton].join('');
 
-            <div class="extension_actions flex-container alignItemsCenter">
-                ${updateButton}
-                ${syncButton}
-                ${branchButton}
-                ${moveButton}
-                ${cleanButton}
-                ${reinstallButton}
-                ${deleteButton}
+    const extensionHtml = `
+        <div class="extension_block${isNative ? ' extension_native' : ''}" data-name="${externalId}" data-extension-type="${DOMPurify.sanitize(extensionType)}" data-enabled="${isActive}">
+            <div class="extension_icon">${extensionIcon}</div>
+            <div class="extension_text_block">
+                <span class="extension_title">${originHtml}<span class="${isActive ? 'extension_enabled' : isDisabled ? 'extension_disabled' : 'extension_missing'}"><span class="extension_name">${safeDisplayName}</span> <span class="extension_version">${DOMPurify.sanitize(displayVersion)}</span></span>${isExternal || isNative ? '</a>' : ''}</span>
+                ${descriptionHtml}
+                ${isNative ? `<span class="extension_origin">${t`Included with Neconyan`}${authorAttribution}${licenseLink}</span>` : ''}
+                ${installedLabel ? `<span class="extension_origin">${installedLabel}</span>` : ''}
             </div>
+            <div class="extension_actions">${actionsHtml}</div>
+            ${toggleElement}
         </div>`;
 
     return extensionHtml;
@@ -1403,22 +1419,30 @@ async function showExtensionsDetails() {
             initialScrollTop = oldPopup.content.scrollTop;
             await oldPopup.completeCancelled();
         }
+        await loadStylesheetAsync(EXTENSIONS_PANEL_STYLESHEET, { id: 'deferred-extensions-panel-css' })
+            .catch(error => console.warn('[Extensions] Could not load the extensions window styles', error));
+
         const htmlErrors = getExtensionLoadErrorsHtml();
-        const htmlDefault = $('<div class="marginBot10"><h3>' + t`Built-in Extensions:` + '</h3></div>');
-
-        const htmlExternal = $(`<div class="marginBot10">
-            <div class="flex-container alignitemscenter spaceBetween flexnowrap marginBot10">
-                <h3 class="margin0">${t`Installed Extensions:`}</h3>
-                <div class="flex-container third_party_toolbar"></div>
+        const createSection = (group, title, hint) => $(`<section class="nn-ext-section" data-group="${group}">
+            <div class="nn-ext-section-head">
+                <div class="nn-ext-section-title">
+                    <h3>${title} <span class="nn-ext-count"></span></h3>
+                    <p>${hint}</p>
+                </div>
             </div>
-        </div>`);
+            <div class="nn-ext-list"></div>
+        </section>`);
+        const sections = {
+            neconyan: createSection('neconyan', t`Neconyan tools`, t`Made for Neconyan and updated with it.`),
+            builtin: createSection('builtin', t`Built-in features`, t`Come with every install. Turn off anything you do not use.`),
+            installed: createSection('installed', t`Installed by you`, t`Extensions you added from a link. You can update or remove these.`),
+        };
+        const htmlExternal = sections.installed;
 
-        const htmlLoading = $(`<div class="flex-container alignItemsCenter justifyCenter marginTop10 marginBot5">
-            <i class="fa-solid fa-spinner fa-spin"></i>
-            <span>` + t`Loading third-party extensions... Please wait...` + `</span>
+        const htmlLoading = $(`<div class="nn-ext-loading" role="status">
+            <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
+            <span>${t`Checking for updates...`}</span>
         </div>`);
-
-        htmlExternal.append(htmlLoading);
 
         const sortOrderKey = 'extensions_sortByName';
         const sortByName = accountStorage.getItem(sortOrderKey) === 'true';
@@ -1426,24 +1450,39 @@ async function showExtensionsDetails() {
         const extensions = Object.entries(manifests).sort((a, b) => sortFn(a[1], b[1])).map(getExtensionData);
         const renderedExtensions = new Set();
         let extensionsToToggle = [];
+        let installedCount = 0;
 
         extensions.forEach(value => {
-            const { isExternal, extensionHtml, name, dedupeKey } = value;
+            const { extensionHtml, name, dedupeKey } = value;
             if (renderedExtensions.has(dedupeKey)) {
                 console.warn(`[Extensions] Skipping duplicate extension block for "${name}"`);
                 return;
             }
 
             renderedExtensions.add(dedupeKey);
-            const container = isExternal ? htmlExternal : htmlDefault;
-            container.append(extensionHtml);
+            const group = getExtensionManagerGroup(getExtensionType(name));
+            if (group === 'installed') installedCount++;
+            sections[group].find('.nn-ext-list').append(extensionHtml);
         });
 
+        if (installedCount > 0) {
+            htmlExternal.find('.nn-ext-list').after(htmlLoading);
+        } else {
+            htmlLoading.remove();
+            const emptyState = $(`<div class="nn-ext-empty">
+                <p>${t`Nothing installed yet. Paste a link to an extension to add it.`}</p>
+                <button type="button" class="menu_button menu_button_icon nn-ext-install"><i class="fa-solid fa-cloud-arrow-down" aria-hidden="true"></i><span>${t`Install extension`}</span></button>
+            </div>`);
+            emptyState.find('.nn-ext-install').on('click', () => {
+                popup.completeCancelled().then(() => $('#third_party_extension_button').trigger('click'));
+            });
+            htmlExternal.find('.nn-ext-list').replaceWith(emptyState);
+        }
+
+        const stateLabels = { on: t`On`, off: t`Off` };
         const html = $('<div></div>')
-            .addClass('extensions_info')
-            .append(htmlErrors)
-            .append(htmlDefault)
-            .append(htmlExternal);
+            .addClass('extensions_info nn-ext-manager')
+            .append(htmlErrors);
 
         {
             const updateAction = async (force) => {
@@ -1452,83 +1491,107 @@ async function showExtensionsDetails() {
                 await popup.complete(POPUP_RESULT.AFFIRMATIVE);
             };
 
-            const toolbar = document.createElement('div');
-            toolbar.classList.add('extensions_toolbar');
+            const toolbar = $(`<div class="extensions_toolbar nn-ext-toolbar">
+                <p class="nn-ext-intro">${t`Turn features on or off. Changes apply when you close this window.`}</p>
+                <div class="nn-ext-controls">
+                    <label class="nn-ext-search">
+                        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                        <input type="search" class="text_pole" autocomplete="off" spellcheck="false" placeholder="${escapeHtml(t`Search extensions`)}" aria-label="${escapeHtml(t`Search extensions`)}">
+                    </label>
+                    <div class="nn-ext-filters" role="group" aria-label="${escapeHtml(t`Show`)}">
+                        <button type="button" class="nn-ext-filter" data-filter="all" aria-pressed="true">${t`All`} <span class="nn-ext-filter-count"></span></button>
+                        <button type="button" class="nn-ext-filter" data-filter="on" aria-pressed="false">${t`On`} <span class="nn-ext-filter-count"></span></button>
+                        <button type="button" class="nn-ext-filter" data-filter="off" aria-pressed="false">${t`Off`} <span class="nn-ext-filter-count"></span></button>
+                    </div>
+                    <button type="button" class="nn-ext-sort" title="${escapeHtml(t`Change the order of the list`)}">
+                        <i class="fa-solid fa-arrow-down-wide-short" aria-hidden="true"></i>
+                        <span>${sortByName ? t`A to Z` : t`Load order`}</span>
+                    </button>
+                </div>
+            </div>`);
 
-            const updateAllButton = document.createElement('button');
-            updateAllButton.classList.add('menu_button', 'menu_button_icon');
-            updateAllButton.textContent = t`Update all`;
-            updateAllButton.addEventListener('click', () => updateAction(true));
-
-            const updateEnabledOnlyButton = document.createElement('button');
-            updateEnabledOnlyButton.classList.add('menu_button', 'menu_button_icon');
-            updateEnabledOnlyButton.textContent = t`Update enabled`;
-            updateEnabledOnlyButton.addEventListener('click', () => updateAction(false));
-
-            const toggleAllExtensionsButton = document.createElement('div');
-            toggleAllExtensionsButton.classList.add('menu_button', 'menu_button_icon');
-            toggleAllExtensionsButton.title = t`Bulk toggle third-party extensions.`;
-            toggleAllExtensionsButton.innerHTML = `
-                <span>${t`Toggle extensions`}</span>
-                <div class="fa-solid fa-circle-info opacity50p"></div>
-            `;
-
-            const restoreBulkToggledExtensionsButton = document.createElement('div');
-            restoreBulkToggledExtensionsButton.classList.add('menu_button', 'menu_button_icon', 'fa-solid', 'fa-arrow-right-rotate', 'displayNone');
-            restoreBulkToggledExtensionsButton.title = t`Restore toggled extensions.\n\nIt does not restore extensions toggled individually.`;
-
-            toggleAllExtensionsButton.addEventListener('click', () => {
-                extensionsToToggle = onToggleAllExtensions(extensionsToToggle, htmlExternal);
-
-                for (const extension of extensionsToToggle) {
-                    const { name } = extension;
-
-                    htmlExternal
-                        .find(`.extension_block[data-name="${name.replace('third-party', '')}"] .extension_toggle input`)
-                        .off('click')
-                        .one('click', () => {
-                            extensionsToToggle = extensionsToToggle.filter(ext => ext.name !== name);
-                        });
-                }
-
-                const restoreButtonHandler = extensionsToToggle.length > 0 ? 'remove' : 'add';
-
-                restoreBulkToggledExtensionsButton.classList[restoreButtonHandler]('displayNone');
-            });
-
-            restoreBulkToggledExtensionsButton.addEventListener('click', () => {
-                for (const extension of extensionsToToggle) {
-                    const { name } = extension;
-                    const isDisabled = isExtensionDisabled(name);
-
-                    htmlExternal
-                        .find(`.extension_block[data-name="${name.replace('third-party', '')}"] .extension_toggle input`)
-                        .prop('checked', !isDisabled)
-                        .toggleClass('toggle_enable', isDisabled)
-                        .toggleClass('toggle_disable', !isDisabled)
-                        .toggleClass('checkbox_disabled', isDisabled);
-                }
-
-                extensionsToToggle = [];
-                restoreBulkToggledExtensionsButton.classList.add('displayNone');
-            });
-
-            const flexExpander = document.createElement('div');
-            flexExpander.classList.add('expander');
-
-            const sortOrderButton = document.createElement('button');
-            sortOrderButton.classList.add('menu_button', 'menu_button_icon');
-            sortOrderButton.textContent = sortByName ? t`Sort: Display Name` : t`Sort: Loading Order`;
-            sortOrderButton.addEventListener('click', async () => {
+            toolbar.find('.nn-ext-sort').on('click', async () => {
                 abortController.abort();
                 accountStorage.setItem(sortOrderKey, sortByName ? 'false' : 'true');
                 await showExtensionsDetails();
             });
 
-            toolbar.append(updateAllButton, updateEnabledOnlyButton, flexExpander, sortOrderButton);
-            htmlExternal.find('.third_party_toolbar').append(restoreBulkToggledExtensionsButton, toggleAllExtensionsButton);
-            html.prepend(toolbar);
+            const pendingNotice = $(`<div class="nn-ext-pending" role="status" hidden>
+                <i class="fa-solid fa-rotate" aria-hidden="true"></i>
+                <span class="nn-ext-pending-text"></span>
+            </div>`);
+            const noMatches = $(`<p class="nn-ext-no-matches" hidden>${t`No extensions match. Try another word, or show all.`}</p>`);
+
+            html.append(toolbar, pendingNotice, sections.neconyan, sections.builtin, sections.installed, noMatches);
+
+            if (installedCount > 0) {
+                const installedToolbar = $('<div class="nn-ext-section-actions third_party_toolbar"></div>');
+
+                const updateAllButton = document.createElement('button');
+                updateAllButton.type = 'button';
+                updateAllButton.classList.add('menu_button', 'menu_button_icon');
+                updateAllButton.textContent = t`Update all`;
+                updateAllButton.addEventListener('click', () => updateAction(true));
+
+                const updateEnabledOnlyButton = document.createElement('button');
+                updateEnabledOnlyButton.type = 'button';
+                updateEnabledOnlyButton.classList.add('menu_button', 'menu_button_icon');
+                updateEnabledOnlyButton.textContent = t`Update the ones that are on`;
+                updateEnabledOnlyButton.addEventListener('click', () => updateAction(false));
+
+                const toggleAllExtensionsButton = document.createElement('button');
+                toggleAllExtensionsButton.type = 'button';
+                toggleAllExtensionsButton.classList.add('menu_button', 'menu_button_icon');
+                toggleAllExtensionsButton.title = t`Turns every installed extension off, or all of them back on if they are all off.`;
+                toggleAllExtensionsButton.textContent = t`Turn all on or off`;
+
+                const restoreBulkToggledExtensionsButton = document.createElement('button');
+                restoreBulkToggledExtensionsButton.type = 'button';
+                restoreBulkToggledExtensionsButton.classList.add('menu_button', 'menu_button_icon', 'displayNone');
+                restoreBulkToggledExtensionsButton.title = t`Puts back the switches you changed with 'Turn all on or off'. Switches you changed one by one stay as they are.`;
+                restoreBulkToggledExtensionsButton.textContent = t`Undo`;
+
+                toggleAllExtensionsButton.addEventListener('click', () => {
+                    extensionsToToggle = onToggleAllExtensions(extensionsToToggle, htmlExternal);
+
+                    for (const extension of extensionsToToggle) {
+                        const { name } = extension;
+
+                        htmlExternal
+                            .find(`.extension_block[data-name="${name.replace('third-party', '')}"] .extension_toggle input`)
+                            .off('click')
+                            .one('click', () => {
+                                extensionsToToggle = extensionsToToggle.filter(ext => ext.name !== name);
+                            });
+                    }
+
+                    const restoreButtonHandler = extensionsToToggle.length > 0 ? 'remove' : 'add';
+
+                    restoreBulkToggledExtensionsButton.classList[restoreButtonHandler]('displayNone');
+                    extensionManager?.refresh();
+                });
+
+                restoreBulkToggledExtensionsButton.addEventListener('click', () => {
+                    for (const extension of extensionsToToggle) {
+                        const { name } = extension;
+                        const isDisabled = isExtensionDisabled(name);
+
+                        htmlExternal
+                            .find(`.extension_block[data-name="${name.replace('third-party', '')}"] .extension_toggle input`)
+                            .prop('checked', !isDisabled);
+                    }
+
+                    extensionsToToggle = [];
+                    restoreBulkToggledExtensionsButton.classList.add('displayNone');
+                    extensionManager?.refresh();
+                });
+
+                installedToolbar.append(updateAllButton, updateEnabledOnlyButton, toggleAllExtensionsButton, restoreBulkToggledExtensionsButton);
+                htmlExternal.find('.nn-ext-section-head').append(installedToolbar);
+            }
         }
+
+        let extensionManager = null;
 
         let waitingForSave = false;
 
@@ -1573,6 +1636,15 @@ async function showExtensionsDetails() {
             },
         });
         popupPromise = popup.show();
+        extensionManager = bindExtensionManager(html[0], {
+            stateLabels,
+            pendingText: count => count === 1
+                ? t`1 change is waiting. It applies when you close this window, and the page reloads.`
+                : t`${count} changes are waiting. They apply when you close this window, and the page reloads.`,
+            onPendingChange: count => {
+                popup.okButton.textContent = count > 0 || stateChanged ? t`Close and reload` : t`Close`;
+            },
+        });
         popup.content.scrollTop = initialScrollTop;
         checkForUpdatesManual(sortFn, abortController.signal).finally(() => htmlLoading.remove());
     } catch (error) {
@@ -2669,8 +2741,7 @@ export async function initExtensions() {
 
     $('#extensions_details').on('click', showExtensionsDetails);
     $('#extensions_notify_updates').on('input', notifyUpdatesInputHandler);
-    $(document).on('click', '.extensions_info .extension_block .toggle_disable', onDisableExtensionClick);
-    $(document).on('click', '.extensions_info .extension_block .toggle_enable', onEnableExtensionClick);
+    $(document).on('change', '.extensions_info .extension_block .extension_toggle input:not(.extension_missing)', onExtensionToggleChange);
     $(document).on('click', '.extensions_info .extension_block .btn_update', onUpdateClick);
     $(document).on('click', '.extensions_info .extension_block .btn_sync', onSyncClick);
     $(document).on('click', '.extensions_info .extension_block .btn_delete', onDeleteClick);
