@@ -68,6 +68,8 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
                 expect(geometry.actions.every(action => action.label.length > 0)).toBe(true);
                 if (viewport.width < 769) expect(geometry.actions.filter(action => action.width < 43.5 || action.height < 43.5)).toEqual([]);
                 await page.screenshot({ path: info.outputPath('companion-panel.png') });
+                // A late chat-load step can move focus to the composer; Escape belongs to the panel only while focus is inside it.
+                await panel.locator('[data-action="panel-close"]').focus();
                 await page.keyboard.press('Escape');
                 await expect(panel).toBeHidden();
                 expect(requests).toEqual([]);
