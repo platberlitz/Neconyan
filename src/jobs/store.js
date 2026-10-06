@@ -14,6 +14,10 @@ export const JOB_LEDGER_MAX_BYTES = 4 * 1024 * 1024;
 // Matches the endpoint body limit so an accepted intent always fits on disk.
 export const JOB_INTENT_LIMIT_BYTES = 3 * 1024 * 1024;
 export const JOB_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+// Unresolved failures carry their whole prompt, so a day of them is enough
+// time to retry; after that they are dismissed and can be cleared for space.
+export const JOB_FAILURE_RETENTION_MS = 24 * 60 * 60 * 1000;
+const PROCESS_STARTED_AT = Date.now();
 
 // Typed limits. They are enforced on both halves of the boundary: the HTTP
 // endpoint cannot be handed an object that would not fit on disk, and the
@@ -193,7 +197,11 @@ function readStore(directories) {
     return store;
 }
 
-const baseRemovable = job => ['completed', 'cancelled'].includes(job.state) || (isTerminal(job) && job.dismissed);
+const finishedCleanly = job => ['completed', 'cancelled'].includes(job.state);
+const unresolvedFailure = job => isTerminal(job) && !finishedCleanly(job) && !job.dismissed;
+const failureExpired = (job, at = now()) => unresolvedFailure(job)
+    && (job.finishedAt ?? job.updatedAt ?? 0) <= at - JOB_FAILURE_RETENTION_MS;
+const baseRemovable = job => finishedCleanly(job) || (isTerminal(job) && (job.dismissed || failureExpired(job)));
 
 /**
  * A conversation family is retained or dropped together: a finished child must
@@ -212,6 +220,9 @@ function familyLocked(job, jobs) {
 }
 
 const removable = (job, jobs = {}) => !pruneHolds.has(job.owner) && baseRemovable(job) && !familyLocked(job, jobs);
+// Last resort when the ledger is over a limit: a recent unresolved failure may
+// go so new work is never refused because of old mistakes.
+const evictableFailure = (job, jobs = {}) => !pruneHolds.has(job.owner) && unresolvedFailure(job) && !familyLocked(job, jobs);
 
 function pruneJobs(jobs, protectedId) {
     const entries = Object.entries(jobs);
@@ -224,6 +235,15 @@ function pruneJobs(jobs, protectedId) {
         .filter(([, job]) => job.id !== protectedId && removable(job, jobs))
         .sort(([, left], [, right]) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0));
     for (const [key] of nonTerminal) keep.add(key);
+    if (keep.size > JOB_LIMIT) {
+        const failures = nonTerminal
+            .filter(([, job]) => job.id !== protectedId && evictableFailure(job, jobs))
+            .sort(([, left], [, right]) => (left.updatedAt ?? 0) - (right.updatedAt ?? 0));
+        for (const [key] of failures) {
+            if (keep.size <= JOB_LIMIT) break;
+            keep.delete(key);
+        }
+    }
     for (const [key, job] of terminal) {
         if (keep.size >= JOB_LIMIT) break;
         if (keep.size >= JOB_RETAINED_LIMIT && (job.updatedAt ?? 0) <= now() - JOB_RETENTION_MS) continue;
@@ -232,20 +252,31 @@ function pruneJobs(jobs, protectedId) {
     return Object.fromEntries(entries.filter(([key]) => keep.has(key)));
 }
 
-function writeStore(directories, store, protectedId) {
-    const previousKeys = Object.keys(store.jobs);
+function dismissExpiredFailures(jobs) {
+    const at = now();
+    for (const job of Object.values(jobs)) {
+        if (!failureExpired(job, at)) continue;
+        job.dismissed = true;
+        job.dismissedReason = 'expired';
+    }
+}
+
+function writeStore(directories, store, protectedId, previousKeys = Object.keys(store.jobs)) {
+    dismissExpiredFailures(store.jobs);
     const ordered = { ...store, jobs: pruneJobs(store.jobs, protectedId) };
     ordered.revision += 1;
     ordered.updatedAt = now();
     let text = JSON.stringify(ordered);
-    for (const [key, job] of Object.entries(ordered.jobs).sort(([, a], [, b]) => a.updatedAt - b.updatedAt)) {
-        if (Buffer.byteLength(text) <= JOB_LEDGER_MAX_BYTES) break;
-        if (job.id === protectedId || !removable(job, ordered.jobs)) continue;
-        delete ordered.jobs[key];
-        text = JSON.stringify(ordered);
+    for (const canDrop of [removable, evictableFailure]) {
+        for (const [key, job] of Object.entries(ordered.jobs).sort(([, a], [, b]) => a.updatedAt - b.updatedAt)) {
+            if (Buffer.byteLength(text) <= JOB_LEDGER_MAX_BYTES) break;
+            if (job.id === protectedId || !canDrop(job, ordered.jobs)) continue;
+            delete ordered.jobs[key];
+            text = JSON.stringify(ordered);
+        }
     }
     if (Buffer.byteLength(text) > JOB_LEDGER_MAX_BYTES) {
-        throw fail(413, 'JOB_STORE_FULL', 'The job ledger for this account is full. Older finished jobs must be dismissed before new work is accepted.');
+        throw fail(413, 'JOB_STORE_FULL', 'The job ledger for this account is full of unfinished work. Wait for it to finish, or use User Settings > Clear job history.');
     }
     fs.mkdirSync(stateDir(directories), { recursive: true, mode: 0o700 });
     writeFileAtomicSync(storePath(directories), text, { mode: 0o600 });
@@ -273,9 +304,10 @@ export function mutateJobs(directories, mutate) {
         const store = readStore(directories);
         const previousOwner = Object.values(store.jobs)[0]?.owner;
         const queued = new Set(Object.values(store.jobs).filter(job => job.state === 'queued').map(job => job.id));
+        const previousKeys = Object.keys(store.jobs);
         const result = mutate(store);
         if (result?.changed === false) return result;
-        const written = writeStore(directories, store, result?.job?.id);
+        const written = writeStore(directories, store, result?.job?.id, previousKeys);
         const jobs = Object.values(written.jobs);
         const owner = result?.job?.owner ?? jobs[0]?.owner ?? previousOwner;
         if (owner) notifyJobsChanged({ owner, queued: jobs.some(job => job.state === 'queued' && !queued.has(job.id)) });
@@ -372,9 +404,9 @@ export function acceptJob(directories, input) {
         // Refuse before persisting when this record could not be saved, rather
         // than throwing away the caller's just-accepted identity.
         if (Object.keys(store.jobs).length >= JOB_LIMIT) {
-            const hasRemovable = Object.values(store.jobs).some(job => removable(job, store.jobs));
+            const hasRemovable = Object.values(store.jobs).some(job => removable(job, store.jobs) || evictableFailure(job, store.jobs));
             if (!hasRemovable) {
-                throw fail(503, 'JOB_STORE_FULL', 'Too many unfinished or unresolved jobs for this account. Finish work or dismiss resolved failures before starting more.');
+                throw fail(503, 'JOB_STORE_FULL', 'Too many unfinished or unresolved jobs for this account. Wait for work to finish, or use User Settings > Clear job history.');
             }
         }
         const id = newJobId();
@@ -756,11 +788,19 @@ function hasSavedProviderResult(directories, job, step = job.recoveryStep) {
  * marked interrupted unless it can be resumed from a server-saved next step; an
  * unknown provider outcome is never silently re-submitted as a charged call.
  */
-export function recoverJobs(directories) {
+export function recoverJobs(directories, { startedAt = PROCESS_STARTED_AT } = {}) {
     return mutateJobs(directories, store => {
         const recoverable = [];
         let changed = false;
         for (const job of Object.values(store.jobs)) {
+            // Failures from before this start are cleared away; work this very
+            // restart interrupts below stays visible so it can still be retried.
+            if (unresolvedFailure(job) && (job.finishedAt ?? job.updatedAt ?? 0) < startedAt) {
+                changed = true;
+                job.dismissed = true;
+                job.dismissedReason = 'restart';
+                continue;
+            }
             if (CANCELLABLE_STATES.includes(job.state) && job.cancellation?.requested) {
                 changed = true;
                 job.state = 'cancelled';

@@ -11,8 +11,8 @@ import { setConfigFilePath } from '../src/util.js';
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 
 const {
-    acceptJob, dismissJob, explicitRetryRecovery, getJob, listJobs, readJobStore, recordReceipt, recoverJobs,
-    requestCancellation, setJobState, updateJob, markProviderUncertain, markProviderSettled, setJobResume,
+    acceptJob, dismissJob, explicitRetryRecovery, getJob, JOB_FAILURE_RETENTION_MS, listJobs, readJobStore,
+    recordReceipt, recoverJobs, requestCancellation, setJobState, updateJob, markProviderUncertain, markProviderSettled, setJobResume,
 } = await import('../src/jobs/store.js');
 const {
     CONCURRENCY, abortJob, canStart, capacity, noteOwner, ownerCount, registerHandler, runScheduledTick,
@@ -218,6 +218,45 @@ test('every ledger accepted by the writer remains readable, and overflow leaves 
     assert.throws(() => acceptJob(directories, { ...input, submissionKey: 'overflow', intent: { text: 'x'.repeat(2000 * 1024) } }), error => error.code === 'JOB_STORE_FULL');
     assert.equal(getJob(directories, first.id).intent.text, input.intent.text);
     assert.equal(listJobs(directories).length, 2);
+});
+
+test('a ledger full of failed replies makes room for new work by dropping the oldest failure', () => {
+    const directories = tempDirectories('failed-full');
+    const input = { owner: 'alice', type: 'roleplay', intent: { text: 'x'.repeat(1100 * 1024) } };
+    const oldest = acceptJob(directories, { ...input, submissionKey: 'oldest' }).job;
+    setJobState(directories, oldest.id, 'failed', { error: { message: 'provider said no' } });
+    const newer = acceptJob(directories, { ...input, submissionKey: 'newer' }).job;
+    setJobState(directories, newer.id, 'failed', { error: { message: 'provider said no' } });
+    const fresh = acceptJob(directories, { ...input, submissionKey: 'fresh', intent: { text: 'x'.repeat(2000 * 1024) } }).job;
+    assert.equal(getJob(directories, oldest.id), null);
+    assert.equal(getJob(directories, newer.id).state, 'failed');
+    assert.equal(getJob(directories, fresh.id).state, 'queued');
+});
+
+test('unresolved failures older than a day are dismissed and become removable', () => {
+    const directories = tempDirectories('failure-expiry');
+    const stale = acceptJob(directories, { owner: 'alice', type: 'test', submissionKey: 'stale', intent: {} }).job;
+    setJobState(directories, stale.id, 'failed', { error: { message: 'boom' } });
+    const recent = acceptJob(directories, { owner: 'alice', type: 'test', submissionKey: 'recent', intent: {} }).job;
+    setJobState(directories, recent.id, 'failed', { error: { message: 'boom' } });
+    updateJob(directories, stale.id, { finishedAt: Date.now() - JOB_FAILURE_RETENTION_MS - 1000 });
+    assert.equal(getJob(directories, stale.id).dismissed, true);
+    assert.equal(getJob(directories, stale.id).dismissedReason, 'expired');
+    assert.deepEqual(listJobs(directories).map(job => job.id), [recent.id]);
+});
+
+test('restart clears earlier failures but keeps work the restart itself interrupts', () => {
+    const directories = tempDirectories('restart-clear');
+    const failed = acceptJob(directories, { owner: 'alice', type: 'test', submissionKey: 'failed', intent: {} }).job;
+    setJobState(directories, failed.id, 'failed', { error: { message: 'boom' } });
+    updateJob(directories, failed.id, { finishedAt: Date.now() - 60 * 60 * 1000 });
+    const running = acceptJob(directories, { owner: 'alice', type: 'test', submissionKey: 'running', intent: {} }).job;
+    setJobState(directories, running.id, 'running');
+    recoverJobs(directories, { startedAt: Date.now() });
+    assert.equal(getJob(directories, failed.id).dismissed, true);
+    assert.equal(getJob(directories, failed.id).dismissedReason, 'restart');
+    assert.equal(getJob(directories, running.id).state, 'interrupted');
+    assert.deepEqual(listJobs(directories).map(job => job.id), [running.id]);
 });
 
 test('intents are typed and bounded, and key order does not defeat deduplication', () => {
