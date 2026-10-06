@@ -18,7 +18,7 @@ If you want SillyTavern with everything working exactly like upstream, use [Sill
 - **Four ways to chat.** Classic Roleplay, messenger-style Conversation, a social timeline called Meower, and Story Mode for long-form writing.
 - **Story memory.** [Mewmory](docs/mewmory.md) keeps track of your story, the NPCs you've met and what they said, so you're not re-explaining everything 200 messages later.
 - **The good stuff comes built in.** Agents, Chat Archive, Quick Image Gen, Guided Generations, BotSearcher and a few more, each with their own settings. [Here's the full list and who made them.](docs/neconyan-native-tools.md)
-- **Somewhere to keep notes.** [Notes](docs/notebooks.md) gives you notebooks for character drafts, places, scene plans and session journals, right next to your chats. Notes link to each other and to your lorebooks, and the assistants can edit them if you let them.
+- **Somewhere to keep notes.** [Notebooks](docs/notebooks.md) gives you space for character drafts, places, scene plans and session journals, right next to your chats. Notes link to each other and to your lorebooks, and the assistants can edit them if you let them.
 - **Little helpers.** Miso, Taro and Nori can use tool calls to create characters with portraits, edit lorebooks and adjust presets or agents. The short First paws tour walks you through the basics.
 - **It's cute.** Calico themes, cats napping on your messages and a pixel cat on Home. That was the whole point, really.
 - **Your files are still your files.** It reads the same character cards, chats, lorebooks and presets as SillyTavern, and there's no telemetry.
@@ -84,14 +84,14 @@ The chat turned into continuous prose, for when you'd rather read a story than s
   </tr>
 </table>
 
-### Notes
+### Notebooks
 
-A notebook that lives next to your chats, for the character drafts and scene plans you'd otherwise lose in a text file somewhere. It has templates, folders, properties and a read view, and you can open it beside a chat. [More on Notes.](docs/notebooks.md)
+A notebook that lives next to your chats, for the character drafts and scene plans you'd otherwise lose in a text file somewhere. It has templates, folders, properties and a read view, and you can open it beside a chat. [More on Notebooks.](docs/notebooks.md)
 
 <table>
   <tr>
-    <td width="72%"><img src="docs/readme/desktop-notes.webp" alt="Notes on desktop"></td>
-    <td width="28%"><img src="docs/readme/phone-notes.webp" alt="Notes on a phone"></td>
+    <td width="72%"><img src="docs/readme/desktop-notes.webp" alt="Notebooks on desktop"></td>
+    <td width="28%"><img src="docs/readme/phone-notes.webp" alt="Notebooks on a phone"></td>
   </tr>
 </table>
 
