@@ -1293,6 +1293,18 @@ function renderNotes(settings) {
         return section;
     }
     const refs = JSON.stringify(settings.notes);
+    const removeButton = ref => {
+        const same = item => JSON.stringify(item) === JSON.stringify(ref);
+        return iconButton(ref.grantId ? t`Stop sharing` : t`Remove`, async () => {
+            if (ref.grantId) {
+                const { notesRequest } = await import('../notebooks/api.js');
+                if (!isCurrent()) return;
+                const result = await notesRequest('/assistant/grants/revoke', { grantId: ref.grantId });
+                if (result.status !== 'success') { reportError(new Error(result.message), t`Sharing could not be stopped.`); return; }
+            }
+            if (isCurrent()) await updateSettings(latest => ({ notes: latest.notes.filter(item => ref.grantId ? item.grantId !== ref.grantId : !same(item)) }), { rerenderContext: true });
+        }, { icon: 'fa-xmark' });
+    };
     list.append(h('p', { class: 'scratchpad-muted', text: t`Checking shared notes...` }));
     api.readNotebookContext(wireSource(source), sessionId).then(context => {
         if (!list.isConnected || !isCurrent() || JSON.stringify(currentSettings().notes) !== refs) return;
@@ -1304,15 +1316,7 @@ function renderNotes(settings) {
             const access = note.unavailable ? t`Not shared` : note.scope === 'selection' ? t`Selected text only` : note.canEdit ? t`Edits need review` : t`Read only`;
             const actions = h('div', { class: 'scratchpad-note-actions' },
                 iconButton(t`Open note`, () => void openNotebook(ref).catch(error => reportError(error, t`That note could not open.`)), { icon: 'fa-arrow-up-right-from-square' }),
-                iconButton(ref.grantId ? t`Stop sharing` : t`Remove`, async () => {
-                    if (ref.grantId) {
-                        const { notesRequest } = await import('../notebooks/api.js');
-                        if (!isCurrent()) return;
-                        const result = await notesRequest('/assistant/grants/revoke', { grantId: ref.grantId });
-                        if (result.status !== 'success') { reportError(new Error(result.message), t`Sharing could not be stopped.`); return; }
-                    }
-                    if (isCurrent()) await updateSettings(latest => ({ notes: latest.notes.filter(item => ref.grantId ? item.grantId !== ref.grantId : !same(item)) }), { rerenderContext: true });
-                }, { icon: 'fa-xmark' }));
+                removeButton(ref));
             if (ref.offset) actions.append(iconButton(t`Previous page`, () => changePage(Math.max(0, ref.offset - 24000)), { icon: 'fa-chevron-left' }));
             if (note.nextOffset !== null && note.nextOffset !== undefined) actions.append(iconButton(t`Next page`, () => changePage(note.nextOffset), { icon: 'fa-chevron-right' }));
             list.append(h('div', { class: `scratchpad-note${note.unavailable ? ' is-unavailable' : ''}` },
@@ -1322,7 +1326,17 @@ function renderNotes(settings) {
                 ref.grantId && !note.unavailable ? h('small', { text: t`Temporary sharing: up to 30 minutes. Stop sharing to prevent future reads; text already sent cannot be withdrawn.` }) : null,
                 note.unavailable ? h('p', { class: 'scratchpad-muted', text: t`Access expired, the shared text changed, or the note is unavailable. Share it again from Notes if needed.` }) : null, actions));
         }
-    }).catch(error => { if (list.isConnected && isCurrent()) list.replaceChildren(h('p', { class: 'scratchpad-error', text: error.message })); });
+    }).catch(error => {
+        if (!list.isConnected || !isCurrent()) return;
+        // Keep every reference removable even when the notes cannot be read together.
+        list.replaceChildren(h('p', { class: 'scratchpad-error', text: error.message }), ...settings.notes.map((ref, index) =>
+            h('div', { class: 'scratchpad-note' },
+                h('div', { class: 'scratchpad-note-heading' }, h('strong', { text: `${t`Note`} ${index + 1}` })),
+                ref.sectionId ? h('small', { text: ref.sectionId, 'data-i18n-ignore': '' }) : null,
+                h('div', { class: 'scratchpad-note-actions' },
+                    iconButton(t`Open note`, () => void openNotebook(ref).catch(e => reportError(e, t`That note could not open.`)), { icon: 'fa-arrow-up-right-from-square' }),
+                    removeButton(ref)))));
+    });
     return section;
 }
 

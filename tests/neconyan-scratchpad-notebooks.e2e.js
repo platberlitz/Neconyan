@@ -116,6 +116,62 @@ for (const phone of [false, true]) {
     });
 }
 
+for (const phone of [false, true]) {
+    test(`${phone ? 'iPhone stand-in' : 'desktop'} keeps Remove and Stop sharing on every shared note when together they are too large to send`, async ({ app }) => {
+        test.setTimeout(180000);
+        const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {} });
+        if (phone) await installIPhoneSafari(account.context, { standalone: true });
+        const notebookId = (await account.post('/api/notebooks/list')).notebooks[0].id;
+        await account.post('/api/notebooks/policies/update', { notebookId, patch: { assistant: 'read' } });
+        const paragraph = 'A personagem "Inês" não sabia o que fazer; a cidade estava silenciosa e o vento soprava frio.\n';
+        let text = '';
+        for (let section = 0; text.length < 24000; section++) text += `## Secção ${section}\n${paragraph.repeat(8)}\n`;
+        const refs = [];
+        for (let index = 0; index < 11; index++) {
+            const created = await account.post('/api/notebooks/notes/create', { notebookId, title: `Chapter ${String(index).padStart(2, '0')}`, text: text.slice(0, 24000), operationId: `fixture:oversize-${index}` });
+            refs.push({ notebookId, noteId: created.noteId });
+        }
+        const grant = (await account.post('/api/notebooks/assistant/grants/create', { notebookId, noteId: refs[10].noteId, scope: 'note', operations: ['read'], minutes: 30 })).grant;
+        refs[10] = { ...refs[10], grantId: grant.id };
+        const page = await account.open();
+        const source = await openScratchpad(page);
+        if (phone) await applyIOSOnlyCss(page);
+        const made = await account.post('/api/scratchpad/session/create', { source, assistant: 'taro' });
+        const session = made.bucket.sessions.find(item => item.id === made.bucket.activeSessionId);
+        await account.post('/api/scratchpad/session/update', { source, sessionId: session.id, changes: { settings: { ...session.settings, notes: refs } } });
+        const refused = await account.context.request.post('/api/scratchpad/notes/context', { headers: account.headers, data: { source, sessionId: session.id } });
+        expect(refused.status()).toBe(413);
+        expect((await refused.json()).code).toBe('SCRATCHPAD_NOTES_TOO_LARGE');
+        await openScratchpad(page);
+        const saved = page.locator('.scratchpad-notes');
+        const remove = saved.getByRole('button', { name: 'Remove', exact: true });
+        const stop = saved.getByRole('button', { name: 'Stop sharing', exact: true });
+        await expect(saved.locator('.scratchpad-error')).toHaveText('Share fewer notes or choose a section before sending.');
+        await expect(saved.locator('.scratchpad-note')).toHaveCount(11);
+        await expect(remove).toHaveCount(10);
+        await expect(stop).toHaveCount(1);
+        const controls = await saved.locator('.scratchpad-note-actions button').evaluateAll(elements => elements.map(element => {
+            const { width, height } = element.getBoundingClientRect();
+            return Math.min(width, height);
+        }));
+        expect(Math.min(...controls)).toBeGreaterThanOrEqual(44);
+
+        expect((await account.post('/api/notebooks/assistant/grants/list')).grants.map(item => item.id)).toContain(grant.id);
+        await stop.click();
+        await expect.poll(async () => (await account.post('/api/notebooks/assistant/grants/list')).grants.map(item => item.id)).not.toContain(grant.id);
+        await expect(saved.locator('.scratchpad-note')).toHaveCount(10);
+        await expect(stop).toHaveCount(0);
+        await expect(remove).toHaveCount(10);
+        await remove.first().click();
+        await expect(saved.locator('.scratchpad-note')).toHaveCount(9);
+        await remove.first().click();
+        await expect(saved.locator('.scratchpad-error')).toHaveCount(0);
+        await expect(saved.locator('.scratchpad-note strong')).toHaveText(Array.from({ length: 8 }, (_, index) => `Chapter ${String(index + 2).padStart(2, '0')}`));
+        await expect(remove).toHaveCount(8);
+        expect((await account.post('/api/scratchpad/bucket', { source })).bucket.sessions.find(item => item.id === session.id).settings.notes.map(item => item.noteId)).toEqual(refs.slice(2, 10).map(item => item.noteId));
+    });
+}
+
 async function checkNoteSelection({ app }, access) {
     test.setTimeout(180000);
     const account = await app.account({ phone: true, contextOptions: IPHONE_SAFARI_CONTEXT });
