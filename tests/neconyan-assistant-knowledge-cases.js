@@ -58,4 +58,11 @@ export const refreshedKnowledgeCases = [
     ['How do I save a lorebook entry Scratchpad suggested?', 'scratchpad.changes', 'nothing changes until saved'],
     ['How do I add alternate greetings in Scratchpad?', 'scratchpad.changes', 'action append and only the new texts'],
     ['What is a Scratchpad Temporary session?', 'scratchpad.sessions', 'disappears when another session is opened or started'],
+    ['Is there a pure black AMOLED theme?', 'appearance.amoled-black', 'suits OLED phone screens'],
+    ['How do I copy a chat link or bookmark a chat?', 'chat.links', 'does not share or publish it'],
+    ['How do I make Neconyan resume my last chat on launch?', 'chat.links', 'a link always wins'],
+    ['Messages fail saying the job ledger for this account is full', 'recovery.job-history', 'failed replies can no longer be retried afterwards'],
+    ['Where is my data folder?', 'admin.operations', 'Neconyan folder and Your data folder paths'],
+    ['How do I turn extensions on or off in Manage extensions?', 'extensions.management', 'changes wait until you close the window'],
+    ['How do I delete a note in Notebooks?', 'notes.history', 'moves that note to Trash'],
 ];
