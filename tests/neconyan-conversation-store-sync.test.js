@@ -69,6 +69,17 @@ describe('conversation store sync merge', () => {
         expect(local.characters.alice.branches.main.messages).toEqual([{ mes: 'Local replacement' }]);
     });
 
+    test('a new branch copied with another chat link ID still merges with the server copy', () => {
+        const messages = [message('a', 'Original question.')];
+        const main = branch('main', messages, 10, { navigationId: 'main-link' });
+        const saved = store({ alice: thread({ main }) });
+        const local = store({ alice: thread({ main, recovered: { ...main, id: 'recovered', createdAt: 11 } }) });
+        const recovered = branch('recovered', messages, 11, { messageEditRevision: 2, messageContentHash: 'hash' });
+        const server = store({ alice: thread({ main, recovered }) });
+        const merged = mergeConversationStore(server, local, saved);
+        expect(merged.characters.alice.branches.recovered).toEqual(recovered);
+    });
+
     test('an unchanged local store accepts the server value', () => {
         const saved = store({ alice: thread({ main: branch('main', [message('a', 'one')], 10) }) });
         const local = JSON.parse(JSON.stringify(saved));

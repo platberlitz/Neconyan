@@ -208,7 +208,8 @@ function mergeBranchMap(serverBranches, localBranches, savedBranches) {
         }
         if (!Object.hasOwn(savedMap, id)) {
             // Different new branches under one key cannot be combined safely.
-            const content = branch => Object.fromEntries(Object.entries(branch).filter(([key]) => !['messageEditRevision', 'messageContentHash', 'serverOperations', 'automationClaims', 'pendingPresentations', 'readThrough'].includes(key)));
+            // Chat link IDs are assigned by the server, so a copied one is not content.
+            const content = branch => Object.fromEntries(Object.entries(branch).filter(([key]) => !['messageEditRevision', 'messageContentHash', 'serverOperations', 'automationClaims', 'pendingPresentations', 'readThrough', 'navigationId'].includes(key)));
             if (!conversationValuesEqual(content(serverMap[id]), content(localMap[id]))) return { conflict: true };
             merged[id] = copyBranch(serverMap[id]);
             continue;
