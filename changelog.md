@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.2.0
+
+### Merged Staging PRs
+- PR #28 (2026-10-06) `fix(notes): highlight the picked template and add a Delete button`
+
 ## v1.1.1
 
 ### Merged Staging PRs
