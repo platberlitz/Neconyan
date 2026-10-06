@@ -7,13 +7,14 @@ import { roleplayAccountBase, roleplayAccountStamp, roleplayLease, withRoleplayA
 export const SCRATCHPAD_SCHEMA = 1;
 export const ASSISTANT_IDS = Object.freeze(['miso', 'taro', 'nori']);
 export const ASSISTANT_GENDERS = Object.freeze(['male', 'female', 'neutral']);
-export const SOURCE_KINDS = Object.freeze(['roleplay', 'conversation']);
+export const SOURCE_KINDS = Object.freeze(['roleplay', 'conversation', 'notebook']);
 export const MAX_SESSIONS = 40;
 export const MAX_MESSAGES = 400;
 export const MAX_MESSAGE_BYTES = 64 * 1024;
 export const MAX_REASONING_BYTES = 64 * 1024;
 export const MAX_NAME_LENGTH = 80;
 export const MAX_PICKED = 400;
+export const MAX_NOTE_REFERENCES = 12;
 export const MAX_LORE_OVERRIDES = 1000;
 export const MIN_MAX_TOKENS = 64;
 export const MAX_MAX_TOKENS = 32000;
@@ -102,6 +103,7 @@ export function defaultSettings() {
     return {
         depth: DEFAULT_DEPTH,
         picked: [],
+        notes: [],
         include: { card: true, persona: true, authorsNote: true, lore: true, hidden: false },
         loreOverrides: {},
         connection: { kind: 'current' },
@@ -116,6 +118,30 @@ export function defaultSettings() {
 export function normaliseSettings(input, previous = defaultSettings()) {
     const source = isPlainObject(input) ? input : {};
     const settings = structuredClone(previous);
+    settings.notes ??= [];
+    if (source.notes !== undefined) {
+        if (!Array.isArray(source.notes) || source.notes.length > MAX_NOTE_REFERENCES) throw fail('SCRATCHPAD_NOTES_INVALID', `Choose up to ${MAX_NOTE_REFERENCES} notes or sections.`);
+        const seen = new Set();
+        settings.notes = source.notes.map(item => {
+            if (!isPlainObject(item)) throw fail('SCRATCHPAD_NOTES_INVALID', 'Choose a saved note or section.');
+            const ref = { notebookId: requireId(item.notebookId, 'notebook'), noteId: requireId(item.noteId, 'note') };
+            if (item.grantId) ref.grantId = requireId(item.grantId, 'sharing grant');
+            if (item.sectionId) {
+                if (typeof item.sectionId !== 'string' || item.sectionId.length > 512) throw fail('SCRATCHPAD_NOTES_INVALID', 'That note section is invalid.');
+                ref.sectionId = item.sectionId;
+            }
+            if (item.offset !== undefined) {
+                if (!Number.isSafeInteger(item.offset) || item.offset < 0 || item.offset > 4 * 1024 * 1024) throw fail('SCRATCHPAD_NOTES_INVALID', 'That note page is invalid.');
+                ref.offset = item.offset;
+            }
+            return ref;
+        }).filter(ref => {
+            const key = JSON.stringify(ref);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }
     if (source.depth !== undefined) {
         const depth = Math.round(Number(source.depth));
         settings.depth = Number.isFinite(depth) ? Math.min(MAX_DEPTH, Math.max(0, depth)) : DEFAULT_DEPTH;
@@ -199,6 +225,11 @@ function normaliseMessage(input) {
         if (typeof input.gender === 'string') message.gender = normaliseGender(input.gender);
         const proposals = normaliseProposals(input.proposals);
         if (Object.keys(proposals).length) message.proposals = proposals;
+        if (isPlainObject(input.notebookProposals)) {
+            const refs = Object.fromEntries(Object.entries(input.notebookProposals).filter(([key, value]) => /^\d{1,3}$/.test(key)
+                && isPlainObject(value) && /^p_[a-f0-9]{24}$/.test(value.id) && /^[a-f0-9]{64}$/.test(value.changeHash)).slice(0, 24));
+            if (Object.keys(refs).length) message.notebookProposals = refs;
+        }
     }
     if (input.edited === true) message.edited = true;
     return message;
@@ -336,11 +367,11 @@ export function createSession(bucket, input = {}) {
         temporary: input.temporary === true,
         created: now(),
         updated: now(),
-        settings: normaliseSettings(input.settings, previous ? { ...previous.settings, picked: [] } : defaultSettings()),
+        settings: normaliseSettings(input.settings, previous ? { ...previous.settings, picked: [], notes: previous.settings.notes.filter(ref => !ref.grantId) } : defaultSettings()),
         messages: [],
     };
     if (Array.isArray(input.messages)) {
-        session.messages = input.messages.map(item => normaliseMessage({ ...item, id: undefined, state: 'done', jobId: undefined }))
+        session.messages = input.messages.map(item => normaliseMessage({ ...item, id: undefined, state: 'done', jobId: undefined, proposals: undefined, notebookProposals: undefined }))
             .filter(Boolean).slice(-MAX_MESSAGES);
     }
     bucket.sessions.unshift(session);
@@ -400,6 +431,7 @@ export function updateMessage(bucket, sessionId, messageId, text) {
         message.state = 'done';
         delete message.error;
         delete message.proposals;
+        delete message.notebookProposals;
     }
     touch(session);
     return message;
@@ -450,7 +482,7 @@ export function publicBucket(bucket) {
         source: bucket.source,
         activeSessionId: bucket.activeSessionId,
         sessions: bucket.sessions,
-        limits: { sessions: MAX_SESSIONS, messages: MAX_MESSAGES, messageBytes: MAX_MESSAGE_BYTES, maxTokens: MAX_MAX_TOKENS, depth: MAX_DEPTH },
+        limits: { sessions: MAX_SESSIONS, messages: MAX_MESSAGES, messageBytes: MAX_MESSAGE_BYTES, maxTokens: MAX_MAX_TOKENS, depth: MAX_DEPTH, notes: MAX_NOTE_REFERENCES },
     };
 }
 

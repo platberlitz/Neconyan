@@ -66,6 +66,14 @@ A new chat opens with a copy of your current note in the message box. Review the
 
 If there is an unsent message draft or a reply is running, finish or clear it first. If the account, note or chat changes while the assistant is opening, the discussion stops rather than sharing into the wrong chat.
 
+### Ask Scratchpad
+
+**Ask Scratchpad** opens a separate discussion belonging to the note, without creating a story chat. Share the whole note or the text selected in **Write** for 30 minutes. It starts read-only; tick **Allow proposed edits to the shared text** if wanted. Review the exact passage, then **Open Scratchpad**. Unfinished edits must save successfully first. Permanent AI access stays unchanged, and the open story, linked notes, embedded notes and attachments stay out.
+
+The discussion opens on **Context**, where **Show preview** shows what will be sent. Pick Miso, Taro or Nori and a connection; tool calling is not required. **Stop sharing** revokes the temporary grant, and **Back to Notes** returns to this note. A new session does not inherit temporary sharing. Revoking cannot withdraw text already sent to a model.
+
+Scratchpad can also add notes already shared with assistants through **Context → Saved notes**. Its note changes use the same **Assistant changes** review as Notes and always wait for your approval, including when requested-edit saving is enabled. Replies, selected passages and completed sessions can be saved back as independent quotations; this does not grant access or publish lore. See [Scratchpad](scratchpad.md) for the controls and limits.
+
 ## Links and backlinks
 
 Type `[[` to pick another note, or use **Link to note** on the toolbar (handy on a phone). These forms work:

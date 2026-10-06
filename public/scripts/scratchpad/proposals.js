@@ -2,6 +2,8 @@
  * Reading proposed changes out of a Scratchpad reply. Nothing here touches the
  * app, so it can be tested on its own.
  */
+import { NOTE_TOOL_DEFINITIONS, NOTE_MUTATING_KINDS } from '../notebooks/assistant-note-tools.js';
+
 export const CHANGE_FENCE = 'scratchpad-change';
 const FENCE_PATTERN = /```scratchpad-change[^\n]*\n([\s\S]*?)```/g;
 const MAX_CHANGES = 24;
@@ -67,6 +69,26 @@ export function stringList(value) {
 export function normaliseChange(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) fail('This change is not a JSON object.');
     const reason = text(value.reason, 1000).trim();
+    if (value.type === 'notebook') {
+        const definition = Object.values(NOTE_TOOL_DEFINITIONS).find(item => item.kind === value.action && NOTE_MUTATING_KINDS.includes(item.kind));
+        if (!definition) fail('This note change has an unknown action.');
+        const args = value.args;
+        if (!args || typeof args !== 'object' || Array.isArray(args)) fail('This note change needs its note details.');
+        const clean = {};
+        for (const [key, schema] of Object.entries(definition.schema.properties)) {
+            if (!Object.hasOwn(args, key)) continue;
+            const item = args[key];
+            if (schema.type === 'string' && (typeof item !== 'string' || item.length > 200_000)) fail(`The note change has an invalid ${key}.`);
+            if (schema.type === 'integer' && (!Number.isSafeInteger(item) || item < 0)) fail(`The note change has an invalid ${key}.`);
+            if (schema.type === 'object' && (!item || typeof item !== 'object' || Array.isArray(item))) fail(`The note change has an invalid ${key}.`);
+            clean[key] = item;
+        }
+        for (const key of definition.schema.required ?? []) {
+            if (!Object.hasOwn(clean, key)) fail(`The note change is missing ${key}.`);
+        }
+        if (!['create-note', 'publish-note-lore'].includes(value.action) && !clean.expectedRevision) fail('Read the note again before proposing a change: its revision is missing.');
+        return { type: 'notebook', action: value.action, args: clean, reason };
+    }
     if (value.type === 'lorebook') {
         const book = text(value.book, 300).trim();
         if (!book) fail('This lorebook change does not say which lorebook.');
@@ -167,6 +189,10 @@ export function splitReply(reply) {
 }
 
 export function describeChange(change) {
+    if (change.type === 'notebook') {
+        const label = Object.values(NOTE_TOOL_DEFINITIONS).find(item => item.kind === change.action)?.displayName || 'Change note';
+        return `${label}${change.args.title ? ` '${change.args.title}'` : ''}`;
+    }
     if (change.type === 'lorebook') {
         if (change.action === 'add') return `New lorebook entry${change.title ? ` '${change.title}'` : ''} in ${change.book}`;
         if (change.action === 'edit') return `Edit lorebook entry ${change.uid} in ${change.book}`;

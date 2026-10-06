@@ -21,12 +21,21 @@ This is the engineering companion to `docs/notebooks.md`. It describes how Notes
 | Import and export | `src/notebooks/transfer.js` | `notes-dialogs.js` |
 | Optional Obsidian Headless adapter | `obsidian.js`, owned `obsidian-client-runner.js`, `obsidian-history.js`, read-only snapshot worker | separately loaded `obsidian-dialogs.js`, guarded opening in `notes-dialogs.js` |
 | Assistant tools, grants, proposals | `src/notebooks/assistant.js` | `assistant-note-tools.js` (shared contract), `neconyan-assistant-tools.js` |
+| Scratchpad integration | `src/scratchpad/notebooks.js`, `jobs.js`, `/api/scratchpad/notes/*` | `public/scripts/scratchpad/notebooks.js`, `index.js`, Notes' `Ask Scratchpad` |
 | Roleplay context | `src/notebooks/context.js`, hook in `src/generation/roleplay-execution.js` | AI access tab preview |
 | Change events | `src/notebooks/events.js` | `api.js` (`subscribeNotes`) |
 | HTTP API | `src/endpoints/notebooks.js`, mounted at `/api/notebooks` | `api.js` |
 | Workspace UI | | `notes-app.js`, `notes-panels.js`, `notes-dialogs.js`, `dom.js`, `templates.js`, `line-diff.js`, `public/css/neconyan-notes.css` |
 
 All Notes browser code and its stylesheet are loaded on demand when Notes opens, so they do not count towards the blocking frontend budgets.
+
+## Scratchpad
+
+Scratchpad sessions store at most twelve note references, not note bodies or trusted model arguments. The server builds selected note/section/page context through the same assistant permission checks as Notebook tools. It rechecks the context fingerprint, note revisions, policies and grants before accepting a prepared reply. Required notebook reconciliation runs outside the account lease, then the locked read is retried. Note-only sources exclude story context. One-time sharing checks the saved revision before capturing the grant's exact selection.
+
+The six mutation schemas reuse `assistant-note-tools.js`. Finished replies register proposals from their persisted `scratchpad-change` blocks in Notebook's existing proposal store. Review requests name the saved session, message and fence index; browser-supplied replacement actions are not accepted. Stable call identities make retries reuse the same review, and Notebook's revision/policy/grant checks guard approval. Requested-edit mode never applies Scratchpad proposals directly. Notes-side approvals and declines are projected back into Scratchpad cards.
+
+Owner-initiated message/session capture uses the existing `/api/notebooks/notes/capture` path, with Scratchpad provenance and attribution. It is independent of assistant write permissions and excludes reasoning, incomplete assistant messages and proposal blocks. Session export/import does not carry note references, grants or approval state.
 
 The source editor uses a separately compiled CodeMirror 6 bundle, not the startup `lib.js` bundle or a CDN. The server compiles and caches the trusted editor entry on its first request; the production frontend build also writes a compiled stable alias and a byte-identical hashed asset. Both ship the accompanying MIT notices. The two compilation caches are isolated, and pruning recognises only generated version directories.
 

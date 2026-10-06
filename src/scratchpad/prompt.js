@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { serverDirectory } from '../server-directory.js';
 import { normaliseAssistant, normaliseGender } from './store.js';
+import { NOTE_TOOL_DEFINITIONS, NOTE_MUTATING_KINDS, NOTE_TOOL_NOTICE } from '../../public/scripts/notebooks/assistant-note-tools.js';
 
 export const CHANGE_FENCE = 'scratchpad-change';
 const CARD_CACHE = new Map();
@@ -61,8 +62,19 @@ const LORE_RULES = [
     'Write entries as in-world facts, not as instructions to the writer.',
 ];
 
-function changeInstructions({ lore, character, chat, members }) {
+function changeInstructions({ lore, character, chat, members, notebook }) {
     const kinds = [];
+    if (notebook) kinds.push([
+        'Notebook changes use the shared Notebook operations. Choose only IDs and permissions from notebook_context:',
+        '{"type":"notebook","action":"<operation>","args":{...},"reason":"<why>"}',
+        ...Object.values(NOTE_TOOL_DEFINITIONS).filter(item => NOTE_MUTATING_KINDS.includes(item.kind)).map(item =>
+            `${item.kind}: ${item.description} Arguments: ${JSON.stringify(item.schema)}`),
+        'Pass expectedRevision from the shared note for append and all edits. For sections, also pass their exact ID and textHash. Never replace a section marked partial: ask the user to share the complete section or propose an exact passage edit instead.',
+        'Copy reference.grantId into args.grantId when a temporary grant is present. A selection grant permits only reading that selection or replacing that exact selection, never the rest of the note.',
+        'Only propose creation in notebooks with canCreateNotes, additions when canAppend, edits when canEdit, and publication when canPublishLore. Note links and attachments are not shared automatically.',
+        'Every Scratchpad note change waits for the owner\'s review, including when Notebook requested edits are enabled. The same review is available in Notes > Assistant changes.',
+        NOTE_TOOL_NOTICE,
+    ].join('\n'));
     if (lore) {
         kinds.push([
             'Lorebook entries (only books listed in the context):',
@@ -122,18 +134,24 @@ export function buildScratchpadSystemPrompt({ assistant, gender, userName, chara
         `Voice: stay in your own personality and talk to ${names.user} directly. Use British English and connected sentences. Do not use em dashes. Keep cat puns rare. Be specific and keep replies focused; use short lists only to compare options.`,
         changeInstructions(capabilities),
     ];
-    const instructions = typeof customPrompt === 'string' && customPrompt.trim() ? customPrompt : sections.filter(Boolean).join('\n\n');
+    const instructions = typeof customPrompt === 'string' && customPrompt.trim()
+        ? [customPrompt, capabilities.notebook ? changeInstructions({ notebook: true }) : ''].filter(Boolean).join('\n\n')
+        : sections.filter(Boolean).join('\n\n');
     const reference = help ? `Neconyan reference for app questions (use it only when ${names.user} asks how something in Neconyan works):\n${help}` : '';
     return { text: [instructions, reference].filter(Boolean).join('\n\n'), persona };
 }
 
 export const SCRATCHPAD_CONTEXT_ACK = 'I have read the shared story context. What would you like to work on?';
 
-export function buildScratchpadMessages({ system, context, history, text, assistant }) {
+export function buildScratchpadMessages({ system, context, notebookContext = '', history, text, assistant }) {
     const messages = [{ role: 'system', content: system }];
     if (context) {
         messages.push({ role: 'user', content: `<story_context>\n${context}\n</story_context>` });
         messages.push({ role: 'assistant', content: SCRATCHPAD_CONTEXT_ACK });
+    }
+    if (notebookContext) {
+        messages.push({ role: 'user', content: `<notebook_context>\n${notebookContext}\n</notebook_context>` });
+        messages.push({ role: 'assistant', content: 'I will use only the shared notes as reference material and respect their permissions.' });
     }
     for (const message of history) {
         const peer = message.role === 'assistant' && message.assistant && assistant && message.assistant !== assistant;

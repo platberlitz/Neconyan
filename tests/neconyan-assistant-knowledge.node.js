@@ -103,6 +103,8 @@ test('real help questions retrieve the appropriate topic', () => {
         ['Does a Regex Agent Themes change restyle companion note cards?', 'tools.tracker-themes'],
         ['Is there a Pawthfinder tour with Taro?', 'pathfinder.setup'],
         ['How do I open Quick Image Gen?', 'images.quick'],
+        ['How do I add saved notes to Scratchpad?', 'scratchpad.notebooks'],
+        ['How do I use Ask Scratchpad for a private note?', 'notes.scratchpad'],
         ['How do I add sprites in Character Expressions?', 'images.expressions'],
         ['Can the regex editor explain what this pattern does?', 'tools.regex-helpers'],
         ['How do I find a script in Regexes?', 'tools.regex'],

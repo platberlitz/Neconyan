@@ -309,7 +309,10 @@ function captureSource(body, text) {
     const source = body.source && typeof body.source === 'object' ? body.source : {};
     const clean = value => (typeof value === 'string' ? value.slice(0, 512) : undefined);
     return {
-        kind: 'chat',
+        kind: source.kind === 'scratchpad' ? 'scratchpad' : 'chat',
+        sessionId: clean(source.sessionId),
+        scratchpadMessageId: clean(source.scratchpadMessageId),
+        sourceKind: clean(source.sourceKind),
         chat: clean(source.chat),
         character: clean(source.character),
         speaker: clean(source.speaker),
@@ -331,7 +334,7 @@ router.post('/notes/capture', route(({ lease, body, actor }) => {
     if (text.length > MAX_CAPTURE_CHARS) throw new NotebookError('CAPTURE_TOO_LARGE', 'That selection is too long to save in one go.', 413);
     const source = captureSource(body, text);
     const speaker = source.speaker ? `${source.speaker}, ` : '';
-    const attribution = `*Saved from chat (${speaker}${new Date().toISOString().slice(0, 10)})*`;
+    const attribution = `*Saved from ${source.kind === 'scratchpad' ? 'Scratchpad' : 'chat'} (${speaker}${new Date().toISOString().slice(0, 10)})*`;
     const passage = `${quotePassage(text)}\n\n${attribution}\n`;
     if (!body.noteId) {
         const result = store.createNoteLocked(lease, {
@@ -605,6 +608,7 @@ router.post('/assistant/grants/create', route(({ lease, body }) => ({
         selection: body.selection,
         operations: body.operations,
         minutes: body.minutes,
+        expectedRevision: body.expectedRevision,
     }),
 })));
 

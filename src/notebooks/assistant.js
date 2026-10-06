@@ -114,7 +114,7 @@ function readGrants(lease, at = Date.now()) {
  * a selection, one note, or a destination folder for a new note. It never
  * widens to linked notes or the rest of the notebook.
  */
-export function createGrantLocked(lease, { notebookId, noteId = null, folder = null, scope, selection = null, operations = [], minutes = 30 }, at = Date.now()) {
+export function createGrantLocked(lease, { notebookId, noteId = null, folder = null, scope, selection = null, operations = [], minutes = 30, expectedRevision = null }, at = Date.now()) {
     requireNotebookId(notebookId);
     if (!['selection', 'note', 'destination'].includes(scope)) throw new NotebookError('GRANT_INVALID', 'Choose what to share.', 400);
     const ops = [...new Set(Array.isArray(operations) ? operations : [])];
@@ -138,6 +138,7 @@ export function createGrantLocked(lease, { notebookId, noteId = null, folder = n
         requireNoteId(noteId);
         const state = loadNotebookLocked(lease, notebookId);
         const entry = requireNoteLocked(state, noteId);
+        if (expectedRevision && expectedRevision !== entry.hash) throw new NotebookError('NOTE_CONFLICT', 'The note changed before it could be shared. Read it again.', 409);
         grant.noteId = noteId;
         grant.revision = entry.hash;
         if (scope === 'selection') {
@@ -239,6 +240,8 @@ function noteAccess(lease, { notebookId, noteId, grant, need }) {
     if (grant) {
         const operation = need === 'read' ? 'read' : need;
         byGrant = grant.notebookId === notebookId && grant.noteId === noteId && grant.operations.includes(operation);
+        // Choosing a grant means choosing its scope, even when permanent access is broader.
+        if (!byGrant) throw denied();
     }
     if (!byPolicy && !byGrant) {
         if (assistantCan(policies, noteId, 'read') || (grant && grant.noteId === noteId)) throw denied();
@@ -247,7 +250,7 @@ function noteAccess(lease, { notebookId, noteId, grant, need }) {
     const state = loadNotebookLocked(lease, notebookId);
     const entry = state.byId.get(noteId);
     if (!entry) throw hidden();
-    return { policies, state, entry, viaGrant: !byPolicy, grantScope: byPolicy ? null : grant.scope };
+    return { policies, state, entry, viaGrant: !byPolicy, grantScope: grant?.scope ?? null };
 }
 
 function sectionList(noteText) {

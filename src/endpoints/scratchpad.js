@@ -4,6 +4,7 @@ import {
     activateSession,
     clearSession,
     createSession,
+    findSession,
     deleteMessage,
     deleteSession,
     markProposal,
@@ -21,6 +22,8 @@ import {
 import { SCRATCHPAD_JOB_TYPE, acceptScratchpadReply } from '../scratchpad/jobs.js';
 import { readScratchpadPreview, subscribeScratchpadPreview } from '../scratchpad/preview.js';
 import { buildScratchpadSystemPrompt } from '../scratchpad/prompt.js';
+import { notebookContextLocked, withNotebookPreparation, prepareNotebookProposalLocked, decideNotebookProposalLocked,
+    projectNotebookProposalsLocked, notifyScratchpadNotebookResult } from '../scratchpad/notebooks.js';
 
 export const router = express.Router();
 
@@ -57,7 +60,7 @@ router.post('/bucket', (request, response) => {
     try {
         const base = scratchpadAccountBase(request);
         const source = normaliseSource(request.body?.source);
-        const bucket = withScratchpad(base, lease => readBucketLocked(lease, source));
+        const bucket = withScratchpad(base, lease => projectNotebookProposalsLocked(lease, readBucketLocked(lease, source)));
         response.json({ bucket: publicBucket(projectPending(bucket, id => getJob(base.directories, id))) });
     } catch (error) {
         sendError(response, error);
@@ -82,7 +85,8 @@ router.post('/prompt', (request, response) => {
 
 router.post('/session/import', (request, response) => change(request, response, (bucket, body) => {
     const session = body.session && typeof body.session === 'object' ? body.session : {};
-    createSession(bucket, { assistant: session.assistant, gender: session.gender, name: session.name, settings: session.settings,
+    const settings = { ...session.settings, notes: [] };
+    createSession(bucket, { assistant: session.assistant, gender: session.gender, name: session.name, settings,
         messages: Array.isArray(session.messages) ? session.messages : [] });
 }));
 
@@ -113,6 +117,37 @@ router.post('/message/delete', (request, response) => change(request, response, 
 router.post('/proposal/mark', (request, response) => change(request, response, (bucket, body) => {
     markProposal(bucket, requireId(body.sessionId, 'session'), requireId(body.messageId, 'message'), body.index, body.state ?? null);
 }));
+
+router.post('/notes/context', async (request, response) => {
+    try {
+        const base = scratchpadAccountBase(request);
+        const body = request.body ?? {};
+        const source = normaliseSource(body.source);
+        const context = await withNotebookPreparation(base, lease => {
+            const bucket = readBucketLocked(lease, source);
+            const settings = body.sessionId ? findSession(bucket, requireId(body.sessionId, 'session')).settings : { notes: [] };
+            return notebookContextLocked(lease, settings);
+        });
+        response.json(context);
+    } catch (error) { sendError(response, error); }
+});
+
+for (const decision of [false, true]) {
+    router.post(decision ? '/notes/decide' : '/notes/proposal', async (request, response) => {
+        try {
+            const base = scratchpadAccountBase(request);
+            const body = request.body ?? {};
+            const source = normaliseSource(body.source);
+            requireId(body.sessionId, 'session');
+            requireId(body.messageId, 'message');
+            const result = await withNotebookPreparation(base, lease => decision
+                ? decideNotebookProposalLocked(lease, source, body, { kind: 'user', handle: base.owner })
+                : prepareNotebookProposalLocked(lease, source, body));
+            notifyScratchpadNotebookResult(base, result);
+            response.json({ ...result, bucket: publicBucket(result.bucket) });
+        } catch (error) { sendError(response, error); }
+    });
+}
 
 router.post('/send', async (request, response) => {
     try {

@@ -55,13 +55,13 @@ export const NOTE_TOOL_DEFINITIONS = Object.freeze({
         kind: 'append-note',
         displayName: 'Add to note',
         description: 'Add text to the end of a note, or to the end of one section. The owner reviews it before it is saved unless they allowed requested edits.',
-        schema: object(['notebookId', 'noteId', 'markdown'], { notebookId, noteId, markdown: text('Markdown text to add.'), sectionId, expectedRevision: text('Revision from ReadNote.') }),
+        schema: object(['notebookId', 'noteId', 'markdown'], { notebookId, noteId, markdown: text('Markdown text to add.'), sectionId, expectedRevision: text('Revision from ReadNote.'), grantId }),
     },
     EditNoteSection: {
         kind: 'edit-note-section',
         displayName: 'Change note section',
         description: 'Replace the text under one heading. Read the section first and pass its textHash; other sections stay untouched.',
-        schema: object(['notebookId', 'noteId', 'sectionId', 'expectedTextHash', 'markdown'], { notebookId, noteId, sectionId, expectedTextHash: text('textHash of the section from ReadNote.'), markdown: text('New section text, without the heading line.'), expectedRevision: text('Revision from ReadNote.') }),
+        schema: object(['notebookId', 'noteId', 'sectionId', 'expectedTextHash', 'markdown'], { notebookId, noteId, sectionId, expectedTextHash: text('textHash of the section from ReadNote.'), markdown: text('New section text, without the heading line.'), expectedRevision: text('Revision from ReadNote.'), grantId }),
     },
     EditNoteSelection: {
         kind: 'edit-note-selection',
@@ -73,7 +73,7 @@ export const NOTE_TOOL_DEFINITIONS = Object.freeze({
         kind: 'edit-note-properties',
         displayName: 'Change note properties',
         description: 'Set or clear simple note properties such as tags, aliases or type. Use null to clear one.',
-        schema: object(['notebookId', 'noteId', 'set'], { notebookId, noteId, set: { type: 'object', description: 'Property names mapped to text, numbers, true/false, lists of text, or null.' }, expectedRevision: text('Revision from ReadNote.') }),
+        schema: object(['notebookId', 'noteId', 'set'], { notebookId, noteId, set: { type: 'object', description: 'Property names mapped to text, numbers, true/false, lists of text, or null.' }, expectedRevision: text('Revision from ReadNote.'), grantId }),
     },
     PublishNoteToLore: {
         kind: 'publish-note-lore',

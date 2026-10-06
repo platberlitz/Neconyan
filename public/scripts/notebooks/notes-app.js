@@ -199,8 +199,9 @@ function buildRoot() {
     elements.fullscreen.setAttribute('aria-expanded', 'false');
     elements.discuss = button('Talk about this note', () => void discussNote(), { icon: 'fa-comments', className: 'notes-discuss' });
     elements.trash = button('Delete', () => void app.dialogs.trashNote(app), { icon: 'fa-trash-can', className: 'notes-delete notes-danger', title: 'Move this note to Trash' });
+    elements.scratchpad = button('Ask Scratchpad', () => void discussInScratchpad(), { icon: 'fa-note-sticky', className: 'notes-discuss' });
     elements.writingActions = h('div', { class: 'notes-writing-actions' }, elements.viewTabs,
-        h('div', { class: 'notes-nav-actions' }, elements.discuss, elements.fullscreen, elements.trash));
+        h('div', { class: 'notes-nav-actions' }, elements.scratchpad, elements.discuss, elements.fullscreen, elements.trash));
     elements.editorBody = h('div', { class: 'notes-editor-body' }, elements.source, elements.reader, elements.suggest);
     elements.empty = h('div', { class: 'notes-empty' });
     elements.editor = h('div', { class: 'notes-editor', hidden: true },
@@ -356,6 +357,58 @@ async function discussNote() {
     } finally {
         state.discussionPending = false;
         elements.discuss.disabled = false;
+    }
+}
+
+/** Explicit, short-lived note sharing; it never changes permanent AI access. */
+async function discussInScratchpad() {
+    const { state, elements } = app;
+    if (!state.note || state.discussionPending || app.sourceEditor?.composing) return;
+    state.discussionPending = true;
+    elements.scratchpad.disabled = true;
+    const snapshot = { account: state.account, notebookId: state.notebookId, noteId: state.note.id, text: state.editorText,
+        start: elements.textarea.selectionStart, end: elements.textarea.selectionEnd };
+    const isCurrent = () => getCurrentUserHandle() === snapshot.account && state.open && state.account === snapshot.account
+        && state.notebookId === snapshot.notebookId && state.note?.id === snapshot.noteId && state.editorText === snapshot.text;
+    const hasSelection = state.view === 'write' && snapshot.end > snapshot.start;
+    let scope = hasSelection ? 'selection' : 'note';
+    const sharing = h('div');
+    const excerpt = h('pre', { class: 'notes-capture-preview', 'data-i18n-ignore': '' });
+    const allowEdits = h('input', { type: 'checkbox' });
+    function renderSharing() {
+        clear(sharing);
+        sharing.append(choiceRow('Share for 30 minutes', [['note', 'Whole note'], ...(hasSelection ? [['selection', 'Selected text only']] : [])], scope,
+            value => { scope = value; renderSharing(); }));
+        excerpt.textContent = (scope === 'selection' ? snapshot.text.slice(snapshot.start, snapshot.end) : snapshot.text).slice(0, 24000);
+    }
+    renderSharing();
+    let grantId = null;
+    try {
+        const content = h('div', { class: 'notes-dialog' }, h('h3', { class: 'notes-heading', text: 'Ask Scratchpad' }), sharing,
+            h('label', { class: 'notes-check' }, allowEdits, h('span', { text: 'Allow proposed edits to the shared text' })),
+            h('p', { class: 'notes-notice', text: 'Read only unless you allow proposed edits. Every change still needs your review. Linked notes, attachments and the open chat are not shared.' }), excerpt,
+            h('p', { class: 'notes-hint', text: 'Unsaved text is saved first. Your permanent AI access stays unchanged. Stop sharing under Scratchpad > Context; text already sent to a model cannot be withdrawn.' }));
+        const result = await callGenericPopup(content, POPUP_TYPE.CONFIRM, '', { wide: true, large: true, okButton: 'Open Scratchpad', cancelButton: 'Not now' });
+        if (result !== POPUP_RESULT.AFFIRMATIVE || !isCurrent()) return;
+        if (!await flushSave() || !isCurrent() || state.dirty) {
+            toast('warning', 'Save this note on the server before sharing it. Resolve any save conflict, then try again.');
+            return;
+        }
+        const shared = await request('/assistant/grants/create', { notebookId: snapshot.notebookId, noteId: snapshot.noteId,
+            expectedRevision: state.note.revision, scope, ...(scope === 'selection' ? { selection: { start: snapshot.start, end: snapshot.end } } : {}),
+            operations: allowEdits.checked ? (scope === 'selection' ? ['read', 'edit'] : ['read', 'append', 'edit']) : ['read'], minutes: 30 });
+        if (failed(shared, 'This note could not be shared.')) return;
+        grantId = shared.grant.id;
+        const { openScratchpad } = await import('../scratchpad/index.js');
+        if (!isCurrent()) return;
+        await openScratchpad({ note: { notebookId: snapshot.notebookId, noteId: snapshot.noteId, title: state.note.title, grantId } });
+        grantId = null;
+    } catch (error) {
+        toast('error', error.message || 'The Scratchpad discussion could not start. Try again.');
+    } finally {
+        if (grantId && getCurrentUserHandle() === snapshot.account) await request('/assistant/grants/revoke', { grantId });
+        state.discussionPending = false;
+        elements.scratchpad.disabled = false;
     }
 }
 

@@ -20,6 +20,7 @@ async function parse(response) {
         body = null;
     }
     if (body && typeof body.status === 'string') return { ...body, http: response.status };
+    if (response.ok && body && typeof body === 'object' && !Array.isArray(body)) return { ...body, status: 'success', http: response.status };
     return {
         status: response.ok ? 'success' : 'failure',
         http: response.status,

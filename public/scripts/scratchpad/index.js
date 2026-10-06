@@ -26,11 +26,13 @@ import {
     sourceConnectionProfile,
     sourceMessages,
     sourceUserName,
+    setNotebookSource,
     wireSource,
 } from './context.js';
 import { describeChange, splitReply } from './proposals.js';
+import { chooseNote, sessionNoteText } from './notebooks.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261006-scratchpad7';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261006-scratchpad-notes1';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -52,6 +54,12 @@ function assistantRole(id) {
 }
 
 function quickPrompts() {
+    if (app.source?.kind === 'notebook') return [
+        { label: t`Summarise note`, text: t`Summarise the shared note, keeping its important details.` },
+        { label: t`Develop ideas`, text: t`Suggest three ways to develop the ideas in the shared note.` },
+        { label: t`Check consistency`, text: t`Check the shared note for contradictions, missing details and unclear passages.` },
+        { label: t`Suggest edits`, text: t`Suggest focused improvements to the shared note. Propose changes only where the shared permissions allow them.` },
+    ];
     return [
         { label: t`Read the scene`, text: t`Read the current scene and tell me what each character wants and what is driving them right now.` },
         { label: t`Plot ideas`, text: t`Give me three ideas for where the story could go next, each with a different tone.` },
@@ -64,6 +72,7 @@ function quickPrompts() {
 const DEFAULT_SETTINGS = Object.freeze({
     depth: 15,
     picked: [],
+    notes: [],
     include: { card: true, persona: true, authorsNote: true, lore: true, hidden: false },
     loreOverrides: {},
     connection: { kind: 'current' },
@@ -264,7 +273,10 @@ function build() {
         applyLayout();
     }, { icon: 'fa-expand', className: 'scratchpad-layout-toggle' });
     el.newSession = iconButton(t`New session`, () => void newSession(false), { icon: 'fa-plus', className: 'scratchpad-new-session', title: t`Start a new Scratchpad session` });
-    const close = iconButton(t`Back to chat`, () => hideScratchpad(), { icon: 'fa-comments', className: 'scratchpad-close' });
+    el.close = iconButton(t`Back to chat`, () => {
+        if (app.source?.kind === 'notebook') void openNotebook(app.source);
+        else hideScratchpad();
+    }, { icon: 'fa-comments', className: 'scratchpad-close' });
 
     el.tabs = {};
     el.panels = {};
@@ -300,7 +312,7 @@ function build() {
             h('div', { class: 'scratchpad-title' },
                 h('h2', { class: 'scratchpad-heading', text: t`Scratchpad` }),
                 el.sourceLabel),
-            h('div', { class: 'scratchpad-header-actions' }, el.newSession, el.layoutButton, close)),
+            h('div', { class: 'scratchpad-header-actions' }, el.newSession, el.layoutButton, el.close)),
         tabList,
         h('div', { class: 'scratchpad-body' }, el.panels.chat, el.panels.context, el.panels.sessions));
     document.body.append(el.root);
@@ -476,7 +488,7 @@ async function ensureSession(source) {
 async function updateSettings(patch, { rerenderContext = false } = {}) {
     const source = app.source;
     const sessionId = activeSession()?.id;
-    await change(async wire => {
+    const result = await change(async wire => {
         /* A new session is shown only once the setting is saved, so the panel never redraws from its defaults. */
         let bucket = app.bucket;
         if (!activeSession()) {
@@ -495,6 +507,7 @@ async function updateSettings(patch, { rerenderContext = false } = {}) {
         }
     }, t`Scratchpad could not save that setting.`, source);
     if (rerenderContext && source?.key === app.source?.key) renderContext();
+    return result;
 }
 
 /* Replies */
@@ -675,11 +688,17 @@ function render() {
 }
 
 function renderHeader() {
+    const sourceKind = app.source?.kind || '';
+    if (app.el.quick.dataset.sourceKind !== sourceKind) {
+        app.el.quick.dataset.sourceKind = sourceKind;
+        app.el.quick.replaceChildren(...quickPrompts().map(prompt => iconButton(prompt.label, () => usePrompt(prompt.text), { className: 'scratchpad-chip' })));
+    }
     const session = activeSession();
     const assistant = session?.assistant ?? app.assistant;
     app.el.portrait.src = getAssistantIconSrc(assistant);
     app.el.sourceLabel.textContent = app.source ? app.source.label : t`No chat open`;
     app.el.newSession.disabled = !app.source;
+    app.el.close.querySelector('span').textContent = app.source?.kind === 'notebook' ? t`Back to Notes` : t`Back to chat`;
     const participants = sessionAssistants(session);
     const roundTable = session?.settings.roundTable === true;
     app.el.roundTable.setAttribute('aria-pressed', String(roundTable));
@@ -718,6 +737,8 @@ async function chooseAssistant(id) {
 }
 
 function contextSummary(settings) {
+    const notes = settings.notes?.length || 0;
+    if (notes) return t`${notes} saved notes or sections shared`;
     if (settings.picked?.length) return t`Reading ${settings.picked.length} picked messages`;
     if (!settings.depth) return t`Not reading any chat messages`;
     return t`Reading the latest ${settings.depth} messages`;
@@ -801,7 +822,9 @@ function renderMessages() {
         list.append(h('div', { class: 'scratchpad-empty' },
             h('img', { src: getAssistantIconSrc(assistant.id), alt: '', width: 72, height: 72 }),
             h('p', { text: t`Ask ${names} anything. Nothing you write here goes into the story.` }),
-            h('p', { text: t`Suggested changes to lorebooks, characters or messages appear as cards you can review before anything is saved.` })));
+            h('p', { text: app.source?.kind === 'notebook'
+                ? t`Suggested note changes appear as cards you can review before anything is saved.`
+                : t`Suggested changes to notes, lorebooks, characters or messages appear as cards you can review before anything is saved.` })));
         return;
     }
     const lastUserIndex = session.messages.findLastIndex(item => item.role === 'user');
@@ -924,12 +947,12 @@ function renderChangeCard(session, message, part) {
     if (state === 'rejected') {
         card.append(h('div', { class: 'scratchpad-change-actions' },
             h('span', { class: 'scratchpad-change-state', text: t`Dismissed` }),
-            iconButton(t`Undo`, () => void markChange(session, message, part.index, null), { className: 'scratchpad-link' })));
+            part.change.type === 'notebook' && message.notebookProposals?.[part.index] ? null : iconButton(t`Undo`, () => void markChange(session, message, part.index, null), { className: 'scratchpad-link' })));
         return card;
     }
     card.append(h('div', { class: 'scratchpad-change-actions' },
         iconButton(t`Review`, () => void reviewChange(session, message, part), { icon: 'fa-eye', primary: true }),
-        iconButton(t`Dismiss`, () => void markChange(session, message, part.index, 'rejected'), { icon: 'fa-xmark' })));
+        iconButton(t`Dismiss`, () => void dismissChange(session, message, part), { icon: 'fa-xmark' })));
     return card;
 }
 
@@ -938,6 +961,7 @@ function markChange(session, message, index, state, source = app.source) {
 }
 
 async function reviewChange(session, message, part) {
+    if (part.change.type === 'notebook') return reviewNotebookChange(session, message, part);
     const source = app.source;
     let plan;
     try {
@@ -977,6 +1001,59 @@ async function reviewChange(session, message, part) {
     await markChange(session, message, part.index, 'applied', source);
 }
 
+async function reviewNotebookChange(session, message, part, { dismiss = false } = {}) {
+    const source = app.source;
+    try {
+        requireScope(source, session.id);
+        const proposal = await api.readNotebookProposal(wireSource(source), session.id, message.id, part.index);
+        requireScope(source, session.id);
+        applyBucket(proposal.bucket);
+        if (proposal.state === 'applied' || proposal.state === 'denied') { await reload(); return; }
+        if (!proposal.proposalHash) { toastr.info(proposal.message || t`Nothing would change.`); return; }
+        if (!dismiss) {
+            const content = h('div', { class: 'scratchpad-review' },
+                h('h3', { text: proposal.summary.label || t`Review note change` }),
+                h('p', { text: t`This exact change is also available in Notes under Assistant changes. Note revisions and AI access are checked again when you save.` }),
+                h('strong', { text: t`Now` }), h('pre', { class: 'scratchpad-review-before', text: proposal.before || t`(empty)` }),
+                h('strong', { text: t`Proposed` }), h('pre', { class: 'scratchpad-review-after', text: proposal.after || t`(empty)` }));
+            const result = await callGenericPopup(content, POPUP_TYPE.CONFIRM, '', { wide: true, large: true, okButton: t`Save change`, cancelButton: t`Not now` });
+            if (result !== POPUP_RESULT.AFFIRMATIVE) return;
+        }
+        requireScope(source, session.id);
+        const result = await api.decideNotebookProposal(wireSource(source), session.id, message.id, part.index, proposal.proposalHash, dismiss ? 'deny' : 'allow');
+        requireScope(source, session.id);
+        applyBucket(result.bucket);
+        if (result.result.committed) toastr.success(t`Change saved.`);
+    } catch (error) { reportError(error, t`That note change could not be saved.`); }
+}
+
+function dismissChange(session, message, part) {
+    return part.change.type === 'notebook' && message.notebookProposals?.[part.index]
+        ? reviewNotebookChange(session, message, part, { dismiss: true }) : markChange(session, message, part.index, 'rejected');
+}
+
+async function openNotebook(ref = {}) {
+    const { openNotes } = await import('../notebooks/notes-app.js');
+    await openNotes({ notebookId: ref.notebookId, noteId: ref.noteId });
+}
+
+async function saveToNote(session, message = null) {
+    const source = app.source;
+    const selection = globalThis.getSelection?.();
+    const article = message ? app.el.messages.querySelector(`[data-message-id="${CSS.escape(message.id)}"]`) : null;
+    const blocks = article ? [...article.querySelectorAll('.scratchpad-text, .scratchpad-plain')].filter(block => !block.closest('.scratchpad-reasoning')) : [];
+    const selected = selection && !selection.isCollapsed && blocks.some(block => block.contains(selection.anchorNode) && block.contains(selection.focusNode)) ? selection.toString() : '';
+    const text = selected || (message ? (message.role === 'assistant' ? replyDraft(message.text) : message.text) : sessionNoteText(session, replyDraft));
+    if (!text.trim()) { toastr.info(t`There is no text to save.`); return; }
+    try {
+        requireScope(source, session.id);
+        const { captureFromChat } = await import('../notebooks/notes-app.js');
+        requireScope(source, session.id);
+        await captureFromChat({ title: session.name, text, source: { kind: 'scratchpad', sourceKind: source.kind, chat: source.key,
+            sessionId: session.id, scratchpadMessageId: message?.id, speaker: message?.assistant ? assistantInfo(message.assistant).name : message ? sourceUserName(source) : t`Scratchpad session`, messageSendDate: message?.created } });
+    } catch (error) { reportError(error, t`That text could not be saved to Notes.`); }
+}
+
 function replyDraft(text) {
     return splitReply(text).filter(part => part.type === 'text').map(part => part.text).join('').trim();
 }
@@ -1014,11 +1091,12 @@ function renderMessageActions(session, message, { latest }) {
     const busy = Boolean(pendingReply(session));
     const actions = h('div', { class: 'scratchpad-message-actions' });
     if (message.text) actions.append(iconButton('', () => void copyMessage(message), { icon: 'fa-copy', title: t`Copy` }));
+    if (message.text) actions.append(iconButton('', () => void saveToNote(session, message), { icon: 'fa-book-bookmark', title: t`Save selection or message to note` }));
     actions.append(iconButton('', () => {
         app.editing = message.id;
         renderMessages();
     }, { icon: 'fa-pen', title: t`Edit`, disabled: busy }));
-    if (message.role === 'assistant' && message.text) {
+    if (message.role === 'assistant' && message.text && app.source?.kind !== 'notebook') {
         actions.append(iconButton('', () => useAsDraft(message), { icon: 'fa-reply', title: t`Use as draft in the chat box` }));
     }
     if (latest && message.role === 'assistant') {
@@ -1085,7 +1163,7 @@ async function editAssistantPrompt(assistant) {
         const previous = session.settings.assistantPrompts?.[assistant.id];
         const context = await buildContext({ source, settings: session.settings });
         const defaults = await api.readPrompt({ assistant: assistant.id, gender: getAssistantGender(assistant.id),
-            names: context.names, capabilities: context.capabilities, participants: sessionAssistants(session) });
+            names: context.names, capabilities: { ...context.capabilities, notebook: true }, participants: sessionAssistants(session) });
         requireScope(source, session.id);
         const editor = h('textarea', { class: 'text_pole scratchpad-review-editor', rows: '16', value: previous ?? defaults.text, 'aria-label': t`Assistant prompt` });
         let reset = false;
@@ -1118,6 +1196,7 @@ function renderContext({ force = true } = {}) {
     const settings = currentSettings();
     const limits = app.bucket?.limits ?? { depth: 200, maxTokens: 32000 };
     const roleplay = app.source.kind === 'roleplay';
+    const notebook = app.source.kind === 'notebook';
 
     const depth = h('input', {
         type: 'number', class: 'text_pole', min: '0', max: String(limits.depth), step: '1', value: String(settings.depth),
@@ -1155,14 +1234,17 @@ function renderContext({ force = true } = {}) {
     const setInclude = (name, value) => void updateSettings({ include: { [name]: value } });
 
     append(panel, [
-        h('section', { class: 'scratchpad-section' },
+        renderNotes(settings),
+        notebook ? h('section', { class: 'scratchpad-section' },
+            h('h3', { class: 'scratchpad-section-title', text: t`Note discussion` }),
+            h('p', { class: 'scratchpad-muted', text: t`This Scratchpad belongs to the note, not the open chat. Story messages, characters, your persona and lorebooks are not included.` })) : h('section', { class: 'scratchpad-section' },
             h('h3', { class: 'scratchpad-section-title', text: t`Chat messages` }),
             h('div', { class: 'scratchpad-field' },
                 h('label', { for: 'scratchpad-depth', text: t`Recent messages to read` }),
                 depth,
                 h('small', { text: settings.picked.length ? t`Ignored while you have picked messages below.` : t`Use 0 to share no messages.` })),
             checkbox(t`Include hidden messages`, include.hidden, value => setInclude('hidden', value))),
-        h('section', { class: 'scratchpad-section' },
+        notebook ? null : h('section', { class: 'scratchpad-section' },
             h('h3', { class: 'scratchpad-section-title', text: t`Also share` }),
             checkbox(t`Character cards`, include.card, value => setInclude('card', value)),
             checkbox(t`Your persona`, include.persona, value => setInclude('persona', value)),
@@ -1175,10 +1257,64 @@ function renderContext({ force = true } = {}) {
             h('h3', { class: 'scratchpad-section-title', text: t`Assistant prompts` }),
             ...ASSISTANTS.map(assistant => iconButton(t`View or edit ${assistant.name}'s prompt`, () => void editAssistantPrompt(assistant), { icon: 'fa-pen' })),
             h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-max-tokens', text: t`Longest reply (tokens)` }), maxTokens)),
-        renderPicks(settings),
-        renderLore(settings),
+        notebook ? null : renderPicks(settings),
+        notebook ? null : renderLore(settings),
         renderPreview(),
     ]);
+}
+
+function renderNotes(settings) {
+    const source = app.source;
+    const sessionId = activeSession()?.id;
+    const isCurrent = () => app.open && isCurrentSource(source) && app.source?.key === source.key && activeSession()?.id === sessionId;
+    const list = h('div', { class: 'scratchpad-notes-list', 'aria-live': 'polite' });
+    const section = h('section', { class: 'scratchpad-section scratchpad-notes' },
+        h('h3', { class: 'scratchpad-section-title', text: t`Saved notes` }),
+        h('p', { class: 'scratchpad-muted', text: t`Add notes or sections for this session. Notebook's AI access still applies. Share private notes or selected text from Notes.` }),
+        h('div', { class: 'scratchpad-note-actions' },
+            iconButton(t`Add saved note`, async () => {
+                try {
+                    const ref = await chooseNote({ isCurrent });
+                    if (ref && isCurrent()) await updateSettings(latest => ({ notes: [...(latest.notes ?? []), ref] }), { rerenderContext: true });
+                } catch (error) { reportError(error, t`That note could not be shared.`); }
+            }, { icon: 'fa-plus', disabled: (settings.notes?.length ?? 0) >= (app.bucket?.limits.notes ?? 12) }),
+            iconButton(t`Open Notes`, () => void openNotebook().catch(error => reportError(error, t`Notes could not open.`)), { icon: 'fa-book-open' })), list);
+    if (!settings.notes?.length) {
+        list.append(h('p', { class: 'scratchpad-muted', text: t`No saved notes are shared with this session.` }));
+        return section;
+    }
+    const refs = JSON.stringify(settings.notes);
+    list.append(h('p', { class: 'scratchpad-muted', text: t`Checking shared notes...` }));
+    api.readNotebookContext(wireSource(source), sessionId).then(context => {
+        if (!list.isConnected || !isCurrent() || JSON.stringify(currentSettings().notes) !== refs) return;
+        clear(list);
+        for (const note of context.notes) {
+            const ref = note.reference;
+            const same = item => JSON.stringify(item) === JSON.stringify(ref);
+            const changePage = offset => void updateSettings(latest => ({ notes: latest.notes.map(item => same(item) ? { ...item, offset } : item) }), { rerenderContext: true });
+            const access = note.unavailable ? t`Not shared` : note.scope === 'selection' ? t`Selected text only` : note.canEdit ? t`Edits need review` : t`Read only`;
+            const actions = h('div', { class: 'scratchpad-note-actions' },
+                iconButton(t`Open note`, () => void openNotebook(ref).catch(error => reportError(error, t`That note could not open.`)), { icon: 'fa-arrow-up-right-from-square' }),
+                iconButton(ref.grantId ? t`Stop sharing` : t`Remove`, async () => {
+                    if (ref.grantId) {
+                        const { notesRequest } = await import('../notebooks/api.js');
+                        if (!isCurrent()) return;
+                        const result = await notesRequest('/assistant/grants/revoke', { grantId: ref.grantId });
+                        if (result.status !== 'success') { reportError(new Error(result.message), t`Sharing could not be stopped.`); return; }
+                    }
+                    if (isCurrent()) await updateSettings(latest => ({ notes: latest.notes.filter(item => ref.grantId ? item.grantId !== ref.grantId : !same(item)) }), { rerenderContext: true });
+                }, { icon: 'fa-xmark' }));
+            if (ref.offset) actions.append(iconButton(t`Previous page`, () => changePage(Math.max(0, ref.offset - 24000)), { icon: 'fa-chevron-left' }));
+            if (note.nextOffset !== null && note.nextOffset !== undefined) actions.append(iconButton(t`Next page`, () => changePage(note.nextOffset), { icon: 'fa-chevron-right' }));
+            list.append(h('div', { class: `scratchpad-note${note.unavailable ? ' is-unavailable' : ''}` },
+                h('div', { class: 'scratchpad-note-heading' }, h('strong', { text: note.title || t`Unavailable note` }), h('span', { class: 'scratchpad-badge', text: access })),
+                note.heading ? h('small', { text: note.heading }) : null,
+                note.partial ? h('small', { text: t`Page begins at character ${(note.offset || 0) + 1}. This is part of a longer note.` }) : null,
+                ref.grantId && !note.unavailable ? h('small', { text: t`Temporary sharing: up to 30 minutes. Stop sharing to prevent future reads; text already sent cannot be withdrawn.` }) : null,
+                note.unavailable ? h('p', { class: 'scratchpad-muted', text: t`Access expired, the shared text changed, or the note is unavailable. Share it again from Notes if needed.` }) : null, actions));
+        }
+    }).catch(error => { if (list.isConnected && isCurrent()) list.replaceChildren(h('p', { class: 'scratchpad-error', text: error.message })); });
+    return section;
 }
 
 function renderPicks(settings) {
@@ -1302,13 +1438,20 @@ function renderPreview() {
             const source = app.source;
             await app.queue;
             requireScope(source);
+            const sessionId = activeSession()?.id;
             const context = await buildContext({ source, settings: currentSettings(), pendingText: app.el.composer.value, sessionText: sessionText(activeSession()) });
-            const tokens = await estimateTokens(context.text);
+            const notes = await api.readNotebookContext(wireSource(source), sessionId);
+            requireScope(source, sessionId);
+            const preview = [context.text, notes.text ? `<notebook_context>\n${notes.text}\n</notebook_context>` : ''].filter(Boolean).join('\n\n');
+            const tokens = await estimateTokens(preview);
+            requireScope(source, sessionId);
+            if (!output.isConnected) return;
             clear(output);
             append(output, [
                 h('p', { text: t`About ${tokens} tokens. Chat messages: ${context.messageCount} of ${context.totalMessages}. Lorebook entries: ${context.lore.entries.filter(entry => entry.included).length}.` }),
                 context.swipeCount ? h('p', { text: t`Swipes shared for comparison: ${context.swipeCount}.` }) : null,
-                h('pre', { class: 'scratchpad-preview-text', text: context.text }),
+                h('p', { text: t`Saved notes or sections: ${notes.notes.filter(note => !note.unavailable).length}.` }),
+                h('pre', { class: 'scratchpad-preview-text', text: preview }),
             ]);
         } catch (error) {
             clear(output);
@@ -1317,7 +1460,7 @@ function renderPreview() {
     };
     return h('section', { class: 'scratchpad-section' },
         h('h3', { class: 'scratchpad-section-title', text: t`What Scratchpad will read` }),
-        h('p', { class: 'scratchpad-muted', text: t`This is the story context sent with your next message. It is rebuilt from the chat each time.` }),
+        h('p', { class: 'scratchpad-muted', text: t`This is the story and saved-note context for your next message. Notes are read on the server, and their contents and permissions are checked again when you send.` }),
         iconButton(t`Show preview`, () => void run(), { icon: 'fa-magnifying-glass' }),
         output);
 }
@@ -1373,7 +1516,7 @@ function exportSession(session) {
             name: session.name,
             assistant: session.assistant,
             gender: session.gender,
-            settings: session.settings,
+            settings: { ...session.settings, notes: [] },
             messages: session.messages.filter(item => item.state !== 'pending').map(item => ({ role: item.role, text: item.text, created: item.created, assistant: item.assistant, gender: item.gender })),
         },
     };
@@ -1428,12 +1571,14 @@ function renderSessions() {
         },
     });
     append(panel, [
-        h('p', { class: 'scratchpad-muted', text: t`Sessions belong to this chat. Temporary sessions disappear when you open another one.` }),
+        h('p', { class: 'scratchpad-muted', text: app.source.kind === 'notebook' ? t`Sessions belong to this note. Temporary sessions disappear when you open another one.` : t`Sessions belong to this chat. Temporary sessions disappear when you open another one.` }),
         h('div', { class: 'scratchpad-session-tools' },
             iconButton(t`New session`, () => void newSession(false), { icon: 'fa-plus', primary: true }),
             iconButton(t`Temporary session`, () => void newSession(true), { icon: 'fa-hourglass-half' }),
             iconButton(t`Import`, importSessionFile, { icon: 'fa-file-import' }),
-            current ? iconButton(t`Export current`, () => exportSession(current), { icon: 'fa-file-export' }) : null),
+            current ? iconButton(t`Export current`, () => exportSession(current), { icon: 'fa-file-export' }) : null,
+            current ? iconButton(t`Save session to note`, () => void saveToNote(current), { icon: 'fa-book-bookmark', disabled: !current.messages.length }) : null),
+        h('p', { class: 'scratchpad-muted', text: t`Exports keep the conversation but leave out saved-note sharing. Imported sessions need notes to be added again.` }),
         search,
     ]);
     const list = h('ul', { class: 'scratchpad-sessions' });
@@ -1469,11 +1614,12 @@ function renderSessions() {
 
 /* Opening and closing */
 
-export async function openScratchpad({ tab = '' } = {}) {
+export async function openScratchpad({ tab = '', note = null } = {}) {
     await loadStylesheetAsync(STYLESHEET, { id: 'neconyan-scratchpad-css' }).catch(() => null);
     build();
     readPrefs();
     globalThis.NeconyanNotes?.hide?.();
+    setNotebookSource(note);
     app.open = true;
     app.el.root.hidden = false;
     if (isPhone()) globalThis.NeconyanShell?.closeWorkspace?.();
@@ -1495,6 +1641,12 @@ export async function openScratchpad({ tab = '' } = {}) {
     }
     clearInterval(app.timer);
     app.timer = setInterval(checkSource, SOURCE_POLL_MS);
+    if (note) {
+        const ref = { notebookId: note.notebookId, noteId: note.noteId, ...(note.grantId ? { grantId: note.grantId } : {}) };
+        const saved = await updateSettings(latest => ({ notes: [...(latest.notes ?? []).filter(item => item.notebookId !== ref.notebookId || item.noteId !== ref.noteId), ref] }), { rerenderContext: true });
+        if (!saved) throw new Error(t`The note could not be added to Scratchpad. Return to Notes and try sharing it again.`);
+        selectTab('context');
+    }
     if (!isPhone()) app.el.composer.focus({ preventScroll: true });
 }
 
@@ -1504,6 +1656,7 @@ export function hideScratchpad() {
     clearInterval(app.timer);
     app.timer = 0;
     stopWatchers();
+    setNotebookSource(null);
     app.el.root.hidden = true;
     applyLayout();
 }
