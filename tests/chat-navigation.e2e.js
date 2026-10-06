@@ -102,8 +102,14 @@ test('foreground history, null history state, explicit Home and a second-context
         await page.goBack();
         await assertRoleplay(page, 'Nav A');
         expect((await nav('state')).pointer.id).toBe(b.id);
+        let release;
+        const gate = new Promise(resolve => { release = resolve; });
+        await page.route('**/api/chats/recent', async route => { await gate; await route.continue(); });
         await page.evaluate(() => { window.history.pushState(null, '', '?view=home'); window.dispatchEvent(new PopStateEvent('popstate', { state: null })); });
+        await expect(page.locator('#neconyan-chat-route-title')).toHaveText('Opening Home');
+        release();
         await ready(page);
+        await page.unroute('**/api/chats/recent');
         await expect(page.locator('body')).toHaveClass(/neconyan-home-visible/);
         await page.reload();
         await ready(page);

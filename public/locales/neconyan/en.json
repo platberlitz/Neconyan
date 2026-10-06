@@ -5525,6 +5525,8 @@
   "Chat could not be opened": "Chat could not be opened",
   "Select and copy this link. It opens this saved chat for the same account on this installation; it does not share the chat.": "Select and copy this link. It opens this saved chat for the same account on this installation; it does not share the chat.",
   "Loading the saved conversation. No message will be sent.": "Loading the saved conversation. No message will be sent.",
+  "Opening Home": "Opening Home",
+  "Loading your recent chats. No message will be sent.": "Loading your recent chats. No message will be sent.",
   "The connection or session could not be checked. Retry, or go to Home.": "The connection or session could not be checked. Retry, or go to Home.",
   "This link is invalid, unavailable, or its mode is disabled. Go to Home to choose another chat.": "This link is invalid, unavailable, or its mode is disabled. Go to Home to choose another chat.",
   "The address follows your saved chat, so Back, Forward and bookmarks open exact chats.": "The address follows your saved chat, so Back, Forward and bookmarks open exact chats.",
