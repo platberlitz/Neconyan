@@ -53,7 +53,7 @@ for (const phone of [false, true]) {
             await page.keyboard.press('Escape');
             await expect(root).toHaveAttribute('data-writing-fullscreen', 'false');
             await root.getByRole('button', { name: 'Read', exact: true }).click();
-            await expect(root.getByRole('button', { name: 'Full screen', exact: true })).toBeHidden();
+            await expect(root.getByRole('button', { name: 'Full screen', exact: true })).toBeVisible();
         } finally {
             await page?.unrouteAll({ behavior: 'wait' });
             await context.close();

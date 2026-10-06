@@ -32,7 +32,18 @@ describe('Notes full-screen writing state', () => {
         expect(f.editor.focus).toHaveBeenCalledTimes(2);
     });
 
-    test.each([{ view: 'read' }, { note: null }, { workspaceView: 'graph' }, { open: false }])('cannot enter without a visible writing editor: %j', patch => {
+    test.each(['write', 'read', 'outline'])('allows full screen in %s without changing the editor or layout', view => {
+        const f = fixture();
+        f.app.state.view = view;
+        f.context.setWritingFullscreen(true);
+        expect(f.app.state.writingFullscreen).toBe(true);
+        expect(f.app.state.layout).toBe('beside');
+        expect(f.app.elements.textarea).toBe(f.editor);
+        expect(f.label.textContent).toBe('Exit full screen');
+        expect(f.editor.focus).toHaveBeenCalledTimes(view === 'write' ? 1 : 0);
+    });
+
+    test.each([{ note: null }, { workspaceView: 'graph' }, { open: false }])('cannot enter without an open note workspace: %j', patch => {
         const f = fixture();
         Object.assign(f.app.state, patch);
         f.context.setWritingFullscreen(true);

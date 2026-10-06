@@ -288,14 +288,14 @@ function applyLayout() {
 
 function setWritingFullscreen(enabled) {
     const { state, elements } = app;
-    state.writingFullscreen = Boolean(enabled && state.open && state.note && state.workspaceView === 'note' && state.view === 'write');
+    state.writingFullscreen = Boolean(enabled && state.open && state.note && state.workspaceView === 'note');
     if (state.writingFullscreen) state.pane = 'note';
     applyLayout();
     if (elements.fullscreen) {
         const label = state.writingFullscreen ? 'Exit full screen' : 'Full screen';
         elements.fullscreen.querySelector('span').textContent = label;
         elements.fullscreen.querySelector('i').className = `fa-solid ${state.writingFullscreen ? 'fa-compress' : 'fa-expand'}`;
-        elements.fullscreen.title = state.writingFullscreen ? 'Exit full screen (Escape)' : 'Write in full screen';
+        elements.fullscreen.title = state.writingFullscreen ? 'Exit full screen (Escape)' : 'Open the note in full screen';
         elements.fullscreen.setAttribute('aria-label', label);
         elements.fullscreen.setAttribute('aria-expanded', String(state.writingFullscreen));
     }
@@ -834,7 +834,7 @@ function renderEditor({ restorePosition = false, fragment = null } = {}) {
     const { elements, state } = app;
     elements.editorPane?.classList?.toggle('notes-table-pane', state.workspaceView === 'table' && Boolean(state.notebookId));
     if (!elements.root) return;
-    if (state.writingFullscreen && (!state.note || state.workspaceView !== 'note' || state.view !== 'write')) setWritingFullscreen(false);
+    if (state.writingFullscreen && (!state.note || state.workspaceView !== 'note')) setWritingFullscreen(false);
     if (elements.root.dataset) elements.root.dataset.workspace = state.workspaceView;
     if (elements.paneTabs) renderPaneTabs();
     if (elements.graph) elements.graph.hidden = state.workspaceView !== 'graph' || !state.notebookId;
@@ -877,7 +877,7 @@ function renderEditor({ restorePosition = false, fragment = null } = {}) {
         elements.viewTabs.append(tab);
     }
     elements.toolbar.hidden = state.view !== 'write';
-    elements.fullscreen.hidden = state.view !== 'write';
+    elements.fullscreen.hidden = false;
     elements.foldControls.hidden = state.view !== 'write';
     elements.foldSections.hidden = state.view !== 'write' || !state.foldSectionsOpen;
     elements.textarea.hidden = state.view !== 'write';
