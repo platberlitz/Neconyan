@@ -32,7 +32,7 @@ import {
 import { describeChange, splitReply } from './proposals.js';
 import { chooseNote, sessionNoteText } from './notebooks.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261006-scratchpad-notes1';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261006-scratchpad-notes2';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -439,7 +439,15 @@ async function reload() {
 function checkSource() {
     const next = currentSource();
     if ((next?.key ?? '') === (app.source?.key ?? '')) {
-        if (next) app.source = next;
+        if (next) {
+            const renamed = next.label !== app.source?.label;
+            app.source = next;
+            if (renamed) {
+                renderHeader();
+                app.contextKey = '';
+                if (app.tab === 'context') renderContext();
+            }
+        }
         return;
     }
     stopWatchers();

@@ -13,10 +13,12 @@ const chat = [];
 const books = new Map();
 let avatar = 'Nova.png';
 let groupId = '';
+let chatId = 'chat';
 const loadWorldInfo = jest.fn(async name => books.get(name));
+const getRoleplaySourceId = jest.fn(() => null);
 
 jest.unstable_mockModule('../public/script.js', () => ({
-    characters, chat, chat_metadata: { world_info: 'Chat lore' }, this_chid: 0, name1: 'Roleplay user', getCurrentChatId: () => 'chat',
+    characters, chat, chat_metadata: { world_info: 'Chat lore' }, this_chid: 0, name1: 'Roleplay user', getCurrentChatId: () => chatId,
     substituteParams: (text, options = {}) => text.replaceAll('{{char}}', options.name2Override || 'Roleplay').replaceAll('{{user}}', options.name1Override || 'Roleplay user'),
 }));
 jest.unstable_mockModule('../public/scripts/group-chats.js', () => ({ getGroupMembers: () => characters.slice(1), groups: [], selected_group: null }));
@@ -32,12 +34,13 @@ jest.unstable_mockModule('../public/scripts/neconyan-conversation/personas.js', 
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/settings-store.js', () => ({ getSettings: () => conversationSettings }));
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/state.js', () => ({ conversationState }));
 jest.unstable_mockModule('../public/scripts/power-user.js', () => ({ power_user }));
+jest.unstable_mockModule('../public/scripts/roleplay-save-chain.js', () => ({ getRoleplaySourceId }));
 jest.unstable_mockModule('../public/scripts/tokenizers.js', () => ({ getTokenCountAsync: async () => 1 }));
 jest.unstable_mockModule('../public/scripts/world-info.js', () => ({
     loadWorldInfo, selected_world_info: ['Global lore'], world_info: { charLore: [{ name: 'Nova', extraBooks: ['Extra lore'] }] },
 }));
 
-const { buildContext, collectLore, currentSource, sourceMessages, sourceCharacters, setNotebookSource } = await import('../public/scripts/scratchpad/context.js');
+const { buildContext, collectLore, currentSource, isCurrentSource, wireSource, sourceMessages, sourceCharacters, setNotebookSource } = await import('../public/scripts/scratchpad/context.js');
 const settings = { depth: 15, include: { lore: true, card: true, persona: true } };
 
 beforeEach(() => {
@@ -45,6 +48,8 @@ beforeEach(() => {
     conversationState.conversationWorkspaceOpen = true;
     avatar = 'Nova.png';
     groupId = '';
+    chatId = 'chat';
+    getRoleplaySourceId.mockReset().mockReturnValue(null);
     branch.messages = [{ id: 'one', role: 'user', mes: 'A lighthouse.' }];
     chat.length = 0;
     books.clear();
@@ -118,6 +123,27 @@ describe('Scratchpad swipe comparison', () => {
 });
 
 describe('Scratchpad source context', () => {
+    test('renaming a protected Roleplay chat changes its label and migration hint, not its identity', () => {
+        conversationState.conversationWorkspaceOpen = false;
+        getRoleplaySourceId.mockReturnValue('11111111-2222-3333-4444-555555555555');
+        const source = currentSource();
+        expect(source.key).toBe('roleplay:11111111-2222-3333-4444-555555555555');
+        expect(source.legacyKey).toBe('character:Roleplay.png:chat');
+        expect(getRoleplaySourceId).toHaveBeenCalledWith({ group: false, avatar: 'Roleplay.png', chat: 'chat' });
+        chatId = 'Renamed chat';
+        expect(currentSource().key).toBe(source.key);
+        expect(currentSource().label).toContain('Renamed chat');
+        expect(isCurrentSource(source)).toBe(true);
+        expect(wireSource(currentSource()).legacyKey).toBe('character:Roleplay.png:Renamed chat');
+        getRoleplaySourceId.mockReturnValue('66666666-2222-3333-4444-555555555555');
+        expect(isCurrentSource(source)).toBe(false);
+    });
+
+    test('a not-yet-protected Roleplay chat keeps its original filename key', () => {
+        conversationState.conversationWorkspaceOpen = false;
+        expect(wireSource(currentSource())).toEqual({ kind: 'roleplay', key: 'character:Roleplay.png:chat', label: 'Roleplay - chat' });
+    });
+
     test('note-only discussions never borrow the open story, persona, characters or lore', async () => {
         setNotebookSource({ notebookId: 'nb', noteId: 'note', title: 'Saved plan' });
         const source = currentSource();

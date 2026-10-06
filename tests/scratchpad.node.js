@@ -18,6 +18,9 @@ const { router } = await import('../src/endpoints/scratchpad.js');
 const notebooks = await import('../src/notebooks/store.js');
 const notebookAssistant = await import('../src/notebooks/assistant.js');
 const { applyPolicyPatch } = await import('../src/notebooks/permissions.js');
+const { readRoleplayChat } = await import('../src/generation/roleplay-source.js');
+const { commitRoleplayLifecycleLocked } = await import('../src/roleplay-lifecycle.js');
+const { roleplayNativeHost } = await import('../src/endpoints/chats.js');
 
 after(() => cancelAutoSaves());
 
@@ -59,6 +62,25 @@ function sendBody(session, extra = {}) {
         ...extra,
     };
 }
+
+test('a reply accepted with the old filename still settles after a protected chat rename', async t => {
+    const a = account(t);
+    const id = readRoleplayChat(a.f.scope, a.f.locator).instanceId;
+    const legacy = { kind: 'roleplay', key: `character:${a.f.locator.avatar}:${a.f.locator.chat}`, label: 'Old chat' };
+    const session = a.mutate(legacy, bucket => store.createSession(bucket, { settings: { connection: { kind: 'profile', profileId: 'saved' } } }));
+    registerScratchpadJobs({ generate: async () => ({ text: 'This unfinished reply was kept.' }) });
+    const body = sendBody(session, { source: legacy });
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    store.withScratchpad(a.base, lease => commitRoleplayLifecycleLocked(lease, { operationKey: 'rename-with-old-job', action: 'chat-rename',
+        intent: { chat: 'Renamed' }, steps: [{ op: 'move', kind: 'chat', locator: a.f.locator, destination: { ...a.f.locator, chat: 'Renamed' } }] }, roleplayNativeHost));
+    await runJob(getJob(a.directories, accepted.job.id));
+    assert.equal(getJob(a.directories, accepted.job.id).state, 'completed');
+    const source = { kind: 'roleplay', key: `roleplay:${id}`, legacyKey: `character:${a.f.locator.avatar}:Renamed`, label: 'Renamed' };
+    const messages = a.read(source).sessions[0].messages;
+    assert.equal(messages[1].state, 'done');
+    assert.equal(messages[1].text, 'This unfinished reply was kept.');
+    assert.equal(a.read(legacy).sessions[0].messages[1].id, messages[1].id);
+});
 
 test('a reply runs as a server job, streams a preview and settles into the saved session', async t => {
     const a = account(t);

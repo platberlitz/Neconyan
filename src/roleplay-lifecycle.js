@@ -19,6 +19,7 @@ import { read as readCharacterCard } from './character-card-parser.js';
 import { MAX_ARCHIVE_BYTES, chatMemoryExists, removeChatMemory, removeSourceMemory, renameCharacterMemory, renameChatMemory } from './mewmory/store.js';
 import { createEntityDateAdded, removeEntityDateAdded } from './entity-date-added.js';
 import { getJob } from './jobs/store.js';
+import { bindRoleplayScratchpadsLocked } from './scratchpad/store.js';
 import { decodeFileWriteRecovery, fsyncDirectorySync, humanizedDateTime, tryWriteFileSync, FILE_WRITE_RECOVERY_SUFFIX } from './util.js';
 
 const CHAT_LIMIT = 64 * 1024 * 1024;
@@ -1236,6 +1237,8 @@ export function commitRoleplayLifecycleLocked(lease, { operationKey, action, int
         accountId: state.accountId, dataEpoch: state.dataEpoch, action, phase: 'prepared', steps: planned,
         auxiliary: JSON.parse(JSON.stringify(auxiliary)), reservedBytes: 8 * 1024 };
     assertRoleplayTransactionCapacity(lease, pending, finishedLifecycle(state, pending));
+    // Authoring files must be bound before state.pending makes account writes unavailable.
+    bindRoleplayScratchpadsLocked(lease, planned);
     steps.forEach((step, index) => {
         const planStep = planned.find(item => item.after?.payload === `lifecycle.${index}.bin`);
         if (planStep) stageRoleplayPayload(lease, pending.id, planStep.after.payload, step.bytes, CHAT_LIMIT);

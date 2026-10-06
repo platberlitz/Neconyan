@@ -13,6 +13,7 @@ import { composeConversationPersonaDescription, getConversationPersonaName } fro
 import { getSettings as getConversationSettings } from '../neconyan-conversation/settings-store.js';
 import { conversationState } from '../neconyan-conversation/state.js';
 import { power_user } from '../power-user.js';
+import { getRoleplaySourceId } from '../roleplay-save-chain.js';
 import { getTokenCountAsync } from '../tokenizers.js';
 import { loadWorldInfo, selected_world_info, world_info } from '../world-info.js';
 
@@ -78,9 +79,12 @@ export function currentSource() {
     if (!chatId) return null;
     if (selected_group) {
         const group = groups.find(item => item.id === selected_group);
+        const id = getRoleplaySourceId({ group: true, chat: chatId });
+        const legacyKey = `group:${selected_group}:${chatId}`;
         return {
             kind: 'roleplay',
-            key: `group:${selected_group}:${chatId}`,
+            key: id ? `roleplay:${id}:group:${selected_group}` : legacyKey,
+            ...(id ? { legacyKey } : {}),
             label: clipLabel(`${group?.name || 'Group chat'} - ${chatId}`),
             groupId: selected_group,
             chatId,
@@ -88,9 +92,12 @@ export function currentSource() {
     }
     const character = characters[this_chid];
     if (!character?.avatar) return null;
+    const id = getRoleplaySourceId({ group: false, avatar: character.avatar, chat: chatId });
+    const legacyKey = `character:${character.avatar}:${chatId}`;
     return {
         kind: 'roleplay',
-        key: `character:${character.avatar}:${chatId}`,
+        key: id ? `roleplay:${id}` : legacyKey,
+        ...(id ? { legacyKey } : {}),
         label: clipLabel(`${character.name} - ${chatId}`),
         avatar: character.avatar,
         chatId,
@@ -98,7 +105,7 @@ export function currentSource() {
 }
 
 export function wireSource(source) {
-    return source ? { kind: source.kind, key: source.key, label: source.label } : null;
+    return source ? { kind: source.kind, key: source.key, label: source.label, ...(source.legacyKey ? { legacyKey: source.legacyKey } : {}) } : null;
 }
 
 export function isCurrentSource(source) {

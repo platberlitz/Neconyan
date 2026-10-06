@@ -13,7 +13,7 @@ All three assistants can do the same things in Scratchpad. They keep their own p
 
 On desktop Scratchpad opens beside the chat. Drag its left edge (or focus the edge and use the arrow keys) to change its width, and use **Full width** or **Beside chat** to switch layouts. On a phone it fills the screen; **Back to chat** returns to the conversation. Opening Notes closes Scratchpad, and opening Scratchpad closes Notes.
 
-Scratchpad follows the chat you have open. Switch chats and it shows that chat's sessions instead.
+Scratchpad follows the chat you have open. Switch chats and it shows that chat's sessions instead. Renaming a saved Roleplay chat keeps its sessions, context settings and replies already in progress. A different chat that reuses the old name gets its own Scratchpad.
 
 **Ask Scratchpad** opens sessions belonging to the note, not the open chat. It saves unfinished note edits before sharing, offers a 30-minute read-only grant and lets you explicitly allow proposed edits. Selected text shares only that exact passage. The open story, character cards, persona, linked notes and attachments are not included. **Back to Notes** returns to the source note. Permanent AI access settings stay unchanged.
 
@@ -96,6 +96,8 @@ The **Sessions** tab lists the sessions for the open chat. Each chat keeps its o
 - **Save session to note** saves the completed conversation as a quotation in a new or existing note. It leaves out reasoning, unfinished replies and change-card instructions.
 
 Sessions are saved on the server under your account, separately from the chat itself. Deleting a session never touches the story.
+
+Saved Roleplay sessions follow the chat's permanent identity rather than its filename. Existing Scratchpad files are kept in place when linked to that identity, including before a rename. Group chats stay separate by group even when groups share the same chat file. This prevents new renames from opening an empty Scratchpad; it doesn't guess which chat owns sessions orphaned by an earlier rename.
 
 Exports and imports leave out saved-note sharing references, temporary grants and saved/declined proposal markers. Imported conversation text remains a copy of what was written; it can still contain material shared in the original session. Saving a quotation does not publish lore or give assistants new access.
 

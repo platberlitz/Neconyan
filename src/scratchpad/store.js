@@ -1,5 +1,6 @@
 import path from 'node:path';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 
 import { readAuthoringFileLocked, writeAuthoringFileLocked, deleteAuthoringFileLocked } from '../authoring-store.js';
 import { roleplayAccountBase, roleplayAccountStamp, roleplayLease, withRoleplayAccount } from '../roleplay-store.js';
@@ -23,6 +24,9 @@ export const DEFAULT_DEPTH = 15;
 export const MAX_DEPTH = 200;
 const FILE_LIMIT = 16 * 1024 * 1024;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+const IDENTITY_LIMIT = 4 * 1024 * 1024;
+const STABLE_KEY_PATTERN = /^roleplay:([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})(?::group:([^\0\r\n]{1,256}))?$/;
+const STORAGE_SOURCE = Symbol('scratchpadStorageSource');
 
 export class ScratchpadError extends Error {
     constructor(code, message, status = 400) {
@@ -67,7 +71,17 @@ export function normaliseSource(input) {
     const kind = SOURCE_KINDS.includes(input.kind) ? input.kind : null;
     const key = typeof input.key === 'string' ? input.key : '';
     if (!kind || !key || key.length > 1024) throw fail('SCRATCHPAD_SOURCE_INVALID', 'Open a chat before using Scratchpad.');
-    return { kind, key, label: boundedString(input.label, 200, { trim: true }) };
+    const source = { kind, key, label: boundedString(input.label, 200, { trim: true }) };
+    if (input.legacyKey !== undefined) {
+        const identity = kind === 'roleplay' && STABLE_KEY_PATTERN.exec(key);
+        const prefix = identity?.[2] ? `group:${identity[2]}:` : 'character:';
+        if (!identity || typeof input.legacyKey !== 'string' || input.legacyKey.length > 1024
+            || !input.legacyKey.startsWith(prefix) || input.legacyKey.length <= prefix.length) {
+            throw fail('SCRATCHPAD_SOURCE_INVALID', 'This Scratchpad chat identity is invalid. Reload the chat.');
+        }
+        source.legacyKey = input.legacyKey;
+    }
+    return source;
 }
 
 export function normaliseAssistant(value) {
@@ -272,9 +286,9 @@ function rootOf(lease) {
     return roleplayLease(lease).scope.directories.root;
 }
 
-export function readBucketLocked(lease, source) {
+function readStoredBucketLocked(lease, source) {
     const file = readAuthoringFileLocked(lease, scratchpadFile(rootOf(lease), source), FILE_LIMIT);
-    if (!file) return emptyBucket(source);
+    if (!file) return null;
     let parsed;
     try {
         parsed = JSON.parse(file.bytes.toString('utf8'));
@@ -284,16 +298,102 @@ export function readBucketLocked(lease, source) {
     if (parsed?.source?.kind !== source.kind || parsed?.source?.key !== source.key) {
         throw fail('SCRATCHPAD_DAMAGED', 'This Scratchpad file belongs to another chat.', 500);
     }
-    return normaliseBucket(parsed, source);
+    return parsed;
+}
+
+function identityFile(lease) {
+    return path.join(rootOf(lease), 'scratchpad', 'identities.json');
+}
+
+function readIdentitiesLocked(lease) {
+    const file = readAuthoringFileLocked(lease, identityFile(lease), IDENTITY_LIMIT);
+    if (!file) return { version: 1, entries: {} };
+    try {
+        const data = JSON.parse(file.bytes.toString('utf8'));
+        if (data.version !== 1 || !isPlainObject(data.entries)) throw new Error('Invalid identity registry.');
+        const claimed = new Set();
+        for (const [key, source] of Object.entries(data.entries)) {
+            if (source?.kind !== 'roleplay') throw new Error('Invalid storage source.');
+            normaliseSource({ kind: 'roleplay', key, legacyKey: source.key });
+            if (claimed.has(source.key)) throw new Error('Duplicate storage source.');
+            claimed.add(source.key);
+        }
+        return data;
+    } catch {
+        throw fail('SCRATCHPAD_DAMAGED', 'Scratchpad\'s saved chat identities could not be read. The original files were kept.', 500);
+    }
+}
+
+function writeIdentitiesLocked(lease, data) {
+    writeAuthoringFileLocked(lease, identityFile(lease), `${JSON.stringify(data, null, 2)}\n`, { limit: IDENTITY_LIMIT });
+}
+
+function bindLegacyLocked(lease, identities, source, claimed) {
+    if (identities.entries[source.key] || !source.legacyKey) return false;
+    const root = rootOf(lease);
+    // A canonical bucket always wins; never merge two existing sets of sessions.
+    if (fs.existsSync(scratchpadFile(root, source)) || claimed.has(source.legacyKey)) return false;
+    const legacy = { kind: 'roleplay', key: source.legacyKey };
+    if (!fs.existsSync(scratchpadFile(root, legacy)) || !readStoredBucketLocked(lease, legacy)) return false;
+    identities.entries[source.key] = legacy;
+    claimed.add(legacy.key);
+    return true;
+}
+
+function storageSourceLocked(lease, source) {
+    if (source.kind !== 'roleplay' || !STABLE_KEY_PATTERN.test(source.key)) return source;
+    const identities = readIdentitiesLocked(lease);
+    const claimed = new Set(Object.values(identities.entries).map(item => item.key));
+    if (bindLegacyLocked(lease, identities, source, claimed)) writeIdentitiesLocked(lease, identities);
+    return identities.entries[source.key] ?? source;
+}
+
+/** Bind old buckets before publishing a chat move. No bucket files or running jobs are moved. */
+export function bindRoleplayScratchpadsLocked(lease, steps) {
+    const moves = steps.filter(step => step.kind === 'chat' && step.op === 'move');
+    if (!moves.length || !fs.existsSync(path.join(rootOf(lease), 'scratchpad'))) return;
+    const identities = readIdentitiesLocked(lease);
+    const claimed = new Set(Object.values(identities.entries).map(item => item.key));
+    let groupIds;
+    let changed = false;
+    for (const step of moves) {
+        if (!step.locator.group) {
+            changed = bindLegacyLocked(lease, identities, {
+                kind: 'roleplay', key: `roleplay:${step.instanceId}`, legacyKey: `character:${step.locator.avatar}:${step.locator.chat}`,
+            }, claimed) || changed;
+            continue;
+        }
+        const directory = roleplayLease(lease).scope.directories.groups;
+        groupIds ??= fs.readdirSync(directory, { withFileTypes: true })
+            .filter(entry => entry.isFile() && entry.name.endsWith('.json'))
+            .map(entry => entry.name.slice(0, -5))
+            .filter(id => id && id.length <= 256 && !/[\0\r\n]/.test(id));
+        for (const groupId of groupIds) {
+            changed = bindLegacyLocked(lease, identities, {
+                kind: 'roleplay', key: `roleplay:${step.instanceId}:group:${groupId}`, legacyKey: `group:${groupId}:${step.locator.chat}`,
+            }, claimed) || changed;
+        }
+    }
+    if (changed) writeIdentitiesLocked(lease, identities);
+}
+
+export function readBucketLocked(lease, source) {
+    const storage = storageSourceLocked(lease, source);
+    const parsed = readStoredBucketLocked(lease, storage);
+    const bucket = parsed ? normaliseBucket(parsed, source) : emptyBucket(source);
+    Object.defineProperty(bucket, STORAGE_SOURCE, { value: storage });
+    return bucket;
 }
 
 export function writeBucketLocked(lease, bucket) {
-    const filename = scratchpadFile(rootOf(lease), bucket.source);
+    const storage = bucket[STORAGE_SOURCE] ?? storageSourceLocked(lease, bucket.source);
+    const filename = scratchpadFile(rootOf(lease), storage);
     if (!bucket.sessions.length) {
         deleteAuthoringFileLocked(lease, filename);
         return;
     }
-    writeAuthoringFileLocked(lease, filename, `${JSON.stringify(bucket, null, 2)}\n`, { limit: FILE_LIMIT });
+    const saved = { ...bucket, source: { kind: storage.kind, key: storage.key, label: bucket.source.label || '' } };
+    writeAuthoringFileLocked(lease, filename, `${JSON.stringify(saved, null, 2)}\n`, { limit: FILE_LIMIT });
 }
 
 export function scratchpadAccountBase(request) {
