@@ -17,6 +17,8 @@ export const JOB_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 // Unresolved failures carry their whole prompt, so a day of them is enough
 // time to retry; after that they are dismissed and can be cleared for space.
 export const JOB_FAILURE_RETENTION_MS = 24 * 60 * 60 * 1000;
+// A tab may still be applying a reply that finished moments ago.
+export const JOB_CLEAR_GRACE_MS = 10 * 60 * 1000;
 const PROCESS_STARTED_AT = Date.now();
 
 // Typed limits. They are enforced on both halves of the boundary: the HTTP
@@ -671,6 +673,33 @@ export function dismissJob(directories, id) {
             child.updatedAt = now();
         }
         return { job };
+    });
+}
+
+/**
+ * The owner's "Clear job history": dismiss every unresolved failure and delete
+ * every finished record that nothing still depends on. Unfinished work stays,
+ * and so do replies finished in the last few minutes that a tab may be applying.
+ */
+export function clearFinishedJobs(directories, { owner } = {}) {
+    return mutateJobs(directories, store => {
+        const at = now();
+        const mine = Object.entries(store.jobs).filter(([, job]) => owner === undefined || job.owner === owner);
+        let dismissed = 0;
+        for (const [, job] of mine) {
+            if (!unresolvedFailure(job)) continue;
+            job.dismissed = true;
+            job.dismissedReason = 'cleared';
+            job.updatedAt = at;
+            dismissed += 1;
+        }
+        const recent = job => job.state === 'completed' && (job.finishedAt ?? job.updatedAt ?? 0) > at - JOB_CLEAR_GRACE_MS;
+        const pinned = job => recent(job) || [job.parentId, ...(job.children ?? [])]
+            .some(id => id && recent(store.jobs[jobKey(id)] ?? {}));
+        const doomed = mine.filter(([, job]) => removable(job, store.jobs) && !pinned(job)).map(([key]) => key);
+        for (const key of doomed) delete store.jobs[key];
+        const remaining = Object.values(store.jobs).filter(job => owner === undefined || job.owner === owner).length;
+        return { changed: dismissed > 0 || doomed.length > 0, removed: doomed.length, dismissed, remaining };
     });
 }
 
