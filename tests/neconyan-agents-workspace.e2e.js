@@ -6,9 +6,14 @@ import { isolateSettingsSaves, trackNavigationErrors } from './chat-scroll-regre
 test.use({ serviceWorkers: 'block' });
 test.setTimeout(180000);
 
+// Earlier tests can leave the account on another Agents section, so every test opens on Manage agents.
+const openOnManage = settings => {
+    delete settings.accountStorage?.['ica--workspace-view'];
+};
+
 test.beforeEach(async ({ page }) => {
     page.setDefaultTimeout(15000);
-    await isolateSettingsSaves(page);
+    await isolateSettingsSaves(page, openOnManage);
     await page.route('**/api/server-admin/**', route => route.fulfill({ status: 403, json: { error: 'Administration is disabled during agent UI checks.' } }));
     await page.route(/\/api\/.*\/generate-quiet(?:\?|$)/, route => route.fulfill({ status: 503, json: { error: 'Generation is disabled during agent UI checks.' } }));
 });
@@ -360,7 +365,10 @@ for (const width of WIDTHS) {
 
         test('light surfaces keep Manage, Library and Editor readable', async ({ page }, info) => {
             const { name, ...theme } = JSON.parse(readFileSync(new URL('../default/content/themes/Neconyan Calico.json', import.meta.url), 'utf8'));
-            await isolateSettingsSaves(page, settings => Object.assign(settings.power_user, theme, { theme: name }));
+            await isolateSettingsSaves(page, settings => {
+                openOnManage(settings);
+                Object.assign(settings.power_user, theme, { theme: name });
+            });
             await openAgents(page);
             await checkClose(page);
             for (const [shell, tab, root] of [['left', 'api', '#left-nav-panel'], ['right', 'settings', '#user-settings-block'], ['right', 'extensions', '#user-settings-block']]) {
@@ -386,7 +394,7 @@ test('empty workspace and failed library load can be recovered without losing th
     let mode = 'fail';
     let release;
     const gate = new Promise(resolve => { release = resolve; });
-    await isolateSettingsSaves(page, undefined, data => { data.inChatAgents = []; });
+    await isolateSettingsSaves(page, openOnManage, data => { data.inChatAgents = []; });
     await page.route(/\/in-chat-agents\/templates\/index\.json(?:\?|$)/, async route => {
         if (mode === 'fail') return route.fulfill({ status: 503, json: {} });
         if (mode === 'delay') await gate;

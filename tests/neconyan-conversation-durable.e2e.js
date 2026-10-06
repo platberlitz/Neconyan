@@ -1015,6 +1015,8 @@ for (const phone of [false, true]) {
             if (control === 'Ask for reply') await page.locator('#sb_conversation_toggle_tools').click();
             if (control === 'Branch from here') {
                 const menu = page.locator('.sb-conversation-message[data-message-id="seed-user"] .sb-conversation-more-actions');
+                // Startup notices can still cover the first message on a slow machine; the check is about the button itself.
+                await page.evaluate(() => window.toastr?.remove());
                 const hit = await menu.evaluate(button => {
                     const rect = button.getBoundingClientRect();
                     return { width: rect.width, height: rect.height, reachable: [[0.5, 0.5], [0.1, 0.5], [0.9, 0.5], [0.5, 0.1], [0.5, 0.9]].every(([x, y]) =>
