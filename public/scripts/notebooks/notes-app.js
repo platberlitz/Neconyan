@@ -271,6 +271,7 @@ function applyLayout() {
     if (!elements.root) return;
     const phone = isPhone();
     const beside = !phone && state.layout === 'beside' && !state.writingFullscreen;
+    elements.intro.hidden = beside;
     elements.root.dataset.layout = phone ? 'phone' : state.layout;
     elements.root.dataset.writingFullscreen = String(state.writingFullscreen);
     elements.root.dataset.pane = state.pane;
