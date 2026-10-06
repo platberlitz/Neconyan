@@ -1316,8 +1316,8 @@ function renderNotes(settings) {
             if (ref.offset) actions.append(iconButton(t`Previous page`, () => changePage(Math.max(0, ref.offset - 24000)), { icon: 'fa-chevron-left' }));
             if (note.nextOffset !== null && note.nextOffset !== undefined) actions.append(iconButton(t`Next page`, () => changePage(note.nextOffset), { icon: 'fa-chevron-right' }));
             list.append(h('div', { class: `scratchpad-note${note.unavailable ? ' is-unavailable' : ''}` },
-                h('div', { class: 'scratchpad-note-heading' }, h('strong', { text: note.title || t`Unavailable note` }), h('span', { class: 'scratchpad-badge', text: access })),
-                note.heading ? h('small', { text: note.heading }) : null,
+                h('div', { class: 'scratchpad-note-heading' }, h('strong', { text: note.title || t`Unavailable note`, 'data-i18n-ignore': '' }), h('span', { class: 'scratchpad-badge', text: access })),
+                note.heading ? h('small', { text: note.heading, 'data-i18n-ignore': '' }) : null,
                 note.partial ? h('small', { text: t`Page begins at character ${(note.offset || 0) + 1}. This is part of a longer note.` }) : null,
                 ref.grantId && !note.unavailable ? h('small', { text: t`Temporary sharing: up to 30 minutes. Stop sharing to prevent future reads; text already sent cannot be withdrawn.` }) : null,
                 note.unavailable ? h('p', { class: 'scratchpad-muted', text: t`Access expired, the shared text changed, or the note is unavailable. Share it again from Notes if needed.` }) : null, actions));

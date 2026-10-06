@@ -71,11 +71,11 @@ export function field(label, control, hint = '', { userLabel = false } = {}) {
 
 export function choiceRow(label, options, current, onChoose) {
     const row = h('div', { class: 'notes-choice-row', role: 'group', 'aria-label': label });
-    for (const [value, text] of options) {
+    for (const [value, text, userText = false] of options) {
         const choice = button(text, () => {
             for (const other of row.children) setButtonPressed(other, other === choice);
             onChoose(value);
-        }, { pressed: value === current, className: 'notes-choice' });
+        }, { pressed: value === current, className: 'notes-choice', userText });
         row.append(choice);
     }
     return h('div', { class: 'notes-choice-group' }, h('span', { class: 'notes-choice-label', text: label }), row);

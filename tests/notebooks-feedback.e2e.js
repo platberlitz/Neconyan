@@ -178,6 +178,8 @@ for (const phone of [false, true]) {
         await expect(popup.getByRole('button', { name: 'Scene plan', exact: true })).toHaveCount(0);
         await popup.getByRole('button', { name: 'Field report', exact: true }).click();
         await expect(popup.getByRole('button', { name: 'Field report', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        await expect(popup.getByRole('button', { name: 'Field report', exact: true })).toHaveAttribute('data-i18n-ignore', '');
+        await expect(popup.getByRole('button', { name: 'Blank note', exact: true })).not.toHaveAttribute('data-i18n-ignore', '');
         await popup.getByRole('button', { name: 'Create note', exact: true }).click();
         await expect(root.getByRole('textbox', { name: 'Note name', exact: true })).toHaveValue('New report');
         expect(await sourceText(page)).toBe(templateText);

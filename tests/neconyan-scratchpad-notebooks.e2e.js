@@ -49,6 +49,7 @@ for (const phone of [false, true]) {
         await page.getByRole('button', { name: 'Add saved note', exact: true }).click();
         const picker = page.locator('.scratchpad-review');
         await expect(picker.locator('.scratchpad-note-result')).toHaveCount(1);
+        await expect(picker.locator('.scratchpad-note-result strong')).toHaveAttribute('data-i18n-ignore', '');
         await expect(picker).not.toContainText('Private journal');
         await picker.locator('.scratchpad-note-result').click();
         await page.getByRole('button', { name: 'Choose note', exact: true }).click();
@@ -56,6 +57,7 @@ for (const phone of [false, true]) {
         await expect(page.locator('.scratchpad-review .scratchpad-preview-text')).toHaveText('The ferry leaves at dawn.');
         await page.getByRole('button', { name: 'Share with Scratchpad', exact: true }).click();
         await expect(page.locator('.scratchpad-note')).toContainText('Scene plan');
+        await expect(page.locator('.scratchpad-note .scratchpad-note-heading strong')).toHaveAttribute('data-i18n-ignore', '');
         await expect(page.locator('.scratchpad-note')).toContainText('Edits need review');
         await page.getByRole('button', { name: 'Show preview', exact: true }).click();
         await expect(page.locator('.scratchpad-preview-text')).toContainText('The ferry leaves at dawn.');
