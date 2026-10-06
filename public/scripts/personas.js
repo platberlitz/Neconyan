@@ -329,9 +329,19 @@ async function setActivePersonaAppendixIds(avatarId, ids) {
     await eventSource.emit(event_types.PERSONA_UPDATED, avatarId);
 }
 
+/**
+ * The workspace shows Browse and Edit side by side when the panel is wide enough;
+ * personas.css hides the Browse/Edit tab row in that case.
+ * @returns {boolean} Whether only one workspace pane is visible at a time
+ */
+function isPersonaWorkspaceNarrow() {
+    const tabs = document.querySelector('#PersonaManagement .persona-workspace-tabs');
+    return tabs instanceof HTMLElement && getComputedStyle(tabs).display !== 'none';
+}
+
 function setPersonaWorkspaceTab(tab) {
     const activeTab = tab === 'edit' ? 'edit' : 'browse';
-    const narrow = window.matchMedia('(max-width: 760px)').matches;
+    const narrow = isPersonaWorkspaceNarrow();
     $('#persona-management-block').attr('data-persona-workspace-tab', activeTab);
     $('.persona-workspace-tabs [data-persona-workspace-tab]').each(function () {
         const selected = $(this).attr('data-persona-workspace-tab') === activeTab;
@@ -536,12 +546,6 @@ function getUserAvatarBlock(avatarId) {
     const avatarUrl = getThumbnailUrlForViewport('persona', avatarId, isFirefox());
     template.find('img').attr('src', avatarUrl);
 
-    // Make sure description block has at least three rows. Otherwise height looks inconsistent. I don't have a better idea for this.
-    const currentText = template.find('.ch_description').text();
-    if (currentText.split('\n').length < 3) {
-        template.find('.ch_description').text(currentText + '\n\xa0\n\xa0');
-    }
-
     $('#user_avatar_block').append(template);
     return template;
 }
@@ -571,6 +575,15 @@ function updatePersonaLibraryState(totalCount, visibleCount) {
     $('#persona_library_state_description').text(emptyKind === 'library-empty'
         ? t`Create a Persona to give your chats a consistent voice.`
         : t`Try a different search or clear the filter.`);
+}
+
+function updatePersonaLibraryCount(totalCount, matchingCount) {
+    const count = document.getElementById('persona_library_count');
+    if (!(count instanceof HTMLElement)) {
+        return;
+    }
+
+    count.textContent = matchingCount === totalCount ? String(totalCount) : t`${matchingCount} of ${totalCount}`;
 }
 
 function updatePersonaPaginationVisibility(itemCount, pageSize) {
@@ -615,7 +628,7 @@ export async function getUserAvatars(doRender = true, openPageAt = '') {
         const storageKey = 'Personas_PerPage';
         const listId = '#user_avatar_block';
         const listScrollerId = '#persona_management_list_scroller';
-        const perPage = Number(accountStorage.getItem(storageKey)) || 5;
+        const perPage = Number(accountStorage.getItem(storageKey)) || 25;
         const sizeChangerOptions = [5, 10, 25, 50, 100, 250, 500, 1000];
 
         $('#persona_pagination_container').pagination({
@@ -638,6 +651,7 @@ export async function getUserAvatars(doRender = true, openPageAt = '') {
                     $(listId).append(getUserAvatarBlock(item));
                 }
                 updatePersonaLibraryState(allEntities.length, data.length);
+                updatePersonaLibraryCount(allEntities.length, entities.length);
                 updatePersonaPaginationVisibility(entities.length, Number(accountStorage.getItem(storageKey)) || perPage);
                 updatePersonaUIStates();
                 localizePagination($('#persona_pagination_container'));
@@ -3961,9 +3975,12 @@ export async function initPersonas() {
         }
     });
     setPersonaWorkspaceTab('browse');
-    window.matchMedia('(max-width: 760px)').addEventListener('change', () => {
-        setPersonaWorkspaceTab($('#persona-management-block').attr('data-persona-workspace-tab'));
-    });
+    const personaManagement = document.getElementById('PersonaManagement');
+    if (personaManagement && typeof ResizeObserver === 'function') {
+        new ResizeObserver(() => {
+            setPersonaWorkspaceTab($('#persona-management-block').attr('data-persona-workspace-tab'));
+        }).observe(personaManagement);
+    }
     setPersonaEditorTab('prompt');
     renderPersonaAppendices();
     updateSelectedPersonaMasthead();

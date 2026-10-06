@@ -1348,11 +1348,8 @@ body.neconyan #sb-topbar-inner :is(#sb-home-toggle, #sb-character-toggle) {
 .neconyan-mobile-section-select { display: none; }
 @media (max-width: 768px) {
     body.neconyan #right-nav-panel > .sb-character-editor-subtabs-wrapper { flex: 0 0 auto; max-height: none; padding: 0 0 4px; }
-    /* Phones: one tap per section, so the editor and persona sections are labelled
-       tabs in a horizontally scrolling row and their dropdown pickers stay hidden. */
-    body.neconyan #PersonaManagement select[data-neconyan-section='data-persona-editor-tab'] { display: none !important; }
-    body.neconyan #right-nav-panel .sb-character-editor-subtabs-wrapper .sb-character-editor-subtabs,
-    body.neconyan #PersonaManagement .persona-editor-workspace .persona-editor-tabs {
+    /* Phones: one tap per section, so editor sections are labelled tabs in a horizontally scrolling row. */
+    body.neconyan #right-nav-panel .sb-character-editor-subtabs-wrapper .sb-character-editor-subtabs {
         display: flex !important;
         flex-direction: row;
         flex-wrap: nowrap;
@@ -1366,8 +1363,7 @@ body.neconyan #sb-topbar-inner :is(#sb-home-toggle, #sb-character-toggle) {
         border: 0;
         scrollbar-width: none;
     }
-    body.neconyan #right-nav-panel .sb-character-editor-subtabs-wrapper .sb-character-editor-subtabs .sb-shell-tab,
-    body.neconyan #PersonaManagement .persona-editor-workspace .persona-editor-tabs .sb-shell-tab {
+    body.neconyan #right-nav-panel .sb-character-editor-subtabs-wrapper .sb-character-editor-subtabs .sb-shell-tab {
         width: auto;
         min-width: 44px;
         max-width: none;
@@ -1378,13 +1374,9 @@ body.neconyan #sb-topbar-inner :is(#sb-home-toggle, #sb-character-toggle) {
         padding: 0 12px;
         white-space: nowrap;
     }
-    body.neconyan #PersonaManagement .persona-editor-workspace .persona-editor-tabs .sb-shell-tab-copy,
-    body.neconyan #PersonaManagement .persona-editor-workspace .persona-editor-tabs .sb-shell-tab-copy > strong { display: inline; }
     /* Phones: the tabs size to their labels, so never ellipsize the copy. */
     body.neconyan #right-nav-panel .sb-character-editor-subtabs-wrapper .sb-character-editor-subtabs .sb-shell-tab-copy,
-    body.neconyan #right-nav-panel .sb-character-editor-subtabs-wrapper .sb-character-editor-subtabs .sb-shell-tab-copy > strong,
-    body.neconyan #PersonaManagement .persona-editor-workspace .persona-editor-tabs .sb-shell-tab-copy,
-    body.neconyan #PersonaManagement .persona-editor-workspace .persona-editor-tabs .sb-shell-tab-copy > strong {
+    body.neconyan #right-nav-panel .sb-character-editor-subtabs-wrapper .sb-character-editor-subtabs .sb-shell-tab-copy > strong {
         width: max-content; max-width: none; min-width: 0; flex: 0 0 auto;
         overflow: visible; text-overflow: clip; white-space: nowrap;
     }

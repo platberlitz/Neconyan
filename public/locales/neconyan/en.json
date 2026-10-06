@@ -769,7 +769,7 @@
   "Click to lock your selected persona to the current chat. Click again to remove the lock.": "Click to lock your selected persona to the current chat. Click again to remove the lock.",
   "Click to set user name for all messages": "Click to set user name for all messages",
   "Persona Description": "Persona Description",
-  "Example: [{{user}} is a 28-year-old Romanian cat girl.]": "Example:\n[{{user}} is a 28-year-old Romanian cat girl.]",
+  "Example: {{user}} is a 7’5” catperson who can’t stop meowing and mrrping.": "Example:\n{{user}} is a 7’5” catperson who can’t stop meowing and mrrping.",
   "Tokens persona description": "Tokens",
   "Position:": "Position:",
   "In Story String / Prompt Manager": "In Story String / Prompt Manager",
@@ -18536,7 +18536,6 @@
   "The message deletion was not saved. Review it again before retrying.": "The message deletion was not saved. Review it again before retrying.",
   "Open the chat this Scratchpad belongs to before applying changes.": "Open the chat this Scratchpad belongs to before applying changes.",
   "Lorebooks active in this chat: ${0}": "Lorebooks active in this chat: ${0}",
-  "Chat: ${0}": "Chat: ${0}",
   "Mode: ${0}": "Mode: ${0}",
   "Conversation (messaging-style chat)": "Conversation (messaging-style chat)",
   "User: ${0}": "User: ${0}",
@@ -19735,5 +19734,13 @@
   "Practical troubleshooter": "Practical troubleshooter",
   "Looks severe but will help you regardless. Don’t be afraid to tell Taro your woes; the scariest thing about this severe one is the puns.": "Looks severe but will help you regardless. Don’t be afraid to tell Taro your woes; the scariest thing about this severe one is the puns.",
   "Creative writing partner": "Creative writing partner",
-  "A bratty little prankster that won’t actually hurt you… unless? Kidding, kidding. Tell Nori everything - you know you want to!": "A bratty little prankster that won’t actually hurt you… unless? Kidding, kidding. Tell Nori everything - you know you want to!"
+  "A bratty little prankster that won’t actually hurt you… unless? Kidding, kidding. Tell Nori everything - you know you want to!": "A bratty little prankster that won’t actually hurt you… unless? Kidding, kidding. Tell Nori everything - you know you want to!",
+  "Search personas": "Search personas",
+  "Locks": "Locks",
+  "Use this persona in the open chat": "Use this persona in the open chat",
+  "Use this persona whenever you talk to them": "Use this persona whenever you talk to them",
+  "Use this persona when nothing else is locked": "Use this persona when nothing else is locked",
+  "Connected characters": "Connected characters",
+  "This persona": "This persona",
+  "All personas": "All personas"
 }

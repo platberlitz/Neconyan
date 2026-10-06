@@ -1,876 +1,984 @@
-/* Deferred Personas workspace and responsive management styles. */
+/* Persona Management: a library pane beside an editor pane, folding into Browse / Edit tabs when narrow. */
 #PersonaManagement {
-    container: persona-management / inline-size;
+    --persona-control-size: 40px;
+    container: persona-page / inline-size;
+    color: var(--neco-ink);
+}
+
+body.neconyan #right-nav-panel[data-menu-type='persona'],
+body.neconyan #PersonaManagement,
+body.neconyan #PersonaManagement #persona-management-block {
+    background: var(--neco-surface) !important;
+}
+
+#right-nav-panel #sb_character_persona_panel {
+    padding: 16px 18px 24px;
+}
+
+#PersonaManagement .persona-workspace {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
 }
 
 #persona-management-block {
     display: grid;
-    grid-template-columns: minmax(260px, 0.88fr) minmax(380px, 1.12fr);
-    gap: 12px;
+    grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
     align-items: start;
     width: 100%;
     min-width: 0;
+}
+
+#PersonaManagement .persona-workspace-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+}
+
+#PersonaManagement .persona-browse-pane {
+    padding-inline-end: 18px;
+    border-inline-end: 1px solid var(--neco-border);
+}
+
+#PersonaManagement .persona-edit-pane {
+    container: persona-editor / inline-size;
+    padding-inline-start: 18px;
+}
+
+/* Tab rows: Browse / Edit (narrow only) and the editor sections. */
+#PersonaManagement :is(.persona-workspace-tabs, .persona-editor-tabs) {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 4px;
+    min-width: 0;
+    height: auto;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-bottom: 1px solid var(--neco-border);
+    border-radius: 0;
+    background: transparent;
+    overflow: hidden;
 }
 
 #PersonaManagement .persona-workspace-tabs {
     display: none;
-    width: 100%;
-    min-width: 0;
-    padding: 4px;
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 78%, transparent);
-    border-radius: var(--sb-radius-md);
-    background: color-mix(in srgb, var(--SmartThemeBlurTintColor) 88%, transparent);
 }
 
-#PersonaManagement .persona-workspace-tabs .sb-shell-tab,
-#PersonaManagement .persona-editor-tabs .sb-shell-tab {
-    flex: 1 1 0;
+#right-nav-panel #PersonaManagement :is(.persona-workspace-tabs, .persona-editor-tabs) .sb-shell-tab {
+    flex: 0 0 auto;
+    flex-direction: row;
     justify-content: center;
-    min-width: 0;
-}
-
-#PersonaManagement > .flex-container.wide100p.alignitemscenter.spaceBetween.flexNoGap {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-    min-width: 0;
-}
-
-#PersonaManagement > .flex-container.wide100p.alignitemscenter.spaceBetween.flexNoGap > .flex-container.alignItemsBaseline.wide100p {
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-    min-width: 0;
-}
-
-#PersonaManagement > .flex-container.wide100p.alignitemscenter.spaceBetween.flexNoGap > .flex-container.alignItemsBaseline.wide100p > .flex-container:last-child {
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-    min-width: 0;
-}
-
-#PersonaManagement .persona-management-actions {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
-    gap: 8px;
-    width: 100%;
-    min-width: 0;
-}
-
-#PersonaManagement .persona-management-actions > .menu_button {
-    min-height: 40px;
-    width: 100%;
-    justify-content: center;
-}
-
-#PersonaManagement .persona-management-browser {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    min-width: 0;
-}
-
-#PersonaManagement .persona-management-browser > #create_dummy_persona {
-    flex: 0 0 116px;
-    justify-content: center;
-}
-
-#PersonaManagement .persona-management-browser > #persona_search_bar {
-    flex: 1 1 220px;
-    min-width: 0;
-}
-
-#PersonaManagement .persona-management-browser > #persona_sort_order {
-    flex: 0 0 92px;
-}
-
-#PersonaManagement .persona-management-browser > #persona_pagination_container {
-    flex: 1 1 280px;
-    min-width: min(100%, 220px);
-    display: flex;
-    align-items: center;
-}
-
-#PersonaManagement .persona-management-browser > #persona_grid_toggle {
-    flex: 0 0 44px;
-    align-self: center;
-}
-
-#persona-management-block .persona_management_left_column,
-#persona-management-block .persona_management_right_column {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    width: 100%;
-    min-width: 0;
-    min-height: 0;
-    align-items: stretch;
-    overflow-x: hidden;
-}
-
-body.neconyan #persona-management-block .persona_management_right_column {
-    container: neconyan-persona-editor / inline-size;
-}
-
-@container persona-management (max-width: 700px) {
-    body.neconyan #persona-management-block { grid-template-columns: minmax(0, 1fr); }
-}
-
-body.neconyan #PersonaManagement :is(.persona_management_current_persona, .persona_management_left_column, .persona_management_global_settings, .persona-selected-masthead) {
-    padding: 0;
-    border: 0;
-    box-shadow: none;
-    background: transparent;
-}
-body.neconyan #PersonaManagement :is(.persona_management_current_persona, .persona_management_left_column, .persona_management_global_settings)::before { display: none; }
-body.neconyan #PersonaManagement .persona-section-header { padding: 0; background: none; border: 0; }
-body.neconyan #PersonaManagement .persona_management_current_persona > h4 { display: none; }
-body.neconyan #PersonaManagement .persona-maintenance-actions { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
-body.neconyan #PersonaManagement .persona-maintenance-actions > button { min-height: 44px; justify-content: flex-start; }
-
-@container neconyan-persona-editor (max-width: 600px) {
-    body.neconyan #PersonaManagement .persona-editor-workspace {
-        display: flex;
-        flex-direction: column;
-    }
-    body.neconyan #PersonaManagement .persona-editor-tabs { display: none !important; }
-    body.neconyan #PersonaManagement select[data-neconyan-section='data-persona-editor-tab'] {
-        display: block;
-        width: 100%;
-        min-height: 44px;
-        margin: 0;
-    }
-    body.neconyan #PersonaManagement .persona-editor-tab-panels { width: 100%; min-width: 0; }
-}
-
-#persona-management-block .persona_management_left_column {
-    position: relative;
-    isolation: isolate;
-    padding: 10px;
-    border-radius: var(--sb-radius-lg);
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 82%, transparent);
-    box-shadow: 0 14px 28px color-mix(in srgb, var(--SmartThemeShadowColor) 12%, transparent);
-}
-
-#persona-management-block .persona_management_left_column::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    border-radius: inherit;
-    pointer-events: none;
-    background: var(--sb-card-bg);
-    opacity: var(--sb-shell-card-opacity);
-}
-
-#persona-management-block .persona_management_current_persona,
-#persona-management-block .persona_management_global_settings {
-    position: relative;
-    isolation: isolate;
-    width: 100%;
-    max-width: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 12px;
-    border-radius: var(--sb-radius-lg);
-    background: transparent;
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 82%, transparent);
-    box-shadow: 0 18px 34px color-mix(in srgb, var(--SmartThemeShadowColor) 14%, transparent);
-}
-
-#persona-management-block .persona_management_current_persona::before,
-#persona-management-block .persona_management_global_settings::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    border-radius: inherit;
-    pointer-events: none;
-    background: var(--sb-card-bg);
-    opacity: var(--sb-shell-card-opacity);
-}
-
-.persona-section-header,
-#persona-management-block .persona_management_global_settings > h4 {
-    margin: 0;
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    min-width: 0;
-    box-sizing: border-box;
-    border-radius: var(--sb-radius-md);
-    background: var(--color-surface-strong, color-mix(in srgb, var(--SmartThemeBlurTintColor) 90%, var(--SmartThemeBodyColor) 10%));
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 74%, transparent);
-}
-
-.persona-section-header--inline {
-    width: 100%;
-    min-width: 0;
-}
-
-#persona-management-block h4.persona-section-header {
-    padding: 8px 12px !important;
-}
-
-.persona-section-meta {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 8px;
-}
-
-#persona-management-block .extension_token_counter {
-    padding: 7px 10px;
-    border-radius: var(--sb-radius-button);
-    background: var(--color-surface, color-mix(in srgb, var(--SmartThemeBlurTintColor) 96%, var(--SmartThemeBodyColor) 4%));
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 74%, transparent);
-}
-
-#persona-management-block .persona_management_current_persona > h4,
-#persona-management-block .persona_management_global_settings > h4 {
-    margin: 0;
-    padding: 8px 12px;
-    box-sizing: border-box;
-}
-
-#persona_controls {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(10rem, 14rem);
-    align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    border-radius: var(--sb-radius-md);
-    background: var(--color-surface, color-mix(in srgb, var(--SmartThemeBlurTintColor) 96%, var(--SmartThemeBodyColor) 4%));
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 74%, transparent);
-    box-sizing: border-box;
-}
-
-.persona-selected-masthead {
-    display: grid;
-    grid-template-columns: 48px minmax(0, 1fr);
-    grid-template-areas:
-        'avatar copy'
-        'avatar chips';
-    align-items: center;
-    gap: 6px 10px;
-    min-width: 0;
-    padding: 10px;
-    border-radius: var(--sb-radius-md);
-    background: color-mix(in srgb, var(--SmartThemeBodyColor) 5%, transparent);
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 76%, transparent);
-}
-
-.persona-selected-avatar {
-    grid-area: avatar;
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 86%, transparent);
-    background: color-mix(in srgb, var(--SmartThemeBlurTintColor) 86%, transparent);
-}
-
-.persona-selected-copy {
-    grid-area: copy;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-.persona-selected-name,
-.persona-selected-title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.persona-selected-name {
-    font-size: calc(var(--mainFontSize) * 1.02);
-    line-height: 1.25;
-}
-
-.persona-selected-title {
-    font-size: calc(var(--mainFontSize) * 0.82);
-    line-height: 1.35;
-}
-
-.persona-selected-chips,
-.persona-appendices-active-chips {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 5px;
-    min-width: 0;
-}
-
-.persona-selected-chips {
-    grid-area: chips;
-}
-
-.persona-state-chip {
-    min-height: 22px;
-    display: inline-flex;
-    align-items: center;
-    max-width: 100%;
-    padding: 2px 7px;
-    border-radius: 999px;
-    font-size: calc(var(--mainFontSize) * 0.74);
-    font-weight: 700;
-    line-height: 1.25;
-    color: var(--SmartThemeBodyColor);
-    background: color-mix(in srgb, var(--SmartThemeBodyColor) 7%, transparent);
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 76%, transparent);
-}
-
-.persona-state-chip.is-lock,
-.persona-state-chip.is-appendix {
-    background: color-mix(in srgb, var(--color-primary, var(--sb-accent)) 14%, transparent);
-    border-color: color-mix(in srgb, var(--color-primary, var(--sb-accent)) 32%, var(--sb-shell-border) 68%);
-}
-
-.persona-state-chip.is-warning {
-    background: color-mix(in srgb, var(--warning, var(--sb-accent)) 16%, transparent);
-    border-color: color-mix(in srgb, var(--warning, var(--sb-accent)) 34%, var(--sb-shell-border) 66%);
-}
-
-.persona-state-chip.is-muted {
-    opacity: 0.72;
-}
-
-#PersonaManagement .persona-editor-workspace {
-    display: grid;
-    grid-template-columns: minmax(9rem, 0.32fr) minmax(0, 1fr);
-    gap: 12px;
-    width: 100%;
-    min-width: 0;
-    align-items: start;
-}
-
-#PersonaManagement .persona-editor-tabs {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 4px;
-    gap: 4px;
+    gap: 6px;
     width: auto;
     min-width: 0;
-    padding: 4px;
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 78%, transparent);
-    border-radius: var(--sb-radius-md);
-    background: color-mix(in srgb, var(--SmartThemeBlurTintColor) 88%, transparent);
+    min-height: 40px;
+    margin: 0;
+    padding: 8px 12px;
+    border: 0;
+    position: relative;
+    border-radius: 6px 6px 0 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--neco-muted);
+    font-size: 13px;
 }
 
-/* Neconyan: equalize Persona editor tab tracks when labels collapse to icon-only/mobile controls. */
-:root[data-sb-desktop-nav-mode='icon-only'] #PersonaManagement .persona-editor-tabs,
-:root[data-sb-mobile-nav-mode='icon-only'] #PersonaManagement .persona-editor-tabs {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+#right-nav-panel #PersonaManagement :is(.persona-workspace-tabs, .persona-editor-tabs) .sb-shell-tab.is-active::after {
+    content: '';
+    position: absolute;
+    inset: auto 8px 0;
+    height: 2px;
+    border-radius: 999px;
+    background: var(--neco-ginger);
 }
 
-@media screen and (max-width: 760px) {
-    #PersonaManagement .persona-workspace-tabs {
-        display: flex !important;
-    }
-
-    #PersonaManagement .persona-editor-workspace {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-    }
-
-    #PersonaManagement .persona-editor-tabs {
-        width: 100%;
-    }
-
-    #PersonaManagement .persona-editor-tab-panels {
-        width: 100%;
-    }
+#right-nav-panel #PersonaManagement :is(.persona-workspace-tabs, .persona-editor-tabs) .sb-shell-tab:hover {
+    background: color-mix(in srgb, var(--neco-ginger) 8%, transparent);
+    color: var(--neco-ink);
 }
 
-#PersonaManagement .persona-editor-tabs .sb-shell-tab {
-    width: 100%;
-    padding-inline: 10px;
-    justify-content: flex-start;
+#right-nav-panel #PersonaManagement :is(.persona-workspace-tabs, .persona-editor-tabs) .sb-shell-tab.is-active {
+    background: transparent;
+    box-shadow: none;
+    color: var(--neco-ink);
 }
 
-#PersonaManagement .persona-editor-tabs .sb-shell-tab-copy,
-#PersonaManagement .persona-editor-tabs .sb-shell-tab-copy > strong {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+#right-nav-panel #PersonaManagement :is(.persona-workspace-tabs, .persona-editor-tabs) .sb-shell-tab.is-active > i {
+    color: var(--neco-ginger);
+}
+
+#right-nav-panel #PersonaManagement :is(.persona-workspace-tabs, .persona-editor-tabs) .sb-shell-tab-copy {
+    display: inline;
+}
+
+#right-nav-panel #PersonaManagement :is(.persona-workspace-tabs, .persona-editor-tabs) .sb-shell-tab-copy strong {
+    font-size: 13px;
+    font-weight: 700;
     white-space: nowrap;
 }
 
-.persona-editor-tab-panels,
-.persona-editor-panel {
-    width: 100%;
-    min-width: 0;
-}
-
-.persona-editor-tab-panels {
-    min-height: 0;
-}
-
-.persona-lore-actions {
+/* Library pane */
+#PersonaManagement .persona-browse-header {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
-    min-width: 0;
-    padding: 10px;
-    border-radius: var(--sb-radius-md);
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 74%, transparent);
-    background: color-mix(in srgb, var(--SmartThemeBodyColor) 4%, transparent);
-}
-
-.persona-lore-copy {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
+    gap: 8px;
     min-width: 0;
 }
 
-.persona-lore-copy span {
-    overflow-wrap: anywhere;
+#PersonaManagement .persona-pane-title {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 0;
+    font-family: var(--sb-font-display);
+    font-size: 17px;
+    font-weight: 400;
+    color: var(--neco-ink);
 }
 
-.persona-lore-buttons {
+#PersonaManagement .persona-library-count {
+    font-family: var(--mainFontFamily);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--neco-muted);
+}
+
+#PersonaManagement .persona-library-count:empty {
+    display: none;
+}
+
+#PersonaManagement .persona-browse-actions {
     display: flex;
-    flex-wrap: wrap;
+    gap: 6px;
+}
+
+#PersonaManagement .persona-browse-actions > .menu_button,
+#PersonaManagement .persona-controls-actions > .menu_button,
+#PersonaManagement .persona-lore-buttons > .menu_button,
+#PersonaManagement .persona-appendices-actions > .menu_button,
+#PersonaManagement .persona-tool-group .menu_button {
+    flex: 0 0 auto;
+    width: auto;
+    min-height: var(--persona-control-size);
+    margin: 0;
+    padding: 6px 12px;
+    white-space: nowrap;
+}
+
+#PersonaManagement .persona-management-browser {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
     gap: 6px;
     min-width: 0;
 }
 
-.persona-lore-buttons .menu_button {
-    min-height: 44px;
-}
-
-.persona-lock-precedence {
+#PersonaManagement .persona-management-browser > :is(#persona_search_bar, #persona_sort_order) {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    min-height: var(--persona-control-size);
     margin: 0;
-    line-height: 1.45;
 }
 
-.persona-library-state {
+#PersonaManagement .persona-management-browser > #persona_sort_order {
+    width: auto;
+    min-width: 76px;
+}
+
+#PersonaManagement .persona-management-browser > #persona_grid_toggle {
+    width: var(--persona-control-size);
+    min-width: var(--persona-control-size);
+    height: var(--persona-control-size);
+    min-height: var(--persona-control-size);
+    margin: 0;
+    padding: 0;
+}
+
+#persona_management_list_scroller {
+    min-height: 0;
+    max-height: clamp(18rem, calc(100dvh - 21rem), 48rem);
+    margin-inline: -4px;
+    padding: 2px 4px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+}
+
+#PersonaManagement .persona-library-state {
     display: flex;
     flex-direction: column;
-    gap: 5px;
-    min-height: 120px;
-    align-items: flex-start;
-    justify-content: center;
-    padding: 16px;
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 72%, transparent);
-    border-radius: var(--sb-radius-md);
-    background: color-mix(in srgb, var(--SmartThemeBodyColor) 4%, transparent);
+    gap: 4px;
+    padding: 24px 12px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--neco-muted);
 }
 
-.persona-library-state[hidden] {
+#PersonaManagement .persona-library-state strong {
+    font-size: 15px;
+    color: var(--neco-ink);
+}
+
+#PersonaManagement .persona-library-state[hidden] {
     display: none;
 }
 
-.persona-library-state span {
-    color: var(--SmartThemeEmColor);
+#PersonaManagement #user_avatar_block {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 2px;
+    width: 100%;
+    padding: 0;
+}
+
+#PersonaManagement #user_avatar_block .avatar-container {
+    margin: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    cursor: pointer;
+}
+
+#PersonaManagement #user_avatar_block .avatar-container:hover {
+    background: color-mix(in srgb, var(--neco-ginger) 8%, transparent);
+}
+
+#PersonaManagement #user_avatar_block .avatar-container.selected {
+    background: color-mix(in srgb, var(--neco-ginger) 16%, var(--neco-surface));
+    box-shadow: inset 3px 0 0 var(--neco-ginger);
+}
+
+#PersonaManagement #user_avatar_block:not(.gridView) .avatar-container.selected :is(.ch_description, .ch_additional_info),
+#PersonaManagement #persona_connections_buttons > .persona-lock-button:is(.locked, [aria-pressed='true']) .persona-lock-copy small {
+    color: color-mix(in srgb, var(--neco-muted) 55%, var(--neco-ink));
+}
+
+#PersonaManagement #user_avatar_block .avatar-container .avatar {
+    flex: none;
+    margin: 0;
+    border-radius: 999px;
+    outline: 0;
+    box-shadow: 0 0 0 1px var(--neco-border);
+}
+
+#PersonaManagement #user_avatar_block .avatar-container .avatar img {
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    object-fit: cover;
+}
+
+#PersonaManagement #user_avatar_block .avatar-container.default_persona .avatar {
+    box-shadow: 0 0 0 2px var(--neco-ginger);
+}
+
+#PersonaManagement #user_avatar_block .avatar-container .ch_name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--neco-ink);
+}
+
+#PersonaManagement #user_avatar_block .avatar-container .ch_additional_info {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    color: var(--neco-muted);
+}
+
+#PersonaManagement #user_avatar_block:not(.gridView) .avatar-container {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+    min-height: 52px;
+    padding: 6px 8px;
+    border-radius: 8px;
+}
+
+#PersonaManagement #user_avatar_block:not(.gridView) .avatar-container .avatar,
+#PersonaManagement #user_avatar_block:not(.gridView) .avatar-container .avatar img {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    min-height: 40px;
+}
+
+#PersonaManagement #user_avatar_block:not(.gridView) .avatar-container .character_select_container {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+        'name states'
+        'description states';
+    align-items: center;
+    gap: 2px 8px;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+}
+
+#PersonaManagement #user_avatar_block:not(.gridView) .avatar-container .character_name_block {
+    grid-area: name;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+    margin: 0;
+}
+
+#PersonaManagement #user_avatar_block:not(.gridView) .avatar-container .ch_description {
+    grid-area: description;
+    display: block;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--neco-muted);
+}
+
+#PersonaManagement #user_avatar_block:not(.gridView) .avatar-container .avatar_container_states {
+    grid-area: states;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 2px;
+    min-width: 0;
+    margin: 0;
+}
+
+#PersonaManagement #user_avatar_block .persona-default-label {
+    display: none;
+}
+
+#PersonaManagement #user_avatar_block .default_persona .persona-default-label {
+    display: inline-flex;
+}
+
+#PersonaManagement #user_avatar_block .avatar_container_states :is(.locked_to_chat_label, .locked_to_character_label) {
+    gap: 2px;
+    width: auto;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    padding: 0 4px;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    opacity: 1;
+    filter: none;
+    font-size: 11px;
+    color: var(--neco-ginger);
+    pointer-events: none;
+}
+
+#PersonaManagement #user_avatar_block .avatar_container_states :is(.locked_to_chat_label, .locked_to_character_label) .label {
+    display: none;
+}
+
+#PersonaManagement #user_avatar_block .avatar_container_states :is(.locked_to_chat_label, .locked_to_character_label) :is(.icon, .label_icon) {
+    display: inline-flex;
+    opacity: 1;
+    color: var(--neco-ginger);
+}
+
+#PersonaManagement #user_avatar_block .avatar_container_states :is(.persona_quick_rename, .persona_quick_delete) {
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    min-height: 32px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--neco-muted);
+    font-size: 13px;
+    opacity: 0;
+}
+
+#PersonaManagement #user_avatar_block .avatar-container:is(:hover, :focus-within, .selected) :is(.persona_quick_rename, .persona_quick_delete),
+#PersonaManagement #user_avatar_block .avatar_container_states :is(.persona_quick_rename, .persona_quick_delete):focus-visible {
+    opacity: 1;
+}
+
+#PersonaManagement #user_avatar_block .avatar_container_states .persona_quick_rename:hover {
+    background: color-mix(in srgb, var(--neco-ginger) 16%, transparent);
+    color: var(--neco-ink);
+}
+
+#PersonaManagement #user_avatar_block .avatar_container_states .persona_quick_delete:hover {
+    background: color-mix(in srgb, var(--warning) 18%, transparent);
+    color: var(--warning);
+}
+
+#PersonaManagement #user_avatar_block.gridView {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 6px;
+}
+
+#PersonaManagement #user_avatar_block.gridView .avatar-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: auto;
+    max-width: none;
+    height: auto;
+    padding: 10px 6px 8px;
+    border-radius: 8px;
+    text-align: center;
+}
+
+#PersonaManagement #user_avatar_block.gridView .avatar-container .avatar,
+#PersonaManagement #user_avatar_block.gridView .avatar-container .avatar img {
+    width: 64px;
+    min-width: 64px;
+    height: 64px;
+    min-height: 64px;
+}
+
+#PersonaManagement #user_avatar_block.gridView .avatar-container :is(.character_select_container, .character_name_block) {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    margin: 0;
+}
+
+#PersonaManagement #user_avatar_block.gridView .avatar-container :is(.ch_name, .ch_additional_info) {
+    width: 100%;
+    max-width: none;
+    text-align: center;
+}
+
+#PersonaManagement #user_avatar_block.gridView .avatar-container .ch_name {
+    font-size: 13px;
+}
+
+#PersonaManagement #user_avatar_block.gridView .avatar-container .avatar_container_states {
+    display: flex;
+    justify-content: center;
+    gap: 2px;
+}
+
+#PersonaManagement #user_avatar_block.gridView .avatar-container :is(.persona_quick_rename, .persona_quick_delete) {
+    display: none;
+}
+
+#PersonaManagement #persona_pagination_container {
+    display: flex;
+    justify-content: center;
+    min-width: 0;
+}
+
+#PersonaManagement #persona_pagination_container[hidden] {
+    display: none;
+}
+
+#PersonaManagement #persona_pagination_container .paginationjs {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px 10px;
+}
+
+#PersonaManagement #persona_pagination_container .paginationjs-nav {
+    width: max-content;
+    padding: 0;
+    font-size: 12px;
+    color: var(--neco-muted);
+}
+
+#PersonaManagement #persona_pagination_container .paginationjs-pages ul {
+    margin: 0;
+    gap: 4px;
+}
+
+#PersonaManagement #persona_pagination_container .paginationjs-pages ul li a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0 6px;
+    border: 1px solid var(--neco-border);
+    border-radius: 6px;
+    background: var(--neco-raised);
+    color: var(--neco-ink);
+    opacity: 1;
+}
+
+#PersonaManagement #persona_pagination_container .paginationjs-pages ul li:not(.disabled) a:hover {
+    border-color: var(--neco-ginger);
+    color: var(--neco-ginger);
+}
+
+#PersonaManagement #persona_pagination_container .paginationjs-pages ul li.disabled a {
+    opacity: 0.45;
+}
+
+#PersonaManagement #persona_pagination_container .paginationjs-size-changer select {
+    min-height: 32px;
+    font-size: 12px;
+}
+
+#PersonaManagement #form_upload_avatar {
+    display: none;
+}
+
+/* Editor pane */
+#PersonaManagement .persona_management_current_persona {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+}
+
+#PersonaManagement .persona-selected-masthead {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+}
+
+#PersonaManagement .persona-selected-avatar {
+    width: 64px;
+    min-width: 64px;
+    max-width: 64px;
+    height: 64px;
+    min-height: 64px;
+    max-height: 64px;
+    border-radius: 999px;
+    object-fit: cover;
+    box-shadow: 0 0 0 2px var(--neco-border);
+}
+
+#PersonaManagement .persona-selected-avatar[hidden] {
+    display: none;
+}
+
+#PersonaManagement .persona-selected-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+#PersonaManagement .persona-selected-name {
+    font-family: var(--sb-font-display);
+    font-size: 20px;
+    font-weight: 400;
+    line-height: 1.2;
+    color: var(--neco-ink);
+    overflow-wrap: anywhere;
+}
+
+#PersonaManagement .persona-selected-title {
+    font-size: 12px;
+    color: var(--neco-muted);
+}
+
+#PersonaManagement .persona-selected-title[hidden],
+#PersonaManagement #your_name {
+    display: none;
+}
+
+#PersonaManagement .persona-selected-chips,
+#PersonaManagement .persona-appendices-active-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    min-width: 0;
+}
+
+#PersonaManagement .persona-selected-chips:empty,
+#PersonaManagement .persona-appendices-active-chips:empty {
+    display: none;
+}
+
+#PersonaManagement #persona_controls {
+    grid-column: 2;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+}
+
+#PersonaManagement .persona-controls-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0;
 }
 
 .persona-compatibility-control {
     display: none !important;
 }
 
-.persona-editor-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.persona-editor-panel[hidden] {
-    display: none !important;
-}
-
-#persona_management_list_scroller {
-    width: 100%;
-    min-height: 0;
-    max-height: clamp(20rem, calc(100dvh - 20rem), 44rem);
-    overflow-y: auto;
-    overflow-x: hidden;
-    overscroll-behavior: contain;
-    scrollbar-gutter: stable;
-    touch-action: pan-y;
-}
-
-#user_avatar_block {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    max-width: 100%;
-    justify-content: flex-start;
-    gap: 8px;
-    padding: 0;
-}
-
-#user_avatar_block.gridView {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-content: flex-start;
-    align-items: flex-start;
-}
-
-#user_avatar_block:not(.gridView) .avatar-container {
-    width: 100%;
-    min-width: 0;
-    margin-inline: 0;
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: start;
-    gap: 8px 10px;
-    padding: 8px 10px;
-    border-radius: var(--sb-radius-md);
-    background: color-mix(in srgb, var(--SmartThemeBodyColor) 4%, transparent);
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 74%, transparent);
-}
-
-#user_avatar_block:not(.gridView) .avatar-container .avatar {
-    grid-column: 1;
-    grid-row: 1 / span 2;
-    margin: 0;
-    align-self: flex-start !important;
-}
-
-#user_avatar_block:not(.gridView) .avatar-container .character_select_container {
-    grid-column: 2 / span 2;
-    width: auto;
-    max-width: none;
-    min-width: 0;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 6px 10px;
-    align-items: start;
-    flex-grow: unset;
-}
-
-#user_avatar_block:not(.gridView) .avatar-container .character_name_block {
-    min-width: 0;
-    margin-bottom: 0;
-}
-
-#user_avatar_block:not(.gridView) .avatar-container .ch_description {
-    grid-column: 1;
-    display: -webkit-box;
-    min-width: 0;
-    margin-top: 0;
-    line-height: 1.38;
-    white-space: normal;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    overflow-wrap: anywhere;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-}
-
-#user_avatar_block:not(.gridView) .avatar-container .avatar_container_states {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    display: flex;
-    flex-wrap: nowrap;
-    justify-content: flex-end;
-    align-items: center;
-    align-content: center;
-    gap: 6px;
-}
-
-#persona-management-block .avatar_container_states .persona_quick_rename,
-#persona-management-block .avatar_container_states .persona_quick_delete,
-#persona_controls .persona_controls_buttons_block > .menu_button,
-#persona_controls .persona-controls-actions > .menu_button {
-    flex: 0 0 auto;
-    width: auto;
-    min-width: 40px;
-    height: 40px;
-    min-height: 40px;
-    padding-inline: 10px;
+.persona-state-chip {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    line-height: 1;
-}
-
-#persona_controls .persona_name {
-    margin: 0;
-    min-width: 0;
-    align-self: center;
-    grid-column: 1;
-    grid-row: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-#persona_controls .persona_controls_menu,
-#persona_controls .persona-controls-menu {
-    min-width: 0;
-}
-
-#persona_controls .persona_controls_buttons_block,
-#persona_controls .persona-controls-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    justify-content: flex-end;
-    align-items: center;
-    align-content: center;
-    grid-column: 1 / -1;
-    grid-row: 2;
-    width: 100%;
-    min-width: 0;
-    max-width: 100%;
-}
-
-#persona_controls > label {
-    min-width: 0;
-    width: 100%;
-    grid-column: 2;
-    grid-row: 1;
-}
-
-#persona_controls > label select,
-#persona_controls > label .text_pole {
-    width: 100%;
-    min-height: 40px;
-}
-
-#persona_description {
-    width: 100%;
-    max-width: 100%;
-    min-height: 12rem;
-    margin: 0;
-    padding: 10px 12px;
-    line-height: 1.5;
-}
-
-#persona-management-block .persona_management_current_persona > h4.flex-container.alignItemsBaseline {
-    justify-content: space-between;
-    gap: 8px;
-    align-items: center;
-    flex-wrap: wrap;
-}
-
-#persona-management-block .persona-section-meta > .persona-section-header {
-    width: 100%;
-    flex: 1 1 100%;
-}
-
-#persona-management-block .persona-section-meta > .extension_token_counter {
-    justify-self: end;
-}
-
-#persona-management-block .persona_management_description_position_container {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-#persona_description_position,
-#persona_depth_position_settings,
-#persona_connections_buttons,
-#persona_connections_info_block,
-#persona_connections_list {
-    width: 100%;
-    max-width: 100%;
-}
-
-#persona-management-block .persona_management_description_position_container > select,
-#persona_depth_position_settings > .flex1 > input,
-#persona_depth_position_settings > .flex1 > select {
-    width: 100%;
-}
-
-#persona_depth_position_settings,
-#persona_connections_buttons {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 8px;
-}
-
-#persona_connections_buttons {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 6px;
-}
-
-#persona_depth_position_settings > .flex1 {
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
     gap: 4px;
-    padding: 8px 10px;
-    border-radius: var(--sb-radius-md);
-    background: color-mix(in srgb, var(--SmartThemeBodyColor) 4%, transparent);
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 74%, transparent);
-}
-
-#persona_depth_position_settings > .flex1 label {
-    margin: 0;
-    line-height: 1.4;
-}
-
-#persona_connections_buttons > .menu_button {
-    width: 100%;
-    min-width: 0;
-    min-height: 38px;
-    justify-content: center;
-    gap: 5px;
-    padding-inline: 6px;
+    min-height: 20px;
+    padding: 1px 8px;
+    border: 1px solid var(--neco-border);
+    border-radius: 999px;
+    background: var(--neco-raised);
+    color: var(--neco-muted);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.3;
     white-space: nowrap;
-    font-size: calc(var(--mainFontSize) * 0.88);
 }
 
-#persona_connections_buttons > .menu_button > :is(div, span) {
+.persona-state-chip.is-lock,
+.persona-state-chip.is-appendix,
+#user_avatar_block .persona-default-label {
+    border-color: color-mix(in srgb, var(--neco-ginger) 45%, var(--neco-border));
+    background: color-mix(in srgb, var(--neco-ginger) 16%, var(--neco-raised));
+    color: var(--neco-ink);
+}
+
+.persona-state-chip.is-warning {
+    border-color: color-mix(in srgb, var(--warning) 50%, var(--neco-border));
+    background: color-mix(in srgb, var(--warning) 14%, var(--neco-raised));
+    color: var(--neco-ink);
+}
+
+.persona-state-chip.is-muted {
+    opacity: 0.72;
+}
+
+#PersonaManagement .persona-editor-tab-panels {
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
-#persona_connections_buttons > .menu_button > .icon {
-    margin: 0;
-    font-size: calc(var(--mainFontSize) * 0.88);
+#PersonaManagement .persona-editor-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
 }
 
-#persona_connections_info_block,
-#persona_connections_list {
-    min-height: 56px;
-    padding: 8px 10px;
-    border-radius: var(--sb-radius-md);
-    background: color-mix(in srgb, var(--SmartThemeBodyColor) 4%, transparent);
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 74%, transparent);
-}
-
-#persona-management-block .persona_management_global_settings .range-block {
-    margin: 0;
-    padding: 8px 10px;
-    border-radius: var(--sb-radius-md);
-    background: color-mix(in srgb, var(--SmartThemeBodyColor) 4%, transparent);
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 74%, transparent);
-}
-
-.persona-editor-panel .persona_management_global_settings {
-    padding: 0;
-    border: 0;
-    box-shadow: none;
-    background: transparent;
-}
-
-.persona-editor-panel .persona_management_global_settings::before {
+#PersonaManagement .persona-editor-panel[hidden] {
     display: none;
 }
 
-.persona-appendices-block {
-    container: persona-scenario-notes / inline-size;
+#PersonaManagement .persona-field-head {
     display: flex;
-    flex-direction: column;
-    gap: 8px;
-    min-width: 0;
-    padding: 10px;
-    border-radius: var(--sb-radius-md);
-    background: color-mix(in srgb, var(--SmartThemeBodyColor) 4%, transparent);
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 74%, transparent);
-}
-
-.persona-appendices-block > summary {
-    display: list-item;
-    cursor: pointer;
-}
-
-.persona-appendices-content {
-    display: flex;
-    flex-direction: column;
+    align-items: center;
     gap: 8px;
     min-width: 0;
 }
 
-.persona-appendices-actions {
+#PersonaManagement .persona-field-label {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--neco-ink);
+}
+
+#PersonaManagement .persona-field-head > .persona-field-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+}
+
+#PersonaManagement .persona-field-head .extension_token_counter {
+    flex: 0 0 auto;
+    width: auto;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-size: 11px;
+    color: var(--neco-muted);
+    white-space: nowrap;
+}
+
+#PersonaManagement .persona-field-head .editor_maximize {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    min-height: 32px;
+    margin: 0;
+    padding: 0;
+    border-radius: 6px;
+    color: var(--neco-muted);
+}
+
+#PersonaManagement .persona-field-head .editor_maximize:hover {
+    background: color-mix(in srgb, var(--neco-ginger) 14%, transparent);
+    color: var(--neco-ink);
+}
+
+#PersonaManagement #persona_description {
+    width: 100%;
+    min-height: 14rem;
+    margin: -6px 0 0;
+    resize: vertical;
+    font-size: 15px;
+    line-height: 1.5;
+}
+
+#PersonaManagement .persona-setting-row {
+    display: grid;
+    grid-template-columns: 88px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px 12px;
+    min-width: 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--neco-border);
+}
+
+#PersonaManagement .me-persona-pronouns {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--neco-border);
+    font-size: 13px;
+}
+
+#PersonaManagement .me-persona-pronouns > .persona-section-header {
+    margin: 0;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+#PersonaManagement .me-persona-pronouns :is(.me-pronoun-presets, .me-pronoun-row) {
+    margin: 0;
+}
+
+#PersonaManagement .me-persona-pronouns .me-drawer-hint {
+    color: var(--neco-muted);
+    font-size: 12px;
+}
+
+#PersonaManagement .persona_management_description_position_container {
     display: flex;
     flex-wrap: wrap;
-    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+#PersonaManagement .persona_management_description_position_container select,
+#PersonaManagement #persona_depth_position_settings :is(input, select) {
+    width: auto;
+    min-width: 0;
+    min-height: var(--persona-control-size);
+    margin: 0;
+}
+
+#PersonaManagement #persona_description_position {
+    flex: 1 1 220px;
+}
+
+#PersonaManagement #persona_depth_position_settings {
+    display: flex;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    min-width: 0;
+}
+
+#PersonaManagement #persona_depth_position_settings label {
+    margin: 0;
+    font-size: 12px;
+    color: var(--neco-muted);
+}
+
+#PersonaManagement #persona_depth_value {
+    width: 80px;
+}
+
+#PersonaManagement .persona-lore-value {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+}
+
+#PersonaManagement .persona-lore-status {
+    min-width: 0;
+    font-size: 13px;
+    color: var(--neco-muted);
+    overflow-wrap: anywhere;
+}
+
+#PersonaManagement .persona-lore-buttons {
+    display: flex;
+    flex-wrap: wrap;
     gap: 6px;
 }
 
-.persona-appendices-actions > .menu_button {
-    min-height: 38px;
-    padding-inline: 10px;
+#PersonaManagement .persona-appendices-block {
+    container: persona-scenario-notes / inline-size;
+    min-width: 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--neco-border);
 }
 
-.persona-appendices-help {
+#PersonaManagement .persona-appendices-block > summary {
+    display: list-item;
+    min-height: 32px;
     margin: 0;
-    line-height: 1.35;
+    padding: 6px 0;
+    border: 0;
+    background: none;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--neco-ink);
+    cursor: pointer;
 }
 
-.persona-appendix-empty,
-.persona-appendices-empty {
-    min-height: 28px;
-    display: flex;
-    align-items: center;
-    line-height: 1.35;
-}
-
-.persona-appendices-list {
+#PersonaManagement .persona-appendices-content {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
+    min-width: 0;
+    padding-top: 6px;
+}
+
+#PersonaManagement .persona-appendices-help {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+#PersonaManagement .persona-appendices-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+#PersonaManagement .persona-appendices-empty {
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+#PersonaManagement .persona-appendices-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
     min-width: 0;
 }
 
-.persona-appendix-card {
+#PersonaManagement .persona-appendix-card {
     display: grid;
     grid-template-columns: 44px minmax(0, 1fr) auto;
     grid-template-areas: 'toggle details actions';
     align-items: start;
-    gap: 6px 10px;
+    gap: 4px 8px;
     min-width: 0;
-    padding: 8px;
-    border-radius: var(--sb-radius-md);
-    background: color-mix(in srgb, var(--SmartThemeBodyColor) 5%, transparent);
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 72%, transparent);
+    padding: 4px 6px;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-raised);
 }
 
-.persona-appendix-toggle-row {
+#PersonaManagement .persona-appendix-toggle-row {
     grid-area: toggle;
-    min-width: 0;
-    min-height: 44px;
     display: flex;
     align-items: center;
     justify-content: center;
+    min-width: 0;
+    min-height: 44px;
     margin: 0;
     cursor: pointer;
 }
 
-.persona-appendix-toggle-row input {
-    accent-color: var(--color-primary, var(--sb-accent));
+#PersonaManagement .persona-appendix-toggle-row input {
+    accent-color: var(--neco-ginger);
 }
 
-.persona-appendix-details {
+#PersonaManagement .persona-appendix-details {
     grid-area: details;
     min-width: 0;
 }
 
-.persona-appendix-name {
+#PersonaManagement .persona-appendix-name {
     display: list-item;
     min-height: 44px;
     padding-block: 10px;
     list-style-position: inside;
     overflow-wrap: anywhere;
+    font-size: 13px;
     font-weight: 700;
     cursor: pointer;
 }
 
-.persona-appendix-description {
-    margin: 0;
-    line-height: 1.38;
+#PersonaManagement .persona-appendix-description {
+    margin: 0 0 8px;
+    font-size: 13px;
+    line-height: 1.4;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+}
+
+#PersonaManagement .persona-appendix-actions {
+    grid-area: actions;
+    display: flex;
+    justify-content: flex-end;
+    gap: 4px;
+}
+
+#PersonaManagement .persona-appendix-actions > .menu_button {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    margin: 0;
+    padding: 0;
+}
+
+@container persona-scenario-notes (max-width: 520px) {
+    #PersonaManagement .persona-appendix-card {
+        grid-template-columns: 44px minmax(0, 1fr);
+        grid-template-areas:
+            'toggle details'
+            '. actions';
+    }
+
+    #PersonaManagement .persona-appendix-actions {
+        justify-content: flex-start;
+    }
 }
 
 .persona-appendix-editor-label {
@@ -880,47 +988,16 @@ body.neconyan #PersonaManagement .persona-maintenance-actions > button { min-hei
     gap: 8px;
 }
 
-.persona-appendix-actions {
-    grid-area: actions;
-    display: flex;
-    justify-content: flex-end;
-    gap: 6px;
+#PersonaManagement .persona-effective-preview {
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-canvas);
 }
 
-.persona-appendix-actions > .menu_button {
-    width: 44px;
-    min-width: 44px;
-    height: 44px;
-    min-height: 44px;
-    padding: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-}
-
-@container persona-scenario-notes (max-width: 520px) {
-    .persona-appendix-card {
-        grid-template-columns: 44px minmax(0, 1fr);
-        grid-template-areas:
-            'toggle details'
-            '. actions';
-    }
-
-    .persona-appendix-actions {
-        justify-content: flex-start;
-    }
-}
-
-.persona-effective-preview {
-    border-radius: var(--sb-radius-md);
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 72%, transparent);
-    background: color-mix(in srgb, var(--SmartThemeBodyColor) 4%, transparent);
-}
-
-.persona-effective-preview-title {
+#PersonaManagement .persona-effective-preview-title {
     display: block;
-    min-height: 36px;
-    padding: 8px 10px;
+    padding: 8px 10px 4px;
+    font-size: 12px;
     font-weight: 700;
 }
 
@@ -931,1152 +1008,281 @@ body.neconyan #PersonaManagement .persona-maintenance-actions > button { min-hei
     overflow: auto;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    color: var(--SmartThemeBodyColor);
+    font-size: 12px;
+    color: var(--neco-ink);
 }
 
-@media screen and (max-width: 1040px) {
+/* Locks */
+#PersonaManagement .persona-lock-precedence {
+    margin: 0;
+    font-size: 12px;
+    color: var(--neco-muted);
+}
+
+#PersonaManagement #persona_connections_buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+}
+
+#PersonaManagement #persona_connections_buttons > .persona-lock-button {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    align-items: center;
+    justify-content: stretch;
+    gap: 12px;
+    width: 100%;
+    min-height: 56px;
+    margin: 0;
+    padding: 8px 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-raised);
+    box-shadow: none;
+    color: var(--neco-ink);
+    text-align: start;
+    white-space: normal;
+}
+
+#PersonaManagement #persona_connections_buttons > .persona-lock-button:hover {
+    border-color: color-mix(in srgb, var(--neco-ginger) 55%, var(--neco-border));
+    background: color-mix(in srgb, var(--neco-ginger) 6%, var(--neco-raised));
+}
+
+#PersonaManagement #persona_connections_buttons > .persona-lock-button > .icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    background: var(--neco-surface);
+    color: var(--neco-muted);
+    font-size: 13px;
+}
+
+#PersonaManagement #persona_connections_buttons > .persona-lock-button:is(.locked, [aria-pressed='true']) {
+    border-color: var(--neco-ginger);
+    background: color-mix(in srgb, var(--neco-ginger) 14%, var(--neco-raised));
+    box-shadow: none;
+    color: var(--neco-ink);
+}
+
+#PersonaManagement #persona_connections_buttons > .persona-lock-button:is(.locked, [aria-pressed='true']) > .icon {
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+}
+
+#PersonaManagement #persona_connections_buttons > .persona-lock-button:is(:disabled, .disabled) {
+    opacity: 0.55;
+}
+
+#PersonaManagement .persona-lock-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+#PersonaManagement .persona-lock-copy strong {
+    font-size: 13px;
+    font-weight: 700;
+}
+
+#PersonaManagement .persona-lock-copy small {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--neco-muted);
+}
+
+#PersonaManagement #persona_connections_info_block:empty {
+    display: none;
+}
+
+#PersonaManagement #persona_connections_list {
+    min-height: 0;
+    margin: -6px 0 0;
+    padding: 0;
+    font-size: 13px;
+}
+
+/* More */
+#PersonaManagement .persona-tool-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    padding: 12px 0 0;
+    border: 0;
+    border-top: 1px solid var(--neco-border);
+    background: none;
+    box-shadow: none;
+}
+
+#PersonaManagement .persona-tool-group:first-child {
+    padding-top: 0;
+    border-top: 0;
+}
+
+#PersonaManagement .persona-group-title {
+    margin: 0;
+    font-family: var(--mainFontFamily);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--neco-muted);
+}
+
+#PersonaManagement :is(.persona-maintenance-actions, .persona-management-actions) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+}
+
+#PersonaManagement .persona-maintenance-actions #persona_delete_button:is(:hover, :focus-visible) {
+    border-color: var(--warning);
+    background: color-mix(in srgb, var(--warning) 12%, var(--neco-surface));
+    color: var(--neco-ink);
+}
+
+#PersonaManagement .persona-maintenance-actions #persona_delete_button:is(:hover, :focus-visible) i {
+    color: var(--warning);
+}
+
+#PersonaManagement .persona_management_global_settings .checkbox_label {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-height: 32px;
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+#PersonaManagement .persona_management_global_settings .checkbox_label input {
+    flex: none;
+    margin-top: 2px;
+    accent-color: var(--neco-ginger);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    #PersonaManagement #user_avatar_block .avatar-container,
+    #PersonaManagement #user_avatar_block .avatar_container_states :is(.persona_quick_rename, .persona_quick_delete),
+    #PersonaManagement #persona_connections_buttons > .persona-lock-button {
+        transition: background-color 120ms ease, border-color 120ms ease, opacity 120ms ease;
+    }
+}
+
+@media (max-width: 768px) {
+    #right-nav-panel #sb_character_persona_panel {
+        padding: 12px 12px 24px;
+    }
+}
+
+/* Touch screens: 44px targets and row buttons that never hide. */
+@media (pointer: coarse) {
+    #PersonaManagement {
+        --persona-control-size: 44px;
+    }
+
+    #PersonaManagement :is(.menu_button, select, input[type='search'], input[type='number']),
+    #PersonaManagement .persona-management-browser > :is(#persona_search_bar, #persona_sort_order),
+    #PersonaManagement .persona-field-head .editor_maximize {
+        min-height: 44px;
+    }
+
+    #PersonaManagement .persona-management-browser > #persona_grid_toggle,
+    #PersonaManagement .persona-field-head .editor_maximize,
+    #PersonaManagement #user_avatar_block .avatar_container_states :is(.persona_quick_rename, .persona_quick_delete) {
+        width: 44px;
+        min-width: 44px;
+        height: 44px;
+        min-height: 44px;
+    }
+
+    #right-nav-panel #PersonaManagement :is(.persona-workspace-tabs, .persona-editor-tabs) .sb-shell-tab {
+        min-height: 44px;
+    }
+
+    #PersonaManagement #user_avatar_block .avatar_container_states :is(.persona_quick_rename, .persona_quick_delete) {
+        opacity: 1;
+    }
+
+    #PersonaManagement #persona_pagination_container .paginationjs-pages ul li a {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    #PersonaManagement .persona_management_global_settings .checkbox_label {
+        min-height: 44px;
+        align-items: center;
+    }
+}
+
+/* Narrow: one pane at a time, picked with the Browse / Edit tabs. */
+@container persona-page (max-width: 719px) {
+    #PersonaManagement .persona-workspace-tabs {
+        display: flex;
+    }
+
+    #right-nav-panel #PersonaManagement .persona-workspace-tabs .sb-shell-tab {
+        flex: 1 1 0;
+    }
+
     #persona-management-block {
-        grid-template-columns: minmax(240px, 0.9fr) minmax(0, 1.1fr);
-    }
-
-    #persona-management-block .persona_management_current_persona,
-    #persona-management-block .persona_management_global_settings {
-        padding: 12px;
-    }
-
-    #persona_controls {
-        grid-template-columns: 1fr;
-        align-items: stretch;
-    }
-
-    #persona_controls .persona_controls_buttons_block,
-    #persona_controls .persona-controls-actions,
-    #persona_controls > label {
-        grid-column: 1;
-        max-width: none;
-    }
-
-    #persona_controls > label {
-        grid-row: 2;
-    }
-
-    #persona_controls .persona_controls_buttons_block,
-    #persona_controls .persona-controls-actions {
-        grid-row: 3;
-    }
-
-    #persona_controls .persona_controls_buttons_block,
-    #persona_controls .persona-controls-actions {
-        flex-wrap: wrap;
-        justify-content: flex-start;
-    }
-
-    #persona-management-block .persona-section-meta {
-        grid-template-columns: 1fr;
-        align-items: stretch;
-    }
-
-    #persona-management-block .persona-section-meta > .extension_token_counter {
-        justify-self: start;
-    }
-
-    #persona-management-block .persona_management_description_position_container,
-    #persona_depth_position_settings,
-    #persona_connections_buttons {
-        gap: 8px;
-    }
-
-    #persona_depth_position_settings > .flex1,
-    #persona_connections_buttons > .menu_button {
-        width: 100%;
-        min-width: 0;
-    }
-
-    #user_avatar_block:not(.gridView) .avatar-container {
-        width: 100%;
-        min-width: 0;
-    }
-
-    #user_avatar_block:not(.gridView) .avatar-container .character_select_container {
         grid-template-columns: minmax(0, 1fr);
     }
 
-    #user_avatar_block:not(.gridView) .avatar-container .avatar_container_states {
-        grid-column: 1;
-        grid-row: auto;
-        min-width: 0;
-        flex-wrap: wrap;
-        justify-content: flex-start;
+    #PersonaManagement .persona-browse-pane {
+        padding-inline-end: 0;
+        border-inline-end: 0;
     }
 
-    #persona_description {
-        min-height: 12rem;
-    }
-}
-
-@media screen and (max-width: 760px) {
-    #PersonaManagement .persona-workspace-tabs {
-        position: -webkit-sticky;
-        position: sticky;
-        top: 0;
-        z-index: 3;
-        display: flex;
+    #PersonaManagement .persona-edit-pane {
+        padding-inline-start: 0;
     }
 
-    #persona-management-block {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-    }
-
-    #persona-management-block[data-persona-workspace-tab='browse'] [data-persona-workspace-panel='edit'],
-    #persona-management-block[data-persona-workspace-tab='edit'] [data-persona-workspace-panel='browse'] {
+    #persona-management-block[data-persona-workspace-tab='browse'] > [data-persona-workspace-panel='edit'],
+    #persona-management-block[data-persona-workspace-tab='edit'] > [data-persona-workspace-panel='browse'] {
         display: none;
-    }
-
-    #PersonaManagement .persona-management-actions {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-
-    #PersonaManagement .persona-management-actions > .menu_button,
-    #PersonaManagement .persona-management-browser > #create_dummy_persona,
-    #PersonaManagement .persona-management-browser > #persona_grid_toggle {
-        min-height: 44px;
-    }
-
-    #persona_controls .persona_controls_buttons_block > .menu_button,
-    #persona_controls .persona-controls-actions > .menu_button {
-        flex-basis: 44px;
-        width: 44px;
-        min-width: 44px;
-        height: 44px;
-        min-height: 44px;
-    }
-
-    #persona_controls .persona-controls-actions > .menu_button > span {
-        display: none;
-    }
-
-    #persona-management-block .avatar_container_states .persona_quick_rename,
-    #persona-management-block .avatar_container_states .persona_quick_delete {
-        flex-basis: 44px;
-        width: 44px;
-        min-width: 44px;
-        height: 44px;
-        min-height: 44px;
-    }
-
-    #PersonaManagement .persona-management-browser {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        align-items: stretch;
-    }
-
-    #PersonaManagement .persona-management-browser > #persona_search_bar,
-    #PersonaManagement .persona-management-browser > #persona_pagination_container {
-        grid-column: 1 / -1;
-    }
-
-    #PersonaManagement .persona-management-browser > #create_dummy_persona,
-    #PersonaManagement .persona-management-browser > #persona_sort_order,
-    #PersonaManagement .persona-management-browser > #persona_grid_toggle {
-        width: 100%;
     }
 
     #persona_management_list_scroller {
-        max-height: min(60dvh, 36rem);
-        overflow-y: auto;
-        overscroll-behavior: contain;
-        scrollbar-gutter: stable;
+        max-height: none;
+        overflow-y: visible;
     }
+}
 
-    .persona-selected-masthead {
-        grid-template-columns: 48px minmax(0, 1fr);
-        grid-template-areas:
-            'avatar copy'
-            'chips chips';
-    }
-
-    .persona-selected-avatar {
-        width: 48px;
-        height: 48px;
-    }
-
-    .persona-appendices-actions {
-        justify-content: stretch;
-    }
-
-    .persona-appendices-actions > .menu_button {
+@container persona-editor (max-width: 440px) {
+    #right-nav-panel #PersonaManagement .persona-editor-tabs .sb-shell-tab {
         flex: 1 1 0;
-        min-height: 44px;
-    }
-}
-
-@media screen and (max-width: 520px) {
-    #PersonaManagement .persona-management-actions,
-    #PersonaManagement .persona-management-browser,
-    #persona_depth_position_settings,
-    #persona_connections_buttons {
-        grid-template-columns: 1fr;
-    }
-
-    #persona_controls .persona_controls_buttons_block,
-    #persona_controls .persona-controls-actions {
-        flex-wrap: wrap;
-        justify-content: flex-start;
-        gap: 6px;
-        width: 100%;
-    }
-
-    #persona_controls .persona_controls_buttons_block > .menu_button,
-    #persona_controls .persona-controls-actions > .menu_button {
-        flex: 0 0 44px;
-        width: 44px;
-        min-width: 44px;
-        max-width: 44px;
-        height: 44px;
-        min-height: 44px;
-    }
-}
-
-@media screen and (max-width: 360px) {
-    #persona_controls .persona_controls_buttons_block,
-    #persona_controls .persona-controls-actions {
-        gap: 5px;
-    }
-
-    #persona_controls .persona_controls_buttons_block > .menu_button,
-    #persona_controls .persona-controls-actions > .menu_button {
-        flex: 0 0 44px;
-        width: 44px;
-        min-width: 44px;
-        max-width: 44px;
-        height: 44px;
-        min-height: 44px;
-    }
-}
-
-@media screen and (max-width: 760px) {
-    #PersonaManagement .persona-management-actions {
-        grid-template-columns: repeat(3, minmax(44px, 1fr)) !important;
-        gap: 6px;
-    }
-
-    #PersonaManagement .persona-management-actions > .menu_button {
-        width: 100%;
-        min-width: 0;
-        height: 44px;
-        min-height: 44px;
-        max-height: 44px;
-        padding: 0;
-        gap: 0;
-        justify-content: center;
-        border-radius: 12px;
-    }
-
-    #PersonaManagement .persona-management-actions > .menu_button > span {
-        display: none;
-    }
-
-    #PersonaManagement .persona-management-actions > .menu_button > i {
-        margin: 0;
-        font-size: calc(var(--mainFontSize) * 0.98);
-    }
-
-    #PersonaManagement .persona-management-browser {
-        display: grid !important;
-        grid-template-columns: 44px minmax(0, 1fr) 44px;
-        gap: 6px;
-        align-items: stretch;
-    }
-
-    #PersonaManagement .persona-management-browser > #create_dummy_persona {
-        grid-column: 1;
-        width: 44px;
-        min-width: 44px;
-        max-width: 44px;
-        height: 44px;
-        min-height: 44px;
-        max-height: 44px;
-        padding: 0;
-        gap: 0;
-        justify-content: center;
-        border-radius: 12px;
-    }
-
-    #PersonaManagement .persona-management-browser > #create_dummy_persona > :is(div, span) {
-        display: none;
-    }
-
-    #PersonaManagement .persona-management-browser > #persona_search_bar {
-        grid-column: 2 / -1;
-        width: 100%;
-        min-width: 0;
-        height: 44px;
-        min-height: 44px;
-        padding-block: 0;
-        font-size: max(16px, var(--mainFontSize));
-    }
-
-    #PersonaManagement .persona-management-browser > #persona_sort_order {
-        grid-column: 1 / 3;
-        grid-row: 2;
-        width: 100% !important;
-        min-width: 0 !important;
-        max-width: none;
-        height: 44px;
-        min-height: 44px;
-        margin: 0;
-        padding-inline: 10px 28px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        font-size: max(16px, calc(var(--mainFontSize) * 0.88));
-    }
-
-    #PersonaManagement .persona-management-browser > #persona_grid_toggle {
-        grid-column: 3;
-        grid-row: 2;
-        width: 44px !important;
-        min-width: 44px !important;
-        max-width: 44px !important;
-        height: 44px;
-        min-height: 44px;
-        max-height: 44px;
-        margin: 0;
-        padding: 0;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 12px;
-    }
-
-    #PersonaManagement .persona-management-browser > #persona_pagination_container {
-        grid-column: 1 / -1;
-        grid-row: 3;
-        width: 100%;
-        min-width: 0;
-        margin: 0;
-        padding: 0;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs {
-        width: 100%;
-        max-width: 100%;
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 4px 6px;
-        margin: 0;
-        padding: 0;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-nav {
-        order: 1;
-        flex: 1 1 auto;
-        min-width: 0;
-        min-height: 34px;
-        display: inline-flex;
-        align-items: center;
-        white-space: nowrap;
-        font-size: calc(var(--mainFontSize) * 0.78);
-        line-height: 1.1;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-size-changer {
-        order: 2;
-        flex: 0 0 auto;
-        margin-left: auto;
-        min-width: 0;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-size-changer select {
-        width: auto;
-        min-width: 6.4em;
-        height: 34px;
-        min-height: 34px;
-        margin: 0;
-        padding-inline: 8px 24px;
-        font-size: max(16px, calc(var(--mainFontSize) * 0.82));
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-pages {
-        order: 3;
-        flex: 1 1 100%;
-        min-width: 0;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-pages ul {
-        display: flex;
-        flex-wrap: nowrap;
-        gap: 4px;
-        justify-content: flex-start;
-        margin: 0;
-        padding: 0;
-        min-width: 0;
-    }
-
-    #PersonaManagement #persona_pagination_container :is(.menu_button, .paginationjs-pages ul li a) {
-        width: 44px;
-        min-width: 44px;
-        height: 44px;
-        min-height: 44px;
-        padding: 0 !important;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 10px;
-    }
-}
-
-@container persona-management (max-width: 520px) {
-    #PersonaManagement .persona-management-actions {
-        grid-template-columns: repeat(3, minmax(44px, 1fr)) !important;
-        gap: 6px;
-    }
-
-    #PersonaManagement .persona-management-actions > .menu_button {
-        width: 100%;
-        min-width: 0;
-        height: 44px;
-        min-height: 44px;
-        max-height: 44px;
-        padding: 0;
-        gap: 0;
-        justify-content: center;
-        border-radius: 12px;
-    }
-
-    #PersonaManagement .persona-management-actions > .menu_button > span {
-        display: none;
-    }
-
-    #PersonaManagement .persona-management-actions > .menu_button > i {
-        margin: 0;
-        font-size: calc(var(--mainFontSize) * 0.98);
-    }
-
-    #PersonaManagement .persona-management-browser {
-        display: grid !important;
-        grid-template-columns: 44px minmax(0, 1fr) 44px;
-        gap: 6px;
-        align-items: stretch;
-    }
-
-    #PersonaManagement .persona-management-browser > #create_dummy_persona {
-        grid-column: 1;
-        width: 44px;
-        min-width: 44px;
-        max-width: 44px;
-        height: 44px;
-        min-height: 44px;
-        max-height: 44px;
-        padding: 0;
-        gap: 0;
-        justify-content: center;
-        border-radius: 12px;
-    }
-
-    #PersonaManagement .persona-management-browser > #create_dummy_persona > :is(div, span) {
-        display: none;
-    }
-
-    #PersonaManagement .persona-management-browser > #persona_search_bar {
-        grid-column: 2 / -1;
-        width: 100%;
-        min-width: 0;
-        height: 44px;
-        min-height: 44px;
-        padding-block: 0;
-        font-size: max(16px, var(--mainFontSize));
-    }
-
-    #PersonaManagement .persona-management-browser > #persona_sort_order {
-        grid-column: 1 / 3;
-        grid-row: 2;
-        width: 100% !important;
-        min-width: 0 !important;
-        max-width: none;
-        height: 44px;
-        min-height: 44px;
-        margin: 0;
-        padding-inline: 10px 28px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        font-size: max(16px, calc(var(--mainFontSize) * 0.88));
-    }
-
-    #PersonaManagement .persona-management-browser > #persona_grid_toggle {
-        grid-column: 3;
-        grid-row: 2;
-        width: 44px !important;
-        min-width: 44px !important;
-        max-width: 44px !important;
-        height: 44px;
-        min-height: 44px;
-        max-height: 44px;
-        margin: 0;
-        padding: 0;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 12px;
-    }
-
-    #PersonaManagement .persona-management-browser > #persona_pagination_container {
-        grid-column: 1 / -1;
-        grid-row: 3;
-        width: 100%;
-        min-width: 0;
-        margin: 0;
-        padding: 0;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs {
-        width: 100%;
-        max-width: 100%;
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 4px 6px;
-        margin: 0;
-        padding: 0;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-nav {
-        order: 1;
-        flex: 1 1 auto;
-        min-width: 0;
-        min-height: 34px;
-        display: inline-flex;
-        align-items: center;
-        white-space: nowrap;
-        font-size: calc(var(--mainFontSize) * 0.78);
-        line-height: 1.1;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-size-changer {
-        order: 2;
-        flex: 0 0 auto;
-        margin-left: auto;
-        min-width: 0;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-size-changer select {
-        width: auto;
-        min-width: 6.4em;
-        height: 34px;
-        min-height: 34px;
-        margin: 0;
-        padding-inline: 8px 24px;
-        font-size: max(16px, calc(var(--mainFontSize) * 0.82));
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-pages {
-        order: 3;
-        flex: 1 1 100%;
-        min-width: 0;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-pages ul {
-        display: flex;
-        flex-wrap: nowrap;
-        gap: 4px;
-        justify-content: flex-start;
-        margin: 0;
-        padding: 0;
-        min-width: 0;
-    }
-
-    #PersonaManagement #persona_pagination_container :is(.menu_button, .paginationjs-pages ul li a) {
-        width: 34px;
-        min-width: 34px;
-        height: 34px;
-        min-height: 34px;
-        padding: 0 !important;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 10px;
-    }
-}
-
-@container persona-management (max-width: 340px) {
-    #PersonaManagement .persona-management-browser {
-        grid-template-columns: 44px minmax(0, 1fr) 44px;
-    }
-
-    #PersonaManagement .persona-management-browser > #create_dummy_persona,
-    #PersonaManagement .persona-management-browser > #persona_grid_toggle {
-        width: 44px !important;
-        min-width: 44px !important;
-        max-width: 44px !important;
-        height: 44px;
-        min-height: 44px;
-        max-height: 44px;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-size-changer select {
-        min-width: 5.8em;
-    }
-}
-
-@media screen and (max-width: 760px) {
-    #PersonaManagement .persona-appendices-actions {
-        flex-wrap: nowrap;
-        justify-content: flex-end;
-        gap: 5px;
-    }
-
-    #PersonaManagement .persona-appendices-actions > .menu_button {
-        width: 44px;
-        min-width: 44px;
-        max-width: 44px;
-        height: 44px;
-        min-height: 44px;
-        padding: 0;
-        justify-content: center;
-    }
-
-    #PersonaManagement .persona-appendices-actions > .menu_button > span {
-        display: none;
-    }
-}
-
-@container persona-management (max-width: 520px) {
-    #PersonaManagement .persona-appendices-actions {
-        flex-wrap: nowrap;
-        justify-content: flex-end;
-        gap: 5px;
-    }
-
-    #PersonaManagement .persona-appendices-actions > .menu_button {
-        width: 44px;
-        min-width: 44px;
-        max-width: 44px;
-        height: 44px;
-        min-height: 44px;
-        padding: 0;
-        justify-content: center;
-    }
-
-    #PersonaManagement .persona-appendices-actions > .menu_button > span {
-        display: none;
-    }
-}
-
-@container persona-management (max-width: 260px) {
-    #PersonaManagement .persona-appendices-block {
-        padding: 8px;
-        gap: 6px;
-    }
-
-    #PersonaManagement .persona-appendices-actions {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        justify-content: stretch;
-        width: 100%;
-    }
-
-    #PersonaManagement .persona-appendices-actions > .menu_button {
-        width: 100%;
-        min-width: 0;
-        max-width: none;
-    }
-}
-
-@container persona-scenario-notes (max-width: 360px) {
-    .persona-appendices-actions {
-        flex-wrap: nowrap;
-        justify-content: flex-end;
-        gap: 5px;
-    }
-
-    .persona-appendices-actions > .menu_button {
-        width: 44px;
-        min-width: 44px;
-        max-width: 44px;
-        height: 44px;
-        min-height: 44px;
-        padding: 0;
-        justify-content: center;
-    }
-
-    .persona-appendices-actions > .menu_button > span {
-        display: none;
-    }
-}
-
-@container persona-scenario-notes (max-width: 230px) {
-    .persona-appendices-actions {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        justify-content: stretch;
-        width: 100%;
-    }
-
-    .persona-appendices-actions > .menu_button {
-        width: 100%;
-        min-width: 0;
-        max-width: none;
-    }
-}
-
-@media screen and (max-width: 760px) {
-    #PersonaManagement #persona_connections_buttons {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 6px;
-    }
-
-    #PersonaManagement #persona_connections_buttons > .menu_button {
-        min-height: 44px;
         padding-inline: 6px;
-        gap: 5px;
-        font-size: calc(var(--mainFontSize) * 0.84);
     }
-}
 
-@container persona-management (max-width: 520px) {
-    #PersonaManagement #persona_connections_buttons {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+    #PersonaManagement .persona-setting-row {
+        grid-template-columns: minmax(0, 1fr);
         gap: 6px;
     }
 
-    #PersonaManagement #persona_connections_buttons > .menu_button {
-        min-height: 44px;
-        padding-inline: 6px;
-        gap: 5px;
-        font-size: calc(var(--mainFontSize) * 0.84);
-    }
-}
-
-@container persona-management (max-width: 300px) {
-    #PersonaManagement #persona_connections_buttons > .menu_button {
-        min-height: 44px;
-        padding-inline: 0;
-        gap: 0;
+    #PersonaManagement .persona-selected-masthead {
+        grid-template-columns: 56px minmax(0, 1fr);
+        gap: 12px;
     }
 
-    #PersonaManagement #persona_connections_buttons > .menu_button > div {
-        display: none;
-    }
-}
-
-@media screen and (max-width: 760px) {
-    #PersonaManagement .persona-management-browser {
-        grid-template-columns: 44px minmax(0, 1fr) 44px;
-        grid-auto-rows: minmax(44px, auto);
-        gap: 6px;
-        align-items: stretch;
-        width: 100%;
-        min-width: 0;
+    #PersonaManagement .persona-selected-avatar {
+        width: 56px;
+        min-width: 56px;
+        max-width: 56px;
+        height: 56px;
+        min-height: 56px;
+        max-height: 56px;
     }
 
-    #PersonaManagement .persona-management-browser > #create_dummy_persona {
-        grid-column: 1;
-        grid-row: 1;
-        width: 44px;
-        min-width: 44px;
-        max-width: 44px;
-        height: 44px;
-        min-height: 44px;
-        max-height: 44px;
-        border-radius: 12px;
-    }
-
-    #PersonaManagement .persona-management-browser > #persona_search_bar {
-        grid-column: 2 / -1;
-        grid-row: 1;
-        width: 100%;
-        min-width: 0;
-        height: 44px;
-        min-height: 44px;
-        padding-inline: 10px;
-    }
-
-    #PersonaManagement .persona-management-browser > #persona_sort_order {
-        grid-column: 1 / 3;
-        grid-row: 2;
-        width: 100% !important;
-        min-width: 0 !important;
-        max-width: none;
-        height: 44px;
-        min-height: 44px;
-        padding-inline: 10px 28px;
-        border-radius: 12px;
-    }
-
-    #PersonaManagement .persona-management-browser > #persona_pagination_container {
+    #PersonaManagement #persona_controls {
         grid-column: 1 / -1;
-        grid-row: 3;
-        display: flex;
-        align-items: center;
-        width: 100%;
-        min-width: 0;
-        margin: 0;
-        padding: 0;
     }
+}
 
-    #PersonaManagement #persona_pagination_container .paginationjs {
-        width: 100%;
-        max-width: 100%;
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 6px;
-        margin: 0;
-        padding: 0;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-nav {
-        order: 1;
-        flex: 1 1 auto;
-        min-width: 0;
-        min-height: 44px;
-        display: inline-flex;
-        align-items: center;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        font-size: calc(var(--mainFontSize) * 0.78);
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-pages {
-        order: 2;
-        flex: 0 0 auto;
-        min-width: 0;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-pages ul {
-        justify-content: center;
-        gap: 4px;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-pages ul li:first-child,
-    #PersonaManagement #persona_pagination_container .paginationjs-pages ul li:last-child {
+@container persona-editor (max-width: 340px) {
+    #right-nav-panel #PersonaManagement .persona-editor-tabs .sb-shell-tab > i {
         display: none;
     }
-
-    #PersonaManagement #persona_pagination_container :is(.menu_button, .paginationjs-pages ul li a) {
-        width: 44px;
-        min-width: 44px;
-        height: 44px;
-        min-height: 44px;
-        border-radius: 12px;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-size-changer {
-        order: 3;
-        flex: 0 0 auto;
-        margin-left: auto;
-        min-width: 0;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-size-changer select {
-        width: auto;
-        min-width: 6.2em;
-        max-width: none;
-        height: 44px;
-        min-height: 44px;
-        padding-inline: 9px 24px;
-        border-radius: 12px;
-        font-size: max(16px, calc(var(--mainFontSize) * 0.76));
-    }
-
-    #PersonaManagement .persona-management-browser > #persona_grid_toggle {
-        grid-column: 3;
-        grid-row: 2;
-        width: 44px !important;
-        min-width: 44px !important;
-        max-width: 44px !important;
-        height: 44px;
-        min-height: 44px;
-        max-height: 44px;
-        border-radius: 12px;
-    }
-}
-
-@container persona-management (max-width: 520px) {
-    #PersonaManagement .persona-management-browser {
-        grid-template-columns: 44px minmax(0, 1fr) 44px;
-        grid-auto-rows: minmax(44px, auto);
-        gap: 6px;
-        align-items: stretch;
-        width: 100%;
-        min-width: 0;
-    }
-
-    #PersonaManagement .persona-management-browser > #create_dummy_persona {
-        grid-column: 1;
-        grid-row: 1;
-        width: 44px;
-        min-width: 44px;
-        max-width: 44px;
-        height: 44px;
-        min-height: 44px;
-        max-height: 44px;
-        border-radius: 12px;
-    }
-
-    #PersonaManagement .persona-management-browser > #persona_search_bar {
-        grid-column: 2 / -1;
-        grid-row: 1;
-        width: 100%;
-        min-width: 0;
-        height: 44px;
-        min-height: 44px;
-        padding-inline: 10px;
-    }
-
-    #PersonaManagement .persona-management-browser > #persona_sort_order {
-        grid-column: 1 / 3;
-        grid-row: 2;
-        width: 100% !important;
-        min-width: 0 !important;
-        max-width: none;
-        height: 44px;
-        min-height: 44px;
-        padding-inline: 10px 28px;
-        border-radius: 12px;
-    }
-
-    #PersonaManagement .persona-management-browser > #persona_pagination_container {
-        grid-column: 1 / -1;
-        grid-row: 3;
-        display: flex;
-        align-items: center;
-        width: 100%;
-        min-width: 0;
-        margin: 0;
-        padding: 0;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs {
-        width: 100%;
-        max-width: 100%;
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 6px;
-        margin: 0;
-        padding: 0;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-nav {
-        order: 1;
-        flex: 1 1 auto;
-        min-width: 0;
-        min-height: 44px;
-        display: inline-flex;
-        align-items: center;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        font-size: calc(var(--mainFontSize) * 0.78);
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-pages {
-        order: 2;
-        flex: 0 0 auto;
-        min-width: 0;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-pages ul {
-        justify-content: center;
-        gap: 4px;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-pages ul li:first-child,
-    #PersonaManagement #persona_pagination_container .paginationjs-pages ul li:last-child {
-        display: none;
-    }
-
-    #PersonaManagement #persona_pagination_container :is(.menu_button, .paginationjs-pages ul li a) {
-        width: 44px;
-        min-width: 44px;
-        height: 44px;
-        min-height: 44px;
-        border-radius: 12px;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-size-changer {
-        order: 3;
-        flex: 0 0 auto;
-        margin-left: auto;
-        min-width: 0;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-size-changer select {
-        width: auto;
-        min-width: 6.2em;
-        max-width: none;
-        height: 44px;
-        min-height: 44px;
-        padding-inline: 9px 24px;
-        border-radius: 12px;
-        font-size: max(16px, calc(var(--mainFontSize) * 0.76));
-    }
-
-    #PersonaManagement .persona-management-browser > #persona_grid_toggle {
-        grid-column: 3;
-        grid-row: 2;
-        width: 44px !important;
-        min-width: 44px !important;
-        max-width: 44px !important;
-        height: 44px;
-        min-height: 44px;
-        max-height: 44px;
-        border-radius: 12px;
-    }
-}
-
-@container persona-management (max-width: 360px) {
-    #PersonaManagement .persona-management-browser {
-        grid-template-columns: 44px minmax(0, 1fr) 44px;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-nav {
-        display: none;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-pages {
-        grid-column: auto;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-size-changer {
-        grid-column: auto;
-    }
-
-    #PersonaManagement .persona-management-browser > #persona_grid_toggle {
-        grid-column: 3;
-    }
-
-    #PersonaManagement .persona-management-browser > #create_dummy_persona,
-    #PersonaManagement .persona-management-browser > #persona_grid_toggle {
-        width: 44px !important;
-        min-width: 44px !important;
-        max-width: 44px !important;
-        height: 44px;
-        min-height: 44px;
-        max-height: 44px;
-    }
-
-    #PersonaManagement #persona_pagination_container :is(.menu_button, .paginationjs-pages ul li a) {
-        width: 44px;
-        min-width: 44px;
-        height: 44px;
-        min-height: 44px;
-    }
-
-    #PersonaManagement #persona_pagination_container .paginationjs-size-changer select {
-        width: auto;
-        min-width: 6.2em;
-        max-width: none;
-        padding-inline: 9px 24px;
-    }
-}
-
-/* Persona workspace controls stay in the document flow on small screens. A sticky tab strip
-   covered the editor heading and textarea while the shell header was scrolling above it. */
-body.neconyan #PersonaManagement .persona-workspace-tabs {
-    position: static;
-    top: auto;
-    z-index: auto;
-}
-
-@media screen and (max-width: 760px) {
-    body.neconyan #PersonaManagement .persona-workspace-tabs {
-        display: grid !important;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 6px;
-        margin: 0 0 10px;
-    }
-}
-
-/* Keep row actions under the name and copy so state controls remain readable at every list
-   width. The existing avatar, IDs, and event targets stay intact. */
-body.neconyan #user_avatar_block:not(.gridView) .avatar-container {
-    grid-template-columns: auto minmax(0, 1fr);
-}
-
-body.neconyan #user_avatar_block:not(.gridView) .avatar-container .character_select_container {
-    grid-column: 2;
-    grid-template-columns: minmax(0, 1fr);
-}
-
-body.neconyan #user_avatar_block:not(.gridView) .character_name_block {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-}
-
-body.neconyan #user_avatar_block:not(.gridView) .character_name_block > :is(.ch_name, .ch_additional_info) {
-    white-space: normal;
-    overflow-wrap: anywhere;
-    max-width: none;
-}
-
-body.neconyan #user_avatar_block:not(.gridView) .avatar-container .avatar_container_states {
-    grid-column: 1 / -1;
-    grid-row: auto;
-    justify-content: flex-start;
-    flex-wrap: wrap;
-    min-width: 0;
-}
-
-body.neconyan #user_avatar_block .avatar-container.default_persona .avatar {
-    outline: none !important;
-}
-
-#user_avatar_block .persona-default-label { display: none; }
-#user_avatar_block .default_persona .persona-default-label { display: inline-flex; }
-
-body.neconyan #PersonaManagement .persona-management-browser {
-    display: grid !important;
-    grid-template-columns: minmax(0, 1fr) 44px;
-}
-body.neconyan #PersonaManagement .persona-management-browser > :is(#create_dummy_persona, #persona_search_bar, #persona_sort_order) {
-    width: 100%;
-    min-width: 0;
-    max-width: none;
-    min-height: 44px;
-}
-body.neconyan #PersonaManagement .persona-management-browser > #create_dummy_persona {
-    grid-area: 1 / 1 / 2 / -1;
-    width: 100% !important;
-    min-width: 0 !important;
-    max-width: none !important;
-    justify-content: flex-start;
-    padding-inline: 12px;
-    gap: 8px;
-}
-body.neconyan #PersonaManagement #create_dummy_persona > :is(div, span) { display: inline !important; }
-body.neconyan #PersonaManagement .persona-management-browser > #persona_search_bar { grid-area: 2 / 1 / 3 / -1; }
-body.neconyan #PersonaManagement .persona-management-browser > #persona_sort_order { grid-area: 3 / 1 / 4 / 2; }
-body.neconyan #PersonaManagement .persona-management-browser > #persona_grid_toggle { grid-area: 3 / 2 / 4 / 3; }
-body.neconyan #PersonaManagement .persona-management-browser > #persona_pagination_container { grid-area: 4 / 1 / 5 / -1; }
-
-/* A one-page library does not need a navigator taking up a full toolbar row. */
-body.neconyan #PersonaManagement #persona_pagination_container[hidden] {
-    display: none !important;
-}
-
-/* Keep the whole Persona workspace on the Neconyan brown surface, including the host
-   around the two columns. */
-body.neconyan #PersonaManagement,
-body.neconyan #PersonaManagement #persona-management-block,
-body.neconyan #PersonaManagement #persona-management-block .persona_management_left_column,
-body.neconyan #PersonaManagement #persona-management-block .persona_management_right_column,
-body.neconyan #PersonaManagement #persona_workspace_panel_browse,
-body.neconyan #PersonaManagement #persona_workspace_panel_edit {
-    min-width: 0;
-    background: var(--neco-surface) !important;
-}
-body.neconyan #right-nav-panel[data-menu-type='persona'] { background: var(--neco-surface) !important; }
-body.neconyan #PersonaManagement #persona-management-block {
-    padding: 12px;
-    border: 1px solid var(--neco-border);
-    border-radius: var(--sb-radius-lg, 16px);
-}
-body.neconyan #PersonaManagement #persona-management-block :is(.persona_management_left_column, .persona_management_right_column) {
-    padding: 10px;
-    border: 1px solid var(--neco-border);
-    border-radius: var(--sb-radius-md, 12px);
 }
