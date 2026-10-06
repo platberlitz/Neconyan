@@ -1071,6 +1071,9 @@ function renderFoldControls() {
         elements.foldSections.hidden = true;
         return;
     }
+    const hidden = readPrefs().hideFoldControls === true;
+    elements.foldControls.hidden = state.view !== 'write' || hidden;
+    elements.foldSections.hidden = state.view !== 'write' || hidden || !state.foldSectionsOpen;
     const sections = button('Sections', () => {
         state.foldSectionsOpen = !state.foldSectionsOpen;
         elements.foldSections.hidden = !state.foldSectionsOpen;
@@ -1424,6 +1427,10 @@ function buildToolbar() {
         ['Code', 'fa-code', () => codeAction()],
         ['Table', 'fa-table', () => insertBlock('| Column | Column |\n| --- | --- |\n| | |')],
         ['Divider', 'fa-minus', () => insertBlock('---')],
+        ['Show or hide section controls', 'fa-layer-group', () => {
+            writePrefs({ hideFoldControls: readPrefs().hideFoldControls !== true });
+            renderFoldControls();
+        }],
     ];
     const bar = h('div', { class: 'notes-toolbar', role: 'toolbar', 'aria-label': 'Formatting' });
     for (const [label, icon, action] of actions) {
