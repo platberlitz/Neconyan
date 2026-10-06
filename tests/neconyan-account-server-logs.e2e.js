@@ -31,6 +31,8 @@ const accountFixture = {
 const serverStatusFixture = {
     runtime: 'Node.js 22',
     configPath: '/isolated/config.yaml',
+    installPath: '/isolated/neconyan',
+    dataPath: '/isolated/data/default-user',
     version: { pkgVersion: '1.0.0', gitBranch: 'staging', gitRevision: 'abc1234' },
     repository: {
         supported: true,
@@ -170,7 +172,7 @@ async function assertSurfaceGeometry(page, surface, coarse) {
     const selectors = {
         settings: '#UI-language-block :is(label, select), #account_controls button, #user-settings-utility-actions :is(.sb-settings-utility-action, .checkbox_label)',
         account: 'dialog.popup[open] button',
-        server: '#sb-shell-panel-right-server .sb-server-actions button, #sb-shell-panel-right-server .sb-server-source-details summary, #sb-shell-panel-right-server .sb-server-card .checkbox_label',
+        server: '#sb-shell-panel-right-server .sb-server-actions button, #sb-shell-panel-right-server .sb-server-source-details summary, #sb-shell-panel-right-server .sb-server-card .checkbox_label, #sb-shell-panel-right-server .sb-server-folder-list button',
         logs: '#sb-shell-panel-right-console-logs .sb-console-log-actions button',
     };
     const result = await page.evaluate(selector => {
@@ -264,6 +266,15 @@ test('Server keeps dirty update state visible and source details collapsed', asy
     await expect(panel.locator('.sb-server-summary-grid')).toContainText('Runtime');
     await expect(panel.getByRole('combobox', { name: 'Git branch' })).toBeVisible();
     await expect(panel.locator('.sb-server-summary-grid')).toContainText('Commit');
+    const folders = panel.locator('.sb-server-folder-list');
+    await expect(folders).toBeVisible();
+    await expect(folders.locator('.sb-server-folder')).toHaveCount(2);
+    await expect(folders.locator('.sb-server-folder').nth(0)).toContainText('Neconyan folder');
+    await expect(folders.locator('.sb-server-folder-path').nth(0)).toHaveText('/isolated/neconyan');
+    await expect(folders.locator('.sb-server-folder').nth(1)).toContainText('Your data folder');
+    await expect(folders.locator('.sb-server-folder-path').nth(1)).toHaveText('/isolated/data/default-user');
+    await expect(folders.getByRole('button', { name: 'Copy Neconyan folder path' })).toBeVisible();
+    await expect(folders.getByRole('button', { name: 'Copy your data folder path' })).toBeVisible();
     await expect(panel.locator('.sb-server-pill')).toHaveText('Update Blocked');
     await expect(panel.locator('.sb-server-note[data-tone="danger"]')).toContainText('local changes');
     await expect(panel.locator('.sb-server-source-details')).not.toHaveAttribute('open', '');

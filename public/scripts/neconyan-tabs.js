@@ -502,7 +502,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261006-extmgr1';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261006-folders1';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -12950,6 +12950,47 @@ function appendServerAdminStat(target, label, value) {
     target.appendChild(item);
 }
 
+function renderServerAdminFolders(target, data) {
+    if (!(target instanceof HTMLElement)) {
+        return;
+    }
+
+    const folders = [
+        { label: 'Neconyan folder', copyLabel: 'Copy Neconyan folder path', path: data?.installPath },
+        { label: 'Your data folder', copyLabel: 'Copy your data folder path', path: data?.dataPath },
+    ].filter(folder => typeof folder.path === 'string' && folder.path);
+
+    target.replaceChildren();
+    target.hidden = folders.length === 0;
+
+    for (const folder of folders) {
+        const item = createElement('div', { className: 'sb-server-stat sb-server-folder' });
+        const copy = createElement('div', { className: 'sb-server-folder-copy' });
+        const title = createElement('small', { className: 'sb-server-stat-label', text: folder.label });
+        const value = createElement('code', { className: 'sb-server-stat-value sb-server-folder-path', text: folder.path });
+        const copyButton = createElement('button', {
+            className: 'menu_button menu_button_icon sb-server-folder-copy-button',
+            html: '<i class="fa-solid fa-copy" aria-hidden="true"></i>',
+            attrs: {
+                type: 'button',
+                title: folder.copyLabel,
+                'aria-label': folder.copyLabel,
+            },
+        });
+        copyButton.addEventListener('click', async () => {
+            try {
+                await copyText(folder.path);
+                toastr.success('Path copied.', folder.label);
+            } catch (error) {
+                toastr.error(error?.message || 'Unable to copy the path.', folder.label);
+            }
+        });
+        copy.append(title, value);
+        item.append(copy, copyButton);
+        target.appendChild(item);
+    }
+}
+
 function updateServerConfigDirtyState() {
     const state = getServerAdminState();
     const refs = getServerAdminRefs();
@@ -13048,10 +13089,13 @@ function renderServerAdminStatus(data) {
         appendServerAdminStat(sourceDetailsGrid, 'Latest ZIP', release?.latestVersion ? `v${release.latestVersion}` : 'Unknown');
     }
     appendServerAdminStat(sourceDetailsGrid, 'Config', data?.configPath || 'Unknown');
+    renderServerAdminFolders(refs.folderList, data);
 
     state.lastStatusData = {
         runtime: data?.runtime || '',
         configPath: data?.configPath || '',
+        installPath: data?.installPath || '',
+        dataPath: data?.dataPath || '',
         version,
         repository,
         release,
@@ -13800,6 +13844,7 @@ function buildServerAdminPanel() {
     const statusDescription = createElement('p', { text: 'Runtime, source, commit, and update state.' });
     const statusPill = createElement('span', { className: 'sb-server-pill', text: 'Checking…' });
     const statusGrid = createElement('div', { className: 'sb-server-grid sb-server-summary-grid' });
+    const folderList = createElement('div', { className: 'sb-server-folder-list', attrs: { hidden: '' } });
     const statusNote = createElement('div', { className: 'sb-server-note' });
     const sourceDetails = createElement('details', { className: 'sb-server-source-details' });
     const sourceSummary = createElement('summary', { text: 'More source details' });
@@ -13807,7 +13852,7 @@ function buildServerAdminPanel() {
     sourceDetails.append(sourceSummary, sourceDetailsGrid);
     statusCopy.append(statusTitle, statusDescription);
     statusHeader.append(statusCopy, statusPill);
-    statusCard.append(statusHeader, statusGrid, statusNote, sourceDetails);
+    statusCard.append(statusHeader, statusGrid, folderList, statusNote, sourceDetails);
 
     const updateCard = createElement('section', { className: 'sb-admin-card sb-server-card' });
     const updateHeader = createElement('div', { className: 'sb-admin-card-header' });
@@ -13957,6 +14002,7 @@ function buildServerAdminPanel() {
         statusPill,
         statusGrid,
         sourceDetailsGrid,
+        folderList,
         statusNote,
         refreshButton,
         updateButton,
