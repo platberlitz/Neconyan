@@ -86,6 +86,11 @@ const LEGACY_BUNDLED_OPT_IN_EXTENSION_IDS = [
     'sillytavern-image-gen',
     'sillytavern-moonlitechoestheme',
 ];
+// Neconyan: extensions that used to ship off by default and now ship on. Each is
+// re-enabled once per install, even where the old opt-in default had switched it off.
+const FORMER_OPT_IN_EXTENSION_IDS = [
+    'neconyan-debugger',
+];
 const genericExtensionSettingsClasses = new Set([
     'alignitemscenter',
     'alignitemsbaseline',
@@ -245,6 +250,7 @@ export const extension_settings = {
     notifyUpdates: false,
     bundledOptInDefaultsApplied: false,
     bundledOptInProcessedExtensions: [],
+    formerOptInEnabledExtensions: [],
     lockedExtensionsUnlockApplied: false,
     disabledExtensions: [],
     expressionOverrides: [],
@@ -352,6 +358,34 @@ function clearStaleLockedExtensionDisables() {
             .filter(name => !staleEntries.includes(name));
     }
 
+    return true;
+}
+
+/**
+ * Turns former opt-in extensions on once, so installs that got them switched off by the
+ * old default pick up the new one. Choices made afterwards are respected.
+ * @returns {boolean} True if the settings were changed.
+ */
+function enableFormerOptInExtensions() {
+    const storedIds = Array.isArray(extension_settings.formerOptInEnabledExtensions)
+        ? extension_settings.formerOptInEnabledExtensions
+        : [];
+    const pendingIds = FORMER_OPT_IN_EXTENSION_IDS
+        .filter(id => !storedIds.some(done => areExtensionIdsEqual(done, id)));
+
+    if (pendingIds.length === 0 && storedIds === extension_settings.formerOptInEnabledExtensions) {
+        return false;
+    }
+
+    const reenabled = extension_settings.disabledExtensions
+        .filter(name => pendingIds.some(id => areExtensionIdsEqual(name, id)));
+    if (reenabled.length > 0) {
+        console.log(`[Extensions] Enabled extensions that are now on by default: ${reenabled.join(', ')}`);
+        extension_settings.disabledExtensions = extension_settings.disabledExtensions
+            .filter(name => !reenabled.includes(name));
+    }
+
+    extension_settings.formerOptInEnabledExtensions = [...storedIds, ...pendingIds];
     return true;
 }
 
@@ -2155,8 +2189,9 @@ export async function loadExtensionSettings(settings, versionChanged, enableAuto
         migrateLegacy: shouldInitializeProcessedIds,
         initializeProcessedIds: shouldInitializeProcessedIds,
     });
+    const formerOptInChanged = enableFormerOptInExtensions();
 
-    if (legacyConnectionSettingsRemoved || unlockMigrationChanged || bundledOptInChanged || removedCount > 0) {
+    if (legacyConnectionSettingsRemoved || unlockMigrationChanged || bundledOptInChanged || formerOptInChanged || removedCount > 0) {
         saveSettingsDebounced();
     }
     bundledOptInSettingsLoaded = true;

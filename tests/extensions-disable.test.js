@@ -370,6 +370,37 @@ describe('disabled extensions', () => {
         expect(saveSettingsDebounced).toHaveBeenCalledTimes(1);
     });
 
+    test('turns the Debugger on once for installs the old opt-in default switched off', async () => {
+        const { saveSettingsDebounced } = installExtensionModuleMocks();
+        installExtensionDiscovery([
+            { name: 'neconyan-debugger', type: 'core', manifest: {} },
+            { name: 'memory', type: 'system' },
+        ]);
+
+        const { extension_settings, findExtension, loadExtensionSettings } = await import('../public/scripts/extensions.js');
+        await loadExtensionSettings({
+            extension_settings: {
+                lockedExtensionsUnlockApplied: true,
+                bundledOptInDefaultsApplied: true,
+                bundledOptInProcessedExtensions: ['neconyan-debugger'],
+                disabledExtensions: ['memory', 'third-party/Neconyan-Debugger', 'neconyan-debugger'],
+            },
+        }, false, false);
+
+        expect(extension_settings.disabledExtensions).toEqual(['memory']);
+        expect(extension_settings.formerOptInEnabledExtensions).toEqual(['neconyan-debugger']);
+        expect(findExtension('neconyan-debugger')).toEqual({ name: 'neconyan-debugger', enabled: true });
+        expect(saveSettingsDebounced).toHaveBeenCalledTimes(1);
+
+        // Switching it off afterwards is a real choice and survives the next load.
+        extension_settings.disabledExtensions.push('neconyan-debugger');
+        saveSettingsDebounced.mockClear();
+        await loadExtensionSettings({ extension_settings: { ...extension_settings } }, false, false);
+
+        expect(extension_settings.disabledExtensions).toEqual(['memory', 'neconyan-debugger']);
+        expect(saveSettingsDebounced).not.toHaveBeenCalled();
+    });
+
     test('keeps an enabled third-party implementation active when a bundled copy is added', async () => {
         installExtensionModuleMocks();
         installExtensionDiscovery([
@@ -419,6 +450,7 @@ describe('disabled extensions', () => {
             extension_settings: {
                 lockedExtensionsUnlockApplied: true,
                 bundledOptInProcessedExtensions: [],
+                formerOptInEnabledExtensions: ['neconyan-debugger'],
                 disabledExtensions: ['third-party/Neconyan-Debugger'],
             },
         }, false, false);

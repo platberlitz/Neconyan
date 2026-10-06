@@ -9,7 +9,7 @@ Story Mode, Meower and the tools below ship with Neconyan. Open **Extensions →
 - **BotSearcher** helps find and import character cards from Characters. Its storage service is included. JannyAI browser support is optional and reports whether a local browser is available.
 - **Dialogue Colors**, **Prompt Tags**, **Macro Enhanced**, **Deep Swipe**, and **Regex Agent Themes** keep their controls in chat, Agents or Extensions, where their work happens.
 - **Preset Tools** and **Chat Completion Tabs** assist with model and prompt setup. **Prompting Lab**, **World Info Lab**, and **Lorebook Distiller** support character, prompt and lorebook work.
-- **Chat Archive** and **Card & Lorebook Time Machine** keep their chat, card and lorebook recovery controls. **Debugger** is an optional diagnostic tool.
+- **Chat Archive** and **Card & Lorebook Time Machine** keep their chat, card and lorebook recovery controls. **Debugger** is a diagnostic tool, on by default; it can be turned off in Extensions.
 - **Termeownal UI** is optional. Enable it in Manage extensions, then use its own settings switch. Its pixel kitty follows the selected palette, and its commands open Neconyan's Home and chat modes. New settings inherit Neconyan's current palette; saved palettes remain yours. Turning it off restores the ordinary workspace.
 
 Meower and Story Mode switch views without clearing the chat draft. Generated Neconyan cat artwork appears in their controls and empty states. Dark mode keeps its black sidebar, and light mode keeps light content surfaces.
