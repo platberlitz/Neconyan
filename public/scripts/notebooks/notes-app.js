@@ -14,7 +14,7 @@ import { formatDiff } from './line-diff.js';
 import { userPhrase } from './user-text.js';
 
 const PREFS_KEY = 'neconyan_notes_prefs';
-const NOTES_STYLESHEET = 'css/neconyan-notes.css?v=15';
+const NOTES_STYLESHEET = 'css/neconyan-notes.css?v=16';
 const TOOL_PAGES_STYLESHEET = 'css/neconyan-tool-pages.css?v=20261003-notes-controls4';
 const TOUR_PAGE_KEY = 'notes';
 const SAVE_DELAY_MS = 1200;
@@ -198,8 +198,9 @@ function buildRoot() {
     elements.fullscreen = button('Full screen', () => setWritingFullscreen(!state.writingFullscreen), { icon: 'fa-expand', className: 'notes-fullscreen', title: 'Write in full screen' });
     elements.fullscreen.setAttribute('aria-expanded', 'false');
     elements.discuss = button('Talk about this note', () => void discussNote(), { icon: 'fa-comments', className: 'notes-discuss' });
+    elements.trash = button('Delete', () => void app.dialogs.trashNote(app), { icon: 'fa-trash-can', className: 'notes-delete notes-danger', title: 'Move this note to Trash' });
     elements.writingActions = h('div', { class: 'notes-writing-actions' }, elements.viewTabs,
-        h('div', { class: 'notes-nav-actions' }, elements.discuss, elements.fullscreen));
+        h('div', { class: 'notes-nav-actions' }, elements.discuss, elements.fullscreen, elements.trash));
     elements.editorBody = h('div', { class: 'notes-editor-body' }, elements.source, elements.reader, elements.suggest);
     elements.empty = h('div', { class: 'notes-empty' });
     elements.editor = h('div', { class: 'notes-editor', hidden: true },

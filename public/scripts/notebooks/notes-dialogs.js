@@ -276,6 +276,27 @@ export async function uploadAttachment(app) {
 
 /* ---------- trash ---------- */
 
+export async function trashNote(app) {
+    const { state } = app;
+    const note = state.note;
+    if (!note) return;
+    const title = note.path.replace(/^.*\//, '').replace(/\.md$/i, '');
+    if (!(await confirm(userPhrase`Move '${title}' to Trash? You can restore it from Trash later.`, 'Move to Trash', 'Cancel'))) return;
+    if (state.note !== note) return;
+    if (!(await app.flushSave())) return app.toast('warning', 'Save the note first, then delete it.');
+    const result = await app.request('/notes/trash', { operationId: newOperationId('trash'), notebookId: state.notebookId, noteId: note.id });
+    if (app.failed(result, 'The note could not be moved to Trash.')) return;
+    state.back = state.back.filter(entry => entry.noteId !== note.id);
+    if (state.note === note) {
+        state.note = null;
+        app.writePrefs({ noteId: null });
+        app.renderEditor();
+    }
+    app.applyLayout();
+    await app.refreshTree();
+    app.toast('success', 'Moved to Trash. Open Trash in the notebook list to restore it.');
+}
+
 export async function trash(app) {
     const result = await app.request('/trash/list', { notebookId: app.state.notebookId });
     if (app.failed(result)) return;

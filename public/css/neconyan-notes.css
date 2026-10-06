@@ -648,7 +648,8 @@ body.neconyan.neconyan-notes-beside #sheld {
     min-height: 44px;
 }
 
-.notes-app .notes-discuss {
+.notes-app .notes-discuss,
+.notes-app .notes-delete {
     min-height: 44px;
 }
 

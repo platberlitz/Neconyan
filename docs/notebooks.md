@@ -148,6 +148,7 @@ Files can be up to 2 MiB, with 500 cards and 2000 connections. Oversized, malfor
 ## History, Trash and undo
 
 - **History** keeps earlier versions. Quick autosaves are grouped so the list stays readable. Restoring a version records a new change, so later work is never silently thrown away. If the note changed in the meantime, restore it as a copy instead.
+- **Delete** (beside **Full screen** above the note) moves the open note to Trash after asking once. Any unsaved typing is saved first, so the copy in Trash is complete.
 - **Trash** keeps deleted notes until you restore them or choose **Delete forever**. Deleting forever asks first.
 
 ## Saving from chat
