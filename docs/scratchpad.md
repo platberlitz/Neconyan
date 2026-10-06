@@ -11,7 +11,7 @@ All three assistants can do the same things in Scratchpad. They keep their own p
 - **Conversation**: press **Scratchpad** in the quick tools row.
 - **Notes**: open a note and press **Ask Scratchpad**. Choose the whole note or selected text, review what will be shared and press **Open Scratchpad**.
 
-On desktop Scratchpad opens beside the chat. Drag its left edge (or focus the edge and use the arrow keys) to change its width, and use **Full width** or **Beside chat** to switch layouts. On a phone it fills the screen; **Back to chat** returns to the conversation. Opening Notes closes Scratchpad, and opening Scratchpad closes Notes.
+On desktop Scratchpad opens beside the chat. Drag its left edge (or focus the edge and use the arrow keys) to change its width, and use **Full width** or **Beside chat** to switch layouts. On a phone it fills the screen; **Back to chat** returns to the conversation. Opening Notebooks closes Scratchpad, and opening Scratchpad closes Notebooks.
 
 Scratchpad follows the chat you have open. Switch chats and it shows that chat's sessions instead. Renaming a saved Roleplay chat keeps its sessions, context settings and replies already in progress. A different chat that reuses the old name gets its own Scratchpad.
 
@@ -56,7 +56,7 @@ Scratchpad rebuilds the story context from the open chat every time you send, so
 - **Lorebook entries**: entries from the lorebooks active in this chat are shared when they are always active, when one of their keywords appears in the last five shared messages, the recent Scratchpad conversation or what you are sending, or when you set them to **Always**. **Never** keeps an entry out. **Auto** goes back to the normal rules. Entries hidden from agents are never shared. At most 40 entries go in at once.
 - **Assistant connections**: choose a saved connection profile for Miso, Taro and Nori separately. Each profile includes its model and connection settings. **Same connection as the chat** uses whatever the chat uses. Switching assistants keeps each assistant's choice, and a new session inherits those choices. Scratchpad also remembers each assistant's last choice, so chats without a Scratchpad session start with it. With **Same connection as the chat**, regex scripts limited to particular characters are skipped, because Scratchpad does not speak as a character; global and preset scripts still apply. A model with tool calling is not needed.
 - **Longest reply (tokens)**: the reply length limit (16000 to start with). Existing sessions keep their saved limit.
-- **Saved notes**: **Add saved note** searches only notes shared with assistants through Notebook AI access. Choose the whole note or a heading section. Up to 12 notes or sections can be selected, with up to 24,000 characters per page. **Next page** and **Previous page** choose the shared page; other sections and pages stay out. **Open note** returns to Notes, **Remove** stops including it and **Stop sharing** revokes a temporary grant.
+- **Saved notes**: **Add saved note** searches only notes shared with assistants through Notebook AI access. Choose the whole note or a heading section. Up to 12 notes or sections can be selected, with up to 24,000 characters per page. **Next page** and **Previous page** choose the shared page; other sections and pages stay out. **Open note** returns to Notebooks, **Remove** stops including it and **Stop sharing** revokes a temporary grant.
 
 **Show preview** under **What Scratchpad will read** shows the exact context that goes with your next message and an estimate of its size in tokens.
 
@@ -77,7 +77,7 @@ Scratchpad can suggest:
 
 Press **Review** on a card to see what is there **Now** next to the **Proposed text**. You can edit the proposed text before pressing **Save change**. **Not now** closes the review without saving, and the card stays so you can come back to it. **Dismiss** marks a card you do not want; **Undo** brings it back.
 
-Notebook cards show the exact, read-only change and also appear in **Notes → Assistant changes** when the reply finishes. Save or decline from either place; Scratchpad reflects that decision when reopened. They always need review, even when Notebook's requested-edit saving is enabled. **Dismiss** permanently declines an already registered Notebook proposal. Stale note revisions, changed permissions and expired grants prevent saving. To adjust a Notebook proposal, ask for a new suggestion rather than editing the review.
+Notebook cards show the exact, read-only change and also appear in **Notebooks → Assistant changes** when the reply finishes. Save or decline from either place; Scratchpad reflects that decision when reopened. They always need review, even when Notebook's requested-edit saving is enabled. **Dismiss** permanently declines an already registered Notebook proposal. Stale note revisions, changed permissions and expired grants prevent saving. To adjust a Notebook proposal, ask for a new suggestion rather than editing the review.
 
 For new alternate greetings, the assistant only supplies the additions. **Review** shows **Existing greetings (kept)** separately from **New greetings to append**. Edit the new greetings and save; they go after the last existing alternate greeting, in order. The existing greetings and first message stay as they are.
 

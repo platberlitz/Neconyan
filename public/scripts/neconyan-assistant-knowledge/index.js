@@ -8,6 +8,6 @@ import notes from './notes.js';
 import scratchpad from './scratchpad.js';
 
 // Knowledge revisions are independent of the assistant cards and artwork.
-export const KNOWLEDGE_REVISION = 16;
+export const KNOWLEDGE_REVISION = 17;
 export const topics = Object.freeze([...core, ...appearance, ...modes, ...memory, ...tools, ...connections, ...notes, ...scratchpad]
     .map(topic => Object.freeze({ ...topic, verification: 'source' })));

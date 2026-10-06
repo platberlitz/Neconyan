@@ -1,10 +1,10 @@
-# Notes
+# Notebooks
 
-Notes is a notebook that lives inside Neconyan. Use it for ideas, drafts, world-building, references, session journals or anything else you want to keep. A note does not need a chat or a character.
+Notebooks keeps your ideas, drafts, world-building, references and session journals inside Neconyan. A note does not need a chat or a character. This workspace is separate from the chat's Author's Note and Companion notes.
 
-Open it from **Notes** in the workspace rail (the sidebar on desktop, the drawer on a phone). It works with no chat open and with no AI connection.
+Open it from **Notebooks** in the workspace rail (the sidebar on desktop, the drawer on a phone). It works with no chat open and with no AI connection.
 
-Notes stays highlighted while it is open, including beside the chat. **Back to chat** closes Notes and clears its highlight.
+Notebooks stays highlighted while it is open, including beside the chat. **Back to chat** closes it and clears its highlight. On desktop, **Beside chat** hides the introductory card so more room is available for the note; **Full width** brings it back.
 
 The first time Notes opens, Miso offers to show you around. **Show me around** starts her tour; **Not now** hides the offer for that account until you restore tour invitations in Settings. You can start the tour later from the **Tour** button under the Notes title. The tour only switches between the Notebooks, Note and Details panes and the detail tabs; it never creates, saves, deletes or imports anything. Steps for parts of the page that are not on screen yet (for example the editor when no note is open) are skipped.
 
@@ -14,8 +14,16 @@ Background updates do not switch the notebook you chose or replace its list with
 
 - **Notebook**: a collection of notes and files. You start with one called 'Notebook' that has an **Inbox** folder. Make more with **New notebook**.
 - **Note**: an ordinary Markdown file (plain text with light formatting such as `# Heading` and `**bold**`). Notes are saved on the server under your account.
-- **New note** asks for a name and offers a few starting templates: Blank note, Character draft, Location, Scene plan and Session journal. Templates are plain text; nothing in them runs.
+- **New note** asks for a name and offers starting templates. The selected choice stays highlighted. Templates are plain text; nothing in them runs.
 - **Quick note** drops a thought straight into the Inbox without asking for a name, folder or type.
+
+### Your templates
+
+In **New note**, press **Manage templates** to edit a template's name, suggested note name and Markdown contents. **Add template** makes another choice; **Remove template** removes the selected choice. **Save templates** keeps these choices for your account across notebooks and devices. **Cancel** discards the changes in this dialog.
+
+**Blank note** is always available and cannot be changed or removed. **Restore default templates** asks before replacing your choices with Character draft, Location, Scene plan and Session journal. Changing or removing a template never changes notes already made from it.
+
+There can be up to 40 editable templates, each with at most 64 KiB of text, and 512 KiB altogether. Templates are copied as written; they do not run scripts, substitute macros, publish lore or change AI access.
 
 ### Save status
 
@@ -41,12 +49,18 @@ On reopening a note, a device draft from the same saved version is restored. If 
 
 - **Write** shows the Markdown source with a toolbar for headings, bold, italic, strikethrough, lists, tasks, quotes, links, images or files, code, tables and dividers.
 - **Read** shows the formatted note. Links work here.
-- **Outline** lists the headings so you can jump around a long note.
+- **Outline** groups headings, subheadings and deeper headings so you can jump around a long note. Arrow buttons hide or show a branch without changing the note.
 - Ctrl+S (Cmd+S on a Mac) saves immediately.
 
-**Full screen** gives the writing area the whole window, hiding the sidebar and Notes navigation. Your note name, save status and writing controls stay available. **Exit full screen** or Escape returns to your previous layout without changing your text. Saving continues normally.
+**Full screen** gives the note the whole window, hiding the sidebar and notebook navigation. Switching between **Write**, **Read** and **Outline** keeps full screen on, your draft and the editor's undo history. **Exit full screen** or Escape returns to your previous layout without changing your text. Saving continues normally.
+
+Bulleted, numbered and task lists continue when you press Enter. Numbers increase, and a new task starts unchecked. Press Enter on an empty item to finish the list. Selecting several lines and pressing **Numbered list** numbers them in order rather than giving every line the same number.
+
+Tab indents a list item by four spaces; Shift+Tab removes one indentation level. **Indent** and **Outdent** on the toolbar also work on selected lines. Frontmatter and fenced code examples are left alone by list continuation and formatting. These edits use the editor's normal undo and redo controls.
 
 In **Write**, **Sections** lists headings you can fold or show. **Fold all** hides the top-level sections; **Show all** opens everything. In **Read**, use **Fold section** or **Show section** beside a heading. These buttons also work with the keyboard.
+
+**Show or hide section controls** on the writing toolbar hides the Sections, Fold all and Show all controls when you do not need them. The choice is remembered for your account; it does not fold anything or change the Markdown.
 
 Folding only hides text on screen. It does not change or save the Markdown, move your selection or add an undo step. Choices are remembered for each note, separately for each notebook and account. If your insertion point is inside a folded section, returning to the editor opens that section before you type.
 
@@ -57,6 +71,10 @@ Neconyan keeps your Markdown exactly as written. Opening and saving a note witho
 ### Properties
 
 The **Properties** tab edits optional fields at the top of the note: tags, aliases (other names the note answers to), type and your own simple fields. You never have to fill them in. Fields that are too complex for the form stay in the source and are left untouched.
+
+Each custom row puts **Field** beside **Value**. **Add field** gives you another row immediately, without first saving the previous one. Field names suggest keys already used in this notebook. You can rename a field or remove its row, then press **Save properties** once for the changes you want to keep. The form is disabled while that save is in progress.
+
+Existing numbers, true/false values and lists keep their types. Lists use a JSON array, such as `["one", "two"]`. Only changed fields are written; untouched fields, nested values and comments stay as they were. The separate **Property table** is unchanged.
 
 ### Talk about this note
 
@@ -91,6 +109,7 @@ Type `[[` to pick another note, or use **Link to note** on the toolbar (handy on
 - If two notes share a name, Neconyan asks which one you meant instead of guessing.
 - A link to a note that does not exist stays marked as missing. You can create it on purpose from the **Links** tab or by clicking it.
 - The **Links** tab shows where this note links to and which notes link back to it, with the sentence around each link.
+- Its **Outline** also nests headings and has collapsible branches. It follows the text you are currently editing, including unsaved headings. Choosing a heading returns to that place in **Write**.
 - Renaming or moving a note updates links that clearly point to it. Examples inside code blocks are never changed.
 
 ### Embedded notes
@@ -228,7 +247,9 @@ Sections already published to lore are left out here, so the same text does not 
 
 ## Import and export
 
-- **Export** downloads the notebook as a ZIP of ordinary Markdown files, folders and attachments. You can open the unzipped folder as a vault in Obsidian or read it in any text editor.
+- **Export** offers **Whole notebook**, **A folder** or **Choose notes**. A folder can include its subfolders, or just notes directly inside it. Choose notes lets you tick individual notes; **Load more notes** shows the next page in a large notebook, and the count says how many are loaded and selected.
+- A partial export includes only the chosen Markdown notes and their directly linked files. Links to other notes do not pull those notes into the ZIP. A whole-notebook export keeps the existing full-content behaviour, including supported attachments and canvases. History, AI permissions and lore bindings are never exported.
+- The current note must save successfully before exporting. The ZIP uses ordinary Markdown and folders, so you can open it in Obsidian or a text editor.
 - **Import** accepts a ZIP or a single `.md` file. You see a summary first: notes, files, anything excluded (for example `.obsidian` settings folders or unsupported file types) and anything renamed to avoid a clash. Importing creates a new, separate notebook.
 - Imported notebooks start with AI access off and no lore links, whatever the files say. Turn access on yourself in **AI access** if you want it.
 - **Compare with this notebook** lets you bring changes from an edited export back into an existing notebook, note by note.

@@ -1,4 +1,4 @@
-# Notes: technical reference
+# Notebooks: technical reference
 
 This is the engineering companion to `docs/notebooks.md`. It describes how Notes stores data, decides permissions, recovers from failures and connects to World Info, the assistant and roleplay prompts.
 
@@ -8,7 +8,9 @@ This is the engineering companion to `docs/notebooks.md`. It describes how Notes
 | --- | --- | --- |
 | Paths, ids, errors | `src/notebooks/paths.js` | |
 | Markdown parsing (frontmatter, headings, sections, links, chunks) | `src/notebooks/markdown.js` | `render.js`, shared presentation boundaries in `folding.js` |
-| Source editor and heading folds | | self-hosted `public/notes-editor.js`, `folding.js`, Read section wrappers in `render.js` |
+| Source editor, lists and heading folds | | self-hosted `public/notes-editor.js`, pure changes in `list-editing.js`, `folding.js`, Read section wrappers in `render.js` |
+| Editable templates | | account-scoped `template-settings.js`, bounded plain text in `templates.js`, review in `template-manager.js` |
+| Nested outlines and property rows | owner key catalogue in `property-table.js` | `outline.js`, `property-fields.js`, guarded forms in `notes-panels.js` |
 | Index, link resolution, backlinks, search | `src/notebooks/note-index.js` | |
 | Read-only embedded-note previews | `src/notebooks/embeds.js`, permission-filtered resolver in `note-index.js` | `render.js`, guarded Read requests in `notes-app.js` |
 | Notebook graph | `src/notebooks/graph.js`, permission-filtered resolver in `note-index.js` | separately loaded `graph.js`, notebook workspace in `notes-app.js` |
@@ -28,6 +30,18 @@ This is the engineering companion to `docs/notebooks.md`. It describes how Notes
 | Workspace UI | | `notes-app.js`, `notes-panels.js`, `notes-dialogs.js`, `dom.js`, `templates.js`, `line-diff.js`, `public/css/neconyan-notes.css` |
 
 All Notes browser code and its stylesheet are loaded on demand when Notes opens, so they do not count towards the blocking frontend budgets.
+
+## Writing controls and templates
+
+The visible workspace name is Notebooks; existing route identifiers, preferences and API paths remain unchanged. Full-screen state belongs to the note workspace, not the Write tab. Write/Read/Outline switches retain the source-editor document and undo history. The introductory card is hidden in the actual desktop beside-chat layout, without changing its stored collapse preference.
+
+List continuation, numbering and indentation share DOM-free change calculations. Native CodeMirror keymaps handle Enter, Tab and Shift+Tab, retaining its keyboard focus escape. Mobile `beforeinput` paragraph events use the same continuation command. Composition bypasses these changes, and frontmatter and fenced code remain literal. Toolbar changes dispatch through the existing editor with explicit history boundaries. The compiled editor's input signature includes the list helper.
+
+Outline nesting uses source heading levels and exact offsets. Each branch has native buttons with `aria-expanded` and a controlled child list; collapse state is separate from source folds. The Links outline refreshes from the current local draft, without replacing other detail controls or making a server request for each keystroke.
+
+Template settings are private account preferences, not notebook Markdown or executable templates. The versioned collection is validated on both read and save: up to forty non-blank templates, 64 KiB per body and 512 KiB total. Blank is an immutable fallback. A working dialog copy is saved only after explicit confirmation and an account check; malformed stored data is not silently replaced. Removing a template cannot mutate existing notes.
+
+Property rows retain a local draft for the current account, notebook and note. The owner-only `/properties/keys` catalogue returns bounded names without values. Changes reuse the existing typed property parser and `/notes/update` path; only changed fields are sent, and changed-field comparisons refuse stale values while leaving unrelated updates intact. Reserved names and duplicate rows are rejected. The native fieldset is disabled across save waits, including replacement forms rendered while saving, so new unsaved rows cannot be cleared by an older accepted save. The property table's layout and write path are unchanged.
 
 ## Scratchpad
 
@@ -215,7 +229,7 @@ Mutating tools are listed explicitly (`assistantToolMutates` in `src/generation/
 
 Paths:
 
-- Browser chats: the tool posts `{callId, tool, args}` to `/api/notebooks/assistant/tool`. The server stores the proposal in `_proposals.json` (id derived from the call id and arguments, so retries map to the same proposal) and answers `needs_approval` with 'Not saved yet'. The page shows a review popup; the decision goes to `/assistant/decide` with the proposal hash. Proposals can also be reviewed later under Notes > Assistant changes.
+- Browser chats: the tool posts `{callId, tool, args}` to `/api/notebooks/assistant/tool`. The server stores the proposal in `_proposals.json` (id derived from the call id and arguments, so retries map to the same proposal) and answers `needs_approval` with 'Not saved yet'. The page shows a review popup; the decision goes to `/assistant/decide` with the proposal hash. Proposals can also be reviewed later under Notebooks > Assistant changes.
 - Native (server-run) jobs: `captureAssistantToolSourceLocked` calls `captureNoteToolLocked`; the job stores a slimmed proposal plus a capped diff, asks for approval through `requireJobApproval` (kind `neconyan-note-proposal`), and applies it inside the job receipt with operation id `native:<hash of job and call>`. A closed tab leaves the job waiting; a restart finishes the same operation or reports a conflict.
 - Applying a proposal rechecks the policy revision, the access level or grant, and the note revision. Any mismatch returns a structured `conflict`, `denied` or `not_found` result with 'Nothing was saved'.
 
@@ -247,6 +261,7 @@ Allowed types are images (PNG, JPEG, GIF, WebP, AVIF, BMP, checked by magic byte
 ## Import and export
 
 - Export is a ZIP of the content folder only (notes and known attachment types). No policies, history, bindings, provenance or chat locators are included. It opens as an Obsidian vault.
+- An optional validated selection chooses all content, an existing folder with explicit descendant handling, or a non-empty set of owned note ids. Invalid, foreign or empty selections never fall back to the whole notebook. Partial exports resolve only direct attachment links using the existing note-link resolver; linked notes, unrelated files and unrelated folder names remain out. Note and folder paths are taken from the saved index, not supplied archive paths. Notebook preparation and ZIP construction remain outside the short account lease, and existing byte limits apply. The owner dialog pages note choices and flushes the current draft before downloading.
 - Import parses the ZIP directory itself and rejects the whole archive for traversal, absolute or drive paths, backslashes, NUL bytes, symlinks, encryption, ZIP64, duplicate names, more than 5000 entries, more than 256 MiB declared, suspicious compression ratios or entries that inflate beyond their declared size. Hidden folders such as `.obsidian`, nested archives, unknown types and non-UTF-8 notes are excluded and listed. Name collisions are renamed and listed.
 - Staged imports live in account-private `notebook-control/_imports/<stageId>/`: `stage.json` records the preview and comparison, and bounded `chunk-N.bin` files keep the validated bytes. These paths are never statically served. Unused previews expire after 30 minutes; started commits do not expire. `/import/list` and `/import/read` let the owner continue after a browser reload or server restart. At most three stages are retained, with completed or unused stages removed first.
 - `commit.json` keeps the immutable choices and note identities before any notebook content is written. `commit-progress.json` advances only after the corresponding content, history and manifest files and their folders have been flushed. One account operation id covers the import; batches contain at most eight files and release the account lock between batches. On recovery, existing imported history is not repeated, folder durability is rechecked, and a later owner edit is not overwritten. Pending identities are reserved so an intervening scan cannot give partially imported files different ids.
@@ -293,7 +308,7 @@ Measured on this Oracle ARM VM with a disposable account:
 
 | Spec section | Where | Tests |
 | --- | --- | --- |
-| 4-6 Notes workspace, editor, statuses, templates | `notes-app.js`, `notes-dialogs.js`, `templates.js`, `render.js`, `folding.js`, `public/notes-editor.js`, `drafts.js`, shared rail selection in `neconyan-tabs.js` | `neconyan-rail.test.js`, `notebooks-workspace-state.test.js`, `notebooks-recovery.test.js`, `notebooks-folding.node.js`, `notebooks-folding.test.js`; native E2E at 1280x900 and 393x852: workspace routes, delayed replies, every recovery choice, Source/Read folds, nested keyboard controls, exact CRLF bytes, unchanged selection, editing a folded caret, undo, preference isolation and reload, Chromium composition |
+| 4-6 Notebooks workspace, editor, statuses, templates | `notes-app.js`, `notes-dialogs.js`, `templates.js`, `render.js`, `folding.js`, `public/notes-editor.js`, `drafts.js`, shared rail selection in `neconyan-tabs.js` | `neconyan-rail.test.js`, `notebooks-workspace-state.test.js`, `notebooks-recovery.test.js`, `notebooks-folding.node.js`, `notebooks-folding.test.js`; native E2E at 1280x900 and 393x852: workspace routes, delayed replies, every recovery choice, Source/Read folds, nested keyboard controls, exact CRLF bytes, unchanged selection, editing a folded caret, undo, preference isolation and reload, Chromium composition |
 | 7 Links, backlinks, search, rename, rendered embeds | `markdown.js`, `note-index.js`, `store.js`, `embeds.js`, `render.js` | `notebooks-store.node.js`, `notebooks-embeds.node.js`, `notebooks-embeds.test.js`; `notebooks-embeds.e2e.js` at both viewports: whole/heading/block previews, nested folder origins, native Open/Fold, exact saved bytes, sanitisation before insertion, root and child external-image requests only after an explicit click, generic limits and ignored late replies |
 | 7 Notebook graph | `src/notebooks/graph.js`, permission-aware resolver, lazy browser `graph.js`, workspace guards in `notes-app.js` | `notebooks-graph.node.js`, `notebooks-graph.test.js`, `notebooks-endpoint.node.js`; `notebooks-graph.e2e.js` at both viewports: lazy load, folder/tag filters, limits, readable small diagrams, keyboard/touch list, unchanged bytes/history/policies/editor document, stable filters and ignored late results |
 | Property table | `src/notebooks/property-table.js`, normal property operations, lazy browser `property-table.js`, `property-values.js`, `notes-dialogs.js`, mobile pan policy | `notebooks-properties.node.js`, `notebooks-property-table.test.js`, `notebooks-endpoint.node.js`, `mobile-shell-lifecycle-wiring.test.js`; `notebooks-property-table.e2e.js` at both viewports: saved filters, numeric sorting, bounded server pages, stable column picker, typed edits, invalid/stale value retention, loaded revision, preserved comments/nesting/CRLF body, source-only cells, real horizontal and vertical touch scrolling, cancelled/detached gesture protection, 44 px controls, ignored late replies and Details outline selection |
