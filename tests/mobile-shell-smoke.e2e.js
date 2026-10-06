@@ -330,18 +330,62 @@ test.describe('mobile shell smoke at iPhone 390x844', () => {
         await expectNoDocumentOverflow(page);
     });
 
+    test('closing the menu over an open page returns to that page', async ({ page }) => {
+        const hamburger = page.locator('#sb-hamburger');
+
+        await hamburger.click();
+        await expect.poll(() => getOverlayStateSnapshot(page)).toMatchObject({ navOpen: true });
+        await page.locator('#neconyan-workspace-rail [data-neconyan-route="server"]').click();
+        await expect.poll(() => getOverlayStateSnapshot(page)).toMatchObject({
+            navOpen: false,
+            rightShellOpen: true,
+        });
+        await waitForNavOpenGrace(page);
+
+        // The drawer has to sit above the open page, or its rows would be covered.
+        await hamburger.click();
+        await expect.poll(() => getOverlayStateSnapshot(page)).toMatchObject({
+            navOpen: true,
+            rightShellOpen: true,
+        });
+        await expect.poll(() => page.evaluate(() => {
+            const row = document.querySelector('#neconyan-workspace-rail [data-neconyan-route="server"]');
+            const rect = row.getBoundingClientRect();
+            const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+            return row.contains(hit);
+        })).toBe(true);
+        await waitForNavOpenGrace(page);
+
+        await hamburger.click();
+        await expect.poll(() => getOverlayStateSnapshot(page)).toMatchObject({
+            navOpen: false,
+            rightShellOpen: true,
+        });
+        await waitForNavOpenGrace(page);
+
+        // Tapping the scrim beside the drawer closes only the menu.
+        await hamburger.click();
+        await expect.poll(() => getOverlayStateSnapshot(page)).toMatchObject({ navOpen: true });
+        await waitForNavOpenGrace(page);
+        await page.touchscreen.tap(380, 300);
+        await expect.poll(() => getOverlayStateSnapshot(page)).toMatchObject({
+            navOpen: false,
+            rightShellOpen: true,
+        });
+    });
+
     test('opening each overlay closes competing mobile surfaces', async ({ page }, testInfo) => {
         await openLeftShell(page);
 
         await expect.poll(() => getOverlayStateSnapshot(page)).toMatchObject({ leftShellOpen: true });
 
-        // toggleMobileNav closes shells, the character panel, and chat tools.
+        // The menu drawer slides over the open page and keeps it open underneath.
         await clickHamburgerProgrammatically(page);
 
         await expect.poll(() => getOverlayStateSnapshot(page)).toEqual({
             navOpen: true,
             chatToolsOpen: false,
-            leftShellOpen: false,
+            leftShellOpen: true,
             rightShellOpen: false,
             characterPanelOpen: false,
         });
@@ -863,7 +907,7 @@ test.describe('mobile shell smoke at tablet 768x1024', () => {
 
         await expect.poll(() => getOverlayStateSnapshot(page)).toMatchObject({
             navOpen: true,
-            leftShellOpen: false,
+            leftShellOpen: true,
         });
 
         await expectNoDocumentOverflow(page);

@@ -904,8 +904,18 @@
     }
 }
 
+/* The menu drawer keeps the open page underneath, so it and its scrim sit above
+   #top-settings-holder. neconyan.css loads later, hence the extra html selector. */
+html body.neconyan #neconyan-workspace-rail { z-index: calc(var(--sb-z-shell-panel) + 20); }
+html body.neconyan .neconyan-rail-drawer-scrim { z-index: calc(var(--sb-z-shell-panel) + 10); }
+
 @supports (-webkit-touch-callout: none) {
     @media screen and (max-width: 768px) {
+        /* iOS lifts #top-settings-holder to the popout layer, so the menu drawer
+           and its scrim follow it there. */
+        html body.neconyan #neconyan-workspace-rail { z-index: calc(var(--sb-z-popout) + 20); }
+        html body.neconyan .neconyan-rail-drawer-scrim { z-index: calc(var(--sb-z-popout) + 10); }
+
         /* Neconyan: iOS 17 WebKit can misresolve dvh for the main shell. */
         body:not(.movingUI) #sheld {
             /* Neconyan: add visual-viewport top so that when iOS Safari shifts the

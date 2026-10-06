@@ -19676,6 +19676,9 @@ jQuery(async function () {
         const forbiddenTargets = [
             // Neconyan: resizing the sidebar must keep the current workspace open.
             '#neconyan-sidebar-toggle',
+            // The phone menu drawer opens over the current workspace; its routes decide what replaces it.
+            'body.neconyan-rail-drawer-open #neconyan-workspace-rail',
+            '#neconyan-rail-drawer-scrim',
             '#avatar-and-name-block',
             '#shadow_popup',
             '.popup',
