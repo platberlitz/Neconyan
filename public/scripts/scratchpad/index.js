@@ -79,6 +79,7 @@ const app = {
     layout: 'beside',
     width: DEFAULT_WIDTH,
     assistant: 'miso',
+    connections: {},
     tab: 'chat',
     overviewCollapsed: false,
     source: null,
@@ -109,6 +110,13 @@ function readPrefs() {
         if (Number.isFinite(saved.width)) app.width = saved.width;
         if (ASSISTANTS.some(item => item.id === saved.assistant)) app.assistant = saved.assistant;
         if (typeof saved.collapsed === 'boolean') app.overviewCollapsed = saved.collapsed;
+        for (const { id } of ASSISTANTS) {
+            const connection = saved.connections?.[id];
+            if (connection?.kind === 'current') app.connections[id] = { kind: 'current' };
+            if (connection?.kind === 'profile' && typeof connection.profileId === 'string' && connection.profileId) {
+                app.connections[id] = { kind: 'profile', profileId: connection.profileId };
+            }
+        }
     } catch {
         /* Defaults are fine when the saved preferences cannot be read. */
     }
@@ -120,7 +128,21 @@ function writePrefs() {
         width: app.width,
         assistant: app.assistant,
         collapsed: app.overviewCollapsed,
+        connections: app.connections,
     }));
+}
+
+/** Each assistant's last connection choice, so chats without a Scratchpad session start with it. */
+function rememberedConnections() {
+    const profiles = new Set(connectionProfiles().map(item => item.id));
+    return Object.fromEntries(Object.entries(app.connections)
+        .filter(([, connection]) => connection.kind === 'current' || profiles.has(connection.profileId)));
+}
+
+function sessionInput(extra = {}) {
+    const input = { assistant: app.assistant, gender: getAssistantGender(app.assistant), ...extra };
+    if (!activeSession()) input.settings = { assistantConnections: rememberedConnections() };
+    return input;
 }
 
 function assistantInfo(id) {
@@ -134,7 +156,7 @@ function activeSession() {
 }
 
 function currentSettings() {
-    return activeSession()?.settings ?? structuredClone(DEFAULT_SETTINGS);
+    return activeSession()?.settings ?? { ...structuredClone(DEFAULT_SETTINGS), assistantConnections: rememberedConnections() };
 }
 
 function assistantConnection(settings, assistant) {
@@ -439,9 +461,8 @@ function change(operation, fallback, source = app.source) {
 }
 
 async function ensureSession(source) {
-    const result = await change(wire => activeSession() ? { bucket: app.bucket } : api.createSession(wire, {
-        assistant: app.assistant, gender: getAssistantGender(app.assistant),
-    }), t`Scratchpad could not start a session.`, source);
+    const result = await change(wire => activeSession() ? { bucket: app.bucket } : api.createSession(wire, sessionInput()),
+        t`Scratchpad could not start a session.`, source);
     if (!result) return null;
     requireScope(source);
     return activeSession();
@@ -455,16 +476,22 @@ async function updateSettings(patch, { rerenderContext = false } = {}) {
     const source = app.source;
     const sessionId = activeSession()?.id;
     await change(async wire => {
+        /* A new session is shown only once the setting is saved, so the panel never redraws from its defaults. */
+        let bucket = app.bucket;
         if (!activeSession()) {
-            const result = await api.createSession(wire, { assistant: app.assistant, gender: getAssistantGender(app.assistant) });
+            bucket = (await api.createSession(wire, sessionInput())).bucket;
             requireScope(source);
-            applyBucket(result.bucket);
         }
-        const session = app.bucket.sessions.find(item => item.id === (sessionId || activeSession()?.id));
+        const session = bucket.sessions.find(item => item.id === (sessionId || bucket.activeSessionId));
         if (!session) throw new Error(t`This Scratchpad session is no longer available.`);
         const latest = session.settings;
         const settings = typeof patch === 'function' ? patch(latest) : patch;
-        return api.updateSession(wire, session.id, { settings });
+        try {
+            return await api.updateSession(wire, session.id, { settings });
+        } catch (error) {
+            if (bucket !== app.bucket) applyBucket(bucket);
+            throw error;
+        }
     }, t`Scratchpad could not save that setting.`, source);
     if (rerenderContext && source?.key === app.source?.key) renderContext();
 }
@@ -1109,6 +1136,8 @@ function renderContext({ force = true } = {}) {
             class: 'text_pole', id,
             onchange: event => {
                 const profileId = event.currentTarget.value;
+                app.connections[assistant.id] = profileId ? { kind: 'profile', profileId } : { kind: 'current' };
+                writePrefs();
                 void updateSettings({ assistantConnections: { [assistant.id]: profileId ? { kind: 'profile', profileId } : { kind: 'current' } } });
             },
         }, h('option', { value: '', text: t`Same connection as the chat` }),
@@ -1308,11 +1337,7 @@ function formatDate(value) {
 }
 
 async function newSession(temporary) {
-    await change(source => api.createSession(source, {
-        assistant: app.assistant,
-        gender: getAssistantGender(app.assistant),
-        temporary,
-    }), t`Scratchpad could not start a session.`);
+    await change(source => api.createSession(source, sessionInput({ temporary })), t`Scratchpad could not start a session.`);
     selectTab('chat');
 }
 

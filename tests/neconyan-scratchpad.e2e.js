@@ -64,6 +64,41 @@ test('assistant connection choices survive reopening and route each speaker to i
     }
 });
 
+test('the first connection choice stays selected and carries over to chats without a session', async ({ app }) => {
+    test.setTimeout(150000);
+    const account = await app.account({ configureSettings: saved => {
+        const profiles = saved.extension_settings.connectionManager.profiles;
+        profiles.push({ ...profiles[0], id: 'remembered', name: 'Remembered', model: 'model-remembered' });
+    } });
+    const page = await account.open();
+    const source = await openScratchpad(page);
+    expect((await account.post('/api/scratchpad/bucket', { source })).bucket.sessions).toHaveLength(0);
+    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+    await page.locator('#scratchpad-connection-taro').selectOption('remembered');
+    await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0]?.settings.assistantConnections?.taro)
+        .toEqual({ kind: 'profile', profileId: 'remembered' });
+    await expect(page.locator('#scratchpad-connection-taro')).toHaveValue('remembered');
+
+    const other = await createCharacter(account, 'Second Chat');
+    await selectConversation(page, other);
+    const otherSource = await page.evaluate(async () => (await import('/scripts/scratchpad/context.js')).wireSource((await import('/scripts/scratchpad/context.js')).currentSource()));
+    expect(otherSource.key).not.toBe(source.key);
+    await page.getByRole('tab', { name: 'Context', exact: true }).click();
+    await expect(page.locator('#scratchpad-connection-taro')).toHaveValue('remembered');
+    await expect(page.locator('#scratchpad-connection-miso')).toHaveValue('');
+    await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+    await page.locator('.scratchpad-header .scratchpad-new-session').click();
+    await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source: otherSource })).bucket.sessions[0]?.settings.assistantConnections?.taro)
+        .toEqual({ kind: 'profile', profileId: 'remembered' });
+
+    await page.close();
+    const reopened = await account.open();
+    const third = await createCharacter(account, 'Third Chat');
+    await selectConversation(reopened, third);
+    await reopened.getByRole('tab', { name: 'Context', exact: true }).click();
+    await expect(reopened.locator('#scratchpad-connection-taro')).toHaveValue('remembered');
+});
+
 for (const phone of [false, true]) {
     test(`${phone ? 'iPhone stand-in' : 'desktop'} swipe picks share only the selected versions without switching the story`, async ({ app }) => {
         test.setTimeout(120000);
