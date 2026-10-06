@@ -683,14 +683,17 @@ async function getRepositoryStatus({ refresh = false } = {}) {
     return status;
 }
 
-router.post('/status', requireAdminMiddleware, async (_request, response) => {
+router.post('/status', requireAdminMiddleware, async (request, response) => {
     try {
         const version = await getVersion();
         const repository = await getRepositoryStatus();
         const release = repository.isRepo ? null : await getLatestZipReleaseStatus(version.pkgVersion);
+        const userRoot = request.user?.directories?.root;
         response.json({
             runtime: formatRuntimeLabel(),
             configPath: getConfigFilePath(),
+            installPath: path.resolve(serverDirectory),
+            dataPath: userRoot ? path.resolve(userRoot) : '',
             version,
             repository,
             release,

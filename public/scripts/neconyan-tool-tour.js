@@ -913,7 +913,7 @@ const TOOL_PAGES = Object.freeze({
                 tab: '#persona_workspace_tab_browse',
                 optional: true,
                 title: 'Your personas',
-                body: 'Click a persona to use it. **Create** makes a new one, **Import persona** loads one from a file, and the search box finds one by name.',
+                body: 'Click a persona to use it. **New** makes a new one, **Import** loads one from a file, and the search box finds one by name.',
                 hint: 'Ooh, so many of you to choose from!',
             },
             {
@@ -931,7 +931,7 @@ const TOOL_PAGES = Object.freeze({
                 tab: '#persona_workspace_tab_edit',
                 optional: true,
                 title: 'Linked lorebook',
-                body: 'A **lorebook** is a set of notes the model reads when certain words come up. Linking one here means it follows this persona into every chat.',
+                body: 'A **lorebook** is a set of notes the model reads when certain words come up. **Choose** one here and it follows this persona into every chat.',
                 hint: 'Perfect for your backstory. Everyone deserves a backstory.',
             },
             {
@@ -940,7 +940,7 @@ const TOOL_PAGES = Object.freeze({
                 tab: '#persona_workspace_tab_edit',
                 optional: true,
                 title: 'Persona Description',
-                body: 'Write who you are in a few lines: looks, personality, anything the model should know. Keep it short; the model reads it before every reply.\n**Scenario Notes**, just below, add extra details for one chat only.',
+                body: 'Write who you are in a few lines: looks, personality, anything the model should know. Keep it short; the model reads it before every reply.\n**Scenario Notes**, further down, add extra details for one chat only.',
                 open: ['#persona_appendices_heading'],
                 hint: 'A few good lines beat a whole essay. Trust me!',
             },
@@ -958,8 +958,8 @@ const TOOL_PAGES = Object.freeze({
                 targets: ['#persona_editor_tab_connections'],
                 tab: '#persona_workspace_tab_edit',
                 optional: true,
-                title: 'Use and More',
-                body: '**Use** locks this persona to the current chat, to a character, or makes it your default. **More** has duplicate, delete, backup and a few global settings.',
+                title: 'Locks and More',
+                body: '**Locks** ties this persona to the current chat, to a character, or makes it your default. **More** has duplicate, delete, backup and a few settings for all personas.',
                 hint: 'Lock it to your favourite character and it will always be ready!',
             },
             {

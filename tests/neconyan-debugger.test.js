@@ -197,12 +197,12 @@ describe('Neconyan Debugger', () => {
         expect(enabled).toEqual(['third-party/Enabled-Extension']);
     });
 
-    test('is a default-off lifecycle extension with the safe Eruda tool profile', async () => {
+    test('is a default-on lifecycle extension with the safe Eruda tool profile', async () => {
         const manifest = JSON.parse(await readFile(new URL('manifest.json', extensionRoot), 'utf8'));
         const source = await readFile(new URL('src/ui.js', extensionRoot), 'utf8');
 
+        expect(manifest).not.toHaveProperty('bundled_opt_in');
         expect(manifest).toMatchObject({
-            bundled_opt_in: true,
             requires: [],
             optional: [],
             hooks: { activate: 'init', enable: 'init', disable: 'deactivate' },

@@ -64,9 +64,11 @@ function isStylesheetLoaded(link) {
  * @param {object} [options] Optional configuration
  * @param {string} [options.id] Link element id
  * @param {string} [options.media='all'] Final media query
+ * @param {'auto'|'high'} [options.priority='auto'] 'high' skips the low-priority media swap
+ * for sheets a panel is waiting on; a script-inserted link still never blocks rendering.
  * @returns {Promise<HTMLLinkElement>}
  */
-export function loadStylesheetAsync(href, { id = '', media = 'all' } = {}) {
+export function loadStylesheetAsync(href, { id = '', media = 'all', priority = 'auto' } = {}) {
     const absoluteHref = getAbsoluteAssetUrl(href);
     const existing = findStylesheetLink(absoluteHref, id);
 
@@ -99,8 +101,13 @@ export function loadStylesheetAsync(href, { id = '', media = 'all' } = {}) {
 
         stylesheet.rel = 'stylesheet';
         stylesheet.type = 'text/css';
+        if (priority === 'high') {
+            stylesheet.fetchPriority = 'high';
+            stylesheet.media = media;
+        } else {
+            stylesheet.media = 'print';
+        }
         stylesheet.href = href;
-        stylesheet.media = 'print';
         stylesheet.onload = finish;
         stylesheet.onerror = reject;
 

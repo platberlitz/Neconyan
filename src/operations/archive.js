@@ -12,6 +12,13 @@ import { publishAccountFile } from './file-publication.js';
 const FILE_LIMIT = 32 * 1024 * 1024;
 const ORGANIZATION_LIMIT = 8 * 1024 * 1024;
 const ORGANIZATION_FILE = '_sbca_organization.json';
+// The archive list shows 180 characters, and every row is held in both the saved plan and the result.
+const PREVIEW_LENGTH = 180;
+
+function previewText(value) {
+    const preview = value.trim().replace(/\s+/g, ' ');
+    return preview.length > PREVIEW_LENGTH ? `${preview.slice(0, PREVIEW_LENGTH - 3)}...` : preview;
+}
 
 function directoryEntries(directory) {
     readRoleplayFile(path.join(directory, '.archive-path-check'), 1, { allowMissingParent: true });
@@ -29,8 +36,13 @@ function metadata(bytes, mtime) {
     try { last = JSON.parse(lines.at(-1) || 'null'); } catch { /* Metadata is still useful for a damaged chat. */ }
     const header = first && typeof first === 'object' && !Array.isArray(first) && !Object.hasOwn(first, 'mes');
     return { file_size: formatBytes(bytes.length), chat_items: Math.max(0, lines.length - Number(Boolean(header))),
-        last_mes: last?.send_date || mtime, mes: typeof last?.mes === 'string' ? last.mes.slice(0, 512) : '[The chat is empty]',
-        ...(header && first.chat_metadata && typeof first.chat_metadata === 'object' ? { chat_metadata: first.chat_metadata } : {}) };
+        last_mes: last?.send_date || mtime, mes: typeof last?.mes === 'string' ? previewText(last.mes) : '[The chat is empty]' };
+}
+
+/** Fields derivable from the captured path are rebuilt rather than stored twice in the plan. */
+function archiveRow(file) {
+    return { _source: file.row.orphan_type && file.row.orphan_type !== 'root' ? 'archive-orphan' : 'archive-inventory',
+        file_id: path.basename(file.relative, '.jsonl'), file_name: path.basename(file.relative), ...file.row, archive_hash: file.hash };
 }
 
 /** Capture both ownership and file identities once; pagination never advances a mutable cursor. */
@@ -58,8 +70,7 @@ export function captureArchive(base, account, input = {}) {
             const file = readRoleplayFile(filename, FILE_LIMIT);
             if (!file) throw operationError('An archive file disappeared during capture. Start another scan.');
             const relative = path.relative(dirs.root, filename); const hash = roleplayHash(relative);
-            const row = { _source: identity.orphan_type && identity.orphan_type !== 'root' ? 'archive-orphan' : 'archive-inventory', file_id: path.basename(filename, '.jsonl'),
-                file_name: path.basename(filename), ...identity, archive_hash: hash, ...metadata(file.bytes, fs.statSync(filename).mtimeMs) };
+            const row = { ...identity, ...metadata(file.bytes, fs.statSync(filename).mtimeMs) };
             files.push({ relative, evidence: authoringEvidence(file), hash, row });
             if (files.length > 100000) throw operationError('This archive exceeds the saved inventory capacity.', 413);
         };
@@ -102,8 +113,8 @@ async function runArchive(context, plan) {
             const text = withOperation(context, ({ base }) => readCaptured(base, file).toString('utf8'));
             const match = findMatchingSnippetInJsonl(text, plan.query);
             errors += Number(match.invalidLines > 0);
-            if (match.snippet !== null) rows.push({ ...file.row, mes: match.snippet, archive_hash: file.hash });
-        } else rows.push(file.row);
+            if (match.snippet !== null) rows.push({ ...archiveRow(file), mes: match.snippet });
+        } else rows.push(archiveRow(file));
         if ((index + 1) % 100 === 0 || index + 1 === plan.files.length) await context.progress({ stage: 'Preparing saved chat archive', completed: index + 1, total: plan.files.length });
     }
     return { rows, errors, total: rows.length, scope: plan.scope, query: plan.query };

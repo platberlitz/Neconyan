@@ -30,98 +30,482 @@ label[for="extensions_notify_updates"] input[type="checkbox"] {
     text-align: left;
 }
 
-.extensions_info h3:not(.margin0) {
-    margin-bottom: 0.5em;
-}
-
-.extensions_info h4 {
-    margin-bottom: 0.5em;
-}
-
-.extensions_info p {
-    margin-bottom: 0.5em;
-    margin-left: 1em;
-}
-
-.extensions_info .disabled {
-    color: var(--sb-muted-fg, color-mix(in srgb, var(--SmartThemeBodyColor) 58%, transparent));
-}
-
-.extensions_info .toggle_enable {
-    color: color-mix(in srgb, var(--color-primary, var(--sb-accent)) 88%, var(--SmartThemeBodyColor) 12%);
-}
-
-.extensions_info .toggle_disable {
-    color: var(--sb-danger, color-mix(in srgb, #fb7185 88%, var(--SmartThemeBodyColor) 12%));
-}
-
-.extensions_info .extension_enabled {
-    font-weight: bold;
-}
-
-.extensions_info .extension_disabled {
-    color: var(--sb-muted-fg, color-mix(in srgb, var(--SmartThemeBodyColor) 58%, transparent));
-}
-
-.extensions_info .extension_missing {
-    color: var(--sb-muted-fg, color-mix(in srgb, var(--SmartThemeBodyColor) 48%, transparent));
-}
-
-.extensions_info .extension_modules {
-    font-size: 0.8em;
-    font-weight: normal;
-}
-
-.extensions_info .extension_block {
+/* 'Manage extensions' window */
+.nn-ext-manager {
+    --nn-ext-gap: 8px;
+    /* Selection follows the secondary accent, as the shell tabs do; it equals the primary accent unless a custom accent is set. */
+    --nn-ext-select: var(--neco-accent-secondary, var(--neco-ginger, var(--SmartThemeQuoteColor)));
+    container: nn-ext-manager / inline-size;
     display: flex;
-    flex-wrap: nowrap;
-    padding: 12px 14px;
-    margin-bottom: 5px;
-    border: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor) 76%, transparent);
-    border-radius: 18px;
-    align-items: flex-start;
-    justify-content: space-between;
+    flex-direction: column;
+    gap: 18px;
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    font-size: 15px;
+}
+
+.nn-ext-manager p {
+    margin: 0;
+}
+
+.nn-ext-manager .nn-ext-toolbar {
+    position: -webkit-sticky;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
     gap: 12px;
-    min-height: 72px;
-    background: color-mix(in srgb, var(--SmartThemeBodyColor) 4%, transparent);
+    margin: 0;
+    padding: 12px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 10px;
+    background: var(--neco-surface, var(--SmartThemeBlurTintColor));
 }
 
-.extensions_info .extension_name {
-    font-size: 1.05em;
+.nn-ext-manager .nn-ext-intro {
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 13px;
 }
 
-.extensions_info :is(.extension_version, .extension_author) {
+.nn-ext-manager .nn-ext-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--nn-ext-gap);
+}
+
+.nn-ext-manager .nn-ext-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex: 1 1 240px;
+    min-width: 0;
+    margin: 0;
+}
+
+.nn-ext-manager .nn-ext-search > i {
+    position: absolute;
+    left: 12px;
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 13px;
+    pointer-events: none;
+}
+
+.nn-ext-manager .nn-ext-search > input {
+    width: 100%;
+    min-height: 36px;
+    margin: 0;
+    padding: 6px 12px 6px 34px;
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+.nn-ext-manager .nn-ext-filters {
+    display: inline-flex;
+    gap: 4px;
+    padding: 3px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 10px;
+    background: var(--neco-canvas, transparent);
+}
+
+.nn-ext-manager :is(.nn-ext-filter, .nn-ext-sort) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 30px;
+    margin: 0;
+    padding: 4px 12px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+body .nn-ext-manager.extensions_info .nn-ext-filters .nn-ext-filter[aria-pressed="true"] {
+    border-color: color-mix(in srgb, var(--nn-ext-select) 60%, var(--neco-border, var(--SmartThemeBorderColor)));
+    background: color-mix(in srgb, var(--nn-ext-select) 18%, var(--neco-surface, transparent));
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+}
+
+.nn-ext-manager .nn-ext-filter:not([aria-pressed="true"]):hover,
+.nn-ext-manager .nn-ext-sort:hover {
+    background: color-mix(in srgb, var(--nn-ext-select) 12%, var(--neco-surface, transparent));
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+}
+
+.nn-ext-manager .nn-ext-filter-count {
+    font-size: 11px;
+    font-weight: 600;
     opacity: 0.8;
-    font-size: 0.8em;
-    font-weight: normal;
-    margin-left: 2px;
 }
 
-.extensions_info :is(.extension_version, .extension_author):empty {
+.nn-ext-manager .nn-ext-sort {
+    min-height: 36px;
+    border-color: var(--neco-border, var(--SmartThemeBorderColor));
+}
+
+.nn-ext-manager :is(.nn-ext-filter, .nn-ext-sort, .extension_toggle input):focus-visible {
+    outline: 2px solid var(--neco-ginger, var(--SmartThemeQuoteColor));
+    outline-offset: 2px;
+}
+
+.nn-ext-manager .nn-ext-pending {
+    display: flex;
+    align-items: center;
+    gap: var(--nn-ext-gap);
+    padding: 10px 12px;
+    border: 1px solid var(--neco-ginger, var(--SmartThemeQuoteColor));
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 12%, var(--neco-surface, transparent));
+    font-size: 13px;
+}
+
+.nn-ext-manager .nn-ext-pending > i {
+    color: var(--neco-ginger, var(--SmartThemeQuoteColor));
+}
+
+.nn-ext-manager [hidden][hidden] {
     display: none;
 }
 
-.extensions_info .extension_author {
-    display: inline-flex;
-    gap: 2px;
+.nn-ext-manager .nn-ext-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.nn-ext-manager .nn-ext-section-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--nn-ext-gap) 16px;
+}
+
+.nn-ext-manager .nn-ext-section-title {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.nn-ext-manager .nn-ext-section h3 {
+    display: flex;
     align-items: baseline;
+    gap: var(--nn-ext-gap);
+    margin: 0;
+    font-family: var(--neco-heading-font, 'Fredoka One', 'Nunito', sans-serif);
+    font-size: 18px;
+    font-weight: 400;
 }
 
-.extensions_info .extension_block a {
-    color: var(--SmartThemeBodyColor);
+.nn-ext-manager .nn-ext-count {
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-family: var(--neco-body-font, 'Nunito', sans-serif);
+    font-size: 12px;
+    font-weight: 700;
 }
 
-.extensions_info .extension_name.update_available {
-    color: color-mix(in srgb, var(--color-primary, var(--sb-accent)) 92%, white 8%);
+.nn-ext-manager .nn-ext-section-title > p {
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 13px;
 }
 
-.extensions_info .third_party_toolbar {
+.nn-ext-manager .nn-ext-section-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
     -webkit-user-select: none;
     user-select: none;
 }
 
-input.extension_missing[type="checkbox"] {
+.nn-ext-manager .nn-ext-section-actions > .menu_button {
+    margin: 0;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.nn-ext-manager .nn-ext-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr));
+    gap: var(--nn-ext-gap);
+}
+
+.nn-ext-manager .extension_block {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr) auto auto;
+    grid-template-areas: "icon text actions toggle";
+    align-items: center;
+    gap: 12px;
+    margin: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 8px;
+    background: var(--neco-surface, transparent);
+    box-shadow: none;
+}
+
+.nn-ext-manager .extension_block[data-enabled="true"] {
+    border-color: color-mix(in srgb, var(--nn-ext-select) 45%, var(--neco-border, var(--SmartThemeBorderColor)));
+}
+
+.nn-ext-manager .extension_icon {
+    grid-area: icon;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background: var(--neco-raised, transparent);
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 15px;
+}
+
+.nn-ext-manager .extension_native .extension_icon {
+    color: var(--neco-ginger, var(--SmartThemeQuoteColor));
+}
+
+.nn-ext-manager .extension_text_block {
+    grid-area: text;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.nn-ext-manager .extension_title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.nn-ext-manager .extension_title a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.nn-ext-manager .extension_title a[href]:hover .extension_name {
+    text-decoration: underline;
+}
+
+.nn-ext-manager .extension_name {
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.nn-ext-manager .extension_disabled .extension_name,
+.nn-ext-manager .extension_missing .extension_name {
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-weight: 600;
+}
+
+.nn-ext-manager .extension_name.update_available {
+    color: var(--neco-ginger, var(--SmartThemeQuoteColor));
+}
+
+.nn-ext-manager .extension_version {
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 11px;
+}
+
+.nn-ext-manager .extension_version:empty {
+    display: none;
+}
+
+.nn-ext-manager .extension_description {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.nn-ext-manager .extension_origin {
+    display: block;
+    margin: 0;
+    overflow: hidden;
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.nn-ext-manager .extension_origin a {
+    color: inherit;
+}
+
+.nn-ext-manager .extension_actions {
+    grid-area: actions;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.nn-ext-manager .extension_actions:not(:has(.menu_button:not(.displayNone))) {
+    display: none;
+}
+
+.nn-ext-manager .extension_actions > .menu_button {
+    margin: 0;
+}
+
+.nn-ext-manager .extension_toggle {
+    grid-area: toggle;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--nn-ext-gap);
+    min-height: 36px;
+    margin: 0;
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.nn-ext-manager .extension_toggle_state {
+    min-width: 2.5em;
+    text-align: right;
+}
+
+.nn-ext-manager .extension_block[data-enabled="true"] .extension_toggle {
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+}
+
+.nn-ext-manager .extension_toggle input[type="checkbox"] {
+    display: block;
+    flex: 0 0 auto;
+    width: 40px;
+    min-width: 40px;
+    height: 24px;
+    min-height: 24px;
+    margin: 0;
+    aspect-ratio: auto;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 999px;
+    background: var(--neco-raised, var(--SmartThemeBlurTintColor));
+    box-shadow: none;
+}
+
+.nn-ext-manager .extension_toggle input[type="checkbox"]::before {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    background: var(--neco-muted, var(--SmartThemeEmColor));
+    box-shadow: none;
+    transform: none;
+    transition: translate 160ms ease-out, background-color 160ms ease-out;
+}
+
+.nn-ext-manager .extension_toggle input[type="checkbox"]:checked {
+    border-color: var(--nn-ext-select);
+    background: var(--nn-ext-select);
+}
+
+.nn-ext-manager .extension_toggle input[type="checkbox"]:checked::before {
+    translate: 16px 0;
+    background: var(--neco-on-accent, var(--SmartThemeBlurTintColor));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--neco-ink, var(--SmartThemeBodyColor)) 25%, transparent);
+    transform: none;
+}
+
+.nn-ext-manager .extension_toggle input[type="checkbox"]:disabled {
     opacity: 0.5;
+}
+
+.nn-ext-manager .extension_toggle:has(input:disabled) {
+    cursor: not-allowed;
+}
+
+.nn-ext-manager .nn-ext-loading,
+.nn-ext-manager .nn-ext-no-matches {
+    display: flex;
+    align-items: center;
+    gap: var(--nn-ext-gap);
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 13px;
+}
+
+.nn-ext-manager .nn-ext-no-matches {
+    justify-content: center;
+    padding: 24px 12px;
+}
+
+.nn-ext-manager .nn-ext-empty {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px;
+    border: 1px dashed var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 8px;
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 13px;
+}
+
+.nn-ext-manager .nn-ext-empty > .menu_button {
+    margin: 0;
+    white-space: nowrap;
+}
+
+@container nn-ext-manager (max-width: 560px) {
+    .nn-ext-manager .extension_block {
+        grid-template-columns: 36px minmax(0, 1fr) auto;
+        grid-template-areas:
+            "icon text toggle"
+            "actions actions actions";
+        row-gap: 0;
+    }
+
+    .nn-ext-manager .extension_actions {
+        justify-content: flex-start;
+        margin-top: var(--nn-ext-gap);
+    }
+
+    .nn-ext-manager .nn-ext-toolbar {
+        position: static;
+    }
+
+    .nn-ext-manager .nn-ext-filters {
+        flex: 1 1 auto;
+    }
+
+    .nn-ext-manager .nn-ext-filter {
+        flex: 1 1 0;
+    }
+
+    .nn-ext-manager .extension_toggle_state {
+        display: none;
+    }
+}
+
+@media (pointer: coarse) {
+    .nn-ext-manager :is(.nn-ext-filter, .nn-ext-sort, .nn-ext-search > input, .extension_toggle) {
+        min-height: 44px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .nn-ext-manager .extension_toggle input[type="checkbox"]::before {
+        transition: none;
+    }
 }
 
 .update-button {
@@ -204,39 +588,6 @@ input.extension_missing[type="checkbox"] {
     box-sizing: border-box;
 }
 
-.extensions_info .extension_text_block {
-    flex: 1 1 auto;
-    min-width: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.extensions_info .extension_actions {
-    display: flex;
-    flex-wrap: nowrap;
-    gap: 8px;
-    align-items: center;
-    align-self: center;
-}
-
-.extensions_toolbar {
-    top: 0;
-    position: -webkit-sticky;
-    position: sticky;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    flex-wrap: wrap;
-    background: color-mix(in srgb, var(--SmartThemeBlurTintColor) 92%, transparent);
-    gap: 8px;
-    z-index: 1;
-    margin-bottom: 10px;
-    padding: 10px 12px;
-    border-radius: 18px;
-    border: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor) 72%, transparent);
-}
-
 @media screen and (max-width: 1360px) and (min-width: 769px) {
     #rm_extensions_block .extensions_block > .alignitemscenter.flex-container.wide100p > label[for='extensions_notify_updates'] {
         flex-basis: 100%;
@@ -260,14 +611,5 @@ input.extension_missing[type="checkbox"] {
     #rm_extensions_block .extensions_block > .alignitemscenter.flex-container.wide100p > .menu_button,
     #rm_extensions_block .extensions_block > .alignitemscenter.flex-container.wide100p > .menu_button_icon {
         width: 100%;
-    }
-
-    .extensions_info .extension_block {
-        flex-wrap: wrap;
-    }
-
-    .extensions_info .extension_actions {
-        width: 100%;
-        justify-content: flex-end;
     }
 }

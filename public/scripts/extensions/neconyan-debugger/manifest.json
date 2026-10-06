@@ -6,7 +6,6 @@
     "js": "index.js",
     "css": "style.css",
     "loading_order": 0,
-    "bundled_opt_in": true,
     "homePage": "https://github.com/platberlitz/SillyBunny-Debugger",
     "requires": [],
     "optional": [],

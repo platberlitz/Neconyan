@@ -16,7 +16,7 @@ Saved single-character and group Roleplay chats are supported. Conversation link
 
 ## Launch and history
 
-An explicit chat link wins over launch restoration, even with both preferences off. Existing import and workspace startup actions keep their priority. An explicit Home destination stays Home on refresh and doesn't erase the remembered chat.
+An explicit chat link wins over launch restoration, even with both preferences off. Existing import and workspace startup actions keep their priority. With 'Chat links in the address bar' on, Home gets its own address too (`?view=home`), so it stays Home on refresh and doesn't erase the remembered chat. With it off, Home keeps a clean address, so refreshing still resumes your last chat if 'Resume last chat on launch' is on. An old `?view=home` address saved while links were off counts as a plain launch for the same reason.
 
 With 'Chat links in the address bar' on, choosing another saved conversation adds a history entry. Startup, preference changes and address cleanup replace the current entry. Messages, renamed titles and settings don't add entries. With it off, an explicit link can remain while that chat is visible; moving elsewhere removes its stale chat parameters.
 

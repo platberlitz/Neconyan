@@ -71,14 +71,14 @@ function dialog() {
     return element;
 }
 
-function showRouteState(kind, { transient = false, link = '' } = {}) {
+function showRouteState(kind, { transient = false, link = '', home = false } = {}) {
     const element = dialog();
     const copying = kind === 'copy';
     const loading = kind === 'loading';
-    element.querySelector('h2').textContent = copying ? 'Copy chat link' : loading ? 'Opening chat' : 'Chat could not be opened';
+    element.querySelector('h2').textContent = copying ? 'Copy chat link' : loading ? (home ? 'Opening Home' : 'Opening chat') : 'Chat could not be opened';
     element.querySelector('[data-route-description]').textContent = copying
         ? 'Select and copy this link. It opens this saved chat for the same account on this installation; it does not share the chat.'
-        : loading ? 'Loading the saved conversation. No message will be sent.'
+        : loading ? (home ? 'Loading your recent chats. No message will be sent.' : 'Loading the saved conversation. No message will be sent.')
             : transient ? 'The connection or session could not be checked. Retry, or go to Home.'
                 : 'This link is invalid, unavailable, or its mode is disabled. Go to Home to choose another chat.';
     element.querySelector('[data-route-retry]').hidden = copying || loading || !transient;
@@ -163,6 +163,8 @@ function openLinkSettings() {
 }
 
 function writeHistory(destination, reason) {
+    // Without chat links Home keeps a clean address, so a refresh can still resume the last chat.
+    if (destination?.kind === 'home' && !power_user.chat_links) destination = null;
     const next = chatNavigationUrl(location.href, destination);
     const action = chatHistoryAction({ current: parseChatNavigation(location.href), next: destination || { kind: 'root' }, linksEnabled: Boolean(power_user.chat_links), reason });
     if (action !== 'none' && next.href !== location.href) history[`${action}State`](history.state, '', next);
@@ -315,7 +317,7 @@ async function navigate(intent, options, ticket) {
     setChatNavigationBlocked(true);
     copyAvailability();
     if (['send_textarea', 'sb_conversation_input'].includes(document.activeElement?.id)) document.activeElement.blur();
-    showRouteState('loading');
+    showRouteState('loading', { home: intent.kind === 'home' || intent.kind === 'root' });
     try {
         if (intent.kind === 'invalid') throw Object.assign(new Error('Invalid link.'), { status: 400 });
         if (intent.kind === 'home' || intent.kind === 'root') {
@@ -479,7 +481,12 @@ export async function initChatNavigation() {
 }
 
 async function startLaunch() {
-    const intent = parseChatNavigation(chatNavigationLaunchUrl);
+    let intent = parseChatNavigation(chatNavigationLaunchUrl);
+    // Earlier builds wrote ?view=home even with chat links off; treat it as a plain launch.
+    if (intent.kind === 'home' && !power_user.chat_links) {
+        writeHistory(null, 'replace');
+        intent = { kind: 'root' };
+    }
     retryStartup = false;
     try {
         const state = await post('state');

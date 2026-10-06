@@ -2,7 +2,8 @@
 Thanks for your pull request. Before you open it:
 
 - Target `staging`. `main` only moves when a release goes out.
-- Start the title with `fix:`, `feat:` or `chore:`, then say what changes in the imperative, for example 'fix: keep the composer above the keyboard'.
+- Write the title as a Conventional Commit: `type(optional-scope): subject`, lower-case imperative, no full stop, for example 'fix(composer): keep Send above the keyboard'. Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert. A check rejects anything else.
+- Add screenshots for anything visible: phone and desktop, before and after.
 - Write the description yourself. AI-generated code is welcome if it follows AGENTS.md, DESIGN.md and PRODUCT.md; AI-written descriptions are not.
 - Keep the diff to the change you describe. Leave formatting, renames and tidy-ups for their own pull request.
 -->
@@ -27,6 +28,14 @@ Thanks for your pull request. Before you open it:
 - [ ] Frontend budgets: `npm run check:frontend-budgets`
 - [ ] You added or updated a test that pins the behaviour you changed
 - [ ] UI changes: you checked a phone (393x852, touch) and desktop (1280x900) in the browser
+- [ ] Buttons: they follow the accent (no hex colours) and stay readable with a pale and a dark accent profile
 - [ ] CSS changes: you bumped `NN_SW_CACHE_VERSION` in `public/sw.js` and the `?v=` on the five core stylesheets in `public/index.html`
 
-<!-- Screenshots help for anything visual. Show the phone and the desktop. -->
+## Screenshots
+
+<!-- Required for anything visible. Phone and desktop, before and after. Drag the images in here. -->
+
+| | Before | After |
+|---|---|---|
+| Phone | | |
+| Desktop | | |

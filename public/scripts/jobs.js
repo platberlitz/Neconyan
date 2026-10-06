@@ -125,6 +125,10 @@ export async function dismissJob(id, { base = '', account = getCurrentUserHandle
     return requestJson(endpoint(base, `/${encodeURIComponent(id)}/dismiss`), { account, method: 'POST', body: JSON.stringify({}) });
 }
 
+export async function clearJobHistory({ base = '', account = getCurrentUserHandle() } = {}) {
+    return requestJson(endpoint(base, '/clear-history'), { account, method: 'POST', body: '{}' });
+}
+
 export async function retryJob(id, { base = '', account = getCurrentUserHandle() } = {}) {
     return requestJson(endpoint(base, `/${encodeURIComponent(id)}/retry`), { account, method: 'POST', body: '{}' });
 }

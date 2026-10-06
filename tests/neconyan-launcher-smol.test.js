@@ -263,4 +263,33 @@ describe('launcher parity', () => {
         expect(prMetadataSource).toContain('Pull requests must target staging.');
         expect(prMetadataSource).not.toContain('TLD/mobile-refactor');
     });
+
+    test('PR metadata accepts only Conventional Commit titles', () => {
+        const pattern = prMetadataSource.match(/grep -Eq '([^']+)' <<< "\$PR_TITLE"/)?.[1];
+        expect(pattern).toBeDefined();
+        const titleRule = new RegExp(pattern.replaceAll('[:space:]', '\\s'));
+
+        for (const title of [
+            'fix: keep the composer above the keyboard',
+            'feat(mewmory): add a summary length setting',
+            'feat(api)!: drop the old route',
+            'docs: revise AGENTS.md, DESIGN.md and CONTRIBUTING.md',
+            'ci(pr-metadata): widen the title check',
+            'refactor: split the tabs module',
+            'revert: undo the drawer change',
+        ]) {
+            expect(titleRule.test(title)).toBe(true);
+        }
+
+        for (const title of [
+            'Fix the composer',
+            'fix:no space',
+            'fix: ends with a full stop.',
+            'feature: not a type',
+            'fix(Composer): upper-case scope',
+            'fix: ',
+        ]) {
+            expect(titleRule.test(title)).toBe(false);
+        }
+    });
 });

@@ -33,6 +33,7 @@ import { is_group_generating } from './group-chats.js';
 import { eventSource, event_types } from './events.js';
 import { extensionNames, findExtension, getExtensionManifest, getExtensionType } from './extensions.js';
 import { getCurrentUserHandle } from './user.js';
+import { bindClearJobHistoryButton } from './job-history-cleanup.js';
 import { getAssistantIconSrc } from './neconyan-assistant-art.js';
 import { t, translate } from './i18n.js';
 import {
@@ -159,7 +160,7 @@ const NN_PANEL_STYLESHEETS = Object.freeze({
         { href: 'css/world-info.css?v=20261006-notebook-feedback1', id: 'deferred-world-info-css' },
     ],
     'characters:persona': [
-        { href: 'css/personas.css?v=20260912h', id: 'deferred-personas-css' },
+        { href: 'css/personas.css?v=20261006-personaui1', id: 'deferred-personas-css' },
         { href: 'css/neconyan-tool-pages.css?v=20261003-notes-controls4', id: 'deferred-tool-pages-css' },
     ],
     'left:api': [
@@ -182,7 +183,7 @@ const NN_PANEL_STYLESHEETS = Object.freeze({
         { href: 'css/neconyan-tool-pages.css?v=20261003-notes-controls4', id: 'deferred-tool-pages-css' },
     ],
     'right:extensions': [
-        { href: 'css/extensions-panel.css?v=20260425a', id: 'deferred-extensions-panel-css' },
+        { href: 'css/extensions-panel.css?v=20261006a', id: 'deferred-extensions-panel-css' },
     ],
     'right:background': [
         { href: 'css/neconyan-tool-pages.css?v=20261003-notes-controls4', id: 'deferred-tool-pages-css' },
@@ -197,6 +198,8 @@ const NN_PANEL_STYLESHEETS = Object.freeze({
         { href: 'css/neconyan-tool-pages.css?v=20261003-notes-controls4', id: 'deferred-tool-pages-css' },
     ],
 });
+const NN_PANEL_STYLE_HOLD_TIMEOUT_MS = 1500;
+let nnPanelStyleHoldCounter = 0;
 const NN_FRONTEND_ICON_DEFAULT = 'calico';
 const NN_FRONTEND_ICONS = Object.freeze([
     {
@@ -501,7 +504,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261006-notebook-feedback1';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261006-scratchpad-merge1';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -10110,7 +10113,8 @@ function openCharacterPersonaTab() {
     const panel = getCharacterPanel();
     nnState.characterDrawer.lastTab = 'persona';
 
-    preloadPanelStylesheets('characters', 'persona');
+    const personaStylesReady = preloadPanelStylesheets('characters', 'persona', { priority: 'high' });
+    holdPanelUntilStyled(document.getElementById('PersonaManagement'), personaStylesReady);
     setCharacterPanelMenuType(panel, 'persona');
     setCharacterEditorEmptyState(false);
     setCharacterImportPanelVisible(false);
@@ -10118,9 +10122,6 @@ function openCharacterPersonaTab() {
     syncCharacterListControls('characters');
     setCharacterPersonaPanelVisible(true);
     hideCharacterMainPanels();
-
-    syncNeconyanSectionSelect(document.querySelector('#PersonaManagement .persona-editor-tabs'), 'data-persona-editor-tab', 'Persona section');
-
     syncCharacterShellTabs('persona');
     syncCharacterTitlebarVisibility();
 }
@@ -10861,7 +10862,13 @@ function toggleShellPanel(shellKey, tabId = null) {
     window.requestAnimationFrame(() => openShell(shellKey, tabId));
 }
 
-function preloadPanelStylesheets(shellKey, tabId = null) {
+/**
+ * @param {string} shellKey
+ * @param {string|null} [tabId]
+ * @param {{ priority?: 'auto'|'high' }} [options]
+ * @returns {Promise<void>|null} Settles once every sheet has loaded or failed; null when the panel has none.
+ */
+function preloadPanelStylesheets(shellKey, tabId = null, { priority = 'auto' } = {}) {
     // Neconyan: old saved/configured left-shell World Info routes should only
     // preload assets for the relocated Characters tab, never recreate a left tab.
     const normalizedTabId = shellKey === 'left' && tabId === 'world-info' ? 'world-info' : tabId;
@@ -10871,14 +10878,55 @@ function preloadPanelStylesheets(shellKey, tabId = null) {
     const stylesheets = NN_PANEL_STYLESHEETS[normalizedKey] ?? NN_PANEL_STYLESHEETS[key];
 
     if (!stylesheets || !window.NeconyanAssets?.loadStylesheetAsync) {
+        return null;
+    }
+
+    return Promise.all(stylesheets.map(stylesheet => window.NeconyanAssets.loadStylesheetAsync(stylesheet.href, { id: stylesheet.id, priority }).catch(error => {
+        console.warn('Failed to load panel stylesheet:', stylesheet.href, error);
+    }))).then(() => undefined);
+}
+
+/**
+ * Keeps a panel invisible until its stylesheets apply, so it never shows unstyled.
+ * A timeout reveals it anyway if a sheet is slow or fails.
+ * @param {Element|null} element
+ * @param {Promise<void>|null} stylesheetsReady
+ */
+function holdPanelUntilStyled(element, stylesheetsReady) {
+    if (!(element instanceof HTMLElement) || !stylesheetsReady) {
         return;
     }
 
-    for (const stylesheet of stylesheets) {
-        window.NeconyanAssets.loadStylesheetAsync(stylesheet.href, { id: stylesheet.id }).catch(error => {
-            console.warn('Failed to load panel stylesheet:', stylesheet.href, error);
-        });
+    // An attribute, not an inline style: ensureCharacterPersonaPanel() strips the style attribute.
+    const token = String(++nnPanelStyleHoldCounter);
+    element.dataset.nnStylesPending = token;
+
+    const reveal = () => {
+        if (element.dataset.nnStylesPending === token) {
+            delete element.dataset.nnStylesPending;
+        }
+    };
+
+    stylesheetsReady.finally(reveal);
+    window.setTimeout(reveal, NN_PANEL_STYLE_HOLD_TIMEOUT_MS);
+}
+
+// Panels whose sheets are fetched once the app is idle, before anyone opens them.
+const NN_IDLE_WARM_PANEL_STYLESHEETS = Object.freeze([['characters', 'persona']]);
+
+function scheduleIdlePanelStylesheetWarmup() {
+    const warm = () => {
+        for (const [shellKey, tabId] of NN_IDLE_WARM_PANEL_STYLESHEETS) {
+            preloadPanelStylesheets(shellKey, tabId, { priority: 'high' });
+        }
+    };
+
+    if ('requestIdleCallback' in window) {
+        window.requestIdleCallback(warm, { timeout: 4000 });
+        return;
     }
+
+    window.setTimeout(warm, 2000);
 }
 
 function isLandingPageVisible() {
@@ -12949,6 +12997,47 @@ function appendServerAdminStat(target, label, value) {
     target.appendChild(item);
 }
 
+function renderServerAdminFolders(target, data) {
+    if (!(target instanceof HTMLElement)) {
+        return;
+    }
+
+    const folders = [
+        { label: 'Neconyan folder', copyLabel: 'Copy Neconyan folder path', path: data?.installPath },
+        { label: 'Your data folder', copyLabel: 'Copy your data folder path', path: data?.dataPath },
+    ].filter(folder => typeof folder.path === 'string' && folder.path);
+
+    target.replaceChildren();
+    target.hidden = folders.length === 0;
+
+    for (const folder of folders) {
+        const item = createElement('div', { className: 'sb-server-stat sb-server-folder' });
+        const copy = createElement('div', { className: 'sb-server-folder-copy' });
+        const title = createElement('small', { className: 'sb-server-stat-label', text: folder.label });
+        const value = createElement('code', { className: 'sb-server-stat-value sb-server-folder-path', text: folder.path });
+        const copyButton = createElement('button', {
+            className: 'menu_button menu_button_icon sb-server-folder-copy-button',
+            html: '<i class="fa-solid fa-copy" aria-hidden="true"></i>',
+            attrs: {
+                type: 'button',
+                title: folder.copyLabel,
+                'aria-label': folder.copyLabel,
+            },
+        });
+        copyButton.addEventListener('click', async () => {
+            try {
+                await copyText(folder.path);
+                toastr.success('Path copied.', folder.label);
+            } catch (error) {
+                toastr.error(error?.message || 'Unable to copy the path.', folder.label);
+            }
+        });
+        copy.append(title, value);
+        item.append(copy, copyButton);
+        target.appendChild(item);
+    }
+}
+
 function updateServerConfigDirtyState() {
     const state = getServerAdminState();
     const refs = getServerAdminRefs();
@@ -13047,10 +13136,13 @@ function renderServerAdminStatus(data) {
         appendServerAdminStat(sourceDetailsGrid, 'Latest ZIP', release?.latestVersion ? `v${release.latestVersion}` : 'Unknown');
     }
     appendServerAdminStat(sourceDetailsGrid, 'Config', data?.configPath || 'Unknown');
+    renderServerAdminFolders(refs.folderList, data);
 
     state.lastStatusData = {
         runtime: data?.runtime || '',
         configPath: data?.configPath || '',
+        installPath: data?.installPath || '',
+        dataPath: data?.dataPath || '',
         version,
         repository,
         release,
@@ -13799,6 +13891,7 @@ function buildServerAdminPanel() {
     const statusDescription = createElement('p', { text: 'Runtime, source, commit, and update state.' });
     const statusPill = createElement('span', { className: 'sb-server-pill', text: 'Checking…' });
     const statusGrid = createElement('div', { className: 'sb-server-grid sb-server-summary-grid' });
+    const folderList = createElement('div', { className: 'sb-server-folder-list', attrs: { hidden: '' } });
     const statusNote = createElement('div', { className: 'sb-server-note' });
     const sourceDetails = createElement('details', { className: 'sb-server-source-details' });
     const sourceSummary = createElement('summary', { text: 'More source details' });
@@ -13806,7 +13899,7 @@ function buildServerAdminPanel() {
     sourceDetails.append(sourceSummary, sourceDetailsGrid);
     statusCopy.append(statusTitle, statusDescription);
     statusHeader.append(statusCopy, statusPill);
-    statusCard.append(statusHeader, statusGrid, statusNote, sourceDetails);
+    statusCard.append(statusHeader, statusGrid, folderList, statusNote, sourceDetails);
 
     const updateCard = createElement('section', { className: 'sb-admin-card sb-server-card' });
     const updateHeader = createElement('div', { className: 'sb-admin-card-header' });
@@ -13956,6 +14049,7 @@ function buildServerAdminPanel() {
         statusPill,
         statusGrid,
         sourceDetailsGrid,
+        folderList,
         statusNote,
         refreshButton,
         updateButton,
@@ -20259,6 +20353,7 @@ function initAll() {
     bindTopbarDragEvents();
     bindChatbarEvents();
     bindClearCookiesAndCacheButton();
+    bindClearJobHistoryButton();
     bindMessageActionExtensionEvents();
     syncMessageActionExtensionVisibility();
     scheduleChatbarRefresh(0);
@@ -20268,6 +20363,7 @@ function initAll() {
     applyDefaultDrawerStates();
     bindInlineDrawerAutoCloseToggle();
     syncMobileViewportState();
+    scheduleIdlePanelStylesheetWarmup();
 
     window.addEventListener('resize', queueMobileViewportStateSync, { passive: true });
     window.addEventListener('orientationchange', queueMobileViewportStateSync);

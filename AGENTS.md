@@ -2,6 +2,11 @@
 
 Read `PRODUCT.md` (what it is, who it is for, tone) and `DESIGN.md` (tokens, type, phone rules) before touching UI.
 
+UI work, in short:
+
+- Design for what the user actually works with: the chat, the composer and the task on screen get the space and the first tap; rare settings step back (see 'Design for what people actually use' in `DESIGN.md`).
+- Buttons are accent-aware: fills, borders and states come from `--neco-ginger`/`--neco-ginger-hover`, text on an accent fill uses `--neco-on-accent`, and no button carries a hex colour (see 'Accent-aware buttons' in `DESIGN.md`).
+
 ## Test and check commands
 
 - Unit tests (Jest, 300+ suites): `npm run test:unit --prefix tests`. Use Node 24. On a small VM the full run can run out of memory, so cap it: `NODE_OPTIONS=--max-old-space-size=4096 npm run test:unit --prefix tests -- --maxWorkers=2 --workerIdleMemoryLimit=512MB`.
@@ -37,13 +42,20 @@ Read `PRODUCT.md` (what it is, who it is for, tone) and `DESIGN.md` (tokens, typ
 - Reproduce before fixing: read the cascade or the code path end to end, then change the one place all callers route through.
 - Verify in a browser, not by reading alone: drive Chromium (the Playwright copy in `tests/node_modules`) at 393x852 with touch for phones and 1280x900 for desktop, and measure computed styles and geometry. WebKit cannot run on this machine, so iOS behaviour is inferred from Chromium and must be labelled as such.
 - For anything an iPhone user reports, emulate iOS with `tests/ios-safari-emulation.js`: `IPHONE_SAFARI_CONTEXT` + `installIPhoneSafari(context, { standalone })` spoof the user agent, `navigator.platform`, touch points and home-screen mode (so `body.safari`, `body.PWA` and `isIOSWebKitPlatform()` behave as on a phone), and `applyIOSOnlyCss(page)` re-applies the `@supports (-webkit-touch-callout: none)` / `-webkit-overflow-scrolling` rules Chromium skips. Call it again after late sheets such as `world-info.css` load. Those rules lift the right-hand drawers to `--sb-z-popout` (4000), so floating UI that looks fine in plain Chromium can sit hidden underneath on iPhones.
+- For a new or restyled button, check it with the theme's default accent, a pale accent and a dark accent (Accent Profiles), and measure that the label contrast holds.
+- Take screenshots of every visible change whenever possible: phone (393x852) and desktop (1280x900), before and after. Save them in `/screenshots/` at the repo root (git ignores it) and never commit them. Show them to the owner in your report, and attach them to the pull request.
 - Run the unit suite, lint and budgets before calling anything done. Add or update the test that pins the behaviour you changed.
 - Never report a guess as a result. Say what was verified, how, and what is inferred.
 
 ## Git and attribution
 
-- Commit only when asked, with a local `git commit`. Subject line in the imperative, `fix:`/`feat:`/`chore:` prefix as the history does (`docs:` for documentation).
-- No `Co-Authored-By` trailers, no 'Generated with' footers, no web-flow commits. The owner writes PR titles and bodies.
+- Commit only when asked, with a local `git commit`.
+- Commit subjects and PR titles follow Conventional Commits: `type(optional-scope): subject`, for example `fix(composer): keep Send above the keyboard`.
+  - Types: `feat` (new behaviour), `fix` (bug fix), `docs`, `style` (formatting only, no behaviour change), `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`.
+  - Subject in the lower-case imperative, no full stop, 72 characters at most. Add `!` after the type or scope for a breaking change (`feat(api)!: ...`) and explain the break in the body.
+  - PR titles pass the same rule; the `PR Metadata` workflow (`.github/workflows/pr-metadata.yml`) rejects titles that do not.
+- Pull requests: one change each, targeting `staging`. Include screenshots for any visible change, phone and desktop, before and after.
+- No `Co-Authored-By` trailers, no 'Generated with' footers, no web-flow commits. The owner writes PR titles and bodies unless he asks you to draft them.
 - Never commit `data/`, `.local-runtime/`, `dist/` or secrets. `default/config.yaml` is the template; real config lives outside the repo.
 - When several UI changes are requested together, make one commit per requested item.
 - Before pushing to staging, fetch the GitHub staging branch and check `git log <fetched>..HEAD`. If it lists commits that are not yours (a local staging branch can hold unpushed work), cherry-pick only your commits onto the fetched staging and push that.

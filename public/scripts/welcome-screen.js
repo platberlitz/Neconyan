@@ -53,6 +53,7 @@ const recentChatsSettingsKey = 'recentChatsSettings';
 
 const DEFAULT_MAX_DISPLAYED = 15;
 const DEFAULT_COLLAPSED_DISPLAYED = 3;
+const HOME_REQUEST_TIMEOUT_MS = 30000;
 
 /**
  * Gets the current recent chats settings from account storage.
@@ -300,7 +301,7 @@ function normalizeAssistantCatalog(payload) {
 
 function fetchAssistantCatalog({ retry = false } = {}) {
     if (retry) assistantCatalogPromise = null;
-    assistantCatalogPromise ??= fetch('/api/characters/assistants', { headers: getRequestHeaders() })
+    assistantCatalogPromise ??= fetch('/api/characters/assistants', { headers: getRequestHeaders(), signal: AbortSignal.timeout(HOME_REQUEST_TIMEOUT_MS) })
         .then(response => {
             if (!response.ok) throw new Error(`Assistant catalog request failed: ${response.status}`);
             return response.json();
@@ -2548,12 +2549,20 @@ async function getRecentChats() {
             return [];
         }
     };
-    const response = await fetch('/api/chats/recent', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({ max: settings.maxDisplayed, pinned: PinnedChatsManager.getAll(), metadata: shouldSeparateAgentRecentChats(), previewMessages: shouldSeparateAgentRecentChats() ? 8 : 0 }),
-        cache: 'no-cache',
-    });
+    let response;
+    try {
+        response = await fetch('/api/chats/recent', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ max: settings.maxDisplayed, pinned: PinnedChatsManager.getAll(), metadata: shouldSeparateAgentRecentChats(), previewMessages: shouldSeparateAgentRecentChats() ? 8 : 0 }),
+            cache: 'no-cache',
+            signal: AbortSignal.timeout(HOME_REQUEST_TIMEOUT_MS),
+        });
+    } catch (error) {
+        // A slow or dropped request must not keep Home from opening.
+        console.warn('Recent character chats did not load', error);
+        return finalizeRecentChats(await getConversationChats());
+    }
 
     if (!response.ok) {
         console.warn('Failed to fetch recent character chats');
