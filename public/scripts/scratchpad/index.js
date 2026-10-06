@@ -30,7 +30,7 @@ import {
 } from './context.js';
 import { describeChange, splitReply } from './proposals.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261005-scratchpad6';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261006-scratchpad7';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -306,6 +306,7 @@ function buildChatPanel() {
         placeholder: t`Ask anything...`,
         'aria-label': t`Message for Scratchpad`,
         onkeydown: onComposerKey,
+        oninput: fitComposer,
     });
     el.send = iconButton(t`Send`, () => onSendButton(), { icon: 'fa-paper-plane', className: 'scratchpad-send', primary: true });
     el.overviewToggle = h('button', {
@@ -345,7 +346,10 @@ function selectTab(key) {
     }
     if (key === 'context') renderContext();
     if (key === 'sessions') renderSessions();
-    if (key === 'chat') scrollMessages(true);
+    if (key === 'chat') {
+        fitComposer();
+        scrollMessages(true);
+    }
 }
 
 /* Data */
@@ -617,8 +621,17 @@ function onComposerKey(event) {
     if (!pendingReply()) void send();
 }
 
+function fitComposer() {
+    const composer = app.el.composer;
+    if (!composer?.isConnected) return;
+    composer.style.height = '';
+    if (!composer.value || !composer.scrollHeight) return;
+    composer.style.height = `${composer.scrollHeight + composer.offsetHeight - composer.clientHeight}px`;
+}
+
 function usePrompt(text) {
     app.el.composer.value = text;
+    fitComposer();
     app.el.composer.focus();
 }
 
@@ -1008,6 +1021,7 @@ function renderEditor(session, message) {
 
 function renderComposer() {
     syncDraft();
+    fitComposer();
     const el = app.el;
     const pending = pendingReply();
     const disabled = !app.source || !app.bucket || app.sending;

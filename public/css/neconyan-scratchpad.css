@@ -620,13 +620,12 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
 .scratchpad-app textarea.scratchpad-composer {
     flex: 1 1 auto;
     min-width: 0;
-    height: calc(max(42px, 1.5em) + 2px);
+    height: 44px;
     min-height: 44px;
-    max-height: calc(max(42px, 1.5em) + 2px);
+    max-height: min(40vh, 196px);
     margin: 0;
-    /* A full-height line prevents adjacent text showing through vertical padding. */
-    padding: 0 12px;
-    line-height: max(42px, 1.5em);
+    padding: max(4px, calc((42px - 1.5em) / 2)) 12px;
+    line-height: 1.5;
     overflow-y: auto;
     resize: none;
 }
