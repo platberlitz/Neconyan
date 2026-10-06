@@ -505,3 +505,24 @@ test('property table metadata is owner-only, and cell writes retain loaded revis
     assert.equal((await first.post('/notes/read', { notebookId, noteId: note.noteId })).body.note.text, after.text);
     assert.deepEqual((await first.post('/policies/get', { notebookId })).body, policies);
 });
+
+test('known property names stay owner-only without returning values or granting assistant access', async t => {
+    const first = await server(t, 'property-keys-owner');
+    const other = await server(t, 'property-keys-other');
+    const notebookId = (await first.post('/list', {})).body.notebooks[0].id;
+    const note = (await first.post('/notes/create', { notebookId, operationId: op('known-keys'), title: 'Reference',
+        text: '---\nseason: PRIVATE-SEASON-VALUE\nscore: 2\n---\nPrivate note body.\n' })).body;
+    const policies = (await first.post('/policies/get', { notebookId })).body;
+    const history = (await first.post('/notes/history', { notebookId, noteId: note.noteId })).body;
+    const result = await first.post('/properties/keys', { notebookId });
+    assert.equal(result.http, 200);
+    assert.deepEqual(result.body.keys, ['score', 'season']);
+    assert.equal(result.body.total, 2);
+    assert.equal(result.body.partial, false);
+    assert.doesNotMatch(JSON.stringify(result.body), /PRIVATE-SEASON-VALUE|Private note body/);
+    assert.equal((await other.post('/properties/keys', { notebookId })).http, 404);
+    assert.equal((await first.post('/properties/keys', { notebookId }, { 'X-Neconyan-Account': other.owner })).http, 409);
+    assert.equal((await first.post('/assistant/tool', { callId: 'known-keys-do-not-share', tool: 'read-note', args: { notebookId, noteId: note.noteId } })).http, 404);
+    assert.deepEqual((await first.post('/policies/get', { notebookId })).body, policies);
+    assert.deepEqual((await first.post('/notes/history', { notebookId, noteId: note.noteId })).body, history);
+});

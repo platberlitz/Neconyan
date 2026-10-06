@@ -1372,10 +1372,51 @@ body.neconyan.neconyan-notes-beside #sheld {
     margin-bottom: 6px;
 }
 
+.notes-properties-form {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.notes-property-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.notes-property-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) 44px;
+    align-items: end;
+    gap: 6px;
+    padding: 8px;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-canvas);
+}
+
+.notes-property-row .notes-field {
+    min-width: 0;
+    margin: 0;
+}
+
 .notes-property-row .notes-input,
 .notes-template-manager .notes-input {
     min-width: 0;
     width: 100%;
+}
+
+.notes-app .notes-property-remove,
+.notes-app .notes-property-add {
+    min-width: 44px;
+    min-height: 44px;
+}
+
+.notes-property-kind {
+    grid-column: 1 / -1;
+    margin: 0;
 }
 
 .notes-outline-tree {

@@ -6,11 +6,11 @@ import { append, button, choiceRow, clear, field, formatBytes, formatTime, h } f
 import { formatDiff } from './line-diff.js';
 import { headingOutline } from './render.js';
 import { renderHeadingOutline } from './outline.js';
+import { blankPropertyRow, createPropertyDraft, propertyChanges, RESERVED_PROPERTIES } from './property-fields.js';
 import { proposalLabel, regionLabel, userPhrase } from './user-text.js';
 import { t } from '../i18n.js';
 
 const TABS = [['properties', 'Properties'], ['links', 'Links'], ['lore', 'Lore'], ['ai', 'AI access'], ['history', 'History']];
-const RESERVED_PROPERTIES = new Set(['title', 'tags', 'tag', 'aliases', 'alias', 'type', 'neconyan_id']);
 const LORE_STATUS = {
     unpublished: ['Not published yet', 'Nothing from this note is in the lorebook yet.'],
     in_sync: ['In sync', 'The lore entry matches what you last published.'],
@@ -39,14 +39,6 @@ function notice(text, kind = '') {
 
 function section(title, ...children) {
     return h('section', { class: 'notes-detail-section' }, h('h3', { class: 'notes-detail-heading', text: title }), ...children);
-}
-
-function listText(value) {
-    return Array.isArray(value) ? value.join(', ') : value == null ? '' : String(value);
-}
-
-function splitList(value) {
-    return String(value ?? '').split(',').map(item => item.trim()).filter(Boolean);
 }
 
 function stemOf(path) {
@@ -125,40 +117,64 @@ async function propertiesPanel(app) {
             await app.moveNote({ title: stemOf(note.path), folder });
         }, { icon: 'fa-folder-open' })));
 
-    const tags = h('input', { id: 'notes-prop-tags', class: 'text_pole notes-input', value: listText(properties.tags ?? properties.tag ?? []), placeholder: 'idea, magic' });
-    const aliases = h('input', { id: 'notes-prop-aliases', class: 'text_pole notes-input', value: listText(properties.aliases ?? properties.alias ?? []), placeholder: 'Other names' });
-    const type = h('input', { id: 'notes-prop-type', class: 'text_pole notes-input', value: listText(properties.type ?? ''), placeholder: 'location, character...' });
-    const custom = [];
-    const customRows = h('div', { class: 'notes-prop-custom' });
-    for (const [key, value] of Object.entries(properties)) {
-        if (RESERVED_PROPERTIES.has(key.toLowerCase())) continue;
-        const input = h('input', { id: `notes-prop-${custom.length}`, class: 'text_pole notes-input', value: listText(value) });
-        custom.push({ key, input, list: Array.isArray(value) });
-        customRows.append(field(key, input, Array.isArray(value) ? 'A list: separate items with commas.' : null, { userLabel: true }));
+    const scope = `${state.account}:${state.notebookId}:${note.id}`;
+    if (state.propertyDraft?.scope !== scope) state.propertyDraft = { scope, ...createPropertyDraft(properties, detail.complexProperties ?? []) };
+    const draft = state.propertyDraft;
+    const current = () => `${app.state.account}:${app.state.notebookId}:${app.state.note?.id}` === scope && getCurrentUserHandle() === state.account;
+    const inputs = {};
+    for (const [key, placeholder] of [['tags', 'idea, magic'], ['aliases', 'Other names'], ['type', 'location, character...']]) {
+        inputs[key] = h('input', { id: `notes-prop-${key}`, class: 'text_pole notes-input', value: draft.fields[key], placeholder,
+            oninput: event => { draft.fields[key] = event.target.value; } });
     }
-    const newKey = h('input', { id: 'notes-prop-new-key', class: 'text_pole notes-input', placeholder: 'Field name' });
-    const newValue = h('input', { id: 'notes-prop-new-value', class: 'text_pole notes-input', placeholder: 'Value' });
+    const known = h('datalist', { id: 'notes-known-property-fields' });
+    const customRows = h('div', { class: 'notes-property-rows' });
+    function addRow(row, focus = false) {
+        const key = h('input', { class: 'text_pole notes-input notes-prop-key', value: row.key, placeholder: 'Field name', list: known.id,
+            oninput: event => { row.key = event.target.value; } });
+        const value = h('input', { class: 'text_pole notes-input notes-prop-value', value: row.value, placeholder: 'Value',
+            oninput: event => { row.value = event.target.value; } });
+        const container = h('div', { class: 'notes-property-row' }, field('Field', key), field('Value', value),
+            button('', () => { row.removed = true; container.remove(); }, { icon: 'fa-xmark', title: 'Remove field', className: 'notes-property-remove' }));
+        if (row.kind !== 'text') container.append(h('small', { class: 'notes-hint notes-property-kind', text: row.kind === 'list'
+            ? 'Keep square brackets for a list, for example ["one", "two"].' : row.kind === 'boolean' ? 'Value: true or false.' : 'Value: a number.' }));
+        customRows.append(container);
+        if (focus) key.focus();
+    }
+    if (!draft.rows.some(row => !row.removed && !row.originalKey)) draft.rows.push(blankPropertyRow());
+    for (const row of draft.rows) if (!row.removed) addRow(row);
+    const add = button('Add field', () => { const row = blankPropertyRow(); draft.rows.push(row); addRow(row, true); }, { icon: 'fa-plus', className: 'notes-property-add' });
+    const form = h('fieldset', { class: 'notes-properties-form', disabled: draft.saving === true });
     const save = async () => {
-        const set = {
-            tags: splitList(tags.value).length ? splitList(tags.value) : null,
-            aliases: splitList(aliases.value).length ? splitList(aliases.value) : null,
-            type: type.value.trim() || null,
-        };
-        for (const item of custom) {
-            const raw = item.input.value.trim();
-            set[item.key] = raw === '' ? null : item.list ? splitList(raw) : raw;
+        if (!current() || draft.saving) return;
+        draft.saving = true;
+        form.disabled = true;
+        try {
+            if (!(await app.flushSave()) || !current()) return;
+            const set = propertyChanges(draft, app.state.note.detail?.properties ?? {});
+            if (!Object.keys(set).length) return app.toast('info', 'No property changes to save.');
+            const result = await app.changeNote([{ type: 'properties', set }], 'edit');
+            if (result && current() && state.propertyDraft === draft) { state.propertyDraft = null; void renderDetails(app); app.toast('success', 'Properties saved.'); }
+        } catch (error) {
+            if (current()) app.toast('warning', error.message);
+        } finally {
+            draft.saving = false;
+            form.disabled = false;
+            if (current() && state.propertyDraft === draft && !form.isConnected) void renderDetails(app);
         }
-        if (newKey.value.trim()) set[newKey.value.trim()] = newValue.value.trim() || null;
-        const result = await app.changeNote([{ type: 'properties', set }], 'edit');
-        if (result) app.toast('success', 'Properties saved.');
     };
-    out.push(section('Properties',
+    form.append(
         notice('All optional. They are stored at the top of the note, so other Markdown apps can read them too.'),
-        field('Tags', tags, 'Separate tags with commas.'), field('Other names', aliases, 'Links using these names find this note.'), field('Type', type),
-        customRows,
-        h('div', { class: 'notes-prop-new' }, field('New field', newKey), field('Value', newValue)),
-        detail.complexProperties?.length ? notice(userPhrase`Kept exactly as written (edit in Write view): ${detail.complexProperties.join(', ')}.`) : null,
-        button('Save properties', save, { icon: 'fa-floppy-disk', className: 'notes-primary' })));
+        field('Tags', inputs.tags, 'Separate tags with commas.'), field('Other names', inputs.aliases, 'Links using these names find this note.'), field('Type', inputs.type),
+        known, customRows, add,
+        notice('Add as many rows as you need, then Save properties once. Field suggestions come from this notebook.'),
+        ...(detail.complexProperties?.length ? [notice(userPhrase`Kept exactly as written (edit in Write view): ${detail.complexProperties.join(', ')}.`)] : []),
+        button('Save properties', save, { icon: 'fa-floppy-disk', className: 'notes-primary' }));
+    out.push(section('Properties', form));
+
+    const suggestions = await app.request('/properties/keys', { notebookId: state.notebookId });
+    if (current() && !app.failed(suggestions)) for (const key of suggestions.keys ?? []) {
+        if (!RESERVED_PROPERTIES.has(key.toLowerCase())) known.append(h('option', { value: key, 'data-i18n-ignore': '' }));
+    }
 
     if (note.provenance?.length) {
         out.push(section('Where this came from', h('ul', { class: 'notes-plain-list' },

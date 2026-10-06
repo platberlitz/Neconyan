@@ -16,7 +16,7 @@ import * as assistant from '../notebooks/assistant.js';
 import * as context from '../notebooks/context.js';
 import { buildNoteEmbeds } from '../notebooks/embeds.js';
 import { buildNoteGraph, GRAPH_LIMITS } from '../notebooks/graph.js';
-import { queryPropertyTable, PROPERTY_TABLE_LIMITS } from '../notebooks/property-table.js';
+import { notebookPropertyKeys, queryPropertyTable, PROPERTY_TABLE_LIMITS } from '../notebooks/property-table.js';
 import * as canvasStore from '../notebooks/canvas-store.js';
 import * as obsidian from '../notebooks/obsidian.js';
 import { projectCanvas } from '../notebooks/canvas-projection.js';
@@ -461,6 +461,12 @@ router.post('/canvas/recovery/decide', route(({ lease, body, actor }) => {
 }));
 
 /* ---------- search and links ---------- */
+
+router.post('/properties/keys', route(({ lease, body }) => {
+    const state = store.loadNotebookLocked(lease, requireNotebookId(body.notebookId));
+    // Suggestions are for the authenticated owner, not an assistant read route.
+    return { status: 'success', ...notebookPropertyKeys(state.entries) };
+}));
 
 router.post('/properties/table', route(({ lease, body }) => {
     const state = store.loadNotebookLocked(lease, requireNotebookId(body.notebookId));
