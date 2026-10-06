@@ -53,9 +53,11 @@ for (const phone of [false, true]) {
                     return colour;
                 }, custom);
 
-                await form.evaluate(element => element.classList.add('sb-generating-controls'));
-                await expect(edge, `${style}, custom=${custom}`).toHaveCSS('box-shadow', `${colour} 0px 0px 0px 3px inset`);
-                await expect(edge).toHaveCSS('border-top-color', colour);
+                // A late chat-load step can call hideStopButton() and drop the class, so re-apply it until it sticks.
+                await expect.poll(async () => {
+                    await form.evaluate(element => element.classList.add('sb-generating-controls'));
+                    return edge.evaluate(element => [getComputedStyle(element).boxShadow, getComputedStyle(element).borderTopColor]);
+                }, { message: `${style}, custom=${custom}` }).toEqual([`${colour} 0px 0px 0px 3px inset`, colour]);
                 const active = await edge.boundingBox();
                 expect(active.height).toBe(idle.height);
                 await form.evaluate(element => element.classList.remove('sb-generating-controls'));

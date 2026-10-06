@@ -25,6 +25,9 @@ for (const phone of [true, false]) {
         const sections = panel.locator('.ica--tpanel-agent');
         const order = () => sections.evaluateAll(nodes => nodes.map(node => node.dataset.agentId));
         await expect.poll(order).toEqual(['reorder-a', 'reorder-b', 'reorder-c']);
+        // Measure the grip only once the panel has finished sliding in and startup notices are gone.
+        await expect.poll(() => panel.evaluate(node => node.getAnimations({ subtree: true }).length)).toBe(0);
+        await page.evaluate(() => window.toastr?.remove());
         const grip = sections.first().locator('.ica--tpanel-drag-handle');
         const draggedHandle = await grip.elementHandle();
         expect(await grip.evaluate(node => window.getComputedStyle(node).touchAction)).toBe('none');
