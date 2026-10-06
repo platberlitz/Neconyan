@@ -127,7 +127,8 @@ test('invalid and missing links block sends; transient failure retries its exact
     expect(new URL(page.url()).searchParams.has('chat')).toBe(true);
     await page.getByRole('button', { name: 'Go to Home', exact: true }).click();
     await ready(page);
-    expect(new URL(page.url()).searchParams.get('view')).toBe('home');
+    expect(new URL(page.url()).searchParams.has('chat')).toBe(false);
+    expect(new URL(page.url()).searchParams.has('view')).toBe(false);
     let failing = true;
     await page.route('**/api/chat-navigation/resolve', route => failing ? route.fulfill({ status: 503, json: { error: 'navigation_retry' } }) : route.continue());
     const link = `${app.url}/?chat=${a.id}&mode=roleplay`;
@@ -442,7 +443,13 @@ test('draft refusal, disabled URL tracking and restored-page routing preserve th
     await page.goto(app.url);
     await ready(page);
     await page.evaluate(() => window.NeconyanShell.showHome());
-    await expect.poll(() => new URL(page.url()).searchParams.get('view')).toBe('home');
+    await expect(page.locator('body')).toHaveClass(/neconyan-home-visible/);
+    expect(new URL(page.url()).searchParams.has('view')).toBe(false);
+    // An address saved by an earlier build still resumes when chat links are off.
+    await preferences(page, { links: false, resume: true });
+    await page.goto(`${app.url}/?view=home`);
+    await assertRoleplay(page, 'Nav A');
+    expect(new URL(page.url()).searchParams.has('view')).toBe(false);
 });
 
 test('desktop clipboard success uses the real labelled control and expired sign-in retains the chat link', async ({ app }) => {

@@ -163,6 +163,8 @@ function openLinkSettings() {
 }
 
 function writeHistory(destination, reason) {
+    // Without chat links Home keeps a clean address, so a refresh can still resume the last chat.
+    if (destination?.kind === 'home' && !power_user.chat_links) destination = null;
     const next = chatNavigationUrl(location.href, destination);
     const action = chatHistoryAction({ current: parseChatNavigation(location.href), next: destination || { kind: 'root' }, linksEnabled: Boolean(power_user.chat_links), reason });
     if (action !== 'none' && next.href !== location.href) history[`${action}State`](history.state, '', next);
@@ -479,7 +481,12 @@ export async function initChatNavigation() {
 }
 
 async function startLaunch() {
-    const intent = parseChatNavigation(chatNavigationLaunchUrl);
+    let intent = parseChatNavigation(chatNavigationLaunchUrl);
+    // Earlier builds wrote ?view=home even with chat links off; treat it as a plain launch.
+    if (intent.kind === 'home' && !power_user.chat_links) {
+        writeHistory(null, 'replace');
+        intent = { kind: 'root' };
+    }
     retryStartup = false;
     try {
         const state = await post('state');
