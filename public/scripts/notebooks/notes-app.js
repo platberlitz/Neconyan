@@ -222,11 +222,11 @@ function buildRoot() {
     elements.resizer = h('div', { class: 'notes-resizer', role: 'separator', 'aria-orientation': 'vertical', tabindex: '0',
         'aria-label': 'Resize notes panel', onpointerdown: startResize, onkeydown: resizeByKey });
     elements.header = h('header', { class: 'notes-header' },
-        h('h2', { class: 'notes-heading' }, h('i', { class: 'fa-solid fa-book-open', 'aria-hidden': 'true' }), h('span', { text: 'Notes' })),
+        h('h2', { class: 'notes-heading' }, h('i', { class: 'fa-solid fa-book-open', 'aria-hidden': 'true' }), h('span', { text: 'Notebooks' })),
         elements.back, h('span', { class: 'notes-spacer' }),
         elements.layoutButton, elements.close);
     elements.intro = h('div', { class: 'notes-intro' });
-    elements.root = h('section', { id: 'neconyan-notes', class: 'notes-app', 'aria-label': 'Notes', hidden: true, onkeydown: onNotesKeydown },
+    elements.root = h('section', { id: 'neconyan-notes', class: 'notes-app', 'aria-label': 'Notebooks', hidden: true, onkeydown: onNotesKeydown },
         elements.resizer, elements.header, elements.intro, elements.paneTabs,
         h('div', { class: 'notes-columns' }, elements.nav, elements.editorPane, elements.details));
     document.body.append(elements.root);

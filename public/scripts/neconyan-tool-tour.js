@@ -1370,7 +1370,7 @@ const TOOL_PAGES = Object.freeze({
     },
     notes: {
         assistant: 'miso',
-        name: 'Notes',
+        name: 'Notebooks',
         aliases: ['notebooks'],
         kicker: 'Writing space',
         description: 'Keep ideas, drafts and references in notebooks that live next to your chats. Link notes together, let assistants read them when you say so, and write with or without a chat open.',
@@ -1381,8 +1381,8 @@ const TOOL_PAGES = Object.freeze({
             {
                 id: 'welcome',
                 targets: ['.neconyan-tool-page-intro'],
-                title: 'Welcome to Notes!',
-                body: 'This is your writing room! **Notes** keeps ideas, character drafts, scene plans and anything else you want to remember, all in **notebooks**.\nNothing here is sent to a model unless you allow it. It is your space first.',
+                title: 'Welcome to Notebooks!',
+                body: 'This is your writing room! **Notebooks** keeps ideas, character drafts, scene plans and anything else you want to remember, all in **notebooks**.\nNothing here is sent to a model unless you allow it. It is your space first.',
                 hint: 'Grab a snack and settle in. Writing rooms need snacks!',
             },
             {
@@ -1479,8 +1479,8 @@ const TOOL_PAGES = Object.freeze({
                 id: 'layout',
                 targets: ['.notes-layout-toggle'],
                 optional: true,
-                title: 'Notes beside the chat',
-                body: 'Press **Beside chat** to shrink Notes into a side column so you can write while a chat is open. Press it again for **Full width**.\nIn a chat, every message has **Save to note**, which copies it straight into a notebook.',
+                title: 'Notebooks beside the chat',
+                body: 'Press **Beside chat** to open Notebooks in a side column so you can write while a chat is open. Press it again for **Full width**.\nIn a chat, every message has **Save to note**, which copies it straight into a notebook.',
                 hint: 'Chat on one side, notes on the other. Cosy!',
             },
             {

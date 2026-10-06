@@ -54,7 +54,7 @@ function createWelcomeRuntime(overrides = {}) {
 }
 
 describe('Neconyan workspace rail behavior', () => {
-    test('Notes selection follows its open state, including beside-chat and direct opens', () => {
+    test('Notebooks selection follows its open state, including beside-chat and direct opens', () => {
         const attributes = [new Map(), new Map(), new Map()];
         const buttons = ['notes', 'home', 'model'].map((route, index) => ({
             dataset: { neconyanRoute: route },
@@ -88,8 +88,8 @@ describe('Neconyan workspace rail behavior', () => {
         expect(tabsSource).toMatch(/observer\.observe\(document\.body, \{\s*attributes: true,\s*attributeFilter: \['class'\]/);
     });
 
-    test('Scratchpad sits under Notes, opens from the rail and shows as selected while open', () => {
-        expect(welcomeSource).toMatch(/\['notes', 'Notes', 'fa-note-sticky'\],\s*\['scratchpad', 'Scratchpad', 'fa-clipboard-list'\],/);
+    test('Scratchpad sits under Notebooks, opens from the rail and shows as selected while open', () => {
+        expect(welcomeSource).toMatch(/\['notes', 'Notebooks', 'fa-note-sticky'\],\s*\['scratchpad', 'Scratchpad', 'fa-clipboard-list'\],/);
         expect(getWelcomeFunctionSource('activateNeconyanRailRoute'))
             .toMatch(/case 'scratchpad':[\s\S]*?import\('\.\/scratchpad\/index\.js'\)[\s\S]*?openScratchpad\(\)/);
 

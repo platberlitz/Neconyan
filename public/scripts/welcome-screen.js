@@ -1929,7 +1929,7 @@ function ensureNeconyanRail() {
         ['agents', 'Agents', 'fa-cat'],
         ['mewmory', 'Mewmory', 'fa-brain'],
         ['lorebooks', 'Lorebooks', 'fa-book-atlas'],
-        ['notes', 'Notes', 'fa-note-sticky'],
+        ['notes', 'Notebooks', 'fa-note-sticky'],
         ['scratchpad', 'Scratchpad', 'fa-clipboard-list'],
         ['extensions', 'Extensions', 'fa-cubes'],
     ];

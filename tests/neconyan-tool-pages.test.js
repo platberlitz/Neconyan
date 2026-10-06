@@ -337,7 +337,7 @@ describe('Agents page tour led by Taro', () => {
     });
 });
 
-describe('Notes opens as a page led by Miso', () => {
+describe('Notebooks opens as a page led by Miso', () => {
     const source = read('../public/scripts/neconyan-tool-tour.js');
     const notesApp = read('../public/scripts/notebooks/notes-app.js');
     const notesPanels = read('../public/scripts/notebooks/notes-panels.js');
@@ -346,8 +346,9 @@ describe('Notes opens as a page led by Miso', () => {
     test('the page exists, answers to notebooks and starts and ends on the page chrome', () => {
         const page = getToolPage('notes');
         expect(page.assistant).toBe('miso');
-        expect(page.name).toBe('Notes');
+        expect(page.name).toBe('Notebooks');
         expect(getToolPageKey('notebooks')).toBe('notes');
+        expect(getToolPageKey('Notes')).toBe('notes');
         expect(page.kicker).toBeTruthy();
         expect(page.description).toBeTruthy();
         expect(page.invite).toBeTruthy();
