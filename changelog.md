@@ -4,6 +4,7 @@
 
 ### Merged Staging PRs
 - PR #28 (2026-10-06) `fix(notes): highlight the picked template and add a Delete button`
+- PR #29 (2026-10-06) `fix: phone menu no longer sends you back to Home`
 
 ## v1.1.1
 
