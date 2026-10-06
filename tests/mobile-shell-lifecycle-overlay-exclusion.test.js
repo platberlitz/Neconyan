@@ -15,6 +15,10 @@ const EXPECTED_CLOSE_SURFACES = Object.freeze({
         MOBILE_SHELL_SURFACE.CHAT_TOOLS,
         MOBILE_SHELL_SURFACE.CONNECTION_STRIP,
     ],
+    [MOBILE_SHELL_SURFACE.RAIL_DRAWER]: [
+        MOBILE_SHELL_SURFACE.CHAT_TOOLS,
+        MOBILE_SHELL_SURFACE.CONNECTION_STRIP,
+    ],
     [MOBILE_SHELL_SURFACE.LEFT_SHELL]: [
         MOBILE_SHELL_SURFACE.RIGHT_SHELL,
         MOBILE_SHELL_SURFACE.CHARACTER_PANEL,
@@ -56,6 +60,7 @@ describe('mobile shell overlay exclusion lifecycle', () => {
     test('keeps the shell surface constants explicit', () => {
         expect(MOBILE_SHELL_SURFACE).toEqual({
             NAV: 'mobile-nav',
+            RAIL_DRAWER: 'rail-drawer',
             LEFT_SHELL: 'left-shell',
             RIGHT_SHELL: 'right-shell',
             CHARACTER_PANEL: 'character-panel',

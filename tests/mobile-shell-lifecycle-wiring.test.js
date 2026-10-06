@@ -863,6 +863,7 @@ describe('mobile shell lifecycle wiring', () => {
         const openShellSource = getFunctionSource('openShell');
         const closeAllDropdownsSource = getFunctionSource('closeAllDropdowns');
         const setConnectionStripOpenStateSource = getFunctionSource('setConnectionStripOpenState');
+        const setRailDrawerOpenSource = getFunctionSource('setNeconyanRailDrawerOpen');
 
         expect(applyExclusivitySource).toContain('[surface.NAV]: () => closeMobileNav(),');
         expect(applyExclusivitySource).toContain('[surface.LEFT_SHELL]: () => closeShell(\'left\'),');
@@ -883,6 +884,7 @@ describe('mobile shell lifecycle wiring', () => {
             openShellSource,
             closeAllDropdownsSource,
             setConnectionStripOpenStateSource,
+            setRailDrawerOpenSource,
         ]) {
             expect(source).toContain('applyMobileSurfaceExclusivity(nnMobileShellLifecycle.overlays.resolveExclusiveOpen({');
         }
@@ -890,6 +892,7 @@ describe('mobile shell lifecycle wiring', () => {
         expect(openMobileChatToolsSource).toContain('surface: nnMobileShellLifecycle.overlays.surface.CHAT_TOOLS,');
         expect(toggleMobileChatToolsSource).toContain('surface: nnMobileShellLifecycle.overlays.surface.CHAT_TOOLS,');
         expect(toggleMobileNavSource).toContain('surface: nnMobileShellLifecycle.overlays.surface.NAV,');
+        expect(setRailDrawerOpenSource).toContain('surface: nnMobileShellLifecycle.overlays.surface.RAIL_DRAWER,');
         expect(toggleCharacterPanelSource).toContain('surface: nnMobileShellLifecycle.overlays.surface.CHARACTER_PANEL,');
         expect(toggleShellPanelSource).toContain('surface: shellSurface,');
         expect(openCharacterWorldInfoTabSource).toContain('surface: nnMobileShellLifecycle.overlays.surface.CHARACTER_PANEL,');

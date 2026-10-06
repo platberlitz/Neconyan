@@ -15,6 +15,7 @@ export const MOBILE_SHELL_NAV_SCROLL_BEHAVIOR = Object.freeze({
 
 export const MOBILE_SHELL_SURFACE = Object.freeze({
     NAV: 'mobile-nav',
+    RAIL_DRAWER: 'rail-drawer',
     LEFT_SHELL: 'left-shell',
     RIGHT_SHELL: 'right-shell',
     CHARACTER_PANEL: 'character-panel',
@@ -51,6 +52,18 @@ const MOBILE_SHELL_OVERLAY_EXCLUSION_TABLE = Object.freeze({
             MOBILE_SHELL_SURFACE.LEFT_SHELL,
             MOBILE_SHELL_SURFACE.RIGHT_SHELL,
             MOBILE_SHELL_SURFACE.CHARACTER_PANEL,
+            MOBILE_SHELL_SURFACE.CHAT_TOOLS,
+            MOBILE_SHELL_SURFACE.CONNECTION_STRIP,
+        ]),
+    }),
+    // The phone menu drawer slides over the open page, so it keeps that page
+    // open underneath and only dismisses transient popovers.
+    [MOBILE_SHELL_SURFACE.RAIL_DRAWER]: Object.freeze({
+        mobile: Object.freeze([
+            MOBILE_SHELL_SURFACE.CHAT_TOOLS,
+            MOBILE_SHELL_SURFACE.CONNECTION_STRIP,
+        ]),
+        desktop: Object.freeze([
             MOBILE_SHELL_SURFACE.CHAT_TOOLS,
             MOBILE_SHELL_SURFACE.CONNECTION_STRIP,
         ]),
