@@ -27,7 +27,7 @@ async function pollHorde({ context, jobContext, key, taskId, cleanup, signal, fe
             const text = cleanGeneratedText(removePartialStops(rawText, cleanup.stops), { power: cleanup.power, mainApi: 'koboldhorde',
                 name1: userName, name2: characterName, groupNames, trimNames, trimWrongNames: trimNames, displayIncompleteSentences: true });
             const result = { response: { text: rawText }, text, generation: { backend: 'horde', source: 'koboldhorde',
-                model: status.generations?.[0]?.model, showThoughts: false } };
+                ...(status.generations?.[0]?.model ? { model: status.generations[0].model } : {}), showThoughts: false } };
             writeArtifact(context.directories, jobContext.job.id, 'horde-result:' + key, result);
             return result;
         }
@@ -206,7 +206,7 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
             trimWrongNames: rawOptions.trimNames !== false, displayIncompleteSentences: true });
         if (!text) fail('No message generated.', 502);
         return { response, text, generation: { backend: material.backend, source: material.source,
-            model: payload.model || material.profile?.model, showThoughts: false } };
+            ...((payload.model || material.profile?.model) ? { model: payload.model || material.profile?.model } : {}), showThoughts: false } };
     };
     if (jobContext) await onProviderStep?.('provider:' + key);
     return jobContext ? providerStep(jobContext, key, call) : call();

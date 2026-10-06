@@ -20,12 +20,12 @@ const instruct = { enabled: true, wrap: false, names_behavior: 'none', input_seq
     first_input_sequence: '<FIRST>', last_input_sequence: '<LAST>', last_output_sequence: '<NEXT>',
     input_suffix: '</U>', output_suffix: '</A>', story_string_prefix: '<S>', story_string_suffix: '</S>' };
 
-function textJob(t, effect = 'append', { contextLimit = 512, instruction = instruct, extraSettings = {}, power = {}, bias } = {}) {
+function textJob(t, effect = 'append', { contextLimit = 512, instruction = instruct, extraSettings = {}, power = {}, bias, model = 'fixture' } = {}) {
     const f = fixture(t);
     f.records[1].extra = bias ? { bias } : {};
     fs.writeFileSync(f.filename, f.records.map(JSON.stringify).join('\n'));
     fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({ _settingsRevision: 1,
-        ...extraSettings, main_api: 'textgenerationwebui', active_generation: { api: 'textgenerationwebui', source: 'llamacpp', model: 'fixture', serverUrl: 'http://127.0.0.1:6000' },
+        ...extraSettings, main_api: 'textgenerationwebui', active_generation: { api: 'textgenerationwebui', source: 'llamacpp', model, serverUrl: 'http://127.0.0.1:6000' },
         max_context: contextLimit, textgenerationwebui_settings: { type: 'llamacpp', api_server: 'http://127.0.0.1:6000',
             server_urls: { llamacpp: 'http://127.0.0.1:6000' } },
         power_user: { tokenizer: 1, custom_stopping_strings: '[]', instruct: instruction,
@@ -58,6 +58,19 @@ for (const effect of ['append', 'continue']) test(`native text ${effect} sends t
     await job.run(async () => assert.fail('A durable result must not call the provider again'));
     assert.equal(calls, 1);
     assert.ok(readRoleplayChat(job.f.scope, job.f.locator).records.at(-1).mes.includes('Finished'));
+});
+
+test('native text saves the reply when the connection has no model name', async t => {
+    const job = textJob(t, 'append', { model: '' });
+    let provided;
+    await runRoleplayReplyJob(job.context, { generate: async options => {
+        provided = await runChatProfile({ ...options, fetch: async () => new Response(JSON.stringify({ content: 'Unnamed model reply' })) });
+        return provided;
+    } });
+    // Saved candidates are hashed as plain JSON, so the provider result must survive a JSON round trip.
+    assert.deepEqual(JSON.parse(JSON.stringify(provided.generation)), provided.generation);
+    assert.equal(Object.hasOwn(provided.generation, 'model'), false);
+    assert.ok(readRoleplayChat(job.f.scope, job.f.locator).records.at(-1).mes.includes('Unnamed model reply'));
 });
 
 test('instruct sequence overhead is budgeted before any paid request', async t => {

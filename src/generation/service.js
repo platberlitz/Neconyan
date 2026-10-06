@@ -26,6 +26,8 @@ import { validFunctionTools } from '../../public/scripts/chat-input-capabilities
 
 const transportFields = ['proxy_password', 'custom_include_headers', 'custom_include_body', 'reverse_proxy', 'custom_url', 'api_server', 'azure_base_url'];
 const withoutTransport = payload => Object.fromEntries(Object.entries(payload).filter(([key]) => !transportFields.includes(key)));
+// Saved provider results are hashed as plain JSON, so a blank model is left out rather than stored as undefined.
+const modelField = model => (model ? { model } : {});
 function restoreTransport(payload, material) {
     const settings = mergeChatPresetSettings(material.active, material.preset);
     return { ...payload, ...Object.fromEntries(transportFields.flatMap(key => {
@@ -245,7 +247,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
         payload = restoreTransport(payload, current);
         await validatePrompt?.(payload, material);
         const generation = { backend: binding.backend || 'chat', source: material.source,
-            model: payload.model || modelOverride || material.profile.model,
+            ...modelField(payload.model || modelOverride || material.profile.model),
             showThoughts: Boolean(material.active.show_thoughts || material.active.auto_append_reasoning_tags) };
         const call = async () => {
             try { await beforeDispatch?.(); } catch (error) { throw providerNotDispatched(error); }
@@ -285,7 +287,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
     payload = { ...restoreTransport(payload, material), stream: stream === true };
     await validatePrompt?.(payload, material);
     const generation = { backend: 'chat', source: material.source,
-        model: payload.model || modelOverride || material.profile.model,
+        ...modelField(payload.model || modelOverride || material.profile.model),
         showThoughts: Boolean(material.active.show_thoughts || material.active.auto_append_reasoning_tags) };
     const call = async () => {
         try { await beforeDispatch?.(); } catch (error) { throw providerNotDispatched(error); }

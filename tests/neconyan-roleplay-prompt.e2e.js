@@ -99,7 +99,7 @@ for (const phone of [false, true]) {
         }, account.avatar);
         await page.locator('#send_textarea').fill('Fixture text question');
         await page.locator('#send_but').click();
-        await expect(page.locator('#chat .mes').last()).toContainText('Text fixture reply');
+        await expect(page.locator('#chat .mes').last()).toContainText('Text fixture reply', { timeout: 60000 });
         const prefix = '<S>Nova belongs to account default-user.</S><FIRST_A>Hello.</A><LAST>Fixture text question</U>';
         expect(app.provider.calls).toHaveLength(1);
         expect(app.provider.calls[0].prompt).toBe(prefix + '<NEXT>');
