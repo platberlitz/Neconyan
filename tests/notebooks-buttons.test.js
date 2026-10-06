@@ -53,6 +53,29 @@ describe('Notes button theme roles', () => {
         expect(element.classList.contains('menu_button_primary')).toBe(true);
     });
 
+    test('choice rows move the selected state and colour to the clicked choice', () => {
+        const choiceRowSource = source.match(/export function choiceRow\([\s\S]*?\n\}/)[0].replace('export ', '');
+        const h = (tag, attributes, ...children) => ({ tag, attributes, children, append(child) { this.children.push(child); } });
+        const buttons = [];
+        const button = (text, onClick, { pressed }) => {
+            const element = makeButton('notes-choice', pressed).element;
+            element.text = text;
+            element.click = () => onClick();
+            buttons.push(element);
+            return element;
+        };
+        const choiceRow = vm.runInNewContext(`${choiceRowSource}; choiceRow`, { h, button, setButtonPressed });
+        const onChoose = jest.fn();
+        const group = choiceRow('Start from', [['blank', 'Blank note'], ['location', 'Location'], ['scene', 'Scene plan']], 'blank', onChoose);
+        expect(group.children[1].children).toEqual(buttons);
+        buttons[1].click();
+        expect(onChoose).toHaveBeenCalledWith('location');
+        expect(buttons.map(element => element.attributes['aria-pressed'])).toEqual(['false', 'true', 'false']);
+        expect(buttons.map(element => element.classList.contains('menu_button_primary'))).toEqual([false, true, false]);
+        buttons[2].click();
+        expect(buttons.map(element => element.attributes['aria-pressed'])).toEqual(['false', 'false', 'true']);
+    });
+
     test('changing a primary action keeps its native colour role even when it is not pressed', () => {
         const { element } = makeButton('notes-primary', true);
         setButtonPressed(element, false);
