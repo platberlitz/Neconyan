@@ -361,7 +361,8 @@ function buildChatPanel() {
         onclick: toggleOverview,
     });
     el.overview = h('div', { id: 'scratchpad-overview', class: 'scratchpad-overview' },
-        h('div', { class: 'scratchpad-chat-top' }, el.overviewToggle, el.roundTable, el.assistantPicker),
+        // Round table comes last so a narrow panel wraps it, not Miso, Taro and Nori.
+        h('div', { class: 'scratchpad-chat-top' }, el.overviewToggle, el.assistantPicker, el.roundTable),
         el.summary);
     append(el.panels.chat, [
         el.overviewBar,
