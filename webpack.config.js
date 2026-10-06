@@ -30,6 +30,7 @@ function getPublicLibInputsSignature(bundle = 'lib') {
     hashFileIfPresent(hasher, path.join(serverDirectory, 'public', `${bundle}.js`));
     if (bundle === 'notes-editor') {
         hashFileIfPresent(hasher, path.join(serverDirectory, 'public', 'scripts', 'notebooks', 'folding.js'));
+        hashFileIfPresent(hasher, path.join(serverDirectory, 'public', 'scripts', 'notebooks', 'list-editing.js'));
     }
     hashFileIfPresent(hasher, path.join(serverDirectory, 'package.json'));
     hashFileIfPresent(hasher, path.join(serverDirectory, 'package-lock.json'));

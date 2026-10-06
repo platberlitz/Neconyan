@@ -2,9 +2,10 @@
 /* Third-party notices are shipped in notes-editor.LICENSE.txt. */
 import { EditorSelection, EditorState, RangeSet, Transaction } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import { defaultKeymap, history, historyKeymap, isolateHistory } from '@codemirror/commands';
 import { codeFolding, foldedRanges, foldEffect, unfoldEffect } from '@codemirror/language';
 import { headingSections, topLevelSections } from './scripts/notebooks/folding.js';
+import { continueList, indentLines } from './scripts/notebooks/list-editing.js';
 
 const headingCache = new WeakMap();
 
@@ -53,8 +54,24 @@ export function createNotesEditor(parent, options = {}) {
         const transaction = revealFoldedSelectionTransaction(view.state);
         if (transaction) view.dispatch(transaction);
     }
+    function applyEdit(edit) {
+        if (!edit || composing || view.composing) return false;
+        view.dispatch({ changes: { from: edit.from, to: edit.to, insert: edit.insert }, selection: edit.selection,
+            annotations: isolateHistory.of('full'), userEvent: 'input.list', scrollIntoView: true });
+        return true;
+    }
+    function listCommand(view, action) {
+        if (composing || view.composing) return false;
+        const selection = view.state.selection.main;
+        return applyEdit(action(view.state.doc.toString(), selection.from, selection.to));
+    }
     const extensions = [
         history(),
+        keymap.of([
+            { key: 'Enter', run: view => listCommand(view, continueList) },
+            { key: 'Tab', run: view => listCommand(view, (text, from, to) => indentLines(text, from, to, false, { listsOnly: true })),
+                shift: view => listCommand(view, (text, from, to) => indentLines(text, from, to, true, { listsOnly: true })) },
+        ]),
         keymap.of([...historyKeymap, ...defaultKeymap]),
         EditorView.lineWrapping,
         EditorState.tabSize.of(4),
@@ -91,7 +108,14 @@ export function createNotesEditor(parent, options = {}) {
             },
             blur() { options.onBlur?.(); },
             focus(event, view) { revealSelection(view); },
-            beforeinput(event, view) { revealSelection(view); },
+            beforeinput(event, view) {
+                revealSelection(view);
+                if (!event.isComposing && ['insertParagraph', 'insertLineBreak'].includes(event.inputType) && listCommand(view, continueList)) {
+                    event.preventDefault();
+                    return true;
+                }
+                return false;
+            },
             scroll() { options.onScroll?.(); },
             compositionstart(event, view) {
                 revealSelection(view);
@@ -156,6 +180,7 @@ export function createNotesEditor(parent, options = {}) {
         },
         setRangeText: replace,
         insertText: text => replace(text),
+        applyEdit,
         scrollToOffset: offset => view.dispatch({ effects: EditorView.scrollIntoView(Math.max(0, Math.min(offset, view.state.doc.length)), { y: 'center' }), annotations: Transaction.addToHistory.of(false) }),
         setAttribute: (name, value) => view.contentDOM.setAttribute(name, value),
         removeAttribute: name => view.contentDOM.removeAttribute(name),

@@ -12,6 +12,7 @@ import { clearDraft, readDraft, saveDraft } from './drafts.js';
 import { headingOutline, renderNoteInto } from './render.js';
 import { formatDiff } from './line-diff.js';
 import { userPhrase } from './user-text.js';
+import { formatList, indentLines } from './list-editing.js';
 
 const PREFS_KEY = 'neconyan_notes_prefs';
 const NOTES_STYLESHEET = 'css/neconyan-notes.css?v=17';
@@ -1411,9 +1412,11 @@ function buildToolbar() {
         ['Bold', 'fa-bold', () => wrapSelection('**', '**', 'bold text')],
         ['Italic', 'fa-italic', () => wrapSelection('*', '*', 'italic text')],
         ['Strikethrough', 'fa-strikethrough', () => wrapSelection('~~', '~~', 'struck text')],
-        ['Bulleted list', 'fa-list-ul', () => prefixLines('- ')],
-        ['Numbered list', 'fa-list-ol', () => prefixLines('1. ')],
-        ['Task', 'fa-square-check', () => prefixLines('- [ ] ')],
+        ['Bulleted list', 'fa-list-ul', () => editList('bullet')],
+        ['Numbered list', 'fa-list-ol', () => editList('ordered')],
+        ['Task', 'fa-square-check', () => editList('task')],
+        ['Indent', 'fa-indent', () => editIndent(false)],
+        ['Outdent', 'fa-outdent', () => editIndent(true)],
         ['Quote', 'fa-quote-left', () => prefixLines('> ')],
         ['Link to note', 'fa-link', () => void app.dialogs.linkPicker(app)],
         ['Web link', 'fa-globe', () => wrapSelection('[', '](https://)', 'link text')],
@@ -1436,6 +1439,22 @@ function buildToolbar() {
         items[(index + (event.key === 'ArrowRight' ? 1 : items.length - 1)) % items.length].focus();
     });
     return bar;
+}
+
+function applyListEdit(edit) {
+    if (!edit || app.sourceEditor?.composing) return;
+    app.elements.textarea.focus({ preventScroll: true });
+    app.elements.textarea.applyEdit(edit);
+}
+
+function editList(kind) {
+    const textarea = app.elements.textarea;
+    applyListEdit(formatList(textarea.value, textarea.selectionStart, textarea.selectionEnd, kind));
+}
+
+function editIndent(outdent) {
+    const textarea = app.elements.textarea;
+    applyListEdit(indentLines(textarea.value, textarea.selectionStart, textarea.selectionEnd, outdent));
 }
 
 /** Replaces the selection through the browser's editing command so native undo keeps working. */
