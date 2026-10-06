@@ -24,13 +24,59 @@ describe('Persona Management mobile layout', () => {
         expect(rules).toContain('touch-action: pan-y;');
     });
 
-    test('shrinks persona card content and wraps mobile actions', () => {
-        const contentRules = getRuleBodies(personaCss, '#user_avatar_block:not(.gridView) .avatar-container .character_select_container').join('\n');
-        const stateRules = getRuleBodies(personaCss, '#user_avatar_block:not(.gridView) .avatar-container .avatar_container_states').join('\n');
+    test('keeps persona rows compact: text shrinks, row actions stay on one line', () => {
+        const rowPrefix = '#PersonaManagement #user_avatar_block:not(.gridView) .avatar-container';
+        const contentRules = getRuleBodies(personaCss, `${rowPrefix} .character_select_container`).join('\n');
+        const descriptionRules = getRuleBodies(personaCss, `${rowPrefix} .ch_description`).join('\n');
+        const stateRules = getRuleBodies(personaCss, `${rowPrefix} .avatar_container_states`).join('\n');
 
-        expect(contentRules).toContain('grid-template-columns: minmax(0, 1fr);');
+        expect(contentRules).toContain('grid-template-columns: minmax(0, 1fr) auto;');
+        expect(contentRules).toContain('min-width: 0;');
+        expect(descriptionRules).toContain('text-overflow: ellipsis;');
+        expect(descriptionRules).toContain('white-space: nowrap;');
         expect(stateRules).toContain('min-width: 0;');
-        expect(stateRules).toContain('flex-wrap: wrap;');
+        expect(stateRules).toContain('flex-wrap: nowrap;');
+    });
+
+    test('drops the old three-line description padding', () => {
+        const personasJs = readFileSync(path.join(repoRoot, 'public', 'scripts', 'personas.js'), 'utf8');
+        expect(personasJs).not.toContain('\\n\\xa0\\n\\xa0');
+    });
+});
+
+describe('Persona Management workspace layout', () => {
+    test('shows library and editor side by side, with Browse/Edit tabs only in narrow panels', () => {
+        expect(personaCss).toContain('container: persona-page / inline-size;');
+        expect(personaCss).toMatch(/@container persona-page \(max-width: 719px\)/);
+        expect(indexHtml).toContain('id="persona_workspace_panel_browse" class="persona-workspace-panel persona-browse-pane"');
+        expect(indexHtml).toContain('id="persona_workspace_panel_edit" class="persona-workspace-panel persona-edit-pane"');
+    });
+
+    test('uses labelled editor tabs instead of a section dropdown', () => {
+        expect(tabsJs).not.toContain('\'#PersonaManagement .persona-editor-tabs\'');
+        expect(indexHtml).toMatch(/id="persona_editor_tab_prompt"[\s\S]*?data-i18n="Description"/);
+        expect(indexHtml).toMatch(/id="persona_editor_tab_connections"[\s\S]*?data-i18n="Locks"/);
+    });
+
+    test('shows each persona name once in the editor header', () => {
+        expect(indexHtml).toMatch(/<h5 id="your_name" class="persona_name" hidden>/);
+    });
+
+    test('colours pressed lock buttons and the selected row from the accent', () => {
+        const lockRules = getRuleBodies(personaCss, '#PersonaManagement #persona_connections_buttons > .persona-lock-button:is(.locked, [aria-pressed=\'true\'])').join('\n');
+        const selectedRules = getRuleBodies(personaCss, '#PersonaManagement #user_avatar_block .avatar-container.selected').join('\n');
+
+        expect(lockRules).toContain('var(--neco-ginger)');
+        expect(selectedRules).toContain('var(--neco-ginger)');
+        expect(personaCss).not.toMatch(/#[0-9a-f]{3,8}\b(?![\w-])/i);
+    });
+
+    test('keeps Delete looking like any other button until it is hovered or focused', () => {
+        expect(indexHtml).toMatch(/id="persona_delete_button" class="menu_button menu_button_icon"/);
+        expect(indexHtml).not.toMatch(/class="persona_quick_delete[^"]*red_button/);
+        const deleteRules = getRuleBodies(personaCss, '#PersonaManagement .persona-maintenance-actions #persona_delete_button:is(:hover, :focus-visible)').join('\n');
+        expect(deleteRules).toContain('var(--warning)');
+        expect(deleteRules).toContain('color: var(--neco-ink);');
     });
 });
 

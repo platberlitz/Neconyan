@@ -6206,10 +6206,6 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     display: none !important;
 }
 
-#right-nav-panel #PersonaManagement > .flex-container.wide100p.alignitemscenter.spaceBetween.flexNoGap:first-child > .flex-container.alignItemsBaseline.wide100p > .flex1 {
-    display: none !important;
-}
-
 #right-nav-panel .sb-creator-notes-compact {
     margin-top: 8px;
 }

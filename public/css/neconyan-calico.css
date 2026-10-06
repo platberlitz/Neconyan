@@ -394,14 +394,7 @@ body.neconyan:not(.sbterm) #right-nav-panel.openDrawer:is([data-menu-type='chara
     #persona-management-block,
     .sb-character-editor-identity,
     .sb-character-editor-field-box,
-    .sb-character-creator-notes-preview,
-    .persona_management_left_column,
-    .persona_management_current_persona,
-    .persona_management_global_settings,
-    .persona-editor-workspace,
-    .persona-editor-tabs,
-    .persona-editor-tab-panels,
-    .persona-editor-panel
+    .sb-character-creator-notes-preview
 ) {
     background: var(--neco-surface) !important;
 }
