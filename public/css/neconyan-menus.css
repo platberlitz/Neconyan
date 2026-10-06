@@ -197,3 +197,41 @@ body.neconyan:not(.sbterm) #options .options-content > hr {
         transition: none;
     }
 }
+
+/* Server status: where Neconyan and the signed-in user's data live on disk. */
+.sb-server-folder-list {
+    display: grid;
+    gap: var(--sb-shell-space-sm, 8px);
+}
+
+.sb-server-folder-list[hidden] { display: none; }
+
+.sb-server-folder-list .sb-server-folder {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+}
+
+.sb-server-folder-copy {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.sb-server-folder-path {
+    font-family: var(--monoFontFamily, monospace);
+    overflow-wrap: anywhere;
+    user-select: text;
+}
+
+.sb-server-folder-list .sb-server-folder-copy-button {
+    flex: 0 0 auto;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    margin: 0;
+    padding: 0;
+    justify-content: center;
+}
