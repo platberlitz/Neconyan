@@ -44,7 +44,9 @@ export function notebookContextLocked(lease, settings) {
         }
     });
     const payload = { notice: NOTE_TOOL_NOTICE, notebooks: destinations, notes };
-    const text = destinations.length || notes.length ? JSON.stringify(payload, null, 2) : '';
+    // The Context tab keeps the full reference; the model gets only the ids of notes it can no longer read.
+    const sent = { ...payload, notes: notes.map(note => note.unavailable ? { ...note, reference: { notebookId: note.reference.notebookId, noteId: note.reference.noteId } } : note) };
+    const text = destinations.length || notes.length ? JSON.stringify(sent, null, 2) : '';
     if (Buffer.byteLength(text) > MAX_CONTEXT_BYTES) throw new ScratchpadError('SCRATCHPAD_NOTES_TOO_LARGE', 'Share fewer notes or choose a section before sending.', 413);
     return { ...payload, text, fingerprint: hash(canonical(payload)) };
 }

@@ -66,6 +66,33 @@ test('Scratchpad reads only selected, currently shared notes, without expanding 
     assert.notEqual(revoked.fingerprint, context.fingerprint);
 });
 
+test('notes that are no longer shared send only their note ids to the model, while the Context tab keeps each full reference', t => {
+    const a = prepared(t);
+    const noteId = a.create('Plans', '# Hidden heading Marlow\n\nSecret body words.\n');
+    const revokedId = a.create('Revoked', '# Revoked heading\n\nRevoked words.\n');
+    const expiredId = a.create('Expired', 'Expired words.');
+    a.policy({ assistant: 'read' });
+    const sectionOf = id => a.context([{ notebookId: a.notebookId, noteId: id }]).notes[0].sections[0].id;
+    const grant = (id, now) => a.run(lease => assistant.createGrantLocked(lease, { notebookId: a.notebookId, noteId: id, scope: 'note', operations: ['read'], minutes: 1 }, now));
+    const section = { notebookId: a.notebookId, noteId, sectionId: sectionOf(noteId) };
+    const revoked = grant(revokedId);
+    const revokedRef = { notebookId: a.notebookId, noteId: revokedId, sectionId: sectionOf(revokedId), grantId: revoked.id };
+    const expired = grant(expiredId, Date.now() - 120000);
+    const expiredRef = { notebookId: a.notebookId, noteId: expiredId, grantId: expired.id, offset: 3 };
+    assert.ok(a.context([section]).text.includes('Secret body words.'));
+    assert.ok(a.context([revokedRef]).text.includes('Revoked words.'));
+    a.policy({ assistant: 'read', notes: { [noteId]: { assistant: 'none' } } });
+    a.run(lease => assistant.revokeGrantLocked(lease, revoked.id));
+    const refs = [section, revokedRef, expiredRef];
+    const context = a.context(refs);
+    assert.deepEqual(context.notes.map(note => note.unavailable), [true, true, true]);
+    assert.deepEqual(context.notes.map(note => note.reference), refs);
+    const sent = JSON.parse(context.text).notes;
+    assert.deepEqual(sent.map(note => note.reference), refs.map(ref => ({ notebookId: ref.notebookId, noteId: ref.noteId })));
+    for (const hidden of [section.sectionId, revokedRef.sectionId, revoked.id, expired.id, 'Hidden heading', 'Revoked heading', '"offset"']) assert.ok(!context.text.includes(hidden), hidden);
+    for (const id of [noteId, revokedId, expiredId]) assert.ok(context.text.includes(id));
+});
+
 test('temporary selection sharing exposes only its exact text and stops after revocation or expiry', t => {
     const a = prepared(t);
     const text = 'Private beginning. Shared passage. Private ending.';
