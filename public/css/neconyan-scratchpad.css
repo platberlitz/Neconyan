@@ -875,7 +875,8 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
 }
 
 @container scratchpad (max-width: 520px) {
-    .scratchpad-app .scratchpad-layout-toggle span {
+    .scratchpad-app .scratchpad-layout-toggle span,
+    .scratchpad-app .scratchpad-new-session span {
         display: none;
     }
 }

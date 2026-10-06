@@ -22,6 +22,8 @@ Pick who you are talking to under **Talking with**, type in the box at the botto
 
 The input starts one line high and grows as you add lines, up to a few lines, so the whole message stays readable. Longer drafts scroll inside it, and pasted text keeps its line breaks.
 
+Press **New session** at the top of Scratchpad to start a fresh conversation for the open chat.
+
 Turn on **Round table** to ask up to three assistants together. Press their portraits to include or exclude them; keep at least one selected. **Ask 2** or **Ask 3** sends one question to everyone selected, using each assistant's own connection profile and personality. Each answer is labelled and saved separately in the same session. The reply limit applies to each assistant.
 
 Round-table assistants answer at the same time. They share your question and the earlier conversation, but do not see the other answers being written in that round. Ask a follow-up to compare their views or have them respond to one another. **Stop all** stops unfinished replies and keeps answers already saved. If one connection fails, the other answers are kept and you can retry just the failed assistant.

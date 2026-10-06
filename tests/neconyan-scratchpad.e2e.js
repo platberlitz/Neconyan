@@ -291,9 +291,11 @@ for (const phone of [false, true]) {
         await expect(composer).toHaveValue('Keep this next message.');
         expect(app.provider.calls.filter(call => call.messages?.at(-1)?.content === 'Tell me about the moonflower.').map(call => call.model)).toEqual([MODEL]);
 
-        await page.getByRole('tab', { name: 'Sessions', exact: true }).click();
-        await page.getByRole('button', { name: 'New session', exact: true }).click();
+        const sessionCount = (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions.length;
+        await page.locator('.scratchpad-header .scratchpad-new-session').click();
+        await expect(page.getByRole('tab', { name: 'Chat', exact: true })).toHaveAttribute('aria-selected', 'true');
         await expect(composer).toHaveValue('');
+        await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions.length).toBe(sessionCount + 1);
         await composer.fill('A separate session draft.');
         await page.getByRole('tab', { name: 'Sessions', exact: true }).click();
         await page.locator('.scratchpad-session:not(.is-active)').getByRole('button', { name: 'Open', exact: true }).click();

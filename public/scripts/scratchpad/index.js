@@ -263,6 +263,7 @@ function build() {
         writePrefs();
         applyLayout();
     }, { icon: 'fa-expand', className: 'scratchpad-layout-toggle' });
+    el.newSession = iconButton(t`New session`, () => void newSession(false), { icon: 'fa-plus', className: 'scratchpad-new-session', title: t`Start a new Scratchpad session` });
     const close = iconButton(t`Back to chat`, () => hideScratchpad(), { icon: 'fa-comments', className: 'scratchpad-close' });
 
     el.tabs = {};
@@ -299,7 +300,7 @@ function build() {
             h('div', { class: 'scratchpad-title' },
                 h('h2', { class: 'scratchpad-heading', text: t`Scratchpad` }),
                 el.sourceLabel),
-            h('div', { class: 'scratchpad-header-actions' }, el.layoutButton, close)),
+            h('div', { class: 'scratchpad-header-actions' }, el.newSession, el.layoutButton, close)),
         tabList,
         h('div', { class: 'scratchpad-body' }, el.panels.chat, el.panels.context, el.panels.sessions));
     document.body.append(el.root);
@@ -678,6 +679,7 @@ function renderHeader() {
     const assistant = session?.assistant ?? app.assistant;
     app.el.portrait.src = getAssistantIconSrc(assistant);
     app.el.sourceLabel.textContent = app.source ? app.source.label : t`No chat open`;
+    app.el.newSession.disabled = !app.source;
     const participants = sessionAssistants(session);
     const roundTable = session?.settings.roundTable === true;
     app.el.roundTable.setAttribute('aria-pressed', String(roundTable));
