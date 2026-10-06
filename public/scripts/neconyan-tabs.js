@@ -33,6 +33,7 @@ import { is_group_generating } from './group-chats.js';
 import { eventSource, event_types } from './events.js';
 import { extensionNames, findExtension, getExtensionManifest, getExtensionType } from './extensions.js';
 import { getCurrentUserHandle } from './user.js';
+import { bindClearJobHistoryButton } from './job-history-cleanup.js';
 import { getAssistantIconSrc } from './neconyan-assistant-art.js';
 import { t, translate } from './i18n.js';
 import {
@@ -20259,6 +20260,7 @@ function initAll() {
     bindTopbarDragEvents();
     bindChatbarEvents();
     bindClearCookiesAndCacheButton();
+    bindClearJobHistoryButton();
     bindMessageActionExtensionEvents();
     syncMessageActionExtensionVisibility();
     scheduleChatbarRefresh(0);

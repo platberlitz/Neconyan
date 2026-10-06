@@ -1,6 +1,6 @@
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import { acceptJob, dismissJob, explicitRetryRecovery, getJob, listJobs, requestCancellation, retryConversationFamily, updateJob, validateOwner } from '../jobs/store.js';
+import { acceptJob, clearFinishedJobs, dismissJob, explicitRetryRecovery, getJob, listJobs, requestCancellation, retryConversationFamily, updateJob, validateOwner } from '../jobs/store.js';
 import { abortJob, capacity, noteOwner, ownerCount } from '../jobs/runner.js';
 import { readArtifact } from '../jobs/artifacts.js';
 import { readAudioArtifact } from '../jobs/audio-artifacts.js';
@@ -212,6 +212,16 @@ router.post('/submit', (request, response) => {
     } catch (error) {
         // The body parser rejects an oversized intent before this handler; the
         // store rejects an intent that would not fit the ledger.
+        return fail(response, error);
+    }
+});
+
+router.post('/clear-history', (request, response) => {
+    try {
+        const { owner, directories } = directoriesFor(request);
+        const { removed = 0, dismissed = 0, remaining = 0 } = clearFinishedJobs(directories, { owner });
+        return response.json({ removed, dismissed, remaining });
+    } catch (error) {
         return fail(response, error);
     }
 });

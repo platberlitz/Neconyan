@@ -47,6 +47,16 @@ describe('browser jobs observer sends the CSRF header and keeps caller headers',
         expect(JSON.parse(fetchCalls[0].options.body)).toMatchObject({ type: 'roleplay', submissionKey: 'k1' });
     });
 
+    test('clearJobHistory posts to the account job history endpoint with the CSRF token', async () => {
+        const { clearJobHistory } = await import('../public/scripts/jobs.js');
+        await clearJobHistory();
+        expect(fetchCalls).toHaveLength(1);
+        expect(fetchCalls[0].url).toBe('/api/jobs/clear-history');
+        expect(fetchCalls[0].options.method).toBe('POST');
+        expect(fetchCalls[0].options.headers).toMatchObject(CSRF_HEADERS);
+        expect(fetchCalls[0].options.headers['X-Neconyan-Account']).toBe('alice');
+    });
+
     test('a caller header spread cannot drop the CSRF token from a POST', async () => {
         const { cancelJob } = await import('../public/scripts/jobs.js');
         await cancelJob('job-1', { reason: 'changed my mind' });

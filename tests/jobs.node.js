@@ -11,7 +11,7 @@ import { setConfigFilePath } from '../src/util.js';
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 
 const {
-    acceptJob, dismissJob, explicitRetryRecovery, getJob, JOB_FAILURE_RETENTION_MS, listJobs, readJobStore,
+    acceptJob, clearFinishedJobs, dismissJob, explicitRetryRecovery, getJob, JOB_FAILURE_RETENTION_MS, jobKey, listJobs, readJobStore,
     recordReceipt, recoverJobs, requestCancellation, setJobState, updateJob, markProviderUncertain, markProviderSettled, setJobResume,
 } = await import('../src/jobs/store.js');
 const {
@@ -257,6 +257,27 @@ test('restart clears earlier failures but keeps work the restart itself interrup
     assert.equal(getJob(directories, failed.id).dismissedReason, 'restart');
     assert.equal(getJob(directories, running.id).state, 'interrupted');
     assert.deepEqual(listJobs(directories).map(job => job.id), [running.id]);
+});
+
+test('clearing job history removes finished and failed records but keeps live and just-finished work', () => {
+    const directories = tempDirectories('clear-history');
+    const accept = key => acceptJob(directories, { owner: 'alice', type: 'test', submissionKey: key, intent: {} }).job;
+    const old = accept('old');
+    writeArtifact(directories, old.id, 'result', { saved: true });
+    setJobState(directories, old.id, 'completed');
+    updateJob(directories, old.id, { finishedAt: Date.now() - 60 * 60 * 1000 });
+    const failed = accept('failed');
+    setJobState(directories, failed.id, 'failed', { error: { message: 'boom' } });
+    const justFinished = accept('just-finished');
+    setJobState(directories, justFinished.id, 'completed');
+    const queued = accept('queued');
+    assert.deepEqual(clearFinishedJobs(directories, { owner: 'alice' }), { changed: true, removed: 2, dismissed: 1, remaining: 2, revision: readJobStore(directories).revision });
+    assert.equal(getJob(directories, old.id), null);
+    assert.equal(getJob(directories, failed.id), null);
+    assert.ok(getJob(directories, justFinished.id));
+    assert.equal(getJob(directories, queued.id).state, 'queued');
+    assert.equal(fs.existsSync(path.join(directories.root, 'jobs', 'artifacts', jobKey(old.id))), false);
+    assert.equal(clearFinishedJobs(directories, { owner: 'alice' }).changed, false);
 });
 
 test('intents are typed and bounded, and key order does not defeat deduplication', () => {
