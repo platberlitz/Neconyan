@@ -754,17 +754,6 @@ body.neconyan .neconyan-included-tool-content,
 body.neconyan .neconyan-included-tool-content > * { min-width: 0; max-width: 100%; }
 
 /* Release-owned extension surfaces inherit Neconyan's compact, paw-soft UI. */
-body.neconyan .extensions_info .extension_native {
-    border-color: var(--neco-border);
-    background: var(--neco-surface);
-    box-shadow: none;
-}
-body.neconyan .extensions_info .extension_native .extension_origin {
-    display: block;
-    margin-top: 2px;
-    color: var(--neco-muted);
-    font-size: 11px;
-}
 body.neconyan :is(.sbbs-root, .sbstory-bar, .sbtw-root, .sbterm-settings-content, .promptTags-settings, .sbme-settings, .sbwil-root, .sbpl-root, .sbctm-root, .sbdistiller-root) {
     color: var(--neco-ink);
     background: var(--neco-surface);
