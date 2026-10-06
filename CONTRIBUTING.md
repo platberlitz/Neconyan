@@ -32,8 +32,18 @@ Before you open one:
 1. Run the unit tests, the server tests if you touched `src/`, lint and the frontend budgets. The commands are in `AGENTS.md`.
 2. Add or update the test that pins the behaviour you changed.
 3. Check UI changes in a browser on a phone (393x852, touch) and on desktop (1280x900).
-4. Start the title with `fix:`, `feat:` or `chore:` and describe the change in the imperative.
-5. Fill in the template: what changed, why, and how I can test it.
+4. Add screenshots of anything visible: phone and desktop, before and after. Attach them to the pull request; don't commit them.
+5. Write the title as a [Conventional Commit](https://www.conventionalcommits.org/): `type(optional-scope): subject`, lower-case imperative, no full stop. For example `fix(composer): keep Send above the keyboard` or `feat(mewmory): add a summary length setting`. Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`; add `!` for a breaking change. Your commit messages follow the same rule.
+6. Fill in the template: what changed, why, and how I can test it.
+
+A check rejects titles that don't follow the format, so you'll know straight away.
+
+## Designing UI
+
+Read [`DESIGN.md`](DESIGN.md) before you change anything people can see. Two rules catch most pull requests:
+
+- Build for what people actually use. The chat, the composer and whatever the user is working on get the room and the first tap. Settings people touch once a month don't get prime space.
+- Buttons follow the accent. People pick their own accent colour, so buttons take theirs from the accent tokens, never from a hex colour. Check yours with a pale and a dark accent profile before you open the pull request.
 
 The same checks run automatically on every pull request. A red check means it isn't ready yet.
 

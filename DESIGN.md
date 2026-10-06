@@ -2,6 +2,17 @@
 
 Neconyan is skinned by four stylesheets loaded in this order: `public/style.css` (upstream base), `public/css/neconyan-tabs.css` (shell), `public/css/neconyan.css` (theme tokens and layout), `public/css/neconyan-calico.css` (the Calico palette and cat decorations). Phone-only rules live in `public/css/neconyan-mobile-shell.css`, which is linked with `media="(max-width: 768px)"`.
 
+## Design for what people actually use
+
+Every screen is built around the thing the user came to work with, and everything else steps back. Before adding or moving anything, ask what the user is doing on that screen and give that the space, the size and the first tap.
+
+- The chat is the product. Messages, the composer and Send/Stop get the most room, the largest type and the easiest reach (bottom of the screen on phones, under the thumb). Nothing covers them by default, and nothing pushes them off screen.
+- Order by use, not by how the code is organised. The actions people reach for every session (pick a character or recent chat, write, regenerate, swipe, edit a message, switch connection) sit one tap away. Settings people change once (API keys, formatting, theme) live in sheets and Fine-tuning groups, still reachable, never in the way.
+- The current task wins the screen. When a sheet or editor is open, its own content is what gets the space: the field being edited, the list being picked from. Decoration, help text and secondary controls shrink or collapse before the working area does.
+- Defaults should already be right. Pick the value most people want so the common path needs no setup; a toggle is a last resort, not a way to skip a decision.
+- Cut what nobody works with. A control that is rarely used and duplicated elsewhere goes; an empty state that only says 'nothing here' gains the one action that fills it.
+- Phones first. The owner and most users are on a phone, so check the phone layout before calling a change done, and never ship a phone layout that is a squeezed desktop one.
+
 ## Colour tokens (`--neco-*`)
 
 All colours flow from a small token set on `body.neconyan`. Themes only change SmartTheme colours; the tokens follow.
@@ -28,6 +39,17 @@ Rules:
 - `--sb-*` tokens used by the shell (`--sb-accent`, `--sb-shell-nav-bg`, `--sb-shell-text`, `--sb-shell-text-secondary`, `--sb-button-bg`, `--sb-focus-ring`) are bridged from `--neco-*` unconditionally in `neconyan.css`.
 - Surfaces that hold text are solid (`--neco-surface`). Only the canvas and the conversation stage are translucent (`--neco-panel-gradient`), so the paw wallpaper shows through at 67% but never behind copy.
 - Every bundled theme is passed through `public/scripts/theme-contrast.js` on load: text reaches 4.5:1 and borders 3:1 against every surface. Calico Dark is the reference and is left untouched.
+
+## Accent-aware buttons
+
+The accent is the user's choice, not ginger. `--neco-ginger` reads the theme's quote colour (`--SmartThemeQuoteColor`), and Accent Profiles (Warm Signal, Bluebell, Ember and the rest in `power-user.js`) change it at any time. Every button follows it.
+
+- Fills, borders, hover, pressed and selected states come from accent tokens: `--neco-ginger` for the solid fill, `--neco-ginger-hover` for hover, and `color-mix(in srgb, var(--neco-ginger) N%, var(--neco-surface))` for tinted fills such as a selected chip. Never a hex value, a named colour or a fixed brand colour, and never a hard-coded ginger.
+- Text and icons on a solid accent fill use `--neco-on-accent`. It is fed by `--neco-accent-ink`, which `applyAccentContrastPalette()` recalculates as black or white for contrast whenever the accent changes, so a pale accent gets dark text and a dark accent gets light text. For white text on an accent (title bars), use `--neco-accent-deep`.
+- Primary actions (Send, Save, Create, Confirm) are the solid accent. Secondary actions sit on `--neco-surface` or `--neco-raised` with a `--neco-border` edge and pick up the accent on hover, focus and when pressed or selected (`aria-pressed='true'`, `.active`). Destructive actions are the one exception: they may turn a warning red (mixed with the theme text colour, as `--sb-danger` does in `extensions-panel.css`) while asking to confirm, and look like any secondary button at rest.
+- Focus rings use `--neco-ginger` (bridged to `--sb-focus-ring`), so they change with the accent too.
+- Shell Styles that copy a fixed operating system look (Windows 98 bevels, Windows XP Luna push buttons) keep their own button chrome, but their selected, active and caption states still take their hue from the accent, as described under Shell Styles.
+- Check every new or restyled button with at least three accents: the theme default, a pale one (Mint Glass or Warm Signal) and a dark one (Plum Wine or Berry Stain), in Calico Dark and Calico Light. The label must stay readable and the states must stay distinguishable in all of them.
 
 ## Type: Nunito + Fredoka One
 
