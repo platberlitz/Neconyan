@@ -12,9 +12,11 @@ import { clearDraft, readDraft, saveDraft } from './drafts.js';
 import { headingOutline, renderNoteInto } from './render.js';
 import { formatDiff } from './line-diff.js';
 import { userPhrase } from './user-text.js';
+import { formatList, indentLines } from './list-editing.js';
+import { renderHeadingOutline } from './outline.js';
 
 const PREFS_KEY = 'neconyan_notes_prefs';
-const NOTES_STYLESHEET = 'css/neconyan-notes.css?v=16';
+const NOTES_STYLESHEET = 'css/neconyan-notes.css?v=17';
 const TOOL_PAGES_STYLESHEET = 'css/neconyan-tool-pages.css?v=20261003-notes-controls4';
 const TOUR_PAGE_KEY = 'notes';
 const SAVE_DELAY_MS = 1200;
@@ -199,8 +201,9 @@ function buildRoot() {
     elements.fullscreen.setAttribute('aria-expanded', 'false');
     elements.discuss = button('Talk about this note', () => void discussNote(), { icon: 'fa-comments', className: 'notes-discuss' });
     elements.trash = button('Delete', () => void app.dialogs.trashNote(app), { icon: 'fa-trash-can', className: 'notes-delete notes-danger', title: 'Move this note to Trash' });
+    elements.scratchpad = button('Ask Scratchpad', () => void discussInScratchpad(), { icon: 'fa-note-sticky', className: 'notes-discuss' });
     elements.writingActions = h('div', { class: 'notes-writing-actions' }, elements.viewTabs,
-        h('div', { class: 'notes-nav-actions' }, elements.discuss, elements.fullscreen, elements.trash));
+        h('div', { class: 'notes-nav-actions' }, elements.scratchpad, elements.discuss, elements.fullscreen, elements.trash));
     elements.editorBody = h('div', { class: 'notes-editor-body' }, elements.source, elements.reader, elements.suggest);
     elements.empty = h('div', { class: 'notes-empty' });
     elements.editor = h('div', { class: 'notes-editor', hidden: true },
@@ -219,11 +222,11 @@ function buildRoot() {
     elements.resizer = h('div', { class: 'notes-resizer', role: 'separator', 'aria-orientation': 'vertical', tabindex: '0',
         'aria-label': 'Resize notes panel', onpointerdown: startResize, onkeydown: resizeByKey });
     elements.header = h('header', { class: 'notes-header' },
-        h('h2', { class: 'notes-heading' }, h('i', { class: 'fa-solid fa-book-open', 'aria-hidden': 'true' }), h('span', { text: 'Notes' })),
+        h('h2', { class: 'notes-heading' }, h('i', { class: 'fa-solid fa-book-open', 'aria-hidden': 'true' }), h('span', { text: 'Notebooks' })),
         elements.back, h('span', { class: 'notes-spacer' }),
         elements.layoutButton, elements.close);
     elements.intro = h('div', { class: 'notes-intro' });
-    elements.root = h('section', { id: 'neconyan-notes', class: 'notes-app', 'aria-label': 'Notes', hidden: true, onkeydown: onNotesKeydown },
+    elements.root = h('section', { id: 'neconyan-notes', class: 'notes-app', 'aria-label': 'Notebooks', hidden: true, onkeydown: onNotesKeydown },
         elements.resizer, elements.header, elements.intro, elements.paneTabs,
         h('div', { class: 'notes-columns' }, elements.nav, elements.editorPane, elements.details));
     document.body.append(elements.root);
@@ -268,6 +271,7 @@ function applyLayout() {
     if (!elements.root) return;
     const phone = isPhone();
     const beside = !phone && state.layout === 'beside' && !state.writingFullscreen;
+    elements.intro.hidden = beside;
     elements.root.dataset.layout = phone ? 'phone' : state.layout;
     elements.root.dataset.writingFullscreen = String(state.writingFullscreen);
     elements.root.dataset.pane = state.pane;
@@ -287,14 +291,14 @@ function applyLayout() {
 
 function setWritingFullscreen(enabled) {
     const { state, elements } = app;
-    state.writingFullscreen = Boolean(enabled && state.open && state.note && state.workspaceView === 'note' && state.view === 'write');
+    state.writingFullscreen = Boolean(enabled && state.open && state.note && state.workspaceView === 'note');
     if (state.writingFullscreen) state.pane = 'note';
     applyLayout();
     if (elements.fullscreen) {
         const label = state.writingFullscreen ? 'Exit full screen' : 'Full screen';
         elements.fullscreen.querySelector('span').textContent = label;
         elements.fullscreen.querySelector('i').className = `fa-solid ${state.writingFullscreen ? 'fa-compress' : 'fa-expand'}`;
-        elements.fullscreen.title = state.writingFullscreen ? 'Exit full screen (Escape)' : 'Write in full screen';
+        elements.fullscreen.title = state.writingFullscreen ? 'Exit full screen (Escape)' : 'Open the note in full screen';
         elements.fullscreen.setAttribute('aria-label', label);
         elements.fullscreen.setAttribute('aria-expanded', String(state.writingFullscreen));
     }
@@ -356,6 +360,58 @@ async function discussNote() {
     } finally {
         state.discussionPending = false;
         elements.discuss.disabled = false;
+    }
+}
+
+/** Explicit, short-lived note sharing; it never changes permanent AI access. */
+async function discussInScratchpad() {
+    const { state, elements } = app;
+    if (!state.note || state.discussionPending || app.sourceEditor?.composing) return;
+    state.discussionPending = true;
+    elements.scratchpad.disabled = true;
+    const snapshot = { account: state.account, notebookId: state.notebookId, noteId: state.note.id, text: state.editorText,
+        start: elements.textarea.selectionStart, end: elements.textarea.selectionEnd };
+    const isCurrent = () => getCurrentUserHandle() === snapshot.account && state.open && state.account === snapshot.account
+        && state.notebookId === snapshot.notebookId && state.note?.id === snapshot.noteId && state.editorText === snapshot.text;
+    const hasSelection = state.view === 'write' && snapshot.end > snapshot.start;
+    let scope = hasSelection ? 'selection' : 'note';
+    const sharing = h('div');
+    const excerpt = h('pre', { class: 'notes-capture-preview', 'data-i18n-ignore': '' });
+    const allowEdits = h('input', { type: 'checkbox' });
+    function renderSharing() {
+        clear(sharing);
+        sharing.append(choiceRow('Share for 30 minutes', [['note', 'Whole note'], ...(hasSelection ? [['selection', 'Selected text only']] : [])], scope,
+            value => { scope = value; renderSharing(); }));
+        excerpt.textContent = (scope === 'selection' ? snapshot.text.slice(snapshot.start, snapshot.end) : snapshot.text).slice(0, 24000);
+    }
+    renderSharing();
+    let grantId = null;
+    try {
+        const content = h('div', { class: 'notes-dialog' }, h('h3', { class: 'notes-heading', text: 'Ask Scratchpad' }), sharing,
+            h('label', { class: 'notes-check' }, allowEdits, h('span', { text: 'Allow proposed edits to the shared text' })),
+            h('p', { class: 'notes-notice', text: 'Read only unless you allow proposed edits. Every change still needs your review. Linked notes, attachments and the open chat are not shared.' }), excerpt,
+            h('p', { class: 'notes-hint', text: 'Unsaved text is saved first. Your permanent AI access stays unchanged. Stop sharing under Scratchpad > Context; text already sent to a model cannot be withdrawn.' }));
+        const result = await callGenericPopup(content, POPUP_TYPE.CONFIRM, '', { wide: true, large: true, okButton: 'Open Scratchpad', cancelButton: 'Not now' });
+        if (result !== POPUP_RESULT.AFFIRMATIVE || !isCurrent()) return;
+        if (!await flushSave() || !isCurrent() || state.dirty) {
+            toast('warning', 'Save this note on the server before sharing it. Resolve any save conflict, then try again.');
+            return;
+        }
+        const shared = await request('/assistant/grants/create', { notebookId: snapshot.notebookId, noteId: snapshot.noteId,
+            expectedRevision: state.note.revision, scope, ...(scope === 'selection' ? { selection: { start: snapshot.start, end: snapshot.end } } : {}),
+            operations: allowEdits.checked ? (scope === 'selection' ? ['read', 'edit'] : ['read', 'append', 'edit']) : ['read'], minutes: 30 });
+        if (failed(shared, 'This note could not be shared.')) return;
+        grantId = shared.grant.id;
+        const { openScratchpad } = await import('../scratchpad/index.js');
+        if (!isCurrent()) return;
+        await openScratchpad({ note: { notebookId: snapshot.notebookId, noteId: snapshot.noteId, title: state.note.title, grantId } });
+        grantId = null;
+    } catch (error) {
+        toast('error', error.message || 'The Scratchpad discussion could not start. Try again.');
+    } finally {
+        if (grantId && getCurrentUserHandle() === snapshot.account) await request('/assistant/grants/revoke', { grantId });
+        state.discussionPending = false;
+        elements.scratchpad.disabled = false;
     }
 }
 
@@ -781,7 +837,7 @@ function renderEditor({ restorePosition = false, fragment = null } = {}) {
     const { elements, state } = app;
     elements.editorPane?.classList?.toggle('notes-table-pane', state.workspaceView === 'table' && Boolean(state.notebookId));
     if (!elements.root) return;
-    if (state.writingFullscreen && (!state.note || state.workspaceView !== 'note' || state.view !== 'write')) setWritingFullscreen(false);
+    if (state.writingFullscreen && (!state.note || state.workspaceView !== 'note')) setWritingFullscreen(false);
     if (elements.root.dataset) elements.root.dataset.workspace = state.workspaceView;
     if (elements.paneTabs) renderPaneTabs();
     if (elements.graph) elements.graph.hidden = state.workspaceView !== 'graph' || !state.notebookId;
@@ -824,7 +880,7 @@ function renderEditor({ restorePosition = false, fragment = null } = {}) {
         elements.viewTabs.append(tab);
     }
     elements.toolbar.hidden = state.view !== 'write';
-    elements.fullscreen.hidden = state.view !== 'write';
+    elements.fullscreen.hidden = false;
     elements.foldControls.hidden = state.view !== 'write';
     elements.foldSections.hidden = state.view !== 'write' || !state.foldSectionsOpen;
     elements.textarea.hidden = state.view !== 'write';
@@ -1017,6 +1073,9 @@ function renderFoldControls() {
         elements.foldSections.hidden = true;
         return;
     }
+    const hidden = readPrefs().hideFoldControls === true;
+    elements.foldControls.hidden = state.view !== 'write' || hidden;
+    elements.foldSections.hidden = state.view !== 'write' || hidden || !state.foldSectionsOpen;
     const sections = button('Sections', () => {
         state.foldSectionsOpen = !state.foldSectionsOpen;
         elements.foldSections.hidden = !state.foldSectionsOpen;
@@ -1056,12 +1115,13 @@ function renderOutline() {
         elements.outline.append(h('p', { class: 'notes-hint', text: 'No headings yet. Lines starting with # become headings.' }));
         return;
     }
-    const list = h('ul', { class: 'notes-outline-list' });
-    for (const heading of headings) {
-        list.append(h('li', { style: `--notes-outline-level:${heading.level - 1}` },
-            h('button', { type: 'button', class: 'notes-outline-item', text: heading.text, 'data-i18n-ignore': '', onclick: () => jumpToOffset(heading.offset) })));
-    }
-    elements.outline.append(list);
+    elements.outline.append(renderHeadingOutline(headings, { onJump: jumpToOffset, collapsed: outlineCollapsed() }));
+}
+
+function outlineCollapsed() {
+    const key = `${app.state.account}:${app.state.notebookId}:${app.state.note?.id}`;
+    if (app.state.outlineKey !== key) { app.state.outlineKey = key; app.state.outlineCollapsed = new Set(); }
+    return app.state.outlineCollapsed;
 }
 
 function jumpToOffset(offset) {
@@ -1087,11 +1147,14 @@ function jumpToHeading(fragment) {
     if (heading) jumpToOffset(heading.offset);
 }
 
+const refreshLiveOutline = debounce(() => app.panels?.refreshLinksOutline?.(app), 150);
+
 function onEditorInput() {
     const { state, elements } = app;
     if (!state.note) return;
     const conflict = state.saveConflict || state.status === 'conflict';
     state.editorText = elements.textarea.value;
+    refreshLiveOutline();
     state.dirty = state.editorText !== lf(state.note.serverText) || conflict;
     if (!state.dirty) {
         clearDraft(state.account, state.notebookId, state.note.id);
@@ -1358,9 +1421,11 @@ function buildToolbar() {
         ['Bold', 'fa-bold', () => wrapSelection('**', '**', 'bold text')],
         ['Italic', 'fa-italic', () => wrapSelection('*', '*', 'italic text')],
         ['Strikethrough', 'fa-strikethrough', () => wrapSelection('~~', '~~', 'struck text')],
-        ['Bulleted list', 'fa-list-ul', () => prefixLines('- ')],
-        ['Numbered list', 'fa-list-ol', () => prefixLines('1. ')],
-        ['Task', 'fa-square-check', () => prefixLines('- [ ] ')],
+        ['Bulleted list', 'fa-list-ul', () => editList('bullet')],
+        ['Numbered list', 'fa-list-ol', () => editList('ordered')],
+        ['Task', 'fa-square-check', () => editList('task')],
+        ['Indent', 'fa-indent', () => editIndent(false)],
+        ['Outdent', 'fa-outdent', () => editIndent(true)],
         ['Quote', 'fa-quote-left', () => prefixLines('> ')],
         ['Link to note', 'fa-link', () => void app.dialogs.linkPicker(app)],
         ['Web link', 'fa-globe', () => wrapSelection('[', '](https://)', 'link text')],
@@ -1368,6 +1433,10 @@ function buildToolbar() {
         ['Code', 'fa-code', () => codeAction()],
         ['Table', 'fa-table', () => insertBlock('| Column | Column |\n| --- | --- |\n| | |')],
         ['Divider', 'fa-minus', () => insertBlock('---')],
+        ['Show or hide section controls', 'fa-layer-group', () => {
+            writePrefs({ hideFoldControls: readPrefs().hideFoldControls !== true });
+            renderFoldControls();
+        }],
     ];
     const bar = h('div', { class: 'notes-toolbar', role: 'toolbar', 'aria-label': 'Formatting' });
     for (const [label, icon, action] of actions) {
@@ -1383,6 +1452,22 @@ function buildToolbar() {
         items[(index + (event.key === 'ArrowRight' ? 1 : items.length - 1)) % items.length].focus();
     });
     return bar;
+}
+
+function applyListEdit(edit) {
+    if (!edit || app.sourceEditor?.composing) return;
+    app.elements.textarea.focus({ preventScroll: true });
+    app.elements.textarea.applyEdit(edit);
+}
+
+function editList(kind) {
+    const textarea = app.elements.textarea;
+    applyListEdit(formatList(textarea.value, textarea.selectionStart, textarea.selectionEnd, kind));
+}
+
+function editIndent(outdent) {
+    const textarea = app.elements.textarea;
+    applyListEdit(indentLines(textarea.value, textarea.selectionStart, textarea.selectionEnd, outdent));
 }
 
 /** Replaces the selection through the browser's editing command so native undo keeps working. */
@@ -1657,6 +1742,7 @@ async function changeNote(changes, reason = 'edit') {
 }
 
 Object.assign(app, {
+    outlineCollapsed,
     request, failed, toast, userToast, isPhone, refreshTree, loadNotebooks, selectNotebook, openNote, reloadNote, flushSave, insertText, setStatus,
     createNote, moveNote, changeNote, compareTexts, showBanner, clearBanner, renderNav, renderEditor, applyLayout, setPane,
     chatScope: currentChatScope, lf, readPrefs, writePrefs, hide: hideNotes, setView, jumpToOffset, closeNotebookView, openNotebookGraph, openNotebookTable, openNotebookCanvas,

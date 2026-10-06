@@ -68,6 +68,30 @@ describe('Scratchpad reply parsing', () => {
         expect(describeChange({ type: 'chat', action: 'insert', after: 2 })).toBe('Add a message after #2');
     });
 
+    test('accepts all six Notebook mutations and strips model-supplied approvals and unrelated fields', () => {
+        const common = { notebookId: 'nb', noteId: 'note', expectedRevision: 'revision', grantId: 'grant', userConfirmed: true, canEdit: true };
+        for (const [action, extra] of [
+            ['create-note', { title: 'New', markdown: 'Text' }], ['append-note', { markdown: 'Text' }],
+            ['edit-note-section', { sectionId: 'section', expectedTextHash: 'hash', markdown: 'Text' }],
+            ['edit-note-selection', { find: 'Old', replace: 'New' }], ['edit-note-properties', { set: { tags: ['draft'] } }],
+            ['publish-note-lore', { book: 'World', uid: 3 }],
+        ]) {
+            const change = normaliseChange({ type: 'notebook', action, args: { ...common, ...extra }, reason: 'Requested', userConfirmed: true });
+            expect(change).toMatchObject({ type: 'notebook', action, reason: 'Requested' });
+            expect(change.args).not.toHaveProperty('userConfirmed');
+            expect(change.args).not.toHaveProperty('canEdit');
+            expect(describeChange(change)).toBeTruthy();
+        }
+    });
+
+    test('rejects Notebook reads, unsupported mutations, absent revisions and malformed argument types', () => {
+        for (const action of ['read-note', 'delete-note', 'notebooks']) expect(() => normaliseChange({ type: 'notebook', action, args: {} })).toThrow();
+        expect(() => normaliseChange({ type: 'notebook', action: 'append-note', args: { notebookId: 'nb', noteId: 'n', markdown: 'x' } })).toThrow('revision');
+        expect(() => normaliseChange({ type: 'notebook', action: 'create-note', args: { notebookId: 'nb', title: 'x', markdown: [] } })).toThrow();
+        expect(() => normaliseChange({ type: 'notebook', action: 'publish-note-lore', args: { notebookId: 'nb', noteId: 'n', book: 'W', uid: -1 } })).toThrow();
+        expect(() => normaliseChange({ type: 'notebook', action: 'edit-note-properties', args: { notebookId: 'nb', noteId: 'n', set: [], expectedRevision: 'r' } })).toThrow();
+    });
+
     test.each(['append', 'add'])('keeps the %s operation for new alternate greetings', action => {
         const change = normaliseChange({ type: 'character', action, character: 'Nova', field: 'alternate_greetings', value: ['Another meeting.'] });
         expect(change).toMatchObject({ action: 'append', value: ['Another meeting.'] });

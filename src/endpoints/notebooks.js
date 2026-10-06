@@ -16,7 +16,7 @@ import * as assistant from '../notebooks/assistant.js';
 import * as context from '../notebooks/context.js';
 import { buildNoteEmbeds } from '../notebooks/embeds.js';
 import { buildNoteGraph, GRAPH_LIMITS } from '../notebooks/graph.js';
-import { queryPropertyTable, PROPERTY_TABLE_LIMITS } from '../notebooks/property-table.js';
+import { notebookPropertyKeys, queryPropertyTable, PROPERTY_TABLE_LIMITS } from '../notebooks/property-table.js';
 import * as canvasStore from '../notebooks/canvas-store.js';
 import * as obsidian from '../notebooks/obsidian.js';
 import { projectCanvas } from '../notebooks/canvas-projection.js';
@@ -309,7 +309,10 @@ function captureSource(body, text) {
     const source = body.source && typeof body.source === 'object' ? body.source : {};
     const clean = value => (typeof value === 'string' ? value.slice(0, 512) : undefined);
     return {
-        kind: 'chat',
+        kind: source.kind === 'scratchpad' ? 'scratchpad' : 'chat',
+        sessionId: clean(source.sessionId),
+        scratchpadMessageId: clean(source.scratchpadMessageId),
+        sourceKind: clean(source.sourceKind),
         chat: clean(source.chat),
         character: clean(source.character),
         speaker: clean(source.speaker),
@@ -331,7 +334,7 @@ router.post('/notes/capture', route(({ lease, body, actor }) => {
     if (text.length > MAX_CAPTURE_CHARS) throw new NotebookError('CAPTURE_TOO_LARGE', 'That selection is too long to save in one go.', 413);
     const source = captureSource(body, text);
     const speaker = source.speaker ? `${source.speaker}, ` : '';
-    const attribution = `*Saved from chat (${speaker}${new Date().toISOString().slice(0, 10)})*`;
+    const attribution = `*Saved from ${source.kind === 'scratchpad' ? 'Scratchpad' : 'chat'} (${speaker}${new Date().toISOString().slice(0, 10)})*`;
     const passage = `${quotePassage(text)}\n\n${attribution}\n`;
     if (!body.noteId) {
         const result = store.createNoteLocked(lease, {
@@ -458,6 +461,12 @@ router.post('/canvas/recovery/decide', route(({ lease, body, actor }) => {
 }));
 
 /* ---------- search and links ---------- */
+
+router.post('/properties/keys', route(({ lease, body }) => {
+    const state = store.loadNotebookLocked(lease, requireNotebookId(body.notebookId));
+    // Suggestions are for the authenticated owner, not an assistant read route.
+    return { status: 'success', ...notebookPropertyKeys(state.entries) };
+}));
 
 router.post('/properties/table', route(({ lease, body }) => {
     const state = store.loadNotebookLocked(lease, requireNotebookId(body.notebookId));
@@ -605,6 +614,7 @@ router.post('/assistant/grants/create', route(({ lease, body }) => ({
         selection: body.selection,
         operations: body.operations,
         minutes: body.minutes,
+        expectedRevision: body.expectedRevision,
     }),
 })));
 
@@ -859,7 +869,7 @@ router.post('/export', async (request, response) => {
     try {
         const base = accountBase(request);
         await store.prepareNotebook(base, request.body?.notebookId);
-        const collected = locked(base, lease => transfer.collectExportLocked(lease, { notebookId: request.body?.notebookId }));
+        const collected = locked(base, lease => transfer.collectExportLocked(lease, { notebookId: request.body?.notebookId, selection: request.body?.selection }));
         const zip = transfer.buildExportZip(collected);
         response.set({
             'Content-Type': 'application/zip',

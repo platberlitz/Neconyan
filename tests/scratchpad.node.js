@@ -15,6 +15,12 @@ const store = await import('../src/scratchpad/store.js');
 const { buildScratchpadMessages, buildScratchpadSystemPrompt } = await import('../src/scratchpad/prompt.js');
 const { readScratchpadPreview } = await import('../src/scratchpad/preview.js');
 const { router } = await import('../src/endpoints/scratchpad.js');
+const notebooks = await import('../src/notebooks/store.js');
+const notebookAssistant = await import('../src/notebooks/assistant.js');
+const { applyPolicyPatch } = await import('../src/notebooks/permissions.js');
+const { readRoleplayChat } = await import('../src/generation/roleplay-source.js');
+const { commitRoleplayLifecycleLocked } = await import('../src/roleplay-lifecycle.js');
+const { roleplayNativeHost } = await import('../src/endpoints/chats.js');
 
 after(() => cancelAutoSaves());
 
@@ -57,6 +63,25 @@ function sendBody(session, extra = {}) {
     };
 }
 
+test('a reply accepted with the old filename still settles after a protected chat rename', async t => {
+    const a = account(t);
+    const id = readRoleplayChat(a.f.scope, a.f.locator).instanceId;
+    const legacy = { kind: 'roleplay', key: `character:${a.f.locator.avatar}:${a.f.locator.chat}`, label: 'Old chat' };
+    const session = a.mutate(legacy, bucket => store.createSession(bucket, { settings: { connection: { kind: 'profile', profileId: 'saved' } } }));
+    registerScratchpadJobs({ generate: async () => ({ text: 'This unfinished reply was kept.' }) });
+    const body = sendBody(session, { source: legacy });
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    store.withScratchpad(a.base, lease => commitRoleplayLifecycleLocked(lease, { operationKey: 'rename-with-old-job', action: 'chat-rename',
+        intent: { chat: 'Renamed' }, steps: [{ op: 'move', kind: 'chat', locator: a.f.locator, destination: { ...a.f.locator, chat: 'Renamed' } }] }, roleplayNativeHost));
+    await runJob(getJob(a.directories, accepted.job.id));
+    assert.equal(getJob(a.directories, accepted.job.id).state, 'completed');
+    const source = { kind: 'roleplay', key: `roleplay:${id}`, legacyKey: `character:${a.f.locator.avatar}:Renamed`, label: 'Renamed' };
+    const messages = a.read(source).sessions[0].messages;
+    assert.equal(messages[1].state, 'done');
+    assert.equal(messages[1].text, 'This unfinished reply was kept.');
+    assert.equal(a.read(legacy).sessions[0].messages[1].id, messages[1].id);
+});
+
 test('a reply runs as a server job, streams a preview and settles into the saved session', async t => {
     const a = account(t);
     const session = startSession(a);
@@ -97,6 +122,60 @@ test('a reply runs as a server job, streams a preview and settles into the saved
     assert.equal(seen.messages.at(-1).content, 'What is Nova hiding in this scene?');
     assert.deepEqual(readArtifact(a.directories, accepted.job.id, 'result'), { replyId: reply.id, sessionId: session.id });
 });
+
+function sharedNote(a) {
+    return store.withScratchpad(a.base, lease => {
+        const notebookId = notebooks.ensureDefaultNotebookLocked(lease).id;
+        const created = notebooks.createNoteLocked(lease, { notebookId, title: 'Plan', text: 'A saved idea.', operationId: `fixture-note-${++counter}` });
+        notebooks.writePoliciesLocked(lease, notebookId, applyPolicyPatch(notebooks.readPoliciesLocked(lease, notebookId), { assistant: 'edit' }));
+        return { notebookId, noteId: created.noteId, revision: created.revision };
+    });
+}
+
+test('server-built note context reaches the provider and finished suggestions register one shared review without saving', async t => {
+    const a = account(t);
+    const note = sharedNote(a);
+    const session = startSession(a, { notes: [{ notebookId: note.notebookId, noteId: note.noteId }], assistantPrompts: { taro: 'Be brief.' } });
+    let seen;
+    const suggestion = { type: 'notebook', action: 'append-note', args: { notebookId: note.notebookId, noteId: note.noteId, expectedRevision: note.revision, markdown: 'Another idea.' } };
+    registerScratchpadJobs({ generate: async options => {
+        seen = options.messages;
+        return { text: `Useful advice.\n\`\`\`scratchpad-change\n${JSON.stringify(suggestion)}\n\`\`\`` };
+    } });
+    const body = sendBody(session, { notebookContext: 'Forged note text.', capabilities: { notebook: false } });
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    await runJob(getJob(a.directories, accepted.job.id));
+    assert.match(seen[0].content, /^Be brief\./);
+    assert.match(seen[0].content, /edit-note-selection/);
+    assert.match(seen.find(message => message.content.startsWith('<notebook_context>')).content, /A saved idea\./);
+    assert.ok(!JSON.stringify(seen).includes('Forged note text.'));
+    const reply = a.read(SOURCE).sessions[0].messages.at(-1);
+    assert.equal(reply.state, 'done');
+    assert.match(reply.notebookProposals[0].id, /^p_[a-f0-9]{24}$/);
+    store.withScratchpad(a.base, lease => {
+        assert.equal(notebooks.readNoteLocked(lease, note).entry.text, 'A saved idea.');
+        assert.equal(notebookAssistant.listProposalsLocked(lease).length, 1);
+    });
+});
+
+for (const kind of ['text', 'permissions']) {
+    test(`a note ${kind} change during send refuses the outdated snapshot before any provider call`, async t => {
+        const a = account(t);
+        const note = sharedNote(a);
+        const session = startSession(a, { notes: [{ notebookId: note.notebookId, noteId: note.noteId }] });
+        let calls = 0;
+        registerScratchpadJobs({ generate: async () => { calls++; return { text: 'Never sent.' }; } });
+        const body = sendBody(session);
+        const sending = acceptScratchpadReply(a.request(body), body);
+        store.withScratchpad(a.base, lease => {
+            if (kind === 'text') notebooks.updateNoteLocked(lease, { ...note, expectedRevision: note.revision, operationId: `fixture-note-${++counter}`, changes: [{ type: 'append', markdown: 'Owner edit.' }] });
+            else notebooks.writePoliciesLocked(lease, note.notebookId, applyPolicyPatch(notebooks.readPoliciesLocked(lease, note.notebookId), { assistant: 'none' }));
+        });
+        await assert.rejects(sending, error => error.code === 'SCRATCHPAD_NOTES_CHANGED');
+        assert.equal(calls, 0);
+        assert.equal(a.read(SOURCE).sessions[0].messages.length, 0);
+    });
+}
 
 test('custom assistant prompts persist independently, reach the provider and reset to defaults', async t => {
     const a = account(t);

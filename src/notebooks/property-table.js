@@ -6,6 +6,16 @@ const nameAllowed = key => typeof key === 'string' && /^[^\s:#][^:\n]{0,63}$/u.t
 const own = (object, key) => Object.hasOwn(object ?? {}, key);
 const compare = (a, b) => a < b ? -1 : a > b ? 1 : 0;
 
+/** Field suggestions for the owner; this does not alter the table projection. */
+export function notebookPropertyKeys(entries, limit = 500) {
+    const keys = new Set();
+    for (const entry of entries) for (const key of Object.keys(entry.properties ?? {})) {
+        if (nameAllowed(key) && !['neconyan_id', '__proto__', 'constructor', 'prototype'].includes(key.toLowerCase())) keys.add(key);
+    }
+    const sorted = [...keys].sort(compare);
+    return { keys: sorted.slice(0, limit), total: sorted.length, partial: sorted.length > limit };
+}
+
 export function propertyCell(entry, key) {
     if (entry.propertiesError) return { kind: 'invalid', editable: false, display: 'Invalid properties. Edit in source.' };
     if (entry.complexProperties?.includes(key)) return { kind: 'complex', editable: false, display: 'Nested value. Edit in source.' };

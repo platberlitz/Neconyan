@@ -1,5 +1,6 @@
 import path from 'node:path';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 
 import { readAuthoringFileLocked, writeAuthoringFileLocked, deleteAuthoringFileLocked } from '../authoring-store.js';
 import { roleplayAccountBase, roleplayAccountStamp, roleplayLease, withRoleplayAccount } from '../roleplay-store.js';
@@ -7,13 +8,14 @@ import { roleplayAccountBase, roleplayAccountStamp, roleplayLease, withRoleplayA
 export const SCRATCHPAD_SCHEMA = 1;
 export const ASSISTANT_IDS = Object.freeze(['miso', 'taro', 'nori']);
 export const ASSISTANT_GENDERS = Object.freeze(['male', 'female', 'neutral']);
-export const SOURCE_KINDS = Object.freeze(['roleplay', 'conversation']);
+export const SOURCE_KINDS = Object.freeze(['roleplay', 'conversation', 'notebook']);
 export const MAX_SESSIONS = 40;
 export const MAX_MESSAGES = 400;
 export const MAX_MESSAGE_BYTES = 64 * 1024;
 export const MAX_REASONING_BYTES = 64 * 1024;
 export const MAX_NAME_LENGTH = 80;
 export const MAX_PICKED = 400;
+export const MAX_NOTE_REFERENCES = 12;
 export const MAX_LORE_OVERRIDES = 1000;
 export const MIN_MAX_TOKENS = 64;
 export const MAX_MAX_TOKENS = 32000;
@@ -22,6 +24,9 @@ export const DEFAULT_DEPTH = 15;
 export const MAX_DEPTH = 200;
 const FILE_LIMIT = 16 * 1024 * 1024;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+const IDENTITY_LIMIT = 4 * 1024 * 1024;
+const STABLE_KEY_PATTERN = /^roleplay:([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})(?::group:([^\0\r\n]{1,256}))?$/;
+const STORAGE_SOURCE = Symbol('scratchpadStorageSource');
 
 export class ScratchpadError extends Error {
     constructor(code, message, status = 400) {
@@ -66,7 +71,17 @@ export function normaliseSource(input) {
     const kind = SOURCE_KINDS.includes(input.kind) ? input.kind : null;
     const key = typeof input.key === 'string' ? input.key : '';
     if (!kind || !key || key.length > 1024) throw fail('SCRATCHPAD_SOURCE_INVALID', 'Open a chat before using Scratchpad.');
-    return { kind, key, label: boundedString(input.label, 200, { trim: true }) };
+    const source = { kind, key, label: boundedString(input.label, 200, { trim: true }) };
+    if (input.legacyKey !== undefined) {
+        const identity = kind === 'roleplay' && STABLE_KEY_PATTERN.exec(key);
+        const prefix = identity?.[2] ? `group:${identity[2]}:` : 'character:';
+        if (!identity || typeof input.legacyKey !== 'string' || input.legacyKey.length > 1024
+            || !input.legacyKey.startsWith(prefix) || input.legacyKey.length <= prefix.length) {
+            throw fail('SCRATCHPAD_SOURCE_INVALID', 'This Scratchpad chat identity is invalid. Reload the chat.');
+        }
+        source.legacyKey = input.legacyKey;
+    }
+    return source;
 }
 
 export function normaliseAssistant(value) {
@@ -102,6 +117,7 @@ export function defaultSettings() {
     return {
         depth: DEFAULT_DEPTH,
         picked: [],
+        notes: [],
         include: { card: true, persona: true, authorsNote: true, lore: true, hidden: false },
         loreOverrides: {},
         connection: { kind: 'current' },
@@ -116,6 +132,30 @@ export function defaultSettings() {
 export function normaliseSettings(input, previous = defaultSettings()) {
     const source = isPlainObject(input) ? input : {};
     const settings = structuredClone(previous);
+    settings.notes ??= [];
+    if (source.notes !== undefined) {
+        if (!Array.isArray(source.notes) || source.notes.length > MAX_NOTE_REFERENCES) throw fail('SCRATCHPAD_NOTES_INVALID', `Choose up to ${MAX_NOTE_REFERENCES} notes or sections.`);
+        const seen = new Set();
+        settings.notes = source.notes.map(item => {
+            if (!isPlainObject(item)) throw fail('SCRATCHPAD_NOTES_INVALID', 'Choose a saved note or section.');
+            const ref = { notebookId: requireId(item.notebookId, 'notebook'), noteId: requireId(item.noteId, 'note') };
+            if (item.grantId) ref.grantId = requireId(item.grantId, 'sharing grant');
+            if (item.sectionId) {
+                if (typeof item.sectionId !== 'string' || item.sectionId.length > 512) throw fail('SCRATCHPAD_NOTES_INVALID', 'That note section is invalid.');
+                ref.sectionId = item.sectionId;
+            }
+            if (item.offset !== undefined) {
+                if (!Number.isSafeInteger(item.offset) || item.offset < 0 || item.offset > 4 * 1024 * 1024) throw fail('SCRATCHPAD_NOTES_INVALID', 'That note page is invalid.');
+                ref.offset = item.offset;
+            }
+            return ref;
+        }).filter(ref => {
+            const key = JSON.stringify(ref);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }
     if (source.depth !== undefined) {
         const depth = Math.round(Number(source.depth));
         settings.depth = Number.isFinite(depth) ? Math.min(MAX_DEPTH, Math.max(0, depth)) : DEFAULT_DEPTH;
@@ -199,6 +239,11 @@ function normaliseMessage(input) {
         if (typeof input.gender === 'string') message.gender = normaliseGender(input.gender);
         const proposals = normaliseProposals(input.proposals);
         if (Object.keys(proposals).length) message.proposals = proposals;
+        if (isPlainObject(input.notebookProposals)) {
+            const refs = Object.fromEntries(Object.entries(input.notebookProposals).filter(([key, value]) => /^\d{1,3}$/.test(key)
+                && isPlainObject(value) && /^p_[a-f0-9]{24}$/.test(value.id) && /^[a-f0-9]{64}$/.test(value.changeHash)).slice(0, 24));
+            if (Object.keys(refs).length) message.notebookProposals = refs;
+        }
     }
     if (input.edited === true) message.edited = true;
     return message;
@@ -241,9 +286,9 @@ function rootOf(lease) {
     return roleplayLease(lease).scope.directories.root;
 }
 
-export function readBucketLocked(lease, source) {
+function readStoredBucketLocked(lease, source) {
     const file = readAuthoringFileLocked(lease, scratchpadFile(rootOf(lease), source), FILE_LIMIT);
-    if (!file) return emptyBucket(source);
+    if (!file) return null;
     let parsed;
     try {
         parsed = JSON.parse(file.bytes.toString('utf8'));
@@ -253,16 +298,102 @@ export function readBucketLocked(lease, source) {
     if (parsed?.source?.kind !== source.kind || parsed?.source?.key !== source.key) {
         throw fail('SCRATCHPAD_DAMAGED', 'This Scratchpad file belongs to another chat.', 500);
     }
-    return normaliseBucket(parsed, source);
+    return parsed;
+}
+
+function identityFile(lease) {
+    return path.join(rootOf(lease), 'scratchpad', 'identities.json');
+}
+
+function readIdentitiesLocked(lease) {
+    const file = readAuthoringFileLocked(lease, identityFile(lease), IDENTITY_LIMIT);
+    if (!file) return { version: 1, entries: {} };
+    try {
+        const data = JSON.parse(file.bytes.toString('utf8'));
+        if (data.version !== 1 || !isPlainObject(data.entries)) throw new Error('Invalid identity registry.');
+        const claimed = new Set();
+        for (const [key, source] of Object.entries(data.entries)) {
+            if (source?.kind !== 'roleplay') throw new Error('Invalid storage source.');
+            normaliseSource({ kind: 'roleplay', key, legacyKey: source.key });
+            if (claimed.has(source.key)) throw new Error('Duplicate storage source.');
+            claimed.add(source.key);
+        }
+        return data;
+    } catch {
+        throw fail('SCRATCHPAD_DAMAGED', 'Scratchpad\'s saved chat identities could not be read. The original files were kept.', 500);
+    }
+}
+
+function writeIdentitiesLocked(lease, data) {
+    writeAuthoringFileLocked(lease, identityFile(lease), `${JSON.stringify(data, null, 2)}\n`, { limit: IDENTITY_LIMIT });
+}
+
+function bindLegacyLocked(lease, identities, source, claimed) {
+    if (identities.entries[source.key] || !source.legacyKey) return false;
+    const root = rootOf(lease);
+    // A canonical bucket always wins; never merge two existing sets of sessions.
+    if (fs.existsSync(scratchpadFile(root, source)) || claimed.has(source.legacyKey)) return false;
+    const legacy = { kind: 'roleplay', key: source.legacyKey };
+    if (!fs.existsSync(scratchpadFile(root, legacy)) || !readStoredBucketLocked(lease, legacy)) return false;
+    identities.entries[source.key] = legacy;
+    claimed.add(legacy.key);
+    return true;
+}
+
+function storageSourceLocked(lease, source) {
+    if (source.kind !== 'roleplay' || !STABLE_KEY_PATTERN.test(source.key)) return source;
+    const identities = readIdentitiesLocked(lease);
+    const claimed = new Set(Object.values(identities.entries).map(item => item.key));
+    if (bindLegacyLocked(lease, identities, source, claimed)) writeIdentitiesLocked(lease, identities);
+    return identities.entries[source.key] ?? source;
+}
+
+/** Bind old buckets before publishing a chat move. No bucket files or running jobs are moved. */
+export function bindRoleplayScratchpadsLocked(lease, steps) {
+    const moves = steps.filter(step => step.kind === 'chat' && step.op === 'move');
+    if (!moves.length || !fs.existsSync(path.join(rootOf(lease), 'scratchpad'))) return;
+    const identities = readIdentitiesLocked(lease);
+    const claimed = new Set(Object.values(identities.entries).map(item => item.key));
+    let groupIds;
+    let changed = false;
+    for (const step of moves) {
+        if (!step.locator.group) {
+            changed = bindLegacyLocked(lease, identities, {
+                kind: 'roleplay', key: `roleplay:${step.instanceId}`, legacyKey: `character:${step.locator.avatar}:${step.locator.chat}`,
+            }, claimed) || changed;
+            continue;
+        }
+        const directory = roleplayLease(lease).scope.directories.groups;
+        groupIds ??= fs.readdirSync(directory, { withFileTypes: true })
+            .filter(entry => entry.isFile() && entry.name.endsWith('.json'))
+            .map(entry => entry.name.slice(0, -5))
+            .filter(id => id && id.length <= 256 && !/[\0\r\n]/.test(id));
+        for (const groupId of groupIds) {
+            changed = bindLegacyLocked(lease, identities, {
+                kind: 'roleplay', key: `roleplay:${step.instanceId}:group:${groupId}`, legacyKey: `group:${groupId}:${step.locator.chat}`,
+            }, claimed) || changed;
+        }
+    }
+    if (changed) writeIdentitiesLocked(lease, identities);
+}
+
+export function readBucketLocked(lease, source) {
+    const storage = storageSourceLocked(lease, source);
+    const parsed = readStoredBucketLocked(lease, storage);
+    const bucket = parsed ? normaliseBucket(parsed, source) : emptyBucket(source);
+    Object.defineProperty(bucket, STORAGE_SOURCE, { value: storage });
+    return bucket;
 }
 
 export function writeBucketLocked(lease, bucket) {
-    const filename = scratchpadFile(rootOf(lease), bucket.source);
+    const storage = bucket[STORAGE_SOURCE] ?? storageSourceLocked(lease, bucket.source);
+    const filename = scratchpadFile(rootOf(lease), storage);
     if (!bucket.sessions.length) {
         deleteAuthoringFileLocked(lease, filename);
         return;
     }
-    writeAuthoringFileLocked(lease, filename, `${JSON.stringify(bucket, null, 2)}\n`, { limit: FILE_LIMIT });
+    const saved = { ...bucket, source: { kind: storage.kind, key: storage.key, label: bucket.source.label || '' } };
+    writeAuthoringFileLocked(lease, filename, `${JSON.stringify(saved, null, 2)}\n`, { limit: FILE_LIMIT });
 }
 
 export function scratchpadAccountBase(request) {
@@ -336,11 +467,11 @@ export function createSession(bucket, input = {}) {
         temporary: input.temporary === true,
         created: now(),
         updated: now(),
-        settings: normaliseSettings(input.settings, previous ? { ...previous.settings, picked: [] } : defaultSettings()),
+        settings: normaliseSettings(input.settings, previous ? { ...previous.settings, picked: [], notes: previous.settings.notes.filter(ref => !ref.grantId) } : defaultSettings()),
         messages: [],
     };
     if (Array.isArray(input.messages)) {
-        session.messages = input.messages.map(item => normaliseMessage({ ...item, id: undefined, state: 'done', jobId: undefined }))
+        session.messages = input.messages.map(item => normaliseMessage({ ...item, id: undefined, state: 'done', jobId: undefined, proposals: undefined, notebookProposals: undefined }))
             .filter(Boolean).slice(-MAX_MESSAGES);
     }
     bucket.sessions.unshift(session);
@@ -400,6 +531,7 @@ export function updateMessage(bucket, sessionId, messageId, text) {
         message.state = 'done';
         delete message.error;
         delete message.proposals;
+        delete message.notebookProposals;
     }
     touch(session);
     return message;
@@ -450,7 +582,7 @@ export function publicBucket(bucket) {
         source: bucket.source,
         activeSessionId: bucket.activeSessionId,
         sessions: bucket.sessions,
-        limits: { sessions: MAX_SESSIONS, messages: MAX_MESSAGES, messageBytes: MAX_MESSAGE_BYTES, maxTokens: MAX_MAX_TOKENS, depth: MAX_DEPTH },
+        limits: { sessions: MAX_SESSIONS, messages: MAX_MESSAGES, messageBytes: MAX_MESSAGE_BYTES, maxTokens: MAX_MAX_TOKENS, depth: MAX_DEPTH, notes: MAX_NOTE_REFERENCES },
     };
 }
 

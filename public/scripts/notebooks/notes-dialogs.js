@@ -3,10 +3,12 @@ import { buildNoteProposalReview } from '../neconyan-assistant-review.js';
 import { newOperationId, notesDownload, notesUpload } from './api.js';
 import { button, choiceRow, clear, field, formatTime, h } from './dom.js';
 import { formatDiff } from './line-diff.js';
-import { NOTE_TEMPLATES, templateById } from './templates.js';
+import { templateById } from './templates.js';
+import { savedTemplates } from './template-settings.js';
 import { parsePropertyValue, propertyInput } from './property-values.js';
 import { proposalLabel, userPhrase } from './user-text.js';
 import { t } from '../i18n.js';
+import { getCurrentUserHandle } from '../user.js';
 
 /* Small dialogs used by the Notes workspace. User text is always placed with textContent. */
 
@@ -184,18 +186,35 @@ export async function deleteFolder(app, folder) {
 /* ---------- creating notes ---------- */
 
 export async function newNote(app) {
+    const account = app.state.account;
+    const notebookId = app.state.notebookId;
+    let saved;
+    try { saved = savedTemplates(); } catch (error) { app.toast('error', error.message); return; }
     const titleId = fieldId('title');
     const title = textInput(titleId, '', 'Untitled');
     let template = 'blank';
-    const templates = choiceRow('Start from', NOTE_TEMPLATES.map(item => [item.id, item.label]), template, value => { template = value; });
+    const templates = h('div');
+    function refreshTemplates() {
+        clear(templates);
+        templates.append(choiceRow('Start from', saved.map(item => [item.id, item.label]), template, value => { template = value; }));
+    }
+    refreshTemplates();
+    const manage = button('Manage templates', async () => {
+        const { manageTemplates } = await import('./template-manager.js');
+        if (app.state.account !== account || app.state.notebookId !== notebookId) return;
+        if (!(await manageTemplates(app))) return;
+        saved = savedTemplates();
+        if (!saved.some(item => item.id === template)) template = 'blank';
+        refreshTemplates();
+    }, { icon: 'fa-pen-to-square' });
     const folder = app.state.folder ?? 'Inbox';
     const content = h('div', { class: 'notes-dialog' },
         h('h3', { text: 'New note' }),
         field('Name', title, userPhrase`It goes in ${folder}. You can rename or move it later.`),
-        templates);
+        templates, manage);
     const { ok } = await dialog(content, { okButton: 'Create note', cancelButton: 'Cancel', onOpen: () => title.focus() });
-    if (!ok) return;
-    const chosen = templateById(template);
+    if (!ok || app.state.account !== account || app.state.notebookId !== notebookId) return;
+    const chosen = templateById(template, saved);
     const created = await app.createNote({ folder, title: title.value.trim() || chosen?.title || '', text: chosen?.text ?? '', template });
     if (created) await app.openNote(app.state.notebookId, created.noteId, { pushBack: Boolean(app.state.note) });
 }
@@ -487,12 +506,86 @@ async function compareImport(app, stage) {
 }
 
 export async function exportNotebook(app) {
+    const account = app.state.account;
+    const notebookId = app.state.notebookId;
+    const isCurrent = () => account === app.state.account && account === getCurrentUserHandle() && notebookId === app.state.notebookId;
+    if (!await app.flushSave() || !isCurrent()) return;
+    let mode = 'all';
+    let offset = 0;
+    let total = 0;
+    let loading = false;
+    let open = true;
+    let selection;
+    const selected = new Set();
+    const loaded = new Map();
+    const folder = h('select', { class: 'notes-input', 'aria-label': t`Folder to export` }, h('option', { value: '', text: t`Notebook root` }));
+    for (const item of app.state.tree?.folders ?? []) folder.append(h('option', { value: item.path, text: item.path, 'data-i18n-ignore': '' }));
+    const subfolders = h('input', { type: 'checkbox', checked: true });
+    const folderPanel = h('div', { class: 'notes-export-folder', hidden: true }, field(t`Folder`, folder),
+        h('label', { class: 'notes-export-check' }, subfolders, h('span', { text: t`Include subfolders` })));
+    const list = h('div', { class: 'notes-export-list' });
+    const count = h('p', { class: 'notes-hint', 'aria-live': 'polite' });
+    const more = button(t`Load more notes`, () => void loadNotes());
+    const updateCount = () => { count.textContent = t`${selected.size} selected; ${loaded.size} of ${total} notes loaded.`; };
+    async function loadNotes() {
+        if (loading || !open || !isCurrent()) return;
+        loading = true;
+        more.disabled = true;
+        const result = await app.request('/notes/list', { notebookId, offset, limit: 200 });
+        loading = false;
+        if (!open || !isCurrent()) return;
+        if (app.failed(result, 'Notes could not be listed for export.')) { more.disabled = false; return; }
+        total = result.total;
+        for (const note of result.notes ?? []) {
+            if (loaded.has(note.id)) continue;
+            const checkbox = h('input', { type: 'checkbox', checked: selected.has(note.id), onchange: () => {
+                if (checkbox.checked) selected.add(note.id); else selected.delete(note.id);
+                updateCount();
+            } });
+            loaded.set(note.id, checkbox);
+            list.append(h('label', { class: 'notes-export-check' }, checkbox,
+                h('span', {}, h('strong', { text: note.title, 'data-i18n-ignore': '' }), h('small', { text: note.path, 'data-i18n-ignore': '' }))));
+        }
+        offset = result.offset + (result.notes?.length ?? 0);
+        more.hidden = offset >= total;
+        more.disabled = false;
+        updateCount();
+    }
+    const notePanel = h('div', { class: 'notes-export-notes', hidden: true },
+        h('div', { class: 'notes-nav-actions' }, button(t`Select loaded notes`, () => {
+            for (const [id, checkbox] of loaded) { selected.add(id); checkbox.checked = true; }
+            updateCount();
+        }), button(t`Clear selection`, () => {
+            selected.clear();
+            for (const checkbox of loaded.values()) checkbox.checked = false;
+            updateCount();
+        })), count, list, more);
+    const choices = choiceRow(t`Export`, [['all', t`Whole notebook`], ['folder', t`A folder`], ['notes', t`Choose notes`]], mode, value => {
+        mode = value;
+        folderPanel.hidden = mode !== 'folder';
+        notePanel.hidden = mode !== 'notes';
+        if (mode === 'notes' && !loaded.size) void loadNotes();
+    });
+    const result = await dialog(h('div', { class: 'notes-dialog' }, h('h3', { text: t`Export Markdown` }), choices, folderPanel, notePanel,
+        h('p', { class: 'notes-hint', text: t`Partial exports include the selected notes and files they use directly. Linked notes, other files, history and AI permissions are not included.` })), {
+        okButton: t`Export Markdown`, cancelButton: t`Cancel`,
+        onClosing: popup => {
+            if (popup.result !== POPUP_RESULT.AFFIRMATIVE) return true;
+            if (!isCurrent()) return false;
+            if (mode === 'notes' && !selected.size) { app.toast('info', t`Choose at least one note to export.`); return false; }
+            selection = mode === 'all' ? { mode } : mode === 'folder' ? { mode, folder: folder.value, includeSubfolders: subfolders.checked } : { mode, noteIds: [...selected] };
+            return true;
+        },
+    });
+    open = false;
+    if (!result.ok || !isCurrent()) return;
     let download;
     try {
-        download = await notesDownload('/export', { notebookId: app.state.notebookId });
+        download = await notesDownload('/export', { notebookId, selection });
     } catch {
         download = { status: 'failure' };
     }
+    if (!isCurrent()) return;
     if (download.status !== 'success') {
         app.failed(download, 'The notebook could not be exported.');
         return;

@@ -28,6 +28,7 @@ import {
 } from './store.js';
 import { buildScratchpadMessages, buildScratchpadSystemPrompt } from './prompt.js';
 import { clearScratchpadPreview, publishScratchpadPreview } from './preview.js';
+import { notebookContextLocked, withNotebookPreparation, captureReplyNotebookProposalsLocked, notifyScratchpadNotebookResult } from './notebooks.js';
 
 export const SCRATCHPAD_JOB_TYPE = 'scratchpad.reply';
 const MAX_CONTEXT_BYTES = 1536 * 1024;
@@ -152,13 +153,14 @@ export async function acceptScratchpadReply(request, body = {}) {
     const duplicate = existingSubmission(directories, owner, input, requestHash);
     if (duplicate) return { created: false, job: duplicate, bucket: readProjectedBucket(base, input.source) };
 
-    const planned = withScratchpad(base, lease => {
+    const planned = await withNotebookPreparation(base, lease => {
         const bucket = readBucketLocked(lease, input.source);
         projectPending(bucket, id => getJob(directories, id));
         const session = findSession(bucket, input.sessionId);
         const plan = planReply(session, input);
+        const notebook = notebookContextLocked(lease, session.settings);
         writeBucketLocked(lease, bucket);
-        return { ...plan, revision: hash(canonical(session)), maxTokens: session.settings.maxTokens,
+        return { ...plan, notebook, revision: hash(canonical(session)), maxTokens: session.settings.maxTokens,
             participants: sessionAssistants(session),
             speakers: plan.assistants.map(assistant => ({ assistant, customPrompt: session.settings.assistantPrompts?.[assistant], gender: input.genders[assistant] ?? (assistant === session.assistant ? session.gender : 'neutral'), connection: assistantConnection(session.settings, assistant) })) };
     });
@@ -168,8 +170,8 @@ export async function acceptScratchpadReply(request, body = {}) {
         const selection = profileId ? { kind: 'profile', profileId } : { kind: 'active' };
         const binding = captureGenerationBinding(directories, selection, body.acknowledgement);
         const system = buildScratchpadSystemPrompt({ ...speaker, userName: input.names.user, participants: planned.participants,
-            characterName: input.names.character, capabilities: input.capabilities, help: input.help });
-        const messages = buildScratchpadMessages({ system: system.text, context: input.context, history: planned.history, text: planned.prompt, assistant: speaker.assistant });
+            characterName: input.names.character, capabilities: { ...input.capabilities, notebook: Boolean(planned.notebook.text) }, help: input.help });
+        const messages = buildScratchpadMessages({ system: system.text, context: input.context, notebookContext: planned.notebook.text, history: planned.history, text: planned.prompt, assistant: speaker.assistant });
         const rawOptions = binding.kind === 'active' ? { trimNames: false } : {};
         const preparedMessages = !binding.backend || binding.backend === 'chat';
         const names = { user: input.names.user, char: system.persona.name };
@@ -196,11 +198,14 @@ export async function acceptScratchpadReply(request, body = {}) {
 
     let bucket;
     try {
-        bucket = withScratchpad(base, lease => {
+        bucket = await withNotebookPreparation(base, lease => {
             const current = readBucketLocked(lease, input.source);
             const session = findSession(current, input.sessionId);
             if (hasPending(session) || hash(canonical(session)) !== planned.revision) {
                 throw fail('SCRATCHPAD_CHANGED', 'This session changed while the message was being sent. Try again.', 409);
+            }
+            if (notebookContextLocked(lease, session.settings).fingerprint !== planned.notebook.fingerprint) {
+                throw fail('SCRATCHPAD_NOTES_CHANGED', 'The shared notes or their permissions changed while sending. Check the preview and try again.', 409);
             }
             const created = new Date().toISOString();
             if (!input.regenerate) session.messages.push({ id: newScratchpadId(), role: 'user', text: input.text, created });
@@ -226,10 +231,11 @@ export async function acceptScratchpadReply(request, body = {}) {
     return { created: true, job: getJob(directories, job.id) ?? job, bucket };
 }
 
-function settleReply(context, request, patch) {
+async function settleReply(context, request, patch) {
     const base = roleplayAccountBase(context.directories);
     if (!base) return false;
-    return withScratchpad(base, lease => {
+    let proposals = [];
+    const settled = await withNotebookPreparation(base, lease => {
         const bucket = readBucketLocked(lease, request.source);
         const session = bucket.sessions.find(item => item.id === request.sessionId);
         const message = session?.messages.find(item => item.id === request.replyId && item.jobId === context.job.id);
@@ -240,10 +246,13 @@ function settleReply(context, request, patch) {
         Object.assign(message, patch);
         if (patch.state === 'done') delete message.error;
         if (!message.reasoning) delete message.reasoning;
+        if (patch.state === 'done') proposals = captureReplyNotebookProposalsLocked(lease, bucket, session, message);
         session.updated = new Date().toISOString();
         writeBucketLocked(lease, bucket);
         return true;
     });
+    for (const result of proposals) notifyScratchpadNotebookResult(base, result);
+    return settled;
 }
 
 function clipBytes(text, max) {
@@ -325,7 +334,7 @@ async function runParticipant(context, request, { generate, grouped = false }) {
             writeArtifact(directories, job.id, artifact, reply);
         }
         requireRunning();
-        if (!settleReply(context, request, { state: 'done', text: reply.text, reasoning: reply.reasoning })) {
+        if (!await settleReply(context, request, { state: 'done', text: reply.text, reasoning: reply.reasoning })) {
             throw fail('SCRATCHPAD_CHANGED', 'The saved reply changed before this result could be saved.', 409);
         }
         publish({ stage: 'done', text: reply.text, reasoning: reply.reasoning });
@@ -333,7 +342,7 @@ async function runParticipant(context, request, { generate, grouped = false }) {
         const cancelled = stopped();
         const message = cancelled ? 'Stopped before it finished.' : (error?.message || 'The reply failed.');
         try {
-            settleReply(context, request, { state: 'failed', error: message });
+            await settleReply(context, request, { state: 'failed', error: message });
             writeArtifact(directories, job.id, outcome, { error: message });
         } catch {
             // The job state still reports the failure if the session file cannot be updated.

@@ -13,6 +13,7 @@ import { composeConversationPersonaDescription, getConversationPersonaName } fro
 import { getSettings as getConversationSettings } from '../neconyan-conversation/settings-store.js';
 import { conversationState } from '../neconyan-conversation/state.js';
 import { power_user } from '../power-user.js';
+import { getRoleplaySourceId } from '../roleplay-save-chain.js';
 import { getTokenCountAsync } from '../tokenizers.js';
 import { loadWorldInfo, selected_world_info, world_info } from '../world-info.js';
 
@@ -22,6 +23,13 @@ const MAX_MESSAGE_CHARS = 16_000;
 const MAX_LORE_ENTRIES = 40;
 const MAX_LORE_CHARS = 24_000;
 const LORE_SCAN_MESSAGES = 5;
+let notebookSource = null;
+
+/** Note discussions have their own sessions and never borrow the open story's context. */
+export function setNotebookSource(note = null) {
+    notebookSource = note ? { kind: 'notebook', key: `notebook:${note.notebookId}:${note.noteId}`,
+        label: clipLabel(note.title || 'Note discussion'), notebookId: note.notebookId, noteId: note.noteId } : null;
+}
 const CARD_FIELDS = [
     ['description', 'Description'],
     ['personality', 'Personality'],
@@ -47,6 +55,7 @@ function characterByAvatar(avatar) {
  * mixes two stories together.
  */
 export function currentSource() {
+    if (notebookSource) return notebookSource;
     if (conversationState.conversationWorkspaceOpen) {
         const avatar = getCurrentCharAvatar();
         if (!avatar) return null;
@@ -70,9 +79,12 @@ export function currentSource() {
     if (!chatId) return null;
     if (selected_group) {
         const group = groups.find(item => item.id === selected_group);
+        const id = getRoleplaySourceId({ group: true, chat: chatId });
+        const legacyKey = `group:${selected_group}:${chatId}`;
         return {
             kind: 'roleplay',
-            key: `group:${selected_group}:${chatId}`,
+            key: id ? `roleplay:${id}:group:${selected_group}` : legacyKey,
+            ...(id ? { legacyKey } : {}),
             label: clipLabel(`${group?.name || 'Group chat'} - ${chatId}`),
             groupId: selected_group,
             chatId,
@@ -80,9 +92,12 @@ export function currentSource() {
     }
     const character = characters[this_chid];
     if (!character?.avatar) return null;
+    const id = getRoleplaySourceId({ group: false, avatar: character.avatar, chat: chatId });
+    const legacyKey = `character:${character.avatar}:${chatId}`;
     return {
         kind: 'roleplay',
-        key: `character:${character.avatar}:${chatId}`,
+        key: id ? `roleplay:${id}` : legacyKey,
+        ...(id ? { legacyKey } : {}),
         label: clipLabel(`${character.name} - ${chatId}`),
         avatar: character.avatar,
         chatId,
@@ -90,12 +105,12 @@ export function currentSource() {
 }
 
 export function wireSource(source) {
-    return source ? { kind: source.kind, key: source.key, label: source.label } : null;
+    return source ? { kind: source.kind, key: source.key, label: source.label, ...(source.legacyKey ? { legacyKey: source.legacyKey } : {}) } : null;
 }
 
 export function isCurrentSource(source) {
     const live = currentSource();
-    return Boolean(source && live && live.key === source.key);
+    return Boolean(source && live && live.kind === source.kind && live.key === source.key);
 }
 
 function requireCurrentSource(source) {
@@ -115,7 +130,7 @@ export function sourceConnectionProfile(source) {
 
 /** Characters taking part in the source chat, as full character objects. */
 export function sourceCharacters(source) {
-    if (!source) return [];
+    if (!source || source.kind === 'notebook') return [];
     if (source.kind === 'conversation') {
         if (source.groupId) {
             const members = getConversationGroupById(source.groupId)?.members || [];
@@ -129,7 +144,7 @@ export function sourceCharacters(source) {
 
 /** The live message list of the source chat, numbered the way Scratchpad shows them. */
 export function sourceMessages(source) {
-    if (!source) return [];
+    if (!source || source.kind === 'notebook') return [];
     if (source.kind === 'conversation') {
         const branch = getActiveConversationBranch(source.avatar, { ...source, create: false });
         const list = Array.isArray(branch?.messages) ? branch.messages : [];
@@ -225,6 +240,7 @@ export function loreScanText({ source, settings, pendingText = '', sessionText =
  */
 export async function collectLore({ source, settings, scanText = '' }) {
     requireCurrentSource(source);
+    if (source.kind === 'notebook') return { books: [], entries: [] };
     const loaded = await Promise.all(sourceLorebooks(source).map(async world => {
         try {
             const data = await loadWorldInfo(world);
@@ -314,6 +330,11 @@ function formatCharacter(character, source, macros) {
  */
 export async function buildContext({ source, settings, pendingText = '', sessionText = '' }) {
     requireCurrentSource(source);
+    if (source.kind === 'notebook') return {
+        text: `Notebook discussion: ${source.label}\nOnly the explicitly shared notes are included. No story messages, persona, character cards or lorebooks are shared.`,
+        names: { user: name1, character: '' }, lore: { books: [], entries: [] }, messageCount: 0, swipeCount: 0, totalMessages: 0, picked: false,
+        capabilities: { lore: false, character: false, chat: false, members: [] },
+    };
     const include = settings?.include || {};
     const all = sourceMessages(source);
     const selection = selectMessages(all, settings);

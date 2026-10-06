@@ -55,6 +55,8 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
         expect(policy.policy.assistantPublish).toBe(false);
         const downloaded = page.waitForEvent('download');
         await page.getByRole('button', { name: 'Export', exact: true }).click();
+        await expect(page.getByRole('button', { name: 'Whole notebook', exact: true })).toHaveAttribute('aria-pressed', 'true');
+        await page.getByRole('button', { name: 'Export Markdown', exact: true }).click();
         const archive = unzipSync(fs.readFileSync(await (await downloaded).path()));
         expect(Buffer.from(archive[`${name}/One.md`]).toString()).toBe(first);
         expect(Buffer.from(archive[`${name}/Folder/Two.md`]).toString()).toBe(second);

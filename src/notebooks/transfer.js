@@ -9,7 +9,7 @@ import { deleteAuthoringFileLocked, readAuthoringFileLocked, writeAuthoringFileL
 import { roleplayAccountStamp, withRoleplayAccount } from '../roleplay-store.js';
 import { prepareInWorker, yieldNotebookWork } from './preparation.js';
 import {
-    MAX_DEPTH, NotebookError, foldKey, normaliseRelativePath, parentFolder, sha256, uniquePath,
+    MAX_DEPTH, NotebookError, foldKey, normaliseFolder, normaliseRelativePath, parentFolder, sha256, uniquePath,
 } from './paths.js';
 import { splitFrontmatter } from './markdown.js';
 import { importedPolicies } from './permissions.js';
@@ -19,6 +19,7 @@ import {
     recordHistoryLocked, listTrashLocked, runOperationLocked, updateManifestLocked, updateNoteLocked, readJsonLocked, writeJsonLocked,
 } from './store.js';
 import { MAX_ATTACHMENT_BYTES, attachmentType, validateAttachment } from './attachments.js';
+import { resolveLink } from './note-index.js';
 
 export const MAX_IMPORT_ARCHIVE_BYTES = 128 * 1024 * 1024;
 export const MAX_IMPORT_ENTRIES = 5000;
@@ -627,21 +628,64 @@ export const commitStageUpdate = (base, input, options) => commitTransfer(base, 
  * attachments only. Control data, permissions, history and provenance are
  * never part of a portable export.
  */
-export function collectExportLocked(lease, { notebookId }) {
+function exportSelection(state, selection) {
+    if (selection === undefined) return { entries: state.entries, folders: state.folders, partial: false };
+    const invalid = () => { throw new NotebookError('EXPORT_SELECTION_INVALID', 'Choose the whole notebook, a folder or at least one note to export.'); };
+    if (!selection || typeof selection !== 'object' || Array.isArray(selection)) invalid();
+    const allowed = { all: ['mode'], folder: ['mode', 'folder', 'includeSubfolders'], notes: ['mode', 'noteIds'] };
+    if (!Object.hasOwn(allowed, selection.mode) || Object.keys(selection).some(key => !allowed[selection.mode].includes(key))) invalid();
+    if (selection.mode === 'all') return { entries: state.entries, folders: state.folders, partial: false };
+    if (selection.mode === 'notes') {
+        if (!Array.isArray(selection.noteIds) || !selection.noteIds.length || selection.noteIds.length > MAX_NOTES_PER_NOTEBOOK || selection.noteIds.some(id => typeof id !== 'string')) invalid();
+        const ids = new Set(selection.noteIds);
+        const entries = state.entries.filter(entry => ids.has(entry.id));
+        if (entries.length !== ids.size) throw new NotebookError('EXPORT_NOTE_NOT_FOUND', 'One of the selected notes cannot be found. Refresh and choose again.', 404);
+        return { entries, folders: [], partial: true };
+    }
+    if (typeof selection.folder !== 'string' || (selection.includeSubfolders !== undefined && typeof selection.includeSubfolders !== 'boolean')) invalid();
+    const folder = normaliseFolder(selection.folder);
+    const key = foldKey(folder);
+    if (folder && !state.folders.some(item => foldKey(item) === key)) throw new NotebookError('EXPORT_FOLDER_NOT_FOUND', 'That folder cannot be found. Refresh and choose again.', 404);
+    const includes = candidate => foldKey(candidate) === key || (selection.includeSubfolders !== false && (!key || foldKey(candidate).startsWith(`${key}/`)));
+    return { entries: state.entries.filter(entry => includes(parentFolder(entry.path))), folders: state.folders.filter(includes), partial: true };
+}
+
+export function collectExportLocked(lease, { notebookId, selection }) {
     const state = loadNotebookLocked(lease, notebookId, { force: true });
+    const selected = exportSelection(state, selection);
     const root = notebookContentRoot(accountRootOf(lease), notebookId);
     const files = [];
     let total = 0;
     const add = (relative, limit) => {
         const file = readAuthoringFileLocked(lease, path.join(root, ...relative.split('/')), limit);
-        if (!file) return;
+        if (!file) {
+            if (selected.partial) throw new NotebookError('EXPORT_SOURCE_CHANGED', 'A selected note or file changed. Refresh and export again.', 409);
+            return;
+        }
         total += file.bytes.length;
         if (total > MAX_EXPORT_BYTES) throw new NotebookError('EXPORT_TOO_LARGE', 'This notebook is too large to export in one archive.', 413);
         files.push({ path: relative, bytes: file.bytes });
     };
-    for (const entry of state.entries) add(entry.path, MAX_NOTE_BYTES);
-    for (const item of state.attachments) if (attachmentType(item.path)) add(item.path, MAX_ATTACHMENT_BYTES);
-    return { name: state.manifest.name, files, folders: state.folders };
+    for (const entry of selected.entries) add(entry.path, MAX_NOTE_BYTES);
+    let attachments = state.attachments;
+    if (selected.partial) {
+        const linked = new Set();
+        for (const entry of selected.entries) {
+            for (const link of entry.links ?? []) {
+                const resolved = resolveLink(state.entries, link, entry.path);
+                if (resolved.status === 'attachment' && resolved.path) linked.add(foldKey(resolved.path));
+            }
+        }
+        attachments = attachments.filter(item => linked.has(foldKey(item.path)));
+    }
+    for (const item of attachments) if (attachmentType(item.path)) add(item.path, MAX_ATTACHMENT_BYTES);
+    const folders = new Set(selected.folders);
+    if (selected.partial) {
+        for (const file of files) {
+            for (let folder = parentFolder(file.path); folder; folder = parentFolder(folder)) folders.add(folder);
+        }
+    }
+    return { name: state.manifest.name, files, folders: [...folders] };
 }
 
 export function exportFilename(name) {
