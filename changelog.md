@@ -5,6 +5,7 @@
 ### Merged Staging PRs
 - PR #28 (2026-10-06) `fix(notes): highlight the picked template and add a Delete button`
 - PR #29 (2026-10-06) `fix: phone menu no longer sends you back to Home`
+- PR #30 (2026-10-06) `feat: connect scratchpad to notebook and preserve sessions on chat rename`
 - PR #31 (2026-10-06) `fix: load the chat archive on large libraries`
 - PR #32 (2026-10-06) `fix: add Portuguese entries for many controls that still showed English`
 - PR #37 (2026-10-06) `feat(personas): rebuild the Persona page and load its styles first`
