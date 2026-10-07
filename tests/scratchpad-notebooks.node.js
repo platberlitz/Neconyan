@@ -280,7 +280,8 @@ test('saving a Scratchpad clip keeps its own attribution, exact quote, replay an
         source: { kind: 'scratchpad', chat: SOURCE.key, sourceKind: 'roleplay', sessionId: 'session', scratchpadMessageId: 'reply', speaker: 'Miso', messageSendDate: '2026-10-06' } };
     const captured = await post('/notebooks/notes/capture', body);
     assert.equal(captured.http, 200);
-    assert.match(a.read(captured.body.noteId).text, /Saved from Scratchpad \(Miso, 2026-10-06\)/);
+    // The attribution carries the day the clip was saved, not the message's send date.
+    assert.ok(a.read(captured.body.noteId).text.includes(`Saved from Scratchpad (Miso, ${new Date().toISOString().slice(0, 10)})`));
     assert.match(a.read(captured.body.noteId).text, /> Useful idea\.\n> Another line\./);
     assert.equal((await post('/notebooks/notes/capture', body)).body.replayed, true);
     assert.equal(a.context([{ notebookId: a.notebookId, noteId: captured.body.noteId }]).notes[0].unavailable, true);
