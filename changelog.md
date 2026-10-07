@@ -11,6 +11,7 @@
 - PR #48 (2026-10-07) `feat(tour): shrink the Tour chip so collapsed page blurbs stay one line`
 - PR #49 (2026-10-07) `fix: show names people wrote as written instead of translating them`
 - PR #50 (2026-10-07) `feat(characters): compact the character editor`
+- PR #51 (2026-10-07) `fix(agents): keep tracker repair labels still while loading`
 
 ## v1.2.0
 
