@@ -3187,12 +3187,16 @@ function buildPromptTransformMessages(agentPrompt, messageText, assistantName, g
     ];
 }
 
-function buildContextInterceptMessages(agentPrompt, contextText, generationType, contextFormat, timing = PRE_GENERATION_INTERCEPT_TIMING) {
+function buildContextInterceptMessages(agentPrompt, contextText, generationType, contextFormat, timing = PRE_GENERATION_INTERCEPT_TIMING, applyMode = 'replace') {
+    // Wrap and patch keep the original and insert the result beside it, so asking for the whole context back only slows the request down.
+    const addsText = applyMode === 'wrap' || applyMode === 'patch';
     if (timing === POST_MAIN_GENERATION_INTERCEPT_TIMING) {
         return [
             {
                 role: 'system',
-                content: `${agentPrompt}\n\nYou are modifying the assistant response after the main model generated it, before it is shown or saved. Return only the final assistant response requested by the instructions above. Do not add commentary, labels, or code fences unless they are part of the response itself. If no changes are needed, return the original response verbatim.`,
+                content: addsText
+                    ? `${agentPrompt}\n\nYou are adding to the assistant response after the main model generated it, before it is shown or saved. Return only the new text requested by the instructions above; it is placed beside the response. Do not repeat or quote the response. Do not add commentary, labels, or code fences unless they are part of the requested text.`
+                    : `${agentPrompt}\n\nYou are modifying the assistant response after the main model generated it, before it is shown or saved. Return only the final assistant response requested by the instructions above. Do not add commentary, labels, or code fences unless they are part of the response itself. If no changes are needed, return the original response verbatim.`,
             },
             {
                 role: 'user',
@@ -3206,7 +3210,9 @@ function buildContextInterceptMessages(agentPrompt, contextText, generationType,
     return [
         {
             role: 'system',
-            content: `${agentPrompt}\n\nYou are modifying the complete outgoing context before the main model sees it. Return only the revised context content requested by the instructions above. Do not add commentary, labels, or code fences unless they are part of the context itself. If no changes are needed, return the original context content verbatim.`,
+            content: addsText
+                ? `${agentPrompt}\n\nYou are reading the complete outgoing context before the main model sees it. Return only the text requested by the instructions above; it is inserted into the context as a separate message. Do not repeat, quote, or return the context. Do not add commentary, labels, or code fences unless they are part of the requested text.`
+                : `${agentPrompt}\n\nYou are modifying the complete outgoing context before the main model sees it. Return only the revised context content requested by the instructions above. Do not add commentary, labels, or code fences unless they are part of the context itself. If no changes are needed, return the original context content verbatim.`,
         },
         {
             role: 'user',
@@ -5067,7 +5073,7 @@ async function runContextInterceptAgent(agent, currentContextText, generationTyp
     }
 
     const helperRequest = appendConfiguredHelperPrefillMessages(
-        buildContextInterceptMessages(expandedPrompt, currentContextText, generationType, contextFormat, timing),
+        buildContextInterceptMessages(expandedPrompt, currentContextText, generationType, contextFormat, timing, applyMode),
     );
     const cancelRevision = agentGenerationCancelRevision;
     const skipChanges = timing === POST_MAIN_GENERATION_INTERCEPT_TIMING && Boolean(options?.skipChanges);
