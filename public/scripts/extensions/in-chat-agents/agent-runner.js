@@ -85,6 +85,7 @@ import {
     TRACKER_REPAIR_INSTRUCTION,
     writeTrackerMetadataValue,
 } from './tracker-state.js';
+import { composePromptTransformDraft, runPromptTransformStages } from './prompt-transform-synthesis.js';
 
 const PROMPT_KEY_PREFIX = 'inchat_agent_';
 const PATHFINDER_AUTO_SUMMARY_PROMPT_KEY = 'pathfinder_zz_auto_summary';
@@ -3349,48 +3350,6 @@ function storePreGenerationInterceptHistory(message, runs) {
     return true;
 }
 
-function consolidateAppendPromptTransformOutputs(baseText, agents, results) {
-    const prependSegments = [];
-    const appendSegments = [];
-    const seenSegments = new Set();
-    const agentMap = new Map((Array.isArray(agents) ? agents : []).map(agent => [agent.id, agent]));
-    const normalizedBaseText = unwrapAssistantResponseWrapper(baseText);
-
-    for (const result of Array.isArray(results) ? results : []) {
-        const outputText = unwrapAssistantResponseWrapper(result?.outputText).trim();
-        if (!outputText) {
-            continue;
-        }
-
-        const agent = agentMap.get(result.agentId);
-        if (!isAgentRuntimeAllowed(agent)) {
-            continue;
-        }
-        const shouldPrepend = shouldPrependPromptTransformOutput(agent, outputText);
-        const dedupeKey = `${shouldPrepend ? 'prepend' : 'append'}:${outputText}`;
-        if (seenSegments.has(dedupeKey)) {
-            continue;
-        }
-
-        seenSegments.add(dedupeKey);
-        (shouldPrepend ? prependSegments : appendSegments).push(outputText);
-    }
-
-    let mergedText = normalizedBaseText;
-    if (prependSegments.length > 0) {
-        mergedText = joinPromptTransformText(prependSegments.join('\n\n'), mergedText);
-    }
-    if (appendSegments.length > 0) {
-        mergedText = joinPromptTransformText(mergedText, appendSegments.join('\n\n'));
-    }
-
-    return {
-        text: mergedText,
-        changed: mergedText !== normalizedBaseText,
-        beforeText: normalizedBaseText,
-    };
-}
-
 function getConfiguredHelperPrefillText() {
     return getGlobalSettings()?.helperPrefillMessages ?? '';
 }
@@ -3991,7 +3950,7 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
     }
 }
 
-async function runPromptTransformAppendBatch(agents, message, generationType, messageTextOverride = null, messageIndex = null, { applyToMessage = true, cancelRevision = null, runtimeAgents = [], postProcessingTarget = null } = {}) {
+async function runPromptTransformAppendBatch(agents, message, generationType, messageTextOverride = null, messageIndex = null, { cancelRevision = null, runtimeAgents = [] } = {}) {
     const targetState = captureMessageTargetState(message);
     const currentMessageText = unwrapAssistantResponseWrapper(
         messageTextOverride !== null ? messageTextOverride : message?.mes,
@@ -4003,13 +3962,7 @@ async function runPromptTransformAppendBatch(agents, message, generationType, me
     let results = [];
 
     if (isCancelled()) {
-        return {
-            results,
-            changed: false,
-            nextMessageText: currentMessageText,
-            beforeText: currentMessageText,
-            cancelled: true,
-        };
+        return { results, outputs: [], cancelled: true };
     }
 
     if (executionMode === 'sequential') {
@@ -4073,37 +4026,105 @@ async function runPromptTransformAppendBatch(agents, message, generationType, me
     }
 
     if (isCancelled() || results.some(result => result?.status === 'cancelled')) {
-        return {
-            results,
-            changed: false,
-            nextMessageText: currentMessageText,
-            beforeText: currentMessageText,
-            cancelled: true,
-        };
+        return { results, outputs: [], cancelled: true };
     }
 
     if (!isMessageTargetCurrent(message, targetState, messageIndex) || results.some(result => result?.status === 'stale-target')) {
-        return {
-            results,
-            changed: false,
-            nextMessageText: currentMessageText,
-            beforeText: currentMessageText,
-            staleTarget: true,
-        };
+        return { results, outputs: [], staleTarget: true };
     }
 
-    const consolidated = consolidateAppendPromptTransformOutputs(currentMessageText, agents, results);
-    if (consolidated.changed && applyToMessage) {
-        setPostProcessingText(message, consolidated.text, postProcessingTarget);
-        await syncPromptTransformMessageStateAsync(message, messageIndex);
-    }
+    const agentMap = new Map(agents.map(agent => [agent.id, agent]));
+    const outputs = results
+        .map(result => ({ agent: agentMap.get(result?.agentId), text: unwrapAssistantResponseWrapper(result?.outputText).trim() }))
+        .filter(output => output.text && isAgentRuntimeAllowed(output.agent));
+    return { results, outputs };
+}
 
-    return {
-        results,
-        changed: consolidated.changed,
-        nextMessageText: consolidated.text,
-        beforeText: currentMessageText,
-    };
+/**
+ * Runs post-generation prompt transforms over one reply. Rewrite agents edit the
+ * reply in Order; append agents share the reply body, and their add-on blocks are
+ * cleaned of echoed text and duplicates, then joined around the finished body.
+ * With Run together the append agents start alongside the rewrites.
+ */
+async function runPromptTransformPasses(agents, message, generationType, text, messageIndex = null, { cancelRevision = null, runtimeAgents = [], stopOnFailure = false, isCurrent = () => true } = {}) {
+    const promptRuns = [];
+    const outcome = { cancelled: false, staleTarget: false, failed: false };
+    const initialText = unwrapAssistantResponseWrapper(text);
+    const isCancelled = () => (cancelRevision !== null && agentGenerationCancelRevision !== cancelRevision) || !runtimeAgents.every(isAgentRuntimeAllowed);
+    const errorRun = (agent, error) => ({
+        agentId: agent.id,
+        agentName: agent.name,
+        changed: false,
+        status: 'error',
+        mode: getPromptTransformMode(agent),
+        error: describeAgentError(error),
+        runner: 'error',
+        timestamp: new Date().toISOString(),
+    });
+
+    const { draft } = await runPromptTransformStages({
+        agents,
+        text: initialText,
+        parallel: getGlobalSettings().appendAgentsExecutionMode !== 'sequential',
+        isAppend: agent => getPromptTransformMode(agent) === 'append',
+        isPrepend: shouldPrependPromptTransformOutput,
+        shouldStop: () => {
+            outcome.cancelled = outcome.cancelled || isCancelled();
+            return outcome.cancelled || !isCurrent();
+        },
+        runRewrite: async (agent, body) => {
+            let result;
+            try {
+                result = await runPromptTransformAgent(agent, message, generationType, body, messageIndex, {
+                    applyToMessage: false,
+                    runtimeAgents,
+                    ...(cancelRevision !== null ? { cancelRevision } : {}),
+                });
+            } catch (error) {
+                promptRuns.push(errorRun(agent, error));
+                outcome.cancelled = isCancelled();
+                outcome.failed = !outcome.cancelled;
+                return { stop: outcome.cancelled || stopOnFailure };
+            }
+            promptRuns.push(result);
+            if (result.status === 'stale-target') {
+                outcome.staleTarget = true;
+                return { stop: true };
+            }
+            if (isCancelled() || result.status === 'cancelled') {
+                outcome.cancelled = true;
+                return { stop: true };
+            }
+            if (result.status === 'error') {
+                outcome.failed = true;
+                if (stopOnFailure) return { stop: true };
+            }
+            return { text: result.nextMessageText };
+        },
+        runAppend: async (batchAgents, body) => {
+            const batch = await runPromptTransformAppendBatch(batchAgents, message, generationType, body, messageIndex, { cancelRevision, runtimeAgents });
+            promptRuns.push(...batch.results);
+            if (batch.cancelled || isCancelled()) {
+                outcome.cancelled = true;
+                return { stop: true };
+            }
+            if (batch.staleTarget) {
+                outcome.staleTarget = true;
+                return { stop: true };
+            }
+            if (batch.results.some(result => result?.status === 'error')) {
+                outcome.failed = true;
+                if (stopOnFailure) return { stop: true };
+            }
+            return { outputs: batch.outputs };
+        },
+    });
+
+    // Runs finish in any order when agents run together; list them in agent Order.
+    const agentOrder = new Map(agents.map((agent, index) => [agent.id, index]));
+    promptRuns.sort((left, right) => (agentOrder.get(left.agentId) ?? 0) - (agentOrder.get(right.agentId) ?? 0));
+    const finalText = composePromptTransformDraft(draft, joinPromptTransformText);
+    return { promptRuns, text: finalText, changed: finalText !== initialText, ...outcome };
 }
 
 async function refreshMessageAfterMutation(messageIndex, message, { deferBackup = false, skipReloadFallback = false } = {}) {
@@ -4611,86 +4632,17 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
             );
 
         const interceptRuns = takeInterceptRunsForMessage(message);
-        const promptRuns = [];
-        let appendBatch = [];
-        let staleTarget = false;
-        const flushAppendBatch = async () => {
-            if (appendBatch.length === 0 || staleTarget || !isOperationCurrent()) {
-                appendBatch = [];
-                return;
-            }
-
-            const batchAgents = appendBatch;
-            appendBatch = [];
-
-            const batchResult = await runPromptTransformAppendBatch(
-                batchAgents,
-                message,
-                generationType,
-                currentPromptTransformText,
-                messageIndex,
-                { applyToMessage: false, cancelRevision: operationCancelRevision },
-            );
-            promptRuns.push(...batchResult.results);
-            currentPromptTransformText = batchResult.nextMessageText;
-            staleTarget = staleTarget || batchResult.staleTarget === true;
-
-            if (batchResult.changed) {
-                chatStateChanged = true;
-                messageDisplayChanged = true;
-            }
-        };
-
-        for (const agent of promptTransformAgents) {
-            if (staleTarget || !isOperationCurrent()) {
-                break;
-            }
-
-            if (getPromptTransformMode(agent) === 'append') {
-                appendBatch.push(agent);
-                continue;
-            }
-
-            await flushAppendBatch();
-            if (staleTarget || !isOperationCurrent()) {
-                break;
-            }
-
-            try {
-                const result = await runPromptTransformAgent(agent, message, generationType, currentPromptTransformText, messageIndex, {
-                    applyToMessage: false,
-                    cancelRevision: operationCancelRevision,
-                });
-                promptRuns.push(result);
-                currentPromptTransformText = result.nextMessageText;
-                if (result.status === 'stale-target') {
-                    staleTarget = true;
-                    break;
-                }
-                if (result.status === 'cancelled') {
-                    break;
-                }
-
-                if (result.changed) {
-                    chatStateChanged = true;
-                    messageDisplayChanged = true;
-                }
-            } catch (error) {
-                promptRuns.push({
-                    agentId: agent.id,
-                    agentName: agent.name,
-                    changed: false,
-                    status: 'error',
-                    mode: getPromptTransformMode(agent),
-                    error: describeAgentError(error),
-                    runner: 'error',
-                    timestamp: new Date().toISOString(),
-                });
-            }
+        const promptTransformResult = await runPromptTransformPasses(promptTransformAgents, message, generationType, currentPromptTransformText, messageIndex, {
+            cancelRevision: operationCancelRevision,
+            isCurrent: isOperationCurrent,
+        });
+        const promptRuns = promptTransformResult.promptRuns;
+        if (promptTransformResult.staleTarget || !isOperationCurrent()) return;
+        if (promptTransformResult.changed) {
+            currentPromptTransformText = promptTransformResult.text;
+            chatStateChanged = true;
+            messageDisplayChanged = true;
         }
-
-        await flushAppendBatch();
-        if (staleTarget || !isOperationCurrent()) return;
 
         for (const agent of utilityAgents) {
             if (!isAgentRuntimeAllowed(agent)) {
@@ -4958,111 +4910,23 @@ async function runPromptTransformAgentsForText(promptTransformAgents, initialTex
         changed: false,
         failed: true,
     });
-    let currentPromptTransformText = initialPromptTransformText;
-    let appendBatch = [];
-
-    const flushAppendBatch = async () => {
-        if (appendBatch.length === 0) {
-            return null;
-        }
-
-        if (isCancelled()) {
-            return { cancelled: true };
-        }
-
-        const batchAgents = appendBatch;
-        appendBatch = [];
-
-        const batchResult = await runPromptTransformAppendBatch(
-            batchAgents,
-            message,
-            generationType,
-            currentPromptTransformText,
-            null,
-            { cancelRevision, runtimeAgents },
-        );
-        promptRuns.push(...batchResult.results);
-
-        if (batchResult.cancelled || isCancelled() || batchResult.results.some(result => result?.status === 'cancelled')) {
-            return { cancelled: true };
-        }
-
-        if (stopOnFailure && batchResult.results.some(result => result?.status === 'error')) {
-            return { failed: true };
-        }
-
-        currentPromptTransformText = batchResult.nextMessageText;
-        return null;
-    };
-
-    for (const agent of promptTransformAgents) {
-        if (isCancelled()) {
-            return cancelledResult();
-        }
-
-        if (getPromptTransformMode(agent) === 'append') {
-            appendBatch.push(agent);
-            continue;
-        }
-
-        const appendResult = await flushAppendBatch();
-        if (appendResult?.cancelled) {
-            return cancelledResult();
-        }
-        if (appendResult?.failed) {
-            return failedResult();
-        }
-
-        try {
-            const result = await runPromptTransformAgent(agent, message, generationType, currentPromptTransformText, null, {
-                applyToMessage: false,
-                runtimeAgents,
-                ...(cancelRevision !== null ? { cancelRevision } : {}),
-            });
-            promptRuns.push(result);
-
-            if (isCancelled() || result.status === 'cancelled') {
-                return cancelledResult();
-            }
-            if (stopOnFailure && result.status === 'error') {
-                return failedResult();
-            }
-
-            currentPromptTransformText = result.nextMessageText;
-        } catch (error) {
-            if (isCancelled()) {
-                return cancelledResult();
-            }
-
-            promptRuns.push({
-                agentId: agent.id,
-                agentName: agent.name,
-                changed: false,
-                status: 'error',
-                mode: getPromptTransformMode(agent),
-                error: describeAgentError(error),
-                runner: 'error',
-                timestamp: new Date().toISOString(),
-            });
-
-            if (stopOnFailure) {
-                return failedResult();
-            }
-        }
-    }
-
-    const appendResult = await flushAppendBatch();
-    if (appendResult?.cancelled) {
+    const result = await runPromptTransformPasses(promptTransformAgents, message, generationType, initialText, null, {
+        cancelRevision,
+        runtimeAgents,
+        stopOnFailure,
+    });
+    promptRuns.push(...result.promptRuns);
+    if (result.cancelled || isCancelled()) {
         return cancelledResult();
     }
-    if (appendResult?.failed) {
+    if (stopOnFailure && result.failed) {
         return failedResult();
     }
 
     return {
         promptRuns,
-        text: currentPromptTransformText,
-        changed: currentPromptTransformText !== unwrapAssistantResponseWrapper(initialText),
+        text: result.text,
+        changed: result.changed,
     };
 }
 
@@ -6364,76 +6228,17 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     let unsafeTrackerRepairs = 0;
     let currentPromptTransformText = unwrapAssistantResponseWrapper(message.mes);
 
-    let appendBatch = [];
-    let fixStaleTarget = false;
-    const flushAppendBatch = async () => {
-        if (appendBatch.length === 0 || !isFixTargetCurrent() || fixStaleTarget) {
-            appendBatch = [];
-            return;
-        }
-
-        const batchAgents = appendBatch;
-        appendBatch = [];
-
-        const batchResult = await runPromptTransformAppendBatch(
-            batchAgents,
-            message,
-            generationType,
-            currentPromptTransformText,
-            messageIndex,
-            { applyToMessage: false, cancelRevision: fixCancelRevision },
-        );
-        if (!isFixTargetCurrent()) return;
-        fixStaleTarget = fixStaleTarget || batchResult.staleTarget === true;
-        promptRuns.push(...batchResult.results);
-        currentPromptTransformText = batchResult.nextMessageText;
-
-        if (batchResult.changed) {
-            chatStateChanged = true;
-            messageDisplayChanged = true;
-        }
-    };
-
-    for (const agent of trackerTransformAgents) {
-        if (!isFixTargetCurrent() || fixStaleTarget) break;
-
-        if (getPromptTransformMode(agent) === 'append') {
-            appendBatch.push(agent);
-            continue;
-        }
-
-        await flushAppendBatch();
-        if (!isFixTargetCurrent() || fixStaleTarget) return;
-
-        try {
-            const result = await runPromptTransformAgent(agent, message, generationType, currentPromptTransformText, messageIndex, {
-                applyToMessage: false,
-                cancelRevision: fixCancelRevision,
-            });
-            if (!isFixTargetCurrent() || result.status === 'stale-target') return;
-            promptRuns.push(result);
-            currentPromptTransformText = result.nextMessageText;
-
-            if (result.changed) {
-                chatStateChanged = true;
-                messageDisplayChanged = true;
-            }
-        } catch (error) {
-            promptRuns.push({
-                agentId: agent.id,
-                agentName: agent.name,
-                changed: false,
-                status: 'error',
-                mode: getPromptTransformMode(agent),
-                error: describeAgentError(error),
-                runner: 'error',
-                timestamp: new Date().toISOString(),
-            });
-        }
+    const promptTransformResult = await runPromptTransformPasses(trackerTransformAgents, message, generationType, currentPromptTransformText, messageIndex, {
+        cancelRevision: fixCancelRevision,
+        isCurrent: isFixTargetCurrent,
+    });
+    if (!isFixTargetCurrent() || promptTransformResult.staleTarget) return;
+    promptRuns.push(...promptTransformResult.promptRuns);
+    if (promptTransformResult.changed) {
+        currentPromptTransformText = promptTransformResult.text;
+        chatStateChanged = true;
+        messageDisplayChanged = true;
     }
-
-    await flushAppendBatch();
-    if (!isFixTargetCurrent() || fixStaleTarget) return;
 
     // Neconyan divergence: Fix Trackers repairs the raw tracker block and then
     // derives metadata from that validated text instead of discarding model output.

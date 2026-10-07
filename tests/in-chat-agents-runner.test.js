@@ -6625,6 +6625,34 @@ describe('in-chat agent post-processing runner', () => {
         await new Promise(resolve => setTimeout(resolve, 5));
     });
 
+    test('run together keeps append blocks out of later rewrites and strips an echoed reply', async () => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'parallel';
+        for (const agent of enabledAgents) agent.postProcess.enabled = true;
+        enabledAgents[0].postProcess.promptTransformMode = 'append';
+        enabledAgents.push({ ...structuredClone(enabledAgents[0]), id: 'agent-manual-c', name: 'Manual C', prompt: 'Add a menu as C' });
+        const original = 'She pours the tea and waits for your answer.';
+        const choices = '1. Take the cup\n2. Decline politely';
+        let releaseRewrite;
+        generateQuietPrompt.mockImplementation(request => {
+            const sent = JSON.stringify(request);
+            if (sent.includes('Rewrite as B')) return new Promise(resolve => { releaseRewrite = () => resolve('She pours the tea, then waits for your answer.'); });
+            return Promise.resolve(`${original}\n\n${choices}`);
+        });
+        const message = { mes: original, is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        const run = eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await new Promise(resolve => setTimeout(resolve, 5));
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(3);
+        expect(generateQuietPrompt.mock.calls.filter(([request]) => JSON.stringify(request).includes(choices))).toHaveLength(0);
+        releaseRewrite();
+        await run;
+        expect(message.mes).toBe(`She pours the tea, then waits for your answer.\n\n${choices}`);
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
     test('raw output rules run once on generation, then only on explicitly enabled edits', async () => {
         useRegexOnlyAgent();
         const script = enabledAgents[0].regexScripts[0];
