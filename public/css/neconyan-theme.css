@@ -5388,22 +5388,6 @@ input[type='range']::-moz-range-thumb {
     border: 1px solid color-mix(in srgb, var(--sb-shell-border) 74%, transparent);
 }
 
-#ThemeTogglesSection [name="themeToggles"] {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 10px 12px;
-}
-
-#ThemeTogglesSection [name="themeToggles"] .checkbox_label {
-    margin: 0;
-    padding: var(--sb-settings-card-padding);
-    border-radius: var(--sb-radius-md);
-    background: color-mix(in srgb, var(--SmartThemeBodyColor) 4%, transparent);
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 74%, transparent);
-    align-items: center;
-    gap: 10px;
-}
-
 #ChatMessageHandlingSection > .inline-drawer-content > .flex-container:first-child {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

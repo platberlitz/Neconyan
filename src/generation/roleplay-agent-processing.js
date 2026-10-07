@@ -3,6 +3,7 @@ import { buildPromptTransformRecentChat, getAgentLengthTarget } from '../../publ
 import { applyRegexScriptList } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 import { buildRegexScriptRefsForAgent } from '../../public/scripts/extensions/in-chat-agents/regex-snapshot-store.js';
 import { inspectTrackerState, mergeTrackerRepairPayload, TRACKER_REPAIR_INSTRUCTION } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
+import { composePromptTransformDraft, planPromptTransformStages, runPromptTransformStages } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-synthesis.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { createProviderScope, readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
@@ -223,6 +224,44 @@ export function roleplayAgentOutputBaseline(value, pre) {
     return stripSavedAuxiliaryTrackerEchoes(value, pre?.trackerTags ?? [], []);
 }
 
+// Old paid steps include preceding append blocks in later inputs. Keep their
+// original ordering and exact merge rules instead of invalidating those receipts.
+async function runLegacyPromptTransformStages({ agents, text, isAppend, runRewrite, runAppend }) {
+    for (const stage of planPromptTransformStages(agents, { isAppend })) {
+        if (stage.type === 'rewrite') {
+            const outcome = await runRewrite(stage.agents[0], text);
+            if (typeof outcome?.text === 'string') text = outcome.text;
+            if (outcome?.stop) break;
+        } else {
+            const outcome = await runAppend(stage.agents, text);
+            if (outcome?.stop) break;
+            const before = [], after = [];
+            for (const { agent, text: output } of outcome?.outputs ?? []) {
+                if (!output) continue;
+                const blocks = prepend(agent, output) ? before : after;
+                if (!blocks.includes(output)) blocks.push(output);
+            }
+            text = join(join(before.reduce(join, ''), text), after.reduce(join, ''));
+        }
+    }
+    return { draft: { body: text, before: [], after: [] } };
+}
+
+function postprocessingPlan(context, account, phaseName, identity, selected, modelName) {
+    const name = `${phaseName}:plan`;
+    const saved = readPhase(context, account, name, identity);
+    if (saved) {
+        if (![1, 2].includes(saved.version)) throw fail('The saved Agent postprocessing plan is unsupported.');
+        return saved.version;
+    }
+    const started = withRoleplayAccount({ owner: context.owner, directories: context.directories }, account, () =>
+        selected.some(agent => ['input', 'result'].some(part =>
+            readArtifact(context.directories, context.job.id, `agent-model:${modelName(agent.id)}:${part}`) !== undefined)));
+    // Persist the choice before any new call, so another interruption cannot
+    // mistake a new synthesis run for a pre-upgrade run.
+    return savePhase(context, account, name, { identity, version: started ? 1 : 2 }).version;
+}
+
 export async function runRoleplayAgentPostprocessing(context, options) {
     const { base, snapshot, records, value, generationType, macros } = options;
     if (!snapshot.agents) return { text: value, extra: {}, metadata: {}, runs: [] };
@@ -244,43 +283,41 @@ export async function runRoleplayAgentPostprocessing(context, options) {
         && agent.prompt.trim() && (!options.repairTrackers || agent.postProcess.enabled && agent.postProcess.promptTransformEnabled && ['post', 'both'].includes(agent.phase) && agent.postProcess.type !== 'extract'));
     const baseline = companionOutput || manual ? value : roleplayAgentOutputBaseline(value, pre);
     const modelName = id => `${options.namespace ? options.namespace + ':' : ''}post:${id}`;
-    let text = baseline, postFailed = false;
+    const version = postprocessingPlan(context, snapshot.account, phaseName, identity, selected, modelName);
+    let postFailed = false;
     const runs = [];
-    for (let index = 0; index < selected.length;) {
-        const agent = selected[index];
-        if (agent.postProcess.promptTransformMode !== 'append') {
-            const run = await modelRun(context, options, agent, text, modelName(agent.id));
-            if (run.outputText) text = run.outputText;
+    const parallel = snapshot.agents.appendMode === 'parallel';
+    // Run together shares one provider scope, so rewrite and append steps can be in flight at once.
+    const scope = parallel ? { ...context, providerScope: context.providerScope ?? createProviderScope(context) } : context;
+    const runStages = version === 1 ? runLegacyPromptTransformStages : runPromptTransformStages;
+    const { draft } = await runStages({
+        agents: selected, text: baseline, parallel, isPrepend: prepend,
+        isAppend: agent => agent.postProcess.promptTransformMode === 'append',
+        runRewrite: async (agent, body) => {
+            const run = await modelRun(scope, options, agent, body, modelName(agent.id));
             runs.push({ ...run, mode: 'rewrite' });
-            if (companionOutput && run.status !== 'done') { postFailed = true; break; }
-            index++;
-            continue;
-        }
-        const batch = [];
-        while (index < selected.length && selected[index].postProcess.promptTransformMode === 'append') batch.push(selected[index++]);
-        const baseline = text;
-        const scope = { ...context, providerScope: context.providerScope ?? createProviderScope(context) };
-        let results;
-        if (snapshot.agents.appendMode === 'parallel') {
-            const settled = await Promise.allSettled(batch.map(item => modelRun(scope, options, item, baseline, modelName(item.id))));
-            const failed = settled.find(item => item.status === 'rejected');
-            if (failed) throw failed.reason;
-            results = settled.map(item => item.value);
-        } else {
-            results = [];
-            for (const item of batch) results.push(await modelRun(context, options, item, baseline, modelName(item.id)));
-        }
-        const before = [], after = [];
-        for (let offset = 0; offset < results.length; offset++) {
-            const run = results[offset];
-            runs.push({ ...run, mode: 'append' });
-            if (!run.outputText) continue;
-            const list = prepend(batch[offset], run.outputText) ? before : after;
-            if (!list.includes(run.outputText)) list.push(run.outputText);
-        }
-        text = join(join(before.reduce(join, ''), baseline), after.reduce(join, ''));
-        if (companionOutput && results.some(run => run.status !== 'done')) { postFailed = true; break; }
-    }
+            if (companionOutput && run.status !== 'done') { postFailed = true; return { stop: true }; }
+            return run.outputText ? { text: run.outputText } : {};
+        },
+        runAppend: async (batch, body) => {
+            let results;
+            if (parallel) {
+                const settled = await Promise.allSettled(batch.map(item => modelRun(scope, options, item, body, modelName(item.id))));
+                const failed = settled.find(item => item.status === 'rejected');
+                if (failed) throw failed.reason;
+                results = settled.map(item => item.value);
+            } else {
+                results = [];
+                for (const item of batch) results.push(await modelRun(scope, options, item, body, modelName(item.id)));
+            }
+            runs.push(...results.map(run => ({ ...run, mode: 'append' })));
+            if (companionOutput && results.some(run => run.status !== 'done')) { postFailed = true; return { stop: true }; }
+            return { outputs: results.map((run, offset) => ({ agent: batch[offset], text: run.outputText })) };
+        },
+    });
+    const agentOrder = new Map(selected.map((agent, index) => [agent.id, index]));
+    runs.sort((left, right) => agentOrder.get(left.agentId) - agentOrder.get(right.agentId));
+    let text = composePromptTransformDraft(draft, join);
     if (companionOutput && postFailed || manual && !options.repairTrackers && runs.some(run => run.status === 'length-limited')) {
         return savePhase(context, snapshot.account, phaseName, { identity, text: value, extra: {}, metadata: {}, runs, failed: true });
     }

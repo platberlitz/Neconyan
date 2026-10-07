@@ -238,6 +238,32 @@ test('an acknowledged parallel Agent survives a lost sibling without committing 
     assert.equal(f.saved().length, 3);
 });
 
+test('run together starts append Agents beside rewrites and joins their cleaned blocks after the rewritten reply', async t => {
+    const post = (id, order, mode, prompt) => ({ id, phase: 'post', prompt, injection: { order }, postProcess: {
+        enabled: true, promptTransformEnabled: true, promptTransformMode: mode, promptTransformMaxTokens: 64 } });
+    const f = prepared(t, [post('menu', 1, 'append', 'MENU'), post('polish', 2, 'rewrite', 'POLISH'), post('again', 3, 'append', 'AGAIN')]);
+    const original = 'The lantern flickers at the fork in the road.';
+    const menu = '1. Go left\n2. Go right';
+    const started = [];
+    let releasePolish;
+    const polishHeld = new Promise(resolve => { releasePolish = resolve; });
+    await f.run({ generate: paid('main', () => original), generateAgent: paid('agents', async ({ messages }) => {
+        const instruction = messages[0].content;
+        started.push(instruction.slice(0, 5));
+        if (started.length === 3) releasePolish();
+        if (instruction.startsWith('POLISH')) {
+            assert.doesNotMatch(JSON.stringify(messages), /Go left/);
+            await polishHeld;
+            return 'The lantern gutters at the fork in the road.';
+        }
+        return `${original}\n\n${menu}`;
+    }) });
+    assert.deepEqual([...started].sort(), ['AGAIN', 'MENU\n', 'POLIS']);
+    const saved = f.saved();
+    assert.equal(saved.at(-1).mes, `The lantern gutters at the fork in the road.\n\n${menu}`);
+    assert.deepEqual(saved.at(-1).extra.inChatAgentPromptRuns.map(run => run.agentId), ['menu', 'polish', 'again']);
+});
+
 test('a damaged postprocessing proof cannot publish a reply or tracker state', async t => {
     const f = prepared(t, [{ id: 'rewrite', phase: 'post', prompt: 'REWRITE', postProcess: {
         enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64,
