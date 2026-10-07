@@ -3809,8 +3809,7 @@ grammarly-extension {
     margin: 0;
 }
 
-#description_div,
-#first_message_div {
+#description_div {
     display: flex;
     align-items: center;
 }
@@ -3984,20 +3983,11 @@ grammarly-extension {
     gap: 10px;
 }
 
-.character-greetings-summary {
-    color: var(--SmartThemeEmColor);
-    line-height: 1.45;
-}
-
 .character-greetings-primary,
 .character-greetings-editor {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    padding: 12px;
-    border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 14px;
-    background: color-mix(in srgb, var(--color-surface, var(--SmartThemeBlurTintColor)) 65%, transparent);
 }
 
 .character-greeting-label-row,
@@ -4009,6 +3999,8 @@ grammarly-extension {
 }
 
 .character-greeting-label-row {
+    justify-content: flex-start;
+    gap: 4px;
     font-weight: 600;
 }
 
@@ -7747,21 +7739,6 @@ body.groupSpeakerControlsHidden #extensionsMenu>#wand_group_speaker_controls {
 }
 
 @media screen and (max-width: 768px) {
-    #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) .sb-character-editor-side-actions {
-        width: 100%;
-        max-width: 100%;
-        align-self: start;
-        justify-self: stretch;
-        justify-content: flex-start;
-    }
-
-    #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) .sb-character-editor-side-actions #favorite_button {
-        flex: 0 0 auto;
-        width: auto;
-        min-width: max(var(--sb-mobile-touch-target, 44px), 4.5rem);
-        overflow: visible;
-    }
-
     #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) #avatar_controls {
         grid-column: 1 / -1;
         width: 100%;

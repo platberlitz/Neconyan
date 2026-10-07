@@ -37,25 +37,23 @@ describe('mobile character editor css', () => {
         expect(phoneRule).toContain('min-height: 44px;');
     });
 
-    test('keeps the favorite control in the name column on mobile', () => {
-        expect(mobileShellCss).toContain(`grid-template-areas:
-            'avatar name'
-            'avatar side-actions'
-            'icon-actions icon-actions'
-            'tags tags';`);
+    test('keeps the favourite star beside the name with the actions under it at every width', () => {
+        const controlsRowRule = getRuleBody(tabsCss, '#right-nav-panel .sb-character-editor-controls-row');
+        expect(controlsRowRule).toContain('grid-template-columns: var(--sb-character-editor-avatar-size) minmax(0, 1fr) auto;');
+        expect(controlsRowRule).toContain(`grid-template-areas:
+        'avatar name side-actions'
+        'avatar icon-actions icon-actions';`);
+        expect(mobileShellCss).not.toMatch(/\.sb-character-editor-controls-row\s*\{[^}]*grid-template-areas/);
     });
 
     test('stretches the mobile editor action rows before wrapping', () => {
         const avatarControlsRule = getRuleBody(styleCss, '#right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) #avatar_controls');
         const formButtonsRule = getRuleBody(styleCss, '#right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) #avatar_controls > .form_create_bottom_buttons_block,\n    #right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) #avatar_controls .char-button-toolbar');
-        const sideActionsRule = getRuleBody(styleCss, '#right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) .sb-character-editor-side-actions');
         const iconActionsRule = getRuleBody(styleCss, '#right-nav-panel.openDrawer:is([data-menu-type="character_edit"], [data-menu-type="create"]) #avatar_controls .char-button-group-icons');
 
         expect(avatarControlsRule).toContain('grid-column: 1 / -1;');
         expect(avatarControlsRule).toContain('align-items: stretch;');
         expect(formButtonsRule).toContain('flex: 0 0 auto;');
-        expect(sideActionsRule).toContain('max-width: 100%;');
-        expect(sideActionsRule).toContain('justify-self: stretch;');
         expect(iconActionsRule).toContain('width: 100%;');
         expect(iconActionsRule).toContain('flex-wrap: wrap;');
         expect(iconActionsRule).toContain('overflow-x: visible;');

@@ -10,6 +10,7 @@
 - PR #47 (2026-10-07) `fix(time-machine): prevent lost edits and repair snapshot capture`
 - PR #48 (2026-10-07) `feat(tour): shrink the Tour chip so collapsed page blurbs stay one line`
 - PR #49 (2026-10-07) `fix: show names people wrote as written instead of translating them`
+- PR #50 (2026-10-07) `feat(characters): compact the character editor`
 
 ## v1.2.0
 
