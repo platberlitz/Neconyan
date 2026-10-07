@@ -1,6 +1,17 @@
 import { Popup, POPUP_TYPE, POPUP_RESULT } from '../../popup.js';
 import { escapeHtml } from '../../utils.js';
-import { captureAgentSaveGuard, getAgentById, getAgents, getCompanionConfig, isCompanionAgent, saveAgentBatch } from './agent-store.js';
+import {
+    captureAgentSaveGuard,
+    DEFAULT_LENGTH_TARGET,
+    getAgentById,
+    getAgents,
+    getCompanionConfig,
+    isCompanionAgent,
+    LENGTH_TRIMMER_TEMPLATE_ID,
+    MAX_PROMPT_TRANSFORM_CONTEXT_MESSAGES,
+    normalizePromptTransformContextMessages,
+    saveAgentBatch,
+} from './agent-store.js';
 import { getCompanionReferenceIds } from './companion/companion-shared.js';
 import { populateConnectionProfileSelect } from './profile-utils.js';
 
@@ -121,6 +132,19 @@ export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent
         fields.push(modelField);
         addSelect(connection, 'phase', 'Run timing', [['pre', 'Before reply'], ['post', 'After reply'], ['both', 'Before and after']], first.phase);
         if (!bulk) addNumber(connection, 'order', 'Order', first.injection.order, 0, 999);
+        if (!bulk && !companions.length && first.postProcess?.promptTransformEnabled) {
+            const rewrite = addSection('Reply rewrite');
+            if (String(first.sourceTemplateId ?? '').trim() === LENGTH_TRIMMER_TEMPLATE_ID) {
+                const lengthTarget = typeof first.settings?.lengthTarget === 'string' ? first.settings.lengthTarget : DEFAULT_LENGTH_TARGET;
+                const input = $('<input type="text" class="text_pole" maxlength="200">').attr('placeholder', DEFAULT_LENGTH_TARGET).val(lengthTarget);
+                rewrite.append($('<label>').text('Target length').append(input));
+                fields.push({ input: input[0], key: 'lengthTarget', setting: true, initial: input.val() });
+                rewrite.append('<p class="ica--profile-help">Plain words work: ‘About 300 words’, ‘Two short paragraphs’, ‘Under 150 words’.</p>');
+            }
+            addNumber(rewrite, 'promptTransformContextMessages', 'Recent messages to read', normalizePromptTransformContextMessages(first.postProcess.promptTransformContextMessages), 0, MAX_PROMPT_TRANSFORM_CONTEXT_MESSAGES);
+            fields.at(-1).postProcess = true;
+            rewrite.append('<p class="ica--profile-help">Earlier chat messages this rewrite can read, so it can catch repeats and slips. They are never changed. 0 sends the reply alone.</p>');
+        }
         if (companions.length) {
             const history = addSection('Chat history');
             addSelect(history, 'includeInChatHistory', 'Keep in chat history', yesNo, config.includeInChatHistory, true);
@@ -190,6 +214,8 @@ export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent
                             draft.companion = getCompanionConfig(draft);
                             draft.companion[field.key] = ['true', 'false'].includes(value) ? value === 'true' : value;
                         } else if (field.key === 'order') draft.injection = { ...draft.injection, order: value };
+                        else if (field.postProcess) draft.postProcess = { ...draft.postProcess, [field.key]: normalizePromptTransformContextMessages(value) };
+                        else if (field.setting) draft.settings = { ...draft.settings, [field.key]: String(value).trim() || DEFAULT_LENGTH_TARGET };
                         else draft[field.key] = value;
                     }
                 }

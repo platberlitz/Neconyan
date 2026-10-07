@@ -407,6 +407,8 @@ describe('in-chat agent post-processing runner', () => {
         await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-store.js', () => ({
             DEFAULT_AGENT_MAX_TOKENS: 8192,
             MAX_AGENT_MAX_TOKENS: 64000,
+            normalizePromptTransformContextMessages: jest.fn(value => Math.max(0, Math.min(20, Math.trunc(Number(value) || 0)))),
+            getAgentLengthTarget: jest.fn(agent => String(agent?.settings?.lengthTarget ?? '').trim() || 'About 300 to 450 words'),
             areAgentsGloballyEnabled: jest.fn(() => globalSettings.enabled),
             getAgentById: jest.fn(id => [...enabledAgents, ...enabledToolAgents].find(agent => agent.id === id)),
             getAgents: jest.fn(() => [...enabledAgents]),
@@ -7930,6 +7932,60 @@ describe('in-chat agent post-processing runner', () => {
         await received;
 
         expect(chat[0].mes).toBe(coloured);
+    });
+
+    test('gives prompt-transform rewrites the recent chat they ask for, and nothing by default', async () => {
+        usePromptTransformPostAgent();
+        enabledAgents[0].prompt = 'Trim to {{lengthTarget}}.';
+        enabledAgents[0].settings = { lengthTarget: 'Two short paragraphs' };
+        enabledAgents[0].postProcess.promptTransformContextMessages = 2;
+        generateQuietPrompt.mockResolvedValue('Rewritten reply');
+
+        const { initAgentRunner, buildPromptDynamicMacros } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        expect(buildPromptDynamicMacros('Reply', null, enabledAgents[0]).lengthTarget).toBe('Two short paragraphs');
+        expect(buildPromptDynamicMacros('Reply', null, { settings: { lengthTarget: '  ' } }).lengthTarget).toBe('About 300 to 450 words');
+
+        chat.push(
+            { name: 'Traveler', mes: 'Too old to include', is_user: true, is_system: false, extra: {} },
+            { name: 'Assistant', mes: 'Earlier reply', is_user: false, is_system: false, extra: {} },
+            { name: 'System', mes: 'Hidden note', is_user: false, is_system: true, extra: {} },
+            { name: 'Traveler', mes: 'Latest question', is_user: true, is_system: false, extra: {} },
+            { name: 'Assistant', mes: 'Original reply', is_user: false, is_system: false, extra: {} },
+        );
+
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 4, 'normal');
+        await waitFor(() => saveChat.mock.calls.length === 1);
+
+        const call = generateQuietPrompt.mock.calls[0][0];
+        const quietPrompt = call.quietPrompt;
+        expect(quietPrompt).toContain('<recent_chat>\nAssistant: Earlier reply\n\nTraveler: Latest question\n</recent_chat>');
+        expect(quietPrompt).not.toContain('Too old to include');
+        expect(quietPrompt).not.toContain('Hidden note');
+        expect(quietPrompt.indexOf('</recent_chat>')).toBeLessThan(quietPrompt.indexOf('<assistant_response>'));
+        expect(chat[4].mes).toBe('Rewritten reply');
+    });
+
+    test('sends a prompt-transform rewrite the reply alone when it asks for no recent chat', async () => {
+        usePromptTransformPostAgent();
+        generateQuietPrompt.mockResolvedValue('Rewritten reply');
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        chat.push(
+            { name: 'Traveler', mes: 'Latest question', is_user: true, is_system: false, extra: {} },
+            { name: 'Assistant', mes: 'Original reply', is_user: false, is_system: false, extra: {} },
+        );
+
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 1, 'normal');
+        await waitFor(() => saveChat.mock.calls.length === 1);
+
+        const quietPrompt = generateQuietPrompt.mock.calls[0][0].quietPrompt;
+        expect(quietPrompt).not.toContain('<recent_chat>');
+        expect(quietPrompt).not.toContain('Latest question');
+        expect(quietPrompt).toContain('<assistant_response>\nOriginal reply\n</assistant_response>');
     });
 
     test('excludes Kimi K3 partial prefill from prompt-transform rewrites', async () => {

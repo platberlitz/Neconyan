@@ -80,6 +80,7 @@ import {
  * @property {boolean} promptTransformShowNotifications
  * @property {'rewrite'|'append'} promptTransformMode
  * @property {number} promptTransformMaxTokens
+ * @property {number} promptTransformContextMessages - Recent chat messages shown to the rewrite as read-only context
  */
 
 /**
@@ -808,7 +809,24 @@ export function agentMatchesListTab(agent, tab) {
 export const LEGACY_AGENT_MAX_TOKENS = 2000;
 export const DEFAULT_AGENT_MAX_TOKENS = 8192;
 export const MAX_AGENT_MAX_TOKENS = 64000;
+export const MAX_PROMPT_TRANSFORM_CONTEXT_MESSAGES = 20;
 export const PATHFINDER_TEMPLATE_ID = 'tpl-pathfinder';
+export const LENGTH_TRIMMER_TEMPLATE_ID = 'tpl-length-trimmer';
+export const DEFAULT_LENGTH_TARGET = 'About 300 to 450 words';
+
+export function normalizePromptTransformContextMessages(value) {
+    const numeric = Math.trunc(Number(value));
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+        return 0;
+    }
+
+    return Math.min(MAX_PROMPT_TRANSFORM_CONTEXT_MESSAGES, numeric);
+}
+
+export function getAgentLengthTarget(agent) {
+    const value = typeof agent?.settings?.lengthTarget === 'string' ? agent.settings.lengthTarget.trim() : '';
+    return value || DEFAULT_LENGTH_TARGET;
+}
 
 export function areAgentsGloballyEnabled() {
     return globalSettings.enabled !== false && !agentSetupApplying && !getAgentLibraryErrors().length && !hasPendingAgentRecovery();
@@ -1325,6 +1343,7 @@ export function createDefaultAgent() {
             promptTransformShowNotifications: true,
             promptTransformMode: 'rewrite',
             promptTransformMaxTokens: DEFAULT_AGENT_MAX_TOKENS,
+            promptTransformContextMessages: 0,
         },
         regexScripts: [],
         enabled: false,
@@ -1456,6 +1475,7 @@ export function normalizeAgent(rawAgent = {}) {
             promptTransformMaxTokens: Number.isFinite(Number(rawPostProcess.promptTransformMaxTokens))
                 ? Math.max(16, Math.min(MAX_AGENT_MAX_TOKENS, Number(rawPostProcess.promptTransformMaxTokens)))
                 : defaults.postProcess.promptTransformMaxTokens,
+            promptTransformContextMessages: normalizePromptTransformContextMessages(rawPostProcess.promptTransformContextMessages),
         },
         regexScripts: Array.isArray(rawAgent.regexScripts)
             ? normalizeAgentRegexIdentities(rawAgent.regexScripts)

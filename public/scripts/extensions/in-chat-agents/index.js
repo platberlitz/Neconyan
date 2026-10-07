@@ -36,7 +36,10 @@ import {
     AGENT_CATEGORIES,
     AGENT_SUBCATEGORIES,
     DEFAULT_AGENT_MAX_TOKENS,
+    DEFAULT_LENGTH_TARGET,
+    LENGTH_TRIMMER_TEMPLATE_ID,
     MAX_AGENT_MAX_TOKENS,
+    normalizePromptTransformContextMessages,
     getGlobalSettings,
     getAgentSetupPresets,
     getAgentSetupPresetById,
@@ -3735,6 +3738,10 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
     editorEl.find('#ica--editor-plot-compass-objective').val(typeof agent.settings?.plotCompassObjective === 'string'
         ? agent.settings.plotCompassObjective
         : '');
+    editorEl.find('#ica--editor-length-target').val(typeof agent.settings?.lengthTarget === 'string'
+        ? agent.settings.lengthTarget
+        : DEFAULT_LENGTH_TARGET);
+    editorEl.find('#ica--length-target-row').toggle(String(agent.sourceTemplateId ?? '').trim() === LENGTH_TRIMMER_TEMPLATE_ID);
 
     let editorFullscreen = false;
     const fullscreenButton = editorEl.find('#ica--editor-fullscreen');
@@ -3773,6 +3780,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
     editorEl.find('#ica--editor-pp-promptEnabled').prop('checked', Boolean(agent.postProcess.promptTransformEnabled));
     editorEl.find('#ica--editor-pp-promptMode').val(getPromptTransformMode(agent));
     editorEl.find('#ica--editor-pp-promptMaxTokens').val(agent.postProcess.promptTransformMaxTokens ?? DEFAULT_AGENT_MAX_TOKENS);
+    editorEl.find('#ica--editor-pp-promptContextMessages').val(normalizePromptTransformContextMessages(agent.postProcess.promptTransformContextMessages));
     editorEl.find('#ica--editor-pp-promptShowNotifications').prop('checked', Boolean(agent.postProcess.promptTransformShowNotifications));
     editorEl.find('#ica--editor-pp-runOnImpersonate').prop('checked', Boolean(agent.conditions.runOnImpersonate));
     editorEl.find('#ica--editor-pp-runOnCompanionOutputs').prop('checked', Boolean(agent.conditions.runOnCompanionOutputs));
@@ -4568,6 +4576,9 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         if (sourceTemplateId === PLOT_COMPASS_TEMPLATE_ID) {
             agent.settings.plotCompassObjective = editorEl.find('#ica--editor-plot-compass-objective').val()?.toString().trim() || '';
         }
+        if (sourceTemplateId === LENGTH_TRIMMER_TEMPLATE_ID) {
+            agent.settings.lengthTarget = editorEl.find('#ica--editor-length-target').val()?.toString().trim() || DEFAULT_LENGTH_TARGET;
+        }
 
         agent.injection.position = Number(editorEl.find('#ica--editor-position').val());
         agent.injection.depth = Number(editorEl.find('#ica--editor-depth').val());
@@ -4600,6 +4611,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         agent.postProcess.promptTransformShowNotifications = editorEl.find('#ica--editor-pp-promptShowNotifications').prop('checked');
         agent.postProcess.promptTransformMode = editorEl.find('#ica--editor-pp-promptMode').val()?.toString() === 'append' ? 'append' : 'rewrite';
         agent.postProcess.promptTransformMaxTokens = Number(editorEl.find('#ica--editor-pp-promptMaxTokens').val()) || DEFAULT_AGENT_MAX_TOKENS;
+        agent.postProcess.promptTransformContextMessages = normalizePromptTransformContextMessages(editorEl.find('#ica--editor-pp-promptContextMessages').val());
         agent.regexScripts = regexScripts.map(script => normalizeRegexScript(script));
         agent.conditions.runOnImpersonate = editorEl.find('#ica--editor-pp-runOnImpersonate').prop('checked');
         agent.conditions.runOnCompanionOutputs = editorEl.find('#ica--editor-pp-runOnCompanionOutputs').prop('checked');

@@ -31,6 +31,7 @@ import {
     getEnabledAgents,
     getEnabledToolAgents,
     getAgentConnectionFallbacks,
+    getAgentLengthTarget,
     getGlobalSettings,
     getPromptTransformMode,
     isAgentRuntimeAllowed,
@@ -40,6 +41,7 @@ import {
     saveAgent,
     isToolAgent,
     normalizePreProcessMaxTokens,
+    normalizePromptTransformContextMessages,
     normalizePromptTransformMaxTokens,
     resolveCompanionConnectionProfile,
     resolveConnectionProfile,
@@ -2198,6 +2200,7 @@ export function buildPromptDynamicMacros(messageText = '', message = null, agent
         assistantName,
         agentName,
         generationType: normalizedGenerationType,
+        lengthTarget: getAgentLengthTarget(agent),
     };
 }
 
@@ -3128,7 +3131,38 @@ function applyContextInterceptText(originalText, interceptText, preProcess = {})
     return outputText;
 }
 
-function buildPromptTransformMessages(agentPrompt, messageText, assistantName, generationType, mode) {
+function getPromptTransformRecentChat(agent, message, messageIndex) {
+    const limit = normalizePromptTransformContextMessages(agent?.postProcess?.promptTransformContextMessages);
+    if (!limit || !Array.isArray(chat)) {
+        return '';
+    }
+
+    let endIndex = Number.isInteger(messageIndex) && messageIndex >= 0 && messageIndex <= chat.length ? messageIndex : -1;
+    if (endIndex < 0) {
+        const foundIndex = message ? chat.indexOf(message) : -1;
+        endIndex = foundIndex >= 0 ? foundIndex : chat.length;
+    }
+
+    const lines = [];
+    for (let index = endIndex - 1; index >= 0 && lines.length < limit; index--) {
+        const entry = chat[index];
+        if (!entry || entry.is_system) {
+            continue;
+        }
+
+        const text = unwrapAssistantResponseWrapper(String(entry.mes ?? '')).trim();
+        if (!text) {
+            continue;
+        }
+
+        const name = String(entry.name ?? '').trim() || (entry.is_user ? 'User' : 'Assistant');
+        lines.unshift(`${name}: ${text}`);
+    }
+
+    return lines.join('\n\n');
+}
+
+function buildPromptTransformMessages(agentPrompt, messageText, assistantName, generationType, mode, recentChat = '') {
     const isImpersonate = isImpersonateGenerationType(generationType);
     const isCompanionOutput = normalizeGenerationType(generationType) === COMPANION_OUTPUT_GENERATION_TYPE;
     const targetLabel = isImpersonate
@@ -3151,6 +3185,9 @@ function buildPromptTransformMessages(agentPrompt, messageText, assistantName, g
         : isCompanionOutput
             ? 'Current companion agent note'
             : 'Current assistant response';
+    const recentChatSection = recentChat
+        ? `Recent chat before this ${contentLabel}, oldest first. Read-only context: do not rewrite, repeat, or return it.\n<recent_chat>\n${recentChat}\n</recent_chat>\n\n`
+        : '';
 
     return [
         {
@@ -3159,7 +3196,7 @@ function buildPromptTransformMessages(agentPrompt, messageText, assistantName, g
         },
         {
             role: 'user',
-            content: `Assistant name: ${assistantName || 'Assistant'}\nGeneration type: ${generationType}\n\n${responseLabel}:\n<assistant_response>\n${currentAssistantResponse}\n</assistant_response>`,
+            content: `Assistant name: ${assistantName || 'Assistant'}\nGeneration type: ${generationType}\n\n${recentChatSection}${responseLabel}:\n<assistant_response>\n${currentAssistantResponse}\n</assistant_response>`,
         },
     ];
 }
@@ -3844,6 +3881,7 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
         String(message?.name ?? '').trim(),
         normalizedGenerationType,
         promptTransformMode,
+        getPromptTransformRecentChat(agent, message, messageIndex),
     ));
     const runningToast = showNotifications
         ? showPromptTransformRunningToast(agent, promptTransformMode, profileId)
