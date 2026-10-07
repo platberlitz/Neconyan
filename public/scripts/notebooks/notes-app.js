@@ -183,7 +183,7 @@ function buildRoot() {
     elements.source = h('div', { class: 'notes-source' });
     app.sourceEditor = app.editorModule.createNotesEditor(elements.source, {
         onChange: onEditorInput, onKeyDown: onEditorKeydown, onScroll: debounce(rememberPosition, 400),
-        onSelect: rememberPosition, onBlur: hideSuggest, onFolds: rememberFolds,
+        onSelect: rememberPosition, onBlur: hideSuggest, onFolds: rememberFolds, isSuggesting: () => !app.elements.suggest.hidden,
         onComposition: composing => {
             renderFoldControls();
             if (!composing && app.state.dirty && !app.state.saveConflict) scheduleSave();

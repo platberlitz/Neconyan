@@ -294,6 +294,24 @@ for (const phone of [false, true]) {
     });
 }
 
+test('Notebook Tab accepts a link suggestion on a list line and still indents and outdents list lines', async ({ app }) => {
+    const { page, account, notebookId } = await openFeedbackNote(app);
+    expect((await account.post('/api/notebooks/notes/create', { notebookId, operationId: 'feedback:link-target', folder: 'Inbox', title: 'Fernwood Manor', text: 'A house.' })).status).toBe('success');
+    const root = page.locator('#neconyan-notes');
+    await fillSource(page, '- see ');
+    await page.keyboard.type('[[Fer');
+    await expect(root.getByRole('option', { name: /Fernwood Manor/ })).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('Tab');
+    await expect.poll(() => sourceText(page)).toBe('- see [[Fernwood Manor]]');
+    await expect(root.getByRole('listbox', { name: 'Link suggestions' })).toBeHidden();
+
+    await fillSource(page, '- plain item');
+    await page.keyboard.press('Tab');
+    await expect.poll(() => sourceText(page)).toBe('    - plain item');
+    await page.keyboard.press('Shift+Tab');
+    await expect.poll(() => sourceText(page)).toBe('- plain item');
+});
+
 test('Notebook export can choose a note beyond the first page without selecting other notes', async ({ app }) => {
     test.setTimeout(300_000);
     const { page, account, notebookId, noteId } = await openFeedbackNote(app);
