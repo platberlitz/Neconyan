@@ -207,27 +207,26 @@ body.neconyan:not(.sbterm) #options .options-content > hr {
 .sb-server-folder-list[hidden] { display: none; }
 
 .sb-server-folder-list .sb-server-folder {
-    flex-direction: row;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px;
     align-items: center;
-    gap: 10px;
+    gap: 6px 10px;
 }
 
 .sb-server-folder-copy {
-    display: flex;
-    flex: 1 1 auto;
-    flex-direction: column;
-    gap: 6px;
-    min-width: 0;
+    display: contents;
 }
 
 .sb-server-folder-path {
+    grid-area: 2 / 1;
     font-family: var(--monoFontFamily, monospace);
     overflow-wrap: anywhere;
     user-select: text;
 }
 
 .sb-server-folder-list .sb-server-folder-copy-button {
-    flex: 0 0 auto;
+    --sb-control-icon-physical-size: 44px;
+    grid-area: 2 / 2;
     width: 44px;
     min-width: 44px;
     height: 44px;

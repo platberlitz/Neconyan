@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
+import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 
 const screenshotDir = fileURLToPath(new URL('../output/playwright/neconyan-audit/account-server-reviewed', import.meta.url));
 mkdirSync(screenshotDir, { recursive: true });
@@ -58,13 +59,14 @@ const logEntries = [
     { id: 2, timestamp: 1726100001000, stream: 'stderr', message: 'A'.repeat(320) },
 ];
 
-async function installFailClosedRoutes(page, { light = false, delayLogs = false, logsMode = 'entries', serverMode = 'dirty', password = true } = {}) {
+async function installFailClosedRoutes(page, { light = false, delayLogs = false, logsMode = 'entries', serverMode = 'dirty', password = true, folderPaths = {} } = {}) {
     let envelopePromise;
     let storedSettings;
     await page.route('**/api/settings/get', async route => {
         const envelope = await (envelopePromise ??= route.fetch().then(response => response.json()));
         if (!storedSettings) {
             storedSettings = JSON.parse(envelope.settings);
+            storedSettings.accountStorage = { ...storedSettings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
             if (light) {
                 const { name, ...theme } = lightTheme;
                 Object.assign(storedSettings.power_user, theme, { theme: name });
@@ -116,6 +118,7 @@ async function installFailClosedRoutes(page, { light = false, delayLogs = false,
                 return;
             }
             const status = structuredClone(serverStatusFixture);
+            Object.assign(status, folderPaths);
             if (serverMode === 'retry') {
                 Object.assign(status.repository, { canUpdate: true, hasLocalChanges: false, changedFilesCount: 0, changedFiles: [], message: 'An update is available.' });
             } else {
@@ -290,6 +293,62 @@ test('Server keeps dirty update state visible and source details collapsed', asy
     expect(restartBounds.y + restartBounds.height).toBeLessThanOrEqual(900);
     await expect(panel.locator('.sb-server-source-details')).toContainText('changed-workspace-file-11.js');
 });
+
+for (const phone of [true, false]) {
+    test.describe(`Server folder alignment on ${phone ? 'phone' : 'desktop'}`, () => {
+        test.use(phone ? IPHONE_SAFARI_CONTEXT : { viewport: { width: 1280, height: 900 }, isMobile: false, hasTouch: false });
+
+        test('copy buttons stay centred beside single-line and wrapped paths', async ({ page, context }) => {
+            if (phone) await installIPhoneSafari(context);
+            const folderPaths = {
+                installPath: serverStatusFixture.installPath,
+                dataPath: `/isolated/${'long-folder-name/'.repeat(6)}default-user`,
+            };
+            await installFailClosedRoutes(page, { folderPaths });
+            await openSettings(page);
+            await openServer(page);
+            if (phone) await applyIOSOnlyCss(page);
+
+            const folders = page.locator('.sb-server-folder-list');
+            await expect(folders).toBeVisible();
+            await folders.scrollIntoViewIfNeeded();
+            await page.screenshot({ path: `${screenshotDir}/folder-alignment-${phone ? 'phone' : 'desktop'}.png` });
+            const geometry = await folders.locator('.sb-server-folder').evaluateAll(rows => rows.map(row => {
+                const path = row.querySelector('.sb-server-folder-path');
+                const pathRect = path.getBoundingClientRect();
+                const button = row.querySelector('button').getBoundingClientRect();
+                return {
+                    offset: Math.abs(button.y + button.height / 2 - pathRect.y - pathRect.height / 2),
+                    right: button.right,
+                    width: button.width,
+                    height: button.height,
+                    lines: pathRect.height / parseFloat(getComputedStyle(path).lineHeight),
+                    overlap: pathRect.right > button.left,
+                };
+            }));
+            expect(geometry[0].lines).toBeLessThan(2);
+            expect(geometry[1].lines).toBeGreaterThan(2);
+            expect(Math.abs(geometry[0].right - geometry[1].right)).toBeLessThan(1);
+            for (const row of geometry) {
+                expect(row.offset).toBeLessThan(1);
+                expect(row.width).toBe(44);
+                expect(row.height).toBe(44);
+                expect(row.overlap).toBe(false);
+            }
+            await page.evaluate(() => {
+                window.__neconyanCopied = [];
+                Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: {
+                    writeText: async text => window.__neconyanCopied.push(text),
+                } });
+            });
+            await folders.getByRole('button', { name: 'Copy Neconyan folder path' }).click();
+            await folders.getByRole('button', { name: 'Copy your data folder path' }).click();
+            expect(await page.evaluate(() => window.__neconyanCopied)).toEqual([
+                folderPaths.installPath, folderPaths.dataPath,
+            ]);
+        });
+    });
+}
 
 test('Logs expose selectable output, preserve it on identical polling, and copy only entries', async ({ page }) => {
     const logsRequestCount = await installFailClosedRoutes(page);
