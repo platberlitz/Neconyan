@@ -29,6 +29,7 @@ const sourceFilenames = [
     'clock-is-lying.json',
     'continuity-companion.json',
     'cyoa-choices-skill-checks.json',
+    'dialogue-humaniser.json',
     'directors-commentary-companion.json',
     'doors-fate-checks.json',
     'doors.json',
@@ -774,6 +775,29 @@ describe('in-chat agent bundled templates', () => {
         expect(proofreader.enabled).toBe(false);
         expect(proofreader.postProcess).toMatchObject({ promptTransformEnabled: true, promptTransformMode: 'rewrite' });
         expect(proofreader.prompt).toContain('Output ONLY the revised message.');
+    });
+
+    test('installs the Dialogue Humaniser by default as a post-phase rewrite that runs before the Proofreader', () => {
+        const humaniser = readTemplate('dialogue-humaniser.json');
+        const proofreader = readTemplate('proofreader.json');
+
+        expect(humaniser).toMatchObject({
+            id: 'tpl-dialogue-humaniser',
+            name: 'Dialogue Humaniser',
+            category: 'content',
+            subcategory: 'prose-quality',
+            phase: 'post',
+            execution: 'inline',
+            enabled: false,
+        });
+        expect(humaniser.postProcess).toMatchObject({ promptTransformEnabled: true, promptTransformMode: 'rewrite' });
+        expect(humaniser.companion).toMatchObject({ includeCharacterCard: true, includePersona: true });
+        expect(humaniser.injection.order).toBeLessThan(proofreader.injection.order);
+        expect(humaniser.prompt).toContain('You are a dialogue editor for prose fiction.');
+        expect(humaniser.prompt).toContain('Output ONLY the revised message.');
+        expect(humaniser.prompt).toContain('Leave all other narration untouched.');
+        expect(humaniser.prompt).not.toMatch(/roleplay|\u2014/i);
+        expect(readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS')).toContain('\'tpl-dialogue-humaniser\'');
     });
 
     test('installs Pura\'s trackers by default, disabled, and keeps the Ethereality kit library-only', () => {

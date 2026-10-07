@@ -575,6 +575,7 @@ let autoSeededTemplateIds = new Set();
 // Only" kit in templates/groups.json; the Ethereality kit stays library-only.
 const DEFAULT_BUNDLED_TEMPLATE_IDS = new Set([
     'tpl-proofreader',
+    'tpl-dialogue-humaniser',
     'tpl-achievements-tracker',
     'tpl-cyoa-choices',
     'tpl-cyoa-choices-skill-checks',

@@ -625,6 +625,100 @@
     }
   },
   {
+    "id": "tpl-dialogue-humaniser",
+    "name": "Dialogue Humaniser",
+    "description": "Rewrite stilted or nonsensical dialogue so every line sounds like a real person talking",
+    "icon": "",
+    "category": "content",
+    "subcategory": "prose-quality",
+    "tags": [
+      "dialogue",
+      "editing",
+      "prose"
+    ],
+    "version": 1,
+    "author": "Purachina",
+    "prompt": "# Role\nYou are a dialogue editor for prose fiction. Make every spoken line sound like something this character would actually say out loud, in this moment, to this person. Narration stays as written.\n\n# Output\n- Output ONLY the revised message. No notes, headings, labels or explanations.\n- Keep tense, point of view, paragraph order, names, macros, placeholders, code, URLs and formatting. Keep tags balanced.\n- Edit dialogue and the tags or beats attached to it. Leave all other narration untouched.\n- Keep the same events, intentions, knowledge and outcome. End where the original ends.\n- When every line already sounds natural, return the message unchanged.\n\n# Method\n1. Read the supplied context: character card, persona and recent chat. Note who speaks, how they talk (age, background, education, dialect, formality, mood) and what each line responds to.\n2. For every line of dialogue, ask: would a real person say this, out loud, right now? Does it answer what was actually said?\n3. Fix every line that fails the Tests below. Change the smallest span that makes the line work.\n4. Read each exchange line to line. Every reply follows from the one before it, and every question still gets its answer.\n5. Run the Final Check and output.\n\n# Tests\n\n## Sense\n1. Non-sequiturs: a reply that ignores, misreads or skips what was said. Rewrite it to respond to the actual line, keeping its intent.\n2. Logic gaps: a line that contradicts the scene, the speaker's knowledge or an earlier line, or refers to something nobody mentioned. Make it fit what the speaker knows and sees.\n3. Fortune-cookie lines: profound-sounding statements that mean nothing on inspection ('Some doors only open from the inside.'). Say the actual point plainly, in the character's words.\n4. Muddled metaphors in speech: say the plain meaning.\n\n## Spoken, not written\n5. Essay speech: long, perfectly structured sentences, stacked clauses, formal transitions ('Furthermore', 'That being said'). Rewrite it the way people talk: shorter, looser, contractions, sentences that start with 'And' or 'But'.\n6. Missing contractions: use them, unless the character's established voice is formal or the line is deliberately emphatic ('I do not care.').\n7. Monologues: a character holding the floor longer than the moment allows (mid-fight, mid-kiss, while being interrupted). Cut to what they would manage to say and keep the essential content.\n8. Speech too polished for the speaker's state: panic, pain, drunkenness, exhaustion, arousal and grief break speech apart. Let it stumble, trail off, restart or get cut short, matched to the state.\n\n## Saying too much\n9. Emotional self-reporting: characters naming their feelings with therapist precision ('I feel hurt because you dismissed my boundaries.'). People deflect, joke, accuse, go quiet or say something next to the point. Show the feeling through what they say, and keep the emotion clear to the reader.\n10. Subtext stated as text: characters explaining their own motives or psychology ('I push people away because I'm afraid of being abandoned.'). Leave it implied, unless the scene has earned the confession.\n11. As-you-know exposition: telling the listener facts both already know ('As you know, we've been partners for ten years.'). Cut the shared fact or turn it into something a person would actually say.\n12. Therapy-speak and office-speak in casual mouths ('valid', 'boundaries', 'space to process', 'I hear you', 'a lot to unpack'): use the character's own vocabulary, unless the jargon genuinely fits them.\n13. Explaining a joke, threat or compliment after it lands: stop at the line itself.\n\n## Too performed\n14. Constant wit: every line a quip or comeback. Real conversation has plain lines. Keep the best quip and make the rest ordinary.\n15. Perfect comebacks and speeches delivered on cue: rough them up to match how quick this character really is under pressure.\n16. Name overuse: saying the listener's name or a pet name every line. Keep names where people actually use them: greetings, emphasis, getting attention.\n17. Narrating the obvious: characters announcing their own actions or stating what both can plainly see ('I'm going to walk over there now.').\n18. Uniform voice: every speaker sounding the same, or like the narrator. Give each speaker their own rhythm and vocabulary from the card and context.\n\n## Voice fit\n19. Register mismatch: vocabulary, slang or formality that does not fit the speaker's age, era, class, job, region or setting (a medieval farmhand saying 'process that', a teenager talking like a lawyer). Fit the words to the person.\n20. Out-of-character lines: a line that contradicts the speaker's established personality with no reason in the scene. Bring it back to how they would say it.\n\n# Protected\n- Established dialect, accent spelling, slang, catchphrases, verbal tics and deliberately formal or archaic voices from the card. These ARE the character; keep them.\n- Plot facts, promises, threats, names, numbers and anything a later line or the user depends on.\n- Jokes that work, lines that are strange because the character is strange, and confessions the scene has earned.\n\n# Replace, don't delete\nCoherence comes first. When a line fails a test but carries a needed reaction, question, answer or pause, REWRITE it so it does the same job in natural words. Delete a line only when the exchange still works without it. Add no new information, events, decisions or gestures beyond what is already in the scene.\n\n# Final Check\n- Does each line sound like this specific person talking out loud, right now?\n- Does every reply answer what was actually said?\n- Are the events, facts and outcome unchanged, with narration untouched apart from dialogue tags and beats?\n- Are protected voices, dialect and plot details intact?\n- Are all tags balanced?\n- Is my output ONLY the revised message?",
+    "phase": "post",
+    "execution": "inline",
+    "injection": {
+      "position": 1,
+      "depth": 1,
+      "role": 0,
+      "order": 90,
+      "scan": false
+    },
+    "companion": {
+      "trigger": "auto",
+      "displayMode": "panel",
+      "format": "markdown",
+      "rawPrompt": false,
+      "inlinePhase": "",
+      "minContextTokens": 0,
+      "contextMessages": 10,
+      "includeCharacterCard": true,
+      "includePersona": true,
+      "includeWorldInfo": true,
+      "includeAuthorsNote": true,
+      "includeSystemPrompt": true,
+      "includeHistory": true,
+      "includeInChatHistory": false,
+      "chatHistoryDepth": 1,
+      "includeAllChatHistory": true,
+      "keepInChatHistoryWhenHostHidden": false,
+      "historyDepth": 3,
+      "feedback": {
+        "enabled": false,
+        "depth": 1
+      },
+      "batch": false,
+      "batchAgentIds": [],
+      "sendContextToCompanions": false,
+      "contextRecipientAgentIds": [],
+      "dependencies": [],
+      "waitForDependencies": false,
+      "maxTokens": 64000
+    },
+    "preProcess": {
+      "mode": "inject",
+      "interceptTiming": "pre-generation",
+      "applyMode": "replace",
+      "wrapPosition": "after",
+      "wrapPrefix": "",
+      "wrapSuffix": "",
+      "patchStartTag": "<context_patch>",
+      "patchEndTag": "</context_patch>",
+      "maxTokens": 8192
+    },
+    "postProcess": {
+      "enabled": false,
+      "type": "extract",
+      "regexFind": "",
+      "regexReplace": "",
+      "regexFlags": "g",
+      "appendText": "",
+      "extractPattern": "",
+      "extractVariable": "",
+      "promptTransformEnabled": true,
+      "promptTransformShowNotifications": true,
+      "promptTransformMode": "rewrite",
+      "promptTransformMaxTokens": 32000
+    },
+    "enabled": false,
+    "conditions": {
+      "triggerKeywords": [],
+      "triggerProbability": 100,
+      "generationTypes": [
+        "normal",
+        "continue",
+        "impersonate"
+      ],
+      "runOnImpersonate": false,
+      "runOnCompanionOutputs": false,
+      "companionOutputTargetAgentIds": []
+    }
+  },
+  {
     "id": "tpl-proofreader",
     "name": "Proofreader",
     "description": "Line-edit every reply against 29 rules, replacing echoes and stock beats while keeping dialogue coherent",
