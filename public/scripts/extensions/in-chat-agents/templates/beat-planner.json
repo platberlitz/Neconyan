@@ -1,0 +1,53 @@
+{
+  "id": "tpl-beat-planner",
+  "name": "Beat Planner",
+  "description": "Fast three-line plan for the next reply: what {{user}} just did, what {{char}} wants, one concrete next beat. Don't run it with: Intent Reader, Plot Compass, Scene Driving Force, Scene Pressure Cocktail, Combined Director's Cut, Chaos Mode.",
+  "icon": "",
+  "category": "content",
+  "subcategory": "behaviour",
+  "tags": [
+    "fast",
+    "planning",
+    "pre-generation"
+  ],
+  "version": 1,
+  "author": "Purachina",
+  "prompt": "{{// Fast pre-generation note. Three lines, inserted just before the main model writes.}}{{trim}}\nRead the end of the context and plan the next reply in exactly three lines:\nUser: what {{user}} just did or said, in one plain sentence.\nWant: what {{char}} wants right now, given the scene.\nBeat: one concrete thing {{char}} does next that moves the scene forward. An action, a decision or a line of dialogue, not a mood.\n\nKeep each line under 25 words. Stay true to the character card and the scene. Never decide {{user}}'s actions or dialogue. Write only the three lines.",
+  "phase": "pre",
+  "injection": {
+    "position": 0,
+    "depth": 0,
+    "role": 0,
+    "order": 90,
+    "scan": false
+  },
+  "preProcess": {
+    "mode": "intercept",
+    "interceptTiming": "pre-generation",
+    "applyMode": "wrap",
+    "wrapPosition": "after",
+    "wrapPrefix": "[Plan for this reply]\n",
+    "wrapSuffix": "",
+    "patchStartTag": "<context_patch>",
+    "patchEndTag": "</context_patch>",
+    "maxTokens": 400
+  },
+  "postProcess": {
+    "enabled": false,
+    "type": "regex",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "",
+    "extractVariable": ""
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 100,
+    "generationTypes": [
+      "normal"
+    ]
+  }
+}

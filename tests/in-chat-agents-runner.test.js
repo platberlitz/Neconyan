@@ -5962,6 +5962,29 @@ describe('in-chat agent post-processing runner', () => {
         expect(extensionPrompts.pathfinder_pipeline_retrieval.value).toBe('new retrieval');
     });
 
+    test('asks wrap intercepts for only their note instead of the whole outgoing context', async () => {
+        enabledAgents = [createPreInterceptAgent({
+            prompt: 'List what to avoid.',
+            preProcess: { applyMode: 'wrap', wrapPrefix: '[Avoid]\n' },
+        })];
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+        await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'normal', {}, false);
+
+        const eventData = { prompt: 'Original outgoing prompt', dryRun: false };
+        await eventSource.emit(eventTypes.GENERATE_AFTER_COMBINE_PROMPTS, eventData);
+
+        const quietPrompt = generateQuietPrompt.mock.calls[0][0].quietPrompt;
+        expect(quietPrompt).toContain('it is inserted into the context as a separate message');
+        expect(quietPrompt).toContain('Do not repeat, quote, or return the context.');
+        expect(quietPrompt).not.toContain('return the original context content verbatim');
+        expect(eventData.prompt).toContain('Original outgoing prompt');
+        expect(eventData.prompt).toContain('[Avoid]\nquiet result');
+    });
+
     test('runs pre-generation intercept agents on text prompts without injecting their prompt', async () => {
         enabledAgents = [createPreInterceptAgent({
             preProcess: { applyMode: 'replace', maxTokens: 123 },
