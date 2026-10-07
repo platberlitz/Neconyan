@@ -1,0 +1,93 @@
+/* Desktop alone: the existing phone/tablet cascade and control locations are restored by JS.
+   Important positioning overrides are needed for the built-in Echo-family layouts. */
+.sb-message-screenshot-surface .nn-response-controls {
+    display: none;
+}
+
+@media screen and (min-width: 1001px) {
+    body.neconyan #chat .mes .nn-response-controls {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        flex-wrap: nowrap;
+        gap: 4px;
+        clear: both;
+        min-height: 36px;
+        margin-top: 8px;
+        color: var(--neco-ink);
+    }
+
+    body.neconyan #chat .mes.nn-response-controls-below {
+        margin-bottom: 76px;
+    }
+
+    body.neconyan #chat .mes.nn-response-controls-below > .nn-response-controls {
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 12px;
+        width: max-content;
+        max-width: calc(100% - 24px);
+        margin: 0;
+        padding: 3px 6px;
+        border: 1px solid var(--neco-border);
+        border-radius: 8px;
+        background: var(--neco-surface);
+    }
+
+    body.neconyan #chat .mes .nn-response-controls .swipeRightBlock {
+        position: static !important;
+        flex-direction: row-reverse !important;
+        align-items: center;
+        flex-wrap: nowrap;
+        gap: 4px;
+        width: auto !important;
+        inline-size: auto !important;
+        min-inline-size: 0;
+        max-inline-size: none;
+        order: 2;
+    }
+
+    body.neconyan #chat .mes .nn-response-controls :is(.swipe_left, .swipe_right, .deep-swipe-left-outer, .deep-swipe-right) {
+        position: static !important;
+        inset: auto !important;
+        transform: none !important;
+        margin: 0 !important;
+        flex: 0 0 36px;
+        width: 36px;
+        height: 36px;
+        inline-size: 36px;
+        block-size: 36px;
+        min-width: 36px;
+        line-height: 36px;
+        text-align: center;
+        color: var(--neco-ink);
+        opacity: 1;
+    }
+
+    body.neconyan #chat .mes .nn-response-controls > .assistant-swipe-arrow {
+        order: 3;
+    }
+
+    body.neconyan #chat .mes .nn-response-controls:has(.deep-swipe-right-block) > .swipeRightBlock:not(.deep-swipe-right-block),
+    body.neconyan #chat .mes .nn-response-controls:has(> .assistant-swipe-arrow) .swipe_right,
+    body.neconyan #chat .mes .nn-response-controls:has(> .deep-swipe-left-outer) > .swipe_left {
+        display: none;
+    }
+
+    body.neconyan #chat .mes .nn-response-controls .swipes-counter {
+        flex: 0 0 auto;
+        width: auto !important;
+        inline-size: auto;
+        min-width: 44px;
+        max-width: none;
+        height: 36px;
+        block-size: 36px;
+        margin: 0 !important;
+        color: var(--neco-ink);
+        opacity: 1;
+    }
+
+    body.neconyan #chat .mes .nn-response-controls .swipes-counter::after {
+        content: none;
+    }
+}

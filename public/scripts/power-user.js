@@ -1,4 +1,5 @@
 import { renderRoleplayStory } from './roleplay-text-format.js';
+import { applyDesktopResponseControls, normaliseDesktopResponseControls } from './desktop-response-controls.js';
 import { Fuse, Handlebars } from '../lib.js';
 import { accessibleTheme } from './theme-contrast.js';
 import { resolveCustomStoppingStrings } from './chat-request-controls.js';
@@ -434,6 +435,7 @@ export const power_user = {
     fast_ui_mode: true,
     avatar_style: avatar_styles.ROUND,
     chat_display: chat_styles.DEFAULT,
+    desktop_response_controls: 'inside',
     toastr_position: defaultToastPosition,
     chat_width: 100,
     never_resize_avatars: false,
@@ -2779,6 +2781,8 @@ export async function loadPowerUserSettings(settings, data) {
     $('#enableLabMode').prop('checked', power_user.enableLabMode).trigger('input', { fromInit: true });
     $(`input[name="avatar_style"][value="${power_user.avatar_style}"]`).prop('checked', true);
     const chatDisplaySelect = $('#chat_display');
+    power_user.desktop_response_controls = normaliseDesktopResponseControls(power_user.desktop_response_controls);
+    applyDesktopResponseControls(power_user.desktop_response_controls);
     const hasChatDisplayOption = chatDisplaySelect.find(`option[value="${power_user.chat_display}"]`).length > 0;
 
     if (hasChatDisplayOption) {
@@ -4513,6 +4517,12 @@ jQuery(async () => {
         }
 
         applyChatDisplay();
+        saveSettingsDebounced();
+    });
+
+    $('#desktop_response_controls').on('change', function () {
+        power_user.desktop_response_controls = normaliseDesktopResponseControls(this.value);
+        applyDesktopResponseControls(power_user.desktop_response_controls);
         saveSettingsDebounced();
     });
 
