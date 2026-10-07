@@ -4819,6 +4819,26 @@ describe('in-chat agent post-processing runner', () => {
         expect(chat[0].extra.inChatAgentCompanionResults[companionAgent.id].content).toBe('Rewritten companion note');
     });
 
+    test.each(['rewrite', 'append'])('bounds %s context to the companion host when rerunning an older note', async mode => {
+        generateQuietPrompt.mockResolvedValueOnce('Raw note').mockResolvedValueOnce('Edited note');
+        const companionAgent = createCompanionAgent({ id: 'context-companion' });
+        const transformer = createCompanionOutputTransformAgent();
+        transformer.postProcess.promptTransformContextMessages = 2;
+        transformer.postProcess.promptTransformMode = mode;
+        enabledAgents = [companionAgent, transformer];
+        const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        chat.push(
+            { name: 'User', mes: 'Earlier question', is_user: true, extra: {} },
+            { name: 'Assistant', mes: 'Host reply', is_user: false, extra: {} },
+            { name: 'User', mes: 'Future question', is_user: true, extra: {} },
+            { name: 'Assistant', mes: 'Future answer', is_user: false, extra: {} },
+        );
+        await companionRunner.runCompanionAgentOnMessage(companionAgent.id, 1);
+        const prompt = generateQuietPrompt.mock.calls[1][0].quietPrompt;
+        expect(prompt).toContain('<recent_chat>\nUser: Earlier question\n\nAssistant: Host reply\n</recent_chat>');
+        expect(prompt).not.toContain('Future');
+    });
+
     test('keeps the raw companion output when a later post pass fails', async () => {
         const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
         generateQuietPrompt

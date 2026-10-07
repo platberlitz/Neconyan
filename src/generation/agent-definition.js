@@ -1,4 +1,5 @@
 import { normalizeRegexScript } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
+import { normalizePromptTransformContextMessages } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-context.js';
 import { roleplayError } from '../roleplay-store.js';
 
 const object = value => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
@@ -47,7 +48,8 @@ export function nativeAgentDefinition(raw) {
         postProcess: { enabled: Boolean(post.enabled), type: oneOf(post.type, ['regex', 'append', 'extract'], 'regex'),
             appendText: text(post.appendText), extractPattern: text(post.extractPattern), extractVariable: text(post.extractVariable),
             promptTransformEnabled: Boolean(post.promptTransformEnabled), promptTransformMode: post.promptTransformMode === 'append' ? 'append' : 'rewrite',
-            promptTransformMaxTokens: agentTokenLimit(post.promptTransformMaxTokens) },
+            promptTransformMaxTokens: agentTokenLimit(post.promptTransformMaxTokens),
+            promptTransformContextMessages: normalizePromptTransformContextMessages(post.promptTransformContextMessages) },
         conditions: { generationTypes: Array.isArray(conditions.generationTypes) ? identifiers(conditions.generationTypes) : ['normal', 'continue', 'impersonate'],
             triggerKeywords: Array.isArray(conditions.triggerKeywords) ? identifiers(conditions.triggerKeywords) : [],
             triggerProbability: Number.isFinite(Number(conditions.triggerProbability)) ? Math.max(0, Math.min(100, Number(conditions.triggerProbability))) : 100,
@@ -75,6 +77,6 @@ export function agentNeedsModel(agent) {
     if (isNativeCompanion(agent)) return Boolean(agent.prompt.trim());
     if (agent.category === 'tool' || !agent.prompt.trim()) return false;
     return ['pre', 'both'].includes(agent.phase) && agent.preProcess.mode === 'intercept'
-        || agent.postProcess.enabled && agent.postProcess.promptTransformEnabled
+        || agent.postProcess.promptTransformEnabled
             && (['post', 'both'].includes(agent.phase) || agent.conditions.runOnCompanionOutputs);
 }

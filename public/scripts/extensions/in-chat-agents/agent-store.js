@@ -1,6 +1,7 @@
 import { getRequestHeaders, saveSettings, saveSettingsDebounced } from '../../../script.js';
 import { extension_settings, getContext } from '../../extensions.js';
 import { uuidv4 } from '../../utils.js';
+import { normalizePromptTransformContextMessages } from './prompt-transform-context.js';
 import { AGENT_STORAGE_LIMITS, getAgentRecordError, isAgentRecordId, isAgentSetupId, mergeAgentSetupRecord, normalizeAgentSetupPreset, normalizeAgentGroup, serializeAgentRecord } from './setup-presets.js';
 import {
     AGENT_REGEX_PLACEMENT,
@@ -809,24 +810,9 @@ export function agentMatchesListTab(agent, tab) {
 export const LEGACY_AGENT_MAX_TOKENS = 2000;
 export const DEFAULT_AGENT_MAX_TOKENS = 8192;
 export const MAX_AGENT_MAX_TOKENS = 64000;
-export const MAX_PROMPT_TRANSFORM_CONTEXT_MESSAGES = 20;
+export { MAX_PROMPT_TRANSFORM_CONTEXT_MESSAGES, LENGTH_TRIMMER_TEMPLATE_ID, DEFAULT_LENGTH_TARGET,
+    normalizePromptTransformContextMessages, getAgentLengthTarget } from './prompt-transform-context.js';
 export const PATHFINDER_TEMPLATE_ID = 'tpl-pathfinder';
-export const LENGTH_TRIMMER_TEMPLATE_ID = 'tpl-length-trimmer';
-export const DEFAULT_LENGTH_TARGET = 'About 300 to 450 words';
-
-export function normalizePromptTransformContextMessages(value) {
-    const numeric = Math.trunc(Number(value));
-    if (!Number.isFinite(numeric) || numeric <= 0) {
-        return 0;
-    }
-
-    return Math.min(MAX_PROMPT_TRANSFORM_CONTEXT_MESSAGES, numeric);
-}
-
-export function getAgentLengthTarget(agent) {
-    const value = typeof agent?.settings?.lengthTarget === 'string' ? agent.settings.lengthTarget.trim() : '';
-    return value || DEFAULT_LENGTH_TARGET;
-}
 
 export function areAgentsGloballyEnabled() {
     return globalSettings.enabled !== false && !agentSetupApplying && !getAgentLibraryErrors().length && !hasPendingAgentRecovery();

@@ -121,6 +121,36 @@ test('native Agent prompts, lore, complete-context interception and postprocessi
     assert.equal(f.saved().length, 4);
 });
 
+for (const effect of ['append', 'continue', 'swipe', 'replace']) {
+    test(`bundled reply rewrites run in order with saved context and length settings for ${effect}`, async t => {
+        const names = ['format-fixer', 'user-agency-guard', 'knowledge-guard', 'friction-keeper', 'dialogue-humaniser', 'repetition-breaker', 'length-trimmer', 'proofreader'];
+        const agents = names.map(name => {
+            const template = JSON.parse(fs.readFileSync(new URL(`../public/scripts/extensions/in-chat-agents/templates/${name}.json`, import.meta.url)));
+            return { ...template, enabled: true, sourceTemplateId: template.id,
+                settings: { ...template.settings, lengthTarget: 'Two short paragraphs' } };
+        });
+        const f = prepared(t, agents, { effect });
+        const calls = [];
+        await f.run({ generate: paid('main', () => 'Main output'), generateAgent: paid('rewrite', ({ messages }) => {
+            const agent = agents[calls.length];
+            calls.push(agent.id);
+            const context = messages[1].content.match(/<recent_chat>\n([\s\S]*?)\n<\/recent_chat>/)?.[1];
+            if (agent.postProcess.promptTransformContextMessages) {
+                assert.equal(context, effect === 'append' ? 'User: Original\n\nNova: Answer' : 'User: Original');
+            } else assert.equal(context, undefined);
+            if (agent.id === 'tpl-length-trimmer') {
+                assert.match(messages[0].content, /Two short paragraphs/);
+                assert.doesNotMatch(messages[0].content, /\{\{lengthTarget\}\}/i);
+            }
+            if (calls.length > 1) assert.match(messages[1].content, new RegExp(`<assistant_response>\\nPass ${calls.length - 1}\\n`));
+            return `Pass ${calls.length}`;
+        }) });
+        assert.deepEqual(calls, agents.map(agent => agent.id));
+        assert.equal(f.saved().at(-1).mes, 'Pass 8');
+        await f.run({ generate: () => assert.fail('Main reply repeated'), generateAgent: () => assert.fail('Rewrite repeated') });
+    });
+}
+
 for (const effect of ['append', 'continue', 'swipe']) {
     test(`a native ${effect} reply saves automatic Companion cleanup with its successful note`, async t => {
         const f = prepared(t, [{ id: 'side', category: 'companion', prompt: 'SIDE',

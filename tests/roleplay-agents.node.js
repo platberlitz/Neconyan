@@ -171,6 +171,27 @@ test('post-main interception waits for an exact saved review and does not repeat
     assert.equal(calls, 1);
 });
 
+test('reply context ignores hidden and empty messages and resolves the default length target in both macro modes', async t => {
+    for (const experimentalMacroEngine of [true, false]) {
+        const f = prepared(t, [{ id: 'rewrite', enabled: true, phase: 'post', prompt: 'Length: {{lengthTarget}}',
+            settings: { lengthTarget: '   ' }, postProcess: { enabled: false, promptTransformEnabled: true, promptTransformContextMessages: 2 } }]);
+        const options = phases(f);
+        options.snapshot.experimentalMacroEngine = experimentalMacroEngine;
+        options.records = [f.records[0], { mes: 'Too old' }, ...f.records.slice(1), { mes: 'Hidden', is_system: true }, { mes: ' ' }];
+        prepareRoleplayAgentContributions(f.context, options);
+        let calls = 0;
+        const result = await runRoleplayAgentPostprocessing(f.context, { ...options, value: 'Current reply', generate: modelResponse(({ messages }) => {
+            calls++;
+            assert.match(messages[0].content, /Length: About 300 to 450 words/);
+            assert.match(messages[1].content, /<recent_chat>\nUser: Original\n\nNova: Answer\n<\/recent_chat>/);
+            assert.doesNotMatch(messages[1].content, /Too old|Hidden/);
+            return { text: 'Rewritten' };
+        }) });
+        assert.equal(calls, 1);
+        assert.equal(result.text, 'Rewritten');
+    }
+});
+
 test('a chat interceptor cannot inject unbound media or an incomplete tool exchange', async t => {
     for (const content of [[{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'https://unbound.example/picture.png' } }] }],
         [{ role: 'assistant', content: '', tool_calls: [{ id: 'call', type: 'function', function: { name: 'tool', arguments: '{}' } }] }]]) {
@@ -193,13 +214,16 @@ test('native Agent defaults retain explicit regex identities and unbounded saved
     assert.deepEqual(first.companion.dependencies, ['A', 'B']);
     assert.equal(first.regexScripts[0].id, 'stable-agent:regex:0');
     assert.equal(nativeAgentDefinition({ id: 'legacy', postProcess: { enabled: true, type: 'regex', regexFind: 'one', regexReplace: 'two' } }).regexScripts[0].findRegex, '/one/g');
+    for (const [value, expected] of [[undefined, 0], [-1, 0], ['bad', 0], [2.9, 2], [200, 20]]) {
+        assert.equal(nativeAgentDefinition({ id: 'rewrite', postProcess: { promptTransformContextMessages: value } }).postProcess.promptTransformContextMessages, expected);
+    }
 });
 
 test('Agent capture binds saved scope, individual profiles and exact record identities without private settings', t => {
     const f = prepared(t, [
         { id: 'pre', enabled: false, prompt: 'Use this scan text', injection: { order: 2, scan: true } },
         { id: 'post', enabled: true, phase: 'post', prompt: 'Rewrite', connectionProfile: 'aux',
-            postProcess: { enabled: true, promptTransformEnabled: true }, settings: { private: 'do-not-persist-this' } },
+            postProcess: { enabled: false, promptTransformEnabled: true }, settings: { private: 'do-not-persist-this' } },
     ], { separateRecentChats: true, scopedEnabledAgentIdsInitialized: true, enabledAgentIdsByChatType: { individual: ['pre', 'post'], group: ['pre'] } });
     const policy = f.locked(lease => captureRoleplayAgents(lease, f.settings));
     assert.deepEqual(policy.agents.map(agent => agent.id), ['pre', 'post']);
