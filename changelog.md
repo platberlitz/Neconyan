@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.2.1
+
+### Merged Staging PRs
+- PR #44 (2026-10-07) `fix(dialogue-colors): stop wasted verification requests and fix audit bugs`
+
 ## v1.2.0
 
 ### Merged Staging PRs
