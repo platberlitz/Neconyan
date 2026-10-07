@@ -206,46 +206,7 @@ import { t } from './i18n.js';
             }
         }
 
-        // Promote nested subdrawers from ChatCharactersSection
-        const parentChatCharacters = document.getElementById('ChatCharactersSection');
         const col2 = document.querySelector('[name="UserSettingsSecondColumn"]');
-        if (parentChatCharacters && col2) {
-            // Find Auto-swipe drawer
-            const autoSwipeDrawer = Array.from(parentChatCharacters.querySelectorAll('.inline-drawer')).find(drawer => {
-                const header = drawer.querySelector('.inline-drawer-header');
-                return header && header.textContent.includes('Auto-swipe');
-            });
-            if (autoSwipeDrawer) {
-                autoSwipeDrawer.id = 'sb-auto-swipe-drawer';
-                col2.appendChild(autoSwipeDrawer);
-            }
-
-            // Find Auto-Continue drawer
-            const autoContinueDrawer = Array.from(parentChatCharacters.querySelectorAll('.inline-drawer')).find(drawer => {
-                const header = drawer.querySelector('.inline-drawer-header');
-                return header && header.textContent.includes('Auto-Continue');
-            });
-            if (autoContinueDrawer) {
-                autoContinueDrawer.id = 'sb-auto-continue-drawer';
-                col2.appendChild(autoContinueDrawer);
-            }
-
-            // Find other named nested drawers
-            const customCss = document.getElementById('CustomCSS-block');
-            if (customCss) col2.appendChild(customCss);
-
-            const googleFont = document.getElementById('GoogleFont-block');
-            if (googleFont) col2.appendChild(googleFont);
-
-            const desktopSec = document.getElementById('DesktopSection');
-            if (desktopSec) col2.appendChild(desktopSec);
-
-            const mobileSec = document.getElementById('MobileSection');
-            if (mobileSec) col2.appendChild(mobileSec);
-
-            const autoComplete = document.querySelector('[name="AutoCompleteToggle"]');
-            if (autoComplete) col2.appendChild(autoComplete);
-        }
 
         // Wrap iOS WebKit Streaming Stability in its own inline-drawer
         const iosBlock = document.querySelector('[name="IOSWebKitStreamingToggles"]');
@@ -305,29 +266,6 @@ import { t } from './i18n.js';
         }
     }
 
-    function ensureStscriptDrawer() {
-        const source = document.querySelector('[name="STscriptToggles"]');
-        const chatSection = document.getElementById('ChatCharactersSection');
-        if (!(source instanceof HTMLElement) || !(chatSection instanceof HTMLElement)) return;
-        if (source.closest('#sb-stscript-drawer')) return;
-
-        const drawer = document.createElement('div');
-        drawer.id = 'sb-stscript-drawer';
-        drawer.className = 'inline-drawer wide100p flexFlowColumn sb-settings-subdrawer';
-        drawer.dataset.settingsTab = 'chat-writing';
-        const header = document.createElement('div');
-        header.className = 'inline-drawer-toggle inline-drawer-header userSettingsInnerExpandable';
-        header.title = 'Set the default flags used by the STscript parser.';
-        header.innerHTML = '<b><i class="fa-solid fa-terminal" aria-hidden="true"></i> <span>STscript Settings</span></b><div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>';
-        const body = document.createElement('div');
-        body.className = 'inline-drawer-content sb-settings-subdrawer-body';
-        body.style.display = 'none';
-        body.append(...source.childNodes);
-        drawer.append(header, body);
-        chatSection.parentElement?.insertBefore(drawer, chatSection.nextSibling);
-        source.remove();
-    }
-
     function ensureSettingsHeaderIcons() {
         const content = document.getElementById('user-settings-block-content');
         if (!(content instanceof HTMLElement)) return;
@@ -340,23 +278,21 @@ import { t } from './i18n.js';
             ['ThemeTogglesSection', 'fa-toggle-on'],
             ['sb-avatar-chat-styles-drawer', 'fa-wand-magic-sparkles'],
             ['ChatCharactersSection', 'fa-comments'],
-            ['ChatMessageHandlingSection', 'fa-message'],
-            ['sb-auto-swipe-drawer', 'fa-forward-step'],
-            ['sb-auto-continue-drawer', 'fa-forward-fast'],
+            ['CharacterHandlingSection', 'fa-address-card'],
+            ['AutoSwipeContinueSection', 'fa-forward'],
+            ['ChatFineTuningSection', 'fa-sliders'],
+            ['MovingUISection', 'fa-up-down-left-right'],
             ['CustomCSS-block', 'fa-code'],
             ['GoogleFont-block', 'fa-font'],
-            ['sb-stscript-drawer', 'fa-terminal'],
             ['DesktopSection', 'fa-desktop'],
             ['MobileSection', 'fa-mobile-screen-button'],
         ]);
         const textIcons = [
             [/auto.?complete/i, 'fa-keyboard'],
-            [/chat\s*\/\s*message/i, 'fa-message'],
             [/theme\s*color/i, 'fa-fill-drip'],
             [/visual\s*toggle/i, 'fa-toggle-on'],
             [/page\s*size|clarity/i, 'fa-ruler-combined'],
             [/avatar.*chat/i, 'fa-wand-magic-sparkles'],
-            [/stscript/i, 'fa-terminal'],
             [/google\s*font/i, 'fa-font'],
             [/custom\s*css/i, 'fa-code'],
         ];
@@ -372,6 +308,83 @@ import { t } from './i18n.js';
             glyph.setAttribute('aria-hidden', 'true');
             label.prepend(glyph, ' ');
         }
+    }
+
+    const MOVING_UI_PRESET_CARDS = new Map([
+        ['Default', { icon: 'fa-house', description: 'Panels open where Neconyan puts them.' }],
+        ['Pop-outs on the Right', { icon: 'fa-clone', description: 'Author\'s Note and other pop-outs open as cards on the right.' }],
+        ['Writing Desk', { icon: 'fa-feather', description: 'A tall Author\'s Note on the right, made for long writing sessions.' }],
+        ['Centred Card', { icon: 'fa-window-restore', description: 'Pop-outs open as a roomy card in the middle of the window.' }],
+        ['Compact Corner', { icon: 'fa-compress', description: 'Small pop-outs tucked into the bottom-right corner.' }],
+    ]);
+
+    function ensureMovingUIPresetCards() {
+        const select = document.getElementById('movingUIPresets');
+        const host = document.querySelector('[data-nn-cw-preset-cards]');
+        if (!(select instanceof HTMLSelectElement) || !(host instanceof HTMLElement)) return;
+
+        const sync = () => {
+            for (const card of host.querySelectorAll('.nn-cw-preset-card')) {
+                card.setAttribute('aria-pressed', String(card.dataset.preset === select.value));
+            }
+        };
+
+        const render = () => {
+            const order = Array.from(MOVING_UI_PRESET_CARDS.keys());
+            const rank = name => (order.includes(name) ? order.indexOf(name) : order.length);
+            const names = Array.from(select.options, option => option.value).filter(Boolean)
+                .sort((a, b) => rank(a) - rank(b));
+            const signature = names.join('\n');
+            if (host.dataset.nnCwPresetSignature === signature) {
+                sync();
+                return;
+            }
+            host.dataset.nnCwPresetSignature = signature;
+            const cards = names.map(name => {
+                const info = MOVING_UI_PRESET_CARDS.get(name) || { icon: 'fa-bookmark', description: 'Your saved layout.' };
+                const card = document.createElement('button');
+                card.type = 'button';
+                card.className = 'nn-cw-preset-card';
+                card.dataset.preset = name;
+                const icon = document.createElement('i');
+                icon.className = `fa-solid ${info.icon} nn-cw-preset-card-icon`;
+                icon.setAttribute('aria-hidden', 'true');
+                const title = document.createElement('span');
+                title.className = 'nn-cw-preset-card-name';
+                title.textContent = name;
+                const description = document.createElement('span');
+                description.className = 'nn-cw-preset-card-desc';
+                description.textContent = info.description;
+                card.append(icon, title, description);
+                return card;
+            });
+            host.replaceChildren(...cards);
+            sync();
+        };
+
+        if (host.dataset.nnCwPresetCardsBound !== 'true') {
+            host.dataset.nnCwPresetCardsBound = 'true';
+            host.addEventListener('click', event => {
+                const card = event.target instanceof Element ? event.target.closest('.nn-cw-preset-card') : null;
+                if (!(card instanceof HTMLElement) || !card.dataset.preset) return;
+                select.value = card.dataset.preset;
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+                sync();
+            });
+            select.addEventListener('change', sync);
+            // Reset and slash commands select a preset without a change event, so re-check on view and on clicks nearby.
+            host.closest('.inline-drawer')?.addEventListener('click', () => setTimeout(sync, 250));
+            if (typeof IntersectionObserver !== 'undefined') {
+                new IntersectionObserver(entries => {
+                    if (entries.some(entry => entry.isIntersecting)) sync();
+                }).observe(host);
+            }
+            if (typeof MutationObserver !== 'undefined') {
+                new MutationObserver(render).observe(select, { childList: true, subtree: true, attributes: true, attributeFilter: ['selected'] });
+            }
+        }
+
+        render();
     }
 
     function createRetiredContentDrawer(parent) {
@@ -688,13 +701,14 @@ import { t } from './i18n.js';
             'ThemeTogglesSection': 'appearance',
             'CustomCSS-block': 'appearance',
             'GoogleFont-block': 'appearance',
+            'MovingUISection': 'appearance',
 
             // Chat & Writing Tab
             'ChatCharactersSection': 'chat-writing',
-            'sb-auto-swipe-drawer': 'chat-writing',
-            'sb-auto-continue-drawer': 'chat-writing',
+            'CharacterHandlingSection': 'chat-writing',
+            'AutoSwipeContinueSection': 'chat-writing',
             'AutoCompleteToggle': 'chat-writing', // will match name attribute or ID
-            'ChatMessageHandlingSection': 'chat-writing',
+            'ChatFineTuningSection': 'chat-writing',
 
             // System & Device Tab
             'SillyTavernImportSection': 'system-device',
@@ -971,8 +985,8 @@ import { t } from './i18n.js';
             if (queued) return;
             queued = requestAnimationFrame(() => {
                 queued = 0;
-                ensureStscriptDrawer();
                 ensureSettingsHeaderIcons();
+                ensureMovingUIPresetCards();
                 tagDrawersWithCategories();
                 tagUntaggedDrawers();
                 controller?.refresh();
@@ -1554,8 +1568,8 @@ import { t } from './i18n.js';
 
         injectStyles();
         promoteNestedDrawers();
-        ensureStscriptDrawer();
         ensureSettingsHeaderIcons();
+        ensureMovingUIPresetCards();
         promoteCacheAccount();
         tagDrawersWithCategories();
         tagUntaggedDrawers();

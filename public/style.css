@@ -5109,31 +5109,18 @@ body:is([data-generating="true"], [data-swiping="true"]) :is(
     margin-bottom: 15px;
 }
 
-#anchor_checkbox,
-#power-user-option-checkboxes {
+#anchor_checkbox {
     display: flex;
     flex-direction: column;
     flex-grow: 1;
 }
 
 #anchor_checkbox label,
-#power-user-option-checkboxes label,
-.checkbox_label,
-.auto_continue_settings_block {
+.checkbox_label {
     display: flex;
     flex-direction: row;
     column-gap: 10px;
     align-items: center;
-}
-
-.auto_continue_settings_block {
-    margin-top: 10px;
-}
-
-.auto_continue_settings_block label {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
 }
 
 #shadow_select_chat_popup {
@@ -6012,7 +5999,6 @@ body:not(.caption) .mes_img_caption {
     background-color: var(--black30a);
 }
 
-#user-settings-block [name="MiscellaneousToggles"],
 #CustomCSS-textAreaBlock {
     display: contents;
 }

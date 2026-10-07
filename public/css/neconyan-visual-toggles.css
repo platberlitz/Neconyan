@@ -1,6 +1,6 @@
-/* Visual Toggles (Settings > Appearance): grouped switch rows with visible descriptions. */
+/* Visual Toggles (Settings > Appearance) and the Chat & Writing cards: grouped switch rows with visible descriptions. */
 
-#ThemeTogglesSection .nn-vt-intro {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-intro {
     margin: 0 0 12px;
     padding-inline-end: 72px;
     color: var(--neco-muted, var(--SmartThemeEmColor));
@@ -8,7 +8,7 @@
     line-height: 1.45;
 }
 
-#ThemeTogglesSection .nn-vt {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt {
     container-type: inline-size;
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
@@ -16,7 +16,7 @@
     gap: 12px;
 }
 
-#ThemeTogglesSection .nn-vt-group {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-group {
     display: flex;
     flex-direction: column;
     min-width: 0;
@@ -26,14 +26,14 @@
     background: var(--neco-surface, var(--SmartThemeBlurTintColor));
 }
 
-#ThemeTogglesSection .nn-vt-group-head {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-group-head {
     display: flex;
     align-items: flex-start;
     gap: 12px;
     padding: 0 4px 8px;
 }
 
-#ThemeTogglesSection .nn-vt-group-icon {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-group-icon {
     display: grid;
     place-items: center;
     flex: 0 0 auto;
@@ -45,14 +45,14 @@
     font-size: 14px;
 }
 
-#ThemeTogglesSection .nn-vt-group-copy {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-group-copy {
     display: flex;
     flex-direction: column;
     gap: 2px;
     min-width: 0;
 }
 
-#ThemeTogglesSection h4.nn-vt-group-title {
+:is(#ThemeTogglesSection, .nn-settings-cards) h4.nn-vt-group-title {
     width: auto;
     min-height: 0;
     margin: 0;
@@ -70,14 +70,14 @@
     text-transform: none;
 }
 
-#ThemeTogglesSection .nn-vt-group-hint {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-group-hint {
     margin: 0;
     color: var(--neco-muted, var(--SmartThemeEmColor));
     font-size: 12px;
     line-height: 1.4;
 }
 
-#ThemeTogglesSection .nn-vt-row {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -92,11 +92,11 @@
     cursor: pointer;
 }
 
-#ThemeTogglesSection .nn-vt-row:hover {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-row:hover {
     background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 6%, transparent);
 }
 
-#ThemeTogglesSection .nn-vt-text {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-text {
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
@@ -104,14 +104,14 @@
     min-width: 0;
 }
 
-#ThemeTogglesSection .nn-vt-name-line {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-name-line {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
 }
 
-#ThemeTogglesSection .nn-vt-name {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-name {
     color: var(--neco-ink, var(--SmartThemeBodyColor));
     font-size: 14px;
     font-weight: 600;
@@ -119,7 +119,7 @@
     overflow-wrap: anywhere;
 }
 
-#ThemeTogglesSection .nn-vt-desc {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-desc {
     color: var(--neco-muted, var(--SmartThemeEmColor));
     font-size: 12px;
     font-weight: 400;
@@ -127,7 +127,7 @@
     overflow-wrap: anywhere;
 }
 
-#ThemeTogglesSection .nn-vt-badge {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-badge {
     padding: 1px 8px;
     border: 1px solid color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 45%, var(--neco-border, var(--SmartThemeBorderColor)));
     border-radius: 10px;
@@ -139,7 +139,7 @@
     white-space: nowrap;
 }
 
-#ThemeTogglesSection .nn-vt-row > input[type="checkbox"] {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-row > input[type="checkbox"] {
     display: block;
     flex: 0 0 auto;
     align-self: center;
@@ -156,7 +156,7 @@
     transition: background-color 160ms ease-out, border-color 160ms ease-out;
 }
 
-#ThemeTogglesSection .nn-vt-row > input[type="checkbox"]::before {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-row > input[type="checkbox"]::before {
     position: absolute;
     top: 3px;
     left: 3px;
@@ -169,42 +169,42 @@
     transition: translate 160ms ease-out, background-color 160ms ease-out;
 }
 
-#ThemeTogglesSection .nn-vt-row > input[type="checkbox"]:hover {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-row > input[type="checkbox"]:hover {
     border-color: var(--neco-ginger, var(--SmartThemeQuoteColor));
 }
 
-#ThemeTogglesSection .nn-vt-row > input[type="checkbox"]:checked {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-row > input[type="checkbox"]:checked {
     border-color: var(--neco-ginger, var(--SmartThemeQuoteColor));
     background: var(--neco-ginger, var(--SmartThemeQuoteColor));
 }
 
-#ThemeTogglesSection .nn-vt-row > input[type="checkbox"]:checked:hover {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-row > input[type="checkbox"]:checked:hover {
     border-color: var(--neco-ginger-hover, var(--neco-ginger, var(--SmartThemeQuoteColor)));
     background: var(--neco-ginger-hover, var(--neco-ginger, var(--SmartThemeQuoteColor)));
 }
 
-#ThemeTogglesSection .nn-vt-row > input[type="checkbox"]:checked::before {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-row > input[type="checkbox"]:checked::before {
     translate: 16px 0;
     background: var(--neco-on-accent, var(--SmartThemeBlurTintColor));
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--neco-ink, var(--SmartThemeBodyColor)) 25%, transparent);
     transform: none;
 }
 
-#ThemeTogglesSection .nn-vt-row > input[type="checkbox"]:focus-visible {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-row > input[type="checkbox"]:focus-visible {
     outline: 2px solid var(--neco-ginger, var(--SmartThemeQuoteColor));
     outline-offset: 2px;
     box-shadow: none;
 }
 
-#ThemeTogglesSection .nn-vt-row:has(> input:disabled) {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-row:has(> input:disabled) {
     cursor: not-allowed;
 }
 
-#ThemeTogglesSection .nn-vt-row > input[type="checkbox"]:disabled {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-row > input[type="checkbox"]:disabled {
     opacity: 0.5;
 }
 
-#ThemeTogglesSection .nn-vt-nest {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-nest {
     display: flex;
     flex-direction: column;
     margin: 0 0 6px 16px;
@@ -212,11 +212,11 @@
     border-left: 2px solid color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 35%, var(--neco-border, var(--SmartThemeBorderColor)));
 }
 
-#ThemeTogglesSection .nn-vt-nest > .nn-vt-row:first-of-type {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-nest > .nn-vt-row:first-of-type {
     border-top: 0;
 }
 
-#ThemeTogglesSection .nn-vt-nest-note {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-nest-note {
     display: none;
     align-items: center;
     gap: 6px;
@@ -227,15 +227,15 @@
     line-height: 1.4;
 }
 
-#ThemeTogglesSection .nn-vt-group:has(#messageModelNameEnabled:not(:checked)) .nn-vt-nest-note {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-group:has(#messageModelNameEnabled:not(:checked)) .nn-vt-nest-note {
     display: flex;
 }
 
-#ThemeTogglesSection .nn-vt-group:has(#messageModelNameEnabled:not(:checked)) .nn-vt-nest > .nn-vt-row .nn-vt-text {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-group:has(#messageModelNameEnabled:not(:checked)) .nn-vt-nest > .nn-vt-row .nn-vt-text {
     opacity: 0.6;
 }
 
-#ThemeTogglesSection .nn-vt-action {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-action {
     display: inline-flex;
     align-items: center;
     align-self: flex-start;
@@ -255,47 +255,47 @@
     transition: background-color 160ms ease-out, border-color 160ms ease-out;
 }
 
-#ThemeTogglesSection .nn-vt-action:hover {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-action:hover {
     border-color: var(--neco-ginger, var(--SmartThemeQuoteColor));
     background: color-mix(in srgb, var(--neco-ginger, var(--SmartThemeQuoteColor)) 18%, var(--neco-surface, var(--SmartThemeBlurTintColor)));
 }
 
-#ThemeTogglesSection .nn-vt-action:focus-visible {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-action:focus-visible {
     outline: 2px solid var(--neco-ginger, var(--SmartThemeQuoteColor));
     outline-offset: 2px;
 }
 
-#ThemeTogglesSection .nn-vt-action > i {
+:is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-action > i {
     color: var(--neco-ginger, var(--SmartThemeQuoteColor));
 }
 
 @container (max-width: 420px) {
-    #ThemeTogglesSection .nn-vt-group {
+    :is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-group {
         padding-inline: 10px;
     }
 
-    #ThemeTogglesSection .nn-vt-nest {
+    :is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-nest {
         margin-left: 8px;
         padding-left: 10px;
     }
 }
 
 @media (pointer: coarse) {
-    #ThemeTogglesSection .nn-vt-action {
+    :is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-action {
         min-height: 44px;
     }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    #ThemeTogglesSection .nn-vt-row > input[type="checkbox"],
-    #ThemeTogglesSection .nn-vt-row > input[type="checkbox"]::before,
-    #ThemeTogglesSection .nn-vt-action {
+    :is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-row > input[type="checkbox"],
+    :is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-row > input[type="checkbox"]::before,
+    :is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-action {
         transition: none;
     }
 }
 
-body.reduced-motion #ThemeTogglesSection .nn-vt-row > input[type="checkbox"],
-body.reduced-motion #ThemeTogglesSection .nn-vt-row > input[type="checkbox"]::before,
-body.reduced-motion #ThemeTogglesSection .nn-vt-action {
+body.reduced-motion :is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-row > input[type="checkbox"],
+body.reduced-motion :is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-row > input[type="checkbox"]::before,
+body.reduced-motion :is(#ThemeTogglesSection, .nn-settings-cards) .nn-vt-action {
     transition: none;
 }
