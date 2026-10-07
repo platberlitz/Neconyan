@@ -8333,7 +8333,6 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         const resolvedCacheScope = cacheScope ?? (type === 'quiet' ? 'auxiliary' : 'main');
         const shouldConsumeUserInput = type !== 'regenerate' && type !== 'swipe' && type !== 'quiet' && !isImpersonate && !dryRun && !depth && !suppressUserMessage;
         let textareaText = '';
-        let renderedUserMessage = false;
 
         if (!(dryRun || depth || suppressUserMessage || type == 'regenerate' || type == 'swipe' || type == 'quiet')) {
             const interruptedByCommand = await processCommands(String($('#send_textarea').val()));
@@ -8394,16 +8393,12 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             } else {
                 await sendMessageAsUser(textareaText, messageBias);
             }
-            renderedUserMessage = true;
         } else if (textareaText == '' && !automatic_trigger && !dryRun && [undefined, 'normal'].includes(type) && main_api == 'openai' && oai_settings.send_if_empty.trim().length > 0 && !depth && !suppressUserMessage && !selected_group) {
         // Use send_if_empty if set and the user message is empty. Only when sending messages normally
             await sendMessageAsUser(oai_settings.send_if_empty.trim(), messageBias);
-            renderedUserMessage = true;
         }
 
-        if (renderedUserMessage && shouldBatchMobileChatRendering()) {
-            await waitForNextFrame();
-        }
+        // Submit without waiting for paint: background mobile tabs suspend animation frames.
         if (!isCurrent()) return;
 
         // Occurs only if the generation is not aborted due to slash commands execution

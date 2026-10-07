@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { setConfigFilePath } from '../src/util.js';
 import { USER_DIRECTORY_TEMPLATE } from '../src/constants.js';
+import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 
 setConfigFilePath(fileURLToPath(new URL('../default/config.yaml', import.meta.url)));
 const { roleplayAccountStamp } = await import('../src/roleplay-store.js');
@@ -72,6 +73,84 @@ async function terminal(account, id) {
 
 for (const phone of [false, true]) {
     const viewport = phone ? 'phone' : 'desktop';
+
+    test(`${viewport} leaving before the first token submits without a paint and finishes with the page frozen`, async ({ app }) => {
+        app.provider.mode.hold = 'conversation-fixture';
+        app.provider.mode.streamReply = { first: 'The server ', rest: 'wrote this reply.' };
+        const account = await app.account({ phone, activeConnection: true,
+            contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {},
+            configureSettings: settings => { settings.oai_settings.stream_openai = true; } });
+        if (phone) await installIPhoneSafari(account.context);
+        const native = owned(app);
+        const locator = await savedChat(account, `Background send ${viewport}`);
+        const page = await account.open({ workspace: false, readyTimeout: 120000 });
+        await openChat(page, locator);
+        if (phone) await applyIOSOnlyCss(page);
+        await page.evaluate(() => {
+            const context = window.SillyTavern.getContext();
+            context.eventSource.once(context.eventTypes.USER_MESSAGE_RENDERED, () => {
+                // Headless Chromium keeps painting background tabs. Model Safari's
+                // paused frames at the exact point before Generate submits its work.
+                const request = window.requestAnimationFrame;
+                const cancel = window.cancelAnimationFrame;
+                const frames = new Map();
+                let nextId = -1;
+                window.requestAnimationFrame = callback => {
+                    const id = nextId--;
+                    frames.set(id, callback);
+                    return id;
+                };
+                window.cancelAnimationFrame = id => frames.delete(id) || cancel.call(window, id);
+                Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+                Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+                document.dispatchEvent(new Event('visibilitychange'));
+                window.restoreBackgroundSend = () => {
+                    window.requestAnimationFrame = request;
+                    window.cancelAnimationFrame = cancel;
+                    delete document.visibilityState;
+                    delete document.hidden;
+                    for (const callback of frames.values()) request.call(window, callback);
+                    document.dispatchEvent(new Event('visibilitychange'));
+                };
+            });
+        });
+        const client = await account.context.newCDPSession(page);
+        const submissions = [];
+        page.on('response', response => { if (acceptedSubmission(response)) submissions.push(response); });
+        await page.locator('#send_textarea').fill('Start my reply even if I leave immediately.');
+        await page.locator('#send_textarea').press('Enter');
+        try {
+            await expect.poll(() => app.provider.calls.length, { timeout: 15000,
+                message: 'The provider starts without a foreground animation frame' }).toBe(1);
+            expect(await page.evaluate(() => document.visibilityState)).toBe('hidden');
+            expect(app.provider.calls[0].completedAt).toBeNull();
+            expect(app.provider.calls[0].firstTokenAt).toBeUndefined();
+            expect(app.provider.calls[0].stream).toBe(true);
+            await expect.poll(() => submissions.length).toBe(1);
+            const response = submissions[0];
+            expect(response.status(), await response.text()).toBe(202);
+            const { jobId } = await response.json();
+            await client.send('Page.setWebLifecycleState', { state: 'frozen' });
+            await app.release();
+            await expect.poll(() => typeof app.provider.mode.finishStream).toBe('function');
+            app.provider.mode.finishStream();
+            await account.settled(jobId);
+            const records = readRoleplayChat(native.scope, locator).records;
+            expect(records.filter(row => row.mes === ANSWER)).toHaveLength(1);
+            expect(records.filter(row => row.mes === 'Start my reply even if I leave immediately.')).toHaveLength(1);
+        } finally {
+            app.provider.mode.finishStream?.();
+            await client.send('Page.setWebLifecycleState', { state: 'active' });
+            await page.bringToFront();
+            await page.evaluate(() => window.restoreBackgroundSend?.());
+            await client.detach();
+            await app.release();
+        }
+        await expect(page.locator('#chat .mes').last()).toContainText(ANSWER, { timeout: 30000 });
+        await expect.poll(() => page.evaluate(async () => (await import('/script.js')).isGenerating()), { timeout: 30000 }).toBe(false);
+        expect(app.provider.calls).toHaveLength(1);
+        expect(submissions).toHaveLength(1);
+    });
 
     test(`${viewport} live Roleplay text appears before completion and remains visible while Companions run`, async ({ app }, info) => {
         app.provider.mode.streamReply = { first: 'First words', rest: ' and the finished reply.', reasoning: 'Considering the answer.', holdReasoning: true };
