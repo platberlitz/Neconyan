@@ -26,9 +26,9 @@
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     justify-content: space-between;
-    gap: 12px 16px;
+    gap: 6px 12px;
     margin-top: 10px;
-    padding: 8px 12px;
+    padding: 3px 4px 3px 12px;
     border: 1px solid var(--neco-border);
     border-radius: 14px;
     background: var(--neco-raised, var(--neco-surface));
@@ -51,9 +51,13 @@
     display: none;
 }
 
+.neconyan-tool-page-intro.neconyan-cat-panel > .neconyan-tool-page-copy {
+    padding: 0 8px 6px 0;
+}
+
 body.neconyan :is(#left-nav-panel, #user-settings-block, #right-nav-panel) .neconyan-tool-page-intro > .neconyan-tool-tour-button {
-    min-height: 44px;
-    min-block-size: 44px;
+    min-height: 28px;
+    min-block-size: 28px;
 }
 
 body.neconyan :is(#left-nav-panel, #user-settings-block, #right-nav-panel) .neconyan-tool-page-intro > .neconyan-page-intro-toggle {
@@ -62,7 +66,7 @@ body.neconyan :is(#left-nav-panel, #user-settings-block, #right-nav-panel) .neco
     gap: 8px;
     min-width: 0;
     width: 100%;
-    min-height: 44px;
+    min-height: 28px;
     padding: 0;
     border: 0;
     border-radius: 6px;
@@ -132,13 +136,40 @@ body.neconyan :is(#left-nav-panel, #user-settings-block, #right-nav-panel) .neco
     background: var(--neco-raised, var(--neco-surface));
 }
 
-.neconyan-tool-page-intro .neconyan-tool-tour-button,
 .neconyan-tool-tour :is(.menu_button, button),
 .neconyan-tool-tour-invite .menu_button {
     min-height: 44px;
     width: auto;
     margin: 0;
     padding: 8px 16px;
+}
+
+/* A one-line chip, so the collapsed intro stays one line tall. */
+.neconyan-tool-page-intro .neconyan-tool-tour-button {
+    gap: 6px;
+    min-height: 28px;
+    width: auto;
+    margin: 0;
+    padding: 3px 10px;
+    font-size: 13px;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+/* Touch screens keep a 44px hit area around the compact Tour chip and blurb toggle. */
+@media (pointer: coarse) {
+    .neconyan-tool-page-intro:not(.neconyan-page-intro-header) > :is(.neconyan-tool-tour-button, .neconyan-page-intro-toggle) {
+        position: relative;
+    }
+
+    .neconyan-tool-page-intro > :is(.neconyan-tool-tour-button, .neconyan-page-intro-toggle)::before {
+        content: '';
+        position: absolute;
+        top: min(0px, calc((100% - 44px) / 2));
+        right: min(0px, calc((100% - 44px) / 2));
+        bottom: min(0px, calc((100% - 44px) / 2));
+        left: min(0px, calc((100% - 44px) / 2));
+    }
 }
 
 .neconyan-tool-page-intro .neconyan-tool-tour-button i {
@@ -621,7 +652,7 @@ body.neconyan-tool-tour-active #neconyan-tour-coachmark {
     }
 
     .neconyan-tool-page-intro {
-        padding: 6px 10px;
+        padding: 3px 4px 3px 10px;
     }
 
     .neconyan-native-page-heading {
@@ -646,7 +677,7 @@ body.neconyan-tool-tour-active #neconyan-tour-coachmark {
     .neconyan-tool-page-intro .neconyan-tool-tour-button {
         justify-content: center;
         white-space: nowrap;
-        padding-inline: 12px;
+        padding-inline: 10px;
     }
 
     #neconyan-tool-tour.neconyan-tool-tour {
