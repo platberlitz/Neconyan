@@ -12,7 +12,7 @@ import { NARRATOR_VISUAL_ID, getNarratorVisual, setNarratorStyle } from './narra
 import { GRADIENT_GENERATOR_ALGORITHM, advanceGradientGenerator, generateSeededGradient, normalizeGradientGenerator } from './seeded-gradient-generator.js';
 import { escapeHtml, generateQuietPrompt, getContext, power_user } from './st-api.js';
 import { characterColors, expandedCharacterRows, groupProfiles, setCharacterColors, setExpandedCharacterRows, setGroupProfiles, setSwapMode, settings, swapMode } from './state.js';
-import { getAutoSyncRecord, isPlainObject, persistModuleStore, saveData, saveGlobalSettingsSnapshot } from './storage.js';
+import { getAutoSyncRecord, isPlainObject, persistLocalModuleChange, saveData, saveGlobalSettingsSnapshot } from './storage.js';
 import { ASSIGNED_COLOR_MIN_DELTA_E, VALID_STYLES, colorDistance, hexToHsl, hslToHex, normalizeAliases, normalizeCharacterEntry, normalizeEntryGradientGenerator, normalizeGoogleFontName, normalizeHexColor, toast } from './utils.js';
 
 export const COLOR_THEMES = {
@@ -60,7 +60,7 @@ export function persistPresets(presets) {
     try {
         const record = getAutoSyncRecord(true);
         record.presets = isPlainObject(presets) ? presets : {};
-        persistModuleStore(record);
+        persistLocalModuleChange(record);
         return true;
     } catch {
         toast.warning('Could not save presets to your user settings.');
@@ -584,8 +584,12 @@ export function flipColorsForTheme() {
 // rejects (reserved word, over-length, control characters) or rewrites (collapsed
 // whitespace) would be reported as saved and then never appear in the dropdown.
 // Resolve the stored name up front so callers can refuse the input instead.
+// Names that differ only in case are the same preset, so reuse the stored spelling.
 export function resolveColorPresetName(rawName) {
-    return normalizeRegistryIdentityName(String(rawName ?? ''), MAX_REGISTRY_IDENTITY_LENGTH);
+    const name = normalizeRegistryIdentityName(String(rawName ?? ''), MAX_REGISTRY_IDENTITY_LENGTH);
+    const identity = normalizeRegistryIdentity(name, MAX_REGISTRY_IDENTITY_LENGTH);
+    if (!identity) return name;
+    return Object.keys(getPresets()).find(candidate => normalizeRegistryIdentity(candidate, MAX_REGISTRY_IDENTITY_LENGTH) === identity) || name;
 }
 
 // Phase 5A: Preset management with dropdown UI
@@ -777,13 +781,13 @@ export function getCustomPaletteMeta() {
 export function saveCustomPaletteMeta(meta) {
     const record = getAutoSyncRecord(true);
     record.customPaletteMeta = isPlainObject(meta) ? meta : {};
-    persistModuleStore(record);
+    persistLocalModuleChange(record);
 }
 
 export function saveCustomPalettes(customs) {
     const record = getAutoSyncRecord(true);
     record.customPalettes = normalizeCustomPalettes(customs);
-    persistModuleStore(record);
+    persistLocalModuleChange(record);
 }
 
 export function setCustomPaletteMetaEntry(name, entry) {

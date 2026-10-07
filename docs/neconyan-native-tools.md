@@ -30,7 +30,7 @@ These are the source revisions used for the native integration. Neconyan adds lo
 | --- | --- | --- | --- | --- |
 | Preset Tools | 1.5.4 | Neconyan | Not declared in source metadata | [5a6d0733](https://github.com/SillyBunnyTeam/SillyBunny/tree/5a6d0733fddbfde6dc55b9e81d804d824b7a61ba) |
 | Chat Completion Tabs | 1.0.0 | Rivelle | Not declared in source metadata | [5a6d0733](https://github.com/SillyBunnyTeam/SillyBunny/tree/5a6d0733fddbfde6dc55b9e81d804d824b7a61ba) |
-| Dialogue Colors | 6.1.3 | platberlitz | Not declared in source metadata | [5af56565](https://github.com/platberlitz/sillytavern-character-colors/tree/5af565658bc223a74e99d025670db6835dd83682) |
+| Dialogue Colors | 6.1.4 | platberlitz | Not declared in source metadata | [78b03c48](https://github.com/platberlitz/sillytavern-character-colors/tree/78b03c48fa7d638b49693260f49a2be2ab4fc6cf) |
 | Termeownal UI | 2.4.0 | platberlitz | AGPL-3.0 | [16d1540c](https://github.com/SillyBunnyTeam/SillyBunny-Terminal-UI/tree/16d1540c6b88d97a9519725d89b04e1f7164bd1a) |
 | BotSearcher | 0.9.0 | platberlitz | AGPL-3.0 | [2e175ff4](https://github.com/SillyBunnyTeam/SillyBunny-BotSearcher/tree/2e175ff439f884fc0bb662ff9930212237053780) |
 | Prompt Tags | 1.0.0 | platberlitz | MIT | [20a0ef20](https://github.com/platberlitz/SillyBunny-PromptTags/tree/20a0ef20c4ed9d2c81a5e4a893501462a6f39183) |

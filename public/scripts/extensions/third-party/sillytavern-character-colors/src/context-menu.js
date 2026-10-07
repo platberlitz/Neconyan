@@ -1699,7 +1699,10 @@ export function replaceMessageSelectionWithFontTag(msg, selectedText, hexColor, 
     const exactSourceText = rawText.slice(start, end);
     if (exactSourceText !== sourceSelection || overlapsAnySourceRange(syntax.unsafe, start, end)) return false;
 
-    msg.mes = `${rawText.slice(0, start)}<font color="${normalizedColor}">${escapeHtml(exactSourceText)}</font>${rawText.slice(end)}`;
+    // Text content only needs &, < and > escaped. Escaping quotes would save
+    // &quot; into the message and stop the host styling it as dialogue.
+    const escapedSourceText = exactSourceText.replace(/[&<>]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[char]);
+    msg.mes = `${rawText.slice(0, start)}<font color="${normalizedColor}">${escapedSourceText}</font>${rawText.slice(end)}`;
     syncActiveSwipeWithMessageText(msg);
     return true;
 }

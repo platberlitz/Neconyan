@@ -134,8 +134,8 @@
     ]
   },
   "sillytavern-character-colors": {
-    "version": "6.1.3",
-    "pinnedRevision": "5af565658bc223a74e99d025670db6835dd83682",
+    "version": "6.1.4",
+    "pinnedRevision": "78b03c48fa7d638b49693260f49a2be2ab4fc6cf",
     "sourceOrigin": "https://github.com/platberlitz/sillytavern-character-colors.git",
     "sourceUrl": "https://github.com/platberlitz/sillytavern-character-colors",
     "licenseFiles": []
