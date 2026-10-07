@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, jest, test } from '@jest/globals';
 import express from 'express';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -110,6 +111,18 @@ describe('character card metadata preservation', () => {
             process.env[diskCacheEnvironmentKey] = originalDiskCacheSetting;
         }
         process.chdir(originalWorkingDirectory);
+    });
+
+    test('a revision-aware read includes the raw card from the same PNG', async () => {
+        await createAlice();
+        const ordinary = await getCharacter('Alice.png');
+        const response = await postJson('/api/characters/get', { avatar_url: 'Alice.png', with_revision: true });
+        expect(response.status).toBe(200);
+        const character = await response.json();
+        expect(typeof character.json_data).toBe('string');
+        expect(JSON.parse(character.json_data)).toEqual(JSON.parse(ordinary.json_data));
+        const bytes = fs.readFileSync(path.join(directories.characters, 'Alice.png'));
+        expect(response.headers.get('X-Character-Revision')).toBe(createHash('sha256').update(bytes).digest('hex'));
     });
 
     test('keeps the PNG container and publishes a new physical file during a metadata edit', async () => {

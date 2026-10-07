@@ -98,3 +98,55 @@ test('an interrupted index write finishes once and keeps settings saved meanwhil
     assert.equal(saved.power_user.mine, 'kept');
     assert.equal(saved.extension_settings[MODULE].snapshots.length, p.total + 1);
 });
+
+for (const damage of ['missing', 'invalid JSON', 'changed content', 'wrong target']) {
+    test(`manual capture replaces an unchanged snapshot with ${damage}`, async t => {
+        const p = prepared(t);
+        const first = await acceptApplicationOperation(p.request, { key: 'first', kind: 'time-machine-capture' });
+        await runOperation(p.context(first.job));
+        const old = p.settings().extension_settings[MODULE].snapshots.find(row => row.kind === 'lorebook');
+        const filename = path.join(p.dirs.files, old.name);
+        const payload = JSON.parse(fs.readFileSync(filename, 'utf8'));
+        if (damage === 'missing') fs.unlinkSync(filename);
+        else if (damage === 'invalid JSON') fs.writeFileSync(filename, '{');
+        else {
+            if (damage === 'changed content') payload.data.entries[0].content = 'Corrupted';
+            else payload.target = 'Different book';
+            fs.writeFileSync(filename, JSON.stringify(payload));
+        }
+        const repair = await acceptApplicationOperation(p.request, { key: 'repair', kind: 'time-machine-capture' });
+        await runOperation(p.context(repair.job));
+        const result = readOperation(p.base, 'repair').result;
+        assert.equal(result.taken, 1);
+        assert.equal(result.skipped, p.total - 1);
+        const row = result.module.snapshots.find(item => item.kind === 'lorebook');
+        assert.notEqual(row.name, old.name);
+        assert.equal(JSON.parse(fs.readFileSync(path.join(p.dirs.files, row.name), 'utf8')).data.entries[0].content, 'Roses');
+    });
+}
+
+test('manual capture reports malformed source files while saving readable items', async t => {
+    const p = prepared(t);
+    fs.writeFileSync(path.join(p.dirs.characters, 'broken.png'), PNG);
+    fs.writeFileSync(path.join(p.dirs.worlds, 'broken.json'), '{');
+    fs.writeFileSync(path.join(p.dirs.openAI_Settings, 'broken.json'), '[]');
+    const accepted = await acceptApplicationOperation(p.request, { key: 'partial', kind: 'time-machine-capture' });
+    await runOperation(p.context(accepted.job));
+    const result = readOperation(p.base, 'partial').result;
+    assert.equal(result.failed, 3);
+    assert.equal(result.taken, p.total);
+    assert.equal(result.skipped, 0);
+});
+
+test('retention preserves malformed index rows and their files for repair', async t => {
+    const p = prepared(t);
+    const invalid = { kind: 'lorebook', target: 'Garden', name: 'cardtm_preset_unrecognised.json', ts: 1, size: 2 };
+    const settings = p.settings();
+    settings.extension_settings[MODULE].snapshots.push(invalid);
+    p.write(settings);
+    fs.writeFileSync(path.join(p.dirs.files, invalid.name), '{}');
+    const accepted = await acceptApplicationOperation(p.request, { key: 'preserve', kind: 'time-machine-capture' });
+    await runOperation(p.context(accepted.job));
+    assert.ok(p.settings().extension_settings[MODULE].snapshots.some(row => row.name === invalid.name));
+    assert.ok(fs.existsSync(path.join(p.dirs.files, invalid.name)));
+});

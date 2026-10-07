@@ -57,11 +57,11 @@ describe('saving over a deleted bundled default preset', () => {
         await new Promise((resolve) => server.close(resolve));
     });
 
-    function savePreset(preset) {
+    function savePreset(preset, guard = {}) {
         return fetch(`${baseUrl}/api/presets/save`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: PRESET_NAME, apiId: 'openai', preset }),
+            body: JSON.stringify({ name: PRESET_NAME, apiId: 'openai', preset, ...guard }),
         });
     }
 
@@ -114,5 +114,18 @@ describe('saving over a deleted bundled default preset', () => {
         expect(response.status).toBe(200);
         expect(contentManager.isDefaultPresetDeleted(directories, defaultPreset)).toBe(true);
         expect(fs.existsSync(path.join(directories.openAI_Settings, `${PRESET_NAME}.json`))).toBe(false);
+    });
+
+    test('a guarded restore refuses an edit made after comparison', async () => {
+        await savePreset({ temperature: 0.8 });
+        const response = await savePreset({ temperature: 0.2 }, { expected_preset: { temperature: 0.5 } });
+        expect(response.status).toBe(409);
+        expect(JSON.parse(fs.readFileSync(path.join(directories.openAI_Settings, `${PRESET_NAME}.json`), 'utf8'))).toEqual({ temperature: 0.8 });
+    });
+
+    test('a guarded restore compares content and can recreate only an absent preset', async () => {
+        expect((await savePreset({ a: 1, b: 2 }, { expected_preset: null })).status).toBe(200);
+        expect((await savePreset({ restored: true }, { expected_preset: null })).status).toBe(409);
+        expect((await savePreset({ restored: true }, { expected_preset: { b: 2, a: 1 } })).status).toBe(200);
     });
 });

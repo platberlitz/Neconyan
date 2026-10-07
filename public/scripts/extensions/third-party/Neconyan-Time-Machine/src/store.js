@@ -5,9 +5,10 @@ import {
     canonicalJson,
     hashOf,
     isPlainObject,
-    legacyHashOf,
+    normalizeRow,
     prunePlan,
     snapshotFileName,
+    validateSnapshotPayload,
 } from './core.js';
 
 export const MODULE_NAME = 'NeconyanCardTimeMachine';
@@ -45,29 +46,6 @@ function canonicalUrl(name) {
 
 function normalUrl(url) {
     return typeof url === 'string' ? `/${url}`.replace(/^\/+/, '/') : '';
-}
-
-function normalizeRow(value) {
-    if (!isPlainObject(value)
-        || !KINDS.has(value.kind)
-        || typeof value.target !== 'string' || value.target === ''
-        || typeof value.label !== 'string'
-        || typeof value.name !== 'string'
-        || !Number.isFinite(value.ts)
-        || !Number.isFinite(value.size) || value.size < 0
-        || (value.hash !== null && !/^[0-9a-f]{64}$/.test(value.hash ?? ''))
-        || (value.sourceTarget !== undefined && (typeof value.sourceTarget !== 'string' || value.sourceTarget === ''))
-        || !new RegExp(`^cardtm_${value.kind}_[A-Za-z0-9_-]+\\.json$`).test(value.name)
-        || normalUrl(value.url) !== canonicalUrl(value.name)) {
-        return null;
-    }
-    return {
-        ...value,
-        id: value.name,
-        ts: Number(value.ts),
-        size: Number(value.size),
-        url: canonicalUrl(value.name),
-    };
 }
 
 let needsRepair = false;
@@ -295,39 +273,6 @@ async function commitNow() {
     throw error;
 }
 
-function snapshotContent(payload) {
-    const { format, kind, target, label, ts, hash, ...content } = payload;
-    return content;
-}
-
-function validatePayloadShape(row, payload) {
-    if (!isPlainObject(payload)
-        || payload.format !== 1
-        || payload.kind !== row.kind
-        || payload.target !== (row.sourceTarget ?? row.target)
-        || payload.ts !== row.ts
-        || typeof payload.label !== 'string'
-        || !isPlainObject(payload.data)
-        || (payload.tags !== undefined && (!Array.isArray(payload.tags) || payload.tags.some(tag => typeof tag !== 'string')))) {
-        throw new Error(`Snapshot ${row.name} does not match its index`);
-    }
-}
-
-async function validatePayloadHash(row, payload) {
-    const expected = await (Object.prototype.hasOwnProperty.call(payload, 'hash')
-        ? hashOf(snapshotContent(payload))
-        : legacyHashOf(payload.data));
-    if (!expected) {
-        return;
-    }
-    if (row.hash && row.hash !== expected) {
-        throw new Error(`Snapshot ${row.name} failed its integrity check`);
-    }
-    if (payload.hash && payload.hash !== expected) {
-        throw new Error(`Snapshot ${row.name} failed its integrity check`);
-    }
-}
-
 function requireRow(row) {
     const valid = normalizeRow(row);
     if (!valid) {
@@ -459,8 +404,7 @@ export async function load(row, { forgetMissing = true } = {}) {
     } catch (error) {
         throw new Error(`Snapshot ${valid.name} is not valid JSON`, { cause: error });
     }
-    validatePayloadShape(valid, payload);
-    await validatePayloadHash(valid, payload);
+    await validateSnapshotPayload(valid, payload);
     return payload;
 }
 
