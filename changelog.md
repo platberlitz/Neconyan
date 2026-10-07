@@ -17,6 +17,7 @@
 - PR #54 (2026-10-07) `fix(chat): start mobile replies without waiting for a redraw`
 - PR #56 (2026-10-07) `feat(settings): group visual toggles with plain descriptions`
 - PR #57 (2026-10-07) `feat(agents): add six default reply rewrite agents`
+- PR #59 (2026-10-07) `docs: point help links to the official neconyan handbook`
 
 ## v1.2.0
 
