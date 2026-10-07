@@ -273,6 +273,7 @@ import { NOTE_MODULE_NAME, getAuthorsNoteDepth, getAuthorsNotePosition, getAutho
 import { registerPromptManagerMigration } from './scripts/PromptManager.js';
 import { getRegexedString, regex_placement } from './scripts/extensions/regex/engine.js';
 import { AGENT_REGEX_PLACEMENT, applyRegexScriptList } from './scripts/extensions/in-chat-agents/regex-scripts.js';
+import { stripTrackerMandatoryMarkers } from './scripts/tracker-mandatory-marker.js';
 import { resolveRegexScriptsForSnapshot } from './scripts/extensions/in-chat-agents/regex-snapshot-store.js';
 import { consolidateCompanionChatHistory, hasCompanionChatHistoryForHiddenHost, selectCompanionChatHistory } from './scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { IN_CHAT_AGENT_PROMPT_KEY_PREFIX, instrumentInChatAgentPromptValue, trimOldestRetainedContribution } from './scripts/in-chat-agent-inspection.js';
@@ -4549,6 +4550,10 @@ function prepareMessageDisplayText(mes, ch_name, isSystem, isUser, messageId, is
         const regexPlacement = getRegexPlacement();
         const depth = messageContext ? 0 : getNonSystemMessageDepth(chat, resolvedMessageId);
         const agentRegexScripts = resolveRegexScriptsForSnapshot(chatMessage?.extra?.inChatAgents);
+
+        if (!isUser && !isReasoning) {
+            mes = stripTrackerMandatoryMarkers(mes);
+        }
 
         if (!isUser && !isReasoning && agentRegexScripts.length > 0) {
             mes = applyRegexScriptList(mes, agentRegexScripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, {
