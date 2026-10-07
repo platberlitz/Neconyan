@@ -299,6 +299,8 @@ function validSubmissionResult(value) {
             && value.outputs.every((output, index) => object(output) && output.name === value.names[index]
                 && UUID.test(output.instanceId) && HASH.test(output.rawHash) && UUID.test(output.writeId))
             && (value.group === null || (object(value.group) && typeof value.group.id === 'string' && HASH.test(value.group.rawHash)))
+            && (value.character === undefined || (value.group === null && object(value.character)
+                && validRoleplayAvatar(value.character.avatar) && UUID.test(value.character.instanceId)))
             && value.outputs[0].instanceId === value.instanceId && value.outputs[0].rawHash === value.rawHash
             && encodedBytes(value) <= IMPORT_RESULT_MAX_BYTES;
     }
@@ -317,7 +319,7 @@ function validCleanup(value) {
     }
     if (Object.hasOwn(value.payloads, 'import.chat.0.jsonl')) {
         return value.journal === null && Object.keys(value.payloads).every(name =>
-            /^import\.chat\.\d+\.jsonl$|^import\.memory\.\d+\.(?:archive|guard)\.json$|^import\.group\.after\.json$/.test(name)
+            /^import\.chat\.\d+\.jsonl$|^import\.memory\.\d+\.(?:archive|guard)\.json$|^import\.group\.after\.json$|^import\.character\.png$/.test(name)
                 && HASH.test(value.payloads[name]));
     }
     if (Object.hasOwn(value.payloads, 'group.after.json')) {
@@ -704,6 +706,8 @@ function validateLifecycleTransaction(pending, state) {
 
 export function roleplayImportPlan(pending) {
     return { target: pending.target, timestamp: pending.timestamp,
+        ...(pending.newCharacter ? { newCharacter: { locator: pending.newCharacter.locator, instanceId: pending.newCharacter.instanceId,
+            expectedVacancy: pending.newCharacter.expectedVacancy, after: pending.newCharacter.after } } : {}),
         outputs: pending.outputs.map(({ locator, instanceId, expectedVacancy, after, memory, memoryPayloads }) =>
             ({ locator, instanceId, expectedVacancy, after, memory, memoryPayloads })),
         group: pending.group && { locator: pending.group.locator, instanceId: pending.group.instanceId,
@@ -724,9 +728,22 @@ function validateImportTransaction(pending, state) {
         || (pending.group !== null) !== pending.target.group) throw damaged();
     const names = new Set();
     const instances = new Set();
+    if (pending.newCharacter !== undefined) {
+        const card = pending.newCharacter;
+        if (!object(card) || pending.target.group || !isStoredLocator('character', card.locator)
+            || card.locator.avatar === pending.target.avatar || !UUID.test(card.instanceId)
+            || card.expectedVacancy !== 0 || state.resources[card.instanceId]
+            || state.paths[roleplayPathKey(state, 'character', card.locator)]
+            || (card.physical !== null && !validPhysical(card.physical))
+            || !object(card.after) || card.after.revision !== 1 || !HASH.test(card.after.rawHash) || !HASH.test(card.after.contentHash)
+            || !integer(card.after.byteLength) || card.after.byteLength > 64 * 1024 * 1024
+            || card.after.payload !== 'import.character.png') throw damaged();
+        instances.add(card.instanceId);
+    }
     for (const [index, output] of pending.outputs.entries()) {
         if (!object(output) || !isStoredLocator('chat', output.locator) || output.locator.group !== pending.target.group
-            || (!pending.target.group && output.locator.avatar !== pending.target.avatar)
+            || (!pending.target.group && output.locator.avatar !== (pending.newCharacter?.locator.avatar ?? pending.target.avatar))
+            || (pending.newCharacter && (output.memory !== null || !Array.isArray(output.memoryPayloads) || output.memoryPayloads.length !== 0))
             || !UUID.test(output.instanceId) || !integer(output.expectedVacancy)
             || (output.physical !== null && !validPhysical(output.physical)) || typeof output.memoryDone !== 'boolean'
             || (output.memoryDone && output.physical === null)
@@ -785,6 +802,7 @@ export function assertRoleplayTransactionCapacity(lease, pending, finalState) {
     // Reserve the largest recovery progress record before staging or publishing any content.
     const progress = pending && { ...state, pending: pending.kind === 'chat-import'
         ? { ...pending, phase: 'linked', outputs: pending.outputs.map(output => ({ ...output, physical: ROLEPLAY_LARGEST_PHYSICAL, memoryDone: true })),
+            ...(pending.newCharacter ? { newCharacter: { ...pending.newCharacter, physical: ROLEPLAY_LARGEST_PHYSICAL } } : {}),
             group: pending.group && { ...pending.group, appliedPhysical: ROLEPLAY_LARGEST_PHYSICAL } }
         : pending.kind === 'group-update'
             ? { ...pending, phase: 'group-applied', appliedPhysical: ROLEPLAY_LARGEST_PHYSICAL }
@@ -815,7 +833,7 @@ export function roleplayPayloadDirectory(lease, transactionId) {
 
 function payloadPath(lease, transactionId, name) {
     if (!['chat.after.jsonl', 'chat.corrupt.jsonl', 'group.after.json', 'memory.archive.json', 'memory.guard.json'].includes(name)
-        && !/^import\.chat\.\d+\.jsonl$|^import\.memory\.\d+\.(?:archive|guard)\.json$|^import\.group\.after\.json$/.test(name)
+        && !/^import\.chat\.\d+\.jsonl$|^import\.memory\.\d+\.(?:archive|guard)\.json$|^import\.group\.after\.json$|^import\.character\.png$/.test(name)
         && !LIFECYCLE_PAYLOAD.test(name)) throw damaged();
     return path.join(roleplayPayloadDirectory(lease, transactionId), name);
 }

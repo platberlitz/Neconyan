@@ -839,6 +839,15 @@ export function convertImportedChatFile(bytes, { format, userName, characterName
     if (!Buffer.isBuffer(bytes) || !Number.isSafeInteger(timestamp) || timestamp < 0) throw new InvalidChatDataError('Invalid chat import.');
     let data;
     try { data = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { throw new InvalidChatDataError('Invalid chat text encoding.'); }
+    if (format === 'instance-batch') {
+        let files;
+        try { files = JSON.parse(data); } catch { throw new InvalidChatDataError('Invalid imported chat selection.'); }
+        if (!Array.isArray(files) || !files.length || files.length > 64
+            || files.some(file => !file || !['json', 'jsonl'].includes(file.format) || typeof file.content !== 'string')) {
+            throw new InvalidChatDataError('Choose between 1 and 64 JSON or JSONL chat files.');
+        }
+        return files.flatMap(file => convertImportedChatFile(Buffer.from(file.content), { format: file.format, userName, characterName, timestamp }));
+    }
     if (format === 'jsonl') {
         const first = data.split('\n').find(line => line.trim());
         let header;
@@ -2161,7 +2170,7 @@ function importProtectedChat(request, response, group) {
         const result = commitSingleChatImport({ owner, directories: request.user.directories, ...block.account }, {
             operationKey: block.operationKey, bytes: fs.readFileSync(uploaded), originalName: request.file.originalname,
             format: request.body.file_type, userName: request.body.user_name, characterName: request.body.character_name,
-            target,
+            target, importAsNewInstance: block.importAsNewInstance,
         }, roleplayNativeHost, convertImportedChatFile);
         return response.set('Cache-Control', 'no-store').send({ res: true, fileNames: result.names, roleplay: result });
     } catch (error) {

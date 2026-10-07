@@ -9,13 +9,13 @@ import { clearChatRecoveryState, createCharacterChatTarget, createGroupChatTarge
     rekeyChatRecoveryState, restoreChatSnapshotIfMatches, runChatRecoveryBestEffort } from './chat-recovery.js';
 import { assertRoleplaySourceLocked, assertPendingRoleplayDependencies, captureRoleplayDependenciesLocked, normaliseRoleplayLocator,
     roleplayChatPath, roleplayContentHash, roleplayPathKey, roleplayGroupContentHash, normaliseRoleplayGroupId,
-    assertRoleplayGroupData, readRoleplayEntityLocked, roleplayEntityContent } from './generation/roleplay-source.js';
+    assertRoleplayGroupData, readRoleplayEntityLocked, readRoleplayChatLocked, roleplayEntityContent } from './generation/roleplay-source.js';
 import { assertRoleplayTransactionCapacity, confirmRoleplayAccount, createRoleplayDirectory, readRoleplayFile, readRoleplayPayload,
     roleplayError, roleplayHash, roleplayLease, saveRoleplayAccount, stageRoleplayPayload, withRoleplayAccountLock, ROLEPLAY_LARGEST_PHYSICAL,
     largestRoleplayJournal, roleplayPayloadDirectory, initialiseRoleplayAccount, readRoleplayWriteJournal, roleplayAvatarOwner,
     validRoleplayAvatar, ROLEPLAY_IMPORT_MAX_OUTPUTS, ROLEPLAY_LIFECYCLE_MAX_STEPS, roleplayImportPlan, settleRoleplayAccountReset } from './roleplay-store.js';
 import { applyPreparedBranchMemoryCapture, assertPreparedBranchMemory, prepareBranchMemoryCapture } from './mewmory/prepared-branch.js';
-import { read as readCharacterCard } from './character-card-parser.js';
+import { read as readCharacterCard, write as writeCharacterCard } from './character-card-parser.js';
 import { MAX_ARCHIVE_BYTES, chatMemoryExists, removeChatMemory, removeSourceMemory, renameCharacterMemory, renameChatMemory } from './mewmory/store.js';
 import { createEntityDateAdded, removeEntityDateAdded } from './entity-date-added.js';
 import { getJob } from './jobs/store.js';
@@ -467,18 +467,52 @@ export function reconcileSingleGroupUpdate(scope, operationKey) {
 
 function importRequestHash(scope, input) {
     if (typeof input.operationKey !== 'string' || !input.operationKey || input.operationKey.length > 256
-        || !Buffer.isBuffer(input.bytes) || input.bytes.length > CHAT_LIMIT || !['json', 'jsonl'].includes(input.format)
+        || !Buffer.isBuffer(input.bytes) || input.bytes.length > CHAT_LIMIT || !['json', 'jsonl', 'instance-batch'].includes(input.format)
+        || (input.importAsNewInstance !== undefined && typeof input.importAsNewInstance !== 'boolean')
+        || (input.format === 'instance-batch' && input.importAsNewInstance !== true)
         || typeof input.originalName !== 'string' || !input.originalName || input.originalName.length > 2048
         || typeof input.userName !== 'string' || typeof input.characterName !== 'string') {
         throw roleplayError('ROLEPLAY_INVALID', 'Invalid uploaded chat file or parser options.', 400);
     }
     const target = input.target;
-    if (!target || typeof target.group !== 'boolean'
+    if (!target || typeof target.group !== 'boolean' || (target.group && input.importAsNewInstance)
         || (target.group ? typeof target.groupId !== 'string' || !target.groupId || !target.source
             : !validRoleplayAvatar(target.avatar))) throw roleplayError('ROLEPLAY_INVALID', 'Invalid chat import target.', 400);
     return roleplayHash({ accountId: scope.accountId, dataEpoch: scope.dataEpoch, target,
+        ...(input.importAsNewInstance ? { importAsNewInstance: true } : {}),
         originalName: input.originalName, format: input.format, userName: input.userName, characterName: input.characterName,
         bytes: crypto.createHash('sha256').update(input.bytes).digest('hex'), byteLength: input.bytes.length });
+}
+
+function assertImportedOrigin(lease, records) {
+    const metadata = records[0].chat_metadata;
+    if (!Object.hasOwn(metadata, 'neconyan_roleplay')) return;
+    const marker = metadata.neconyan_roleplay;
+    const { state } = roleplayLease(lease);
+    const resource = marker && state.resources[marker.instanceId];
+    if (!resource || resource.kind !== 'chat' || resource.status !== 'live'
+        || resource.accountId !== state.accountId || resource.dataEpoch !== state.dataEpoch) {
+        throw roleplayError('ROLEPLAY_FOREIGN_SOURCE', 'This chat belongs to another instance. Select Import as new instance to adopt a separate copy.');
+    }
+    const saved = readRoleplayChatLocked(lease, resource.locator);
+    if (!isDeepStrictEqual(marker, { schema: 1, instanceId: marker.instanceId, revision: resource.revision, writeId: resource.head.writeId })
+        || metadata.integrity !== saved.records[0].chat_metadata.integrity
+        || roleplayContentHash(records) !== resource.head.contentHash) throw conflict();
+}
+
+function newImportCharacter(lease, character, timestamp) {
+    const { scope, state } = roleplayLease(lease);
+    // A random owner, not a display name, separates both current and orphaned histories.
+    const instanceId = crypto.randomUUID();
+    const avatar = `Imported-${instanceId}.png`;
+    const locator = { avatar };
+    if (state.paths[roleplayPathKey(state, 'character', locator)]
+        || Object.values(state.resources).some(resource => resource.locator.avatar === avatar)
+        || fs.existsSync(path.join(scope.directories.characters, avatar))
+        || fs.existsSync(path.join(scope.directories.chats, roleplayAvatarOwner(avatar)))) throw conflict();
+    const { data } = roleplayEntityContent('character', avatar, character.bytes, { storage: true });
+    data.create_date = humanizedDateTime(timestamp);
+    return { locator, instanceId, expectedVacancy: 0, physical: null, data };
 }
 
 function importedChatName(scope, targetValue, characterName, timestamp, reserved, state) {
@@ -539,6 +573,15 @@ function prepareImportGroupLink(lease, saved, names, transactionId) {
 function finishedImportState(state, pending, physical = null) {
     const next = JSON.parse(JSON.stringify(state));
     const payloads = {};
+    if (pending.newCharacter) {
+        const card = pending.newCharacter;
+        next.resources[card.instanceId] = { accountId: state.accountId, dataEpoch: state.dataEpoch,
+            kind: 'character', locator: card.locator, status: 'live', revision: 1, busySubmission: null,
+            head: { rawHash: card.after.rawHash, contentHash: card.after.contentHash, writeId: null,
+                physical: physical ?? card.physical } };
+        next.paths[roleplayPathKey(state, 'character', card.locator)] = { generation: 1, instanceId: card.instanceId };
+        payloads[card.after.payload] = card.after.rawHash;
+    }
     for (const [index, output] of pending.outputs.entries()) {
         const currentPhysical = physical ?? output.physical;
         next.resources[output.instanceId] = { accountId: state.accountId, dataEpoch: state.dataEpoch,
@@ -558,6 +601,7 @@ function finishedImportState(state, pending, physical = null) {
     }
     const first = pending.outputs[0];
     const result = { kind: 'import', mode: 'create', instanceId: first.instanceId, revision: 1,
+        ...(pending.newCharacter ? { character: { avatar: pending.newCharacter.locator.avatar, instanceId: pending.newCharacter.instanceId } } : {}),
         rawHash: first.after.rawHash, integrity: first.after.integrity, writeId: pending.id, changed: true,
         names: pending.outputs.map(output => output.locator.chat),
         outputs: pending.outputs.map(output => ({ name: output.locator.chat, instanceId: output.instanceId,
@@ -591,6 +635,8 @@ function prepareChatImport(lease, input, host, convert, requestHash, operationKe
         if (!character) throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'The character owning this imported chat is missing.', 404);
     }
     const timestamp = Date.now();
+    const newCharacter = input.importAsNewInstance ? newImportCharacter(lease, character, timestamp) : null;
+    const destinationTarget = newCharacter ? { group: false, avatar: newCharacter.locator.avatar } : targetValue;
     const converted = convert(input.bytes, { format: input.format, userName: input.userName,
         characterName: input.characterName, timestamp });
     if (!Array.isArray(converted) || converted.length < 1 || converted.length > ROLEPLAY_IMPORT_MAX_OUTPUTS) {
@@ -603,7 +649,18 @@ function prepareChatImport(lease, input, host, convert, requestHash, operationKe
         if (typeof chat !== 'string') throw roleplayError('ROLEPLAY_INVALID', 'A converted history is invalid.', 400);
         const parsed = parseChatJsonl(chat);
         if (parsed.status !== 'ok') throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'The uploaded history is malformed.', 422);
-        const destination = importedChatName(scope, targetValue, input.characterName, timestamp, reserved, state);
+        if (newCharacter) {
+            // Imported messages survive; links to source histories and inherited memory do not.
+            delete parsed.records[0].chat_metadata.main_chat;
+            delete parsed.records[0].chat_metadata.chat_id_hash;
+            for (const message of parsed.records.slice(1)) {
+                const extras = [message.extra, ...(Array.isArray(message.swipe_info) ? message.swipe_info.map(swipe => swipe?.extra) : [])];
+                for (const extra of extras) {
+                    if (extra && typeof extra === 'object') { delete extra.bookmark_link; delete extra.branches; }
+                }
+            }
+        } else assertImportedOrigin(lease, parsed.records);
+        const destination = importedChatName(scope, destinationTarget, input.characterName, timestamp, reserved, state);
         const instanceId = crypto.randomUUID();
         const writeId = crypto.randomUUID();
         const prepared = host.prepare(parsed.records, { marker: { schema: 1, instanceId, revision: 1, writeId } });
@@ -623,10 +680,20 @@ function prepareChatImport(lease, input, host, convert, requestHash, operationKe
     });
     const linked = group && prepareImportGroupLink(lease, group, outputs.map(output => output.locator.chat), id);
     if (linked) staged.push({ name: linked.after.payload, bytes: linked.bytes });
+    if (newCharacter) {
+        newCharacter.data.chat = outputs[0].locator.chat;
+        const bytes = writeCharacterCard(character.bytes, JSON.stringify(newCharacter.data));
+        const { contentHash } = roleplayEntityContent('character', newCharacter.locator.avatar, bytes, { storage: true });
+        newCharacter.after = { revision: 1, rawHash: crypto.createHash('sha256').update(bytes).digest('hex'), contentHash,
+            byteLength: bytes.length, payload: 'import.character.png' };
+        delete newCharacter.data;
+        staged.push({ name: newCharacter.after.payload, bytes });
+    }
     const pending = { schema: 1, kind: 'chat-import', id, operationKeyHash, requestHash, planHash: '',
         accountId: state.accountId, dataEpoch: state.dataEpoch,
         target: targetValue.group ? { group: true, groupId: targetValue.groupId }
             : { group: false, avatar: targetValue.avatar, character: { rawHash: character.rawHash, physical: character.physical } },
+        ...(newCharacter ? { newCharacter } : {}),
         timestamp, outputs, group: linked && { locator: linked.locator, instanceId: linked.instanceId,
             before: linked.before, after: linked.after, appliedPhysical: null },
         phase: 'prepared', reservedBytes: 32 * 1024 };
@@ -708,6 +775,14 @@ function applyPendingChatImport(lease, host) {
         }
     }
     for (const output of pending.outputs) importedOutputFile(lease, output);
+    assertImportTarget(lease, pending);
+    if (pending.newCharacter) {
+        const card = pending.newCharacter;
+        const filename = path.join(scope.directories.characters, card.locator.avatar);
+        const { bytes } = readRoleplayPayload(lease, pending.id, card.after.payload, card.after.rawHash, CHAT_LIMIT);
+        withChatFileLocks([filename], () => publishThroughTemporary(lease, filename, bytes,
+            `${pending.id}-import-character`, null, () => card.physical, physical => { card.physical = physical; }));
+    }
     pending.phase = 'linking';
     saveRoleplayAccount(lease);
     if (pending.group) {

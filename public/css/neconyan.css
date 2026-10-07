@@ -3,6 +3,20 @@
 :root[style*='--mainFontFamily']:has(body.neconyan) { --sb-font-display: var(--mainFontFamily); }
 body.neconyan:not(.sbterm) :is(h1, h2, h3, h4, h5, h6, .sb-topbar-brand, .neconyan-rail-brand) { font-family: var(--sb-font-display); }
 
+/* Import consent stays readable and easy to press as the panel grows. */
+body.neconyan #sb_character_import_panel { flex: 0 0 auto; }
+#sb_character_chat_import_options > label,
+#chat_import_instance_options > label,
+#chat_import_instance_options > summary { min-height: 44px; box-sizing: border-box; }
+body.neconyan #sb_character_chat_import_action {
+    border-color: var(--neco-ginger);
+    background: color-mix(in srgb, var(--neco-ginger) 8%, var(--neco-surface));
+    color: var(--neco-ink);
+}
+body.neconyan #sb_character_chat_import_action:hover {
+    background: color-mix(in srgb, var(--neco-ginger-hover) 14%, var(--neco-surface));
+}
+
 /* Bulk selection must survive Shell Style card and hover backgrounds without resizing rows. */
 body.neconyan:not(.sbterm) #right-nav-panel.openDrawer #rm_print_characters_block.group_overlay_mode_select > :is(.character_select, .group_select).flex-container.character_selected {
     background: color-mix(in srgb, var(--neco-ginger) 28%, var(--neco-surface));

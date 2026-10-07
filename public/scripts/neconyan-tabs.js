@@ -28,7 +28,7 @@ import { escapeRegex } from './util/escape-regex.js';
 import { hasChangedAttributeValue } from './util/attribute-mutations.js';
 import { copyText, flashHighlight, showFontAwesomePicker } from './utils.js';
 import { characters, chat, flushCharacterSaveDebounced, flushPendingChatSavesForNavigation, getChatGeneration, getCurrentChatId, getGeneratingModel, getOneCharacter, getShortModelName, getThumbnailUrl, is_send_press, parseAvatarSource, refreshCsrfToken, saveSettingsDebounced, scrollReopenedChatToBottom, selectCharacterById, selectRightMenuWithAnimation, this_chid } from '../script.js';
-import { is_group_generating } from './group-chats.js';
+import { is_group_generating, selected_group } from './group-chats.js';
 import { eventSource, event_types } from './events.js';
 import { extensionNames, findExtension, getExtensionManifest, getExtensionType } from './extensions.js';
 import { getCurrentUserHandle } from './user.js';
@@ -503,7 +503,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261007-chat-writing';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261008-import-instance';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -9750,6 +9750,13 @@ function setCharacterImportPanelVisible(visible) {
     const host = document.getElementById('sb_character_import_panel');
 
     if (host instanceof HTMLElement) {
+        const consent = document.getElementById('sb_character_import_new_instance');
+        if (consent instanceof HTMLInputElement && (host.hidden || !visible)) consent.checked = false;
+        const selected = !selected_group && characters[this_chid];
+        const target = document.getElementById('sb_character_chat_import_target');
+        if (target) target.textContent = selected ? t`Selected character: ${selected.name}` : t`Select or import a character first.`;
+        const action = document.getElementById('sb_character_chat_import_action');
+        if (action instanceof HTMLButtonElement) action.disabled = !selected;
         host.hidden = !visible;
         host.setAttribute('aria-hidden', String(!visible));
     }

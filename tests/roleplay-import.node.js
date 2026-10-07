@@ -6,8 +6,8 @@ import express from 'express';
 import multer from 'multer';
 import { fixture, memoryParent } from './roleplay-transactions-fixture.js';
 import { convertImportedChatFile, roleplayNativeHost, router as chatRouter } from '../src/endpoints/chats.js';
-import { commitSingleChatImport, reconcilePendingChatWrite } from '../src/roleplay-lifecycle.js';
-import { readRoleplayEntity } from '../src/generation/roleplay-source.js';
+import { commitSingleChatImport, commitSingleChatWrite, reconcilePendingChatWrite } from '../src/roleplay-lifecycle.js';
+import { assertRoleplaySource, captureRoleplaySource, readRoleplayChat, readRoleplayEntity } from '../src/generation/roleplay-source.js';
 import { readRoleplayAccount, readRoleplayFile } from '../src/roleplay-store.js';
 import { canonicalMemoryPaths } from '../src/mewmory/prepared-branch.js';
 
@@ -47,11 +47,10 @@ test('one native upload creates one recorded chat and replays its receipt', t =>
     assert.equal(fs.existsSync(filename), false);
 });
 
-test('imported native marker is replaced, and long Unicode names avoid occupied destinations', t => {
+test('long Unicode names avoid occupied destinations', t => {
     const f = fixture(t, false, 'import-collisions');
     t.mock.method(Date, 'now', () => 1760000000000);
     const records = structuredClone(f.records);
-    records[0].chat_metadata.neconyan_roleplay = { schema: 1, instanceId: 'foreign-instance', revision: 99, writeId: 'foreign-write' };
     const characterName = '猫'.repeat(200);
     const first = commitSingleChatImport(f.scope, input(f, { characterName,
         bytes: Buffer.from(records.map(JSON.stringify).join('\n')) }), roleplayNativeHost, convertImportedChatFile);
@@ -65,6 +64,124 @@ test('imported native marker is replaced, and long Unicode names avoid occupied 
         assert.equal(header.chat_metadata.neconyan_roleplay.instanceId, result.instanceId);
         assert.notEqual(header.chat_metadata.neconyan_roleplay.instanceId, 'foreign-instance');
     }
+});
+
+test('foreign origins require explicit adoption, which isolates every selected history and protects subsequent writes', t => {
+    const f = fixture(t, false, 'adopt-foreign');
+    const originalCharacter = readRoleplayEntity(f.scope, 'character', 'Nova.png', { storage: true });
+    const originalChat = readRoleplayFile(f.filename);
+    const parent = memoryParent(f);
+    const records = structuredClone(f.records);
+    records[0].chat_metadata = { neconyan_roleplay: { schema: 1, instanceId: 'foreign-instance', revision: 90, writeId: 'foreign-write' },
+        integrity: 'foreign-seal', main_chat: 'Parent', chat_id_hash: 'source-hash' };
+    records[1].extra.bookmark_link = 'Source checkpoint';
+    records[2].extra = { branches: ['Source branch'], reasoning: 'keep this' };
+    records[2].swipe_info[0].extra.bookmark_link = 'Source checkpoint';
+    records[2].swipe_info[0].extra.branches = ['Source branch'];
+    const bytes = Buffer.from(records.map(JSON.stringify).join('\n'));
+    assert.throws(() => commitSingleChatImport(f.scope, input(f, { bytes }), roleplayNativeHost, convertImportedChatFile),
+        { code: 'ROLEPLAY_FOREIGN_SOURCE', roleplayImportUnaccepted: true });
+    assert.equal(readRoleplayAccount(f.scope).pending, null);
+    assert.deepEqual(fs.readdirSync(f.scope.directories.characters), ['Nova.png']);
+    const request = input(f, { importAsNewInstance: true, format: 'instance-batch', bytes: Buffer.from(JSON.stringify([
+        { format: 'jsonl', content: bytes.toString() }, { format: 'jsonl', content: bytes.toString() },
+    ])) });
+    const result = commitSingleChatImport(f.scope, request, roleplayNativeHost, convertImportedChatFile);
+    assert.notEqual(result.character.avatar, 'Nova.png');
+    assert.notEqual(result.character.instanceId, originalCharacter.instanceId);
+    assert.equal(readRoleplayEntity(f.scope, 'character', result.character.avatar).instanceId, result.character.instanceId);
+    assert.equal(result.names.length, 2);
+    assert.notEqual(result.outputs[0].instanceId, result.outputs[1].instanceId);
+    for (const [index, chat] of result.names.entries()) {
+        const locator = { group: false, avatar: result.character.avatar, chat };
+        const loaded = readRoleplayChat(f.scope, locator);
+        assert.equal(loaded.records.length, records.length);
+        assert.equal(loaded.instanceId, result.outputs[index].instanceId);
+        assert.notEqual(loaded.records[0].chat_metadata.integrity, 'foreign-seal');
+        assert.equal(loaded.records[0].chat_metadata.main_chat, undefined);
+        assert.equal(loaded.records[0].chat_metadata.chat_id_hash, undefined);
+        assert.equal(loaded.records[1].extra.bookmark_link, undefined);
+        assert.equal(loaded.records[2].extra.branches, undefined);
+        assert.equal(loaded.records[2].extra.reasoning, 'keep this');
+        assert.deepEqual(loaded.records[2].swipe_info[0].extra, { reasoning: 'hidden' });
+        assert.deepEqual(loaded.records[2].swipes, records[2].swipes);
+        const source = captureRoleplaySource(f.scope, { locator });
+        assertRoleplaySource(f.scope, source);
+        const updated = [...loaded.records, { name: 'Nova', mes: 'A native reply', is_user: false }];
+        commitSingleChatWrite(f.scope, { mode: 'update', operationKey: `native-${index}`, source, records: updated }, roleplayNativeHost);
+        assert.throws(() => assertRoleplaySource(f.scope, source), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+        const stale = { mode: 'update', operationKey: `ghost-${index}`, source, records: records.slice(0, 2) };
+        assert.throws(() => commitSingleChatWrite(f.scope, stale, roleplayNativeHost));
+        assert.equal(readRoleplayChat(f.scope, locator).records.length, updated.length);
+        assert.equal(fs.existsSync(canonicalMemoryPaths(f.scope.directories, locator).archive), false);
+    }
+    assert.deepEqual(readRoleplayFile(f.filename), originalChat);
+    assert.equal(readRoleplayEntity(f.scope, 'character', 'Nova.png').rawHash, originalCharacter.rawHash);
+    assert.deepEqual(JSON.parse(fs.readFileSync(parent.paths.archive, 'utf8')), parent.state);
+    assert.deepEqual(commitSingleChatImport(f.scope, request, roleplayNativeHost, convertImportedChatFile), result);
+    assert.throws(() => commitSingleChatImport(f.scope, { ...request, importAsNewInstance: false }, roleplayNativeHost, convertImportedChatFile));
+});
+
+test('strict import accepts only a current local origin and seal, without weakening normal reads', t => {
+    const f = fixture(t, false, 'import-strict-origin');
+    commitSingleChatWrite(f.scope, f.input(), roleplayNativeHost);
+    const bytes = fs.readFileSync(f.filename);
+    commitSingleChatImport(f.scope, input(f, { bytes }), roleplayNativeHost, convertImportedChatFile);
+    for (const field of ['integrity', 'revision', 'message']) {
+        const records = bytes.toString().trim().split('\n').map(JSON.parse);
+        if (field === 'integrity') records[0].chat_metadata.integrity = 'wrong';
+        if (field === 'revision') records[0].chat_metadata.neconyan_roleplay.revision++;
+        if (field === 'message') records[1].mes = 'Changed outside this instance';
+        assert.throws(() => commitSingleChatImport(f.scope, input(f, { operationKey: field,
+            bytes: Buffer.from(records.map(JSON.stringify).join('\n')) }), roleplayNativeHost, convertImportedChatFile),
+        { code: 'ROLEPLAY_SOURCE_CHANGED' });
+    }
+    const foreign = structuredClone(f.records);
+    foreign[0].chat_metadata.neconyan_roleplay = { schema: 1, instanceId: 'foreign-instance', revision: 1, writeId: 'foreign-write' };
+    fs.writeFileSync(path.join(path.dirname(f.filename), 'Foreign.jsonl'), foreign.map(JSON.stringify).join('\n'));
+    assert.throws(() => readRoleplayChat(f.scope, { ...f.locator, chat: 'Foreign' }), { code: 'ROLEPLAY_FOREIGN_SOURCE' });
+});
+
+test('interrupted adoption resumes one character and refuses an occupied character destination', t => {
+    for (const occupy of [false, true]) {
+        const f = fixture(t, false, `adopt-recovery-${occupy}`);
+        const request = input(f, { importAsNewInstance: true, format: 'instance-batch', bytes: Buffer.from(JSON.stringify([
+            { format: 'jsonl', content: input(f).bytes.toString() }, { format: 'jsonl', content: input(f).bytes.toString() },
+        ])) });
+        let count = 0;
+        assert.throws(() => commitSingleChatImport(f.scope, request, { ...roleplayNativeHost, publish(args) {
+            if (++count === 2) throw new Error('interrupted');
+            return roleplayNativeHost.publish(args);
+        } }, convertImportedChatFile), /interrupted/);
+        const pending = readRoleplayAccount(f.scope).pending;
+        const filename = path.join(f.scope.directories.characters, pending.newCharacter.locator.avatar);
+        assert.equal(fs.existsSync(filename), false);
+        if (occupy) {
+            fs.writeFileSync(filename, 'Another card');
+            assert.throws(() => reconcilePendingChatWrite(f.scope, roleplayNativeHost), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+            assert.equal(fs.readFileSync(filename, 'utf8'), 'Another card');
+        } else {
+            const result = reconcilePendingChatWrite(f.scope, roleplayNativeHost);
+            assert.equal(result.character.instanceId, pending.newCharacter.instanceId);
+            assert.equal(result.outputs[0].instanceId, pending.outputs[0].instanceId);
+            assert.equal(fs.readdirSync(f.scope.directories.characters).length, 2);
+            assert.deepEqual(commitSingleChatImport(f.scope, request, roleplayNativeHost, convertImportedChatFile), result);
+        }
+    }
+});
+
+test('adoption requires a boolean opt-in and rejects malformed batches before publication', t => {
+    const f = fixture(t, false, 'adopt-invalid');
+    for (const importAsNewInstance of ['true', 1, null]) {
+        assert.throws(() => commitSingleChatImport(f.scope, input(f, { importAsNewInstance }), roleplayNativeHost, convertImportedChatFile),
+            { code: 'ROLEPLAY_INVALID' });
+    }
+    const request = input(f, { importAsNewInstance: true, format: 'instance-batch', bytes: Buffer.from(JSON.stringify([
+        { format: 'jsonl', content: input(f).bytes.toString() }, { format: 'jsonl', content: 'broken' },
+    ])) });
+    assert.throws(() => commitSingleChatImport(f.scope, request, roleplayNativeHost, convertImportedChatFile));
+    assert.deepEqual(fs.readdirSync(f.scope.directories.characters), ['Nova.png']);
+    assert.equal(readRoleplayAccount(f.scope).pending, null);
 });
 
 test('a character avatar with an embedded .png uses its exact existing chat folder mapping', t => {
