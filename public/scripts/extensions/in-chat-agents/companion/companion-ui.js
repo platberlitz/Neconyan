@@ -6,6 +6,7 @@ import { Popup, POPUP_RESULT, POPUP_TYPE } from '../../../popup.js';
 import { escapeHtml } from '../../../utils.js';
 import { attachTextareaFullscreen } from '../textarea-fullscreen.js';
 import { withReadOnlyVariables } from '../../../variable-read-only.js';
+import { stripTrackerMandatoryMarkers } from '../../../tracker-mandatory-marker.js';
 import { captureMessageTargetState, isMessageTargetCurrent } from '../agent-runner.js';
 import { replaceCompanionView, runCompanionViewAction } from './view-state.js';
 import {
@@ -250,7 +251,7 @@ export function formatCompanionContent(agentId, result = {}, message = null, sty
         return '<div class="ica--companion-empty">No note returned.</div>';
     }
 
-    const content = applyAgentRegexToCompanionContent(agentId, rawContent, message);
+    const content = applyAgentRegexToCompanionContent(agentId, stripTrackerMandatoryMarkers(rawContent), message);
     const resolved = resolveCompanionContentMacros(content, message);
     const sanitizeOptions = { prefix: stylePrefix };
 
