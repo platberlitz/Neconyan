@@ -93,7 +93,7 @@ describe('compact page introductions', () => {
     test('all tool page intros use the shared control with a header option', () => {
         const read = file => readFileSync(new URL('../public/' + file, import.meta.url), 'utf8');
         expect(read('scripts/neconyan-tool-tour.js')).toContain('createPageIntro(page.key, t([page.kicker]), t([page.description]), launch, { header: Boolean(headerHeading) })');
-        expect(read('css/neconyan-tool-pages.css')).toContain('grid-template-columns: minmax(0, 1fr) auto');
+        expect(read('css/neconyan-tool-pages.css')).toContain('grid-template-columns: minmax(0, max-content) auto minmax(0, 1fr)');
         expect(read('css/neconyan-tool-pages.css')).toContain('.neconyan-tool-page-copy[hidden]');
     });
 });

@@ -356,14 +356,24 @@ body.neconyan .sb-shell-header .sb-shell-subtitle { color: var(--neco-muted); fo
 body.neconyan .neconyan-shell-page-intro:empty { display: none; }
 body.neconyan .sb-shell-header:has(.neconyan-page-intro-header) {
     --neco-shell-close-top: 26px;
+    display: grid;
+    grid-template-columns: fit-content(calc(100% - 90px)) minmax(0, 1fr);
     flex-shrink: 0;
-    gap: 6px;
+    gap: 6px 12px;
 }
 body.neconyan .sb-shell-header:has(.neconyan-page-intro-header) > :is(.sb-shell-subtitle, .sb-shell-description) { display: none; }
-body.neconyan .sb-shell-header:has(.neconyan-page-intro-header) > .sb-shell-title { min-height: 34px; padding-inline-end: 96px; }
-body.neconyan .sb-shell-header .neconyan-shell-page-intro { width: 100%; min-width: 0; }
+body.neconyan .sb-shell-header:has(.neconyan-page-intro-header) > .sb-shell-title { grid-area: 1 / 1; align-self: center; align-content: center; min-height: 34px; padding: 0; }
+body.neconyan .sb-shell-header .neconyan-shell-page-intro {
+    display: grid;
+    grid-area: 1 / 1 / 3 / -1;
+    grid-template-columns: subgrid;
+    grid-template-rows: subgrid;
+    min-width: 0;
+}
 body.neconyan .sb-shell-header .neconyan-page-intro-header {
-    display: block;
+    grid-area: 1 / 1 / 3 / -1;
+    grid-template-columns: subgrid;
+    grid-template-rows: subgrid;
     margin: 0;
     padding: 0;
     border: 0;
@@ -371,14 +381,13 @@ body.neconyan .sb-shell-header .neconyan-page-intro-header {
     background: none;
     box-shadow: none;
 }
-body.neconyan .sb-shell-header .neconyan-page-intro-header > .neconyan-tool-page-copy { grid-column: auto; font-size: 12px; }
-/* Tour sits on the title row beside the close button, so the blurb gets the full width. */
+body.neconyan .sb-shell-header .neconyan-page-intro-header > .neconyan-tool-page-copy { grid-area: 2 / 1 / 3 / -1; font-size: 12px; }
+/* Share the title's column sizing so Tour follows the text at any panel width. */
 body.neconyan .sb-shell-header .neconyan-page-intro-header > .neconyan-tool-tour-button {
-    position: absolute;
-    top: var(--neco-shell-close-top, 26px);
-    right: 66px;
+    position: relative;
+    grid-area: 1 / 2;
+    justify-self: start;
     margin: 0;
-    translate: 0 -50%;
 }
 body.neconyan #right-nav-panel :is(.sb-character-editor-identity, .sb-character-editor-field-box, .sb-character-creator-notes-preview, .sb-character-editor-subtabs) {
     background: transparent; box-shadow: none; border-color: var(--neco-border); border-radius: 6px;
