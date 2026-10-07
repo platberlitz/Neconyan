@@ -222,12 +222,12 @@ test.describe('Agents navigation with an open chat', () => {
                     if (width < 769) await library.locator('.ica--template-category-select').selectOption('content');
                     else await library.locator('.ica--template-pill[data-category="content"]').click();
                     await expect(library.locator('.ica--library-kits')).toBeHidden();
-                    await library.locator('.ica--template-search').fill('Prose Polisher');
-                    const polisherCard = library.locator('.ica--template-card[data-id="tpl-grounded-prose-polisher"]');
-                    await expect(polisherCard).toHaveCount(1);
-                    await expect(polisherCard.locator('.ica--template-card-name')).toHaveText('Prose Polisher');
+                    await library.locator('.ica--template-search').fill('Grounded Prose');
+                    const groundedProseCard = library.locator('.ica--template-card[data-id="tpl-grounded-prose"]');
+                    await expect(groundedProseCard).toHaveCount(1);
+                    await expect(groundedProseCard.locator('.ica--template-card-name')).toHaveText('Grounded Prose');
                     await capture(page, info, 'library');
-                    const templateId = 'tpl-grounded-prose-polisher';
+                    const templateId = 'tpl-grounded-prose';
                     let addedPayload;
                     await page.route('**/api/in-chat-agents/save', async route => {
                         const payload = route.request().postDataJSON();
@@ -236,19 +236,14 @@ test.describe('Agents navigation with an open chat', () => {
                         return route.fulfill({ status: 200, body: '' });
                     });
                     const added = page.waitForResponse(response => response.url().endsWith('/api/in-chat-agents/save') && response.request().postDataJSON()?.sourceTemplateId === templateId);
-                    await polisherCard.locator('.ica--template-add').click();
+                    await groundedProseCard.locator('.ica--template-add').click();
                     const addedResponse = await added;
                     expect(addedResponse.ok()).toBe(true);
                     expect(addedPayload).toEqual(expect.objectContaining({
-                        name: 'Prose Polisher',
+                        name: 'Grounded Prose',
                         sourceTemplateId: templateId,
                         enabled: false,
-                        phase: 'post',
-                        postProcess: expect.objectContaining({
-                            promptTransformEnabled: true,
-                            promptTransformMode: 'rewrite',
-                            promptTransformMaxTokens: 8192,
-                        }),
+                        phase: 'pre',
                     }));
                     createdIds.add(addedResponse.request().postDataJSON().id);
                     await page.unroute('**/api/in-chat-agents/save');

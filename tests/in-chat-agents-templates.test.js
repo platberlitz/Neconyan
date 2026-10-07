@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { parse } from 'acorn';
-import { createHash } from 'node:crypto';
 import { describe, expect, jest, test } from '@jest/globals';
 
 await jest.unstable_mockModule('../public/scripts/utils.js', () => ({
@@ -37,7 +36,6 @@ const sourceFilenames = [
     'entanglement-tracker.json',
     'event-tracker.json',
     'four-winds.json',
-    'grounded-prose-polisher.json',
     'improbable-effects.json',
     'item-tracker.json',
     'lorebook-scout-companion.json',
@@ -246,36 +244,6 @@ describe('in-chat agent bundled templates', () => {
             const catalogTemplate = catalog.find(template => template.id === source.id);
             expect(catalogTemplate).toEqual(source);
         }
-    });
-
-    test('ships Prose Polisher with the exact Grounded Prose Rules rewrite configuration', () => {
-        const template = readTemplate('grounded-prose-polisher.json');
-        const preamble = 'Edit the generated reply using the rules below. Preserve narrative facts, meaning, voice, viewpoint, and formatting. Return only the rewritten text.';
-        expect(template.prompt.startsWith(`${preamble}\n\n`)).toBe(true);
-        const rules = template.prompt.slice(`${preamble}\n\n`.length);
-
-        expect(createHash('sha256').update(rules).digest('hex')).toBe('c067c74ef28967ce4fa1bf537d05c67718172b6b0a158a18b87116d8855e9fa9');
-        expect(template).toEqual(expect.objectContaining({
-            id: 'tpl-grounded-prose-polisher',
-            name: 'Prose Polisher',
-            description: 'Edit generated replies using the Grounded Prose Rules',
-            category: 'content',
-            subcategory: 'prose-quality',
-            author: 'Purachina',
-            version: 1,
-            enabled: false,
-            phase: 'post',
-        }));
-        expect(template.postProcess).toEqual(expect.objectContaining({
-            promptTransformEnabled: true,
-            promptTransformShowNotifications: true,
-            promptTransformMode: 'rewrite',
-            promptTransformMaxTokens: 8192,
-        }));
-        expect(template.conditions).toEqual(expect.objectContaining({
-            generationTypes: ['normal', 'continue', 'impersonate'],
-            runOnImpersonate: true,
-        }));
     });
 
     test('tracker extractors compile and retain complete canonical blocks', () => {
@@ -505,7 +473,9 @@ describe('in-chat agent bundled templates', () => {
     test('does not ship retired writing helpers in the catalog', () => {
         const catalog = readTemplate('index.json');
         expect(catalog.find(template => template.id === 'tpl-prose-polisher')).toBeUndefined();
+        expect(catalog.find(template => template.id === 'tpl-grounded-prose-polisher')).toBeUndefined();
         expect(catalog.find(template => template.id === 'tpl-npc-motivator')).toBeUndefined();
+        expect(fs.existsSync(new URL('grounded-prose-polisher.json', templateDir))).toBe(false);
     });
 
     test('bundles companion templates as sidecar execution agents', async () => {

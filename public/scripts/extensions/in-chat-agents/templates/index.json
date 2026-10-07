@@ -576,55 +576,6 @@
     }
   },
   {
-    "id": "tpl-grounded-prose-polisher",
-    "name": "Prose Polisher",
-    "description": "Edit generated replies using the Grounded Prose Rules",
-    "icon": "",
-    "category": "content",
-    "subcategory": "prose-quality",
-    "tags": [
-      "prose",
-      "editing",
-      "grounded"
-    ],
-    "version": 1,
-    "author": "Purachina",
-    "prompt": "Edit the generated reply using the rules below. Preserve narrative facts, meaning, voice, viewpoint, and formatting. Return only the rewritten text.\n\n# Grounded Prose Rules\nWrite immediate, concrete prose. Show observable action, object interaction, realistic human sound, and sensory details tied to physical sources. Avoid abstract emotion, generic body-language clichés, stock metaphors, and negative-framed phrasing.\n\n## Core\n\n- State what happens directly through positive physical action.\n- Show reactions through character-specific gestures, habits, posture, grip, distance, balance, object handling, or micro-movements.\n- Use realistic human vocalization: breath, throat-clearing, quiet laughter, mutters, broken phrases, coughs, voice shifts.\n- Ground setting details in material evidence: residue, light, layout, wear, temperature, texture, odor source, object placement.\n- Replace any banned phrase, cliché, vague emotion, generic body reaction, or abstract metaphor with one concrete observable detail.\n\n## Avoid; Never write any of these\n\n### Constructions and tropes\n- `not X`, `not X but Y`, `not quite X`, litotes, negative parallelisms\n- `doesn't just X but Y`, `doesn't X; Y`, `they don't X`\n- `say that again`, `are you sure`, `that does it`, `that lands`, `not a question`, `really looks at`\n- `like a physical blow`, `like a stone into still water`, predator/prey metaphors\n- `a promise and/or a threat`, `either X, Y, or both`\n- rule of threes, word/number counting emphasis\n- `A beat`, `A pause`, `starts. stops.`, `somewhere, X...`\n- `deletes it, types it, deletes it again`\n- architectural metaphors outside literal architecture\n- flat tone comparisons to weather/groceries\n- overexplained tone fragments like `Flat. Factual.`\n- `Your face is doing a thing`\n- `no heat behind it`, `no venom behind it`\n- excessive em dashes\n\n### Echoing\n- X repeats, tasting the word (or any variations of echoing and parroting)\n- \"(verbatim previous dialogue)?\"\n\n### Somatic tics\n- jaw movement/tightening/working/shifting\n- mouth open-close cycling, mouths opening and closing (strictly only use this if they are literally a fish)\n- breath catching\n- knuckle whitening/pale knuckles\n- burning cheeks\n\n### Scents\n- ozone, sandalwood, cedar, cardamom\n- `something distinctly X`\n- `The room smells like X`\n- vague scent phrasing like `something X`, `maybe X`\n\n### Nicknames\n- `Gremlin`\n- `Goblin`\n\n### Human vocalizations (exception: anthros, demihumans, furries, animals)\n- purring\n- chirping\n- growling\n\n### Audio formulas\n- `between an X and a Y`\n- `half X, half Y`\n- `makes a/an X sound`\n- `strangled sound`\n- `teakettle boiling`\n\n### Environmental tropes\n- `dust motes`\n- `metallic tang of X`\n\n### Romantic/possessive shorthand\n- `Mine`\n- possessive romantic shorthand\n- forehead-touching after kisses\n\n## Use Instead\n\n- Character-specific physical action\n- Posture, grip, distance, gaze, or balance changes\n- Interaction with nearby objects\n- Human voice/breath/throat events\n- Sensory details with clear sources\n- Concrete environmental consequences\n- Care, memory, protection, practical help, or shared-space gestures for affection",
-    "phase": "post",
-    "injection": {
-      "position": 1,
-      "depth": 1,
-      "role": 0,
-      "order": 100,
-      "scan": false
-    },
-    "postProcess": {
-      "enabled": false,
-      "type": "regex",
-      "regexFind": "",
-      "regexReplace": "",
-      "regexFlags": "g",
-      "appendText": "",
-      "extractPattern": "",
-      "extractVariable": "",
-      "promptTransformEnabled": true,
-      "promptTransformShowNotifications": true,
-      "promptTransformMode": "rewrite",
-      "promptTransformMaxTokens": 8192
-    },
-    "enabled": false,
-    "conditions": {
-      "triggerKeywords": [],
-      "triggerProbability": 100,
-      "generationTypes": [
-        "normal",
-        "continue",
-        "impersonate"
-      ],
-      "runOnImpersonate": true
-    }
-  },
-  {
     "id": "tpl-dialogue-humaniser",
     "name": "Dialogue Humaniser",
     "description": "Rewrite stilted or nonsensical dialogue so every line sounds like a real person talking",

@@ -621,6 +621,7 @@ const REMOVED_BUNDLED_TEMPLATE_IDS = new Set([
     'tpl-director-core',
     'tpl-nsfw-mode',
     'tpl-prose-polisher',
+    'tpl-grounded-prose-polisher',
     'tpl-npc-motivator',
     'tpl-unscheduled-phenomena',
 ]);
