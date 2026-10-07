@@ -100,6 +100,7 @@ async function installFailClosedRoutes(page, { light = false, delayLogs = false,
 
     let logsRequests = 0;
     let statusRequests = 0;
+    let failNextStatus = false;
     await page.route('**/api/server-admin/**', async route => {
         const endpoint = new URL(route.request().url()).pathname;
         if (endpoint === '/api/server-admin/status') {
@@ -109,7 +110,8 @@ async function installFailClosedRoutes(page, { light = false, delayLogs = false,
                 return;
             }
             statusRequests++;
-            if ((serverMode === 'retry' && statusRequests === 2) || (serverMode === 'initial-503' && statusRequests === 1)) {
+            if ((serverMode === 'retry' && failNextStatus) || (serverMode === 'initial-503' && statusRequests === 1)) {
+                failNextStatus = false;
                 await route.fulfill({ status: 503, json: { error: 'Server status is temporarily unavailable.' } });
                 return;
             }
@@ -165,7 +167,8 @@ async function installFailClosedRoutes(page, { light = false, delayLogs = false,
         throw new Error(`Unexpected server-admin request: ${endpoint}`);
     });
 
-    return () => logsRequests;
+    // The background update check can also ask for status, so the retry test marks the one request that fails.
+    return Object.assign(() => logsRequests, { failNextStatus: () => { failNextStatus = true; } });
 }
 
 async function assertSurfaceGeometry(page, surface, coarse) {
@@ -404,13 +407,14 @@ test('Pause Live keeps an in-flight response from rewriting selected output', as
 });
 
 test('Server disables stale Update authority after a failed status refresh and recovers', async ({ page }) => {
-    await installFailClosedRoutes(page, { serverMode: 'retry' });
+    const routes = await installFailClosedRoutes(page, { serverMode: 'retry' });
     await openSettings(page);
     await openServer(page);
     const panel = page.locator('#sb-shell-panel-right-server');
     const update = panel.getByRole('button', { name: 'Update & Restart', exact: true });
     const refresh = panel.getByRole('button', { name: 'Check for updates', exact: true });
     await expect(update).toBeEnabled();
+    routes.failNextStatus();
     await refresh.click();
     await expect(panel.locator('.sb-server-pill')).toHaveText('Unavailable');
     await expect(update).toBeDisabled();
