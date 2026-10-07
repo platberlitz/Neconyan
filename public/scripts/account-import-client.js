@@ -15,23 +15,24 @@ export function createAccountImportClient({ client, owner, storage, upload, uuid
         let pending = raw ? JSON.parse(raw) : null;
         const identity = file && { name: file.name, size: file.size, lastModified: file.lastModified };
         if (pending && (typeof pending.key !== 'string' || !pending.key || !pending.file)) throw new Error('The retained ZIP request is invalid. It has not been replaced.');
-        if (pending && identity && JSON.stringify(pending.file) !== JSON.stringify(identity)) throw new Error('A different ZIP upload is still awaiting its saved result. Resume that import first.');
         if (!pending) {
             if (!file) throw new Error('Choose the ZIP to import.');
             pending = { key: uuid(), file: identity };
             storage.setItem(storageKey, JSON.stringify(pending));
         }
-        if (!pending.inputId) {
-            let saved;
-            try { saved = await client.request(`/api/operations/import-input/${encodeURIComponent(pending.key)}`); } catch (error) { if (error.status !== 404) throw error; }
-            if (!saved) {
-                if (!file) throw new Error('Select the original ZIP to finish its retained upload.');
-                saved = await upload(pending.key, file);
-            }
-            if (typeof saved.inputId !== 'string' || !/^[a-f0-9]{64}$/.test(saved.inputId)) throw new Error('The uploaded ZIP receipt is unreadable. The request has been retained.');
-            pending.inputId = saved.inputId;
-            storage.setItem(storageKey, JSON.stringify(pending));
+        // Browser storage outlives a reinstall. Only the current server can confirm a retained source.
+        let saved;
+        try { saved = await client.request(`/api/operations/import-input/${encodeURIComponent(pending.key)}`); } catch (error) { if (error.status !== 404) throw error; }
+        if (!saved || (identity && JSON.stringify(pending.file) !== JSON.stringify(identity))) {
+            if (!file) throw new Error('Select the original ZIP to finish its retained upload.');
+            // Android may change file metadata on reselection. Reuse the key so the server checks
+            // the actual bytes, including an incomplete upload, before accepting a replacement.
+            saved = await upload(pending.key, file);
         }
+        if (typeof saved.inputId !== 'string' || !/^[a-f0-9]{64}$/.test(saved.inputId)) throw new Error('The uploaded ZIP receipt is unreadable. The request has been retained.');
+        pending.inputId = saved.inputId;
+        if (identity) pending.file = identity;
+        storage.setItem(storageKey, JSON.stringify(pending));
         return pending.inputId;
     }
     return async (input, { file, prepareInput = value => value, ...options } = {}) => {

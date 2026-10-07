@@ -79,6 +79,59 @@ async function closeAll(page, browser) {
 
 for (const phone of [false, true]) {
     const viewport = phone ? 'phone' : 'desktop';
+    for (const retained of [false, true]) {
+        test(`${viewport} ZIP recovery handles ${retained ? 'changed picker metadata' : 'old browser storage after reinstall'}`, async ({ app }) => {
+            const account = await app.account({ phone });
+            const { page, card } = await showImporter(account);
+            const archive = archiver('zip'); const chunks = [];
+            archive.on('data', chunk => chunks.push(chunk));
+            archive.append('Recovered backup attachment', { name: 'default-user/user/files/recovered.txt' });
+            // Keep the completion report open instead of automatically reloading the page.
+            archive.append('Invalid card', { name: 'default-user/characters/Damaged.png' });
+            await archive.finalize();
+            const buffer = Buffer.concat(chunks);
+            const key = randomUUID();
+            let inputId = 'b'.repeat(64);
+            if (retained) {
+                const response = await account.context.request.post('/api/operations/import-input', { headers: account.headers,
+                    multipart: { key, avatar: { name: 'backup.zip', mimeType: 'application/zip', buffer } } });
+                expect(response.ok(), await response.text()).toBe(true);
+                inputId = (await response.json()).inputId;
+            }
+            const pending = { key, inputId, file: { name: retained ? 'backup.zip' : 'old-backup.zip', size: buffer.length, lastModified: 1 } };
+            await page.evaluate(value => localStorage.setItem('neconyan-account-import-upload:default-user', JSON.stringify(value)), pending);
+            const chooser = card.getByLabel('Choose a SillyTavern backup ZIP');
+            const note = card.locator('.sb-import-note');
+            if (retained) {
+                // A genuinely different file must still be refused, with the old upload intact.
+                await chooser.setInputFiles({ name: 'different.zip', mimeType: 'application/zip', buffer: Buffer.from('Different bytes') });
+                await expect(note).toContainText('This import key already belongs to a different upload. The earlier upload was kept.');
+                expect(await page.evaluate(() => JSON.parse(localStorage.getItem('neconyan-account-import-upload:default-user')))).toEqual(pending);
+            }
+            const submissions = [];
+            page.on('request', request => {
+                if (request.url().endsWith('/api/operations/submit') && request.postDataJSON()?.kind === 'account-import') submissions.push(request.postDataJSON());
+            });
+            await chooser.setInputFiles({ name: 'backup.zip', mimeType: 'application/zip', buffer });
+            await expect(note).toContainText(/Backup ZIP imported\.|A different ZIP upload is still awaiting/, { timeout: 60000 });
+            await note.scrollIntoViewIfNeeded();
+            const geometry = await note.evaluate(element => ({ width: element.clientWidth, scrollWidth: element.scrollWidth,
+                right: element.getBoundingClientRect().right, viewport: window.innerWidth, display: getComputedStyle(element).display }));
+            expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.width + 1);
+            expect(geometry.right).toBeLessThanOrEqual(geometry.viewport);
+            expect(geometry.display).not.toBe('none');
+            const screenshot = path.resolve('..', 'screenshots', `${viewport}-import-${retained ? 'reselection' : 'reinstall'}.png`);
+            await fs.mkdir(path.dirname(screenshot), { recursive: true });
+            await page.screenshot({ path: screenshot });
+            await test.info().attach(`${viewport}-import-recovery`, { path: screenshot, contentType: 'image/png' });
+            await expect(note).toContainText('Backup ZIP imported.');
+            expect(submissions).toHaveLength(1);
+            expect(submissions[0].inputId === inputId).toBe(retained);
+            expect(await fs.readFile(path.join(app.directory, 'data/default-user/user/files/recovered.txt'), 'utf8')).toBe('Recovered backup attachment');
+            expect(await page.evaluate(() => localStorage.getItem('neconyan-account-import-upload:default-user'))).toBeNull();
+        });
+    }
+
     test(`${viewport} backup import keeps pending background settings saves from changing its destination`, async ({ app }) => {
         const account = await app.account({ phone });
         const { page, card } = await showImporter(account);
