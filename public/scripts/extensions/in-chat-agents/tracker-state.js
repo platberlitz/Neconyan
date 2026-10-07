@@ -305,6 +305,105 @@ function rejectUnlabelledTrackerBullets(agent, inspection) {
     return { ...inspection, status: 'unlabelled', payload: '' };
 }
 
+const TRACKER_EMPTY_SENTINEL_LINE = /^[^\S\n]*(?:tracker-none|TRACKER_NONE|phone-none|PHONE_NONE)[^\S\n]*$/gm;
+const TRACKER_FENCE_LINE = /^[^\S\n]*(?:```|~~~)[^\n]*$/gm;
+const STRAY_SPEECH = /["“”«»][^"“”«»\n]{3,}["“”«»]/u;
+const STRAY_ACTION = /(?:^|\s)\*[^*\n]{3,}\*/u;
+
+/** The tag a companion tracker must produce, taken only from its configuration, never from its output. */
+function getConfiguredTrackerTag(agent = {}) {
+    const pattern = String(agent?.postProcess?.extractPattern ?? '').trim();
+    if (pattern) return getTrackerTagFromPattern(pattern);
+    const tag = getTrackerTagFromText(agent?.prompt);
+    return tag && findTrackerBlocks(agent?.prompt, tag).some(block => block.complete) ? tag : '';
+}
+
+/** Story prose or dialogue left beside a tracker block, as opposed to a one-line preamble. */
+function isStoryLikeStrayText(text = '') {
+    const stray = normalizeText(text).replaceAll(TRACKER_EMPTY_SENTINEL_LINE, '').replaceAll(TRACKER_FENCE_LINE, '').trim();
+    if (!stray) return false;
+    const words = stray.match(/[\p{L}\p{N}]+/gu)?.length ?? 0;
+    const letters = stray.match(/\p{L}/gu)?.length ?? 0;
+    if (words >= 30 || letters >= 160) return true;
+    return words >= 8 && (STRAY_SPEECH.test(stray) || STRAY_ACTION.test(stray));
+}
+
+function getTextOutsideBlocks(source, blocks) {
+    let outside = '';
+    let cursor = 0;
+    for (const block of blocks) {
+        outside += `${source.slice(cursor, block.start)}\n`;
+        cursor = block.end;
+    }
+    return outside + source.slice(cursor);
+}
+
+/**
+ * Decides what an automatic companion tracker run should do with a model reply.
+ * - keep: store `content` (the reply, or its locally fixed tracker block).
+ * - regenerate: the reply is story prose, with or without a tracker beside it; `content`
+ *   holds the intact tracker block when there is one, as a fallback.
+ * - repair: the tracker block is broken and needs a repair pass.
+ * Only trackers whose configuration names a [TAG]...[/TAG] block are checked.
+ * @param {object} agent
+ * @param {string} text
+ * @returns {{ action: 'keep'|'regenerate'|'repair', content: string, reason: string }}
+ */
+export function inspectCompanionTrackerOutput(agent = {}, text = '') {
+    const source = normalizeText(text);
+    const keep = (reason, content = source) => ({ action: 'keep', content, reason });
+    if (agent?.category !== 'tracker' || !source.trim()) return keep('not-checked');
+    const tag = getConfiguredTrackerTag(agent);
+    if (!tag) return keep('not-checked');
+
+    const blocks = findTrackerBlocks(source, tag);
+    const completeBlocks = blocks.filter(block => block.complete);
+    const outside = getTextOutsideBlocks(source, completeBlocks);
+    // Another structural block beside ours belongs to a custom multi-block format; leave it alone.
+    if (/\[\/[A-Za-z][A-Za-z0-9_-]*\]/.test(outside.replace(new RegExp(`\\[\\/${escapeRegex(tag)}\\]`, 'ig'), ''))) {
+        return keep('unknown-structure');
+    }
+
+    if (blocks.length === 0) {
+        const hasSentinel = new RegExp(TRACKER_EMPTY_SENTINEL_LINE.source, 'm').test(source);
+        if (hasSentinel && !isStoryLikeStrayText(source)) return keep('empty', 'tracker-none');
+        return { action: 'regenerate', content: '', reason: 'no-tracker' };
+    }
+
+    if (blocks.length === completeBlocks.length) {
+        const payload = completeBlocks.map(block => block.text.trim()).join('\n\n');
+        if (hasUnlabelledTrackerBullets(agent, payload)) {
+            return { action: 'repair', content: '', reason: 'unlabelled' };
+        }
+        if (isStoryLikeStrayText(outside)) {
+            return { action: 'regenerate', content: payload, reason: 'story-text' };
+        }
+        return keep('valid');
+    }
+
+    // A lone block with only a mistyped closer ("/TAG]" or "TAG]") is fixed here; a block that
+    // never closes could have swallowed story prose, so it goes to the model for repair.
+    const trimmed = source.trim();
+    const mistypedCloser = new RegExp(`(?:^|\\n)\\s*\\/?${escapeRegex(tag)}\\]\\s*$`, 'i');
+    if (blocks.length === 1 && blocks[0].start === source.search(/\S/u) && mistypedCloser.test(trimmed)) {
+        const payload = normalizeCompanionTrackerRepairPayload(agent, trimmed).payload;
+        if (payload) return keep('closer-fixed', payload);
+    }
+    return { action: 'repair', content: '', reason: 'malformed' };
+}
+
+/**
+ * The tracker payload from an automatic repair reply, or '' when it is still unusable. Stricter
+ * than the manual repair: a block that never closes is rejected because it may hold story prose.
+ * @param {object} agent
+ * @param {string} text
+ */
+export function getCompanionTrackerAutoRepairPayload(agent = {}, text = '') {
+    const check = inspectCompanionTrackerOutput(agent, text);
+    if (check.action === 'keep') return normalizeCompanionTrackerRepairPayload(agent, check.content).payload;
+    return check.reason === 'story-text' ? check.content : '';
+}
+
 /**
  * Atomically replaces complete blocks or malformed headers with explicit closing
  * tags, or inserts a missing tracker payload. Unbounded spans preserve the prose.

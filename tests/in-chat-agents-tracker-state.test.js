@@ -7,8 +7,10 @@ await jest.unstable_mockModule('../public/scripts/utils.js', () => ({
 
 const {
     findTrackerBlocks,
+    getCompanionTrackerAutoRepairPayload,
     getTrackerRepairPayload,
     hasUnlabelledTrackerBullets,
+    inspectCompanionTrackerOutput,
     inspectTrackerState,
     mergeTrackerRepairPayload,
     normalizeCompanionTrackerRepairPayload,
@@ -242,5 +244,73 @@ describe('writeTrackerMetadataValue', () => {
         expect(metadata.variables.other).toBe('keep');
         expect(writeTrackerMetadataValue(metadata, 'agent_status_data', '')).toBe(false);
         expect(writeTrackerMetadataValue(null, 'agent_status_data', 'x')).toBe(false);
+    });
+});
+
+describe('inspectCompanionTrackerOutput', () => {
+    const trackerAgent = { ...statusAgent, category: 'tracker' };
+    const block = '[STATUS|Alice|Tired|Moderate]\nnote: Long day\n[/STATUS]';
+    const roleplay = 'Alice pushed the tavern door open and shook the rain from her cloak. "Another long night," she muttered, '
+        + 'dropping into the chair by the fire while the barkeep slid a mug across the counter towards her.';
+
+    test('keeps a clean tracker block untouched', () => {
+        expect(inspectCompanionTrackerOutput(trackerAgent, block)).toEqual({ action: 'keep', content: block, reason: 'valid' });
+    });
+
+    test('keeps a short preamble beside a valid block', () => {
+        const text = `Here is the update:\n${block}`;
+        expect(inspectCompanionTrackerOutput(trackerAgent, text)).toEqual(expect.objectContaining({ action: 'keep', content: text }));
+    });
+
+    test.each([
+        ['before', `${roleplay}\n\n${block}`],
+        ['after', `${block}\n\n${roleplay}`],
+    ])('asks for a fresh reply when roleplay sits %s the tracker', (_where, text) => {
+        expect(inspectCompanionTrackerOutput(trackerAgent, text)).toEqual({ action: 'regenerate', content: block, reason: 'story-text' });
+    });
+
+    test('flags short dialogue or actions as roleplay too', () => {
+        const text = `*She smiles and leans closer.* "Come on, tell me more."\n${block}`;
+        expect(inspectCompanionTrackerOutput(trackerAgent, text).action).toBe('regenerate');
+    });
+
+    test('asks for a fresh reply when the output is prose with no tracker', () => {
+        expect(inspectCompanionTrackerOutput(trackerAgent, roleplay)).toEqual({ action: 'regenerate', content: '', reason: 'no-tracker' });
+    });
+
+    test('keeps the empty-output sentinel', () => {
+        expect(inspectCompanionTrackerOutput(trackerAgent, 'tracker-none')).toEqual({ action: 'keep', content: 'tracker-none', reason: 'empty' });
+        expect(inspectCompanionTrackerOutput(trackerAgent, `tracker-none\n${roleplay}`).action).toBe('regenerate');
+    });
+
+    test('fixes a mistyped closer locally', () => {
+        const text = '[STATUS|Alice|Tired|Moderate]\nnote: Long day\n/STATUS]';
+        expect(inspectCompanionTrackerOutput(trackerAgent, text)).toEqual({ action: 'keep', content: block, reason: 'closer-fixed' });
+    });
+
+    test('sends a block that never closes or has unlabelled bullets to repair', () => {
+        expect(inspectCompanionTrackerOutput(trackerAgent, `[STATUS|Alice|Tired|Moderate]\nnote: Long day\n${roleplay}`))
+            .toEqual({ action: 'repair', content: '', reason: 'malformed' });
+        const parallel = {
+            category: 'tracker',
+            prompt: '[PARALLEL]\n- Person: what they are doing\n[/PARALLEL]',
+            postProcess: { extractPattern: '\\[PARALLEL\\][\\s\\S]*?\\[/PARALLEL\\]' },
+        };
+        expect(inspectCompanionTrackerOutput(parallel, '[PARALLEL]\n- walking to the market\n[/PARALLEL]').action).toBe('repair');
+    });
+
+    test('leaves non-trackers, unknown formats and unconfigured tags alone', () => {
+        expect(inspectCompanionTrackerOutput(statusAgent, roleplay).reason).toBe('not-checked');
+        expect(inspectCompanionTrackerOutput({ category: 'tracker', prompt: 'Summarise the scene.' }, roleplay).reason).toBe('not-checked');
+        const multi = `${block}\n[NPC|Bob]\n${roleplay}\n[/NPC]`;
+        expect(inspectCompanionTrackerOutput(trackerAgent, multi)).toEqual(expect.objectContaining({ action: 'keep', reason: 'unknown-structure' }));
+    });
+
+    test('automatic repair rejects a block that never closes instead of closing it around prose', () => {
+        expect(getCompanionTrackerAutoRepairPayload(trackerAgent, `Fixed:\n${block}`)).toBe(block);
+        expect(getCompanionTrackerAutoRepairPayload(trackerAgent, `${roleplay}\n${block}`)).toBe(block);
+        expect(getCompanionTrackerAutoRepairPayload(trackerAgent, `[STATUS|Alice|Tired|Moderate]\n${roleplay}`)).toBe('');
+        expect(getCompanionTrackerAutoRepairPayload(trackerAgent, roleplay)).toBe('');
+        expect(getCompanionTrackerAutoRepairPayload(trackerAgent, 'tracker-none')).toBe('');
     });
 });

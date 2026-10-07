@@ -9,7 +9,7 @@ import { runAgentModelStep } from './agent-model-step.js';
 import { runRoleplayAgentPostprocessing } from './roleplay-agent-processing.js';
 import { companionMessageTokens, previousCompanionNotes, resolveCompanionText, singleCompanionPrompt, batchCompanionPrompt } from './companion-context.js';
 import { classifyCompanionFailureMessage, getActiveCompanionResults, isEmptyOutputSentinel, MEMORY_SHARD_TEMPLATE_ID } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
-import { normalizeCompanionTrackerRepairPayload } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
+import { getCompanionTrackerAutoRepairPayload, inspectCompanionTrackerOutput, normalizeCompanionTrackerRepairPayload } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
 import { captureCompanionCapacity, MAX_COMPANION_RESULT_BYTES } from './companion-capacity.js';
 
 const clean = value => String(value ?? '').replace(/\r\n?/g, '\n').trim();
@@ -194,12 +194,52 @@ export async function runRoleplayCompanions(context, options) {
             : { ...baseRecord(agent, model), status: 'error', content: '', error: reason, failureKind, tokenUsage: null, updatedAt: Date.now() };
         return storeResult(agent, runIdentity, record, false);
     };
-    const finishResult = async (agent, raw, model, prompt, runIdentity, tokenUsage, coverage) => {
+    const usageOf = async (prompt, raw) => ({ inputTokens: await count(JSON.stringify(prompt.messages)),
+        outputTokens: await count(JSON.stringify({ role: 'assistant', content: content(raw) })) });
+    // Automatic tracker runs keep only the tracker block: story prose is regenerated once, a broken block gets one repair pass.
+    const cleanTrackerOutput = async (agent, text, sections, stepName) => {
+        const usage = [];
+        let model = null;
+        const ask = async (repair, extra, suffix) => {
+            const prompt = singleCompanionPrompt({ ...input, repair }, agent, extra);
+            model = await runModel(agent, `${stepName}:${suffix}`, prompt, agent.companion.maxTokens);
+            usage.push(await usageOf(prompt, model.text));
+            return model.lengthLimited ? null : content(model.text);
+        };
+        const done = value => ({ text: value, model, usage });
+        const failed = reason => ({ error: reason, model, usage });
+        let check = inspectCompanionTrackerOutput(agent, text);
+        if (check.action === 'keep') return done(check.content);
+        let broken = text;
+        if (check.action === 'regenerate') {
+            const fallback = check.content;
+            const next = await ask(false, sections, 'tracker-regenerate');
+            if (next === null) return failed('The reply reached its output limit.');
+            check = inspectCompanionTrackerOutput(agent, next);
+            if (check.action === 'keep') return done(check.content);
+            if (check.content || fallback) return done(check.content || fallback);
+            broken = next;
+        }
+        const repaired = await ask(true, [...sections, { title: 'Current companion agent note', content: broken }], 'tracker-repair');
+        if (repaired === null) return failed('The reply reached its output limit.');
+        const payload = getCompanionTrackerAutoRepairPayload(agent, repaired);
+        return payload ? done(payload) : failed('Tracker repair returned invalid output.');
+    };
+    const finishResult = async (agent, raw, model, prompt, runIdentity, tokenUsage, coverage, sections = [], stepName = `companion:${agent.id}`) => {
         const cached = saved(context, snapshot.account, `roleplay-companion:${agent.id}`, runIdentity);
         if (cached) return cached;
         if (model.lengthLimited) return failedResult(agent, runIdentity, 'The reply reached its output limit.', model);
         let text = content(raw);
         if (!text) return failedResult(agent, runIdentity, 'Companion returned no output.', model);
+        let usage = tokenUsage ?? await usageOf(prompt, raw);
+        if (!isRepairTarget(agent) && agent.category === 'tracker') {
+            const cleaned = await cleanTrackerOutput(agent, text, sections, stepName);
+            usage = cleaned.usage.reduce((total, next) => ({ inputTokens: total.inputTokens + next.inputTokens,
+                outputTokens: total.outputTokens + next.outputTokens }), usage);
+            if (cleaned.error) return failedResult(agent, runIdentity, cleaned.error, cleaned.model ?? model);
+            text = cleaned.text;
+            model = cleaned.model ?? model;
+        }
         const post = await runRoleplayAgentPostprocessing(shared, { ...options, companionAgent: agent, generationType: 'companion_output',
             namespace: `companion:${agent.id}`, value: text, records: preparedRecords, assertCurrent, generate });
         text = content(post.text);
@@ -208,8 +248,7 @@ export async function runRoleplayCompanions(context, options) {
             if (!text) return failedResult(agent, runIdentity, 'Tracker repair returned invalid output.', model);
         } else if (!text) return failedResult(agent, runIdentity, 'Companion returned no output.', model);
         const prior = Object.hasOwn(hostResults, agent.id) ? hostResults[agent.id] : {};
-        const record = { ...prior, ...baseRecord(agent, model), status: 'done', content: text, error: '', tokenUsage: tokenUsage ?? {
-            inputTokens: await count(JSON.stringify(prompt.messages)), outputTokens: await count(JSON.stringify({ role: 'assistant', content: content(raw) })) }, updatedAt: model.completedAt };
+        const record = { ...prior, ...baseRecord(agent, model), status: 'done', content: text, error: '', tokenUsage: usage, updatedAt: model.completedAt };
         delete record.lastRunError; delete record.lastRunFailureKind; delete record.failureKind; delete record.previousResult;
         if (references(agent).includes(MEMORY_SHARD_TEMPLATE_ID) && coverage) record.contextCoverage = coverage;
         return storeResult(agent, runIdentity, record, true);
@@ -233,8 +272,9 @@ export async function runRoleplayCompanions(context, options) {
         }
         const extra = isRepairTarget(agent) && prior?.content ? [...sections, { title: 'Current companion agent note', content: prior.content }] : sections;
         const prompt = singleCompanionPrompt({ ...input, repair: isRepairTarget(agent) }, agent, extra);
-        const model = await runModel(agent, `companion:${agent.id}${suffix}`, prompt, agent.companion.maxTokens);
-        return finishResult(agent, model.text, model, prompt, runIdentity, null, prompt.coverage);
+        const stepName = `companion:${agent.id}${suffix}`;
+        const model = await runModel(agent, stepName, prompt, agent.companion.maxTokens);
+        return finishResult(agent, model.text, model, prompt, runIdentity, null, prompt.coverage, sections, stepName);
     };
     const runUnit = async (group, sections) => {
         if (group.length === 1 || group.some(isRepairTarget)) {
@@ -254,7 +294,8 @@ export async function runRoleplayCompanions(context, options) {
             if (model.lengthLimited) outputs.push(failedResult(agent, runIdentity, 'The reply reached its output limit.', model));
             else if (!parsed.get(agent.id)) outputs.push(await runSingle(agent, sections.get(agent.id), ':missing-batch-result'));
             else outputs.push(await finishResult(agent, parsed.get(agent.id), model, prompt, runIdentity, {
-                inputTokens: Math.round(taskCounts[offset] + sharedTokens), outputTokens: await count(JSON.stringify({ role: 'assistant', content: parsed.get(agent.id) })) }, prompt.coverage));
+                inputTokens: Math.round(taskCounts[offset] + sharedTokens), outputTokens: await count(JSON.stringify({ role: 'assistant', content: parsed.get(agent.id) })) },
+            prompt.coverage, sections.get(agent.id), `${name}:${agent.id}`));
         }
         return outputs;
     };

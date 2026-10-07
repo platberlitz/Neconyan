@@ -70,7 +70,7 @@ import {
     TRACKER_EMPTY_OUTPUT_INSTRUCTION,
 } from './companion-shared.js';
 import { resolveCompanionContentMacros } from './companion-macros.js';
-import { findTrackerBlocks, inspectTrackerState, normalizeCompanionTrackerRepairPayload, TRACKER_REPAIR_INSTRUCTION } from '../tracker-state.js';
+import { findTrackerBlocks, getCompanionTrackerAutoRepairPayload, inspectCompanionTrackerOutput, inspectTrackerState, normalizeCompanionTrackerRepairPayload, TRACKER_REPAIR_INSTRUCTION } from '../tracker-state.js';
 
 export { COMPANION_RESULTS_EXTRA_KEY };
 export const COMPANION_RESULTS_UPDATED_EVENT = 'in_chat_agent_companion_results_updated';
@@ -1727,7 +1727,44 @@ export function captureCompanionResultTarget(messageIndex, agentId) {
     return () => isCurrent() && JSON.stringify(getCompanionResults(chat[messageIndex])[agentId]) === snapshot;
 }
 
-async function runSingleCompanionAgent(agent, messageIndex, generationType, cancelRevision, { repair = false, extraContextSections = [], allowUserMessage = false, previousContent = null, previousResult = null, run = null } = {}) {
+/**
+ * Automatic tracker runs must leave only the tracker block. A reply that is story prose (with or
+ * without the tracker under it) is regenerated once; a broken block gets one repair pass. Both
+ * extra calls reuse `generate`, and the usage of every call is added to `attempt.tokenUsage`.
+ */
+async function cleanUpCompanionTrackerOutput(agent, attempt, generate, extraContextSections) {
+    const addUsage = next => ({
+        ...next,
+        tokenUsage: {
+            inputTokens: (attempt.tokenUsage?.inputTokens ?? 0) + (next.tokenUsage?.inputTokens ?? 0),
+            outputTokens: (attempt.tokenUsage?.outputTokens ?? 0) + (next.tokenUsage?.outputTokens ?? 0),
+        },
+    });
+    let check = inspectCompanionTrackerOutput(agent, attempt.rawContent);
+    if (check.action === 'keep') return { ...attempt, rawContent: check.content };
+
+    let brokenContent = attempt.rawContent;
+    if (check.action === 'regenerate') {
+        const fallback = check.content;
+        attempt = addUsage(await generate({ repair: false, extraContextSections }));
+        check = inspectCompanionTrackerOutput(agent, attempt.rawContent);
+        if (check.action === 'keep') return { ...attempt, rawContent: check.content };
+        // Still story prose: an intact tracker block from either reply beats another call.
+        const payload = check.content || fallback;
+        if (payload) return { ...attempt, rawContent: payload };
+        brokenContent = attempt.rawContent;
+    }
+
+    attempt = addUsage(await generate({
+        repair: true,
+        extraContextSections: [...extraContextSections, { title: 'Current companion agent note', content: brokenContent }],
+    }));
+    const payload = getCompanionTrackerAutoRepairPayload(agent, attempt.rawContent);
+    if (!payload) throw new Error('Tracker repair returned invalid output.');
+    return { ...attempt, rawContent: payload };
+}
+
+async function runSingleCompanionAgent(agent, messageIndex, generationType, cancelRevision, { repair = false, extraContextSections = [], allowUserMessage = false, previousContent = null, previousResult = null, run = null, initialOutput = null } = {}) {
     const message = chat[messageIndex];
     if (!isValidCompanionTargetMessage(message, { allowUserMessage })) {
         return { agentId: agent.id, changed: false, result: null };
@@ -1737,14 +1774,9 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
     const previous = previousContent ?? getCompanionResultContent(message, agent.id);
     const isMessageCurrent = captureCompanionTarget(messageIndex);
     const isTargetCurrent = () => isMessageCurrent() && (!run || run.isCurrent());
-
-    try {
-        if (!areAgentsGloballyEnabled() || !isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
-            throw new DOMException('Companion run cancelled.', 'AbortError');
-        }
-
+    const generate = async ({ repair: repairPass, extraContextSections: sections }) => {
         const contextCapture = getCompanionReferenceIds(agent).includes(MEMORY_SHARD_TEMPLATE_ID) ? {} : null;
-        const promptMessages = await buildCompanionPromptMessages(agent, messageIndex, generationType, { repair, extraContextSections, contextCapture });
+        const promptMessages = await buildCompanionPromptMessages(agent, messageIndex, generationType, { repair: repairPass, extraContextSections: sections, contextCapture });
         if (!areAgentsGloballyEnabled() || !isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
             throw new DOMException('Companion run cancelled.', 'AbortError');
         }
@@ -1761,6 +1793,19 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
         if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
             throw new DOMException('Companion target changed.', 'AbortError');
         }
+        return { rawContent, tokenUsage, profileId: response.profileId, contextCoverage: contextCapture?.coverage };
+    };
+
+    try {
+        if (!areAgentsGloballyEnabled() || !isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
+            throw new DOMException('Companion run cancelled.', 'AbortError');
+        }
+
+        let attempt = initialOutput ?? await generate({ repair, extraContextSections });
+        if (!repair && agent.category === 'tracker') {
+            attempt = await cleanUpCompanionTrackerOutput(agent, attempt, generate, extraContextSections);
+        }
+        const { rawContent, tokenUsage } = attempt;
         let content = await applyCompanionOutputPostPassesToContent(agent, rawContent, messageIndex, cancelRevision);
         if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
             throw new DOMException('Companion run cancelled.', 'AbortError');
@@ -1783,10 +1828,10 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
             content,
             error: '',
             tokenUsage,
-            profileId: response.profileId,
-            profileLabel: getProfileLabel(agent, response.profileId),
+            profileId: attempt.profileId,
+            profileLabel: getProfileLabel(agent, attempt.profileId),
             modelLabel: getModelLabel(agent),
-            contextCoverage: contextCapture?.coverage,
+            contextCoverage: attempt.contextCoverage,
         });
     } catch (error) {
         if (!isAgentRuntimeAllowed(agent)) {
@@ -1939,6 +1984,7 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
         if (!isTargetCurrent()) return getResults();
         const parsed = parseBatchResponse(response.output);
         const missingAgents = [];
+        const cleanupAgents = [];
         for (const agent of agents) {
             if (!isTargetCurrent()) return getResults();
             if (getAgentGenerationCancelRevision() !== cancelRevision) {
@@ -1963,7 +2009,20 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
                 return getResults();
             }
             if (!isAgentRuntimeAllowed(agent) || !isAgentCurrent(agent)) continue;
-            const content = await applyCompanionOutputPostPassesToContent(agent, rawContent, messageIndex, cancelRevision);
+            const trackerCheck = inspectCompanionTrackerOutput(agent, rawContent);
+            if (trackerCheck.action !== 'keep') {
+                cleanupAgents.push({
+                    agent,
+                    initialOutput: {
+                        rawContent,
+                        tokenUsage: { inputTokens: inputTokensByAgentId.get(agent.id) ?? 0, outputTokens },
+                        profileId: response.profileId,
+                        contextCoverage: getCompanionReferenceIds(agent).includes(MEMORY_SHARD_TEMPLATE_ID) ? contextCapture?.coverage : undefined,
+                    },
+                });
+                continue;
+            }
+            const content = await applyCompanionOutputPostPassesToContent(agent, trackerCheck.content, messageIndex, cancelRevision);
             if (!isTargetCurrent()) return getResults();
             if (getAgentGenerationCancelRevision() !== cancelRevision) {
                 await cancelCompanionAgentResults(message, agents, messageIndex, response.profileId, runs);
@@ -1986,7 +2045,7 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
             await emitCompanionResultsUpdated(messageIndex, agent.id);
         }
 
-        for (const agent of missingAgents) {
+        for (const { agent, initialOutput = null } of [...missingAgents.map(agent => ({ agent })), ...cleanupAgents]) {
             if (!isTargetCurrent()) return getResults();
             if (getAgentGenerationCancelRevision() !== cancelRevision) {
                 await cancelCompanionAgentResults(message, agents, messageIndex, response.profileId, runs);
@@ -1998,6 +2057,7 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
                 allowUserMessage,
                 previousContent: previousMap.get(agent.id),
                 extraContextSections: extraContextSectionsByAgentId?.get(agent.id) ?? [],
+                initialOutput,
             });
         }
     } catch (error) {
