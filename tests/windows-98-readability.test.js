@@ -43,11 +43,13 @@ describe('Windows 98 shell style stays readable with custom colours', () => {
         expect(css).toMatch(/:is\(\.sb-shell-tab\.is-active, \.sb-settings-tab-btn\.active, [^)]*\) i \{\s*color: inherit;/);
     });
 
-    test('the header Tour button centres with translate, which the push-button transform reset leaves alone', () => {
+    test('the header Tour button uses grid placement, which the push-button transform reset leaves alone', () => {
         const core = read('public/css/neconyan.css');
         const rule = core.match(/\.sb-shell-header \.neconyan-page-intro-header > \.neconyan-tool-tour-button \{([^}]*)\}/);
         expect(rule).not.toBeNull();
-        expect(rule[1]).toContain('translate: 0 -50%;');
+        expect(rule[1]).toContain('position: relative;');
+        expect(rule[1]).toContain('grid-area: 1 / 2;');
+        expect(rule[1]).not.toContain('translate');
         expect(rule[1]).not.toContain('transform');
         expect(css).toMatch(/:is\(\.menu_button,[^{]*\{[^}]*transform: none;/);
     });
