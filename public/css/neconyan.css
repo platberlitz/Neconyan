@@ -3116,6 +3116,8 @@ body.neconyan #neconyan-tour-coachmark figcaption { font-size: 12px; }
 body.neconyan #neconyan-tour-coachmark .neconyan-tour-speaker { display: block; }
 body.neconyan #neconyan-tour-coachmark.neconyan-tour-ending .neconyan-tour-coach-dialogue { grid-template-columns: minmax(0, 1fr); }
 body.neconyan #neconyan-tour-coachmark.neconyan-tour-ending .neconyan-tour-step-copy { position: relative; padding-right: 48px; }
+body.neconyan #rm_characters_block > .neconyan-native-page-heading { margin-bottom: 0; }
+body.neconyan #neconyan-character-library #character_search_bar { margin-top: 0; }
 body.neconyan #right-nav-panel #neconyan-character-library { padding: 8px 12px; border-radius: 0; }
 body.neconyan #right-nav-panel #neconyan-character-library #charListFixedTop {
     display: grid;
