@@ -7016,7 +7016,8 @@
                                     <small data-i18n="Choose all the JSON or JSONL chats for this character together.">Choose all the JSON or JSONL chats for this character together.</small>
                                 </span>
                             </button>
-                            <input type="file" id="sb_character_chat_import_file" accept=".json, .jsonl" multiple hidden>
+                            <!-- No accept filter: Android can omit unknown .jsonl types. The shared chat import handler validates extensions and the server validates contents. -->
+                            <input type="file" id="sb_character_chat_import_file" multiple hidden>
                         </div>
                     </div>
                     <!-- Neconyan: runtime reparents the upstream #WI-SP-button/#WorldInfo node here so World Info behaves as a right Characters tab without duplicating IDs. This differs from upstream so the route stays compatible with saved shortcuts and existing selectors. -->
@@ -7680,7 +7681,8 @@
                 <div name="selectChatPopupHeader" class="flex-container alignitemscenter justifySpaceBetween flexGap10">
                     <div id="select_chat_import"> <!-- import chat popup header -->
                         <form id="form_import_chat" action="javascript:void(null);" method="post" enctype="multipart/form-data" style="display: none;">
-                            <input type="file" id="chat_import_file" accept=".json, .jsonl" multiple name="avatar">
+                            <!-- No accept filter: Android can omit unknown .jsonl types. The shared chat import handler validates extensions and the server validates contents. -->
+                            <input type="file" id="chat_import_file" multiple name="avatar">
                             <input id="chat_import_file_type" name="file_type" class="text_pole" value="" autocomplete="off" style="display: none;">
                             <input id="chat_import_avatar_url" name="avatar_url" class="text_pole" value="" autocomplete="off" style="display: none;">
                             <input id="chat_import_character_name" name="character_name" class="text_pole" value="" autocomplete="off" style="display: none;">
