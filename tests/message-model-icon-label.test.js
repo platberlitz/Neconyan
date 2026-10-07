@@ -39,7 +39,7 @@ return createModelIcon;`)(FakeImage, { LINKAPI: 'linkapi' });
 
 describe('message model icon label', () => {
     test('both toggles sit with the model icon toggle in Visual Toggles', () => {
-        const themeToggles = indexHtml.indexOf('<div name="themeToggles">');
+        const themeToggles = indexHtml.search(/<div name="themeToggles"[\s>]/);
         expect(themeToggles).toBeGreaterThan(-1);
 
         for (const [id] of TOGGLES) {
@@ -47,7 +47,7 @@ describe('message model icon label', () => {
             expect(indexHtml.indexOf(id)).toBeGreaterThan(themeToggles);
         }
 
-        expect(indexHtml).toMatch(/messageModelIconEnabled[\s\S]{0,500}?messageModelNameEnabled[\s\S]{0,500}?messageModelNameShortEnabled[\s\S]{0,500}?messageReasoningEffortEnabled/);
+        expect(indexHtml).toMatch(/messageModelIconEnabled[\s\S]{0,900}?messageModelNameEnabled[\s\S]{0,900}?messageModelNameShortEnabled[\s\S]{0,900}?messageReasoningEffortEnabled/);
     });
 
     test('the short model name toggle is off by default and repaints messages', () => {

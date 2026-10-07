@@ -16,7 +16,7 @@
             background-color: #141514;
         }
     </style>
-    <link rel="preload" as="style" href="style.css?v=20261007-dialogue-quotes">
+    <link rel="preload" as="style" href="style.css?v=20261007-visual-toggles">
     <script type="importmap">
         { "imports": { "#macro-vendor": "./lib.js" } }
     </script>
@@ -41,21 +41,22 @@
     <link rel="icon" type="image/png" sizes="192x192" href="img/neconyan-icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="img/neconyan-icon-512.png">
     <link rel="apple-touch-icon" sizes="180x180" href="img/neconyan-icon-180.png" />
-    <link rel="stylesheet" type="text/css" href="style.css?v=20261007-dialogue-quotes">
+    <link rel="stylesheet" type="text/css" href="style.css?v=20261007-visual-toggles">
     <link rel="stylesheet" type="text/css" href="css/st-tailwind.css">
     <link rel="stylesheet" type="text/css" href="css/toggle-dependent.css">
     <link rel="stylesheet" type="text/css" href="css/select2-overrides.css?v=20260609a">
     <link rel="stylesheet" type="text/css" href="css/mobile-styles.css?v=20260916p" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-theme.css?v=20261007-dialogue-quotes">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-paper-theme.css?v=20261007-dialogue-quotes" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-tabs.css?v=20261007-dialogue-quotes">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-mobile-shell.css?v=20261007-dialogue-quotes" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan.css?v=20261007-dialogue-quotes">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-home.css?v=20261007-dialogue-quotes">
-    <link id="neconyan-calico-stylesheet" rel="stylesheet" type="text/css" href="css/neconyan-calico.css?v=20261007-dialogue-quotes">
-    <link href="css/neconyan-menus.css?v=20261007-dialogue-quotes" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-theme.css?v=20261007-visual-toggles">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-paper-theme.css?v=20261007-visual-toggles" media="(max-width: 768px)">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-tabs.css?v=20261007-visual-toggles">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-mobile-shell.css?v=20261007-visual-toggles" media="(max-width: 768px)">
+    <link rel="stylesheet" type="text/css" href="css/neconyan.css?v=20261007-visual-toggles">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-home.css?v=20261007-visual-toggles">
+    <link id="neconyan-calico-stylesheet" rel="stylesheet" type="text/css" href="css/neconyan-calico.css?v=20261007-visual-toggles">
+    <link href="css/neconyan-menus.css?v=20261007-visual-toggles" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <link href="css/neconyan-help.css?v=20260929b" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <link href="css/neconyan-home-compact.css?v=20261003g" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
+    <link href="css/neconyan-visual-toggles.css?v=20261007-visual-toggles" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <script>
         (function () {
             try {
@@ -63,7 +64,7 @@
                 if (['kittyless', 'windows-aero', 'windows-xp', 'windows-98', 'clean-minimal', 'macos-minimal', 'cozy-warm', 'hypr-glow', 'slate-flat'].indexOf(shellStyle) !== -1) {
                     var link = document.createElement('link');
                     link.rel = 'stylesheet';
-                    link.href = 'css/shell-styles/' + shellStyle + '.css?v=20261007-dialogue-quotes';
+                    link.href = 'css/shell-styles/' + shellStyle + '.css?v=20261007-visual-toggles';
                     link.setAttribute('data-sb-shell-style', shellStyle);
                     document.documentElement.setAttribute('data-sb-theme', shellStyle);
                     document.head.appendChild(link);
@@ -71,7 +72,7 @@
                 if (shellStyle === 'kittyless' || localStorage.getItem('sb-kittyless') === 'true') {
                     var catless = document.createElement('link');
                     catless.rel = 'stylesheet';
-                    catless.href = 'css/neconyan-kittyless.css?v=20261007-dialogue-quotes';
+                    catless.href = 'css/neconyan-kittyless.css?v=20261007-visual-toggles';
                     catless.setAttribute('data-sb-kittyless', 'true');
                     document.documentElement.setAttribute('data-sb-kittyless', 'true');
                     document.head.appendChild(catless);
@@ -5491,112 +5492,155 @@
                                 </div>
                             </div>
                             <div id="ThemeTogglesSection" class="inline-drawer wide100p flexFlowColumn sb-settings-subdrawer">
-                                <div class="inline-drawer-toggle inline-drawer-header userSettingsInnerExpandable" title="Toggle motion, blur, timestamps, and other interface extras.">
+                                <div class="inline-drawer-toggle inline-drawer-header userSettingsInnerExpandable" title="Switch motion, blur, message details and other interface extras on or off.">
                                     <b><span>Visual Toggles</span></b>
                                     <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
                                 </div>
                                 <div class="inline-drawer-content sb-settings-subdrawer-body" style="display:none">
-                                    <div class="sb-settings-subdrawer-toolbar">
-                                        <small>Keep motion, blur, timestamps, and message chrome in one easier-to-scan group.</small>
+                                    <p class="nn-vt-intro">Small switches for how Neconyan looks and behaves. Each one says what it changes.</p>
+                                    <div name="themeToggles" class="nn-vt">
+                                        <section class="nn-vt-group" aria-labelledby="nn-vt-comfort-title">
+                                            <div class="nn-vt-group-head">
+                                                <i class="fa-solid fa-feather nn-vt-group-icon" aria-hidden="true"></i>
+                                                <div class="nn-vt-group-copy">
+                                                    <h4 id="nn-vt-comfort-title" class="nn-vt-group-title">Comfort</h4>
+                                                    <p class="nn-vt-group-hint">Calmer, lighter screens. Handy on slower devices.</p>
+                                                </div>
+                                            </div>
+                                            <label for="reduced_motion" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Reduced Motion">Reduced Motion</small><span class="nn-vt-desc">Turns off animations and sliding transitions.</span></span>
+                                                <input id="reduced_motion" type="checkbox" />
+                                            </label>
+                                            <label for="fast_ui_mode" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="No Blur Effect">No Blur Effect</small><span class="nn-vt-desc">Drops the frosted blur behind panels, so the app draws faster.</span></span>
+                                                <input id="fast_ui_mode" type="checkbox" />
+                                            </label>
+                                            <label for="noShadowsmode" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="No Text Shadows">No Text Shadows</small><span class="nn-vt-desc">Removes the soft shadow behind text.</span></span>
+                                                <input id="noShadowsmode" type="checkbox" />
+                                            </label>
+                                        </section>
+                                        <section class="nn-vt-group" aria-labelledby="nn-vt-messages-title">
+                                            <div class="nn-vt-group-head">
+                                                <i class="fa-solid fa-message nn-vt-group-icon" aria-hidden="true"></i>
+                                                <div class="nn-vt-group-copy">
+                                                    <h4 id="nn-vt-messages-title" class="nn-vt-group-title">Message details</h4>
+                                                    <p class="nn-vt-group-hint">Extra information shown on each chat message.</p>
+                                                </div>
+                                            </div>
+                                            <label for="messageTimestampsEnabled" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Chat Timestamps">Chat Timestamps</small><span class="nn-vt-desc">Shows when each message was sent.</span></span>
+                                                <input id="messageTimestampsEnabled" type="checkbox" />
+                                            </label>
+                                            <label for="messageTimerEnabled" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Message Timer">Message Timer</small><span class="nn-vt-desc">Shows how long each AI reply took to write.</span></span>
+                                                <input id="messageTimerEnabled" type="checkbox" />
+                                            </label>
+                                            <label for="messageTokensEnabled" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Show Message Token Count">Message Token Count</small><span class="nn-vt-desc">Shows how many tokens, the pieces of text a model counts, each message uses.</span></span>
+                                                <input id="messageTokensEnabled" type="checkbox" />
+                                            </label>
+                                            <label for="mesIDDisplayEnabled" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Message IDs">Message IDs</small><span class="nn-vt-desc">Numbers every message in order.</span></span>
+                                                <input id="mesIDDisplayEnabled" type="checkbox" />
+                                            </label>
+                                            <label for="show_swipe_num_all_messages" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Swipe # for All Messages">Swipe # for All Messages</small><span class="nn-vt-desc">Shows which alternative reply you are on for every message, not just the latest.</span></span>
+                                                <input id="show_swipe_num_all_messages" type="checkbox" />
+                                            </label>
+                                            <label for="messageModelIconEnabled" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Model Icon">Model Icons</small><span class="nn-vt-desc">Shows the icon of the service that wrote each reply.</span></span>
+                                                <input id="messageModelIconEnabled" type="checkbox" />
+                                            </label>
+                                            <label for="messageModelNameEnabled" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Model Name After Icon">Model Name After Icon</small><span class="nn-vt-desc">Writes the exact model name by each reply's time, after its icon when icons are on.</span></span>
+                                                <input id="messageModelNameEnabled" type="checkbox" />
+                                            </label>
+                                            <div class="nn-vt-nest">
+                                                <p class="nn-vt-nest-note"><i class="fa-solid fa-circle-info" aria-hidden="true"></i><span>Needs Model Name After Icon switched on.</span></p>
+                                                <label for="messageModelNameShortEnabled" class="checkbox_label nn-vt-row">
+                                                    <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Short Model Name">Short Model Name</small><span class="nn-vt-desc">Drops the provider prefix, so kimi/kimi-k3 shows as kimi-k3.</span></span>
+                                                    <input id="messageModelNameShortEnabled" type="checkbox" />
+                                                </label>
+                                            </div>
+                                            <label for="messageReasoningEffortEnabled" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Reasoning Effort After Model">Reasoning Effort After Model</small><span class="nn-vt-desc">Adds the reasoning effort the reply used, when it had one.</span></span>
+                                                <input id="messageReasoningEffortEnabled" type="checkbox" />
+                                            </label>
+                                        </section>
+                                        <section class="nn-vt-group" aria-labelledby="nn-vt-chat-title">
+                                            <div class="nn-vt-group-head">
+                                                <i class="fa-solid fa-comments nn-vt-group-icon" aria-hidden="true"></i>
+                                                <div class="nn-vt-group-copy">
+                                                    <h4 id="nn-vt-chat-title" class="nn-vt-group-title">Chat layout</h4>
+                                                    <p class="nn-vt-group-hint">How the chat window and message buttons behave.</p>
+                                                </div>
+                                            </div>
+                                            <label for="waifuMode" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Waifu Mode">Visual Novel Mode</small><span class="nn-vt-desc">Shortens the chat and puts the character's sprite behind it.</span></span>
+                                                <input id="waifuMode" type="checkbox" />
+                                            </label>
+                                            <label for="hideChatAvatarsEnabled" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Hide Chat Avatars">Hide Chat Avatars</small><span class="nn-vt-desc">Hides profile pictures inside chat messages only.</span></span>
+                                                <input id="hideChatAvatarsEnabled" type="checkbox" />
+                                            </label>
+                                            <label for="expandMessageActions" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Auto-Expand Message Actions">Expand Message Actions</small><span class="nn-vt-desc">Shows every message button at once instead of tucking extras behind the '...' menu.</span></span>
+                                                <input id="expandMessageActions" type="checkbox" />
+                                            </label>
+                                            <label for="click_to_edit" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Click to Edit">Click to Edit</small><span class="nn-vt-desc">Tap or click the text of a message to start editing it.</span></span>
+                                                <input id="click_to_edit" type="checkbox" />
+                                            </label>
+                                            <label for="compact_input_area" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><span class="nn-vt-name-line"><small class="nn-vt-name" data-i18n="Compact Input Area (Mobile)">Compact Input Area</small><span class="nn-vt-badge">Phones only</span></span><span class="nn-vt-desc">Keeps the message box to a single row.</span></span>
+                                                <input id="compact_input_area" type="checkbox" />
+                                            </label>
+                                        </section>
+                                        <section class="nn-vt-group" aria-labelledby="nn-vt-characters-title">
+                                            <div class="nn-vt-group-head">
+                                                <i class="fa-solid fa-user-group nn-vt-group-icon" aria-hidden="true"></i>
+                                                <div class="nn-vt-group-copy">
+                                                    <h4 id="nn-vt-characters-title" class="nn-vt-group-title">Characters</h4>
+                                                    <p class="nn-vt-group-hint">Shortcuts for the character list and avatars.</p>
+                                                </div>
+                                            </div>
+                                            <label for="hotswapEnabled" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Characters Hotswap">Characters Hotswap</small><span class="nn-vt-desc">Shows quick buttons for your favourite characters in the character panel.</span></span>
+                                                <input id="hotswapEnabled" type="checkbox" />
+                                            </label>
+                                            <label for="bogus_folders" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Tags as Folders">Tags as Folders</small><span class="nn-vt-desc">Groups characters into folders by tag. Mark a tag as a folder in Manage tags first.</span></span>
+                                                <input id="bogus_folders" type="checkbox" />
+                                            </label>
+                                            <button type="button" class="nn-vt-action tags_view"><i class="fa-solid fa-tags" aria-hidden="true"></i><span>Manage tags</span></button>
+                                            <label for="zoomed_avatar_magnification" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Avatar Hover Magnification">Avatar Hover Magnification</small><span class="nn-vt-desc">After you click an avatar in chat to zoom it, magnifies the part under your pointer.</span></span>
+                                                <input id="zoomed_avatar_magnification" type="checkbox" />
+                                            </label>
+                                        </section>
+                                        <section class="nn-vt-group" aria-labelledby="nn-vt-settings-title">
+                                            <div class="nn-vt-group-head">
+                                                <i class="fa-solid fa-sliders nn-vt-group-icon" aria-hidden="true"></i>
+                                                <div class="nn-vt-group-copy">
+                                                    <h4 id="nn-vt-settings-title" class="nn-vt-group-title">Settings and sliders</h4>
+                                                    <p class="nn-vt-group-hint">These settings panels, and the reply sliders such as Temperature.</p>
+                                                </div>
+                                            </div>
+                                            <label for="sb_auto_close_inline_drawers" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name">Auto-close setting drawers</small><span class="nn-vt-desc">Opening one settings section folds the others away.</span></span>
+                                                <input id="sb_auto_close_inline_drawers" type="checkbox" />
+                                            </label>
+                                            <label for="enableZenSliders" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Zen Sliders">Zen Sliders</small><span class="nn-vt-desc">Swaps the reply sliders for simpler ones with fewer steps.</span></span>
+                                                <input id="enableZenSliders" type="checkbox" />
+                                            </label>
+                                            <label for="enableLabMode" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><span class="nn-vt-name-line"><small class="nn-vt-name" data-i18n="Mad Lab Mode">Mad Lab Mode</small><span class="nn-vt-badge">Advanced</span></span><span class="nn-vt-desc">Removes the safe limits on every reply slider. Easy to break replies with.</span></span>
+                                                <input id="enableLabMode" type="checkbox" />
+                                            </label>
+                                        </section>
                                     </div>
-                                    <div name="themeToggles">
-                                <!-- <h4 data-i18n="Theme Toggles">Theme Toggles</h4> -->
-
-                                <label for="reduced_motion" class="checkbox_label" title="Disable animations and transitions" data-i18n="[title]Disables animations and transitions">
-                                    <input id="reduced_motion" type="checkbox" />
-                                    <small data-i18n="Reduced Motion">Reduced Motion</small>
-                                </label>
-                                <label for="fast_ui_mode" class="checkbox_label" title="Remove blur from window backgrounds, for faster rendering." data-i18n="[title]removes blur from window backgrounds">
-                                    <input id="fast_ui_mode" type="checkbox" />
-                                    <small data-i18n="No Blur Effect">No Blur Effect</small>
-                                </label>
-                                <label for="noShadowsmode" class="checkbox_label" title="Remove text shadow effect." data-i18n="[title]Remove text shadow effect">
-                                    <input id="noShadowsmode" type="checkbox" />
-                                    <small data-i18n="No Text Shadows">No Text Shadows</small>
-                                </label>
-                                <label for="sb_auto_close_inline_drawers" class="checkbox_label" title="Automatically collapse sibling settings drawers when you open another one.">
-                                    <input id="sb_auto_close_inline_drawers" type="checkbox" />
-                                    <small>Auto-close setting drawers</small>
-                                </label>
-                                <label for="waifuMode" class="checkbox_label" title="Reduce chat height, and put a static sprite behind the chat window." data-i18n="[title]Reduce chat height, and put a static sprite behind the chat window">
-                                    <input id="waifuMode" type="checkbox" />
-                                    <small data-i18n="Waifu Mode">Visual Novel Mode</small>
-                                </label>
-                                <label for="expandMessageActions" class="checkbox_label" title="Always show the full list of the Message Actions context items for chat messages, instead of hiding them behind '...'." data-i18n="[title]Always show the full list of the Message Actions context items for chat messages, instead of hiding them behind '...'">
-                                    <input id="expandMessageActions" type="checkbox" />
-                                    <small data-i18n="Auto-Expand Message Actions">Expand Message Actions</small>
-                                </label>
-                                <label for="enableZenSliders" class="checkbox_label" title="Alternative UI for numeric sampling parameters with fewer steps." data-i18n="[title]Alternative UI for numeric sampling parameters with fewer steps">
-                                    <input id="enableZenSliders" type="checkbox" />
-                                    <small data-i18n="Zen Sliders">Zen Sliders</small>
-                                </label>
-                                <label for="enableLabMode" class="checkbox_label" title="Entirely unrestrict all numeric sampling parameters." data-i18n="[title]Entirely unrestrict all numeric sampling parameters">
-                                    <input id="enableLabMode" type="checkbox" />
-                                    <small data-i18n="Mad Lab Mode">Mad Lab Mode</small>
-                                </label>
-                                <label for="messageTimerEnabled" class="checkbox_label" title="Time the AI's message generation, and show the duration in the chat log." data-i18n="[title]Time the AI's message generation, and show the duration in the chat log">
-                                    <input id="messageTimerEnabled" type="checkbox" />
-                                    <small data-i18n="Message Timer">Message Timer</small>
-                                </label>
-                                <label for="messageTimestampsEnabled" class="checkbox_label" title="Show a timestamp for each message in the chat log." data-i18n="[title]Show a timestamp for each message in the chat log">
-                                    <input id="messageTimestampsEnabled" type="checkbox" />
-                                    <small data-i18n="Chat Timestamps">Chat Timestamps</small>
-                                </label>
-                                <label for="messageModelIconEnabled" class="checkbox_label" title="Show an icon for the API that generated the message." data-i18n="[title]Show an icon for the API that generated the message">
-                                    <input id="messageModelIconEnabled" type="checkbox" />
-                                    <small data-i18n="Model Icon">Model Icons</small>
-                                </label>
-                                <label for="messageModelNameEnabled" class="checkbox_label" title="Write the exact model name after the message icon." data-i18n="[title]Write the exact model name after the message icon">
-                                    <input id="messageModelNameEnabled" type="checkbox" />
-                                    <small data-i18n="Model Name After Icon">Model Name After Icon</small>
-                                </label>
-                                <label for="messageModelNameShortEnabled" class="checkbox_label" title="Drop the provider prefix from the model name, so kimi/kimi-k3 shows as kimi-k3." data-i18n="[title]Drop the provider prefix from the model name, so kimi/kimi-k3 shows as kimi-k3">
-                                    <input id="messageModelNameShortEnabled" type="checkbox" />
-                                    <small data-i18n="Short Model Name">Short Model Name</small>
-                                </label>
-                                <label for="messageReasoningEffortEnabled" class="checkbox_label" title="Write the reasoning effort used after the model name." data-i18n="[title]Write the reasoning effort used after the model name">
-                                    <input id="messageReasoningEffortEnabled" type="checkbox" />
-                                    <small data-i18n="Reasoning Effort After Model">Reasoning Effort After Model</small>
-                                </label>
-                                <label for="mesIDDisplayEnabled" class="checkbox_label" title="Show sequential message numbers in the chat log." data-i18n="[title]Show sequential message numbers in the chat log">
-                                    <input id="mesIDDisplayEnabled" type="checkbox" />
-                                    <small data-i18n="Message IDs">Message IDs</small>
-                                </label>
-                                <label for="hideChatAvatarsEnabled" class="checkbox_label" title="Hide avatars, only in chat messages." data-i18n="[title]Hide avatars, only in chat messages.">
-                                    <input id="hideChatAvatarsEnabled" type="checkbox" />
-                                    <small data-i18n="Hide Chat Avatars">Hide Chat Avatars</small>
-                                </label>
-                                <label for="messageTokensEnabled" class="checkbox_label" title="Show the number of tokens for each message in the chat log." data-i18n="[title]Show the number of tokens in each message in the chat log">
-                                    <input id="messageTokensEnabled" type="checkbox" />
-                                    <small data-i18n="Show Message Token Count">Message Token Count</small>
-                                </label>
-                                <label for="compact_input_area" class="checkbox_label" title="Single-row message input area. Mobile only, no effect on PC." data-i18n="[title]Single-row message input area. Mobile only, no effect on PC">
-                                    <input id="compact_input_area" type="checkbox" />
-                                    <small data-i18n="Compact Input Area (Mobile)">Compact Input Area</small><i class="fa-solid fa-mobile-screen-button"></i>
-                                </label>
-                                <label for="show_swipe_num_all_messages" class="checkbox_label" title="Display swipe numbers for all messages, not just the last." data-i18n="[title]Display swipe numbers for all messages, not just the last.">
-                                    <input id="show_swipe_num_all_messages" type="checkbox" />
-                                    <small data-i18n="Swipe # for All Messages">Swipe # for All Messages</small>
-                                </label>
-                                <label for="hotswapEnabled" class="checkbox_label" title="In the Character Management panel, show quick selection buttons for favorited characters." data-i18n="[title]In the Character Management panel, show quick selection buttons for favorited characters">
-                                    <input id="hotswapEnabled" type="checkbox" />
-                                    <small data-i18n="Characters Hotswap">Characters Hotswap</small>
-                                </label>
-                                <label for="zoomed_avatar_magnification" class="checkbox_label" title="Enable magnification for zoomed avatar display." data-i18n="[title]Enable magnification for zoomed avatar display.">
-                                    <input id="zoomed_avatar_magnification" type="checkbox" />
-                                    <small data-i18n="Avatar Hover Magnification">Avatar Hover Magnification</small>
-                                    <i title="Enables a magnification effect on hover when you display the zoomed avatar after clicking an avatar's image in chat." data-i18n="[title]Enables a magnification effect on hover when you display the zoomed avatar after clicking an avatar's image in chat." class="right_menu_button fa-solid fa-circle-exclamation"></i>
-                                </label>
-                                <label for="bogus_folders" class="checkbox_label" title="Show tagged character folders in the character list." data-i18n="[title]Show tagged character folders in the character list">
-                                    <input id="bogus_folders" type="checkbox" />
-                                    <small data-i18n="Tags as Folders">Tags as Folders</small>
-                                    <i title="Recent change: Tags must be marked as folders in the Tag Management menu to appear as such. Click here to bring it up." data-i18n="[title]Tags_as_Folders_desc" class="tags_view right_menu_button fa-solid fa-circle-exclamation"></i>
-                                </label>
-                                <label for="click_to_edit" class="checkbox_label" title="Click the message text in the chat log to edit it." data-i18n="[title]Click the message text in the chat log to edit it.">
-                                    <input id="click_to_edit" type="checkbox" />
-                                    <small data-i18n="Click to Edit">Click to Edit</small>
-                                </label>
-                            </div>
                                 </div>
                             </div>
                         </div>
