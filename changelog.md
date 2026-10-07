@@ -9,6 +9,7 @@
 - PR #31 (2026-10-06) `fix: load the chat archive on large libraries`
 - PR #32 (2026-10-06) `fix: add Portuguese entries for many controls that still showed English`
 - PR #37 (2026-10-06) `feat(personas): rebuild the Persona page and load its styles first`
+- PR #41 (2026-10-07) `fix: let Tab accept a Notebook link suggestion on list lines`
 
 ## v1.1.1
 
