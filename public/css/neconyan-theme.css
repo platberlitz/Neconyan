@@ -4336,8 +4336,8 @@ input[type='range']::-moz-range-thumb {
 #UI-presets-block > .sb-ui-theme-actions {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
+    justify-content: flex-end;
+    gap: 8px;
     margin: 0;
     padding: 0;
     background: transparent;
@@ -4345,18 +4345,9 @@ input[type='range']::-moz-range-thumb {
     box-shadow: none;
 }
 
-#UI-presets-block > .sb-ui-theme-actions .flex-container {
-    gap: 8px;
-    align-items: center;
-    margin-left: auto;
-}
-
-#UI-presets-block .flex-container.flexnowrap.alignitemscenter {
-    gap: 10px;
-}
-
 #themes {
-    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
     min-height: 46px;
     border-radius: var(--sb-radius-md);
     border: 1px solid var(--sb-input-border);
@@ -4369,6 +4360,8 @@ input[type='range']::-moz-range-thumb {
 #ui-preset-delete-button,
 #ui-preset-update-button,
 #ui-preset-save-button {
+    --sb-control-icon-physical-size: 44px;
+    flex: 0 0 44px;
     width: 44px;
     min-width: 44px;
     height: 44px;
@@ -5590,8 +5583,6 @@ input[type='range']::-moz-range-thumb {
         width: 100%;
     }
 
-    #UI-presets-block > .sb-ui-theme-actions,
-    #UI-presets-block .flex-container.flexnowrap.alignitemscenter,
     .sb-settings-subdrawer-toolbar {
         align-items: center;
         flex-wrap: wrap;

@@ -350,6 +350,54 @@ for (const phone of [true, false]) {
     });
 }
 
+for (const width of [393, 1280, 320]) {
+    test.describe(`Theme action alignment at ${width}px`, () => {
+        const phone = width < 768;
+        test.use(phone ? { ...IPHONE_SAFARI_CONTEXT, viewport: { width, height: 852 } } : { viewport: { width, height: 900 }, isMobile: false, hasTouch: false });
+
+        test('theme selector and all five actions fit without wrapping', async ({ page, context }) => {
+            if (phone) await installIPhoneSafari(context);
+            await installFailClosedRoutes(page);
+            await openSettings(page);
+            const categories = page.locator('.sb-settings-category-select');
+            if (await categories.isVisible()) await categories.selectOption('appearance');
+            else await page.locator('.sb-settings-tab-btn[data-tab="appearance"]').click();
+            const block = page.locator('#UI-presets-block');
+            if (!await block.isVisible()) await page.locator('#AppearanceSection > .inline-drawer-toggle').click();
+            if (phone) await applyIOSOnlyCss(page);
+            await block.scrollIntoViewIfNeeded();
+            await page.screenshot({ path: `${screenshotDir}/theme-alignment-${width}.png` });
+            const geometry = await block.evaluate(element => {
+                const rect = element.getBoundingClientRect();
+                const select = element.querySelector('#themes').getBoundingClientRect();
+                const buttons = [...element.querySelectorAll('.menu_button')].map(button => {
+                    const box = button.getBoundingClientRect();
+                    return { x: box.x, y: box.y, right: box.right, width: box.width, height: box.height };
+                });
+                return { left: rect.left, right: rect.right, select: { left: select.left, right: select.right, bottom: select.bottom }, buttons };
+            });
+            expect(geometry.buttons).toHaveLength(5);
+            expect(Math.abs(geometry.select.left - geometry.left)).toBeLessThan(1);
+            expect(Math.abs(geometry.select.right - geometry.right)).toBeLessThan(1);
+            const gaps = geometry.buttons.slice(1).map((button, index) => button.x - geometry.buttons[index].right);
+            expect(Math.max(...gaps) - Math.min(...gaps)).toBeLessThan(1);
+            expect(Math.min(...gaps)).toBeGreaterThanOrEqual(0);
+            for (const button of geometry.buttons) {
+                expect(button.y).toBeGreaterThan(geometry.select.bottom);
+                expect(Math.abs(button.y - geometry.buttons[0].y)).toBeLessThan(1);
+                expect(button.width).toBe(44);
+                expect(button.height).toBe(44);
+                expect(button.x).toBeGreaterThanOrEqual(geometry.left - 1);
+                expect(button.right).toBeLessThanOrEqual(geometry.right + 1);
+            }
+            await page.locator('#ui-preset-save-button').click();
+            const popup = page.locator('dialog.popup:visible');
+            await expect(popup).toContainText('Save');
+            await popup.getByRole('button', { name: 'Cancel', exact: true }).click();
+        });
+    });
+}
+
 test('Logs expose selectable output, preserve it on identical polling, and copy only entries', async ({ page }) => {
     const logsRequestCount = await installFailClosedRoutes(page);
     await openSettings(page);
