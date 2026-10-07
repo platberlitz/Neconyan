@@ -5,6 +5,7 @@
 ### Merged Staging PRs
 - PR #43 (2026-10-07) `fix(scratchpad): refresh Context when shared notes change`
 - PR #44 (2026-10-07) `fix(dialogue-colors): stop wasted verification requests and fix audit bugs`
+- PR #46 (2026-10-07) `fix(quick-image-gen): retain cancellation during queued image downloads`
 
 ## v1.2.0
 
