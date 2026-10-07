@@ -19617,9 +19617,8 @@ jQuery(async function () {
             try {
                 if (target.groupId) throw new Error(t`Choose a character before importing as a new instance.`);
                 if (!files.length) return;
-                if (files.length > 64 || files.reduce((total, file) => total + file.size, 0) > 64 * 1024 * 1024) {
-                    throw new Error(t`Choose up to 64 chat files, totalling at most 64 MiB.`);
-                }
+                const tooLarge = t`Choose up to 64 chat files, totalling at most 64 MiB.`;
+                if (files.length > 64 || files.reduce((total, file) => total + file.size, 0) > 64 * 1024 * 1024) throw new Error(tooLarge);
                 const batch = [];
                 for (const file of files) {
                     const format = file.name.split('.').pop().toLowerCase();
@@ -19627,8 +19626,11 @@ jQuery(async function () {
                     const content = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer());
                     batch.push({ name: file.name, format, content });
                 }
+                // The server limit applies to the encoded batch, which JSON escaping makes larger than the files.
+                const encoded = new File([JSON.stringify(batch)], 'selected-chats.json', { type: 'application/json' });
+                if (encoded.size > 64 * 1024 * 1024) throw new Error(tooLarge);
                 const formData = new FormData(formElement);
-                formData.set('avatar', new File([JSON.stringify(batch)], 'selected-chats.json', { type: 'application/json' }));
+                formData.set('avatar', encoded);
                 formData.set('file_type', 'instance-batch');
                 formData.set('user_name', name1);
                 formData.set('character_name', characterName);
