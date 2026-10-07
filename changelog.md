@@ -7,6 +7,7 @@
 - PR #44 (2026-10-07) `fix(dialogue-colors): stop wasted verification requests and fix audit bugs`
 - PR #45 (2026-10-07) `fix(scratchpad): keep the default prompt from duplicating Notebook rules`
 - PR #46 (2026-10-07) `fix(quick-image-gen): retain cancellation during queued image downloads`
+- PR #47 (2026-10-07) `fix(time-machine): prevent lost edits and repair snapshot capture`
 - PR #48 (2026-10-07) `feat(tour): shrink the Tour chip so collapsed page blurbs stay one line`
 
 ## v1.2.0
