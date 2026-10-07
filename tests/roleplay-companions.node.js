@@ -360,3 +360,46 @@ test('a saved length-limited batch failure survives an interruption after anothe
     assert.deepEqual(readArtifact(f.directories, f.jobId, 'roleplay-companion:a'), failed);
     assert.equal(f.rows().at(-1).extra.inChatAgentCompanionResults.c.content, 'Complete C');
 });
+
+const trackerCompanion = id => ({ ...companion(id), category: 'tracker',
+    prompt: `TASK_${id.toUpperCase()}\n[WORLD|Place]\ndetail: note\n[/WORLD]`,
+    postProcess: { enabled: true, type: 'extract', extractPattern: '\\[WORLD\\|[^\\]]*\\][\\s\\S]*?\\[\\/WORLD\\]', extractVariable: `${id}_world` } });
+const trackerBlock = '[WORLD|Market]\ndetail: Bells mark closing time.\n[/WORLD]';
+const trackerRoleplay = 'Mira wandered past the stalls, trailing her fingers over the bolts of silk. "You will not find better '
+    + 'cloth this side of the river," the merchant called after her, and she laughed despite herself.';
+
+test('native tracker Companions regenerate a reply that carries roleplay', async t => {
+    const f = prepared(t, [trackerCompanion('world')]);
+    const replies = [`${trackerRoleplay}\n\n${trackerBlock}`, trackerBlock];
+    const prompts = [];
+    await f.run({ generate: paid('main', 'Main reply'), generateAgent: paid('agent', options => {
+        prompts.push(JSON.stringify(options.messages));
+        return { text: replies[prompts.length - 1] };
+    }) });
+    const result = f.rows().at(-1).extra.inChatAgentCompanionResults.world;
+    assert.equal(prompts.length, 2);
+    assert.equal(result.status, 'done');
+    assert.equal(result.content, trackerBlock);
+    assert.ok(!prompts[1].includes('Repair mode'));
+    assert.ok(result.tokenUsage.outputTokens > 0);
+});
+
+test('native tracker Companions repair a broken reply and fail without closing a block around prose', async t => {
+    const f = prepared(t, [trackerCompanion('world'), trackerCompanion('lost')]);
+    const prompts = [];
+    await f.run({ generate: paid('main', 'Main reply'), generateAgent: paid('agent', options => {
+        const text = JSON.stringify(options.messages);
+        prompts.push(text);
+        if (text.includes('TASK_LOST')) return { text: `[WORLD|Market]\n${trackerRoleplay}` };
+        return { text: text.includes('Repair mode') ? `Fixed:\n${trackerBlock}` : `[WORLD|Market]\ndetail: Bells\n${trackerRoleplay}` };
+    }) });
+    const results = f.rows().at(-1).extra.inChatAgentCompanionResults;
+    const repairs = prompts.filter(prompt => prompt.includes('Repair mode'));
+    assert.equal(prompts.length, 4);
+    assert.equal(repairs.length, 2);
+    assert.ok(repairs.every(prompt => prompt.includes('Current companion agent note') && prompt.includes('Mira wandered')));
+    assert.equal(results.world.status, 'done');
+    assert.equal(results.world.content, trackerBlock);
+    assert.equal(results.lost.status, 'error');
+    assert.match(results.lost.error, /Tracker repair returned invalid output/);
+});

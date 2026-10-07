@@ -3450,6 +3450,101 @@ describe('in-chat agent post-processing runner', () => {
         expect(saveChatDebounced).not.toHaveBeenCalled();
     });
 
+    describe('automatic tracker cleanup', () => {
+        const block = '[WORLD|Culture|Market]\ndetail: Bells mark closing time.\n[/WORLD]';
+        const roleplay = 'Mira wandered past the stalls, trailing her fingers over the bolts of silk. "You will not find better '
+            + 'cloth this side of the river," the merchant called after her, and she laughed despite herself.';
+        const makeTracker = (id, companion = {}) => createCompanionAgent({
+            id,
+            category: 'tracker',
+            companion,
+            postProcess: {
+                enabled: true,
+                type: 'extract',
+                extractPattern: '\\[WORLD\\|[^\\]]*\\][\\s\\S]*?\\[\\/WORLD\\]',
+                extractVariable: `${id}_world_data`,
+            },
+        });
+        const prompts = () => generateQuietPrompt.mock.calls.map(call => call[0].quietPrompt);
+
+        test('regenerates a tracker reply that carries roleplay', async () => {
+            const tracker = makeTracker('roleplay-tracker');
+            enabledAgents = [tracker];
+            generateQuietPrompt.mockResolvedValueOnce(`${roleplay}\n\n${block}`).mockResolvedValueOnce(block);
+            const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+            chat.push({ mes: 'Assistant reply', name: 'Assistant', is_user: false, is_system: false, extra: {} });
+
+            const result = await companionRunner.runCompanionAgentOnMessage(tracker.id, 0);
+
+            expect(result).toEqual(expect.objectContaining({ status: 'done', content: block }));
+            expect(generateQuietPrompt).toHaveBeenCalledTimes(2);
+            expect(prompts()[1]).not.toContain('Repair mode');
+        });
+
+        test('keeps only the tracker block when the fresh reply carries roleplay again', async () => {
+            const tracker = makeTracker('stubborn-roleplay-tracker');
+            enabledAgents = [tracker];
+            generateQuietPrompt.mockResolvedValue(`${block}\n\n${roleplay}`);
+            const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+            chat.push({ mes: 'Assistant reply', name: 'Assistant', is_user: false, is_system: false, extra: {} });
+
+            const result = await companionRunner.runCompanionAgentOnMessage(tracker.id, 0);
+
+            expect(result).toEqual(expect.objectContaining({ status: 'done', content: block }));
+            expect(generateQuietPrompt).toHaveBeenCalledTimes(2);
+        });
+
+        test('repairs a broken tracker reply straight away', async () => {
+            const tracker = makeTracker('broken-tracker');
+            enabledAgents = [tracker];
+            const broken = `[WORLD|Culture|Market]\ndetail: Bells mark closing time.\n${roleplay}`;
+            generateQuietPrompt.mockResolvedValueOnce(broken).mockResolvedValueOnce(`Fixed:\n${block}`);
+            const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+            chat.push({ mes: 'Assistant reply', name: 'Assistant', is_user: false, is_system: false, extra: {} });
+
+            const result = await companionRunner.runCompanionAgentOnMessage(tracker.id, 0);
+
+            expect(result).toEqual(expect.objectContaining({ status: 'done', content: block }));
+            expect(generateQuietPrompt).toHaveBeenCalledTimes(2);
+            expect(prompts()[1]).toContain('Repair mode');
+            expect(prompts()[1]).toContain('Current companion agent note');
+            expect(prompts()[1]).toContain('Mira wandered past the stalls');
+        });
+
+        test('keeps the previous note when the automatic repair also fails', async () => {
+            const tracker = makeTracker('unrepairable-tracker');
+            enabledAgents = [tracker];
+            generateQuietPrompt.mockResolvedValue(`[WORLD|Culture|Market]\n${roleplay}`);
+            const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+            chat.push({ mes: 'Assistant reply', name: 'Assistant', is_user: false, is_system: false, extra: {} });
+            companionRunner.setCompanionResult(chat[0], tracker, { status: 'done', content: block });
+
+            const result = await companionRunner.runCompanionAgentOnMessage(tracker.id, 0);
+
+            expect(generateQuietPrompt).toHaveBeenCalledTimes(2);
+            expect(result).toEqual(expect.objectContaining({ content: block }));
+            expect(chat[0].extra.inChatAgentCompanionResults[tracker.id].content).toBe(block);
+        });
+
+        test('cleans up only the batched tracker that went wrong', async () => {
+            const scene = makeTracker('scene', { batch: true, batchAgentIds: ['mood'] });
+            const mood = makeTracker('mood', { batch: true, batchAgentIds: ['scene'] });
+            enabledAgents = [scene, mood];
+            generateQuietPrompt
+                .mockResolvedValueOnce(`<<<companion:scene>>>${block}<<<end:scene>>>\n<<<companion:mood>>>${roleplay}\n${block}<<<end:mood>>>`)
+                .mockResolvedValueOnce(block.replace('Bells', 'Drums'));
+            const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+            chat.push({ mes: 'Assistant reply', name: 'Assistant', is_user: false, is_system: false, extra: {} });
+
+            await companionRunner.runCompanionsOnMessage(0);
+
+            const results = chat[0].extra.inChatAgentCompanionResults;
+            expect(generateQuietPrompt).toHaveBeenCalledTimes(2);
+            expect(results.scene).toEqual(expect.objectContaining({ status: 'done', content: block }));
+            expect(results.mood).toEqual(expect.objectContaining({ status: 'done', content: block.replace('Bells', 'Drums') }));
+        });
+    });
+
     test('stops a tracker companion batch after switching chats', async () => {
         let resolveRepair;
         const makeTracker = id => createCompanionAgent({
