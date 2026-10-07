@@ -70,9 +70,8 @@ function findEdgeMatch(output, body, fromEnd) {
 }
 
 /**
- * Cleans one append agent's output against the reply body: drops a copy of the
- * reply the model echoed before or after its new content, and drops a block the
- * reply already contains. Returns the block to add, or an empty string.
+ * Strips a copy of the input reply echoed before or after an append's new content.
+ * Keep partial matches until composition: a later rewrite may remove that passage.
  */
 export function cleanAppendOutput(outputText, bodyText) {
     let output = String(outputText ?? '').replace(RESPONSE_TAG_RE, '').trim();
@@ -94,10 +93,6 @@ export function cleanAppendOutput(outputText, bodyText) {
     }
     output = output.replace(RESPONSE_TAG_RE, '').trim();
 
-    const normalizedOutput = normalizeSynthesisText(output);
-    if (!normalizedOutput || normalizedOutput.length >= MIN_MATCH_LENGTH && normalizedBody.includes(normalizedOutput)) {
-        return '';
-    }
     return output;
 }
 
@@ -121,14 +116,21 @@ export function addAppendOutputs(draft, outputs, { isPrepend = () => false, body
     return added;
 }
 
-/** Joins held add-on blocks around the body; with no blocks the body is returned as is. */
+/** Deduplicates against the finished body, then joins the held add-on blocks around it. */
 export function composePromptTransformDraft(draft, join) {
     let text = draft.body;
-    if (draft.before.length > 0) {
-        text = join(draft.before.join('\n\n'), text);
+    const body = normalizeSynthesisText(draft.body);
+    const isNewBlock = block => {
+        const key = normalizeSynthesisText(block);
+        return key && key !== body && !(key.length >= MIN_MATCH_LENGTH && body.includes(key));
+    };
+    const before = draft.before.filter(isNewBlock);
+    const after = draft.after.filter(isNewBlock);
+    if (before.length > 0) {
+        text = join(before.join('\n\n'), text);
     }
-    if (draft.after.length > 0) {
-        text = join(text, draft.after.join('\n\n'));
+    if (after.length > 0) {
+        text = join(text, after.join('\n\n'));
     }
     return text;
 }
@@ -183,7 +185,13 @@ export async function runPromptTransformStages({
             ? Promise.resolve({ ok: true, value: { stop: true } })
             : Promise.resolve()
                 .then(() => runAppend(appendStage.agents, startBody))
-                .then(value => ({ ok: true, value }), error => ({ ok: false, error }));
+                .then(value => {
+                    if (value?.stop) stopped = true;
+                    return { ok: true, value };
+                }, error => {
+                    stopped = true;
+                    return { ok: false, error };
+                });
         let rewriteError = null;
         try {
             for (const stage of stages) {

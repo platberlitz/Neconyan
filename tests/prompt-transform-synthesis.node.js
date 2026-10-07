@@ -31,9 +31,13 @@ test('an append output that repeats the reply keeps only its new content', () =>
     assert.equal(cleanAppendOutput(`<assistant_response>${reply}</assistant_response>\nChoices: a`, reply), 'Choices: a');
 });
 
-test('an append output that only repeats the reply, or a passage of it, adds nothing', () => {
+test('an echoed reply is dropped but passages wait for the finished body', () => {
     assert.equal(cleanAppendOutput(` ${reply.replace(/\s+/g, ' ')} `, reply), '');
-    assert.equal(cleanAppendOutput('She smiled and poured the tea.', reply), '');
+    const passage = 'She smiled and poured the tea.';
+    assert.equal(cleanAppendOutput(passage, reply), passage);
+    const draft = createPromptTransformDraft(reply);
+    addAppendOutputs(draft, [{ agent: { id: 'a1' }, text: passage }]);
+    assert.equal(composePromptTransformDraft(draft, join), reply);
     assert.equal(cleanAppendOutput('1. Yes', reply), '1. Yes');
     assert.equal(cleanAppendOutput('Hi there, more text', 'Hi'), 'Hi there, more text');
 });
@@ -89,6 +93,51 @@ test('one at a time gives later append agents the rewritten body and keeps earli
     assert.deepEqual(rewriteInputs, ['Plain reply']);
     assert.equal(composePromptTransformDraft(draft, join), 'Rewritten reply\n\na1 for Plain reply\n\na2 for Rewritten reply');
 });
+
+for (const parallel of [true, false]) {
+    test(`${parallel ? 'parallel' : 'sequential'} merging compares held blocks with the finished reply`, async () => {
+        const menu = '[CHOICES]\n1. Take the cup\n2. Decline politely\n[/CHOICES]';
+        const original = `${reply}\n\n${menu}`;
+        for (const rewritten of [reply.toUpperCase(), `${reply.toUpperCase()}\n\n${menu}`]) {
+            const { draft } = await runPromptTransformStages({
+                agents: agents(['a1', 'r1']), text: original, parallel, isAppend,
+                runAppend: async group => ({ outputs: [{ agent: group[0], text: `${original}\n\n${menu}` }] }),
+                runRewrite: async () => ({ text: rewritten }),
+            });
+            assert.equal(composePromptTransformDraft(draft, join), `${reply.toUpperCase()}\n\n${menu}`);
+        }
+    });
+}
+
+for (const failure of ['stop', 'throw']) {
+    test(`an append ${failure} prevents later rewrites and waits for the one already running`, async () => {
+        const calls = [];
+        let releaseRewrite;
+        const held = new Promise(resolve => { releaseRewrite = resolve; });
+        let rewriteFinished = false;
+        const run = runPromptTransformStages({
+            agents: agents(['a1', 'r1', 'r2']), text: reply, parallel: true, isAppend,
+            runRewrite: async agent => {
+                calls.push(agent.id);
+                await held;
+                rewriteFinished = true;
+                return { text: 'Rewritten' };
+            },
+            runAppend: async () => {
+                calls.push('a1');
+                if (failure === 'throw') throw new Error('append failed');
+                return { stop: true };
+            },
+        });
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(rewriteFinished, false);
+        releaseRewrite();
+        if (failure === 'throw') await assert.rejects(run, /append failed/);
+        else assert.equal((await run).stopped, true);
+        assert.equal(rewriteFinished, true);
+        assert.deepEqual(calls, ['r1', 'a1']);
+    });
+}
 
 test('a stop leaves out the stopping append group and later stages', async () => {
     const calls = [];

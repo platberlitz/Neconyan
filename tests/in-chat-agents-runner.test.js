@@ -6653,6 +6653,50 @@ describe('in-chat agent post-processing runner', () => {
         await new Promise(resolve => setTimeout(resolve, 5));
     });
 
+    test('run together preserves an appended menu removed from the rewritten body', async () => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'parallel';
+        for (const agent of enabledAgents) agent.postProcess.enabled = true;
+        enabledAgents[1].postProcess.promptTransformMode = 'append';
+        const choices = '[CHOICES]\n1. Take the cup\n2. Decline politely\n[/CHOICES]';
+        generateQuietPrompt.mockImplementation(request => Promise.resolve(
+            JSON.stringify(request).includes('Rewrite as A') ? 'She pours the tea.' : choices));
+        const message = { mes: `She pours the tea and waits for your answer.\n\n${choices}`, is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        expect(message.mes).toBe(`She pours the tea.\n\n${choices}`);
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('a failed parallel companion append prevents later paid rewrites', async () => {
+        globalSettings.appendAgentsExecutionMode = 'parallel';
+        const companion = createCompanionAgent({ id: 'failed-append-companion' });
+        enabledAgents = [companion,
+            createCompanionOutputTransformAgent({ id: 'append', prompt: 'APPEND', injection: { order: 100 }, postProcess: { promptTransformMode: 'append' } }),
+            createCompanionOutputTransformAgent({ id: 'rewrite1', prompt: 'REWRITE1', injection: { order: 110 } }),
+            createCompanionOutputTransformAgent({ id: 'rewrite2', prompt: 'REWRITE2', injection: { order: 120 } }),
+        ];
+        let releaseRewrite;
+        let appendFailed = false;
+        const started = [];
+        generateQuietPrompt.mockImplementation(request => {
+            const text = JSON.stringify(request);
+            if (text.includes('APPEND')) { started.push('append'); appendFailed = true; return Promise.reject(new Error('Append failed')); }
+            if (text.includes('REWRITE1')) { started.push('rewrite1'); return new Promise(resolve => { releaseRewrite = resolve; }); }
+            started.push('rewrite2');
+            return Promise.resolve('Unneeded final rewrite');
+        });
+        const { runCompanionOutputPostPasses } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const pending = runCompanionOutputPostPasses(companion, 'Original companion note');
+        await waitFor(() => appendFailed && typeof releaseRewrite === 'function');
+        await new Promise(resolve => setTimeout(resolve, 5));
+        releaseRewrite('First rewrite');
+        await expect(pending).rejects.toThrow('Append failed');
+        expect(started).toEqual(['rewrite1', 'append']);
+    });
+
     test('raw output rules run once on generation, then only on explicitly enabled edits', async () => {
         useRegexOnlyAgent();
         const script = enabledAgents[0].regexScripts[0];

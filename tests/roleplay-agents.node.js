@@ -155,6 +155,81 @@ test('parallel append passes share one baseline, retain tracker state and freeze
     assert.equal((await runRoleplayAgentPostprocessing(f.context, { ...options, value: 'Body\n[STATE]x[/STATE]', generate: () => assert.fail('Paid post-pass repeated') })).hash, result.hash);
 });
 
+for (const mode of ['parallel', 'sequential']) {
+    for (const namespace of ['', 'companion:side']) {
+        test(`pre-upgrade ${mode} postprocessing resumes saved ${namespace || 'main'} requests without replay`, async t => {
+            const transform = (id, order, promptTransformMode) => ({ id, enabled: true, phase: 'post', prompt: id.toUpperCase(),
+                injection: { order }, postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMode, promptTransformMaxTokens: 64 } });
+            const f = prepared(t, [transform('rewrite', 1, 'rewrite'), transform('menu', 2, 'append'), transform('later', 3, 'rewrite')],
+                { appendAgentsExecutionMode: mode });
+            const options = { ...phases(f), namespace, value: 'The lantern flickers at the fork in the road.' };
+            prepareRoleplayAgentContributions(f.context, options);
+            const definitions = f.locked(lease => readRoleplayAgentsLocked(lease, options.snapshot.agents));
+            const rewritten = 'The lantern gutters at the fork in the road.';
+            const menu = '[CHOICES]\n1. Go left\n2. Go right\n[/CHOICES]';
+            const legacyBody = `${rewritten}\n\n${menu}`;
+            // Seed the old durable steps directly: each identity binds the exact
+            // combined text that the pre-upgrade runner supplied to this agent.
+            const seed = (id, text, generate) => {
+                const agent = definitions.find(item => item.id === id);
+                return runAgentModelStep(f.context, { base: options.base, account: f.account,
+                    name: `${namespace ? namespace + ':' : ''}post:${id}`,
+                    identity: roleplayHash({ intent: f.context.job.intent, agent: options.snapshot.agents.agents.find(item => item.id === id),
+                        text, intercept: false, format: 'text', generationType: options.generationType }),
+                    binding: agent.binding || options.binding, modelOverride: agent.binding ? agent.modelOverride : '',
+                    maxTokens: 64, macros: options.macros, tokenizer: options.snapshot.tokenizer, fallbackContext: 4000,
+                    assertCurrent: options.assertCurrent, generate,
+                    buildMessages: () => [{ role: 'system', content: agent.prompt }, { role: 'user', content: text }] });
+            };
+            await seed('rewrite', options.value, modelResponse(() => ({ text: rewritten })));
+            await seed('menu', rewritten, modelResponse(() => ({ text: menu })));
+            await assert.rejects(seed('later', legacyBody, () => { throw new Error('Restart before dispatch'); }), /Restart before dispatch/);
+            let calls = 0;
+            const generate = modelResponse(({ messages }) => {
+                calls++;
+                assert.equal(messages[0].content, 'LATER');
+                assert.equal(messages[1].content, legacyBody);
+                return { text: 'Completed legacy rewrite' };
+            });
+            const result = await runRoleplayAgentPostprocessing(f.context, { ...options, generate });
+            assert.equal(result.text, 'Completed legacy rewrite');
+            assert.equal(calls, 1);
+            assert.deepEqual(result.runs.map(run => run.agentId), ['rewrite', 'menu', 'later']);
+            const phaseName = namespace ? `roleplay-agent-post:${namespace}` : 'roleplay-agent-post';
+            assert.equal(readArtifact(f.directories, f.job.id, `${phaseName}:plan`).version, 1);
+            await runRoleplayAgentPostprocessing(f.context, { ...options, generate: () => assert.fail('Saved work repeated') });
+        });
+    }
+}
+
+test('an interrupted new synthesis retains its plan and reuses completed parallel steps', async t => {
+    const transform = (id, order, promptTransformMode) => ({ id, enabled: true, phase: 'post', prompt: id.toUpperCase(),
+        injection: { order }, postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMode, promptTransformMaxTokens: 64 } });
+    const f = prepared(t, [transform('rewrite', 1, 'rewrite'), transform('menu', 2, 'append'), transform('later', 3, 'rewrite')]);
+    const options = { ...phases(f), value: 'The lantern flickers at the fork in the road.' };
+    prepareRoleplayAgentContributions(f.context, options);
+    const rewritten = 'The lantern gutters at the fork in the road.';
+    const menu = '[CHOICES]\n1. Go left\n2. Go right\n[/CHOICES]';
+    await assert.rejects(runRoleplayAgentPostprocessing(f.context, { ...options, generate: args => {
+        if (args.messages[0].content.startsWith('LATER')) throw new Error('Restart before dispatch');
+        return modelResponse(({ messages }) => {
+            assert.ok(messages[1].content.includes(options.value));
+            return { text: messages[0].content.startsWith('REWRITE') ? rewritten : menu };
+        })(args);
+    } }), /Restart before dispatch/);
+    assert.equal(readArtifact(f.directories, f.job.id, 'roleplay-agent-post:plan').version, 2);
+    let calls = 0;
+    const result = await runRoleplayAgentPostprocessing(f.context, { ...options, generate: modelResponse(({ messages }) => {
+        calls++;
+        assert.ok(messages[0].content.startsWith('LATER'));
+        assert.ok(messages[1].content.includes(rewritten));
+        assert.ok(!messages[1].content.includes(menu));
+        return { text: 'Completed new rewrite' };
+    }) });
+    assert.equal(calls, 1);
+    assert.equal(result.text, `Completed new rewrite\n\n${menu}`);
+});
+
 test('post-main interception waits for an exact saved review and does not repeat an accepted decision', async t => {
     const f = prepared(t, [{ id: 'review', enabled: true, prompt: 'Rework', preProcess: { mode: 'intercept', interceptTiming: 'post-main-generation', applyMode: 'replace' } }]);
     const options = phases(f);
