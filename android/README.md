@@ -1,5 +1,7 @@
 # Neconyan for Android
 
+For installation and usage questions, read the [Android guide in the official handbook](https://platberlitz.github.io/neconyan-docs/start/android/).
+
 This app runs Neconyan's server on the phone. It includes Node.js and the web
 interface; Termux and a separate server are not required. Model access is still
 your own: connect to a supported API or model service in Model → Connections.

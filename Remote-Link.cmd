@@ -6,7 +6,7 @@ echo This script downloads and runs the latest cloudflared.exe from Cloudflare t
 echo Using the randomly generated temporary tunnel URL, anyone can access your Neconyan over the Internet while the tunnel
 echo is active. Keep the URL safe and secure your Neconyan installation by setting a username and password in config.yaml!
 echo.
-echo See https://docs.sillytavern.app/usage/remoteconnections/ for more details about how to secure your SillyTavern install.
+echo See https://platberlitz.github.io/neconyan-docs/start/phone/ for Neconyan connection and remote-access guidance.
 echo.
 echo By continuing you confirm that you're aware of the potential dangers of having a tunnel open and take all responsibility
 echo to properly use and secure it!

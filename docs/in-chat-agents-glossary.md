@@ -1,5 +1,7 @@
 # In-Chat Agents Glossary
 
+For setup and usage questions, start with [Agents in the official handbook](https://platberlitz.github.io/neconyan-docs/helpers/agents/).
+
 Every label here matches what you see on screen. Search for the word you saw, read the short entry, and jump back. Sections follow the order you meet things: the Agents panel, then an agent's editor, then the Companion panel.
 
 ## Core Terms

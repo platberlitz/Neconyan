@@ -81,6 +81,7 @@ describe('Neconyan /? help guide', () => {
         }
         expect(template).toContain('data-neconyan-help-action="workbench"');
         expect(template).not.toContain('docs.sillytavern.app');
+        expect(template).toContain('href="https://platberlitz.github.io/neconyan-docs/"');
         expect(template).not.toMatch(/data-i18n="help_\d"/);
     });
 

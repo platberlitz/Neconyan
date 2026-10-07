@@ -1,5 +1,7 @@
 # Conversation Mode Glossary
 
+For usage questions, start with [Conversation in the official handbook](https://platberlitz.github.io/neconyan-docs/workspace/conversation/).
+
 Conversation Mode is a separate direct-message workspace for talking to Neconyan characters outside the normal Roleplay transcript. This reference explains the visible controls, automatic behavior, prompt settings, and stored Conversation data.
 
 ## Opening and Closing Conversation Mode

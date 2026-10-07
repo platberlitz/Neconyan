@@ -1,5 +1,7 @@
 # Neconyan
 
+[Neconyan 공식 안내서 (영어)](https://platberlitz.github.io/neconyan-docs/)
+
 <img src="../public/img/neconyan-pixel-cat.webp" width="180" alt="Neconyan">
 
 캐릭터와 대화하고, 이야기를 만들고, 모델을 실험하는 아늑한 공간입니다.

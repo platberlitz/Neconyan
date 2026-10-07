@@ -6,7 +6,7 @@ labels:
         body: >
           Hey @{{ issue.user.login }}, this issue has been marked as invalid.
 
-          Please double-check that you've followed the issue template, included all necessary details, and reviewed the docs & previous issues before submitting.
+          Check the [Neconyan handbook](https://platberlitz.github.io/neconyan-docs/) for usage questions. Before submitting a bug report, follow the issue template and check previous issues.
           If provided, follow the instructions given by maintainers.
 
   - name: 👩‍💻 Good First Issue
@@ -16,8 +16,8 @@ labels:
           🏆 This issue has been marked as a good first issue for contributors to implement!
           This is a great way to support the project. While also improving your skills, you'll also be credited as a contributor once your PR is merged.
 
-          If you're new to SillyTavern [here is the official documentation](https://docs.sillytavern.app/). The official contribution guide can be found [here](https://github.com/SillyTavern/SillyTavern/blob/release/CONTRIBUTING.md).
-          If you need any support, feel free to reach out via [Discord](https://discord.gg/sillytavern), or let us know in this issue or via [discussions](https://github.com/SillyTavern/SillyTavern/discussions).
+          Start with the [Neconyan handbook](https://platberlitz.github.io/neconyan-docs/) for usage questions and the [contribution guide](https://github.com/platberlitz/Neconyan/blob/staging/CONTRIBUTING.md) for development.
+          Ask questions about implementing this change in this issue.
 
   - name: ❌ wontfix
     labeled:

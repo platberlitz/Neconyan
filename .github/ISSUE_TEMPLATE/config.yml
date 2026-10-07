@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Neconyan documentation and usage questions
+    url: https://platberlitz.github.io/neconyan-docs/
+    about: Start with the official handbook for help using Neconyan.

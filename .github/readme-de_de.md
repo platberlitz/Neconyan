@@ -1,5 +1,7 @@
 # Neconyan
 
+[Offizielles Neconyan-Handbuch (Englisch)](https://platberlitz.github.io/neconyan-docs/)
+
 <img src="../public/img/neconyan-pixel-cat.webp" width="180" alt="Neconyan">
 
 Ein Zuhause für Charakter-Chats, Geschichten und Experimente mit Sprachmodellen.

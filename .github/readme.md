@@ -9,6 +9,8 @@
 
 Neconyan is my cat-themed fork of [SillyTavern](https://github.com/SillyTavern/SillyTavern) and [SillyBunny](https://github.com/SillyBunnyTeam/SillyBunny) for chatting and roleplaying with AI characters, on desktop or your phone. You bring the model, either a local backend or an API key, since no model access or credits come with it.
 
+**[Read the official Neconyan handbook](https://platberlitz.github.io/neconyan-docs/).** Start there for setup and questions about using Neconyan. It includes screenshot guides, a macro reference and instructions for making extensions. If something isn't working, try the [troubleshooting guide](https://platberlitz.github.io/neconyan-docs/help/troubleshooting/) before opening an issue.
+
 If you want SillyTavern with everything working exactly like upstream, use [SillyBunny](https://github.com/SillyBunnyTeam/SillyBunny) instead. I only pull in the upstream bits I want, so some things look and behave differently here, and some extensions might not work.
 
 <p align="center">

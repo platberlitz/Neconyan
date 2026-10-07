@@ -1,5 +1,7 @@
 # Notebooks
 
+For setup and usage questions, start with [Notebooks in the official handbook](https://platberlitz.github.io/neconyan-docs/helpers/notebooks/).
+
 Notebooks keeps your ideas, drafts, world-building, references and session journals inside Neconyan. A note does not need a chat or a character. This workspace is separate from the chat's Author's Note and Companion notes.
 
 Open it from **Notebooks** in the workspace rail (the sidebar on desktop, the drawer on a phone). It works with no chat open and with no AI connection.

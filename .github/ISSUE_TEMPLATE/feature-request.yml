@@ -5,6 +5,11 @@ title: '[FEATURE_REQUEST] <title>'
 labels: ['🦄 Feature Request']
 
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the [official Neconyan handbook](https://platberlitz.github.io/neconyan-docs/) to see whether the feature is already available.
+        For questions about how to use it, start with the handbook. Use this form to suggest a change.
 
   # Field 1 - Did the user searched for similar requests
   - type: dropdown

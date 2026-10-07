@@ -1,5 +1,7 @@
 # Mewmory
 
+For setup and usage questions, start with [Mewmory in the official handbook](https://platberlitz.github.io/neconyan-docs/helpers/mewmory/).
+
 Mewmory is Neconyan’s native long-form Roleplay memory system. Pawspective is its character-specific interview history. Open **Mewmory** in the workspace navigation on desktop or mobile.
 
 ## Set up
