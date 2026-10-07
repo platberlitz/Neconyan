@@ -2,7 +2,7 @@ import { appendHelperPrefillMessages } from '../../public/scripts/extensions/hel
 import { applyRegexScriptList } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 import { buildRegexScriptRefsForAgent } from '../../public/scripts/extensions/in-chat-agents/regex-snapshot-store.js';
 import { inspectTrackerState, mergeTrackerRepairPayload, TRACKER_REPAIR_INSTRUCTION } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
-import { composePromptTransformDraft, runPromptTransformStages } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-synthesis.js';
+import { composePromptTransformDraft, planPromptTransformStages, runPromptTransformStages } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-synthesis.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { createProviderScope, readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
@@ -212,6 +212,44 @@ export function roleplayAgentOutputBaseline(value, pre) {
     return stripSavedAuxiliaryTrackerEchoes(value, pre?.trackerTags ?? [], []);
 }
 
+// Old paid steps include preceding append blocks in later inputs. Keep their
+// original ordering and exact merge rules instead of invalidating those receipts.
+async function runLegacyPromptTransformStages({ agents, text, isAppend, runRewrite, runAppend }) {
+    for (const stage of planPromptTransformStages(agents, { isAppend })) {
+        if (stage.type === 'rewrite') {
+            const outcome = await runRewrite(stage.agents[0], text);
+            if (typeof outcome?.text === 'string') text = outcome.text;
+            if (outcome?.stop) break;
+        } else {
+            const outcome = await runAppend(stage.agents, text);
+            if (outcome?.stop) break;
+            const before = [], after = [];
+            for (const { agent, text: output } of outcome?.outputs ?? []) {
+                if (!output) continue;
+                const blocks = prepend(agent, output) ? before : after;
+                if (!blocks.includes(output)) blocks.push(output);
+            }
+            text = join(join(before.reduce(join, ''), text), after.reduce(join, ''));
+        }
+    }
+    return { draft: { body: text, before: [], after: [] } };
+}
+
+function postprocessingPlan(context, account, phaseName, identity, selected, modelName) {
+    const name = `${phaseName}:plan`;
+    const saved = readPhase(context, account, name, identity);
+    if (saved) {
+        if (![1, 2].includes(saved.version)) throw fail('The saved Agent postprocessing plan is unsupported.');
+        return saved.version;
+    }
+    const started = withRoleplayAccount({ owner: context.owner, directories: context.directories }, account, () =>
+        selected.some(agent => ['input', 'result'].some(part =>
+            readArtifact(context.directories, context.job.id, `agent-model:${modelName(agent.id)}:${part}`) !== undefined)));
+    // Persist the choice before any new call, so another interruption cannot
+    // mistake a new synthesis run for a pre-upgrade run.
+    return savePhase(context, account, name, { identity, version: started ? 1 : 2 }).version;
+}
+
 export async function runRoleplayAgentPostprocessing(context, options) {
     const { base, snapshot, records, value, generationType, macros } = options;
     if (!snapshot.agents) return { text: value, extra: {}, metadata: {}, runs: [] };
@@ -233,12 +271,14 @@ export async function runRoleplayAgentPostprocessing(context, options) {
         && agent.prompt.trim() && (!options.repairTrackers || agent.postProcess.enabled && agent.postProcess.promptTransformEnabled && ['post', 'both'].includes(agent.phase) && agent.postProcess.type !== 'extract'));
     const baseline = companionOutput || manual ? value : roleplayAgentOutputBaseline(value, pre);
     const modelName = id => `${options.namespace ? options.namespace + ':' : ''}post:${id}`;
+    const version = postprocessingPlan(context, snapshot.account, phaseName, identity, selected, modelName);
     let postFailed = false;
     const runs = [];
     const parallel = snapshot.agents.appendMode === 'parallel';
     // Run together shares one provider scope, so rewrite and append steps can be in flight at once.
     const scope = parallel ? { ...context, providerScope: context.providerScope ?? createProviderScope(context) } : context;
-    const { draft } = await runPromptTransformStages({
+    const runStages = version === 1 ? runLegacyPromptTransformStages : runPromptTransformStages;
+    const { draft } = await runStages({
         agents: selected, text: baseline, parallel, isPrepend: prepend,
         isAppend: agent => agent.postProcess.promptTransformMode === 'append',
         runRewrite: async (agent, body) => {
