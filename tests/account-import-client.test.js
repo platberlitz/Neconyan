@@ -27,10 +27,75 @@ test('a lost operation acknowledgement retains the uploaded source and refuses a
     const f = fixture();
     f.client.run.mockImplementationOnce(async (_kind, input, options) => { await options.prepareInput(input); throw new Error('acceptance lost'); });
     await expect(f.run({ mode: 'zip' }, { file: f.file })).rejects.toThrow('acceptance lost');
-    await expect(f.run({ mode: 'zip' }, { file: { ...f.file, name: 'different.zip' } })).rejects.toThrow('different ZIP');
+    f.client.request.mockResolvedValue({ inputId: 'a'.repeat(64) });
+    f.upload.mockRejectedValueOnce(new Error('This import key already belongs to a different upload. The earlier upload was kept.'));
+    await expect(f.run({ mode: 'zip' }, { file: { ...f.file, name: 'different.zip' } })).rejects.toThrow('different upload');
     await f.run({ mode: 'zip' }, { file: f.file });
-    expect(f.upload).toHaveBeenCalledTimes(1);
+    expect(f.upload).toHaveBeenCalledTimes(2);
     expect(f.values.size).toBe(0);
+});
+
+test('a fresh installation accepts a ZIP despite an old browser upload receipt', async () => {
+    const f = fixture();
+    f.values.set('neconyan-account-import-upload:alice', JSON.stringify({ key: 'old-upload',
+        file: { name: 'previous.zip', size: 100, lastModified: 1 }, inputId: 'b'.repeat(64) }));
+    const prepareInput = jest.fn(value => value);
+    await expect(f.run({ mode: 'zip' }, { file: f.file, prepareInput })).resolves.toEqual(f.record);
+    expect(f.client.request).toHaveBeenCalledWith('/api/operations/import-input/old-upload');
+    expect(f.upload).toHaveBeenCalledWith('old-upload', f.file);
+    expect(prepareInput).toHaveBeenCalledWith({ mode: 'zip', inputId: 'a'.repeat(64) });
+});
+
+test('a changed Android file timestamp verifies the ZIP with the original upload key', async () => {
+    const f = fixture();
+    f.values.set('neconyan-account-import-upload:alice', JSON.stringify({ key: 'old-upload', file: f.file, inputId: 'a'.repeat(64) }));
+    f.client.request.mockResolvedValue({ inputId: 'a'.repeat(64) });
+    const selected = { ...f.file, lastModified: 999 };
+    await expect(f.run({ mode: 'zip' }, { file: selected })).resolves.toEqual(f.record);
+    expect(f.upload).toHaveBeenCalledWith('old-upload', selected);
+});
+
+test('a stale cached receipt for the same file is checked against the current installation', async () => {
+    const f = fixture();
+    f.values.set('neconyan-account-import-upload:alice', JSON.stringify({ key: 'old-upload', file: f.file, inputId: 'b'.repeat(64) }));
+    const prepareInput = jest.fn(value => value);
+    await f.run({ mode: 'zip' }, { file: f.file, prepareInput });
+    expect(f.upload).toHaveBeenCalledWith('old-upload', f.file);
+    expect(prepareInput).toHaveBeenCalledWith({ mode: 'zip', inputId: 'a'.repeat(64) });
+});
+
+test('an unavailable receipt check preserves the request without uploading or publishing', async () => {
+    const f = fixture();
+    const pending = JSON.stringify({ key: 'old-upload', file: f.file, inputId: 'b'.repeat(64) });
+    f.values.set('neconyan-account-import-upload:alice', pending);
+    f.client.request.mockRejectedValue(new Error('offline'));
+    const prepareInput = jest.fn();
+    await expect(f.run({ mode: 'zip' }, { file: { ...f.file, lastModified: 999 }, prepareInput })).rejects.toThrow('offline');
+    expect(f.values.get('neconyan-account-import-upload:alice')).toBe(pending);
+    expect(f.upload).not.toHaveBeenCalled();
+    expect(prepareInput).not.toHaveBeenCalled();
+});
+
+test('an incomplete upload keeps its original key and file when the server refuses different bytes', async () => {
+    const f = fixture();
+    const pending = JSON.stringify({ key: 'partial-upload', file: f.file });
+    f.values.set('neconyan-account-import-upload:alice', pending);
+    f.upload.mockRejectedValue(new Error('This import key already belongs to a different upload. The earlier upload was kept.'));
+    const selected = { ...f.file, lastModified: 999 };
+    const prepareInput = jest.fn();
+    await expect(f.run({ mode: 'zip' }, { file: selected, prepareInput })).rejects.toThrow('different upload');
+    expect(f.upload).toHaveBeenCalledWith('partial-upload', selected);
+    expect(f.values.get('neconyan-account-import-upload:alice')).toBe(pending);
+    expect(prepareInput).not.toHaveBeenCalled();
+});
+
+test('a missing source requires the original file even when the browser has a cached receipt', async () => {
+    const f = fixture();
+    const pending = JSON.stringify({ key: 'old-upload', file: f.file, inputId: 'b'.repeat(64) });
+    f.values.set('neconyan-account-import-upload:alice', pending);
+    await expect(f.run({ mode: 'zip' })).rejects.toThrow('Select the original ZIP');
+    expect(f.values.get('neconyan-account-import-upload:alice')).toBe(pending);
+    expect(f.upload).not.toHaveBeenCalled();
 });
 
 test('resuming an acknowledged import does not need the original file or rerun preparation', async () => {
