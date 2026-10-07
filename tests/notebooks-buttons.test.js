@@ -76,6 +76,16 @@ describe('Notes button theme roles', () => {
         expect(buttons.map(element => element.attributes['aria-pressed'])).toEqual(['false', 'false', 'true']);
     });
 
+    test('choice rows mark a user-written choice so the localiser leaves it as written', () => {
+        const choiceRowSource = source.match(/export function choiceRow\([\s\S]*?\n\}/)[0].replace('export ', '');
+        const h = (tag, attributes, ...children) => ({ tag, attributes, children, append(child) { this.children.push(child); }, setAttribute(key, value) { this.attributes[key] = value; } });
+        const choiceRow = vm.runInNewContext(`${buttonSource}; ${choiceRowSource}; choiceRow`, { h, setButtonPressed });
+        const group = choiceRow('Start from', [['blank', 'Blank note'], ['mine', 'Blank note', true]], 'blank', jest.fn());
+        const [builtIn, written] = group.children[1].children;
+        expect(written.attributes['data-i18n-ignore']).toBe('');
+        expect(builtIn.attributes['data-i18n-ignore']).toBeNull();
+    });
+
     test('changing a primary action keeps its native colour role even when it is not pressed', () => {
         const { element } = makeButton('notes-primary', true);
         setButtonPressed(element, false);

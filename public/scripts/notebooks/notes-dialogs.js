@@ -3,7 +3,7 @@ import { buildNoteProposalReview } from '../neconyan-assistant-review.js';
 import { newOperationId, notesDownload, notesUpload } from './api.js';
 import { button, choiceRow, clear, field, formatTime, h } from './dom.js';
 import { formatDiff } from './line-diff.js';
-import { templateById } from './templates.js';
+import { NOTE_TEMPLATES, templateById } from './templates.js';
 import { savedTemplates } from './template-settings.js';
 import { parsePropertyValue, propertyInput } from './property-values.js';
 import { proposalLabel, userPhrase } from './user-text.js';
@@ -196,7 +196,7 @@ export async function newNote(app) {
     const templates = h('div');
     function refreshTemplates() {
         clear(templates);
-        templates.append(choiceRow('Start from', saved.map(item => [item.id, item.label]), template, value => { template = value; }));
+        templates.append(choiceRow('Start from', saved.map(item => [item.id, item.label, !NOTE_TEMPLATES.some(base => base.id === item.id && base.label === item.label)]), template, value => { template = value; }));
     }
     refreshTemplates();
     const manage = button('Manage templates', async () => {
