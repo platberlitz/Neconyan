@@ -1094,9 +1094,12 @@ function moduleRecordMatchesSnapshot(expected) {
     return recordsEqual(extension_settings[MODULE_NAME], expected);
 }
 
+// A queued save makes the last confirmed copy stale: undoing back to it must
+// still save, or the queued change lands on the server after the undo.
 function queueDebouncedModuleSettingsSave(expectedSource = getAutoSyncRecord(true), options = {}) {
     clearModuleSettingsDebounce();
     moduleSettingsActivityEpoch++;
+    lastServerVerifiedModuleRecord = null;
     const expected = getModuleRecordSnapshot(expectedSource);
     const expectedRegex = cloneJsonValue(extension_settings.regex);
     const delay = Number.isFinite(options.delay) ? options.delay : 250;
@@ -1109,6 +1112,7 @@ function queueDebouncedModuleSettingsSave(expectedSource = getAutoSyncRecord(tru
 export function queueImmediateSettingsSave(expectedSource = getAutoSyncRecord(true), options = {}) {
     clearModuleSettingsDebounce();
     moduleSettingsActivityEpoch++;
+    lastServerVerifiedModuleRecord = null;
     if (!options.retry) ordinaryModuleSaveRetryCount = 0;
     ordinaryModuleSaveExpected = getModuleRecordSnapshot(expectedSource);
     ordinaryModuleSaveExpectedRegex = cloneJsonValue(options.expectedRegex ?? extension_settings.regex);
@@ -1201,6 +1205,15 @@ export function persistModuleStore(record, { debounce = true, immediate = false 
     return normalized;
 }
 
+// For writes that skip the auto-sync step (presets, palettes, legend position).
+// A pending sync waits to see its own snapshot on the server, so republish or
+// that wait ends in a false "Save failed".
+export function persistLocalModuleChange(record) {
+    const persisted = persistModuleStore(record);
+    if (autoSyncEnabled && autoSyncPendingRecord) saveSettingsToStore({ force: true });
+    return persisted;
+}
+
 export function getAutoSyncRecord(create = false) {
     const existing = extension_settings[MODULE_NAME];
     if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
@@ -1246,11 +1259,23 @@ export function saveCustomGradientPreset(name, source, options = {}) {
     return normalizeGradientPreset(preset);
 }
 
+// Stored preset names are unique without case, so a name typed in another case
+// means the existing preset rather than a second one that would become "Name (2)".
+export function resolveCustomGradientPresetName(rawName) {
+    const name = normalizeRegistryIdentityName(rawName, 80);
+    const identity = normalizeRegistryIdentity(name, 80);
+    if (!identity) return name;
+    return Object.keys(getCustomGradientPresets()).find(candidate => normalizeRegistryIdentity(candidate, 80) === identity) || name;
+}
+
 export function renameCustomGradientPreset(currentName, nextName, options = {}) {
     const current = normalizeRegistryIdentityName(currentName, 80);
     const next = normalizeRegistryIdentityName(nextName, 80);
     const presets = getCustomGradientPresets();
-    if (!current || !next || !hasOwn(presets, current) || (current !== next && hasOwn(presets, next))) return false;
+    const nextIdentity = normalizeRegistryIdentity(next, 80);
+    const takenByAnother = Object.keys(presets)
+        .some(candidate => candidate !== current && normalizeRegistryIdentity(candidate, 80) === nextIdentity);
+    if (!current || !next || !hasOwn(presets, current) || takenByAnother) return false;
     if (current !== next) {
         presets[next] = presets[current];
         delete presets[current];
@@ -1617,7 +1642,7 @@ function rememberChatScopeFallback(metadataId, hostStorageKey) {
     record.ui = isPlainObject(record.ui) ? record.ui : {};
     record.ui.chatScopeFallbacks = isPlainObject(record.ui.chatScopeFallbacks) ? record.ui.chatScopeFallbacks : {};
     record.ui.chatScopeFallbacks[metadataId] = hostStorageKey;
-    persistModuleStore(record);
+    persistLocalModuleChange(record);
 }
 
 function getCardIdentity(context = getContext()) {
@@ -3012,7 +3037,7 @@ export function saveLegendPosition(position) {
     const record = getAutoSyncRecord(true);
     const nextPosition = isPlainObject(position) ? position : {};
     record.ui = { ...(isPlainObject(record.ui) ? record.ui : {}), legendPosition: nextPosition };
-    persistModuleStore(record);
+    persistLocalModuleChange(record);
 }
 
 // Extract dominant color from avatar image

@@ -22,6 +22,8 @@ let lastAppliedAutoTheme = null;
 let lastAppliedAutoSurface = null;
 let themeRefreshTimers = [];
 let loudGenerationActive = false;
+// Impersonate streams into the input box but still fires token events.
+let impersonateGenerationActive = false;
 let automaticRuntimeActive = false;
 let enabledStorageInitialized = false;
 let regexInstallTimer = null;
@@ -81,6 +83,7 @@ function stopAutomaticRuntime() {
     regexInstallTimer = null;
     stopAutoSyncPolling();
     loudGenerationActive = false;
+    impersonateGenerationActive = false;
     setIsStreamingGenerationActive(false);
     clearAutoAttributionVerificationQueue({ clearCooldown: true });
     cancelStreamingAttributionVerification({ clearOverrides: true });
@@ -146,6 +149,7 @@ export function registerKeyboardShortcuts() {
 
 export function resetDialogueCountsForNewChat() {
     loudGenerationActive = false;
+    impersonateGenerationActive = false;
     clearTimeout(runtimeState.dialogueRecountTimer);
     runtimeState.dialogueRecountTimer = null;
     if (!settings.enabled || !automaticRuntimeActive) return;
@@ -169,6 +173,7 @@ export function resetDialogueCountsForNewChat() {
 
 export function handleChatChanged() {
     loudGenerationActive = false;
+    impersonateGenerationActive = false;
     clearTimeout(runtimeState.dialogueRecountTimer);
     runtimeState.dialogueRecountTimer = null;
     if (!settings.enabled) {
@@ -356,6 +361,7 @@ export function registerEventHandlers() {
             if (!settings.enabled || !automaticRuntimeActive) return;
             if (dryRun) return;
             if (type !== 'quiet') loudGenerationActive = true;
+            if (type !== 'quiet') impersonateGenerationActive = type === 'impersonate';
         },
         generationAfterCommands: (_type, _options, dryRun) => {
             if (settings.enabled && automaticRuntimeActive && !dryRun) flushPromptInjection();
@@ -366,7 +372,7 @@ export function registerEventHandlers() {
         messageDeleted: handleMessageDeleted,
         // No timers here: beginStreamingPaint installs a MutationObserver so the
         // repaint lands in the same frame as the host's .mes_text rewrite.
-        streamToken: () => { if (settings.enabled && automaticRuntimeActive) { setIsStreamingGenerationActive(true); beginStreamingPaint(); scheduleStreamingAttributionVerification(); } },
+        streamToken: () => { if (settings.enabled && automaticRuntimeActive && !impersonateGenerationActive) { setIsStreamingGenerationActive(true); beginStreamingPaint(); scheduleStreamingAttributionVerification(); } },
         generationEnded: () => {
             if (!settings.enabled || !automaticRuntimeActive) return;
             // GENERATION_ENDED has no type payload. A preceding non-quiet start
@@ -374,6 +380,7 @@ export function registerEventHandlers() {
             let isQuietEnd = false;
             if (loudGenerationActive) loudGenerationActive = false;
             else isQuietEnd = consumeMainAiQuietGenerationEnd();
+            if (!isQuietEnd) impersonateGenerationActive = false;
             // Streaming teardown runs even for quiet ends, or the frozen
             // assignments get replayed onto a different message body.
             setIsStreamingGenerationActive(false);
@@ -389,6 +396,7 @@ export function registerEventHandlers() {
         },
         generationInterrupted: () => {
             loudGenerationActive = false;
+            impersonateGenerationActive = false;
             // ponytail: host suppresses GENERATION_ENDED on stop/error, so teardown must run here too.
             if (!automaticRuntimeActive) return;
             setIsStreamingGenerationActive(false);
@@ -407,8 +415,8 @@ export function registerEventHandlers() {
                 console.warn('[Dialogue Colors] Chat storage rename migration failed.', error);
             }
         },
+        // Same as chat renames: skipping this while disabled orphans the card's colours for good.
         characterRenamed: (oldValue, newValue) => {
-            if (!settings.enabled || !automaticRuntimeActive) return;
             void migrateRenamedCharacterStorage(oldValue, newValue)
                 .then(result => {
                     if (!result?.ok) console.warn('[Dialogue Colors] Character storage rename migration was not persisted.', result);

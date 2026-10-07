@@ -13,8 +13,25 @@ import { AUTO_ATTRIBUTION_VERIFY_DELAY_MS, AUTO_ATTRIBUTION_VERIFY_RENDERED_LIMI
 import { setVerifyAttributionButtonBusy } from './ui.js';
 import { getMessageElementByIndex, hashMessageText, isCompositeSpeakerLabel, toast } from './utils.js';
 
+// The welcome-page greeting is an ordinary (non-system) message that SillyTavern
+// labels 'assistant_message'. That chat is never saved, so a verdict can never
+// stick and every visit to the welcome page would pay for a fresh request.
+function isWelcomeAssistantMessage(msg) {
+    return msg?.extra?.type === 'assistant_message';
+}
+
+// A swipe still waiting for its first streamed piece: SillyTavern has already moved
+// swipe_id to a slot that does not exist yet, while mes still holds the previous
+// swipe's text. Checking it would verify text that is about to be replaced.
+function isPendingSwipe(msg) {
+    return Array.isArray(msg?.swipes) && Number.isInteger(msg?.swipe_id) && msg.swipe_id >= msg.swipes.length;
+}
+
 export function isMessageEligibleForAttributionVerification(msg) {
-    return !!msg && !isHostSystemOrToolMessage(msg) && !!msg.mes && !collectFontColorsFromText(msg.mes).size;
+    // User messages are excluded because their suggestions can never be accepted
+    // or overridden (validateAcceptance and the context menu refuse them).
+    return !!msg && msg.is_user !== true && !isHostSystemOrToolMessage(msg) && !isWelcomeAssistantMessage(msg) && !isPendingSwipe(msg)
+        && !!msg.mes && !collectFontColorsFromText(msg.mes).size;
 }
 
 export const MAX_ATTRIBUTION_VERIFIER_RESPONSE_CHARS = 65536;
@@ -317,8 +334,10 @@ export function pruneRecentAutoAttributionVerifyAttempts(now = Date.now()) {
     for (const [key, timestamp] of recentAutoAttributionVerifyAttempts.entries()) {
         if (now - timestamp > maxAge) recentAutoAttributionVerifyAttempts.delete(key);
     }
+    // The retry cap must outlive a long verification of another message, or a
+    // flip-flopping model resets its own counter and re-checks without limit.
     for (const [key, record] of stabilityVerifyRetries.entries()) {
-        if (now - record.at > maxAge) stabilityVerifyRetries.delete(key);
+        if (now - record.at > FAILED_ATTRIBUTION_VERIFY_BACKOFF_MS) stabilityVerifyRetries.delete(key);
     }
     for (const [key, record] of failedAutoAttributionVerifyAttempts.entries()) {
         if (now - record.at > FAILED_ATTRIBUTION_VERIFY_BACKOFF_MS) failedAutoAttributionVerifyAttempts.delete(key);
@@ -470,7 +489,11 @@ export async function drainAutoAttributionVerificationQueue() {
     for (let i = 0; i < queued.length; i++) {
         const item = queued[i];
         if (!isAutoAttributionVerificationEnabled()) break;
-        if (isVerifyingAttribution) {
+        // A queued manual run starts from a zero-delay timer, which this loop
+        // would otherwise beat on every iteration; give way to it instead.
+        const manualRunWaiting = pendingAttributionVerifications
+            .some(pending => pending.cancellationEpoch === attributionVerificationEpoch);
+        if (isVerifyingAttribution || manualRunWaiting) {
             for (const rest of queued.slice(i)) pendingAutoAttributionVerifyIndices.set(rest.key, rest);
             boundPendingAutoAttributionVerifications();
             scheduleAutoAttributionVerificationDrain(AUTO_ATTRIBUTION_VERIFY_DELAY_MS);
@@ -700,6 +723,15 @@ Rules:
 10. Correction indexes must exactly match the supplied segment indexes.`;
 }
 
+// The main-AI path rejects '{{' and '}}' so chat text cannot run host macros.
+// Escaping braces inside JSON strings keeps the data identical once parsed
+// while a style block or code sample in a message no longer stops verification.
+function stringifyVerifierData(data) {
+    return JSON.stringify(data).replace(/"(?:[^"\\]|\\.)*"/g, literal => literal
+        .replace(/\{/g, '\\u007b')
+        .replace(/\}/g, '\\u007d'));
+}
+
 function buildAttributionVerifierRequest(msg, mesIndex, segments, lookup, capturedPrecedingContext = null) {
     const thoughtSymbols = getThoughtDelimiterSymbols()
         .slice(0, 8)
@@ -785,7 +817,7 @@ function buildAttributionVerifierRequest(msg, mesIndex, segments, lookup, captur
     };
     return {
         systemInstruction: buildAttributionVerifierSystemInstruction(),
-        userContent: `BEGIN_UNTRUSTED_CHAT_DATA\n${JSON.stringify(data)}\nEND_UNTRUSTED_CHAT_DATA`,
+        userContent: `BEGIN_UNTRUSTED_CHAT_DATA\n${stringifyVerifierData(data)}\nEND_UNTRUSTED_CHAT_DATA`,
         submittedSegments,
         hasAllSegments: submittedSegments.length === sourceSegments.length,
     };
@@ -885,16 +917,20 @@ function isAttributionVerificationTargetCurrent(target, { allowAppendedText = fa
     return isAttributionMessageIdentityCurrent(target, { allowAppendedText });
 }
 
-function hasCurrentVerifierSegments(target, segments) {
+function hasCurrentVerifierSegments(target, segments, { allowAppendedText = false } = {}) {
     const current = new Map(segments.map(segment => [segment.index, segment]));
     // An added segment (for example after enabling a new thought delimiter)
-    // was never submitted, so the verifier's answer cannot cover it.
-    if (current.size !== target.segments.size) return false;
+    // was never submitted, so the verifier's answer cannot cover it. While a
+    // reply streams, new quotes keep arriving after the submitted ones; the
+    // answer still covers those, and their heuristic guesses may shift as
+    // trailing speaker tags land, so only their position and text must hold.
+    if (allowAppendedText ? current.size < target.segments.size : current.size !== target.segments.size) return false;
     for (const original of target.segments.values()) {
         const next = current.get(original.index);
         if (!next || next.start !== original.start || next.end !== original.end
-            || next.text !== original.text || next.delimiter !== original.delimiter
-            || (next.assignment?.key ?? null) !== original.assignmentKey
+            || next.text !== original.text || next.delimiter !== original.delimiter) return false;
+        if (allowAppendedText) continue;
+        if ((next.assignment?.key ?? null) !== original.assignmentKey
             || (next.assignment?.name ?? null) !== original.assignmentName
             || (next.assignment?.color ?? null) !== original.assignmentColor
             || (next.confidence ?? null) !== original.confidence
@@ -919,7 +955,7 @@ function isAttributionVerificationTargetAndSegmentsCurrent(target, options = {})
         ...getMessageQuoteOverrideOptions(target.mesIndex, msg),
         mesIndex: target.mesIndex,
     });
-    return hasCurrentVerifierSegments(target, attribution.segments);
+    return hasCurrentVerifierSegments(target, attribution.segments, options);
 }
 
 function createVerifierEvidence(segment, correction) {
@@ -1052,7 +1088,7 @@ export async function verifyAttributionsWithLLM(mesIndex, options = {}) {
             });
         } catch (e) {
             const targetCurrent = isAttributionVerificationTargetAndSegmentsCurrent(target, { allowAppendedText: useTransientOverrides });
-            const cancelled = e?.name === 'AbortError' || !targetCurrent;
+            const cancelled = e?.name === 'AbortError' || classifyLlmRequestError(e).category === 'cancelled' || !targetCurrent;
             if (!cancelled) {
                 console.warn('[Dialogue Colors] LLM attribution verification failed:', e);
                 if (trackFailure) recordAutoAttributionVerifyFailure(verifyKey, mesIndex);
@@ -1107,7 +1143,7 @@ export async function verifyAttributionsWithLLM(mesIndex, options = {}) {
     }
     const validCorrections = reduceAttributionVerifierBallots(ballots);
     if (!isAttributionVerificationTargetCurrent(target, { allowAppendedText: useTransientOverrides })
-        || !hasCurrentVerifierSegments(target, currentAttribution.segments)) {
+        || !hasCurrentVerifierSegments(target, currentAttribution.segments, { allowAppendedText: useTransientOverrides })) {
         return unchecked;
     }
     failedAutoAttributionVerifyAttempts.delete(verifyKey);
@@ -1153,7 +1189,9 @@ export async function verifyAttributionsWithLLM(mesIndex, options = {}) {
                 ({ assignment } = resolveVerifierSpeakerName(correction.speaker, currentLookup));
             }
         }
-        if (assignment?.key === seg.assignment?.key) continue;
+        // An unresolved speaker on an uncoloured quote must still reach review;
+        // comparing two missing keys would otherwise drop it as 'no change'.
+        if (assignment && assignment.key === seg.assignment?.key) continue;
 
         const latestEntry = getMessageQuoteOverrideEntry(mesIndex, msg, false);
         const existingOverride = latestEntry?.segments?.[String(correction.index)];

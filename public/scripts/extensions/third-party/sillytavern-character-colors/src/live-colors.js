@@ -494,7 +494,9 @@ export function updateTextColorReferences(rawText, replacements) {
 export function updateVisibleMessageColors(messageIndex, replacements) {
     const normalized = normalizeColorReplacementMap(replacements);
     if (!Object.keys(normalized).length) return false;
-    const mesEl = document.querySelector(`.mes[mesid="${messageIndex}"]`) || document.querySelectorAll('.mes')[messageIndex];
+    // No positional fallback: long chats only render their newest messages, so
+    // the Nth .mes on screen is a different message from chat index N.
+    const mesEl = document.querySelector(`#chat .mes[mesid="${messageIndex}"]`);
     if (!mesEl) return false;
     let changed = false;
     mesEl.querySelectorAll('font[color]').forEach(fontEl => {
@@ -1364,7 +1366,9 @@ export async function applyHtmlBreakingSpanRepair(options = {}) {
 // model is writing the reply, so a fresh chat can pick the mistake up at any time.
 export function repairOverreachingColorSpans(chat = getContext()?.chat) {
     const report = { repairedIndices: [] };
-    if (!Array.isArray(chat) || !chat.length) return report;
+    // The DOM engine never hands colour tags to a reply model, so any spans in
+    // the chat were written by someone else and are not ours to re-scope.
+    if (!Array.isArray(chat) || !chat.length || isDomEngine()) return report;
 
     for (let i = 0; i < chat.length; i++) {
         const msg = chat[i];

@@ -49,7 +49,11 @@ export function classifyLlmRequestError(error) {
     if (classified) {
         return { category: classified.llmCategory, retryable: classified.retryable, status };
     }
-    if (names.has('AbortError')) return { category: 'cancelled', retryable: false, status };
+    // The host aborts raw requests with plain Errors when the user presses Stop
+    // or another extension cancels, so those messages also mean cancellation.
+    if (names.has('AbortError') || /\bcancell?ed by (?:stop event|extension|external signal)\b/.test(text)) {
+        return { category: 'cancelled', retryable: false, status };
+    }
     if (names.has('TimeoutError') || /\b(?:timed? out|timeout)\b/.test(text)) {
         return { category: 'timeout', retryable: true, status };
     }
@@ -228,7 +232,7 @@ function suppressAmbientExtensionPrompt(context) {
     };
 }
 
-async function requestFromMainAi(userContent, systemInstruction, maxTokens, quietOptions) {
+async function requestFromMainAi(userContent, systemInstruction, maxTokens, quietOptions, signal) {
     let context = null;
     try { context = getContext(); } catch { /* unavailable on older hosts */ }
     if (typeof context?.generateRaw === 'function') {
@@ -238,6 +242,7 @@ async function requestFromMainAi(userContent, systemInstruction, maxTokens, quie
             responseLength: maxTokens,
             quietToLoud: false,
             trimNames: false,
+            signal,
             ...(quietOptions.jsonSchema ? { jsonSchema: quietOptions.jsonSchema } : {}),
         });
     }
@@ -251,6 +256,7 @@ async function requestFromMainAi(userContent, systemInstruction, maxTokens, quie
             quietPrompt,
             responseLength: maxTokens,
             ...quietOptions,
+            signal,
         });
     } finally {
         restorePrompt();
@@ -286,16 +292,16 @@ async function callMainAi(userContent, systemInstruction, maxTokens, timeoutMs, 
             quietName: quietOptions.quietName,
             generationEndConsumed: false,
         };
-        // SillyTavern does not expose an AbortSignal for generateQuietPrompt.
-        // The consumer races cancellation, while this settlement chain retains
-        // the lock and active quiet-request tag until the host really finishes.
+        // The host request receives the abort signal so cancelling stops the
+        // provider call. The consumer still races cancellation, while this
+        // settlement chain keeps the lock until the host really finishes.
         const hostOutcome = Promise.resolve()
             .then(() => {
                 if (cancellation.signal.aborted) {
                     const reason = cancellation.signal.reason;
                     throw reason instanceof Error ? reason : createAbortError('LLM request was cancelled');
                 }
-                return requestFromMainAi(userContent, systemInstruction, maxTokens, quietOptions);
+                return requestFromMainAi(userContent, systemInstruction, maxTokens, quietOptions, cancellation.signal);
             })
             .then(
                 value => ({ ok: true, value }),

@@ -123,8 +123,10 @@ function stabilizeStreamingAssignments(attribution, overrideOptions) {
     for (const segment of attribution.segments.slice(0, MAX_STREAMING_SEGMENT_ASSIGNMENTS)) {
         const key = `${segment.delimiter}:${segment.index}`;
         const overridden = overrides && Object.prototype.hasOwnProperty.call(overrides, String(segment.index));
-        if (!overridden && stableSegmentAssignments.has(key)) {
-            const cached = stableSegmentAssignments.get(key);
+        const cached = stableSegmentAssignments.get(key);
+        // Quote numbers can shift while text streams in, so only reuse a guess
+        // for the same quote.
+        if (!overridden && cached && cached.start === segment.start) {
             segment.assignment = cached.assignment ? { ...cached.assignment } : null;
             segment.provenance = { source: 'streaming-cache', method: 'stable-segment-index' };
             // A reused guess keeps the confidence it earned; repainting must not

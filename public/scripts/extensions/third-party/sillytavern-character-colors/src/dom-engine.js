@@ -9,7 +9,7 @@ import { isTrackedPersonaMessage, onNewMessage, queueColorStateSave } from './li
 import { getNarratorVisual } from './narrator-style.js';
 import { applyThemeReadabilityAndBrightness, getTextHighlightState } from './palettes.js';
 import { escapeHtml, eventSource, event_types, getContext, saveMetadata } from './st-api.js';
-import { ATTRIBUTION_VERIFIER_VERSION, AUTO_ATTRIBUTION_VERIFY_DELAY_MS, attributionChatGeneration, characterColors, isDomEngine, runtimeState, settings, stableSegmentAssignments, streamingAttributionOverrides, streamingSession } from './state.js';
+import { ATTRIBUTION_VERIFIER_VERSION, AUTO_ATTRIBUTION_VERIFY_DELAY_MS, attributionChatGeneration, characterColors, isDomEngine, isStreamingGenerationActive, runtimeState, settings, stableSegmentAssignments, streamingAttributionOverrides, streamingSession } from './state.js';
 import { isPlainObject } from './storage.js';
 import { getPaintedStreamingAssignment } from './streaming-paint.js';
 import { applyTextStyle, clearTextStyle, TEXT_STYLE_MARKER_ATTRIBUTE } from './text-style-rendering.js';
@@ -2913,7 +2913,9 @@ export function setupChatObserver() {
         }
         if (!isDomEngine()) {
             applyCustomFontsToMessageElements(fontTargets);
-            if (settings.completePartialColorize && fontTargets.size > 0) onNewMessage();
+            // Streamed chunks rewrite .mes_text on every token. The finished reply
+            // reaches onNewMessage through CHARACTER_MESSAGE_RENDERED instead.
+            if (settings.completePartialColorize && fontTargets.size > 0 && !isStreamingGenerationActive) onNewMessage();
         }
         for (const mesElement of observed) queueObservedMessageDecoration(mesElement);
     });
