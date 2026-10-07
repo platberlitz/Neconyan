@@ -1,0 +1,32 @@
+{
+    "name": "Compact Corner",
+    "movingUIState": {
+        "floatingPrompt": {
+            "top": "auto",
+            "right": "16px",
+            "bottom": "16px",
+            "left": "auto",
+            "margin": "unset",
+            "width": "min(360px, 30vw)",
+            "height": "min(440px, 50vh)"
+        },
+        "cfgConfig": {
+            "top": "auto",
+            "right": "16px",
+            "bottom": "16px",
+            "left": "auto",
+            "margin": "unset",
+            "width": "min(360px, 30vw)",
+            "height": "min(440px, 50vh)"
+        },
+        "logprobsViewer": {
+            "top": "auto",
+            "right": "calc(min(360px, 30vw) + 28px)",
+            "bottom": "16px",
+            "left": "auto",
+            "margin": "unset",
+            "width": "min(320px, 26vw)",
+            "height": "min(320px, 40vh)"
+        }
+    }
+}

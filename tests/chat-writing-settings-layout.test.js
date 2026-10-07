@@ -94,4 +94,21 @@ describe('Chat & Writing settings layout', () => {
         expect(chatWritingCss).not.toMatch(/#[0-9a-f]{3,8}\b(?![\w-])/i);
         expect(chatWritingCss).toContain('prefers-reduced-motion');
     });
+
+    test('offers MovingUI layout presets that never move the chat', () => {
+        const contentIndex = JSON.parse(read('default/content/index.json'));
+        const presetFiles = contentIndex.filter(item => item.type === 'moving_ui').map(item => item.filename);
+        expect(presetFiles).toEqual([
+            'presets/moving-ui/Default.json',
+            'presets/moving-ui/Pop-outs on the Right.json',
+            'presets/moving-ui/Writing Desk.json',
+            'presets/moving-ui/Centred Card.json',
+            'presets/moving-ui/Compact Corner.json',
+        ]);
+        for (const file of presetFiles.slice(1)) {
+            const preset = JSON.parse(read(`default/content/${file}`));
+            expect(path.basename(file, '.json')).toBe(preset.name);
+            expect(Object.keys(preset.movingUIState).sort()).toEqual(['cfgConfig', 'floatingPrompt', 'logprobsViewer']);
+        }
+    });
 });
