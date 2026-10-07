@@ -16,6 +16,24 @@ export function escapeHtmlText(value) {
     return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+/**
+ * Marks an element that shows a name or text a person (or the stored data) wrote, so the run-time localiser leaves it alone.
+ * Call it on every write: an element that shows the app's own fallback instead must be translated, so the mark comes off.
+ * @param {Element|null} element
+ * @param {boolean} isValue True when the element shows a value, false when it shows a built-in fallback.
+ */
+export function setUserTextSlot(element, isValue) {
+    if (!(element instanceof Element)) {
+        return;
+    }
+
+    if (isValue) {
+        element.setAttribute('translate', 'no');
+    } else {
+        element.removeAttribute('translate');
+    }
+}
+
 function compactAttachmentFingerprint(item) {
     if (!item || typeof item !== 'object') {
         return '';

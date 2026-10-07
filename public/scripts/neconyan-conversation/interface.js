@@ -15,7 +15,7 @@ import {
     saveGroupConversationSettings,
 } from './context.js';
 import { submitConversationRewrite } from './generation.js';
-import { getConversationDisplayName, getConversationParticipants, getEffectiveConversationStatus, renderConversationParticipantStack } from './media.js';
+import { getConversationDisplayLabel, getConversationParticipants, getEffectiveConversationStatus, renderConversationParticipantStack } from './media.js';
 import {
     clearUnreadCount,
     getBadgeLabel,
@@ -30,11 +30,11 @@ import { readChimingPartnersFromList, readWeeklyScheduleFromEditor, updateUserFo
 import { clamp, getConversationReplyMaxTokens, getCurrentActivityFromSchedule, getStoredSchedule } from './schedule.js';
 import { getSettings, saveSettings } from './settings-store.js';
 import { conversationState } from './state.js';
-import { getConversationThread } from './thread-store.js';
+import { getConversationThread, isConversationPreviewValue } from './thread-store.js';
 import { renderConversationTimeline, updateConversationNotificationSettingsVisibility } from './timeline-render.js';
-import { getActiveTypingParticipants, getLastConversationPreview, updateLastPreviewFromConversation } from './typing.js';
+import { getActiveTypingParticipants, getLastConversationPreview, isLastConversationPreviewValue, updateLastPreviewFromConversation } from './typing.js';
 import { registerConversationRenderer, scheduleInterfaceRefresh, scheduleTimelineRender } from './render-scheduler.js';
-import { hashConversationRenderFingerprint } from './render-utils.js';
+import { hashConversationRenderFingerprint, setUserTextSlot } from './render-utils.js';
 
 function buildBranchListFingerprint(characterStore, activeBranchId) {
     return Object.entries(characterStore?.branches || {})
@@ -42,6 +42,7 @@ function buildBranchListFingerprint(characterStore, activeBranchId) {
             branch?.id || id,
             branch?.name || '',
             branch?.preview || '',
+            isConversationPreviewValue(branch) ? '1' : '0',
             branch?.updatedAt || '',
             branch?.unread || 0,
             (branch?.id || id) === activeBranchId ? '1' : '0',
@@ -64,6 +65,7 @@ function buildPalsRailFingerprint(pals) {
             })
             .join(',');
         const branches = buildBranchListFingerprint(characterStore, activeBranchId);
+        const displayLabel = getConversationDisplayLabel(avatar, settings, { groupId });
 
         parts.push([
             avatar,
@@ -74,8 +76,10 @@ function buildPalsRailFingerprint(pals) {
             settings?.enabled ? '1' : '0',
             settings?.availability || '',
             settings?.multi_char_names || '',
-            getConversationDisplayName(avatar, settings, { groupId }),
+            displayLabel.text,
+            displayLabel.source,
             getLastConversationPreview(avatar, { groupId, personaId }),
+            isLastConversationPreviewValue(avatar, { groupId, personaId }) ? '1' : '0',
             unreadCount,
             isConversationActiveThread(avatar, groupId, { personaId }) ? '1' : '0',
             activeBranchId,
@@ -226,16 +230,19 @@ export function renderPalsRail() {
             status: getEffectiveConversationStatus(character.avatar, settings),
             max: 3,
         });
+        // A name or preview a person wrote is marked so the localiser leaves it as written; the built-in fallbacks are not, so they translate.
         if (name instanceof HTMLElement) {
-            name.textContent = groupId
-                ? getConversationDisplayName(character.avatar, settings, { groupId })
-                : character.name || 'Character';
+            const displayLabel = groupId ? getConversationDisplayLabel(character.avatar, settings, { groupId }) : null;
+            name.textContent = displayLabel ? displayLabel.text : character.name || 'Character';
+            setUserTextSlot(name, displayLabel ? displayLabel.isValue : Boolean(character.name));
         }
         if (kind instanceof HTMLElement) {
             kind.textContent = groupId ? (group?.name || 'Group DM') : 'Solo';
+            setUserTextSlot(kind, Boolean(groupId && group?.name));
         }
         if (preview instanceof HTMLElement) {
             preview.textContent = getLastConversationPreview(character.avatar, { groupId, personaId });
+            setUserTextSlot(preview, isLastConversationPreviewValue(character.avatar, { groupId, personaId }));
         }
         if (unreadBadge instanceof HTMLElement) {
             unreadBadge.textContent = getBadgeLabel(unreadCount);
@@ -266,9 +273,12 @@ export function renderPalsRail() {
             const branchUnread = branchButton.querySelector('.sb-conversation-branch-unread');
             if (branchName instanceof HTMLElement) {
                 branchName.textContent = branch.name || 'Conversation';
+                // The default branch is called 'Main' by the app, so that name translates; any other stored name shows as stored.
+                setUserTextSlot(branchName, Boolean(branch.name) && !(branch.id === DEFAULT_BRANCH_ID && branch.name === 'Main'));
             }
             if (branchPreview instanceof HTMLElement) {
                 branchPreview.textContent = branch.preview || 'Conversation ready';
+                setUserTextSlot(branchPreview, isConversationPreviewValue(branch));
             }
             if (branchUnread instanceof HTMLElement) {
                 branchUnread.textContent = getBadgeLabel(branch.unread);
@@ -346,9 +356,13 @@ export function updateConversationHeader(settings = getSettings()) {
         }
         renderHeaderParticipantStack(participantsContainer, [], { status: 'offline' });
         const kicker = document.querySelector(`#${CHROME_IDS.header} .sb-conversation-header-kicker`);
-        if (kicker) kicker.textContent = 'Conversation';
+        if (kicker) {
+            kicker.textContent = 'Conversation';
+            setUserTextSlot(kicker, false);
+        }
         if (name instanceof HTMLElement) {
             name.textContent = unavailableGroup?.name || 'Conversation';
+            setUserTextSlot(name, Boolean(unavailableGroup?.name));
         }
         if (status instanceof HTMLElement) {
             status.textContent = unavailableGroup
@@ -376,11 +390,17 @@ export function updateConversationHeader(settings = getSettings()) {
         zoomable: true,
     });
     if (name instanceof HTMLElement) {
-        const branchLabel = getConversationDisplayName(avatar, settings);
-        const identityLabel = groupId ? getConversationGroupById(groupId)?.name || branchLabel : character.name || branchLabel;
+        const branchLabel = getConversationDisplayLabel(avatar, settings);
+        const identityName = groupId ? getConversationGroupById(groupId)?.name : character.name;
+        const identityLabel = identityName || branchLabel.text;
         name.textContent = identityLabel;
+        setUserTextSlot(name, Boolean(identityName) || branchLabel.isValue);
         const kicker = document.querySelector(`#${CHROME_IDS.header} .sb-conversation-header-kicker`);
-        if (kicker) kicker.textContent = branchLabel !== identityLabel ? branchLabel : 'Conversation';
+        if (kicker) {
+            const showsBranch = branchLabel.text !== identityLabel;
+            kicker.textContent = showsBranch ? branchLabel.text : 'Conversation';
+            setUserTextSlot(kicker, showsBranch && branchLabel.isValue);
+        }
     }
     if (status instanceof HTMLElement) {
         const typingParticipants = getActiveTypingParticipants(avatar, { groupId, personaId });

@@ -20441,6 +20441,7 @@ function initAll() {
         },
         closeWorkspace,
         isMobileViewport,
+        refreshTopBarLabel: updateTopBarBrand,
         highlightCharacterEditorTab() {
             const editorTab = document.querySelector('[data-sb-character-tab="editor"]');
             if (editorTab instanceof HTMLElement) {

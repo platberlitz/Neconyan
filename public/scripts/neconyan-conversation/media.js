@@ -1,4 +1,5 @@
 import { characters, default_user_avatar, getThumbnailUrl } from '../../script.js';
+import { t, translate } from '../i18n.js';
 import { DEFAULT_SETTINGS, MAX_STACKED_PARTICIPANT_AVATARS } from './constants.js';
 import {
     getActiveConversationBranch,
@@ -9,6 +10,7 @@ import {
     getCurrentCharAvatar,
 } from './context.js';
 import { collectConversationPartnerAvatars } from './partners-utils.js';
+import { setUserTextSlot } from './render-utils.js';
 import { getCurrentActivityFromSchedule, getStoredSchedule } from './schedule.js';
 import { getSettings } from './settings-store.js';
 import { getConversationThread } from './thread-store.js';
@@ -90,6 +92,8 @@ export function renderConversationParticipantStack(container, participants, {
     const visibleParticipants = participantList.filter(participant => participant?.avatar).slice(0, max);
     container.textContent = '';
     container.title = getParticipantNamesForDisplay(participantList).join(', ');
+    // The container holds names the cards carry, so the localiser leaves it and everything inside it alone; the captions the code writes inside are translated here.
+    setUserTextSlot(container, participantList.some(participant => participant?.name));
 
     if (!visibleParticipants.length) {
         const fallbackItem = document.createElement('span');
@@ -112,13 +116,14 @@ export function renderConversationParticipantStack(container, participants, {
         const avatarItem = document.createElement('span');
         avatarItem.className = 'sb-conversation-participant-avatar';
         avatarItem.dataset.primary = String(index === 0);
-        avatarItem.title = participant.name || 'Character';
+        const participantName = participant.name || translate('Character');
+        avatarItem.title = participantName;
 
         if (typeof onAvatarClick === 'function') {
             avatarItem.classList.add('is-interactive');
             avatarItem.tabIndex = 0;
             avatarItem.role = 'button';
-            avatarItem.setAttribute('aria-label', `Open solo DM with ${participant.name || 'Character'}`);
+            avatarItem.setAttribute('aria-label', t`Open solo DM with ${participantName}`);
             avatarItem.addEventListener('click', (event) => {
                 event.stopPropagation();
                 onAvatarClick(participant);
@@ -136,7 +141,7 @@ export function renderConversationParticipantStack(container, participants, {
             avatarItem.dataset.avatarType = 'avatar';
             avatarItem.tabIndex = 0;
             avatarItem.role = 'button';
-            avatarItem.setAttribute('aria-label', `Show full picture for ${participant.name || 'Character'}`);
+            avatarItem.setAttribute('aria-label', t`Show full picture for ${participantName}`);
         }
 
         const image = document.createElement('img');
@@ -172,12 +177,27 @@ export function getCharacterAuthorNote(avatar = getCurrentCharAvatar()) {
     return String(character?.data?.extensions?.depth_prompt?.prompt || '').trim();
 }
 
-export function getConversationDisplayName(avatar = getCurrentCharAvatar(), settings = getSettings(avatar), { groupId = getConversationGroupIdForAvatar(avatar) } = {}) {
+/**
+ * The text getConversationDisplayName returns, with where it came from: 'branch' (a branch name), 'participants' (their names, at least one of them written),
+ * or 'fallback' (the built-in 'Conversation', or 'Character' for participants with no name). Only the first two are a person's words.
+ * @returns {{ text: string, source: 'branch'|'participants'|'fallback', isValue: boolean }}
+ */
+export function getConversationDisplayLabel(avatar = getCurrentCharAvatar(), settings = getSettings(avatar), { groupId = getConversationGroupIdForAvatar(avatar) } = {}) {
     const branch = getActiveConversationBranch(avatar, { create: false, groupId });
     if (branch?.name && branch.name !== 'Main') {
-        return branch.name;
+        return { text: branch.name, source: 'branch', isValue: true };
     }
 
-    const names = getParticipantNamesForDisplay(getConversationParticipants(avatar, settings, { groupId }));
-    return names.length ? names.join(', ') : 'Conversation';
+    const participants = getConversationParticipants(avatar, settings, { groupId });
+    const names = getParticipantNamesForDisplay(participants);
+    if (!names.length) {
+        return { text: 'Conversation', source: 'fallback', isValue: false };
+    }
+
+    const named = participants.some(participant => participant?.name);
+    return { text: names.join(', '), source: named ? 'participants' : 'fallback', isValue: named };
+}
+
+export function getConversationDisplayName(avatar, settings, options) {
+    return getConversationDisplayLabel(avatar, settings, options).text;
 }

@@ -1299,6 +1299,8 @@ async function firstLoadInit() {
         await initSecrets();
         await readSecretState();
         await initLocales();
+        // The top bar was first built before the translations loaded, and its title is protected from the localiser, so rebuild its label now.
+        globalThis.NeconyanShell?.refreshTopBarLabel?.();
         initChatUtilities();
         initDefaultSlashCommands();
         initTextGenModels();
@@ -16746,10 +16748,12 @@ async function openCharacterWorldPopup() {
 
     // TODO: Maybe make this utility function not use the window context?
     const fileName = getCharaFilename(chid);
-    const charName = (menu_type == 'create' ? create_save.name : characters[chid]?.data?.name) || 'Nameless';
+    const cardName = (menu_type == 'create' ? create_save.name : characters[chid]?.data?.name) || '';
+    const charName = cardName || 'Nameless';
     const worldId = (menu_type == 'create' ? create_save.world : characters[chid]?.data?.extensions?.world) || '';
     const template = $('#character_world_template .character_world').clone();
-    template.find('.character_name').text(charName);
+    // The card's name is shown as written; the 'Nameless' fallback is the app's own and translates.
+    template.find('.character_name').text(charName).attr('translate', cardName ? 'no' : null);
 
     // --- Event Handlers ---
     async function handlePrimaryWorldSelect() {

@@ -166,6 +166,7 @@ export class SettingsUi {
             const opt = document.createElement('option'); {
                 opt.value = qrs.name;
                 opt.textContent = qrs.name;
+                opt.setAttribute('translate', 'no');
                 this.currentSet.append(opt);
             }
         });
@@ -357,6 +358,7 @@ export class SettingsUi {
             // Update the option in the current selected QR dropdown. All others will be refreshed via the prepare calls below.
             /** @type {HTMLOptionElement} */
             const option = this.currentSet.querySelector(`#qr--set option[value="${oldName}"]`);
+            // The option keeps the translate="no" it was created with.
             option.value = newName;
             option.textContent = newName;
 
@@ -403,6 +405,7 @@ export class SettingsUi {
                 const opt = document.createElement('option'); {
                     opt.value = qrs.name;
                     opt.textContent = qrs.name;
+                    opt.setAttribute('translate', 'no');
                     if (idx > -1) {
                         this.currentSet.children[idx].insertAdjacentElement('beforebegin', opt);
                     } else {
@@ -462,6 +465,7 @@ export class SettingsUi {
                     const opt = document.createElement('option'); {
                         opt.value = qrs.name;
                         opt.textContent = qrs.name;
+                        opt.setAttribute('translate', 'no');
                         if (idx > -1) {
                             this.currentSet.children[idx].insertAdjacentElement('beforebegin', opt);
                         } else {
@@ -513,6 +517,7 @@ export class SettingsUi {
             const opt = document.createElement('option'); {
                 opt.value = newQrSet.name;
                 opt.textContent = newQrSet.name;
+                opt.setAttribute('translate', 'no');
                 if (idx > -1) {
                     this.currentSet.children[idx].insertAdjacentElement('beforebegin', opt);
                 } else {

@@ -46,6 +46,7 @@ export class QuickReplySetLink {
                     const opt = document.createElement('option'); {
                         opt.value = qrs.name;
                         opt.textContent = qrs.name;
+                        opt.setAttribute('translate', 'no');
                         opt.selected = getQuickReplySetNameKey(qrs) === getQuickReplySetLinkNameKey(this);
                         set.append(opt);
                     }

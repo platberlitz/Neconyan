@@ -253,3 +253,97 @@ test('preset selectors marked as data keep their option names, however the optio
         ariaLabel: 'Chat Completion Preset',
     });
 });
+
+// Names and other text a person wrote must show as written, while the interface's own captions on the same surfaces keep translating.
+// 'Defect' assertions fail on code before the user-text change and pass after it; 'preservation' assertions pass on both.
+async function mergedDictionary(lang) {
+    const readJson = async path => JSON.parse(await readFile(new URL(path, import.meta.url), 'utf8'));
+    return { ...await readJson(`../public/locales/${lang}.json`), ...await readJson(`../public/locales/neconyan/${lang}.json`) };
+}
+
+async function openLocaliser(page, markup) {
+    const source = await readFile(new URL('../public/scripts/ui-localization.js', import.meta.url), 'utf8');
+    await page.setContent(`<main id="root">${markup}</main>`);
+    await page.addScriptTag({ type: 'module', content: `${source}\nwindow.localizeControls = localizeControls;` });
+    await page.waitForFunction(() => typeof window.localizeControls === 'function');
+}
+
+test('the top bar title, panel heading, Quick Reply label and sprite folder show a value that equals a key as written (pt-pt)', async ({ page }) => {
+    const dictionary = await mergedDictionary('pt-pt');
+    // The values are keys of the real dictionary, as the names people give things can be.
+    for (const key of ['Thoughts', 'Summary', 'Continue', 'Solo']) expect(dictionary[key], key).toBeTruthy();
+    await openLocaliser(page, `
+        <div id="sb-topbar-title" title="Thoughts">Thoughts</div>
+        <div id="rm_button_selected_ch"><h2>Summary</h2></div>
+        <div><span class="qr--button-label">Continue</span></div>
+        <div><span id="sprite-label">Sprite set:</span> <span id="image_list_header_name">Solo</span></div>
+        <p id="control">Thoughts</p>`);
+    const result = await page.evaluate(dictionary => {
+        window.localizeControls(document.getElementById('root'), dictionary);
+        const text = selector => document.querySelector(selector).textContent;
+        return {
+            topbar: [text('#sb-topbar-title'), document.getElementById('sb-topbar-title').title],
+            heading: text('#rm_button_selected_ch h2'),
+            qrLabel: text('.qr--button-label'),
+            spriteName: text('#image_list_header_name'),
+            spriteLabel: text('#sprite-label'),
+            control: text('#control'),
+        };
+    }, dictionary);
+    // Defect assertions: the four value elements.
+    expect.soft({ topbar: result.topbar, heading: result.heading, qrLabel: result.qrLabel, spriteName: result.spriteName }, 'defect: values as written').toEqual({
+        topbar: ['Thoughts', 'Thoughts'], heading: 'Summary', qrLabel: 'Continue', spriteName: 'Solo',
+    });
+    // Preservation assertions: the built-in caption beside a value, and an ordinary element, still translate.
+    expect({ spriteLabel: result.spriteLabel, control: result.control }, 'preservation: captions still translate').toEqual({
+        spriteLabel: 'Conjunto de sprites:', control: 'Pensamentos',
+    });
+});
+
+test('a translate="no" slot keeps a value, and translates the fallback after the attribute is removed, each time it is rewritten (pt-pt)', async ({ page }) => {
+    const dictionary = await mergedDictionary('pt-pt');
+    await openLocaliser(page, '<span id="slot" class="sb-conversation-pal-kind"></span><button id="recent" title="Summary" aria-label="Summary" translate="no"><span>Summary</span><small>Chat</small></button>');
+    const result = await page.evaluate(dictionary => {
+        const slot = document.getElementById('slot');
+        // As the render code does: a value sets the attribute, the built-in fallback removes it.
+        const write = (text, isValue) => {
+            slot.textContent = text;
+            if (isValue) slot.setAttribute('translate', 'no');
+            else slot.removeAttribute('translate');
+            window.localizeControls(document.getElementById('root'), dictionary);
+            return slot.textContent;
+        };
+        const shown = [write('Solo', true), write('Solo', false), write('Solo', true), write('Solo', false)];
+        const recent = document.getElementById('recent');
+        window.localizeControls(document.getElementById('root'), dictionary);
+        return { shown, recent: [recent.title, recent.getAttribute('aria-label'), recent.querySelector('span').textContent, recent.querySelector('small').textContent] };
+    }, dictionary);
+    // Preservation assertions (the localiser already honours translate="no"; the render code is what must write it, see user-text-render.e2e.js).
+    expect(result.shown).toEqual(['Solo', 'Individual', 'Solo', 'Individual']);
+    expect(result.recent).toEqual(['Summary', 'Summary', 'Summary', 'Chat']);
+});
+
+test('a protected element keeps the captions the code translated, and English ones inside it stay English, so the code must translate them (pt-pt)', async ({ page }) => {
+    const dictionary = await mergedDictionary('pt-pt');
+    await openLocaliser(page, `
+        <span id="stack" translate="no" title="Alice, Bob">
+            <span id="translated" title="Personagem" aria-label="Mostrar imagem completa de Alice"></span>
+            <span id="english" title="Character" aria-label="Show full picture for Bob"></span>
+        </span>
+        <select id="sets"><option translate="no">Default</option><option id="placeholder">-- Select QR Set --</option></select>`);
+    const result = await page.evaluate(dictionary => {
+        window.localizeControls(document.getElementById('root'), dictionary);
+        const late = document.createElement('option');
+        late.setAttribute('translate', 'no');
+        late.textContent = 'Summary';
+        document.getElementById('sets').append(late);
+        // As the observer in i18n.js passes each added node.
+        window.localizeControls(late, dictionary);
+        const read = id => [document.getElementById(id).title, document.getElementById(id).getAttribute('aria-label')];
+        return { translated: read('translated'), english: read('english'), options: [...document.getElementById('sets').options].map(option => option.text) };
+    }, dictionary);
+    // Preservation assertions.
+    expect(result.translated).toEqual(['Personagem', 'Mostrar imagem completa de Alice']);
+    expect(result.english).toEqual(['Character', 'Show full picture for Bob']);
+    expect(result.options).toEqual(['Default', '-- Selecione um conjunto de QR --', 'Summary']);
+});

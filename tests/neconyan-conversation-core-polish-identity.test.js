@@ -38,7 +38,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/generati
     submitConversationRewrite,
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/media.js', () => ({
-    getConversationDisplayName: () => 'Aster',
+    getConversationDisplayLabel: () => ({ text: 'Aster', source: 'participants', isValue: true }),
     getConversationParticipants: () => [],
     getEffectiveConversationStatus: () => 'online',
     renderConversationParticipantStack: jest.fn(),
@@ -79,6 +79,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/thread-s
         const store = getStore(options.personaId || currentPersonaId, avatar, options.groupId || '');
         return store?.branches?.[options.branchId || store.activeBranchId]?.messages || [];
     },
+    isConversationPreviewValue: () => false,
     saveConversationThread,
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/timeline-render.js', () => ({
@@ -88,6 +89,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/timeline
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/typing.js', () => ({
     getActiveTypingParticipants: () => [],
     getLastConversationPreview: () => '',
+    isLastConversationPreviewValue: () => false,
     updateLastPreviewFromConversation: jest.fn(),
 }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/render-scheduler.js', () => ({
@@ -95,7 +97,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/render-s
     scheduleInterfaceRefresh: jest.fn(),
     scheduleTimelineRender,
 }));
-await jest.unstable_mockModule('../public/scripts/neconyan-conversation/render-utils.js', () => ({ hashConversationRenderFingerprint: value => value }));
+await jest.unstable_mockModule('../public/scripts/neconyan-conversation/render-utils.js', () => ({ hashConversationRenderFingerprint: value => value, setUserTextSlot: jest.fn() }));
 
 const { handleCharacterMessagePolish } = await import('../public/scripts/neconyan-conversation/interface.js');
 
