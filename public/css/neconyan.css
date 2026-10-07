@@ -1190,7 +1190,7 @@ body.neconyan #sb-topbar-inner :is(#sb-home-toggle, #sb-character-toggle) {
         white-space: normal;
     }
     body.neconyan #right-nav-panel.openDrawer .sb-character-editor-subtabs { flex-flow: row wrap; gap: 4px; }
-    body.neconyan #right-nav-panel.openDrawer .sb-character-editor-subtab { width: auto; flex: 1 1 0; white-space: nowrap; }
+    body.neconyan #right-nav-panel.openDrawer .sb-character-editor-subtab { width: auto; flex: 0 0 auto; white-space: nowrap; }
     /* A pinned panel keeps all four sections on one row once the icons step aside. */
     @container (max-width: 480px) {
         body.neconyan #right-nav-panel.openDrawer .sb-character-editor-subtab { padding-inline: 8px; }
@@ -1347,7 +1347,7 @@ body.neconyan #sb-topbar-inner :is(#sb-home-toggle, #sb-character-toggle) {
 /* Editor sections are labelled tabs at every width, fullscreen included; the mirrored dropdown stays hidden. */
 .neconyan-mobile-section-select { display: none; }
 @media (max-width: 768px) {
-    body.neconyan #right-nav-panel > .sb-character-editor-subtabs-wrapper { flex: 0 0 auto; max-height: none; padding: 0 0 4px; }
+    body.neconyan #right-nav-panel > .sb-character-editor-subtabs-wrapper { flex: 0 0 auto; max-height: none; padding: 0; }
     /* Phones: one tap per section, so editor sections are labelled tabs in a horizontally scrolling row. */
     body.neconyan #right-nav-panel .sb-character-editor-subtabs-wrapper .sb-character-editor-subtabs {
         display: flex !important;
@@ -1357,7 +1357,7 @@ body.neconyan #sb-topbar-inner :is(#sb-home-toggle, #sb-character-toggle) {
         gap: 4px;
         width: 100%;
         max-height: none;
-        padding: 4px 8px;
+        padding: 0 8px 4px;
         overflow-x: auto;
         overflow-y: hidden;
         border: 0;
@@ -1383,7 +1383,7 @@ body.neconyan #sb-topbar-inner :is(#sb-home-toggle, #sb-character-toggle) {
     /* Phones: the commit bar scrolls with the content so the whole sheet height goes to editing. */
     body.neconyan #right-nav-panel.openDrawer #sb_character_commit_bar { position: static; }
     /* The name/token titlebar is moved into the scroller on phones (syncCharacterTitlebarVisibility). */
-    body.neconyan #right-nav-panel.openDrawer > .scrollableInner > #rm_PinAndTabs { flex: 0 0 auto; padding: 2px 0 4px; }
+    body.neconyan #right-nav-panel.openDrawer > .scrollableInner > #rm_PinAndTabs { flex: 0 0 auto; padding: 0; }
 }
 
 /* Settings and extensions use one narrow navigator beside one readable detail surface. */
@@ -1967,9 +1967,41 @@ body.neconyan #right-nav-panel .sb-entity-empty-actions { display: flex; flex-wr
 body.neconyan #right-nav-panel .sb-entity-empty-actions .menu_button { min-height: 44px; }
 
 /* Character editor field ownership stays in the existing form and IDs. */
-body.neconyan #right-nav-panel .sb-character-editor-panel { gap: 14px; }
+body.neconyan #right-nav-panel .sb-character-editor-panel { gap: 12px; }
 body.neconyan #right-nav-panel .sb-character-editor-panel > :is(#descriptionWrapper, #personality_div, #scenario_div, #depth_prompt_div, #talkativeness_div, #mes_example_div) { min-width: 0; }
 body.neconyan #right-nav-panel .sb-editor-field-label { display: block; margin-bottom: 4px; color: var(--neco-muted); font-size: 12px; }
+/* One field = a heading row (label, expand, help, then the token count on the right) over its box. */
+body.neconyan #right-nav-panel #form_create :is(#descriptionWrapper, #personality_div, #scenario_div, #mes_example_div, .sb-character-editor-field-box) {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 8px; margin: 0; padding: 0;
+}
+body.neconyan #right-nav-panel #form_create :is(#descriptionWrapper, #personality_div, #scenario_div, #mes_example_div, .sb-character-editor-field-box, #depth_prompt_div > .flex1) > * { grid-column: 1 / -1; min-width: 0; margin: 0; }
+body.neconyan #right-nav-panel #form_create :is(#descriptionWrapper, #personality_div, #scenario_div, #mes_example_div, .sb-character-editor-field-box) > :first-child { grid-column: 1; }
+body.neconyan #right-nav-panel #form_create :is(#descriptionWrapper, #personality_div, #scenario_div, #mes_example_div, .sb-character-editor-field-box) > .extension_token_counter { grid-area: 1 / 2; }
+body.neconyan #right-nav-panel #form_create :is(h4, .character-greeting-label-row, .character-greetings-editor-title) {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 0 4px; min-height: 0; margin: 0; color: var(--neco-ink); font-size: 14px; text-align: start;
+}
+body.neconyan #right-nav-panel #form_create .character-greetings-editor-title { justify-content: space-between; }
+body.neconyan #right-nav-panel #form_create :is(h5, small, .extension_token_counter, .slider_hint, #depth_prompt_div > :not(.flex1) > h4) { margin: 0; color: var(--neco-muted); font-family: var(--mainFontFamily); font-size: 12px; font-weight: 400; text-align: start; }
+body.neconyan #right-nav-panel .sb-character-editor-controls-row > #name_div { display: grid !important; }
+body.neconyan #right-nav-panel #form_create .extension_token_counter { font-size: 11px; white-space: nowrap; }
+body.neconyan #right-nav-panel #form_create :is(h5 .warning, #mes_example_div h5) { color: inherit; font-weight: 400; }
+body.neconyan #right-nav-panel #form_create :is(textarea, .text_pole) { margin-block: 0; }
+/* Character's Note: heading and token count, the text at full width, then depth and role on one short row. */
+body.neconyan #right-nav-panel #depth_prompt_div { display: grid; grid-template-columns: auto auto auto auto minmax(0, 1fr); align-items: center; gap: 4px 8px; }
+body.neconyan #right-nav-panel #depth_prompt_div > div { display: contents; }
+body.neconyan #right-nav-panel #form_create #depth_prompt_div > .flex1 > h4 { grid-area: 1 / 1 / 2 / 5; }
+body.neconyan #right-nav-panel #depth_prompt_div > :not(.flex1) > :is(input, select) { width: auto; min-width: 4.5rem; max-width: 9rem; margin: 0; }
+body.neconyan #right-nav-panel #depth_prompt_div > :not(.flex1) > .extension_token_counter { grid-area: 1 / 5; justify-self: end; }
+body.neconyan #right-nav-panel #form_create :is(.character-greeting-label-row > span, .character-greetings-editor-title > .flex1 > span) { font-family: var(--sb-font-display); }
+body.neconyan #right-nav-panel #mes_example_div > div:first-child { display: contents; }
+/* Each alternate greeting keeps its buttons on its title row instead of a row of their own. */
+body.neconyan #right-nav-panel #character_greetings_editor .alternate_greeting_header { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+body.neconyan #right-nav-panel #character_greetings_editor .alternate_greeting_header > details { grid-area: 1 / 1 / 2 / 3; }
+body.neconyan #right-nav-panel #character_greetings_editor .alternate_greeting_actions { grid-area: 1 / 2; align-self: start; z-index: 1; }
+body.neconyan #right-nav-panel #character_greetings_editor .alternate_greeting summary { padding-block: 8px; padding-inline-end: 11rem; }
+body.neconyan #right-nav-panel #form_create #mes_example_div > div > h5 { grid-column: 1 / -1; }
+body.neconyan #right-nav-panel #talkativeness_div { display: flex; flex-direction: column; gap: 2px; }
+body.neconyan #right-nav-panel #talkativeness_div > #talkativeness_slider { margin-block: 12px 6px; }
 body.neconyan #right-nav-panel .sb-character-commit-bar,
 body.neconyan #right-nav-panel .sb-group-commit-bar {
     container-type: inline-size;

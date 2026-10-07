@@ -5601,11 +5601,11 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 #right-nav-panel .sb-character-editor-identity {
     display: flex;
     flex-direction: column;
-    gap: var(--sb-shell-space-md);
+    gap: 8px;
     min-width: 0;
     container-type: inline-size;
-    margin: 4px 0 2px;
-    padding: var(--sb-shell-space-md);
+    margin: 0;
+    padding: 10px;
     border: 1px solid color-mix(in srgb, var(--sb-shell-border) 82%, transparent);
     border-radius: var(--sb-radius-lg, 22px);
     background:
@@ -5618,17 +5618,16 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 }
 
 #right-nav-panel .sb-character-editor-controls-row {
-    --sb-character-editor-avatar-size: clamp(112px, 13vw, 152px);
+    --sb-character-editor-avatar-size: clamp(64px, 18cqi, 96px);
     width: 100%;
     display: grid;
-    grid-template-columns: var(--sb-character-editor-avatar-size) minmax(0, 1fr);
+    grid-template-columns: var(--sb-character-editor-avatar-size) minmax(0, 1fr) auto;
     grid-template-areas:
-        'avatar name'
-        'avatar side-actions'
-        'avatar icon-actions'
-        'tags tags';
+        'avatar name side-actions'
+        'avatar icon-actions icon-actions';
     align-items: flex-start;
-    gap: 8px 14px;
+    align-content: start;
+    gap: 8px 10px;
     min-width: 0;
 }
 
@@ -5667,24 +5666,27 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     max-width: 100%;
     min-width: 0;
     box-sizing: border-box;
-    align-self: start;
-    padding: 6px 8px;
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 76%, transparent);
-    border-radius: var(--sb-radius-md, 16px);
-    background: color-mix(in srgb, var(--sb-shell-main-bg) 72%, transparent);
+    align-self: end;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    column-gap: 8px;
 }
 
 #right-nav-panel .sb-character-editor-controls-row > #name_div #character_name_pole {
+    grid-column: 1 / -1;
     width: 100%;
-    min-height: 34px;
-    height: 34px;
+    min-height: var(--sb-mobile-touch-target, 40px);
+    height: var(--sb-mobile-touch-target, 40px);
     margin: 0;
 }
 
 #right-nav-panel .sb-character-editor-controls-row > #name_div .extension_token_counter {
-    margin-top: 2px;
-    font-size: calc(var(--mainFontSize) * 0.72);
+    grid-area: 1 / 2;
+    margin: 0;
+    font-size: 11px;
     line-height: 1.1;
+    white-space: nowrap;
 }
 
 #right-nav-panel #avatar_controls > label[for="char-management-dropdown"] {
@@ -5736,16 +5738,15 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     flex-wrap: wrap;
     flex: 0 1 auto;
     min-width: 0;
-    min-height: 40px;
     max-width: 100%;
     margin-inline-start: 0;
-    padding: 4px;
-    gap: 6px;
+    padding: 0;
+    border: 0;
+    background: none;
+    overflow: visible;
+    gap: 4px;
     justify-self: start;
     justify-content: flex-start;
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 70%, transparent);
-    border-radius: var(--sb-radius-md, 16px);
-    background: color-mix(in srgb, var(--sb-shell-main-bg) 72%, transparent);
 }
 
 #right-nav-panel #avatar_controls .char-button-group-icons .menu_button {
@@ -5767,22 +5768,10 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     flex: 0 0 auto;
     min-width: 0;
     flex-wrap: nowrap;
-    align-self: start;
-    min-height: 40px;
-    margin-top: 0;
-    padding: 4px;
+    align-self: end;
+    margin: 0;
+    padding: 0;
     gap: 4px;
-}
-
-/* Sized by the editor, not the window: a pinned or MovingUI-resized panel is narrow on a wide screen. */
-@container (min-width: 780px) {
-    #right-nav-panel .sb-character-editor-controls-row {
-        grid-template-columns: var(--sb-character-editor-avatar-size) minmax(0, 1fr) minmax(240px, 28rem);
-        grid-template-areas:
-            'avatar side-actions name'
-            'avatar icon-actions name'
-            'tags tags tags';
-    }
 }
 
 #right-nav-panel #character-editor-pinned-actions {
@@ -5801,8 +5790,8 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     flex: 0 0 auto;
     align-self: stretch;
     box-sizing: border-box;
-    margin: var(--sb-shell-space-sm) var(--sb-shell-panel-padding-inline) 0;
-    padding: var(--sb-shell-space-sm);
+    margin: 4px var(--sb-shell-panel-padding-inline) 0;
+    padding: 0;
     border: 1px solid color-mix(in srgb, var(--sb-shell-border) 84%, transparent);
     border-radius: var(--sb-radius-md, 16px);
     background: color-mix(in srgb, var(--sb-shell-surface) 76%, transparent);
@@ -5815,8 +5804,8 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 #right-nav-panel .sb-character-editor-subtabs {
     flex: 1 1 100%;
     min-width: 0;
-    justify-content: safe center;
-    gap: 6px;
+    justify-content: flex-start;
+    gap: 4px;
     width: 100%;
     padding: 0;
     border-bottom: 0;
@@ -5851,8 +5840,8 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 #right-nav-panel .sb-character-editor-subtab {
     flex: 0 0 auto;
     min-width: max-content;
-    min-height: 40px;
-    padding: 7px 12px;
+    min-height: 36px;
+    padding: 4px 12px;
     border-radius: var(--sb-radius-pill, 999px);
     background: color-mix(in srgb, var(--sb-shell-main-bg) 54%, transparent);
 }
@@ -5908,10 +5897,6 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     flex: 1 0 auto;
 }
 
-#right-nav-panel.openDrawer.sb-character-editor-fullscreen:is([data-menu-type="character_edit"], [data-menu-type="create"]) .sb-character-editor-panel {
-    gap: 18px;
-}
-
 #right-nav-panel.openDrawer.sb-character-editor-fullscreen:is([data-menu-type="character_edit"], [data-menu-type="create"]) .sb-character-editor-fullscreen-toggle {
     background: color-mix(in srgb, var(--color-primary, var(--sb-accent)) 12%, var(--sb-shell-surface) 88%);
 }
@@ -5920,16 +5905,10 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     content: '\f066';
 }
 
-#right-nav-panel.openDrawer.sb-character-editor-fullscreen:is([data-menu-type="character_edit"], [data-menu-type="create"]) .sb-character-editor-identity,
-#right-nav-panel.openDrawer.sb-character-editor-fullscreen:is([data-menu-type="character_edit"], [data-menu-type="create"]) .sb-character-editor-field-box,
-#right-nav-panel.openDrawer.sb-character-editor-fullscreen:is([data-menu-type="character_edit"], [data-menu-type="create"]) .sb-character-creator-notes-preview {
-    box-shadow: 0 18px 50px color-mix(in srgb, var(--SmartThemeShadowColor) 14%, transparent);
-}
-
 #right-nav-panel .sb-character-editor-subtab-panels {
     display: flex;
     flex-direction: column;
-    gap: var(--sb-shell-space-lg);
+    gap: 12px;
     min-width: 0;
     min-height: 0;
 }
@@ -5937,7 +5916,7 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 #right-nav-panel .sb-character-editor-panel {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 12px;
     min-width: 0;
 }
 
@@ -5955,28 +5934,59 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 #right-nav-panel .sb-character-editor-field-box {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 4px;
     min-width: 0;
-    padding: 12px;
-    border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 14px;
-    background: color-mix(in srgb, var(--color-surface, var(--SmartThemeBlurTintColor)) 65%, transparent);
+    padding: 0;
+    border: 0;
+    background: transparent;
 }
 
-#right-nav-panel .sb-character-creator-notes-preview {
-    margin: 8px 0 12px;
-    padding: 10px 12px;
+/* Creator's Notes read as one row on Basics; tap the excerpt or Expand for the whole note. */
+#right-nav-panel #form_create > .sb-character-creator-notes-preview {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0 10px;
+    margin: 0 0 12px;
+    padding: 0 0 0 10px;
     border: 1px solid color-mix(in srgb, var(--sb-shell-border) 76%, transparent);
     border-radius: var(--sb-radius-md, 16px);
-    background: color-mix(in srgb, var(--sb-shell-surface) 58%, transparent);
+}
+
+#right-nav-panel #form_create:has(#sb_character_editor_panel_char_info[hidden]) > .sb-character-creator-notes-preview:not(.flex1) {
+    display: none;
+}
+
+#right-nav-panel .sb-character-creator-notes-preview > #creators_notes_div {
+    display: contents;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#right-nav-panel .sb-character-creator-notes-preview > #creators_notes_div > .flex1 {
+    flex: 0 0 auto;
 }
 
 #right-nav-panel .sb-character-creator-notes-preview-body {
-    min-height: 34px;
-    max-height: 7.5rem;
+    grid-area: 1 / 2;
+    max-height: 2.6em;
+    overflow: hidden;
+    color: var(--SmartThemeEmColor);
+    font-size: 12px;
+    line-height: 1.3;
+    cursor: pointer;
+}
+
+#right-nav-panel .sb-character-creator-notes-preview-body :is(p, h1, h2, h3, h4, ul, ol, blockquote) {
+    margin: 0;
+}
+
+#right-nav-panel .sb-character-creator-notes-preview.flex1 .sb-character-creator-notes-preview-body {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    max-height: none;
     overflow-y: auto;
-    overscroll-behavior: contain;
-    padding-inline-end: 4px;
+    padding-block-end: 10px;
 }
 
 .sb-creator-notes-fullscreen {
@@ -6043,13 +6053,9 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 
 #right-nav-panel #avatar-and-name-block #tagList {
     flex: 0 0 auto;
-    margin: 8px 0 0;
-    padding: 6px 8px;
-    min-height: 34px;
+    margin: 0;
+    padding: 0;
     align-items: center;
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 72%, transparent);
-    border-radius: var(--sb-radius-md, 16px);
-    background: color-mix(in srgb, var(--sb-shell-surface) 52%, transparent);
     overflow: visible;
 }
 
@@ -6062,11 +6068,11 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 }
 
 #right-nav-panel .sb-character-editor-side-actions #favorite_button {
-    width: 40px;
-    min-width: 40px;
-    height: 40px;
-    min-height: 40px;
-    max-height: 40px;
+    width: var(--sb-mobile-touch-target, 40px);
+    min-width: var(--sb-mobile-touch-target, 40px);
+    height: var(--sb-mobile-touch-target, 40px);
+    min-height: var(--sb-mobile-touch-target, 40px);
+    max-height: var(--sb-mobile-touch-target, 40px);
     max-width: none;
     aspect-ratio: 1;
     padding-inline: 10px !important;
@@ -6101,8 +6107,8 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     min-height: 0 !important;
     max-height: none !important;
     margin: 0 !important;
-    border-width: 3px;
-    border-radius: var(--sb-radius-lg, 22px);
+    border-width: 1px;
+    border-radius: 8px;
     overflow: hidden;
     /* Letterbox surface for art that isn't 3:4, so `contain` reads as a frame */
     background: color-mix(in srgb, var(--sb-shell-surface) 62%, transparent);
@@ -6113,26 +6119,6 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     height: 100% !important;
     /* The whole image stays visible regardless of its aspect ratio */
     object-fit: contain !important;
-}
-
-#right-nav-panel #avatar_div > #tagList {
-    flex: 0 0 auto;
-    margin: 8px 0 0;
-    padding: 6px 8px;
-    min-height: 34px;
-    align-items: center;
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 72%, transparent);
-    border-radius: var(--sb-radius-md, 16px);
-    background: color-mix(in srgb, var(--sb-shell-surface) 52%, transparent);
-    overflow: visible;
-}
-
-#right-nav-panel #avatar_div > #tagList:empty {
-    display: none;
-}
-
-#right-nav-panel #avatar_div > #tagList .tag {
-    margin: 0;
 }
 
 /* Neconyan: WebKit keeps flex children at min-width:auto in this sticky header; keep the token text shrinkable and every action icon in a fixed touch target. */
