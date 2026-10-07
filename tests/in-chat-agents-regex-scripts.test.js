@@ -1,5 +1,7 @@
 import { describe, expect, jest, test } from '@jest/globals';
+import { readFileSync } from 'node:fs';
 import { regexFromString } from '../public/scripts/regex-utils.js';
+import { SAMPLES } from '../public/scripts/extensions/third-party/Neconyan-Regex-Agent-Themes/src/samples.js';
 
 await jest.unstable_mockModule('../public/scripts/slash-commands/SlashCommandRuntimeUtils.js', () => ({
     uuidv4: jest.fn(() => 'test-uuid'),
@@ -16,6 +18,38 @@ const {
 function script(overrides) {
     return normalizeRegexScript({ id: 's1', scriptName: 'test', markdownOnly: false, ...overrides });
 }
+
+describe('bundled Relationship Tracker Unsaid quotes', () => {
+    const bundles = JSON.parse(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/regex-bundles.json', import.meta.url), 'utf8'));
+    const scripts = bundles['tpl-relationship-tracker'];
+    const render = (value, replacements = scripts) => applyRegexScriptList(
+        SAMPLES['relationship-bond'].full.replace('I hoped you would stay', value),
+        replacements, AGENT_REGEX_PLACEMENT.AI_OUTPUT, { isMarkdown: true },
+    ).match(/Unsaid[\s\S]*?<\/summary><div[^>]*>([\s\S]*?)<\/div>/)?.[1];
+
+    test.each([
+        ['I hoped you would stay', '“I hoped you would stay”'],
+        ['<font color="#aaffaa">Stay</font>', '“<font color="#aaffaa">Stay</font>”'],
+        ['"Stay"', '"Stay"'],
+        ['“Stay”', '“Stay”'],
+        ['<font color="#aaffaa">"Stay"</font>', '<font color="#aaffaa">"Stay"</font>'],
+        ['<font color="#aaffaa"><em>“Stay”</em></font>', '<font color="#aaffaa"><em>“Stay”</em></font>'],
+        ['<font color="#aaffaa">&quot;Stay&quot;</font>', '<font color="#aaffaa">&quot;Stay&quot;</font>'],
+        ['He said "stay" quietly', '“He said "stay" quietly”'],
+        ['"Stay', '“"Stay”'],
+    ])('preserves one surrounding pair and original markup for %s', (value, expected) => {
+        expect(render(value)).toBe(expected);
+    });
+
+    test('saved copies with new identities receive the same display repair', () => {
+        expect(render('"Stay"', scripts.map(item => ({ ...item, id: 'saved-copy', scriptName: 'My tracker' })))).toBe('"Stay"');
+    });
+
+    test('custom replacement punctuation is preserved', () => {
+        const customised = scripts.map(item => ({ ...item, replaceString: item.replaceString.replace('“$17”', 'Thought: “$17”') }));
+        expect(render('"Stay"', customised)).toBe('Thought: “"Stay"”');
+    });
+});
 
 describe('regexFromString parses the whole input', () => {
     test('a multi-line pattern compiles as one pattern', () => {

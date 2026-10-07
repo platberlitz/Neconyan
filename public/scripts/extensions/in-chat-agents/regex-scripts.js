@@ -1,4 +1,5 @@
 import { regexFromString } from '../../regex-utils.js';
+import { preserveRelationshipQuotePair } from '../../relationship-tracker-quotes.js';
 import { uuidv4 } from '../../slash-commands/SlashCommandRuntimeUtils.js';
 
 /**
@@ -244,7 +245,7 @@ export function applyRegexScript(script, rawString, {
         /* Trailing callback arguments are offset, source string and (optionally) named groups; only the leading entries are captures. */
         const namedGroups = args[args.length - 1] && typeof args[args.length - 1] === 'object' ? args[args.length - 1] : null;
         const captureCount = args.length - 3 - (namedGroups ? 1 : 0);
-        const replaceString = script.replaceString.replace(/{{match}}/gi, '$0');
+        const replaceString = preserveRelationshipQuotePair(script.replaceString, match, args[17]).replace(/{{match}}/gi, '$0');
         const interpolated = replaceString.replaceAll(/\$(\d+)|\$<([^>]+)>/g, (_, groupIndex, groupName) => {
             let replacement;
             if (groupIndex) {

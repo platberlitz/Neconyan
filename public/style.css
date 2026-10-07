@@ -1405,9 +1405,10 @@ body .panelControlBar {
 }
 
 .mes q:before,
-.mes q:after {
+.mes q:after,
+.mes_text q:before,
+.mes_text q:after {
     content: '';
-
 }
 
 .last_mes {

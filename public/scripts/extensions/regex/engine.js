@@ -2,6 +2,7 @@ import { characters, saveSettingsDebounced, substituteParams, substituteParamsEx
 import { extension_settings, writeExtensionField } from '../../extensions.js';
 import { getPresetManager } from '../../preset-manager.js';
 import { regexFromString } from '../../utils.js';
+import { preserveRelationshipQuotePair } from '../../relationship-tracker-quotes.js';
 import { lodash } from '../../../lib.js';
 
 /**
@@ -418,7 +419,7 @@ export function runRegexScript(regexScript, rawString, { characterOverride } = {
     // Run replacement. Currently does not support the Overlay strategy
     newString = rawString.replace(findRegex, function (match) {
         const args = [...arguments];
-        const replaceString = regexScript.replaceString.replace(/{{match}}/gi, '$0');
+        const replaceString = preserveRelationshipQuotePair(regexScript.replaceString, match, args[17]).replace(/{{match}}/gi, '$0');
         const replaceWithGroups = replaceString.replaceAll(/\$(\d+)|\$<([^>]+)>/g, (_, num, groupName) => {
             if (num) {
                 // Handle numbered capture groups ($1, $2, etc.)
