@@ -144,6 +144,8 @@ export async function openTimeMachine() {
                     : `Stored ${result.taken} new snapshot${result.taken === 1 ? '' : 's'}.`;
             }
             renderTargets();
+            state.comparison++;
+            renderTimeline();
         } catch (error) {
             console.error('[Time Machine] snapshot failed', error);
             status.textContent = 'Could not finish the snapshot. See the console.';
@@ -342,6 +344,9 @@ export async function openTimeMachine() {
             : row.kind === 'lorebook'
                 ? lorebookDiff(live?.data, payload.data)
                 : fieldDiff(live?.data, payload.data);
+        if (live === null && diffNode.classList.contains('sbctm-empty')) {
+            diffNode.textContent = 'This snapshot is empty.';
+        }
         detail.append(diffNode);
 
         const bar = el('div', 'sbctm-bar');
@@ -350,7 +355,7 @@ export async function openTimeMachine() {
             restore.disabled = true;
         }
         // The diff renderers return the empty-state div exactly when nothing differs.
-        if (diffNode.classList.contains('sbctm-empty')) {
+        if (live !== null && diffNode.classList.contains('sbctm-empty')) {
             restore.disabled = true;
             restore.title = 'This version is identical to the current one';
         }
@@ -523,7 +528,7 @@ export async function openTimeMachine() {
                 await restoreLorebook(row.target, payload.data, current?.data ?? null);
             } else {
                 const [apiId, ...rest] = row.target.split('/');
-                await restorePreset(apiId, rest.join('/'), payload.data);
+                await restorePreset(apiId, rest.join('/'), payload.data, current?.data ?? null);
             }
 
             let cleanupFailed = false;
@@ -549,7 +554,7 @@ export async function openTimeMachine() {
                     ? 'The item may have changed, but its before snapshot was kept.'
                     : 'The item may have changed. See the console before trying again.';
                 globalThis.toastr?.warning('The restore may have partially completed.');
-            } else if (error.code === 'RESTORE_CHANGED') {
+            } else if (error.code === 'RESTORE_CHANGED' || error.status === 409) {
                 status.textContent = 'The item changed again, so the restore was stopped. Compare and retry.';
                 globalThis.toastr?.warning('Restore stopped because a newer change was detected.');
                 unpinSnapshots(pinned);
@@ -759,6 +764,7 @@ export function renderDrawer(hostElement) {
         box.type = 'checkbox';
         box.checked = !!settings[key];
         box.addEventListener('change', async () => {
+            const settings = getSettings();
             const previous = settings[key];
             settings[key] = box.checked;
             box.disabled = true;
@@ -779,11 +785,13 @@ export function renderDrawer(hostElement) {
 
     hostElement.append(
         numberField(hostElement, 'Versions kept per item', settings.keepPerTarget, (value) => {
+            const settings = getSettings();
             const previous = settings.keepPerTarget;
             settings.keepPerTarget = value;
             return () => { settings.keepPerTarget = previous; };
         }),
         numberField(hostElement, 'Total size budget (MB)', Math.round(settings.maxTotalBytes / (1024 * 1024)), (value) => {
+            const settings = getSettings();
             const previous = settings.maxTotalBytes;
             settings.maxTotalBytes = value * 1024 * 1024;
             return () => { settings.maxTotalBytes = previous; };

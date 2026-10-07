@@ -10,7 +10,7 @@ import { publishFileDeletions } from './file-deletion.js';
 import { registerOperation } from './jobs.js';
 import { operationError, withOperation } from './store.js';
 import {
-    DEFAULT_KEEP_PER_TARGET, DEFAULT_MAX_TOTAL_BYTES, hashOf, isPlainObject, prunePlan, snapshotFileName,
+    DEFAULT_KEEP_PER_TARGET, DEFAULT_MAX_TOTAL_BYTES, hashOf, isPlainObject, normalizeRow, prunePlan, snapshotFileName, validateSnapshotPayload,
 } from '../../public/scripts/extensions/third-party/Neconyan-Time-Machine/src/core.js';
 
 export const TIME_MACHINE_MODULE = 'NeconyanCardTimeMachine';
@@ -37,9 +37,7 @@ function parseSettings(file) {
 }
 
 function validRow(value) {
-    return isPlainObject(value) && KINDS.includes(value.kind) && typeof value.target === 'string' && value.target
-        && typeof value.name === 'string' && /^cardtm_(character|lorebook|preset)_[A-Za-z0-9_-]+\.json$/.test(value.name)
-        && Number.isFinite(value.ts) && Number.isFinite(value.size) && value.size >= 0;
+    return normalizeRow(value) !== null;
 }
 
 /** Reads the module index the same way the page does, keeping unrecognised rows out of retention. */
@@ -76,6 +74,7 @@ function readJson(filename) {
 function readSources(lease, kinds, settings) {
     const dirs = roleplayLease(lease).scope.directories;
     const sources = [];
+    let failed = 0;
     let total = 0;
     const add = (source, size) => {
         total += size;
@@ -87,10 +86,10 @@ function readSources(lease, kinds, settings) {
             .filter(entry => entry.isFile() && entry.name.toLowerCase().endsWith('.png')).map(entry => entry.name).sort() : [];
         for (const avatar of names) {
             const file = readRoleplayFile(path.join(dirs.characters, avatar), SOURCE_LIMIT);
-            if (!file) continue;
+            if (!file) { failed++; continue; }
             let card;
-            try { card = JSON.parse(readCard(file.bytes)); } catch { continue; }
-            if (!isPlainObject(card)) continue;
+            try { card = JSON.parse(readCard(file.bytes)); } catch { failed++; continue; }
+            if (!isPlainObject(card)) { failed++; continue; }
             delete card.chat; delete card.json_data; delete card.avatar;
             const tags = settings.tag_map?.[avatar] ?? [];
             if (!Array.isArray(tags) || tags.some(tag => typeof tag !== 'string')) throw operationError(`The saved tags for ${avatar} are malformed.`);
@@ -100,7 +99,7 @@ function readSources(lease, kinds, settings) {
     if (kinds.includes('lorebook')) {
         for (const filename of jsonFiles(dirs.worlds)) {
             const book = readJson(path.join(dirs.worlds, filename));
-            if (!book) continue;
+            if (!book) { failed++; continue; }
             const name = filename.slice(0, -5);
             add({ kind: 'lorebook', target: name, label: name, content: { data: book.value } }, book.size);
         }
@@ -110,13 +109,25 @@ function readSources(lease, kinds, settings) {
             const { folder } = getPresetSettingsByAPI(apiId, dirs);
             for (const filename of jsonFiles(folder)) {
                 const preset = readJson(path.join(folder, filename));
-                if (!preset) continue;
+                if (!preset) { failed++; continue; }
                 const name = NAMED_PRESETS.includes(apiId) && typeof preset.value.name === 'string' ? preset.value.name : filename.slice(0, -5);
                 add({ kind: 'preset', target: `${apiId}/${name}`, label: `${name} (${apiId})`, content: { data: preset.value } }, preset.size);
             }
         }
     }
-    return sources;
+    return { sources, failed };
+}
+
+async function readableSnapshot(context, row) {
+    try {
+        const file = withOperation(context, ({ lease }) => readAuthoringFileLocked(lease,
+            path.join(roleplayLease(lease).scope.directories.files, row.name), SNAPSHOT_LIMIT));
+        if (!file) return false;
+        await validateSnapshotPayload(row, JSON.parse(file.bytes.toString('utf8')));
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 export function captureTimeMachine(base, account, input = {}) {
@@ -131,9 +142,9 @@ export function captureTimeMachine(base, account, input = {}) {
 async function planSnapshots(context, plan) {
     const saved = readArtifact(context.directories, context.job.id, 'time-machine-plan');
     if (saved) return saved;
-    const { settings, sources } = withOperation(context, ({ lease }) => {
+    const { settings, sources, failed } = withOperation(context, ({ lease }) => {
         const settings = parseSettings(readAuthoringFileLocked(lease, settingsPath(lease), SETTINGS_LIMIT));
-        return { settings, sources: readSources(lease, plan.kinds, settings) };
+        return { settings, ...readSources(lease, plan.kinds, settings) };
     });
     const { rows } = moduleIndex(settings);
     const newest = new Map();
@@ -147,7 +158,8 @@ async function planSnapshots(context, plan) {
     let skipped = 0;
     for (const [index, source] of sources.entries()) {
         const hash = await hashOf(source.content);
-        if (hash && newest.get(`${source.kind}:${source.target}`)?.hash === hash) {
+        const previous = newest.get(`${source.kind}:${source.target}`);
+        if (hash && previous?.hash === hash && await readableSnapshot(context, previous)) {
             skipped++;
             continue;
         }
@@ -161,7 +173,7 @@ async function planSnapshots(context, plan) {
         snapshots.push({ id: name, ts, kind: source.kind, target: source.target, label: source.label, name, url: `/user/files/${name}`, hash, size });
         ts++;
     }
-    const result = { snapshots, skipped };
+    const result = { snapshots, skipped, failed };
     writeArtifact(context.directories, context.job.id, 'time-machine-plan', result);
     return result;
 }
@@ -225,7 +237,7 @@ function publishIndex(context, planned, { afterTimeMachineIndex } = {}) {
                 { expected: authoringEvidence(current), limit: SETTINGS_LIMIT });
             value.effects.settings = { state: 'prepared', staged };
             value.timeMachineDeletions = deletions;
-            value.timeMachineResult = { taken: planned.snapshots.length, skipped: planned.skipped, removed: doomed.size,
+            value.timeMachineResult = { taken: planned.snapshots.length, skipped: planned.skipped, failed: planned.failed ?? 0, removed: doomed.size,
                 module: nextModule, attachments, previousVersion: getSettingsVersion(settings), version: prepared.version,
                 settingsRevision: prepared.settingsRevision };
             save();

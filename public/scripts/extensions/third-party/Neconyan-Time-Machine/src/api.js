@@ -27,6 +27,7 @@ const RESERVED_EXTENSION_KEYS = new Set([
 
 const captureSuppressions = new Map();
 const liveLorebookRevisions = new WeakMap();
+const liveCharacterRevisions = new WeakMap();
 const PRESET_CHANGE_APIS = new Set(['kobold', 'novel', 'openai', 'textgenerationwebui']);
 const NAMED_PRESET_APIS = new Set(['instruct', 'context', 'sysprompt', 'reasoning']);
 
@@ -308,7 +309,7 @@ export async function captureEverything(onProgress = () => {}) {
         settings.character_attachments['__Neconyan-Card-Time-Machine__'] = structuredClone(result.attachments ?? []);
         core.adoptServerSettingsWrite({ account, previousVersion: result.previousVersion, version: result.version, settingsRevision: result.settingsRevision });
     }
-    return { taken: result.taken ?? 0, skipped: result.skipped ?? 0, failed: 0, removed: result.removed ?? 0 };
+    return { taken: result.taken ?? 0, skipped: result.skipped ?? 0, failed: result.failed ?? 0, removed: result.removed ?? 0 };
 }
 
 // ------------------------------------------------------------- live state ---
@@ -316,17 +317,19 @@ export async function captureEverything(onProgress = () => {}) {
 /** The complete recoverable character state as it is right now. */
 export async function liveCharacterState(avatar) {
     const context = ctx();
-    const live = context.characters ?? [];
-    const index = live.findIndex(character => character?.avatar === avatar);
-    if (index === -1) {
-        return null;
+    let response;
+    try {
+        response = await post('/api/characters/get', { avatar_url: avatar, with_revision: true });
+    } catch (error) {
+        if (error.status === 404) return null;
+        throw error;
     }
-    await context.unshallowCharacter(index);
-    const character = (context.characters ?? []).find(item => item?.avatar === avatar);
+    const character = await response.json();
     const data = cardFromCharacter(character);
-    if (!character || !data) {
-        return null;
-    }
+    if (!data) throw new Error(`Neconyan returned a malformed character for ${avatar}`);
+    const revision = response.headers?.get?.('X-Character-Revision');
+    if (!revision) throw new Error('The character revision is unavailable. Reload Neconyan before restoring it.');
+    liveCharacterRevisions.set(data, revision);
     const tags = context.tagMap?.[avatar] ?? [];
     if (!Array.isArray(tags) || tags.some(tag => typeof tag !== 'string')) {
         throw new Error(`Neconyan returned malformed tags for ${avatar}`);
@@ -391,21 +394,26 @@ export async function restoreCharacter(avatar, card, live, tags) {
     if (!isPlainObject(card) || !isPlainObject(live)) {
         throw new TypeError('Invalid character snapshot');
     }
+    const revision = liveCharacterRevisions.get(live);
+    if (!revision) throw new Error('Read the current character before restoring it; nothing was saved.');
     const payload = restorePayload(live ?? {}, card, context.constants?.unset);
     if (tags !== undefined && (!Array.isArray(tags) || tags.some(tag => typeof tag !== 'string') || !context.tagMap)) {
         throw new Error('This Neconyan version cannot restore character tags safely');
     }
     return suppressCapture('character', avatar, async () => {
         let started = false;
+        let saved = false;
         try {
             started = true;
-            await post('/api/characters/merge-attributes', { ...payload, avatar });
+            await post('/api/characters/merge-attributes', { ...payload, avatar, expected_revision: revision });
+            saved = true;
             if (tags !== undefined) {
                 context.tagMap[avatar] = structuredClone(tags);
                 await commitSettings();
             }
             await context.getCharacters();
         } catch (error) {
+            if (!saved && error.status === 409) throw error;
             throw started ? partialRestore(error) : error;
         }
     });
@@ -444,16 +452,18 @@ export async function restoreLorebook(name, book, live) {
  * again, so restoring one the user deliberately deleted really does bring it
  * back for good.
  */
-export async function restorePreset(apiId, name, preset) {
+export async function restorePreset(apiId, name, preset, live) {
     if (!isPlainObject(preset)) {
         throw new TypeError('Invalid preset snapshot');
     }
+    if (live !== null && !isPlainObject(live)) throw new Error('Read the current preset before restoring it; nothing was saved.');
     const manager = ctx().getPresetManager?.(apiId);
     if (typeof manager?.updateList !== 'function') {
         throw new Error(`This Neconyan version cannot refresh ${apiId} presets safely`);
     }
     return suppressCapture('preset', `${apiId}/${name}`, async () => {
         let started = false;
+        let saved = false;
         let changed;
         try {
             const restoredPreset = structuredClone(preset);
@@ -461,13 +471,15 @@ export async function restorePreset(apiId, name, preset) {
                 restoredPreset.name = name;
             }
             started = true;
-            const response = await post('/api/presets/save', { preset: restoredPreset, name, apiId });
+            const response = await post('/api/presets/save', { preset: restoredPreset, name, apiId, expected_preset: live });
+            saved = true;
             const body = await response.json().catch(() => ({}));
             // The server sanitises the name, so what it stored may not be what was sent.
             const storedName = typeof body?.name === 'string' ? body.name : name;
             if (NAMED_PRESET_APIS.has(apiId) && restoredPreset.name !== storedName) {
+                const expected = structuredClone(restoredPreset);
                 restoredPreset.name = storedName;
-                await post('/api/presets/save', { preset: restoredPreset, name: storedName, apiId });
+                await post('/api/presets/save', { preset: restoredPreset, name: storedName, apiId, expected_preset: expected });
             }
             const refresh = async () => {
                 changed = waitForPresetChange(apiId);
@@ -482,6 +494,7 @@ export async function restorePreset(apiId, name, preset) {
             return storedName;
         } catch (error) {
             changed?.cancel();
+            if (!saved && error.status === 409) throw error;
             throw started ? partialRestore(error) : error;
         }
     });

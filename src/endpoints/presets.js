@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 import express from 'express';
 import sanitize from 'sanitize-filename';
@@ -82,6 +83,18 @@ router.post('/save', authoringRoute(function (request, response, lease) {
 
     const fullpath = path.join(settings.folder, filename);
     assertNativeMediaTargetIdle(lease, { kind: 'preset', id: path.relative(request.user.directories.root, fullpath) });
+    // Time Machine compares before asking to restore. Check again under the write
+    // lock so a save in another tab cannot be overwritten after that comparison.
+    if (Object.hasOwn(request.body, 'expected_preset')) {
+        const expected = request.body.expected_preset;
+        if (expected !== null && (typeof expected !== 'object' || Array.isArray(expected))) return response.sendStatus(400);
+        const current = readAuthoringFileLocked(lease, fullpath);
+        let matches = expected === null && !current;
+        if (current && expected !== null) {
+            try { matches = isDeepStrictEqual(JSON.parse(current.bytes.toString('utf8')), expected); } catch { /* unreadable is not a match */ }
+        }
+        if (!matches) return response.status(409).send({ error: 'The preset changed after comparison. Compare it again before restoring.' });
+    }
     const defaultPreset = findDefaultPreset(request.user.directories, { folder: settings.folder, name });
 
     writeAuthoringFileLocked(lease, fullpath, JSON.stringify(request.body.preset, null, 4));

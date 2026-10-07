@@ -2537,8 +2537,9 @@ router.post('/get', validateAvatarUrlMiddleware, async function (request, respon
             const snapshot = withRoleplayAccount(characterBase(request), null, () => {
                 recoverFileWriteSync(filePath);
                 const bytes = fs.readFileSync(filePath);
+                const jsonData = read(bytes);
                 return {
-                    character: { ...getCharaCardV2(JSON.parse(read(bytes)), request.user.directories, false), avatar: item },
+                    character: { ...getCharaCardV2(JSON.parse(jsonData), request.user.directories, false), avatar: item, json_data: jsonData },
                     revision: createHash('sha256').update(bytes).digest('hex'),
                 };
             });

@@ -379,3 +379,42 @@ export function formatBytes(value) {
     }
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+/** The browser and server must agree which index rows are safe to read or prune. */
+export function normalizeRow(value) {
+    const url = typeof value?.url === 'string' ? `/${value.url}`.replace(/^\/+/, '/') : '';
+    if (!isPlainObject(value)
+        || !['character', 'lorebook', 'preset'].includes(value.kind)
+        || typeof value.target !== 'string' || value.target === ''
+        || typeof value.label !== 'string'
+        || typeof value.name !== 'string'
+        || !Number.isFinite(value.ts)
+        || !Number.isFinite(value.size) || value.size < 0
+        || (value.hash !== null && !/^[0-9a-f]{64}$/.test(value.hash ?? ''))
+        || (value.sourceTarget !== undefined && (typeof value.sourceTarget !== 'string' || value.sourceTarget === ''))
+        || !new RegExp(`^cardtm_${value.kind}_[A-Za-z0-9_-]+\\.json$`).test(value.name)
+        || url !== `/user/files/${value.name}`) {
+        return null;
+    }
+    return { ...value, id: value.name, ts: Number(value.ts), size: Number(value.size), url };
+}
+
+/** Verify both the identity and contents before restoring or skipping a duplicate. */
+export async function validateSnapshotPayload(row, payload) {
+    if (!isPlainObject(payload)
+        || payload.format !== SNAPSHOT_FORMAT
+        || payload.kind !== row.kind
+        || payload.target !== (row.sourceTarget ?? row.target)
+        || payload.ts !== row.ts
+        || typeof payload.label !== 'string'
+        || !isPlainObject(payload.data)
+        || (payload.tags !== undefined && (!Array.isArray(payload.tags) || payload.tags.some(tag => typeof tag !== 'string')))) {
+        throw new Error(`Snapshot ${row.name} does not match its index`);
+    }
+    const content = { ...payload };
+    for (const key of ['format', 'kind', 'target', 'label', 'ts', 'hash']) delete content[key];
+    const expected = await (Object.prototype.hasOwnProperty.call(payload, 'hash') ? hashOf(content) : legacyHashOf(payload.data));
+    if (expected && ((row.hash && row.hash !== expected) || (payload.hash && payload.hash !== expected))) {
+        throw new Error(`Snapshot ${row.name} failed its integrity check`);
+    }
+}
