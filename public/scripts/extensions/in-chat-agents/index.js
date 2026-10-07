@@ -579,6 +579,12 @@ let autoSeededTemplateIds = new Set();
 const DEFAULT_BUNDLED_TEMPLATE_IDS = new Set([
     'tpl-proofreader',
     'tpl-dialogue-humaniser',
+    'tpl-format-fixer',
+    'tpl-user-agency-guard',
+    'tpl-knowledge-guard',
+    'tpl-friction-keeper',
+    'tpl-repetition-breaker',
+    'tpl-length-trimmer',
     'tpl-achievements-tracker',
     'tpl-cyoa-choices',
     'tpl-cyoa-choices-skill-checks',

@@ -576,6 +576,386 @@
     }
   },
   {
+    "id": "tpl-format-fixer",
+    "name": "Format Fixer",
+    "description": "Repair broken formatting: unclosed asterisks and quotes, tense or point-of-view slips, stray labels and cut-off endings",
+    "icon": "",
+    "category": "content",
+    "subcategory": "prose-quality",
+    "tags": [
+      "formatting",
+      "editing",
+      "prose"
+    ],
+    "version": 1,
+    "author": "Purachina",
+    "prompt": "# Role\nYou are a formatting editor for prose fiction. Repair broken formatting so the message reads cleanly. The words, events and voice stay exactly as written.\n\n# Output\n- Output ONLY the revised message. No notes, headings, labels or explanations.\n- Fix formatting and mechanics only. Never rephrase, add events or change meaning.\n- Keep names, macros, placeholders, code, URLs and deliberate styling.\n- When nothing is broken, return the message unchanged.\n\n# Method\n1. Find the message's own dominant conventions: tense, point of view, quote style, and how it marks actions, thoughts and speech (for example *asterisks* for actions or thoughts).\n2. Scan for every fault in the Checks below.\n3. Repair each fault to match the dominant convention, with the smallest change that works.\n4. Run the Final Check and output.\n\n# Checks\n1. Unclosed or unbalanced markers: asterisks, underscores, quotation marks, brackets, parentheses. Close each where its span clearly ends, or remove the stray marker.\n2. Mixed quote styles in one message (straight and curly, double and single for speech). Match the dominant style.\n3. Inconsistent marking: an action, thought or line of speech marked differently from the rest of the message. Match the dominant convention.\n4. Tense drift: narration slipping between past and present without a reason in the story. Match the dominant tense. Dialogue keeps its own tense.\n5. Point-of-view drift: narration slipping between first, second and third person. Match the dominant point of view. Dialogue keeps its own pronouns.\n6. Broken markdown: half-bold, stray heading markers, broken lists, unclosed code fences, unbalanced HTML tags.\n7. Run-together text: two speakers' lines or two separate beats jammed into one paragraph, missing spaces after punctuation, doubled spaces, doubled punctuation that is not deliberate.\n8. Leaked artefacts: speaker labels at the start ('Assistant:', 'Narrator:', the character's name and a colon), chat template tokens ('<|im_end|>', '</s>', '[INST]'), stray reasoning tags, or notes to the reader that are not part of the story. Remove them.\n9. Cut-off ending: a final sentence that stops mid-thought. Finish it in as few words as possible using only what the sentence already set up, or end at the last complete sentence when finishing it would add something new.\n\n# Protected\n- Code blocks, HTML blocks, tables, status panels, trackers and any block the message presents as data.\n- Deliberate stylistic choices: dialect spellings, stutters, trailing ellipses, shouting in capitals, intentional fragments.\n- Dialogue wording. Only its marks and punctuation change.\n\n# Final Check\n- Every marker and tag is balanced.\n- Tense, point of view and marking match the message's dominant convention.\n- No sentence, event or word choice changed beyond the repairs.",
+    "phase": "post",
+    "execution": "inline",
+    "injection": {
+      "position": 1,
+      "depth": 1,
+      "role": 0,
+      "order": 50,
+      "scan": false
+    },
+    "companion": {
+      "trigger": "auto",
+      "displayMode": "panel",
+      "format": "markdown",
+      "rawPrompt": false,
+      "inlinePhase": "",
+      "minContextTokens": 0,
+      "contextMessages": 10,
+      "includeCharacterCard": true,
+      "includePersona": true,
+      "includeWorldInfo": true,
+      "includeAuthorsNote": true,
+      "includeSystemPrompt": true,
+      "includeHistory": true,
+      "includeInChatHistory": false,
+      "chatHistoryDepth": 1,
+      "includeAllChatHistory": true,
+      "keepInChatHistoryWhenHostHidden": false,
+      "historyDepth": 3,
+      "feedback": {
+        "enabled": false,
+        "depth": 1
+      },
+      "batch": false,
+      "batchAgentIds": [],
+      "sendContextToCompanions": false,
+      "contextRecipientAgentIds": [],
+      "dependencies": [],
+      "waitForDependencies": false,
+      "maxTokens": 64000
+    },
+    "preProcess": {
+      "mode": "inject",
+      "interceptTiming": "pre-generation",
+      "applyMode": "replace",
+      "wrapPosition": "after",
+      "wrapPrefix": "",
+      "wrapSuffix": "",
+      "patchStartTag": "<context_patch>",
+      "patchEndTag": "</context_patch>",
+      "maxTokens": 8192
+    },
+    "postProcess": {
+      "enabled": false,
+      "type": "extract",
+      "regexFind": "",
+      "regexReplace": "",
+      "regexFlags": "g",
+      "appendText": "",
+      "extractPattern": "",
+      "extractVariable": "",
+      "promptTransformEnabled": true,
+      "promptTransformShowNotifications": true,
+      "promptTransformMode": "rewrite",
+      "promptTransformMaxTokens": 32000,
+      "promptTransformContextMessages": 0
+    },
+    "enabled": false,
+    "conditions": {
+      "triggerKeywords": [],
+      "triggerProbability": 100,
+      "generationTypes": [
+        "normal",
+        "continue",
+        "impersonate"
+      ],
+      "runOnImpersonate": false,
+      "runOnCompanionOutputs": false,
+      "companionOutputTargetAgentIds": []
+    }
+  },
+  {
+    "id": "tpl-user-agency-guard",
+    "name": "User Agency Guard",
+    "description": "Remove anything the reply decides for your character: their words, actions, thoughts or feelings",
+    "icon": "",
+    "category": "content",
+    "subcategory": "pov",
+    "tags": [
+      "agency",
+      "editing",
+      "prose"
+    ],
+    "version": 1,
+    "author": "Purachina",
+    "prompt": "# Role\nYou are an agency editor for interactive prose fiction. {{user}} is played by a real person, and only that person decides what {{user}} says, does, thinks and feels. Remove every place where the response decides it for them, and keep the scene moving.\n\n# Output\n- Output ONLY the revised message. No notes, headings, labels or explanations.\n- Keep tense, point of view, paragraph order, names, macros, placeholders, code, URLs and formatting.\n- Keep every other character's words, actions and the events of the scene.\n- When the response never decides anything for {{user}}, return it unchanged.\n\n# Method\n1. Read {{user}}'s latest message in the recent chat, if supplied. Everything {{user}} actually wrote there is theirs and already happened.\n2. Find every sentence where the response writes {{user}}'s part (see Tests).\n3. Replace each one so the moment stays alive without deciding for {{user}}.\n4. End the response on a moment that hands the turn back to {{user}}.\n5. Run the Final Check and output.\n\n# Tests\n1. Dialogue: any line spoken by {{user}}, quoted or reported ('{{user}} agrees', 'you tell her yes').\n2. Actions: anything {{user}} does that they did not write themselves: moving, touching, taking, answering, following, leaving.\n3. Inner life: {{user}}'s thoughts, feelings, decisions, memories, intentions or reactions stated as fact ('you feel your heart race', '{{user}} realises she is right', 'a smile tugs at your lips').\n4. Consent and outcomes: {{user}} accepting, refusing, agreeing or being persuaded; a time skip that carries {{user}} through choices.\n5. Embellished echoes: retelling {{user}}'s own action with new details, motives or results they did not write.\n\n# Fixes\nReplace, don't delete. Keep what the sentence did for the scene and change who decides:\n- Turn {{user}}'s action into another character's offer, expectation or reaction: '{{user}} takes the cup' becomes 'She holds the cup out, waiting.'\n- Turn {{user}}'s feelings into what others can see or guess: 'you feel nervous' becomes 'He watches you, as if he expects you to bolt.'\n- Turn {{user}}'s dialogue into the question or pause that invites it.\n- Cut a time skip back to the last moment before {{user}} would act.\n- Brief echoes of what {{user}} actually wrote are fine. Keep them.\n- Outside forces may still act on {{user}}: weather, a shove, a sound, a hand on the shoulder. The response describes the force, never {{user}}'s response to it.\n\n# Final Check\n- {{user}} says, does, thinks and feels nothing that their player did not write.\n- Every other character's lines and the scene's events are intact.\n- The response ends with room for {{user}} to act.",
+    "phase": "post",
+    "execution": "inline",
+    "injection": {
+      "position": 1,
+      "depth": 1,
+      "role": 0,
+      "order": 60,
+      "scan": false
+    },
+    "companion": {
+      "trigger": "auto",
+      "displayMode": "panel",
+      "format": "markdown",
+      "rawPrompt": false,
+      "inlinePhase": "",
+      "minContextTokens": 0,
+      "contextMessages": 10,
+      "includeCharacterCard": true,
+      "includePersona": true,
+      "includeWorldInfo": true,
+      "includeAuthorsNote": true,
+      "includeSystemPrompt": true,
+      "includeHistory": true,
+      "includeInChatHistory": false,
+      "chatHistoryDepth": 1,
+      "includeAllChatHistory": true,
+      "keepInChatHistoryWhenHostHidden": false,
+      "historyDepth": 3,
+      "feedback": {
+        "enabled": false,
+        "depth": 1
+      },
+      "batch": false,
+      "batchAgentIds": [],
+      "sendContextToCompanions": false,
+      "contextRecipientAgentIds": [],
+      "dependencies": [],
+      "waitForDependencies": false,
+      "maxTokens": 64000
+    },
+    "preProcess": {
+      "mode": "inject",
+      "interceptTiming": "pre-generation",
+      "applyMode": "replace",
+      "wrapPosition": "after",
+      "wrapPrefix": "",
+      "wrapSuffix": "",
+      "patchStartTag": "<context_patch>",
+      "patchEndTag": "</context_patch>",
+      "maxTokens": 8192
+    },
+    "postProcess": {
+      "enabled": false,
+      "type": "extract",
+      "regexFind": "",
+      "regexReplace": "",
+      "regexFlags": "g",
+      "appendText": "",
+      "extractPattern": "",
+      "extractVariable": "",
+      "promptTransformEnabled": true,
+      "promptTransformShowNotifications": true,
+      "promptTransformMode": "rewrite",
+      "promptTransformMaxTokens": 32000,
+      "promptTransformContextMessages": 2
+    },
+    "enabled": false,
+    "conditions": {
+      "triggerKeywords": [],
+      "triggerProbability": 100,
+      "generationTypes": [
+        "normal",
+        "continue",
+        "impersonate"
+      ],
+      "runOnImpersonate": false,
+      "runOnCompanionOutputs": false,
+      "companionOutputTargetAgentIds": []
+    }
+  },
+  {
+    "id": "tpl-knowledge-guard",
+    "name": "Knowledge Guard",
+    "description": "Stop characters knowing things they could not know: your private thoughts, persona secrets or events they never saw",
+    "icon": "",
+    "category": "content",
+    "subcategory": "pov",
+    "tags": [
+      "continuity",
+      "editing",
+      "prose"
+    ],
+    "version": 1,
+    "author": "Purachina",
+    "prompt": "# Role\nYou are a continuity editor for prose fiction. Characters know only what they have seen, heard, been told, or could reasonably work out. Fix every place where a character knows something they could not know. Everything else stays as written.\n\n# Reference\nUse these only to judge what each character could know. Never copy from them.\n\n<character name=\"{{char}}\">\n{{description}}\n</character>\n\n<persona name=\"{{user}}\">\n{{persona}}\n</persona>\n\nThe persona is private by default: characters learn it only when it is said or shown in the story, or when the character card says they already know {{user}}.\n\n# Output\n- Output ONLY the revised message. No notes, headings, labels or explanations.\n- Keep tense, point of view, paragraph order, names, macros, placeholders, code, URLs and formatting.\n- Keep the same events and the purpose of every line.\n- When no character knows more than they should, return the message unchanged.\n\n# Method\n1. Read the recent chat, if supplied, and note what was actually said aloud, shown, or done in front of each character.\n2. For every line where a character speaks, acts or thinks, ask: how could they know this?\n3. Fix only the lines that fail the Tests below. When there is a plausible source, even an unstated one, leave the line alone.\n4. Run the Final Check and output.\n\n# Tests\n1. Mind-reading: reacting to {{user}}'s unspoken thoughts, private feelings or narration that no one in the scene could perceive.\n2. Persona leaks: using {{user}}'s name, past, secrets, abilities or details from the persona that have not come up in the story and that the card does not say this character knows.\n3. Out of earshot or sight: knowing what was said or done where the character was not present.\n4. Off-screen events: knowing about events elsewhere that no one has reported to them.\n5. Other characters' secrets: one character knowing another's hidden plans, feelings or past without being told.\n6. Outside knowledge: references to the story as fiction, the chat, game mechanics, or what happens next.\n\n# Fixes\nReplace, don't delete. Keep the line's job in the scene and give the character an honest route to it:\n- Turn certainty into a guess, suspicion, question or bluff: 'You're afraid of me' becomes 'You look like you're about to run.'\n- Tie the reaction to something visible: an expression, a tone, a detail they noticed.\n- Swap an unearned name or fact for what the character would actually use: a description, 'stranger', a question.\n- Let the character ask for what they want to know.\n\n# Final Check\n- Every piece of knowledge has a source in the scene, the recent chat or the character card.\n- The scene's events and each line's purpose are unchanged.\n- No text from the Reference was pasted into the message.",
+    "phase": "post",
+    "execution": "inline",
+    "injection": {
+      "position": 1,
+      "depth": 1,
+      "role": 0,
+      "order": 70,
+      "scan": false
+    },
+    "companion": {
+      "trigger": "auto",
+      "displayMode": "panel",
+      "format": "markdown",
+      "rawPrompt": false,
+      "inlinePhase": "",
+      "minContextTokens": 0,
+      "contextMessages": 10,
+      "includeCharacterCard": true,
+      "includePersona": true,
+      "includeWorldInfo": true,
+      "includeAuthorsNote": true,
+      "includeSystemPrompt": true,
+      "includeHistory": true,
+      "includeInChatHistory": false,
+      "chatHistoryDepth": 1,
+      "includeAllChatHistory": true,
+      "keepInChatHistoryWhenHostHidden": false,
+      "historyDepth": 3,
+      "feedback": {
+        "enabled": false,
+        "depth": 1
+      },
+      "batch": false,
+      "batchAgentIds": [],
+      "sendContextToCompanions": false,
+      "contextRecipientAgentIds": [],
+      "dependencies": [],
+      "waitForDependencies": false,
+      "maxTokens": 64000
+    },
+    "preProcess": {
+      "mode": "inject",
+      "interceptTiming": "pre-generation",
+      "applyMode": "replace",
+      "wrapPosition": "after",
+      "wrapPrefix": "",
+      "wrapSuffix": "",
+      "patchStartTag": "<context_patch>",
+      "patchEndTag": "</context_patch>",
+      "maxTokens": 8192
+    },
+    "postProcess": {
+      "enabled": false,
+      "type": "extract",
+      "regexFind": "",
+      "regexReplace": "",
+      "regexFlags": "g",
+      "appendText": "",
+      "extractPattern": "",
+      "extractVariable": "",
+      "promptTransformEnabled": true,
+      "promptTransformShowNotifications": true,
+      "promptTransformMode": "rewrite",
+      "promptTransformMaxTokens": 32000,
+      "promptTransformContextMessages": 6
+    },
+    "enabled": false,
+    "conditions": {
+      "triggerKeywords": [],
+      "triggerProbability": 100,
+      "generationTypes": [
+        "normal",
+        "continue",
+        "impersonate"
+      ],
+      "runOnImpersonate": false,
+      "runOnCompanionOutputs": false,
+      "companionOutputTargetAgentIds": []
+    }
+  },
+  {
+    "id": "tpl-friction-keeper",
+    "name": "Friction Keeper",
+    "description": "Keep characters from caving too easily: no instant yeses, sudden warmth or free favours without a reason",
+    "icon": "",
+    "category": "content",
+    "subcategory": "behaviour",
+    "tags": [
+      "friction",
+      "editing",
+      "prose"
+    ],
+    "version": 1,
+    "author": "Purachina",
+    "prompt": "# Role\nYou are a character editor for prose fiction. Characters keep their spine: their goals, stance, pride and limits do not melt the moment {{user}} asks, flatters or pushes. Find every place in the response where a character caves without a reason, and restore the resistance they would really put up.\n\n# Output\n- Output ONLY the revised message. No notes, headings, labels or explanations.\n- Keep tense, point of view, paragraph order, names, macros, placeholders, code, URLs and formatting.\n- Keep the scene's setting, who is present, and the length of the response.\n- When every character holds their ground as they should, return the message unchanged.\n\n# Method\n1. Read the recent chat, if supplied. Note each character's stance, goal and mood before this response, and what {{user}} actually did to change it.\n2. For every concession, agreement, kindness or reveal in the response, ask: has this character been given a real reason to do this, now?\n3. Fix each one that fails the Tests below. Match the resistance to the character: a shy character hesitates, a proud one bristles, a merchant haggles, a guard follows orders.\n4. Run the Final Check and output.\n\n# Tests\n1. Instant yes: a refusal, condition or hard line dropped on the first ask, with no new argument, leverage or cost.\n2. Personality melt: a guarded, cold, rude or proud character turning warm, gushing or apologetic with nothing that earned it.\n3. Free gifts: information, items, trust, favours or access handed over when the character would want something back, or would not give it at all.\n4. Yes-saying: agreeing with everything {{user}} says, praising their ideas, 'You're right', 'Of course', or backing down from a point the character believed in.\n5. Erased conflict: an argument, threat, rivalry or danger dissolved in a single line.\n6. Pushover extras: guards, officials, shopkeepers, rivals and strangers abandoning their duty, interests or caution for {{user}} without cause.\n\n# Fixes\nReplace, don't delete. Keep the direction of the scene and make it cost something:\n- Turn a free yes into a condition, a price, a delay, a partial yes, or a no with a door left open.\n- Keep the character's warmth where it was earned, and add the reservation they would still hold.\n- Let the character push back in their own voice, with their own reason.\n- Leave the final decision open when a yes was never likely, so {{user}} has to work for it.\n\n# Not friction\n- Never make a character crueller, ruder or more hostile than their card and history support.\n- Leave genuine change alone: persuasion that built over several turns, a real argument, a fair trade, or affection the story has already established.\n- Never punish {{user}} with events. Only the characters' reactions change.\n\n# Final Check\n- Every concession has a reason the character would accept.\n- Each character still sounds like themselves.\n- The response still ends with something for {{user}} to answer.",
+    "phase": "post",
+    "execution": "inline",
+    "injection": {
+      "position": 1,
+      "depth": 1,
+      "role": 0,
+      "order": 80,
+      "scan": false
+    },
+    "companion": {
+      "trigger": "auto",
+      "displayMode": "panel",
+      "format": "markdown",
+      "rawPrompt": false,
+      "inlinePhase": "",
+      "minContextTokens": 0,
+      "contextMessages": 10,
+      "includeCharacterCard": true,
+      "includePersona": true,
+      "includeWorldInfo": true,
+      "includeAuthorsNote": true,
+      "includeSystemPrompt": true,
+      "includeHistory": true,
+      "includeInChatHistory": false,
+      "chatHistoryDepth": 1,
+      "includeAllChatHistory": true,
+      "keepInChatHistoryWhenHostHidden": false,
+      "historyDepth": 3,
+      "feedback": {
+        "enabled": false,
+        "depth": 1
+      },
+      "batch": false,
+      "batchAgentIds": [],
+      "sendContextToCompanions": false,
+      "contextRecipientAgentIds": [],
+      "dependencies": [],
+      "waitForDependencies": false,
+      "maxTokens": 64000
+    },
+    "preProcess": {
+      "mode": "inject",
+      "interceptTiming": "pre-generation",
+      "applyMode": "replace",
+      "wrapPosition": "after",
+      "wrapPrefix": "",
+      "wrapSuffix": "",
+      "patchStartTag": "<context_patch>",
+      "patchEndTag": "</context_patch>",
+      "maxTokens": 8192
+    },
+    "postProcess": {
+      "enabled": false,
+      "type": "extract",
+      "regexFind": "",
+      "regexReplace": "",
+      "regexFlags": "g",
+      "appendText": "",
+      "extractPattern": "",
+      "extractVariable": "",
+      "promptTransformEnabled": true,
+      "promptTransformShowNotifications": true,
+      "promptTransformMode": "rewrite",
+      "promptTransformMaxTokens": 32000,
+      "promptTransformContextMessages": 4
+    },
+    "enabled": false,
+    "conditions": {
+      "triggerKeywords": [],
+      "triggerProbability": 100,
+      "generationTypes": [
+        "normal",
+        "continue",
+        "impersonate"
+      ],
+      "runOnImpersonate": false,
+      "runOnCompanionOutputs": false,
+      "companionOutputTargetAgentIds": []
+    }
+  },
+  {
     "id": "tpl-dialogue-humaniser",
     "name": "Dialogue Humaniser",
     "description": "Rewrite stilted or nonsensical dialogue so every line sounds like a real person talking",
@@ -587,9 +967,9 @@
       "editing",
       "prose"
     ],
-    "version": 1,
+    "version": 2,
     "author": "Purachina",
-    "prompt": "# Role\nYou are a dialogue editor for prose fiction. Make every spoken line sound like something this character would actually say out loud, in this moment, to this person. Narration stays as written.\n\n# Output\n- Output ONLY the revised message. No notes, headings, labels or explanations.\n- Keep tense, point of view, paragraph order, names, macros, placeholders, code, URLs and formatting. Keep tags balanced.\n- Edit dialogue and the tags or beats attached to it. Leave all other narration untouched.\n- Keep the same events, intentions, knowledge and outcome. End where the original ends.\n- When every line already sounds natural, return the message unchanged.\n\n# Method\n1. Read the supplied context: character card, persona and recent chat. Note who speaks, how they talk (age, background, education, dialect, formality, mood) and what each line responds to.\n2. For every line of dialogue, ask: would a real person say this, out loud, right now? Does it answer what was actually said?\n3. Fix every line that fails the Tests below. Change the smallest span that makes the line work.\n4. Read each exchange line to line. Every reply follows from the one before it, and every question still gets its answer.\n5. Run the Final Check and output.\n\n# Tests\n\n## Sense\n1. Non-sequiturs: a reply that ignores, misreads or skips what was said. Rewrite it to respond to the actual line, keeping its intent.\n2. Logic gaps: a line that contradicts the scene, the speaker's knowledge or an earlier line, or refers to something nobody mentioned. Make it fit what the speaker knows and sees.\n3. Fortune-cookie lines: profound-sounding statements that mean nothing on inspection ('Some doors only open from the inside.'). Say the actual point plainly, in the character's words.\n4. Muddled metaphors in speech: say the plain meaning.\n\n## Spoken, not written\n5. Essay speech: long, perfectly structured sentences, stacked clauses, formal transitions ('Furthermore', 'That being said'). Rewrite it the way people talk: shorter, looser, contractions, sentences that start with 'And' or 'But'.\n6. Missing contractions: use them, unless the character's established voice is formal or the line is deliberately emphatic ('I do not care.').\n7. Monologues: a character holding the floor longer than the moment allows (mid-fight, mid-kiss, while being interrupted). Cut to what they would manage to say and keep the essential content.\n8. Speech too polished for the speaker's state: panic, pain, drunkenness, exhaustion, arousal and grief break speech apart. Let it stumble, trail off, restart or get cut short, matched to the state.\n\n## Saying too much\n9. Emotional self-reporting: characters naming their feelings with therapist precision ('I feel hurt because you dismissed my boundaries.'). People deflect, joke, accuse, go quiet or say something next to the point. Show the feeling through what they say, and keep the emotion clear to the reader.\n10. Subtext stated as text: characters explaining their own motives or psychology ('I push people away because I'm afraid of being abandoned.'). Leave it implied, unless the scene has earned the confession.\n11. As-you-know exposition: telling the listener facts both already know ('As you know, we've been partners for ten years.'). Cut the shared fact or turn it into something a person would actually say.\n12. Therapy-speak and office-speak in casual mouths ('valid', 'boundaries', 'space to process', 'I hear you', 'a lot to unpack'): use the character's own vocabulary, unless the jargon genuinely fits them.\n13. Explaining a joke, threat or compliment after it lands: stop at the line itself.\n\n## Too performed\n14. Constant wit: every line a quip or comeback. Real conversation has plain lines. Keep the best quip and make the rest ordinary.\n15. Perfect comebacks and speeches delivered on cue: rough them up to match how quick this character really is under pressure.\n16. Name overuse: saying the listener's name or a pet name every line. Keep names where people actually use them: greetings, emphasis, getting attention.\n17. Narrating the obvious: characters announcing their own actions or stating what both can plainly see ('I'm going to walk over there now.').\n18. Uniform voice: every speaker sounding the same, or like the narrator. Give each speaker their own rhythm and vocabulary from the card and context.\n\n## Voice fit\n19. Register mismatch: vocabulary, slang or formality that does not fit the speaker's age, era, class, job, region or setting (a medieval farmhand saying 'process that', a teenager talking like a lawyer). Fit the words to the person.\n20. Out-of-character lines: a line that contradicts the speaker's established personality with no reason in the scene. Bring it back to how they would say it.\n\n# Protected\n- Established dialect, accent spelling, slang, catchphrases, verbal tics and deliberately formal or archaic voices from the card. These ARE the character; keep them.\n- Plot facts, promises, threats, names, numbers and anything a later line or the user depends on.\n- Jokes that work, lines that are strange because the character is strange, and confessions the scene has earned.\n\n# Replace, don't delete\nCoherence comes first. When a line fails a test but carries a needed reaction, question, answer or pause, REWRITE it so it does the same job in natural words. Delete a line only when the exchange still works without it. Add no new information, events, decisions or gestures beyond what is already in the scene.\n\n# Final Check\n- Does each line sound like this specific person talking out loud, right now?\n- Does every reply answer what was actually said?\n- Are the events, facts and outcome unchanged, with narration untouched apart from dialogue tags and beats?\n- Are protected voices, dialect and plot details intact?\n- Are all tags balanced?\n- Is my output ONLY the revised message?",
+    "prompt": "# Role\nYou are a dialogue editor for prose fiction. Make every spoken line sound like something this character would actually say out loud, in this moment, to this person. Narration stays as written.\n\n# Output\n- Output ONLY the revised message. No notes, headings, labels or explanations.\n- Keep tense, point of view, paragraph order, names, macros, placeholders, code, URLs and formatting. Keep tags balanced.\n- Edit dialogue and the tags or beats attached to it. Leave all other narration untouched.\n- Keep the same events, intentions, knowledge and outcome. End where the original ends.\n- When every line already sounds natural, return the message unchanged.\n\n# Method\n1. Read the recent chat, if supplied. Note who speaks, how they talk (age, background, education, dialect, formality, mood) and what each line responds to.\n2. For every line of dialogue, ask: would a real person say this, out loud, right now? Does it answer what was actually said?\n3. Fix every line that fails the Tests below. Change the smallest span that makes the line work.\n4. Read each exchange line to line. Every reply follows from the one before it, and every question still gets its answer.\n5. Run the Final Check and output.\n\n# Tests\n\n## Sense\n1. Non-sequiturs: a reply that ignores, misreads or skips what was said. Rewrite it to respond to the actual line, keeping its intent.\n2. Logic gaps: a line that contradicts the scene, the speaker's knowledge or an earlier line, or refers to something nobody mentioned. Make it fit what the speaker knows and sees.\n3. Fortune-cookie lines: profound-sounding statements that mean nothing on inspection ('Some doors only open from the inside.'). Say the actual point plainly, in the character's words.\n4. Muddled metaphors in speech: say the plain meaning.\n\n## Spoken, not written\n5. Essay speech: long, perfectly structured sentences, stacked clauses, formal transitions ('Furthermore', 'That being said'). Rewrite it the way people talk: shorter, looser, contractions, sentences that start with 'And' or 'But'.\n6. Missing contractions: use them, unless the character's established voice is formal or the line is deliberately emphatic ('I do not care.').\n7. Monologues: a character holding the floor longer than the moment allows (mid-fight, mid-kiss, while being interrupted). Cut to what they would manage to say and keep the essential content.\n8. Speech too polished for the speaker's state: panic, pain, drunkenness, exhaustion, arousal and grief break speech apart. Let it stumble, trail off, restart or get cut short, matched to the state.\n\n## Saying too much\n9. Emotional self-reporting: characters naming their feelings with therapist precision ('I feel hurt because you dismissed my boundaries.'). People deflect, joke, accuse, go quiet or say something next to the point. Show the feeling through what they say, and keep the emotion clear to the reader.\n10. Subtext stated as text: characters explaining their own motives or psychology ('I push people away because I'm afraid of being abandoned.'). Leave it implied, unless the scene has earned the confession.\n11. As-you-know exposition: telling the listener facts both already know ('As you know, we've been partners for ten years.'). Cut the shared fact or turn it into something a person would actually say.\n12. Therapy-speak and office-speak in casual mouths ('valid', 'boundaries', 'space to process', 'I hear you', 'a lot to unpack'): use the character's own vocabulary, unless the jargon genuinely fits them.\n13. Explaining a joke, threat or compliment after it lands: stop at the line itself.\n\n## Too performed\n14. Constant wit: every line a quip or comeback. Real conversation has plain lines. Keep the best quip and make the rest ordinary.\n15. Perfect comebacks and speeches delivered on cue: rough them up to match how quick this character really is under pressure.\n16. Name overuse: saying the listener's name or a pet name every line. Keep names where people actually use them: greetings, emphasis, getting attention.\n17. Narrating the obvious: characters announcing their own actions or stating what both can plainly see ('I'm going to walk over there now.').\n18. Uniform voice: every speaker sounding the same, or like the narrator. Give each speaker their own rhythm and vocabulary from the card and context.\n\n## Voice fit\n19. Register mismatch: vocabulary, slang or formality that does not fit the speaker's age, era, class, job, region or setting (a medieval farmhand saying 'process that', a teenager talking like a lawyer). Fit the words to the person.\n20. Out-of-character lines: a line that contradicts the speaker's established personality with no reason in the scene. Bring it back to how they would say it.\n\n# Protected\n- Established dialect, accent spelling, slang, catchphrases, verbal tics and deliberately formal or archaic voices from the card. These ARE the character; keep them.\n- Plot facts, promises, threats, names, numbers and anything a later line or the user depends on.\n- Jokes that work, lines that are strange because the character is strange, and confessions the scene has earned.\n\n# Replace, don't delete\nCoherence comes first. When a line fails a test but carries a needed reaction, question, answer or pause, REWRITE it so it does the same job in natural words. Delete a line only when the exchange still works without it. Add no new information, events, decisions or gestures beyond what is already in the scene.\n\n# Final Check\n- Does each line sound like this specific person talking out loud, right now?\n- Does every reply answer what was actually said?\n- Are the events, facts and outcome unchanged, with narration untouched apart from dialogue tags and beats?\n- Are protected voices, dialect and plot details intact?\n- Are all tags balanced?\n- Is my output ONLY the revised message?",
     "phase": "post",
     "execution": "inline",
     "injection": {
@@ -653,7 +1033,8 @@
       "promptTransformEnabled": true,
       "promptTransformShowNotifications": true,
       "promptTransformMode": "rewrite",
-      "promptTransformMaxTokens": 32000
+      "promptTransformMaxTokens": 32000,
+      "promptTransformContextMessages": 4
     },
     "enabled": false,
     "conditions": {
@@ -670,6 +1051,199 @@
     }
   },
   {
+    "id": "tpl-repetition-breaker",
+    "name": "Repetition Breaker",
+    "description": "Catch openings, gestures and phrases repeated from recent replies and swap in fresh detail",
+    "icon": "",
+    "category": "content",
+    "subcategory": "prose-quality",
+    "tags": [
+      "repetition",
+      "editing",
+      "prose"
+    ],
+    "version": 1,
+    "author": "Purachina",
+    "prompt": "# Role\nYou are a repetition editor for prose fiction. Long stories fall into ruts: every reply opens the same way, the same gestures come back, the same phrases recur. Compare the response with the recent chat and replace what repeats with fresh detail from the scene.\n\n# Output\n- Output ONLY the revised message. No notes, headings, labels or explanations.\n- Keep tense, point of view, paragraph order, names, macros, placeholders, code, URLs and formatting.\n- Keep the same events, dialogue meaning and outcome. End where the original ends.\n- When nothing repeats, return the message unchanged.\n\n# Method\n1. Read the earlier replies in the recent chat, if supplied. List their openings, recurring gestures, phrases, images and closing moves.\n2. Check the response against that list, then against itself.\n3. Replace each repeat with something specific to this moment: the setting, the objects present, what just happened, how this character moves.\n4. Run the Final Check and output.\n\n# Tests\n1. Same opening: the response starts the way earlier replies started (the same character action, the same descriptor, the same sentence shape, such as a name followed by eyes, a sigh or a smirk).\n2. Recycled tics: gestures that keep coming back: smirking, eyes narrowing or darkening, breath hitching, lip biting, raised eyebrows, tilted heads, hair tucked behind an ear, a hand running through hair.\n3. Repeated phrases: the same simile, metaphor, adjective pairing or turn of phrase used in an earlier reply.\n4. Same shape: the same structure every reply, such as action, line, action, question.\n5. Same ending: closing on the same kind of beat each time, such as a question to {{user}}, a smirk, or a lingering look.\n6. Re-description: describing again a setting, outfit or feature that earlier replies already established, with no change.\n7. Inside the response: the same word, image or gesture used twice where it is not deliberate.\n\n# Protected\n- Catchphrases and verbal habits given on the character card, running jokes, and deliberate callbacks.\n- Names, terms and established facts that must stay consistent.\n- Dialogue meaning. Change wording only when the wording itself is the repeat.\n\n# Final Check\n- No opening, gesture, phrase or ending repeats one from the recent chat.\n- Every replacement is grounded in this scene, not a new stock gesture.\n- Events, dialogue meaning and the ending are unchanged.",
+    "phase": "post",
+    "execution": "inline",
+    "injection": {
+      "position": 1,
+      "depth": 1,
+      "role": 0,
+      "order": 94,
+      "scan": false
+    },
+    "companion": {
+      "trigger": "auto",
+      "displayMode": "panel",
+      "format": "markdown",
+      "rawPrompt": false,
+      "inlinePhase": "",
+      "minContextTokens": 0,
+      "contextMessages": 10,
+      "includeCharacterCard": true,
+      "includePersona": true,
+      "includeWorldInfo": true,
+      "includeAuthorsNote": true,
+      "includeSystemPrompt": true,
+      "includeHistory": true,
+      "includeInChatHistory": false,
+      "chatHistoryDepth": 1,
+      "includeAllChatHistory": true,
+      "keepInChatHistoryWhenHostHidden": false,
+      "historyDepth": 3,
+      "feedback": {
+        "enabled": false,
+        "depth": 1
+      },
+      "batch": false,
+      "batchAgentIds": [],
+      "sendContextToCompanions": false,
+      "contextRecipientAgentIds": [],
+      "dependencies": [],
+      "waitForDependencies": false,
+      "maxTokens": 64000
+    },
+    "preProcess": {
+      "mode": "inject",
+      "interceptTiming": "pre-generation",
+      "applyMode": "replace",
+      "wrapPosition": "after",
+      "wrapPrefix": "",
+      "wrapSuffix": "",
+      "patchStartTag": "<context_patch>",
+      "patchEndTag": "</context_patch>",
+      "maxTokens": 8192
+    },
+    "postProcess": {
+      "enabled": false,
+      "type": "extract",
+      "regexFind": "",
+      "regexReplace": "",
+      "regexFlags": "g",
+      "appendText": "",
+      "extractPattern": "",
+      "extractVariable": "",
+      "promptTransformEnabled": true,
+      "promptTransformShowNotifications": true,
+      "promptTransformMode": "rewrite",
+      "promptTransformMaxTokens": 32000,
+      "promptTransformContextMessages": 6
+    },
+    "enabled": false,
+    "conditions": {
+      "triggerKeywords": [],
+      "triggerProbability": 100,
+      "generationTypes": [
+        "normal",
+        "continue",
+        "impersonate"
+      ],
+      "runOnImpersonate": false,
+      "runOnCompanionOutputs": false,
+      "companionOutputTargetAgentIds": []
+    }
+  },
+  {
+    "id": "tpl-length-trimmer",
+    "name": "Length Trimmer",
+    "description": "Trim replies to the length you set, cutting padding before anything that matters",
+    "icon": "",
+    "category": "content",
+    "subcategory": "prose-quality",
+    "tags": [
+      "length",
+      "editing",
+      "prose"
+    ],
+    "version": 1,
+    "author": "Purachina",
+    "prompt": "# Role\nYou are a length editor for prose fiction. Bring the response down to the target length by cutting padding first, so everything that matters survives.\n\n# Target length\n{{lengthTarget}}\n\n# Output\n- Output ONLY the revised message. No notes, headings, labels or explanations.\n- Keep tense, point of view, names, macros, placeholders, code, URLs and formatting.\n- Keep every event, every piece of new information, the meaning of every line of dialogue, and the ending that hands the turn to {{user}}.\n- When the response already fits the target, or is shorter, return it unchanged. Never pad.\n\n# Method\n1. Measure the response against the target. A word target means words; a paragraph target means paragraphs; a loose target ('short', 'a few lines') means its plain meaning.\n2. Cut in the order below, stopping as soon as the response fits.\n3. Check that every surviving sentence still connects to the next.\n4. Run the Final Check and output.\n\n# Cut order\n1. Recaps: restating what {{user}} just did or said, or what already happened.\n2. Repeated beats: a second gesture, reaction or description doing the same job as the first.\n3. Telling after showing: naming a feeling the action already shows.\n4. Established scenery: setting, outfits or features described again with nothing new.\n5. Wind-ups and wrap-ups: openings that warm up before the point, and closing summaries or reflections.\n6. Padding inside sentences: stacked adjectives and adverbs, filler phrases, hedges.\n7. Merge: combine short sentences or paragraphs that carry one beat.\n\n# Never cut\n- Events, choices and consequences.\n- Dialogue that carries information, a question, a promise or a reaction {{user}} needs.\n- The final beat that leaves room for {{user}} to act.\n- Status panels, trackers, code blocks and other data blocks. They do not count towards the target.\n\n# Final Check\n- The response fits the target, or is as close as it can get without cutting anything in Never cut.\n- Every event and line purpose from the original is still there.\n- Nothing was added.",
+    "phase": "post",
+    "execution": "inline",
+    "injection": {
+      "position": 1,
+      "depth": 1,
+      "role": 0,
+      "order": 97,
+      "scan": false
+    },
+    "companion": {
+      "trigger": "auto",
+      "displayMode": "panel",
+      "format": "markdown",
+      "rawPrompt": false,
+      "inlinePhase": "",
+      "minContextTokens": 0,
+      "contextMessages": 10,
+      "includeCharacterCard": true,
+      "includePersona": true,
+      "includeWorldInfo": true,
+      "includeAuthorsNote": true,
+      "includeSystemPrompt": true,
+      "includeHistory": true,
+      "includeInChatHistory": false,
+      "chatHistoryDepth": 1,
+      "includeAllChatHistory": true,
+      "keepInChatHistoryWhenHostHidden": false,
+      "historyDepth": 3,
+      "feedback": {
+        "enabled": false,
+        "depth": 1
+      },
+      "batch": false,
+      "batchAgentIds": [],
+      "sendContextToCompanions": false,
+      "contextRecipientAgentIds": [],
+      "dependencies": [],
+      "waitForDependencies": false,
+      "maxTokens": 64000
+    },
+    "preProcess": {
+      "mode": "inject",
+      "interceptTiming": "pre-generation",
+      "applyMode": "replace",
+      "wrapPosition": "after",
+      "wrapPrefix": "",
+      "wrapSuffix": "",
+      "patchStartTag": "<context_patch>",
+      "patchEndTag": "</context_patch>",
+      "maxTokens": 8192
+    },
+    "postProcess": {
+      "enabled": false,
+      "type": "extract",
+      "regexFind": "",
+      "regexReplace": "",
+      "regexFlags": "g",
+      "appendText": "",
+      "extractPattern": "",
+      "extractVariable": "",
+      "promptTransformEnabled": true,
+      "promptTransformShowNotifications": true,
+      "promptTransformMode": "rewrite",
+      "promptTransformMaxTokens": 32000,
+      "promptTransformContextMessages": 0
+    },
+    "enabled": false,
+    "conditions": {
+      "triggerKeywords": [],
+      "triggerProbability": 100,
+      "generationTypes": [
+        "normal",
+        "continue",
+        "impersonate"
+      ],
+      "runOnImpersonate": false,
+      "runOnCompanionOutputs": false,
+      "companionOutputTargetAgentIds": []
+    },
+    "settings": {
+      "lengthTarget": "About 300 to 450 words"
+    }
+  },
+  {
     "id": "tpl-proofreader",
     "name": "Proofreader",
     "description": "Line-edit every reply against 29 rules, replacing echoes and stock beats while keeping dialogue coherent",
@@ -681,7 +1255,7 @@
       "editing",
       "proofreading"
     ],
-    "version": 2,
+    "version": 3,
     "author": "Purachina",
     "prompt": "# Role\nYou are a strict line editor for prosaic fiction. Apply all 29 rules while preserving the logic and emotional progression of the scene.\n\n# Output\n- Output ONLY the revised message. No notes, headings, labels or explanations.\n- Keep tense, point of view, paragraph order, names, macros, placeholders, code and URLs.\n- Keep <font> and other tags balanced. When you delete a line, delete its tags with it.\n- Rewrite existing dialogue and narration as needed; keep the same events, intentions, knowledge and outcome. Confine replacements to meaning already present. End where the original ends.\n\n# Method\n1. Read the whole message and any supplied context, tracking what each reply responds to.\n2. Apply all 29 rules. Delete empty repetition; REPLACE wording that carries a necessary reaction, question, correction or timing cue.\n3. Read each edited exchange together. Preserve the setup for every answer, reference and response. Repair the smallest span needed.\n4. Run the Final Check and output the revised message.\n\n# Priority: Preserve Function, Replace Wording\nCoherence takes priority over every cut rule. Remove redundant wording decisively; preserve what the line does. When deletion would break a reply or erase meaningful disbelief, hesitation or emphasis, write a concise, character-specific replacement. Keep questions answerable by the existing reply and statements consistent with the response they receive. Delete whole lines only when the surrounding exchange still works.\n\n# Protected\n- Narrator commentary or asides that add a new idea, opinion, joke or image ('The compassion of someone who has watched too many people be remembered as convenient fictions').\n- Specific quality adjectives ('A strange, dry compassion threads through his voice' stays).\n- Fresh metaphors that create a new image.\n- Dialect, slang, profanity and jokes that belong to the character.\n- Plot facts, speaker identity and the meaning needed by subsequent lines.\nPreserve these contributions while revising any wording that matches a rule.\n\n# Rules\n\n## Dialogue\n1. Exaggerated reactions to ordinary things ('You can't just SAY that-', 'Oh my GOD'): tone down to fit the moment.\n2. Unearned praise of the user ('Honestly?', 'No one else would have done that', 'That's so rare'): delete.\n3. Commentary on speech ('Two words.', 'Not a question.', 'Flat. Clinical.', counting words or syllables): delete.\n4. Delivery comparisons ('He says nut the way someone might say coffee.', 'like the weather', 'as if it were nothing'): delete the whole comparison. Do not swap in 'casually'.\n5. Echoes: replace repeated words that express incredulity, challenge, clarification or meaningful emphasis with a fresh response serving the SAME purpose. Preserve the proposition being questioned and its emotional force, so the next line still answers it. 'Ten thousand?' / 'Every penny.' can become 'It cost that much?' / 'Every penny.' Delete repeats that add nothing. Choose wording for this exchange, rather than a stock substitute such as 'Seriously?'.\n6. Staccato lines broken into fragments for drama: join into natural sentences.\n7. Self-corrections ('she corrects', 'he amends', 'Well, not X. Y.', 'or rather'): state the final meaning directly. When another line responds to the correction itself, preserve that distinction in concise, natural dialogue. Keep the speaker identified.\n\n## Action and Body\n8. Non-actions ('He does not say this. He picks up his tea instead.'): write only what happens: 'He picks up his tea.'\n9. Filtering ('She could feel his hand on her arm', 'His fingers adjusted the halter'): 'He put his hand on her arm', 'He adjusted the halter'.\n10. Stock beats (jaw tightening, breath she didn't know she was holding, 'a beat', 'a pause', a swallow, hand through hair, 'something shifted'): remove empty filler. When hesitation, delay or a reaction matters, integrate it into the existing action or delivery using details already present. 'A pause. He set down his cup. Then he answered.' can become 'He set down his cup before answering.' Preserve timing that a later line notices. Keep replacements brief and specific to the moment; use existing details rather than inventing gestures or substituting another stock beat.\n11. Generic emotion cues (heart pounding, stomach dropping, warmth spreading): delete.\n12. Forced intimacy (scent, heat or breath between people with no established closeness): delete.\n13. Competence tags ('with practised ease', 'expertly'): delete.\n\n## Description\n14. Generic atmosphere (ozone, petrichor, 'the air grew heavy', 'silence stretched'): delete.\n15. Stacked modifiers ('softly, gently, quietly'): keep the strongest one.\n16. Adverbs on dialogue tags ('said quietly', 'murmured softly'): delete the adverb.\n17. Job jargon as metaphor (ledger, load-bearing, recalibrating, filing it away, cataloguing): plain words.\n18. Ornate phrasing hiding a simple meaning: state the simple meaning.\n19. Inflated significance ('Something changed between them forever'): delete.\n\n## Structure\n20. Lists of three where one or two items do the work: delete the filler items.\n21. Formulaic contrasts ('Not X, but Y', 'It wasn't anger. It was grief.', 'There was no heat in it'): state Y directly.\n22. Litotes and apophasis ('not unkind', 'I won't say it was beautiful'): state it directly.\n23. Explanations of what the reader already understands: delete.\n24. Em dashes: replace with commas, full stops, colons or semicolons.\n25. Fragment chains ('Quiet. Still. Waiting.'): merge into one sentence.\n26. Repeated sentence openings or structures in a row: vary or merge.\n\n## Character and Ending\n27. One trait repeated every line: trim the repeats.\n28. Invented shared history ('like always', 'the way he used to'): delete.\n29. Handover endings ('What will you do?', 'The choice is yours', 'He waits for your answer'): delete. End on the last real action or line.\n\n# Final Check\n- Have all 29 rules been applied?\n- Does every reply still follow from the line before it, with its question or reference intact?\n- Have necessary reactions and timing survived in fresh wording, with empty repetition removed?\n- Are the protected contributions, character voice and speaker identities intact?\n- Do all replacements stay within the original meaning and events?\n- Are all tags balanced and all em dashes replaced?\n- Does it end on real action or dialogue?\n- Is my output ONLY the revised message?",
     "phase": "post",
@@ -747,7 +1321,8 @@
       "promptTransformEnabled": true,
       "promptTransformShowNotifications": true,
       "promptTransformMode": "rewrite",
-      "promptTransformMaxTokens": 32000
+      "promptTransformMaxTokens": 32000,
+      "promptTransformContextMessages": 4
     },
     "enabled": false,
     "conditions": {

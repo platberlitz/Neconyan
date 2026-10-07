@@ -1,0 +1,95 @@
+{
+  "id": "tpl-format-fixer",
+  "name": "Format Fixer",
+  "description": "Repair broken formatting: unclosed asterisks and quotes, tense or point-of-view slips, stray labels and cut-off endings",
+  "icon": "",
+  "category": "content",
+  "subcategory": "prose-quality",
+  "tags": [
+    "formatting",
+    "editing",
+    "prose"
+  ],
+  "version": 1,
+  "author": "Purachina",
+  "prompt": "# Role\nYou are a formatting editor for prose fiction. Repair broken formatting so the message reads cleanly. The words, events and voice stay exactly as written.\n\n# Output\n- Output ONLY the revised message. No notes, headings, labels or explanations.\n- Fix formatting and mechanics only. Never rephrase, add events or change meaning.\n- Keep names, macros, placeholders, code, URLs and deliberate styling.\n- When nothing is broken, return the message unchanged.\n\n# Method\n1. Find the message's own dominant conventions: tense, point of view, quote style, and how it marks actions, thoughts and speech (for example *asterisks* for actions or thoughts).\n2. Scan for every fault in the Checks below.\n3. Repair each fault to match the dominant convention, with the smallest change that works.\n4. Run the Final Check and output.\n\n# Checks\n1. Unclosed or unbalanced markers: asterisks, underscores, quotation marks, brackets, parentheses. Close each where its span clearly ends, or remove the stray marker.\n2. Mixed quote styles in one message (straight and curly, double and single for speech). Match the dominant style.\n3. Inconsistent marking: an action, thought or line of speech marked differently from the rest of the message. Match the dominant convention.\n4. Tense drift: narration slipping between past and present without a reason in the story. Match the dominant tense. Dialogue keeps its own tense.\n5. Point-of-view drift: narration slipping between first, second and third person. Match the dominant point of view. Dialogue keeps its own pronouns.\n6. Broken markdown: half-bold, stray heading markers, broken lists, unclosed code fences, unbalanced HTML tags.\n7. Run-together text: two speakers' lines or two separate beats jammed into one paragraph, missing spaces after punctuation, doubled spaces, doubled punctuation that is not deliberate.\n8. Leaked artefacts: speaker labels at the start ('Assistant:', 'Narrator:', the character's name and a colon), chat template tokens ('<|im_end|>', '</s>', '[INST]'), stray reasoning tags, or notes to the reader that are not part of the story. Remove them.\n9. Cut-off ending: a final sentence that stops mid-thought. Finish it in as few words as possible using only what the sentence already set up, or end at the last complete sentence when finishing it would add something new.\n\n# Protected\n- Code blocks, HTML blocks, tables, status panels, trackers and any block the message presents as data.\n- Deliberate stylistic choices: dialect spellings, stutters, trailing ellipses, shouting in capitals, intentional fragments.\n- Dialogue wording. Only its marks and punctuation change.\n\n# Final Check\n- Every marker and tag is balanced.\n- Tense, point of view and marking match the message's dominant convention.\n- No sentence, event or word choice changed beyond the repairs.",
+  "phase": "post",
+  "execution": "inline",
+  "injection": {
+    "position": 1,
+    "depth": 1,
+    "role": 0,
+    "order": 50,
+    "scan": false
+  },
+  "companion": {
+    "trigger": "auto",
+    "displayMode": "panel",
+    "format": "markdown",
+    "rawPrompt": false,
+    "inlinePhase": "",
+    "minContextTokens": 0,
+    "contextMessages": 10,
+    "includeCharacterCard": true,
+    "includePersona": true,
+    "includeWorldInfo": true,
+    "includeAuthorsNote": true,
+    "includeSystemPrompt": true,
+    "includeHistory": true,
+    "includeInChatHistory": false,
+    "chatHistoryDepth": 1,
+    "includeAllChatHistory": true,
+    "keepInChatHistoryWhenHostHidden": false,
+    "historyDepth": 3,
+    "feedback": {
+      "enabled": false,
+      "depth": 1
+    },
+    "batch": false,
+    "batchAgentIds": [],
+    "sendContextToCompanions": false,
+    "contextRecipientAgentIds": [],
+    "dependencies": [],
+    "waitForDependencies": false,
+    "maxTokens": 64000
+  },
+  "preProcess": {
+    "mode": "inject",
+    "interceptTiming": "pre-generation",
+    "applyMode": "replace",
+    "wrapPosition": "after",
+    "wrapPrefix": "",
+    "wrapSuffix": "",
+    "patchStartTag": "<context_patch>",
+    "patchEndTag": "</context_patch>",
+    "maxTokens": 8192
+  },
+  "postProcess": {
+    "enabled": false,
+    "type": "extract",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "",
+    "extractVariable": "",
+    "promptTransformEnabled": true,
+    "promptTransformShowNotifications": true,
+    "promptTransformMode": "rewrite",
+    "promptTransformMaxTokens": 32000,
+    "promptTransformContextMessages": 0
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 100,
+    "generationTypes": [
+      "normal",
+      "continue",
+      "impersonate"
+    ],
+    "runOnImpersonate": false,
+    "runOnCompanionOutputs": false,
+    "companionOutputTargetAgentIds": []
+  }
+}

@@ -35,9 +35,13 @@ const sourceFilenames = [
     'drift-tracker.json',
     'entanglement-tracker.json',
     'event-tracker.json',
+    'format-fixer.json',
     'four-winds.json',
+    'friction-keeper.json',
     'improbable-effects.json',
     'item-tracker.json',
+    'knowledge-guard.json',
+    'length-trimmer.json',
     'lorebook-scout-companion.json',
     'meanwhile-impossibly.json',
     'memory-shard-companion.json',
@@ -50,6 +54,7 @@ const sourceFilenames = [
     'proofreader.json',
     'relationship-lens-companion.json',
     'relationship-tracker.json',
+    'repetition-breaker.json',
     'reputation-tracker.json',
     'scene-tracker.json',
     'secrets-tracker.json',
@@ -63,6 +68,7 @@ const sourceFilenames = [
     'thin-places-tracker.json',
     'thought-cabinet.json',
     'time-tracker.json',
+    'user-agency-guard.json',
     'what-the-town-knows.json',
     'world-detail.json',
 ];
@@ -768,6 +774,41 @@ describe('in-chat agent bundled templates', () => {
         expect(humaniser.prompt).toContain('Leave all other narration untouched.');
         expect(humaniser.prompt).not.toMatch(/roleplay|\u2014/i);
         expect(readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS')).toContain('\'tpl-dialogue-humaniser\'');
+    });
+
+    test('installs the reply rewrite chain by default in a fixed running order with the recent chat each pass needs', () => {
+        const defaults = readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS');
+        const chain = [
+            ['format-fixer.json', 'tpl-format-fixer', 'Format Fixer', 0],
+            ['user-agency-guard.json', 'tpl-user-agency-guard', 'User Agency Guard', 2],
+            ['knowledge-guard.json', 'tpl-knowledge-guard', 'Knowledge Guard', 6],
+            ['friction-keeper.json', 'tpl-friction-keeper', 'Friction Keeper', 4],
+            ['dialogue-humaniser.json', 'tpl-dialogue-humaniser', 'Dialogue Humaniser', 4],
+            ['repetition-breaker.json', 'tpl-repetition-breaker', 'Repetition Breaker', 6],
+            ['length-trimmer.json', 'tpl-length-trimmer', 'Length Trimmer', 0],
+            ['proofreader.json', 'tpl-proofreader', 'Proofreader', 4],
+        ];
+        const orders = [];
+
+        for (const [filename, id, name, contextMessages] of chain) {
+            const template = readTemplate(filename);
+            expect(template).toMatchObject({ id, name, category: 'content', phase: 'post', execution: 'inline', enabled: false });
+            expect(template.postProcess).toMatchObject({
+                promptTransformEnabled: true,
+                promptTransformMode: 'rewrite',
+                promptTransformContextMessages: contextMessages,
+            });
+            expect(template.prompt).toContain('Output ONLY the revised message.');
+            expect(`${template.prompt}\n${template.description}`).not.toMatch(/roleplay|\u2014/i);
+            expect(defaults).toContain(`'${id}'`);
+            orders.push(template.injection.order);
+        }
+
+        expect(orders).toEqual([...orders].sort((a, b) => a - b));
+        expect(new Set(orders).size).toBe(orders.length);
+        expect(readTemplate('length-trimmer.json').settings).toEqual({ lengthTarget: 'About 300 to 450 words' });
+        expect(readTemplate('length-trimmer.json').prompt).toContain('{{lengthTarget}}');
+        expect(readTemplate('knowledge-guard.json').prompt).toContain('{{persona}}');
     });
 
     test('installs Pura\'s trackers by default, disabled, and keeps the Ethereality kit library-only', () => {
