@@ -1,0 +1,53 @@
+{
+  "id": "tpl-pace-setter",
+  "name": "Pace Setter",
+  "description": "Fast two-line note setting how long the next reply runs and what it ends on, based on {{user}}'s last message. Don't run it with: Length Trimmer, Scene Pressure Cocktail, Combined Director's Cut.",
+  "icon": "",
+  "category": "content",
+  "subcategory": "behaviour",
+  "tags": [
+    "fast",
+    "pacing",
+    "pre-generation"
+  ],
+  "version": 1,
+  "author": "Purachina",
+  "prompt": "{{// Fast pre-generation note. Two lines, inserted just before the main model writes.}}{{trim}}\nRead {{user}}'s latest message and the current scene. Decide how the next reply should move, and write exactly two lines:\nLength: short (1-2 paragraphs), medium (3-4) or long (5 or more). Match {{user}}'s message: quick back-and-forth dialogue gets a short reply; a big action or a new scene can run long.\nEnd on: dialogue or action, whichever gives {{user}} the clearest thing to respond to, plus a few words on what it is.\n\nWrite only the two lines.",
+  "phase": "pre",
+  "injection": {
+    "position": 0,
+    "depth": 0,
+    "role": 0,
+    "order": 95,
+    "scan": false
+  },
+  "preProcess": {
+    "mode": "intercept",
+    "interceptTiming": "pre-generation",
+    "applyMode": "wrap",
+    "wrapPosition": "after",
+    "wrapPrefix": "[Pacing for this reply]\n",
+    "wrapSuffix": "",
+    "patchStartTag": "<context_patch>",
+    "patchEndTag": "</context_patch>",
+    "maxTokens": 400
+  },
+  "postProcess": {
+    "enabled": false,
+    "type": "regex",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "",
+    "extractVariable": ""
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 100,
+    "generationTypes": [
+      "normal"
+    ]
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "id": "tpl-repeat-spotter",
+  "name": "Repeat Spotter",
+  "description": "Fast note listing the openers, phrases and gestures recent replies keep repeating, so the next one avoids them before it's written. Don't run it with: Repetition Breaker. Fine alongside Grounded Prose and Proofreader.",
+  "icon": "",
+  "category": "content",
+  "subcategory": "prose-quality",
+  "tags": [
+    "fast",
+    "repetition",
+    "pre-generation"
+  ],
+  "version": 1,
+  "author": "Purachina",
+  "prompt": "{{// Fast pre-generation note. A short avoid list, inserted just before the main model writes.}}{{trim}}\nRead the last three assistant messages in the context. Find what they keep repeating:\n- the same opening move (a sound, a sigh, a glance, the weather, a name)\n- the same phrases, images or sentence shapes\n- the same gestures or body language\n- the same kind of ending\n\nList up to five things for the next reply to avoid, one short line each, quoting or naming the repeated thing.\n\nIf the messages are already varied, write one line: Nothing repeated; keep varying openings and endings. Write only the list.",
+  "phase": "pre",
+  "injection": {
+    "position": 0,
+    "depth": 0,
+    "role": 0,
+    "order": 100,
+    "scan": false
+  },
+  "preProcess": {
+    "mode": "intercept",
+    "interceptTiming": "pre-generation",
+    "applyMode": "wrap",
+    "wrapPosition": "after",
+    "wrapPrefix": "[Avoid repeating in this reply]\n",
+    "wrapSuffix": "",
+    "patchStartTag": "<context_patch>",
+    "patchEndTag": "</context_patch>",
+    "maxTokens": 400
+  },
+  "postProcess": {
+    "enabled": false,
+    "type": "regex",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "",
+    "extractVariable": ""
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 100,
+    "generationTypes": [
+      "normal",
+      "continue"
+    ]
+  }
+}

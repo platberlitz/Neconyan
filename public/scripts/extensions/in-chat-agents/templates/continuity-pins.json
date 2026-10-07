@@ -1,0 +1,54 @@
+{
+  "id": "tpl-continuity-pins",
+  "name": "Continuity Pins",
+  "description": "Fast note of up to three facts the next reply could get wrong: who's there, what they hold or wear, injuries, where they are. Don't run it with: Continuity Companion, Scene Tracker, Status Tracker, Item Tracker.",
+  "icon": "",
+  "category": "content",
+  "subcategory": "behaviour",
+  "tags": [
+    "fast",
+    "continuity",
+    "pre-generation"
+  ],
+  "version": 1,
+  "author": "Purachina",
+  "prompt": "{{// Fast pre-generation note. Up to three facts, inserted just before the main model writes.}}{{trim}}\nRead the recent scene in the context. List up to three facts the next reply is most likely to get wrong. Pick from:\n- who is present, and who has left\n- what each character is holding or wearing\n- injuries, restraints or other physical states\n- where everyone is, and the time of day\n- anything a character has just promised, revealed or refused\n\nWrite one short line per fact, stated plainly as it stands now, for example: Mara's left hand is bandaged.\n\nOnly use facts the context establishes. Never guess. If nothing stands out, write where the scene is and who is present. Write only the lines.",
+  "phase": "pre",
+  "injection": {
+    "position": 0,
+    "depth": 0,
+    "role": 0,
+    "order": 85,
+    "scan": false
+  },
+  "preProcess": {
+    "mode": "intercept",
+    "interceptTiming": "pre-generation",
+    "applyMode": "wrap",
+    "wrapPosition": "after",
+    "wrapPrefix": "[Keep these facts straight]\n",
+    "wrapSuffix": "",
+    "patchStartTag": "<context_patch>",
+    "patchEndTag": "</context_patch>",
+    "maxTokens": 400
+  },
+  "postProcess": {
+    "enabled": false,
+    "type": "regex",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "",
+    "extractVariable": ""
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 100,
+    "generationTypes": [
+      "normal",
+      "continue"
+    ]
+  }
+}

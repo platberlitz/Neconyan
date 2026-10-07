@@ -23,10 +23,12 @@ const sourceFilenames = [
     'actor-interview-companion.json',
     'afflictions-blessings.json',
     'almanac-generator.json',
+    'beat-planner.json',
     'chat-only-companion.json',
     'chatroom-companion.json',
     'clock-is-lying.json',
     'continuity-companion.json',
+    'continuity-pins.json',
     'cyoa-choices-skill-checks.json',
     'dialogue-humaniser.json',
     'directors-commentary-companion.json',
@@ -39,6 +41,7 @@ const sourceFilenames = [
     'four-winds.json',
     'friction-keeper.json',
     'improbable-effects.json',
+    'intent-reader.json',
     'item-tracker.json',
     'knowledge-guard.json',
     'length-trimmer.json',
@@ -49,11 +52,13 @@ const sourceFilenames = [
     'motif-tracker.json',
     'npc-profiles.json',
     'omen-tracker.json',
+    'pace-setter.json',
     'parallel-tracker.json',
     'plot-compass-companion.json',
     'proofreader.json',
     'relationship-lens-companion.json',
     'relationship-tracker.json',
+    'repeat-spotter.json',
     'repetition-breaker.json',
     'reputation-tracker.json',
     'scene-tracker.json',
@@ -809,6 +814,35 @@ describe('in-chat agent bundled templates', () => {
         expect(readTemplate('length-trimmer.json').settings).toEqual({ lengthTarget: 'About 300 to 450 words' });
         expect(readTemplate('length-trimmer.json').prompt).toContain('{{lengthTarget}}');
         expect(readTemplate('knowledge-guard.json').prompt).toContain('{{persona}}');
+    });
+
+    test('ships fast pre-generation wrap notes that say which agents not to run them with', () => {
+        const catalog = readTemplate('index.json');
+        const names = new Set(catalog.map(template => template.name));
+        const notes = new Map([
+            ['intent-reader.json', { avoid: ['Beat Planner'] }],
+            ['continuity-pins.json', { avoid: ['Continuity Companion', 'Scene Tracker', 'Status Tracker', 'Item Tracker'] }],
+            ['beat-planner.json', { avoid: ['Intent Reader', 'Plot Compass', 'Scene Driving Force', 'Scene Pressure Cocktail', 'Combined Director\'s Cut', 'Chaos Mode'] }],
+            ['pace-setter.json', { avoid: ['Length Trimmer', 'Scene Pressure Cocktail', 'Combined Director\'s Cut'] }],
+            ['repeat-spotter.json', { avoid: ['Repetition Breaker'], fine: ['Grounded Prose', 'Proofreader'] }],
+        ]);
+
+        for (const [filename, { avoid, fine = [] }] of notes) {
+            const template = readTemplate(filename);
+            expect(template).toMatchObject({ category: 'content', phase: 'pre', enabled: false });
+            expect(template.preProcess).toMatchObject({ mode: 'intercept', interceptTiming: 'pre-generation', applyMode: 'wrap', wrapPosition: 'after' });
+            expect(template.preProcess.maxTokens).toBeLessThanOrEqual(400);
+            expect(template.preProcess.wrapPrefix).not.toMatch(/\{\{/);
+            expect(template.conditions.generationTypes).not.toContain('impersonate');
+            expect(`${template.description}\n${template.prompt}`).not.toMatch(/\u2014/);
+            const [, avoidList = '', fineList = ''] = template.description.match(/Don't run it with: ([^.]+)\.(?: Fine alongside ([^.]+)\.)?$/) ?? [];
+            expect(avoidList.split(', ')).toEqual(avoid);
+            expect(fineList ? fineList.split(' and ') : []).toEqual(fine);
+            for (const name of [...avoid, ...fine]) {
+                expect(names).toContain(name);
+            }
+            expect(readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS')).not.toContain(`'${template.id}'`);
+        }
     });
 
     test('installs Pura\'s trackers by default, disabled, and keeps the Ethereality kit library-only', () => {
