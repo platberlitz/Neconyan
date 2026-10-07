@@ -30,7 +30,7 @@ import {
     safeParseWeeklySchedule,
 } from './personas.js';
 import { schedulePalsRailRender } from './render-scheduler.js';
-import { escapeHtmlAttribute, escapeHtmlText } from './render-utils.js';
+import { escapeHtmlAttribute, escapeHtmlText, setUserTextSlot } from './render-utils.js';
 import { closePalsRail, setConversationBackdropVisible } from './settings-panel.js';
 import { conversationState } from './state.js';
 
@@ -147,6 +147,8 @@ export function updateUserFooter() {
     }
     if (nameEl instanceof HTMLElement) {
         nameEl.textContent = personaName;
+        // The persona's name is as written; the 'You' fallback is the app's own and translates.
+        setUserTextSlot(nameEl, Boolean(name1));
     }
     if (statusEl instanceof HTMLElement) {
         statusEl.textContent = personaStatus || statusCopy.label;
@@ -344,7 +346,7 @@ export function toggleAddDmPicker() {
             rows.push(`
                 <button type="button" class="sb-conversation-add-dm-option" data-sb-conversation-action="add-character-dm" data-character-index="${idx}" style="display: flex; align-items: center; gap: 8px; inline-size: 100%; background: none; border: none; padding: 6px; border-radius: var(--sb-radius-sm); text-align: left; cursor: pointer; color: inherit;">
                     <img src="${escapeHtmlAttribute(thumb)}" alt="" style="inline-size: 24px; block-size: 24px; border-radius: 50%; object-fit: cover;" loading="lazy" />
-                    <span style="font-size: var(--sb-type-caption);">${escapeHtmlText(name)}</span>
+                    <span${character.name ? ' translate="no"' : ''} style="font-size: var(--sb-type-caption);">${escapeHtmlText(name)}</span>
                 </button>
             `);
         });

@@ -1809,6 +1809,11 @@ function getNeconyanRecentChatLabel(recentChat) {
     return String(recentChat?.chat_name || recentChat?.conversation_branch_name || 'Untitled chat').trim() || 'Untitled chat';
 }
 
+/** Whether the label holds a name someone wrote. 'Untitled chat' and the 'Conversation Mode' stand-in are the app's own; a group entry's label is the member's name and the branch, so it counts when either is a name. A record without the origin field (every roleplay chat) counts as named. */
+function isNeconyanRecentChatLabelNamed(recentChat) {
+    return Boolean(String(recentChat?.chat_name || recentChat?.conversation_branch_name || '').trim()) && recentChat?.conversation_label_named !== false;
+}
+
 function renderNeconyanRailRecentChats(chats) {
     const recentHost = document.querySelector('#neconyan-workspace-rail [data-neconyan-recent-list]');
     if (!(recentHost instanceof HTMLElement)) {
@@ -1827,7 +1832,10 @@ function renderNeconyanRailRecentChats(chats) {
 
     for (const recentChat of visibleChats) {
         const label = getNeconyanRecentChatLabel(recentChat);
-        const owner = String(recentChat.char_name || (recentChat.is_group ? 'Group chat' : 'Chat')).trim();
+        const labelNamed = isNeconyanRecentChatLabelNamed(recentChat);
+        // The owner is a name someone wrote, or the app's own 'Character', 'Group chat' or 'Chat'. The localiser skips a protected button whole, so those are translated here.
+        const ownerNamed = Boolean(recentChat.char_name) && recentChat.char_name_named !== false;
+        const owner = ownerNamed ? String(recentChat.char_name).trim() : translate(recentChat.char_name ? 'Character' : recentChat.is_group ? 'Group chat' : 'Chat');
         const button = createNeconyanRailButton({
             label,
             icon: recentChat.is_conversation ? 'fa-comments' : recentChat.is_group ? 'fa-users' : 'fa-message',
@@ -1835,8 +1843,14 @@ function renderNeconyanRailRecentChats(chats) {
             onClick: () => void openNeconyanRecentChat(recentChat),
         });
         button.dataset.neconyanRecentKey = PinnedChatsManager.getKey(recentChat);
+        if (labelNamed) {
+            button.setAttribute('translate', 'no');
+        }
         const detail = document.createElement('small');
         detail.textContent = owner;
+        if (!labelNamed && ownerNamed) {
+            detail.setAttribute('translate', 'no');
+        }
         button.appendChild(detail);
         recentHost.appendChild(button);
     }
@@ -2512,6 +2526,8 @@ async function openRecentChatsSettingsPopup() {
  * @property {boolean} [is_conversation] Indicates if the chat is a Conversation Mode branch
  * @property {string} [conversation_branch_id] Conversation Mode branch ID
  * @property {string} [conversation_branch_name] Conversation Mode branch name
+ * @property {boolean} [conversation_label_named] False when chat_name holds no name someone wrote: the branch is unnamed and, for a group entry, the member has no name either; absent means a name was given
+ * @property {boolean} [char_name_named] False when char_name is the 'Character' stand-in for a card with no name; absent means a name was given
  */
 function shouldSeparateAgentRecentChats() {
     return Boolean(extension_settings?.inChatAgents?.globalSettings?.separateRecentChats);

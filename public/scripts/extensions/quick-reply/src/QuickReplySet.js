@@ -299,6 +299,7 @@ export class QuickReplySet {
                         const opt = document.createElement('option'); {
                             opt.value = qrs.name;
                             opt.textContent = qrs.name;
+                            opt.setAttribute('translate', 'no');
                             sel.append(opt);
                         }
                     }

@@ -208,7 +208,9 @@ export function getConversationWelcomeChats({ max = Infinity } = {}) {
 
         const timestamp = parsePositiveInt(branch?.updatedAt || branch?.createdAt, Date.now(), 1);
         const date = new Date(timestamp);
-        const branchName = branch?.name && branch.name !== 'Main' ? branch.name : 'Conversation Mode';
+        // 'Conversation Mode' stands in for a branch with no name of its own; the record says so, so the Recent list can tell it from a name someone chose.
+        const branchNamed = Boolean(branch?.name) && branch.name !== 'Main';
+        const branchName = branchNamed ? branch.name : 'Conversation Mode';
         const groupName = group?.name || '';
         pushedKeys.add(key);
         if (groupId) {
@@ -233,6 +235,9 @@ export function getConversationWelcomeChats({ max = Infinity } = {}) {
             recent_chat_type: 'conversation',
             conversation_branch_id: branchId,
             conversation_branch_name: branchName,
+            // The chat_name label as a whole: a name someone chose when the branch is named, or, for a group entry, when the member has a name.
+            conversation_label_named: branchNamed || Boolean(groupName && character.name),
+            char_name_named: Boolean(groupName || character.name),
             hidden: false,
             pinned: false,
         });

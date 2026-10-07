@@ -106,6 +106,27 @@ export function getConversationMessagePreviewText(message) {
     return stripPreviewText(message?.mes) || stripPreviewText(getConversationAttachmentLabels(message).join(', '));
 }
 
+/**
+ * Whether a branch's stored preview is text from one of its messages (a value) rather than the 'Conversation ready' fallback.
+ * The text alone cannot tell them apart, since a message can read 'Conversation ready'; a preview with no matching message is treated as the fallback.
+ * @param {{ preview?: string, messages?: object[] }|null|undefined} branch
+ * @returns {boolean}
+ */
+export function isConversationPreviewValue(branch) {
+    const preview = branch?.preview;
+    if (typeof preview !== 'string' || !preview || !Array.isArray(branch.messages)) {
+        return false;
+    }
+
+    for (let index = branch.messages.length - 1; index >= 0; index--) {
+        if (getConversationMessagePreviewText(branch.messages[index]) === preview) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 export function buildConversationMessageReplyReference(message) {
     if (!message?.id) {
         return null;

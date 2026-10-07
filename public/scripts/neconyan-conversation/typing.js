@@ -13,7 +13,7 @@ import { getAvailabilityCopy } from './personas.js';
 import { scheduleInterfaceRefresh } from './render-scheduler.js';
 import { getCurrentActivityFromSchedule, getStoredSchedule } from './schedule.js';
 import { activeTypingParticipants } from './state.js';
-import { getConversationMessagePreviewText, getConversationThread, hasConversationMessageContent } from './thread-store.js';
+import { getConversationMessagePreviewText, getConversationThread, hasConversationMessageContent, isConversationPreviewValue } from './thread-store.js';
 
 export function getConversationActivityContext(settings, avatar, now = new Date(), { personaId = getConversationPersonaId() } = {}) {
     const schedule = getStoredSchedule(avatar, { personaId });
@@ -119,6 +119,11 @@ export function setLastConversationPreview(avatar, messageText, { branchId = '',
 
 export function getLastConversationPreview(avatar, { groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId() } = {}) {
     return getActiveConversationBranch(avatar, { create: false, groupId, personaId })?.preview || 'Conversation ready';
+}
+
+/** Whether the preview getLastConversationPreview returns is text from a message in the branch, not the 'Conversation ready' fallback. */
+export function isLastConversationPreviewValue(avatar, { groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId() } = {}) {
+    return isConversationPreviewValue(getActiveConversationBranch(avatar, { create: false, groupId, personaId }));
 }
 
 export function updateLastPreviewFromConversation(avatar = getCurrentCharAvatar(), { branchId = '', groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId() } = {}) {

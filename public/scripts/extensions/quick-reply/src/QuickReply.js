@@ -949,10 +949,13 @@ export class QuickReply {
             const tpl = dom.querySelector('#qr--ctxItem');
             const linkList = dom.querySelector('#qr--ctxEditor');
             const fillQrSetSelect = (/**@type {HTMLSelectElement}*/select, /**@type {QuickReplyContextLink}*/ link) => {
-                [{ name: 'Select a QR set' }, ...getUniqueQuickReplySetsByName(QuickReplySet.list).toSorted((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))].forEach(qrs => {
+                const placeholder = { name: 'Select a QR set' };
+                [placeholder, ...getUniqueQuickReplySetsByName(QuickReplySet.list).toSorted((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))].forEach(qrs => {
                     const opt = document.createElement('option'); {
                         opt.value = qrs.name;
                         opt.textContent = qrs.name;
+                        // A set name shows as written; the placeholder is the app's own and still translates.
+                        if (qrs !== placeholder) opt.setAttribute('translate', 'no');
                         opt.selected = qrs.name == link.set?.name;
                         select.append(opt);
                     }

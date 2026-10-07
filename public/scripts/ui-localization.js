@@ -7,6 +7,7 @@ const userText = [
     '.persona_name', '#persona_selected_name', '.sb-persona-option-name', '.sb-conversation-persona-option-name', '.sb-conversation-reply-name',
     '.sb-conversation-group-member-name',
     '.sb-chat-file-preview', '.sb-conversation-file-name', '.sb-import-file-name',
+    '#sb-topbar-title', '#rm_button_selected_ch h2', '.qr--button-label', '#image_list_header_name',
 ].join(',');
 const attributes = ['title', 'placeholder', 'aria-label'];
 const nonEmptyDictionaries = new WeakSet();

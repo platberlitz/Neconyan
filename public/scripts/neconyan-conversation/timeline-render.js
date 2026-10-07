@@ -863,7 +863,7 @@ export function buildPartnerOptions(selectedNames, emptyText = 'Enable more char
                 <label class="sb-conversation-partner-pick">
                     <input type="checkbox" class="sb-conversation-partner-checkbox" value="${escapeHtmlAttribute(charAvatar)}"${checked} />
                     <img class="sb-conversation-partner-avatar" src="${escapeHtmlAttribute(thumbUrl)}" alt="${escapeHtmlAttribute(charName)}" width="24" height="24" loading="lazy" />
-                    <span class="sb-conversation-partner-name">${escapeHtmlText(charName)}</span>
+                    <span class="sb-conversation-partner-name"${character.name ? ' translate="no"' : ''}>${escapeHtmlText(charName)}</span>
                 </label>
             </div>
         `);

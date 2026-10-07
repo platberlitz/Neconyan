@@ -121,6 +121,7 @@ async function importConversationMedia({ characters, currentAvatar, state, rende
     await jest.unstable_mockModule('../public/scripts/neconyan-conversation/thread-store.js', () => ({
         getConversationThread: jest.fn(() => []),
     }));
+    await jest.unstable_mockModule('../public/scripts/i18n.js', () => ({ t: strings => strings.join(''), translate: text => text }));
     return import('../public/scripts/neconyan-conversation/media.js');
 }
 
