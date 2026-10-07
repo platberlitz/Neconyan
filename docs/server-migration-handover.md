@@ -2,6 +2,39 @@
 
 ## Release preparation: 1.0.0
 
+### 7 October: 1.2.0 released from main, staging moves to 1.2.1
+
+Release E2E had not run on staging since 1.1.0, so the first run on the 1.2.0
+candidate (`37480481087`) failed eight groups. Most were browser tests that had
+not caught up with staging (the knowledge revision, the slimmer chat bar, the
+smaller phone avatars, the rebuilt Persona page, Debugger being on by default
+and the new Portuguese translations), but four were real bugs that never
+reached a release: text-completion replies without a model name were refused
+by the roleplay save (`b351e04`); a new Conversation branch copied with another
+chat link ID never merged with the server copy, so the next Send did nothing
+(`e6918c6`); Home refused to open while the composer held a draft (`e6918c6`);
+and Scratchpad wrapped Miso, Taro and Nori under the fold button in a narrow
+panel. Those are fixed in `9b2e0ba`, `5a22103`, `4496af9` and `e76bd76`. Later
+runs each failed one to three groups on timing in the tests (late chat-load
+steps, startup notices covering buttons, settings left in flight at teardown,
+a background update check taking a planned failure, a store edit racing a page
+save); each test was hardened and rerun locally. Pull requests #38 to #42 were
+reviewed and squash-merged before the release.
+
+`main` was fast-forwarded to staging `2de24c5` without a merge commit. All 435
+unit-test suites passed (5,637 tests, two skipped), all 1,905 server tests and
+89 Mewmory tests passed, and root lint, frontend budgets, the production build
+and Bun server initialisation passed. Release E2E run `37556681748` passed all
+16 browser-test groups. Android run `37556684322` passed the signed build and
+Android 11 and 15 emulator lifecycle checks. The downloaded checksums,
+provenance for `2de24c50a7c05e7c00e18745261bcc78ac0bf9dd`, signing-certificate
+records (the same certificate as 1.1.0) and 16 KiB alignment checks were
+verified. All source ZIP contents and file modes match a local `git archive` of
+the release commit. Neconyan 1.2.0 is published at
+https://github.com/platberlitz/Neconyan/releases/tag/v1.2.0 with the annotated
+tag `v1.2.0` and all nine release assets. It has not been tested on a physical
+phone. Staging now moves to `1.2.1`, including the version displayed in the app.
+
 ### 4 October: 1.1.0 released from main, staging moves to 1.1.1
 
 `main` was fast-forwarded to staging `11e64e3` without a merge commit. All 419
