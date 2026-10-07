@@ -14,6 +14,7 @@
 - PR #51 (2026-10-07) `fix(agents): keep tracker repair labels still while loading`
 - PR #52 (2026-10-07) `feat(agents): clean up tracker companion replies automatically`
 - PR #53 (2026-10-07) `fix(trackers): strip copied MANDATORY markers from tracker notes`
+- PR #54 (2026-10-07) `fix(chat): start mobile replies without waiting for a redraw`
 
 ## v1.2.0
 
