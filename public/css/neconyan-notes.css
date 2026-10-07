@@ -118,11 +118,15 @@ body.neconyan.neconyan-notes-beside #sheld {
     box-sizing: border-box;
 }
 
+#neconyan-notes .neconyan-tool-page-intro > :is(.neconyan-page-intro-toggle, .neconyan-tool-tour-button) {
+    min-height: 28px;
+}
+
 #neconyan-notes .neconyan-page-intro-toggle {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 0;
+    padding: 0;
     border: 0;
     background: transparent;
     color: inherit;
@@ -136,7 +140,7 @@ body.neconyan.neconyan-notes-beside #sheld {
     align-items: center;
     gap: 6px;
     margin: 0;
-    padding: 6px 14px;
+    padding: 3px 10px;
     border-radius: 12px;
     white-space: nowrap;
 }

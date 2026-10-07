@@ -292,6 +292,18 @@ describe('settings pages open as Neconyan pages with an assistant tour', () => {
         expect(css).toContain('#left-nav-panel[data-neconyan-native-page=\'connections\'] .neconyan-model-provider-stack');
     });
 
+    test('the Tour chip and the collapsed blurb stay one line tall but keep a 44px touch area', () => {
+        const chip = css.match(/\n\.neconyan-tool-page-intro \.neconyan-tool-tour-button \{([^}]*)\}/)?.[1] ?? '';
+        expect(chip).toContain('min-height: 28px;');
+        expect(chip).toContain('white-space: nowrap;');
+        expect(css).toMatch(/> \.neconyan-tool-tour-button \{\s*min-height: 28px;\s*min-block-size: 28px;/);
+        expect(css).toMatch(/> \.neconyan-page-intro-toggle \{[^}]*min-height: 28px;/);
+        const touch = css.slice(css.indexOf('@media (pointer: coarse)'));
+        expect(touch).toContain('.neconyan-tool-page-intro > :is(.neconyan-tool-tour-button, .neconyan-page-intro-toggle)::before');
+        expect(touch).toContain('top: min(0px, calc((100% - 44px) / 2));');
+        expect(read('../public/css/neconyan-notes.css')).toContain('#neconyan-notes .neconyan-tool-page-intro > :is(.neconyan-page-intro-toggle, .neconyan-tool-tour-button) {\n    min-height: 28px;');
+    });
+
     test('Nori explains presets without pressing save, import or delete and skips unavailable controls', () => {
         const steps = getToolTourSteps('presets');
         expect(steps.map(step => step.id)).toEqual(['welcome', 'choose', 'save', 'copy', 'files', 'linking', 'parameters', 'prompts', 'done']);
