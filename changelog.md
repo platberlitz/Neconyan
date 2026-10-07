@@ -19,6 +19,7 @@
 - PR #57 (2026-10-07) `feat(agents): add six default reply rewrite agents`
 - PR #58 (2026-10-07) `feat(agents): add five fast pre-generation note templates`
 - PR #59 (2026-10-07) `docs: point help links to the official neconyan handbook`
+- PR #61 (2026-10-07) `feat(settings): rebuild chat & writing settings and add MovingUI presets`
 
 ## v1.2.0
 
