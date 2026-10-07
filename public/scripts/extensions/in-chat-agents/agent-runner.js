@@ -31,6 +31,7 @@ import {
     getEnabledAgents,
     getEnabledToolAgents,
     getAgentConnectionFallbacks,
+    getAgentLengthTarget,
     getGlobalSettings,
     getPromptTransformMode,
     isAgentRuntimeAllowed,
@@ -40,6 +41,7 @@ import {
     saveAgent,
     isToolAgent,
     normalizePreProcessMaxTokens,
+    normalizePromptTransformContextMessages,
     normalizePromptTransformMaxTokens,
     resolveCompanionConnectionProfile,
     resolveConnectionProfile,
@@ -50,6 +52,7 @@ import { isKimiK3Model } from '../../openai-model-capabilities.js';
 import { isGenerationLengthFinish } from '../../generation-request-controls.js';
 import { resolveExpressionsAgentProfile } from '../expressions/expressions-agent-utils.js';
 import { buildFallbackPromptText, extractProfileResponseText } from './llm-utils.js';
+import { buildPromptTransformRecentChat } from './prompt-transform-context.js';
 import { getConnectionProfileDisplayName, getConnectionProfileModelName } from './profile-utils.js';
 import {
     appendHelperPrefillMessages,
@@ -2199,6 +2202,7 @@ export function buildPromptDynamicMacros(messageText = '', message = null, agent
         assistantName,
         agentName,
         generationType: normalizedGenerationType,
+        lengthTarget: getAgentLengthTarget(agent),
     };
 }
 
@@ -3129,7 +3133,22 @@ function applyContextInterceptText(originalText, interceptText, preProcess = {})
     return outputText;
 }
 
-function buildPromptTransformMessages(agentPrompt, messageText, assistantName, generationType, mode) {
+function getPromptTransformRecentChat(agent, message, messageIndex) {
+    const limit = normalizePromptTransformContextMessages(agent?.postProcess?.promptTransformContextMessages);
+    if (!limit || !Array.isArray(chat)) {
+        return '';
+    }
+
+    let endIndex = Number.isInteger(messageIndex) && messageIndex >= 0 && messageIndex <= chat.length ? messageIndex : -1;
+    if (endIndex < 0) {
+        const foundIndex = message ? chat.indexOf(message) : -1;
+        endIndex = foundIndex >= 0 ? foundIndex : chat.length;
+    }
+
+    return buildPromptTransformRecentChat(chat.slice(0, endIndex), limit, unwrapAssistantResponseWrapper);
+}
+
+function buildPromptTransformMessages(agentPrompt, messageText, assistantName, generationType, mode, recentChat = '') {
     const isImpersonate = isImpersonateGenerationType(generationType);
     const isCompanionOutput = normalizeGenerationType(generationType) === COMPANION_OUTPUT_GENERATION_TYPE;
     const targetLabel = isImpersonate
@@ -3152,6 +3171,9 @@ function buildPromptTransformMessages(agentPrompt, messageText, assistantName, g
         : isCompanionOutput
             ? 'Current companion agent note'
             : 'Current assistant response';
+    const recentChatSection = recentChat
+        ? `Recent chat before this ${contentLabel}, oldest first. Read-only context: do not rewrite, repeat, or return it.\n<recent_chat>\n${recentChat}\n</recent_chat>\n\n`
+        : '';
 
     return [
         {
@@ -3160,7 +3182,7 @@ function buildPromptTransformMessages(agentPrompt, messageText, assistantName, g
         },
         {
             role: 'user',
-            content: `Assistant name: ${assistantName || 'Assistant'}\nGeneration type: ${generationType}\n\n${responseLabel}:\n<assistant_response>\n${currentAssistantResponse}\n</assistant_response>`,
+            content: `Assistant name: ${assistantName || 'Assistant'}\nGeneration type: ${generationType}\n\n${recentChatSection}${responseLabel}:\n<assistant_response>\n${currentAssistantResponse}\n</assistant_response>`,
         },
     ];
 }
@@ -3803,6 +3825,7 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
         String(message?.name ?? '').trim(),
         normalizedGenerationType,
         promptTransformMode,
+        getPromptTransformRecentChat(agent, message, options.recentChatEndIndex ?? messageIndex),
     ));
     const runningToast = showNotifications
         ? showPromptTransformRunningToast(agent, promptTransformMode, profileId)
@@ -3950,7 +3973,7 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
     }
 }
 
-async function runPromptTransformAppendBatch(agents, message, generationType, messageTextOverride = null, messageIndex = null, { cancelRevision = null, runtimeAgents = [] } = {}) {
+async function runPromptTransformAppendBatch(agents, message, generationType, messageTextOverride = null, messageIndex = null, { cancelRevision = null, runtimeAgents = [], recentChatEndIndex = null } = {}) {
     const targetState = captureMessageTargetState(message);
     const currentMessageText = unwrapAssistantResponseWrapper(
         messageTextOverride !== null ? messageTextOverride : message?.mes,
@@ -3976,6 +3999,7 @@ async function runPromptTransformAppendBatch(agents, message, generationType, me
                     applyToMessage: false,
                     runtimeAgents,
                     cancelRevision,
+                    recentChatEndIndex,
                 });
                 results.push(result);
                 if (isCancelled() || result.status === 'cancelled') {
@@ -4005,6 +4029,7 @@ async function runPromptTransformAppendBatch(agents, message, generationType, me
                         applyToMessage: false,
                         runtimeAgents,
                         cancelRevision,
+                        recentChatEndIndex,
                     });
                 } catch (error) {
                     return {
@@ -4046,7 +4071,7 @@ async function runPromptTransformAppendBatch(agents, message, generationType, me
  * cleaned of echoed text and duplicates, then joined around the finished body.
  * With Run together the append agents start alongside the rewrites.
  */
-async function runPromptTransformPasses(agents, message, generationType, text, messageIndex = null, { cancelRevision = null, runtimeAgents = [], stopOnFailure = false, isCurrent = () => true } = {}) {
+async function runPromptTransformPasses(agents, message, generationType, text, messageIndex = null, { cancelRevision = null, runtimeAgents = [], stopOnFailure = false, isCurrent = () => true, recentChatEndIndex = null } = {}) {
     const promptRuns = [];
     const outcome = { cancelled: false, staleTarget: false, failed: false };
     const initialText = unwrapAssistantResponseWrapper(text);
@@ -4078,6 +4103,7 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
                 result = await runPromptTransformAgent(agent, message, generationType, body, messageIndex, {
                     applyToMessage: false,
                     runtimeAgents,
+                    recentChatEndIndex,
                     ...(cancelRevision !== null ? { cancelRevision } : {}),
                 });
             } catch (error) {
@@ -4102,7 +4128,7 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
             return { text: result.nextMessageText };
         },
         runAppend: async (batchAgents, body) => {
-            const batch = await runPromptTransformAppendBatch(batchAgents, message, generationType, body, messageIndex, { cancelRevision, runtimeAgents });
+            const batch = await runPromptTransformAppendBatch(batchAgents, message, generationType, body, messageIndex, { cancelRevision, runtimeAgents, recentChatEndIndex });
             promptRuns.push(...batch.results);
             if (batch.cancelled || isCancelled()) {
                 outcome.cancelled = true;
@@ -4886,7 +4912,7 @@ async function onMessageEdited(messageIndex) {
     if (changed || historyLinked) scheduleMessageRefresh(messageIndex, message);
 }
 
-async function runPromptTransformAgentsForText(promptTransformAgents, initialText, generationType, { messageContext = {}, cancelRevision = null, stopOnFailure = false, runtimeAgents = [] } = {}) {
+async function runPromptTransformAgentsForText(promptTransformAgents, initialText, generationType, { messageContext = {}, cancelRevision = null, stopOnFailure = false, runtimeAgents = [], recentChatEndIndex = null } = {}) {
     const message = {
         mes: initialText,
         name: getUserMessageName(),
@@ -4914,6 +4940,7 @@ async function runPromptTransformAgentsForText(promptTransformAgents, initialTex
         cancelRevision,
         runtimeAgents,
         stopOnFailure,
+        recentChatEndIndex,
     });
     promptRuns.push(...result.promptRuns);
     if (result.cancelled || isCancelled()) {
@@ -4969,6 +4996,7 @@ export async function runCompanionOutputPostPasses(companionAgent, initialText, 
             COMPANION_OUTPUT_GENERATION_TYPE,
             {
                 messageContext: characterName ? { name: characterName } : {},
+                recentChatEndIndex: sourceMessage ? Number(messageIndex) + 1 : 0,
                 cancelRevision,
                 stopOnFailure: true,
                 runtimeAgents: [companionAgent],
@@ -5935,16 +5963,16 @@ export function initAgentRunner() {
  * @param {object} agent
  * @param {string} text
  * @param {string} generationType Labeling context for the prompt pass
- * @param {{ characterOverride?: string, messageContext?: object }} [options]
+ * @param {{ characterOverride?: string, messageContext?: object, recentChatEndIndex?: number, runtimeAgents?: object[], cancelRevision?: number }} [options]
  * @returns {Promise<{ text: string, changed: boolean, promptRuns: object[] }>}
  */
-export async function runSingleAgentPostPassesOnText(agent, text, generationType, { characterOverride = '', messageContext = {}, runtimeAgents = [], cancelRevision = agentGenerationCancelRevision } = {}) {
+export async function runSingleAgentPostPassesOnText(agent, text, generationType, { characterOverride = '', messageContext = {}, runtimeAgents = [], cancelRevision = agentGenerationCancelRevision, recentChatEndIndex = null } = {}) {
     let currentText = String(text ?? '');
     let changed = false;
     let promptRuns = [];
 
     if (String(agent?.prompt ?? '').trim()) {
-        const promptResult = await runPromptTransformAgentsForText([agent], currentText, generationType, { messageContext, runtimeAgents, cancelRevision });
+        const promptResult = await runPromptTransformAgentsForText([agent], currentText, generationType, { messageContext, runtimeAgents, cancelRevision, recentChatEndIndex });
         promptRuns = promptResult.promptRuns ?? [];
         currentText = promptResult.text;
         changed = changed || promptResult.changed;

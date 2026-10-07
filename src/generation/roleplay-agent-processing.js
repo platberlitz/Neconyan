@@ -1,4 +1,5 @@
 import { appendHelperPrefillMessages } from '../../public/scripts/extensions/helper-prefill.js';
+import { buildPromptTransformRecentChat, getAgentLengthTarget } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-context.js';
 import { applyRegexScriptList } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 import { buildRegexScriptRefsForAgent } from '../../public/scripts/extensions/in-chat-agents/regex-snapshot-store.js';
 import { inspectTrackerState, mergeTrackerRepairPayload, TRACKER_REPAIR_INSTRUCTION } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
@@ -51,7 +52,10 @@ function keywordMatches(value, text, companion) {
 
 function activation(agent, records, generationType, random) {
     const conditions = agent.conditions;
-    if (conditions.generationTypes.length && !conditions.generationTypes.includes(generationType)) return { active: false, draw: null };
+    // The browser treats swipes and regenerations as normal replies. Honour
+    // explicit saved types too, including records created by server clients.
+    const normalReply = ['swipe', 'regenerate'].includes(generationType) && conditions.generationTypes.includes('normal');
+    if (conditions.generationTypes.length && !conditions.generationTypes.includes(generationType) && !normalReply) return { active: false, draw: null };
     const draw = conditions.triggerProbability < 100 ? random() * 100 : null;
     if (draw !== null && (!Number.isFinite(draw) || draw < 0 || draw > 100)) throw fail('The Agent activation draw is invalid.');
     if (draw !== null && draw > conditions.triggerProbability) return { active: false, draw };
@@ -64,7 +68,8 @@ function activation(agent, records, generationType, random) {
 
 function aliases(environment, agent, text, generationType, assistantName) {
     for (const key of ['currentmessage', 'lastmessage', 'latestmessage', 'response', 'currentresponse', 'latestresponse', 'assistantmessage']) environment.dynamicMacros[key] = text;
-    Object.assign(environment.dynamicMacros, { assistantname: assistantName, agentname: agent.name, generationtype: generationType });
+    Object.assign(environment.dynamicMacros, { assistantname: assistantName, agentname: agent.name, generationtype: generationType,
+        lengthtarget: getAgentLengthTarget(agent) });
     return environment;
 }
 
@@ -117,7 +122,7 @@ function unwrap(value) {
     return text;
 }
 
-function messagesFor(agent, text, prompt, generationType, assistantName, format, intercept) {
+function messagesFor(agent, text, prompt, generationType, assistantName, format, intercept, recentChat = '') {
     if (intercept) {
         const post = agent.preProcess.interceptTiming === 'post-main-generation';
         const instruction = post
@@ -131,11 +136,18 @@ function messagesFor(agent, text, prompt, generationType, assistantName, format,
         ? 'Return ONLY the new content to append. Do not repeat, rewrite or summarise the original response. Do not include explanations or markdown fences.'
         : 'Return ONLY the final rewritten response. If no changes are needed, return the original response verbatim. Do not include explanations or markdown fences.';
     const label = generationType === 'impersonate' ? 'Current impersonation text' : generationType === 'companion_output' ? 'Current companion note' : 'Current assistant response';
-    return [{ role: 'system', content: `${prompt}\n\n${instruction}` }, { role: 'user', content: `Assistant name: ${assistantName}\nGeneration type: ${generationType}\n\n${label}:\n<assistant_response>\n${text}\n</assistant_response>` }];
+    const recent = recentChat ? `Recent chat, oldest first. Read-only context: do not rewrite, repeat, or return it.\n<recent_chat>\n${recentChat}\n</recent_chat>\n\n` : '';
+    return [{ role: 'system', content: `${prompt}\n\n${instruction}` }, { role: 'user', content: `Assistant name: ${assistantName}\nGeneration type: ${generationType}\n\n${recent}${label}:\n<assistant_response>\n${text}\n</assistant_response>` }];
 }
 
 async function modelRun(context, options, agent, text, name, intercept = false, format = 'text') {
     const { base, snapshot, macros, generationType, assertCurrent, generate } = options;
+    const { effect, source, request } = context.job.intent;
+    const records = options.records ?? [];
+    const isNote = options.companionAgent || request?.agent?.mode === 'companion-output';
+    const endIndex = !isNote && ['continue', 'agent'].includes(effect) && Number.isInteger(source?.message?.index)
+        ? source.message.index + 1 : records.length;
+    const recentChat = intercept ? '' : buildPromptTransformRecentChat(records.slice(1, endIndex), agent.postProcess.promptTransformContextMessages, unwrap);
     const result = await runAgentModelStep(context, { base, account: snapshot.account, name,
         identity: roleplayHash({ intent: context.job.intent, agent: snapshot.agents.agents.find(item => item.id === agent.id), text, intercept, format, generationType }),
         binding: agent.binding || options.binding, modelOverride: agent.binding ? agent.modelOverride : '', fallbacks: agent.fallbacks,
@@ -144,7 +156,7 @@ async function modelRun(context, options, agent, text, name, intercept = false, 
         buildMessages: environment => {
             aliases(environment, agent, text, generationType, options.assistantName);
             const prompt = evaluate(environment, agent.prompt, snapshot);
-            return appendHelperPrefillMessages(messagesFor(agent, text, prompt, generationType, options.assistantName, format, intercept), snapshot.agents.helperPrefill);
+            return appendHelperPrefillMessages(messagesFor(agent, text, prompt, generationType, options.assistantName, format, intercept, recentChat), snapshot.agents.helperPrefill);
         } });
     return { agentId: agent.id, agentName: agent.name, order: agent.injection.order,
         outputText: result.lengthLimited ? '' : unwrap(result.text), status: result.lengthLimited ? 'length-limited' : result.text.trim() ? 'done' : 'empty',
@@ -265,7 +277,7 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     const agents = manual ? readRoleplayAgents(base, snapshot).filter(agent => options.manualAgentIds.includes(agent.id) && !isNativeCompanion(agent))
         : companionOutput ? readRoleplayAgents(base, snapshot).filter(agent => inline(agent) && agent.id !== options.companionAgent.id
             && agent.conditions.runOnCompanionOutputs && (!agent.conditions.companionOutputTargetAgentIds.length || agent.conditions.companionOutputTargetAgentIds.some(id => targetIds.includes(id)))) : active.agents;
-    const selected = agents.filter(agent => (manual || inline(agent) && agent.postProcess.enabled && agent.postProcess.promptTransformEnabled
+    const selected = agents.filter(agent => (manual || inline(agent) && agent.postProcess.promptTransformEnabled
         && (companionOutput || ['post', 'both'].includes(agent.phase)) && agent.prompt.trim()
         && (companionOutput || outputStages.has(generationType) || generationType === 'impersonate' && (agent.conditions.runOnImpersonate || agent.sourceTemplateId === 'tpl-prose-polisher')))
         && agent.prompt.trim() && (!options.repairTrackers || agent.postProcess.enabled && agent.postProcess.promptTransformEnabled && ['post', 'both'].includes(agent.phase) && agent.postProcess.type !== 'extract'));

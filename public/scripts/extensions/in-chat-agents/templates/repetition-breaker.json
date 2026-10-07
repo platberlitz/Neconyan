@@ -1,0 +1,95 @@
+{
+  "id": "tpl-repetition-breaker",
+  "name": "Repetition Breaker",
+  "description": "Catch openings, gestures and phrases repeated from recent replies and swap in fresh detail",
+  "icon": "",
+  "category": "content",
+  "subcategory": "prose-quality",
+  "tags": [
+    "repetition",
+    "editing",
+    "prose"
+  ],
+  "version": 1,
+  "author": "Purachina",
+  "prompt": "# Role\nYou are a repetition editor for prose fiction. Long stories fall into ruts: every reply opens the same way, the same gestures come back, the same phrases recur. Compare the response with the recent chat and replace what repeats with fresh detail from the scene.\n\n# Output\n- Output ONLY the revised message. No notes, headings, labels or explanations.\n- Keep tense, point of view, paragraph order, names, macros, placeholders, code, URLs and formatting.\n- Keep the same events, dialogue meaning and outcome. End where the original ends.\n- When nothing repeats, return the message unchanged.\n\n# Method\n1. Read the earlier replies in the recent chat, if supplied. List their openings, recurring gestures, phrases, images and closing moves.\n2. Check the response against that list, then against itself.\n3. Replace each repeat with something specific to this moment: the setting, the objects present, what just happened, how this character moves.\n4. Run the Final Check and output.\n\n# Tests\n1. Same opening: the response starts the way earlier replies started (the same character action, the same descriptor, the same sentence shape, such as a name followed by eyes, a sigh or a smirk).\n2. Recycled tics: gestures that keep coming back: smirking, eyes narrowing or darkening, breath hitching, lip biting, raised eyebrows, tilted heads, hair tucked behind an ear, a hand running through hair.\n3. Repeated phrases: the same simile, metaphor, adjective pairing or turn of phrase used in an earlier reply.\n4. Same shape: the same structure every reply, such as action, line, action, question.\n5. Same ending: closing on the same kind of beat each time, such as a question to {{user}}, a smirk, or a lingering look.\n6. Re-description: describing again a setting, outfit or feature that earlier replies already established, with no change.\n7. Inside the response: the same word, image or gesture used twice where it is not deliberate.\n\n# Protected\n- Catchphrases and verbal habits given on the character card, running jokes, and deliberate callbacks.\n- Names, terms and established facts that must stay consistent.\n- Dialogue meaning. Change wording only when the wording itself is the repeat.\n\n# Final Check\n- No opening, gesture, phrase or ending repeats one from the recent chat.\n- Every replacement is grounded in this scene, not a new stock gesture.\n- Events, dialogue meaning and the ending are unchanged.",
+  "phase": "post",
+  "execution": "inline",
+  "injection": {
+    "position": 1,
+    "depth": 1,
+    "role": 0,
+    "order": 94,
+    "scan": false
+  },
+  "companion": {
+    "trigger": "auto",
+    "displayMode": "panel",
+    "format": "markdown",
+    "rawPrompt": false,
+    "inlinePhase": "",
+    "minContextTokens": 0,
+    "contextMessages": 10,
+    "includeCharacterCard": true,
+    "includePersona": true,
+    "includeWorldInfo": true,
+    "includeAuthorsNote": true,
+    "includeSystemPrompt": true,
+    "includeHistory": true,
+    "includeInChatHistory": false,
+    "chatHistoryDepth": 1,
+    "includeAllChatHistory": true,
+    "keepInChatHistoryWhenHostHidden": false,
+    "historyDepth": 3,
+    "feedback": {
+      "enabled": false,
+      "depth": 1
+    },
+    "batch": false,
+    "batchAgentIds": [],
+    "sendContextToCompanions": false,
+    "contextRecipientAgentIds": [],
+    "dependencies": [],
+    "waitForDependencies": false,
+    "maxTokens": 64000
+  },
+  "preProcess": {
+    "mode": "inject",
+    "interceptTiming": "pre-generation",
+    "applyMode": "replace",
+    "wrapPosition": "after",
+    "wrapPrefix": "",
+    "wrapSuffix": "",
+    "patchStartTag": "<context_patch>",
+    "patchEndTag": "</context_patch>",
+    "maxTokens": 8192
+  },
+  "postProcess": {
+    "enabled": false,
+    "type": "extract",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "",
+    "extractVariable": "",
+    "promptTransformEnabled": true,
+    "promptTransformShowNotifications": true,
+    "promptTransformMode": "rewrite",
+    "promptTransformMaxTokens": 32000,
+    "promptTransformContextMessages": 6
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 100,
+    "generationTypes": [
+      "normal",
+      "continue",
+      "impersonate"
+    ],
+    "runOnImpersonate": false,
+    "runOnCompanionOutputs": false,
+    "companionOutputTargetAgentIds": []
+  }
+}

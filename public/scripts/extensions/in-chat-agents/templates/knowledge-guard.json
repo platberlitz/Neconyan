@@ -1,0 +1,95 @@
+{
+  "id": "tpl-knowledge-guard",
+  "name": "Knowledge Guard",
+  "description": "Stop characters knowing things they could not know: your private thoughts, persona secrets or events they never saw",
+  "icon": "",
+  "category": "content",
+  "subcategory": "pov",
+  "tags": [
+    "continuity",
+    "editing",
+    "prose"
+  ],
+  "version": 1,
+  "author": "Purachina",
+  "prompt": "# Role\nYou are a continuity editor for prose fiction. Characters know only what they have seen, heard, been told, or could reasonably work out. Fix every place where a character knows something they could not know. Everything else stays as written.\n\n# Reference\nUse these only to judge what each character could know. Never copy from them.\n\n<character name=\"{{char}}\">\n{{description}}\n</character>\n\n<persona name=\"{{user}}\">\n{{persona}}\n</persona>\n\nThe persona is private by default: characters learn it only when it is said or shown in the story, or when the character card says they already know {{user}}.\n\n# Output\n- Output ONLY the revised message. No notes, headings, labels or explanations.\n- Keep tense, point of view, paragraph order, names, macros, placeholders, code, URLs and formatting.\n- Keep the same events and the purpose of every line.\n- When no character knows more than they should, return the message unchanged.\n\n# Method\n1. Read the recent chat, if supplied, and note what was actually said aloud, shown, or done in front of each character.\n2. For every line where a character speaks, acts or thinks, ask: how could they know this?\n3. Fix only the lines that fail the Tests below. When there is a plausible source, even an unstated one, leave the line alone.\n4. Run the Final Check and output.\n\n# Tests\n1. Mind-reading: reacting to {{user}}'s unspoken thoughts, private feelings or narration that no one in the scene could perceive.\n2. Persona leaks: using {{user}}'s name, past, secrets, abilities or details from the persona that have not come up in the story and that the card does not say this character knows.\n3. Out of earshot or sight: knowing what was said or done where the character was not present.\n4. Off-screen events: knowing about events elsewhere that no one has reported to them.\n5. Other characters' secrets: one character knowing another's hidden plans, feelings or past without being told.\n6. Outside knowledge: references to the story as fiction, the chat, game mechanics, or what happens next.\n\n# Fixes\nReplace, don't delete. Keep the line's job in the scene and give the character an honest route to it:\n- Turn certainty into a guess, suspicion, question or bluff: 'You're afraid of me' becomes 'You look like you're about to run.'\n- Tie the reaction to something visible: an expression, a tone, a detail they noticed.\n- Swap an unearned name or fact for what the character would actually use: a description, 'stranger', a question.\n- Let the character ask for what they want to know.\n\n# Final Check\n- Every piece of knowledge has a source in the scene, the recent chat or the character card.\n- The scene's events and each line's purpose are unchanged.\n- No text from the Reference was pasted into the message.",
+  "phase": "post",
+  "execution": "inline",
+  "injection": {
+    "position": 1,
+    "depth": 1,
+    "role": 0,
+    "order": 70,
+    "scan": false
+  },
+  "companion": {
+    "trigger": "auto",
+    "displayMode": "panel",
+    "format": "markdown",
+    "rawPrompt": false,
+    "inlinePhase": "",
+    "minContextTokens": 0,
+    "contextMessages": 10,
+    "includeCharacterCard": true,
+    "includePersona": true,
+    "includeWorldInfo": true,
+    "includeAuthorsNote": true,
+    "includeSystemPrompt": true,
+    "includeHistory": true,
+    "includeInChatHistory": false,
+    "chatHistoryDepth": 1,
+    "includeAllChatHistory": true,
+    "keepInChatHistoryWhenHostHidden": false,
+    "historyDepth": 3,
+    "feedback": {
+      "enabled": false,
+      "depth": 1
+    },
+    "batch": false,
+    "batchAgentIds": [],
+    "sendContextToCompanions": false,
+    "contextRecipientAgentIds": [],
+    "dependencies": [],
+    "waitForDependencies": false,
+    "maxTokens": 64000
+  },
+  "preProcess": {
+    "mode": "inject",
+    "interceptTiming": "pre-generation",
+    "applyMode": "replace",
+    "wrapPosition": "after",
+    "wrapPrefix": "",
+    "wrapSuffix": "",
+    "patchStartTag": "<context_patch>",
+    "patchEndTag": "</context_patch>",
+    "maxTokens": 8192
+  },
+  "postProcess": {
+    "enabled": false,
+    "type": "extract",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "",
+    "extractVariable": "",
+    "promptTransformEnabled": true,
+    "promptTransformShowNotifications": true,
+    "promptTransformMode": "rewrite",
+    "promptTransformMaxTokens": 32000,
+    "promptTransformContextMessages": 6
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 100,
+    "generationTypes": [
+      "normal",
+      "continue",
+      "impersonate"
+    ],
+    "runOnImpersonate": false,
+    "runOnCompanionOutputs": false,
+    "companionOutputTargetAgentIds": []
+  }
+}

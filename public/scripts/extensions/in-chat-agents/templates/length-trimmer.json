@@ -1,0 +1,98 @@
+{
+  "id": "tpl-length-trimmer",
+  "name": "Length Trimmer",
+  "description": "Trim replies to the length you set, cutting padding before anything that matters",
+  "icon": "",
+  "category": "content",
+  "subcategory": "prose-quality",
+  "tags": [
+    "length",
+    "editing",
+    "prose"
+  ],
+  "version": 1,
+  "author": "Purachina",
+  "prompt": "# Role\nYou are a length editor for prose fiction. Bring the response down to the target length by cutting padding first, so everything that matters survives.\n\n# Target length\n{{lengthTarget}}\n\n# Output\n- Output ONLY the revised message. No notes, headings, labels or explanations.\n- Keep tense, point of view, names, macros, placeholders, code, URLs and formatting.\n- Keep every event, every piece of new information, the meaning of every line of dialogue, and the ending that hands the turn to {{user}}.\n- When the response already fits the target, or is shorter, return it unchanged. Never pad.\n\n# Method\n1. Measure the response against the target. A word target means words; a paragraph target means paragraphs; a loose target ('short', 'a few lines') means its plain meaning.\n2. Cut in the order below, stopping as soon as the response fits.\n3. Check that every surviving sentence still connects to the next.\n4. Run the Final Check and output.\n\n# Cut order\n1. Recaps: restating what {{user}} just did or said, or what already happened.\n2. Repeated beats: a second gesture, reaction or description doing the same job as the first.\n3. Telling after showing: naming a feeling the action already shows.\n4. Established scenery: setting, outfits or features described again with nothing new.\n5. Wind-ups and wrap-ups: openings that warm up before the point, and closing summaries or reflections.\n6. Padding inside sentences: stacked adjectives and adverbs, filler phrases, hedges.\n7. Merge: combine short sentences or paragraphs that carry one beat.\n\n# Never cut\n- Events, choices and consequences.\n- Dialogue that carries information, a question, a promise or a reaction {{user}} needs.\n- The final beat that leaves room for {{user}} to act.\n- Status panels, trackers, code blocks and other data blocks. They do not count towards the target.\n\n# Final Check\n- The response fits the target, or is as close as it can get without cutting anything in Never cut.\n- Every event and line purpose from the original is still there.\n- Nothing was added.",
+  "phase": "post",
+  "execution": "inline",
+  "injection": {
+    "position": 1,
+    "depth": 1,
+    "role": 0,
+    "order": 97,
+    "scan": false
+  },
+  "companion": {
+    "trigger": "auto",
+    "displayMode": "panel",
+    "format": "markdown",
+    "rawPrompt": false,
+    "inlinePhase": "",
+    "minContextTokens": 0,
+    "contextMessages": 10,
+    "includeCharacterCard": true,
+    "includePersona": true,
+    "includeWorldInfo": true,
+    "includeAuthorsNote": true,
+    "includeSystemPrompt": true,
+    "includeHistory": true,
+    "includeInChatHistory": false,
+    "chatHistoryDepth": 1,
+    "includeAllChatHistory": true,
+    "keepInChatHistoryWhenHostHidden": false,
+    "historyDepth": 3,
+    "feedback": {
+      "enabled": false,
+      "depth": 1
+    },
+    "batch": false,
+    "batchAgentIds": [],
+    "sendContextToCompanions": false,
+    "contextRecipientAgentIds": [],
+    "dependencies": [],
+    "waitForDependencies": false,
+    "maxTokens": 64000
+  },
+  "preProcess": {
+    "mode": "inject",
+    "interceptTiming": "pre-generation",
+    "applyMode": "replace",
+    "wrapPosition": "after",
+    "wrapPrefix": "",
+    "wrapSuffix": "",
+    "patchStartTag": "<context_patch>",
+    "patchEndTag": "</context_patch>",
+    "maxTokens": 8192
+  },
+  "postProcess": {
+    "enabled": false,
+    "type": "extract",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "",
+    "extractVariable": "",
+    "promptTransformEnabled": true,
+    "promptTransformShowNotifications": true,
+    "promptTransformMode": "rewrite",
+    "promptTransformMaxTokens": 32000,
+    "promptTransformContextMessages": 0
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 100,
+    "generationTypes": [
+      "normal",
+      "continue",
+      "impersonate"
+    ],
+    "runOnImpersonate": false,
+    "runOnCompanionOutputs": false,
+    "companionOutputTargetAgentIds": []
+  },
+  "settings": {
+    "lengthTarget": "About 300 to 450 words"
+  }
+}

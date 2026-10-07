@@ -1,0 +1,95 @@
+{
+  "id": "tpl-friction-keeper",
+  "name": "Friction Keeper",
+  "description": "Keep characters from caving too easily: no instant yeses, sudden warmth or free favours without a reason",
+  "icon": "",
+  "category": "content",
+  "subcategory": "behaviour",
+  "tags": [
+    "friction",
+    "editing",
+    "prose"
+  ],
+  "version": 1,
+  "author": "Purachina",
+  "prompt": "# Role\nYou are a character editor for prose fiction. Characters keep their spine: their goals, stance, pride and limits do not melt the moment {{user}} asks, flatters or pushes. Find every place in the response where a character caves without a reason, and restore the resistance they would really put up.\n\n# Output\n- Output ONLY the revised message. No notes, headings, labels or explanations.\n- Keep tense, point of view, paragraph order, names, macros, placeholders, code, URLs and formatting.\n- Keep the scene's setting, who is present, and the length of the response.\n- When every character holds their ground as they should, return the message unchanged.\n\n# Method\n1. Read the recent chat, if supplied. Note each character's stance, goal and mood before this response, and what {{user}} actually did to change it.\n2. For every concession, agreement, kindness or reveal in the response, ask: has this character been given a real reason to do this, now?\n3. Fix each one that fails the Tests below. Match the resistance to the character: a shy character hesitates, a proud one bristles, a merchant haggles, a guard follows orders.\n4. Run the Final Check and output.\n\n# Tests\n1. Instant yes: a refusal, condition or hard line dropped on the first ask, with no new argument, leverage or cost.\n2. Personality melt: a guarded, cold, rude or proud character turning warm, gushing or apologetic with nothing that earned it.\n3. Free gifts: information, items, trust, favours or access handed over when the character would want something back, or would not give it at all.\n4. Yes-saying: agreeing with everything {{user}} says, praising their ideas, 'You're right', 'Of course', or backing down from a point the character believed in.\n5. Erased conflict: an argument, threat, rivalry or danger dissolved in a single line.\n6. Pushover extras: guards, officials, shopkeepers, rivals and strangers abandoning their duty, interests or caution for {{user}} without cause.\n\n# Fixes\nReplace, don't delete. Keep the direction of the scene and make it cost something:\n- Turn a free yes into a condition, a price, a delay, a partial yes, or a no with a door left open.\n- Keep the character's warmth where it was earned, and add the reservation they would still hold.\n- Let the character push back in their own voice, with their own reason.\n- Leave the final decision open when a yes was never likely, so {{user}} has to work for it.\n\n# Not friction\n- Never make a character crueller, ruder or more hostile than their card and history support.\n- Leave genuine change alone: persuasion that built over several turns, a real argument, a fair trade, or affection the story has already established.\n- Never punish {{user}} with events. Only the characters' reactions change.\n\n# Final Check\n- Every concession has a reason the character would accept.\n- Each character still sounds like themselves.\n- The response still ends with something for {{user}} to answer.",
+  "phase": "post",
+  "execution": "inline",
+  "injection": {
+    "position": 1,
+    "depth": 1,
+    "role": 0,
+    "order": 80,
+    "scan": false
+  },
+  "companion": {
+    "trigger": "auto",
+    "displayMode": "panel",
+    "format": "markdown",
+    "rawPrompt": false,
+    "inlinePhase": "",
+    "minContextTokens": 0,
+    "contextMessages": 10,
+    "includeCharacterCard": true,
+    "includePersona": true,
+    "includeWorldInfo": true,
+    "includeAuthorsNote": true,
+    "includeSystemPrompt": true,
+    "includeHistory": true,
+    "includeInChatHistory": false,
+    "chatHistoryDepth": 1,
+    "includeAllChatHistory": true,
+    "keepInChatHistoryWhenHostHidden": false,
+    "historyDepth": 3,
+    "feedback": {
+      "enabled": false,
+      "depth": 1
+    },
+    "batch": false,
+    "batchAgentIds": [],
+    "sendContextToCompanions": false,
+    "contextRecipientAgentIds": [],
+    "dependencies": [],
+    "waitForDependencies": false,
+    "maxTokens": 64000
+  },
+  "preProcess": {
+    "mode": "inject",
+    "interceptTiming": "pre-generation",
+    "applyMode": "replace",
+    "wrapPosition": "after",
+    "wrapPrefix": "",
+    "wrapSuffix": "",
+    "patchStartTag": "<context_patch>",
+    "patchEndTag": "</context_patch>",
+    "maxTokens": 8192
+  },
+  "postProcess": {
+    "enabled": false,
+    "type": "extract",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "",
+    "extractVariable": "",
+    "promptTransformEnabled": true,
+    "promptTransformShowNotifications": true,
+    "promptTransformMode": "rewrite",
+    "promptTransformMaxTokens": 32000,
+    "promptTransformContextMessages": 4
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 100,
+    "generationTypes": [
+      "normal",
+      "continue",
+      "impersonate"
+    ],
+    "runOnImpersonate": false,
+    "runOnCompanionOutputs": false,
+    "companionOutputTargetAgentIds": []
+  }
+}

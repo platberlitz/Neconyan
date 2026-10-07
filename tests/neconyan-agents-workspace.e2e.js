@@ -78,6 +78,83 @@ async function chooseEditorSection(page, section) {
 const WIDTHS = [1280, 1024, 997, 768, 390, 393, 320];
 
 for (const width of [1280, 393]) {
+    test.describe(`Reply rewrite settings at ${width}px`, () => {
+        test.use({ viewport: { width, height: width === 393 ? 852 : 900 }, isMobile: width === 393, hasTouch: width === 393 });
+        test('length and recent context survive quick settings, editor changes and reloads', async ({ page }, info) => {
+            await openAgents(page);
+            const skipTour = page.getByRole('region', { name: 'Neconyan interactive tutorial' }).getByRole('button', { name: 'Skip', exact: true });
+            if (await skipTour.isVisible()) {
+                await skipTour.click();
+                await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
+            }
+            const template = JSON.parse(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/length-trimmer.json', import.meta.url)));
+            const agent = { ...template, id: `rewrite-settings-${width}-${Date.now()}`, sourceTemplateId: template.id,
+                name: 'Reply rewrite settings check', settings: { ...template.settings, auditMarker: 'preserve' } };
+            const requestHeaders = await headers(page);
+            expect((await page.request.post('/api/in-chat-agents/save', { headers: requestHeaders, data: agent })).ok()).toBe(true);
+            try {
+                await openAgents(page);
+                await page.locator('#ica--search').fill(agent.name);
+                await page.locator('#ica--agentList .ica--btn-settings').click();
+                const quick = page.locator('.ica--quick-settings');
+                const length = quick.getByLabel('Target length', { exact: true });
+                const context = quick.getByLabel('Recent messages to read', { exact: true });
+                await expect(length).toHaveValue('About 300 to 450 words');
+                await expect(context).toHaveValue('0');
+                await length.fill('Two short paragraphs');
+                await context.fill('6');
+                for (const control of [length, context]) {
+                    await control.scrollIntoViewIfNeeded();
+                    const box = await control.boundingBox();
+                    expect(box.x).toBeGreaterThanOrEqual(0);
+                    expect(box.x + box.width).toBeLessThanOrEqual(width);
+                    expect(await control.evaluate(element => window.getComputedStyle(element).visibility)).toBe('visible');
+                }
+                await capture(page, info, 'rewrite-quick-settings');
+                await page.locator('dialog.popup:visible .popup-button-ok').click();
+                await expect(quick).toBeHidden();
+                await openAgents(page);
+                await page.locator('#ica--search').fill(agent.name);
+                await page.locator('#ica--agentList .ica--btn-edit').click();
+                const editor = page.locator('#ica--editor');
+                await chooseEditorSection(page, 'instructions');
+                await expect(editor.locator('#ica--editor-length-target')).toHaveValue('Two short paragraphs');
+                await editor.locator('#ica--editor-length-target').fill('');
+                await chooseEditorSection(page, 'reply');
+                const editorContext = editor.locator('#ica--editor-pp-promptContextMessages');
+                await expect(editorContext).toHaveValue('6');
+                await editorContext.fill('0');
+                await editorContext.evaluate(element => element.scrollIntoView({ block: 'center', behavior: 'instant' }));
+                const editorGeometry = await editorContext.evaluate(element => {
+                    const box = element.getBoundingClientRect();
+                    return { left: box.left, right: box.right, top: box.top, bottom: box.bottom,
+                        unobscured: document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2) === element };
+                });
+                expect(editorGeometry.left).toBeGreaterThanOrEqual(0);
+                expect(editorGeometry.right).toBeLessThanOrEqual(width);
+                expect(editorGeometry.top).toBeGreaterThanOrEqual(0);
+                expect(editorGeometry.bottom).toBeLessThanOrEqual(page.viewportSize().height);
+                expect(editorGeometry.unobscured).toBe(true);
+                await capture(page, info, 'rewrite-editor');
+                await page.locator('dialog.popup:visible .popup-button-ok').click();
+                await expect(editor).toBeHidden();
+                await openAgents(page);
+                await page.locator('#ica--search').fill(agent.name);
+                await page.locator('#ica--agentList .ica--btn-settings').click();
+                await expect(length).toHaveValue('About 300 to 450 words');
+                await expect(context).toHaveValue('0');
+                const response = await page.request.post('/api/settings/get', { headers: requestHeaders, data: {} });
+                const saved = (await response.json()).inChatAgents.find(item => item.id === agent.id);
+                expect(saved.settings.auditMarker).toBe('preserve');
+                expect(saved.enabled).toBe(false);
+            } finally {
+                await page.request.post('/api/in-chat-agents/delete', { headers: requestHeaders, data: { id: agent.id } });
+            }
+        });
+    });
+}
+
+for (const width of [1280, 393]) {
     test.describe(`Companion note clean-up at ${width}px`, () => {
         test.use({ viewport: { width, height: width === 393 ? 852 : 900 }, isMobile: width === 393, hasTouch: width === 393 });
         test('automatic clean-up is opt-in, configurable and saved without changing agents or notes', async ({ page }, info) => {

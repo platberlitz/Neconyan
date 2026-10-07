@@ -73,6 +73,24 @@ describe('in-chat agent scoped enabled state', () => {
         expect(globalThis.fetch.mock.calls[0][0]).toBe('/api/in-chat-agents/list');
     });
 
+    test('normalises how many recent messages a reply rewrite may read and the Length Trimmer target', async () => {
+        const store = await importStore();
+        const contextFor = value => {
+            store.loadAgents([{ id: 'rewrite', name: 'Rewrite', postProcess: { promptTransformContextMessages: value } }], { account: 'alice' });
+            return store.getAgentById('rewrite').postProcess.promptTransformContextMessages;
+        };
+
+        expect(store.createDefaultAgent().postProcess.promptTransformContextMessages).toBe(0);
+        expect(contextFor(undefined)).toBe(0);
+        expect(contextFor('6')).toBe(6);
+        expect(contextFor(3.9)).toBe(3);
+        expect(contextFor(-2)).toBe(0);
+        expect(contextFor(500)).toBe(store.MAX_PROMPT_TRANSFORM_CONTEXT_MESSAGES);
+        expect(store.getAgentLengthTarget({ settings: { lengthTarget: '  Under 150 words ' } })).toBe('Under 150 words');
+        expect(store.getAgentLengthTarget({ settings: { lengthTarget: '' } })).toBe(store.DEFAULT_LENGTH_TARGET);
+        expect(store.getAgentLengthTarget(null)).toBe(store.DEFAULT_LENGTH_TARGET);
+    });
+
     test('created-agent readback refuses an account switch during the request', async () => {
         const store = await importStore();
         store.loadAgents([], { account: 'alice' });

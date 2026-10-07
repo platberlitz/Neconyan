@@ -1,0 +1,95 @@
+{
+  "id": "tpl-user-agency-guard",
+  "name": "User Agency Guard",
+  "description": "Remove anything the reply decides for your character: their words, actions, thoughts or feelings",
+  "icon": "",
+  "category": "content",
+  "subcategory": "pov",
+  "tags": [
+    "agency",
+    "editing",
+    "prose"
+  ],
+  "version": 1,
+  "author": "Purachina",
+  "prompt": "# Role\nYou are an agency editor for interactive prose fiction. {{user}} is played by a real person, and only that person decides what {{user}} says, does, thinks and feels. Remove every place where the response decides it for them, and keep the scene moving.\n\n# Output\n- Output ONLY the revised message. No notes, headings, labels or explanations.\n- Keep tense, point of view, paragraph order, names, macros, placeholders, code, URLs and formatting.\n- Keep every other character's words, actions and the events of the scene.\n- When the response never decides anything for {{user}}, return it unchanged.\n\n# Method\n1. Read {{user}}'s latest message in the recent chat, if supplied. Everything {{user}} actually wrote there is theirs and already happened.\n2. Find every sentence where the response writes {{user}}'s part (see Tests).\n3. Replace each one so the moment stays alive without deciding for {{user}}.\n4. End the response on a moment that hands the turn back to {{user}}.\n5. Run the Final Check and output.\n\n# Tests\n1. Dialogue: any line spoken by {{user}}, quoted or reported ('{{user}} agrees', 'you tell her yes').\n2. Actions: anything {{user}} does that they did not write themselves: moving, touching, taking, answering, following, leaving.\n3. Inner life: {{user}}'s thoughts, feelings, decisions, memories, intentions or reactions stated as fact ('you feel your heart race', '{{user}} realises she is right', 'a smile tugs at your lips').\n4. Consent and outcomes: {{user}} accepting, refusing, agreeing or being persuaded; a time skip that carries {{user}} through choices.\n5. Embellished echoes: retelling {{user}}'s own action with new details, motives or results they did not write.\n\n# Fixes\nReplace, don't delete. Keep what the sentence did for the scene and change who decides:\n- Turn {{user}}'s action into another character's offer, expectation or reaction: '{{user}} takes the cup' becomes 'She holds the cup out, waiting.'\n- Turn {{user}}'s feelings into what others can see or guess: 'you feel nervous' becomes 'He watches you, as if he expects you to bolt.'\n- Turn {{user}}'s dialogue into the question or pause that invites it.\n- Cut a time skip back to the last moment before {{user}} would act.\n- Brief echoes of what {{user}} actually wrote are fine. Keep them.\n- Outside forces may still act on {{user}}: weather, a shove, a sound, a hand on the shoulder. The response describes the force, never {{user}}'s response to it.\n\n# Final Check\n- {{user}} says, does, thinks and feels nothing that their player did not write.\n- Every other character's lines and the scene's events are intact.\n- The response ends with room for {{user}} to act.",
+  "phase": "post",
+  "execution": "inline",
+  "injection": {
+    "position": 1,
+    "depth": 1,
+    "role": 0,
+    "order": 60,
+    "scan": false
+  },
+  "companion": {
+    "trigger": "auto",
+    "displayMode": "panel",
+    "format": "markdown",
+    "rawPrompt": false,
+    "inlinePhase": "",
+    "minContextTokens": 0,
+    "contextMessages": 10,
+    "includeCharacterCard": true,
+    "includePersona": true,
+    "includeWorldInfo": true,
+    "includeAuthorsNote": true,
+    "includeSystemPrompt": true,
+    "includeHistory": true,
+    "includeInChatHistory": false,
+    "chatHistoryDepth": 1,
+    "includeAllChatHistory": true,
+    "keepInChatHistoryWhenHostHidden": false,
+    "historyDepth": 3,
+    "feedback": {
+      "enabled": false,
+      "depth": 1
+    },
+    "batch": false,
+    "batchAgentIds": [],
+    "sendContextToCompanions": false,
+    "contextRecipientAgentIds": [],
+    "dependencies": [],
+    "waitForDependencies": false,
+    "maxTokens": 64000
+  },
+  "preProcess": {
+    "mode": "inject",
+    "interceptTiming": "pre-generation",
+    "applyMode": "replace",
+    "wrapPosition": "after",
+    "wrapPrefix": "",
+    "wrapSuffix": "",
+    "patchStartTag": "<context_patch>",
+    "patchEndTag": "</context_patch>",
+    "maxTokens": 8192
+  },
+  "postProcess": {
+    "enabled": false,
+    "type": "extract",
+    "regexFind": "",
+    "regexReplace": "",
+    "regexFlags": "g",
+    "appendText": "",
+    "extractPattern": "",
+    "extractVariable": "",
+    "promptTransformEnabled": true,
+    "promptTransformShowNotifications": true,
+    "promptTransformMode": "rewrite",
+    "promptTransformMaxTokens": 32000,
+    "promptTransformContextMessages": 2
+  },
+  "enabled": false,
+  "conditions": {
+    "triggerKeywords": [],
+    "triggerProbability": 100,
+    "generationTypes": [
+      "normal",
+      "continue",
+      "impersonate"
+    ],
+    "runOnImpersonate": false,
+    "runOnCompanionOutputs": false,
+    "companionOutputTargetAgentIds": []
+  }
+}

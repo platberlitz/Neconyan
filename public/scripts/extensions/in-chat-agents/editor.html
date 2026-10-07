@@ -113,6 +113,11 @@
                 <input type="text" id="ica--editor-modelOverride" class="text_pole" placeholder="Leave empty to use profile default" />
             </label>
         </div>
+        <div class="ica--editor-row" id="ica--length-target-row" style="display:none">
+            <label>Target length <small>Say it in plain words, such as 'About 300 words', 'Two short paragraphs' or 'Under 150 words'.</small>
+                <input type="text" id="ica--editor-length-target" class="text_pole" maxlength="200" placeholder="About 300 to 450 words" />
+            </label>
+        </div>
         <textarea id="ica--editor-prompt" class="text_pole textarea_compact" rows="8" aria-label="Agent instructions" placeholder="Write your agent prompt here. Supports macros: &#123;&#123;char&#125;&#125;, &#123;&#123;user&#125;&#125;, &#123;&#123;random::a::b::c&#125;&#125;, etc."></textarea>
         </div>
     </section>
@@ -462,12 +467,15 @@
                 <label class="flex1">Max Tokens
                     <input type="number" id="ica--editor-pp-promptMaxTokens" class="text_pole" min="16" max="64000" value="8192" />
                 </label>
+                <label class="flex1" title="How many earlier chat messages this pass can read. They are context only and are never rewritten.">Recent messages
+                    <input type="number" id="ica--editor-pp-promptContextMessages" class="text_pole" min="0" max="20" step="1" value="0" />
+                </label>
             </div>
             <label class="checkbox_label">
                 <input type="checkbox" id="ica--editor-pp-promptShowNotifications" />
                 <span>Show toast notifications while this prompt pass runs</span>
             </label>
-            <div class="ica--regex-note">The prompt pass runs after the main reply using this agent's prompt and connection profile. In <b>rewrite</b> mode it replaces the message. In <b>append</b> mode it only adds newly generated text after the original reply. Useful macros inside the prompt include <code>&#123;&#123;currentMessage&#125;&#125;</code>, <code>&#123;&#123;response&#125;&#125;</code>, and <code>&#123;&#123;original&#125;&#125;</code>.</div>
+            <div class="ica--regex-note">The prompt pass runs after the main reply using this agent's prompt and connection profile. In <b>rewrite</b> mode it replaces the message. In <b>append</b> mode it only adds newly generated text after the original reply. <b>Recent messages</b> lets the pass read that many earlier chat messages as context, which helps it spot repeats and knowledge slips; 0 sends the reply alone. Useful macros inside the prompt include <code>&#123;&#123;currentMessage&#125;&#125;</code>, <code>&#123;&#123;response&#125;&#125;</code>, and <code>&#123;&#123;original&#125;&#125;</code>.</div>
         </div>
         <label class="checkbox_label">
             <input type="checkbox" id="ica--editor-pp-runOnImpersonate" />

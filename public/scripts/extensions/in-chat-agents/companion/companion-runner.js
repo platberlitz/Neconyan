@@ -2520,6 +2520,7 @@ export async function applyAgentPostPassesToCompanionResult(transformerAgentId, 
     const passResult = await runSingleAgentPostPassesOnText(transformer, result.content, COMPANION_OUTPUT_GENERATION_TYPE, {
         characterOverride: characterName,
         messageContext: characterName ? { name: characterName } : {},
+        recentChatEndIndex: Number(messageIndex) + 1,
         runtimeAgents: [getAgentById(companionAgentId)],
         cancelRevision,
     });
