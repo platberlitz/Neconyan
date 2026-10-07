@@ -365,6 +365,7 @@ for (const width of [393, 1280, 320]) {
             const block = page.locator('#UI-presets-block');
             if (!await block.isVisible()) await page.locator('#AppearanceSection > .inline-drawer-toggle').click();
             if (phone) await applyIOSOnlyCss(page);
+            await expect(page.locator('#AppearanceSection hr')).toHaveCount(0);
             await block.scrollIntoViewIfNeeded();
             await page.screenshot({ path: `${screenshotDir}/theme-alignment-${width}.png` });
             const geometry = await block.evaluate(element => {
