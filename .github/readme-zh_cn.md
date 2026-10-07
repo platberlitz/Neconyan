@@ -1,5 +1,7 @@
 # Neconyan
 
+[Neconyan 官方使用手册（英文）](https://platberlitz.github.io/neconyan-docs/)
+
 <img src="../public/img/neconyan-pixel-cat.webp" width="180" alt="Neconyan">
 
 一个适合角色聊天、创作故事和探索模型的温馨小窝。

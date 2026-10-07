@@ -1,5 +1,7 @@
 # Scratchpad
 
+For usage questions, start with [Scratchpad in the official handbook](https://platberlitz.github.io/neconyan-docs/helpers/scratchpad/).
+
 Scratchpad is a side conversation with Miso, Taro or Nori. Ask about anything, compare ideas, or use the chat you have open to talk through a scene, check continuity or ask for lorebook entries. Nothing you write there goes into the story, and the characters in the chat never see it.
 
 All three assistants can do the same things in Scratchpad. They keep their own personalities: Miso is the cheerful guide, Taro the careful troubleshooter and Nori the playful writing partner. Each uses the Male, Female or Neutral version you picked for that assistant elsewhere in Neconyan.

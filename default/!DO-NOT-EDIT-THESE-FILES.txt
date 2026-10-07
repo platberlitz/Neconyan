@@ -10,4 +10,4 @@ etc.
 
 Any questions? You're always welcome at our official documentation website:
 
-https://docs.sillytavern.app/
+https://platberlitz.github.io/neconyan-docs/

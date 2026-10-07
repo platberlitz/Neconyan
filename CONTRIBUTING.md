@@ -2,6 +2,8 @@
 
 Thanks for wanting to help. Neconyan stays small on purpose, and so should your pull request.
 
+For questions about using Neconyan, start with the [official handbook](https://platberlitz.github.io/neconyan-docs/). The [extension authoring guide](https://platberlitz.github.io/neconyan-docs/extensions/) explains how to build an extension. Report missing or unclear documentation in the [handbook repository](https://github.com/platberlitz/neconyan-docs/issues).
+
 ## Keep it simple
 
 - One change per pull request. A bug fix is a bug fix; it doesn't bring a refactor along.

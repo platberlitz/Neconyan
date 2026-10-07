@@ -4,6 +4,11 @@ description: Report something that's not working the intended way. Support reque
 title: '[BUG] <title>'
 labels: ['🐛 Bug']
 body:
+  - type: markdown
+    attributes:
+      value: |
+        For questions about using Neconyan, start with the [official handbook](https://platberlitz.github.io/neconyan-docs/).
+        If something isn't working, check the [troubleshooting guide](https://platberlitz.github.io/neconyan-docs/help/troubleshooting/), then describe the problem below if it persists.
   - type: dropdown
     id: environment
     attributes:
@@ -79,9 +84,9 @@ body:
           required: true
         - label: I have checked that this [issue hasn't already been raised](https://github.com/platberlitz/Neconyan/issues?q=is%3Aissue)
           required: true
-        - label: I have checked the [docs](https://docs.sillytavern.app/) ![important](https://img.shields.io/badge/Important!-F6094E)
+        - label: I have checked the [Neconyan handbook](https://platberlitz.github.io/neconyan-docs/) and its [troubleshooting guide](https://platberlitz.github.io/neconyan-docs/help/troubleshooting/)
           required: true
-        - label: I confirm that my issue is not related to third-party content, unofficial extension or patch. If in doubt, check with a new [user account](https://docs.sillytavern.app/administration/multi-user/) and with extensions disabled
+        - label: I confirm that my issue is not related to third-party content, an unofficial extension or a patch. If in doubt, follow the [troubleshooting guide](https://platberlitz.github.io/neconyan-docs/help/troubleshooting/) and check with extensions disabled
           required: true
 
   - type: markdown

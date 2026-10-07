@@ -1,5 +1,7 @@
 # Neconyan's included tools
 
+For usage questions, start with [Included tools in the official handbook](https://platberlitz.github.io/neconyan-docs/helpers/tools/). Original project credits are listed below.
+
 Story Mode, Meower and the tools below ship with Neconyan. Open **Extensions → Manage extensions** to see their versions, authors and licences, or to turn a feature off. Their code updates with Neconyan. Custom extensions can still be installed and managed separately.
 
 ## Find the right paw for the job

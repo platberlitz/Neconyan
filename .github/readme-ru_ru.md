@@ -1,5 +1,7 @@
 # Neconyan
 
+[Официальное руководство Neconyan (на английском)](https://platberlitz.github.io/neconyan-docs/)
+
 <img src="../public/img/neconyan-pixel-cat.webp" width="180" alt="Neconyan">
 
 Уютное место для бесед с персонажами, историй и экспериментов с моделями.

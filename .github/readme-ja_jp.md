@@ -1,5 +1,7 @@
 # Neconyan
 
+[Neconyan 公式ハンドブック（英語）](https://platberlitz.github.io/neconyan-docs/)
+
 <img src="../public/img/neconyan-pixel-cat.webp" width="180" alt="Neconyan">
 
 キャラクターとの会話や物語づくり、モデルの実験を楽しむための居場所です。
