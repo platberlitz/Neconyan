@@ -16,7 +16,7 @@
             background-color: #141514;
         }
     </style>
-    <link rel="preload" as="style" href="style.css?v=20261007-compact-tour1">
+    <link rel="preload" as="style" href="style.css?v=20261007-char-editor1">
     <script type="importmap">
         { "imports": { "#macro-vendor": "./lib.js" } }
     </script>
@@ -41,19 +41,19 @@
     <link rel="icon" type="image/png" sizes="192x192" href="img/neconyan-icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="img/neconyan-icon-512.png">
     <link rel="apple-touch-icon" sizes="180x180" href="img/neconyan-icon-180.png" />
-    <link rel="stylesheet" type="text/css" href="style.css?v=20261007-compact-tour1">
+    <link rel="stylesheet" type="text/css" href="style.css?v=20261007-char-editor1">
     <link rel="stylesheet" type="text/css" href="css/st-tailwind.css">
     <link rel="stylesheet" type="text/css" href="css/toggle-dependent.css">
     <link rel="stylesheet" type="text/css" href="css/select2-overrides.css?v=20260609a">
     <link rel="stylesheet" type="text/css" href="css/mobile-styles.css?v=20260916p" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-theme.css?v=20261007-compact-tour1">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-paper-theme.css?v=20261007-compact-tour1" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-tabs.css?v=20261007-compact-tour1">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-mobile-shell.css?v=20261007-compact-tour1" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan.css?v=20261007-compact-tour1">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-home.css?v=20261007-compact-tour1">
-    <link id="neconyan-calico-stylesheet" rel="stylesheet" type="text/css" href="css/neconyan-calico.css?v=20261007-compact-tour1">
-    <link href="css/neconyan-menus.css?v=20261007-compact-tour1" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-theme.css?v=20261007-char-editor1">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-paper-theme.css?v=20261007-char-editor1" media="(max-width: 768px)">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-tabs.css?v=20261007-char-editor1">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-mobile-shell.css?v=20261007-char-editor1" media="(max-width: 768px)">
+    <link rel="stylesheet" type="text/css" href="css/neconyan.css?v=20261007-char-editor1">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-home.css?v=20261007-char-editor1">
+    <link id="neconyan-calico-stylesheet" rel="stylesheet" type="text/css" href="css/neconyan-calico.css?v=20261007-char-editor1">
+    <link href="css/neconyan-menus.css?v=20261007-char-editor1" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <link href="css/neconyan-help.css?v=20260929b" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <link href="css/neconyan-home-compact.css?v=20261003g" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <script>
@@ -63,7 +63,7 @@
                 if (['kittyless', 'windows-aero', 'windows-xp', 'windows-98', 'clean-minimal', 'macos-minimal', 'cozy-warm', 'hypr-glow', 'slate-flat'].indexOf(shellStyle) !== -1) {
                     var link = document.createElement('link');
                     link.rel = 'stylesheet';
-                    link.href = 'css/shell-styles/' + shellStyle + '.css?v=20261007-compact-tour1';
+                    link.href = 'css/shell-styles/' + shellStyle + '.css?v=20261007-char-editor1';
                     link.setAttribute('data-sb-shell-style', shellStyle);
                     document.documentElement.setAttribute('data-sb-theme', shellStyle);
                     document.head.appendChild(link);
@@ -71,7 +71,7 @@
                 if (shellStyle === 'kittyless' || localStorage.getItem('sb-kittyless') === 'true') {
                     var catless = document.createElement('link');
                     catless.rel = 'stylesheet';
-                    catless.href = 'css/neconyan-kittyless.css?v=20261007-compact-tour1';
+                    catless.href = 'css/neconyan-kittyless.css?v=20261007-char-editor1';
                     catless.setAttribute('data-sb-kittyless', 'true');
                     document.documentElement.setAttribute('data-sb-kittyless', 'true');
                     document.head.appendChild(catless);
@@ -6846,7 +6846,7 @@
                     <div id="sb_character_world_info_panel" class="sb-character-world-info-panel" role="tabpanel" aria-labelledby="sb_character_tab_world_info" aria-hidden="true" hidden></div>
                     <div name="Solo Char Create/Edit Panel" id="rm_ch_create_block" class="right_menu flex-container flexFlowColumn" style="display: none;">
                         <form id="form_create" action="javascript:void(null);" method="post" enctype="multipart/form-data">
-                            <div id="spoiler_free_desc" class="flex-container flexFlowColumn flexNoGap sb-creator-notes-compact sb-character-creator-notes-preview">
+                            <div id="spoiler_free_desc" class="flex-container flexFlowColumn sb-creator-notes-compact sb-character-creator-notes-preview">
                                 <div id="creators_notes_div" class="title_restorable flexGap5 wide100p sb-character-creator-notes-preview-title">
                                     <span class="flex1" data-i18n="Creator's Notes">Creator's Notes</span>
                                     <!-- Neconyan: this sits beside the rendered preview, so it opens the formatted notes rather than the raw textarea value; the editor's own .editor_maximize in Char Info still expands the source. -->
@@ -7091,22 +7091,13 @@
                                 </section>
                                 <section id="sb_character_editor_panel_greetings" class="sb-character-editor-panel" role="tabpanel" aria-labelledby="sb_character_editor_tab_greetings" aria-hidden="true" data-sb-character-editor-panel="greetings" hidden>
                                     <div id="firstMessageWrapper" class="flex-container flexFlowColumn flex1 greetings-editor-shell">
-                                        <div id="first_message_div" class="title_restorable">
-                                            <div class="flex-container alignitemscenter flex1">
-                                                <span data-i18n="Greetings" class="mdhotkey_location">Greetings</span>
+                                        <div class="character-greetings-primary sb-character-editor-field-box">
+                                            <div class="character-greeting-label-row">
+                                                <span data-i18n="First message" class="mdhotkey_location">First message</span>
                                                 <i class="editor_maximize fa-solid fa-maximize right_menu_button" data-for="firstmessage_textarea" title="Expand the editor" data-i18n="[title]Expand the editor"></i>
                                                 <a href="https://docs.sillytavern.app/usage/core-concepts/characterdesign/#first-message" class="notes-link" target="_blank">
                                                     <span class="fa-solid fa-circle-question note-link-span"></span>
                                                 </a>
-                                            </div>
-                                        </div>
-                                        <small class="character-greetings-summary">
-                                            <span data-i18n="First message">First message</span>
-                                            starts every new chat. Alternate greetings appear as extra opening swipes.
-                                        </small>
-                                        <div class="character-greetings-primary sb-character-editor-field-box">
-                                            <div class="character-greeting-label-row">
-                                                <span data-i18n="First message">First message</span>
                                             </div>
                                         <textarea id="firstmessage_textarea" class="text_pole mdHotkeys" data-macros data-i18n="[placeholder]This will be the first message from the character that starts every chat." placeholder="This will be the first message from the character that starts every chat." name="first_mes" placeholder=""></textarea>
                                             <div class="extension_token_counter">
