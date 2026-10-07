@@ -176,6 +176,8 @@ for (const phone of [false, true]) {
             await page.locator('[data-neconyan-primary-nav] [data-neconyan-route="characters"] > span').first().click();
             await expect(page.locator('#character_search_bar')).toBeVisible();
             expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(phone ? 394 : 1281);
+            // A late settings load can still be in flight when the page closes.
+            await page.unrouteAll({ behavior: 'ignoreErrors' });
         });
     });
 }
