@@ -4877,12 +4877,6 @@ input[type='range']::-moz-range-thumb {
     border: 1px solid color-mix(in srgb, var(--sb-shell-border) 74%, transparent);
 }
 
-#user-settings-block [name="MiscellaneousToggles"] {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
 #user-settings-block {
     display: flex;
     flex-direction: column;
@@ -5045,42 +5039,6 @@ input[type='range']::-moz-range-thumb {
     min-width: 0;
 }
 
-#CharacterHandlingToggles,
-#MiscellaneousToggles,
-#STscriptToggles {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sb-row-gap);
-}
-
-#CharacterHandlingToggles > .flex-container.alignitemscenter,
-#STscriptToggles > div {
-    gap: var(--sb-row-gap);
-    min-width: 0;
-}
-
-#CharacterHandlingToggles > .flex-container.alignitemscenter {
-    flex-wrap: wrap;
-    align-items: center;
-    padding: var(--sb-settings-card-padding);
-    border-radius: var(--sb-radius-md);
-    background: color-mix(in srgb, var(--SmartThemeBodyColor) 4%, transparent);
-    border: 1px solid color-mix(in srgb, var(--sb-shell-border) 70%, transparent);
-}
-
-#CharacterHandlingToggles > .flex-container.alignitemscenter > label {
-    flex: 0 1 180px;
-    min-width: min(180px, 100%);
-    margin: 0;
-}
-
-#CharacterHandlingToggles > .flex-container.alignitemscenter > select {
-    flex: 1 1 190px;
-}
-
-#CharacterHandlingToggles .checkbox_label,
-#MiscellaneousToggles .checkbox_label,
-#STscriptToggles .checkbox_label,
 #tts_container .checkbox_label {
     padding: var(--sb-settings-card-padding);
     border-radius: var(--sb-radius-md);
@@ -5089,13 +5047,8 @@ input[type='range']::-moz-range-thumb {
     align-items: center;
 }
 
-#STscriptToggles .checkbox_label > span,
 #tts_container .checkbox_label > span {
     flex: 1 1 auto;
-}
-
-#STscriptToggles .checkbox_label .notes-link {
-    margin-left: auto;
 }
 
 #tts_container h4 {
@@ -5388,32 +5341,17 @@ input[type='range']::-moz-range-thumb {
     border: 1px solid color-mix(in srgb, var(--sb-shell-border) 74%, transparent);
 }
 
-#ChatMessageHandlingSection > .inline-drawer-content > .flex-container:first-child {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 14px;
-}
-
-#ChatMessageHandlingSection > .inline-drawer-content > .flex-container:first-child > .alignitemscenter.flex-container.flexFlowColumn {
-    min-width: min(100%, 210px);
-}
-
-#ChatMessageHandlingSection > .inline-drawer-content > .flex-container:first-child > .alignitemscenter.flex-container.flexFlowColumn,
 #AppearanceLayoutSection [name="FontBlurChatWidthBlock"] > .alignitemscenter.flex-container.flexFlowColumn {
     gap: var(--sb-row-gap);
     align-items: stretch;
 }
 
-#ChatMessageHandlingSection .range-block,
 #AppearanceLayoutSection .range-block {
     gap: 8px 10px;
     margin-bottom: var(--sb-row-gap);
 }
 
-#ChatMessageHandlingSection .range-block-title,
-#AppearanceLayoutSection .range-block-title,
-#CharacterHandlingToggles h4,
-#STscriptToggles h4 {
+#AppearanceLayoutSection .range-block-title {
     display: flex;
     align-items: center;
     justify-content: center;

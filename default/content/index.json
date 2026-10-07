@@ -624,6 +624,22 @@
         "type": "moving_ui"
     },
     {
+        "filename": "presets/moving-ui/Pop-outs on the Right.json",
+        "type": "moving_ui"
+    },
+    {
+        "filename": "presets/moving-ui/Writing Desk.json",
+        "type": "moving_ui"
+    },
+    {
+        "filename": "presets/moving-ui/Centred Card.json",
+        "type": "moving_ui"
+    },
+    {
+        "filename": "presets/moving-ui/Compact Corner.json",
+        "type": "moving_ui"
+    },
+    {
         "filename": "presets/quick-replies/Default.json",
         "type": "quick_replies"
     },

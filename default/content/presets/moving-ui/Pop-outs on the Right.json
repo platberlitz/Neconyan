@@ -1,0 +1,32 @@
+{
+    "name": "Pop-outs on the Right",
+    "movingUIState": {
+        "floatingPrompt": {
+            "top": "70px",
+            "right": "16px",
+            "bottom": "auto",
+            "left": "auto",
+            "margin": "unset",
+            "width": "min(420px, 34vw)",
+            "height": "min(640px, calc(100vh - 96px))"
+        },
+        "cfgConfig": {
+            "top": "70px",
+            "right": "16px",
+            "bottom": "auto",
+            "left": "auto",
+            "margin": "unset",
+            "width": "min(420px, 34vw)",
+            "height": "min(640px, calc(100vh - 96px))"
+        },
+        "logprobsViewer": {
+            "top": "auto",
+            "right": "calc(min(420px, 34vw) + 28px)",
+            "bottom": "16px",
+            "left": "auto",
+            "margin": "unset",
+            "width": "min(360px, 28vw)",
+            "height": "min(360px, 40vh)"
+        }
+    }
+}

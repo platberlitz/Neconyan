@@ -1,0 +1,32 @@
+{
+    "name": "Writing Desk",
+    "movingUIState": {
+        "floatingPrompt": {
+            "top": "62px",
+            "right": "12px",
+            "bottom": "auto",
+            "left": "auto",
+            "margin": "unset",
+            "width": "min(520px, 40vw)",
+            "height": "calc(100vh - 74px)"
+        },
+        "cfgConfig": {
+            "top": "62px",
+            "right": "12px",
+            "bottom": "auto",
+            "left": "auto",
+            "margin": "unset",
+            "width": "min(520px, 40vw)",
+            "height": "calc(100vh - 74px)"
+        },
+        "logprobsViewer": {
+            "top": "auto",
+            "right": "calc(min(520px, 40vw) + 24px)",
+            "bottom": "12px",
+            "left": "auto",
+            "margin": "unset",
+            "width": "min(360px, 28vw)",
+            "height": "min(360px, 40vh)"
+        }
+    }
+}

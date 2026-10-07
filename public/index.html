@@ -16,7 +16,7 @@
             background-color: #141514;
         }
     </style>
-    <link rel="preload" as="style" href="style.css?v=20261007-visual-toggles">
+    <link rel="preload" as="style" href="style.css?v=20261007-chat-writing">
     <script type="importmap">
         { "imports": { "#macro-vendor": "./lib.js" } }
     </script>
@@ -41,22 +41,23 @@
     <link rel="icon" type="image/png" sizes="192x192" href="img/neconyan-icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="img/neconyan-icon-512.png">
     <link rel="apple-touch-icon" sizes="180x180" href="img/neconyan-icon-180.png" />
-    <link rel="stylesheet" type="text/css" href="style.css?v=20261007-visual-toggles">
+    <link rel="stylesheet" type="text/css" href="style.css?v=20261007-chat-writing">
     <link rel="stylesheet" type="text/css" href="css/st-tailwind.css">
     <link rel="stylesheet" type="text/css" href="css/toggle-dependent.css">
     <link rel="stylesheet" type="text/css" href="css/select2-overrides.css?v=20260609a">
-    <link rel="stylesheet" type="text/css" href="css/mobile-styles.css?v=20260916p" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-theme.css?v=20261007-visual-toggles">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-paper-theme.css?v=20261007-visual-toggles" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-tabs.css?v=20261007-visual-toggles">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-mobile-shell.css?v=20261007-visual-toggles" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan.css?v=20261007-visual-toggles">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-home.css?v=20261007-visual-toggles">
-    <link id="neconyan-calico-stylesheet" rel="stylesheet" type="text/css" href="css/neconyan-calico.css?v=20261007-visual-toggles">
-    <link href="css/neconyan-menus.css?v=20261007-visual-toggles" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
+    <link rel="stylesheet" type="text/css" href="css/mobile-styles.css?v=20261007-chat-writing" media="(max-width: 768px)">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-theme.css?v=20261007-chat-writing">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-paper-theme.css?v=20261007-chat-writing" media="(max-width: 768px)">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-tabs.css?v=20261007-chat-writing">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-mobile-shell.css?v=20261007-chat-writing" media="(max-width: 768px)">
+    <link rel="stylesheet" type="text/css" href="css/neconyan.css?v=20261007-chat-writing">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-home.css?v=20261007-chat-writing">
+    <link id="neconyan-calico-stylesheet" rel="stylesheet" type="text/css" href="css/neconyan-calico.css?v=20261007-chat-writing">
+    <link href="css/neconyan-menus.css?v=20261007-chat-writing" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <link href="css/neconyan-help.css?v=20260929b" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <link href="css/neconyan-home-compact.css?v=20261003g" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
-    <link href="css/neconyan-visual-toggles.css?v=20261007-visual-toggles" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
+    <link href="css/neconyan-visual-toggles.css?v=20261007-chat-writing" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
+    <link href="css/neconyan-chat-writing.css?v=20261007-chat-writing" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <script>
         (function () {
             try {
@@ -64,7 +65,7 @@
                 if (['kittyless', 'windows-aero', 'windows-xp', 'windows-98', 'clean-minimal', 'macos-minimal', 'cozy-warm', 'hypr-glow', 'slate-flat'].indexOf(shellStyle) !== -1) {
                     var link = document.createElement('link');
                     link.rel = 'stylesheet';
-                    link.href = 'css/shell-styles/' + shellStyle + '.css?v=20261007-visual-toggles';
+                    link.href = 'css/shell-styles/' + shellStyle + '.css?v=20261007-chat-writing';
                     link.setAttribute('data-sb-shell-style', shellStyle);
                     document.documentElement.setAttribute('data-sb-theme', shellStyle);
                     document.head.appendChild(link);
@@ -72,7 +73,7 @@
                 if (shellStyle === 'kittyless' || localStorage.getItem('sb-kittyless') === 'true') {
                     var catless = document.createElement('link');
                     catless.rel = 'stylesheet';
-                    catless.href = 'css/neconyan-kittyless.css?v=20261007-visual-toggles';
+                    catless.href = 'css/neconyan-kittyless.css?v=20261007-chat-writing';
                     catless.setAttribute('data-sb-kittyless', 'true');
                     document.documentElement.setAttribute('data-sb-kittyless', 'true');
                     document.head.appendChild(catless);
@@ -5648,104 +5649,643 @@
                         </div><!-- end Appearance inline-drawer -->
                     </div>
                     <div name="UserSettingsSecondColumn" id="UI-Customization" class="flex-container flexFlowColumn wide100p flexNoGap flex1">
-                        <div id="ChatCharactersSection" class="inline-drawer wide100p flexFlowColumn sb-settings-subdrawer">
-                            <div class="inline-drawer-toggle inline-drawer-header userSettingsInnerExpandable">
-                                <b><i class="fa-solid fa-comments"></i> <span data-i18n="Chat & Characters">Chat & Characters</span></b>
+                        <div id="ChatCharactersSection" class="inline-drawer wide100p flexFlowColumn sb-settings-subdrawer nn-settings-cards">
+                            <div class="inline-drawer-toggle inline-drawer-header userSettingsInnerExpandable" title="Sending, replies, the chat window and messages.">
+                                <b><i class="fa-solid fa-comments"></i> <span>Chat &amp; messages</span></b>
                                 <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
                             </div>
-                            <div class="inline-drawer-content flex-container flexFlowColumn sb-settings-subdrawer-body" style="display:none">
-                        <div name="CharacterHandlingToggles">
-                            <h4 data-i18n="Character Handling">
-                                Character Handling
-                            </h4>
-                            <div class="flex-container alignitemscenter" title="If set in the advanced character definitions, this field will be displayed in the characters list." data-i18n="[title]If set in the advanced character definitions, this field will be displayed in the characters list.">
-                                <label for="aux_field"><small data-i18n="Char List Subheader">Char List Subheader</small></label>
-                                <select id="aux_field" class="widthNatural flex1 margin0">
-                                    <option data-i18n="Character Version" value="character_version">Character Version</option>
-                                    <option data-i18n="Created by" value="creator">Created by</option>
-                                </select>
+                            <div class="inline-drawer-content sb-settings-subdrawer-body" style="display:none">
+                                <p class="nn-vt-intro">How sending, replies and messages behave in every chat.</p>
+                                <div class="nn-vt">
+                                    <section class="nn-vt-group" aria-labelledby="nn-cw-sending-title">
+                                        <div class="nn-vt-group-head">
+                                            <i class="fa-solid fa-paper-plane nn-vt-group-icon" aria-hidden="true"></i>
+                                            <div class="nn-vt-group-copy">
+                                                <h4 id="nn-cw-sending-title" class="nn-vt-group-title">Sending</h4>
+                                                <p class="nn-vt-group-hint">What Enter and the Send button do.</p>
+                                            </div>
+                                        </div>
+                                        <div class="nn-cw-field">
+                                            <label for="send_on_enter" class="nn-vt-text"><small class="nn-vt-name" data-i18n="Send on Enter">Send with Enter</small><span class="nn-vt-desc">Automatic sends with Enter on a computer and adds a new line on a phone.</span></label>
+                                            <div class="nn-cw-control">
+                                                <select id="send_on_enter" class="text_pole">
+                                                    <option value="-1" data-i18n="Disabled">Disabled</option>
+                                                    <option value="0" data-i18n="Automatic (PC)">Automatic (PC)</option>
+                                                    <option value="1" data-i18n="Enabled">Enabled</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <label for="continue_on_send" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Press Send to continue">Send continues the reply</small><span class="nn-vt-desc">Pressing Send with an empty box continues the last reply instead.</span></span>
+                                            <input id="continue_on_send" type="checkbox" />
+                                        </label>
+                                        <label for="quick_continue" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Quick 'Continue' button">Continue button</small><span class="nn-vt-desc">Adds a button beside Send that continues the last reply.</span></span>
+                                            <input id="quick_continue" type="checkbox" />
+                                        </label>
+                                        <label for="quick_impersonate" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Quick 'Impersonate' button">Impersonate button</small><span class="nn-vt-desc">Adds a button beside Send that writes your next message for you.</span></span>
+                                            <input id="quick_impersonate" type="checkbox" />
+                                        </label>
+                                        <label for="restore_user_input" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Restore User Input">Keep unsent text</small><span class="nn-vt-desc">Brings back what you were typing after the page reloads.</span></span>
+                                            <input id="restore_user_input" type="checkbox" />
+                                        </label>
+                                        <label for="enable_auto_select_input" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Auto-select Input Text">Select text in pop-up boxes</small><span class="nn-vt-desc">Clicking into a pop-up text box selects its text, so typing replaces it.</span></span>
+                                            <input id="enable_auto_select_input" type="checkbox" />
+                                        </label>
+                                        <label for="enable_md_hotkeys" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Markdown Hotkeys">Markdown shortcuts</small><span class="nn-vt-desc">Ctrl+B, Ctrl+I and similar keys add bold, italics and more as you type. Type /help hotkeys for the full list.</span></span>
+                                            <input id="enable_md_hotkeys" type="checkbox" />
+                                        </label>
+                                    </section>
+                                    <section class="nn-vt-group" aria-labelledby="nn-cw-replies-title">
+                                        <div class="nn-vt-group-head">
+                                            <i class="fa-solid fa-feather-pointed nn-vt-group-icon" aria-hidden="true"></i>
+                                            <div class="nn-vt-group-copy">
+                                                <h4 id="nn-cw-replies-title" class="nn-vt-group-title">Replies</h4>
+                                                <p class="nn-vt-group-hint">How new replies appear while they are written.</p>
+                                            </div>
+                                        </div>
+                                        <label id="smooth_streaming_control" for="smooth_streaming" class="checkbox_label nn-vt-row nn-cw-parent">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Smooth Streaming">Smooth streaming</small><span class="nn-vt-desc">Shows replies at an even pace instead of in bursts.</span></span>
+                                            <input id="smooth_streaming" type="checkbox" />
+                                        </label>
+                                        <div class="nn-vt-nest">
+                                            <label id="smooth_streaming_no_think_control" for="smooth_streaming_no_think" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Exclude 'Thinking...'">Skip for thinking</small><span class="nn-vt-desc">Thinking blocks appear the moment they arrive.</span></span>
+                                                <input id="smooth_streaming_no_think" type="checkbox" />
+                                            </label>
+                                            <div id="smooth_streaming_speed_control" class="nn-cw-field nn-cw-slider">
+                                                <div class="nn-cw-slider-head">
+                                                    <label for="smooth_streaming_speed" class="nn-vt-text"><small class="nn-vt-name">Speed</small><span class="nn-vt-desc">How fast smooth streaming types out a reply.</span></label>
+                                                </div>
+                                                <input class="neo-range-slider" type="range" id="smooth_streaming_speed" name="smooth_streaming_speed" min="0" max="100" step="10" value="50" />
+                                                <div class="slider_hint"><span data-i18n="Slow">Slow</span><span></span><span data-i18n="Fast">Fast</span></div>
+                                            </div>
+                                        </div>
+                                        <label for="stream_fade_in" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><span class="nn-vt-name-line"><small class="nn-vt-name" data-i18n="Stream Fade-In">Fade in new text</small><span class="nn-vt-badge">Experimental</span></span><span class="nn-vt-desc">New words fade in instead of popping in. May not work with every connection.</span></span>
+                                            <input id="stream_fade_in" type="checkbox" />
+                                        </label>
+                                        <div class="nn-cw-field nn-cw-slider">
+                                            <div class="nn-cw-slider-head">
+                                                <label for="streaming_fps" class="nn-vt-text"><small class="nn-vt-name" data-i18n="Streaming FPS">Screen updates per second</small><span class="nn-vt-desc">How often the chat redraws while a reply streams. Lower it if your device struggles.</span></label>
+                                                <input class="neo-range-input" type="number" min="5" max="100" step="5" data-for="streaming_fps" id="streaming_fps_counter" />
+                                            </div>
+                                            <input class="neo-range-slider" type="range" id="streaming_fps" name="streaming_fps" min="5" max="100" step="5" />
+                                        </div>
+                                        <audio id="audio_message_sound" src="sounds/message.mp3" hidden></audio>
+                                        <label for="play_message_sound" class="checkbox_label nn-vt-row nn-cw-parent">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Message Sound">Sound when a reply finishes</small><span class="nn-vt-desc">Plays a short chime when a reply is done.</span></span>
+                                            <input id="play_message_sound" type="checkbox" />
+                                        </label>
+                                        <div class="nn-vt-nest">
+                                            <label for="play_sound_unfocused" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Background Sound Only">Only when Neconyan is in the background</small><span class="nn-vt-desc">Stays quiet while you are looking at the chat.</span></span>
+                                                <input id="play_sound_unfocused" type="checkbox" />
+                                            </label>
+                                        </div>
+                                    </section>
+                                    <section class="nn-vt-group" aria-labelledby="nn-cw-window-title">
+                                        <div class="nn-vt-group-head">
+                                            <i class="fa-solid fa-message nn-vt-group-icon" aria-hidden="true"></i>
+                                            <div class="nn-vt-group-copy">
+                                                <h4 id="nn-cw-window-title" class="nn-vt-group-title">Chat window</h4>
+                                                <p class="nn-vt-group-hint">What the chat shows and how you move around it.</p>
+                                            </div>
+                                        </div>
+                                        <label for="swipes-checkbox" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Swipes">Swipes</small><span class="nn-vt-desc">Shows arrows on the latest reply to flip between versions or ask for a new one.</span></span>
+                                            <input id="swipes-checkbox" type="checkbox" />
+                                        </label>
+                                        <label for="gestures-checkbox" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Gestures">Swipe gestures</small><span class="nn-vt-desc">On a phone, swipe left or right on the latest reply to change it.</span></span>
+                                            <input id="gestures-checkbox" type="checkbox" />
+                                        </label>
+                                        <div class="nn-cw-field">
+                                            <label for="image_overswipe" class="nn-vt-text"><small class="nn-vt-name" data-i18n="Image Swipe Behavior:">Swiping past the last image</small><span class="nn-vt-desc">Make a new image, or go back to the first one.</span></label>
+                                            <div class="nn-cw-control">
+                                                <select id="image_overswipe" class="text_pole">
+                                                    <option value="generate" data-i18n="Generate new">Generate new</option>
+                                                    <option value="rollover" data-i18n="Roll over">Roll over</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <label for="auto_scroll_chat_to_bottom" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Auto-scroll Chat">Follow new messages</small><span class="nn-vt-desc">Keeps the chat scrolled to the bottom while a reply streams.</span></span>
+                                            <input id="auto_scroll_chat_to_bottom" type="checkbox" />
+                                        </label>
+                                        <div class="nn-cw-field nn-cw-slider">
+                                            <div class="nn-cw-slider-head">
+                                                <label for="chat_truncation" class="nn-vt-text"><small class="nn-vt-name" data-i18n="# Messages to Load">Messages to load</small><span class="nn-vt-desc">How many recent messages load when a chat opens. 0 loads them all; a lower number opens long chats faster.</span></label>
+                                                <input class="neo-range-input" type="number" min="0" max="1000" step="5" data-for="chat_truncation" id="chat_truncation_counter" />
+                                            </div>
+                                            <input class="neo-range-slider" type="range" id="chat_truncation" name="chat_truncation" min="0" max="1000" step="5" />
+                                        </div>
+                                        <label for="show_group_chat_queue" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Show group chat queue">Group chat queue</small><span class="nn-vt-desc">Shows who speaks next in a group chat.</span></span>
+                                            <input id="show_group_chat_queue" type="checkbox" />
+                                        </label>
+                                        <label for="pin_styles" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Pin greeting message styles">Keep greeting styles</small><span class="nn-vt-desc">Styling from a greeting stays on even after the greeting scrolls out of the loaded messages.</span></span>
+                                            <input id="pin_styles" type="checkbox" />
+                                        </label>
+                                        <label for="auto-load-chat-checkbox" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Resume last chat on launch">Reopen your last chat</small><span class="nn-vt-desc">Opening Neconyan returns to the last chat you had open on this account.</span></span>
+                                            <input id="auto-load-chat-checkbox" type="checkbox" />
+                                        </label>
+                                        <label for="chat-links-checkbox" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Chat links in the address bar">Chat links in the address bar</small><span class="nn-vt-desc">Back, Forward and bookmarks open the exact chat. Links only work for your account on this install; they are not for sharing.</span></span>
+                                            <input id="chat-links-checkbox" type="checkbox" />
+                                        </label>
+                                    </section>
+                                    <section class="nn-vt-group" aria-labelledby="nn-cw-messages-title">
+                                        <div class="nn-vt-group-head">
+                                            <i class="fa-solid fa-pen-to-square nn-vt-group-icon" aria-hidden="true"></i>
+                                            <div class="nn-vt-group-copy">
+                                                <h4 id="nn-cw-messages-title" class="nn-vt-group-title">Messages</h4>
+                                                <p class="nn-vt-group-hint">Editing, deleting and how message text is shown.</p>
+                                            </div>
+                                        </div>
+                                        <label for="auto_save_msg_edits" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Auto-save Message Edits">Save edits as you type</small><span class="nn-vt-desc">Message edits save on their own, without pressing the tick.</span></span>
+                                            <input id="auto_save_msg_edits" type="checkbox" />
+                                        </label>
+                                        <label for="confirm_message_delete" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Confirm message deletion">Ask before deleting</small><span class="nn-vt-desc">Asks for confirmation before a message is deleted.</span></span>
+                                            <input id="confirm_message_delete" type="checkbox" />
+                                        </label>
+                                        <label for="auto_fix_generated_markdown" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Auto-fix Markdown">Tidy up Markdown</small><span class="nn-vt-desc">Closes unfinished bold, italics and code in replies so they display properly.</span></span>
+                                            <input id="auto_fix_generated_markdown" type="checkbox" />
+                                        </label>
+                                        <label for="allow_name2_display" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Allow {{char}}: in bot messages">Keep the character's name in replies</small><span class="nn-vt-desc">Leaves a leading "Name:" in replies instead of removing it.</span></span>
+                                            <input id="allow_name2_display" type="checkbox" />
+                                        </label>
+                                        <label for="allow_name1_display" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Allow {{user}}: in bot messages">Keep your name in replies</small><span class="nn-vt-desc">Leaves lines that start with your name in replies instead of removing them.</span></span>
+                                            <input id="allow_name1_display" type="checkbox" />
+                                        </label>
+                                        <label for="encode_tags" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Show tags in responses">Show &lt;tags&gt; as text</small><span class="nn-vt-desc">Shows HTML-style tags in replies as plain text instead of running them.</span></span>
+                                            <input id="encode_tags" type="checkbox" />
+                                        </label>
+                                        <label for="forbid_external_media" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Forbid External Media">Block outside media</small><span class="nn-vt-desc">Stops messages loading images, audio or video from other websites.</span></span>
+                                            <input id="forbid_external_media" type="checkbox" />
+                                        </label>
+                                        <label for="allow_card_scripts" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Allow Card Scripts (sandboxed)">Allow card scripts</small><span class="nn-vt-desc">Lets scripts inside a character card run in a sandbox. Only turn this on for cards you trust.</span></span>
+                                            <input id="allow_card_scripts" type="checkbox" />
+                                        </label>
+                                    </section>
+                                </div>
                             </div>
-                            <div class="flex-container alignitemscenter" title="Defines on importing cards which action should be chosen for importing its listed tags. 'Ask' will always display the dialog." data-i18n="[title]Defines on importing cards which action should be chosen for importing its listed tags. 'Ask' will always display the dialog.">
-                                <label for="tag_import_setting"><small data-i18n="Import Card Tags">Import Card Tags</small></label>
-                                <select id="tag_import_setting" class="widthNatural flex1 margin0">
-                                    <option data-i18n="Ask" value="1">Ask</option>
-                                    <option data-i18n="tag_import_none" value="2">None</option>
-                                    <option data-i18n="tag_import_all" value="3">All</option>
-                                    <option data-i18n="tag_import_existing" value="4">Existing</option>
-                                </select>
-                            </div>
-                            <label class="checkbox_label" for="fuzzy_search_checkbox" title="Use fuzzy matching, and search characters in the list by all data fields, not just by a name substring." data-i18n="[title]Use fuzzy matching, and search characters in the list by all data fields, not just by a name substring">
-                                <input id="fuzzy_search_checkbox" type="checkbox" />
-                                <small data-i18n="Advanced Character Search">Advanced Character Search</small>
-                            </label>
-                            <label for="prefer_character_prompt" title="If checked and the character card contains a prompt override (System Prompt), use that instead." data-i18n="[title]If checked and the character card contains a prompt override (System Prompt), use that instead" class="checkbox_label">
-                                <input id="prefer_character_prompt" type="checkbox" />
-                                <small data-i18n="Prefer Character Card Prompt">Prefer Char. Prompt</small>
-                            </label>
-                            <label for="prefer_character_jailbreak" title="If checked and the character card contains a Post-History Instructions override, use that instead." data-i18n="[title]If checked and the character card contains a Post-History Instructions override, use that instead" class="checkbox_label">
-                                <input id="prefer_character_jailbreak" type="checkbox" />
-                                <small data-i18n="Prefer Character Card Instructions">Prefer Char. Instructions</small>
-                            </label>
-                            <label class="checkbox_label" for="never_resize_avatars" title="Avoid cropping and resizing imported character images. When off, crop/resize to 512x768.&#10;This will disable the upload cropping popup for avatars." data-i18n="[title]never_resize_avatars_tooltip">
-                                <input id="never_resize_avatars" type="checkbox" />
-                                <small data-i18n="Never resize avatars">Never resize avatars</small>
-                            </label>
-                            <label data-i18n="[title]Allow animations for WEBP backgrounds. This is only a change for the selection menu." for="background_thumbnails_animation" class="checkbox_label" title="Allow animations for WEBP backgrounds. This is only a change for the selection menu.">
-                                <input id="background_thumbnails_animation" type="checkbox" />
-                                <small data-i18n="Animated background thumbnails">Animated background thumbnails</small>
-                            </label>
-                            <label class="checkbox_label" for="show_card_avatar_urls" title="Show actual file names on the disk, in the characters list display only." data-i18n="[title]Show actual file names on the disk, in the characters list display only">
-                                <input id="show_card_avatar_urls" type="checkbox" />
-                                <small data-i18n="Show avatar filenames">Show avatar filenames</small>
-                            </label>
-                            <label class="checkbox_label" for="spoiler_free_mode" title="Hide character definitions from the editor panel behind a spoiler button." data-i18n="[title]Hide character definitions from the editor panel behind a spoiler button">
-                                <input id="spoiler_free_mode" type="checkbox" />
-                                <small data-i18n="Spoiler Free Mode">Spoiler Free Mode</small>
-                            </label>
-
                         </div>
-
-                        <div name="MiscellaneousToggles">
-                            <h4><span data-i18n="Miscellaneous">Miscellaneous</span></h4>
-                            <div class="flex-container flexGap2">
-                                <div id="reload_chat" class="menu_button whitespacenowrap" data-i18n="[title]Reload and redraw the currently open chat" title="Reload and redraw the currently open chat.">
-                                    <small data-i18n="Reload Chat">Reload Chat</small>
-                                </div>
-                                <div id="debug_menu" class="menu_button whitespacenowrap">
-                                    <small data-i18n="Debug Menu">Debug Menu</small>
-                                </div>
-                                <div id="data_maid_button" class="menu_button whitespacenowrap" title="Find and delete backups, unused chats, files, images, etc." data-i18n="[title]Find and delete backups, unused chats, files, images, etc.">
-                                    <small data-i18n="Clean-Up">Clean-Up</small>
+                        <div id="CharacterHandlingSection" class="inline-drawer wide100p flexFlowColumn sb-settings-subdrawer nn-settings-cards">
+                            <div class="inline-drawer-toggle inline-drawer-header userSettingsInnerExpandable" title="Character list, importing and prompts.">
+                                <b><i class="fa-solid fa-address-card"></i> <span>Characters</span></b>
+                                <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
+                            </div>
+                            <div class="inline-drawer-content sb-settings-subdrawer-body" style="display:none">
+                                <p class="nn-vt-intro">How characters are listed, imported and used in prompts.</p>
+                                <div class="nn-vt">
+                                    <section class="nn-vt-group" aria-labelledby="nn-cw-charlist-title">
+                                        <div class="nn-vt-group-head">
+                                            <i class="fa-solid fa-list nn-vt-group-icon" aria-hidden="true"></i>
+                                            <div class="nn-vt-group-copy">
+                                                <h4 id="nn-cw-charlist-title" class="nn-vt-group-title">Character list</h4>
+                                                <p class="nn-vt-group-hint">What the character list shows.</p>
+                                            </div>
+                                        </div>
+                                        <div class="nn-cw-field">
+                                            <label for="aux_field" class="nn-vt-text"><small class="nn-vt-name" data-i18n="Char List Subheader">Line under each name</small><span class="nn-vt-desc">Show the card version or the creator under a character name.</span></label>
+                                            <div class="nn-cw-control">
+                                                <select id="aux_field" class="text_pole">
+                                                    <option value="character_version" data-i18n="Character Version">Character Version</option>
+                                                    <option value="creator" data-i18n="Created by">Created by</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <label for="fuzzy_search_checkbox" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Advanced Character Search">Smarter search</small><span class="nn-vt-desc">Finds characters despite typos and searches more than names.</span></span>
+                                            <input id="fuzzy_search_checkbox" type="checkbox" />
+                                        </label>
+                                        <label for="show_card_avatar_urls" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Show avatar filenames">Show image file names</small><span class="nn-vt-desc">Shows each character's image file name in the list.</span></span>
+                                            <input id="show_card_avatar_urls" type="checkbox" />
+                                        </label>
+                                        <label for="spoiler_free_mode" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Spoiler Free Mode">Spoiler-free mode</small><span class="nn-vt-desc">Hides card descriptions and other details until you choose to look.</span></span>
+                                            <input id="spoiler_free_mode" type="checkbox" />
+                                        </label>
+                                    </section>
+                                    <section class="nn-vt-group" aria-labelledby="nn-cw-import-title">
+                                        <div class="nn-vt-group-head">
+                                            <i class="fa-solid fa-file-import nn-vt-group-icon" aria-hidden="true"></i>
+                                            <div class="nn-vt-group-copy">
+                                                <h4 id="nn-cw-import-title" class="nn-vt-group-title">Importing</h4>
+                                                <p class="nn-vt-group-hint">What happens when you add a card or a lorebook.</p>
+                                            </div>
+                                        </div>
+                                        <div class="nn-cw-field">
+                                            <label for="tag_import_setting" class="nn-vt-text"><small class="nn-vt-name" data-i18n="Import Card Tags">Card tags on import</small><span class="nn-vt-desc">Ask each time, skip them, add them all, or only add tags you already use.</span></label>
+                                            <div class="nn-cw-control">
+                                                <select id="tag_import_setting" class="text_pole">
+                                                    <option value="1" data-i18n="Ask">Ask</option>
+                                                    <option value="2" data-i18n="tag_import_none">None</option>
+                                                    <option value="3" data-i18n="tag_import_all">All</option>
+                                                    <option value="4" data-i18n="tag_import_existing">Existing</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <label for="world_import_dialog" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Lorebook Import Dialog">Offer bundled lorebooks</small><span class="nn-vt-desc">Asks whether to import a lorebook that comes inside a card.</span></span>
+                                            <input id="world_import_dialog" type="checkbox" />
+                                        </label>
+                                        <label for="never_resize_avatars" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Never resize avatars">Keep avatars full size</small><span class="nn-vt-desc">Skips the crop and resize step when you upload an avatar.</span></span>
+                                            <input id="never_resize_avatars" type="checkbox" />
+                                        </label>
+                                        <label for="background_thumbnails_animation" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Animated background thumbnails">Animated background previews</small><span class="nn-vt-desc">Plays animated backgrounds in the background picker. Uses more memory.</span></span>
+                                            <input id="background_thumbnails_animation" type="checkbox" />
+                                        </label>
+                                    </section>
+                                    <section class="nn-vt-group" aria-labelledby="nn-cw-prompts-title">
+                                        <div class="nn-vt-group-head">
+                                            <i class="fa-solid fa-scroll nn-vt-group-icon" aria-hidden="true"></i>
+                                            <div class="nn-vt-group-copy">
+                                                <h4 id="nn-cw-prompts-title" class="nn-vt-group-title">Prompts</h4>
+                                                <p class="nn-vt-group-hint">How card text is used when a prompt is built.</p>
+                                            </div>
+                                        </div>
+                                        <label for="prefer_character_prompt" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Prefer Character Card Prompt">Use the card's main prompt</small><span class="nn-vt-desc">When a card has its own main prompt, it replaces yours.</span></span>
+                                            <input id="prefer_character_prompt" type="checkbox" />
+                                        </label>
+                                        <label for="prefer_character_jailbreak" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Prefer Character Card Instructions">Use the card's instructions</small><span class="nn-vt-desc">When a card has its own post-history instructions, they replace yours.</span></span>
+                                            <input id="prefer_character_jailbreak" type="checkbox" />
+                                        </label>
+                                        <div class="nn-cw-field nn-cw-field-stacked">
+                                            <label for="example_messages_behavior" class="nn-vt-text"><small class="nn-vt-name" data-i18n="Example Messages Behavior">Example messages</small><span class="nn-vt-desc">Gradual push-out drops examples as the chat fills up. You can also always or never include them.</span></label>
+                                            <div class="nn-cw-control">
+                                                <select id="example_messages_behavior" class="text_pole">
+                                                    <option value="normal" data-i18n="Gradual push-out">Gradual push-out</option>
+                                                    <option value="keep" data-i18n="Always include examples">Always include examples</option>
+                                                    <option value="strip" data-i18n="Never include examples">Never include examples</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <label for="disable_group_trimming" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Relax message trim in Groups">Gentler trimming in groups</small><span class="nn-vt-desc">Stops group replies being cut off where another character's name appears.</span></span>
+                                            <input id="disable_group_trimming" type="checkbox" />
+                                        </label>
+                                    </section>
                                 </div>
                             </div>
-                            <label id="smooth_streaming_control" class="checkbox_label" for="smooth_streaming">
-                                <input id="smooth_streaming" type="checkbox" />
-                                <div class="flex-container alignItemsBaseline">
-                                    <small data-i18n="Smooth Streaming">
-                                        Smooth Streaming
-                                    </small>
-                                </div>
-                            </label>
-                            <label id="smooth_streaming_no_think_control" class="checkbox_label" for="smooth_streaming_no_think" title="Bypass smooth streaming in reasoning blocks." data-i18n="[title]Bypass smooth streaming in reasoning blocks.">
-                                <input id="smooth_streaming_no_think" type="checkbox" />
-                                <small data-i18n="Exclude 'Thinking...'">
-                                    Exclude 'Thinking...'
-                                </small>
-                            </label>
-                            <div id="smooth_streaming_speed_control" class="wide100p">
-                                <input type="range" id="smooth_streaming_speed" name="smooth_streaming_speed" min="0" max="100" step="10" value="50">
-                                <div class="slider_hint">
-                                    <span data-i18n="Slow">Slow</span>
-                                    <span></span>
-                                    <span data-i18n="Fast">Fast</span>
+                        </div>
+                        <div id="AutoSwipeContinueSection" class="inline-drawer wide100p flexFlowColumn sb-settings-subdrawer nn-settings-cards">
+                            <div class="inline-drawer-toggle inline-drawer-header userSettingsInnerExpandable" title="Automatic swipes and continuations.">
+                                <b><i class="fa-solid fa-forward"></i> <span>Auto-swipe &amp; auto-continue</span></b>
+                                <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
+                            </div>
+                            <div class="inline-drawer-content sb-settings-subdrawer-body" style="display:none">
+                                <p class="nn-vt-intro">Retry replies that miss the mark, or keep a reply going when it stops early.</p>
+                                <div class="nn-vt">
+                                    <section class="nn-vt-group" aria-labelledby="nn-cw-autoswipe-title">
+                                        <div class="nn-vt-group-head">
+                                            <i class="fa-solid fa-forward-step nn-vt-group-icon" aria-hidden="true"></i>
+                                            <div class="nn-vt-group-copy">
+                                                <h4 id="nn-cw-autoswipe-title" class="nn-vt-group-title">Auto-swipe</h4>
+                                                <p class="nn-vt-group-hint">Asks for a new reply when one is too short or uses words you block.</p>
+                                            </div>
+                                        </div>
+                                        <label for="auto_swipe" class="checkbox_label nn-vt-row nn-cw-parent">
+                                            <span class="nn-vt-text"><small class="nn-vt-name">Auto-swipe</small><span class="nn-vt-desc">Swipes for a new reply automatically when one fails the checks below.</span></span>
+                                            <input id="auto_swipe" type="checkbox" />
+                                        </label>
+                                        <div class="nn-vt-nest">
+                                            <div class="nn-cw-field">
+                                                <label for="auto_swipe_minimum_length" class="nn-vt-text"><small class="nn-vt-name" data-i18n="Minimum generated message length">Shortest reply</small><span class="nn-vt-desc">Replies with fewer characters than this get swiped. 0 turns the length check off.</span></label>
+                                                <div class="nn-cw-control">
+                                                    <input id="auto_swipe_minimum_length" name="auto_swipe_minimum_length" type="number" min="0" step="1" value="0" class="text_pole nn-cw-number" />
+                                                </div>
+                                            </div>
+                                            <div class="nn-cw-field nn-cw-field-stacked">
+                                                <label for="auto_swipe_blacklist" class="nn-vt-text"><small class="nn-vt-name" data-i18n="Blacklisted words">Blocked words</small><span class="nn-vt-desc">Words you never want in a reply, separated by commas.</span></label>
+                                                <div class="nn-cw-control">
+                                                    <textarea id="auto_swipe_blacklist" name="auto_swipe_blacklist" data-i18n="[placeholder]words you dont want generated separated by comma ','" placeholder="words you don't want generated separated by comma ','" class="text_pole textarea_compact" autocomplete="off" rows="3"></textarea>
+                                                </div>
+                                            </div>
+                                            <div class="nn-cw-field">
+                                                <label for="auto_swipe_blacklist_threshold" class="nn-vt-text"><small class="nn-vt-name" data-i18n="Blacklisted word count to swipe">Blocked words before a swipe</small><span class="nn-vt-desc">How many blocked words a reply needs before it gets swiped.</span></label>
+                                                <div class="nn-cw-control">
+                                                    <input id="auto_swipe_blacklist_threshold" name="auto_swipe_blacklist_threshold" type="number" min="0" step="1" value="1" class="text_pole nn-cw-number" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </section>
+                                    <section class="nn-vt-group" aria-labelledby="nn-cw-autocontinue-title">
+                                        <div class="nn-vt-group-head">
+                                            <i class="fa-solid fa-forward-fast nn-vt-group-icon" aria-hidden="true"></i>
+                                            <div class="nn-vt-group-copy">
+                                                <h4 id="nn-cw-autocontinue-title" class="nn-vt-group-title">Auto-continue</h4>
+                                                <p class="nn-vt-group-hint">Keeps a reply going until it reaches the length you want.</p>
+                                            </div>
+                                        </div>
+                                        <label for="auto_continue_enabled" class="checkbox_label nn-vt-row nn-cw-parent">
+                                            <span class="nn-vt-text"><small class="nn-vt-name">Auto-continue</small><span class="nn-vt-desc">Continues a reply automatically when it stops short of the target.</span></span>
+                                            <input id="auto_continue_enabled" type="checkbox" />
+                                        </label>
+                                        <div class="nn-vt-nest">
+                                            <label for="auto_continue_allow_chat_completions" class="checkbox_label nn-vt-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Allow for Chat Completion APIs">Also for Chat Completion</small><span class="nn-vt-desc">Lets auto-continue work with Chat Completion connections too.</span></span>
+                                                <input id="auto_continue_allow_chat_completions" type="checkbox" />
+                                            </label>
+                                            <div class="nn-cw-field">
+                                                <label for="auto_continue_target_length" class="nn-vt-text"><small class="nn-vt-name" data-i18n="Target length (tokens)">Target length</small><span class="nn-vt-desc">How many tokens a reply should reach. 0 turns auto-continue off.</span></label>
+                                                <div class="nn-cw-control">
+                                                    <input id="auto_continue_target_length" type="number" class="text_pole nn-cw-number" min="0" max="1024" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </section>
                                 </div>
                             </div>
-                            <label class="checkbox_label" for="stream_fade_in" title="Fade in streamed text when it appears, instead of it just popping in." data-i18n="[title]Fade in streamed text when it appears, instead of it just popping in">
-                                <input id="stream_fade_in" type="checkbox" />
-                                <small data-i18n="Stream Fade-In">Stream Fade-In</small>
-                                <i class="fa-solid fa-flask" data-i18n="[title]Experimental feature. May not work for all backends." title="Experimental feature. May not work for all backends."></i>
-                            </label>
-
+                        </div>
+                        <div name="AutoCompleteToggle" class="inline-drawer wide100p flexFlowColumn sb-settings-subdrawer nn-settings-cards">
+                            <div class="inline-drawer-toggle inline-drawer-header userSettingsInnerExpandable" title="Options for the various autocomplete input boxes.">
+                                <b><i class="fa-solid fa-keyboard"></i> <span>Autocomplete</span></b>
+                                <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
+                            </div>
+                            <div class="inline-drawer-content sb-settings-subdrawer-body" style="display:none">
+                                <p class="nn-vt-intro">Suggestions for slash commands and {{macros}} while you type.</p>
+                                <div class="nn-vt">
+                                    <section class="nn-vt-group" aria-labelledby="nn-cw-ac-when-title">
+                                        <div class="nn-vt-group-head">
+                                            <i class="fa-solid fa-eye nn-vt-group-icon" aria-hidden="true"></i>
+                                            <div class="nn-vt-group-copy">
+                                                <h4 id="nn-cw-ac-when-title" class="nn-vt-group-title">When it shows</h4>
+                                                <p class="nn-vt-group-hint">Where and when suggestions appear.</p>
+                                            </div>
+                                        </div>
+                                        <div class="nn-cw-field">
+                                            <label for="stscript_autocomplete_state" class="nn-vt-text"><small class="nn-vt-name" data-i18n="Visibility">Show suggestions</small><span class="nn-vt-desc">Never, once you have typed two characters, or straight away.</span></label>
+                                            <div class="nn-cw-control">
+                                                <select id="stscript_autocomplete_state" class="text_pole">
+                                                    <option value="0" data-i18n="Don't show">Don't show</option>
+                                                    <option value="1" data-i18n="Input length &gt; 1">Input length &gt; 1</option>
+                                                    <option value="2" data-i18n="Always show">Always show</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <label for="stscript_autocomplete_autoHide" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Automatically hide details">Fold up details</small><span class="nn-vt-desc">Keeps the help text for each suggestion folded until you open it.</span></span>
+                                            <input id="stscript_autocomplete_autoHide" type="checkbox" />
+                                        </label>
+                                        <label for="stscript_autocomplete_showInAllMacroFields" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Show in all macro fields">Every macro field</small><span class="nn-vt-desc">Suggests macros in every field that accepts them. When off, only expanded editors and Ctrl+Space show them.</span></span>
+                                            <input id="stscript_autocomplete_showInAllMacroFields" type="checkbox" />
+                                        </label>
+                                    </section>
+                                    <section class="nn-vt-group" aria-labelledby="nn-cw-ac-pick-title">
+                                        <div class="nn-vt-group-head">
+                                            <i class="fa-solid fa-arrow-pointer nn-vt-group-icon" aria-hidden="true"></i>
+                                            <div class="nn-vt-group-copy">
+                                                <h4 id="nn-cw-ac-pick-title" class="nn-vt-group-title">Choosing</h4>
+                                                <p class="nn-vt-group-hint">How suggestions are found and picked.</p>
+                                            </div>
+                                        </div>
+                                        <div class="nn-cw-field">
+                                            <label for="stscript_matching" class="nn-vt-text"><small class="nn-vt-name" data-i18n="Autocomplete Matching">Matching</small><span class="nn-vt-desc">Starts with is strict; Includes and Fuzzy find more.</span></label>
+                                            <div class="nn-cw-control">
+                                                <select id="stscript_matching" class="text_pole">
+                                                    <option value="strict" data-i18n="Starts with">Starts with</option>
+                                                    <option value="includes" data-i18n="Includes">Includes</option>
+                                                    <option value="fuzzy" data-i18n="Fuzzy">Fuzzy</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="nn-cw-field">
+                                            <label for="stscript_autocomplete_select" class="nn-vt-text"><small class="nn-vt-name" data-i18n="Keyboard">Pick with</small><span class="nn-vt-desc">Which key accepts the highlighted suggestion.</span></label>
+                                            <div class="nn-cw-control">
+                                                <select id="stscript_autocomplete_select" class="text_pole">
+                                                    <option value="3" data-i18n="Select with Tab or Enter">Select with Tab or Enter</option>
+                                                    <option value="1" data-i18n="Select with Tab">Select with Tab</option>
+                                                    <option value="2" data-i18n="Select with Enter">Select with Enter</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </section>
+                                    <section class="nn-vt-group" aria-labelledby="nn-cw-ac-look-title">
+                                        <div class="nn-vt-group-head">
+                                            <i class="fa-solid fa-palette nn-vt-group-icon" aria-hidden="true"></i>
+                                            <div class="nn-vt-group-copy">
+                                                <h4 id="nn-cw-ac-look-title" class="nn-vt-group-title">Look</h4>
+                                                <p class="nn-vt-group-hint">Colours, text size and width of the list.</p>
+                                            </div>
+                                        </div>
+                                        <div class="nn-cw-field">
+                                            <label for="stscript_autocomplete_style" class="nn-vt-text"><small class="nn-vt-name" data-i18n="Autocomplete Style">Colours</small><span class="nn-vt-desc">Follow the theme, or always use dark or light.</span></label>
+                                            <div class="nn-cw-control">
+                                                <select id="stscript_autocomplete_style" class="text_pole">
+                                                    <option value="theme" data-i18n="Follow Theme">Follow Theme</option>
+                                                    <option value="dark" data-i18n="Dark">Dark</option>
+                                                    <option value="light" data-i18n="Light">Light</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="nn-cw-field nn-cw-slider">
+                                            <div class="nn-cw-slider-head">
+                                                <label for="stscript_autocomplete_font_scale" class="nn-vt-text"><small class="nn-vt-name">Text size</small><span class="nn-vt-desc">Size of the text in the suggestion list.</span></label>
+                                                <input class="neo-range-input" type="number" min="0.5" max="2" step="0.01" data-for="stscript_autocomplete_font_scale" id="stscript_autocomplete_font_scale_counter" />
+                                            </div>
+                                            <input class="neo-range-slider" type="range" id="stscript_autocomplete_font_scale" name="stscript_autocomplete_font_scale" min="0.5" max="2" step="0.01" />
+                                        </div>
+                                        <div class="nn-cw-field nn-cw-field-stacked">
+                                            <div class="nn-vt-text"><small class="nn-vt-name" data-i18n="Autocomplete Width">Width</small><span class="nn-vt-desc">How far the list stretches to each side: the message box, the chat, or the full window.</span></div>
+                                            <div class="nn-cw-control nn-cw-width">
+                                                <div class="doubleRangeContainer">
+                                                    <div class="doubleRangeInputContainer">
+                                                        <input type="range" id="stscript_autocomplete_width_left" min="0" max="2" step="1" />
+                                                        <datalist id="stscript_autocomplete_width_left_values">
+                                                            <option value="0" label="input" title="chat input box" data-i18n="[title]chat input box"></option>
+                                                            <option value="1" label="chat" title="entire chat width" data-i18n="[title]entire chat width"></option>
+                                                            <option value="2" label="full" title="full window width" data-i18n="[title]full window width"></option>
+                                                        </datalist>
+                                                    </div>
+                                                    <div class="doubleRangeInputContainer">
+                                                        <input type="range" id="stscript_autocomplete_width_right" min="0" max="2" step="1" />
+                                                        <datalist id="stscript_autocomplete_width_right_values">
+                                                            <option value="0" label="input" title="chat input box" data-i18n="[title]chat input box"></option>
+                                                            <option value="1" label="chat" title="entire chat width" data-i18n="[title]entire chat width"></option>
+                                                            <option value="2" label="full" title="full window width" data-i18n="[title]full window width"></option>
+                                                        </datalist>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </section>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="ChatFineTuningSection" class="inline-drawer wide100p flexFlowColumn sb-settings-subdrawer nn-settings-cards">
+                            <div class="inline-drawer-toggle inline-drawer-header userSettingsInnerExpandable" title="Tools, prompt context and developer options.">
+                                <b><i class="fa-solid fa-sliders"></i> <span>Fine-tuning</span></b>
+                                <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
+                            </div>
+                            <div class="inline-drawer-content sb-settings-subdrawer-body" style="display:none">
+                                <p class="nn-vt-intro">Rarely needed tools and expert options. Safe to leave as they are.</p>
+                                <div class="nn-vt">
+                                    <section class="nn-vt-group" aria-labelledby="nn-cw-tools-title">
+                                        <div class="nn-vt-group-head">
+                                            <i class="fa-solid fa-toolbox nn-vt-group-icon" aria-hidden="true"></i>
+                                            <div class="nn-vt-group-copy">
+                                                <h4 id="nn-cw-tools-title" class="nn-vt-group-title">Tools</h4>
+                                                <p class="nn-vt-group-hint">One-off fixes for the chat and your files.</p>
+                                            </div>
+                                        </div>
+                                        <div class="nn-cw-field nn-cw-action-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name">Reload chat</small><span class="nn-vt-desc">Redraws the open chat if something looks wrong.</span></span>
+                                            <div class="nn-cw-control">
+                                                <div id="reload_chat" class="menu_button nn-cw-button" role="button" tabindex="0" title="Reload and redraw the currently open chat." data-i18n="[title]Reload and redraw the currently open chat"><i class="fa-solid fa-rotate" aria-hidden="true"></i><span>Reload</span></div>
+                                            </div>
+                                        </div>
+                                        <div class="nn-cw-field nn-cw-action-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name">Clean-Up</small><span class="nn-vt-desc">Finds old backups, unused chats, files and images so you can delete them.</span></span>
+                                            <div class="nn-cw-control">
+                                                <div id="data_maid_button" class="menu_button nn-cw-button" role="button" tabindex="0" title="Find and delete backups, unused chats, files, images, etc." data-i18n="[title]Find and delete backups, unused chats, files, images, etc."><i class="fa-solid fa-broom" aria-hidden="true"></i><span data-i18n="Clean-Up">Clean-Up</span></div>
+                                            </div>
+                                        </div>
+                                        <div class="nn-cw-field nn-cw-action-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name">Debug menu</small><span class="nn-vt-desc">Low-level fixes and diagnostics.</span></span>
+                                            <div class="nn-cw-control">
+                                                <div id="debug_menu" class="menu_button nn-cw-button" role="button" tabindex="0"><i class="fa-solid fa-bug" aria-hidden="true"></i><span>Open</span></div>
+                                            </div>
+                                        </div>
+                                    </section>
+                                    <section class="nn-vt-group" aria-labelledby="nn-cw-context-title">
+                                        <div class="nn-vt-group-head">
+                                            <i class="fa-solid fa-layer-group nn-vt-group-icon" aria-hidden="true"></i>
+                                            <div class="nn-vt-group-copy">
+                                                <h4 id="nn-cw-context-title" class="nn-vt-group-title">Prompt context</h4>
+                                                <p class="nn-vt-group-hint">How much old message formatting reaches the model.</p>
+                                            </div>
+                                        </div>
+                                        <div class="nn-cw-field">
+                                            <label for="ooc_context_depth" class="nn-vt-text"><small class="nn-vt-name" data-i18n="OOC context depth">Keep OOC notes for</small><span class="nn-vt-desc">How many messages back ((out-of-character)) notes stay in the prompt. -1 keeps them all, 0 only the latest turn.</span></label>
+                                            <div class="nn-cw-control">
+                                                <input id="ooc_context_depth" class="text_pole nn-cw-number" type="number" min="-1" step="1" value="-1" />
+                                            </div>
+                                        </div>
+                                        <div class="nn-cw-field">
+                                            <label for="html_context_depth" class="nn-vt-text"><small class="nn-vt-name" data-i18n="HTML tag context depth">Keep HTML for</small><span class="nn-vt-desc">How many messages back HTML tags stay in the prompt. -1 keeps them all, 0 only the latest turn.</span></label>
+                                            <div class="nn-cw-control">
+                                                <input id="html_context_depth" class="text_pole nn-cw-number" type="number" min="-1" step="1" value="-1" />
+                                            </div>
+                                        </div>
+                                        <label for="experimental_macro_engine" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><span class="nn-vt-name-line"><small class="nn-vt-name" data-i18n="Experimental Macro Engine">New macro engine</small><span class="nn-vt-badge">Experimental</span></span><span class="nn-vt-desc">Uses the new {{macro}} processor, which is still being tested.</span></span>
+                                            <input id="experimental_macro_engine" type="checkbox" />
+                                        </label>
+                                    </section>
+                                    <section class="nn-vt-group" aria-labelledby="nn-cw-dev-title">
+                                        <div class="nn-vt-group-head">
+                                            <i class="fa-solid fa-code nn-vt-group-icon" aria-hidden="true"></i>
+                                            <div class="nn-vt-group-copy">
+                                                <h4 id="nn-cw-dev-title" class="nn-vt-group-title">Developer</h4>
+                                                <p class="nn-vt-group-hint">For troubleshooting, API quirks and scripts.</p>
+                                            </div>
+                                        </div>
+                                        <label for="console_log_prompts" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Log prompts to console">Log prompts to the console</small><span class="nn-vt-desc">Prints every prompt to the browser console.</span></span>
+                                            <input id="console_log_prompts" type="checkbox" />
+                                        </label>
+                                        <label for="request_token_probabilities" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Request token probabilities">Request token probabilities</small><span class="nn-vt-desc">Asks the connection for word-by-word probabilities, shown in the probabilities viewer.</span></span>
+                                            <input id="request_token_probabilities" type="checkbox" />
+                                        </label>
+                                        <label for="relaxed_api_urls" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Relaxed API URLS">Relaxed API addresses</small><span class="nn-vt-desc">Accepts API addresses that do not look standard.</span></span>
+                                            <input id="relaxed_api_urls" type="checkbox" />
+                                        </label>
+                                        <label for="stscript_parser_flag_strict_escaping" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="STRICT_ESCAPING">STscript: strict escaping</small><span class="nn-vt-desc">A backslash can escape any separator, including another backslash. <a href="https://docs.sillytavern.app/usage/st-script/#strict-escaping" target="_blank" rel="noopener" class="nn-cw-help-link"><i class="fa-solid fa-circle-question" aria-hidden="true"></i> How it works</a></span></span>
+                                            <input id="stscript_parser_flag_strict_escaping" type="checkbox" />
+                                        </label>
+                                        <label for="stscript_parser_flag_replace_getvar" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="REPLACE_GETVAR">STscript: literal variables</small><span class="nn-vt-desc">Stops {{getvar::}} and {{getglobalvar::}} running macros stored inside variables. <a href="https://docs.sillytavern.app/usage/st-script/#replace-variable-macros" target="_blank" rel="noopener" class="nn-cw-help-link"><i class="fa-solid fa-circle-question" aria-hidden="true"></i> How it works</a></span></span>
+                                            <input id="stscript_parser_flag_replace_getvar" type="checkbox" />
+                                        </label>
+                                    </section>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="MovingUISection" class="inline-drawer wide100p flexFlowColumn sb-settings-subdrawer nn-settings-cards">
+                            <div class="inline-drawer-toggle inline-drawer-header userSettingsInnerExpandable" title="Drag and resize panels on a computer.">
+                                <b><i class="fa-solid fa-up-down-left-right"></i> <span>Movable panels</span></b>
+                                <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
+                            </div>
+                            <div class="inline-drawer-content sb-settings-subdrawer-body" style="display:none">
+                                <p class="nn-vt-intro">On a computer, drag and resize pop-out panels such as Author's Note. Phones always use the standard layout.</p>
+                                <div class="nn-vt">
+                                    <section class="nn-vt-group" aria-labelledby="nn-cw-moving-title">
+                                        <div class="nn-vt-group-head">
+                                            <i class="fa-solid fa-hand nn-vt-group-icon" aria-hidden="true"></i>
+                                            <div class="nn-vt-group-copy">
+                                                <h4 id="nn-cw-moving-title" class="nn-vt-group-title">Moving panels</h4>
+                                                <p class="nn-vt-group-hint">Each browser window size remembers its own layout.</p>
+                                            </div>
+                                        </div>
+                                        <label id="movingUIModeCheckBlock" for="movingUImode" class="checkbox_label nn-vt-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name" data-i18n="Movable UI Panels">Movable panels</small><span class="nn-vt-desc">Drag a panel by its top edge to move it, and by its corner to resize it.</span></span>
+                                            <input id="movingUImode" type="checkbox" />
+                                        </label>
+                                        <div id="movingUIOffscreenWarning" class="info-block warning displayNone">
+                                            <i class="fa-solid fa-triangle-exclamation margin-r5"></i>
+                                            <span data-i18n="A saved MovingUI panel position appears to be off-screen.">A saved MovingUI panel position appears to be off-screen.</span>
+                                            <div id="movingUIOffscreenReset" title="Reset MovingUI panel sizes/locations." class="menu_button margin0" data-i18n="[title]Reset MovingUI panel sizes/locations."><i class="fa-solid fa-recycle margin-r5"></i><span data-i18n="Reset panels">Reset panels</span></div>
+                                        </div>
+                                        <div class="nn-cw-field nn-cw-action-row">
+                                            <span class="nn-vt-text"><small class="nn-vt-name">Put panels back</small><span class="nn-vt-desc">Returns every panel to its standard place and size, including any lost off-screen.</span></span>
+                                            <div class="nn-cw-control">
+                                                <div id="movingUIreset" class="menu_button nn-cw-button" role="button" tabindex="0" title="Reset MovingUI panel sizes/locations, including off-screen panels." data-i18n="[title]Reset MovingUI panel sizes/locations, including off-screen panels."><i class="fa-solid fa-recycle" aria-hidden="true"></i><span data-i18n="mui_reset">Reset</span></div>
+                                            </div>
+                                        </div>
+                                    </section>
+                                    <section class="nn-vt-group" aria-labelledby="nn-cw-layouts-title">
+                                        <div class="nn-vt-group-head">
+                                            <i class="fa-solid fa-table-columns nn-vt-group-icon" aria-hidden="true"></i>
+                                            <div class="nn-vt-group-copy">
+                                                <h4 id="nn-cw-layouts-title" class="nn-vt-group-title">Layouts</h4>
+                                                <p class="nn-vt-group-hint">Pick a ready-made layout for this window size, or save your own.</p>
+                                            </div>
+                                        </div>
+                                        <div id="MovingUI-presets-block" class="nn-cw-presets-block">
+                                            <div class="nn-cw-preset-cards" role="group" aria-labelledby="nn-cw-layouts-title" data-nn-cw-preset-cards></div>
+                                            <div id="nn-cw-preset-select-row" class="nn-cw-field">
+                                                <label for="movingUIPresets" class="nn-vt-text"><small class="nn-vt-name" data-i18n="MUI Preset">Layout</small><span class="nn-vt-desc">The layout applied to this window size.</span></label>
+                                                <div class="nn-cw-control">
+                                                    <select id="movingUIPresets" class="text_pole"></select>
+                                                </div>
+                                            </div>
+                                            <div class="nn-cw-field nn-cw-action-row">
+                                                <span class="nn-vt-text"><small class="nn-vt-name">Save this layout</small><span class="nn-vt-desc">Saves how your panels sit right now as a new layout.</span></span>
+                                                <div class="nn-cw-control">
+                                                    <div id="movingui-preset-save-button" class="menu_button nn-cw-button" role="button" tabindex="0" title="Save changes to a new MovingUI preset file." data-i18n="[title]Save movingUI changes to a new file"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i><span>Save</span></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </section>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Neconyan: streaming and memory blocks, moved into System & Device by neconyan-settings-tabs.js -->
                             <div name="IOSWebKitStreamingToggles">
                                 <h4><span data-i18n="iOS Streaming Stability">iOS Streaming Stability</span></h4>
                                 <small data-i18n="iOS Streaming Stability_desc">Controls iPhone and iPad WebKit safeguards for long streamed generations.</small>
@@ -5766,7 +6306,6 @@
                                     <small data-i18n="Bypass iOS stream fade-in">Bypass iOS stream fade-in</small>
                                 </label>
                             </div>
-
                             <div name="AndroidStreamingToggles" data-sb-persistent-menu="true">
                                 <h4><span data-i18n="Android Streaming Stability">Android Streaming Stability</span></h4>
                                 <small data-i18n="Android Streaming Stability_desc">Applies when the browser is Android, even if the server runs on another machine.</small>
@@ -5791,7 +6330,6 @@
                                     <small data-i18n="Skip Android fade-in segmentation">Skip Android fade-in segmentation</small>
                                 </label>
                             </div>
-
                             <!-- Neconyan: aggressive DOM unloading for low-memory devices -->
                             <div name="AggressiveDomUnloadToggles">
                                 <h4><span data-i18n="Aggressive DOM Unloading">Aggressive DOM Unloading</span></h4>
@@ -5808,305 +6346,6 @@
                                     <input class="neo-range-slider" type="range" id="aggressive_dom_window_size" name="aggressive_dom_window_size" min="1" max="25" step="1">
                                     <input class="neo-range-input" type="number" min="1" max="25" step="1" data-for="aggressive_dom_window_size" id="aggressive_dom_window_size_counter">
                                 </div>
-                            </div>
-
-                            <label for="play_message_sound" class="checkbox_label" title="Play a sound when a message generation finishes." data-i18n="[title]Play a sound when a message generation finishes">
-                                <input id="play_message_sound" type="checkbox" />
-                                <audio id="audio_message_sound" src="sounds/message.mp3" hidden></audio>
-                                <span>
-                                    <small data-i18n="Message Sound">Message Sound</small>
-                                </span>
-                            </label>
-                            <label for="play_sound_unfocused" class="checkbox_label" title="Only play a sound when Neconyan's browser tab is unfocused." data-i18n="[title]Only play a sound when Neconyan's browser tab is unfocused">
-                                <input id="play_sound_unfocused" type="checkbox" />
-                                <small data-i18n="Background Sound Only">Background Sound Only</small>
-                            </label>
-                            <label class="checkbox_label" for="relaxed_api_urls" title="Reduce the formatting requirements on API URLs." data-i18n="[title]Reduce the formatting requirements on API URLs">
-                                <input id="relaxed_api_urls" type="checkbox" />
-                                <small data-i18n="Relaxed API URLS">Relaxed API URLs</small>
-                            </label>
-                            <label class="checkbox_label" for="world_import_dialog" title="Ask to import the Lorebook for every new character with embedded lorebook. If unchecked, a brief message will be shown instead." data-i18n="[title]Ask to import the Lorebook for every new character with embedded lorebook. If unchecked, a brief message will be shown instead">
-                                <input id="world_import_dialog" type="checkbox" />
-                                <small data-i18n="Lorebook Import Dialog">Lorebook Import Dialog</small>
-                            </label>
-                            <label class="checkbox_label" for=" enable_auto_select_input" title="Enable auto-select of input text in some text fields when clicking/selecting them. Applies to popup input textboxes, and possible other custom input fields." data-i18n="[title]Enable auto-select of input text in some text fields when clicking/selecting them. Applies to popup input textboxes, and possible other custom input fields.">
-                                <input id="enable_auto_select_input" type="checkbox" />
-                                <small data-i18n="Auto-select Input Text">Auto-select Input Text</small>
-                            </label>
-                            <label class="checkbox_label alignItemsCenter" for="enable_md_hotkeys" data-i18n="[title]markdown_hotkeys_desc" title="Enable hotkeys for inserting markdown format characters in certain text input boxes. See '/help hotkeys'.">
-                                <input id="enable_md_hotkeys" type="checkbox" />
-                                <small>
-                                    <span data-i18n="Markdown Hotkeys">Markdown Hotkeys</span>
-                                    <i class="fa-brands fa-markdown"></i>
-                                </small>
-                            </label>
-                            <label class="checkbox_label" for="restore_user_input" title="Restore unsaved user input on page refresh." data-i18n="[title]Restore unsaved user input on page refresh">
-                                <input id="restore_user_input" type="checkbox" />
-                                <small data-i18n="Restore User Input">Restore User Input</small>
-                            </label>
-                            <div class="flex-container alignItemsCenter">
-                                <label id="movingUIModeCheckBlock" for="movingUImode" class="checkbox_label" title="Allow repositioning certain UI elements by dragging them. PC only, no effect on mobile." data-i18n="[title]Allow repositioning certain UI elements by dragging them. PC only, no effect on mobile">
-                                    <input id="movingUImode" type="checkbox" />
-                                    <small>
-                                        <span data-i18n="Movable UI Panels">MovingUI</span>
-                                        <i class="fa-solid fa-desktop"></i>
-                                    </small>
-                                </label>
-                                <div id="movingUIreset" title="Reset MovingUI panel sizes/locations, including off-screen panels." class="menu_button margin0" data-i18n="[title]Reset MovingUI panel sizes/locations, including off-screen panels.">
-                                    <i class=" fa-solid fa-recycle margin-r5"></i>
-                                    <span data-i18n="mui_reset">Reset</span>
-                                </div>
-                            </div>
-                            <small>Drag or resize a panel to remember its layout for this browser and window size. Other devices and sizes use the default layout; selecting a preset applies it to the current size.</small>
-                            <!-- Neconyan: surface recovery when restored MovingUI geometry puts panels outside the viewport. -->
-                            <div id="movingUIOffscreenWarning" class="info-block warning displayNone">
-                                <i class="fa-solid fa-triangle-exclamation margin-r5"></i>
-                                <span data-i18n="A saved MovingUI panel position appears to be off-screen.">A saved MovingUI panel position appears to be off-screen.</span>
-                                <div id="movingUIOffscreenReset" title="Reset MovingUI panel sizes/locations." class="menu_button margin0" data-i18n="[title]Reset MovingUI panel sizes/locations.">
-                                    <i class="fa-solid fa-recycle margin-r5"></i>
-                                    <span data-i18n="Reset panels">Reset panels</span>
-                                </div>
-                            </div>
-                            <div id="MovingUI-presets-block" class="flex-container alignitemscenter">
-                                <div class="flex-container alignItemsFlexEnd">
-                                    <label for="movingUIPresets" title="MovingUI preset. Predefined/saved draggable positions." data-i18n="[title]MovingUI preset. Predefined/saved draggable positions">
-                                        <small data-i18n="MUI Preset">MovingUI Preset:</small>
-                                        <div class="flex-container flexnowrap">
-                                            <select id="movingUIPresets" class="widthNatural flex1 margin0">
-                                            </select>
-                                        </div>
-                                    </label>
-                                    <div id="movingui-preset-save-button" title="Save changes to a new MovingUI preset file." data-i18n="[title]Save movingUI changes to a new file" class="menu_button margin0 fa-solid fa-save"></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div name="UserSettingsThirdColumn" id="power-user-options-block" class="flex-container wide100p flex1">
-                        <div id="power-user-option-checkboxes">
-
-                            <div id="ChatMessageHandlingSection" class="inline-drawer wide100p flexFlowColumn sb-settings-subdrawer">
-                                <div class="inline-drawer-toggle inline-drawer-header userSettingsInnerExpandable">
-                                    <b><span data-i18n="Chat/Message Handling">Chat/Message Handling</span></b>
-                                    <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
-                                </div>
-                                <div class="inline-drawer-content sb-settings-subdrawer-body" style="display:none">
-                                <label class="checkbox_label" for="chat-links-checkbox" title="Back, Forward and bookmarks then open exact saved chats. Links work only for the same account on this installation, not public sharing.">
-                                    <input id="chat-links-checkbox" type="checkbox" />
-                                    <small data-i18n="Chat links in the address bar">Chat links in the address bar</small>
-                                </label>
-                                <label class="checkbox_label" for="auto-load-chat-checkbox" title="Opening Neconyan returns to the last saved chat you opened on this account.">
-                                    <input id="auto-load-chat-checkbox" type="checkbox" />
-                                    <small data-i18n="Resume last chat on launch">Resume last chat on launch</small>
-                                </label>
-                                <div class="flex-container">
-                                    <div class="alignitemscenter flex-container flexFlowColumn flexBasis48p flexGrow flexShrink gap0">
-                                        <small>
-                                            <span data-i18n="# Messages to Load"># Msg. to Load</span>
-
-                                            <div class="fa-solid fa-circle-info opacity50p" data-i18n="[title]The number of chat history messages to load before pagination." title="The number of chat history messages to load before pagination."></div>
-                                        </small>
-                                        <input class="neo-range-slider" type="range" id="chat_truncation" name="chat_truncation" min="0" max="1000" step="5">
-                                        <input class="neo-range-input" type="number" min="0" max="1000" step="5" data-for="chat_truncation" id="chat_truncation_counter">
-                                        <small data-i18n="(0 = All)">(0 = All)</small>
-                                    </div>
-
-                                    <div class="alignitemscenter flex-container flexFlowColumn flexBasis48p flexGrow flexShrink gap0">
-                                        <small>
-                                            <span data-i18n="Streaming FPS">Streaming FPS</span>
-                                            <div class="fa-solid fa-circle-info opacity50p" data-i18n="[title]Update speed of streamed text." title="Update speed of streamed text."></div>
-                                        </small>
-                                        <input class="neo-range-slider" type="range" id="streaming_fps" name="streaming_fps" min="5" max="100" step="5">
-                                        <input class="neo-range-input" type="number" min="5" max="100" step="5" data-for="streaming_fps" id="streaming_fps_counter">
-                                    </div>
-                                </div>
-                                <div id="examples-behavior-block">
-                                    <label for="example_messages_behavior">
-                                        <small data-i18n="Example Messages Behavior">
-                                            Example Messages Behavior:
-                                        </small>
-                                    </label>
-                                    <select id="example_messages_behavior">
-                                        <option value="normal" data-i18n="Gradual push-out">Gradual push-out</option>
-                                        <option value="keep" data-i18n="Always include examples">Always include examples</option>
-                                        <option value="strip" data-i18n="Never include examples">Never include examples</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label for="image_overswipe">
-                                        <small data-i18n="Image Swipe Behavior:">
-                                            Image Swipe Behavior:
-                                        </small>
-                                    </label>
-                                    <select id="image_overswipe">
-                                        <option value="generate" data-i18n="Generate new">Generate new</option>
-                                        <option value="rollover" data-i18n="Roll over">Roll over</option>
-                                    </select>
-                                </div>
-                                <div class="flex-container alignitemscenter">
-                                    <small data-i18n="Send on Enter">
-                                        Enter to Send:
-                                    </small>
-                                    <select id="send_on_enter" class="widthNatural flex1 margin0">
-                                        <option value="-1" data-i18n="Disabled">Disabled</option>
-                                        <option value="0" data-i18n="Automatic (PC)">Automatic (PC)</option>
-                                        <option value="1" data-i18n="Enabled">Enabled</option>
-                                    </select>
-                                </div>
-                                <label class="checkbox_label" for="continue_on_send">
-                                    <input id="continue_on_send" type="checkbox" />
-                                    <small data-i18n="Press Send to continue">
-                                        "Send" to Continue
-                                    </small>
-                                </label>
-                                <label class="checkbox_label" for="quick_continue" title="Show a button in the input area to ask the AI to continue (extend) its last message." data-i18n="[title]Show a button in the input area to ask the AI to continue (extend) its last message">
-                                    <input id="quick_continue" type="checkbox" />
-                                    <small data-i18n="Quick 'Continue' button">
-                                        Quick "Continue" button
-                                    </small>
-                                </label>
-                                <label class="checkbox_label" for="quick_impersonate" title="Show a button in the input area to ask the AI to impersonate your character for a single message." data-i18n="[title]Show a button in the input area to ask the AI to impersonate your character for a single message">
-                                    <input id="quick_impersonate" type="checkbox" />
-                                    <small data-i18n="Quick 'Impersonate' button">
-                                        Quick "Impersonate" button
-                                    </small>
-                                </label>
-                                <div class="checkbox-container flex-container">
-                                    <label class="checkbox_label" for="swipes-checkbox" title="Show arrow buttons on the last in-chat message to generate alternative AI responses. Both PC and mobile." data-i18n="[title]Show arrow buttons on the last in-chat message to generate alternative AI responses. Both PC and mobile">
-                                        <input id="swipes-checkbox" type="checkbox" />
-                                        <small data-i18n="Swipes">Swipes</small><i class="fa-solid fa-desktop"></i><i class="fa-solid fa-mobile-screen-button"></i>
-                                    </label>
-                                    <label class="checkbox_label" for="gestures-checkbox" title="Allow using swiping gestures on the last in-chat message to trigger swipe generation. Mobile only, no effect on PC." , data-i18n="[title]Allow using swiping gestures on the last in-chat message to trigger swipe generation. Mobile only, no effect on PC">
-                                        <input id="gestures-checkbox" type="checkbox" />
-                                        <small data-i18n="Gestures">Gestures</small>
-                                        <i class="fa-solid fa-mobile-screen-button"></i>
-                                    </label>
-                                </div>
-                                <label for="auto_scroll_chat_to_bottom" class="checkbox_label">
-                                    <input id="auto_scroll_chat_to_bottom" type="checkbox" />
-                                    <small data-i18n="Auto-scroll Chat">Auto-scroll Chat</small>
-                                </label>
-                                <label class="checkbox_label" for="auto_save_msg_edits" title="Save edits to messages without confirmation as you type." data-i18n="[title]Save edits to messages without confirmation as you type">
-                                    <input id="auto_save_msg_edits" type="checkbox" />
-                                    <small data-i18n="Auto-save Message Edits">Auto-save Message Edits</small>
-                                </label>
-                                <label class="checkbox_label" for="confirm_message_delete">
-                                    <input id="confirm_message_delete" type="checkbox" />
-                                    <small data-i18n="Confirm message deletion">Confirm message deletion</small>
-                                </label>
-                                <label class="checkbox_label" for="auto_fix_generated_markdown">
-                                    <input id="auto_fix_generated_markdown" type="checkbox" />
-                                    <small data-i18n="Auto-fix Markdown">Auto-fix Markdown</small>
-                                </label>
-                                <label class="checkbox_label" for="forbid_external_media" title="Disallow embedded media from other domains in chat messages." data-i18n="[title]Disallow embedded media from other domains in chat messages">
-                                    <input id="forbid_external_media" type="checkbox" />
-                                    <small data-i18n="Forbid External Media">Forbid External Media</small>
-                                </label>
-                                <label class="checkbox_label" for="allow_card_scripts" title="Run sandboxed scripts embedded in character cards. Off by default." data-i18n="[title]Run sandboxed scripts embedded in character cards. Off by default.">
-                                    <input id="allow_card_scripts" type="checkbox" />
-                                    <small data-i18n="Allow Card Scripts (sandboxed)">Allow Card Scripts (sandboxed)</small>
-                                </label>
-                                <label class="checkbox_label" for="allow_name2_display">
-                                    <input id="allow_name2_display" type="checkbox" />
-                                    <small data-i18n="Allow {{char}}: in bot messages">Show {{char}}: in responses</small>
-                                </label>
-                                <label class="checkbox_label" for="allow_name1_display">
-                                    <input id="allow_name1_display" type="checkbox" />
-                                    <small data-i18n="Allow {{user}}: in bot messages">Show {{user}}: in responses</small>
-                                </label>
-                                <label class="checkbox_label" for="encode_tags" title="Skip encoding &lt; and &gt; characters in message text, allowing a subset of HTML markup as well as Markdown." data-i18n="[title]Skip encoding  and  characters in message text, allowing a subset of HTML markup as well as Markdown">
-                                    <input id="encode_tags" type="checkbox" />
-                                    <small data-i18n="Show tags in responses">Show &lt;tags&gt; in responses</small>
-                                </label>
-                                <div class="flex-container alignitemscenter gap10">
-                                    <label for="ooc_context_depth" class="flex1" title="Keep OOC ((...)) blocks in prompt context. -1 keeps all messages, 0 keeps only the active turn, N keeps through depth N." data-i18n="[title]Keep OOC blocks in prompt context. -1 keeps all messages, 0 keeps only the active turn, N keeps through depth N.">
-                                        <small data-i18n="OOC context depth">OOC context depth</small>
-                                        <small class="opacity50p" data-i18n="-1 keeps all OOC blocks, 0 keeps the active turn only, N keeps through depth N.">-1 keeps all OOC blocks, 0 keeps the active turn only, N keeps through depth N.</small>
-                                    </label>
-                                    <input id="ooc_context_depth" class="text_pole widthUnset" type="number" min="-1" step="1" value="-1" />
-                                </div>
-                                <div class="flex-container alignitemscenter gap10">
-                                    <label for="html_context_depth" class="flex1" title="Keep raw HTML tags in prompt context. -1 keeps all messages, 0 keeps only the active turn, N keeps through depth N." data-i18n="[title]Keep raw HTML tags in prompt context. -1 keeps all messages, 0 keeps only the active turn, N keeps through depth N.">
-                                        <small data-i18n="HTML tag context depth">HTML tag context depth</small>
-                                        <small class="opacity50p" data-i18n="-1 keeps all HTML tags, 0 keeps the active turn only, N keeps through depth N.">-1 keeps all HTML tags, 0 keeps the active turn only, N keeps through depth N.</small>
-                                    </label>
-                                    <input id="html_context_depth" class="text_pole widthUnset" type="number" min="-1" step="1" value="-1" />
-                                </div>
-                                <label class="checkbox_label" for="experimental_macro_engine" title="Experimental new Macro Engine.&NewLine;&NewLine;Allows nested macros to be resolved correctly and has a dedicated, logical replacement order.&NewLine;The new engine is designed to cleanly replace the old regex-based macro system.">
-                                    <input id="experimental_macro_engine" type="checkbox" />
-                                    <small data-i18n="Experimental Macro Engine">Experimental Macro Engine</small>
-                                    <i class="fa-solid fa-flask" title="Experimental feature. Currently in development to test." data-i18n="[title]Experimental feature. Currently in development to test."></i>
-                                </label>
-                                <label class="checkbox_label" for="disable_group_trimming" title="Allow AI messages in groups to contain lines spoken by other group members." data-i18n="[title]Allow AI messages in groups to contain lines spoken by other group members">
-                                    <input id="disable_group_trimming" type="checkbox" />
-                                    <small data-i18n="Relax message trim in Groups">Relax message trim in Groups</small>
-                                </label>
-                                <label class="checkbox_label" for="console_log_prompts">
-                                    <input id="console_log_prompts" type="checkbox" />
-                                    <small data-i18n="Log prompts to console">Log prompts to console</small>
-                                </label>
-                                <label class="checkbox_label" for="request_token_probabilities" title="Requests logprobs from the API for the Token Probabilities feature." data-i18n="[title]Requests logprobs from the API for the Token Probabilities feature">
-                                    <input id="request_token_probabilities" type="checkbox" />
-                                    <small data-i18n="Request token probabilities">Request token probabilities</small>
-                                </label>
-                                <label class="checkbox_label" for="show_group_chat_queue" title="In group chat, highlight the character(s) that are currently queued to generate responses and the order in which they will respond." data-i18n="[title]In group chat, highlight the character(s) that are currently queued to generate responses and the order in which they will respond.">
-                                    <input id="show_group_chat_queue" type="checkbox" />
-                                    <small data-i18n="Show group chat queue">Show group chat queue</small>
-                                </label>
-                                <label class="checkbox_label" for="pin_styles" title="Always render style tags from greetings, even if the message is unloaded due to lazy loading." data-i18n="[title]Always render style tags from greetings, even if the message is unloaded due to lazy loading.">
-                                    <input id="pin_styles" type="checkbox" />
-                                    <small data-i18n="Pin greeting message styles">Pin greeting message styles</small>
-                                </label>
-                                <div class="inline-drawer wide100p flexFlowColumn">
-                                    <div class="inline-drawer-toggle inline-drawer-header userSettingsInnerExpandable" title="Automatically reject and re-generate AI message based on configurable criteria." data-i18n="[title]Automatically reject and re-generate AI message based on configurable criteria">
-                                        <b><span data-i18n="Auto-swipe">Auto-swipe</span></b>
-                                        <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
-                                    </div>
-                                    <div class="inline-drawer-content">
-                                        <label class="checkbox_label" for="auto_swipe" title="Enable the auto-swipe function. Settings in this section only have an effect when auto-swipe is enabled." data-i18n="[title]Enable the auto-swipe function. Settings in this section only have an effect when auto-swipe is enabled">
-                                            <input id="auto_swipe" type="checkbox" />
-                                            <small data-i18n="Enabled">Enabled</small>
-                                        </label>
-                                        <small data-i18n="Minimum generated message length">Minimum generated message length</small>
-                                        <input id="auto_swipe_minimum_length" name="auto_swipe_minimum_length" type="number" min="0" step="1" value="0" class="text_pole" title="If the generated message is shorter than these many characters, trigger an auto-swipe." data-i18n="[title]If the generated message is shorter than these many characters, trigger an auto-swipe">
-                                        <small data-i18n="Blacklisted words">Blacklisted words</small>
-                                        <div class="auto_swipe">
-                                            <textarea id="auto_swipe_blacklist" name="auto_swipe_blacklist" data-i18n="[placeholder]words you dont want generated separated by comma ','" placeholder="words you don't want generated separated by comma ','" class="text_pole textarea_compact" value="" autocomplete="off" rows="3"></textarea>
-                                            <small data-i18n="Blacklisted word count to swipe">Blacklisted word count to swipe</small>
-                                            <input id="auto_swipe_blacklist_threshold" name="auto_swipe_blacklist_threshold" type="number" min="0" step="1" value="1" class="text_pole" title="Minimum number of blacklisted words detected to trigger an auto-swipe." data-i18n="[title]Minimum number of blacklisted words detected to trigger an auto-swipe">
-                                        </div>
-                                    </div>
-                                </div>
-                                <div nane="AutoContiueBlock" class="inline-drawer wide100p flexFlowColumn">
-                                    <div class="inline-drawer-toggle inline-drawer-header userSettingsInnerExpandable" data-i18n="[title]Automatically 'continue' a response if the model stopped before reaching a certain amount of tokens." title="Automatically 'continue' a response if the model stopped before reaching a certain amount of tokens.">
-                                        <b><span data-i18n="Auto-Continue">Auto-Continue</span></b>
-                                        <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
-                                    </div>
-                                    <div class="inline-drawer-content">
-                                        <div class="flex-container">
-                                            <label class="checkbox_label" for="auto_continue_enabled">
-                                                <input id="auto_continue_enabled" type="checkbox" />
-                                                <small data-i18n="Enabled">
-                                                    Enabled
-                                                </small>
-                                            </label>
-                                            <label class="checkbox_label" for="auto_continue_allow_chat_completions">
-                                                <input id="auto_continue_allow_chat_completions" type="checkbox" />
-                                                <small data-i18n="Allow for Chat Completion APIs">
-                                                    Allow for Chat Completion APIs
-                                                </small>
-                                            </label>
-                                        </div>
-                                        <div class="auto_continue_settings_block">
-                                            <label for="auto_continue_target_length">
-                                                <small data-i18n="Target length (tokens)">Target length (tokens)</small>
-                                                <input id="auto_continue_target_length" type="number" class="text_pole textarea_compact" min="0" max="1024" />
-                                            </label>
-                                        </div>
-                                    </div>
-
-
-                                </div>
-                            </div>
                             </div>
                             <div class="inline-drawer wide100p flexFlowColumn sb-settings-subdrawer sb-desktop-setting" id="DesktopSection">
                                 <div class="inline-drawer-toggle inline-drawer-header userSettingsInnerExpandable">
@@ -6179,126 +6418,6 @@
                                     </div>
                                 </div>
                             </div>
-                            <div name="AutoCompleteToggle" class="inline-drawer wide100p flexFlowColumn sb-settings-subdrawer">
-                                <div class="inline-drawer-toggle inline-drawer-header userSettingsInnerExpandable" title="Options for the various autocomplete input boxes.">
-                                    <b><span data-i18n="AutoComplete Settings">AutoComplete Settings</span></b>
-                                    <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
-                                </div>
-                                <div class="inline-drawer-content sb-settings-subdrawer-body">
-                                    <div class="flex1" title="When to show the autocomplete for slash commands and macros." data-i18n="[title]When to show the autocomplete for slash commands and macros.">
-                                        <label for="stscript_autocomplete_state">
-                                            <small data-i18n="Visibility">Visibility</small>
-                                        </label>
-                                        <select id="stscript_autocomplete_state">
-                                            <option value="0" data-i18n="Don't show">Don't show</option>
-                                            <option value="1" data-i18n="Input length > 1">Input length > 1</option>
-                                            <option value="2" data-i18n="Always show">Always show</option>
-                                        </select>
-                                    </div>
-                                    <label class="checkbox_label" for="stscript_autocomplete_autoHide">
-                                        <input id="stscript_autocomplete_autoHide" type="checkbox" />
-                                        <small data-i18n="Automatically hide details">
-                                            Automatically hide details
-                                        </small>
-                                    </label>
-                                    <label class="checkbox_label" for="stscript_autocomplete_showInAllMacroFields" title="Show macro autocomplete in all macro-enabled fields. When off, autocomplete only shows in expanded editors or when pressing Ctrl+Space." data-i18n="[title]Show macro autocomplete in all macro-enabled fields. When off, autocomplete only shows in expanded editors or when pressing Ctrl+Space.">
-                                        <input id="stscript_autocomplete_showInAllMacroFields" type="checkbox" />
-                                        <small data-i18n="Show in all macro fields">
-                                            Show in all macro fields
-                                        </small>
-                                    </label>
-                                    <div class="flex-container">
-                                        <div class="flex1" title="Determines how entries are found for autocomplete." data-i18n="[title]Determines how entries are found for autocomplete.">
-                                            <label for="stscript_matching">
-                                                <small data-i18n="Autocomplete Matching">Matching</small>
-                                            </label>
-                                            <select id="stscript_matching">
-                                                <option data-i18n="Starts with" value="strict">Starts with</option>
-                                                <option data-i18n="Includes" value="includes">Includes</option>
-                                                <option data-i18n="Fuzzy" value="fuzzy">Fuzzy</option>
-                                            </select>
-                                        </div>
-                                        <div class="flex1" title="Sets the style of the autocomplete." data-i18n="[title]Sets the style of the autocomplete.">
-                                            <label for="stscript_autocomplete_style">
-                                                <small data-i18n="Autocomplete Style">Style</small>
-                                            </label>
-                                            <div class="flex-container flexFlowRow alignItemsBaseline">
-                                                <select id="stscript_autocomplete_style">
-                                                    <option data-i18n="Follow Theme" value="theme">Follow Theme</option>
-                                                    <option data-i18n="Dark" value="dark">Dark</option>
-                                                    <option data-i18n="Light" value="light">Light</option>
-                                                </select>
-                                                <!-- <div class="menu_button fa-solid fa-pen-to-square" title="Customize colors"></div> -->
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div title="Determines which keys select an item from the AutoComplete suggestions">
-                                        <label>
-                                            <small data-i18n="Keyboard">Keyboard:</small>
-                                        </label>
-                                        <select id="stscript_autocomplete_select">
-                                            <option value="3" data-i18n="Select with Tab or Enter">Select with Tab or Enter</option>
-                                            <option value="1" data-i18n="Select with Tab">Select with Tab</option>
-                                            <option value="2" data-i18n="Select with Enter">Select with Enter</option>
-                                        </select>
-                                    </div>
-                                    <div class="flex-container flexFlowColumn gap0" title="Sets the font size of the autocomplete." data-i18n="[title]Sets the font size of the autocomplete.">
-                                        <label for="stscript_autocomplete_font_scale"><small>Font Scale</small></label>
-                                        <input class="neo-range-slider" type="range" id="stscript_autocomplete_font_scale" min="0.5" max="2" step="0.01">
-                                        <input class="neo-range-input" type="number" min="0.5" max="2" step="0.01" data-for="stscript_autocomplete_font_scale" id="stscript_autocomplete_font_scale_counter">
-                                    </div>
-                                    <div title="Sets the width of the autocomplete." data-i18n="[title]Sets the width of the autocomplete.">
-                                        <label for="stscript_autocomplete_width">
-                                            <small data-i18n="Autocomplete Width">Width</small>
-                                        </label>
-                                        <div class="doubleRangeContainer">
-                                            <div class="doubleRangeInputContainer">
-                                                <input type="range" id="stscript_autocomplete_width_left" min="0" max="2" step="1">
-                                                <datalist id="stscript_autocomplete_width_left_values">
-                                                    <option value="0" label="input" title="chat input box" data-i18n="[title]chat input box"></option>
-                                                    <option value="1" label="chat" title="entire chat width" data-i18n="[title]entire chat width"></option>
-                                                    <option value="2" label="full" title="full window width" data-i18n="[title]full window width"></option>
-                                                </datalist>
-                                            </div>
-                                            <div class="doubleRangeInputContainer">
-                                                <input type="range" id="stscript_autocomplete_width_right" min="0" max="2" step="1">
-                                                <datalist id="stscript_autocomplete_width_right_values">
-                                                    <option value="0" label="input" title="chat input box" data-i18n="[title]chat input box"></option>
-                                                    <option value="1" label="chat" title="entire chat width" data-i18n="[title]entire chat width"></option>
-                                                    <option value="2" label="full" title="full window width" data-i18n="[title]full window width"></option>
-                                                </datalist>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div name="STscriptToggles">
-                                <h4 data-i18n="STscript Settings">STscript Settings</h4>
-                                <div title="Sets default flags for the STscript parser." data-i18n="[title]Sets default flags for the STscript parser.">
-                                    <label><small data-i18n="Parser Flags">Parser Flags</small></label>
-                                    <label class="checkbox_label" title="Switch to stricter escaping, allowing all delimiting characters to be escaped with a backslash, and backslashes to be escaped as well." data-i18n="[title]Switch to stricter escaping, allowing all delimiting characters to be escaped with a backslash, and backslashes to be escaped as well.">
-                                        <input id="stscript_parser_flag_strict_escaping" type="checkbox" />
-                                        <span>
-                                            <small data-i18n="STRICT_ESCAPING">STRICT_ESCAPING</small>
-                                        </span>
-                                        <a href="https://docs.sillytavern.app/usage/st-script/#strict-escaping" target="_blank" class="notes-link">
-                                            <span class="fa-solid fa-circle-question note-link-span"></span>
-                                        </a>
-                                    </label>
-                                    <label class="checkbox_label" title="Prevents {{getvar::}} {{getglobalvar::}} macros from having literal macro-like values auto-evaluated.&NewLine;e.g. &quot;{{newline}}&quot; remains as literal string &quot;{{newline}}&quot;&NewLine;&NewLine;(This is done by internally replacing {{getvar::}} {{getglobalvar::}} macros with scoped variables.)" data-i18n="[title]stscript_parser_flag_replace_getvar_label">
-                                        <input id="stscript_parser_flag_replace_getvar" type="checkbox" />
-                                        <span>
-                                            <small data-i18n="REPLACE_GETVAR">REPLACE_GETVAR</small>
-                                        </span>
-                                        <a href="https://docs.sillytavern.app/usage/st-script/#replace-variable-macros" target="_blank" class="notes-link">
-                                            <span class="fa-solid fa-circle-question note-link-span"></span>
-                                        </a>
-                                    </label>
-                                </div>
-                            </div>
-                            </div><!-- end Chat & Characters inline-drawer-content -->
-                        </div><!-- end Chat & Characters inline-drawer -->
-                        </div>
                     </div>
                 </div>
             </div>

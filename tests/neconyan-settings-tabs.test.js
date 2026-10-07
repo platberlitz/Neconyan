@@ -82,14 +82,23 @@ describe('Neconyan settings theme drawers', () => {
         expect(neconyanCssSource).toContain('.sb-theme-lifted-drawer > .sb-settings-subdrawer-body[style*=\'display: block\']');
     });
 
-    test('gives promoted settings drawers icons and separates STscript settings', () => {
+    test('gives settings drawers icons and files the Chat & Writing drawers under their tabs', () => {
         expect(settingsTabsSource).toContain('function ensureSettingsHeaderIcons()');
-        for (const icon of ['fa-ruler-combined', 'fa-fill-drip', 'fa-toggle-on', 'fa-message', 'fa-keyboard', 'fa-code', 'fa-font', 'fa-terminal']) {
+        for (const icon of ['fa-ruler-combined', 'fa-fill-drip', 'fa-toggle-on', 'fa-keyboard', 'fa-code', 'fa-font', 'fa-address-card', 'fa-sliders']) {
             expect(settingsTabsSource).toContain(icon);
         }
-        expect(settingsTabsSource).toContain('function ensureStscriptDrawer()');
-        expect(settingsTabsSource).toContain('drawer.id = \'sb-stscript-drawer\';');
-        expect(settingsTabsSource).toContain('chatSection.parentElement?.insertBefore(drawer, chatSection.nextSibling);');
+        for (const id of ['ChatCharactersSection', 'CharacterHandlingSection', 'AutoSwipeContinueSection', 'ChatFineTuningSection']) {
+            expect(settingsTabsSource).toContain(`'${id}': 'chat-writing',`);
+        }
+        expect(settingsTabsSource).toContain('\'MovingUISection\': \'appearance\',');
+        expect(settingsTabsSource).not.toContain('function ensureStscriptDrawer()');
+        expect(settingsTabsSource).not.toContain('sb-auto-swipe-drawer');
+    });
+
+    test('shows MovingUI presets as cards that drive the preset select', () => {
+        expect(settingsTabsSource).toContain('function ensureMovingUIPresetCards()');
+        expect(settingsTabsSource).toContain('select.dispatchEvent(new Event(\'change\', { bubbles: true }));');
+        expect(settingsTabsSource).toContain('card.setAttribute(\'aria-pressed\', String(card.dataset.preset === select.value));');
     });
 
     test('keeps the new top-bar Quick Actions wording and removes replacement-page controls', () => {

@@ -25,6 +25,10 @@ const stylesheets = [
         url: new URL('../public/css/neconyan-visual-toggles.css', import.meta.url),
     },
     {
+        name: 'chat and writing settings',
+        url: new URL('../public/css/neconyan-chat-writing.css', import.meta.url),
+    },
+    {
         name: 'input history',
         url: new URL('../public/scripts/extensions/input-history/style.css', import.meta.url),
     },

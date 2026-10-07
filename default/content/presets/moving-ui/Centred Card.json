@@ -1,0 +1,32 @@
+{
+    "name": "Centred Card",
+    "movingUIState": {
+        "floatingPrompt": {
+            "top": "80px",
+            "right": "auto",
+            "bottom": "auto",
+            "left": "calc(50vw - min(300px, 32vw))",
+            "margin": "unset",
+            "width": "min(600px, 64vw)",
+            "height": "min(480px, calc(100vh - 420px))"
+        },
+        "cfgConfig": {
+            "top": "80px",
+            "right": "auto",
+            "bottom": "auto",
+            "left": "calc(50vw - min(300px, 32vw))",
+            "margin": "unset",
+            "width": "min(600px, 64vw)",
+            "height": "min(480px, calc(100vh - 420px))"
+        },
+        "logprobsViewer": {
+            "top": "auto",
+            "right": "16px",
+            "bottom": "16px",
+            "left": "auto",
+            "margin": "unset",
+            "width": "min(360px, 28vw)",
+            "height": "min(300px, 34vh)"
+        }
+    }
+}
