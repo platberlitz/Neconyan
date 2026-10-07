@@ -1,7 +1,8 @@
 /* global document, window */
 import { randomUUID } from 'node:crypto';
 import { expect } from '@playwright/test';
-import { test, acknowledgeActiveSettings } from './neconyan-conversation-durable-fixture.js';
+import { test, acknowledgeActiveSettings, MODEL } from './neconyan-conversation-durable-fixture.js';
+import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 
 test.setTimeout(180000);
 // eslint-disable-next-line playwright/no-skipped-test -- Uses an owned server and a deterministic model provider.
@@ -10,11 +11,21 @@ test.skip(process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1', 'Requires a
 const body = 'route: 🌱 Slow Burn Under Glass\npath: Close > Confidant > Intimate\nheart: He keeps holding hands.\ntrust: He trusts Kris.\nwant: Stay\nguard: Pride\nlikes: Soup\ndislikes: Distance\ntell: His thumb moves.\nunsaid: Stay here.\nmemory: Dinner: They held hands.\ndate: Dinner\nturn: Kris squeezed back.\nnext: Time together';
 const repaired = `[METER|Alhaitham|Confidant|💚 STABLE|🌅 WARMING]\n${body}\n[/METER]`;
 
+function labelBoundsWithinButton(element) {
+    const label = element.getBoundingClientRect();
+    const button = element.parentElement.getBoundingClientRect();
+    return { x: label.x - button.x, y: label.y - button.y, width: label.width, height: label.height };
+}
+
 for (const { phone, kind } of [false, true].flatMap(phone => ['header', 'field order'].map(kind => ({ phone, kind })))) {
     test(`Fix Trackers repairs inline ${kind} and persists it on ${phone ? 'phone' : 'desktop'}`, async ({ app }, info) => {
         const broken = kind === 'header' ? repaired.replace('STABLE|', 'STABLE]')
             : repaired.replace('date: Dinner\nturn: Kris squeezed back.', 'turn: Kris squeezed back.\ndate: Dinner');
-        const account = await app.account({ phone, activeConnection: true });
+        const account = await app.account({ phone, activeConnection: true,
+            configureSettings: saved => { saved.extension_settings.connectionManager.profiles[0].model = MODEL; },
+            contextOptions: { ...(phone ? IPHONE_SAFARI_CONTEXT : {}), reducedMotion: 'no-preference' } });
+        if (phone) await installIPhoneSafari(account.context);
+        if (kind === 'header') app.provider.mode.hold = MODEL;
         app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: repaired } }] };
         const chatName = 'Tracker repair regression';
         const request = { avatar_url: account.avatar, file_name: chatName };
@@ -41,13 +52,65 @@ for (const { phone, kind } of [false, true].flatMap(phone => ['header', 'field o
             await (await import('/script.js')).openCharacterChat(chatName);
         }, { avatar: account.avatar, chatName });
         await acknowledgeActiveSettings(page);
+        if (phone) await applyIOSOnlyCss(page);
         const message = page.locator('#chat .mes[mesid="0"]');
         const text = message.locator('.mes_text');
         await expect(text).toContainText(broken.split('\n')[0]);
         await expect(text.locator('details')).toHaveCount(0);
         await message.locator('.extraMesButtonsHint').click();
-        await message.locator('.mes_fix_trackers').click();
+        const fixButton = message.locator('.mes_fix_trackers');
+        const label = fixButton.locator('.neconyan-action-label');
+        const restingLabelBounds = await label.evaluate(labelBoundsWithinButton);
+        await fixButton.click();
+        if (kind === 'header') {
+            try {
+                await expect.poll(() => app.provider.calls.length).toBe(1);
+                await expect(fixButton).toHaveClass(/mes_fix_trackers--running/);
+                // Freeze a quarter-turn so a rotating row cannot pass at a full revolution.
+                await fixButton.evaluate(element => {
+                    for (const animation of element.getAnimations({ subtree: true })) {
+                        animation.pause();
+                        animation.currentTime = 250;
+                    }
+                });
+                // A user scroll releases the phone's automatic bottom pin during generation.
+                await page.locator('#chat').hover();
+                await page.mouse.wheel(0, -2000);
+                await expect(fixButton).toBeInViewport();
+                await page.screenshot({ path: info.outputPath('tracker-repair-running.png'), animations: 'allow' });
+                await expect(fixButton).toHaveCSS('animation-name', 'none');
+                await expect(fixButton).toHaveCSS('transform', 'none');
+                expect(await label.evaluate(labelBoundsWithinButton)).toEqual(restingLabelBounds);
+                expect(await fixButton.evaluate(element => window.getComputedStyle(element, '::before').animationName))
+                    .toBe('mes-fix-trackers-spin');
+                expect(await fixButton.evaluate(element => window.getComputedStyle(element, '::before').transform)).not.toBe('none');
+                // The companion message action shares this rule; settings use a separate icon child.
+                for (const [selector, runningClass, childIcon] of [
+                    ['.mes_run_companions', 'mes_run_companions--running', false],
+                    ['#ica--fixTrackers', 'mes_fix_trackers--running', true],
+                ]) {
+                    const action = childIcon ? page.locator(selector) : message.locator(selector);
+                    const motion = await action.evaluate((element, { runningClass, childIcon }) => {
+                        element.classList.add(runningClass);
+                        const result = {
+                            button: window.getComputedStyle(element).animationName,
+                            icon: window.getComputedStyle(childIcon ? element.querySelector('i') : element, childIcon ? null : '::before').animationName,
+                        };
+                        element.classList.remove(runningClass);
+                        return result;
+                    }, { runningClass, childIcon });
+                    expect(motion).toEqual({ button: 'none', icon: 'mes-fix-trackers-spin' });
+                }
+                await page.emulateMedia({ reducedMotion: 'reduce' });
+                expect(await fixButton.evaluate(element => window.getComputedStyle(element, '::before').animationName)).toBe('none');
+                await page.emulateMedia({ reducedMotion: 'no-preference' });
+            } finally {
+                await app.release();
+            }
+        }
         await expect(text.locator('details').first()).toBeVisible({ timeout: 60000 });
+        await expect(fixButton).not.toHaveClass(/mes_fix_trackers--running/);
+        expect(await fixButton.evaluate(element => window.getComputedStyle(element, '::before').animationName)).toBe('none');
         await expect(text).not.toContainText('[METER|');
         if (kind === 'field order') expect(app.provider.calls).toHaveLength(0);
         await expect(text).toContainText('Before the tracker.');
