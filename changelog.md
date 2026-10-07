@@ -23,6 +23,7 @@
 - PR #61 (2026-10-07) `feat(settings): rebuild chat & writing settings and add MovingUI presets`
 - PR #62 (2026-10-07) `fix(import): keep jsonl chats selectable on android`
 - PR #63 (2026-10-07) `fix(lorebooks): enable the additional books picker on mobile`
+- PR #64 (2026-10-07) `fix(import): recheck retained zip uploads after reinstall`
 
 ## v1.2.0
 
