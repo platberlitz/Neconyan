@@ -65,4 +65,7 @@ export const refreshedKnowledgeCases = [
     ['Where is my data folder?', 'admin.operations', 'Neconyan folder and Your data folder paths'],
     ['How do I turn extensions on or off in Manage extensions?', 'extensions.management', 'changes wait until you close the window'],
     ['How do I delete a note in Notebooks?', 'notes.history', 'moves that note to Trash'],
+    ['Which notebooks does Scratchpad see when I send a message?', 'scratchpad.notebook-access', 'The list has no note titles or text'],
+    ['Scratchpad says Share fewer notes or choose a section before sending', 'scratchpad.notebook-access', 'still lists each reference with Open note and Remove or Stop sharing'],
+    ['How do I accept a link suggestion in a note?', 'notes.links', 'Enter or Tab accepts the highlighted one'],
 ];
