@@ -15304,6 +15304,8 @@ let chatHistoryQuery = 0;
 export async function displayPastChats(hightlightNames = []) {
     const session = ++chatHistorySession;
     const groupId = selected_group;
+    $('#chat_import_new_instance').prop('checked', false).prop('disabled', Boolean(groupId));
+    $('#chat_import_instance_options').toggle(!groupId).prop('open', false);
     const characterAvatar = groupId ? null : characters[this_chid]?.avatar;
     const ownerKey = getChatExportOwnerKey();
     const isCurrent = () => session === chatHistorySession && getChatExportOwnerKey() === ownerKey;
@@ -16603,7 +16605,7 @@ function clearDurableChatImportAttempt(key, attempt) {
 }
 
 /** Send one frozen file and import key; CSRF retries rebuild only the header. */
-export async function sendChatImport(formData, { target, group, refresh = true, operationKey = uuidv4(), onAccepted }) {
+export async function sendChatImport(formData, { target, group, refresh = true, operationKey = uuidv4(), onAccepted, importAsNewInstance = false }) {
     if (!isCurrentChatImportTarget(target)) throw new Error('The selected chat changed before import.');
     const file = formData.get('avatar');
     if (!(file instanceof File)) throw new Error('Choose one chat file to import.');
@@ -16612,12 +16614,14 @@ export async function sendChatImport(formData, { target, group, refresh = true, 
     if (!isCurrentChatImportTarget(target)) throw new Error('The selected chat changed before import.');
     const attemptId = JSON.stringify([target.stamp.owner, target.stamp.account.accountId, target.stamp.account.dataEpoch,
         group ? target.groupId : target.avatar,
-        file.name, hash, formData.get('file_type'), formData.get('user_name'), formData.get('character_name')]);
+        file.name, hash, formData.get('file_type'), formData.get('user_name'), formData.get('character_name'),
+        ...(importAsNewInstance ? ['new-instance'] : [])]);
     const keyHash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(attemptId)))].map(value => value.toString(16).padStart(2, '0')).join('');
     if (!isCurrentChatImportTarget(target)) throw new Error('The selected chat changed before import.');
     const retryKey = CHAT_IMPORT_RETRY_PREFIX + keyHash;
     const attempt = durableChatImportAttempt(retryKey, attemptId, operationKey, group ? structuredClone(target.source) : null);
     formData.set('roleplay', JSON.stringify({ account: target.stamp.account, operationKey: attempt.operationKey,
+        ...(importAsNewInstance ? { importAsNewInstance: true } : {}),
         ...(group ? { source: attempt.source } : {}) }));
     if (group) formData.set('group_id', target.groupId);
     else formData.set('avatar_url', target.avatar);
@@ -16634,6 +16638,13 @@ export async function sendChatImport(formData, { target, group, refresh = true, 
     }
     if (!response.ok) {
         if (response.headers.get('X-Neconyan-Import-Unaccepted') === '1') clearDurableChatImportAttempt(retryKey, attempt);
+        const failure = await response.json().catch(() => null);
+        if (failure?.code === 'ROLEPLAY_FOREIGN_SOURCE') {
+            if (group) throw new Error(t`This group chat belongs to another instance. Import it through a character's 'Import as new instance' option to adopt a separate copy.`);
+            throw new Error(t`This chat belongs to another instance. Tick 'Import as new instance', then choose the chats again. The copy will be separate from your existing character and history.`);
+        }
+        if (failure?.code === 'ROLEPLAY_IMPORT_ORIGIN_CHANGED') throw new Error(t`This chat no longer matches its recorded origin or seal. To adopt a separate copy, explicitly choose 'Import as new instance'.`);
+        if (failure?.code === 'ROLEPLAY_SOURCE_CHANGED') throw new Error(t`The character changed while the chats were importing. Reload the character list, then try again.`);
         throw new Error(`Chat import failed (${response.status}).`);
     }
     const result = await response.json();
@@ -16643,6 +16654,14 @@ export async function sendChatImport(formData, { target, group, refresh = true, 
         const applied = group && JSON.stringify(attempt.source) === JSON.stringify(target.source)
             ? applyGroupImportResult(target, result) : !group;
         if (typeof onAccepted === 'function') onAccepted(result, applied);
+        if (importAsNewInstance && result.roleplay?.character?.avatar) {
+            const avatar = result.roleplay.character.avatar;
+            if (!await getOneCharacter(avatar, { allowInsert: true, isCurrent: () => isCurrentChatImportTarget(target) })) return result.fileNames;
+            if (!isCurrentChatImportTarget(target) || !await selectImportedChar(avatar)) return result.fileNames;
+            await printCharacters(true);
+            await displayPastChats(result.fileNames);
+            return result.fileNames;
+        }
         if (refresh) await displayPastChats(result.fileNames);
     }
     return result.fileNames;
@@ -19569,7 +19588,11 @@ jQuery(async function () {
         $('#chat_import_file').trigger('click');
     });
 
-    $('#chat_import_file').on('change', async function (e) {
+    $('#sb_character_chat_import_action').on('click', function () {
+        $('#sb_character_chat_import_file').trigger('click');
+    });
+
+    $('#chat_import_file, #sb_character_chat_import_file').on('change', async function (e) {
         const targetElement = e.target;
         const formElement = document.getElementById('form_import_chat');
         if (!(targetElement instanceof HTMLInputElement) || !(formElement instanceof HTMLFormElement)) {
@@ -19577,6 +19600,10 @@ jQuery(async function () {
         }
 
         const files = Array.from(targetElement.files);
+        const mainImport = targetElement.id === 'sb_character_chat_import_file';
+        const consent = document.getElementById(mainImport ? 'sb_character_import_new_instance' : 'chat_import_new_instance');
+        const importAsNewInstance = consent.checked;
+        consent.checked = false;
         let target;
         try { target = await captureChatImportTarget(); } catch (error) {
             toastr.error(String(error?.message || error));
@@ -19584,6 +19611,36 @@ jQuery(async function () {
             return;
         }
         const importedFileNames = [];
+        const characterName = target.groupId ? String(formElement.elements.namedItem('character_name').value) : characters[target.characterId].name;
+
+        if (importAsNewInstance) {
+            try {
+                if (target.groupId) throw new Error(t`Choose a character before importing as a new instance.`);
+                if (!files.length) return;
+                const tooLarge = t`Choose up to 64 chat files, totalling at most 64 MiB.`;
+                if (files.length > 64 || files.reduce((total, file) => total + file.size, 0) > 64 * 1024 * 1024) throw new Error(tooLarge);
+                const batch = [];
+                for (const file of files) {
+                    const format = file.name.split('.').pop().toLowerCase();
+                    if (!['json', 'jsonl'].includes(format)) throw new Error(t`Only JSON and JSONL files are supported for chat imports.`);
+                    const content = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer());
+                    batch.push({ name: file.name, format, content });
+                }
+                // The server limit applies to the encoded batch, which JSON escaping makes larger than the files.
+                const encoded = new File([JSON.stringify(batch)], 'selected-chats.json', { type: 'application/json' });
+                if (encoded.size > 64 * 1024 * 1024) throw new Error(tooLarge);
+                const formData = new FormData(formElement);
+                formData.set('avatar', encoded);
+                formData.set('file_type', 'instance-batch');
+                formData.set('user_name', name1);
+                formData.set('character_name', characterName);
+                const names = await importCharacterChat(formData, { target, importAsNewInstance: true, refresh: false });
+                toastr.success(t`Imported ${names.length} chat(s) as a separate character instance.`);
+            } catch (error) {
+                toastr.error(String(error?.message || error));
+            } finally { targetElement.value = ''; }
+            return;
+        }
 
         for (const [index, file] of files.entries()) {
             const ext = file.name.match(/\.(\w+)$/);
@@ -19598,6 +19655,7 @@ jQuery(async function () {
             formData.set('file_type', format);
             formData.set('avatar', file);
             formData.set('user_name', name1);
+            formData.set('character_name', characterName);
 
             const importFn = target.groupId ? importGroupChat : importCharacterChat;
             try {
