@@ -2504,10 +2504,12 @@ button.ica--card-pill--version-update {
     pointer-events: none;
 }
 
-.mes_fix_trackers--running.fa-solid,
+/* Keep the labelled action still; only its icon indicates activity. */
+.mes_fix_trackers--running.fa-solid::before,
 .mes_fix_trackers--running > i,
-.mes_run_companions--running.fa-solid,
+.mes_run_companions--running.fa-solid::before,
 .mes_run_companions--running > i {
+    display: inline-block;
     animation: mes-fix-trackers-spin 1s linear infinite;
 }
 
@@ -2569,9 +2571,9 @@ button.ica--card-pill--version-update {
 
     .ica--card-pill--version-update:hover,
     .ica--card-pill--version-update:focus-visible,
-    .mes_fix_trackers--running.fa-solid,
+    .mes_fix_trackers--running.fa-solid::before,
     .mes_fix_trackers--running > i,
-    .mes_run_companions--running.fa-solid,
+    .mes_run_companions--running.fa-solid::before,
     .mes_run_companions--running > i {
         animation: none !important;
     }
