@@ -3,6 +3,7 @@
 ## v1.2.1
 
 ### Merged Staging PRs
+- PR #43 (2026-10-07) `fix(scratchpad): refresh Context when shared notes change`
 - PR #44 (2026-10-07) `fix(dialogue-colors): stop wasted verification requests and fix audit bugs`
 
 ## v1.2.0
