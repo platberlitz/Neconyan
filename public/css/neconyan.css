@@ -359,7 +359,7 @@ body.neconyan .sb-shell-header:has(.neconyan-page-intro-header) {
     display: grid;
     grid-template-columns: fit-content(calc(100% - 90px)) minmax(0, 1fr);
     flex-shrink: 0;
-    gap: 6px 12px;
+    gap: 2px 12px;
 }
 body.neconyan .sb-shell-header:has(.neconyan-page-intro-header) > :is(.sb-shell-subtitle, .sb-shell-description) { display: none; }
 body.neconyan .sb-shell-header:has(.neconyan-page-intro-header) > .sb-shell-title { grid-area: 1 / 1; align-self: center; align-content: center; min-height: 34px; padding: 0; }

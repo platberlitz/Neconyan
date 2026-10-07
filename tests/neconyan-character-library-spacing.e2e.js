@@ -36,9 +36,11 @@ for (const phone of [false, true]) {
                         const search = root.querySelector('#character_search_bar').getBoundingClientRect();
                         const heading = intro.querySelector('.neconyan-native-kicker').getBoundingClientRect();
                         const tour = intro.querySelector('.neconyan-tool-tour-button').getBoundingClientRect();
+                        const copy = intro.querySelector('.neconyan-tool-page-copy');
+                        const compactBlurbGap = copy.hidden || copy.getBoundingClientRect().top - tour.bottom <= 2;
                         const gap = search.top - intro.getBoundingClientRect().bottom;
-                        return { compactGap: gap >= 6 && gap <= 12, tourBesideHeading: tour.left >= heading.right && tour.left - heading.right <= 16 };
-                    })).toEqual({ compactGap: true, tourBesideHeading: true });
+                        return { compactGap: gap >= 6 && gap <= 12, compactBlurbGap, tourBesideHeading: tour.left >= heading.right && tour.left - heading.right <= 16 };
+                    })).toEqual({ compactGap: true, compactBlurbGap: true, tourBesideHeading: true });
                     if (!expanded) await toggle.click();
                 }
                 await toggle.click();
