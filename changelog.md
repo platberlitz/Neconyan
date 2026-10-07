@@ -21,6 +21,7 @@
 - PR #59 (2026-10-07) `docs: point help links to the official neconyan handbook`
 - PR #60 (2026-10-07) `feat(import): add explicit adoption as a new instance`
 - PR #61 (2026-10-07) `feat(settings): rebuild chat & writing settings and add MovingUI presets`
+- PR #62 (2026-10-07) `fix(import): keep jsonl chats selectable on android`
 
 ## v1.2.0
 
