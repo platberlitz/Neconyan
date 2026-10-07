@@ -1175,6 +1175,7 @@ async function editAssistantPrompt(assistant) {
             names: context.names, capabilities: { ...context.capabilities, notebook: true }, participants: sessionAssistants(session) });
         requireScope(source, session.id);
         const editor = h('textarea', { class: 'text_pole scratchpad-review-editor', rows: '16', value: previous ?? defaults.text, 'aria-label': t`Assistant prompt` });
+        const initialPrompt = editor.value;
         let reset = false;
         editor.addEventListener('input', () => { reset = false; });
         const content = h('div', { class: 'scratchpad-review' },
@@ -1186,7 +1187,9 @@ async function editAssistantPrompt(assistant) {
         if (result !== POPUP_RESULT.AFFIRMATIVE) return;
         requireScope(source, session.id);
         if (activeSession().settings.assistantPrompts?.[assistant.id] !== previous) throw new Error(t`The prompt changed while the editor was open. Open it again.`);
-        await updateSettings({ assistantPrompts: { [assistant.id]: reset ? null : editor.value } });
+        const useDefault = reset || (previous === undefined && editor.value === initialPrompt);
+        const prompt = previous !== undefined && editor.value === initialPrompt ? previous : editor.value;
+        await updateSettings({ assistantPrompts: { [assistant.id]: useDefault ? null : prompt } });
     } catch (error) {
         reportError(error, t`The assistant prompt could not be saved.`);
     }
