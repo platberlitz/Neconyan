@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { deflateRawSync } from 'node:zlib';
 import test, { after } from 'node:test';
+import { setImmediate as nextTurn } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
 import { setConfigFilePath } from '../src/util.js';
@@ -576,6 +577,56 @@ test('unsupported queued model and workflow settings refuse before paid submissi
         assert.notEqual(getJob(directories, context.job.id).recoverability, 'unknown-outcome');
     }
 });
+
+for (const provider of ['replicate', 'civitai']) {
+    for (const interruption of ['cancel', 'timeout']) {
+        test(`${provider} keeps ${interruption} active while downloading the image body`, async t => {
+            const directories = tempRoot();
+            const controller = new AbortController();
+            const context = { ...jobContext(directories), signal: controller.signal };
+            const settings = { provider, replicateKey: 'replicate-private-key', civitaiKey: 'civitai-private-key',
+                civitaiModel: 'urn:air:sdxl:checkpoint:123', sampler: 'euler_a', hostedTimeout: 30, seed: 12 };
+            saveImageSettings(directories, settings);
+            t.mock.timers.enable({ apis: ['setTimeout'] });
+            const downloading = Promise.withResolvers();
+            let downloadSignal;
+            let streamController;
+            const imageUrl = provider === 'replicate'
+                ? 'https://cdn.replicate.delivery/image.png' : 'https://cdn.civitai.com/image.png';
+            const pending = generateQuickImageGenJobImage(context, {
+                effectId: `${provider}:${interruption}`, prompt: 'village',
+                settingsFingerprint: quickImageGenSettingsFingerprint(settings), wait: async () => {},
+                fetch: async (url, options) => {
+                    if (options.method === 'POST') return jsonResponse({ id: 'queued-image' }, 201);
+                    if (url.endsWith('/queued-image')) return jsonResponse({ status: 'succeeded',
+                        output: [imageUrl], steps: [{ output: { images: [{ url: imageUrl }] } }] });
+                    assert.equal(url, imageUrl);
+                    downloadSignal = options.signal;
+                    return new Response(new ReadableStream({
+                        start(stream) {
+                            streamController = stream;
+                            stream.enqueue(Buffer.from(PNG_BASE64, 'base64'));
+                            options.signal.addEventListener('abort', () => stream.error(options.signal.reason), { once: true });
+                            downloading.resolve();
+                        },
+                    }));
+                },
+            });
+            // Observe errors immediately, including when the response body aborts.
+            const outcome = pending.then(image => ({ image }), error => ({ error }));
+            await downloading.promise;
+            await nextTurn();
+            if (interruption === 'cancel') controller.abort(new DOMException('Generation cancelled', 'AbortError'));
+            else t.mock.timers.tick(30_000);
+            // Finish a broken implementation's stream too, so a regression fails rather than hangs.
+            if (!downloadSignal.aborted) streamController.close();
+            const result = await outcome;
+            assert.equal(downloadSignal.aborted, true, 'the final download must retain the job deadline and cancellation');
+            assert.equal(result.error?.name, interruption === 'cancel' ? 'AbortError' : 'TimeoutError');
+            assert.equal(result.image, undefined);
+        });
+    }
+}
 
 function comfySuccess(promptId = 'prompt-1') {
     return jsonResponse({ [promptId]: { status: { status_str: 'success', completed: true },

@@ -124,16 +124,17 @@ export async function generateQueuedImageJob(context, { effectId, input, setting
             const result = await json(status);
             const state = String(result?.status || '').toLowerCase();
             if (state === 'succeeded') {
+                // Await the image body before finally removes timeout and cancellation protection.
                 if (provider === 'replicate') {
                     const source = extractProviderImageSource({ output: result.output });
                     if (!source) throw fail('Replicate completed without an image.', 'QIG_BAD_IMAGE');
-                    return materializeSource(source, fetchImpl, deadline.signal, provider, key);
+                    return await materializeSource(source, fetchImpl, deadline.signal, provider, key);
                 }
                 const url = getCivitaiWorkflowImageUrls(result)[0];
                 if (!url) throw fail('CivitAI completed without an image.', 'QIG_BAD_IMAGE');
                 const output = await fetchCivitaiOutput(url, key, { fetchImpl, signal: deadline.signal });
                 checkResponse(output, 'download');
-                return imageFromResponse(output);
+                return await imageFromResponse(output);
             }
             if (['failed', 'expired', 'canceled', 'cancelled'].includes(state)) throw fail(`The queued image request ${state}.`);
         }
