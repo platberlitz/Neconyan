@@ -7598,7 +7598,7 @@
   "Connections and defaults": "Connections and defaults",
   "Which connection profile to use when an agent does not have its own editor profile override. Leave this on the selected Connection Manager profile to follow the active profile.": "Which connection profile to use when an agent does not have its own editor profile override. Leave this on the selected Connection Manager profile to follow the active profile.",
   "Which connection profile Companion agents use when they do not have their own editor profile override. Leave empty to share the default above.": "Which connection profile Companion agents use when they do not have their own editor profile override. Leave empty to share the default above.",
-  "Run append-mode agents in parallel or sequentially.": "Run append-mode agents in parallel or sequentially.",
+  "Run append-mode agents together alongside rewrites, or one at a time in Order.": "Run append-mode agents together alongside rewrites, or one at a time in Order.",
   "Run companion agents in parallel or sequentially.": "Run companion agents in parallel or sequentially.",
   "Run companion agents at the same time as post-generation passes instead of after them.": "Run companion agents at the same time as post-generation passes instead of after them.",
   "Keep enabled In-Chat Agents separate between Individual chats and Group chats.": "Keep enabled In-Chat Agents separate between Individual chats and Group chats.",

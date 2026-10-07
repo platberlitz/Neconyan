@@ -76,7 +76,7 @@ Open this with **Connections & defaults** at the top of the Agents panel. These 
 
 **Companion connection profile**: a separate default just for companions. A quick, cheap model works well here. **Default connection** means 'use the one above'. A companion's own profile, set in its editor, beats both.
 
-**Append agents**: how after-reply agents set to **Append generated content** run. **Run together** is faster but sends several requests at once. **Run one at a time** follows each agent's Order and is kinder to rate limits.
+**Append agents**: how after-reply agents set to **Append generated content** run. **Run together** starts every append agent at once, alongside the rewrite agents, so it is fastest but sends several requests at once. **Run one at a time** follows each agent's Order and is kinder to rate limits. Either way, rewrite agents only edit the reply itself: added blocks such as choices or trackers are set aside, cleaned of any copy of the reply and of duplicates, then placed back around the finished reply.
 
 **Companion agents**: the same choice for companions. Batching and 'wait for' links can still group or delay particular companions.
 

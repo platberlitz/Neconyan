@@ -2,6 +2,7 @@ import { appendHelperPrefillMessages } from '../../public/scripts/extensions/hel
 import { applyRegexScriptList } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 import { buildRegexScriptRefsForAgent } from '../../public/scripts/extensions/in-chat-agents/regex-snapshot-store.js';
 import { inspectTrackerState, mergeTrackerRepairPayload, TRACKER_REPAIR_INSTRUCTION } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
+import { composePromptTransformDraft, runPromptTransformStages } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-synthesis.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { createProviderScope, readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
@@ -232,43 +233,39 @@ export async function runRoleplayAgentPostprocessing(context, options) {
         && agent.prompt.trim() && (!options.repairTrackers || agent.postProcess.enabled && agent.postProcess.promptTransformEnabled && ['post', 'both'].includes(agent.phase) && agent.postProcess.type !== 'extract'));
     const baseline = companionOutput || manual ? value : roleplayAgentOutputBaseline(value, pre);
     const modelName = id => `${options.namespace ? options.namespace + ':' : ''}post:${id}`;
-    let text = baseline, postFailed = false;
+    let postFailed = false;
     const runs = [];
-    for (let index = 0; index < selected.length;) {
-        const agent = selected[index];
-        if (agent.postProcess.promptTransformMode !== 'append') {
-            const run = await modelRun(context, options, agent, text, modelName(agent.id));
-            if (run.outputText) text = run.outputText;
+    const parallel = snapshot.agents.appendMode === 'parallel';
+    // Run together shares one provider scope, so rewrite and append steps can be in flight at once.
+    const scope = parallel ? { ...context, providerScope: context.providerScope ?? createProviderScope(context) } : context;
+    const { draft } = await runPromptTransformStages({
+        agents: selected, text: baseline, parallel, isPrepend: prepend,
+        isAppend: agent => agent.postProcess.promptTransformMode === 'append',
+        runRewrite: async (agent, body) => {
+            const run = await modelRun(scope, options, agent, body, modelName(agent.id));
             runs.push({ ...run, mode: 'rewrite' });
-            if (companionOutput && run.status !== 'done') { postFailed = true; break; }
-            index++;
-            continue;
-        }
-        const batch = [];
-        while (index < selected.length && selected[index].postProcess.promptTransformMode === 'append') batch.push(selected[index++]);
-        const baseline = text;
-        const scope = { ...context, providerScope: context.providerScope ?? createProviderScope(context) };
-        let results;
-        if (snapshot.agents.appendMode === 'parallel') {
-            const settled = await Promise.allSettled(batch.map(item => modelRun(scope, options, item, baseline, modelName(item.id))));
-            const failed = settled.find(item => item.status === 'rejected');
-            if (failed) throw failed.reason;
-            results = settled.map(item => item.value);
-        } else {
-            results = [];
-            for (const item of batch) results.push(await modelRun(context, options, item, baseline, modelName(item.id)));
-        }
-        const before = [], after = [];
-        for (let offset = 0; offset < results.length; offset++) {
-            const run = results[offset];
-            runs.push({ ...run, mode: 'append' });
-            if (!run.outputText) continue;
-            const list = prepend(batch[offset], run.outputText) ? before : after;
-            if (!list.includes(run.outputText)) list.push(run.outputText);
-        }
-        text = join(join(before.reduce(join, ''), baseline), after.reduce(join, ''));
-        if (companionOutput && results.some(run => run.status !== 'done')) { postFailed = true; break; }
-    }
+            if (companionOutput && run.status !== 'done') { postFailed = true; return { stop: true }; }
+            return run.outputText ? { text: run.outputText } : {};
+        },
+        runAppend: async (batch, body) => {
+            let results;
+            if (parallel) {
+                const settled = await Promise.allSettled(batch.map(item => modelRun(scope, options, item, body, modelName(item.id))));
+                const failed = settled.find(item => item.status === 'rejected');
+                if (failed) throw failed.reason;
+                results = settled.map(item => item.value);
+            } else {
+                results = [];
+                for (const item of batch) results.push(await modelRun(scope, options, item, body, modelName(item.id)));
+            }
+            runs.push(...results.map(run => ({ ...run, mode: 'append' })));
+            if (companionOutput && results.some(run => run.status !== 'done')) { postFailed = true; return { stop: true }; }
+            return { outputs: results.map((run, offset) => ({ agent: batch[offset], text: run.outputText })) };
+        },
+    });
+    const agentOrder = new Map(selected.map((agent, index) => [agent.id, index]));
+    runs.sort((left, right) => agentOrder.get(left.agentId) - agentOrder.get(right.agentId));
+    let text = composePromptTransformDraft(draft, join);
     if (companionOutput && postFailed || manual && !options.repairTrackers && runs.some(run => run.status === 'length-limited')) {
         return savePhase(context, snapshot.account, phaseName, { identity, text: value, extra: {}, metadata: {}, runs, failed: true });
     }
