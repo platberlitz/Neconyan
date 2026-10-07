@@ -16643,7 +16643,8 @@ export async function sendChatImport(formData, { target, group, refresh = true, 
             if (group) throw new Error(t`This group chat belongs to another instance. Import it through a character's 'Import as new instance' option to adopt a separate copy.`);
             throw new Error(t`This chat belongs to another instance. Tick 'Import as new instance', then choose the chats again. The copy will be separate from your existing character and history.`);
         }
-        if (failure?.code === 'ROLEPLAY_SOURCE_CHANGED') throw new Error(t`This chat no longer matches its recorded origin or seal. To adopt a separate copy, explicitly choose 'Import as new instance'.`);
+        if (failure?.code === 'ROLEPLAY_IMPORT_ORIGIN_CHANGED') throw new Error(t`This chat no longer matches its recorded origin or seal. To adopt a separate copy, explicitly choose 'Import as new instance'.`);
+        if (failure?.code === 'ROLEPLAY_SOURCE_CHANGED') throw new Error(t`The character changed while the chats were importing. Reload the character list, then try again.`);
         throw new Error(`Chat import failed (${response.status}).`);
     }
     const result = await response.json();

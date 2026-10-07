@@ -490,14 +490,17 @@ function assertImportedOrigin(lease, records) {
     const marker = metadata.neconyan_roleplay;
     const { state } = roleplayLease(lease);
     const resource = marker && state.resources[marker.instanceId];
-    if (!resource || resource.kind !== 'chat' || resource.status !== 'live'
+    if (!resource || resource.kind !== 'chat'
         || resource.accountId !== state.accountId || resource.dataEpoch !== state.dataEpoch) {
         throw roleplayError('ROLEPLAY_FOREIGN_SOURCE', 'This chat belongs to another instance. Select Import as new instance to adopt a separate copy.');
     }
+    const originChanged = () => roleplayError('ROLEPLAY_IMPORT_ORIGIN_CHANGED',
+        'This chat no longer matches its recorded local origin. Select Import as new instance to adopt a separate copy.');
+    if (resource.status !== 'live') throw originChanged();
     const saved = readRoleplayChatLocked(lease, resource.locator);
     if (!isDeepStrictEqual(marker, { schema: 1, instanceId: marker.instanceId, revision: resource.revision, writeId: resource.head.writeId })
         || metadata.integrity !== saved.records[0].chat_metadata.integrity
-        || roleplayContentHash(records) !== resource.head.contentHash) throw conflict();
+        || roleplayContentHash(records) !== resource.head.contentHash) throw originChanged();
 }
 
 function newImportCharacter(lease, character, timestamp) {

@@ -5260,6 +5260,7 @@
   "This group chat belongs to another instance. Import it through a character's 'Import as new instance' option to adopt a separate copy.": "This group chat belongs to another instance. Import it through a character's 'Import as new instance' option to adopt a separate copy.",
   "This chat belongs to another instance. Tick 'Import as new instance', then choose the chats again. The copy will be separate from your existing character and history.": "This chat belongs to another instance. Tick 'Import as new instance', then choose the chats again. The copy will be separate from your existing character and history.",
   "This chat no longer matches its recorded origin or seal. To adopt a separate copy, explicitly choose 'Import as new instance'.": "This chat no longer matches its recorded origin or seal. To adopt a separate copy, explicitly choose 'Import as new instance'.",
+  "The character changed while the chats were importing. Reload the character list, then try again.": "The character changed while the chats were importing. Reload the character list, then try again.",
   "Does not have an Id for this character in world select menu.": "Does not have an Id for this character in world select menu.",
   "Nameless": "Nameless",
   "Does not have an Id for this character in editor menu.": "Does not have an Id for this character in editor menu.",

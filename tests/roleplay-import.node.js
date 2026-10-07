@@ -134,7 +134,7 @@ test('strict import accepts only a current local origin and seal, without weaken
         if (field === 'message') records[1].mes = 'Changed outside this instance';
         assert.throws(() => commitSingleChatImport(f.scope, input(f, { operationKey: field,
             bytes: Buffer.from(records.map(JSON.stringify).join('\n')) }), roleplayNativeHost, convertImportedChatFile),
-        { code: 'ROLEPLAY_SOURCE_CHANGED' });
+        { code: 'ROLEPLAY_IMPORT_ORIGIN_CHANGED', roleplayImportUnaccepted: true });
     }
     const foreign = structuredClone(f.records);
     foreign[0].chat_metadata.neconyan_roleplay = { schema: 1, instanceId: 'foreign-instance', revision: 1, writeId: 'foreign-write' };
