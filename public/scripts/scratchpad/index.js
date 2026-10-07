@@ -691,7 +691,7 @@ function render() {
     if (!app.built) return;
     renderHeader();
     renderChat();
-    const key = `${app.source?.key ?? ''}|${activeSession()?.id ?? ''}`;
+    const key = JSON.stringify([app.source?.key ?? '', activeSession()?.id ?? '', currentSettings().notes]);
     if (app.tab === 'context' && key !== app.contextKey) renderContext({ force: true });
     if (app.tab === 'sessions') renderSessions();
 }
@@ -1194,7 +1194,7 @@ async function editAssistantPrompt(assistant) {
 
 function renderContext({ force = true } = {}) {
     const panel = app.el.panels.context;
-    const key = `${app.source?.key ?? ''}|${activeSession()?.id ?? ''}`;
+    const key = JSON.stringify([app.source?.key ?? '', activeSession()?.id ?? '', currentSettings().notes]);
     if (!force && key === app.contextKey && panel.childElementCount) return;
     app.contextKey = key;
     clear(panel);
