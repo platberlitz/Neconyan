@@ -22,4 +22,13 @@ describe('transient toasts dismiss themselves', () => {
         expect(body).toMatch(/onHidden\(\) \{[\s\S]*?activePromptTransformToasts\.delete\(toast\)/);
     });
 
+    test('external media blocked toast closes after 2 seconds', () => {
+        const source = readPublic('scripts/chats.js');
+        const start = source.indexOf('t`External media has been blocked`');
+        expect(start).toBeGreaterThan(-1);
+        const options = source.slice(start, source.indexOf('accountStorage.setItem(warningShownKey', start));
+        expect(options).toMatch(/timeOut: 2000,/);
+        expect(options).toMatch(/extendedTimeOut: 2000,/);
+        expect(options).not.toMatch(/timeOut: 0/);
+    });
 });
