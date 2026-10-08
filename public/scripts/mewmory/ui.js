@@ -894,15 +894,35 @@ function render() {
     }
 }
 
-export async function mountMewmory(root) {
-    initMewmory();
-    if (!document.getElementById('mewmory-css')) {
-        const style = document.createElement('link');
+/** Resolves once the Mewmory stylesheet applies, so the panel never paints unstyled. */
+function loadMewmoryStyles() {
+    let style = document.getElementById('mewmory-css');
+    if (!style) {
+        style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.rel = 'stylesheet';
         style.href = 'css/mewmory.css?v=20260926c';
         document.head.append(style);
     }
+    if (style.rel !== 'stylesheet') {
+        style.dataset.sbStyleActivated = 'true';
+        style.media = 'all';
+        style.rel = 'stylesheet';
+    }
+    if (style.sheet) return Promise.resolve();
+    return new Promise(resolve => {
+        const done = () => {
+            window.clearTimeout(timeout);
+            resolve();
+        };
+        const timeout = window.setTimeout(done, 8000);
+        style.addEventListener('load', done, { once: true });
+        style.addEventListener('error', done, { once: true });
+    });
+}
+
+export async function mountMewmory(root) {
+    initMewmory();
+    await loadMewmoryStyles();
     if (ui.root !== root) {
         ui.root = root;
         window.addEventListener('mewmory:updated', render);
