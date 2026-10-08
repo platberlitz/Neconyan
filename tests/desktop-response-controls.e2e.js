@@ -105,3 +105,56 @@ test('desktop response placement persists, preserves swipe actions, and restores
     await expect(footer.locator('.swipeRightBlock')).toHaveCount(1);
     expect(await message.evaluate(element => element.querySelector('.swipe_right') === window.responseControl)).toBe(true);
 });
+
+test('last response controls stay above the toolbar at the bottom of a long chat', async ({ app }, info) => {
+    test.setTimeout(180000);
+    const account = await app.account();
+    const page = await account.open({ workspace: false });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.evaluate(async avatar => {
+        const context = window.SillyTavern.getContext();
+        await context.getCharacters();
+        await context.selectCharacterById(context.characters.findIndex(character => character.avatar === avatar));
+        const response = 'A long response fills the chat before its controls.\n\n'.repeat(50)
+            + '<details open><summary>World details</summary><p>The expanded panel ends here.</p></details>';
+        context.chat[0].mes = response;
+        context.chat[0].swipes = [response, response + '\n\nSecond response.'];
+        context.chat[0].swipe_id = 0;
+        await context.saveChat();
+        await context.reloadCurrentChat();
+    }, account.avatar);
+    const footer = page.locator('#chat .last_mes .nn-response-controls');
+    await expect(page.locator('#sb-bottom-chat-bar')).toBeVisible();
+
+    for (const style of ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']) {
+        await page.locator('#chat_display').selectOption(style, { force: true });
+        for (const position of ['below', 'inside']) {
+            await page.locator('#desktop_response_controls').selectOption(position, { force: true });
+            await expect.poll(() => footer.evaluate(element => element.parentElement.classList.contains('mes_block'))).toBe(position === 'inside');
+            // Style changes can reflow the message after the first scroll attempt.
+            await expect.poll(() => footer.evaluate(element => {
+                const scroller = document.getElementById('chat');
+                scroller.scrollTop = scroller.scrollHeight;
+                const chat = scroller.getBoundingClientRect();
+                const toolbar = document.getElementById('sb-bottom-chat-bar').getBoundingClientRect();
+                const box = element.getBoundingClientRect();
+                const arrows = [...element.querySelectorAll('.swipe_left, .swipe_right')].filter(arrow => arrow.getBoundingClientRect().width);
+                return {
+                    bottom: box.bottom,
+                    visibleBottom: Math.min(chat.bottom, toolbar.top),
+                    fits: box.bottom <= Math.min(chat.bottom, toolbar.top),
+                    arrowsReachable: arrows.every(arrow => {
+                        const rect = arrow.getBoundingClientRect();
+                        return arrow.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+                    }),
+                };
+            }), { message: `style ${style}, ${position}: controls clear the toolbar and receive clicks` }).toMatchObject({ fits: true, arrowsReachable: true });
+            await page.screenshot({ path: info.outputPath(`desktop-${style}-${position}.png`) });
+        }
+    }
+    await page.locator('#desktop_response_controls').selectOption('below', { force: true });
+    await footer.locator('.swipe_right').click();
+    await expect(page.locator('#chat .last_mes .mes_text')).toContainText('Second response.');
+    await footer.locator('.swipe_left').click();
+    await expect(page.locator('#chat .last_mes .mes_text')).not.toContainText('Second response.');
+});
