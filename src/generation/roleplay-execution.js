@@ -457,14 +457,15 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                     request.maxTokens, limit, () => environment));
                 const historySnapshot = vectors ? { ...request.worldInfo, attachments: request.worldInfo.attachments
                     .filter(item => !vectors.projection.files.some(file => file.index === item.index)) } : request.worldInfo;
-                const { content, reasoning, global, characterExamples, authorNote, depthPrompt, depthPrompts, worldInfoContent, companionHostIndex } = prepareRoleplayHistoryContent(initialRecords, historySnapshot, environment, agentPre?.history);
+                const { content, reasoning, global, characterExamples, authorNote, depthPrompt, depthPrompts, worldInfoContent, companionHostIndex, companionBlocks } = prepareRoleplayHistoryContent(initialRecords, historySnapshot, environment, agentPre?.history);
                 const scanContent = worldInfoContent ?? content;
                 const promptChat = initialRecords.slice(1).flatMap((record, index) => vectors?.projection.removed.some(item => item.index === index) || record.is_system && index !== companionHostIndex
                     || !scanContent[index].trim() && !record.extra?.media?.length ? [] : [
                         request.worldInfo.settings.world_info_include_names ? `${record.name}: ${scanContent[index]}` : scanContent[index],
                     ]).reverse();
                 const data = { identity, content, reasoning, global, characterExamples, authorNote, depthPrompt, ...(depthPrompts ? { depthPrompts } : {}),
-                    ...(worldInfoContent ? { worldInfoContent } : {}), ...(companionHostIndex !== undefined ? { companionHostIndex } : {}), promptChat, macroState: environment.captureState() };
+                    ...(worldInfoContent ? { worldInfoContent } : {}), ...(companionHostIndex !== undefined ? { companionHostIndex } : {}),
+                    ...(companionBlocks ? { companionBlocks } : {}), promptChat, macroState: environment.captureState() };
                 preparedHistory = { ...data, hash: roleplayHash(data) };
                 writeArtifact(directories, job.id, 'roleplay-history-input', preparedHistory);
             }
@@ -473,6 +474,14 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 || data.content.some(value => typeof value !== 'string') || !Array.isArray(data.promptChat)
                 || data.promptChat.some(value => typeof value !== 'string') || !data.global || !data.macroState || hash !== roleplayHash(data)) {
                 throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The prepared Roleplay history needs recovery.', 503);
+            }
+            if (data.companionBlocks !== undefined) {
+                const keys = new Set(contributions.extensions.map(item => item.key));
+                if (!Array.isArray(data.companionBlocks) || data.companionBlocks.some(item => keys.has(item?.key))) {
+                    throw roleplayError('ROLEPLAY_INVALID', 'A kept Companion notes block conflicts with an existing contributor.', 409);
+                }
+                contributions = { ...contributions, extensions: [...contributions.extensions, ...data.companionBlocks] };
+                scanContributions = contributions.extensions.filter(prompt => prompt.scan).map(prompt => prompt.content);
             }
             acceptedMacros = { ...boundMacroSnapshot(savedRoleplayMacroSnapshot({ ...request.worldInfo, global: data.global, characterExamples: data.characterExamples }, initialRecords)), variables: data.macroState.variables,
                 extra: { ...acceptedMacros.extra, chatMetadata: data.macroState.chatMetadata, bannedWords: data.macroState.bannedWords } };

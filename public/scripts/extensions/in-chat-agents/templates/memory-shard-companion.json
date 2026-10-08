@@ -33,7 +33,8 @@
     "minContextTokens": 30000,
     "includeInChatHistory": true,
     "includeAllChatHistory": true,
-    "keepInChatHistoryWhenHostHidden": true
+    "keepInChatHistoryWhenHostHidden": true,
+    "chatHistoryPlacement": "block"
   },
   "injection": {
     "position": 0,

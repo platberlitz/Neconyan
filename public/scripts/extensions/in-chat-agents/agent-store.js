@@ -43,6 +43,7 @@ import {
  * @property {number} chatHistoryDepth
  * @property {boolean} includeAllChatHistory
  * @property {boolean} keepInChatHistoryWhenHostHidden
+ * @property {'latest'|'source'|'block'} chatHistoryPlacement - Where kept notes go: the newest reply, the reply each note was written for, or one labelled block at the agent's Position, Depth and Role
  * @property {number} historyDepth
  * @property {AgentCompanionFeedback} feedback
  * @property {boolean} batch
@@ -1054,6 +1055,7 @@ export function createDefaultCompanionConfig() {
         chatHistoryDepth: 1,
         includeAllChatHistory: true,
         keepInChatHistoryWhenHostHidden: false,
+        chatHistoryPlacement: 'latest',
         historyDepth: 3,
         feedback: {
             enabled: false,
@@ -1109,6 +1111,9 @@ export function normalizeCompanionConfig(raw = {}) {
         chatHistoryDepth: clampNumber(rawConfig.chatHistoryDepth, defaults.chatHistoryDepth, 1, Infinity),
         includeAllChatHistory: rawConfig.includeAllChatHistory === undefined ? defaults.includeAllChatHistory : Boolean(rawConfig.includeAllChatHistory),
         keepInChatHistoryWhenHostHidden: Boolean(rawConfig.keepInChatHistoryWhenHostHidden),
+        chatHistoryPlacement: ['latest', 'source', 'block'].includes(rawConfig.chatHistoryPlacement)
+            ? rawConfig.chatHistoryPlacement
+            : defaults.chatHistoryPlacement,
         historyDepth: clampNumber(rawConfig.historyDepth, defaults.historyDepth, 1, 10),
         feedback: {
             ...rawFeedback,

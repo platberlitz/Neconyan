@@ -202,6 +202,61 @@ export function getActiveCompanionResults(message) {
     return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
 }
 
+export const COMPANION_HISTORY_PROMPT_KEY_PREFIX = 'inchat_agent_companion_history_';
+/** Where kept notes go: the newest reply, the reply each note was written for, or one labelled block. */
+export const COMPANION_CHAT_HISTORY_PLACEMENTS = Object.freeze(['latest', 'source', 'block']);
+
+export function normalizeCompanionChatHistoryPlacement(value) {
+    return COMPANION_CHAT_HISTORY_PLACEMENTS.includes(value) ? value : 'latest';
+}
+
+/**
+ * Normalises the Position, Depth, Role and scan copied from an agent for a kept-notes block.
+ * @param {object} injection
+ * @returns {{ position: number, depth: number, role: number, scan: boolean }}
+ */
+export function normalizeCompanionChatHistoryInjection(injection) {
+    const source = injection && typeof injection === 'object' ? injection : {};
+    const whole = (value, fallback, min, max) => {
+        const number = Number(value);
+        return Number.isFinite(number) ? Math.min(max, Math.max(min, Math.floor(number))) : fallback;
+    };
+    return {
+        position: whole(source.position, 1, 0, 2),
+        depth: whole(source.depth, 1, 0, 99),
+        role: whole(source.role, 0, 0, 2),
+        scan: source.scan === true,
+    };
+}
+
+/**
+ * Builds the labelled kept-notes blocks for Companions that send their notes as one block.
+ * @param {{ agentId: string, placement: string, injection: object|null, contribution: { name: string, content: string } }[]} entries
+ * @param {(entry: object) => string} [getContent]
+ * @returns {{ key: string, agentId: string, name: string, content: string, position: number, depth: number, role: number, scan: boolean }[]}
+ */
+export function buildCompanionChatHistoryBlocks(entries = [], getContent = entry => entry.contribution?.content) {
+    const blocks = new Map();
+    for (const entry of entries) {
+        if (entry?.placement !== 'block') continue;
+        const content = String(getContent(entry) ?? '').trim();
+        if (!content) continue;
+        const block = blocks.get(entry.agentId) ?? {
+            key: `${COMPANION_HISTORY_PROMPT_KEY_PREFIX}${entry.agentId}`,
+            agentId: entry.agentId,
+            name: entry.contribution?.name || 'Companion',
+            notes: [],
+            ...normalizeCompanionChatHistoryInjection(entry.injection),
+        };
+        block.notes.push(content);
+        blocks.set(entry.agentId, block);
+    }
+    return [...blocks.values()].map(({ notes, ...block }) => ({
+        ...block,
+        content: `[${block.name} - kept notes]\n${notes.join('\n\n')}`,
+    }));
+}
+
 export function isRetainedCompanionResult(result) {
     return Boolean(
         result
@@ -227,12 +282,12 @@ export function hasCompanionChatHistoryForHiddenHost(message) {
 }
 
 /**
- * Selects the latest retained results for each Companion across the supplied candidate messages.
- * @param {object[]} messages
- * @param {{ policyMessages?: object[] }} options
- * @returns {Map<object, Set<string>>}
+ * Uses explicit policies when supplied, otherwise the latest retained result for each Companion.
+ * @param {object[]} policyMessages
+ * @param {Record<string, object>|null} policies
+ * @returns {Map<string, object>}
  */
-export function selectCompanionChatHistory(messages = [], { policyMessages = messages, policies = null } = {}) {
+function collectCompanionHistoryPolicies(policyMessages = [], policies = null) {
     const policyByAgent = new Map(policies ? Object.entries(policies) : []);
 
     for (const message of policies ? [] : policyMessages) {
@@ -245,6 +300,17 @@ export function selectCompanionChatHistory(messages = [], { policyMessages = mes
         }
     }
 
+    return policyByAgent;
+}
+
+/**
+ * Selects the latest retained results for each Companion across the supplied candidate messages.
+ * @param {object[]} messages
+ * @param {{ policyMessages?: object[], policies?: Record<string, object>|null }} options
+ * @returns {Map<object, Set<string>>}
+ */
+export function selectCompanionChatHistory(messages = [], { policyMessages = messages, policies = null } = {}) {
+    const policyByAgent = collectCompanionHistoryPolicies(policyMessages, policies);
     const candidatesByAgent = new Map();
 
     for (const message of messages) {
@@ -304,15 +370,19 @@ export function getCompanionChatHistoryContributions(message, resolveMacros = co
 }
 
 /**
- * Collects selected retained notes across messages and assigns them to the newest selected host.
- * Each note is resolved against its original host before consolidation.
+ * Collects selected retained notes across messages and decides where each one goes.
+ * Each note is resolved against its original host first. 'latest' notes go to the newest
+ * selected host, 'source' notes stay on their own visible reply (falling back to that host),
+ * and 'block' notes get no host because they are sent as one labelled block instead.
  * @param {object[]} messages
  * @param {Map<object, Set<string>>} selections
  * @param {(message: object) => ((content: string) => string)} getMacroResolver
  * @param {(message: object) => boolean} canHost
- * @returns {{ host: object|null, entries: { message: object, contribution: { identifier: string, name: string, role: string, content: string, kind: string } }[] }}
+ * @param {{ policyMessages?: object[], policies?: Record<string, object>|null }} options
+ * @returns {{ host: object|null, entries: { message: object, contribution: { identifier: string, name: string, role: string, content: string, kind: string }, agentId: string, placement: string, host: object|null, injection: object|null }[] }}
  */
-export function consolidateCompanionChatHistory(messages = [], selections = new Map(), getMacroResolver = () => content => content, canHost = () => true) {
+export function consolidateCompanionChatHistory(messages = [], selections = new Map(), getMacroResolver = () => content => content, canHost = () => true, { policyMessages = messages, policies = null } = {}) {
+    const policyByAgent = collectCompanionHistoryPolicies(policyMessages, policies);
     let host = null;
     const entries = [];
 
@@ -320,16 +390,41 @@ export function consolidateCompanionChatHistory(messages = [], selections = new 
         const agentIds = selections.get(message);
         if (!(agentIds instanceof Set)) continue;
 
-        const selected = getCompanionChatHistoryContributions(message, getMacroResolver(message), { agentIds });
-        if (selected.length === 0) continue;
-
-        if (canHost(message)) {
-            host = message;
+        const results = getActiveCompanionResults(message);
+        for (const contribution of getCompanionChatHistoryContributions(message, getMacroResolver(message), { agentIds })) {
+            const agentId = contribution.identifier.slice(COMPANION_HISTORY_PROMPT_KEY_PREFIX.length);
+            const policy = policyByAgent.get(agentId) ?? results[agentId] ?? {};
+            const placement = normalizeCompanionChatHistoryPlacement(policy.chatHistoryPlacement);
+            if (placement !== 'block' && canHost(message)) {
+                host = message;
+            }
+            entries.push({
+                message,
+                contribution,
+                agentId,
+                placement,
+                host: null,
+                injection: placement === 'block'
+                    ? normalizeCompanionChatHistoryInjection(policy.chatHistoryInjection ?? results[agentId]?.chatHistoryInjection)
+                    : null,
+            });
         }
-        entries.push(...selected.map(contribution => ({ message, contribution })));
     }
 
-    host ??= messages.findLast(message => message && !message.is_user && canHost(message)) ?? null;
+    if (entries.length === 0 || entries.some(entry => entry.placement !== 'block')) {
+        host ??= messages.findLast(message => message && !message.is_user && canHost(message)) ?? null;
+    }
+
+    for (const entry of entries) {
+        if (entry.placement === 'block') continue;
+        entry.host = entry.placement === 'source' && !entry.message.is_system && canHost(entry.message)
+            ? entry.message
+            : host;
+    }
+
+    if (entries.length > 0 && !entries.some(entry => entry.host && entry.host === host)) {
+        host = null;
+    }
 
     return { host, entries };
 }

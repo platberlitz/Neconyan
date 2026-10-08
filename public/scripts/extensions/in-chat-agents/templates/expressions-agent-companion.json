@@ -33,7 +33,8 @@
       "depth": 0
     },
     "batch": false,
-    "maxTokens": 64000
+    "maxTokens": 64000,
+    "chatHistoryPlacement": "source"
   },
   "injection": {
     "position": 0,

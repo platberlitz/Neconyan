@@ -64,6 +64,7 @@ export function nativeAgentDefinition(raw) {
             includeSystemPrompt: companion.includeSystemPrompt !== false, includeHistory: companion.includeHistory !== false,
             includeInChatHistory: Boolean(companion.includeInChatHistory), includeAllChatHistory: companion.includeAllChatHistory !== false,
             keepInChatHistoryWhenHostHidden: Boolean(companion.keepInChatHistoryWhenHostHidden), chatHistoryDepth: number(companion.chatHistoryDepth, 1, 1),
+            chatHistoryPlacement: oneOf(companion.chatHistoryPlacement, ['latest', 'source', 'block'], 'latest'),
             historyDepth: number(companion.historyDepth, 3, 1, 10), feedback: { enabled: Boolean(companion.feedback?.enabled), depth: number(companion.feedback?.depth, 1, 1, 10) },
             batch: Boolean(companion.batch), batchAgentIds: identifiers(companion.batchAgentIds),
             sendContextToCompanions: Boolean(companion.sendContextToCompanions), contextRecipientAgentIds: identifiers(companion.contextRecipientAgentIds),

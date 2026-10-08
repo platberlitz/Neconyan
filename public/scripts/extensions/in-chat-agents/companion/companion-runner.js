@@ -65,6 +65,8 @@ import {
     isRetryableCompanionFailure,
     isSuppressedCompanionResult,
     isValidCompanionMessage,
+    normalizeCompanionChatHistoryInjection,
+    normalizeCompanionChatHistoryPlacement,
     normalizePlotCompassObjective,
     planCompanionNoteCleanup,
     TRACKER_EMPTY_OUTPUT_INSTRUCTION,
@@ -530,6 +532,7 @@ export function setCompanionResult(message, agent, update = {}) {
             chatHistoryDepth: companion.chatHistoryDepth,
             includeAllChatHistory: Boolean(companion.includeAllChatHistory),
             keepInChatHistoryWhenHostHidden: Boolean(companion.keepInChatHistoryWhenHostHidden),
+            ...getCompanionChatHistoryPlacementPolicy(agent, companion),
             updatedAt: update.updatedAt ?? new Date().toISOString(),
         },
     };
@@ -580,6 +583,19 @@ export function updateCompanionResult(message, agentId, update = {}) {
 }
 
 /**
+ * Copies where kept notes go, plus the Position, Depth, Role and scan used for a kept-notes block.
+ * @param {object} agent
+ * @param {object} companion
+ * @returns {{ chatHistoryPlacement: string, chatHistoryInjection: { position: number, depth: number, role: number, scan: boolean } }}
+ */
+function getCompanionChatHistoryPlacementPolicy(agent, companion) {
+    return {
+        chatHistoryPlacement: normalizeCompanionChatHistoryPlacement(companion.chatHistoryPlacement),
+        chatHistoryInjection: normalizeCompanionChatHistoryInjection(agent?.injection),
+    };
+}
+
+/**
  * Applies a live Companion's history policy to every saved swipe in the active chat.
  * Stored snapshots remain the fallback for cards whose agent was deleted.
  * @param {object} agent
@@ -598,6 +614,7 @@ export async function syncCompanionChatHistoryConfig(agent) {
         chatHistoryDepth: companion.chatHistoryDepth,
         includeAllChatHistory: Boolean(companion.includeAllChatHistory),
         keepInChatHistoryWhenHostHidden: Boolean(companion.keepInChatHistoryWhenHostHidden),
+        ...getCompanionChatHistoryPlacementPolicy(agent, companion),
     };
     let updatedCount = 0;
 
@@ -613,8 +630,8 @@ export async function syncCompanionChatHistoryConfig(agent) {
             for (const record of [result, result.previousResult]) {
                 if (!record || typeof record !== 'object') continue;
                 for (const [key, value] of Object.entries(update)) {
-                    if (record[key] !== value) {
-                        record[key] = value;
+                    if (JSON.stringify(record[key]) !== JSON.stringify(value)) {
+                        record[key] = structuredClone(value);
                         changed = true;
                     }
                 }

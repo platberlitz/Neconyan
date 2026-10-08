@@ -150,6 +150,7 @@ export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent
             addSelect(history, 'includeInChatHistory', 'Keep in chat history', yesNo, config.includeInChatHistory, true);
             addSelect(history, 'includeAllChatHistory', 'Keep all saved notes', yesNo, config.includeAllChatHistory, true);
             addNumber(history, 'chatHistoryDepth', 'Notes to keep when not keeping all', config.chatHistoryDepth, 1, null, true);
+            addSelect(history, 'chatHistoryPlacement', 'Where kept notes go', [['latest', 'Newest reply'], ['source', 'Each note\'s own reply'], ['block', 'One labelled block']], config.chatHistoryPlacement ?? 'latest', true);
             addSelect(history, 'keepInChatHistoryWhenHostHidden', 'Keep notes when the reply is hidden', yesNo, config.keepInChatHistoryWhenHostHidden, true);
             history.append('<p class="ica--profile-help">Saved companion notes become context for future replies. These settings also update notes in the open chat.</p>');
             const behaviour = addSection('Companion settings');

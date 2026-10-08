@@ -267,6 +267,36 @@ test('retained hidden companion notes use their original host and frozen prompt 
     assert.equal(f.rows()[2].extra.inChatAgentCompanionResults.old.content, 'ONLY_NOTE evening-bell by {{char}}');
 });
 
+test('kept notes stay on their own reply or travel as one labelled block when their Companion asks for it', async t => {
+    const note = (content, placement, extra = {}) => ({ status: 'done', content, agentName: placement === 'block' ? 'Keeper' : 'Lens',
+        includeInChatHistory: true, includeAllChatHistory: true, chatHistoryDepth: 1, chatHistoryPlacement: placement, ...extra });
+    const injection = { position: 1, depth: 0, role: 0, scan: false };
+    let firstReply = '';
+    const f = prepared(t, [], { changeRecords(records) {
+        firstReply = records[2].mes;
+        records[2].extra.inChatAgentCompanionResults = { lens: note('SOURCE_NOTE_ONE', 'source'), keep: note('BLOCK_NOTE_ONE', 'block', { chatHistoryInjection: injection }) };
+        records.push({ name: 'Ari', is_user: true, mes: 'Second question', extra: {} },
+            { name: 'Nova', is_user: false, mes: 'Second answer', extra: { inChatAgentCompanionResults: {
+                lens: note('SOURCE_NOTE_TWO', 'source'), keep: note('BLOCK_NOTE_TWO', 'block', { chatHistoryInjection: injection }) } } },
+            { name: 'Ari', is_user: true, mes: 'Third question', extra: {} });
+    } });
+    await f.run({ generate: paid('main', options => {
+        const contents = options.messages.map(message => typeof message.content === 'string' ? message.content : JSON.stringify(message.content));
+        const first = contents.find(content => content.includes(firstReply));
+        const second = contents.find(content => content.includes('Second answer'));
+        assert.match(first, /SOURCE_NOTE_ONE/);
+        assert.doesNotMatch(first, /SOURCE_NOTE_TWO|BLOCK_NOTE/);
+        assert.match(second, /SOURCE_NOTE_TWO/);
+        assert.doesNotMatch(second, /SOURCE_NOTE_ONE|BLOCK_NOTE/);
+        const block = options.messages.find(message => String(message.content).includes('[Keeper - kept notes]'));
+        assert.ok(block, 'the kept notes block reaches the prompt');
+        assert.equal(block.role, 'system');
+        assert.match(block.content, /BLOCK_NOTE_ONE\s+BLOCK_NOTE_TWO/);
+        assert.equal(contents.filter(content => content.includes('BLOCK_NOTE_ONE')).length, 1);
+        return { text: 'Visible reply' };
+    }), generateAgent: () => assert.fail('kept notes paid for a new companion') });
+});
+
 test('continuing excludes the current companion note but uses its latest saved history policy', async t => {
     const note = (content, depth) => ({ status: 'done', content, includeInChatHistory: true, includeAllChatHistory: false, chatHistoryDepth: depth });
     const f = prepared(t, [], { effect: 'continue', changeRecords(records) {

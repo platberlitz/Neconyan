@@ -1467,6 +1467,106 @@ describe('in-chat agent post-processing runner', () => {
         expect(consolidated.entries).toHaveLength(1);
     });
 
+    test('routes kept notes to the newest reply, their own reply, or one labelled block per agent', async () => {
+        const {
+            buildCompanionChatHistoryBlocks,
+            consolidateCompanionChatHistory,
+            selectCompanionChatHistory,
+        } = await import('../public/scripts/extensions/in-chat-agents/companion/companion-shared.js');
+        const result = (agentName, content, chatHistoryPlacement, chatHistoryInjection) => ({
+            agentName,
+            status: 'done',
+            content,
+            includeInChatHistory: true,
+            includeAllChatHistory: true,
+            ...(chatHistoryPlacement && { chatHistoryPlacement }),
+            ...(chatHistoryInjection && { chatHistoryInjection }),
+        });
+        const blockInjection = { position: 0, depth: 4, role: 0, scan: true };
+        const createMessage = (mes, results, isSystem = false) => ({
+            mes,
+            is_user: false,
+            is_system: isSystem,
+            extra: { inChatAgentCompanionResults: results },
+        });
+        const first = createMessage('First', {
+            legacy: result('Legacy', 'Legacy one'),
+            chat: result('Chat', 'Chat one', 'source'),
+            keeper: result('Keeper', 'Keeper one', 'block', blockInjection),
+        });
+        const hidden = createMessage('Hidden', {
+            chat: { ...result('Chat', 'Chat hidden', 'source'), keepInChatHistoryWhenHostHidden: true },
+        }, true);
+        const latest = createMessage('Latest', {
+            legacy: result('Legacy', 'Legacy two'),
+            chat: result('Chat', 'Chat two', 'source'),
+            keeper: result('Keeper', 'Keeper two', 'block', blockInjection),
+        });
+        const messages = [first, hidden, latest];
+
+        const { host, entries } = consolidateCompanionChatHistory(
+            messages,
+            selectCompanionChatHistory(messages),
+            () => content => content,
+            () => true,
+            { policyMessages: messages },
+        );
+        const hostedText = message => entries.filter(entry => entry.host === message).map(entry => entry.contribution.content);
+
+        expect(host).toBe(latest);
+        expect(hostedText(first)).toEqual(['Chat one']);
+        expect(hostedText(hidden)).toEqual([]);
+        expect(hostedText(latest)).toEqual(['Legacy one', 'Chat hidden', 'Legacy two', 'Chat two']);
+        expect(entries.filter(entry => entry.placement === 'block').every(entry => entry.host === null)).toBe(true);
+
+        expect(buildCompanionChatHistoryBlocks(entries)).toEqual([{
+            key: 'inchat_agent_companion_history_keeper',
+            agentId: 'keeper',
+            name: 'Keeper',
+            content: '[Keeper - kept notes]\nKeeper one\n\nKeeper two',
+            position: 0,
+            depth: 4,
+            role: 0,
+            scan: true,
+        }]);
+    });
+
+    test('keeps no chat-history host when every kept note travels as a block', async () => {
+        const {
+            consolidateCompanionChatHistory,
+            selectCompanionChatHistory,
+        } = await import('../public/scripts/extensions/in-chat-agents/companion/companion-shared.js');
+        const message = {
+            mes: 'Only reply',
+            is_user: false,
+            is_system: true,
+            extra: {
+                inChatAgentCompanionResults: {
+                    keeper: {
+                        agentName: 'Keeper',
+                        status: 'done',
+                        content: 'Block note',
+                        includeInChatHistory: true,
+                        includeAllChatHistory: true,
+                        keepInChatHistoryWhenHostHidden: true,
+                        chatHistoryPlacement: 'block',
+                    },
+                },
+            },
+        };
+
+        const { host, entries } = consolidateCompanionChatHistory(
+            [message],
+            selectCompanionChatHistory([message]),
+            () => content => content,
+            () => true,
+        );
+
+        expect(host).toBeNull();
+        expect(entries).toHaveLength(1);
+        expect(entries[0]).toMatchObject({ placement: 'block', host: null, injection: { position: 1, depth: 1, role: 0, scan: false } });
+    });
+
     test('updates existing Companion cards when history retention settings change', async () => {
         const { selectCompanionChatHistory } = await import('../public/scripts/extensions/in-chat-agents/companion/companion-shared.js');
         const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');

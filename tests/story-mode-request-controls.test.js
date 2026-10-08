@@ -120,6 +120,7 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
         getGroupDepthPrompts: () => [], getExtensionPromptRoleByName: () => 0,
         hasCompanionChatHistoryForHiddenHost: () => false,
         selectCompanionChatHistory: () => [], consolidateCompanionChatHistory: () => ({ host: null, entries: [] }),
+        buildCompanionChatHistoryBlocks: () => [], COMPANION_HISTORY_PROMPT_KEY_PREFIX: 'inchat_agent_companion_history_',
         resolveRegexScriptsForSnapshot: () => [], shouldRetainContextAtDepth: () => true,
         stripHtmlTagsFromContext: value => value, stripOocBlocksFromContext: value => value,
         getRegexedString: value => value, appendFileContent: async () => '',
