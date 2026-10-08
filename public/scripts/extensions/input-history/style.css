@@ -38,14 +38,16 @@ body.neconyan #send_form .stih--buttons .stih--menuTrigger > span { display: non
 }
 .stih--history {
   z-index: var(--sb-z-popout, 4000);
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 0;
+  position: fixed;
+  top: var(--stih-menu-top, auto);
+  left: var(--stih-menu-left, 12px);
+  translate: 0 -100%;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
   width: min(560px, calc(100vw - 24px));
-  max-height: 55dvh;
+  max-height: min(55dvh, var(--stih-menu-space, 55dvh));
+  margin: 0;
   padding: 16px;
   gap: 8px;
   border: 1px solid var(--neco-border);
@@ -59,17 +61,14 @@ body.neconyan #send_form .stih--buttons .stih--menuTrigger > span { display: non
   white-space: normal;
   text-shadow: none;
 }
-#send_form:has(.stih--history),
-.gg-action-buttons-container:has(> .stih--buttons .stih--history) {
-  overflow: visible;
-}
+.stih--history.stih--below { translate: none; }
 .stih--history .stih--header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
-body.neconyan #send_form .stih--history h3 {
+body.neconyan #stih-history .stih--header h3 {
   margin: 0;
   padding: 0;
   border: 0;
@@ -111,7 +110,7 @@ body.neconyan #send_form .stih--history h3 {
   text-shadow: none;
   cursor: pointer;
 }
-body.neconyan #send_form #stih-history .stih--item {
+body.neconyan #stih-history .stih--item {
   --neconyan-control-radius: 0;
   display: block;
   background: var(--neco-surface);
@@ -127,7 +126,7 @@ body.neconyan #send_form #stih-history .stih--item {
 }
 .stih--history .stih--code { font-family: var(--monoFontFamily); }
 body.neconyan #send_form .stih--buttons .stih--button:is(:hover, [aria-expanded='true']),
-body.neconyan #send_form #stih-history button:hover {
+body.neconyan #stih-history button:hover {
   background: color-mix(in srgb, var(--neco-ginger) 12%, var(--neco-surface));
   border-color: var(--neco-ginger);
 }
@@ -138,4 +137,4 @@ body.neconyan #send_form #stih-history button:hover {
 }
 html > body .stih--buttons.stih--hidden,
 html > body .stih--buttons .stih--hidden,
-body.neconyan #send_form #stih-history [hidden] { display: none; }
+body.neconyan #stih-history [hidden] { display: none; }
