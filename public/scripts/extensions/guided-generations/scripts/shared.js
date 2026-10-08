@@ -13,11 +13,13 @@ import {
 const extensionName = 'guided-generations';
 const guidedResponseInjectId = 'gg-guided-response';
 const guidedSwipeInjectId = 'gg-guided-swipe';
+const guidedRegenerateInjectId = 'gg-guided-regenerate';
 const guidedCorrectionInjectId = 'gg-guided-correction';
 const guidedImpersonateInjectId = 'gg-impersonate-voice';
 const guidedGenerationInjectIds = [
     guidedResponseInjectId,
     guidedSwipeInjectId,
+    guidedRegenerateInjectId,
     guidedCorrectionInjectId,
     guidedImpersonateInjectId,
 ];
@@ -68,20 +70,28 @@ async function submitGuidedWorkflow(name, prompt) {
     if (isGroupChat()) {
         return false;
     }
+    const { chat, chatId, groupId } = getContext() ?? {};
+    const isCurrent = () => {
+        const current = getContext();
+        return current?.chat === chat && current?.chatId === chatId && current?.groupId === groupId;
+    };
     const workflows = await import('../../../neconyan-conversation/roleplay-workflows.js').catch(() => null);
+    // Treat a chat switch as handled so no caller falls back into the new chat.
+    if (!isCurrent()) return true;
     if (!workflows?.isNativeRoleplayWorkflowReady?.()) {
         return false;
     }
     // Macros resolve in the page exactly as the injected guide would have, and a
     // page prompt addition the server cannot carry keeps the browser path.
-    const text = workflows.resolvePageText(prompt?.text);
+    const text = prompt === undefined ? null : workflows.resolvePageText(prompt.text);
     const page = await workflows.capturePagePrompts(name);
-    if (!text || !page) {
+    if (!isCurrent()) return true;
+    if ((prompt !== undefined && !text) || !page) {
         return false;
     }
     debugLog('[Guided] Submitting named workflow', name);
     try {
-        await workflows.submitRoleplayWorkflow({ name, intent: { prompt: { ...prompt, text } }, page });
+        await workflows.submitRoleplayWorkflow({ name, intent: prompt === undefined ? {} : { prompt: { ...prompt, text } }, page });
     } catch (error) {
         // A refusal is final. Falling back here would inject the guide and pay for
         // a second generation the server already accounted for.
@@ -153,6 +163,7 @@ export {
     getCurrentProfileId,
     guidedCorrectionInjectId,
     guidedImpersonateInjectId,
+    guidedRegenerateInjectId,
     guidedResponseInjectId,
     guidedSwipeInjectId,
     getLastAiMessage,

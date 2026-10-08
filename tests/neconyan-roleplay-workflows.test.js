@@ -139,7 +139,7 @@ beforeEach(() => {
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 0));
 
-test.each(['roleplay.swipe', 'roleplay.correct', 'guided.swipe', 'guided.correction'])('%s clears the display before saving and restores it after cancellation', async name => {
+test.each(['roleplay.swipe', 'roleplay.correct', 'guided.swipe', 'guided.regenerate', 'guided.correction'])('%s clears the display before saving and restores it after cancellation', async name => {
     const pending = workflows.submitRoleplayWorkflow({ name });
     expect(beginRoleplayReplacement).toHaveBeenCalledWith(name, 1, expect.any(Function));
     expect(saved).toHaveLength(0);

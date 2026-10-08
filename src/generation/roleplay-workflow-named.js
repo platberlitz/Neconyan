@@ -41,6 +41,7 @@ export const ROLEPLAY_WORKFLOW_NAMES = Object.freeze({
     'story.passage': { effect: 'continue', anchor: 'block', prompt: 'story', instruction: 'none', automatic: false },
     'guided.response': { effect: 'append', anchor: 'end', prompt: 'guided', instruction: 'none', automatic: false },
     'guided.swipe': { effect: 'swipe', anchor: 'assistant', prompt: 'guided', instruction: 'none', automatic: false },
+    'guided.regenerate': { effect: 'replace', anchor: 'assistant', prompt: 'guided', instruction: 'none', automatic: false },
     'guided.correction': { effect: 'replace', anchor: 'assistant', prompt: 'guided', instruction: 'none', automatic: false },
     'deep-swipe.reply': { effect: 'alternative', anchor: 'chosen', prompt: 'none', instruction: 'required', automatic: false },
     'deep-swipe.user': { effect: 'alternative', anchor: 'chosen', prompt: 'none', instruction: 'required', automatic: false },

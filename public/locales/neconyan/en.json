@@ -19968,5 +19968,12 @@
   "Practical troubleshooter": "Practical troubleshooter",
   "Looks severe but will help you regardless. Don’t be afraid to tell Taro your woes; the scariest thing about this severe one is the puns.": "Looks severe but will help you regardless. Don’t be afraid to tell Taro your woes; the scariest thing about this severe one is the puns.",
   "Creative writing partner": "Creative writing partner",
-  "A bratty little prankster that won’t actually hurt you… unless? Kidding, kidding. Tell Nori everything - you know you want to!": "A bratty little prankster that won’t actually hurt you… unless? Kidding, kidding. Tell Nori everything - you know you want to!"
+  "A bratty little prankster that won’t actually hurt you… unless? Kidding, kidding. Tell Nori everything - you know you want to!": "A bratty little prankster that won’t actually hurt you… unless? Kidding, kidding. Tell Nori everything - you know you want to!",
+  "Guided Regenerate": "Guided Regenerate",
+  "No AI reply found to replace.": "No AI reply found to replace.",
+  "Could not verify the instruction. Nothing was generated.": "Could not verify the instruction. Nothing was generated.",
+  "No replacement reply was generated. Your previous reply was restored.": "No replacement reply was generated. Your previous reply was restored.",
+  "Guided Regenerate button": "Guided Regenerate button",
+  "Guided Regenerate prompt": "Guided Regenerate prompt",
+  "Type a direction in the composer, then use Guided Regenerate to replace the latest AI reply. Leave the composer empty for an ordinary regeneration. Use Guided Swipe to keep the old reply as an alternative.": "Type a direction in the composer, then use Guided Regenerate to replace the latest AI reply. Leave the composer empty for an ordinary regeneration. Use Guided Swipe to keep the old reply as an alternative."
 }

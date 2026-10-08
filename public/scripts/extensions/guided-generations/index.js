@@ -9,7 +9,7 @@ import {
     getProfileList,
     resolveStoredProfile,
 } from './scripts/shared.js';
-import { guidedCorrection } from './scripts/guidedCorrection.js';
+import { guidedCorrection, guidedRegenerate } from './scripts/guidedCorrection.js';
 import { guidedImpersonate } from './scripts/guidedImpersonate.js';
 import { guidedResponse } from './scripts/guidedResponse.js';
 import { guidedSwipe } from './scripts/guidedSwipe.js';
@@ -27,6 +27,7 @@ const defaultSettings = {
     showFlushGuidesButton: true,
     showGuidedResponse: true,
     showGuidedSwipe: true,
+    showGuidedRegenerate: true,
     showGuidedCorrection: true,
     showImpersonate1stPerson: true,
     showSimpleSendButton: true,
@@ -35,11 +36,13 @@ const defaultSettings = {
     debugMode: false,
     promptGuidedResponse: '[Take the following into special consideration for your next message: {{input}}]',
     promptGuidedSwipe: '[Take the following into special consideration for your next message: {{input}}]',
+    promptGuidedRegenerate: '[Take the following into special consideration for your next message: {{input}}]',
     promptGuidedCorrection: '[Apply the following correction to your previous message: {{input}}]',
     promptImpersonate1st: 'Write the next message as {{user}}, not {{char}}. Follow the requested perspective, narration style, and constraints exactly. {{input}}',
     helperPrefillMessages: '',
     depthPromptGuidedResponse: 0,
     depthPromptGuidedSwipe: 0,
+    depthPromptGuidedRegenerate: 0,
     depthPromptGuidedCorrection: 0,
     profileImpersonate1st: '',
     presetImpersonate1st: '',
@@ -68,7 +71,7 @@ function sanitizeLegacySettings(settings) {
         }
     }
 
-    for (const key of ['promptGuidedResponse', 'promptGuidedSwipe', 'promptGuidedCorrection', 'promptImpersonate1st']) {
+    for (const key of ['promptGuidedResponse', 'promptGuidedSwipe', 'promptGuidedRegenerate', 'promptGuidedCorrection', 'promptImpersonate1st']) {
         if (isLegacySystemPromptPreset(settings[key])) {
             settings[key] = defaultSettings[key];
             changed = true;
@@ -422,6 +425,7 @@ function updateExtensionButtons() {
         settings.showSimpleSendButton && createActionButton('gg_simple_send_button', 'Simple Send', 'fa-solid fa-paper-plane', simpleSend),
         settings.showImpersonate1stPerson && createActionButton('gg_impersonate_button', 'Guided Impersonate', 'fa-solid fa-user-pen', guidedImpersonate),
         settings.showGuidedSwipe && createActionButton('gg_swipe_button', 'Guided Swipe', 'fa-solid fa-forward', guidedSwipe),
+        settings.showGuidedRegenerate && createActionButton('gg_regenerate_button', 'Guided Regenerate', 'fa-solid fa-rotate-right', guidedRegenerate),
         settings.showGuidedCorrection && createActionButton('gg_correction_button', 'Guided Correction', 'fa-solid fa-pen-to-square', guidedCorrection),
         settings.showGuidedResponse && createActionButton('gg_response_button', 'Guided Response', 'fa-solid fa-compass', guidedResponse),
     ].filter(Boolean);

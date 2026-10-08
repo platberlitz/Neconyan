@@ -1,4 +1,4 @@
-const replacements = new Set(['roleplay.swipe', 'roleplay.correct', 'guided.swipe', 'guided.correction']);
+const replacements = new Set(['roleplay.swipe', 'roleplay.correct', 'guided.swipe', 'guided.regenerate', 'guided.correction']);
 
 /** Detach only the displayed reply; its saved source remains available for the server. */
 export function beginRoleplayReplacement(name, messageIndex, isCurrent) {

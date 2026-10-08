@@ -31,6 +31,7 @@ describe('Guided Generations settings migration', () => {
         }));
         await jest.unstable_mockModule('../public/scripts/extensions/guided-generations/scripts/guidedCorrection.js', () => ({
             guidedCorrection: jest.fn(),
+            guidedRegenerate: jest.fn(),
         }));
         await jest.unstable_mockModule('../public/scripts/extensions/guided-generations/scripts/guidedImpersonate.js', () => ({
             guidedImpersonate: jest.fn(),
@@ -113,6 +114,9 @@ describe('Guided Generations settings migration', () => {
         loadSettings();
 
         expect(extensionSettings['guided-generations'].helperPrefillMessages).toBe('');
+        expect(extensionSettings['guided-generations'].showGuidedRegenerate).toBe(true);
+        expect(extensionSettings['guided-generations'].promptGuidedRegenerate).toContain('{{input}}');
+        expect(extensionSettings['guided-generations'].depthPromptGuidedRegenerate).toBe(0);
         expect(saveSettingsDebounced).not.toHaveBeenCalled();
     });
 });

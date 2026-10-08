@@ -3388,6 +3388,13 @@ body.neconyan #send_form :is(#gg-action-button-container button, .stih--buttons 
     background: var(--neco-raised);
 }
 
+/* Keep all seven guided actions reachable without shrinking their touch targets. */
+body.neconyan #send_form > #gg-action-button-container.gg-action-buttons-container > .gg-regular-buttons-container {
+    --gg-mobile-action-size: 44px;
+    --bottomFormBlockSize: 44px;
+    flex: 1 1 100%;
+}
+
 /* Phones drop the duplicate Import button: the Import section in the same sheet still opens the picker. */
 body.neconyan #right-nav-panel .neconyan-character-library-footer .sb-character-library-primary-actions > #character_import_button { display: none; }
 

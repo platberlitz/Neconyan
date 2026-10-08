@@ -41,11 +41,12 @@ describe('Guided Generations flush guides', () => {
             correction: { value: 'correction' },
             'gg-guided-response': { value: 'guide' },
             'gg-guided-correction': { value: 'correction' },
+            'gg-guided-regenerate': { value: 'regenerate' },
         };
 
         const { getActiveGuides } = await import('../public/scripts/extensions/guided-generations/scripts/shared.js');
 
-        expect(getActiveGuides()).toEqual(['gg-guided-response', 'gg-guided-correction']);
+        expect(getActiveGuides()).toEqual(['gg-guided-response', 'gg-guided-regenerate', 'gg-guided-correction']);
     });
 
     test('flushes only active guided-generation injects', async () => {
