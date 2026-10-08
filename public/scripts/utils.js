@@ -2885,7 +2885,7 @@ export async function importFromExternalUrl(url, { preserveFileName = null } = {
                 await processDroppedFiles([bridged.file], extraData);
                 return;
             }
-            const guidance = jannyBridgeGuidance(bridged.error);
+            const guidance = jannyBridgeGuidance(bridged.error, bridged.retryAfter);
             toastr.warning(guidance.message, guidance.title, { timeOut: 20000, extendedTimeOut: 20000 });
             return;
         }

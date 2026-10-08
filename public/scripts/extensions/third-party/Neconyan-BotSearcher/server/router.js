@@ -704,22 +704,30 @@ export function createRouter(router, state) {
             return;
         }
         const { adapter } = resolved;
-        if (adapter.id === 'jannyai' && !requireJannyAdmin(request, response)) {
+        const janny = adapter.id === 'jannyai';
+        if (janny && !requireJannyAdmin(request, response)) {
+            logJannyUrlCardFailure('janny_admin_required');
             return;
         }
         const rawUrl = own(request.body, 'url');
-        const parsed = adapter.id === 'jannyai'
+        const parsed = janny
             ? parseJannyUrl(rawUrl)
             : (typeof adapter.parseImportUrl === 'function' ? adapter.parseImportUrl(rawUrl) : null);
         if (!parsed) {
+            if (janny) {
+                logJannyUrlCardFailure('bad_import_url');
+            }
             fail(response, 400, 'bad_import_url');
             return;
         }
 
         const gate = await gateRequest(request, response, adapter.id, 'card', {
-            allowDown: adapter.id === 'jannyai',
+            allowDown: janny,
         });
         if (!gate) {
+            if (janny) {
+                logJannyUrlCardFailure('refused_by_rate_limit_or_busy_gate', `HTTP ${response.statusCode}`, parsed.id);
+            }
             return;
         }
 
@@ -743,6 +751,7 @@ export function createRouter(router, state) {
                     return;
                 }
                 if (error instanceof JannyBrowserError) {
+                    logJannyUrlCardFailure(error.code, error.detail, parsed.id);
                     fail(response, error.status, error.code);
                     return;
                 }
@@ -765,12 +774,18 @@ export function createRouter(router, state) {
                     ? embedCardInPng(avatarPng, card)
                     : Buffer.from(JSON.stringify(card), 'utf8');
                 if (buffer.length > MAX_CARD_BYTES) {
+                    if (janny) {
+                        logJannyUrlCardFailure('too_large', `${buffer.length} bytes`, parsed.id);
+                    }
                     fail(response, 422, 'too_large');
                     return;
                 }
                 verdict = validateCardBytes(buffer, Buffer.isBuffer(avatarPng) ? 'png' : 'json');
             } catch (error) {
                 if (error instanceof CardBytesError) {
+                    if (janny) {
+                        logJannyUrlCardFailure(error.code, error.detail, parsed.id);
+                    }
                     fail(response, 422, error.code);
                     return;
                 }
@@ -1323,6 +1338,16 @@ async function respondWithJanny(response, operation) {
         }
         throw error;
     }
+}
+
+// The client only receives an error code, so the server log is the one place
+// that says why a JannyAI link import failed.
+export function logJannyUrlCardFailure(code, detail, id) {
+    const card = typeof id === 'string' && id ? ` for ${id}` : '';
+    const reason = typeof detail === 'string' && detail.trim()
+        ? ` (${detail.replace(/\s+/g, ' ').trim().slice(0, 300)})`
+        : '';
+    console.warn(`[BotSearcher] JannyAI link import failed${card}: ${code}${reason}`);
 }
 
 function requireJannyAdmin(request, response) {
