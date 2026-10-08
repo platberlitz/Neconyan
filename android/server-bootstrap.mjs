@@ -7,11 +7,15 @@ import { serverEvents, EVENT_NAMES } from './src/server-events.js';
 import { verifyAndroidStorage } from './file-stats.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const [privatePath, port, password] = process.argv.slice(2);
-if (!privatePath || !/^\d+$/.test(port) || !/^[a-f0-9]{64}$/.test(password)) throw new Error('Invalid private Android launch configuration.');
+const [privatePath, port, password, mode = 'normal'] = process.argv.slice(2);
+if (!privatePath || !/^\d+$/.test(port) || !/^[a-f0-9]{64}$/.test(password) || !['normal', 'safe'].includes(mode)) throw new Error('Invalid private Android launch configuration.');
 // Android's /data/user/0 alias must be resolved before strict storage checks.
 const statePath = fs.realpathSync(privatePath);
+let started = false;
+// After startup the launcher watches the process itself; the server ignores some harmless
+// stream errors, and a note written for those would make the launcher restart a healthy server.
 if (process.platform === 'android') process.on('uncaughtExceptionMonitor', error => {
+    if (started) return;
     try {
         writeFileAtomicSync(path.join(process.env.TMPDIR, 'startup-status.txt'), `Could not start Neconyan: ${error.message}. Saved data has been kept.`, { mode: 0o600 });
     } catch { /* The original error still reaches the private server log. */ }
@@ -37,10 +41,12 @@ config.logging.enableAccessLog = false;
 fs.mkdirSync(statePath, { recursive: true });
 writeFileAtomicSync(configPath, YAML.stringify(config), { mode: 0o600 });
 process.env.NECONYAN_SUPERVISED = '1';
+if (mode === 'safe') process.env.NECONYAN_SAFE_START = '1';
 process.argv = [process.argv[0], path.join(root, 'server.js'), '--configPath', configPath];
 const readyPath = path.join(statePath, 'android-ready.json');
 serverEvents.once(EVENT_NAMES.SERVER_STARTED, () => {
-    writeFileAtomicSync(readyPath, JSON.stringify({ pid: process.pid, port: Number(port) }), { mode: 0o600 });
+    started = true;
+    writeFileAtomicSync(readyPath, JSON.stringify({ pid: process.pid, port: Number(port), safe: mode === 'safe' }), { mode: 0o600 });
 });
 process.once('exit', () => fs.rmSync(readyPath, { force: true }));
 await import('./server.js');

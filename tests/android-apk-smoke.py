@@ -34,6 +34,27 @@ def start():
     adb('shell', 'am', 'start', '-n', package + '/io.github.platberlitz.neconyan.MainActivity')
 
 
+def private(*command):
+    """Run a command as the app (root on release emulators) inside its private directory."""
+    if args.release:
+        return adb('shell', 'cd /data/user/0/' + package + ' && ' + ' '.join(command))
+    return adb('shell', 'run-as', package, *command)
+
+
+def server_pid():
+    return subprocess.run([args.adb, '-s', args.serial, 'shell', 'pidof', package + ':server'],
+                          capture_output=True, text=True, timeout=30).stdout.strip()
+
+
+def window_labels():
+    try:
+        adb('shell', 'uiautomator', 'dump', '/data/local/tmp/neconyan-window.xml')
+        screen = adb('shell', 'cat', '/data/local/tmp/neconyan-window.xml')
+        return {node.get('text', '') for node in ET.fromstring(screen).iter('node')}
+    except (subprocess.SubprocessError, ET.ParseError):
+        return set()
+
+
 def wait_for_workspace():
     deadline = time.monotonic() + 120
     last = ''
@@ -151,6 +172,30 @@ request, token, port, origin = connect()
 try:
     assert name in request('/api/characters/get', {'avatar_url': avatar}, token)
     print('Character survived process death and reopening.', flush=True)
+    wait_for_workspace()
+finally:
+    adb('forward', '--remove', 'tcp:' + port)
+
+# A server killed outright (low memory, native crash) leaves its ready marker behind.
+# The open app must notice, restart it once in safe mode and load the workspace again.
+crashed = server_pid()
+private('kill', '-9', crashed)
+deadline = time.monotonic() + 120
+while time.monotonic() < deadline and server_pid() in ('', crashed):
+    time.sleep(1)
+assert server_pid() not in ('', crashed), 'The app did not restart its killed server'
+request, token, port, origin = connect()
+try:
+    assert json.loads(private('cat', 'files/android-ready.json')).get('safe') is True, 'The restart after an early stop was not in safe mode'
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline and 'Neconyan is in safe mode' not in window_labels():
+        time.sleep(1)
+    assert 'Neconyan is in safe mode' in window_labels(), 'The safe-mode notice did not appear'
+    adb('shell', 'input', 'keyevent', '4')
+    wait_for_workspace()
+    assert name in request('/api/characters/get', {'avatar_url': avatar}, token)
+    print('A killed server restarted in safe mode with its data and the workspace reloaded.', flush=True)
+    adb('shell', 'am', 'force-stop', package)
 finally:
     adb('forward', '--remove', 'tcp:' + port)
 

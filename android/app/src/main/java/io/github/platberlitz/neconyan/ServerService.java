@@ -15,6 +15,7 @@ import java.util.Set;
 
 public final class ServerService extends Service {
     public static final String STOP = "io.github.platberlitz.neconyan.STOP";
+    public static final String SAFE = "safe";
     private static native int startNode(String[] arguments, String cache);
     private boolean started;
     private boolean nodeStarted;
@@ -52,6 +53,7 @@ public final class ServerService extends Service {
             .setContentIntent(open).addAction(new Notification.Action.Builder(null, "Stop", stop).build()).setOngoing(true).build());
         if (!started) {
             started = true;
+            boolean safe = intent != null && intent.getBooleanExtra(SAFE, false);
             new File(getFilesDir(), "android-ready.json").delete();
             wake = getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Neconyan:server");
             wake.acquire();
@@ -64,8 +66,11 @@ public final class ServerService extends Service {
                     System.loadLibrary("neconyan-node");
                     if (!runtimeClaimed.compareAndSet(false, true)) throw new IOException("The previous local server is still stopping");
                     nodeStarted = true;
-                    int exit = startNode(new String[] { "node", "--max-old-space-size=512", "--import", new File(runtime, "file-stats.mjs").getPath(), new File(runtime, "server-bootstrap.mjs").getPath(),
-                        getFilesDir().getPath(), credentials.getString("port"), credentials.getString("password") }, getCacheDir().getPath());
+                    // Keep the previous run's log so a crash can still be explained after the restart.
+                    File log = new File(getCacheDir(), "server.log");
+                    if (log.isFile()) Files.move(log.toPath(), new File(getCacheDir(), "server.previous.log").toPath(), StandardCopyOption.REPLACE_EXISTING);
+                    int exit = startNode(new String[] { "node", "--max-old-space-size=" + heapMegabytes(this), "--import", new File(runtime, "file-stats.mjs").getPath(), new File(runtime, "server-bootstrap.mjs").getPath(),
+                        getFilesDir().getPath(), credentials.getString("port"), credentials.getString("password"), safe ? "safe" : "normal" }, getCacheDir().getPath());
                     status("Neconyan stopped (" + exit + "). Reopen the app to start it again.");
                     stopSelf();
                 } catch (Throwable error) {
@@ -76,6 +81,14 @@ public final class ServerService extends Service {
         }
         // Reopen after process loss; do not repeatedly boot a failing native runtime.
         return START_NOT_STICKY;
+    }
+
+    // Large chats need more than a fixed 512 MB heap; leave most of the phone's memory to Android.
+    static int heapMegabytes(Context context) {
+        ActivityManager.MemoryInfo memory = new ActivityManager.MemoryInfo();
+        context.getSystemService(ActivityManager.class).getMemoryInfo(memory);
+        long quarter = memory.totalMem / (4L * 1024 * 1024);
+        return (int) Math.max(512, Math.min(2048, quarter));
     }
 
     private void status(String text) throws IOException {
