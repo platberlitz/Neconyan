@@ -87,7 +87,8 @@ export function captureRoleplayAgentSet(lease, settings, { group = false, server
         appendMode: global.appendAgentsExecutionMode === 'sequential' ? 'sequential' : 'parallel',
         companionMode: global.companionExecutionMode === 'sequential' ? 'sequential' : 'parallel',
         concurrentCompanions: Boolean(global.companionConcurrentWithPostGen),
-        reviewPostMain: global.postMainInterceptShowMessageFirst !== false, helperPrefill };
+        reviewPostMain: global.postMainInterceptShowMessageFirst !== false,
+        refusalGuard: global.promptTransformRefusalGuard !== false, helperPrefill };
     if (global.companionAutoCleanupEnabled === true) {
         const value = global.companionAutoCleanupOlderNotes;
         const count = value === '' || value === null || value === undefined ? 3 : Number(value);

@@ -151,6 +151,17 @@ for (const effect of ['append', 'continue', 'swipe', 'replace']) {
     });
 }
 
+for (const guard of [true, false]) {
+    test(`a refused reply rewrite ${guard ? 'keeps the original reply' : 'replaces the reply when the refusal guard is off'}`, async t => {
+        const refusal = 'I\u2019m sorry, but I can\u2019t help with rewriting this scene.';
+        const f = prepared(t, [{ id: 'rewrite', phase: 'post', prompt: 'REWRITE', injection: { order: 3 },
+            postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64 } }],
+        { globalSettings: guard ? {} : { promptTransformRefusalGuard: false } });
+        await f.run({ generate: paid('main', () => 'Main output'), generateAgent: paid('rewrite', () => refusal) });
+        assert.equal(f.saved().at(-1).mes, guard ? 'Main output' : refusal);
+    });
+}
+
 for (const effect of ['append', 'continue', 'swipe']) {
     test(`a native ${effect} reply saves automatic Companion cleanup with its successful note`, async t => {
         const f = prepared(t, [{ id: 'side', category: 'companion', prompt: 'SIDE',
