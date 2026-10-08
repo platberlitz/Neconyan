@@ -728,3 +728,11 @@ body.neconyan img.neconyan-message-sleeper {
 }
 body.neconyan img.neconyan-message-sleeper.is-user { left: auto; right: -17px; }
 body.neconyan img.neconyan-message-sleeper:focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 2px; }
+
+@media (min-width: 769px) {
+    /* Document row padding/block margin: toggle-dependent.css; last-row padding: style.css. Paws sit 41px below the image top; tails overhang 17px. */
+    body.neconyan.documentstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm):not(.sbstory) #chat .mes:is([mesid], [data-roleplay-draft]) > .neconyan-message-sleeper { top: -37px; left: -9px; right: auto; }
+    body.neconyan.documentstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm):not(.sbstory) #chat .mes.last_mes:is([mesid], [data-roleplay-draft]) > .neconyan-message-sleeper { top: -41px; left: calc(10px * var(--messageMarginScale, 1) - 17px); }
+    body.neconyan.documentstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm):not(.sbstory) #chat .mes:is([mesid], [data-roleplay-draft]) > .neconyan-message-sleeper.is-user { left: auto; right: 15px; }
+    body.neconyan.documentstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm):not(.sbstory) #chat .mes.last_mes:is([mesid], [data-roleplay-draft]) > .neconyan-message-sleeper.is-user { left: auto; right: calc(10px * var(--messageMarginScale, 1) + 7px); }
+}
