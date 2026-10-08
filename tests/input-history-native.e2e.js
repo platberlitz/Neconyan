@@ -89,6 +89,16 @@ for (const phone of [false, true]) {
             expect(geometry.top).toBeGreaterThanOrEqual(0);
             expect(geometry.formBottom).toBeLessThanOrEqual(geometry.height + 1);
             expect(Math.min(...geometry.targets)).toBeGreaterThanOrEqual(44);
+            // iOS only scrolls the list reliably when the menu is its own layer, not nested over the chat inside the composer.
+            const layer = await panel.evaluate(element => ({
+                parent: element.parentElement === document.body,
+                position: getComputedStyle(element).position,
+                bottom: element.getBoundingClientRect().bottom,
+                anchorTop: document.querySelector('.stih--buttons').getBoundingClientRect().top,
+            }));
+            expect(layer.parent).toBe(true);
+            expect(layer.position).toBe('fixed');
+            expect(layer.bottom).toBeLessThanOrEqual(layer.anchorTop);
             await page.screenshot({ path: `../screenshots/input-history-${phone ? 'phone' : 'desktop'}-${tone.toLowerCase()}-after.png` });
 
             // Secondary controls must keep readable labels across pale and dark accents.
@@ -104,7 +114,7 @@ for (const phone of [false, true]) {
                         ctx.fillRect(0, 0, 1, 1);
                         return [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3);
                     };
-                    return [...document.querySelectorAll('.stih--buttons button')].map(button => {
+                    return [...document.querySelectorAll('.stih--buttons button, #stih-history button')].map(button => {
                         const style = getComputedStyle(button);
                         return contrastRatio(channels(style.color), channels(style.backgroundColor));
                     });
@@ -143,6 +153,23 @@ for (const phone of [false, true]) {
             }));
             expect(overflow.scroll).toBeGreaterThan(overflow.client);
             expect(overflow.contentWidth).toBeLessThanOrEqual(overflow.width + 1);
+            const list = panel.locator('.stih--list');
+            const listBox = await list.boundingBox();
+            const x = Math.round(listBox.x + listBox.width / 2);
+            const y = Math.round(listBox.y + listBox.height * 0.8);
+            if (phone) {
+                const cdp = await context.newCDPSession(page);
+                await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+                for (let step = 1; step <= 10; step++) {
+                    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y - step * 20 }] });
+                }
+                await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+            } else {
+                await page.mouse.move(x, y);
+                await page.mouse.wheel(0, 300);
+            }
+            await expect.poll(() => list.evaluate(element => element.scrollTop), { message: 'history list scrolls' }).toBeGreaterThan(50);
+            await expect(panel).toBeVisible();
             await panel.getByRole('button', { name: 'Close', exact: true }).click();
 
             await page.evaluate(async () => {

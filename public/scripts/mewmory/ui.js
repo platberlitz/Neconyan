@@ -544,11 +544,14 @@ function renderSettings(root) {
     const settings = section('Automatic memory');
     settings.dataset.mewmoryTour = 'automatic';
     settings.append(node('p', 'mewmory-caption', 'Model roles are shared by all your chats; turning Mewmory on is per chat. These models are set up separately from the model that writes replies.'),
+        check('Turn on Mewmory in every new chat', draft.enableNewChats, value => { draft.enableNewChats = value; }),
         check('Update automatically during play', draft.autoUpdate, value => { draft.autoUpdate = value; }),
         check('Only use models on this computer', draft.localOnly, value => { draft.localOnly = value; }),
-        check('Leave out older chat that Mewmory has already remembered', draft.excludeHistory, value => { draft.excludeHistory = value; }));
+        check('Leave out older chat that Mewmory has already remembered', draft.excludeHistory, value => { draft.excludeHistory = value; }),
+        check('Hide old messages automatically', draft.autoHide, value => { draft.autoHide = value; }));
     const budgets = node('div', 'mewmory-fields');
     budgets.append(
+        field('Hide messages beyond, tokens', draft.autoHideTokens, value => { draft.autoHideTokens = value; }, { type: 'number', hint: 'With automatic hiding on, older messages past this size are hidden after each reply. Mewmory still remembers them.' }),
         field('Recent chat target, tokens', draft.historyWindow, value => { draft.historyWindow = value; }, { type: 'number', hint: 'Chat only. NPC references, selected memory and the rest of your prompt need additional room.' }),
         field('Selected memory budget, tokens', draft.memoryTokens, value => { draft.memoryTokens = value; }, { type: 'number' }),
         field('Messages per update', draft.batchMessages, value => { draft.batchMessages = value; }, { type: 'number', hint: 'Smaller batches use less space in the Facts and events model.' }),
@@ -894,15 +897,35 @@ function render() {
     }
 }
 
-export async function mountMewmory(root) {
-    initMewmory();
-    if (!document.getElementById('mewmory-css')) {
-        const style = document.createElement('link');
+/** Resolves once the Mewmory stylesheet applies, so the panel never paints unstyled. */
+function loadMewmoryStyles() {
+    let style = document.getElementById('mewmory-css');
+    if (!style) {
+        style = document.createElement('link');
         style.id = 'mewmory-css';
-        style.rel = 'stylesheet';
         style.href = 'css/mewmory.css?v=20260926c';
         document.head.append(style);
     }
+    if (style.rel !== 'stylesheet') {
+        style.dataset.sbStyleActivated = 'true';
+        style.media = 'all';
+        style.rel = 'stylesheet';
+    }
+    if (style.sheet) return Promise.resolve();
+    return new Promise(resolve => {
+        const done = () => {
+            window.clearTimeout(timeout);
+            resolve();
+        };
+        const timeout = window.setTimeout(done, 8000);
+        style.addEventListener('load', done, { once: true });
+        style.addEventListener('error', done, { once: true });
+    });
+}
+
+export async function mountMewmory(root) {
+    initMewmory();
+    await loadMewmoryStyles();
     if (ui.root !== root) {
         ui.root = root;
         window.addEventListener('mewmory:updated', render);

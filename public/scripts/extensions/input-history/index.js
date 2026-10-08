@@ -132,15 +132,53 @@ SlashCommandParser.addCommandObject(SlashCommand.fromProps({ name: 'inputhistory
     helpString: 'Adds input string to Input History (typically used for Quick Reply macros).',
 }));
 
+const HISTORY_MENU_GAP_PX = 8;
+const HISTORY_MENU_EDGE_PX = 12;
+const HISTORY_MENU_MIN_ABOVE_PX = 220;
+
+const getHistoryMenuAnchor = () => [buttonWrap, ta, document.querySelector('#send_form')]
+    .map(element => element?.getBoundingClientRect())
+    .find(rect => rect && (rect.width || rect.height));
+
+// The menu lives on <body> as a fixed layer, so iOS scrolls its list instead of the chat it covers.
+const positionHistoryMenu = () => {
+    if (!historyMenu) return;
+    const anchor = getHistoryMenuAnchor();
+    if (!anchor) return;
+    const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const spaceAbove = anchor.top - HISTORY_MENU_GAP_PX - HISTORY_MENU_EDGE_PX;
+    const spaceBelow = viewportHeight - anchor.bottom - HISTORY_MENU_GAP_PX - HISTORY_MENU_EDGE_PX;
+    const below = spaceAbove < HISTORY_MENU_MIN_ABOVE_PX && spaceBelow > spaceAbove;
+    const width = historyMenu.offsetWidth;
+    const left = Math.max(HISTORY_MENU_EDGE_PX, Math.min(anchor.left, viewportWidth - width - HISTORY_MENU_EDGE_PX));
+    historyMenu.classList.toggle('stih--below', below);
+    historyMenu.style.setProperty('--stih-menu-left', `${Math.round(left)}px`);
+    historyMenu.style.setProperty('--stih-menu-top', `${Math.round(below ? anchor.bottom + HISTORY_MENU_GAP_PX : anchor.top - HISTORY_MENU_GAP_PX)}px`);
+    historyMenu.style.setProperty('--stih-menu-space', `${Math.max(0, Math.round(below ? spaceBelow : spaceAbove))}px`);
+};
+
+const onHistoryMenuKeydown = (event) => {
+    if (event.key === 'Escape' && historyMenu) {
+        event.preventDefault();
+        event.stopPropagation();
+        hideHistoryMenu();
+        btnHistory.focus({ preventScroll: true });
+    }
+};
+
 const hideHistoryMenu = () => {
     historyMenu?.remove();
     historyMenu = null;
+    window.removeEventListener('resize', positionHistoryMenu);
+    window.visualViewport?.removeEventListener('resize', positionHistoryMenu);
+    window.visualViewport?.removeEventListener('scroll', positionHistoryMenu);
     btnHistory?.classList.remove('stih--hasMenu');
     btnHistory?.setAttribute('aria-expanded', 'false');
 };
 const showHistoryMenu = () => {
     if (historyMenu) return hideHistoryMenu();
-    if (!ta || !buttonWrap) return;
+    if (!ta || !buttonWrap || !getHistoryMenuAnchor()) return;
     btnHistory.classList.add('stih--hasMenu');
     btnHistory.setAttribute('aria-expanded', 'true');
     historyMenu = document.createElement('section');
@@ -207,7 +245,12 @@ const showHistoryMenu = () => {
     });
     list.append(empty);
     historyMenu.append(header, hint, search, list);
-    buttonWrap.append(historyMenu);
+    historyMenu.addEventListener('keydown', onHistoryMenuKeydown);
+    document.body.append(historyMenu);
+    positionHistoryMenu();
+    window.addEventListener('resize', positionHistoryMenu);
+    window.visualViewport?.addEventListener('resize', positionHistoryMenu);
+    window.visualViewport?.addEventListener('scroll', positionHistoryMenu);
     // Focus a button so opening history does not summon the phone keyboard.
     close.focus({ preventScroll: true });
 };
@@ -299,17 +342,10 @@ eventSource.on(event_types.APP_READY, async () => {
         if (ta.value.trim() != '') taValue = ta.value;
     });
     document.addEventListener('pointerdown', (event) => {
-        if (historyMenu && !buttonWrap.contains(event.target)) hideHistoryMenu();
+        if (historyMenu && !buttonWrap.contains(event.target) && !historyMenu.contains(event.target)) hideHistoryMenu();
     });
     updateButtons();
-    buttonWrap.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && historyMenu) {
-            event.preventDefault();
-            event.stopPropagation();
-            hideHistoryMenu();
-            btnHistory.focus({ preventScroll: true });
-        }
-    });
+    buttonWrap.addEventListener('keydown', onHistoryMenuKeydown);
 });
 eventSource.on(event_types.GENERATION_STARTED, () => {
     addToInputHistory(taValue);

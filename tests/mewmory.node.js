@@ -1024,6 +1024,32 @@ test('legacy 60-second timeouts upgrade while custom and subsequently saved valu
     assert.equal(publicConfig(directories).roles.extractor.timeoutMs, 300000);
 });
 
+test('automatic hiding and new-chat switching start off, fill in for older settings and save', t => {
+    const { directories } = disk(t);
+    const defaults = defaultConfig();
+    assert.equal(defaults.autoHide, false);
+    assert.equal(defaults.autoHideTokens, 30000);
+    assert.equal(defaults.enableNewChats, false);
+    const legacy = defaultConfig();
+    delete legacy.autoHide;
+    delete legacy.autoHideTokens;
+    delete legacy.enableNewChats;
+    writeJson(path.join(directories.root, 'mewmory', 'config.json'), legacy);
+    for (const read of [readConfig, publicConfig]) {
+        const config = read(directories);
+        assert.equal(config.autoHide, false);
+        assert.equal(config.autoHideTokens, 30000);
+        assert.equal(config.enableNewChats, false);
+    }
+    const saved = saveConfig(directories, { ...publicConfig(directories), autoHide: true, autoHideTokens: 12000, enableNewChats: true });
+    assert.equal(saved.autoHide, true);
+    assert.equal(readConfig(directories).autoHideTokens, 12000);
+    assert.equal(readConfig(directories).enableNewChats, true);
+    const current = publicConfig(directories);
+    assert.throws(() => saveConfig(directories, { ...current, autoHideTokens: 100 }), /Hide messages beyond, tokens/);
+    assert.throws(() => saveConfig(directories, { ...current, enableNewChats: 'yes' }), /enableNewChats must be switched on or off/);
+});
+
 test('the old 16,000-token output default upgrades once to 32,000 while chosen limits survive', t => {
     const { directories } = disk(t);
     const legacy = defaultConfig();

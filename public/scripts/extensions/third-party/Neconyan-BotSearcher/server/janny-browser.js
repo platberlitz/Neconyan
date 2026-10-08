@@ -23,11 +23,13 @@ const CLOSE_TIMEOUT_MS = 5000;
 let playwrightImport;
 
 export class JannyBrowserError extends Error {
-    constructor(code, status = 503) {
+    constructor(code, status = 503, detail = undefined) {
         super(code);
         this.name = 'JannyBrowserError';
         this.code = code;
         this.status = status;
+        // Server-log context only; never sent to the client.
+        this.detail = detail;
     }
 }
 
@@ -128,7 +130,7 @@ async function withTimeout(promise, timeoutMs = REQUEST_TIMEOUT_MS) {
         return await Promise.race([
             promise,
             new Promise((_, reject) => {
-                timer = setTimeout(() => reject(new JannyBrowserError('janny_browser_request_failed', 502)), timeoutMs);
+                timer = setTimeout(() => reject(new JannyBrowserError('janny_browser_request_failed', 502, `timed out after ${timeoutMs} ms`)), timeoutMs);
             }),
         ]);
     } finally {
@@ -252,22 +254,22 @@ async function inPageFetch(page, url, init = {}) {
         if (error instanceof JannyBrowserError) {
             await withTimeout(page.close(), CLOSE_TIMEOUT_MS).catch(() => {});
         }
-        throw new JannyBrowserError('janny_browser_request_failed', 502);
+        throw new JannyBrowserError('janny_browser_request_failed', 502, error?.detail ?? error?.message);
     }
 }
 
 async function jsonFromPage(page, url, init = {}) {
     const result = await inPageFetch(page, url, init);
     if (result.status === 401 || result.status === 403) {
-        throw new JannyBrowserError('janny_login_required', 401);
+        throw new JannyBrowserError('janny_login_required', 401, `JanitorAI answered HTTP ${result.status}`);
     }
     if (result.status >= 400) {
-        throw new JannyBrowserError('janny_card_unavailable', 502);
+        throw new JannyBrowserError('janny_card_unavailable', 502, `JanitorAI answered HTTP ${result.status}`);
     }
     try {
         return JSON.parse(result.body);
     } catch {
-        throw new JannyBrowserError('janny_card_unavailable', 502);
+        throw new JannyBrowserError('janny_card_unavailable', 502, 'JanitorAI answer was not JSON');
     }
 }
 

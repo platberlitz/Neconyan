@@ -46,13 +46,39 @@ test('client canonicalises Janny links and UUIDs for the browser import', () => 
     assert.equal(canonicalJannyCharacterUrl(''), null);
 });
 
-test('client guidance points at the Cloudflare check for a blocked bridge', () => {
+test('client guidance points at the server browser login for a logged-out bridge', () => {
     const blocked = jannyBridgeGuidance('janny_login_required');
-    assert.equal(blocked.title, 'JannyAI import needs a Cloudflare check');
+    assert.equal(blocked.title, 'JannyAI login needed on the server');
     assert.match(blocked.message, /Open JannyAI login window/);
-    assert.match(jannyBridgeGuidance('http_404').message, /Extensions > BotSearcher/);
+    assert.match(blocked.message, /your own browser does not count/);
     assert.match(jannyBridgeGuidance('janny_admin_required').message, /administrator/);
     assert.match(jannyBridgeGuidance('janny_browser_unavailable').message, /download the card PNG/i);
+});
+
+test('client guidance names the real failure instead of always blaming Cloudflare', () => {
+    const failed = jannyBridgeGuidance('janny_browser_request_failed');
+    assert.equal(failed.title, 'JannyAI browser did not answer');
+    assert.match(failed.message, /Refresh status/);
+
+    assert.equal(jannyBridgeGuidance('janny_private_card_unsupported').title, 'JannyAI card definition is hidden');
+    assert.equal(jannyBridgeGuidance('janny_private_capture_failed').title, 'JannyAI hidden card not captured');
+    assert.equal(jannyBridgeGuidance('source_down').title, 'JannyAI is not responding');
+    assert.equal(jannyBridgeGuidance('bad_import_url').title, 'JannyAI link not recognised');
+    assert.equal(jannyBridgeGuidance('janny_bridge_unreachable').title, 'JannyAI import could not reach the server');
+
+    const limited = jannyBridgeGuidance('rate_limited', 42);
+    assert.equal(limited.title, 'JannyAI import rate limited');
+    assert.match(limited.message, /in 42 seconds/);
+    assert.match(jannyBridgeGuidance('source_busy', 1).message, /in 1 second\./);
+    assert.match(jannyBridgeGuidance('source_busy').message, /in a moment/);
+
+    const unknown = jannyBridgeGuidance('http_500');
+    assert.equal(unknown.title, 'JannyAI import failed');
+    assert.match(unknown.message, /\(http_500\)/);
+    assert.match(unknown.message, /Extensions > BotSearcher/);
+    for (const code of ['janny_browser_request_failed', 'rate_limited', 'source_busy', 'http_500']) {
+        assert.notEqual(jannyBridgeGuidance(code).title, 'JannyAI import needs a Cloudflare check', code);
+    }
 });
 
 test('client fetches the card through the BotSearcher browser import', async () => {
@@ -71,9 +97,31 @@ test('client fetches the card through the BotSearcher browser import', async () 
     const blocked = await fetchJannyCardThroughBrowser(`https://jannyai.com/characters/${ID}`, {}, async () => Response.json({ error: 'janny_login_required' }, { status: 401 }));
     assert.deepEqual(blocked, { error: 'janny_login_required' });
 
+    const limited = await fetchJannyCardThroughBrowser(`https://jannyai.com/characters/${ID}`, {}, async () => Response.json({ error: 'rate_limited', retryAfter: 30 }, { status: 429 }));
+    assert.deepEqual(limited, { error: 'rate_limited', retryAfter: 30 });
+
     const missing = await fetchJannyCardThroughBrowser(`https://jannyai.com/characters/${ID}`, {}, async () => new Response('Not Found', { status: 404 }));
     assert.deepEqual(missing, { error: 'http_404' });
 
     const offline = await fetchJannyCardThroughBrowser(`https://jannyai.com/characters/${ID}`, {}, async () => { throw new TypeError('offline'); });
     assert.deepEqual(offline, { error: 'janny_bridge_unreachable' });
+});
+
+test('server logs why a JannyAI link import failed', async () => {
+    const { logJannyUrlCardFailure } = await import('../public/scripts/extensions/third-party/Neconyan-BotSearcher/server/router.js');
+    const { JannyBrowserError } = await import('../public/scripts/extensions/third-party/Neconyan-BotSearcher/server/janny-browser.js');
+    const lines = [];
+    const original = console.warn;
+    console.warn = (...args) => lines.push(args.join(' '));
+    try {
+        const error = new JannyBrowserError('janny_browser_request_failed', 502, 'page.evaluate: Target page,\n  context or browser has been closed');
+        logJannyUrlCardFailure(error.code, error.detail, ID);
+        logJannyUrlCardFailure('bad_import_url');
+        logJannyUrlCardFailure('janny_login_required', 'x'.repeat(500), ID);
+    } finally {
+        console.warn = original;
+    }
+    assert.equal(lines[0], `[BotSearcher] JannyAI link import failed for ${ID}: janny_browser_request_failed (page.evaluate: Target page, context or browser has been closed)`);
+    assert.equal(lines[1], '[BotSearcher] JannyAI link import failed: bad_import_url');
+    assert.equal(lines[2], `[BotSearcher] JannyAI link import failed for ${ID}: janny_login_required (${'x'.repeat(300)})`);
 });

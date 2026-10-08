@@ -693,14 +693,14 @@ const TOOL_PAGES = Object.freeze({
                 id: 'updates', tab: '#mewmory-tab-settings',
                 targets: ['[id="mewmory-field-Messages per update"]'],
                 title: 'Choose how often new memories are written',
-                body: '**Update automatically during play** makes Mewmory process new chat while you play. **Messages per update** sets the batch size: smaller batches ask it to update more often and put less text into each request.\nFor an existing chat, **Catch up on this whole chat** processes earlier messages. **Check for missed details** checks the chat again. Those are real model requests, not steps the tour runs for you.',
+                body: '**Turn on Mewmory in every new chat** ticks **Use Mewmory in this chat** for you in chats you start. **Update automatically during play** makes Mewmory process new chat while you play. **Messages per update** sets the batch size: smaller batches ask it to update more often and put less text into each request.\nFor an existing chat, **Catch up on this whole chat** processes earlier messages. **Check for missed details** checks the chat again. Those are real model requests, not steps the tour runs for you.',
                 hint: 'More frequent work can mean more requests. Choose deliberately.',
             },
             {
                 id: 'budgets', tab: '#mewmory-tab-settings',
                 targets: ['[id="mewmory-field-Recent chat target, tokens"]'],
                 title: 'Share the reply model’s available space',
-                body: '**Recent chat target, tokens** is the target for recent chat only. **Selected memory budget, tokens** limits the selected memories added to the reply prompt. Character details, NPC references and other instructions also need space.\n**Recall candidates** limits the memories considered for selection. **Writer tokenizer** counts text for the model writing your replies, separately from each memory role’s tokenizer. **Leave out older chat that Mewmory has already remembered** can shorten the prompt; the older messages stay saved.',
+                body: '**Recent chat target, tokens** is the target for recent chat only. **Selected memory budget, tokens** limits the selected memories added to the reply prompt. Character details, NPC references and other instructions also need space.\n**Recall candidates** limits the memories considered for selection. **Writer tokenizer** counts text for the model writing your replies, separately from each memory role’s tokenizer. **Leave out older chat that Mewmory has already remembered** can shorten the prompt; the older messages stay saved. **Hide old messages automatically** hides the oldest messages after each reply once the chat passes **Hide messages beyond, tokens**; Mewmory still remembers them.',
                 hint: 'Recent chat and memories both need room. Neither gets the whole limit.',
             },
             {

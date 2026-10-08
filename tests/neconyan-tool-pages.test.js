@@ -267,6 +267,15 @@ describe('settings pages open as Neconyan pages with an assistant tour', () => {
         expect(scope.body).toBe(emptyBody);
     });
 
+    test('Mewmory has its stylesheet before the panel first paints', () => {
+        const html = read('../public/index.html');
+        expect(html).toMatch(/<link id="mewmory-css" href="css\/mewmory\.css\?v=[^"]+" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">/);
+        const source = read('../public/scripts/mewmory/ui.js');
+        const mount = source.slice(source.indexOf('export async function mountMewmory'));
+        expect(mount.indexOf('await loadMewmoryStyles()')).toBeGreaterThan(-1);
+        expect(mount.indexOf('await loadMewmoryStyles()')).toBeLessThan(mount.indexOf('render()'));
+    });
+
     test('Mewmory walks through Settings even without a saved chat or visible settings pane', () => {
         const steps = getToolTourSteps('mewmory', { isShown: () => false, empty: true });
         for (const id of ['settings', 'roles', 'connection', 'privacy', 'limits', 'embeddings', 'updates', 'budgets', 'save']) {

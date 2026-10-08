@@ -69,7 +69,6 @@ test.describe('input history overflow menu', () => {
                         <div id="send_form">
                             <div class="stih--buttons stih--standalone">
                                 <button type="button" class="stih--button"></button>
-                                <div id="stih-history" class="stih--history stih--active"><div class="stih--list">${historyItems}</div></div>
                             </div>
                             <div id="nonQRFormItems">
                                 <textarea id="send_textarea"></textarea>
@@ -77,12 +76,18 @@ test.describe('input history overflow menu', () => {
                         </div>
                     </div>
                 </div>
+                <section id="stih-history" class="stih--history stih--active"><div class="stih--list">${historyItems}</div></section>
             </body>
             </html>`);
 
         const geometry = await page.evaluate(() => {
             const history = document.querySelector('.stih--history');
             const buttons = document.querySelector('.stih--buttons');
+            // Mirror positionHistoryMenu(): the menu is a fixed layer on <body> anchored above the buttons.
+            const anchorTop = buttons.getBoundingClientRect().top;
+            history.style.setProperty('--stih-menu-left', '12px');
+            history.style.setProperty('--stih-menu-top', `${anchorTop - 8}px`);
+            history.style.setProperty('--stih-menu-space', `${anchorTop - 20}px`);
             const form = document.querySelector('#form_sheld');
             const pageScrollHeight = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
 
