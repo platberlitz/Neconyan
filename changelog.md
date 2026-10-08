@@ -6,6 +6,7 @@
 - PR #66 (2026-10-08) `feat: add Desktop swipe button customization controls`
 - PR #67 (2026-10-08) `fix(tools): open tool pages in translated interfaces`
 - PR #68 (2026-10-08) `fix(import): recover replacement zips and stale security tokens`
+- PR #69 (2026-10-08) `fix(chat): keep desktop response controls clear of the bottom toolbar`
 
 ## v1.2.1
 
