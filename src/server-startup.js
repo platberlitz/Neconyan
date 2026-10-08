@@ -44,6 +44,7 @@ import { router as translateRouter } from './endpoints/translate.js';
 import { router as classifyRouter } from './endpoints/classify.js';
 import { router as captionRouter } from './endpoints/caption.js';
 import { router as searchRouter } from './endpoints/search.js';
+import { router as accountSearchRouter } from './endpoints/account-search.js';
 import { router as openRouterRouter } from './endpoints/openrouter.js';
 import { router as nanogptRouter } from './endpoints/nanogpt.js';
 import { router as chatCompletionsRouter } from './endpoints/backends/chat-completions.js';
@@ -125,6 +126,7 @@ export function setupPrivateEndpoints(app) {
     app.use('/api/extra/classify', classifyRouter);
     app.use('/api/extra/caption', captionRouter);
     app.use('/api/search', searchRouter);
+    app.use('/api/account-search', accountSearchRouter);
     app.use('/api/backends/text-completions', textCompletionsRouter);
     app.use('/api/openrouter', openRouterRouter);
     app.use('/api/nanogpt', nanogptRouter);

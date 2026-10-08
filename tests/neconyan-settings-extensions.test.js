@@ -157,6 +157,7 @@ describe('Neconyan settings and extension controllers', () => {
         class HTMLElement {
             constructor(_tag, options = {}) {
                 this.children = [];
+                this.dataset = {};
                 this.className = options.className;
                 this.id = options.attrs?.id;
                 this.classList = { add() {}, remove() {} };
@@ -182,10 +183,10 @@ describe('Neconyan settings and extension controllers', () => {
             createElement: (tag, options) => new HTMLElement(tag, options),
             normalizeText: value => value, setUniversalSearchActiveIndex() {},
         });
-        vm.runInContext(shellSource.match(/^function renderUniversalSearchResults\([\s\S]*?^}/m)[0], context);
-        context.renderUniversalSearchResults('test');
+        vm.runInContext(shellSource.match(/^function renderSearchMatches\([\s\S]*?^}/m)[0], context);
+        context.renderSearchMatches('test', matches, { loadMore() {} });
         expect(results.querySelectorAll().map(button => button.id)).toEqual([
-            'sb-search-result-0', 'sb-search-result-1', 'sb-search-result-2',
+            'sb-search-result-0', 'sb-search-result-1', 'sb-search-result-2', 'sb-search-result-3',
         ]);
     });
 

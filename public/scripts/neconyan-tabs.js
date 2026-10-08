@@ -25,6 +25,8 @@ import {
 } from './topbar-extension-slot/index.js';
 import { power_user, setCharacterSpoilerFreeFieldsHidden } from './power-user.js';
 import { escapeRegex } from './util/escape-regex.js';
+import { createSearchMatcher } from './util/fuzzy-search.js';
+import { searchSavedContent, openSavedSearchResult } from './account-search.js';
 import { hasChangedAttributeValue } from './util/attribute-mutations.js';
 import { copyText, flashHighlight, showFontAwesomePicker } from './utils.js';
 import { characters, chat, flushCharacterSaveDebounced, flushPendingChatSavesForNavigation, getChatGeneration, getCurrentChatId, getGeneratingModel, getOneCharacter, getShortModelName, getThumbnailUrl, is_send_press, parseAvatarSource, refreshCsrfToken, saveSettingsDebounced, scrollReopenedChatToBottom, selectCharacterById, selectRightMenuWithAnimation, this_chid } from '../script.js';
@@ -1286,10 +1288,10 @@ const NN_ADVANCED_SEARCH_ROUTES = new Set([
     'characters:import',
 ]);
 
-const NN_UNIVERSAL_SEARCH_PLACEHOLDER = 'Search pages and settings...';
-const NN_UNIVERSAL_SEARCH_IDLE_TITLE = 'Search pages and settings';
-const NN_UNIVERSAL_SEARCH_IDLE_HINT = 'Type a page or a setting name, such as Sampling, Temperature or Hide cats.';
-const NN_UNIVERSAL_SEARCH_EMPTY_HINT = 'Try the name of a page, such as Connections, or a shorter word from the setting.';
+const NN_UNIVERSAL_SEARCH_PLACEHOLDER = 'Search everything...';
+const NN_UNIVERSAL_SEARCH_IDLE_TITLE = 'Search everything';
+const NN_UNIVERSAL_SEARCH_IDLE_HINT = 'Find pages, tools, settings, characters, personas, chat messages, notebook notes and lorebook entries. Small typos are fine.';
+const NN_UNIVERSAL_SEARCH_EMPTY_HINT = 'Try a name, a few words from the content, or a shorter query.';
 const NN_UNIVERSAL_SEARCH_RESULT_LIMIT = 12;
 const NN_UNIVERSAL_SEARCH_PAGE_LIMIT = 3;
 
@@ -1297,6 +1299,8 @@ const NN_UNIVERSAL_SEARCH_PAGE_LIMIT = 3;
 // the buttons inside it. Keywords are the other words people use for the same page.
 const NN_SEARCH_PAGES = Object.freeze([
     { route: 'home', label: 'Home', description: 'Recent chats, characters and quick starts.', keywords: ['start', 'dashboard', 'welcome'] },
+    { route: 'notes', label: 'Notebooks', description: 'Your notes, folders, properties and linked pages.', keywords: ['notes', 'notebook', 'markdown', 'writing', 'knowledge base'] },
+    { route: 'scratchpad', label: 'Scratchpad', description: 'Temporary writing sessions with model help.', keywords: ['scratch pad', 'drafts', 'sessions', 'writing'] },
     { route: 'new-chat', label: 'New chat', description: 'Start a fresh chat.', keywords: ['temporary chat', 'start chat'] },
     { route: 'characters', label: 'Characters', description: 'Browse, create and import characters.', keywords: ['bots', 'character cards', 'groups'], covers: ['characters::characters::characters'] },
     { route: 'model', label: 'Connections', description: 'Choose the service, API key and model that write the replies.', keywords: ['api', 'api key', 'provider', 'model', 'backend', 'connect', 'proxy', 'endpoint', 'connection profiles'] },
@@ -3371,12 +3375,15 @@ function scoreSearchEntry(entry, query, patterns) {
     if (label === query) return { score: 100 + pageBonus - lengthPenalty, sectionOnly: false };
     if (label.startsWith(query)) return { score: 80 + pageBonus - lengthPenalty, sectionOnly: false };
     if (hasSearchWordStarts(label, patterns)) return { score: 60 + pageBonus - lengthPenalty, sectionOnly: false };
+    const matcher = createSearchMatcher(query);
+    const fuzzyLabel = matcher(label);
+    if (fuzzyLabel) return { score: Math.min(59, fuzzyLabel) + pageBonus - lengthPenalty, sectionOnly: false };
     if (entry.kind === 'page') {
         // 'model' is exactly a keyword of Connections; 'temp' only starts one of New chat's.
         const keywordScore = entry.keywords?.includes(query) ? 75 : 45;
         return { score: keywordScore - lengthPenalty, sectionOnly: false };
     }
-    if (section && (section === query || hasSearchWordStarts(section, patterns))) {
+    if (section && matcher(section)) {
         return { score: 30 - lengthPenalty, sectionOnly: true };
     }
     return { score: 10 - lengthPenalty, sectionOnly: false };
@@ -3497,6 +3504,7 @@ function setUniversalSearchOpenState(isOpen, { focusInput = false } = {}) {
     }
 
     if (!nextOpenState) {
+        cancelSavedSearch();
         searchState.results?.classList.remove('is-visible');
         if (wasOpen) {
             requestMobileViewportReset({ restoreScroll: true });
@@ -11211,6 +11219,9 @@ function buildUniversalSearchRow() {
 
     if (!nnState.universalSearch.dismissBound) {
         document.addEventListener('click', event => {
+            // Delayed editor activation clicks hidden controls after navigation.
+            // Only a person's outside click should dismiss a newly opened search.
+            if (!event.isTrusted) return;
             const searchState = getUniversalSearchState();
 
             if (!searchState.expanded || !(searchState.root instanceof HTMLElement)) {
@@ -16521,7 +16532,7 @@ function getSearchSectionElement(element) {
 }
 
 function getSearchPageEntries() {
-    return NN_SEARCH_PAGES.map(page => ({
+    const pages = NN_SEARCH_PAGES.map(page => ({
         element: null,
         searchText: normalizeText([page.label, page.route.replace(/-/g, ' '), ...page.keywords].join(' ')),
         displayText: page.label,
@@ -16543,6 +16554,16 @@ function getSearchPageEntries() {
             globalThis.NeconyanWelcome?.activateRoute?.(page.route);
         },
     }));
+    const tools = getNeconyanNativeTools().filter(tool => !pages.some(page => page.displayText === tool.label))
+        .map(tool => ({ displayText: tool.label, searchText: `${tool.label} ${tool.id} ${tool.description || ''}`,
+            detail: tool.description || 'Open this included tool.', kind: 'page', groupLabel: 'Tools',
+            dedupeKey: `tool::${tool.id}`, action: () => openNeconyanNativeTool(tool) }));
+    const modes = NECONYAN_MODE_DEFINITIONS.map(mode => ({ displayText: mode.label,
+        searchText: `${mode.label} mode`, detail: 'Switch the current chat mode.', kind: 'page', groupLabel: 'Modes',
+        dedupeKey: `mode::${mode.id}`, action: () => activateNeconyanMode(mode.id) }));
+    return [...pages, ...tools, ...modes, { displayText: 'Handbook', searchText: 'handbook documentation help guide manual',
+        detail: 'Open the official Neconyan handbook.', kind: 'page', groupLabel: 'Help', dedupeKey: 'handbook',
+        action: () => window.open('https://platberlitz.github.io/neconyan-docs/', '_blank', 'noopener,noreferrer') }];
 }
 
 function collectGlobalSearchMatches(query) {
@@ -16554,6 +16575,7 @@ function collectGlobalSearchMatches(query) {
 
     const searchTerms = normalizedQuery.split(' ').filter(Boolean);
     const wordPatterns = searchTerms.map(getSearchWordStartPattern);
+    const matcher = createSearchMatcher(query);
 
     const searchSources = [{ shellKey: 'pages', shellLabel: 'Pages', entries: getSearchPageEntries() }];
 
@@ -16562,14 +16584,8 @@ function collectGlobalSearchMatches(query) {
         const entries = [];
 
         for (const tabState of shellState.tabs.values()) {
-            if (!tabState.searchIndex || ['settings', 'extensions'].includes(tabState.id)) {
-                tabState.searchIndex = createSearchIndex(tabState, { readable: true });
-            }
-
-            entries.push(...tabState.searchIndex);
-            if (tabState.id === 'persona') {
-                entries.push(...getPersonaSearchEntries(tabState));
-            }
+            // Keep quick-action labels stable; their index also supplies persisted action keys.
+            entries.push(...createSearchIndex(tabState, { readable: true }));
         }
 
         searchSources.push({ shellKey, shellLabel, entries });
@@ -16640,12 +16656,8 @@ function collectGlobalSearchMatches(query) {
         return matches;
     };
 
-    // Words must start a word in the result ('temp' finds Temperature, not Attempts). Only when
-    // nothing matches that way does search fall back to matching inside words.
-    let matches = collectMatches(text => hasSearchWordStarts(text, wordPatterns));
-    if (!matches.size) {
-        matches = collectMatches(text => searchTerms.every(term => text.includes(term)));
-    }
+    // A good literal match must not hide another result with a misspelt name.
+    const matches = collectMatches(matcher);
 
     for (const match of matches.values()) {
         for (const coveredKey of match.covers ?? []) {
@@ -16690,7 +16702,7 @@ function getMobileQuickActionSearchMatches(query) {
         return [];
     }
 
-    const searchTerms = normalizedQuery.split(' ').filter(Boolean);
+    const matcher = createSearchMatcher(query);
     const matches = new Map();
 
     for (const [shellKey, shellState] of Object.entries(nnState.shells)) {
@@ -16698,7 +16710,7 @@ function getMobileQuickActionSearchMatches(query) {
 
         for (const tabState of shellState.tabs.values()) {
             for (const entry of getTabSearchEntries(tabState, { includeThemeCard: true })) {
-                if (!searchTerms.every(term => entry.searchText.includes(term))) {
+                if (!matcher(entry.searchText)) {
                     continue;
                 }
 
@@ -16707,7 +16719,7 @@ function getMobileQuickActionSearchMatches(query) {
                     shellKey,
                     shellLabel,
                     advanced: entry.advanced === true || NN_ADVANCED_SEARCH_ROUTES.has(`${shellKey}:${entry.tabId}`),
-                    score: Number(entry.searchText.startsWith(normalizedQuery)) * 10 - entry.displayText.length / 1000,
+                    score: matcher(entry.displayText) || matcher(entry.searchText) / 2,
                 };
                 const matchKey = [
                     shellKey,
@@ -16809,7 +16821,68 @@ function activateMobileNavAction(action) {
     openShell(normalizedAction.shellKey, normalizedAction.tabId);
 }
 
+function cancelSavedSearch() {
+    const state = getUniversalSearchState();
+    clearTimeout(state.savedTimer);
+    state.savedController?.abort();
+    state.savedController = null;
+    state.savedTicket = (state.savedTicket || 0) + 1;
+}
+
 function renderUniversalSearchResults(query) {
+    cancelSavedSearch();
+    const state = getUniversalSearchState();
+    const trimmedQuery = String(query ?? '').trim().slice(0, 200);
+    const matches = trimmedQuery ? collectGlobalSearchMatches(trimmedQuery) : [];
+    renderSearchMatches(trimmedQuery, matches, { loading: Boolean(trimmedQuery) });
+    if (!trimmedQuery || !state.expanded) return;
+    const ticket = state.savedTicket;
+    const owner = getCurrentUserHandle();
+    const controller = new AbortController();
+    state.savedController = controller;
+    const saved = new Map();
+    const isCurrent = () => state.expanded && state.savedTicket === ticket && owner === getCurrentUserHandle();
+    const load = async (offset = 0) => {
+        if (!isCurrent()) return;
+        renderSearchMatches(trimmedQuery, [...matches, ...saved.values()], { loading: true });
+        try {
+            const data = await searchSavedContent(trimmedQuery, { signal: controller.signal, offset });
+            if (!isCurrent()) return;
+            for (const result of data.results) {
+                saved.set(result.id, { ...result, action: () => openSavedSearchResult(result, {
+                    openCharacters: async avatar => {
+                        const index = characters.findIndex(character => character.avatar === avatar);
+                        if (index < 0) throw new Error('This character is no longer available. Search again.');
+                        await selectCharacterById(index);
+                        openCharacterPanelTab('editor');
+                    },
+                    openPersona: ({ name }) => {
+                        openCharacterPanelTab('persona');
+                        const input = document.getElementById('persona_search_bar');
+                        if (input) { input.value = name; input.dispatchEvent(new Event('input', { bubbles: true })); }
+                    },
+                    openLorebooks: () => openCharacterPanelTab('world-info'),
+                    openArchive: async archiveHash => {
+                        const { openArchive } = await import('./extensions/neconyan-chats-archive/src/ui.js');
+                        await openArchive(getSillyTavernContext(), null, { archiveHash });
+                    },
+                }) });
+            }
+            renderSearchMatches(trimmedQuery, [...matches, ...saved.values()], {
+                message: data.unavailable.length ? `Some content could not be searched: ${data.unavailable.join(', ')}.` : '',
+                loadMore: data.nextOffset === null ? null : () => load(data.nextOffset),
+            });
+        } catch (error) {
+            if (!isCurrent() || controller.signal.aborted) return;
+            renderSearchMatches(trimmedQuery, [...matches, ...saved.values()], {
+                message: error.message, loadMore: () => load(offset), moreLabel: 'Retry saved-content search',
+            });
+        }
+    };
+    state.savedTimer = setTimeout(() => void load(), 200);
+}
+
+function renderSearchMatches(query, matches, { loading = false, message = '', loadMore = null, moreLabel = 'More saved results' } = {}) {
     const searchState = getUniversalSearchState();
     const results = searchState.results;
 
@@ -16817,6 +16890,8 @@ function renderUniversalSearchResults(query) {
         return;
     }
 
+    const selectedKey = results.querySelector('.sb-search-result.is-active')?.dataset.searchKey;
+    const previousScroll = results.scrollTop;
     results.replaceChildren();
     searchState.activeIndex = -1;
     searchState.input?.removeAttribute('aria-activedescendant');
@@ -16834,9 +16909,8 @@ function renderUniversalSearchResults(query) {
         return;
     }
 
-    const matches = collectGlobalSearchMatches(trimmedQuery);
     const groupedMatches = new Map();
-    for (const match of matches) {
+    for (const match of [...matches].sort((a, b) => b.score - a.score)) {
         const groupLabel = match.groupLabel || `${match.shellLabel} · ${match.tabLabel}`;
         if (!groupedMatches.has(groupLabel)) {
             groupedMatches.set(groupLabel, []);
@@ -16877,13 +16951,14 @@ function renderUniversalSearchResults(query) {
                     ? `in ${match.sectionLabel}`
                     : ''
             );
-            const kindText = match.kind === 'page'
+            button.dataset.searchKey = `${match.shellKey}:${match.dedupeKey}`;
+            const kindText = match.kindLabel || (match.kind === 'page'
                 ? 'Open page'
                 : match.kind === 'section'
                     ? 'Open section'
                     : match.kind === 'tab'
                         ? 'Open tab'
-                        : typeof match.action === 'function' ? 'Quick action' : 'Jump to setting';
+                        : typeof match.action === 'function' ? 'Quick action' : 'Jump to setting');
 
             button.appendChild(createElement('strong', { text: label }));
 
@@ -16904,7 +16979,7 @@ function renderUniversalSearchResults(query) {
         results.appendChild(group);
     }
 
-    if (!results.childElementCount) {
+    if (!results.childElementCount && !loading && !message) {
         renderSearchEmptyState(
             results,
             `No matches for "${trimmedQuery}" yet.`,
@@ -16912,8 +16987,26 @@ function renderUniversalSearchResults(query) {
         );
     }
 
+    if (loading || message) {
+        results.appendChild(createElement('div', { className: 'sb-search-empty',
+            text: loading ? 'Searching saved content…' : message, attrs: { role: 'status' } }));
+    }
+    if (loadMore) {
+        const more = createElement('button', { className: 'sb-search-result', text: moreLabel,
+            attrs: { type: 'button', role: 'option', id: `sb-search-result-${resultIndex++}`, 'aria-selected': 'false' } });
+        more.addEventListener('click', event => {
+            // Rendering removes this button before the document's outside-click handler runs.
+            event.stopPropagation();
+            void loadMore();
+        });
+        results.appendChild(more);
+    }
+
     results.classList.add('is-visible');
-    setUniversalSearchActiveIndex(results.querySelector('.sb-search-result') ? 0 : -1);
+    const buttons = [...results.querySelectorAll('.sb-search-result')];
+    const selected = selectedKey ? buttons.findIndex(button => button.dataset.searchKey === selectedKey) : -1;
+    setUniversalSearchActiveIndex(selected >= 0 ? selected : buttons.length ? 0 : -1);
+    if (selected >= 0) results.scrollTop = previousScroll;
 }
 
 function setUniversalSearchActiveIndex(index) {
@@ -17056,7 +17149,9 @@ function revealSearchMatch(shellKey, match) {
 
     // Entries with a custom action (e.g. persona results) bypass DOM scrolling
     if (typeof match.action === 'function') {
-        match.action();
+        Promise.resolve().then(() => match.action()).catch(error => {
+            globalThis.toastr?.error?.(error.message || 'This result could not be opened. Search again.');
+        });
         return;
     }
 

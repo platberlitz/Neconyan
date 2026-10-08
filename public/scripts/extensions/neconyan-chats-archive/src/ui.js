@@ -409,13 +409,14 @@ export async function closeArchive() {
     await popup?.completeCancelled();
 }
 
-export async function openArchive(ctx, opener = null) {
+export async function openArchive(ctx, opener = null, { archiveHash = null } = {}) {
     if (popup) {
         popup.dlg?.focus();
         return;
     }
 
     const state = {
+        searchArchiveHash: archiveHash,
         rows: [],
         orphanRows: [],
         deepRows: null,
@@ -2007,7 +2008,7 @@ async function loadRows(ctx, state, ui) {
     setStatus(ui, tr(ctx, 'Loading chats...'));
 
     try {
-        for await (const page of iterateArchiveInventoryPages(ctx, 'archive', controller.signal)) {
+        for await (const page of iterateArchiveInventoryPages(ctx, state.searchArchiveHash ? 'all' : 'archive', controller.signal)) {
             if (state.listAbort !== controller || state.closed || controller.signal.aborted) {
                 return;
             }
@@ -2041,6 +2042,12 @@ async function loadRows(ctx, state, ui) {
         renderList(ctx, state, ui);
         updateBrowseStatus(ctx, state, ui);
         updateSelectionControls(ctx, state, ui);
+        if (state.searchArchiveHash) {
+            const row = state.rows.find(row => row.archiveHash === state.searchArchiveHash);
+            state.searchArchiveHash = null;
+            if (row) void openViewer(ctx, state, row, ui);
+            else setStatus(ui, tr(ctx, 'This chat is no longer available. Refresh and search again.'));
+        }
         if (mentionSearchState(ui.search.value, ui.characterMentions).text) {
             void runDeepSearch(ctx, state, ui);
         }

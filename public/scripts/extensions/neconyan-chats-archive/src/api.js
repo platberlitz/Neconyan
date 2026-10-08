@@ -11,7 +11,7 @@ function rowsFrom(record) {
 
 /** One server inventory completes independently; these pages only display its saved result. */
 export async function* iterateArchiveInventoryPages(_ctx, scope, signal) {
-    if (!['archive', 'orphans'].includes(scope)) throw new TypeError(`Unsupported archive inventory scope: ${String(scope)}`);
+    if (!['archive', 'orphans', 'all'].includes(scope)) throw new TypeError(`Unsupported archive inventory scope: ${String(scope)}`);
     const client = await getOperationClient();
     const record = await client.run('archive-inventory', { scope }, { scope: `archive:${scope}`, signal });
     const rows = rowsFrom(record);

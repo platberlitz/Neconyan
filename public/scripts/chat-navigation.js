@@ -399,6 +399,14 @@ export function requestNavigation(intent, options = {}) {
     return serial;
 }
 
+/** Reuse saved-chat guards and identity checks for account-wide Search results. */
+export async function requestSavedSearchNavigation(target) {
+    if (!currentAccount()) return;
+    const destination = await post('establish', target);
+    if (!currentAccount()) return;
+    return requestNavigation({ kind: 'chat', id: destination.id, mode: destination.mode }, { reason: 'foreground', track: true });
+}
+
 async function copyChatLink() {
     if (!preparedLink || routing) { toastr.info('Only a saved conversation has a chat link.'); return; }
     const link = preparedLink;

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
+import { createSearchMatcher } from '../public/scripts/util/fuzzy-search.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const shellSource = readFileSync(path.join(repoRoot, 'public', 'scripts', 'neconyan-tabs.js'), 'utf8');
@@ -22,6 +23,7 @@ function getFunctionSource(name) {
 
 function createSearchContext() {
     const context = vm.createContext({
+        createSearchMatcher,
         escapeRegex: value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
         normalizeText: value => String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase(),
     });
@@ -99,7 +101,7 @@ describe('global search finds pages and the setting you asked for', () => {
         expect(collectSource).toContain('isSearchElementSwitchedOff(entry.element)');
         expect(collectSource).toContain('entry.element.matches(NN_SEARCH_SECTION_HEADING_SELECTOR)');
         expect(collectSource).toContain('dedupeKey: `${entry.tabId}::section::${sectionText}`');
-        expect(collectSource).toContain('collectMatches(text => hasSearchWordStarts(text, wordPatterns))');
+        expect(collectSource).toContain('collectMatches(matcher)');
         expect(collectSource).toContain('const namedPages = ordered.filter(match => match.kind === \'page\' && match.score >= 80);');
         expect(getFunctionSource('isSearchElementSwitchedOff')).toContain('current.style.display === \'none\'');
         expect(shellSource).toContain('const NN_SEARCH_READABLE_TARGET_SELECTOR = `${NN_SEARCH_TARGET_SELECTOR}, input[type="range"][aria-label]`;');
@@ -115,7 +117,7 @@ describe('global search finds pages and the setting you asked for', () => {
     });
 
     test('results say what they open and whole-tab results skip scrolling', () => {
-        const renderSource = getFunctionSource('renderUniversalSearchResults');
+        const renderSource = getFunctionSource('renderSearchMatches');
         const revealSource = getFunctionSource('revealSearchMatch');
 
         expect(renderSource).toContain('match.groupLabel ||');
