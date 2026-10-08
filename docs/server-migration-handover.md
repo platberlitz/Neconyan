@@ -69,6 +69,47 @@ the PR against staging and validate the resulting APK on the reporting device.
 
 ## Release preparation: 1.0.0
 
+### 9 October: 1.2.2 released from main, staging moves to 1.2.3
+
+The official handbook was refreshed against staging `e25ae4d` and published at
+https://platberlitz.github.io/neconyan-docs/. Its strict build, link checks and
+phone/desktop browser checks passed. The assistants' app-help reference moved to
+revision 21 with new topics for the swipe picker, Desktop response controls,
+NSFW Enhancer and the refusal guard, kept-note placement, Termux recovery and
+JannyAI import failures. The Agents glossary and the Mewmory guide now cover the
+refusal guard, kept-note placement and the instantly saved Automatic memory
+switches.
+
+The first release browser run, `37793388440`, failed two groups. The desktop
+Roleplay replacement check found a real regression from Desktop response
+controls (#66): a reply detached for a replacement preview lost its swipe
+controls when it was put back after a cancellation. Bisecting pointed at
+`a1b0bec`; `f92a01d` now checks whether the marker is still inside the message
+rather than on the page, with a browser regression for a detached and restored
+reply. The other failure, the server panel's initial status check, passed eight
+repeated local runs and touches no changed code, so it is treated as a timing
+flake. Run `37804853782` then passed all 16 groups on `f92a01d`.
+
+`main` was fast-forwarded to `f92a01d86161087cec15d97133cc367f7a721bd7`.
+All 444 unit suites passed (5,787 tests, two skipped), along with 2,013 server
+tests, 90 Mewmory tests, root lint, frontend budgets and the production build.
+
+Release E2E run `37812008143` on `main` passed all 16 groups after one rerun:
+the tracker repair check read the saved chat before the debounced chat save had
+landed, while the screen already showed the repair, and the same commit had
+passed that check on staging. A follow-up staging commit makes the check wait
+for the save. Android run `37812012210` passed the signed build and Android
+11/15 emulator checks after one rerun, because GitHub's Android 15 emulator
+image failed to download. The nine downloaded assets passed checksum,
+signing-record, 16 KiB alignment-record and APK payload/provenance checks; all
+3,869 source ZIP entries and file modes match a local archive of the release
+commit. The published assets were downloaded again and match byte for byte.
+
+Neconyan 1.2.2 is published at
+https://github.com/platberlitz/Neconyan/releases/tag/v1.2.2 with the annotated
+tag `v1.2.2` and nine assets. No physical phone testing is claimed. Staging
+advances to `1.2.3`.
+
 ### 8 October: Guided Regenerate prepared for review
 
 Branch `feat/guided-regenerate` starts from staging `b4a21ee23` in the isolated
