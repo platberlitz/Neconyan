@@ -11,6 +11,7 @@ const tabs = [['now', 'Now'], ['pawspective', 'Pawspective'], ['archive', 'Archi
 const kinds = { entity: 'NPC or entity reference', state: 'Current state', event: 'Event', relationship: 'Relationship fact',
     knowledge: 'Character knowledge', commitment: 'Promise or unresolved matter', interview: 'Pawspective interview', overview: 'Current subject view' };
 const roles = { extractor: 'Facts and events', pawspective: 'Pawspective interviews', embedding: 'Embeddings', selector: 'Recall selector', fallback: 'Recall fallback' };
+const SWITCHES = ['enableNewChats', 'autoUpdate', 'localOnly', 'excludeHistory', 'autoHide'];
 const tokenizers = ['auto', 'o200k_base', 'cl100k_base', 'gpt2', 'llama', 'llama3', 'mistral', 'gemma', 'claude', 'qwen2', 'deepseek', 'nemo', 'jamba', 'yi'];
 const ui = { root: null, tab: 'now', owner: '', subject: '', significance: '', status: '', kind: 'objective', query: '', offset: 0,
     source: null, editor: null, draft: null, savedDraft: '', configError: '', role: 'extractor', restore: null, matches: null,
@@ -537,6 +538,35 @@ function updateSettingsStatus() {
     status.dataset.error = String(Boolean(ui.configError));
 }
 
+// A server still running older code drops switches it does not know and saves the rest.
+function confirmSavedSwitches(saved, expected) {
+    if (SWITCHES.some(key => typeof expected[key] === 'boolean' && saved?.[key] !== expected[key])) {
+        throw new Error('Neconyan was updated but is still running the old version. Restart Neconyan, then try again.');
+    }
+}
+
+function saveSwitch(key, value) {
+    const edited = JSON.stringify(ui.draft) !== ui.savedDraft;
+    const previous = ui.draft[key];
+    ui.draft[key] = value;
+    return act(async () => {
+        try {
+            const saved = await changeMewmory('config/save', { config: { ...mewmory.config, [key]: value } });
+            confirmSavedSwitches(saved.config, { [key]: value });
+            const draft = ui.draft;
+            resetSettingsDraft(saved.config);
+            if (edited) ui.draft = { ...draft, [key]: value, revision: saved.config.revision };
+            ui.configError = '';
+            window.dispatchEvent(new Event('mewmory:configured'));
+        } catch (error) {
+            ui.draft[key] = previous;
+            if (!edited) resetSettingsDraft();
+            ui.configError = error.message;
+            throw error;
+        }
+    }, { refresh: false });
+}
+
 function renderSettings(root) {
     if (mewmory.config && (!ui.draft || JSON.stringify(ui.draft) === ui.savedDraft)) resetSettingsDraft();
     const draft = ui.draft;
@@ -544,11 +574,11 @@ function renderSettings(root) {
     const settings = section('Automatic memory');
     settings.dataset.mewmoryTour = 'automatic';
     settings.append(node('p', 'mewmory-caption', 'Model roles are shared by all your chats; turning Mewmory on is per chat. These models are set up separately from the model that writes replies.'),
-        check('Turn on Mewmory in every new chat', draft.enableNewChats, value => { draft.enableNewChats = value; }),
-        check('Update automatically during play', draft.autoUpdate, value => { draft.autoUpdate = value; }),
-        check('Only use models on this computer', draft.localOnly, value => { draft.localOnly = value; }),
-        check('Leave out older chat that Mewmory has already remembered', draft.excludeHistory, value => { draft.excludeHistory = value; }),
-        check('Hide old messages automatically', draft.autoHide, value => { draft.autoHide = value; }));
+        check('Turn on Mewmory in every new chat', draft.enableNewChats, value => saveSwitch('enableNewChats', value)),
+        check('Update automatically during play', draft.autoUpdate, value => saveSwitch('autoUpdate', value)),
+        check('Only use models on this computer', draft.localOnly, value => saveSwitch('localOnly', value)),
+        check('Leave out older chat that Mewmory has already remembered', draft.excludeHistory, value => saveSwitch('excludeHistory', value)),
+        check('Hide old messages automatically', draft.autoHide, value => saveSwitch('autoHide', value)));
     const budgets = node('div', 'mewmory-fields');
     budgets.append(
         field('Hide messages beyond, tokens', draft.autoHideTokens, value => { draft.autoHideTokens = value; }, { type: 'number', hint: 'With automatic hiding on, older messages past this size are hidden after each reply. Mewmory still remembers them.' }),
@@ -672,6 +702,7 @@ function renderSettings(root) {
     actions.append(button('Save configuration', () => act(async () => {
         try {
             const saved = await changeMewmory('config/save', { config: ui.draft });
+            confirmSavedSwitches(saved.config, ui.draft);
             resetSettingsDraft(saved.config);
             ui.configError = '';
             window.dispatchEvent(new Event('mewmory:configured'));
