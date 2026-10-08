@@ -69,6 +69,41 @@ the PR against staging and validate the resulting APK on the reporting device.
 
 ## Release preparation: 1.0.0
 
+### 9 October: Android recovery hotfix 1.2.3, staging moves to 1.2.4
+
+Issue #80 reported a dead local server after an overnight phone restart, with
+`ERR_CONNECTION_RESET` and `kill failed: ESRCH`. I repaired the launcher so it
+detects a stopped server and tries one safe-mode restart. If recovery fails,
+the native recovery screen can export a backup without the server and copy
+startup diagnostics. Safe mode pauses replayed jobs, interrupted Mewmory work
+and automatic messages for that run. The server heap allowance scales with RAM,
+and the previous startup log is kept. The original Samsung crash cause remains
+unconfirmed; no physical-phone verification is claimed.
+
+`main` was fast-forwarded to `4f0f702ee21befbb6fc8e0fde8694b1ede8c3fb2`.
+Neconyan 1.2.3 is published at
+https://github.com/platberlitz/Neconyan/releases/tag/v1.2.3 with the annotated
+tag `v1.2.3` and nine assets. The existing signing certificate is retained.
+The published files were downloaded again: checksums match the validated build,
+both APK payloads match the release commit, native libraries support 16 KiB
+pages, and all 3,645 source files match a local archive of the commit.
+
+All 444 unit suites passed (5,787 tests, two skipped), along with 2,022 server
+tests, 91 Mewmory tests, root lint, frontend budgets and the production build.
+Android run `37855748205` passed the signed build and Android 11/15 emulator
+checks, including forced server death, safe-mode recovery and retained data.
+The pure-Java rescue ZIP was accepted by the account-backup importer in tests.
+The official handbook's Android recovery page was published in `869d249`; strict
+build, link and phone/desktop browser checks passed. Assistant knowledge and
+the changelog cover the hotfix.
+
+Release browser run `37855710806` passed 13 of 16 groups on its first attempt.
+The three failing checks were server-status initial failure, Story navigation
+and Scratchpad swipe selection. The failed groups are being rerun, and the
+release notes explicitly mark full browser validation as pending. Issue #80
+has upgrade and backup instructions requesting confirmation from the reporter.
+Staging advances to `1.2.4`.
+
 ### 9 October: 1.2.2 released from main, staging moves to 1.2.3
 
 The official handbook was refreshed against staging `e25ae4d` and published at
