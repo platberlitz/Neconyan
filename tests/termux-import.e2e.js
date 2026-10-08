@@ -3,13 +3,14 @@ import { expect } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import archiver from 'archiver';
+import YAML from 'yaml';
 import { test } from './neconyan-conversation-durable-fixture.js';
 
 test.setTimeout(180000);
 test.skip(process.env.NECONYAN_TERMUX_IMPORT_RECOVERY_TEST !== '1', 'Opt in to the disposable Termux recovery preload test.');
 
 for (const phone of [false, true]) {
-    test(`Termux ZIP import survives write, rename and restart on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
+    test(`Termux ZIP import survives restart and reconnects to its original data folder on ${phone ? 'phone' : 'desktop'}`, async ({ app }) => {
         const account = await app.account({ phone });
         const page = await account.open({ workspace: false, readyTimeout: 60000, timeout: 60000 });
         await page.waitForFunction(async () => {
@@ -46,6 +47,10 @@ for (const phone of [false, true]) {
         expect(response.ok()).toBe(true);
         const uploadKey = uploads[0].postDataBuffer().toString().match(/name="key"\r\n\r\n([^\r]+)/)[1];
         const receipt = await response.json();
+        const records = await account.context.request.get('/api/operations/records?kind=account-import');
+        const savedImports = await records.json();
+        expect(savedImports).toHaveLength(1);
+        const importKey = savedImports[0].key;
         const contents = path.join(app.directory, 'data/default-user/user/files/termux.txt');
         expect(await fs.readFile(contents, 'utf8')).toBe('Imported under stable Termux file identity.');
         await note.scrollIntoViewIfNeeded();
@@ -53,8 +58,35 @@ for (const phone of [false, true]) {
         await fs.mkdir(path.dirname(screenshot), { recursive: true });
         await page.screenshot({ path: screenshot });
         await test.info().attach('Termux import result', { path: screenshot, contentType: 'image/png' });
-        await page.close();
-        await app.restart();
+        // The browser kept the acknowledged operation, but a repeated setup command
+        // starts an empty data folder behind the same URL.
+        const storageKey = await page.evaluate(async key => {
+            const { accountImportScope } = await import('/scripts/account-import-client.js');
+            const storageKey = `neconyan-operations:default-user:${accountImportScope({ mode: 'zip', content: 'core' })}`;
+            localStorage.setItem(storageKey, JSON.stringify({ key }));
+            return storageKey;
+        }, importKey);
+        const configPath = path.join(app.directory, 'config.yaml');
+        const originalConfig = await fs.readFile(configPath, 'utf8');
+        const emptyRoot = path.join(app.directory, 'empty-recovery');
+        await fs.mkdir(emptyRoot);
+        await app.stop();
+        await fs.writeFile(configPath, YAML.stringify({ ...YAML.parse(originalConfig), dataRoot: emptyRoot, enableUserAccounts: false }));
+        await app.start({ useConfigDataRoot: true });
+        const chooseAgain = () => card.getByLabel('Choose a SillyTavern backup ZIP').setInputFiles({
+            name: 'default-user.zip', mimeType: 'application/zip', buffer: Buffer.concat(chunks),
+        });
+        await chooseAgain();
+        await expect(note).toContainText('The saved application result was not found.');
+        expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), storageKey)).toEqual({ key: importKey });
+        expect(uploads).toHaveLength(1);
+        await app.stop();
+        await fs.writeFile(configPath, originalConfig);
+        await app.start();
+        await chooseAgain();
+        await expect(note).toContainText('Backup ZIP imported.', { timeout: 60000 });
+        expect(uploads).toHaveLength(1);
+        expect(await page.evaluate(key => localStorage.getItem(key), storageKey)).toBeNull();
         const retained = await account.context.request.get(`/api/operations/import-input/${uploadKey}`, { headers: account.headers });
         expect(retained.ok()).toBe(true);
         expect(await retained.json()).toEqual(receipt);

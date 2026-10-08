@@ -29,32 +29,79 @@ pending work and retained uploads intact. The recovery instance begins with
 fresh account settings; the backup importer brings across only the selected
 libraries. Keep both data folders until the imported contents have been checked.
 
-1. Stop the Termux Neconyan process with Ctrl+C. Do not clear application data or
-   delete the protected storage directories.
-2. Put the matching `src/termux-file-stats.js` from this fix in
-   `.local-runtime/termux-import/termux-file-stats.js` and copy the installation's
-   `src/runtime.js` beside it. This ignored folder keeps the backport separate
-   from future Git updates. No dependency install is needed.
-3. From the Neconyan installation directory, create a separate data folder and
-   start it on an unused port, for example 5534:
+## Install the recovery tools
 
-   ```sh
-   NECO_IMPORT_DATA=$(mktemp -d "$HOME/neconyan-import-XXXXXX")
-   printf 'Recovery data folder: %s\n' "$NECO_IMPORT_DATA"
-   node --import ./.local-runtime/termux-import/termux-file-stats.js server.js \
-     --dataRoot "$NECO_IMPORT_DATA" --port 5534
-   ```
+Place these files from the same version of this fix in
+`.local-runtime/termux-import/` inside the Neconyan installation:
 
-4. Open `http://127.0.0.1:5534` and import the ZIP. The separate port also gives
-   this instance separate browser storage, so old pending browser requests are
-   kept with the original instance.
+- `src/termux-file-stats.js`
+- `scripts/termux-import-folder.js`
+- `scripts/start-termux-import.sh`
+- A copy of the installation's `src/runtime.js`
 
-To reopen the recovery instance, use the same command with the printed data
-folder path. Do not run `mktemp` again unless another empty instance is wanted.
-Stopping this process and using the usual launch command returns to the original
-data. Always use the command-line `--import` option for this recovery instance.
-Ordinary launches do not enable the preload, so updating does not change the
-identity rules of existing data.
+The ignored tools folder avoids conflicts with future Git updates. No dependency
+install is needed. Stop the current Neconyan process with Ctrl+C before starting
+another copy on the recovery port.
+
+## Resume an existing recovery instance
+
+From the Neconyan installation directory, run:
+
+```sh
+bash .local-runtime/termux-import/start-termux-import.sh
+```
+
+The launcher finds the recovery folder containing saved account imports. It
+remembers that choice in `~/.neconyan-import-folder`, outside the installation,
+and reuses it on every subsequent run. If there is more than one possible
+folder, it prints the available import keys and stops instead of guessing.
+Unreadable records and a missing previously selected folder also stop the
+launcher. Nothing is deleted or overwritten in the data folders.
+
+The launcher acquires the Termux wake lock before starting Node on port 5534.
+Open `http://127.0.0.1:5534`, reload the page, and use **Saved account imports** to
+observe the saved import. An accepted import can resume on the server without
+uploading the ZIP again. A wake lock reduces sleep interruptions; it does not
+make the process immune to Android termination. After stopping the server, run
+`termux-wake-unlock` when the wake lock is no longer needed.
+
+If Neconyan stops, rerun the same launcher command. Reinstalling the application
+may remove `.local-runtime`; reinstall the tools and run the launcher again.
+The selected data folder and its saved choice remain outside the installation.
+
+### If the setup command was run repeatedly
+
+The earlier `mktemp` command created a new data folder on every run while
+reusing port 5534. Fennec retained the previous import request for that address,
+so the empty replacement instance replied **The saved application result was
+not found**. Keep every recovery folder: an earlier one may contain the original
+accepted operation and its uploaded ZIP.
+
+The launcher can reconnect to the only folder containing saved imports. If it
+lists several possibilities, read the pending key in **Debugger → Console**:
+
+```js
+console.log(JSON.stringify(Object.keys(localStorage)
+    .filter(key => key.startsWith('neconyan-operations:') && key.includes(':account-import:'))
+    .map(key => ({ scope: key, key: JSON.parse(localStorage.getItem(key)).key })), null, 2));
+```
+
+This reads browser records without changing them. Pass the relevant key to the
+launcher with `--key IMPORT_KEY`. A key which does not match a folder is refused;
+a conflicting existing saved folder choice is kept for inspection.
+
+## First-time recovery only
+
+When no recovery folder exists yet, explicitly create the first instance:
+
+```sh
+bash .local-runtime/termux-import/start-termux-import.sh --new
+```
+
+This creates `~/neconyan-import-recovery` and saves its path before launch.
+Repeating the command reuses that folder. It never makes another random data
+folder. The recovery account begins with fresh settings and imports only the
+selected libraries. Use the ordinary launcher to return to the original data.
 
 The APK starts its own server and uses a separate Android file-identity adapter.
 An installation path under `/data/data/com.termux/files/home` identifies the
