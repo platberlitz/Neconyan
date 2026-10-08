@@ -41,7 +41,8 @@
     },
     "batch": false,
     "batchAgentIds": [],
-    "maxTokens": 64000
+    "maxTokens": 64000,
+    "chatHistoryPlacement": "source"
   },
   "preProcess": {
     "mode": "inject",

@@ -427,6 +427,7 @@ async function finishAgentLibraryInitialization() {
     }
 
     await migrateLevelUpStatsContextLinks();
+    await migrateKeptNotesPlacementDefaults();
 
     if (getGlobalSettings().separateRecentChats) {
         const initializedScopedAgentState = initializeScopedAgentEnableState();
@@ -1392,6 +1393,33 @@ async function migrateLevelUpStatsContextLinks() {
     setGlobalSettings({
         levelUpStatsContextLinksVersion: LEVEL_UP_STATS_CONTEXT_LINKS_VERSION,
     });
+    persistExtensionState();
+    return migrated;
+}
+
+const KEPT_NOTES_PLACEMENT_DEFAULTS_VERSION = 1;
+
+/**
+ * Gives installed bundled agents their template's 'Where kept notes go' choice once.
+ * The setting is new, so a bundled agent still on 'latest' has never had it chosen;
+ * custom agents have no source template and keep 'latest', which matches the old behaviour.
+ */
+async function migrateKeptNotesPlacementDefaults() {
+    const settings = getGlobalSettings();
+    if ((Number(settings.keptNotesPlacementDefaultsVersion ?? 0) || 0) >= KEPT_NOTES_PLACEMENT_DEFAULTS_VERSION) {
+        return 0;
+    }
+
+    let migrated = 0;
+    for (const agent of getAgents().map(agent => structuredClone(agent))) {
+        const placement = findSourceTemplateForAgent(agent)?.companion?.chatHistoryPlacement;
+        if (!agent.companion || !placement || placement === 'latest' || agent.companion.chatHistoryPlacement !== 'latest') continue;
+        agent.companion.chatHistoryPlacement = placement;
+        await saveAgent(agent);
+        migrated++;
+    }
+
+    setGlobalSettings({ keptNotesPlacementDefaultsVersion: KEPT_NOTES_PLACEMENT_DEFAULTS_VERSION });
     persistExtensionState();
     return migrated;
 }
@@ -3729,6 +3757,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
     editorEl.find('#ica--editor-companion-includeInChatHistory').prop('checked', companion.includeInChatHistory);
     editorEl.find('#ica--editor-companion-chatHistoryDepth').val(companion.chatHistoryDepth);
     editorEl.find('#ica--editor-companion-includeAllChatHistory').prop('checked', companion.includeAllChatHistory);
+    editorEl.find('#ica--editor-companion-chatHistoryPlacement').val(companion.chatHistoryPlacement ?? 'latest');
     editorEl.find('#ica--editor-companion-keepInChatHistoryWhenHostHidden').prop('checked', companion.keepInChatHistoryWhenHostHidden);
     editorEl.find('#ica--editor-companion-feedbackEnabled').prop('checked', companion.feedback.enabled);
     editorEl.find('#ica--editor-companion-feedbackDepth').val(companion.feedback.depth);
@@ -3820,6 +3849,12 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         const category = editorEl.find('#ica--editor-category').val()?.toString() || '';
         const execution = editorEl.find('#ica--editor-execution').val()?.toString() || 'inline';
         return category === 'companion' || execution === 'companion';
+    }
+
+    function isEditorKeptNotesBlock() {
+        return isEditorCompanionExecution()
+            && Boolean(editorEl.find('#ica--editor-companion-includeInChatHistory').prop('checked'))
+            && editorEl.find('#ica--editor-companion-chatHistoryPlacement').val() === 'block';
     }
 
     let activeEditorView = agent.execution === 'companion' || agent.category === 'companion'
@@ -4024,6 +4059,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         const showChatHistoryOptions = companionExecution && editorEl.find('#ica--editor-companion-includeInChatHistory').prop('checked');
         editorEl.find('#ica--companion-chat-history-row').toggle(showChatHistoryOptions);
         editorEl.find('#ica--editor-companion-chatHistoryDepth').prop('disabled', editorEl.find('#ica--editor-companion-includeAllChatHistory').prop('checked'));
+        editorEl.find('#ica--companion-chat-history-placement-note').toggle(isEditorKeptNotesBlock());
         editorEl.find('#ica--companion-feedback-depth-row').toggle(editorEl.find('#ica--editor-companion-feedbackEnabled').prop('checked'));
         editorEl.find('#ica--companion-batch-row').toggle(companionExecution);
         editorEl.find('#ica--companion-batch-select-row').toggle(companionExecution && editorEl.find('#ica--editor-companion-batch').prop('checked'));
@@ -4071,6 +4107,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
             includeInChatHistory: root.find('#ica--editor-companion-includeInChatHistory').prop('checked'),
             chatHistoryDepth: Number(root.find('#ica--editor-companion-chatHistoryDepth').val()) || current.chatHistoryDepth,
             includeAllChatHistory: root.find('#ica--editor-companion-includeAllChatHistory').prop('checked'),
+            chatHistoryPlacement: root.find('#ica--editor-companion-chatHistoryPlacement').val()?.toString() || current.chatHistoryPlacement,
             keepInChatHistoryWhenHostHidden: root.find('#ica--editor-companion-keepInChatHistoryWhenHostHidden').prop('checked'),
             historyDepth: Number(root.find('#ica--editor-companion-historyDepth').val()) || current.historyDepth,
             feedback: {
@@ -4106,6 +4143,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         editorEl.find('#ica--editor-companion-includeInChatHistory').prop('checked', nextCompanion.includeInChatHistory);
         editorEl.find('#ica--editor-companion-chatHistoryDepth').val(nextCompanion.chatHistoryDepth);
         editorEl.find('#ica--editor-companion-includeAllChatHistory').prop('checked', nextCompanion.includeAllChatHistory);
+        editorEl.find('#ica--editor-companion-chatHistoryPlacement').val(nextCompanion.chatHistoryPlacement ?? 'latest');
         editorEl.find('#ica--editor-companion-keepInChatHistoryWhenHostHidden').prop('checked', nextCompanion.keepInChatHistoryWhenHostHidden);
         editorEl.find('#ica--editor-companion-feedbackEnabled').prop('checked', nextCompanion.feedback.enabled);
         editorEl.find('#ica--editor-companion-feedbackDepth').val(nextCompanion.feedback.depth);
@@ -4124,7 +4162,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         updateCompanionEditorVisibility();
         syncEditorViewSections();
     });
-    editorEl.find('#ica--editor-execution, #ica--editor-companion-feedbackEnabled, #ica--editor-companion-includeInChatHistory, #ica--editor-companion-includeAllChatHistory, #ica--editor-chatroom-style, #ica--editor-director-voice').on('change', () => {
+    editorEl.find('#ica--editor-execution, #ica--editor-companion-feedbackEnabled, #ica--editor-companion-includeInChatHistory, #ica--editor-companion-includeAllChatHistory, #ica--editor-companion-chatHistoryPlacement, #ica--editor-chatroom-style, #ica--editor-director-voice').on('change', () => {
         updateCompanionEditorVisibility();
         syncEditorViewSections();
     });
@@ -4158,7 +4196,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
             companion: isEditorCompanionExecution(),
             phase: editorEl.find('#ica--editor-phase').val(),
             category: editorEl.find('#ica--editor-category').val(),
-            feedback: Boolean(editorEl.find('#ica--editor-companion-feedbackEnabled').prop('checked')),
+            feedback: Boolean(editorEl.find('#ica--editor-companion-feedbackEnabled').prop('checked')) || isEditorKeptNotesBlock(),
         });
         editorEl.find('#ica--injection-section').toggle(availability.placement);
         editorEl.find('#ica--before-mode-controls').prop('hidden', !availability.before);
@@ -4421,6 +4459,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
             includeInChatHistory: currentCompanion.includeInChatHistory,
             chatHistoryDepth: currentCompanion.chatHistoryDepth,
             includeAllChatHistory: currentCompanion.includeAllChatHistory,
+            chatHistoryPlacement: currentCompanion.chatHistoryPlacement,
             keepInChatHistoryWhenHostHidden: currentCompanion.keepInChatHistoryWhenHostHidden,
         });
         toastr.success('Applied generated companion. Review and save when ready.');

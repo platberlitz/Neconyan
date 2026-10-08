@@ -1,6 +1,7 @@
 import { applyRegexScriptList, normalizeRegexScript } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 import { getRegexScriptRevision } from '../../public/scripts/extensions/in-chat-agents/regex-snapshot-store.js';
-import { consolidateCompanionChatHistory, getActiveCompanionResults, hasCompanionChatHistoryForHiddenHost, isRetainedCompanionResult, selectCompanionChatHistory } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
+import { buildCompanionChatHistoryBlocks, consolidateCompanionChatHistory, getActiveCompanionResults, hasCompanionChatHistoryForHiddenHost, isRetainedCompanionResult,
+    normalizeCompanionChatHistoryInjection, normalizeCompanionChatHistoryPlacement, selectCompanionChatHistory } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { shouldRetainContextAtDepth, stripHtmlTagsFromContext, stripOocBlocksFromContext } from '../../public/scripts/ooc-blocks.js';
 import { roleplayError } from '../roleplay-store.js';
 
@@ -40,6 +41,8 @@ export function captureCompanionHistoryPolicies(records) {
             if (isRetainedCompanionResult(result)) policies.set(id, {
                 chatHistoryDepth: Math.max(1, Math.floor(Number(result.chatHistoryDepth) || 1)),
                 includeAllChatHistory: result.includeAllChatHistory !== false,
+                chatHistoryPlacement: normalizeCompanionChatHistoryPlacement(result.chatHistoryPlacement),
+                chatHistoryInjection: normalizeCompanionChatHistoryInjection(result.chatHistoryInjection),
             });
         }
     }
@@ -73,8 +76,8 @@ export function prepareCompanionPromptHistory(records, snapshot, environment, { 
         } finally { environment.names = names; }
     };
     const { host, entries } = consolidateCompanionChatHistory(candidates, selections, resolve,
-        message => !Array.isArray(message.extra?.tool_invocations));
-    const transformed = entries.map(({ message, contribution }) => {
+        message => !Array.isArray(message.extra?.tool_invocations), { policyMessages: messages, policies });
+    const transformed = entries.map(({ message, contribution, agentId, placement, host: entryHost, injection }) => {
         const index = indices.get(message), sourceIndex = core.indexOf(message);
         const depth = core.length - sourceIndex - (snapshot.global.trigger === 'continue' ? 2 : 1);
         const contextDepth = Math.max(0, core.length - sourceIndex - 1);
@@ -85,7 +88,12 @@ export function prepareCompanionPromptHistory(records, snapshot, environment, { 
         const content = retain(applyAgentHistoryRegex(afterAgent, message, snapshot.regex, depth, snapshot, environment));
         const worldInfoContent = afterAgent === contribution.content ? content
             : retain(applyAgentHistoryRegex(contribution.content, message, snapshot.regex, depth, snapshot, environment));
-        return { content, worldInfoContent };
+        return { content, worldInfoContent, hostIndex: entryHost ? indices.get(entryHost) : -1,
+            agentId, placement, injection, contribution: { name: contribution.name } };
     });
-    return { hostIndex: host ? indices.get(host) : -1, entries: transformed };
+    const blocks = buildCompanionChatHistoryBlocks(transformed, entry => entry.content).map(block => ({ key: block.key, content: block.content,
+        ...(block.worldInfoContent !== undefined ? { worldInfoContent: block.worldInfoContent } : {}),
+        position: block.position, depth: block.depth, role: ['system', 'user', 'assistant'][block.role], scan: block.scan }));
+    return { hostIndex: host ? indices.get(host) : -1, entries: transformed.filter(entry => entry.placement !== 'block')
+        .map(({ content, worldInfoContent, hostIndex }) => ({ content, worldInfoContent, hostIndex })), blocks };
 }

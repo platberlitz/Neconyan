@@ -99,7 +99,7 @@ export function prepareRoleplayHistoryContent(records, snapshot, environment, ag
             + (titles.length ? `\n\n${titles.join('\n\n')}` : ''),
         shouldRetainContextAtDepth(depth, snapshot.contextRetention?.ooc)),
         shouldRetainContextAtDepth(depth, snapshot.contextRetention?.html));
-        const retained = index === companionHistory.hostIndex ? companionHistory.entries : [];
+        const retained = companionHistory.entries.filter(entry => entry.hostIndex === index);
         worldInfoContent.push([finish(afterAgent === original ? text : transform(original)), ...retained.map(item => item.worldInfoContent)].filter(Boolean).join('\n\n'));
         return [finish(text), ...retained.map(item => item.content)].filter(Boolean).join('\n\n');
     });
@@ -146,6 +146,7 @@ export function prepareRoleplayHistoryContent(records, snapshot, environment, ag
     global.inject = inject;
     return { content, reasoning: state, global, characterExamples, authorNote, depthPrompt,
         ...(companionHistory.hostIndex >= 0 ? { companionHostIndex: companionHistory.hostIndex } : {}),
+        ...(companionHistory.blocks.length ? { companionBlocks: companionHistory.blocks } : {}),
         ...(worldInfoContent.some((value, index) => value !== content[index]) ? { worldInfoContent } : {}),
         ...(depthPrompts?.length ? { depthPrompts } : {}) };
 }

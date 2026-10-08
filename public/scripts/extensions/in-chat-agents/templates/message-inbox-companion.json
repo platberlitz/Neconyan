@@ -32,7 +32,8 @@
       "depth": 1
     },
     "batch": false,
-    "maxTokens": 64000
+    "maxTokens": 64000,
+    "chatHistoryPlacement": "source"
   },
   "regexScripts": [
     {

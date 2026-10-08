@@ -275,7 +275,7 @@ import { getRegexedString, regex_placement } from './scripts/extensions/regex/en
 import { AGENT_REGEX_PLACEMENT, applyRegexScriptList } from './scripts/extensions/in-chat-agents/regex-scripts.js';
 import { stripTrackerMandatoryMarkers } from './scripts/tracker-mandatory-marker.js';
 import { resolveRegexScriptsForSnapshot } from './scripts/extensions/in-chat-agents/regex-snapshot-store.js';
-import { consolidateCompanionChatHistory, hasCompanionChatHistoryForHiddenHost, selectCompanionChatHistory } from './scripts/extensions/in-chat-agents/companion/companion-shared.js';
+import { buildCompanionChatHistoryBlocks, COMPANION_HISTORY_PROMPT_KEY_PREFIX, consolidateCompanionChatHistory, hasCompanionChatHistoryForHiddenHost, selectCompanionChatHistory } from './scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { IN_CHAT_AGENT_PROMPT_KEY_PREFIX, instrumentInChatAgentPromptValue, trimOldestRetainedContribution } from './scripts/in-chat-agent-inspection.js';
 import { initLogprobs, saveLogprobsForActiveMessage } from './scripts/logprobs.js';
 import { FILTER_STATES, FILTER_TYPES, FilterHelper, isFilterState } from './scripts/filters.js';
@@ -6696,9 +6696,10 @@ async function getAllExtensionPrompts() {
 /**
  * Wrapper to fetch extension prompts by module name
  * @param {string} moduleName Module name
+ * @param {{forWorldInfo?: boolean}} options Select the scan copy before prompt-only Agent transformations.
  * @returns {Promise<string>} Extension prompt
  */
-export async function getExtensionPromptByName(moduleName) {
+export async function getExtensionPromptByName(moduleName, { forWorldInfo = false } = {}) {
     if (!moduleName) {
         return '';
     }
@@ -6715,7 +6716,7 @@ export async function getExtensionPromptByName(moduleName) {
         return '';
     }
 
-    return substituteParams(prompt.value);
+    return substituteParams(forWorldInfo ? prompt.worldInfoValue ?? prompt.value : prompt.value);
 }
 
 /**
@@ -8589,8 +8590,8 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         } = consolidateCompanionChatHistory(companionCandidateMessages, companionChatHistory, sourceMessage => content => substituteParams(content, {
             name2Override: String(sourceMessage.name ?? '').trim() || undefined,
             original: sourceMessage.is_system ? '' : sourceMessage.mes,
-        }), message => !Array.isArray(message?.extra?.tool_invocations));
-        const consolidatedRetainedContributions = consolidatedRetainedEntries.map(({ message: sourceMessage, contribution }) => {
+        }), message => !Array.isArray(message?.extra?.tool_invocations), { policyMessages: companionPolicyMessages });
+        const consolidatedRetainedContributions = consolidatedRetainedEntries.map(({ message: sourceMessage, contribution, ...placement }) => {
             const sourceIndex = coreChat.indexOf(sourceMessage);
             const regexType = sourceMessage.is_user ? regex_placement.USER_INPUT : regex_placement.AI_OUTPUT;
             const options = { isPrompt: true, depth: (coreChat.length - sourceIndex - (isContinue ? 2 : 1)) };
@@ -8614,6 +8615,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             const retainHtml = shouldRetainContextAtDepth(contextDepth, power_user.html_context_depth);
 
             return {
+                ...placement,
                 contribution: {
                     ...contribution,
                     content: stripHtmlTagsFromContext(stripOocBlocksFromContext(promptContent, retainOoc), retainHtml),
@@ -8623,6 +8625,14 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                     : stripHtmlTagsFromContext(stripOocBlocksFromContext(worldInfoContent, retainOoc), retainHtml),
             };
         });
+        // Neconyan: Companions set to 'One labelled block' send kept notes at their own Position, Depth and Role.
+        for (const key of Object.keys(extension_prompts)) {
+            if (key.startsWith(COMPANION_HISTORY_PROMPT_KEY_PREFIX)) delete extension_prompts[key];
+        }
+        for (const block of buildCompanionChatHistoryBlocks(consolidatedRetainedContributions)) {
+            setExtensionPrompt(block.key, block.content, block.position, block.depth, block.scan, block.role, null, block.name);
+            if (block.worldInfoContent !== undefined) extension_prompts[block.key].worldInfoValue = block.worldInfoContent;
+        }
         coreChat = coreChat.filter(chatItem => !chatItem.is_system
         || (canUseTools && Array.isArray(chatItem.extra?.tool_invocations))
         || chatItem === consolidatedCompanionHistoryHost);
@@ -8633,12 +8643,13 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
             const worldInfoSourceMessage = chatItem === firstChatMessage && firstMessageVariants !== undefined
                 ? firstMessageVariants.worldInfo
                 : originalMessage;
-            const isConsolidatedCompanionHost = chatItem === consolidatedCompanionHistoryHost;
-            const hiddenCompanionHistory = chatItem.is_system && isConsolidatedCompanionHost;
+            const hostedRetainedContributions = consolidatedRetainedContributions.filter(item => item.host === chatItem);
+            const isConsolidatedCompanionHost = hostedRetainedContributions.length > 0;
+            const hiddenCompanionHistory = chatItem.is_system && chatItem === consolidatedCompanionHistoryHost;
             // Neconyan: project opted-in companion notes into prompt history without changing stored chat text.
-            const retainedContributions = isConsolidatedCompanionHost
-                ? consolidatedRetainedContributions.map(item => item.contribution).filter(contribution => contribution.content)
-                : [];
+            const retainedContributions = hostedRetainedContributions
+                .map(item => item.contribution)
+                .filter(contribution => contribution.content);
             const contextSourceMessage = hiddenCompanionHistory ? '' : originalMessage;
             const worldInfoContextSourceMessage = hiddenCompanionHistory ? '' : worldInfoSourceMessage;
             let message = contextSourceMessage;
@@ -8705,7 +8716,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
                 );
             }
             if (isConsolidatedCompanionHost) {
-                const worldInfoRetainedContent = consolidatedRetainedContributions
+                const worldInfoRetainedContent = hostedRetainedContributions
                     .map(item => item.worldInfoContent ?? item.contribution.content)
                     .filter(Boolean);
                 worldInfoContextMessage = [worldInfoContextMessage, ...worldInfoRetainedContent]

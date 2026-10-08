@@ -5726,7 +5726,7 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
     // Put this code here since otherwise, the chat reference is modified
     for (const key of Object.keys(context.extensionPrompts)) {
         if (context.extensionPrompts[key]?.scan) {
-            const prompt = await getExtensionPromptByName(key);
+            const prompt = await getExtensionPromptByName(key, { forWorldInfo: true });
             if (prompt) {
                 buffer.addInject(prompt);
             }

@@ -242,29 +242,66 @@ test('a length-limited continued companion retains its last good selected note a
     assert.equal(cycle.rows().at(-1).extra.inChatAgentCompanionResults.b.failureKind, 'cycle');
 });
 
-test('retained hidden companion notes use their original host and frozen prompt regex without exposing hidden message text', async t => {
-    const script = { id: 'old-script', findRegex: '/evening-bell/g', replaceString: '', placement: [2], promptOnly: true, markdownOnly: false,
-        trimStrings: [], disabled: false, runOnEdit: true, substituteRegex: 0, minDepth: null, maxDepth: null };
+for (const [placement, stripAll] of [['latest', false], ['source', false], ['block', false], ['block', true]]) {
+    test(`retained hidden ${placement} companion notes preserve lore scanning through ${stripAll ? 'whole-note' : 'keyword'} prompt regex`, async t => {
+        const script = { id: 'old-script', findRegex: stripAll ? '/[\\s\\S]+/g' : '/evening-bell/g', replaceString: '', placement: [2], promptOnly: true, markdownOnly: false,
+            trimStrings: [], disabled: false, runOnEdit: true, substituteRegex: 0, minDepth: null, maxDepth: null };
+        const f = prepared(t, [], { changeRecords(records) {
+            records[2].is_system = true;
+            records[2].mes = 'SECRET_HIDDEN_MESSAGE';
+            records[2].extra = { title: 'SECRET_HIDDEN_TITLE', append_title: true,
+                inChatAgents: { regexScriptRefs: [{ agentId: 'removed-agent', scriptId: script.id, revision: getRegexScriptRevision(script) }],
+                    nativeRegexScripts: [{ agentId: 'removed-agent', script }] },
+                inChatAgentCompanionResults: { old: { status: 'done', content: 'ONLY_NOTE evening-bell by {{char}}', includeInChatHistory: true,
+                    includeAllChatHistory: true, chatHistoryDepth: 1, keepInChatHistoryWhenHostHidden: true,
+                    chatHistoryPlacement: placement, chatHistoryInjection: { position: 1, depth: 0, role: 0, scan: true } } } };
+            records.push({ name: 'Ari', is_user: true, mes: 'Next question', extra: {} });
+        } });
+        await f.run({ generate: paid('main', options => {
+            const text = JSON.stringify(options.messages);
+            if (stripAll) {
+                assert.doesNotMatch(text, /ONLY_NOTE|kept notes/);
+            } else {
+                assert.match(text, /ONLY_NOTE\s+by Nova/);
+                assert.equal((text.match(/ONLY_NOTE/g) ?? []).length, 1);
+            }
+            assert.doesNotMatch(text, /SECRET_HIDDEN|evening-bell/);
+            assert.match(text, /THE_COMPANION_BELL_LORE/);
+            return { text: 'Visible reply' };
+        }), generateAgent: () => assert.fail('retained notes paid for a new companion') });
+        assert.equal(f.rows()[2].mes, 'SECRET_HIDDEN_MESSAGE');
+        assert.equal(f.rows()[2].extra.inChatAgentCompanionResults.old.content, 'ONLY_NOTE evening-bell by {{char}}');
+    });
+}
+
+test('kept notes stay on their own reply or travel as one labelled block when their Companion asks for it', async t => {
+    const note = (content, placement, extra = {}) => ({ status: 'done', content, agentName: placement === 'block' ? 'Keeper' : 'Lens',
+        includeInChatHistory: true, includeAllChatHistory: true, chatHistoryDepth: 1, chatHistoryPlacement: placement, ...extra });
+    const injection = { position: 1, depth: 0, role: 0, scan: false };
+    let firstReply = '';
     const f = prepared(t, [], { changeRecords(records) {
-        records[2].is_system = true;
-        records[2].mes = 'SECRET_HIDDEN_MESSAGE';
-        records[2].extra = { title: 'SECRET_HIDDEN_TITLE', append_title: true,
-            inChatAgents: { regexScriptRefs: [{ agentId: 'removed-agent', scriptId: script.id, revision: getRegexScriptRevision(script) }],
-                nativeRegexScripts: [{ agentId: 'removed-agent', script }] },
-            inChatAgentCompanionResults: { old: { status: 'done', content: 'ONLY_NOTE evening-bell by {{char}}', includeInChatHistory: true,
-                includeAllChatHistory: true, chatHistoryDepth: 1, keepInChatHistoryWhenHostHidden: true } } };
-        records.push({ name: 'Ari', is_user: true, mes: 'Next question', extra: {} });
+        firstReply = records[2].mes;
+        records[2].extra.inChatAgentCompanionResults = { lens: note('SOURCE_NOTE_ONE', 'source'), keep: note('BLOCK_NOTE_ONE', 'block', { chatHistoryInjection: injection }) };
+        records.push({ name: 'Ari', is_user: true, mes: 'Second question', extra: {} },
+            { name: 'Nova', is_user: false, mes: 'Second answer', extra: { inChatAgentCompanionResults: {
+                lens: note('SOURCE_NOTE_TWO', 'source'), keep: note('BLOCK_NOTE_TWO', 'block', { chatHistoryInjection: injection }) } } },
+            { name: 'Ari', is_user: true, mes: 'Third question', extra: {} });
     } });
     await f.run({ generate: paid('main', options => {
-        const text = JSON.stringify(options.messages);
-        assert.match(text, /ONLY_NOTE\s+by Nova/);
-        assert.equal((text.match(/ONLY_NOTE/g) ?? []).length, 1);
-        assert.doesNotMatch(text, /SECRET_HIDDEN|evening-bell/);
-        assert.match(text, /THE_COMPANION_BELL_LORE/);
+        const contents = options.messages.map(message => typeof message.content === 'string' ? message.content : JSON.stringify(message.content));
+        const first = contents.find(content => content.includes(firstReply));
+        const second = contents.find(content => content.includes('Second answer'));
+        assert.match(first, /SOURCE_NOTE_ONE/);
+        assert.doesNotMatch(first, /SOURCE_NOTE_TWO|BLOCK_NOTE/);
+        assert.match(second, /SOURCE_NOTE_TWO/);
+        assert.doesNotMatch(second, /SOURCE_NOTE_ONE|BLOCK_NOTE/);
+        const block = options.messages.find(message => String(message.content).includes('[Keeper - kept notes]'));
+        assert.ok(block, 'the kept notes block reaches the prompt');
+        assert.equal(block.role, 'system');
+        assert.match(block.content, /BLOCK_NOTE_ONE\s+BLOCK_NOTE_TWO/);
+        assert.equal(contents.filter(content => content.includes('BLOCK_NOTE_ONE')).length, 1);
         return { text: 'Visible reply' };
-    }), generateAgent: () => assert.fail('retained notes paid for a new companion') });
-    assert.equal(f.rows()[2].mes, 'SECRET_HIDDEN_MESSAGE');
-    assert.equal(f.rows()[2].extra.inChatAgentCompanionResults.old.content, 'ONLY_NOTE evening-bell by {{char}}');
+    }), generateAgent: () => assert.fail('kept notes paid for a new companion') });
 });
 
 test('continuing excludes the current companion note but uses its latest saved history policy', async t => {

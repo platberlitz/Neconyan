@@ -260,6 +260,14 @@
                 <input type="number" id="ica--editor-companion-chatHistoryDepth" class="text_pole" min="1" value="1" />
             </label>
             <div class="ica--regex-note">Keeps this agent's most recent notes in the AI's context. Only notes that finished generating are counted.</div>
+            <label>Where kept notes go
+                <select id="ica--editor-companion-chatHistoryPlacement" class="text_pole">
+                    <option value="latest">Newest reply</option>
+                    <option value="source">Each note's own reply</option>
+                    <option value="block">One labelled block</option>
+                </select>
+            </label>
+            <div class="ica--regex-note" id="ica--companion-chat-history-placement-note">A labelled block uses the agent's Position, Depth, Role, and World Info scan fields under When it runs.</div>
             <label class="checkbox_label"><input type="checkbox" id="ica--editor-companion-includeAllChatHistory" /><span>Keep all notes instead</span></label>
             <label class="checkbox_label"><input type="checkbox" id="ica--editor-companion-keepInChatHistoryWhenHostHidden" /><span>Keep notes in context even when their message is hidden</span></label>
         </div>

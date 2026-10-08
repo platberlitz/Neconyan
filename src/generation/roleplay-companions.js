@@ -8,7 +8,7 @@ import { isNativeCompanion } from './agent-definition.js';
 import { runAgentModelStep } from './agent-model-step.js';
 import { runRoleplayAgentPostprocessing } from './roleplay-agent-processing.js';
 import { companionMessageTokens, previousCompanionNotes, resolveCompanionText, singleCompanionPrompt, batchCompanionPrompt } from './companion-context.js';
-import { classifyCompanionFailureMessage, getActiveCompanionResults, isEmptyOutputSentinel, MEMORY_SHARD_TEMPLATE_ID } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
+import { classifyCompanionFailureMessage, getActiveCompanionResults, isEmptyOutputSentinel, MEMORY_SHARD_TEMPLATE_ID, normalizeCompanionChatHistoryInjection } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { getCompanionTrackerAutoRepairPayload, inspectCompanionTrackerOutput, normalizeCompanionTrackerRepairPayload } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
 import { captureCompanionCapacity, MAX_COMPANION_RESULT_BYTES } from './companion-capacity.js';
 
@@ -138,7 +138,8 @@ function baseRecord(agent, model) {
     return { agentName: agent.name, agentCategory: agent.category, icon: agent.icon, profileId: model?.profileId ?? '', profileLabel: model?.fallbackLabel || agent.profileLabel || 'Main model',
         modelLabel: model?.model ?? agent.modelOverride, format: agent.companion.format, displayMode: agent.companion.displayMode,
         includeInChatHistory: agent.companion.includeInChatHistory, chatHistoryDepth: agent.companion.chatHistoryDepth,
-        includeAllChatHistory: agent.companion.includeAllChatHistory, keepInChatHistoryWhenHostHidden: agent.companion.keepInChatHistoryWhenHostHidden };
+        includeAllChatHistory: agent.companion.includeAllChatHistory, keepInChatHistoryWhenHostHidden: agent.companion.keepInChatHistoryWhenHostHidden,
+        chatHistoryPlacement: agent.companion.chatHistoryPlacement, chatHistoryInjection: normalizeCompanionChatHistoryInjection(agent.injection) };
 }
 
 /** Run automatic or explicitly selected companions from saved inputs and acknowledged provider steps. */

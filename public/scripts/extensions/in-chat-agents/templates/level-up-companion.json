@@ -47,7 +47,8 @@
     "contextRecipientAgentIds": [
       "tpl-user-based-stats-generator"
     ],
-    "maxTokens": 64000
+    "maxTokens": 64000,
+    "chatHistoryPlacement": "block"
   },
   "preProcess": {
     "mode": "inject",

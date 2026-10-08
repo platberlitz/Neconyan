@@ -13,6 +13,7 @@
  */
 import { activateSendButtons, chat, deactivateSendButtons, extension_prompts, getActiveGenerationAcknowledgement, getCurrentChatId, getRequestHeaders, isChatSaving, isGenerating, reloadCurrentChat, saveChatConditional, saveSettings, substituteParams, willRunNativeRoleplayWorkflow } from '../../script.js';
 import { activeGenerationInterceptors } from '../extensions.js';
+import { COMPANION_HISTORY_PROMPT_KEY_PREFIX } from '../extensions/in-chat-agents/companion/companion-shared.js';
 import { selected_group } from '../group-chats.js';
 import { cancelJob, listJobs, observeJob, TERMINAL } from '../jobs.js';
 import { roleplayAccountStamp } from '../roleplay-save-chain.js';
@@ -173,7 +174,7 @@ function storyPrompt() {
 
 /** Prompts the server rebuilds itself from the saved chat, card, persona and lorebooks. */
 const SERVER_PROMPT_KEYS = new Set(['2_floating_prompt', 'PERSONA_DESCRIPTION', '__STORY_STRING__', 'QUIET_PROMPT', '3_vectors', '4_vectors_data_bank']);
-const SERVER_PROMPT_PREFIXES = ['DEPTH_PROMPT', 'customDepthWI', 'customWIOutlet_'];
+const SERVER_PROMPT_PREFIXES = ['DEPTH_PROMPT', 'customDepthWI', 'customWIOutlet_', COMPANION_HISTORY_PROMPT_KEY_PREFIX];
 /** Prompts written by work the server decides itself; text from them has no faithful page copy. */
 const POLICY_PROMPT_PREFIXES = ['inchat_agent_', 'pathfinder_'];
 const PAGE_KEY = /^[a-zA-Z0-9_-]{1,120}$/;

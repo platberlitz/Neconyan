@@ -75,6 +75,7 @@ function createHost() {
         getExtensionPromptRoleByName: role => role,
         ToolManager: { isToolCallingSupported: () => false, canPerformToolCalls: () => false, RECURSE_LIMIT: 5 },
         selectCompanionChatHistory: () => [], consolidateCompanionChatHistory: () => ({ host: null, entries: [] }),
+        buildCompanionChatHistoryBlocks: () => [], COMPANION_HISTORY_PROMPT_KEY_PREFIX: 'inchat_agent_companion_history_',
         PromptReasoning: class { removePrefix(text) { return text; } },
         getMaxPromptTokens: () => 4096, runGenerationInterceptors: jest.fn(async () => false),
         prepareMewmoryGeneration: jest.fn(async messages => ({ chat: messages, enabled: false })),

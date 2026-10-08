@@ -453,6 +453,7 @@ describe('in-chat agent scoped enabled state', () => {
             includeInChatHistory: false,
             chatHistoryDepth: 1,
             includeAllChatHistory: true,
+            chatHistoryPlacement: 'latest',
             keepInChatHistoryWhenHostHidden: false,
             historyDepth: 3,
             feedback: {
@@ -740,6 +741,15 @@ describe('in-chat agent scoped enabled state', () => {
         expect(store.normalizeCompanionConfig({}).minContextTokens).toBe(0);
         expect(store.normalizeCompanionConfig({ minContextTokens: 30000 }).minContextTokens).toBe(30000);
         expect(store.normalizeCompanionConfig({ minContextTokens: 500000 }).minContextTokens).toBe(200000);
+    });
+
+    test('keeps kept-note placement to the newest reply unless a known choice is saved', async () => {
+        const store = await importStore();
+
+        expect(store.normalizeCompanionConfig({}).chatHistoryPlacement).toBe('latest');
+        expect(store.normalizeCompanionConfig({ chatHistoryPlacement: 'source' }).chatHistoryPlacement).toBe('source');
+        expect(store.normalizeCompanionConfig({ chatHistoryPlacement: 'block' }).chatHistoryPlacement).toBe('block');
+        expect(store.normalizeCompanionConfig({ chatHistoryPlacement: 'sideways' }).chatHistoryPlacement).toBe('latest');
     });
 
     test('grants context access defaults to companions while honoring explicit choices', async () => {

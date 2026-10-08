@@ -628,7 +628,8 @@
       "contextRecipientAgentIds": [],
       "dependencies": [],
       "waitForDependencies": false,
-      "maxTokens": 64000
+      "maxTokens": 64000,
+      "chatHistoryPlacement": "source"
     },
     "preProcess": {
       "mode": "inject",
@@ -723,7 +724,8 @@
       "contextRecipientAgentIds": [],
       "dependencies": [],
       "waitForDependencies": false,
-      "maxTokens": 64000
+      "maxTokens": 64000,
+      "chatHistoryPlacement": "source"
     },
     "preProcess": {
       "mode": "inject",
@@ -818,7 +820,8 @@
       "contextRecipientAgentIds": [],
       "dependencies": [],
       "waitForDependencies": false,
-      "maxTokens": 64000
+      "maxTokens": 64000,
+      "chatHistoryPlacement": "source"
     },
     "preProcess": {
       "mode": "inject",
@@ -913,7 +916,8 @@
       "contextRecipientAgentIds": [],
       "dependencies": [],
       "waitForDependencies": false,
-      "maxTokens": 64000
+      "maxTokens": 64000,
+      "chatHistoryPlacement": "source"
     },
     "preProcess": {
       "mode": "inject",
@@ -1009,7 +1013,8 @@
       "contextRecipientAgentIds": [],
       "dependencies": [],
       "waitForDependencies": false,
-      "maxTokens": 64000
+      "maxTokens": 64000,
+      "chatHistoryPlacement": "source"
     },
     "preProcess": {
       "mode": "inject",
@@ -1104,7 +1109,8 @@
       "contextRecipientAgentIds": [],
       "dependencies": [],
       "waitForDependencies": false,
-      "maxTokens": 64000
+      "maxTokens": 64000,
+      "chatHistoryPlacement": "source"
     },
     "preProcess": {
       "mode": "inject",
@@ -1199,7 +1205,8 @@
       "contextRecipientAgentIds": [],
       "dependencies": [],
       "waitForDependencies": false,
-      "maxTokens": 64000
+      "maxTokens": 64000,
+      "chatHistoryPlacement": "source"
     },
     "preProcess": {
       "mode": "inject",
@@ -1294,7 +1301,8 @@
       "contextRecipientAgentIds": [],
       "dependencies": [],
       "waitForDependencies": false,
-      "maxTokens": 64000
+      "maxTokens": 64000,
+      "chatHistoryPlacement": "source"
     },
     "preProcess": {
       "mode": "inject",
@@ -1392,7 +1400,8 @@
       "contextRecipientAgentIds": [],
       "dependencies": [],
       "waitForDependencies": false,
-      "maxTokens": 64000
+      "maxTokens": 64000,
+      "chatHistoryPlacement": "source"
     },
     "preProcess": {
       "mode": "inject",
@@ -2130,7 +2139,8 @@
         "depth": 0
       },
       "batch": false,
-      "maxTokens": 64000
+      "maxTokens": 64000,
+      "chatHistoryPlacement": "source"
     },
     "injection": {
       "position": 0,
@@ -2190,7 +2200,8 @@
         "depth": 2
       },
       "batch": false,
-      "maxTokens": 64000
+      "maxTokens": 64000,
+      "chatHistoryPlacement": "block"
     },
     "injection": {
       "position": 0,
@@ -2250,7 +2261,8 @@
         "depth": 1
       },
       "batch": false,
-      "maxTokens": 64000
+      "maxTokens": 64000,
+      "chatHistoryPlacement": "block"
     },
     "injection": {
       "position": 0,
@@ -2310,7 +2322,8 @@
         "depth": 1
       },
       "batch": false,
-      "maxTokens": 64000
+      "maxTokens": 64000,
+      "chatHistoryPlacement": "block"
     },
     "injection": {
       "position": 0,
@@ -2370,7 +2383,8 @@
         "depth": 1
       },
       "batch": false,
-      "maxTokens": 64000
+      "maxTokens": 64000,
+      "chatHistoryPlacement": "source"
     },
     "injection": {
       "position": 0,
@@ -2430,7 +2444,8 @@
         "depth": 1
       },
       "batch": false,
-      "maxTokens": 64000
+      "maxTokens": 64000,
+      "chatHistoryPlacement": "block"
     },
     "injection": {
       "position": 0,
@@ -2494,7 +2509,8 @@
       "minContextTokens": 30000,
       "includeInChatHistory": true,
       "includeAllChatHistory": true,
-      "keepInChatHistoryWhenHostHidden": true
+      "keepInChatHistoryWhenHostHidden": true,
+      "chatHistoryPlacement": "block"
     },
     "injection": {
       "position": 0,
@@ -2558,7 +2574,8 @@
         "depth": 1
       },
       "batch": false,
-      "maxTokens": 64000
+      "maxTokens": 64000,
+      "chatHistoryPlacement": "block"
     },
     "injection": {
       "position": 0,
@@ -2621,7 +2638,8 @@
         "depth": 1
       },
       "batch": false,
-      "maxTokens": 64000
+      "maxTokens": 64000,
+      "chatHistoryPlacement": "source"
     },
     "regexScripts": [
       {
@@ -2788,7 +2806,8 @@
         "depth": 1
       },
       "batch": false,
-      "maxTokens": 64000
+      "maxTokens": 64000,
+      "chatHistoryPlacement": "source"
     },
     "regexScripts": [
       {
@@ -2870,7 +2889,8 @@
         "depth": 1
       },
       "batch": false,
-      "maxTokens": 64000
+      "maxTokens": 64000,
+      "chatHistoryPlacement": "source"
     },
     "regexScripts": [
       {
@@ -3418,7 +3438,8 @@
       },
       "batch": false,
       "batchAgentIds": [],
-      "maxTokens": 64000
+      "maxTokens": 64000,
+      "chatHistoryPlacement": "source"
     },
     "preProcess": {
       "mode": "inject",
@@ -3581,7 +3602,8 @@
       "contextRecipientAgentIds": [
         "tpl-user-based-stats-generator"
       ],
-      "maxTokens": 64000
+      "maxTokens": 64000,
+      "chatHistoryPlacement": "block"
     },
     "preProcess": {
       "mode": "inject",
@@ -3713,7 +3735,8 @@
         "tpl-level-up-companion"
       ],
       "waitForDependencies": true,
-      "maxTokens": 64000
+      "maxTokens": 64000,
+      "chatHistoryPlacement": "block"
     },
     "preProcess": {
       "mode": "inject",

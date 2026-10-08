@@ -51,7 +51,8 @@
     "contextRecipientAgentIds": [],
     "dependencies": [],
     "waitForDependencies": false,
-    "maxTokens": 64000
+    "maxTokens": 64000,
+    "chatHistoryPlacement": "source"
   },
   "preProcess": {
     "mode": "inject",

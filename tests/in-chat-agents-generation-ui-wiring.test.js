@@ -1,7 +1,8 @@
 import { describe, expect, test } from '@jest/globals';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const indexSource = readFileSync(path.join(repoRoot, 'public', 'scripts', 'extensions', 'in-chat-agents', 'index.js'), 'utf8');
@@ -241,6 +242,68 @@ describe('in-chat agents generation UI wiring', () => {
         expect(indexSource).toContain('const LEVEL_UP_STATS_CONTEXT_LINKS_VERSION = 2;');
         expect(migrationSource).toContain('levelUpStatsContextLinksVersion');
         expect(indexSource).toContain('await migrateLevelUpStatsContextLinks();');
+    });
+
+    test('gives installed bundled companions their kept-note placement once without touching other agents', async () => {
+        const settings = {};
+        const saved = [];
+        const templates = new Map([
+            ['tpl-keeper', { companion: { chatHistoryPlacement: 'block' } }],
+            ['tpl-chat', { companion: { chatHistoryPlacement: 'source' } }],
+            ['tpl-tracker', { companion: { includeSystemPrompt: false } }],
+        ]);
+        const agents = [
+            { id: 'keeper', sourceTemplateId: 'tpl-keeper', companion: { chatHistoryPlacement: 'latest' } },
+            { id: 'chat', sourceTemplateId: 'tpl-chat', companion: { chatHistoryPlacement: 'latest' } },
+            { id: 'chosen', sourceTemplateId: 'tpl-chat', companion: { chatHistoryPlacement: 'block' } },
+            { id: 'tracker', sourceTemplateId: 'tpl-tracker', companion: { chatHistoryPlacement: 'latest' } },
+            { id: 'custom', sourceTemplateId: '', companion: { chatHistoryPlacement: 'latest' } },
+        ];
+        const runtime = vm.createContext({
+            structuredClone,
+            KEPT_NOTES_PLACEMENT_DEFAULTS_VERSION: 1,
+            getGlobalSettings: () => settings,
+            setGlobalSettings: update => Object.assign(settings, update),
+            persistExtensionState: () => {},
+            getAgents: () => agents,
+            findSourceTemplateForAgent: agent => templates.get(agent.sourceTemplateId) ?? null,
+            saveAgent: async agent => saved.push(agent),
+        });
+        vm.runInContext(`async ${getFunctionSource('migrateKeptNotesPlacementDefaults')}`, runtime);
+
+        await expect(runtime.migrateKeptNotesPlacementDefaults()).resolves.toBe(2);
+        expect(saved.map(agent => [agent.id, agent.companion.chatHistoryPlacement])).toEqual([['keeper', 'block'], ['chat', 'source']]);
+        expect(settings.keptNotesPlacementDefaultsVersion).toBe(1);
+        await expect(runtime.migrateKeptNotesPlacementDefaults()).resolves.toBe(0);
+        expect(indexSource).toContain('await migrateKeptNotesPlacementDefaults();');
+    });
+
+    test('lets the editor choose where kept notes go and shows placement fields for a labelled block', () => {
+        expect(editorTemplateSource).toContain('id="ica--editor-companion-chatHistoryPlacement"');
+        for (const value of ['latest', 'source', 'block']) expect(editorTemplateSource).toContain(`<option value="${value}">`);
+        expect(getFunctionSource('readCompanionConfigFromEditor')).toContain('chatHistoryPlacement: root.find(\'#ica--editor-companion-chatHistoryPlacement\')');
+        expect(getFunctionSource('writeCompanionConfigToEditor')).toContain('find(\'#ica--editor-companion-chatHistoryPlacement\').val(');
+        expect(getFunctionSource('updatePhaseVisibility')).toContain('isEditorKeptNotesBlock()');
+        expect(getFunctionSource('isEditorKeptNotesBlock')).toContain('=== \'block\'');
+    });
+
+    test('bundled templates agree on where each companion keeps its notes', () => {
+        const templateDir = path.join(repoRoot, 'public', 'scripts', 'extensions', 'in-chat-agents', 'templates');
+        const indexed = JSON.parse(readFileSync(path.join(templateDir, 'index.json'), 'utf8'));
+        const placements = new Map(indexed.filter(template => template.companion?.chatHistoryPlacement)
+            .map(template => [template.id, template.companion.chatHistoryPlacement]));
+        for (const file of readdirSync(templateDir).filter(name => name.endsWith('.json') && name !== 'index.json')) {
+            const parsed = JSON.parse(readFileSync(path.join(templateDir, file), 'utf8'));
+            for (const template of Array.isArray(parsed) ? parsed : [parsed]) {
+                if (!template?.id || !placements.has(template.id)) continue;
+                expect([template.id, template.companion?.chatHistoryPlacement]).toEqual([template.id, placements.get(template.id)]);
+            }
+        }
+        expect(placements.get('tpl-memory-shard-companion')).toBe('block');
+        expect(placements.get('tpl-continuity-companion')).toBe('block');
+        expect(placements.get('tpl-chatroom-companion')).toBe('source');
+        expect(placements.get('tpl-dialogue-humaniser')).toBe('source');
+        expect([...placements.values()].every(value => ['source', 'block'].includes(value))).toBe(true);
     });
 
     test('targets inline and companion tracker fixes independently', () => {

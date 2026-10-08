@@ -280,6 +280,18 @@ test.each([
     expect(requests).toHaveLength(0);
 });
 
+test('kept-note blocks left by a browser prompt preview do not disable server-owned replies', async () => {
+    extensionPrompts.inchat_agent_companion_history_keeper = {
+        value: '[Keeper - kept notes]\nA previous preview.', position: 1, depth: 0, scan: true, role: 0,
+    };
+    expect(await workflows.capturePagePrompts('roleplay.reply')).toEqual([]);
+    const pending = workflows.runNativeRoleplayGeneration('normal');
+    await settle();
+    expect(requests.find(entry => entry.url.endsWith('/workflow/submit')).body.intent).toEqual({});
+    await observers.get('job-1').onStop('done');
+    await pending;
+});
+
 test('page text a control hands over resolves its macros or keeps the browser path', () => {
     expect(workflows.resolvePageText(' Rewrite {{user}}\'s reply. ')).toBe('Rewrite Alice\'s reply.');
     expect(workflows.resolvePageText('Roll {{roll:d6}}')).toBeNull();
