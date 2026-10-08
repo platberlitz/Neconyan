@@ -13,7 +13,8 @@ export function normaliseDesktopResponseControls(value) {
 
 function restore(message, state) {
     for (const [control, marker] of state.controls) {
-        if (marker.isConnected && state.footer.contains(control)) marker.replaceWith(control);
+        // A detached reply (a Roleplay replacement preview) is put back later, so check the message, not the page.
+        if (message.contains(marker) && state.footer.contains(control)) marker.replaceWith(control);
         else marker.remove();
     }
     state.footer.remove();

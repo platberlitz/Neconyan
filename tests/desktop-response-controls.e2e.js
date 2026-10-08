@@ -104,6 +104,18 @@ test('desktop response placement persists, preserves swipe actions, and restores
     });
     await expect(footer.locator('.swipeRightBlock')).toHaveCount(1);
     expect(await message.evaluate(element => element.querySelector('.swipe_right') === window.responseControl)).toBe(true);
+
+    // Roleplay replacement previews detach the reply and put the same element back after a cancellation.
+    await message.evaluate(element => {
+        const placeholder = document.createElement('span');
+        placeholder.hidden = true;
+        element.replaceWith(placeholder);
+        window.detachedResponse = { element, placeholder };
+    });
+    await expect.poll(() => page.evaluate(() => window.detachedResponse.element.querySelector('.nn-response-controls') === null)).toBe(true);
+    await page.evaluate(() => window.detachedResponse.placeholder.replaceWith(window.detachedResponse.element));
+    await expect(footer.locator('.swipeRightBlock')).toHaveCount(1);
+    expect(await message.evaluate(element => element.querySelector('.swipe_right') === window.responseControl)).toBe(true);
 });
 
 test('last response controls stay above the toolbar at the bottom of a long chat', async ({ app }, info) => {
