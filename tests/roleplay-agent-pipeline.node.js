@@ -123,7 +123,7 @@ test('native Agent prompts, lore, complete-context interception and postprocessi
 
 for (const effect of ['append', 'continue', 'swipe', 'replace']) {
     test(`bundled reply rewrites run in order with saved context and length settings for ${effect}`, async t => {
-        const names = ['format-fixer', 'user-agency-guard', 'knowledge-guard', 'friction-keeper', 'dialogue-humaniser', 'repetition-breaker', 'length-trimmer', 'proofreader'];
+        const names = ['format-fixer', 'user-agency-guard', 'knowledge-guard', 'friction-keeper', 'nsfw-enhancer', 'dialogue-humaniser', 'repetition-breaker', 'length-trimmer', 'proofreader'];
         const agents = names.map(name => {
             const template = JSON.parse(fs.readFileSync(new URL(`../public/scripts/extensions/in-chat-agents/templates/${name}.json`, import.meta.url)));
             return { ...template, enabled: true, sourceTemplateId: template.id,
@@ -146,7 +146,7 @@ for (const effect of ['append', 'continue', 'swipe', 'replace']) {
             return `Pass ${calls.length}`;
         }) });
         assert.deepEqual(calls, agents.map(agent => agent.id));
-        assert.equal(f.saved().at(-1).mes, 'Pass 8');
+        assert.equal(f.saved().at(-1).mes, 'Pass 9');
         await f.run({ generate: () => assert.fail('Main reply repeated'), generateAgent: () => assert.fail('Rewrite repeated') });
     });
 }

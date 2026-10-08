@@ -583,6 +583,7 @@ const DEFAULT_BUNDLED_TEMPLATE_IDS = new Set([
     'tpl-user-agency-guard',
     'tpl-knowledge-guard',
     'tpl-friction-keeper',
+    'tpl-nsfw-enhancer',
     'tpl-repetition-breaker',
     'tpl-length-trimmer',
     'tpl-intent-reader',
