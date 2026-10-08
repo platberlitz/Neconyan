@@ -35,6 +35,12 @@ function captionOf(locator) {
     return locator.evaluate(el => getComputedStyle(el).backgroundImage);
 }
 
+async function expectXpWallpaper(page) {
+    // Wait for the rendered wallpaper, not just the lazy stylesheet's presence.
+    await expect.poll(() => page.evaluate(() => getComputedStyle(document.body, '::before').backgroundImage))
+        .toContain('shell-windows-xp.webp');
+}
+
 for (const phone of [false, true]) {
     test(`${phone ? 'iPhone stand-in' : 'desktop'} Windows XP Luna windows and colour schemes`, async ({ browser }, info) => {
         test.setTimeout(120000);
@@ -67,6 +73,7 @@ for (const phone of [false, true]) {
         await page.evaluate(() => NeconyanShell.showHome());
         if (phone) await applyIOSOnlyCss(page);
 
+        await expectXpWallpaper(page);
         const wallpaper = await page.evaluate(async () => {
             const url = getComputedStyle(document.body, '::before').backgroundImage;
             const image = new Image();
@@ -105,7 +112,7 @@ for (const phone of [false, true]) {
         await page.reload();
         await page.waitForFunction(() => window.NeconyanShell && document.querySelector('.neconyan-home'));
         await expect(page.locator('html')).toHaveAttribute('data-sb-theme', 'windows-xp');
-        expect(await page.evaluate(() => getComputedStyle(document.body, '::before').backgroundImage)).toContain('shell-windows-xp.webp');
+        await expectXpWallpaper(page);
         expect(errors).toEqual([]);
         await page.unrouteAll({ behavior: 'ignoreErrors' });
         await context.close();
