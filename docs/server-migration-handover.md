@@ -2,6 +2,36 @@
 
 ## Release preparation: 1.0.0
 
+### 8 October: 1.2.1 released from main, staging moves to 1.2.2
+
+The official handbook was refreshed against the release candidate and published
+at https://platberlitz.github.io/neconyan-docs/. Its strict build, link checks and
+phone/desktop browser checks passed. Optional GitHub statistics requests now use
+fixed responses in the browser tests, with a separate check for a refused request.
+
+The first release browser run found stale help-revision expectations, a search
+test filling an input while the previous navigation dialog still owned focus,
+and a real Scratchpad sharing failure during an active note autosave. The help
+and search tests were corrected in `f467dbf`. The shared note-saving path now
+waits for an active save in `bb586c4`; a held-save browser regression and two
+unit regressions cover joining a save and keeping account changes isolated.
+
+`main` was fast-forwarded to `f467dbf67760d336d91a39c0aa33eebeb3248ae6`.
+All 440 unit suites passed (5,717 tests, two skipped), along with 1,959 server
+tests, 89 Mewmory tests, root lint, frontend budgets and the production build.
+All 11 focused search/Scratchpad browser checks and 12 notebook recovery checks
+passed. Android run `37718819351` passed the signed build and Android 11/15
+emulator checks. The nine downloaded assets passed checksum, signing-record,
+16 KiB alignment-record and APK payload/provenance checks; all 3,843 source ZIP
+entries and file modes match a local archive of the release commit.
+
+Neconyan 1.2.1 is published at
+https://github.com/platberlitz/Neconyan/releases/tag/v1.2.1 with the annotated
+tag `v1.2.1` and nine assets. At the owner's request, publication proceeds while
+full browser run `37718820673` is pending, as clearly stated in the release notes.
+Update those notes when the run finishes and investigate any failure. No physical
+phone testing is claimed. Staging advances to `1.2.2`.
+
 ### 7 October: 1.2.0 released from main, staging moves to 1.2.1
 
 Release E2E had not run on staging since 1.1.0, so the first run on the 1.2.0
