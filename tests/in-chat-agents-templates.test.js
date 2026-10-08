@@ -816,7 +816,7 @@ describe('in-chat agent bundled templates', () => {
         expect(readTemplate('knowledge-guard.json').prompt).toContain('{{persona}}');
     });
 
-    test('ships fast pre-generation wrap notes that say which agents not to run them with', () => {
+    test('installs the fast pre-generation wrap notes by default, disabled, and says which agents not to run them with', () => {
         const catalog = readTemplate('index.json');
         const names = new Set(catalog.map(template => template.name));
         const notes = new Map([
@@ -841,7 +841,8 @@ describe('in-chat agent bundled templates', () => {
             for (const name of [...avoid, ...fine]) {
                 expect(names).toContain(name);
             }
-            expect(readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS')).not.toContain(`'${template.id}'`);
+            expect(readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS')).toContain(`'${template.id}'`);
+            expect(readIndexSetBody('HIDDEN_TEMPLATE_BROWSER_IDS')).not.toContain(`'${template.id}'`);
         }
     });
 
