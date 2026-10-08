@@ -4,7 +4,7 @@ I kept this opt-in. You can bookmark an exact saved conversation without making 
 
 ## Using it
 
-Both switches sit next to 'Copy chat link', so you don't have to dig through settings to find them. On desktop they're in the Recent Chats panel, under the copy button. On phones, the chat tools menu has a 'Chat link settings' row that opens a small panel with the copy button and both switches. They're also the first two options under Chat/Message Handling in User Settings. Every copy stays in sync.
+Both switches sit next to 'Copy chat link', so you don't have to dig through settings to find them. On desktop they're in the Recent Chats panel, under the copy button. On phones, the chat tools menu has a 'Chat link settings' row that opens a small panel with the copy button and both switches. In Settings, open **Chat & Writing → Chat & messages → Chat window** for **Reopen your last chat** and **Chat links in address bar**. Every copy stays in sync.
 
 'Chat links in the address bar' keeps the address bar on the saved chat you're viewing. It's off by default. 'Resume last chat on launch' is separate: it uses your account's last successfully opened saved conversation when you open Neconyan without a destination. Your previous auto-load choice is kept.
 

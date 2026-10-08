@@ -2,6 +2,16 @@
 
 ## v1.2.1
 
+### Highlights
+
+- Search saved chats, notes, character definitions, personas and lorebook entries across your account, alongside pages and settings. Search tolerates small spelling mistakes and doesn't call a model.
+- Added Dialogue Humaniser and six focused reply rewriters alongside Proofreader. Five short pre-generation note helpers are also installed by default. They start disabled; enable only the ones you need because each model-based helper adds a request.
+- Reply rewriters run in order while append agents can run together. Appended blocks survive rewriting, with duplicate blocks and copied reply text cleaned up.
+- Added explicit **Import as new instance** for chats from another installation. It creates a separate character instance and history. Android can select JSONL chat files, and saved ZIP imports recheck their retained upload after reinstalling.
+- Reorganised Chat & Writing and Visual Toggles, added movable-panel layouts, compacted the character editor and moved Tour buttons beside page headings.
+- Fixed additional lorebook selection on phones, stale Time Machine restores, Scratchpad context refresh, tracker formatting and mobile reply start delays.
+- Updated the [official handbook](https://platberlitz.github.io/neconyan-docs/) and the assistants' app-help reference.
+
 ### Merged Staging PRs
 - PR #43 (2026-10-07) `fix(scratchpad): refresh Context when shared notes change`
 - PR #44 (2026-10-07) `fix(dialogue-colors): stop wasted verification requests and fix audit bugs`
