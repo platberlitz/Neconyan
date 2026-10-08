@@ -90,6 +90,8 @@ Open this with **Connections & defaults** at the top of the Agents panel. These 
 
 **Show prompt pass notifications**: the master switch for pop-up notices from reply changes. Each agent also has its own switch.
 
+**Keep the original when an Agent refuses**: in **Context & notifications**, on by default. When a rewrite, append, intercept or combining pass answers with a refusal instead of the text, Neconyan discards it, keeps the original and says so in a notice. Refusal wording already in the original doesn't count, so characters can still refuse things in the story.
+
 **Show main output before an intercept pass**: a testing aid. Leave it off unless you're debugging an intercept.
 
 **Companion panel button**: opens the Companion panel from a **Floating side button** or a **Top bar button**.
@@ -215,6 +217,8 @@ Tick **Include character card**, **Include persona**, **Include World Info**, **
 **Keep this agent in Chat History**: sends saved notes to the main model with later replies. Include prior notes is for the companion's own memory; this one is for the main model's.
 
 **Notes to keep**: how many recent notes stay in history. **Keep all notes instead** keeps every one, which adds up fast in long chats.
+
+**Where kept notes go**: **Newest reply** attaches the kept notes to the latest reply, **Each note's own reply** leaves each note with the reply it came from, and **One labelled block** gathers them under `[<Name> - kept notes]`, placed with this agent's Position, Depth, Role and World Info scan fields from When it runs. Also in the **Agent settings** quick popup.
 
 **Keep notes in context even when their message is hidden**: keeps a note even after you hide the message it's attached to.
 
