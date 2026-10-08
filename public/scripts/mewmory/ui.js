@@ -546,9 +546,11 @@ function renderSettings(root) {
     settings.append(node('p', 'mewmory-caption', 'Model roles are shared by all your chats; turning Mewmory on is per chat. These models are set up separately from the model that writes replies.'),
         check('Update automatically during play', draft.autoUpdate, value => { draft.autoUpdate = value; }),
         check('Only use models on this computer', draft.localOnly, value => { draft.localOnly = value; }),
-        check('Leave out older chat that Mewmory has already remembered', draft.excludeHistory, value => { draft.excludeHistory = value; }));
+        check('Leave out older chat that Mewmory has already remembered', draft.excludeHistory, value => { draft.excludeHistory = value; }),
+        check('Hide old messages automatically', draft.autoHide, value => { draft.autoHide = value; }));
     const budgets = node('div', 'mewmory-fields');
     budgets.append(
+        field('Hide messages beyond, tokens', draft.autoHideTokens, value => { draft.autoHideTokens = value; }, { type: 'number', hint: 'With automatic hiding on, older messages past this size are hidden after each reply. Mewmory still remembers them.' }),
         field('Recent chat target, tokens', draft.historyWindow, value => { draft.historyWindow = value; }, { type: 'number', hint: 'Chat only. NPC references, selected memory and the rest of your prompt need additional room.' }),
         field('Selected memory budget, tokens', draft.memoryTokens, value => { draft.memoryTokens = value; }, { type: 'number' }),
         field('Messages per update', draft.batchMessages, value => { draft.batchMessages = value; }, { type: 'number', hint: 'Smaller batches use less space in the Facts and events model.' }),

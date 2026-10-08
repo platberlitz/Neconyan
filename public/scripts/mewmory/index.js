@@ -21,6 +21,7 @@ let viewKey = '';
 let selectionVersion = 0;
 let refreshVersion = 0;
 let latestRefresh;
+let autoHiding = false;
 
 export function getMewmoryLocator() {
     if (conversationState.conversationWorkspaceOpen) return null;
@@ -176,6 +177,12 @@ export async function hideOverflowMessages() {
         toastr.warning('The chat changed while the question was open, so nothing was hidden.');
         return 0;
     }
+    const hidden = await hideMessages(indices, chatId);
+    if (hidden) toastr.success('Hid ' + hidden + ' older ' + (hidden === 1 ? 'message' : 'messages') + ' from the prompt.');
+    return hidden;
+}
+
+async function hideMessages(indices, chatId) {
     const ranges = [];
     for (const index of indices) {
         const range = ranges.at(-1);
@@ -187,8 +194,28 @@ export async function hideOverflowMessages() {
         if (getCurrentChatId() !== chatId || !await hideChatMessageRange(start, end, false, null, { keepInMewmory: true })) break;
         hidden += end - start + 1;
     }
-    if (hidden) toastr.success('Hid ' + hidden + ' older ' + (hidden === 1 ? 'message' : 'messages') + ' from the prompt.');
     return hidden;
+}
+
+/**
+ * After a reply, hides the oldest messages once the visible chat passes the token limit in Settings.
+ * Only runs where Mewmory is on, so the hidden messages stay remembered.
+ */
+export async function hideOverflowAutomatically() {
+    const config = mewmory.config;
+    if (autoHiding || !config?.autoHide || !mewmory.view?.enabled || !getMewmoryLocator()) return 0;
+    autoHiding = true;
+    try {
+        const chatId = getCurrentChatId();
+        const { limit, indices } = await getOverflowMessages(config.autoHideTokens);
+        if (!indices.length || getCurrentChatId() !== chatId) return 0;
+        const hidden = await hideMessages(indices, chatId);
+        if (hidden) toastr.info('Hid ' + hidden + ' older ' + (hidden === 1 ? 'message' : 'messages') + ' past ' + limit.toLocaleString()
+            + ' tokens. Mewmory still remembers them.');
+        return hidden;
+    } finally {
+        autoHiding = false;
+    }
 }
 
 export async function processMewmory({ all = false, checkpoint = false } = {}) {
@@ -257,6 +284,7 @@ export function initMewmory() {
     ]) {
         eventSource.on(event, () => scheduleUpdate());
     }
+    eventSource.on(event_types.GENERATION_ENDED, () => void hideOverflowAutomatically());
     window.addEventListener('mewmory:configured', () => { void refreshMewmory(); scheduleUpdate(); });
     scheduleUpdate();
 }

@@ -93,6 +93,8 @@ For a new chapter in another chat, **Link this continuation** explicitly copies 
 
 Switching chats refreshes Mewmory immediately, including while its panel is closed. A selected chat can show loading, disabled memory or a recoverable error; those states do not mean that no Roleplay chat is selected. Starting a separate chat with the same character does not automatically enable or share its other chats’ memory.
 
+**Hide old messages automatically** (off by default) hides the oldest messages after each reply once the visible chat passes **Hide messages beyond, tokens** (30,000 by default). It only runs in chats with Mewmory on, keeps the latest reply, and marks the hidden messages so Mewmory still reads them, exactly like **Hide old messages that no longer fit**. Unhide any message with its eye button.
+
 ## Deletion and recovery
 
 Excluding a source makes it and its dependent records ineligible for processing and recall. It remains available for inspection.
