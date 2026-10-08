@@ -148,6 +148,7 @@ let agentRunnerInitialized = false;
 let postGenerationRecoveryHooksInitialized = false;
 let postGenerationRecoveryObserver = null;
 const activePromptTransformToasts = new Set();
+const POST_GEN_RUNNING_TOAST_TIMEOUT_MS = 2000;
 const agentGenerationStateListeners = new Set();
 // Manual message rewrites must not wait behind Companions, including manually started ones.
 const manualAgentRunQueues = [false, true].map(companion => ({
@@ -2647,12 +2648,19 @@ function showPromptTransformRunningToast(agent, mode, profileId = '', options = 
         </button>
     `;
 
-    const toast = toastr.info(messageHtml, escapeToastHtml(agentName), {
-        timeOut: 0,
-        extendedTimeOut: 0,
+    const dismissDelay = kind === 'postGen' ? POST_GEN_RUNNING_TOAST_TIMEOUT_MS : 0;
+    let toast = null;
+    toast = toastr.info(messageHtml, escapeToastHtml(agentName), {
+        timeOut: dismissDelay,
+        extendedTimeOut: dismissDelay,
         tapToDismiss: false,
         closeButton: true,
         escapeHtml: false,
+        onHidden() {
+            if (toast) {
+                activePromptTransformToasts.delete(toast);
+            }
+        },
         onShown() {
             const toastElement = this instanceof HTMLElement ? this : this?.[0];
             const cancelButton = toastElement?.querySelector?.(`.${cancelButtonClass}`);
