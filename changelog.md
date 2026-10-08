@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.2.2
+
+### Merged Staging PRs
+- PR #66 (2026-10-08) `feat: add Desktop swipe button customization controls`
+
 ## v1.2.1
 
 ### Highlights
