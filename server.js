@@ -25,6 +25,8 @@ globalThis.DATA_ROOT = path.resolve(cliArgs.dataRoot);
 globalThis.COMMAND_LINE_ARGS = cliArgs;
 
 try {
+    const { configureTermuxStartup } = await import('./src/termux-startup.js');
+    await configureTermuxStartup(cliArgs);
     await import('./src/server-main.js');
 } catch (error) {
     console.error('A critical error has occurred while starting the server:', error);

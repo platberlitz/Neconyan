@@ -7,11 +7,13 @@ import envPaths from 'env-paths';
 import { APP_NAME } from './runtime.js';
 import { color, getConfigValue, stringToBool } from './util.js';
 import { initConfig } from './config-init.js';
+import { resolveTermuxRecovery } from './termux-startup.js';
 
 /**
  * @typedef {object} CommandLineArguments Parsed command line arguments
  * @property {string} configPath Path to the config file
  * @property {string} dataRoot Data root directory
+ * @property {boolean} [termuxRecovery] Continuing an explicitly selected Termux recovery folder
  * @property {number} port Port number
  * @property {boolean} listen If Neconyan is listening on all network interfaces
  * @property {string} listenAddressIPv6 IPv6 address to listen to
@@ -265,9 +267,13 @@ export class CommandLineParser {
         }
         initConfig(configPath);
 
-        const dataRoot = isGlobal
+        const configuredDataRoot = isGlobal
             ? defaultConfig.dataRoot
             : (cliArguments.dataRoot ?? getConfigValue('dataRoot', defaultConfig.dataRoot));
+        const recovery = resolveTermuxRecovery({ dataRoot: configuredDataRoot,
+            port: cliArguments.port ?? getConfigValue('port', defaultConfig.port, 'number'),
+            explicitDataRoot: cliArguments.dataRoot !== null, explicitPort: cliArguments.port !== null, global: isGlobal });
+        const dataRoot = recovery.dataRoot;
         try {
             if (!fs.existsSync(dataRoot)) {
                 fs.mkdirSync(dataRoot, { recursive: true });
@@ -280,7 +286,8 @@ export class CommandLineParser {
         const result = {
             configPath: configPath,
             dataRoot: dataRoot,
-            port: cliArguments.port ?? getConfigValue('port', defaultConfig.port, 'number'),
+            ...(recovery.recovery ? { termuxRecovery: true } : {}),
+            port: recovery.port,
             listen: cliArguments.listen ?? getConfigValue('listen', defaultConfig.listen, 'boolean'),
             listenAddressIPv6: cliArguments.listenAddressIPv6 ?? getConfigValue('listenAddress.ipv6', defaultConfig.listenAddressIPv6),
             listenAddressIPv4: cliArguments.listenAddressIPv4 ?? getConfigValue('listenAddress.ipv4', defaultConfig.listenAddressIPv4),
