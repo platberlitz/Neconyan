@@ -58,7 +58,11 @@ for (const phone of [false, true]) {
                 });
                 expect(toolbar).toHaveLength(10);
                 expect(Math.max(...toolbar.map(button => button.centre)) - Math.min(...toolbar.map(button => button.centre)), `${width}px toolbar stays on one row`).toBeLessThanOrEqual(1);
-                expect(Math.min(...toolbar.map(button => button.height))).toBeGreaterThanOrEqual(phone ? 44 : 24);
+                const sizes = toolbar.map(button => Math.round(button.height));
+                const [minimum, maximum] = width === 768 ? [44, 44] : [26, 32];
+                expect(Math.min(...sizes), `${width}px history and guided buttons stay compact`).toBeGreaterThanOrEqual(minimum);
+                expect(Math.max(...sizes), `${width}px history and guided buttons stay compact`).toBeLessThanOrEqual(maximum);
+                expect(new Set(sizes).size, `${width}px history buttons match the guided buttons`).toBe(1);
                 expect(Math.min(...toolbar.map(button => button.left))).toBeGreaterThanOrEqual(0);
                 expect(Math.max(...toolbar.map(button => button.right))).toBeLessThanOrEqual(page.viewportSize().width);
             }
@@ -76,7 +80,7 @@ for (const phone of [false, true]) {
                     left: box.left, right: box.right, top: box.top, bottom: box.bottom,
                     contentWidth: element.scrollWidth, panelWidth: element.clientWidth,
                     viewport: window.innerWidth, formBottom: form.bottom, height: window.innerHeight,
-                    targets: [...document.querySelectorAll('.stih--buttons button')].map(button => button.getBoundingClientRect().height),
+                    targets: [...element.querySelectorAll('button')].map(button => button.getBoundingClientRect().height),
                 };
             });
             expect(geometry.contentWidth).toBeLessThanOrEqual(geometry.panelWidth + 1);

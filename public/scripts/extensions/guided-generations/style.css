@@ -149,9 +149,9 @@
         width: var(--gg-mobile-action-size) !important;
         min-width: var(--gg-mobile-action-size) !important;
         max-width: var(--gg-mobile-action-size) !important;
-        height: var(--gg-mobile-action-height, var(--gg-mobile-action-size)) !important;
-        min-height: var(--gg-mobile-action-height, var(--gg-mobile-action-size)) !important;
-        max-height: var(--gg-mobile-action-height, var(--gg-mobile-action-size)) !important;
+        height: var(--gg-mobile-action-size) !important;
+        min-height: var(--gg-mobile-action-size) !important;
+        max-height: var(--gg-mobile-action-size) !important;
         flex: 0 0 var(--gg-mobile-action-size) !important;
         border-radius: 8px !important;
         font-size: var(--gg-mobile-action-icon-size) !important;

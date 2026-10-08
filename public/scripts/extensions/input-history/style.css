@@ -1,5 +1,4 @@
 .stih--buttons {
-  --sb-control-icon-physical-size: var(--stih-control-width, 44px);
   position: relative;
   display: flex;
   align-items: center;
@@ -18,25 +17,20 @@ body.neconyan #send_form .stih--buttons .stih--button {
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  width: var(--stih-control-width, 44px);
-  min-width: var(--stih-control-width, 44px);
-  height: 44px;
-  min-height: 44px;
+  width: var(--stih-control-width, var(--sb-control-icon-physical-size));
+  min-width: var(--stih-control-width, var(--sb-control-icon-physical-size));
+  height: var(--stih-control-width, var(--sb-control-icon-physical-size));
   margin: 0;
   padding: 0;
-  border: 1px solid var(--neco-border);
-  border-radius: 12px;
-  background: var(--neco-surface);
   color: var(--neco-ink);
   opacity: 1;
 }
-body.neconyan #send_form .stih--buttons .stih--menuTrigger {
-  width: auto;
-  max-width: none;
-  gap: 8px;
-  padding: 0 12px;
-  font-family: var(--mainFontFamily);
-  font-size: 15px;
+/* Icon-only, like the guided actions beside it; the name lives in aria-label and title. */
+body.neconyan #send_form .stih--buttons .stih--menuTrigger { border-radius: var(--sb-icon-control-radius); }
+body.neconyan #send_form .stih--buttons .stih--menuTrigger > span { display: none; }
+/* History squares match the guided actions: compact on phones and desktop, the shared touch height on tablets. */
+@media screen and (max-width: 600px), screen and (min-width: 769px) {
+  body.neconyan #send_form .stih--buttons .stih--button { min-height: var(--stih-control-width, var(--sb-control-icon-physical-size)); }
 }
 .stih--arrows {
   display: flex;
