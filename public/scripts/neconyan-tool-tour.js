@@ -693,7 +693,7 @@ const TOOL_PAGES = Object.freeze({
                 id: 'updates', tab: '#mewmory-tab-settings',
                 targets: ['[id="mewmory-field-Messages per update"]'],
                 title: 'Choose how often new memories are written',
-                body: '**Update automatically during play** makes Mewmory process new chat while you play. **Messages per update** sets the batch size: smaller batches ask it to update more often and put less text into each request.\nFor an existing chat, **Catch up on this whole chat** processes earlier messages. **Check for missed details** checks the chat again. Those are real model requests, not steps the tour runs for you.',
+                body: '**Turn on Mewmory in every new chat** ticks **Use Mewmory in this chat** for you in chats you start. **Update automatically during play** makes Mewmory process new chat while you play. **Messages per update** sets the batch size: smaller batches ask it to update more often and put less text into each request.\nFor an existing chat, **Catch up on this whole chat** processes earlier messages. **Check for missed details** checks the chat again. Those are real model requests, not steps the tour runs for you.',
                 hint: 'More frequent work can mean more requests. Choose deliberately.',
             },
             {

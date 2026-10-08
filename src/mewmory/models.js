@@ -19,7 +19,7 @@ export function defaultConfig() {
     return {
         revision: 0, defaultsVersion: 2, localOnly: false, autoUpdate: true, historyWindow: 30000,
         memoryTokens: 6000, batchMessages: 12, candidateLimit: 24,
-        writerTokenizer: 'auto', excludeHistory: true, autoHide: false, autoHideTokens: 30000,
+        writerTokenizer: 'auto', excludeHistory: true, autoHide: false, autoHideTokens: 30000, enableNewChats: false,
         retrieval: { ...RAG_DEFAULTS },
         roles: Object.fromEntries(ROLE_NAMES.map(name => [name, {
             enabled: false, profileId: '', endpoint: '', model: '', modelOverride: '', modelRevision: '', allowRemote: true,
@@ -84,7 +84,7 @@ function validateRetrieval(input = {}) {
 export function validateConfig(input) {
     object(input, 'Settings');
     const result = defaultConfig();
-    for (const key of ['localOnly', 'autoUpdate', 'excludeHistory', 'autoHide']) {
+    for (const key of ['localOnly', 'autoUpdate', 'excludeHistory', 'autoHide', 'enableNewChats']) {
         if (typeof input[key] !== 'boolean') fail(key + ' must be switched on or off.');
         result[key] = input[key];
     }
@@ -151,6 +151,7 @@ function readSavedConfig(directories) {
     config.retrieval = { ...RAG_DEFAULTS, ...config.retrieval };
     config.autoHide ??= false;
     config.autoHideTokens ??= 30000;
+    config.enableNewChats ??= false;
     config.roles.embedding.provider ||= 'custom';
     return config;
 }

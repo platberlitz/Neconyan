@@ -1,6 +1,6 @@
 import {
     characters, chat, chat_metadata, flushPendingChatSaves, getChatGeneration, getCurrentChatId,
-    getMaxContextTokens, getRequestHeaders, this_chid,
+    getMaxContextTokens, getRequestHeaders, saveMetadata, this_chid,
 } from '../../script.js';
 import { hideChatMessageRange } from '../chats.js';
 import { Popup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
@@ -15,6 +15,7 @@ import { t, translate } from '../i18n.js';
 export const mewmory = {
     config: null, view: null, stories: [], error: '', loading: false, busy: false, backfilling: false, preparing: false,
 };
+const NEW_CHAT_MARK = 'mewmory_new_chat';
 let initialized = false;
 let timer;
 let viewKey = '';
@@ -218,6 +219,31 @@ export async function hideOverflowAutomatically() {
     }
 }
 
+/**
+ * Switches Mewmory on once in a chat the user has just started, when Settings asks for every new chat.
+ * The chat keeps a mark, so switching Mewmory off afterwards sticks.
+ */
+export async function enableMewmoryForNewChat(view, scope = getMewmoryScope()) {
+    const metadata = chat_metadata;
+    if (!mewmory.config?.enableNewChats || !view || view.enabled || metadata[NEW_CHAT_MARK]) return false;
+    if (scope !== getMewmoryScope() || chat.filter(message => message.is_user).length > 1) return false;
+    metadata[NEW_CHAT_MARK] = true;
+    try {
+        await changeMewmory('enabled', { enabled: true });
+        if (scope !== getMewmoryScope()) return false;
+        void saveMetadata();
+        window.dispatchEvent(new Event('mewmory:configured'));
+        return true;
+    } catch (error) {
+        delete metadata[NEW_CHAT_MARK];
+        if (scope === getMewmoryScope()) {
+            mewmory.error = error.message;
+            notifyMewmory();
+        }
+        return false;
+    }
+}
+
 export async function processMewmory({ all = false, checkpoint = false } = {}) {
     if (mewmory.busy) return;
     const locator = getMewmoryLocator();
@@ -273,6 +299,10 @@ export function initMewmory() {
         void refreshMewmory();
         scheduleUpdate();
     };
+    const created = () => {
+        const scope = getMewmoryScope();
+        void refreshMewmory().then(view => enableMewmoryForNewChat(view, scope));
+    };
     eventSource.on(event_types.CHAT_CHANGED, changed);
     eventSource.on(event_types.CHAT_RENAMED, changed);
     window.addEventListener('sb:conversation-workspace-state-changed', changed);
@@ -285,6 +315,13 @@ export function initMewmory() {
         eventSource.on(event, () => scheduleUpdate());
     }
     eventSource.on(event_types.GENERATION_ENDED, () => void hideOverflowAutomatically());
+    eventSource.on(event_types.CHAT_CREATED, created);
+    eventSource.on(event_types.GROUP_CHAT_CREATED, created);
+    // Chats without a greeting never announce themselves, so their first message counts as the start.
+    eventSource.on(event_types.MESSAGE_SENT, () => {
+        if (mewmory.view?.enabled || chat_metadata[NEW_CHAT_MARK] || chat.filter(message => message.is_user).length !== 1) return;
+        created();
+    });
     window.addEventListener('mewmory:configured', () => { void refreshMewmory(); scheduleUpdate(); });
     scheduleUpdate();
 }

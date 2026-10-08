@@ -5,6 +5,8 @@ let generation = 1;
 const listeners = new Map();
 const conversationState = { conversationWorkspaceOpen: false };
 const chat = [];
+const chatMetadata = {};
+const saveMetadata = jest.fn(async () => true);
 let contextSize = 30;
 let popupAnswer = 1;
 const hideChatMessageRange = jest.fn(async (start, end, unhide, filter, options) => {
@@ -14,9 +16,9 @@ const hideChatMessageRange = jest.fn(async (start, end, unhide, filter, options)
 global.toastr = { info: jest.fn(), success: jest.fn(), warning: jest.fn() };
 jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => 'default-user' }));
 jest.unstable_mockModule('../public/script.js', () => ({
-    characters: [{ avatar: 'Mara.png' }], this_chid: 0, chat_metadata: {}, is_send_press: false,
+    characters: [{ avatar: 'Mara.png' }], this_chid: 0, chat_metadata: chatMetadata, is_send_press: false,
     getCurrentChatId: () => chatId, getChatGeneration: () => generation, chat, getMaxContextTokens: () => contextSize,
-    flushPendingChatSaves: async () => true, getRequestHeaders: () => ({}),
+    flushPendingChatSaves: async () => true, getRequestHeaders: () => ({}), saveMetadata,
 }));
 jest.unstable_mockModule('../public/scripts/group-chats.js', () => ({ is_group_generating: false, selected_group: null }));
 jest.unstable_mockModule('../public/scripts/tokenizers.js', () => ({
@@ -38,7 +40,7 @@ jest.unstable_mockModule('../public/scripts/events.js', () => ({
         listeners.set(name, Object.assign((...args) => handlers.map(item => item(...args)), { handlers }));
     } },
 }));
-const { getMewmoryLocator, getMewmoryScope, getOverflowMessages, hideOverflowAutomatically, hideOverflowMessages, initMewmory, mewmory, notifyMewmory, prepareMewmoryGeneration, processMewmory, refreshMewmory, requestMewmory, stopMewmoryBackfill } = await import('../public/scripts/mewmory/index.js');
+const { enableMewmoryForNewChat, getMewmoryLocator, getMewmoryScope, getOverflowMessages, hideOverflowAutomatically, hideOverflowMessages, initMewmory, mewmory, notifyMewmory, prepareMewmoryGeneration, processMewmory, refreshMewmory, requestMewmory, stopMewmoryBackfill } = await import('../public/scripts/mewmory/index.js');
 const config = { revision: 1, roles: {} };
 const response = data => ({ ok: true, json: async () => data });
 
@@ -46,6 +48,8 @@ beforeEach(() => {
     generation++;
     chatId = 'first';
     conversationState.conversationWorkspaceOpen = false;
+    for (const key of Object.keys(chatMetadata)) delete chatMetadata[key];
+    saveMetadata.mockClear();
     global.window = Object.assign(new EventTarget(), { clearTimeout: jest.fn(), setTimeout: jest.fn() });
     global.document = { querySelectorAll: () => [] };
     global.fetch = jest.fn(async (url, { body }) => response(url.endsWith('config/get')
@@ -232,4 +236,69 @@ test('automatic hiding runs after a reply only where Mewmory is on and the setti
     expect(hideChatMessageRange.mock.calls.every(call => call[4]?.keepInMewmory === true)).toBe(true);
     expect(global.toastr.info).toHaveBeenLastCalledWith('Hid 3 older messages past 30 tokens. Mewmory still remembers them.');
     expect(await hideOverflowAutomatically()).toBe(0);
+});
+
+const settle = async () => {
+    for (let step = 0; step < 10; step++) await new Promise(resolve => setTimeout(resolve, 0));
+};
+const enabledCalls = () => fetch.mock.calls.filter(([url]) => url.endsWith('/enabled'));
+
+test('every new chat turns Mewmory on once, and switching it off afterwards sticks', async () => {
+    initMewmory();
+    // Opening a chat already saves Mewmory's record once, so a brand-new chat is not at revision 0.
+    let state = { enabled: false, revision: 1 };
+    let settings = { ...config, enableNewChats: true };
+    fetch.mockImplementation(async (url, { body }) => {
+        if (url.endsWith('config/get')) return response({ config: settings, stories: [] });
+        if (url.endsWith('/enabled')) state = { enabled: JSON.parse(body).enabled, revision: state.revision + 1 };
+        return response({ locator: JSON.parse(body).locator, ...state });
+    });
+    chat.splice(0, chat.length, { is_user: false, mes: 'Hello there' });
+    const configured = jest.fn();
+    global.window.addEventListener('mewmory:configured', configured);
+    listeners.get('CHAT_CREATED')();
+    await settle();
+    expect(enabledCalls()).toHaveLength(1);
+    expect(JSON.parse(enabledCalls()[0][1].body)).toMatchObject({ enabled: true, revision: 1, locator: { chat: 'first' } });
+    expect(mewmory.view.enabled).toBe(true);
+    expect(chatMetadata.mewmory_new_chat).toBe(true);
+    expect(saveMetadata).toHaveBeenCalledTimes(1);
+    expect(configured).toHaveBeenCalledTimes(1);
+
+    state = { enabled: false, revision: 4 };
+    await refreshMewmory();
+    chat.push({ is_user: true, mes: 'One' });
+    listeners.get('MESSAGE_SENT')();
+    listeners.get('CHAT_CREATED')();
+    await settle();
+    expect(enabledCalls()).toHaveLength(1);
+
+    delete chatMetadata.mewmory_new_chat;
+    listeners.get('CHAT_CHANGED')();
+    await settle();
+    expect(enabledCalls()).toHaveLength(1);
+    chat.push({ is_user: false, mes: 'Two' }, { is_user: true, mes: 'Three' });
+    expect(await enableMewmoryForNewChat(await refreshMewmory())).toBe(false);
+    chat.splice(1);
+    settings = { ...config, enableNewChats: false };
+    listeners.get('GROUP_CHAT_CREATED')();
+    await settle();
+    expect(enabledCalls()).toHaveLength(1);
+    expect(chatMetadata.mewmory_new_chat).toBeUndefined();
+});
+
+test('a new chat without a greeting turns Mewmory on with the first message', async () => {
+    initMewmory();
+    let state = { enabled: false, revision: 2 };
+    fetch.mockImplementation(async (url, { body }) => {
+        if (url.endsWith('config/get')) return response({ config: { ...config, enableNewChats: true }, stories: [] });
+        if (url.endsWith('/enabled')) state = { enabled: true, revision: 3 };
+        return response({ locator: JSON.parse(body).locator, ...state });
+    });
+    chat.splice(0, chat.length, { is_user: true, mes: 'Hi' });
+    listeners.get('MESSAGE_SENT')();
+    await settle();
+    expect(enabledCalls()).toHaveLength(1);
+    expect(mewmory.view.enabled).toBe(true);
+    expect(chatMetadata.mewmory_new_chat).toBe(true);
 });
