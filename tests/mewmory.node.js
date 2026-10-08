@@ -28,7 +28,7 @@ const { createMewmoryProvider } = await import('./mewmory-provider.js');
 const { readConfig, publicConfig, roleVersion } = await import('../src/mewmory/models.js');
 const { readSecret, writeSecret, SecretManager, SECRET_KEYS } = await import('../src/endpoints/secrets.js');
 const { resolveModelProfile } = await import('../src/mewmory/connection-profiles.js');
-const { startProcessing, waitForProcessing, cancelProcessing, scanProcessing, startMewmoryWorker } = await import('../src/mewmory/worker.js');
+const { startProcessing, waitForProcessing, cancelProcessing, scanProcessing, startMewmoryWorker, pauseInterruptedProcessing } = await import('../src/mewmory/worker.js');
 const { startOperation, registerMewmoryOperations } = await import('../src/mewmory/operations.js');
 const { getJob: getSavedJob, recoverJobs, updateJob } = await import('../src/jobs/store.js');
 const { setDirectoriesResolver, testExports: jobRunner } = await import('../src/jobs/runner.js');
@@ -452,6 +452,25 @@ test('startup clears interrupted jobs that are now disabled and skips idle sourc
     await scanProcessing(directories, async () => ({ value: { records: [], interviews: [], activeNpcIds: [] }, usage: { role: 'extractor' } }));
     const completed = await waitForProcessing(directories, locator);
     assert.equal(pendingSources(completed, readConfig(directories), { checkpoint: true }).length, 0);
+});
+
+test('safe start pauses interrupted processing instead of resuming it', async t => {
+    const { directories } = disk(t);
+    const config = defaultConfig();
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
+    config.autoUpdate = true;
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => {
+        state.enabled = true;
+        state.processing = { status: 'running', automatic: true };
+    });
+    assert.equal(await pauseInterruptedProcessing(async () => [directories]), 1);
+    const paused = readState(directories, locator).processing;
+    assert.equal(paused.status, 'failed');
+    assert.equal(paused.errorStatus, 503);
+    assert.match(paused.error, /safe mode/);
+    assert.equal(await pauseInterruptedProcessing(async () => [directories]), 0);
 });
 
 test('changing a timeout preserves extraction coverage but changing the provider invalidates it', () => {

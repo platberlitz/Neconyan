@@ -788,9 +788,17 @@ async function postSetupTasks(result) {
     setupLogLevel();
     serverEvents.emit(EVENT_NAMES.SERVER_STARTED, { url: browserLaunchUrl });
     notifyServerStartup(getLoadedServerPlugins());
-    void runDeferredStartupTasks();
-    const { startMewmoryWorker } = await import('./mewmory/worker.js');
-    startMewmoryWorker(getUserDirectoriesList);
+    // Safe start follows a crash: skip background maintenance and pause work
+    // that would replay by itself, so the user can reach and back up their data.
+    const safeStart = process.env.NECONYAN_SAFE_START === '1';
+    if (safeStart) console.warn('Safe start: background maintenance is off and interrupted work is paused until the next normal start.');
+    const { startMewmoryWorker, pauseInterruptedProcessing } = await import('./mewmory/worker.js');
+    if (safeStart) {
+        await pauseInterruptedProcessing(getUserDirectoriesList).catch(error => console.warn('Safe start could not pause Mewmory processing.', error));
+    } else {
+        void runDeferredStartupTasks();
+        startMewmoryWorker(getUserDirectoriesList);
+    }
     await import('./generation/roleplay-execution.js');
     await import('./generation/sprite-jobs.js');
     await import('./generation/speech-jobs.js');
@@ -840,11 +848,13 @@ async function postSetupTasks(result) {
             finalizeBrowserWork(context);
             finalizeScratchpadSubmission(context);
         },
+        holdRecovered: safeStart,
     });
     const { startConversationWorker } = await import('./generation/conversation-worker.js');
     startConversationWorker({
         directoriesFor: handle => getUserDirectories(handle),
         owners: () => getAllUserHandles(),
+        autonomy: !safeStart,
     });
 }
 

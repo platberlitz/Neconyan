@@ -286,7 +286,7 @@ export function abortJob(id) {
  * Start the dispatcher. Recovery runs once so queued work and interrupts are
  * known before the first tick; the interval then only picks up new jobs.
  */
-export function startJobsRunner({ directoriesFor, owners, recoverWaiting = null }) {
+export function startJobsRunner({ directoriesFor, owners, recoverWaiting = null, holdRecovered = false }) {
     setDirectoriesResolver(directoriesFor);
     waitingResolver = recoverWaiting;
     let stopped = false;
@@ -314,7 +314,7 @@ export function startJobsRunner({ directoriesFor, owners, recoverWaiting = null 
                 if (stopped) return;
                 noteOwner(owner);
                 try {
-                    recoverJobs(directoriesFor(owner));
+                    recoverJobs(directoriesFor(owner), { hold: holdRecovered });
                 } catch (error) {
                     serverEvents.emit('job-recovery-failed', { owner, message: error?.message ?? 'Recovery failed.' });
                 }

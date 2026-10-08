@@ -111,6 +111,26 @@ export async function scanProcessing(directories, call, { reconcile = true } = {
     }
 }
 
+/** Safe start: stop interrupted processing from resuming by itself; its saved memory is kept for a manual retry. */
+export async function pauseInterruptedProcessing(getDirectories) {
+    let paused = 0;
+    for (const directories of await getDirectories()) {
+        for (const story of listStories(directories)) {
+            if (story.processing?.status !== 'running') continue;
+            try {
+                mutateState(directories, story.locator, state => {
+                    if (state.processing?.status !== 'running') return;
+                    Object.assign(state.processing, { status: 'failed', error: 'Neconyan restarted in safe mode, so this update was paused. Update memories again when you are ready.', errorStatus: 503, finishedAt: Date.now() });
+                    paused++;
+                }, undefined, { existingOnly: true });
+            } catch (error) {
+                console.warn('[Mewmory] Could not pause saved processing:', error.message);
+            }
+        }
+    }
+    return paused;
+}
+
 export function startMewmoryWorker(getDirectories, call) {
     let scanning = false;
     let pending = false;

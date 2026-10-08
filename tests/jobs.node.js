@@ -314,6 +314,26 @@ test('cancellation is durable before acknowledgement and a late completion stays
     assert.equal(late.state, 'cancelled', 'a reply that lands after a cancel must not report success');
 });
 
+test('safe-start recovery pauses work that a normal start would replay', () => {
+    const directories = tempDirectories('recover-hold');
+    const queued = acceptJob(directories, { owner: 'alice', type: 'roleplay', submissionKey: 'a', intent: intent() }).job;
+    const checkpointed = acceptJob(directories, { owner: 'alice', type: 'roleplay', submissionKey: 'b', intent: intent() }).job;
+    setJobResume(directories, checkpointed.id, 'apply-reply');
+    updateJob(directories, checkpointed.id, { state: 'running' });
+    const plain = acceptJob(directories, { owner: 'alice', type: 'roleplay', submissionKey: 'c', intent: intent() }).job;
+    updateJob(directories, plain.id, { state: 'running' });
+
+    const { recoverable } = recoverJobs(directories, { hold: true });
+    assert.deepEqual(recoverable, [], 'safe start replays nothing that may have stopped the server');
+    for (const id of [queued.id, checkpointed.id]) {
+        const job = getJob(directories, id);
+        assert.equal(job.state, 'interrupted');
+        assert.equal(job.error.code, 'SAFE_START');
+        assert.equal(job.recoverability, 'needs-retry');
+    }
+    assert.equal(getJob(directories, plain.id).error.code, 'INTERRUPTED', 'work that could never resume keeps the ordinary message');
+});
+
 test('restart recovery resumes only server-checkpointed work and interrupts unknown provider outcomes', () => {
     const directories = tempDirectories('recover');
     const queued = acceptJob(directories, { owner: 'alice', type: 'roleplay', submissionKey: 'a', intent: intent() }).job;

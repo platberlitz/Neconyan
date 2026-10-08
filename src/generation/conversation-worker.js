@@ -312,7 +312,7 @@ export async function scanConversationAutonomy({ directoriesFor, owners, now = D
 }
 
 /** Start the reconciler. Returns a stop function. Overlapping ticks are skipped. */
-export function startConversationWorker({ directoriesFor, owners, intervalMs = DEFAULT_INTERVAL_MS, autoIntervalMs = AUTO_SCAN_INTERVAL_MS } = {}) {
+export function startConversationWorker({ directoriesFor, owners, intervalMs = DEFAULT_INTERVAL_MS, autoIntervalMs = AUTO_SCAN_INTERVAL_MS, autonomy = true } = {}) {
     const list = async () => (typeof owners === 'function' ? await owners() : owners || []);
     let ticking = false;
     let lastScan = 0;
@@ -323,7 +323,7 @@ export function startConversationWorker({ directoriesFor, owners, intervalMs = D
             const listNow = await list();
             await runConversationWorkerTick({ directoriesFor, owners: listNow, now: Date.now() });
             const now = Date.now();
-            if (now - lastScan >= autoIntervalMs) {
+            if (autonomy && now - lastScan >= autoIntervalMs) {
                 lastScan = now;
                 await scanConversationAutonomy({ directoriesFor, owners: listNow, now });
             }

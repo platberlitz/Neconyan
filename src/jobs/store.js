@@ -817,10 +817,20 @@ function hasSavedProviderResult(directories, job, step = job.recoveryStep) {
  * marked interrupted unless it can be resumed from a server-saved next step; an
  * unknown provider outcome is never silently re-submitted as a charged call.
  */
-export function recoverJobs(directories, { startedAt = PROCESS_STARTED_AT } = {}) {
+export function recoverJobs(directories, { startedAt = PROCESS_STARTED_AT, hold = false } = {}) {
     return mutateJobs(directories, store => {
         const recoverable = [];
         let changed = false;
+        // Safe start: work that would run again on its own is paused for a
+        // deliberate retry, because replaying it may be what stopped the server.
+        const pause = job => {
+            changed = true;
+            job.state = 'interrupted';
+            job.stage = null;
+            job.finishedAt = now();
+            job.error = { message: 'Neconyan restarted in safe mode, so this job was paused. Retry it when you are ready.', code: 'SAFE_START' };
+            job.recoverability = 'needs-retry';
+        };
         for (const job of Object.values(store.jobs)) {
             // Failures from before this start are cleared away; work this very
             // restart interrupts below stays visible so it can still be retried.
@@ -840,7 +850,8 @@ export function recoverJobs(directories, { startedAt = PROCESS_STARTED_AT } = {}
             const unknown = providerSteps.some(step => !hasSavedProviderResult(directories, job, step))
                 || !providerSteps.length && job.recoverability === 'unknown-outcome';
             if (job.state === 'queued' && !unknown) {
-                recoverable.push(job);
+                if (hold) pause(job);
+                else recoverable.push(job);
                 continue;
             }
             // A saved review stays waiting for its decision, not another execution.
@@ -849,6 +860,10 @@ export function recoverJobs(directories, { startedAt = PROCESS_STARTED_AT } = {}
                 // The result can be saved immediately before the status write; its artifact proves a retry will not repeat the provider call.
                 const savedResult = providerSteps.length > 0 && !unknown;
                 const resumable = !unknown && (job.recoverability === 'resumable' || savedResult) && typeof job.resume === 'string' && job.resume;
+                if (resumable && hold) {
+                    pause(job);
+                    continue;
+                }
                 if (resumable) {
                     job.state = 'queued';
                     job.stage = null;
