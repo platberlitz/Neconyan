@@ -544,6 +544,7 @@ function renderSettings(root) {
     const settings = section('Automatic memory');
     settings.dataset.mewmoryTour = 'automatic';
     settings.append(node('p', 'mewmory-caption', 'Model roles are shared by all your chats; turning Mewmory on is per chat. These models are set up separately from the model that writes replies.'),
+        check('Turn on Mewmory in every new chat', draft.enableNewChats, value => { draft.enableNewChats = value; }),
         check('Update automatically during play', draft.autoUpdate, value => { draft.autoUpdate = value; }),
         check('Only use models on this computer', draft.localOnly, value => { draft.localOnly = value; }),
         check('Leave out older chat that Mewmory has already remembered', draft.excludeHistory, value => { draft.excludeHistory = value; }),
