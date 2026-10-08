@@ -1120,6 +1120,17 @@ import { t } from './i18n.js';
         return normalizeExtensionLookup(value).replace(/^neconyan/, '');
     }
 
+    function unitMatchesSelector(unit, selector) {
+        if (!selector || typeof unit?.matches !== 'function') {
+            return false;
+        }
+        try {
+            return unit.matches(selector);
+        } catch {
+            return false;
+        }
+    }
+
     function getNeconyanNativeToolDefinitions() {
         const definitions = globalThis.NeconyanNativeTools?.getDefinitions?.();
         return Array.isArray(definitions) ? definitions : [];
@@ -1130,12 +1141,20 @@ import { t } from './i18n.js';
             return null;
         }
 
+        // A declared settings drawer identifies the tool whatever language its heading is in.
+        const definitions = getNeconyanNativeToolDefinitions();
+        const declared = definitions.find(definition => (info.units || [])
+            .some(unit => unitMatchesSelector(unit, definition.unit)));
+        if (declared) {
+            return declared;
+        }
+
         const candidates = [
             info.name,
             ...(info.units || []).flatMap(unit => getExtensionUnitCandidates(unit, info.name, getExtensionUnitId(unit))),
         ].map(normalizeIncludedToolLookup).filter(Boolean);
 
-        return getNeconyanNativeToolDefinitions().find(definition => (
+        return definitions.find(definition => (
             [definition.id, definition.label].filter(Boolean)
                 .map(normalizeIncludedToolLookup)
                 .some(candidate => candidates.includes(candidate))
@@ -1162,6 +1181,22 @@ import { t } from './i18n.js';
 
     function findExtensionGroupForTarget(groups, target) {
         return groups.find(info => info.units.some(unit => unit === target || unit.contains?.(target))) || null;
+    }
+
+    function findIncludedToolGroup(groups, label, extensionId = label, unitSelector = '') {
+        // A declared drawer identifies the tool whatever language its heading is in.
+        const declared = unitSelector
+            ? groups.find(info => info.scope === 'built-in'
+                && info.units.some(unit => unitMatchesSelector(unit, unitSelector)))
+            : null;
+        if (declared) {
+            return declared;
+        }
+
+        const normalize = normalizeIncludedToolLookup;
+        return groups.find(info => normalize(info.name) === normalize(label)
+            || info.units.some(unit => getExtensionUnitCandidates(unit, info.name, getExtensionUnitId(unit))
+                .some(candidate => normalize(candidate) === normalize(extensionId)))) || null;
     }
 
     function openIncludedToolSettings(info) {
@@ -1524,12 +1559,9 @@ import { t } from './i18n.js';
         globalThis.NeconyanExtensions = {
             resetThirdParty: () => state.setScope('third-party'),
             focusUnit: label => state.focusUnit(label),
-            mountUnit: (label, host, extensionId = label) => {
+            mountUnit: (label, host, extensionId = label, unitSelector = '') => {
                 if (!(host instanceof HTMLElement)) return false;
-                const normalize = normalizeIncludedToolLookup;
-                const target = state.allGroups.find(info => normalize(info.name) === normalize(label)
-                    || info.units.some(unit => getExtensionUnitCandidates(unit, info.name, getExtensionUnitId(unit))
-                        .some(candidate => normalize(candidate) === normalize(extensionId))));
+                const target = findIncludedToolGroup(state.allGroups, label, extensionId, unitSelector);
                 if (!target?.units?.length) return false;
                 state.mountedHost = host;
                 state.mountedKey = target.key;

@@ -102,7 +102,7 @@ describe('Quick Image Gen opens as a page led by Nori', () => {
     });
 
     test('the rail item and the included tools list both open the page', () => {
-        expect(shell).toContain('{ id: \'quick-image-gen\', label: \'Quick Image Gen\', icon: \'fa-image\', actions: [\'settings\'] }');
+        expect(shell).toContain('{ id: \'quick-image-gen\', label: \'Quick Image Gen\', icon: \'fa-image\', actions: [\'settings\'], unit: \'#qig-settings\' }');
         expect(shell).toMatch(/NECONYAN_TOOL_PAGE_ROUTES = Object\.freeze\(\{[^}]*'quick-image-gen': 'quick-image-gen'/);
         expect(rail).toContain('shell?.openIncludedTool?.(\'quick-image-gen\')');
     });
@@ -132,7 +132,7 @@ describe('Character Expressions opens as a page led by Miso', () => {
     });
 
     test('the rail item and the included tools list both open the page', () => {
-        expect(shell).toContain('{ id: \'expressions\', label: \'Character Expressions\', icon: \'fa-masks-theater\', actions: [\'settings\'] }');
+        expect(shell).toContain('{ id: \'expressions\', label: \'Character Expressions\', icon: \'fa-masks-theater\', actions: [\'settings\'], unit: \'#expressions_container\' }');
         expect(shell).toMatch(/NECONYAN_TOOL_PAGE_ROUTES = Object\.freeze\(\{[^}]*expressions: 'expressions'/);
         expect(rail).toMatch(/case 'expressions':\s*case 'regex':\s*if \(shell\?\.openIncludedTool\?\.\(route\)\) break;/);
     });
@@ -162,7 +162,7 @@ describe('Regexes opens as a page led by Taro', () => {
     });
 
     test('the rail item and the included tools list both open the page under one name', () => {
-        expect(shell).toContain('{ id: \'regex\', label: \'Regexes\', icon: \'fa-code\', actions: [\'settings\'] }');
+        expect(shell).toContain('{ id: \'regex\', label: \'Regexes\', icon: \'fa-code\', actions: [\'settings\'], unit: \'#regex_container\' }');
         expect(shell).toMatch(/NECONYAN_TOOL_PAGE_ROUTES = Object\.freeze\(\{[^}]*regex: 'regex'/);
         expect(manifest.display_name).toBe('Regexes');
     });
