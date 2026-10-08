@@ -36,7 +36,7 @@ for (const phone of [true, false]) {
                 const bounds = row.getBoundingClientRect();
                 return {
                     count: boxes.length,
-                    rows: new Set(boxes.map(rect => Math.round(rect.y))).size,
+                    rows: new Set(boxes.map(rect => Math.round(rect.y + rect.height / 2))).size,
                     fits: boxes.every(rect => rect.left >= bounds.left && rect.right <= bounds.right + 1),
                     compactTargets: boxes.every(rect => rect.width >= 26 && rect.height >= 26),
                     noOverlap: boxes.every((rect, index) => index === 0 || rect.left >= boxes[index - 1].right),

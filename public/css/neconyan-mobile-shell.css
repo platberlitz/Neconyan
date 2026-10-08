@@ -3388,19 +3388,28 @@ body.neconyan #send_form :is(#gg-action-button-container button, .stih--buttons 
     background: var(--neco-raised);
 }
 
-/* Input History and the seven guided actions share one compact row. */
+/* Keep history and all seven guided actions on one line, with 44px-tall targets. */
 body.neconyan #send_form > #gg-action-button-container.gg-action-buttons-container {
-    --gg-mobile-action-size: clamp(26px, calc((100vw - 60px) / 10), 32px);
-    justify-content: space-between;
+    --stih-control-width: clamp(24px, calc((100vw - 58px) / 10), 36px);
+    --gg-mobile-action-size: var(--stih-control-width);
+    --gg-mobile-action-height: 44px;
+    --bottomFormBlockSize: 44px;
 }
 body.neconyan #send_form > #gg-action-button-container.gg-action-buttons-container > :is(.stih--buttons, .gg-regular-buttons-container) {
-    --bottomFormBlockSize: var(--gg-mobile-action-size);
-    --stih-mobile-action-size: var(--gg-mobile-action-size);
     flex: 0 0 auto;
+    width: auto;
     flex-wrap: nowrap;
     gap: 3px;
 }
-body.neconyan #send_form > #gg-action-button-container.gg-action-buttons-container .stih--arrows { gap: 3px; }
+body.neconyan #send_form > #gg-action-button-container > .stih--buttons {
+    margin-right: auto;
+}
+body.neconyan #send_form .stih--arrows { gap: 3px; }
+body.neconyan #send_form .stih--buttons .stih--button.stih--menuTrigger {
+    width: var(--stih-control-width, 44px);
+    padding: 0;
+}
+body.neconyan #send_form .stih--menuTrigger > span { display: none; }
 
 /* Phones drop the duplicate Import button: the Import section in the same sheet still opens the picker. */
 body.neconyan #right-nav-panel .neconyan-character-library-footer .sb-character-library-primary-actions > #character_import_button { display: none; }
@@ -3526,3 +3535,5 @@ body.neconyan #open_chat_expressions #expressions_stop_sprite_generation { grid-
     width: 100%;
     justify-content: center;
 }
+
+body.neconyan .stih--history { padding: 12px; }

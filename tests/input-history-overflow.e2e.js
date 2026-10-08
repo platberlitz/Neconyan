@@ -69,7 +69,7 @@ test.describe('input history overflow menu', () => {
                         <div id="send_form">
                             <div class="stih--buttons stih--standalone">
                                 <button type="button" class="stih--button"></button>
-                                <div class="stih--history stih--active">${historyItems}</div>
+                                <div id="stih-history" class="stih--history stih--active"><div class="stih--list">${historyItems}</div></div>
                             </div>
                             <div id="nonQRFormItems">
                                 <textarea id="send_textarea"></textarea>
@@ -90,8 +90,8 @@ test.describe('input history overflow menu', () => {
                 buttonsTop: buttons.getBoundingClientRect().top,
                 formBottom: form.getBoundingClientRect().bottom,
                 historyBottom: history.getBoundingClientRect().bottom,
-                historyClientHeight: history.clientHeight,
-                historyScrollHeight: history.scrollHeight,
+                historyClientHeight: history.querySelector('.stih--list').clientHeight,
+                historyScrollHeight: history.querySelector('.stih--list').scrollHeight,
                 maxScrollY: pageScrollHeight - window.innerHeight,
             };
         });
