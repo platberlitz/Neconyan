@@ -11,6 +11,7 @@
 - PR #71 (2026-10-08) `feat(guided-generations): add guided regenerate`
 - PR #72 (2026-10-08) `fix(input-history): use a readable native picker`
 - PR #73 (2026-10-08) `feat(agents): add NSFW Enhancer and keep replies when an agent refuses`
+- PR #75 (2026-10-08) `feat(agents): let companions choose where kept notes go`
 
 ## v1.2.1
 
