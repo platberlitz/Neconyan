@@ -27,10 +27,16 @@ entries and file modes match a local archive of the release commit.
 
 Neconyan 1.2.1 is published at
 https://github.com/platberlitz/Neconyan/releases/tag/v1.2.1 with the annotated
-tag `v1.2.1` and nine assets. At the owner's request, publication proceeds while
-full browser run `37718820673` is pending, as clearly stated in the release notes.
-Update those notes when the run finishes and investigate any failure. No physical
-phone testing is claimed. Staging advances to `1.2.2`.
+tag `v1.2.1` and nine assets. At the owner's request, it was published while full
+browser run `37718820673` was pending, as stated in the release notes at the time.
+All 16 groups have now passed on the published commit. One desktop Windows XP
+wallpaper check initially read the default wallpaper; its failure screenshot
+already showed the XP wallpaper. The original desktop/phone checks passed six
+local repeats, and the failed CI group passed on rerun without a release change.
+Staging commit `9764f34` makes the wallpaper assertion wait for the expected
+computed style at selection and reload; both updated browser checks passed.
+The release notes now record the completed results and initial failure. No
+physical phone testing is claimed. Staging advances to `1.2.2`.
 
 ### 7 October: 1.2.0 released from main, staging moves to 1.2.1
 
