@@ -700,3 +700,21 @@ test('native batch previews reject stale inputs and apply only their retained pr
     await runLabJob(f.context(apply));
     assert.equal(JSON.parse(fs.readFileSync(f.bookPath)).entries[3].probability, 42);
 });
+
+test('a long saved chat with many swipes still scans its lorebooks in the World Info Lab', async () => {
+    const f = fixture();
+    const filler = 'x'.repeat(2048), swipe = 'y'.repeat(3072);
+    const messages = Array.from({ length: 1600 }, (_, index) => ({ name: index % 2 ? 'Nova' : 'User', is_user: index % 2 === 0,
+        mes: `${index === 1599 ? 'We can see the earth. ' : ''}${filler}`, swipes: [swipe, swipe], swipe_id: 0 }));
+    fs.writeFileSync(f.chatPath, [{ user_name: 'User', character_name: 'Nova', chat_metadata: {} }, ...messages]
+        .map(row => JSON.stringify(row)).join('\n'));
+    assert.ok(fs.statSync(f.chatPath).size > 8 * 1024 * 1024);
+    const locator = { group: false, avatar: 'nova.png', chat: 'scene' };
+    const scan = await acceptLabJob(f.request, { key: 'long-scan', kind: 'world-info.scan', book: 'Garden', mode: 'chat', locator });
+    await runLabJob(f.context(scan));
+    const record = readLabRecord(f.base, 'long-scan');
+    assert.deepEqual(record.result.activated.map(entry => entry.uid), [3]);
+    const health = await acceptLabJob(f.request, { key: 'long-health', kind: 'world-info.health', book: 'Garden', mode: 'chat', locator });
+    await runLabJob(f.context(health));
+    assert.equal(readLabRecord(f.base, 'long-health').result.chatMessageCount, 1600);
+});

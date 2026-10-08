@@ -9,6 +9,9 @@ import { createMacroEnvironment } from '../macros/index.js';
 import { selectSavedRoleplayPersona } from '../generation/world-info.js';
 import { labError } from './store.js';
 
+/** Saved chats are read with the same ceiling as replies, so long chats open in Labs too. */
+export const LAB_CHAT_LIMIT = 64 * 1024 * 1024;
+
 export function readLabSettings(base) {
     const file = readRoleplayFile(path.join(base.directories.root, 'settings.json'), 16 * 1024 * 1024);
     if (!file) throw labError('Save the account settings before running a Lab.');
@@ -19,7 +22,7 @@ export function captureLabChat(base, account, locator) {
     const selected = normaliseRoleplayLocator(locator);
     return withRoleplayAccount(base, account, lease => {
         const { scope } = roleplayLease(lease);
-        const file = readRoleplayFile(roleplayChatPath(scope, selected), 8 * 1024 * 1024, { allowMissingParent: true });
+        const file = readRoleplayFile(roleplayChatPath(scope, selected), LAB_CHAT_LIMIT, { allowMissingParent: true });
         if (!file) throw labError('The selected saved chat no longer exists.');
         const parsed = parseChatJsonl(file.bytes);
         if (parsed.status !== 'ok') throw labError('The selected saved chat is damaged.');

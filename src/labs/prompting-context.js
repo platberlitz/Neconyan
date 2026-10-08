@@ -5,7 +5,7 @@ import { roleplayEntityContent } from '../generation/roleplay-source.js';
 import { captureGenerationBinding, captureProfilePresetBinding, resolveGenerationProfile } from '../generation/profiles.js';
 import { captureSavedRoleplayImages, savedAttachments, selectSavedRoleplayPersona } from '../generation/world-info.js';
 import { getSettingsRevision } from '../settings-version.js';
-import { readLabSettings } from './sources.js';
+import { LAB_CHAT_LIMIT, readLabSettings } from './sources.js';
 import { captureWorldInfoLab, labScopedAuthorsNotes } from './world-info.js';
 import { labError } from './store.js';
 import { capturePromptingTags } from './prompting-tags.js';
@@ -41,7 +41,7 @@ export function capturePromptingContext(base, account, pins, { maxTokens = 300, 
         throw labError('The test chat does not belong to its selected character.');
     }
     const file = selected.chat ? readRoleplayFile(path.join(base.directories.chats, path.parse(avatar).name, selected.chat + '.jsonl'),
-        8 * 1024 * 1024, { allowMissingParent: true }) : null;
+        LAB_CHAT_LIMIT, { allowMissingParent: true }) : null;
     const parsed = file ? parseChatJsonl(file.bytes) : null;
     if (locator?.chat && !file) throw labError('The selected saved test chat no longer exists.');
     if (parsed && parsed.status !== 'ok') throw labError('The test chat is damaged.');
