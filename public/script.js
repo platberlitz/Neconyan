@@ -16799,7 +16799,7 @@ async function openCharacterWorldPopup() {
     });
 
     // Append to extras dropdown.
-    const extrasSelect = template.find('.character_extra_world_info_selector');
+    const extrasSelect = template.find('.character_extra_world_info_selector').empty();
     const existingCharLore = world_info.charLore?.find((e) => e.name === fileName);
     world_names.forEach((item, i) => {
         const array = (menu_type == 'create' ? create_save.extra_books : existingCharLore?.extraBooks);
@@ -16814,17 +16814,18 @@ async function openCharacterWorldPopup() {
             primarySelect.on('change', handlePrimaryWorldSelect);
             extrasSelect.on('change', handleExtrasWorldSelect);
 
-            // Not needed on mobile.
-            if (!isMobile()) {
-                extrasSelect.select2({
-                    width: '100%',
-                    placeholder: t`No auxiliary Lorebooks set. Click here to select.`,
-                    dropdownCssClass: 'sb-world-info-select2-dropdown',
-                    allowClear: true,
-                    closeOnSelect: false,
-                    dropdownParent: popupDialog,
-                });
-            }
+            // Android WebView renders a native multiple select as a tiny list, not a picker.
+            extrasSelect.select2({
+                width: '100%',
+                placeholder: t`No auxiliary Lorebooks set. Click here to select.`,
+                dropdownCssClass: 'sb-world-info-select2-dropdown',
+                allowClear: true,
+                closeOnSelect: false,
+                dropdownParent: popupDialog,
+            });
+        },
+        onClose: function () {
+            extrasSelect.select2('destroy');
         },
     });
 

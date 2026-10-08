@@ -54,7 +54,7 @@ async function assertHeader(root) {
         const box = selector => header.querySelector(selector).getBoundingClientRect().toJSON();
         const tour = box('.neconyan-tool-tour-button');
         const close = box('.sb-shell-close');
-        const titleText = document.createRange();
+        const titleText = header.ownerDocument.createRange();
         titleText.selectNodeContents(header.querySelector('.sb-shell-title'));
         const tourButton = header.querySelector('.neconyan-tool-tour-button');
         const centreX = tour.left + tour.width / 2;
@@ -74,8 +74,10 @@ async function assertHeader(root) {
         const measurements = await measure();
         return {
             descriptionBelowTitle: measurements.description.top >= measurements.title.bottom,
+            compactBlurbGap: measurements.description.top - measurements.title.bottom <= 2,
             tourOnTitleRow: measurements.tour.bottom <= measurements.description.top,
             tourClearOfTitle: measurements.tour.left >= measurements.titleTextRight,
+            tourBesideTitle: measurements.tour.left - measurements.titleTextRight <= 16,
             descriptionFullWidth: measurements.description.right > measurements.tour.left,
             compactTour: measurements.tour.height <= 30,
             touchTarget: measurements.touchTarget,
@@ -83,7 +85,7 @@ async function assertHeader(root) {
             fitsHeader: measurements.tour.right <= measurements.header.right,
             subtitle: measurements.subtitle,
         };
-    }).toEqual({ descriptionBelowTitle: true, tourOnTitleRow: true, tourClearOfTitle: true, descriptionFullWidth: true, compactTour: true, touchTarget: true, overlap: false, fitsHeader: true, subtitle: 'none' });
+    }).toEqual({ descriptionBelowTitle: true, compactBlurbGap: true, tourOnTitleRow: true, tourClearOfTitle: true, tourBesideTitle: true, descriptionFullWidth: true, compactTour: true, touchTarget: true, overlap: false, fitsHeader: true, subtitle: 'none' });
     await expect(root.locator('.sb-shell-header .neconyan-page-intro-toggle')).toHaveCount(0);
     await expect(root.locator('.sb-shell-panel-active .neconyan-tool-page-intro')).toHaveCount(0);
 }

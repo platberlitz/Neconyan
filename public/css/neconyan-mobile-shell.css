@@ -3492,19 +3492,19 @@ body.neconyan #open_chat_expressions #expressions_stop_sprite_generation { grid-
 @media (max-width: 768px) {
     body.neconyan :is(#left-nav-panel, #user-settings-block).openDrawer .sb-shell-header:has(.neconyan-page-intro-header) {
         --neco-shell-header-padding: 10px 12px 12px;
+        display: grid;
+        grid-template-columns: fit-content(calc(100% - 132px)) minmax(0, 1fr) 42px;
+        align-items: stretch;
     }
 
     body.neconyan :is(#left-nav-panel, #user-settings-block).openDrawer .sb-shell-header:has(.neconyan-page-intro-header) > .sb-shell-title {
-        padding-inline-end: 128px;
+        padding-inline-end: 0;
     }
 
     body.neconyan :is(#left-nav-panel, #user-settings-block).openDrawer .sb-shell-header:has(.neconyan-page-intro-header) > .sb-shell-description {
         display: none;
     }
 
-    body.neconyan :is(#left-nav-panel, #user-settings-block).openDrawer .sb-shell-header .neconyan-page-intro-header > .neconyan-tool-tour-button {
-        right: 54px;
-    }
 }
 /* The labelled link action belongs to the existing phone chat tools. */
 #sb-mobile-chat-tools-panel .sb-mobile-chat-copy-link {
