@@ -41,6 +41,8 @@ describe('Guided Correction', () => {
                 injectionEndRole: 'system',
                 depthPromptGuidedCorrection: 2,
                 promptGuidedCorrection: 'CORRECT: {{input}}',
+                depthPromptGuidedRegenerate: 1,
+                promptGuidedRegenerate: 'REGENERATE: {{input}}',
             },
         };
 
@@ -108,6 +110,146 @@ describe('Guided Correction', () => {
             handleSwitching: jest.fn(async () => ({ switch: jest.fn(), restore: jest.fn() })),
             resolveStoredProfile: jest.fn(() => null),
         }));
+    });
+
+    test('regeneration uses its own native workflow and leaves the composer alone', async () => {
+        context.chat.push({ is_user: true, mes: 'Prompt' }, { name: 'Bot', mes: 'Old reply' });
+        workflows.ready = true;
+        const { guidedRegenerate } = await import('../public/scripts/extensions/guided-generations/scripts/guidedCorrection.js');
+        await guidedRegenerate();
+        expect(workflows.submitRoleplayWorkflow).toHaveBeenCalledWith({
+            name: 'guided.regenerate',
+            intent: { prompt: { text: 'REGENERATE: make the reply more suspicious', depth: 1, role: 'system', scan: true } },
+            page: [],
+        });
+        expect(generate).not.toHaveBeenCalled();
+        expect(context.executeSlashCommandsWithOptions).not.toHaveBeenCalled();
+        expect(textarea.value).toBe('make the reply more suspicious');
+    });
+
+    test('empty regeneration submits the ordinary workflow without a guide', async () => {
+        context.chat.push({ name: 'Bot', mes: 'Old reply' });
+        textarea.value = '  ';
+        workflows.ready = true;
+        const { guidedRegenerate } = await import('../public/scripts/extensions/guided-generations/scripts/guidedCorrection.js');
+        await guidedRegenerate();
+        expect(workflows.submitRoleplayWorkflow).toHaveBeenCalledWith({ name: 'roleplay.correct', intent: {}, page: [] });
+        expect(generate).not.toHaveBeenCalled();
+    });
+
+    test('switching chats while collecting native prompts does not regenerate in the new chat', async () => {
+        context.chatId = 'original';
+        context.chat.push({ name: 'Bot', mes: 'Old reply' });
+        workflows.ready = true;
+        workflows.capturePagePrompts.mockImplementationOnce(async () => {
+            context = { ...context, chatId: 'different', chat: [{ name: 'Other', mes: 'Different reply' }] };
+            textarea.value = 'Different draft';
+            return [];
+        });
+        const { guidedRegenerate } = await import('../public/scripts/extensions/guided-generations/scripts/guidedCorrection.js');
+        await guidedRegenerate();
+        expect(workflows.submitRoleplayWorkflow).not.toHaveBeenCalled();
+        expect(generate).not.toHaveBeenCalled();
+        expect(textarea.value).toBe('Different draft');
+        expect(context.chat[0].mes).toBe('Different reply');
+    });
+
+    test('a refused regeneration never falls back or mutates the chat', async () => {
+        context.chat.push({ name: 'Bot', mes: 'Old reply' });
+        workflows.ready = true;
+        workflows.submitRoleplayWorkflow.mockRejectedValueOnce(new Error('The chat changed.'));
+        const quiet = jest.spyOn(console, 'error').mockImplementation(() => {});
+        const { guidedRegenerate } = await import('../public/scripts/extensions/guided-generations/scripts/guidedCorrection.js');
+        await guidedRegenerate();
+        quiet.mockRestore();
+        expect(generate).not.toHaveBeenCalled();
+        expect(context.saveChat).not.toHaveBeenCalled();
+        expect(context.executeSlashCommandsWithOptions).not.toHaveBeenCalled();
+        expect(context.chat[0].mes).toBe('Old reply');
+    });
+
+    test.each([false, true])('browser regeneration excludes the old reply and keeps trailing messages (group=%s)', async group => {
+        context.chat.push({ is_user: true, mes: 'Prompt' }, { name: 'Bot', original_avatar: 'bot.png', mes: 'Old reply' },
+            { is_user: true, mes: 'Later message' });
+        if (group) {
+            context.groupId = 'group';
+            context.groups = [];
+            context.characters = [{ name: 'Bot', avatar: 'bot.png' }];
+        }
+        textarea.value = 'left | right';
+        generate.mockImplementation(async (type, options) => {
+            expect(type).toBe('regenerate');
+            expect(options).toEqual({ preserveLastMessage: false, ...(group ? { force_chid: 0 } : {}) });
+            expect(context.chat).toHaveLength(2);
+            expect(textarea.value).toBe(group ? '' : 'left | right');
+            context.chat.splice(1, 1, { name: 'Bot', mes: 'Fresh reply' });
+        });
+        const { guidedRegenerate } = await import('../public/scripts/extensions/guided-generations/scripts/guidedCorrection.js');
+        await guidedRegenerate();
+        expect(context.chat.map(message => message.mes)).toEqual(['Prompt', 'Fresh reply', 'Later message']);
+        expect(context.executeSlashCommandsWithOptions.mock.calls[0][0]).toContain('REGENERATE: left \\| right');
+        expect(context.executeSlashCommandsWithOptions).toHaveBeenLastCalledWith('/flushinject gg-guided-regenerate');
+        expect(textarea.value).toBe('left | right');
+    });
+
+    test.each(['failure', 'cancel'])('browser regeneration restores the old reply after %s', async outcome => {
+        context.chat.push({ is_user: true, mes: 'Prompt' }, { name: 'Bot', mes: 'Old reply', swipes: ['Old reply'] });
+        generate.mockImplementation(async () => {
+            context.chat.pop();
+            if (outcome === 'failure') throw new Error('Provider failed');
+        });
+        const quiet = jest.spyOn(console, 'error').mockImplementation(() => {});
+        const { guidedRegenerate } = await import('../public/scripts/extensions/guided-generations/scripts/guidedCorrection.js');
+        await guidedRegenerate();
+        quiet.mockRestore();
+        expect(context.chat.map(message => message.mes)).toEqual(['Prompt', 'Old reply']);
+        expect(context.saveChat).toHaveBeenCalled();
+        expect(context.chatMetadata.script_injects).toEqual({});
+    });
+
+    test('regeneration ignores a second click and does not restore into a different chat', async () => {
+        context.chatId = 'original';
+        context.chat.push({ name: 'Bot', mes: 'Old reply' });
+        let finish;
+        generate.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+        const { guidedRegenerate } = await import('../public/scripts/extensions/guided-generations/scripts/guidedCorrection.js');
+        const first = guidedRegenerate();
+        while (!finish) await new Promise(resolve => setTimeout(resolve, 0));
+        await guidedRegenerate();
+        const save = context.saveChat;
+        context = { ...context, chatId: 'different', chat: [{ name: 'Bot', mes: 'Different reply' }] };
+        textarea.value = 'Different draft';
+        finish();
+        await first;
+        expect(generate).toHaveBeenCalledTimes(1);
+        expect(save).not.toHaveBeenCalled();
+        expect(textarea.value).toBe('Different draft');
+        expect(context.chat[0].mes).toBe('Different reply');
+    });
+
+    test('regeneration requires an AI reply', async () => {
+        context.chat.push({ is_user: true, mes: 'Prompt' });
+        const { guidedRegenerate } = await import('../public/scripts/extensions/guided-generations/scripts/guidedCorrection.js');
+        await guidedRegenerate();
+        expect(generate).not.toHaveBeenCalled();
+        expect(context.executeSlashCommandsWithOptions).not.toHaveBeenCalled();
+        expect(globalThis.toastr.error).toHaveBeenCalledWith('No AI reply found to replace.', 'Guided Regenerate');
+    });
+
+    test('switching chats while isolating a group target keeps the new draft', async () => {
+        context.groupId = 'original';
+        context.chat.push({ name: 'Bot', mes: 'Old reply' }, { is_user: true, mes: 'Later message' });
+        let finish;
+        context.redisplayChat.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+        const { guidedRegenerate } = await import('../public/scripts/extensions/guided-generations/scripts/guidedCorrection.js');
+        const pending = guidedRegenerate();
+        while (!finish) await new Promise(resolve => setTimeout(resolve, 0));
+        context = { ...context, groupId: 'different', chat: [] };
+        textarea.value = 'Different draft';
+        finish();
+        await pending;
+        expect(textarea.value).toBe('Different draft');
+        expect(generate).not.toHaveBeenCalled();
     });
 
     test('keeps the target in context and replaces it with the appended correction', async () => {
@@ -203,8 +345,7 @@ describe('Guided Correction', () => {
             page: [],
         });
         expect(generate).not.toHaveBeenCalled();
-        // Only the routine cleanup of an inject that was never written runs.
-        expect(context.executeSlashCommandsWithOptions.mock.calls.map(call => call[0])).toEqual(['/flushinject gg-guided-correction']);
+        expect(context.executeSlashCommandsWithOptions.mock.calls.map(call => call[0])).toEqual([]);
         expect(context.deleteMessage).not.toHaveBeenCalled();
         expect(context.chat).toEqual([expect.objectContaining({ mes: 'Prompt' }), target]);
         expect(target.mes).toBe('Original reply');
@@ -222,7 +363,7 @@ describe('Guided Correction', () => {
 
         expect(workflows.submitRoleplayWorkflow).toHaveBeenCalledTimes(1);
         expect(generate).not.toHaveBeenCalled();
-        expect(context.executeSlashCommandsWithOptions.mock.calls.map(call => call[0])).toEqual(['/flushinject gg-guided-correction']);
+        expect(context.executeSlashCommandsWithOptions.mock.calls.map(call => call[0])).toEqual([]);
         expect(globalThis.toastr.error).toHaveBeenCalledWith('The chat changed.', 'Nothing was generated');
     });
 

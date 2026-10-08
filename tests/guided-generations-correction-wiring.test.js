@@ -20,11 +20,11 @@ describe('Guided Correction generation wiring', () => {
     });
 
     test('uses retained regeneration and only clears input for group corrections', () => {
-        expect(correctionSource).toContain('const options = { preserveLastMessage: true };');
+        expect(correctionSource).toContain('const options = { preserveLastMessage };');
         expect(correctionSource).toContain('if (context.groupId) {');
         expect(correctionSource).toContain('textarea.value = \'\';');
         expect(correctionSource.indexOf('textarea.value = \'\';'))
-            .toBeLessThan(correctionSource.indexOf('await generateCorrection(target);'));
+            .toBeLessThan(correctionSource.indexOf('await generateReplacement(target, !regenerate);'));
     });
 
     test('carries the companion rewrite target through group generation only', () => {

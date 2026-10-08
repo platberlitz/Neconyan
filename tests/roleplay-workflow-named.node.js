@@ -210,6 +210,25 @@ test('a named correction replaces one message and leaves the rest of the chat al
         [['guided_prompt', 1, 1, 'system', true]]);
 });
 
+test('guided regeneration replaces the reply without sending its old text or adding a swipe', async t => {
+    const f = saved(t);
+    const before = f.records();
+    const target = before.findLast(record => record.is_user === false);
+    const guided = await f.run('guided.regenerate', { intent: { prompt: {
+        text: 'A different direction.', depth: 0, role: 'system', scan: true,
+    } }, text: 'A fresh reply.', key: 'named-regenerate' });
+
+    assert.equal(guided.result.status, 'completed');
+    assert.equal(f.records().length, before.length);
+    assert.deepEqual(guided.result.named, { replaced: true, length: 'A fresh reply.'.length });
+    assert.equal(guided.calls.count, 1);
+    assert.ok(guided.calls.prompts[0].some(message => message.content.includes('A different direction.')));
+    assert.ok(guided.calls.prompts[0].every(message => !message.content.includes(target.mes)));
+    const replacement = f.records().findLast(record => record.is_user === false);
+    assert.equal(replacement.mes, 'A fresh reply.');
+    assert.deepEqual(replacement.swipes ?? [replacement.mes], ['A fresh reply.']);
+});
+
 test('regeneration completes and releases the chat when the model repeats the saved wording', async t => {
     const f = saved(t);
     const before = f.records();

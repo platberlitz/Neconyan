@@ -7,6 +7,7 @@ import {
     extension_settings,
     getContext,
     guidedCorrectionInjectId,
+    guidedRegenerateInjectId,
     getLastAiMessage,
     submitGuidedWorkflow,
 } from './shared.js';
@@ -142,9 +143,9 @@ async function applyAppendedGenerationToTarget(context, targetIndex, targetMessa
     return true;
 }
 
-async function generateCorrection(target) {
+async function generateReplacement(target, preserveLastMessage) {
     const forceCharacterId = getTargetForceCharacterId(target.message);
-    const options = { preserveLastMessage: true };
+    const options = { preserveLastMessage };
 
     if (forceCharacterId !== undefined) {
         options.force_chid = forceCharacterId;
@@ -153,9 +154,13 @@ async function generateCorrection(target) {
     await Generate('regenerate', options);
 }
 
-async function guidedCorrection() {
-    if (is_send_press || is_group_generating) {
-        toastr.warning('Please wait for the current generation to complete.', 'Guided Correction');
+let isReplacing = false;
+
+async function guidedReplacement(regenerate) {
+    const label = regenerate ? 'Guided Regenerate' : 'Guided Correction';
+    const injectId = regenerate ? guidedRegenerateInjectId : guidedCorrectionInjectId;
+    if (isReplacing || is_send_press || is_group_generating) {
+        toastr.warning('Please wait for the current generation to complete.', label);
         return;
     }
 
@@ -166,14 +171,15 @@ async function guidedCorrection() {
     }
 
     const originalInput = textarea.value;
-    if (!originalInput.trim()) {
+    const hasGuide = Boolean(originalInput.trim());
+    if (!hasGuide && !regenerate) {
         toastr.warning('Please enter a correction instruction.', 'Guided Correction');
         return;
     }
 
     const target = getLastAiMessage();
     if (!target) {
-        toastr.error('No AI message found to correct.', 'Guided Correction');
+        toastr.error('No AI reply found to replace.', label);
         return;
     }
 
@@ -181,32 +187,51 @@ async function guidedCorrection() {
     const chatSnapshot = context.chat.map(cloneChatMessage);
     let trailingMessages = [];
     let didRestoreSnapshot = false;
+    let injectionAttempted = false;
+    let browserGenerationAttempted = false;
+    const isOriginalChat = () => {
+        const current = getContext();
+        return current.chat === context.chat && current.chatId === context.chatId && current.groupId === context.groupId;
+    };
+    isReplacing = true;
 
     try {
         const settings = extension_settings[extensionName] ?? {};
         const injectionRole = settings.injectionEndRole ?? 'system';
-        const depth = settings.depthPromptGuidedCorrection ?? 0;
-        const promptTemplate = settings.promptGuidedCorrection ?? '';
+        const depth = (regenerate ? settings.depthPromptGuidedRegenerate : settings.depthPromptGuidedCorrection) ?? 0;
+        const promptTemplate = (regenerate ? settings.promptGuidedRegenerate : settings.promptGuidedCorrection) ?? '';
         const filledPrompt = applyPromptTemplate(promptTemplate, originalInput);
-        if (await submitGuidedWorkflow('guided.correction', { text: filledPrompt, depth, role: injectionRole, scan: true })) return;
-        const stscriptCommand = `/inject id=${guidedCorrectionInjectId} position=chat ephemeral=true scan=true depth=${depth} role=${injectionRole} ${filledPrompt} |`;
+        const workflow = regenerate ? 'guided.regenerate' : 'guided.correction';
+        if (await submitGuidedWorkflow(hasGuide ? workflow : 'roleplay.correct',
+            hasGuide ? { text: filledPrompt, depth, role: injectionRole, scan: true } : undefined)) return;
+        if (!isOriginalChat()) return;
 
-        await executeSTScriptCommand(stscriptCommand);
-        debugLog('[Correction] Executed command:', stscriptCommand);
-
-        if (!await waitForInjection(guidedCorrectionInjectId)) {
-            toastr.error('Could not verify correction instruction injection.', 'Guided Correction');
-            return;
+        if (hasGuide) {
+            // A literal pipe in the direction must not become another slash command.
+            const escapedPrompt = filledPrompt.replace(/\|/g, '\\|');
+            const stscriptCommand = `/inject id=${injectId} position=chat ephemeral=true scan=true depth=${depth} role=${injectionRole} ${escapedPrompt} |`;
+            injectionAttempted = true;
+            await executeSTScriptCommand(stscriptCommand);
+            debugLog(`[${label}] Executed command:`, stscriptCommand);
+            if (!isOriginalChat()) return;
+            if (!await waitForInjection(injectId)) {
+                toastr.error('Could not verify the instruction. Nothing was generated.', label);
+                return;
+            }
+            if (!isOriginalChat()) return;
         }
 
+        browserGenerationAttempted = true;
         trailingMessages = await isolateTargetMessage(context, target.index);
+        if (!isOriginalChat()) return;
 
         if (context.groupId) {
             textarea.value = '';
             textarea.dispatchEvent(new Event('input', { bubbles: true }));
         }
 
-        await generateCorrection(target);
+        await generateReplacement(target, !regenerate);
+        if (!isOriginalChat()) return;
         const targetWasUpdatedInPlace = await applyAppendedGenerationToTarget(context, target.index, target.message);
         const regeneratedMessage = context.chat[target.index];
         const targetWasRegenerated = Boolean(regeneratedMessage && regeneratedMessage !== target.message && !regeneratedMessage.is_user && !regeneratedMessage.is_system);
@@ -214,15 +239,15 @@ async function guidedCorrection() {
         if (!targetWasRegenerated && !targetWasUpdatedInPlace) {
             await restoreChatSnapshot(context, chatSnapshot, target.index);
             didRestoreSnapshot = true;
-            toastr.error('Guided Correction did not produce a replacement message.', 'Guided Correction');
+            toastr.error('No replacement reply was generated. Your previous reply was restored.', label);
             return;
         }
 
         await restoreTrailingMessages(context, target.index, trailingMessages);
     } catch (error) {
-        console.error('[GuidedGenerations][Correction] Error during guided correction execution:', error);
+        console.error(`[GuidedGenerations][${label}] Replacement failed:`, error);
 
-        if (!didRestoreSnapshot) {
+        if (browserGenerationAttempted && !didRestoreSnapshot && isOriginalChat()) {
             try {
                 await restoreChatSnapshot(context, chatSnapshot, target.index);
             } catch (restoreError) {
@@ -230,17 +255,31 @@ async function guidedCorrection() {
             }
         }
 
-        toastr.error(String(error?.message || error), 'Guided Correction');
+        toastr.error(String(error?.message || error), label);
     } finally {
-        textarea.value = originalInput;
-        textarea.dispatchEvent(new Event('input', { bubbles: true }));
-
-        try {
-            await executeSTScriptCommand(`/flushinject ${guidedCorrectionInjectId}`);
-        } catch (error) {
-            console.warn('[GuidedGenerations][Correction] Could not flush guided correction injection:', error);
+        if (isOriginalChat()) {
+            if (browserGenerationAttempted && (!textarea.value || textarea.value === originalInput)) {
+                textarea.value = originalInput;
+                textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            if (injectionAttempted) {
+                try {
+                    await executeSTScriptCommand(`/flushinject ${injectId}`);
+                } catch (error) {
+                    console.warn(`[GuidedGenerations][${label}] Could not flush the guide:`, error);
+                }
+            }
         }
+        isReplacing = false;
     }
 }
 
-export { guidedCorrection };
+async function guidedCorrection() {
+    await guidedReplacement(false);
+}
+
+async function guidedRegenerate() {
+    await guidedReplacement(true);
+}
+
+export { guidedCorrection, guidedRegenerate };

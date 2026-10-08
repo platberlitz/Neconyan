@@ -74,7 +74,7 @@ function settleFinished(key, receipt) {
 /** The named vocabulary a control may ask for. The server owns the mapping. */
 export const ROLEPLAY_WORKFLOW_NAMES = Object.freeze([
     'roleplay.reply', 'roleplay.continue', 'roleplay.swipe', 'roleplay.correct',
-    'story.passage', 'guided.response', 'guided.swipe', 'guided.correction',
+    'story.passage', 'guided.response', 'guided.swipe', 'guided.regenerate', 'guided.correction',
     'deep-swipe.reply', 'deep-swipe.user',
 ]);
 
@@ -89,7 +89,7 @@ export const ROLEPLAY_WORKFLOW_NAMES = Object.freeze([
 export const ROLEPLAY_WORKFLOW_ANCHORS = Object.freeze({
     'roleplay.reply': 'end', 'roleplay.continue': 'block', 'roleplay.swipe': 'assistant',
     'roleplay.correct': 'assistant', 'story.passage': 'block',
-    'guided.response': 'end', 'guided.swipe': 'assistant', 'guided.correction': 'assistant',
+    'guided.response': 'end', 'guided.swipe': 'assistant', 'guided.regenerate': 'assistant', 'guided.correction': 'assistant',
     'deep-swipe.reply': 'chosen', 'deep-swipe.user': 'chosen',
 });
 

@@ -30,6 +30,31 @@ the PR against staging and validate the resulting APK on the reporting device.
 
 ## Release preparation: 1.0.0
 
+### 8 October: Guided Regenerate prepared for review
+
+Branch `feat/guided-regenerate` starts from staging `b4a21ee23` in the isolated
+`guided-regenerate` worktree. Guided Generations
+1.8.0 adds Guided Regenerate beside Guided Swipe, with its own prompt, depth,
+reset and visibility setting. It replaces the latest AI reply using the composer
+instruction; empty input uses ordinary regeneration. The server owns the named
+`guided.regenerate` replacement. The browser fallback shares Correction's recovery
+and group-speaker handling, with chat-switch guards before submission and draft
+changes. Input History and the seven guided buttons share one compact row. The controls
+use 32px at the usual phone width, scaling down to 26px on narrow phones, with
+tighter gaps and no clipping. The cache version is `20261008-guided-row`.
+
+Verification on this base: all 442 Jest suites passed (5,756 tests, two skipped),
+all 1,961 server tests passed, and root lint, changed-test lint and frontend
+budgets passed. The full tests-folder lint has 31 errors in ten unchanged files.
+Both Chromium browser tests passed at touch 393x852 with iPhone emulation and
+desktop 1280x900: durable replacement, no retained old swipe, ordinary regeneration
+with empty input, composer preservation, keyboard focus, six theme/accent
+combinations per viewport and saved visibility/prompt/depth settings. The helper
+row also stays on one line without overlap at widths 320, 375, 393, 600 and 768. Before/after
+and settings screenshots are in the worktree's ignored `screenshots/` folder.
+Safari/WebKit and physical phones were not tested; model replies used a local
+fixture. Next action: review the PR against staging before merging.
+
 ### 8 October: 1.2.1 released from main, staging moves to 1.2.2
 
 The official handbook was refreshed against the release candidate and published
