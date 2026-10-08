@@ -234,3 +234,270 @@ body.neconyan:not(.sbterm) #options .options-content > hr {
     padding: 0;
     justify-content: center;
 }
+
+/* Swipe picker: every version of one reply as a card. The popup grows with its cards
+   and the list scrolls inside it, so the header and the Show button stay in reach. */
+.swipe_picker_popup .popup-body,
+.swipe_picker_popup .popup-content {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+
+body.neconyan .popup.swipe_picker_popup {
+    width: min(680px, calc(100dvw - 2em));
+    min-width: 0;
+}
+
+.swipe_picker {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    gap: 12px;
+}
+
+.swipe_picker_header {
+    display: grid;
+    gap: 4px;
+    padding-inline-end: 48px;
+}
+
+body.neconyan .popup .swipe_picker_title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-family: var(--sb-font-display, inherit);
+    font-size: 1.2rem;
+    font-weight: 400;
+}
+
+.swipe_picker_count {
+    min-width: 24px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--neco-ginger) 18%, var(--neco-surface));
+    color: var(--neco-ink);
+    font-family: var(--mainFontFamily, inherit);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.4;
+    text-align: center;
+}
+
+body.neconyan .popup .swipe_picker_hint {
+    margin: 0;
+    color: var(--neco-muted);
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.swipe_picker_div {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    gap: 8px;
+    min-height: 0;
+    padding: 4px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.swipe_picker_block {
+    display: grid;
+    flex: 0 0 auto;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 8px;
+    background: var(--neco-surface, transparent);
+    color: var(--neco-ink, inherit);
+    cursor: pointer;
+    transition: background-color 150ms ease-out, border-color 150ms ease-out;
+}
+
+@media (hover: hover) {
+    .swipe_picker_block:not([highlight]):hover {
+        background: var(--neco-raised, var(--white30a));
+    }
+
+    .swipe_picker_action:hover {
+        border-color: var(--neco-ginger);
+        color: var(--neco-ink);
+    }
+}
+
+/* Blending towards the ink keeps a very dark or very pale accent visible on the card. */
+.swipe_picker_block[highlight] {
+    --swipe-picker-selected-edge: color-mix(in srgb, var(--neco-ginger) 60%, var(--neco-ink));
+    border-color: var(--swipe-picker-selected-edge);
+    background: color-mix(in srgb, var(--neco-ginger) 14%, var(--neco-surface));
+    box-shadow: inset 3px 0 0 var(--swipe-picker-selected-edge);
+}
+
+.swipe_picker_block:focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+.swipe_picker_card_head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    min-width: 0;
+}
+
+.swipe_picker_number {
+    font-family: var(--sb-font-display, inherit);
+    font-size: 15px;
+    line-height: 1.2;
+}
+
+.swipe_picker_badge {
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
+.swipe_picker_meta {
+    margin-inline-start: auto;
+    color: var(--neco-muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+.swipe_picker_text {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+    overflow: hidden;
+    font-size: 15px;
+    line-height: 1.5;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+.swipe_picker_block.expanded .swipe_picker_text {
+    display: block;
+    -webkit-line-clamp: unset;
+    line-clamp: unset;
+}
+
+.swipe_picker_text_empty {
+    color: var(--neco-muted);
+    font-style: italic;
+}
+
+.swipe_picker_actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.swipe_picker_action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 32px;
+    margin: 0;
+    padding: 4px 10px;
+    border: 1px solid var(--neco-border, var(--SmartThemeBorderColor));
+    border-radius: 6px;
+    background: var(--neco-raised, transparent);
+    color: var(--neco-muted, inherit);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: color 150ms ease-out, border-color 150ms ease-out, background-color 150ms ease-out;
+}
+
+.swipe_picker_action[hidden] {
+    display: none;
+}
+
+.swipe_picker_action:focus-visible {
+    border-color: var(--neco-ginger);
+    color: var(--neco-ink);
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+.swipe_picker_action:active {
+    background: color-mix(in srgb, var(--neco-ginger) 18%, var(--neco-raised));
+}
+
+.swipe_picker_expand i {
+    transition: rotate 150ms ease-out;
+}
+
+.swipe_picker_block.expanded .swipe_picker_expand i {
+    rotate: 180deg;
+}
+
+.swipe_picker_delete {
+    margin-inline-start: auto;
+}
+
+.swipe_picker_empty {
+    padding: 16px;
+    color: var(--neco-muted);
+    text-align: center;
+}
+
+@media (max-width: 768px), (pointer: coarse) {
+    body.neconyan .popup.swipe_picker_popup {
+        width: calc(100dvw - 16px);
+        max-width: calc(100dvw - 16px);
+        padding-inline: 12px;
+    }
+
+    .swipe_picker_actions {
+        flex-wrap: nowrap;
+    }
+
+    .swipe_picker_action {
+        flex: 1 1 0;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+        min-height: 48px;
+        padding: 4px;
+        font-size: 12px;
+    }
+
+    .swipe_picker_delete {
+        margin-inline-start: 0;
+    }
+
+    .swipe_picker_meta {
+        flex-basis: 100%;
+        margin-inline-start: 0;
+    }
+}
+
+body.neconyan.reduced-motion .swipe_picker_block,
+body.neconyan.reduced-motion .swipe_picker_action,
+body.neconyan.reduced-motion .swipe_picker_expand i {
+    transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .swipe_picker_block,
+    .swipe_picker_action,
+    .swipe_picker_expand i {
+        transition: none;
+    }
+}
