@@ -411,7 +411,7 @@ for (const swipeId of [0, 1]) {
         await openUndoFixture(page);
         await seedMessages(page, { swipes: true });
         const picker = await openPicker(page);
-        await picker.locator(`.swipe_picker_block[data-swipe-id="${swipeId}"] .PastChat_cross`).click();
+        await picker.locator(`.swipe_picker_block[data-swipe-id="${swipeId}"] .swipe_picker_delete`).click();
         const confirm = page.locator('dialog.popup:visible').filter({ hasText: `Are you sure you want to delete swipe #${swipeId + 1}?` });
         await confirm.getByRole('button', { name: 'Delete Swipe', exact: true }).click();
         await expect(picker.locator('.swipe_picker_block')).toHaveCount(2);
@@ -439,7 +439,7 @@ test('a stale picker refuses delete before the click and edits during confirmati
     const state = await openUndoFixture(page);
     await seedMessages(page, { swipes: true });
     let picker = await openPicker(page);
-    await picker.locator('.swipe_picker_block[data-swipe-id="1"] .PastChat_cross').click();
+    await picker.locator('.swipe_picker_block[data-swipe-id="1"] .swipe_picker_delete').click();
     await page.evaluate(() => { window.SillyTavern.getContext().chat.at(-1).mes = 'edited while confirming'; });
     await page.locator('dialog.popup:visible').filter({ hasText: 'Are you sure you want to delete swipe #2?' }).getByRole('button', { name: 'Delete Swipe', exact: true }).click();
     expect(await page.evaluate(() => window.SillyTavern.getContext().chat.at(-1).swipes.length)).toBe(3);
@@ -447,7 +447,7 @@ test('a stale picker refuses delete before the click and edits during confirmati
     await page.evaluate(async () => window.SillyTavern.getContext().selectCharacterById(1, { switchMenu: false }));
     const before = await messages(page), saves = state.saveRequests.length;
     picker = page.locator('dialog.popup:visible').filter({ has: page.locator('.swipe_picker_div') });
-    await picker.locator('.swipe_picker_block[data-swipe-id="0"] .PastChat_cross').click();
+    await picker.locator('.swipe_picker_block[data-swipe-id="0"] .swipe_picker_delete').click();
     expect(await messages(page)).toEqual(before);
     expect(state.saveRequests).toHaveLength(saves);
     await expect(picker).toHaveCount(0);
@@ -671,7 +671,7 @@ test('early picker Undo keeps restored selection and rows during a delayed delet
     const state = await openUndoFixture(page);
     await seedMessages(page, { swipes: true });
     const picker = await openPicker(page);
-    await picker.locator('.swipe_picker_block[data-swipe-id="1"] .PastChat_cross').click();
+    await picker.locator('.swipe_picker_block[data-swipe-id="1"] .swipe_picker_delete').click();
     state.nextSave = { delay: 2000 };
     await page.locator('dialog.popup:visible').filter({ hasText: 'Are you sure you want to delete swipe #2?' }).getByRole('button', { name: 'Delete Swipe', exact: true }).click();
     await page.locator('.neconyan-undo-action').click();

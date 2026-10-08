@@ -45,6 +45,32 @@ export function canJumpToSwipeForMessage(messageId) {
 }
 
 /**
+ * Builds a labelled action button for a swipe card.
+ * @param {string} className Action class, for example 'swipe_picker_copy'.
+ * @param {string} iconClass Font Awesome icon classes.
+ * @param {string} label Visible label.
+ * @param {string} [title] Longer tooltip.
+ * @returns {HTMLButtonElement}
+ */
+function createSwipeAction(className, iconClass, label, title = label) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.classList.add('swipe_picker_action', className);
+    button.title = title;
+
+    const icon = document.createElement('i');
+    icon.classList.add('fa-fw', ...iconClass.split(' '));
+    icon.setAttribute('aria-hidden', 'true');
+
+    const text = document.createElement('span');
+    text.classList.add('swipe_picker_action_label');
+    text.textContent = label;
+
+    button.append(icon, text);
+    return button;
+}
+
+/**
  * Opens a popup for viewing or jumping to a specific swipe on a message.
  * @param {number} messageId
  * @returns {Promise<void>}
@@ -63,35 +89,57 @@ async function openSwipePicker(messageId) {
     }
 
     const canJumpToSwipe = canJumpToSwipeForMessage(messageId);
-    let selectedSwipeId = clamp(Number(message.swipe_id ?? 0), 0, message.swipes.length - 1);
-    const swipeIdInputId = `swipe_picker_id_${messageId}`;
+    const getShownSwipeId = () => clamp(Number(message.swipe_id ?? 0), 0, message.swipes.length - 1);
+    let selectedSwipeId = getShownSwipeId();
+
     const wrapper = document.createElement('div');
-    wrapper.classList.add('flex-container', 'flexFlowColumn', 'flexNoGap', 'wide100p', 'flex1', 'overflowHidden');
+    wrapper.classList.add('swipe_picker');
 
     const header = document.createElement('div');
-    header.classList.add('swipe_picker_header', 'flex-container', 'alignItemsCenter', 'justifySpaceBetween', 'gap10px');
+    header.classList.add('swipe_picker_header');
 
-    const description = document.createElement('h3');
-    description.classList.add('margin0', 'justifyLeft');
-    description.textContent = t`Swipe Selection`;
-    header.appendChild(description);
+    const heading = document.createElement('h3');
+    heading.classList.add('swipe_picker_title');
+    const headingText = document.createElement('span');
+    headingText.textContent = t`Swipes`;
+    const swipeCount = document.createElement('span');
+    swipeCount.classList.add('swipe_picker_count');
+    heading.append(headingText, swipeCount);
+
+    const hint = document.createElement('p');
+    hint.classList.add('swipe_picker_hint');
+    hint.textContent = canJumpToSwipe
+        ? t`Pick a version, then show it in the chat.`
+        : t`This is an earlier reply. You can read, copy or branch from any version.`;
+
+    header.append(heading, hint);
     wrapper.appendChild(header);
 
     const listContainer = document.createElement('div');
-    listContainer.classList.add('swipe_picker_div', 'flex1', 'marginTop10');
+    listContainer.classList.add('swipe_picker_div');
+    listContainer.setAttribute('role', 'list');
+    listContainer.setAttribute('aria-label', t`Swipes`);
     wrapper.appendChild(listContainer);
 
     /** @type {Popup} */
     let popup;
-    /** @type {HTMLInputElement} */
-    let swipeIdInput;
     /** @type {number|null} */
     let branchActionSwipeId = null;
+    let measureFrame = 0;
 
-    function syncSwipeIdInput() {
-        if (swipeIdInput) {
-            swipeIdInput.value = String(selectedSwipeId + 1);
+    function getSwipeCard(swipeId) {
+        const card = listContainer.querySelector(`.swipe_picker_block[data-swipe-id="${swipeId}"]`);
+        return card instanceof HTMLElement ? card : null;
+    }
+
+    function syncConfirmButton() {
+        if (!canJumpToSwipe || !popup?.okButton) {
+            return;
         }
+        const swipeNumber = selectedSwipeId + 1;
+        popup.okButton.textContent = selectedSwipeId === getShownSwipeId()
+            ? t`Keep swipe #${swipeNumber}`
+            : t`Show swipe #${swipeNumber}`;
     }
 
     function setSelectedSwipe(nextSwipeId) {
@@ -100,245 +148,257 @@ async function openSwipePicker(messageId) {
             const isSelected = Number(element.getAttribute('data-swipe-id')) === selectedSwipeId;
             if (isSelected) {
                 element.setAttribute('highlight', 'true');
+                element.setAttribute('aria-current', 'true');
             } else {
                 element.removeAttribute('highlight');
+                element.removeAttribute('aria-current');
             }
         });
-        syncSwipeIdInput();
+        syncConfirmButton();
     }
 
     function scrollToSelectedSwipe() {
-        const swipeBlock = listContainer.querySelector(`.swipe_picker_block[data-swipe-id="${selectedSwipeId}"]`);
-        if (swipeBlock instanceof HTMLElement) {
-            const scrollParent = swipeBlock.closest('.swipe_picker_div');
-            if (scrollParent instanceof HTMLElement) {
-                const blockRect = swipeBlock.getBoundingClientRect();
-                const parentRect = scrollParent.getBoundingClientRect();
-                if (blockRect.top < parentRect.top) {
-                    scrollParent.scrollTop -= (parentRect.top - blockRect.top) + 5;
-                } else if (blockRect.bottom > parentRect.bottom) {
-                    scrollParent.scrollTop += (blockRect.bottom - parentRect.bottom) + 5;
-                }
-            }
-        }
+        getSwipeCard(selectedSwipeId)?.scrollIntoView({ block: 'nearest' });
     }
+
+    // Only offer 'Read all' on cards whose text is actually cut short.
+    function measureExpandButtons() {
+        listContainer.querySelectorAll('.swipe_picker_block').forEach((card) => {
+            const text = card.querySelector('.swipe_picker_text');
+            const expandButton = card.querySelector('.swipe_picker_expand');
+            if (!(text instanceof HTMLElement) || !(expandButton instanceof HTMLElement)) {
+                return;
+            }
+            const isExpanded = card.classList.contains('expanded');
+            expandButton.hidden = !isExpanded && text.scrollHeight <= text.clientHeight + 1;
+        });
+    }
+
+    function scheduleMeasure() {
+        cancelAnimationFrame(measureFrame);
+        measureFrame = requestAnimationFrame(measureExpandButtons);
+    }
+
+    const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(scheduleMeasure) : null;
 
     function canDeleteSwipeFromPicker(swipeId) {
         if ((message?.swipes?.length ?? 0) <= 1) {
             return false;
         }
 
-        const currentSwipeId = clamp(Number(message.swipe_id ?? 0), 0, message.swipes.length - 1);
-        return canJumpToSwipe || swipeId !== currentSwipeId;
+        return canJumpToSwipe || swipeId !== getShownSwipeId();
+    }
+
+    async function deleteSwipeFromPicker(index) {
+        if (!canDeleteSwipeFromPicker(index) || !isPickerScopeCurrent()) {
+            if (!isPickerScopeCurrent()) {
+                toastr.warning(t`This chat changed, so the deletion cannot be safely undone.`);
+                await popup?.completeCancelled();
+            }
+            return;
+        }
+
+        const nextSelectedSwipeId = index < selectedSwipeId
+            ? selectedSwipeId - 1
+            : index > selectedSwipeId
+                ? selectedSwipeId
+                : Math.min(selectedSwipeId, message.swipes.length - 2);
+
+        const expectedGeneration = pickerScope.generation + Number(index === Number(message.swipe_id));
+        let restoredDuringDelete = false;
+        const newSwipeId = await deleteSwipe(index, messageId, {
+            askConfirmation: power_user.confirm_message_delete,
+            offerUndo: true,
+            onRestored: async ({ restoredSwipeId }) => {
+                if (!isPickerScopeCurrent(expectedGeneration) || !popup?.dlg?.isConnected) {
+                    return;
+                }
+                pickerScope.generation = expectedGeneration;
+                restoredDuringDelete = true;
+
+                selectedSwipeId = clamp(Number(restoredSwipeId), 0, message.swipes.length - 1);
+                const rendered = await renderSwipeList();
+                if (!rendered || !isPickerScopeCurrent()) {
+                    return;
+                }
+                const restoredRow = getSwipeCard(selectedSwipeId);
+                if (restoredRow) {
+                    restoredRow.tabIndex = -1;
+                    return restoredRow;
+                }
+            },
+        });
+
+        if (restoredDuringDelete || !Number.isInteger(newSwipeId) || !isPickerScopeCurrent(expectedGeneration)) {
+            return;
+        }
+
+        pickerScope.generation = expectedGeneration;
+        selectedSwipeId = clamp(nextSelectedSwipeId, 0, message.swipes.length - 1);
+
+        await renderSwipeList();
+    }
+
+    /**
+     * @param {number} index
+     * @returns {Promise<HTMLElement>}
+     */
+    async function buildSwipeCard(index) {
+        const swipeText = String(message.swipes[index] ?? '');
+        const swipeInfo = Array.isArray(message.swipe_info) ? message.swipe_info[index] : null;
+        const sendDate = swipeInfo?.send_date ? timestampToMoment(swipeInfo.send_date).format('lll') : '';
+        const hasText = swipeText.trim().length > 0;
+        const tokenCount = swipeInfo?.extra?.token_count ?? await getTokenCountAsync(swipeText, 0);
+        const isShown = index === getShownSwipeId();
+
+        const card = document.createElement('div');
+        card.classList.add('swipe_picker_block');
+        card.setAttribute('role', 'listitem');
+        card.setAttribute('data-swipe-id', String(index));
+        card.tabIndex = 0;
+
+        const cardHead = document.createElement('div');
+        cardHead.classList.add('swipe_picker_card_head');
+
+        const number = document.createElement('span');
+        number.classList.add('swipe_picker_number');
+        number.textContent = `#${index + 1}`;
+        cardHead.appendChild(number);
+
+        if (isShown) {
+            const badge = document.createElement('span');
+            badge.classList.add('swipe_picker_badge');
+            badge.textContent = t`Showing`;
+            badge.title = t`This is the version shown in the chat.`;
+            cardHead.appendChild(badge);
+        }
+
+        const details = [sendDate, tokenCount ? t`${tokenCount} tokens` : ''].filter(Boolean);
+        if (details.length) {
+            const meta = document.createElement('span');
+            meta.classList.add('swipe_picker_meta');
+            meta.textContent = details.join(' · ');
+            cardHead.appendChild(meta);
+        }
+
+        const text = document.createElement('div');
+        text.classList.add('swipe_picker_text');
+        text.classList.toggle('swipe_picker_text_empty', !hasText);
+        text.textContent = hasText ? swipeText.trim() : t`(empty swipe)`;
+
+        const actions = document.createElement('div');
+        actions.classList.add('swipe_picker_actions');
+
+        const expandButton = createSwipeAction('swipe_picker_expand', 'fa-solid fa-chevron-down', t`Read all`);
+        expandButton.setAttribute('aria-expanded', 'false');
+        expandButton.hidden = true;
+        expandButton.addEventListener('click', () => {
+            const isExpanded = card.classList.toggle('expanded');
+            expandButton.setAttribute('aria-expanded', String(isExpanded));
+            expandButton.title = isExpanded ? t`Show less` : t`Read all`;
+            expandButton.querySelector('.swipe_picker_action_label').textContent = expandButton.title;
+            if (!isExpanded) {
+                card.scrollIntoView({ block: 'nearest' });
+            }
+        });
+
+        const copyButton = createSwipeAction('swipe_picker_copy', 'fa-regular fa-copy', t`Copy`, t`Copy this swipe`);
+        copyButton.addEventListener('click', async () => {
+            await copyText(swipeText);
+            toastr.info(t`Copied!`, '', { timeOut: 2000 });
+        });
+
+        const branchButton = createSwipeAction('swipe_picker_branch', 'fa-solid fa-code-branch', t`Branch`, t`Start a new chat branch from this swipe`);
+        branchButton.addEventListener('click', async () => {
+            setSelectedSwipe(index);
+            branchActionSwipeId = index;
+            await popup.completeCancelled();
+        });
+
+        actions.append(expandButton, copyButton, branchButton);
+
+        if (canDeleteSwipeFromPicker(index)) {
+            const deleteButton = createSwipeAction('swipe_picker_delete', 'fa-regular fa-trash-can', t`Delete`, t`Delete this swipe`);
+            deleteButton.addEventListener('click', () => deleteSwipeFromPicker(index));
+            actions.appendChild(deleteButton);
+        }
+
+        // Buttons act on their own; only taps on the card body change the selection.
+        actions.addEventListener('click', (event) => event.stopPropagation());
+        actions.addEventListener('dblclick', (event) => event.stopPropagation());
+
+        card.append(cardHead, text, actions);
+
+        card.addEventListener('click', () => setSelectedSwipe(index));
+        card.addEventListener('dblclick', async () => {
+            if (!canJumpToSwipe) {
+                return;
+            }
+
+            setSelectedSwipe(index);
+            await popup.completeAffirmative();
+        });
+
+        return card;
     }
 
     async function renderSwipeList() {
-        const swipeBlocks = await Promise.all(message.swipes.map(async (swipe, index) => {
-            const swipeText = String(swipe ?? '');
-            const template = $('#past_chat_template .select_chat_block_wrapper').clone();
-            const block = template.find('.select_chat_block');
-            block.removeClass('select_chat_block').addClass('swipe_picker_block');
-            block.find('.select_chat_actions').removeClass('gap10px');
-            const branchButton = template.find('.exportRawChatButton');
-            const deleteButton = template.find('.PastChat_cross');
-            const swipeInfo = Array.isArray(message.swipe_info) ? message.swipe_info[index] : null;
-            const sendDate = swipeInfo?.send_date ? timestampToMoment(swipeInfo.send_date).format('lll') : '';
-            const previewText = swipeText.replace(/\s+/g, ' ').trim();
-            const tokenCount = swipeInfo?.extra?.token_count ?? await getTokenCountAsync(swipeText, 0);
-            const canDeleteSwipe = canDeleteSwipeFromPicker(index);
-            const swipeDetails = [];
-
-            if (previewText) {
-                swipeDetails.push(`${previewText.length} ${t`chars`}`);
-            }
-
-            if (tokenCount) {
-                swipeDetails.push(`${tokenCount}t`);
-            }
-
-            block.attr({
-                file_name: `swipe-${index + 1}`,
-                'data-swipe-id': index,
-            });
-
-            template.find('.renameChatButton, .exportChatButton').remove();
-            branchButton
-                .removeAttr('data-format')
-                .attr({
-                    title: t`Create Branch`,
-                    'data-i18n': '[title]Create Branch',
-                })
-                .removeClass('exportRawChatButton fa-solid fa-file-export')
-                .addClass('swipe_picker_branch mes_button fa-fw fa-regular fa-code-branch')
-                .on('click', async (event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setSelectedSwipe(index);
-                    branchActionSwipeId = index;
-                    await popup.completeCancelled();
-                });
-            deleteButton
-                .removeAttr('file_name')
-                .attr('aria-disabled', String(!canDeleteSwipe))
-                .removeClass('fa-skull')
-                .addClass('swipe_picker_delete fa-fw fa-trash-can')
-                .toggleClass('hoverglow', canDeleteSwipe)
-                .toggleClass('disabled', !canDeleteSwipe)
-                .each(function () {
-                    if (canDeleteSwipe) {
-                        $(this)
-                            .attr({
-                                title: t`Delete Swipe`,
-                                'data-i18n': '[title]Delete Swipe',
-                            });
-                    } else {
-                        $(this)
-                            .removeAttr('title')
-                            .removeAttr('data-i18n');
-                    }
-                })
-                .off('click')
-                .on('click', async (event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-
-                    if (!canDeleteSwipe || !isPickerScopeCurrent()) {
-                        if (!isPickerScopeCurrent()) {
-                            toastr.warning(t`This chat changed, so the deletion cannot be safely undone.`);
-                            await popup?.completeCancelled();
-                        }
-                        return;
-                    }
-
-                    const nextSelectedSwipeId = index < selectedSwipeId
-                        ? selectedSwipeId - 1
-                        : index > selectedSwipeId
-                            ? selectedSwipeId
-                            : Math.min(selectedSwipeId, message.swipes.length - 2);
-
-                    const expectedGeneration = pickerScope.generation + Number(index === Number(message.swipe_id));
-                    let restoredDuringDelete = false;
-                    const newSwipeId = await deleteSwipe(index, messageId, {
-                        askConfirmation: power_user.confirm_message_delete,
-                        offerUndo: true,
-                        onRestored: async ({ restoredSwipeId }) => {
-                            if (!isPickerScopeCurrent(expectedGeneration) || !popup?.dlg?.isConnected) {
-                                return;
-                            }
-                            pickerScope.generation = expectedGeneration;
-                            restoredDuringDelete = true;
-
-                            selectedSwipeId = clamp(Number(restoredSwipeId), 0, message.swipes.length - 1);
-                            if (swipeIdInput instanceof HTMLInputElement) {
-                                swipeIdInput.max = String(message.swipes.length);
-                            }
-                            const rendered = await renderSwipeList();
-                            if (!rendered || !isPickerScopeCurrent()) {
-                                return;
-                            }
-                            const restoredRow = listContainer.querySelector(`.swipe_picker_block[data-swipe-id="${selectedSwipeId}"]`);
-                            if (restoredRow instanceof HTMLElement) {
-                                restoredRow.tabIndex = -1;
-                                return restoredRow;
-                            }
-                        },
-                    });
-
-                    if (restoredDuringDelete || !Number.isInteger(newSwipeId) || !isPickerScopeCurrent(expectedGeneration)) {
-                        return;
-                    }
-
-                    pickerScope.generation = expectedGeneration;
-                    selectedSwipeId = clamp(nextSelectedSwipeId, 0, message.swipes.length - 1);
-
-                    if (swipeIdInput instanceof HTMLInputElement) {
-                        swipeIdInput.max = String(message.swipes.length);
-                    }
-
-                    await renderSwipeList();
-                });
-
-            // Add expand/collapse toggle
-            const expandCheckboxId = `swipe_picker_expand_${messageId}_${index}`;
-            const expandCheckbox = document.createElement('input');
-            expandCheckbox.type = 'checkbox';
-            expandCheckbox.id = expandCheckboxId;
-            expandCheckbox.classList.add('swipe_picker_expand_toggle');
-            block[0].prepend(expandCheckbox);
-
-            const expandLabel = document.createElement('label');
-            expandLabel.htmlFor = expandCheckboxId;
-            expandLabel.classList.add('swipe_picker_expand_label', 'fa-solid', 'fa-fw', 'fa-chevron-down');
-            expandLabel.title = t`Expand/Collapse`;
-            expandLabel.setAttribute('data-i18n', '[title]Expand/Collapse');
-            expandLabel.addEventListener('click', (event) => event.stopPropagation());
-
-            // Add copy button
-            const copyButton = document.createElement('div');
-            copyButton.classList.add('swipe_picker_copy', 'fa-solid', 'fa-fw', 'fa-copy');
-            copyButton.title = t`Copy`;
-            copyButton.setAttribute('data-i18n', '[title]Copy');
-            copyButton.addEventListener('click', async (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                await copyText(swipeText);
-                toastr.info(t`Copied!`, '', { timeOut: 2000 });
-            });
-
-            // Insert new buttons before the branch button
-            branchButton.before(expandLabel, copyButton);
-
-            template.find('.select_chat_block_filename').text(`#${index + 1}${index === Number(message.swipe_id ?? 0) ? ` ${t`[Current]`}` : ''}`);
-            template.find('.chat_messages_date').text(sendDate);
-            template.find('.chat_file_size').text(swipeDetails.length ? `(${swipeDetails[0]}${swipeDetails.length > 1 ? ',' : ')'}` : '');
-            template.find('.chat_messages_num').text(swipeDetails.length > 1 ? `${swipeDetails.slice(1).join(', ')})` : '');
-            template.find('.select_chat_block_mes').text(previewText ? swipeText : t`(empty swipe)`);
-
-            block.on('click', () => setSelectedSwipe(index));
-            block.on('dblclick', async () => {
-                if (!canJumpToSwipe) {
-                    return;
-                }
-
-                setSelectedSwipe(index);
-                await popup.completeAffirmative();
-            });
-
-            return template[0];
-        }));
+        const swipeCards = await Promise.all(message.swipes.map((_swipe, index) => buildSwipeCard(index)));
 
         if (!isPickerScopeCurrent()) return false;
-        listContainer.replaceChildren(...swipeBlocks);
+        listContainer.replaceChildren(...swipeCards);
+        swipeCount.textContent = String(swipeCards.length);
+        swipeCount.title = t`${swipeCards.length} swipes`;
         setSelectedSwipe(selectedSwipeId);
+        scheduleMeasure();
 
-        if (swipeBlocks.length === 0) {
+        if (swipeCards.length === 0) {
             const empty = document.createElement('div');
-            empty.classList.add('textAlignCenter', 'opacity50p', 'padding10');
+            empty.classList.add('swipe_picker_empty');
             empty.textContent = t`No swipes available.`;
             listContainer.replaceChildren(empty);
         }
         return true;
     }
 
+    listContainer.addEventListener('keydown', (event) => {
+        const card = event.target instanceof HTMLElement && event.target.classList.contains('swipe_picker_block') ? event.target : null;
+        if (!card) {
+            return;
+        }
+
+        const lastSwipeId = message.swipes.length - 1;
+        const currentSwipeId = Number(card.getAttribute('data-swipe-id'));
+        const targetSwipeId = {
+            ArrowDown: currentSwipeId + 1,
+            ArrowUp: currentSwipeId - 1,
+            Home: 0,
+            End: lastSwipeId,
+        }[event.key];
+
+        if (targetSwipeId === undefined) {
+            return;
+        }
+
+        event.preventDefault();
+        setSelectedSwipe(targetSwipeId);
+        const targetCard = getSwipeCard(selectedSwipeId);
+        if (targetCard) {
+            targetCard.focus({ preventScroll: true });
+            targetCard.scrollIntoView({ block: 'nearest' });
+        }
+    });
+
     popup = new Popup(wrapper, POPUP_TYPE.CONFIRM, '', {
-        okButton: canJumpToSwipe ? t`Go` : false,
+        okButton: canJumpToSwipe ? t`Show swipe` : false,
         cancelButton: false,
-        customInputs: [{
-            id: swipeIdInputId,
-            label: t`Swipe ID`,
-            type: 'text',
-            defaultState: String(selectedSwipeId + 1),
-            tooltip: `1-${message.swipes.length}`,
-        }],
-        large: true,
         wider: true,
         allowVerticalScrolling: true,
         onOpen: function () {
+            resizeObserver?.observe(listContainer);
+            measureExpandButtons();
             scrollToSelectedSwipe();
-            if (swipeIdInput instanceof HTMLInputElement) {
-                swipeIdInput.focus({ preventScroll: true });
-                swipeIdInput.select();
-            }
+            getSwipeCard(selectedSwipeId)?.focus({ preventScroll: true });
         },
         onClosing: function (popup) {
             if (popup.result !== POPUP_RESULT.AFFIRMATIVE) {
@@ -348,68 +408,22 @@ async function openSwipePicker(messageId) {
                 toastr.warning(t`This chat changed, so the action was cancelled.`);
                 return false;
             }
-
-            const swipeIdInput = popup.dlg.querySelector(`#${swipeIdInputId}`);
-            const targetSwipeNumber = Number.parseInt(String(swipeIdInput instanceof HTMLInputElement ? swipeIdInput.value : '').trim(), 10);
-
-            if (!Number.isInteger(targetSwipeNumber) || targetSwipeNumber < 1 || targetSwipeNumber > message.swipes.length) {
-                toastr.warning(t`Enter a swipe ID between 1 and ${message.swipes.length}.`, t`Jump to Swipe`);
-                if (swipeIdInput instanceof HTMLInputElement) {
-                    swipeIdInput.focus({ preventScroll: true });
-                    swipeIdInput.select();
-                }
-                return false;
-            }
-
-            setSelectedSwipe(targetSwipeNumber - 1);
             return true;
+        },
+        onClose: function () {
+            resizeObserver?.disconnect();
+            cancelAnimationFrame(measureFrame);
         },
     });
 
     popup.dlg.classList.add('swipe_picker_popup');
-    popup.closeButton.style.display = 'block';
-    popup.closeButton.classList.add('opacity50p', 'hoverglow', 'fontsize120p');
-    popup.closeButton.style.position = 'static';
-    popup.closeButton.style.top = 'auto';
-    popup.closeButton.style.right = 'auto';
-    popup.closeButton.style.width = 'auto';
-    popup.closeButton.style.height = 'auto';
-    popup.closeButton.style.padding = '0';
-    popup.closeButton.style.filter = 'none';
-    header.appendChild(popup.closeButton);
-
-    swipeIdInput = popup.dlg.querySelector(`#${swipeIdInputId}`);
-    const swipeIdLabel = popup.dlg.querySelector(`label[for="${swipeIdInputId}"]`);
-
-    if (swipeIdLabel instanceof HTMLLabelElement) {
-        swipeIdLabel.classList.add('flex-container', 'alignItemsCenter', 'justifyCenter', 'gap10px', 'margin0');
-        popup.buttonControls.insertBefore(swipeIdLabel, canJumpToSwipe ? popup.okButton : popup.buttonControls.firstChild);
-        popup.inputControls.style.display = 'none';
-    }
-
-    if (swipeIdInput instanceof HTMLInputElement) {
-        swipeIdInput.type = 'number';
-        swipeIdInput.min = '1';
-        swipeIdInput.max = String(message.swipes.length);
-        swipeIdInput.step = '1';
-        swipeIdInput.inputMode = 'numeric';
-        swipeIdInput.classList.add('flex1', 'width100px', 'textAlignCenter');
-        swipeIdInput.setAttribute('autofocus', '');
-        syncSwipeIdInput();
-
-        swipeIdInput.addEventListener('input', function () {
-            const nextSwipeId = Number.parseInt(this.value, 10);
-            if (!Number.isInteger(nextSwipeId) || nextSwipeId < 1 || nextSwipeId > message.swipes.length) {
-                return;
-            }
-
-            setSelectedSwipe(nextSwipeId - 1);
-            scrollToSelectedSwipe();
-        });
-
-        swipeIdInput.addEventListener('blur', function () {
-            syncSwipeIdInput();
-        });
+    popup.closeButton.style.display = '';
+    popup.closeButton.title = t`Close`;
+    popup.closeButton.setAttribute('aria-label', t`Close`);
+    // The label follows the selected swipe, so the static translation key must not reset it.
+    delete popup.okButton.dataset.i18n;
+    if (!canJumpToSwipe) {
+        popup.buttonControls.style.display = 'none';
     }
 
     if (!await renderSwipeList()) return;
@@ -437,10 +451,9 @@ async function openSwipePicker(messageId) {
     }
 
     const targetSwipeId = clamp(selectedSwipeId, 0, message.swipes.length - 1);
-    const currentSwipeId = clamp(Number(message.swipe_id ?? 0), 0, message.swipes.length - 1);
+    const currentSwipeId = getShownSwipeId();
 
     if (targetSwipeId === currentSwipeId) {
-        toastr.info(t`Already showing swipe #${targetSwipeId + 1}.`, t`Jump to Swipe`);
         return;
     }
 
