@@ -17,8 +17,9 @@
         color: var(--neco-ink);
     }
 
-    body.neconyan #chat .mes.nn-response-controls-below {
-        margin-bottom: 76px;
+    body.neconyan #sheld #chat .mes.nn-response-controls-below {
+        /* Preserve the footer space against last-message, Tide and sleeper margin resets. */
+        margin-bottom: 76px !important;
     }
 
     body.neconyan #chat .mes.nn-response-controls-below > .nn-response-controls {
