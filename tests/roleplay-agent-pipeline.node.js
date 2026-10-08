@@ -129,7 +129,7 @@ for (const effect of ['append', 'continue', 'swipe', 'replace']) {
             return { ...template, enabled: true, sourceTemplateId: template.id,
                 settings: { ...template.settings, lengthTarget: 'Two short paragraphs' } };
         });
-        const f = prepared(t, agents, { effect });
+        const f = prepared(t, agents, { effect, globalSettings: { appendAgentsExecutionMode: 'sequential' } });
         const calls = [];
         await f.run({ generate: paid('main', () => 'Main output'), generateAgent: paid('rewrite', ({ messages }) => {
             const agent = agents[calls.length];
@@ -263,6 +263,70 @@ test('run together starts append Agents beside rewrites and joins their cleaned 
     assert.equal(saved.at(-1).mes, `The lantern gutters at the fork in the road.\n\n${menu}`);
     assert.deepEqual(saved.at(-1).extra.inChatAgentPromptRuns.map(run => run.agentId), ['menu', 'polish', 'again']);
 });
+
+for (const legacy of [false, true]) {
+    test(`${legacy ? 'saved v2 plans keep ordered rewrites' : 'parallel rewrites overlap and durably synthesise with append context'}`, { timeout: 10000 }, async t => {
+        const f = prepared(t, ['one', 'two', 'menu'].map((id, order) => ({ id, phase: 'post', prompt: id.toUpperCase(), injection: { order },
+            postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMode: id === 'menu' ? 'append' : 'rewrite', promptTransformMaxTokens: 128 } })), { globalSettings: { appendAgentsExecutionMode: legacy ? 'sequential' : 'parallel' } });
+        const calls = [];
+        let release;
+        const held = new Promise(resolve => { release = resolve; });
+        const generate = paid('main', () => 'Original reply');
+        const generateAgent = paid('agents', async ({ messages, stepNamespace }) => {
+            calls.push(stepNamespace);
+            if (stepNamespace === 'agent-model:post-synthesis') {
+                const input = JSON.parse(messages[1].content);
+                assert.equal(input.original, 'Original reply');
+                assert.deepEqual(input.candidates.map(item => item.text), ['First improvement', 'Second improvement']);
+                assert.deepEqual(input.after, ['Choices']);
+                return 'Both improvements';
+            }
+            if (stepNamespace === 'agent-model:post:one' && !legacy) await held;
+            if (stepNamespace === 'agent-model:post:two') {
+                assert.match(messages[1].content, legacy ? /First improvement/ : /Original reply/);
+                release();
+            }
+            return stepNamespace.endsWith(':one') ? 'First improvement' : stepNamespace.endsWith(':two') ? 'Second improvement' : 'Choices';
+        });
+        if (legacy) {
+            // Interrupt after the plan is saved but before any provider request, then simulate a v2 plan.
+            await assert.rejects(f.run({ generate, generateAgent: () => { throw new Error('before dispatch'); } }), /before dispatch/);
+            const plan = readArtifact(f.directories, f.jobId, 'roleplay-agent-post:plan');
+            delete plan.hash;
+            plan.version = 2;
+            writeArtifact(f.directories, f.jobId, 'roleplay-agent-post:plan', { ...plan, hash: roleplayHash(plan) });
+        }
+        await f.run({ generate, generateAgent });
+        assert.equal(f.saved().at(-1).mes, `${legacy ? 'Second improvement' : 'Both improvements'}\n\nChoices`);
+        assert.equal(calls.includes('agent-model:post-synthesis'), !legacy);
+        await f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Agent repeated') });
+    });
+}
+
+test('an uncertain synthesis retains all rewrite receipts and never repeats a paid request', async t => {
+    const f = prepared(t, ['one', 'two'].map(id => ({ id, phase: 'post', prompt: id,
+        postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 128 } })));
+    await assert.rejects(f.run({ generate: paid('main', () => 'Original reply'), generateAgent: paid('agents', ({ stepNamespace }) => {
+        if (stepNamespace === 'agent-model:post-synthesis') throw new Error('lost synthesis');
+        return stepNamespace;
+    }) }), /lost synthesis/);
+    assert.equal(f.saved().length, 3);
+    for (const id of ['one', 'two']) assert.ok(readArtifact(f.directories, f.jobId, `agent-model:post:${id}:result`));
+    recoverJobs(f.directories);
+    await assert.rejects(f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Agent repeated') }), /unknown|uncertain|recovery/i);
+    assert.equal(f.saved().length, 3);
+});
+
+for (const output of [{ text: '' }, { text: 'Partial combination', finishReason: 'length' }]) {
+    test(`an ${output.text ? 'incomplete' : 'empty'} synthesis cannot replace the original`, async t => {
+        const f = prepared(t, ['one', 'two'].map(id => ({ id, phase: 'post', prompt: id,
+            postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 128 } })));
+        await assert.rejects(f.run({ generate: paid('main', () => 'Original reply'), generateAgent: paid('agents', ({ stepNamespace }) =>
+            stepNamespace === 'agent-model:post-synthesis' ? output : stepNamespace) }), /empty or cut short/);
+        assert.equal(f.saved().length, 3);
+        await assert.rejects(f.run({ generate: () => assert.fail('main repeated'), generateAgent: () => assert.fail('Agent repeated') }), /empty or cut short/);
+    });
+}
 
 test('a damaged postprocessing proof cannot publish a reply or tracker state', async t => {
     const f = prepared(t, [{ id: 'rewrite', phase: 'post', prompt: 'REWRITE', postProcess: {

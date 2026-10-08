@@ -15,6 +15,35 @@ const isAppend = agent => agent.append === true;
 const agents = ids => ids.map(id => ({ id, append: id.startsWith('a') }));
 const describe = stages => stages.map(stage => `${stage.type}:${stage.agents.map(agent => agent.id).join(',')}`);
 
+test('all parallel rewrites start on the original and synthesis waits for every result', async () => {
+    const started = [];
+    const releases = [];
+    let synthesised = false;
+    const pending = runPromptTransformStages({
+        agents: agents(['r1', 'a1', 'r2']), text: reply, parallel: true, isAppend,
+        runRewrite: (agent, body) => {
+            started.push([agent.id, body]);
+            return new Promise(resolve => releases.push(() => resolve({ text: agent.id })));
+        },
+        runAppend: async group => ({ outputs: group.map(agent => ({ agent, text: 'Menu' })) }),
+        runSynthesis: async (original, rewrites, draft) => {
+            synthesised = true;
+            assert.equal(original, reply);
+            assert.deepEqual(rewrites.map(item => item.text), ['r1', 'r2']);
+            assert.deepEqual(draft.after, ['Menu']);
+            return { text: 'Combined reply' };
+        },
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(started, [['r1', reply], ['r2', reply]]);
+    releases[1]();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(synthesised, false);
+    releases[0]();
+    const { draft } = await pending;
+    assert.equal(composePromptTransformDraft(draft, join), 'Combined reply\n\nMenu');
+});
+
 test('run together puts rewrites in order and gathers every append agent into one group', () => {
     const stages = planPromptTransformStages(agents(['a1', 'r1', 'a2', 'r2', 'a3']), { parallel: true, isAppend });
     assert.deepEqual(describe(stages), ['rewrite:r1', 'rewrite:r2', 'append:a1,a2,a3']);
@@ -23,6 +52,23 @@ test('run together puts rewrites in order and gathers every append agent into on
 test('one at a time follows Order and groups only neighbouring append agents', () => {
     const stages = planPromptTransformStages(agents(['a1', 'r1', 'a2', 'a3', 'r2']), { parallel: false, isAppend });
     assert.deepEqual(describe(stages), ['append:a1', 'rewrite:r1', 'append:a2,a3', 'rewrite:r2']);
+});
+
+test('identical rewrites need no synthesis and formatting edits survive', async () => {
+    const { draft } = await runPromptTransformStages({
+        agents: agents(['r1', 'r2']), text: reply, parallel: true, isAppend,
+        runRewrite: async () => ({ text: reply.replace('\n\n', '\n') }),
+        runSynthesis: () => assert.fail('Identical results need no paid combining request'),
+    });
+    assert.equal(draft.body, reply.replace('\n\n', '\n'));
+});
+
+test('a failed synthesis cannot publish one of the independent alternatives', async () => {
+    await assert.rejects(runPromptTransformStages({
+        agents: agents(['r1', 'r2']), text: reply, parallel: true, isAppend,
+        runRewrite: async agent => ({ text: agent.id }),
+        runSynthesis: async () => ({ text: '' }),
+    }), /combined Agent reply was empty/);
 });
 
 test('an append output that repeats the reply keeps only its new content', () => {
@@ -110,7 +156,7 @@ for (const parallel of [true, false]) {
 }
 
 for (const failure of ['stop', 'throw']) {
-    test(`an append ${failure} prevents later rewrites and waits for the one already running`, async () => {
+    test(`an append ${failure} waits for all parallel rewrites and prevents synthesis`, async () => {
         const calls = [];
         let releaseRewrite;
         const held = new Promise(resolve => { releaseRewrite = resolve; });
@@ -135,11 +181,11 @@ for (const failure of ['stop', 'throw']) {
         if (failure === 'throw') await assert.rejects(run, /append failed/);
         else assert.equal((await run).stopped, true);
         assert.equal(rewriteFinished, true);
-        assert.deepEqual(calls, ['r1', 'a1']);
+        assert.deepEqual(calls, ['r1', 'r2', 'a1']);
     });
 }
 
-test('a stop leaves out the stopping append group and later stages', async () => {
+test('a stopped parallel batch preserves the original reply', async () => {
     const calls = [];
     const { draft, stopped } = await runPromptTransformStages({
         agents: agents(['a1', 'r1', 'a2']), text: 'Reply', parallel: true, isAppend,
@@ -154,7 +200,7 @@ test('a stop leaves out the stopping append group and later stages', async () =>
     });
     assert.equal(stopped, true);
     assert.deepEqual(calls.sort(), ['append', 'rewrite']);
-    assert.equal(composePromptTransformDraft(draft, join), 'Partly rewritten');
+    assert.equal(composePromptTransformDraft(draft, join), 'Reply');
 });
 
 test('a failing rewrite waits for the append group before the error surfaces', async () => {

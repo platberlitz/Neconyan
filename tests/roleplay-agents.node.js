@@ -217,17 +217,23 @@ test('an interrupted new synthesis retains its plan and reuses completed paralle
             return { text: messages[0].content.startsWith('REWRITE') ? rewritten : menu };
         })(args);
     } }), /Restart before dispatch/);
-    assert.equal(readArtifact(f.directories, f.job.id, 'roleplay-agent-post:plan').version, 2);
+    assert.equal(readArtifact(f.directories, f.job.id, 'roleplay-agent-post:plan').version, 3);
     let calls = 0;
     const result = await runRoleplayAgentPostprocessing(f.context, { ...options, generate: modelResponse(({ messages }) => {
         calls++;
+        if (messages[0].content.startsWith('Combine parallel edits')) {
+            const input = JSON.parse(messages[1].content);
+            assert.deepEqual(input.candidates.map(item => item.text), [rewritten, 'Completed new rewrite']);
+            assert.deepEqual(input.after, [menu]);
+            return { text: 'Combined new rewrite' };
+        }
         assert.ok(messages[0].content.startsWith('LATER'));
-        assert.ok(messages[1].content.includes(rewritten));
+        assert.ok(messages[1].content.includes(options.value));
         assert.ok(!messages[1].content.includes(menu));
         return { text: 'Completed new rewrite' };
     }) });
-    assert.equal(calls, 1);
-    assert.equal(result.text, `Completed new rewrite\n\n${menu}`);
+    assert.equal(calls, 2);
+    assert.equal(result.text, `Combined new rewrite\n\n${menu}`);
 });
 
 test('post-main interception waits for an exact saved review and does not repeat an accepted decision', async t => {

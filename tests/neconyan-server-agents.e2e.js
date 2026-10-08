@@ -93,6 +93,74 @@ async function reopen(account, name, info) {
 
 for (const phone of [false, true]) {
     const viewport = phone ? 'phone' : 'desktop';
+    test(`${viewport} parallel reply passes overlap over HTTP and publish one combined reply`, async ({ app, browser }, info) => {
+        const original = 'The lantern flickers beside the open door.';
+        const combined = 'The lantern gutters beside the open oak door.';
+        let helperModels = [];
+        app.provider.mode.reply = body => {
+            const instruction = body.messages[0].content;
+            if (instruction.includes('Combine parallel edits')) return completed(combined);
+            if (instruction.startsWith('EDIT_LIGHT')) return completed('The lantern gutters beside the open door.');
+            if (instruction.startsWith('EDIT_DOOR')) return completed('The lantern flickers beside the open oak door.');
+            if (instruction.startsWith('MENU')) return completed('1. Enter\n2. Wait outside');
+            app.provider.mode.hold = [body.model, ...helperModels];
+            return completed(original);
+        };
+        const account = await app.account({ phone, activeConnection: true, configureSettings: settings => {
+            helperModels = settings.extension_settings.connectionManager.profiles.map(profile => profile.model);
+            settings.extension_settings.inChatAgents = { globalSettings: { enabled: true, appendAgentsExecutionMode: 'parallel', postMainInterceptShowMessageFirst: false } };
+        } });
+        await account.open({ workspace: false });
+        await noPages(browser);
+        const native = accountScope(app);
+        withRoleplayAccount(native.base, native.account, lease => {
+            for (const [order, prompt] of ['EDIT_LIGHT', 'EDIT_DOOR', 'MENU'].entries()) {
+                writeAgentRecordLocked(lease, 'agent', { id: prompt.toLowerCase(), name: prompt, category: 'custom', enabled: true,
+                    phase: 'post', prompt, injection: { order }, postProcess: { enabled: true, promptTransformEnabled: true,
+                        promptTransformMode: prompt === 'MENU' ? 'append' : 'rewrite', promptTransformMaxTokens: 256 } });
+            }
+        });
+        const locator = await chat(account, 'Parallel reply passes');
+        const before = await reopen(account, locator.chat, info);
+        const screenshots = path.resolve('..', 'screenshots');
+        fs.mkdirSync(screenshots, { recursive: true });
+        await before.screenshot({ path: path.join(screenshots, `parallel-agents-${viewport}-before.png`) });
+        await noPages(browser);
+        const jobId = reply(native, account.avatar, locator, 'parallel-reply-passes');
+        await expect.poll(async () => {
+            const job = await account.job(jobId);
+            if (['failed', 'conflict', 'interrupted', 'completed'].includes(job.state)) {
+                throw new Error(JSON.stringify({ state: job.state, error: job.error, result: job.result,
+                    requests: app.provider.calls.map(call => call.messages?.[0]?.content?.slice(0, 100)) }));
+            }
+            return app.provider.calls.filter(call => call.completedAt === null).length;
+        }, { timeout: 30000, message: 'All three post-generation HTTP requests overlap' }).toBe(3);
+        const pending = app.provider.calls.filter(call => call.completedAt === null);
+        for (const call of pending) expect(call.messages[1].content).toContain(original);
+        expect(app.provider.calls).toHaveLength(4);
+        expect(readRoleplayChat(native.scope, locator).records).toHaveLength(3);
+        await account.context.request.post(app.provider.url.replace('/v1', '/fixture/release'), { data: {} });
+        await account.settled(jobId);
+        expect(app.provider.calls).toHaveLength(5);
+        const synthesis = app.provider.calls.at(-1);
+        expect(synthesis.messages[0].content).toContain('Combine parallel edits');
+        expect(pending.every(call => call.completedAt <= synthesis.startedAt)).toBe(true);
+        const input = JSON.parse(synthesis.messages[1].content);
+        expect(input.candidates.map(item => item.text)).toEqual([
+            'The lantern gutters beside the open door.', 'The lantern flickers beside the open oak door.',
+        ]);
+        expect(input.after).toEqual(['1. Enter\n2. Wait outside']);
+        const records = readRoleplayChat(native.scope, locator).records;
+        expect(records.at(-1).mes).toBe(`${combined}\n\n1. Enter\n2. Wait outside`);
+        expect(records.at(-1).extra.inChatAgentTransformHistory).toHaveLength(1);
+        await app.restart();
+        const after = await reopen(account, locator.chat, info);
+        await expect(after.locator('#chat .mes').last()).toContainText(combined);
+        await after.screenshot({ path: path.join(screenshots, `parallel-agents-${viewport}-after.png`) });
+        expect(app.provider.calls).toHaveLength(5);
+        await after.close();
+    });
+
     test(`${viewport} saved Agents and Quick Reply finish a protected reply with every page closed`, async ({ app, browser }, info) => {
         app.provider.mode.reply = body => completed(JSON.stringify(body.messages).includes('CHANGE RESPONSE TO ORBIT')
             ? 'Edited by Agent.' : 'Original from model.');
