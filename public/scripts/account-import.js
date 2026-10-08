@@ -1,7 +1,8 @@
-import { getCurrentChatId, getRequestHeaders, pauseSettingsForAccountImport, saveChatConditional } from '../script.js';
+import { getCurrentChatId, getRequestHeaders, pauseSettingsForAccountImport, refreshCsrfToken, saveChatConditional } from '../script.js';
 import { getCurrentUserHandle } from './user.js';
 import { getOperationClient, mountOperationRecovery } from './operations-client.js';
 import { accountImportScope, createAccountImportClient } from './account-import-client.js';
+import { fetchWithCsrfRetry } from './csrf-token-refresh.js';
 
 const SKIPPED_SHOWN = 20;
 
@@ -54,13 +55,15 @@ export async function importAccountData(input, options = {}) {
     const upload = async (key, file) => {
         assertOwner();
         const body = new FormData(); body.append('key', key); body.append('avatar', file, file.name);
-        const response = await fetch('/api/operations/import-input', { method: 'POST', body,
-            headers: { ...getRequestHeaders({ omitContentType: true }), 'X-Neconyan-Account': owner } });
+        const response = await fetchWithCsrfRetry('/api/operations/import-input', () => {
+            assertOwner();
+            return { method: 'POST', body, headers: { ...getRequestHeaders({ omitContentType: true }), 'X-Neconyan-Account': owner } };
+        }, { refreshCsrfToken });
         const text = await response.text();
         assertOwner();
         let value;
         try { value = JSON.parse(text); } catch { throw new Error('The ZIP upload response was unreadable. Its request has been retained.'); }
-        if (!response.ok) throw Object.assign(new Error(value.error || 'The ZIP upload failed.'), { status: response.status });
+        if (!response.ok) throw Object.assign(new Error(value.error || 'The ZIP upload failed.'), { status: response.status, code: value.code });
         return value;
     };
     let resumeSettings;

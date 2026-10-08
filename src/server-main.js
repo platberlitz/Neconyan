@@ -859,9 +859,9 @@ function apply404Middleware() {
 }
 
 /**
- * Renders a themed HTML page for CSRF rejections that a browser navigates to.
- * The client retry (scripts/csrf-token-refresh.js) looks for the message text in
- * the body, so the page keeps the words "Invalid CSRF token" in its copy.
+ * Keep CSRF rejections recognisable to API retries even in production, where
+ * Express otherwise replaces their message with a generic Forbidden page.
+ * Browser navigations receive the themed HTML page instead.
  */
 function applyHtmlErrorMiddleware() {
     const pageCandidates = [
@@ -874,11 +874,14 @@ function applyHtmlErrorMiddleware() {
         }
         const status = Number(error?.status || error?.statusCode) || 500;
         const message = String(error?.message || '');
-        const wantsHtml = Boolean(request.accepts?.('html'))
-            && !String(request.path || '').startsWith('/api/');
-        if (status !== 403 || !message.includes('Invalid CSRF token') || !wantsHtml) {
+        if (status !== 403 || !message.includes('Invalid CSRF token')) {
             return next(error);
         }
+        if (String(request.path || '').startsWith('/api/')) {
+            response.set({ 'Cache-Control': 'no-store' });
+            return response.status(403).json({ error: 'Invalid CSRF token. Please refresh the page and try again.', code: 'INVALID_CSRF_TOKEN' });
+        }
+        if (!request.accepts?.('html')) return next(error);
         const page = pageCandidates.map(candidate => safeReadFileSync(candidate)).find(Boolean) ?? '';
         response.set({ 'Cache-Control': 'no-store, no-cache, must-revalidate, private' });
         response.status(403).type('html').send(page);

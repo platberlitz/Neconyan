@@ -79,6 +79,78 @@ async function closeAll(page, browser) {
 
 for (const phone of [false, true]) {
     const viewport = phone ? 'phone' : 'desktop';
+    test(`${viewport} ZIP replacement escapes an earlier retained upload`, async ({ app }) => {
+        const account = await app.account({ phone });
+        const { page, card } = await showImporter(account);
+        const key = randomUUID();
+        const earlier = await account.context.request.post('/api/operations/import-input', { headers: account.headers,
+            multipart: { key, avatar: { name: 'default-user.zip', mimeType: 'application/zip', buffer: Buffer.from('Earlier upload') } } });
+        expect(earlier.ok()).toBe(true);
+        const receipt = await earlier.json();
+        await page.evaluate(pending => localStorage.setItem('neconyan-account-import-upload:default-user', JSON.stringify(pending)),
+            { key, inputId: receipt.inputId, file: { name: 'default-user.zip', size: 14, lastModified: 1 } });
+        const archive = archiver('zip'); const chunks = [];
+        archive.on('data', chunk => chunks.push(chunk));
+        archive.append('Replacement backup attachment', { name: 'default-user/user/files/replacement.txt' });
+        archive.append('Invalid card', { name: 'default-user/characters/Damaged.png' });
+        await archive.finalize();
+        await card.getByLabel('Choose a SillyTavern backup ZIP').setInputFiles({
+            name: 'default-user.zip', mimeType: 'application/zip', buffer: Buffer.concat(chunks),
+        });
+        const note = card.locator('.sb-import-note');
+        await expect(note).toContainText(/Backup ZIP imported\.|This import key already belongs/, { timeout: 60000 });
+        await note.scrollIntoViewIfNeeded();
+        const screenshot = path.resolve('..', 'screenshots', `${viewport}-replacement-zip-${process.env.NECONYAN_IMPORT_BASELINE === '1' ? 'before' : 'after'}.png`);
+        await fs.mkdir(path.dirname(screenshot), { recursive: true });
+        await page.screenshot({ path: screenshot });
+        await test.info().attach(`${viewport}-replacement-zip`, { path: screenshot, contentType: 'image/png' });
+        await expect(note).toContainText('Backup ZIP imported.');
+        expect(await fs.readFile(path.join(app.directory, 'data/default-user/user/files/replacement.txt'), 'utf8')).toBe('Replacement backup attachment');
+        const kept = await account.context.request.get(`/api/operations/import-input/${key}`, { headers: account.headers });
+        expect(await kept.json()).toEqual(receipt);
+        expect(await page.evaluate(() => localStorage.getItem('neconyan-account-import-upload:default-user'))).toBeNull();
+    });
+
+    test(`${viewport} ZIP import refreshes stale security tokens during upload and submission`, async ({ app }) => {
+        const account = await app.account({ phone });
+        const { page, card } = await showImporter(account);
+        const requests = new Map();
+        for (const endpoint of ['import-input', 'submit']) {
+            const attempts = [];
+            requests.set(endpoint, attempts);
+            await page.route(`**/api/operations/${endpoint}`, async route => {
+                attempts.push(route.request());
+                await route.continue({ headers: { ...route.request().headers(),
+                    ...(attempts.length === 1 ? { 'x-csrf-token': 'expired-import-test-token' } : {}) } });
+            });
+        }
+        const archive = archiver('zip'); const chunks = [];
+        archive.on('data', chunk => chunks.push(chunk));
+        archive.append('Token recovery attachment', { name: 'default-user/user/files/token-recovery.txt' });
+        archive.append('Invalid card', { name: 'default-user/characters/Damaged.png' });
+        await archive.finalize();
+        await card.getByLabel('Choose a SillyTavern backup ZIP').setInputFiles({
+            name: 'default-user.zip', mimeType: 'application/zip', buffer: Buffer.concat(chunks),
+        });
+        await expect(card.locator('.sb-import-note')).toContainText('Backup ZIP imported.', { timeout: 60000 });
+        for (const attempts of requests.values()) {
+            expect(attempts).toHaveLength(2);
+            const rejection = await attempts[0].response();
+            expect(rejection.status()).toBe(403);
+            expect((await rejection.json()).code).toBe('INVALID_CSRF_TOKEN');
+            expect(rejection.headers()['cache-control']).toContain('no-store');
+        }
+        const submissions = requests.get('submit');
+        expect(submissions[0].postData()).toBe(submissions[1].postData());
+        // Multipart boundaries may change; the selected ZIP and retained key must not.
+        const uploadKeys = requests.get('import-input').map(request => request.postDataBuffer().toString().match(/name="key"\r\n\r\n([^\r]+)/)[1]);
+        expect(uploadKeys[0]).toBe(uploadKeys[1]);
+        expect(await fs.readFile(path.join(app.directory, 'data/default-user/user/files/token-recovery.txt'), 'utf8')).toBe('Token recovery attachment');
+        const records = await account.context.request.get('/api/operations/records?kind=account-import', { headers: account.headers });
+        expect(records.ok()).toBe(true);
+        expect(await records.json()).toHaveLength(1);
+    });
+
     for (const retained of [false, true]) {
         test(`${viewport} ZIP recovery handles ${retained ? 'changed picker metadata' : 'old browser storage after reinstall'}`, async ({ app }) => {
             const account = await app.account({ phone });
@@ -103,9 +175,11 @@ for (const phone of [false, true]) {
             const chooser = card.getByLabel('Choose a SillyTavern backup ZIP');
             const note = card.locator('.sb-import-note');
             if (retained) {
-                // A genuinely different file must still be refused, with the old upload intact.
-                await chooser.setInputFiles({ name: 'different.zip', mimeType: 'application/zip', buffer: Buffer.from('Different bytes') });
-                await expect(note).toContainText('This import key already belongs to a different upload. The earlier upload was kept.');
+                // The server still refuses replacing an existing upload identity with different bytes.
+                const conflict = await account.context.request.post('/api/operations/import-input', { headers: account.headers,
+                    multipart: { key, avatar: { name: 'different.zip', mimeType: 'application/zip', buffer: Buffer.from('Different bytes') } } });
+                expect(conflict.status()).toBe(409);
+                expect((await conflict.json()).code).toBe('IMPORT_UPLOAD_CONFLICT');
                 expect(await page.evaluate(() => JSON.parse(localStorage.getItem('neconyan-account-import-upload:default-user')))).toEqual(pending);
             }
             const submissions = [];
