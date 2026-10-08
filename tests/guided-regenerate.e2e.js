@@ -28,10 +28,24 @@ for (const phone of [true, false]) {
         const box = await button.boundingBox();
         expect(box.x).toBeGreaterThanOrEqual(0);
         expect(box.x + box.width).toBeLessThanOrEqual(phone ? 393 : 1280);
-        if (phone) {
-            expect(box.width).toBeGreaterThanOrEqual(44);
-            expect(box.height).toBeGreaterThanOrEqual(44);
+        for (const width of phone ? [320, 375, 393, 600, 768] : [1280]) {
+            await page.setViewportSize({ width, height: phone ? 852 : 900 });
+            await expect.poll(() => page.locator('#gg-action-button-container').evaluate(row => {
+                const boxes = Array.from(row.querySelectorAll('.stih--button, .gg-action-button'))
+                    .map(element => element.getBoundingClientRect()).filter(rect => rect.width > 0 && rect.height > 0);
+                const bounds = row.getBoundingClientRect();
+                return {
+                    count: boxes.length,
+                    rows: new Set(boxes.map(rect => Math.round(rect.y))).size,
+                    fits: boxes.every(rect => rect.left >= bounds.left && rect.right <= bounds.right + 1),
+                    compactTargets: boxes.every(rect => rect.width >= 26 && rect.height >= 26),
+                    noOverlap: boxes.every((rect, index) => index === 0 || rect.left >= boxes[index - 1].right),
+                };
+            }), { message: `Composer helpers stay on one line at ${width}px` }).toEqual({
+                count: 10, rows: 1, fits: true, compactTargets: true, noOverlap: true,
+            });
         }
+        await page.setViewportSize({ width: phone ? 393 : 1280, height: phone ? 852 : 900 });
         await button.focus();
         await button.press('Tab');
         await page.keyboard.press('Shift+Tab');

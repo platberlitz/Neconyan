@@ -3388,12 +3388,19 @@ body.neconyan #send_form :is(#gg-action-button-container button, .stih--buttons 
     background: var(--neco-raised);
 }
 
-/* Keep all seven guided actions reachable without shrinking their touch targets. */
-body.neconyan #send_form > #gg-action-button-container.gg-action-buttons-container > .gg-regular-buttons-container {
-    --gg-mobile-action-size: 44px;
-    --bottomFormBlockSize: 44px;
-    flex: 1 1 100%;
+/* Input History and the seven guided actions share one compact row. */
+body.neconyan #send_form > #gg-action-button-container.gg-action-buttons-container {
+    --gg-mobile-action-size: clamp(26px, calc((100vw - 60px) / 10), 32px);
+    justify-content: space-between;
 }
+body.neconyan #send_form > #gg-action-button-container.gg-action-buttons-container > :is(.stih--buttons, .gg-regular-buttons-container) {
+    --bottomFormBlockSize: var(--gg-mobile-action-size);
+    --stih-mobile-action-size: var(--gg-mobile-action-size);
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    gap: 3px;
+}
+body.neconyan #send_form > #gg-action-button-container.gg-action-buttons-container .stih--arrows { gap: 3px; }
 
 /* Phones drop the duplicate Import button: the Import section in the same sheet still opens the picker. */
 body.neconyan #right-nav-panel .neconyan-character-library-footer .sb-character-library-primary-actions > #character_import_button { display: none; }
