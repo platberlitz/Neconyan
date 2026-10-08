@@ -318,6 +318,14 @@ function getConfiguredTrackerTag(agent = {}) {
     return tag && findTrackerBlocks(agent?.prompt, tag).some(block => block.complete) ? tag : '';
 }
 
+const BLOCK_CLOSER = /\[\/([A-Za-z][A-Za-z0-9_-]*)\]/g;
+
+/** Upper-cased tags of every [/TAG] closer named in the tracker's prompt or extract pattern. */
+function getConfiguredBlockTags(agent = {}) {
+    const config = `${agent?.prompt ?? ''}\n${String(agent?.postProcess?.extractPattern ?? '').replace(/\\(?=[[\]/])/g, '')}`;
+    return new Set([...config.matchAll(BLOCK_CLOSER)].map(match => match[1].toUpperCase()));
+}
+
 /** Story prose or dialogue left beside a tracker block, as opposed to a one-line preamble. */
 function isStoryLikeStrayText(text = '') {
     const stray = normalizeText(text).replaceAll(TRACKER_EMPTY_SENTINEL_LINE, '').replaceAll(TRACKER_FENCE_LINE, '').trim();
@@ -359,8 +367,10 @@ export function inspectCompanionTrackerOutput(agent = {}, text = '') {
     const blocks = findTrackerBlocks(source, tag);
     const completeBlocks = blocks.filter(block => block.complete);
     const outside = getTextOutsideBlocks(source, completeBlocks);
-    // Another structural block beside ours belongs to a custom multi-block format; leave it alone.
-    if (/\[\/[A-Za-z][A-Za-z0-9_-]*\]/.test(outside.replace(new RegExp(`\\[\\/${escapeRegex(tag)}\\]`, 'ig'), ''))) {
+    // Another block the tracker's own configuration asks for makes it a custom multi-block format;
+    // leave it alone. Blocks it never asks for were copied from the story reply and count as stray text.
+    const ownTags = getConfiguredBlockTags(agent);
+    if ([...outside.matchAll(BLOCK_CLOSER)].some(match => match[1].toUpperCase() !== tag.toUpperCase() && ownTags.has(match[1].toUpperCase()))) {
         return keep('unknown-structure');
     }
 

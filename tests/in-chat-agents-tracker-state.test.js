@@ -302,8 +302,24 @@ describe('inspectCompanionTrackerOutput', () => {
     test('leaves non-trackers, unknown formats and unconfigured tags alone', () => {
         expect(inspectCompanionTrackerOutput(statusAgent, roleplay).reason).toBe('not-checked');
         expect(inspectCompanionTrackerOutput({ category: 'tracker', prompt: 'Summarise the scene.' }, roleplay).reason).toBe('not-checked');
+        const multiAgent = { ...trackerAgent, prompt: `${trackerAgent.prompt}\n[NPC|Name]\nnote: what they want\n[/NPC]` };
         const multi = `${block}\n[NPC|Bob]\n${roleplay}\n[/NPC]`;
-        expect(inspectCompanionTrackerOutput(trackerAgent, multi)).toEqual(expect.objectContaining({ action: 'keep', reason: 'unknown-structure' }));
+        expect(inspectCompanionTrackerOutput(multiAgent, multi)).toEqual(expect.objectContaining({ action: 'keep', reason: 'unknown-structure' }));
+    });
+
+    test('treats blocks copied from the story reply as roleplay, not a custom format', () => {
+        const thought = '[THOUGHT|Something Is Running My Body|COOKING|2 of 3]\nnote: The clinical words are gone now.\n[/THOUGHT]';
+        expect(inspectCompanionTrackerOutput(trackerAgent, `${roleplay}\n\n${thought}\n\n${block}`))
+            .toEqual({ action: 'regenerate', content: block, reason: 'story-text' });
+        const copied = `[COLORS:Alice=#e86d96]\n\n${roleplay}\n[VOICE|Alice]\nquiet\n[/VOICE]\n${block}\n[METER|Mood|4]\nnote: calm\n[/METER]`;
+        expect(inspectCompanionTrackerOutput(trackerAgent, copied)).toEqual({ action: 'regenerate', content: block, reason: 'story-text' });
+        expect(inspectCompanionTrackerOutput(trackerAgent, `${roleplay}\n${thought}`)).toEqual({ action: 'regenerate', content: '', reason: 'no-tracker' });
+    });
+
+    test('reads extra block tags from an escaped extract pattern', () => {
+        const patterned = { category: 'tracker', prompt: 'Track the scene.',
+            postProcess: { extractPattern: '\\[STATUS\\|[^\\]]*\\][\\s\\S]*?\\[/STATUS\\]|\\[NPC\\|[^\\]]*\\][\\s\\S]*?\\[\\/NPC\\]' } };
+        expect(inspectCompanionTrackerOutput(patterned, `${block}\n[NPC|Bob]\n${roleplay}\n[/NPC]`).reason).toBe('unknown-structure');
     });
 
     test('automatic repair rejects a block that never closes instead of closing it around prose', () => {
