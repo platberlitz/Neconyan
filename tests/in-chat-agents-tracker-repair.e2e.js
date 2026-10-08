@@ -131,8 +131,9 @@ for (const { phone, kind } of [false, true].flatMap(phone => ['header', 'field o
         expect(geometry.touchPoints > 0).toBe(phone);
         await info.attach('tracker-geometry', { body: JSON.stringify(geometry), contentType: 'application/json' });
         await page.screenshot({ path: info.outputPath('tracker-repaired.png') });
-        const saved = await account.post('/api/chats/get', request);
-        expect(saved[1].mes).toBe(`Before the tracker.\n\n${repaired}\n\nAfter the tracker.`);
+        // The repair saves through the debounced chat save, so wait for it to land.
+        await expect.poll(async () => (await account.post('/api/chats/get', request))[1].mes)
+            .toBe(`Before the tracker.\n\n${repaired}\n\nAfter the tracker.`);
         await page.evaluate(async chatName => (await import('/script.js')).openCharacterChat(chatName), chatName);
         await expect(text.locator('details').first()).toBeVisible();
         await expect(text).not.toContainText('[METER|');
