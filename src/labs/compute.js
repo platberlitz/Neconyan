@@ -1,11 +1,13 @@
 import { Worker } from 'node:worker_threads';
 import { labError } from './store.js';
+import { termuxWorkerOptions } from '../termux-file-identity.js';
 
 /** Bounded native computation also bounds user regular expressions. */
 export function computeLab(kind, plan, signal, { timeout = 30000, tokenCount, prepareMemory } = {}) {
     signal?.throwIfAborted();
     return new Promise((resolve, reject) => {
         const worker = new Worker(new URL('./compute-worker.js', import.meta.url), { workerData: { kind, plan },
+            ...termuxWorkerOptions(),
             resourceLimits: { maxOldGenerationSizeMb: 256, maxYoungGenerationSizeMb: 32 } });
         let settled = false;
         const finish = (error, result) => {

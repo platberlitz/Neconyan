@@ -39,6 +39,8 @@ export async function acknowledgeActiveSettings(page) {
 }
 
 export const test = base.extend({
+    dataRootName: ['data', { option: true }],
+    initialServerOptions: [{}, { option: true }],
     libraryCache: [async ({}, use) => {
         const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'conversation-libraries-'));
         try {
@@ -48,7 +50,7 @@ export const test = base.extend({
         }
         finally { await fs.rm(directory, { recursive: true, force: true }); }
     }, { scope: 'worker' }],
-    app: [async ({ browser, libraryCache }, use, info) => {
+    app: [async ({ browser, libraryCache, dataRootName, initialServerOptions }, use, info) => {
         if (process.env.NECONYAN_CONVERSATION_TEST_DISPOSABLE !== '1') {
             throw new Error('Set NECONYAN_CONVERSATION_TEST_DISPOSABLE=1 to run this owned, disposable fixture.');
         }
@@ -62,7 +64,7 @@ export const test = base.extend({
         await new Promise(resolve => reservation.close(resolve));
         const config = YAML.parse(await fs.readFile(path.join(root, 'default/config.yaml'), 'utf8'));
         Object.assign(config, {
-            dataRoot: path.join(directory, 'data'), port, listen: false,
+            dataRoot: path.join(directory, dataRootName), port, listen: false,
             enableUserAccounts: true, enableDownloadableTokenizers: false,
             enableServerPlugins: false, enableServerPluginsAutoUpdate: false,
         });
@@ -82,18 +84,18 @@ export const test = base.extend({
         let imageProvider;
         let output = '';
         const app = {
-            url: `http://127.0.0.1:${port}`, provider, directory, processes,
+            url: `http://127.0.0.1:${port}`, provider, directory, dataRoot: config.dataRoot, processes,
             get serverOutput() { return output; },
             async images() {
                 imageProvider = await createMewmoryProvider();
                 imageProvider.mode.reply = { images: ['iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC'] };
                 return imageProvider;
             },
-            async start({ useConfigDataRoot = false } = {}) {
+            async start({ useConfigDataRoot = false, env = {}, checkoutRoot = root } = {}) {
                 child = spawn(process.execPath, ['server.js', '--configPath', configPath,
                     ...(useConfigDataRoot ? [] : ['--dataRoot', config.dataRoot]),
                     '--port', String(port), '--browserLaunchEnabled', 'false'], {
-                    cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, NECONYAN_SUPERVISED: '1' },
+                    cwd: checkoutRoot, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...env, NECONYAN_SUPERVISED: '1' },
                 });
                 const record = { pid: child.pid, startedAt: Date.now() };
                 processes.push(record);
@@ -256,7 +258,7 @@ export const test = base.extend({
                 return account;
             },
         };
-        try { await app.start(); await use(app); }
+        try { await app.start(initialServerOptions); await use(app); }
         finally {
             await app.release();
             for (const context of contexts) await context.close();

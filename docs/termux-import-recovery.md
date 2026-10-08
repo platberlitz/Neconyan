@@ -1,5 +1,36 @@
 # Termux ZIP import recovery
 
+## Normal startup after updating
+
+The standard Termux launcher (`./start.sh`) selects Node. New installations no
+longer need a console snippet or special launch command. Normal Node startup
+checks the data filesystem before opening protected
+storage. If Node reports a changing timestamp as creation time, Neconyan records
+and uses a stable identity policy. The server and its file-processing workers
+use the same policy after restart and after later runtime updates.
+
+For users of the recovery launcher, updating and running the usual launcher in
+`~/Neconyan` continues the folder saved in `~/.neconyan-import-folder`, using port
+5534. Their imported data stays in that folder; it is not moved or imported again.
+An explicit `--dataRoot`, a custom configured data folder, global mode or another
+installation keeps its own data choice. An explicit `--port` keeps that port.
+Missing or invalid saved choices stop with an explanation instead of silently
+opening an empty instance.
+
+Ordinary native Termux startup also requests the wake lock. Android can still
+terminate a process, so the saved folder and durable import records remain the
+basis for restarting. Use `termux-wake-unlock` after stopping the server when the
+lock is no longer needed.
+
+Older protected data without a known identity policy is not silently rewritten.
+If its runtime has the timestamp problem, startup keeps those records unchanged
+and prints the recovery instructions below. A saved recovery folder is recognised
+as the explicitly chosen compatibility instance. Its policy is recorded in
+`_termux-file-identity.json` outside the account's imported files. Data marked for
+Node compatibility must continue using Node rather than a forced Bun runtime.
+
+## Backport for 1.2.1
+
 Some native Termux Node builds report a file's last-change time as its creation
 time. Writing or renaming a retained ZIP then changes what Neconyan sees as its
 file identity. The import stops with:
@@ -35,6 +66,7 @@ Place these files from the same version of this fix in
 `.local-runtime/termux-import/` inside the Neconyan installation:
 
 - `src/termux-file-stats.js`
+- `src/termux-file-identity.js`
 - `scripts/termux-import-folder.js`
 - `scripts/start-termux-import.sh`
 - A copy of the installation's `src/runtime.js`
@@ -122,3 +154,10 @@ npx --no-install playwright test termux-import.e2e.js --workers=1 --reporter=lin
 These tests use disposable data and check upload, publication and readback after
 a process restart. The desktop and touch Chromium checks simulate the affected
 filesystem; they do not establish physical-device or Fennec compatibility.
+
+Automatic startup and recovery-to-normal-start upgrade checks use
+`termux-startup.e2e.js` with `NECONYAN_TERMUX_AUTO_START_TEST=1`, the same disposable
+opt-in, and only `termux-ctime-fixture.js` in `NODE_OPTIONS`. Set
+`NECONYAN_TERMUX_V121_ROOT` to an owned v1.2.1 checkout with its own dependencies
+and the original 1.2.1 recovery preload to include the real version-upgrade cases.
+No compatibility preload is supplied to the updated server in those cases.

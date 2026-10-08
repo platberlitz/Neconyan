@@ -1,54 +1,43 @@
 # Full server migration: continuation
 
-### 8 October: explicit Termux recovery launch for failed ZIP imports
+### 8 October: automatic Termux startup and recovery upgrades
 
-Restart correction: rerunning the original `mktemp` setup created five recovery
-folders behind port 5534 while Fennec retained the first accepted import key.
-That produced 'The saved application result was not found'. The recovery tools
-now include a folder selector and Bash launcher. They locate the folder with
-saved import metadata, save the choice in `~/.neconyan-import-folder`, and reuse
-it on every launch. Ambiguous imports require an exact key; missing selected
-folders, unreadable metadata and an occupied port stop without resetting data.
-The launcher acquires the Termux wake lock before starting the server. `--new`
-creates a first fixed folder only when none exists, and repeated setup reuses
-the existing selection. No data folders or browser requests are cleared.
+PR #74, branch `codex/fix-termux-file-identity` from staging `d520b8885`, now
+covers normal startup as well as the 1.2.1 recovery tools. New native Termux Node
+installs probe their actual data filesystem before protected storage opens.
+Affected fresh data records a durable zero-birthtime policy in
+`_termux-file-identity.json`. The policy survives restarts and later runtimes
+which expose native creation times. File workers receive the same policy without
+changing global Node options for unrelated child processes.
 
-Latest checks: 442 Jest suites (5,763 passed, two skipped), 1,993 server tests,
-root/test lint (zero errors), frontend budgets and four browser cases across
-this branch and the actual 1.2.1 source. The browser cases now switch a real
-server to an empty data folder behind the same URL, reproduce the exact error,
-restore the original folder, and verify the retained result without a second
-upload. Folder-selection tests cover five attempts, repeated launches, exact
-keys, unreadable data, missing folders, links, path aliases, port conflicts and
-wake-lock ordering. Use the updated guide's restart launcher for the user;
-the earlier random-folder command is superseded.
+A normal launch in `~/Neconyan` follows the saved recovery choice in
+`~/.neconyan-import-folder` and keeps port 5534. Explicit data-root choices,
+custom configured data folders, global mode and other installations retain their
+own data; an explicit CLI port wins. Missing or invalid choices stop instead of
+opening an empty replacement instance. The server requests the Termux wake lock.
+Older unmarked protected data is kept unchanged and gets recovery instructions
+if its runtime is affected. Its saved identities are never silently converted.
 
-The new recording confirms that the browser reset runs, then the import fails
-with 'The retained upload was replaced or is incomplete'. The reported server
-is Node 24.18.0 in `/data/data/com.termux/files/home/Neconyan`, version 1.2.1.
-This is the Termux runtime, which does not use the APK's native timestamp adapter.
-Simulating Node's ctime-as-birthtime fallback reproduces the exact error while
-the retained bytes, device and inode remain correct.
+The 1.2.1 launcher remains available and remembers one folder across repeated
+runs. It finds saved imports among the earlier random folders, requires an exact
+key when ambiguous, refuses occupied ports or unreadable/missing selections, and
+never clears browser requests or removes data folders. Updated backport files
+also include `src/termux-file-identity.js` beside the preload and `runtime.js`.
+Previously supplied pinned backport commands remain self-contained and valid.
 
-Branch `codex/fix-termux-file-identity`, based on staging `d520b8885`, provides an
-explicit `--import` preload in `src/termux-file-stats.js`. It probes a real write
-and rename and normalises only proven unavailable creation times on that
-filesystem. Native creation times and the existing byte/inode/link checks remain
-in force. It is deliberately not enabled on ordinary launches: review found
-that automatic activation could invalidate older stored physical identities.
-The recovery guide uses a new data folder outside the repository and a separate
-port. Existing files and accepted requests are not rewritten.
+Verified on Node 24: 442 Jest suites (5,763 passed, two skipped), 2,002 server
+tests, root/test lint (zero errors), frontend budgets and whitespace. Eight
+Chromium cases passed: fresh normal-start imports/restarts and upgrades from the
+actual 1.2.1 recovery runtime, plus retained-result reconnection regressions on
+current and 1.2.1 code, at desktop and touch-phone sizes. The upgrade cases use
+no compatibility preload or explicit data-root override on the updated server.
+Targeted checks cover actual notebook workers, later native-birthtime support,
+malformed policies, explicit overrides and older-data preservation.
 
-Validation on Node 24: 442 Jest suites (5,763 passed, two skipped), 1,982 server
-tests, root lint, full test-folder lint (zero errors), frontend budgets and
-whitespace passed. Four explicit-preload Chromium cases passed across the actual
-1.2.1 release source and this branch, at desktop and touch-phone sizes, checking
-ZIP publication and retained readback after a server restart. The documented
-backport placement and CLI flags were also checked in a main process, worker
-thread and supervised-style child. Screenshots are saved locally under
-`screenshots/termux-import-{phone,desktop}.png`; physical Termux/Fennec remains
-unverified. Next action: review the follow-up PR and have the reporting user try
-the isolated 1.2.1 recovery command in `docs/termux-import-recovery.md`.
+Physical Termux/Fennec remains unverified; the failing timestamps were simulated.
+Next action: review/merge the updated PR for 1.2.2 and confirm the reporting phone
+can update and use its usual launcher with the same recovery data. The current
+behaviour and 1.2.1 backport are documented in `docs/termux-import-recovery.md`.
 
 ### 8 October: recover replacement ZIP imports and stale security tokens
 

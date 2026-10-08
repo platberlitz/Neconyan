@@ -5,6 +5,9 @@ const read = filename => readFileSync(new URL(filename, import.meta.url), 'utf8'
 
 describe('protected storage startup and account transport', () => {
     test('initialises and reconciles storage before migrations, plugins, listening and workers', () => {
+        const entry = read('../server.js');
+        expect(entry.indexOf('await configureTermuxStartup(cliArgs)')).toBeGreaterThanOrEqual(0);
+        expect(entry.indexOf('await configureTermuxStartup(cliArgs)')).toBeLessThan(entry.indexOf('await import(\'./src/server-main.js\')'));
         const source = read('../src/server-main.js');
         const boot = source.slice(source.indexOf('initUserStorage(globalThis.DATA_ROOT)'));
         const stages = ['.then(ensurePublicDirectoriesExist)', '.then(initialiseRoleplayStorage)', '.then(migrateUserData)',
