@@ -6,7 +6,10 @@ import path from 'node:path';
 
 async function search(page, query) {
     await page.evaluate(() => globalThis.NeconyanWelcome.activateRoute('search'));
-    await page.locator('#sb-universal-search-input').fill(query);
+    const input = page.locator('#sb-universal-search-input');
+    // A saved-chat navigation dialog can still own focus; use the field as a person would.
+    await input.click();
+    await input.fill(query);
 }
 
 for (const phone of [false, true]) {
