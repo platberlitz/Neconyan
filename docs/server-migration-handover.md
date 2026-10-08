@@ -2,6 +2,27 @@
 
 ### 8 October: explicit Termux recovery launch for failed ZIP imports
 
+Restart correction: rerunning the original `mktemp` setup created five recovery
+folders behind port 5534 while Fennec retained the first accepted import key.
+That produced 'The saved application result was not found'. The recovery tools
+now include a folder selector and Bash launcher. They locate the folder with
+saved import metadata, save the choice in `~/.neconyan-import-folder`, and reuse
+it on every launch. Ambiguous imports require an exact key; missing selected
+folders, unreadable metadata and an occupied port stop without resetting data.
+The launcher acquires the Termux wake lock before starting the server. `--new`
+creates a first fixed folder only when none exists, and repeated setup reuses
+the existing selection. No data folders or browser requests are cleared.
+
+Latest checks: 442 Jest suites (5,763 passed, two skipped), 1,993 server tests,
+root/test lint (zero errors), frontend budgets and four browser cases across
+this branch and the actual 1.2.1 source. The browser cases now switch a real
+server to an empty data folder behind the same URL, reproduce the exact error,
+restore the original folder, and verify the retained result without a second
+upload. Folder-selection tests cover five attempts, repeated launches, exact
+keys, unreadable data, missing folders, links, path aliases, port conflicts and
+wake-lock ordering. Use the updated guide's restart launcher for the user;
+the earlier random-folder command is superseded.
+
 The new recording confirms that the browser reset runs, then the import fails
 with 'The retained upload was replaced or is incomplete'. The reported server
 is Node 24.18.0 in `/data/data/com.termux/files/home/Neconyan`, version 1.2.1.
