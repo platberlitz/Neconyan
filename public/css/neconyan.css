@@ -549,6 +549,8 @@ body.neconyan #sheld .sb-conversation-message[data-message-id] { gap: 20px; alig
 /* Centre on the bubble itself, not on the room reserved above it for the sleeping cat. */
 body.neconyan #sheld .sb-conversation-message:has(> .sb-conversation-message-bubble > .neconyan-message-sleeper) > .sb-conversation-message-avatar { margin-top: var(--neconyan-sleeper-space, 44px); }
 @media (min-width: 769px) {
+    body.neconyan.documentstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm):not(.sbstory) #chat .mes .mes_block { padding: 8px var(--neco-bubble-pad); }
+    body.neconyan.documentstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm):not(.sbstory) #chat .mes .mes_text { margin-left: 0; }
     body.neconyan:is(.sbterm, :not(.flatchat)) #chat { padding-inline: max(var(--neco-gutter), calc(50% * (1 - var(--neconyanPageWidthScale, 1)))); }
     body.neconyan.echostyle:not(.sbterm) #chat .mes .mes_text { margin-top: var(--neconyan-sleeper-space, 44px); }
     body.neconyan.echostyle:not(.sbterm) #chat .mes > .neconyan-message-sleeper { top: calc(var(--neconyan-sleeper-text-top, 0px) - 41px); }

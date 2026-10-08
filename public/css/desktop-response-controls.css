@@ -35,6 +35,10 @@
         background: var(--neco-surface);
     }
 
+    /* Document's 8px row padding + 24px block margin (toggle-dependent.css); final padding is scaled in style.css. */
+    body.neconyan.documentstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm):not(.sbstory) #chat .mes.nn-response-controls-below > .nn-response-controls { right: 32px; }
+    body.neconyan.documentstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm):not(.sbstory) #chat .mes.last_mes.nn-response-controls-below > .nn-response-controls { right: calc(24px + 10px * var(--messageMarginScale, 1)); }
+
     body.neconyan #chat .mes .nn-response-controls .swipeRightBlock {
         position: static !important;
         flex-direction: row-reverse !important;
