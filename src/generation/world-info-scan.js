@@ -14,14 +14,28 @@ function hookEntry(entry) {
         position: entry.position ?? null, depth: entry.depth ?? null, order: entry.order ?? null };
 }
 
+/** Count the newest messages any scan pass can read, so long chats only carry that window. */
+export function worldInfoScanWindow(entries, settings = {}) {
+    const depths = [Number(settings.world_info_depth ?? 2)];
+    for (const entry of entries ?? []) if (entry?.scanDepth !== undefined && entry?.scanDepth !== null) depths.push(Number(entry.scanDepth));
+    if (Number(settings.world_info_min_activations) > 0) {
+        depths.push(Number(settings.world_info_min_activations_depth_max) || MAX_SCAN_DEPTH);
+    }
+    const window = Math.max(...depths);
+    return Number.isFinite(window) ? Math.min(MAX_SCAN_DEPTH, Math.max(0, Math.ceil(window))) : MAX_SCAN_DEPTH;
+}
+
 /** Scan saved entries without browser globals. The caller must save the result before provider dispatch. */
-export async function scanWorldInfo({ entries, chat, metadata = {}, settings, global = {}, maxContext,
+export async function scanWorldInfo({ entries, chat, chatLength = chat.length, metadata = {}, settings, global = {}, maxContext,
     countTokens, substitute = value => value, transform = value => value, random = Math.random, onScan = async () => {} }) {
+    if (!Number.isSafeInteger(chatLength) || chatLength < chat.length) {
+        throw roleplayError('ROLEPLAY_INVALID', 'The World Info chat length is invalid.', 409);
+    }
     const sorted = structuredClone(entries);
-    const effects = resolveWorldInfoTimedEffects(sorted, chat.length, metadata.timedWorldInfo);
+    const effects = resolveWorldInfoTimedEffects(sorted, chatLength, metadata.timedWorldInfo);
     const active = (type, entry) => effects.active[type].has(entry.hash);
     if (!sorted.length) return { worldInfoBefore: '', worldInfoAfter: '', EMEntries: [], WIDepthEntries: [],
-        ANBeforeEntries: [], ANAfterEntries: [], outletEntries: {}, activated: [], chatLength: chat.length,
+        ANBeforeEntries: [], ANAfterEntries: [], outletEntries: {}, activated: [], chatLength,
         timedWorldInfo: effects.metadata, draws: [], iterations: 0, hookEvents: { scanPasses: [], activated: null } };
     let budget = Math.min(maxContext, Math.round(settings.world_info_budget * maxContext / 100) || 1);
     if (settings.world_info_budget_cap > 0) budget = Math.min(budget, settings.world_info_budget_cap);
@@ -134,7 +148,7 @@ export async function scanWorldInfo({ entries, chat, metadata = {}, settings, gl
         if (settings.world_info_recursive && !overflowed && state === MIN_ACTIVATIONS && recursion.length) next = RECURSION;
         if (!next && !overflowed && settings.world_info_min_activations > activated.size
             && (!settings.world_info_min_activations_depth_max || depth < settings.world_info_min_activations_depth_max)
-            && depth < chat.length) { next = MIN_ACTIVATIONS; depth++; }
+            && depth < chatLength) { next = MIN_ACTIVATIONS; depth++; }
         if (settings.world_info_recursive && state === RECURSION && !next && delayed.length) {
             next = RECURSION;
             currentDelay = delayed.shift();
@@ -228,6 +242,6 @@ export async function scanWorldInfo({ entries, chat, metadata = {}, settings, gl
         ...(entry.automationId ? { automationId: entry.automationId } : {}),
     }));
     return { ...output, activated: activation,
-        chatLength: chat.length, timedWorldInfo: applyWorldInfoTimedEffects(effects.metadata, activatedEntries, chat.length),
+        chatLength, timedWorldInfo: applyWorldInfoTimedEffects(effects.metadata, activatedEntries, chatLength),
         draws, iterations, hookEvents: { scanPasses, activated: activation.length ? activation : null } };
 }

@@ -97,7 +97,8 @@ export async function runQuickImageJob(context, { generateText, fetchImpl = fetc
             let lore = read('image:world-info');
             if (lore === undefined && request.worldInfo) {
                 const selection = await prepareRoleplayWorldInfo(base, request.worldInfo, {
-                    macros: request.snapshot.macros, promptChat: [request.scene, ...request.worldInfo.chat], random,
+                    macros: request.snapshot.macros, promptChat: [request.scene, ...request.worldInfo.chat],
+                    chatLength: (request.worldInfo.chatLength ?? request.worldInfo.chat.length) + 1, random,
                 });
                 if (selection.hookEvents.actions.length) throw fail('The image lore selection needs its native Quick Reply action.', 'QIG_CONTRIBUTOR_PENDING');
                 const text = selection.activeLore.map(entry => `[${entry.title}]\n${entry.content}`).join('\n\n');

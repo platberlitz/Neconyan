@@ -8,7 +8,7 @@ import { assertRoleplaySourceLocked, readRoleplayEntityLocked } from './roleplay
 import { prepareWorldInfoEntries } from '../../public/scripts/world-info-scan-core.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { applyRegexScriptList, AGENT_REGEX_PLACEMENT } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
-import { scanWorldInfo } from './world-info-scan.js';
+import { scanWorldInfo, worldInfoScanWindow } from './world-info-scan.js';
 import { normalizeExtensionBootId } from '../../public/scripts/extension-boot-lifecycle/index.js';
 import { getStringHash } from '../../public/scripts/macro-primitives.js';
 import { captureScopedAuthorsNotes, findCharacterNoteEntry, getPersonaNoteEntry } from '../../public/scripts/authors-note-profiles.js';
@@ -320,12 +320,16 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         const images = agentContext ? [] : captureSavedRoleplayImages(base.directories, promptRecords, settings.power_user?.media_display ?? 'list', extensions.caption);
         const captions = agentContext ? null : captureRoleplayCaptions(base.directories, savedSettings, { records: promptRecords, images,
             serverPrompt, display: settings.power_user?.media_display ?? 'list' });
-        const chat = promptRecords.slice(1).flatMap((message, index) => {
+        const history = promptRecords.slice(1).flatMap((message, index) => {
             if (message.is_system) return [];
             const text = (attachments.find(item => item.index === index)?.text ?? '') + String(message.mes ?? '');
             return [(settings.world_info_include_names ?? DEFAULTS.world_info_include_names)
                 ? `${message.name}: ${text}` : text];
         }).reverse();
+        const scanSettings = Object.fromEntries(SETTINGS.map(key => [key, settings[key] ?? DEFAULTS[key]]));
+        // Scans never read past this window, so long chats keep only the newest messages here.
+        const chat = history.slice(0, worldInfoScanWindow(Object.values(names).flat()
+            .flatMap(name => Object.values(selected[name]?.data?.entries ?? {})), scanSettings));
         const authorNote = { prompt: saved.records[0].chat_metadata?.note_prompt ?? note.default ?? '',
             interval: saved.records[0].chat_metadata?.note_interval ?? note.defaultInterval ?? 1,
             position: saved.records[0].chat_metadata?.note_position ?? note.defaultPosition ?? 1,
@@ -437,11 +441,11 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             ...(inputTranslation ? { inputTranslation } : {}),
             ...(speech ? { speech } : {}),
             ...(captions ? { captions } : {}),
-            names, settings: Object.fromEntries(SETTINGS.map(key => [key, settings[key] ?? DEFAULTS[key]])),
+            names, settings: scanSettings,
             bookHashes: Object.fromEntries(Object.entries(selected).map(([name, value]) => [name, value.hash])),
             bookEvidence: Object.fromEntries(Object.entries(selected).map(([name, value]) =>
                 [name, { rawHash: value.rawHash, physical: value.physical }])),
-            characterFile: path.parse(avatar).name, avatar, maxContext, tokenizer, chat, regex,
+            characterFile: path.parse(avatar).name, avatar, maxContext, tokenizer, chat, chatLength: history.length, regex,
             savedChatLength: saved.records.length - 1,
             metadata: structuredClone(saved.records[0].chat_metadata ?? {}),
             authorNote,
@@ -481,7 +485,7 @@ export function assertRoleplayWorldInfoCurrent(base, snapshot) {
     }
 }
 
-export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.random, onEntriesLoaded, onScan, macros, promptChat, promptGlobal, promptInjections = [], vectorEntries = [] } = {}) {
+export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.random, onEntriesLoaded, onScan, macros, promptChat, chatLength, promptGlobal, promptInjections = [], vectorEntries = [] } = {}) {
     assertRoleplayWorldInfoCurrent(base, snapshot);
     let records;
     const selected = withRoleplayAccount(base, snapshot.account, lease => {
@@ -531,8 +535,9 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
     }
     const transform = (content, entry) => applyRegexScriptList(content, snapshot.regex, AGENT_REGEX_PLACEMENT.WORLD_INFO,
         { isPrompt: true, depth: entry.position === 4 ? entry.depth ?? 4 : undefined });
+    const scanChat = (promptChat ?? snapshot.chat)?.slice?.(0, worldInfoScanWindow(entries, snapshot.settings));
     if (promptChat !== undefined && (!Array.isArray(promptChat) || promptChat.some(value => typeof value !== 'string')
-        || Buffer.byteLength(JSON.stringify(promptChat)) > 2 * 1024 * 1024)) {
+        || Buffer.byteLength(JSON.stringify(scanChat)) > 2 * 1024 * 1024)) {
         throw roleplayError('ROLEPLAY_INVALID', 'The prepared World Info history is invalid.', 409);
     }
     if (!Array.isArray(promptInjections) || promptInjections.some(value => typeof value !== 'string')
@@ -555,7 +560,8 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
         if (!entry || entry.disable || getStringHash(String(entry.content ?? '')) !== item.hash) throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'A vector-selected lore entry changed.', 409);
         return `${item.world}.${item.uid}`;
     });
-    const result = await scanWorldInfo({ entries, chat: promptChat ?? snapshot.chat, metadata: snapshot.metadata,
+    const result = await scanWorldInfo({ entries, chat: scanChat,
+        chatLength: chatLength ?? promptChat?.length ?? snapshot.chatLength ?? snapshot.chat.length, metadata: snapshot.metadata,
         settings: snapshot.settings, global: { ...global, inject: [...global.inject, ...promptInjections], characterFile: snapshot.characterFile,
             ...(external.length ? { external } : {}) },
         maxContext: snapshot.maxContext, countTokens: count, substitute, random, onScan, transform });

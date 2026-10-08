@@ -5,7 +5,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { fixture, png } from './roleplay-transactions-fixture.js';
 import { constructScopedTextPrompt, createRawPrompt } from '../public/scripts/generation-format.js';
-import { scanWorldInfo } from '../src/generation/world-info-scan.js';
+import { scanWorldInfo, worldInfoScanWindow } from '../src/generation/world-info-scan.js';
 import { activeRoleplayAuthorNote, assertWorldInfoDepthHistory, buildRoleplaySavedHistory, insertRoleplayChatSystem, insertRoleplayPostHistory, insertWorldInfoAuthorNote, insertWorldInfoDepth, insertWorldInfoExamples, insertWorldInfoOutlets } from '../src/generation/roleplay-prompt.js';
 import { write as writeCard } from '../src/character-card-parser.js';
 
@@ -2499,4 +2499,51 @@ test('server replies use the saved character profile and persona Author\'s Note'
         { code: 'ROLEPLAY_INVALID' });
     assert.throws(() => activeRoleplayAuthorNote({ ...sam, persona: { useNote: true, prompt: 'x', position: 7 } }),
         { code: 'ROLEPLAY_INVALID' });
+});
+
+test('a long saved chat keeps only the scanned window while timed lore counts every message', async t => {
+    const f = fixture(t);
+    const filler = 'x'.repeat(2048);
+    const messages = Array.from({ length: 1600 }, (_, index) => ({ name: index % 2 ? 'Nova' : 'User', is_user: index % 2 === 0,
+        mes: `${index === 1599 ? 'The harbour bell rings. ' : ''}${filler}` }));
+    fs.writeFileSync(f.filename, [f.records[0], ...messages].map(record => JSON.stringify(record)).join('\n'));
+    f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+    fs.mkdirSync(f.scope.directories.worlds);
+    fs.writeFileSync(path.join(f.scope.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: entry(1, 'harbour', 'Late harbour lore', { delay: 1500 }),
+        2: entry(2, 'lighthouse', 'Deep lore', { scanDepth: 5 }),
+    } }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        world_info_settings: { world_info: { globalSelect: ['Town'] }, world_info_budget: 100 },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const snapshot = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 4000 });
+    assert.equal(snapshot.chat.length, 5);
+    assert.equal(snapshot.chatLength, 1600);
+    assert.ok(Buffer.byteLength(JSON.stringify(snapshot)) < 2 * 1024 * 1024);
+    const prepared = await prepareRoleplayWorldInfo(f.scope, snapshot);
+    assert.deepEqual(prepared.activated.map(value => value.uid), [1]);
+    const history = messages.map(message => `${message.name}: ${message.mes}`).reverse();
+    const fromHistory = await prepareRoleplayWorldInfo(f.scope, snapshot, { promptChat: history });
+    assert.deepEqual(fromHistory.activated.map(value => value.uid), [1]);
+    assert.equal(fromHistory.chatLength, 1600);
+});
+
+test('the scan window covers the deepest entry and stays inside the scanner limit', () => {
+    assert.equal(worldInfoScanWindow([], { world_info_depth: 2 }), 2);
+    assert.equal(worldInfoScanWindow([{ scanDepth: 7 }, { scanDepth: null }], { world_info_depth: 2 }), 7);
+    assert.equal(worldInfoScanWindow([{ scanDepth: 5000 }], { world_info_depth: 2 }), 1000);
+    assert.equal(worldInfoScanWindow([], { world_info_depth: 2, world_info_min_activations: 1, world_info_min_activations_depth_max: 40 }), 40);
+    assert.equal(worldInfoScanWindow([], { world_info_depth: 2, world_info_min_activations: 1 }), 1000);
+    assert.equal(worldInfoScanWindow([], { world_info_depth: 'bad' }), 1000);
+});
+
+test('timed lore counts the full chat length when the scanned history is shorter', async () => {
+    const delayed = [entry(1, 'cat', 'Delayed lore', { delay: 3 })];
+    assert.equal((await scan(delayed)).worldInfoBefore, '');
+    const result = await scan(delayed, { chatLength: 3 });
+    assert.equal(result.worldInfoBefore, 'Delayed lore');
+    assert.equal(result.chatLength, 3);
+    await assert.rejects(scan(delayed, { chatLength: 0 }), { code: 'ROLEPLAY_INVALID' });
 });
