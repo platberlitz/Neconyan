@@ -4872,7 +4872,8 @@ describe('in-chat agent post-processing runner', () => {
         }
     });
 
-    test('cancels companion post passes without starting later transforms', async () => {
+    test('cancels sequential companion post passes without starting later transforms', async () => {
+        globalSettings.appendAgentsExecutionMode = 'sequential';
         let resolveTransform;
         generateQuietPrompt
             .mockResolvedValueOnce('Raw companion note')
@@ -6674,6 +6675,67 @@ describe('in-chat agent post-processing runner', () => {
         await new Promise(resolve => setTimeout(resolve, 5));
     });
 
+    test('parallel rewrite requests overlap and combine once before one reversible message update', async () => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'parallel';
+        for (const agent of enabledAgents) agent.postProcess.enabled = true;
+        const releases = [];
+        generateQuietPrompt.mockImplementation(request => {
+            if (request.quietPrompt.includes('Combine parallel edits')) {
+                return Promise.resolve('Both improvements');
+            }
+            return new Promise(resolve => releases.push(resolve));
+        });
+        const message = { mes: 'Original reply', is_user: false, is_system: false, extra: {} };
+        chat.push(message);
+        const { initAgentRunner, undoPromptTransform, redoPromptTransform } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        const pending = eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await waitFor(() => releases.length === 2);
+        releases[1]('Second improvement');
+        await new Promise(resolve => setTimeout(resolve, 5));
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(2);
+        expect(message.mes).toBe('Original reply');
+        releases[0]('First improvement');
+        await pending;
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(3);
+        for (const [request] of generateQuietPrompt.mock.calls.slice(0, 2)) expect(request.quietPrompt).toContain('Original reply');
+        expect(generateQuietPrompt.mock.calls[2][0].quietPrompt).toContain('First improvement');
+        expect(generateQuietPrompt.mock.calls[2][0].quietPrompt).toContain('Second improvement');
+        expect(message.mes).toBe('Both improvements');
+        expect(message.extra.inChatAgentTransformHistory).toHaveLength(1);
+        await expect(undoPromptTransform(0)).resolves.toBe(true);
+        expect(message.mes).toBe('Original reply');
+        await expect(redoPromptTransform(0)).resolves.toBe(true);
+        expect(message.mes).toBe('Both improvements');
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test.each(['requests', 'synthesis'])('Stop during parallel %s keeps the original without applying late results', async phase => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'parallel';
+        for (const agent of enabledAgents) agent.postProcess.enabled = true;
+        const releases = [];
+        generateQuietPrompt.mockImplementation(request => {
+            if (phase === 'synthesis' && !request.quietPrompt.includes('Combine parallel edits')) {
+                return Promise.resolve(request.quietPrompt.includes('Rewrite as A') ? 'First edit' : 'Second edit');
+            }
+            return new Promise(resolve => releases.push(resolve));
+        });
+        chat.push({ mes: 'Original reply', is_user: false, is_system: false, extra: {} });
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        const pending = eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await waitFor(() => releases.length === (phase === 'requests' ? 2 : 1));
+        await eventSource.emit(eventTypes.GENERATION_STOPPED);
+        releases.forEach((release, index) => release(`Late result ${index}`));
+        await pending;
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(phase === 'requests' ? 2 : 3);
+        expect(chat[0].mes).toBe('Original reply');
+        expect(chat[0].extra.inChatAgentTransformHistory).toBeUndefined();
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
     test('run together keeps append blocks out of later rewrites and strips an echoed reply', async () => {
         useManualTransformAgents();
         globalSettings.appendAgentsExecutionMode = 'parallel';
@@ -6719,7 +6781,7 @@ describe('in-chat agent post-processing runner', () => {
         await new Promise(resolve => setTimeout(resolve, 5));
     });
 
-    test('a failed parallel companion append prevents later paid rewrites', async () => {
+    test('a failed parallel companion append waits for all rewrites without synthesising', async () => {
         globalSettings.appendAgentsExecutionMode = 'parallel';
         const companion = createCompanionAgent({ id: 'failed-append-companion' });
         enabledAgents = [companion,
@@ -6743,7 +6805,7 @@ describe('in-chat agent post-processing runner', () => {
         await new Promise(resolve => setTimeout(resolve, 5));
         releaseRewrite('First rewrite');
         await expect(pending).rejects.toThrow('Append failed');
-        expect(started).toEqual(['rewrite1', 'append']);
+        expect(started).toEqual(['rewrite1', 'rewrite2', 'append']);
     });
 
     test('raw output rules run once on generation, then only on explicitly enabled edits', async () => {
@@ -6795,7 +6857,8 @@ describe('in-chat agent post-processing runner', () => {
         expect(generateQuietPrompt).not.toHaveBeenCalled();
     });
 
-    test('Stop during the first automatic rewrite prevents the second agent from sending a request', async () => {
+    test('Stop during the first sequential rewrite prevents the second agent from sending a request', async () => {
+        globalSettings.appendAgentsExecutionMode = 'sequential';
         useManualTransformAgents();
         const quietResolvers = [];
         generateQuietPrompt.mockImplementation(async () => await new Promise(resolve => quietResolvers.push(resolve)));

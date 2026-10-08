@@ -88,7 +88,7 @@ import {
     TRACKER_REPAIR_INSTRUCTION,
     writeTrackerMetadataValue,
 } from './tracker-state.js';
-import { composePromptTransformDraft, runPromptTransformStages } from './prompt-transform-synthesis.js';
+import { buildPromptTransformSynthesisMessages, composePromptTransformDraft, runPromptTransformStages } from './prompt-transform-synthesis.js';
 
 const PROMPT_KEY_PREFIX = 'inchat_agent_';
 const PATHFINDER_AUTO_SUMMARY_PROMPT_KEY = 'pathfinder_zz_auto_summary';
@@ -3825,7 +3825,7 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
         return result;
     }
 
-    const helperRequest = appendConfiguredHelperPrefillMessages(buildPromptTransformMessages(
+    const helperRequest = appendConfiguredHelperPrefillMessages(options.promptMessages ?? buildPromptTransformMessages(
         expandedPrompt,
         transformMessageText,
         String(message?.name ?? '').trim(),
@@ -4073,9 +4073,10 @@ async function runPromptTransformAppendBatch(agents, message, generationType, me
 
 /**
  * Runs post-generation prompt transforms over one reply. Rewrite agents edit the
- * reply in Order; append agents share the reply body, and their add-on blocks are
+ * reply in Order in sequential mode; parallel rewrites share the original and
+ * are synthesised afterwards. Append agents share the reply body, and their add-on blocks are
  * cleaned of echoed text and duplicates, then joined around the finished body.
- * With Run together the append agents start alongside the rewrites.
+ * With Run together every agent request starts together.
  */
 async function runPromptTransformPasses(agents, message, generationType, text, messageIndex = null, { cancelRevision = null, runtimeAgents = [], stopOnFailure = false, isCurrent = () => true, recentChatEndIndex = null } = {}) {
     const promptRuns = [];
@@ -4099,6 +4100,7 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
         parallel: getGlobalSettings().appendAgentsExecutionMode !== 'sequential',
         isAppend: agent => getPromptTransformMode(agent) === 'append',
         isPrepend: shouldPrependPromptTransformOutput,
+        isAgentAllowed: isAgentRuntimeAllowed,
         shouldStop: () => {
             outcome.cancelled = outcome.cancelled || isCancelled();
             return outcome.cancelled || !isCurrent();
@@ -4149,6 +4151,22 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
                 if (stopOnFailure) return { stop: true };
             }
             return { outputs: batch.outputs };
+        },
+        runSynthesis: async (original, rewrites, draft) => {
+            const agent = rewrites.at(-1).agent;
+            const synthesisAgent = { ...agent, name: 'Combined reply', postProcess: { ...agent.postProcess,
+                promptTransformMaxTokens: Math.max(...rewrites.map(item => normalizePromptTransformMaxTokens(item.agent.postProcess?.promptTransformMaxTokens))) } };
+            const result = await runPromptTransformAgent(synthesisAgent, message, generationType, original, messageIndex, {
+                applyToMessage: false, runtimeAgents: [...runtimeAgents, ...agents.filter(isAgentRuntimeAllowed)], recentChatEndIndex,
+                ...(cancelRevision !== null ? { cancelRevision } : {}),
+                promptMessages: buildPromptTransformSynthesisMessages(original, rewrites, draft),
+            });
+            promptRuns.push({ ...result, mode: 'synthesis' });
+            if (result.status === 'stale-target') outcome.staleTarget = true;
+            if (isCancelled() || ['cancelled', 'skipped-runtime-filter'].includes(result.status)) outcome.cancelled = true;
+            if (outcome.staleTarget || outcome.cancelled || !isCurrent()) return { stop: true };
+            if (!['changed', 'unchanged'].includes(result.status)) throw new Error('The combined Agent reply was empty or cut short. The original reply was kept.');
+            return { text: result.nextMessageText };
         },
     });
 

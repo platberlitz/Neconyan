@@ -3,7 +3,7 @@ import { buildPromptTransformRecentChat, getAgentLengthTarget } from '../../publ
 import { applyRegexScriptList } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 import { buildRegexScriptRefsForAgent } from '../../public/scripts/extensions/in-chat-agents/regex-snapshot-store.js';
 import { inspectTrackerState, mergeTrackerRepairPayload, TRACKER_REPAIR_INSTRUCTION } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
-import { composePromptTransformDraft, planPromptTransformStages, runPromptTransformStages } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-synthesis.js';
+import { buildPromptTransformSynthesisMessages, composePromptTransformDraft, planPromptTransformStages, runOrderedPromptTransformStages, runPromptTransformStages } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-synthesis.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { createProviderScope, readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
@@ -149,11 +149,13 @@ async function modelRun(context, options, agent, text, name, intercept = false, 
         ? source.message.index + 1 : records.length;
     const recentChat = intercept ? '' : buildPromptTransformRecentChat(records.slice(1, endIndex), agent.postProcess.promptTransformContextMessages, unwrap);
     const result = await runAgentModelStep(context, { base, account: snapshot.account, name,
-        identity: roleplayHash({ intent: context.job.intent, agent: snapshot.agents.agents.find(item => item.id === agent.id), text, intercept, format, generationType }),
+        identity: roleplayHash({ intent: context.job.intent, agent: snapshot.agents.agents.find(item => item.id === agent.id), text, intercept, format, generationType,
+            ...(options.synthesisMessages ? { synthesisMessages: options.synthesisMessages } : {}) }),
         binding: agent.binding || options.binding, modelOverride: agent.binding ? agent.modelOverride : '', fallbacks: agent.fallbacks,
         maxTokens: intercept ? agent.preProcess.maxTokens : agent.postProcess.promptTransformMaxTokens,
         macros, tokenizer: snapshot.tokenizer, fallbackContext: snapshot.maxContext, assertCurrent, generate,
         buildMessages: environment => {
+            if (options.synthesisMessages) return appendHelperPrefillMessages(options.synthesisMessages, snapshot.agents.helperPrefill);
             aliases(environment, agent, text, generationType, options.assistantName);
             const prompt = evaluate(environment, agent.prompt, snapshot);
             return appendHelperPrefillMessages(messagesFor(agent, text, prompt, generationType, options.assistantName, format, intercept, recentChat), snapshot.agents.helperPrefill);
@@ -251,7 +253,7 @@ function postprocessingPlan(context, account, phaseName, identity, selected, mod
     const name = `${phaseName}:plan`;
     const saved = readPhase(context, account, name, identity);
     if (saved) {
-        if (![1, 2].includes(saved.version)) throw fail('The saved Agent postprocessing plan is unsupported.');
+        if (![1, 2, 3].includes(saved.version)) throw fail('The saved Agent postprocessing plan is unsupported.');
         return saved.version;
     }
     const started = withRoleplayAccount({ owner: context.owner, directories: context.directories }, account, () =>
@@ -259,7 +261,7 @@ function postprocessingPlan(context, account, phaseName, identity, selected, mod
             readArtifact(context.directories, context.job.id, `agent-model:${modelName(agent.id)}:${part}`) !== undefined)));
     // Persist the choice before any new call, so another interruption cannot
     // mistake a new synthesis run for a pre-upgrade run.
-    return savePhase(context, account, name, { identity, version: started ? 1 : 2 }).version;
+    return savePhase(context, account, name, { identity, version: started ? 1 : 3 }).version;
 }
 
 export async function runRoleplayAgentPostprocessing(context, options) {
@@ -289,7 +291,7 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     const parallel = snapshot.agents.appendMode === 'parallel';
     // Run together shares one provider scope, so rewrite and append steps can be in flight at once.
     const scope = parallel ? { ...context, providerScope: context.providerScope ?? createProviderScope(context) } : context;
-    const runStages = version === 1 ? runLegacyPromptTransformStages : runPromptTransformStages;
+    const runStages = version === 1 ? runLegacyPromptTransformStages : version === 2 ? runOrderedPromptTransformStages : runPromptTransformStages;
     const { draft } = await runStages({
         agents: selected, text: baseline, parallel, isPrepend: prepend,
         isAppend: agent => agent.postProcess.promptTransformMode === 'append',
@@ -313,6 +315,16 @@ export async function runRoleplayAgentPostprocessing(context, options) {
             runs.push(...results.map(run => ({ ...run, mode: 'append' })));
             if (companionOutput && results.some(run => run.status !== 'done')) { postFailed = true; return { stop: true }; }
             return { outputs: results.map((run, offset) => ({ agent: batch[offset], text: run.outputText })) };
+        },
+        runSynthesis: async (original, rewrites, draft) => {
+            const agent = rewrites.at(-1).agent;
+            const synthesisAgent = { ...agent, postProcess: { ...agent.postProcess,
+                promptTransformMaxTokens: Math.max(...rewrites.map(item => item.agent.postProcess.promptTransformMaxTokens)) } };
+            const run = await modelRun(scope, { ...options, synthesisMessages: buildPromptTransformSynthesisMessages(original, rewrites, draft) },
+                synthesisAgent, original, `${options.namespace ? options.namespace + ':' : ''}post-synthesis`);
+            runs.push({ ...run, agentName: 'Combined reply', mode: 'synthesis' });
+            if (run.status !== 'done') throw roleplayError('ROLEPLAY_AGENT_SYNTHESIS', 'The combined Agent reply was empty or cut short. The original reply was kept.', 409);
+            return { text: run.outputText };
         },
     });
     const agentOrder = new Map(selected.map((agent, index) => [agent.id, index]));

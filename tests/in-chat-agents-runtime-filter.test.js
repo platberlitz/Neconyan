@@ -571,16 +571,39 @@ describe('runtime checks at agent dispatch', () => {
         expect(companions.getCompanionResults(edited)).toEqual({});
     });
 
-    test('rechecks companion-output post passes after a prompt wait', async () => {
+    test('rechecks parallel companion-output post passes before synthesis', async () => {
         loadAgents({ id: 'companion', execution: 'companion' }, ...['first', 'blocked', 'last'].map(id => ({ id, conditions: { runOnCompanionOutputs: true } })));
         addMessage();
-        context.generateRaw.mockImplementationOnce(async () => {
-            store.setRuntimeAgentFilter(OWNER, agent => agent.id !== 'blocked');
-            return 'first-output';
+        context.generateRaw.mockImplementation(async ({ prompt }) => {
+            const instruction = prompt[0].content.split('\n')[0];
+            if (instruction === 'first') store.setRuntimeAgentFilter(OWNER, agent => agent.id !== 'blocked');
+            return instruction.startsWith('Combine parallel edits') ? 'combined-output' : `${instruction}-output`;
         });
         const result = await runner.runCompanionOutputPostPasses({ id: 'companion' }, 'original', { messageIndex: 0 });
-        expect(context.generateRaw.mock.calls.map(([request]) => request.prompt[0].content.split('\n')[0])).toEqual(['first', 'last']);
+        expect(context.generateRaw.mock.calls.map(([request]) => request.prompt[0].content.split('\n')[0])).toEqual([
+            'first', 'last', 'Combine parallel edits of one reply into a single coherent final reply body.',
+        ]);
+        expect(result.text).toBe('combined-output');
+    });
+
+    test('drops an earlier parallel rewrite excluded while its sibling is pending', async () => {
+        loadAgents({ id: 'companion', execution: 'companion' }, ...['first', 'last'].map(id => ({ id, conditions: { runOnCompanionOutputs: true } })));
+        addMessage();
+        const held = deferred();
+        const started = deferred();
+        context.generateRaw.mockResolvedValueOnce('first-output').mockImplementationOnce(async () => {
+            started.resolve();
+            await held.promise;
+            store.setRuntimeAgentFilter(OWNER, agent => agent.id !== 'first');
+            return 'last-output';
+        });
+        const pending = runner.runCompanionOutputPostPasses({ id: 'companion' }, 'original', { messageIndex: 0 });
+        await started.promise;
+        await jest.advanceTimersByTimeAsync(0);
+        held.resolve();
+        const result = await pending;
         expect(result.text).toBe('last-output');
+        expect(context.generateRaw).toHaveBeenCalledTimes(2);
     });
 
     test('does not activate runtime-excluded keyword companions or change their saved toggle', async () => {
