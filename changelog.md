@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.2.3
+
+Android hotfix for [#80](https://github.com/platberlitz/Neconyan/issues/80), where the app stopped opening and showed `ERR_CONNECTION_RESET` or `kill failed: ESRCH`.
+
+### Highlights
+
+- The Android app notices when its local server stops while starting, instead of waiting five minutes and showing an error. It restarts the server once in **safe mode**, which pauses background Mewmory updates, automatic Conversation messages and interrupted tasks until you retry them. The next start is normal.
+- If the server still can't start, a recovery screen offers **Try again**, **Save a backup of my data**, **Copy details for a bug report** and **Close Neconyan**. The backup is a ZIP of your account folder, saved without the server, and **Import Backup ZIP** accepts it in another installation. Saved API keys are only included if you choose to.
+- Page load failures reconnect to the workspace instead of showing the WebView error page.
+- The server's memory limit now scales with the phone's memory, from 512 MB up to 2 GB, instead of a fixed 512 MB. The previous server log is kept for bug reports.
+- Updated the [official handbook](https://platberlitz.github.io/neconyan-docs/start/android/) and the assistants' app-help reference.
+
 ## v1.2.2
 
 ### Highlights
