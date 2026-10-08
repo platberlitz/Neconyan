@@ -2,6 +2,19 @@
 
 ## v1.2.2
 
+### Highlights
+
+- The swipe picker shows each version as a card you can read, copy, branch from or delete. Open it from the swipe counter on desktop or with a long press on phones.
+- Added **Desktop response controls** to place the swipe arrows and counter inside the bubble or below it on wide screens.
+- Added **Guided Regenerate**, which replaces the latest reply using the composer text as direction. Input History now opens a searchable picker that replaces your draft.
+- Reply passes set to **Run together** now run at the same time on the original reply. Differing rewrites are combined with one extra request.
+- Added the **NSFW Enhancer** rewriter, off by default, and **Keep the original when an Agent refuses**, on by default. Companions can choose **Where kept notes go**.
+- Mewmory can hide old messages past a token limit and turn itself on in every new chat. Its Automatic memory switches now save as soon as you change them.
+- Long chats no longer fail the server World Info scan, and the Labs open saved chats up to 64 MiB.
+- JannyAI link imports name the real reason they fail. A different ZIP starts its own saved upload, and expired security tokens refresh once before retrying.
+- Termux recovery continues its saved data folder, keeps the phone awake during startup and switches to a file-time compatibility mode when the phone needs it.
+- Updated the [official handbook](https://platberlitz.github.io/neconyan-docs/) and the assistants' app-help reference.
+
 ### Merged Staging PRs
 - PR #66 (2026-10-08) `feat: add Desktop swipe button customization controls`
 - PR #67 (2026-10-08) `fix(tools): open tool pages in translated interfaces`
