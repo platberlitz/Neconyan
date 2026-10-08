@@ -114,7 +114,7 @@ describe('paper texture regression guards', () => {
             paperThemeCss.match(/\.mes::after\s*\{[\s\S]*?\}/)?.[0] ?? '',
         ];
         for (const overlay of overlays) {
-            expect(overlay).toContain("url('../img/neconyan/paper-fibre.webp')");
+            expect(overlay).toContain('url(\'../img/neconyan/paper-fibre.webp\')');
             expect(overlay).toContain('background-size: 256px 256px');
             expect(overlay).toContain('pointer-events: none');
             expect(overlay).not.toMatch(/(?:radial|linear)-gradient/);

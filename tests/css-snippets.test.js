@@ -210,11 +210,11 @@ describe('CSS Snippets packaging', () => {
             expect(commands).toContain(`name: '${name}'`);
         }
         const index = fs.readFileSync(path.join(extensionRoot, 'index.js'), 'utf8');
-        expect(index).toContain("'csss_manager_button'");
+        expect(index).toContain('\'csss_manager_button\'');
         expect(index).toContain('#CustomCSS-block');
         const tabs = fs.readFileSync(path.join(repoRoot, 'public/scripts/neconyan-tabs.js'), 'utf8');
-        expect(tabs).toContain("{ id: 'css-snippets', label: 'CSS Snippets', icon: 'fa-list-check', actions: ['open'], open: 'css-snippets' }");
-        expect(tabs).toContain("clickNeconyanNativeLauncher('#csss_manager_button')");
+        expect(tabs).toContain('{ id: \'css-snippets\', label: \'CSS Snippets\', icon: \'fa-list-check\', actions: [\'open\'], open: \'css-snippets\' }');
+        expect(tabs).toContain('clickNeconyanNativeLauncher(\'#csss_manager_button\')');
     });
 
     test('does not ship the original bundled code editor', () => {

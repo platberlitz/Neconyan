@@ -55,7 +55,7 @@ describe('prompt list previews', () => {
     });
 
     test('rows render the escaped preview after the token count, leaving control positions alone', () => {
-        expect(promptManagerSource).toContain("import { getPromptPreview } from './prompt-preview.js';");
+        expect(promptManagerSource).toContain('import { getPromptPreview } from \'./prompt-preview.js\';');
         expect(promptManagerSource).toContain('const promptPreview = prompt.marker ? null : getPromptPreview(prompt.content);');
         expect(promptManagerSource).toMatch(/prompt-manager-prompt-preview[^`]*\$\{escapeHtml\(promptPreview\.text\)\}<\/small>/);
         expect(promptManagerSource).toMatch(/prompt_manager_prompt_tokens" data-pm-tokens="\$\{calculatedTokens\}">[^\n]*<\/span>\n\s*\$\{previewHtml\}\n\s*<\/li>/);

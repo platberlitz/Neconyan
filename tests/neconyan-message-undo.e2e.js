@@ -309,8 +309,7 @@ test('cancelled deletion retains the prior Undo and expiry does not steal editor
     await expect(page.locator('.neconyan-undo-action')).toBeVisible();
     await page.locator('#chat .mes[mesid="1"] .mes_edit').click();
     await page.locator('#curEditTextarea').fill('keep my editing focus');
-    await page.waitForTimeout(8500);
-    await expect(page.locator('.neconyan-undo-toast')).toHaveCount(0);
+    await expect(page.locator('.neconyan-undo-toast')).toHaveCount(0, { timeout: 13500 });
     await expect(page.locator('#curEditTextarea')).toBeFocused();
     await expect(page.locator('#curEditTextarea')).toHaveValue('keep my editing focus');
 });

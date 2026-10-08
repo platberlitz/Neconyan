@@ -19,6 +19,18 @@ module.exports = {
     overrides: [
         { files: ['*.test.js'], extends: ['plugin:jest/recommended'] },
         { files: ['*.e2e.js', '*-fixture.js', '*-helpers.js', 'capture-screenshots.js'], extends: ['plugin:playwright/recommended'] },
+        {
+            files: ['in-chat-agents-templates.test.js'],
+            rules: {
+                'jest/expect-expect': ['warn', { assertFunctionNames: ['expect', 'expectLevelUpStatsDefaults', 'expectExistingStatsSectionOnStatsTemplate'] }],
+            },
+        },
+        {
+            files: ['neconyan-scratchpad-notebooks.e2e.js'],
+            rules: {
+                'playwright/expect-expect': ['warn', { assertFunctionNames: ['checkNoteSelection'] }],
+            },
+        },
     ],
     ignorePatterns: [
         '*.min.js',

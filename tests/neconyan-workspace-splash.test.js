@@ -21,8 +21,10 @@ describe('Preparing workspace splash', () => {
             expect(bytes.toString('ascii', 8, 12)).toBe('WEBP');
             expect(bytes.length).toBeLessThan(110_000);
             expect(bytes.includes(Buffer.from('ANIM'))).toBe(animated);
-            if (animated) expect(bytes[20] & 0x10).toBe(0x10); // WebP extended-header alpha flag.
-            else expect(bytes.includes(Buffer.from('ALPH'))).toBe(true);
+            const hasAlpha = animated
+                ? (bytes[20] & 0x10) === 0x10 // WebP extended-header alpha flag.
+                : bytes.includes(Buffer.from('ALPH'));
+            expect(hasAlpha).toBe(true);
         }
     });
 
@@ -37,6 +39,6 @@ describe('Preparing workspace splash', () => {
 
     test('hides the waving kitty with Hide cats while retaining the loading status', () => {
         expect(read('css/neconyan-kittyless.css')).toContain('.neconyan-workspace-kitty');
-        expect(read('scripts/welcome-screen.js')).toContain("chatElement.querySelector('#neconyan-home-skeleton')?.remove();");
+        expect(read('scripts/welcome-screen.js')).toContain('chatElement.querySelector(\'#neconyan-home-skeleton\')?.remove();');
     });
 });

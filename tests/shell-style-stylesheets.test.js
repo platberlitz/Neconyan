@@ -81,11 +81,11 @@ const runtimeIds = themeIds.filter(id => id !== 'calico');
 describe('shell style runtime stylesheets', () => {
     test('tour accent actions use the primary-button contract in every shell style', () => {
         const tours = readSource('public', 'scripts', 'neconyan-tool-tour.js');
-        expect(tours).toContain("'menu_button menu_button_primary neconyan-tool-tour-next', t`Show me around`");
-        expect(tours).toContain("'menu_button menu_button_primary neconyan-tool-tour-next', t`Next`");
+        expect(tours).toContain('\'menu_button menu_button_primary neconyan-tool-tour-next\', t`Show me around`');
+        expect(tours).toContain('\'menu_button menu_button_primary neconyan-tool-tour-next\', t`Next`');
         const loreTours = readSource('public', 'scripts', 'neconyan-lorebook-tour.js');
-        expect(loreTours).toContain("'menu_button menu_button_primary neconyan-lorebook-tour-next', t`Show me around`");
-        expect(loreTours).toContain("'menu_button menu_button_primary neconyan-lorebook-tour-next', t`Next`");
+        expect(loreTours).toContain('\'menu_button menu_button_primary neconyan-lorebook-tour-next\', t`Show me around`');
+        expect(loreTours).toContain('\'menu_button menu_button_primary neconyan-lorebook-tour-next\', t`Next`');
         for (const id of runtimeIds.filter(id => id !== 'kittyless')) {
             const source = readSource('public', 'css', 'shell-styles', `${id}.css`);
             expect(source).toContain('.menu_button_primary, .popup-button-ok');
@@ -195,7 +195,7 @@ describe('Hide cats works with every shell style', () => {
     test('the cat removal sheet only applies while cats are hidden', () => {
         const selectors = collectSelectors(catSheet).flatMap(splitSelectorList);
         expect(selectors.length).toBeGreaterThan(10);
-        expect(selectors.filter(part => !part.startsWith(":root[data-sb-kittyless='true']"))).toEqual([]);
+        expect(selectors.filter(part => !part.startsWith(':root[data-sb-kittyless=\'true\']'))).toEqual([]);
         expect(stripped).not.toMatch(/!important/);
         expect(stripped).not.toMatch(/\b(transition|animation)\s*:/);
         expect(stripped).not.toMatch(/(^|[^:])\/\//m);
@@ -205,10 +205,10 @@ describe('Hide cats works with every shell style', () => {
     });
 
     test('it hides the cats, and swaps only Calico\'s wallpaper for the railway', () => {
-        for (const piece of ['.neconyan-whiskers', '.neconyan-home-cat', '.neconyan-message-sleeper', '.neconyan-startup-cat', '.neconyan-cat-panel, .neconyan-assistant-row', '#options::before', "content: '\\f544'"]) {
+        for (const piece of ['.neconyan-whiskers', '.neconyan-home-cat', '.neconyan-message-sleeper', '.neconyan-startup-cat', '.neconyan-cat-panel, .neconyan-assistant-row', '#options::before', 'content: \'\\f544\'']) {
             expect(stripped).toContain(piece);
         }
-        expect(stripped).toContain(":root[data-sb-kittyless='true']:is(:not([data-sb-theme]), [data-sb-theme='calico'], [data-sb-theme='kittyless']) body.neconyan::before");
+        expect(stripped).toContain(':root[data-sb-kittyless=\'true\']:is(:not([data-sb-theme]), [data-sb-theme=\'calico\'], [data-sb-theme=\'kittyless\']) body.neconyan::before');
         expect(stripped).toContain('shell-kittyless.webp');
         expect(readSource('public', 'css', 'shell-styles', 'kittyless.css')).not.toContain('shell-kittyless.webp');
     });
@@ -216,11 +216,11 @@ describe('Hide cats works with every shell style', () => {
     test('the head script and the shell script load it for the Kittyless style or the switch', () => {
         const version = readShellScriptVersion();
         const headScript = readHeadScript();
-        expect(headScript).toContain("if (shellStyle === 'kittyless' || localStorage.getItem('sb-kittyless') === 'true')");
+        expect(headScript).toContain('if (shellStyle === \'kittyless\' || localStorage.getItem(\'sb-kittyless\') === \'true\')');
         expect(headScript).toContain(`'css/neconyan-kittyless.css?v=${version}'`);
-        expect(headScript).toContain("document.documentElement.setAttribute('data-sb-kittyless', 'true')");
+        expect(headScript).toContain('document.documentElement.setAttribute(\'data-sb-kittyless\', \'true\')');
 
-        expect(tabsSource).toContain("kittyless: 'sb-kittyless',");
+        expect(tabsSource).toContain('kittyless: \'sb-kittyless\',');
         expect(tabsSource).toContain('const NN_KITTYLESS_STYLESHEET_HREF = `css/neconyan-kittyless.css?v=${NN_SHELL_STYLE_STYLESHEET_VERSION}`;');
         expect(tabsSource).toMatch(/function setShellTheme\([\s\S]*?syncShellStyleStylesheet\(nextTheme\);\s*syncKittylessStylesheet\(\);/);
         expect(tabsSource).toMatch(/function isKittylessActive\(\) \{\s*return nnState\.theme === 'kittyless' \|\| nnState\.kittyless;/);
@@ -228,8 +228,8 @@ describe('Hide cats works with every shell style', () => {
     });
 
     test('Shell Style has a Hide cats switch that the Kittyless style locks on', () => {
-        expect(tabsSource).toContain("id: 'sb-kittyless-enabled-input'");
-        expect(tabsSource).toContain("label: 'Hide cats (Kittyless)'");
+        expect(tabsSource).toContain('id: \'sb-kittyless-enabled-input\'');
+        expect(tabsSource).toContain('label: \'Hide cats (Kittyless)\'');
         expect(tabsSource).toContain('The Kittyless style always hides the cats.');
         expect(stripped).toContain('.sb-kittyless-setting.is-disabled #sb-kittyless-enabled-input:checked');
     });
@@ -259,8 +259,8 @@ describe('Windows 98 hourglass cats', () => {
 
     test('reduced motion swaps the spinning cats for still copies', () => {
         const css = stripCssBlockComments(readSource('public', 'css', 'shell-styles', 'windows-98.css'));
-        const running = "img[src*='img/neconyan-pixel-cat-running.webp'] { content: url('../../img/neconyan/win98/";
-        const moving = "img[src*='img/neconyan-pixel-cat.webp'] { content: url('../../img/neconyan/win98/";
+        const running = 'img[src*=\'img/neconyan-pixel-cat-running.webp\'] { content: url(\'../../img/neconyan/win98/';
+        const moving = 'img[src*=\'img/neconyan-pixel-cat.webp\'] { content: url(\'../../img/neconyan/win98/';
         expect(css).toContain(`body.neconyan ${running}startup-cat.webp`);
         expect(css).toContain(`body.neconyan ${moving}home-cat.webp`);
         const media = css.match(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/);

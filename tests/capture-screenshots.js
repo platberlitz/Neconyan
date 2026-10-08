@@ -5,9 +5,10 @@
  *
  * Automates screenshot capture for desktop and mobile viewports.
  * Uses a robust drawer state-machine to handle complex desktop/mobile overlays.
- * Requires the Neconyan server to be running on port 4433.
+ * Uses NECONYAN_TEST_BASE_URL, or a Neconyan server on port 4433.
  */
 
+/* global document, window */
 import { chromium } from 'playwright';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -33,7 +34,7 @@ const version = versionArg.split('=')[1];
 // has one so the shot is not empty chrome. Defaults to the in-chat character.
 const conversationCharacter = conversationCharacterArg ? conversationCharacterArg.split('=').slice(1).join('=') : '';
 const searchQuery = 'agents';
-const baseURL = 'http://127.0.0.1:4433';
+const baseURL = process.env.NECONYAN_TEST_BASE_URL || 'http://127.0.0.1:4433';
 const screenshotsDir = join(__dirname, '..', 'screenshots');
 
 // Viewport configurations
@@ -44,109 +45,59 @@ const viewports = {
 
 async function dismissOnboardingIfPresent(page) {
     const onboardingDialog = page.locator('dialog[open]:has(.onboarding)').first();
-    if (await onboardingDialog.isVisible().catch(() => false)) {
+    if (await onboardingDialog.isVisible()) {
         await onboardingDialog.locator('.popup-input').fill('Screenshot Tester');
-        await onboardingDialog.locator('.popup-button-ok').click({ force: true });
-        await page.waitForTimeout(1000);
+        await onboardingDialog.locator('.popup-button-ok').click();
+        await onboardingDialog.waitFor({ state: 'hidden' });
+    }
+    const skipTour = page.getByRole('button', { name: 'Skip', exact: true });
+    if (await skipTour.isVisible()) {
+        await skipTour.click();
+        await skipTour.waitFor({ state: 'hidden' });
     }
 }
 
-async function forceClick(page, selector) {
-    await page.waitForSelector(selector, { state: 'attached', timeout: 10000 });
-    try {
-        await page.locator(selector).click({ force: true, timeout: 5000 });
-    } catch (e) {
-        console.log(`      Standard click failed on ${selector}, attempting dispatchEvent...`);
-        await page.locator(selector).dispatchEvent('click');
+async function ensureOnlyOpen(page, target, tabId) {
+    const panels = {
+        left: '#left-nav-panel',
+        customize: '#user-settings-block',
+        characters: '#right-nav-panel',
+    };
+    // Selection can close a phone drawer between a visibility check and a click.
+    await page.evaluate(() => {
+        window.NeconyanShell.closeWorkspace();
+        window.NeconyanShell.closeCharacters();
+    });
+    for (const selector of Object.values(panels)) {
+        await page.locator(`${selector}.openDrawer`).waitFor({ state: 'hidden' });
     }
-    await page.waitForTimeout(500);
-}
-
-// Drawer state machine helper
-async function ensureOnlyOpen(page, target) {
-    const leftOpen = await page.locator('#left-nav-panel.openDrawer').isVisible().catch(() => false);
-    const customizeOpen = await page.locator('#user-settings-block.openDrawer').isVisible().catch(() => false);
-    const charactersOpen = await page.locator('#right-nav-panel.openDrawer').isVisible().catch(() => false);
-
-    console.log(`      Current state: Left=${leftOpen}, Customize=${customizeOpen}, Characters=${charactersOpen} -> Targeting: ${target}`);
-
-    if (target === 'left') {
-        if (customizeOpen) {
-            await forceClick(page, '#sb-right-shell-toggle');
-            await page.waitForSelector('#user-settings-block.openDrawer', { state: 'hidden', timeout: 5000 }).catch(() => {});
-        }
-        if (charactersOpen) {
-            await forceClick(page, '#sb-character-toggle');
-            await page.waitForSelector('#right-nav-panel.openDrawer', { state: 'hidden', timeout: 5000 }).catch(() => {});
-        }
-        if (!leftOpen) {
-            await forceClick(page, '#sb-left-shell-toggle');
-            await page.waitForSelector('#left-nav-panel.openDrawer', { timeout: 10000 });
-        }
-    } else if (target === 'customize') {
-        if (leftOpen) {
-            await forceClick(page, '#sb-left-shell-toggle');
-            await page.waitForSelector('#left-nav-panel.openDrawer', { state: 'hidden', timeout: 5000 }).catch(() => {});
-        }
-        if (charactersOpen) {
-            await forceClick(page, '#sb-character-toggle');
-            await page.waitForSelector('#right-nav-panel.openDrawer', { state: 'hidden', timeout: 5000 }).catch(() => {});
-        }
-        if (!customizeOpen) {
-            await forceClick(page, '#sb-right-shell-toggle');
-            await page.waitForSelector('#user-settings-block.openDrawer', { timeout: 10000 });
-        }
-    } else if (target === 'characters') {
-        if (leftOpen) {
-            await forceClick(page, '#sb-left-shell-toggle');
-            await page.waitForSelector('#left-nav-panel.openDrawer', { state: 'hidden', timeout: 5000 }).catch(() => {});
-        }
-        if (customizeOpen) {
-            await forceClick(page, '#sb-right-shell-toggle');
-            await page.waitForSelector('#user-settings-block.openDrawer', { state: 'hidden', timeout: 5000 }).catch(() => {});
-        }
-        if (!charactersOpen) {
-            await forceClick(page, '#sb-character-toggle');
-            await page.waitForSelector('#right-nav-panel.openDrawer', { timeout: 10000 });
-        }
-    } else if (target === 'none') {
-        if (leftOpen) {
-            await forceClick(page, '#sb-left-shell-toggle');
-            await page.waitForSelector('#left-nav-panel.openDrawer', { state: 'hidden', timeout: 5000 }).catch(() => {});
-        }
-        if (customizeOpen) {
-            await forceClick(page, '#sb-right-shell-toggle');
-            await page.waitForSelector('#user-settings-block.openDrawer', { state: 'hidden', timeout: 5000 }).catch(() => {});
-        }
-        if (charactersOpen) {
-            await forceClick(page, '#sb-character-toggle');
-            await page.waitForSelector('#right-nav-panel.openDrawer', { state: 'hidden', timeout: 5000 }).catch(() => {});
-        }
+    if (target !== 'none') {
+        const [shell, defaultTab] = { left: ['left', 'presets'], customize: ['right', 'settings'], characters: ['characters', 'characters'] }[target];
+        const tab = tabId || defaultTab;
+        await page.evaluate(({ shell, tab }) => window.NeconyanShell.openTab(shell, tab), { shell, tab });
+        const tabAttribute = target === 'characters' ? 'data-menu-type' : 'data-sb-active-tab';
+        await page.locator(`${panels[target]}.openDrawer[${tabAttribute}="${tab}"]`).waitFor();
     }
-    await page.waitForTimeout(500);
 }
 
 async function selectCharacterByName(page, name) {
     const row = page.locator('#rm_print_characters_block .character_select')
         .filter({ has: page.locator('.ch_name', { hasText: name }) })
         .first();
-
-    if (!(await row.count())) {
-        throw new Error(`Character "${name}" not found in the character list`);
-    }
-
-    await row.click({ force: true, timeout: 5000 }).catch(async () => {
-        await row.dispatchEvent('click');
-    });
-    await page.waitForTimeout(1500);
+    await row.click();
+    await page.waitForFunction(name => {
+        const context = window.SillyTavern.getContext();
+        return context.characters[context.characterId]?.name === name;
+    }, name);
 }
 
-// The Characters drawer header hosts the Roleplay/Conversation radio group; clicking
-// it is the same path a user takes, and it drives the conversation workspace events.
 async function setCharacterMode(page, mode) {
-    await ensureOnlyOpen(page, 'characters');
-    await forceClick(page, `#sb_character_mode_toggle [data-sb-character-mode="${mode}"]`);
-    await page.waitForTimeout(1000);
+    await ensureOnlyOpen(page, 'none');
+    const button = page.locator(`#neconyan-workspace-rail [data-neconyan-chat-mode="${mode}"]`);
+    if (!await button.isVisible()) await page.locator('#sb-hamburger').click();
+    await button.click();
+    await page.waitForFunction(mode => document.body.dataset.neconyanChatMode === mode, mode);
+    if (await page.locator('body.neconyan-rail-drawer-open').count()) await page.locator('#sb-hamburger').click();
 }
 
 // Screenshot sections configuration
@@ -156,9 +107,6 @@ const sections = [
         description: 'Workspace Presets',
         setup: async (page) => {
             await ensureOnlyOpen(page, 'left');
-            // Ensure Presets tab is active
-            await forceClick(page, 'button[role="tab"][aria-label="Presets"]');
-            await page.waitForTimeout(500);
         },
     },
     {
@@ -166,17 +114,13 @@ const sections = [
         description: 'User Settings drawer',
         setup: async (page) => {
             await ensureOnlyOpen(page, 'customize');
-            await page.waitForTimeout(500);
         },
     },
     {
         name: 'agents',
         description: 'Workspace Agents tab',
         setup: async (page) => {
-            await ensureOnlyOpen(page, 'left');
-            // Click Agents tab
-            await forceClick(page, 'button[role="tab"][aria-label="Agents"]');
-            await page.waitForTimeout(500);
+            await ensureOnlyOpen(page, 'left', 'agents');
         },
     },
     {
@@ -184,7 +128,6 @@ const sections = [
         description: 'Character Management drawer',
         setup: async (page) => {
             await ensureOnlyOpen(page, 'characters');
-            await page.waitForTimeout(500);
         },
     },
     {
@@ -192,19 +135,13 @@ const sections = [
         description: 'Active chat with Assistant',
         setup: async (page) => {
             await ensureOnlyOpen(page, 'none');
-            // Check if "Open Assistant" is visible on the Home page, if not click Home toggle
-            const isHome = await page.locator('button[data-assistant-id="guide"][data-action="open-assistant"]').first().isVisible().catch(() => false);
-            if (!isHome) {
-                await forceClick(page, '#sb-home-toggle');
-            }
-            // Click "Open Assistant"
-            const assistantBtn = page.locator('button[data-assistant-id="guide"][data-action="open-assistant"]').first();
-            await assistantBtn.click({ force: true, timeout: 5000 }).catch(async () => {
-                await assistantBtn.dispatchEvent('click');
-            });
-            // Wait for chat to load
-            await page.waitForSelector('#chat', { state: 'visible', timeout: 10000 });
-            await page.waitForTimeout(2000);
+            await page.evaluate(() => window.NeconyanShell.showHome());
+            const assistant = page.locator('[data-assistant-personality="miso"]');
+            await assistant.locator('[data-assistant-variant]').first().check();
+            await assistant.locator('[data-assistant-open]').click();
+            await page.waitForFunction(() => document.querySelector('[data-assistant-picker]')?.dataset.assistantBusy !== 'true');
+            await setCharacterMode(page, 'roleplay');
+            await page.locator('#chat .mes').first().waitFor();
         },
     },
     {
@@ -215,14 +152,14 @@ const sections = [
             // openGlobalSearch is the shell's own entry point; the topbar proxy icon is
             // rebuilt by a MutationObserver and goes stale mid-run.
             await page.evaluate('globalThis.NeconyanShell?.openGlobalSearch?.({ focusInput: true })');
-            await page.waitForSelector('#sb-universal-search.is-open', { timeout: 10000 });
+            await page.locator('#sb-universal-search.is-open').waitFor({ timeout: 10000 });
             await page.locator('#sb-universal-search input[type="search"]').fill(searchQuery);
-            await page.waitForSelector('#sb-universal-search-results.is-visible', { timeout: 10000 });
-            await page.waitForTimeout(1000);
+            await page.locator('#sb-universal-search-results.is-visible').waitFor({ timeout: 10000 });
+            await page.getByRole('status').filter({ hasText: 'Searching saved content…' }).waitFor({ state: 'hidden' });
         },
         teardown: async (page) => {
             await page.keyboard.press('Escape');
-            await page.waitForTimeout(500);
+            await page.locator('#sb-universal-search.is-open').waitFor({ state: 'hidden' });
         },
     },
     {
@@ -236,8 +173,7 @@ const sections = [
             await setCharacterMode(page, 'conversation');
             await ensureOnlyOpen(page, 'none');
             // Wait for real bubbles, not just the chrome, so an empty thread fails loudly
-            await page.waitForSelector('.sb-conversation-message-bubble', { state: 'visible', timeout: 15000 });
-            await page.waitForTimeout(2000);
+            await page.locator('.sb-conversation-message-bubble').first().waitFor({ timeout: 15000 });
         },
         teardown: async (page) => {
             await setCharacterMode(page, 'roleplay');
@@ -251,8 +187,9 @@ async function captureScreenshots(viewportType) {
     console.log(`\n📸 Capturing ${viewportType} screenshots (${viewport.width}x${viewport.height})...`);
 
     const browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({ viewport });
+    const context = await browser.newContext({ viewport, reducedMotion: 'reduce', hasTouch: viewportType === 'mobile', isMobile: viewportType === 'mobile' });
     const page = await context.newPage();
+    let captureFailed = false;
 
     // Log browser errors
     page.on('console', msg => {
@@ -268,6 +205,7 @@ async function captureScreenshots(viewportType) {
 
         // Wait for app to initialize
         await page.locator('#preloader').waitFor({ state: 'detached', timeout: 60000 });
+        await page.waitForFunction(() => typeof window.NeconyanShell?.openTab === 'function', undefined, { timeout: 60000 });
         await dismissOnboardingIfPresent(page);
 
         // Capture each section
@@ -281,15 +219,19 @@ async function captureScreenshots(viewportType) {
                 // Setup the UI for this screenshot
                 await section.setup(page);
 
+                await page.evaluate(() => document.fonts.ready);
+
                 // Take screenshot
                 await page.screenshot({
                     path: filepath,
                     fullPage: false,
                     type: 'png',
+                    animations: 'disabled',
                 });
 
                 console.log(`   ✓ Saved: ${filename}`);
             } catch (error) {
+                captureFailed = true;
                 console.error(`   ✗ Failed to capture ${section.name}: ${error.message}`);
             }
 
@@ -297,9 +239,11 @@ async function captureScreenshots(viewportType) {
             try {
                 await section.teardown?.(page);
             } catch (error) {
+                captureFailed = true;
                 console.error(`   ✗ Failed to reset after ${section.name}: ${error.message}`);
             }
         }
+        if (captureFailed) throw new Error('One or more screenshot sections failed.');
     } catch (error) {
         console.error(`Error during ${viewportType} capture:`, error.message);
         throw error;

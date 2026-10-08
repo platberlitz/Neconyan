@@ -92,7 +92,6 @@ async function openCharacterEditor(page, name = 'Edit Miso (Male)') {
             return;
         } catch (error) {
             if (attempt >= 3) throw error;
-            await page.waitForTimeout(250);
         }
     }
 }

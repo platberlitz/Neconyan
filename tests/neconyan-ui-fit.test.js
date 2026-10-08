@@ -98,8 +98,8 @@ describe('Background Position', () => {
         expect(backgroundsJs).toContain('export function setBackgroundPosition(position)');
         expect(backgroundsJs).toMatch(/position: 'auto'/);
         expect(backgroundsJs).toContain('root.dataset.sbBgPosition');
-        expect(backgroundsJs).toContain("'--sb-bg-position'");
-        expect(backgroundsJs).toContain("$('#background_position').on('input'");
+        expect(backgroundsJs).toContain('\'--sb-bg-position\'');
+        expect(backgroundsJs).toContain('$(\'#background_position\').on(\'input\'');
     });
 
     test('a chosen position moves both uploaded backgrounds and the built-in wallpaper', () => {

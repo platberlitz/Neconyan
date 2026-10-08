@@ -9,6 +9,6 @@ test('phone shell tabs hide labels and retain touch targets when icons-only is s
 
 test('desktop vertical label styling does not override icons-only mode', () => {
     const css = readFileSync(new URL('../public/css/neconyan.css', import.meta.url), 'utf8');
-    expect(css).toContain(":root[data-sb-desktop-nav-layout='vertical']:not([data-sb-desktop-nav-mode='icon-only']) body.neconyan .sb-shell-root.openDrawer .sb-shell-tab-copy {");
-    expect(css).toContain(":root[data-sb-desktop-nav-layout='vertical']:not([data-sb-desktop-nav-mode='icon-only']) body.neconyan .sb-shell-root.openDrawer .sb-shell-nav > .sb-shell-tab {");
+    expect(css).toContain(':root[data-sb-desktop-nav-layout=\'vertical\']:not([data-sb-desktop-nav-mode=\'icon-only\']) body.neconyan .sb-shell-root.openDrawer .sb-shell-tab-copy {');
+    expect(css).toContain(':root[data-sb-desktop-nav-layout=\'vertical\']:not([data-sb-desktop-nav-mode=\'icon-only\']) body.neconyan .sb-shell-root.openDrawer .sb-shell-nav > .sb-shell-tab {');
 });

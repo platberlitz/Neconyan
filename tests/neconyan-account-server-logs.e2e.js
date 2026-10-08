@@ -420,7 +420,9 @@ test('Logs expose selectable output, preserve it on identical polling, and copy 
         selection.addRange(range);
     });
     const selectedBeforePolling = await page.evaluate(() => window.getSelection().toString());
-    await page.waitForTimeout(2800);
+    const requestsBeforePolling = logsRequestCount();
+    await expect.poll(logsRequestCount, { timeout: 10000 }).toBeGreaterThan(requestsBeforePolling);
+    await expect(output).toHaveAttribute('aria-busy', 'false');
     expect(await page.evaluate(() => window.getSelection().toString())).toBe(selectedBeforePolling);
 
     const pauseButton = panel.locator('.sb-console-log-actions button').nth(1);

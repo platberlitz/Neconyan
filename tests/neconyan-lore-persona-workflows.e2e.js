@@ -248,7 +248,7 @@ test('Lorebooks and Personas preserve edits, controls, and narrow layouts', asyn
             if (tab === 'persona') {
                 await expect(page.locator('#persona_pagination_container')).toBeHidden();
                 // The tab strip stays in the document flow so it never covers the editor while scrolling.
-                expect(['static', 'relative']).toContain(await page.locator('.persona-workspace-tabs').evaluate(element => getComputedStyle(element).position));
+                expect(['static', 'relative']).toContain(await page.locator('.persona-workspace-tabs').evaluate(element => window.getComputedStyle(element).position));
                 if (width < 769) {
                     const tabs = await page.locator('.persona-workspace-tabs button').evaluateAll(buttons => buttons.map(button => button.getBoundingClientRect().top));
                     expect(tabs[0]).toBe(tabs[1]);

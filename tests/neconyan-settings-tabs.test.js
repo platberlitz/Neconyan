@@ -36,9 +36,9 @@ describe('Neconyan settings theme drawers', () => {
     });
 
     test('removes the empty shell card and duplicate inner UI Theme heading', () => {
-        expect(shellTabsSource).toContain("dataset.themePickerInitialized === 'true'");
+        expect(shellTabsSource).toContain('dataset.themePickerInitialized === \'true\'');
         expect(shellTabsSource).toContain('if (!card.hasChildNodes()) {\n        card.remove();\n    }');
-        expect(shellTabsSource).toContain("themeBlock.dataset.themePickerInitialized = 'true';");
+        expect(shellTabsSource).toContain('themeBlock.dataset.themePickerInitialized = \'true\';');
         const themeBlock = indexSource.match(/<div id="UI-presets-block"[^>]*>([\s\S]*?)<div class="sb-theme-presets">/)[1];
         expect(themeBlock).toContain('class="sb-ui-theme-actions"');
         expect(themeBlock).not.toContain('<h4');
