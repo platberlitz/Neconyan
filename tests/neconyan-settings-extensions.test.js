@@ -13,6 +13,39 @@ function getFunctionSource(name) {
     return source.match(new RegExp(`^    function ${name}\\([\\s\\S]*?^    }`, 'm'))?.[0] ?? '';
 }
 
+// A drawer as the real page presents it in a translated interface: the id the extension writes
+// into its markup, no data-extension-name, and a `matches` that compares the selector.
+function createDrawerUnit(id, { matchesThrows = false } = {}) {
+    return {
+        id,
+        dataset: {},
+        getAttribute: () => null,
+        matches: selector => {
+            if (matchesThrows) {
+                throw new SyntaxError(`'${selector}' is not a valid selector`);
+            }
+            return selector === `#${id}`;
+        },
+    };
+}
+
+function createExtensionGroup(scope, name, ...units) {
+    return { scope, name, searchText: name.toLowerCase(), units };
+}
+
+// A missing function becomes empty source, so naming one that only exists after the change does
+// not stop the old code from loading.
+function createToolLookupContext(helperNames, definitions) {
+    const context = vm.createContext({
+        normalizeSettingsSearchText: value => String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase(),
+        getExtensionUnitId: unit => unit.id,
+        NeconyanNativeTools: { getDefinitions: () => definitions },
+    });
+    context.globalThis = context;
+    vm.runInContext(helperNames.map(getFunctionSource).join('\n'), context);
+    return context;
+}
+
 describe('Neconyan settings and extension controllers', () => {
     test('keeps only populated extension units and ignores non-settings script nodes', () => {
         class HTMLElement {
@@ -86,6 +119,7 @@ describe('Neconyan settings and extension controllers', () => {
             'getExtensionUnitCandidates',
             'normalizeIncludedToolLookup',
             'getNeconyanNativeToolDefinitions',
+            'unitMatchesSelector',
             'getIncludedToolDefinition',
             'getVisibleExtensionGroups',
             'findExtensionGroupForLabel',
@@ -137,6 +171,112 @@ describe('Neconyan settings and extension controllers', () => {
         expect(opened.every(definition => definition.label === 'Dialogue Colors')).toBe(true);
         expect(context.getIncludedToolDefinition(groups[1])).toBeNull();
         expect(context.getIncludedToolDefinition(groups[3]).id).toBe('third-party/Neconyan-Time-Machine');
+    });
+
+    // Jest stops a test at its first failed assertion, so each defect assertion has a test of its own:
+    // one run on the old code then shows every one of them.
+    describe('treats a translated drawer with a declared selector as an included tool', () => {
+        const dialogueColors = { id: 'third-party/sillytavern-character-colors', label: 'Dialogue Colors', unit: '#dc-ext' };
+        const timeMachine = { id: 'third-party/Neconyan-Time-Machine', label: 'Card & Lorebook Time Machine', unit: '#sbctm-settings-drawer' };
+        // Only functions that exist before and after the change, plus the guard the change adds.
+        const context = createToolLookupContext([
+            'normalizeExtensionLookup',
+            'getExtensionUnitCandidates',
+            'normalizeIncludedToolLookup',
+            'getNeconyanNativeToolDefinitions',
+            'unitMatchesSelector',
+            'getIncludedToolDefinition',
+            'getVisibleExtensionGroups',
+        ], [dialogueColors, timeMachine]);
+
+        // The headings are translated, so neither the label nor the id can be read from them.
+        const portugueseColours = createExtensionGroup('built-in', 'Cores de diálogo', createDrawerUnit('dc-ext'));
+        const germanTimeMachine = createExtensionGroup('built-in', 'Zeitmaschine', createDrawerUnit('sbctm-settings-drawer'));
+        const portugueseQuickReply = createExtensionGroup('built-in', 'Resposta rápida', createDrawerUnit('qr_container'));
+
+        // Defect: the old code compares the translated heading and returns null.
+        test('finds Dialogue Colors by its drawer under a Portuguese heading', () => {
+            expect(context.getIncludedToolDefinition(portugueseColours)?.label).toBe('Dialogue Colors');
+        });
+
+        // Defect: as above, through the old identity test, which also reads the heading.
+        test('finds Time Machine by its drawer under a German heading', () => {
+            expect(context.getIncludedToolDefinition(germanTimeMachine)?.label).toBe('Card & Lorebook Time Machine');
+        });
+
+        // Defect: the old code keeps all three in the Built-in list.
+        test('leaves only the other drawers in the Built-in list', () => {
+            const groups = [portugueseColours, germanTimeMachine, portugueseQuickReply];
+            expect(context.getVisibleExtensionGroups(groups, 'built-in').map(info => info.name)).toEqual(['Resposta rápida']);
+        });
+
+        // Preservation: a third-party group never becomes an included tool through a selector.
+        test('gives a third-party group no definition', () => {
+            const thirdPartyColours = createExtensionGroup('third-party', 'Cores de diálogo', createDrawerUnit('dc-ext'));
+            expect(context.getIncludedToolDefinition(thirdPartyColours)).toBeNull();
+        });
+
+        // Preservation: a selector that throws falls back to the heading and never throws itself. The throwing
+        // drawer is alone in its group, because beside `dc-ext` the lookup would be a defect assertion.
+        test('falls back to the heading when the selector throws, without throwing', () => {
+            const englishWithBadSelector = createExtensionGroup('built-in', 'Dialogue Colors', createDrawerUnit('broken-drawer', { matchesThrows: true }));
+            const germanWithBadSelector = createExtensionGroup('built-in', 'Dialogfarben', createDrawerUnit('broken-drawer', { matchesThrows: true }));
+            let englishResult;
+            let germanResult;
+            expect(() => { englishResult = context.getIncludedToolDefinition(englishWithBadSelector); }).not.toThrow();
+            expect(() => { germanResult = context.getIncludedToolDefinition(germanWithBadSelector); }).not.toThrow();
+            expect(englishResult?.label).toBe('Dialogue Colors');
+            expect(germanResult).toBeNull();
+        });
+    });
+
+    test('finds the tool page group by its declared drawer, among built-in groups only', () => {
+        const colourId = 'third-party/sillytavern-character-colors';
+        const machineId = 'third-party/Neconyan-Time-Machine';
+        // All of these are new-helper assertions: `findIncludedToolGroup` exists only after the change.
+        const context = createToolLookupContext([
+            'normalizeExtensionLookup',
+            'getExtensionUnitCandidates',
+            'normalizeIncludedToolLookup',
+            'unitMatchesSelector',
+            'findIncludedToolGroup',
+        ], []);
+        const find = (...args) => context.findIncludedToolGroup(...args);
+
+        const portugueseColours = createExtensionGroup('built-in', 'Cores de diálogo', createDrawerUnit('dc-ext'));
+        const germanTimeMachine = createExtensionGroup('built-in', 'Zeitmaschine', createDrawerUnit('sbctm-settings-drawer'));
+        const portugueseQuickReply = createExtensionGroup('built-in', 'Resposta rápida', createDrawerUnit('qr_container'));
+        const groups = [portugueseQuickReply, portugueseColours, germanTimeMachine];
+        expect(find(groups, 'Dialogue Colors', colourId, '#dc-ext')).toBe(portugueseColours);
+        expect(find(groups, 'Card & Lorebook Time Machine', machineId, '#sbctm-settings-drawer')).toBe(germanTimeMachine);
+
+        // Scope: a third-party group listed first whose drawer also matches does not take precedence.
+        const thirdPartyLookalike = createExtensionGroup('third-party', 'Cores personalizadas', createDrawerUnit('dc-ext'));
+        expect(find([thirdPartyLookalike, portugueseColours], 'Dialogue Colors', colourId, '#dc-ext')).toBe(portugueseColours);
+
+        // Fallback unchanged: with only a third-party group matching the selector, the old search decides.
+        const thirdPartyNamedLikeTool = createExtensionGroup('third-party', 'Dialogue Colors', createDrawerUnit('dc-ext'));
+        expect(find([thirdPartyNamedLikeTool], 'Dialogue Colors', colourId, '#dc-ext')).toBe(thirdPartyNamedLikeTool);
+        expect(find([thirdPartyLookalike], 'Dialogue Colors', colourId, '#dc-ext')).toBeNull();
+        // Fallback unchanged: without a selector, or with one that matches nothing, the heading still finds the group.
+        const englishColours = createExtensionGroup('built-in', 'Dialogue Colors', createDrawerUnit('dc-ext'));
+        expect(find([englishColours], 'Dialogue Colors', colourId)).toBe(englishColours);
+        expect(find([englishColours], 'Dialogue Colors', colourId, '#matches-nothing')).toBe(englishColours);
+
+        // Grouping: the whole group comes back, so a late drawer with the same heading still joins the page.
+        const declaredUnit = createDrawerUnit('dc-ext');
+        const lateUnit = createDrawerUnit('neconyan-tool-late-probe');
+        const withLateDrawer = createExtensionGroup('built-in', 'Cores de diálogo', declaredUnit, lateUnit);
+        const found = find([withLateDrawer], 'Dialogue Colors', colourId, '#dc-ext');
+        expect(found).toBe(withLateDrawer);
+        expect(found.units).toEqual([declaredUnit, lateUnit]);
+
+        // A drawer whose `matches` throws does not throw out of the lookup.
+        const englishWithBadSelector = createExtensionGroup('built-in', 'Dialogue Colors', createDrawerUnit('broken-drawer', { matchesThrows: true }));
+        const germanWithBadSelector = createExtensionGroup('built-in', 'Dialogfarben', createDrawerUnit('broken-drawer', { matchesThrows: true }));
+        expect(() => find([englishWithBadSelector], 'Dialogue Colors', colourId, '#dc-ext')).not.toThrow();
+        expect(find([englishWithBadSelector], 'Dialogue Colors', colourId, '#dc-ext')).toBe(englishWithBadSelector);
+        expect(find([germanWithBadSelector], 'Dialogue Colors', colourId, '#dc-ext')).toBeNull();
     });
 
     test('excludes generated ARIA panels from existing drawer persistence keys', () => {
@@ -230,5 +370,33 @@ describe('Neconyan settings and extension controllers', () => {
         expect(shellSource).toContain('function buildIncludedToolPanel()');
         expect(shellSource).toContain('openShell(\'right\', \'included-tool\')');
         expect(shellSource).toContain('restoreMountedUnits');
+    });
+
+    // Separate tests, so the old code's run shows both defect assertions.
+    describe('declares the settings drawer of every included tool that has a settings page', () => {
+        const definitionsSource = shellSource.match(/const NECONYAN_NATIVE_TOOL_DEFINITIONS = Object\.freeze\(\[[\s\S]*?\n\]\);/)[0];
+        const definitions = [...vm.runInNewContext(`${definitionsSource}\nNECONYAN_NATIVE_TOOL_DEFINITIONS;`)];
+        const withSettingsPage = definitions.filter(definition => definition.actions.includes('settings') && definition.unitOnly !== true);
+        const others = definitions.filter(definition => !withSettingsPage.includes(definition));
+
+        // Preservation: eighteen tools go through the lookup, and four never do.
+        test('has eighteen tools that go through the lookup and four that do not, and the four declare no drawer', () => {
+            expect(withSettingsPage).toHaveLength(18);
+            expect(others.map(definition => definition.label)).toEqual(['Chat Archive', 'CSS Snippets', 'Lorebook Distiller', 'Pawthfinder']);
+            expect(others.filter(definition => definition.unit !== undefined)).toEqual([]);
+        });
+
+        // Defect: none of the eighteen declares a drawer yet, so this list is not empty before the change.
+        test('gives each of the eighteen a non-empty selector', () => {
+            const withoutUnit = withSettingsPage
+                .filter(definition => typeof definition.unit !== 'string' || definition.unit.trim() === '')
+                .map(definition => definition.label);
+            expect(withoutUnit).toEqual([]);
+        });
+
+        // Defect: the tool page does not pass the declared drawer to the lookup yet.
+        test('passes the declared drawer when the tool page mounts its settings', () => {
+            expect(shellSource).toContain('mountUnit?.(tool.label, content, tool.id, tool.unit)');
+        });
     });
 });

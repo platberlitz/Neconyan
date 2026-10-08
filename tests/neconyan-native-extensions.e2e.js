@@ -846,6 +846,67 @@ test('Included tool settings have their own pages and preserve late settings nod
     await expect(page.locator('#neconyan-tool-late-probe')).toHaveCount(1);
 });
 
+test('Included tool settings open when the interface is in German', async ({ page }) => {
+    page.setDefaultTimeout(20000);
+    await mockNativeSettings(page);
+    await page.addInitScript(() => localStorage.setItem('language', 'de-de'));
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await safety.navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
+    await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 60000 });
+    // The names on screen are German, so nothing here is found by its text. The rail is scoped
+    // because the same list is also rendered in the phone menu.
+    const rail = page.locator('#neconyan-workspace-rail');
+    const tools = rail.locator('.neconyan-rail-tools');
+    const content = page.locator('.neconyan-included-tool-content');
+    const openToolSettings = async extensionId => {
+        if (!await tools.evaluate(element => element.open)) await tools.locator(':scope > summary').click();
+        const item = rail.locator(`details[data-neconyan-extension-id="${extensionId}"]`);
+        if (!await item.evaluate(element => element.open)) await item.locator('summary').click();
+        await item.locator('[data-neconyan-native-tool-action="settings"]').click();
+    };
+    // In this order: the page is the tool page, the declared drawer is inside it, and only then is the
+    // missing-settings message checked, because that message appears about four seconds after the page opens.
+    // Defect tools use soft assertions, so a run on the old code records every one of them.
+    const expectToolPage = async (extensionId, drawer, { defect }) => {
+        const check = defect ? expect.soft : expect;
+        await openToolSettings(extensionId);
+        await check(page.locator('#user-settings-block')).toHaveAttribute('data-sb-active-tab', 'included-tool');
+        await check(content.locator(drawer)).toBeVisible();
+        await check(page.locator('.neconyan-included-tool-unavailable')).toHaveCount(0);
+    };
+
+    // Defect: the old lookup reads the translated heading, so these three tools show the missing-settings message.
+    await expectToolPage('third-party/Neconyan-Preset-Tools', '#bpt-settings', { defect: true });
+    await expectToolPage('third-party/sillytavern-character-colors', '#dc-ext', { defect: true });
+    await expectToolPage('third-party/Neconyan-WorldInfo-Lab', '.sbwil-settings-container', { defect: true });
+    // Preservation: the old lookup already finds these two in German.
+    await expectToolPage('third-party/ChatCompletionTabs', '#ChatCompletionTabs-drawer', { defect: false });
+    await expectToolPage('third-party/Neconyan-PromptTags', '#promptTags-drawer', { defect: false });
+
+    // Branch only (neither defect nor preservation): on the old code this fails because the Dialogue Colors
+    // page does not open. The drawer joins only if the localiser has translated its heading before the
+    // controller regroups. Soft, so the old code's run still reaches the Built-in list below.
+    await openToolSettings('third-party/sillytavern-character-colors');
+    await expect(content.locator(':scope > *').first()).toBeVisible({ timeout: 15000 });
+    await page.evaluate(() => {
+        const unit = document.createElement('div');
+        unit.id = 'neconyan-tool-late-probe';
+        unit.className = 'extension_container';
+        unit.innerHTML = '<h3>Dialogue Colors</h3><input id="neconyan-tool-late-input" aria-label="Late tool setting">';
+        document.getElementById('extensions_settings2').append(unit);
+    });
+    await expect.soft(content.locator('#neconyan-tool-late-input')).toBeVisible();
+
+    await page.evaluate(() => window.NeconyanShell.openTab('right', 'extensions'));
+    await page.locator('.sb-extensions-scope-button[data-extensions-scope="built-in"]').click();
+    // Defect: the old comparison also lists these two tools as ordinary built-in extensions.
+    await expect.soft(page.locator('#dc-ext')).toBeHidden();
+    await expect.soft(page.locator('#bpt-settings')).toBeHidden();
+    // Preservation: shows the list itself is on screen. Time Machine is switched off by this test's settings,
+    // and Termeownal UI depends on the server's data, so the screen check covers both.
+    await expect(page.locator('#qr_container')).toBeVisible();
+});
+
 test.describe('native import report', () => {
     test.use({ viewport: { width: 320, height: 1000 }, isMobile: true, hasTouch: true });
     test('distinguishes retained native copies from custom extensions awaiting reload', async ({ page }, info) => {

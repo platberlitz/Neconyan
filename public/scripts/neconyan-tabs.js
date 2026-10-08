@@ -561,32 +561,33 @@ const NN_SAMPLING_SUBTITLE_HTML = 'Adjust randomness, reply length and other gen
 /*
  * The server owns the extension catalog. These entries only describe where a
  * native tool already exposes its existing launcher or settings drawer.
+ * `unit` selects that drawer by id or class, because its heading may be translated.
  */
 const NECONYAN_NATIVE_TOOL_DEFINITIONS = Object.freeze([
-    { id: 'third-party/Neconyan-Preset-Tools', label: 'Preset Tools', icon: 'fa-sliders', actions: ['open', 'settings'], open: 'presets' },
-    { id: 'third-party/ChatCompletionTabs', label: 'Chat Completion Tabs', icon: 'fa-table-columns', actions: ['open', 'settings'], open: 'presets' },
-    { id: 'third-party/sillytavern-character-colors', label: 'Dialogue Colors', icon: 'fa-palette', actions: ['settings'] },
-    { id: 'third-party/Neconyan-Terminal-UI', label: 'Termeownal UI', icon: 'fa-terminal', actions: ['settings'] },
-    { id: 'third-party/Neconyan-BotSearcher', label: 'BotSearcher', icon: 'fa-binoculars', actions: ['open', 'settings'], open: 'botsearcher' },
-    { id: 'third-party/Neconyan-PromptTags', label: 'Prompt Tags', icon: 'fa-tags', actions: ['settings'] },
-    { id: 'third-party/Neconyan-Regex-Agent-Themes', label: 'Regex Agent Themes', icon: 'fa-brush', actions: ['settings'] },
-    { id: 'third-party/MacroEnhanced', label: 'Macro Enhanced', icon: 'fa-wand-magic-sparkles', actions: ['settings'] },
-    { id: 'third-party/Neconyan-WorldInfo-Lab', label: 'World Info Lab', icon: 'fa-book-atlas', actions: ['open', 'settings'], open: 'world-info-lab' },
-    { id: 'third-party/Neconyan-Prompting-Lab', label: 'Prompting Lab', icon: 'fa-flask', actions: ['open', 'settings'], open: 'prompting-lab' },
-    { id: 'neconyan-debugger', label: 'Debugger', icon: 'fa-bug', actions: ['open', 'settings'], open: 'debugger' },
+    { id: 'third-party/Neconyan-Preset-Tools', label: 'Preset Tools', icon: 'fa-sliders', actions: ['open', 'settings'], open: 'presets', unit: '#bpt-settings' },
+    { id: 'third-party/ChatCompletionTabs', label: 'Chat Completion Tabs', icon: 'fa-table-columns', actions: ['open', 'settings'], open: 'presets', unit: '#ChatCompletionTabs-drawer' },
+    { id: 'third-party/sillytavern-character-colors', label: 'Dialogue Colors', icon: 'fa-palette', actions: ['settings'], unit: '#dc-ext' },
+    { id: 'third-party/Neconyan-Terminal-UI', label: 'Termeownal UI', icon: 'fa-terminal', actions: ['settings'], unit: '#sbterm-settings-drawer' },
+    { id: 'third-party/Neconyan-BotSearcher', label: 'BotSearcher', icon: 'fa-binoculars', actions: ['open', 'settings'], open: 'botsearcher', unit: '#sbbs_settings' },
+    { id: 'third-party/Neconyan-PromptTags', label: 'Prompt Tags', icon: 'fa-tags', actions: ['settings'], unit: '#promptTags-drawer' },
+    { id: 'third-party/Neconyan-Regex-Agent-Themes', label: 'Regex Agent Themes', icon: 'fa-brush', actions: ['settings'], unit: '#rat_drawer' },
+    { id: 'third-party/MacroEnhanced', label: 'Macro Enhanced', icon: 'fa-wand-magic-sparkles', actions: ['settings'], unit: '#me-settings-drawer' },
+    { id: 'third-party/Neconyan-WorldInfo-Lab', label: 'World Info Lab', icon: 'fa-book-atlas', actions: ['open', 'settings'], open: 'world-info-lab', unit: '.sbwil-settings-container' },
+    { id: 'third-party/Neconyan-Prompting-Lab', label: 'Prompting Lab', icon: 'fa-flask', actions: ['open', 'settings'], open: 'prompting-lab', unit: '.sbpl-settings-container' },
+    { id: 'neconyan-debugger', label: 'Debugger', icon: 'fa-bug', actions: ['open', 'settings'], open: 'debugger', unit: '#sbdbg-settings' },
     { id: 'neconyan-chats-archive', label: 'Chat Archive', icon: 'fa-box-archive', actions: ['open'], open: 'chat-archive' },
     { id: 'css-snippets', label: 'CSS Snippets', icon: 'fa-list-check', actions: ['open'], open: 'css-snippets' },
     { id: 'third-party/Neconyan-Lorebook-Distiller', label: 'Lorebook Distiller', icon: 'fa-book-medical', actions: ['open'], open: 'distiller' },
-    { id: 'third-party/Neconyan-Time-Machine', label: 'Card & Lorebook Time Machine', icon: 'fa-clock-rotate-left', actions: ['open', 'settings'], open: 'time-machine' },
-    { id: 'third-party/Neconyan-Deep-Swipe', label: 'Deep Swipe', icon: 'fa-arrows-up-down', actions: ['settings'] },
-    { id: 'third-party/Neconyan-Story-Mode', label: 'Story Mode', icon: 'fa-book-open', actions: ['open', 'settings'], open: 'story-mode' },
-    { id: 'third-party/Neconyan-Hopper', label: 'Meower', icon: 'fa-paw', actions: ['open', 'settings'], open: 'meower' },
+    { id: 'third-party/Neconyan-Time-Machine', label: 'Card & Lorebook Time Machine', icon: 'fa-clock-rotate-left', actions: ['open', 'settings'], open: 'time-machine', unit: '#sbctm-settings-drawer' },
+    { id: 'third-party/Neconyan-Deep-Swipe', label: 'Deep Swipe', icon: 'fa-arrows-up-down', actions: ['settings'], unit: '.deep-swipe-extension-settings' },
+    { id: 'third-party/Neconyan-Story-Mode', label: 'Story Mode', icon: 'fa-book-open', actions: ['open', 'settings'], open: 'story-mode', unit: '#sbstory-settings' },
+    { id: 'third-party/Neconyan-Hopper', label: 'Meower', icon: 'fa-paw', actions: ['open', 'settings'], open: 'meower', unit: '#sbtw-drawer' },
     // Pawthfinder is a settings section inside In-Chat Agents rather than its own
     // extension, so it is presented here and resolved by its settings unit.
     { id: 'pathfinder', label: 'Pawthfinder', icon: 'fa-diamond-turn-right', actions: ['settings'], unitOnly: true },
-    { id: 'quick-image-gen', label: 'Quick Image Gen', icon: 'fa-image', actions: ['settings'] },
-    { id: 'expressions', label: 'Character Expressions', icon: 'fa-masks-theater', actions: ['settings'] },
-    { id: 'regex', label: 'Regexes', icon: 'fa-code', actions: ['settings'] },
+    { id: 'quick-image-gen', label: 'Quick Image Gen', icon: 'fa-image', actions: ['settings'], unit: '#qig-settings' },
+    { id: 'expressions', label: 'Character Expressions', icon: 'fa-masks-theater', actions: ['settings'], unit: '#expressions_container' },
+    { id: 'regex', label: 'Regexes', icon: 'fa-code', actions: ['settings'], unit: '#regex_container' },
 ]);
 
 const nativeToolActionLabel = actionName => ({ open: t`Open`, settings: t`Settings`, manage: t`Manage extensions` })[actionName];
@@ -2845,7 +2846,7 @@ function buildIncludedToolPanel() {
             if (tool.id === 'pathfinder') {
                 return globalThis.NeconyanAgents?.mountPathfinderSettings?.(content);
             }
-            return globalThis.NeconyanExtensions?.mountUnit?.(tool.label, content, tool.id);
+            return globalThis.NeconyanExtensions?.mountUnit?.(tool.label, content, tool.id, tool.unit);
         }, 4000);
         if (token !== activationToken) return;
         setToolPageKey('');
