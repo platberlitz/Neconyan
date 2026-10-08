@@ -1,5 +1,34 @@
 # Full server migration: continuation
 
+### 8 October: explicit Termux recovery launch for failed ZIP imports
+
+The new recording confirms that the browser reset runs, then the import fails
+with 'The retained upload was replaced or is incomplete'. The reported server
+is Node 24.18.0 in `/data/data/com.termux/files/home/Neconyan`, version 1.2.1.
+This is the Termux runtime, which does not use the APK's native timestamp adapter.
+Simulating Node's ctime-as-birthtime fallback reproduces the exact error while
+the retained bytes, device and inode remain correct.
+
+Branch `codex/fix-termux-file-identity`, based on staging `d520b8885`, provides an
+explicit `--import` preload in `src/termux-file-stats.js`. It probes a real write
+and rename and normalises only proven unavailable creation times on that
+filesystem. Native creation times and the existing byte/inode/link checks remain
+in force. It is deliberately not enabled on ordinary launches: review found
+that automatic activation could invalidate older stored physical identities.
+The recovery guide uses a new data folder outside the repository and a separate
+port. Existing files and accepted requests are not rewritten.
+
+Validation on Node 24: 442 Jest suites (5,763 passed, two skipped), 1,982 server
+tests, root lint, full test-folder lint (zero errors), frontend budgets and
+whitespace passed. Four explicit-preload Chromium cases passed across the actual
+1.2.1 release source and this branch, at desktop and touch-phone sizes, checking
+ZIP publication and retained readback after a server restart. The documented
+backport placement and CLI flags were also checked in a main process, worker
+thread and supervised-style child. Screenshots are saved locally under
+`screenshots/termux-import-{phone,desktop}.png`; physical Termux/Fennec remains
+unverified. Next action: review the follow-up PR and have the reporting user try
+the isolated 1.2.1 recovery command in `docs/termux-import-recovery.md`.
+
 ### 8 October: recover replacement ZIP imports and stale security tokens
 
 Investigated on `codex/fix-replacement-zip-import`, based on staging `910356095`.
