@@ -9,6 +9,7 @@
 - PR #69 (2026-10-08) `fix(chat): keep desktop response controls clear of the bottom toolbar`
 - PR #70 (2026-10-08) `fix(agents): run parallel reply passes concurrently`
 - PR #71 (2026-10-08) `feat(guided-generations): add guided regenerate`
+- PR #72 (2026-10-08) `fix(input-history): use a readable native picker`
 
 ## v1.2.1
 
