@@ -6696,9 +6696,10 @@ async function getAllExtensionPrompts() {
 /**
  * Wrapper to fetch extension prompts by module name
  * @param {string} moduleName Module name
+ * @param {{forWorldInfo?: boolean}} options Select the scan copy before prompt-only Agent transformations.
  * @returns {Promise<string>} Extension prompt
  */
-export async function getExtensionPromptByName(moduleName) {
+export async function getExtensionPromptByName(moduleName, { forWorldInfo = false } = {}) {
     if (!moduleName) {
         return '';
     }
@@ -6715,7 +6716,7 @@ export async function getExtensionPromptByName(moduleName) {
         return '';
     }
 
-    return substituteParams(prompt.value);
+    return substituteParams(forWorldInfo ? prompt.worldInfoValue ?? prompt.value : prompt.value);
 }
 
 /**
@@ -8630,6 +8631,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         }
         for (const block of buildCompanionChatHistoryBlocks(consolidatedRetainedContributions)) {
             setExtensionPrompt(block.key, block.content, block.position, block.depth, block.scan, block.role, null, block.name);
+            if (block.worldInfoContent !== undefined) extension_prompts[block.key].worldInfoValue = block.worldInfoContent;
         }
         coreChat = coreChat.filter(chatItem => !chatItem.is_system
         || (canUseTools && Array.isArray(chatItem.extra?.tool_invocations))

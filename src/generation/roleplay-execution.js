@@ -480,8 +480,10 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
                 if (!Array.isArray(data.companionBlocks) || data.companionBlocks.some(item => keys.has(item?.key))) {
                     throw roleplayError('ROLEPLAY_INVALID', 'A kept Companion notes block conflicts with an existing contributor.', 409);
                 }
-                contributions = { ...contributions, extensions: [...contributions.extensions, ...data.companionBlocks] };
-                scanContributions = contributions.extensions.filter(prompt => prompt.scan).map(prompt => prompt.content);
+                scanContributions = [...scanContributions, ...data.companionBlocks.filter(prompt => prompt.scan)
+                    .map(prompt => prompt.worldInfoContent ?? prompt.content)];
+                const blocks = data.companionBlocks.map(({ worldInfoContent: _scanContent, ...prompt }) => prompt);
+                contributions = { ...contributions, extensions: [...contributions.extensions, ...blocks] };
             }
             acceptedMacros = { ...boundMacroSnapshot(savedRoleplayMacroSnapshot({ ...request.worldInfo, global: data.global, characterExamples: data.characterExamples }, initialRecords)), variables: data.macroState.variables,
                 extra: { ...acceptedMacros.extra, chatMetadata: data.macroState.chatMetadata, bannedWords: data.macroState.bannedWords } };

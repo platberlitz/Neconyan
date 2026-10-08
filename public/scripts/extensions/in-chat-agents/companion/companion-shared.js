@@ -231,30 +231,35 @@ export function normalizeCompanionChatHistoryInjection(injection) {
 
 /**
  * Builds the labelled kept-notes blocks for Companions that send their notes as one block.
- * @param {{ agentId: string, placement: string, injection: object|null, contribution: { name: string, content: string } }[]} entries
+ * @param {{ agentId: string, placement: string, injection: object|null, contribution: { name: string, content: string }, worldInfoContent?: string }[]} entries
  * @param {(entry: object) => string} [getContent]
- * @returns {{ key: string, agentId: string, name: string, content: string, position: number, depth: number, role: number, scan: boolean }[]}
+ * @returns {{ key: string, agentId: string, name: string, content: string, worldInfoContent?: string, position: number, depth: number, role: number, scan: boolean }[]}
  */
 export function buildCompanionChatHistoryBlocks(entries = [], getContent = entry => entry.contribution?.content) {
     const blocks = new Map();
     for (const entry of entries) {
         if (entry?.placement !== 'block') continue;
         const content = String(getContent(entry) ?? '').trim();
-        if (!content) continue;
+        const worldInfoContent = String(entry.worldInfoContent ?? content).trim();
+        if (!content && !worldInfoContent) continue;
         const block = blocks.get(entry.agentId) ?? {
             key: `${COMPANION_HISTORY_PROMPT_KEY_PREFIX}${entry.agentId}`,
             agentId: entry.agentId,
             name: entry.contribution?.name || 'Companion',
             notes: [],
+            scanNotes: [],
             ...normalizeCompanionChatHistoryInjection(entry.injection),
         };
-        block.notes.push(content);
+        if (content) block.notes.push(content);
+        if (worldInfoContent) block.scanNotes.push(worldInfoContent);
         blocks.set(entry.agentId, block);
     }
-    return [...blocks.values()].map(({ notes, ...block }) => ({
-        ...block,
-        content: `[${block.name} - kept notes]\n${notes.join('\n\n')}`,
-    }));
+    return [...blocks.values()].map(({ notes, scanNotes, ...block }) => {
+        const label = `[${block.name} - kept notes]\n`;
+        const content = notes.length ? label + notes.join('\n\n') : '';
+        const worldInfoContent = scanNotes.length ? label + scanNotes.join('\n\n') : '';
+        return { ...block, content, ...(worldInfoContent !== content ? { worldInfoContent } : {}) };
+    });
 }
 
 export function isRetainedCompanionResult(result) {

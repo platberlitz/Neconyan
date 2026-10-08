@@ -92,6 +92,7 @@ export function prepareCompanionPromptHistory(records, snapshot, environment, { 
             agentId, placement, injection, contribution: { name: contribution.name } };
     });
     const blocks = buildCompanionChatHistoryBlocks(transformed, entry => entry.content).map(block => ({ key: block.key, content: block.content,
+        ...(block.worldInfoContent !== undefined ? { worldInfoContent: block.worldInfoContent } : {}),
         position: block.position, depth: block.depth, role: ['system', 'user', 'assistant'][block.role], scan: block.scan }));
     return { hostIndex: host ? indices.get(host) : -1, entries: transformed.filter(entry => entry.placement !== 'block')
         .map(({ content, worldInfoContent, hostIndex }) => ({ content, worldInfoContent, hostIndex })), blocks };

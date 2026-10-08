@@ -66,4 +66,54 @@ for (const phone of [false, true]) {
         expect(scan.values, JSON.stringify(scan)).toContain('The observatory is open.');
         await page.close();
     });
+
+    test(`${phone ? 'phone' : 'desktop'} kept-note previews preserve lore keywords and server reply routing`, async ({ app }) => {
+        const account = await app.account({ phone, activeConnection: true, configureSettings: settings => {
+            settings.world_info_settings.world_info.globalSelect = ['Kept-note-scan'];
+            settings.world_info_settings.world_info_budget = 100;
+        } });
+        await account.post('/api/worldinfo/edit', { name: 'Kept-note-scan', data: { entries: {
+            1: { uid: 1, key: ['evening-bell'], keysecondary: [], content: 'The bell tower is open.',
+                order: 100, position: 0, probability: 100, useProbability: true },
+        } } });
+        const page = await account.open({ workspace: false });
+        const results = await page.evaluate(async avatar => {
+            const core = await import('/script.js');
+            const context = window.SillyTavern.getContext();
+            const world = await import('/scripts/world-info.js');
+            const { getRegexScriptRevision } = await import('/scripts/extensions/in-chat-agents/regex-snapshot-store.js');
+            const { capturePagePrompts } = await import('/scripts/neconyan-conversation/roleplay-workflows.js');
+            await context.getCharacters();
+            const id = context.characters.findIndex(character => character.avatar === avatar);
+            if (id < 0 || !await core.selectCharacterById(id, { switchMenu: false })) throw new Error('Fixture character unavailable');
+            const results = [];
+            for (const stripAll of [false, true]) {
+                for (const scan of [true, false]) {
+                    const script = { id: 'kept-note-regex', findRegex: stripAll ? '/[\\s\\S]+/g' : '/evening-bell/g',
+                        replaceString: '', placement: [2], promptOnly: true, markdownOnly: false, disabled: false,
+                        trimStrings: [], substituteRegex: 0, minDepth: null, maxDepth: null };
+                    core.chat.splice(0, core.chat.length, { name: 'Keeper', is_user: false, is_system: true, mes: 'SECRET_HIDDEN_MESSAGE', extra: {
+                        inChatAgents: { regexScriptRefs: [{ agentId: 'keeper', scriptId: script.id, revision: getRegexScriptRevision(script) }],
+                            nativeRegexScripts: [{ agentId: 'keeper', script }] },
+                        inChatAgentCompanionResults: { keeper: { agentName: 'Keeper', status: 'done', content: 'ONLY_NOTE evening-bell',
+                            includeInChatHistory: true, includeAllChatHistory: true, keepInChatHistoryWhenHostHidden: true,
+                            chatHistoryPlacement: 'block', chatHistoryInjection: { position: 1, depth: 0, role: 0, scan } } },
+                    } }, { name: 'User', is_user: true, mes: 'Next question', extra: {} });
+                    await core.Generate('normal', { suppressUserMessage: true }, true);
+                    const block = core.extension_prompts.inchat_agent_companion_history_keeper;
+                    const lore = await world.checkWorldInfo(['Next question'], 4096, true);
+                    results.push({ stripAll, scan, content: block?.value, lore: lore.worldInfoBefore,
+                        pagePrompts: await capturePagePrompts('roleplay.reply') });
+                }
+            }
+            return results;
+        }, account.avatar);
+        for (const result of results) {
+            expect(result.content).toBe(result.stripAll ? '' : '[Keeper - kept notes]\nONLY_NOTE');
+            expect(result.lore.includes('The bell tower is open.')).toBe(result.scan);
+            expect(result.pagePrompts).not.toBeNull();
+            expect(result.pagePrompts.some(prompt => prompt.key.startsWith('inchat_agent_companion_history_'))).toBe(false);
+        }
+        await page.close();
+    });
 }

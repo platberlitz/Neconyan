@@ -242,30 +242,37 @@ test('a length-limited continued companion retains its last good selected note a
     assert.equal(cycle.rows().at(-1).extra.inChatAgentCompanionResults.b.failureKind, 'cycle');
 });
 
-test('retained hidden companion notes use their original host and frozen prompt regex without exposing hidden message text', async t => {
-    const script = { id: 'old-script', findRegex: '/evening-bell/g', replaceString: '', placement: [2], promptOnly: true, markdownOnly: false,
-        trimStrings: [], disabled: false, runOnEdit: true, substituteRegex: 0, minDepth: null, maxDepth: null };
-    const f = prepared(t, [], { changeRecords(records) {
-        records[2].is_system = true;
-        records[2].mes = 'SECRET_HIDDEN_MESSAGE';
-        records[2].extra = { title: 'SECRET_HIDDEN_TITLE', append_title: true,
-            inChatAgents: { regexScriptRefs: [{ agentId: 'removed-agent', scriptId: script.id, revision: getRegexScriptRevision(script) }],
-                nativeRegexScripts: [{ agentId: 'removed-agent', script }] },
-            inChatAgentCompanionResults: { old: { status: 'done', content: 'ONLY_NOTE evening-bell by {{char}}', includeInChatHistory: true,
-                includeAllChatHistory: true, chatHistoryDepth: 1, keepInChatHistoryWhenHostHidden: true } } };
-        records.push({ name: 'Ari', is_user: true, mes: 'Next question', extra: {} });
-    } });
-    await f.run({ generate: paid('main', options => {
-        const text = JSON.stringify(options.messages);
-        assert.match(text, /ONLY_NOTE\s+by Nova/);
-        assert.equal((text.match(/ONLY_NOTE/g) ?? []).length, 1);
-        assert.doesNotMatch(text, /SECRET_HIDDEN|evening-bell/);
-        assert.match(text, /THE_COMPANION_BELL_LORE/);
-        return { text: 'Visible reply' };
-    }), generateAgent: () => assert.fail('retained notes paid for a new companion') });
-    assert.equal(f.rows()[2].mes, 'SECRET_HIDDEN_MESSAGE');
-    assert.equal(f.rows()[2].extra.inChatAgentCompanionResults.old.content, 'ONLY_NOTE evening-bell by {{char}}');
-});
+for (const [placement, stripAll] of [['latest', false], ['source', false], ['block', false], ['block', true]]) {
+    test(`retained hidden ${placement} companion notes preserve lore scanning through ${stripAll ? 'whole-note' : 'keyword'} prompt regex`, async t => {
+        const script = { id: 'old-script', findRegex: stripAll ? '/[\\s\\S]+/g' : '/evening-bell/g', replaceString: '', placement: [2], promptOnly: true, markdownOnly: false,
+            trimStrings: [], disabled: false, runOnEdit: true, substituteRegex: 0, minDepth: null, maxDepth: null };
+        const f = prepared(t, [], { changeRecords(records) {
+            records[2].is_system = true;
+            records[2].mes = 'SECRET_HIDDEN_MESSAGE';
+            records[2].extra = { title: 'SECRET_HIDDEN_TITLE', append_title: true,
+                inChatAgents: { regexScriptRefs: [{ agentId: 'removed-agent', scriptId: script.id, revision: getRegexScriptRevision(script) }],
+                    nativeRegexScripts: [{ agentId: 'removed-agent', script }] },
+                inChatAgentCompanionResults: { old: { status: 'done', content: 'ONLY_NOTE evening-bell by {{char}}', includeInChatHistory: true,
+                    includeAllChatHistory: true, chatHistoryDepth: 1, keepInChatHistoryWhenHostHidden: true,
+                    chatHistoryPlacement: placement, chatHistoryInjection: { position: 1, depth: 0, role: 0, scan: true } } } };
+            records.push({ name: 'Ari', is_user: true, mes: 'Next question', extra: {} });
+        } });
+        await f.run({ generate: paid('main', options => {
+            const text = JSON.stringify(options.messages);
+            if (stripAll) {
+                assert.doesNotMatch(text, /ONLY_NOTE|kept notes/);
+            } else {
+                assert.match(text, /ONLY_NOTE\s+by Nova/);
+                assert.equal((text.match(/ONLY_NOTE/g) ?? []).length, 1);
+            }
+            assert.doesNotMatch(text, /SECRET_HIDDEN|evening-bell/);
+            assert.match(text, /THE_COMPANION_BELL_LORE/);
+            return { text: 'Visible reply' };
+        }), generateAgent: () => assert.fail('retained notes paid for a new companion') });
+        assert.equal(f.rows()[2].mes, 'SECRET_HIDDEN_MESSAGE');
+        assert.equal(f.rows()[2].extra.inChatAgentCompanionResults.old.content, 'ONLY_NOTE evening-bell by {{char}}');
+    });
+}
 
 test('kept notes stay on their own reply or travel as one labelled block when their Companion asks for it', async t => {
     const note = (content, placement, extra = {}) => ({ status: 'done', content, agentName: placement === 'block' ? 'Keeper' : 'Lens',
