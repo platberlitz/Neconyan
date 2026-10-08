@@ -5,6 +5,7 @@
 ### Merged Staging PRs
 - PR #66 (2026-10-08) `feat: add Desktop swipe button customization controls`
 - PR #67 (2026-10-08) `fix(tools): open tool pages in translated interfaces`
+- PR #68 (2026-10-08) `fix(import): recover replacement zips and stale security tokens`
 
 ## v1.2.1
 
