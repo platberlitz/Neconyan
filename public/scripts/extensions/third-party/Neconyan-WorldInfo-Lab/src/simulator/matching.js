@@ -1,6 +1,6 @@
 import { LOGIC, SCAN_STATE, entryRef, entryRefKey } from '../constants.js';
 
-const MAX_SCAN_DEPTH = 1000;
+export const MAX_SCAN_DEPTH = 1000;
 const MATCHER = '\x01';
 const JOINER = `\n${MATCHER}`;
 

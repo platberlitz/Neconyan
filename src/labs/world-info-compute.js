@@ -46,7 +46,7 @@ export async function computeWorldInfoLab(kind, plan, tokenCount) {
     const result = await simulateWorldInfo({ ...plan, entries, tokenCount,
         injections: plan.injections.map((value, index) => macros.expand(value, `prompt:${index}`)),
         expand: macros.expand, macroSnapshot: macros.cache, unfrozenMacros: macros.unsafe, volatileMacros: macros.volatile,
-        timedEffects: plan.timedEffects ?? getTimedEffects({ chatMetadata: plan.macros.extra.chatMetadata }, entries, plan.messages.length),
+        timedEffects: plan.timedEffects ?? getTimedEffects({ chatMetadata: plan.macros.extra.chatMetadata }, entries, plan.chatLength ?? plan.messages.length),
         parseRegex: parseWorldInfoKeyRegex,
         processRegex: (content, depth) => applyRegexScriptList(content, plan.regex, AGENT_REGEX_PLACEMENT.WORLD_INFO,
             { depth, isMarkdown: false, isPrompt: true, substituteParamsFn: value => expand(value),

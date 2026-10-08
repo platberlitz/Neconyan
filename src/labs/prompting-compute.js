@@ -48,10 +48,10 @@ export async function compilePromptingCapture({ context: plan, material, scene =
     const snapshot = { ...original, ...prepared };
     let lore = emptyLore(), scan = null;
     if (plan.scan.sourcePlan.all.length) {
+        const messages = records.slice(1).flatMap((record, index) => record.is_system ? [] : [plan.scan.settings.includeNames
+            ? `${record.name}: ${prepared.content[index]}` : prepared.content[index]]).reverse();
         scan = await computeWorldInfoLab('world-info.scan', { ...plan.scan, macros: savedRoleplayMacroSnapshot(snapshot, records),
-            globalScanData: prepared.global, injections: prepared.global.inject,
-            messages: records.slice(1).flatMap((record, index) => record.is_system ? [] : [plan.scan.settings.includeNames
-                ? `${record.name}: ${prepared.content[index]}` : prepared.content[index]]).reverse(),
+            globalScanData: prepared.global, injections: prepared.global.inject, messages, chatLength: messages.length,
         }, tokenCount);
         const placement = scan.placements;
         loreContext.activeLore = scan.activated.map(active => {

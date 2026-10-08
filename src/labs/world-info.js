@@ -2,6 +2,7 @@ import path from 'node:path';
 import { normalizePlan, normalizeScanSettings } from '../../public/scripts/extensions/third-party/Neconyan-WorldInfo-Lab/src/sources.js';
 import { currentChatMessages } from '../../public/scripts/extensions/third-party/Neconyan-WorldInfo-Lab/src/scan-input.js';
 import { GENERATION_TRIGGERS } from '../../public/scripts/extensions/third-party/Neconyan-WorldInfo-Lab/src/constants.js';
+import { MAX_SCAN_DEPTH } from '../../public/scripts/extensions/third-party/Neconyan-WorldInfo-Lab/src/simulator/matching.js';
 import { captureSavedTokenizer as captureTokenizer, savedTokenCounter as labTokenCounter } from '../generation/saved-token-counter.js';
 import { activeRoleplayAuthorNote, isWorldInfoAuthorNoteActive } from '../generation/roleplay-prompt.js';
 import { captureScopedAuthorsNotes, findCharacterNoteEntry, getPersonaNoteEntry } from '../../public/scripts/authors-note-profiles.js';
@@ -16,6 +17,16 @@ export { labTokenCounter };
 /** Character and persona Author's Notes as the chat would use them, for Labs previews of solo chats. */
 export function labScopedAuthorsNotes(note, avatar, personaAvatar) {
     return captureScopedAuthorsNotes(findCharacterNoteEntry(note?.chara, avatar), getPersonaNoteEntry(note?.persona, personaAvatar), personaAvatar);
+}
+
+const MACRO_MESSAGE_FIELDS = ['name', 'mes', 'is_user', 'is_system', 'send_date', 'swipe_id'];
+
+/** Chat macros only read these message fields, so swipe text stays out of the Labs plan. */
+function macroChatSnapshot(macros) {
+    const chat = (macros.extra?.chat ?? []).map(message => ({
+        ...Object.fromEntries(MACRO_MESSAGE_FIELDS.filter(key => message[key] !== undefined).map(key => [key, message[key]])),
+        ...(Array.isArray(message.swipes) ? { swipes: message.swipes.map(() => '') } : {}) }));
+    return { ...macros, extra: { ...macros.extra, chat } };
 }
 
 export function captureWorldInfoLab(base, account, input, kind, captured = {}) {
@@ -50,9 +61,12 @@ export function captureWorldInfoLab(base, account, input, kind, captured = {}) {
     const settings = normalizeScanSettings(input.settings ?? { ...saved, ...saved.world_info_settings });
     const trigger = input.trigger ?? 'normal';
     if (!GENERATION_TRIGGERS.includes(trigger)) throw labError('The lorebook scan trigger is invalid.', 400);
-    const macros = chat?.macros ?? { names: { user: saved.username || 'User', char: '' }, character: {}, variables: {}, extra: { chat: [], chatMetadata: {} } };
-    const messages = input.messages ?? (input.mode === 'text' && !(kind === 'world-info.health' && chat) ? [String(input.text ?? '').trim()].filter(Boolean)
+    const macros = chat?.macros ? macroChatSnapshot(chat.macros)
+        : { names: { user: saved.username || 'User', char: '' }, character: {}, variables: {}, extra: { chat: [], chatMetadata: {} } };
+    const history = input.messages ?? (input.mode === 'text' && !(kind === 'world-info.health' && chat) ? [String(input.text ?? '').trim()].filter(Boolean)
         : currentChatMessages({ chat: chat.records.slice(1), name1: macros.names.user, name2: macros.names.char }, settings.includeNames, trigger));
+    // Scans never read past MAX_SCAN_DEPTH, so long chats keep only the newest messages in the plan.
+    const messages = kind === 'world-info.health' || !Array.isArray(history) ? history : history.slice(0, MAX_SCAN_DEPTH);
     const note = extensions.note ?? {}, depthPrompt = card.extensions?.depth_prompt?.prompt ?? '';
     const authorNote = { prompt: metadata.note_prompt ?? note.default ?? '', interval: metadata.note_interval ?? note.defaultInterval ?? 1,
         userMessages: chat?.records.slice(1).filter(item => item.is_user).length ?? 0,
@@ -72,7 +86,7 @@ export function captureWorldInfoLab(base, account, input, kind, captured = {}) {
     const maxContext = Number(input.maxContext ?? (Number(contextLimit || 4096) - Number(responseLimit || 0)));
     if (!Number.isSafeInteger(maxContext) || maxContext < 1 || maxContext > 2000000) throw labError('The scan context limit is invalid.', 400);
     if (![messages, injections].every(list => Array.isArray(list) && list.every(value => typeof value === 'string'))) throw labError('The scan text is invalid.', 400);
-    return { books, sourcePlan, settings, messages, injections, macros, regex, maxContext, trigger,
+    return { books, sourcePlan, settings, messages, chatLength: history.length, injections, macros, regex, maxContext, trigger,
         mode: input.mode === 'text' ? 'text' : 'chat', seed: Number(input.seed ?? 1) >>> 0,
         macroEngine: power.experimental_macro_engine ? 'experimental' : 'legacy', macroSnapshot: input.macroSnapshot ?? {},
         timedEffects: input.timedEffects ?? null, forcedRefs: input.forcedRefs ?? [],
