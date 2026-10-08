@@ -1,11 +1,11 @@
 import { eventSource, event_types, saveSettingsDebounced } from '../../../script.js';
 import { extension_settings } from '../../extensions.js';
-import { delay, isTrueBoolean } from '../../utils.js';
+import { isTrueBoolean } from '../../utils.js';
 import { accountStorage } from '../../util/AccountStorage.js';
 import { SlashCommand } from '../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from '../../slash-commands/SlashCommandArgument.js';
 import { SlashCommandParser } from '../../slash-commands/SlashCommandParser.js';
-import { waitForFrame } from './lib/wait.js';
+import { t } from '../../i18n.js';
 
 const INPUT_HISTORY_STORAGE_KEY = 'st--inputHistory';
 
@@ -132,58 +132,84 @@ SlashCommandParser.addCommandObject(SlashCommand.fromProps({ name: 'inputhistory
     helpString: 'Adds input string to Input History (typically used for Quick Reply macros).',
 }));
 
-const hideHistoryMenu = async () => {
-    if (!historyMenu) return;
-    historyMenu.classList.remove('stih--active');
-    await delay(410);
-    historyMenu.remove();
+const hideHistoryMenu = () => {
+    historyMenu?.remove();
     historyMenu = null;
-    btnHistory.classList.remove('stih--hasMenu');
+    btnHistory?.classList.remove('stih--hasMenu');
+    btnHistory?.setAttribute('aria-expanded', 'false');
 };
-const showHistoryMenu = async () => {
+const showHistoryMenu = () => {
     if (historyMenu) return hideHistoryMenu();
+    if (!ta || !buttonWrap) return;
     btnHistory.classList.add('stih--hasMenu');
-    historyMenu = document.createElement('div'); {
-        historyMenu.classList.add('stih--history');
-        const renderItem = (c) => {
-            const item = document.createElement('div'); {
-                item.classList.add('stih--item');
-                item.title = c;
-                const icon = document.createElement('div'); {
-                    icon.classList.add('stih--icon');
-                    icon.classList.add('fa-solid', 'fa-comment');
-                    item.append(icon);
-                }
-                const label = document.createElement('div'); {
-                    label.classList.add('stih--label');
-                    const content = document.createElement('div'); {
-                        content.classList.add('stih--content');
-                        const title = document.createElement('div'); {
-                            title.classList.add('stih--title');
-                            if (c[0] == '/') title.classList.add('stih--code');
-                            title.textContent = c;
-                            content.append(title);
-                        }
-                        label.append(content);
-                    }
-                    item.append(label);
-                }
-                item.addEventListener('click', async () => {
-                    hideHistoryMenu();
-                    ta.value = c;
-                    ta.focus({ preventScroll: true });
-                });
-                historyMenu.append(item);
-            }
-        };
-        for (const c of getInputHistory()) {
-            renderItem(c);
-        }
-        await waitForFrame();
-        buttonWrap.append(historyMenu);
-        await waitForFrame();
-        historyMenu.classList.add('stih--active');
+    btnHistory.setAttribute('aria-expanded', 'true');
+    historyMenu = document.createElement('section');
+    historyMenu.className = 'stih--history stih--active';
+    historyMenu.id = 'stih-history';
+    historyMenu.setAttribute('aria-label', t`Input History`);
+
+    const header = document.createElement('div');
+    header.className = 'stih--header';
+    const heading = document.createElement('h3');
+    heading.textContent = t`Input History`;
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'stih--close';
+    close.textContent = t`Close`;
+    close.addEventListener('click', () => {
+        hideHistoryMenu();
+        btnHistory.focus({ preventScroll: true });
+    });
+    header.append(heading, close);
+    const hint = document.createElement('p');
+    hint.className = 'stih--hint';
+    hint.textContent = t`Choose an input to replace your draft.`;
+    const search = document.createElement('input');
+    search.type = 'search';
+    search.className = 'text_pole stih--search';
+    search.placeholder = t`Search input history`;
+    search.setAttribute('aria-label', t`Search input history`);
+    const list = document.createElement('div');
+    list.className = 'stih--list';
+    const history = getInputHistory();
+    for (const [index, text] of history.entries()) {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'stih--item';
+        const title = document.createElement('span');
+        title.className = 'stih--title';
+        if (text.startsWith('/')) title.classList.add('stih--code');
+        title.textContent = text;
+        item.append(title);
+        item.addEventListener('click', () => {
+            hideHistoryMenu();
+            inputHistoryIdx = index;
+            ta.value = text;
+            ta.dispatchEvent(new Event('input', { bubbles: true }));
+            ta.focus({ preventScroll: true });
+        });
+        list.append(item);
     }
+    const empty = document.createElement('p');
+    empty.className = 'stih--empty';
+    empty.setAttribute('role', 'status');
+    empty.textContent = t`Your inputs will appear here after you send them.`;
+    empty.hidden = history.length > 0;
+    search.addEventListener('input', () => {
+        const terms = search.value.toLowerCase().trim().split(/\s+/);
+        let matches = 0;
+        for (const item of list.querySelectorAll('.stih--item')) {
+            item.hidden = !terms.every(term => item.textContent.toLowerCase().includes(term));
+            if (!item.hidden) matches++;
+        }
+        empty.textContent = history.length ? t`No matching inputs. Try another search.` : t`Your inputs will appear here after you send them.`;
+        empty.hidden = matches > 0;
+    });
+    list.append(empty);
+    historyMenu.append(header, hint, search, list);
+    buttonWrap.append(historyMenu);
+    // Focus a button so opening history does not summon the phone keyboard.
+    close.focus({ preventScroll: true });
 };
 const updateButtons = () => {
     if (!ta) return;
@@ -195,37 +221,47 @@ const updateButtons = () => {
             const arrows = document.createElement('div'); {
                 arrowsWrap = arrows;
                 arrows.classList.add('stih--arrows');
-                const prev = document.createElement('div'); {
+                const prev = document.createElement('button'); {
+                    prev.type = 'button';
                     prev.classList.add('stih--button');
                     prev.classList.add('menu_button');
                     prev.classList.add('menu_button_icon');
                     prev.classList.add('fa-solid');
                     prev.classList.add('fa-chevron-up');
-                    prev.title = 'Previous input';
+                    prev.title = t`Previous input`;
+                    prev.setAttribute('aria-label', prev.title);
                     prev.addEventListener('click', () => inputHistoryBack());
                     arrows.append(prev);
                 }
-                const next = document.createElement('div'); {
+                const next = document.createElement('button'); {
+                    next.type = 'button';
                     next.classList.add('stih--button');
                     next.classList.add('menu_button');
                     next.classList.add('menu_button_icon');
                     next.classList.add('fa-solid');
                     next.classList.add('fa-chevron-down');
-                    next.title = 'Next input';
+                    next.title = t`Next input`;
+                    next.setAttribute('aria-label', next.title);
                     next.addEventListener('click', () => inputHistoryForward());
                     arrows.append(next);
                 }
                 wrap.append(arrows);
             }
-            const his = document.createElement('div'); {
+            const his = document.createElement('button'); {
+                his.type = 'button';
                 btnHistory = his;
                 his.classList.add('stih--button');
                 his.classList.add('menu_button');
                 his.classList.add('menu_button_icon');
                 his.classList.add('stih--menuTrigger');
-                his.classList.add('fa-solid');
-                his.classList.add('fa-clock-rotate-left');
-                his.title = 'Input History';
+                his.innerHTML = '<i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>';
+                const label = document.createElement('span');
+                label.textContent = t`History`;
+                his.append(label);
+                his.title = t`Input History`;
+                his.setAttribute('aria-label', his.title);
+                his.setAttribute('aria-expanded', 'false');
+                his.setAttribute('aria-controls', 'stih-history');
                 his.addEventListener('click', () => showInputHistory());
                 wrap.append(his);
             }
@@ -236,7 +272,7 @@ const updateButtons = () => {
     buttonWrap.classList[settings.showButtons ? 'remove' : 'add']('stih--hidden');
     arrowsWrap.classList[settings.showArrowButtons ? 'remove' : 'add']('stih--hidden');
     btnHistory.classList[settings.showHistoryButton ? 'remove' : 'add']('stih--hidden');
-    if (!settings.showHistoryButton) hideHistoryMenu();
+    if (!settings.showButtons || !settings.showHistoryButton) hideHistoryMenu();
 };
 
 eventSource.on(event_types.APP_READY, async () => {
@@ -261,24 +297,19 @@ eventSource.on(event_types.APP_READY, async () => {
     });
     ta.addEventListener('input', () => {
         if (ta.value.trim() != '') taValue = ta.value;
-        if (!historyMenu) return;
-        const text = ta.value.trim();
-        if (text.length == 0) {
-            for (const el of historyMenu.children) {
-                el.classList.remove('stih--hidden');
-            }
-        } else {
-            const terms = text.split(/\s+/);
-            getInputHistory().forEach((c, idx) => {
-                if (terms.filter(it => c.toLowerCase().includes(it.toLowerCase())).length == terms.length) {
-                    historyMenu.children[idx].classList.remove('stih--hidden');
-                } else {
-                    historyMenu.children[idx].classList.add('stih--hidden');
-                }
-            });
-        }
+    });
+    document.addEventListener('pointerdown', (event) => {
+        if (historyMenu && !buttonWrap.contains(event.target)) hideHistoryMenu();
     });
     updateButtons();
+    buttonWrap.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && historyMenu) {
+            event.preventDefault();
+            event.stopPropagation();
+            hideHistoryMenu();
+            btnHistory.focus({ preventScroll: true });
+        }
+    });
 });
 eventSource.on(event_types.GENERATION_STARTED, () => {
     addToInputHistory(taValue);
@@ -319,7 +350,7 @@ export function inputHistoryBack() {
     if (inputHistoryIdx + 1 < history.length) {
         inputHistoryIdx++;
     }
-    ta.value = history[inputHistoryIdx];
+    ta.value = history[inputHistoryIdx] ?? '';
     ta.dispatchEvent(new Event('input', { bubbles: true }));
 }
 export function inputHistoryForward() {
@@ -336,5 +367,4 @@ export function inputHistoryForward() {
 }
 export function showInputHistory() {
     showHistoryMenu();
-    ta.focus({ preventScroll: true });
 }

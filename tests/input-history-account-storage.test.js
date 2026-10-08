@@ -46,6 +46,10 @@ await jest.unstable_mockModule('../public/scripts/extensions/input-history/lib/w
     waitForFrame: jest.fn(async () => {}),
 }));
 
+await jest.unstable_mockModule('../public/scripts/i18n.js', () => ({
+    t: strings => strings.join(''),
+}));
+
 const { getInputHistory, setInputHistory } = await import('../public/scripts/extensions/input-history/index.js');
 
 beforeEach(() => {
