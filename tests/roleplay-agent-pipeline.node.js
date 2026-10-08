@@ -123,7 +123,7 @@ test('native Agent prompts, lore, complete-context interception and postprocessi
 
 for (const effect of ['append', 'continue', 'swipe', 'replace']) {
     test(`bundled reply rewrites run in order with saved context and length settings for ${effect}`, async t => {
-        const names = ['format-fixer', 'user-agency-guard', 'knowledge-guard', 'friction-keeper', 'dialogue-humaniser', 'repetition-breaker', 'length-trimmer', 'proofreader'];
+        const names = ['format-fixer', 'user-agency-guard', 'knowledge-guard', 'friction-keeper', 'nsfw-enhancer', 'dialogue-humaniser', 'repetition-breaker', 'length-trimmer', 'proofreader'];
         const agents = names.map(name => {
             const template = JSON.parse(fs.readFileSync(new URL(`../public/scripts/extensions/in-chat-agents/templates/${name}.json`, import.meta.url)));
             return { ...template, enabled: true, sourceTemplateId: template.id,
@@ -146,8 +146,19 @@ for (const effect of ['append', 'continue', 'swipe', 'replace']) {
             return `Pass ${calls.length}`;
         }) });
         assert.deepEqual(calls, agents.map(agent => agent.id));
-        assert.equal(f.saved().at(-1).mes, 'Pass 8');
+        assert.equal(f.saved().at(-1).mes, 'Pass 9');
         await f.run({ generate: () => assert.fail('Main reply repeated'), generateAgent: () => assert.fail('Rewrite repeated') });
+    });
+}
+
+for (const guard of [true, false]) {
+    test(`a refused reply rewrite ${guard ? 'keeps the original reply' : 'replaces the reply when the refusal guard is off'}`, async t => {
+        const refusal = 'I\u2019m sorry, but I can\u2019t help with rewriting this scene.';
+        const f = prepared(t, [{ id: 'rewrite', phase: 'post', prompt: 'REWRITE', injection: { order: 3 },
+            postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64 } }],
+        { globalSettings: guard ? {} : { promptTransformRefusalGuard: false } });
+        await f.run({ generate: paid('main', () => 'Main output'), generateAgent: paid('rewrite', () => refusal) });
+        assert.equal(f.saved().at(-1).mes, guard ? 'Main output' : refusal);
     });
 }
 

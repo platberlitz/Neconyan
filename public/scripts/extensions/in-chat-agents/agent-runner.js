@@ -89,6 +89,7 @@ import {
     writeTrackerMetadataValue,
 } from './tracker-state.js';
 import { buildPromptTransformSynthesisMessages, composePromptTransformDraft, runPromptTransformStages } from './prompt-transform-synthesis.js';
+import { isLikelyPromptTransformRefusal } from './prompt-transform-refusal.js';
 
 const PROMPT_KEY_PREFIX = 'inchat_agent_';
 const PATHFINDER_AUTO_SUMMARY_PROMPT_KEY = 'pathfinder_zz_auto_summary';
@@ -2566,6 +2567,10 @@ function shouldShowPostMainInterceptMessageFirst() {
     return getGlobalSettings()?.postMainInterceptShowMessageFirst !== false;
 }
 
+function isGuardedRefusal(outputText, originalText) {
+    return getGlobalSettings()?.promptTransformRefusalGuard !== false && isLikelyPromptTransformRefusal(outputText, originalText);
+}
+
 function describePromptTransformTarget(profileId = '', runner = '') {
     if (runner === 'main') {
         return 'the main model';
@@ -3881,7 +3886,8 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
         const staleTarget = !isMessageTargetCurrent(message, targetState, messageIndex);
         // A rewrite the provider cut short at its output limit must not replace the complete original.
         const truncatedRewrite = response.lengthLimited === true;
-        if (staleTarget || truncatedRewrite || agentGenerationCancelRevision !== cancelRevision || !isRuntimeAllowed()) {
+        const refusedRewrite = !truncatedRewrite && isGuardedRefusal(promptOutputText, transformMessageText);
+        if (staleTarget || truncatedRewrite || refusedRewrite || agentGenerationCancelRevision !== cancelRevision || !isRuntimeAllowed()) {
             if (staleTarget) {
                 console.info(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" finished after the message changed; result discarded.`);
             } else if (truncatedRewrite) {
@@ -3889,12 +3895,17 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
                 if (showNotifications) {
                     toastr.warning(`${escapeToastHtml(agent.name)} ran out of output room, so the original text was kept. Raise its max tokens and try again.`);
                 }
+            } else if (refusedRewrite) {
+                console.warn(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" refused; the original text was kept.`);
+                if (showNotifications) {
+                    toastr.warning(`${escapeToastHtml(agent.name)} refused, so the original text was kept.`);
+                }
             }
             return {
                 agentId: agent.id,
                 agentName: agent.name,
                 changed: false,
-                status: staleTarget ? 'stale-target' : truncatedRewrite ? 'truncated' : agentGenerationCancelRevision !== cancelRevision ? 'cancelled' : 'skipped-runtime-filter',
+                status: staleTarget ? 'stale-target' : truncatedRewrite ? 'truncated' : refusedRewrite ? 'refused' : agentGenerationCancelRevision !== cancelRevision ? 'cancelled' : 'skipped-runtime-filter',
                 mode: promptTransformMode,
                 profileId: response.profileId,
                 ...getPromptTransformRunMetadata(agent, response.profileId),
@@ -5128,6 +5139,11 @@ async function runContextInterceptAgent(agent, currentContextText, generationTyp
 
         const outputText = unwrapContextInterceptOutput(response.output).trim();
 
+        if (isGuardedRefusal(outputText, currentContextText)) {
+            console.warn(`[InChatAgents] intercept agent "${agent.name}" refused; the original text was kept.`);
+            return { ...baseResult, status: 'refused', profileId: response.profileId, runner: response.runner };
+        }
+
         if (!outputText) {
             console.warn(`[InChatAgents] pre-generation intercept agent "${agent.name}" returned an empty response.`);
             return {
@@ -6137,7 +6153,7 @@ async function executeManualAgentRun(agentId, target, cancelRevision = agentGene
         return null;
     }
 
-    if (result.status !== 'truncated') {
+    if (!['truncated', 'refused'].includes(result.status)) {
         result.nextMessageText = applyAgentRegexScriptsToText([agent], result.nextMessageText, { characterOverride: message.name, includeDisplay: false });
         result.changed = result.nextMessageText !== beforeText;
     }

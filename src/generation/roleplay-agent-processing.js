@@ -4,6 +4,7 @@ import { applyRegexScriptList } from '../../public/scripts/extensions/in-chat-ag
 import { buildRegexScriptRefsForAgent } from '../../public/scripts/extensions/in-chat-agents/regex-snapshot-store.js';
 import { inspectTrackerState, mergeTrackerRepairPayload, TRACKER_REPAIR_INSTRUCTION } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
 import { buildPromptTransformSynthesisMessages, composePromptTransformDraft, planPromptTransformStages, runOrderedPromptTransformStages, runPromptTransformStages } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-synthesis.js';
+import { isLikelyPromptTransformRefusal } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-refusal.js';
 import { createMacroEnvironment } from '../macros/index.js';
 import { createProviderScope, readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
@@ -160,8 +161,12 @@ async function modelRun(context, options, agent, text, name, intercept = false, 
             const prompt = evaluate(environment, agent.prompt, snapshot);
             return appendHelperPrefillMessages(messagesFor(agent, text, prompt, generationType, options.assistantName, format, intercept, recentChat), snapshot.agents.helperPrefill);
         } });
+    const outputText = result.lengthLimited ? '' : unwrap(result.text);
+    // A refusal never replaces the text it was asked to work on.
+    const refused = snapshot.agents.refusalGuard !== false && isLikelyPromptTransformRefusal(outputText, text);
     return { agentId: agent.id, agentName: agent.name, order: agent.injection.order,
-        outputText: result.lengthLimited ? '' : unwrap(result.text), status: result.lengthLimited ? 'length-limited' : result.text.trim() ? 'done' : 'empty',
+        outputText: refused ? '' : outputText,
+        status: result.lengthLimited ? 'length-limited' : refused ? 'refused' : result.text.trim() ? 'done' : 'empty',
         profileLabel: result.fallbackLabel || result.profileId || 'Main model', modelLabel: result.model, timestamp: result.completedAt, modelHash: result.hash };
 }
 
@@ -330,7 +335,7 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     const agentOrder = new Map(selected.map((agent, index) => [agent.id, index]));
     runs.sort((left, right) => agentOrder.get(left.agentId) - agentOrder.get(right.agentId));
     let text = composePromptTransformDraft(draft, join);
-    if (companionOutput && postFailed || manual && !options.repairTrackers && runs.some(run => run.status === 'length-limited')) {
+    if (companionOutput && postFailed || manual && !options.repairTrackers && runs.some(run => ['length-limited', 'refused'].includes(run.status))) {
         return savePhase(context, snapshot.account, phaseName, { identity, text: value, extra: {}, metadata: {}, runs, failed: true });
     }
     const utilities = agents.filter(agent => inline(agent) && agent.postProcess.enabled

@@ -956,6 +956,102 @@
     }
   },
   {
+    "id": "tpl-nsfw-enhancer",
+    "name": "NSFW Enhancer",
+    "description": "Make sex scenes explicit and specific: no euphemisms, fades to black, hedging or purple prose",
+    "icon": "",
+    "category": "content",
+    "subcategory": "prose-quality",
+    "tags": [
+      "nsfw",
+      "explicit",
+      "editing",
+      "prose"
+    ],
+    "version": 1,
+    "author": "Purachina",
+    "prompt": "# Role\nYou are an explicit-content editor for adult fiction between consenting adults. When the response contains a sexual or sensual scene, make it frank, physical and specific, written the way this story and these characters would actually play it. When the response has no intimate content, return it unchanged.\n\n# Output\n- Output ONLY the revised message. No notes, headings, labels, warnings or explanations.\n- Keep tense, point of view, paragraph order, names, macros, placeholders, code, URLs and formatting. Keep tags balanced.\n- Keep the same events, decisions and outcome. End where the original ends.\n- Write nothing for {{user}}: no new actions, words, thoughts or feelings.\n- When the intimate content is already explicit and specific, return the message unchanged.\n\n# Method\n1. Read the recent chat, if supplied. Note who is involved, what each character wants, how far the scene has already gone, and the tone (tender, playful, rough, awkward, desperate).\n2. Find every sexual or sensual passage in the response. Leave everything else exactly as written.\n3. Fix each passage that fails the Tests below. Expand in place; never add a new scene or skip ahead.\n4. Run the Final Check and output.\n\n# Tests\n1. Euphemism: 'core', 'heat', 'sex' used as a noun for a body part, 'manhood', 'womanhood', 'member', 'folds' standing alone, 'down there', 'their bodies became one'. Name bodies and acts plainly, in the vocabulary this character and narrator would use.\n2. Fade to black: a cut, time skip or 'afterwards' that jumps past sex the scene was clearly heading into. Write the moment that was skipped, at the pace of the scene, and stop where the original stops.\n3. Vague action: 'they made love', 'pleasure washed over her', 'he touched her everywhere'. Say who does what, with which part, where, and how it feels.\n4. Missing senses: replace summary with touch, pressure, temperature, taste, smell, sound and breath, through the point-of-view character.\n5. Sanitised voice: a crude, bold or teasing character suddenly speaking politely in bed. Give them their own dirty talk, nerves or silence.\n6. Hedging and moralising: disclaimers, consent check-ins the characters would not say, lectures, or a character stopping for no reason in the story. Remove them; keep any hesitation that belongs to the character.\n7. Purple prose: stacked metaphors, waves, fire, electricity and stars instead of bodies. Say the physical thing.\n\n# Limits\n- Keep every character an adult, and keep the established consent dynamics of the scene. Never turn a reluctant moment into an eager one, or the reverse.\n- Never escalate past what the scene has started. A kiss stays a kiss unless the response already moves further.\n- Keep characterisation, emotional beats and dialogue that drives the story. Heat comes from the people, not just the anatomy.\n\n# Final Check\n- Is every intimate passage explicit, concrete and in the characters' own voices?\n- Are the events, outcome, length of the scene and {{user}}'s part unchanged?\n- Is non-intimate text untouched?\n- Is my output ONLY the revised message?",
+    "phase": "post",
+    "execution": "inline",
+    "injection": {
+      "position": 1,
+      "depth": 1,
+      "role": 0,
+      "order": 85,
+      "scan": false
+    },
+    "companion": {
+      "trigger": "auto",
+      "displayMode": "panel",
+      "format": "markdown",
+      "rawPrompt": false,
+      "inlinePhase": "",
+      "minContextTokens": 0,
+      "contextMessages": 10,
+      "includeCharacterCard": true,
+      "includePersona": true,
+      "includeWorldInfo": true,
+      "includeAuthorsNote": true,
+      "includeSystemPrompt": true,
+      "includeHistory": true,
+      "includeInChatHistory": false,
+      "chatHistoryDepth": 1,
+      "includeAllChatHistory": true,
+      "keepInChatHistoryWhenHostHidden": false,
+      "historyDepth": 3,
+      "feedback": {
+        "enabled": false,
+        "depth": 1
+      },
+      "batch": false,
+      "batchAgentIds": [],
+      "sendContextToCompanions": false,
+      "contextRecipientAgentIds": [],
+      "dependencies": [],
+      "waitForDependencies": false,
+      "maxTokens": 64000
+    },
+    "preProcess": {
+      "mode": "inject",
+      "interceptTiming": "pre-generation",
+      "applyMode": "replace",
+      "wrapPosition": "after",
+      "wrapPrefix": "",
+      "wrapSuffix": "",
+      "patchStartTag": "<context_patch>",
+      "patchEndTag": "</context_patch>",
+      "maxTokens": 8192
+    },
+    "postProcess": {
+      "enabled": false,
+      "type": "extract",
+      "regexFind": "",
+      "regexReplace": "",
+      "regexFlags": "g",
+      "appendText": "",
+      "extractPattern": "",
+      "extractVariable": "",
+      "promptTransformEnabled": true,
+      "promptTransformShowNotifications": true,
+      "promptTransformMode": "rewrite",
+      "promptTransformMaxTokens": 32000,
+      "promptTransformContextMessages": 4
+    },
+    "enabled": false,
+    "conditions": {
+      "triggerKeywords": [],
+      "triggerProbability": 100,
+      "generationTypes": [
+        "normal",
+        "continue",
+        "impersonate"
+      ],
+      "runOnImpersonate": false,
+      "runOnCompanionOutputs": false,
+      "companionOutputTargetAgentIds": []
+    }
+  },
+  {
     "id": "tpl-dialogue-humaniser",
     "name": "Dialogue Humaniser",
     "description": "Rewrite stilted or nonsensical dialogue so every line sounds like a real person talking",

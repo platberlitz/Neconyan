@@ -184,6 +184,7 @@ const defaultGlobalSettings = {
     companionConnectionFallbacks: [],
     promptTransformShowNotifications: true,
     postMainInterceptShowMessageFirst: true,
+    promptTransformRefusalGuard: true,
     appendAgentsExecutionMode: 'parallel',
     companionExecutionMode: 'parallel',
     companionConcurrentWithPostGen: false,
@@ -265,7 +266,7 @@ export function hasPendingAgentRecovery() {
 
 /**
  * Returns the global settings.
- * @returns {{ enabled: boolean, pathfinderEnabled: boolean, separateRecentChats: boolean, enabledAgentIdsByChatType: Record<string, string[]>, scopedEnabledAgentIdsInitialized: boolean, connectionProfile: string, companionConnectionProfile: string, connectionFallbacks: string[], companionConnectionFallbacks: string[], promptTransformShowNotifications: boolean, postMainInterceptShowMessageFirst: boolean, appendAgentsExecutionMode: 'parallel'|'sequential', helperPrefillMessages: string, hiddenCompanionAgentIds: string[] }}
+ * @returns {{ enabled: boolean, pathfinderEnabled: boolean, separateRecentChats: boolean, enabledAgentIdsByChatType: Record<string, string[]>, scopedEnabledAgentIdsInitialized: boolean, connectionProfile: string, companionConnectionProfile: string, connectionFallbacks: string[], companionConnectionFallbacks: string[], promptTransformShowNotifications: boolean, postMainInterceptShowMessageFirst: boolean, promptTransformRefusalGuard: boolean, appendAgentsExecutionMode: 'parallel'|'sequential', helperPrefillMessages: string, hiddenCompanionAgentIds: string[] }}
  */
 export function getGlobalSettings() {
     return globalSettings;
@@ -423,6 +424,7 @@ export function setGlobalSettings(update) {
 function normalizeGlobalSettingsRecord(settings, update) {
     settings.pathfinderEnabled = settings.pathfinderEnabled !== false;
     settings.postMainInterceptShowMessageFirst = settings.postMainInterceptShowMessageFirst !== false;
+    settings.promptTransformRefusalGuard = settings.promptTransformRefusalGuard !== false;
     settings.enabledAgentIdsByChatType = normalizeScopedEnabledAgentIds(settings.enabledAgentIdsByChatType);
     settings.helperPrefillMessages = typeof settings.helperPrefillMessages === 'string'
         ? settings.helperPrefillMessages

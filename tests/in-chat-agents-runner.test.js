@@ -8447,6 +8447,29 @@ describe('in-chat agent post-processing runner', () => {
         expect(chat[0].mes).toBe('Full rewrite');
     });
 
+    test.each([
+        [undefined, 'Needs rewrite'],
+        [false, 'I\u2019m sorry, but I can\u2019t help with that.'],
+    ])('a refused rewrite with the refusal guard set to %s leaves %s', async (guard, expected) => {
+        usePromptTransformPostAgent();
+        globalSettings.promptTransformRefusalGuard = guard;
+        enabledAgents[0].connectionProfile = 'profile-cc';
+        connectionManagerRequestService = {
+            getProfile: jest.fn(() => ({ name: 'Example profile', model: 'm' })),
+            sendRequest: jest.fn(async () => ({ content: 'I\u2019m sorry, but I can\u2019t help with that.', lengthLimited: false })),
+        };
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        chat.push({ name: 'Assistant', mes: 'Needs rewrite', is_user: false, is_system: false, extra: {} });
+
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        await new Promise(resolve => setTimeout(resolve, 5));
+
+        expect(connectionManagerRequestService.sendRequest).toHaveBeenCalledTimes(1);
+        expect(chat[0].mes).toBe(expected);
+    });
+
     test.each([401, 429, 500])('profile failure %s keeps its cause without repeating the same chat request', async status => {
         usePromptTransformPostAgent();
         enabledAgents[0].connectionProfile = 'profile-cc';

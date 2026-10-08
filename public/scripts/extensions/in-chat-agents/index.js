@@ -583,6 +583,7 @@ const DEFAULT_BUNDLED_TEMPLATE_IDS = new Set([
     'tpl-user-agency-guard',
     'tpl-knowledge-guard',
     'tpl-friction-keeper',
+    'tpl-nsfw-enhancer',
     'tpl-repetition-breaker',
     'tpl-length-trimmer',
     'tpl-intent-reader',
@@ -6195,6 +6196,10 @@ function populateGlobalNotificationToggle() {
         'checked',
         getGlobalSettings().postMainInterceptShowMessageFirst !== false,
     );
+    $('#ica--promptTransformRefusalGuard').prop(
+        'checked',
+        getGlobalSettings().promptTransformRefusalGuard !== false,
+    );
 }
 
 function populatePathfinderSubmoduleToggle() {
@@ -6830,6 +6835,10 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
     });
     $('#ica--postMainInterceptShowMessageFirst').on('change', function () {
         setGlobalSettings({ postMainInterceptShowMessageFirst: $(this).prop('checked') });
+        persistExtensionState();
+    });
+    $('#ica--promptTransformRefusalGuard').on('change', function () {
+        setGlobalSettings({ promptTransformRefusalGuard: $(this).prop('checked') });
         persistExtensionState();
     });
     $('#ica--pathfinderSubmoduleEnabled').on('change', async function () {

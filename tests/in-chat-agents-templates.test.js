@@ -51,6 +51,7 @@ const sourceFilenames = [
     'message-inbox-companion.json',
     'motif-tracker.json',
     'npc-profiles.json',
+    'nsfw-enhancer.json',
     'omen-tracker.json',
     'pace-setter.json',
     'parallel-tracker.json',
@@ -781,6 +782,27 @@ describe('in-chat agent bundled templates', () => {
         expect(readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS')).toContain('\'tpl-dialogue-humaniser\'');
     });
 
+    test('installs the NSFW Enhancer by default as a post-phase rewrite that leaves other text and the user alone', () => {
+        const enhancer = readTemplate('nsfw-enhancer.json');
+
+        expect(enhancer).toMatchObject({
+            id: 'tpl-nsfw-enhancer',
+            name: 'NSFW Enhancer',
+            category: 'content',
+            subcategory: 'prose-quality',
+            phase: 'post',
+            execution: 'inline',
+            enabled: false,
+        });
+        expect(enhancer.injection.order).toBeGreaterThan(readTemplate('friction-keeper.json').injection.order);
+        expect(enhancer.injection.order).toBeLessThan(readTemplate('dialogue-humaniser.json').injection.order);
+        expect(enhancer.prompt).toContain('When the response has no intimate content, return it unchanged.');
+        expect(enhancer.prompt).toContain('Write nothing for {{user}}');
+        expect(enhancer.prompt).toContain('Keep every character an adult');
+        expect(enhancer.id).not.toBe('tpl-nsfw-mode');
+        expect(readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS')).toContain('\'tpl-nsfw-enhancer\'');
+    });
+
     test('installs the reply rewrite chain by default in a fixed running order with the recent chat each pass needs', () => {
         const defaults = readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS');
         const chain = [
@@ -788,6 +810,7 @@ describe('in-chat agent bundled templates', () => {
             ['user-agency-guard.json', 'tpl-user-agency-guard', 'User Agency Guard', 2],
             ['knowledge-guard.json', 'tpl-knowledge-guard', 'Knowledge Guard', 6],
             ['friction-keeper.json', 'tpl-friction-keeper', 'Friction Keeper', 4],
+            ['nsfw-enhancer.json', 'tpl-nsfw-enhancer', 'NSFW Enhancer', 4],
             ['dialogue-humaniser.json', 'tpl-dialogue-humaniser', 'Dialogue Humaniser', 4],
             ['repetition-breaker.json', 'tpl-repetition-breaker', 'Repetition Breaker', 6],
             ['length-trimmer.json', 'tpl-length-trimmer', 'Length Trimmer', 0],
