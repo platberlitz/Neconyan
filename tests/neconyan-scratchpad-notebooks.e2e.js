@@ -174,7 +174,7 @@ for (const phone of [false, true]) {
     });
 }
 
-async function checkNoteSelection({ app }, access) {
+async function checkNoteSelection({ app }, access, { holdSave = false } = {}) {
     test.setTimeout(180000);
     const account = await app.account({ phone: true, contextOptions: IPHONE_SAFARI_CONTEXT });
     await installIPhoneSafari(account.context, { standalone: true });
@@ -183,7 +183,18 @@ async function checkNoteSelection({ app }, access) {
     if (access !== 'none') await account.post('/api/notebooks/policies/update', { notebookId, patch: { assistant: access } });
     const page = await account.open();
     await page.evaluate(async ref => (await import('/scripts/notebooks/notes-app.js')).openNotes({ ...ref, layout: 'full' }), { notebookId, noteId: created.noteId });
+    let releaseSave;
+    let saveStarted = false;
+    if (holdSave) {
+        const saveGate = new Promise(resolve => { releaseSave = resolve; });
+        await page.route('**/api/notebooks/notes/update', async route => {
+            saveStarted = true;
+            await saveGate;
+            await route.continue();
+        });
+    }
     await fillSource(page, 'Private beginning. Shared passage. Private ending.');
+    if (holdSave) await expect.poll(() => saveStarted).toBe(true);
     await page.evaluate(async () => {
         const app = (await import('/scripts/notebooks/notes-app.js')).notesApp();
         app.elements.textarea.setSelectionRange(19, 34);
@@ -192,6 +203,7 @@ async function checkNoteSelection({ app }, access) {
     await expect(page.locator('.notes-dialog .notes-capture-preview')).toHaveText('Shared passage.');
     await page.getByRole('checkbox', { name: 'Allow proposed edits to the shared text', exact: true }).check();
     await page.getByRole('button', { name: 'Open Scratchpad', exact: true }).click();
+    releaseSave?.();
     await expect(page.locator('#neconyan-scratchpad')).toBeVisible();
     await applyIOSOnlyCss(page);
     await expect(page.locator('.scratchpad-note')).toContainText('Selected text only');
@@ -221,3 +233,5 @@ async function checkNoteSelection({ app }, access) {
 for (const access of ['none', 'edit']) {
     test(`a ${access === 'none' ? 'private' : 'shared'} note selection opens its own Scratchpad, saves unsaved text first and revokes temporary sharing`, ({ app }) => checkNoteSelection({ app }, access));
 }
+
+test('a private note selection waits for an in-flight autosave before opening Scratchpad', ({ app }) => checkNoteSelection({ app }, 'none', { holdSave: true }));

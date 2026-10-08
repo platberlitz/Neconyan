@@ -101,6 +101,7 @@ const app = {
         status: 'idle',
         pending: null,
         saving: false,
+        savePromise: null,
         retryMs: 0,
         saveTimer: null,
         layout: 'full',
@@ -151,7 +152,7 @@ function resetForAccount(handle) {
     app.tableView?.clear();
     app.canvasView?.clear();
     Object.assign(state, { account: handle, notebooks: [], importStages: [], notebookId: null, tree: null, note: null, dirty: false,
-        saveConflict: false, pending: null, saving: false, back: [], search: null, status: 'idle', workspaceView: 'note' });
+        saveConflict: false, pending: null, saving: false, savePromise: null, back: [], search: null, status: 'idle', workspaceView: 'note' });
     if (state.built) {
         renderEditor();
         void loadNotebooks();
@@ -1185,15 +1186,28 @@ function scheduleSave(delay = SAVE_DELAY_MS) {
 async function saveNow() {
     const { state } = app;
     clearTimeout(state.saveTimer);
+    // Explicit actions must join an autosave already in progress, not reject it.
+    if (state.savePromise) return state.savePromise;
+    const pending = saveNote();
+    state.savePromise = pending;
+    try {
+        return await pending;
+    } finally {
+        if (state.savePromise === pending) {
+            state.savePromise = null;
+            state.saving = false;
+        }
+    }
+}
+
+async function saveNote() {
+    const { state } = app;
+    clearTimeout(state.saveTimer);
     const note = state.note;
     if (!note || !state.dirty) return true;
     if (state.saveConflict || state.status === 'conflict') return false;
     if (app.sourceEditor?.composing) {
         scheduleSave();
-        return false;
-    }
-    if (state.saving) {
-        scheduleSave(400);
         return false;
     }
     const text = state.editorText;
@@ -1208,7 +1222,6 @@ async function saveNow() {
         operationId: pending.operationId, notebookId, noteId: note.id, expectedRevision: pending.baseRevision,
         changes: [{ type: 'replace_all', markdown: text }], reason: 'autosave',
     });
-    state.saving = false;
     if (state.note !== note || state.account !== account || state.notebookId !== notebookId
         || state.noteRequestVersion !== noteRequestVersion || state.notebookSelectionVersion !== notebookSelectionVersion) return false;
     if (result.status === 'success' || result.status === 'no_change') {

@@ -23,6 +23,7 @@ function runtime(overrides = {}, functions = ['showBanner', 'clearBanner', 'show
         lf: text => text, createNote: jest.fn(), openNote: jest.fn(async () => true), compareTexts: jest.fn(), setStatus: jest.fn(), saveNow: jest.fn(),
         readDraft: () => ({ text: 'My draft.' }), formatTime: () => 'Today', onEditorInput: jest.fn(), refreshLiveOutline: jest.fn(), toast: jest.fn(),
         flushSave: async () => true, selectNotebook: jest.fn(), renderNav: jest.fn(), writePrefs: jest.fn(), applyLayout: jest.fn(), isPhone: () => false, clearTimeout, ...overrides });
+    if (functions.includes('saveNow')) functions = [...functions, 'saveNote'];
     vm.runInContext(functionSource('notebookCanvasCanLeave') + '\n' + functions.map(functionSource).join('\n'), context);
     const actions = () => rows.at(-1).children[1].children;
     return { app, context, rows, removed, actions };
@@ -299,5 +300,40 @@ describe('Notes conflict and recovery safety', () => {
         expect(await saving).toBe(false);
         expect(context.clearDraft).not.toHaveBeenCalled();
         expect(app.state.dirty).toBe(true);
+    });
+
+    test('an explicit save joins the pending autosave without a duplicate request', async () => {
+        const waiting = deferred();
+        const request = jest.fn(() => waiting.promise);
+        const { app, context } = runtime({ request, newOperationId: () => 'save', reportLoreUpdates: jest.fn() }, ['saveNow', 'flushSave']);
+        app.state.status = 'device';
+        const autosave = context.saveNow();
+        const explicitSave = context.flushSave();
+        expect(request).toHaveBeenCalledTimes(1);
+        waiting.resolve({ status: 'success', revision: 'saved' });
+        expect(await autosave).toBe(true);
+        expect(await explicitSave).toBe(true);
+        expect(app.state.dirty).toBe(false);
+        expect(app.state.saving).toBe(false);
+    });
+
+    test('a save from the previous account cannot clear the new account save state', async () => {
+        const older = deferred(), newer = deferred();
+        const request = jest.fn().mockImplementationOnce(() => older.promise).mockImplementationOnce(() => newer.promise);
+        const { app, context } = runtime({ request, newOperationId: () => 'save', reportLoreUpdates: jest.fn() }, ['saveNow']);
+        app.state.status = 'device';
+        const oldSave = context.saveNow();
+        app.state.account = 'new-owner';
+        app.state.savePromise = null;
+        app.state.saving = false;
+        app.state.note = { id: 'two', revision: 'new-account-original', serverText: 'New account.' };
+        const newSave = context.saveNow();
+        older.resolve({ status: 'success', revision: 'old-account-saved' });
+        expect(await oldSave).toBe(false);
+        expect(app.state.saving).toBe(true);
+        expect(app.state.note.revision).toBe('new-account-original');
+        newer.resolve({ status: 'success', revision: 'new-account-saved' });
+        expect(await newSave).toBe(true);
+        expect(app.state.saving).toBe(false);
     });
 });

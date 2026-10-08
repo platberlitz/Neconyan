@@ -10,6 +10,7 @@
 - Added explicit **Import as new instance** for chats from another installation. It creates a separate character instance and history. Android can select JSONL chat files, and saved ZIP imports recheck their retained upload after reinstalling.
 - Reorganised Chat & Writing and Visual Toggles, added movable-panel layouts, compacted the character editor and moved Tour buttons beside page headings.
 - Fixed additional lorebook selection on phones, stale Time Machine restores, Scratchpad context refresh, tracker formatting and mobile reply start delays.
+- Opening Scratchpad from a note now waits for an autosave already in progress instead of rejecting the sharing request.
 - Updated the [official handbook](https://platberlitz.github.io/neconyan-docs/) and the assistants' app-help reference.
 
 ### Merged Staging PRs
