@@ -19,7 +19,8 @@ export function defaultConfig() {
     return {
         revision: 0, defaultsVersion: 2, localOnly: false, autoUpdate: true, historyWindow: 30000,
         memoryTokens: 6000, batchMessages: 12, candidateLimit: 24,
-        writerTokenizer: 'auto', excludeHistory: true, retrieval: { ...RAG_DEFAULTS },
+        writerTokenizer: 'auto', excludeHistory: true, autoHide: false, autoHideTokens: 30000,
+        retrieval: { ...RAG_DEFAULTS },
         roles: Object.fromEntries(ROLE_NAMES.map(name => [name, {
             enabled: false, profileId: '', endpoint: '', model: '', modelOverride: '', modelRevision: '', allowRemote: true,
             contextTokens: 200000, maxOutputTokens: name === 'embedding' ? 0 : 32000,
@@ -83,11 +84,12 @@ function validateRetrieval(input = {}) {
 export function validateConfig(input) {
     object(input, 'Settings');
     const result = defaultConfig();
-    for (const key of ['localOnly', 'autoUpdate', 'excludeHistory']) {
+    for (const key of ['localOnly', 'autoUpdate', 'excludeHistory', 'autoHide']) {
         if (typeof input[key] !== 'boolean') fail(key + ' must be switched on or off.');
         result[key] = input[key];
     }
     result.historyWindow = integer(input.historyWindow, 'Recent chat target, tokens', 1024, 200000);
+    result.autoHideTokens = integer(input.autoHideTokens, 'Hide messages beyond, tokens', 1024, 2000000);
     result.memoryTokens = integer(input.memoryTokens, 'Selected memory budget, tokens', 256, 64000);
     result.batchMessages = integer(input.batchMessages, 'Messages per update', 1, 24);
     result.candidateLimit = integer(input.candidateLimit, 'Recall candidates', 4, 64);
@@ -147,6 +149,8 @@ function readSavedConfig(directories) {
         config.defaultsVersion = 2;
     }
     config.retrieval = { ...RAG_DEFAULTS, ...config.retrieval };
+    config.autoHide ??= false;
+    config.autoHideTokens ??= 30000;
     config.roles.embedding.provider ||= 'custom';
     return config;
 }

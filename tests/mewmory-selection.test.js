@@ -33,9 +33,12 @@ jest.unstable_mockModule('../public/scripts/i18n.js', () => ({
 }));
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/state.js', () => ({ conversationState }));
 jest.unstable_mockModule('../public/scripts/events.js', () => ({
-    event_types: new Proxy({}, { get: (_, name) => name }), eventSource: { on: (name, handler) => listeners.set(name, handler) },
+    event_types: new Proxy({}, { get: (_, name) => name }), eventSource: { on: (name, handler) => {
+        const handlers = [...listeners.get(name)?.handlers || [], handler];
+        listeners.set(name, Object.assign((...args) => handlers.map(item => item(...args)), { handlers }));
+    } },
 }));
-const { getMewmoryLocator, getMewmoryScope, getOverflowMessages, hideOverflowMessages, initMewmory, mewmory, notifyMewmory, prepareMewmoryGeneration, processMewmory, refreshMewmory, requestMewmory, stopMewmoryBackfill } = await import('../public/scripts/mewmory/index.js');
+const { getMewmoryLocator, getMewmoryScope, getOverflowMessages, hideOverflowAutomatically, hideOverflowMessages, initMewmory, mewmory, notifyMewmory, prepareMewmoryGeneration, processMewmory, refreshMewmory, requestMewmory, stopMewmoryBackfill } = await import('../public/scripts/mewmory/index.js');
 const config = { revision: 1, roles: {} };
 const response = data => ({ ok: true, json: async () => data });
 
@@ -204,4 +207,29 @@ test('hiding old messages keeps the latest reply and what fits the context size,
     expect(hideChatMessageRange.mock.calls.map(call => call.slice(0, 2))).toEqual([[0, 1], [3, 3]]);
     expect(hideChatMessageRange.mock.calls.every(call => call[4]?.keepInMewmory === true)).toBe(true);
     expect(chat.map(message => Boolean(message.is_system))).toEqual([true, true, true, true, false, false, false]);
+});
+
+test('automatic hiding runs after a reply only where Mewmory is on and the setting asks for it', async () => {
+    initMewmory();
+    const line = (is_user, mes, extra = {}) => ({ is_user, mes, ...extra });
+    const reset = () => chat.splice(0, chat.length, line(true, 'aaaaaaaaaa'), line(false, 'bbbbbbbbbb'), line(true, 'cccccccccc', { is_system: true }),
+        line(false, 'dddddddddd'), line(true, 'eeeeeeeeee'), line(false, 'ffffffffff'), line(true, 'gggggggggg'));
+    reset();
+    hideChatMessageRange.mockClear();
+    contextSize = 1000;
+    mewmory.view = { enabled: true, revision: 1 };
+    mewmory.config = { ...config, autoHide: false, autoHideTokens: 30 };
+    expect(await hideOverflowAutomatically()).toBe(0);
+    mewmory.config.autoHide = true;
+    mewmory.view.enabled = false;
+    expect(await hideOverflowAutomatically()).toBe(0);
+    expect(hideChatMessageRange).not.toHaveBeenCalled();
+
+    mewmory.view.enabled = true;
+    listeners.get('GENERATION_ENDED')();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(hideChatMessageRange.mock.calls.map(call => call.slice(0, 2))).toEqual([[0, 1], [3, 3]]);
+    expect(hideChatMessageRange.mock.calls.every(call => call[4]?.keepInMewmory === true)).toBe(true);
+    expect(global.toastr.info).toHaveBeenLastCalledWith('Hid 3 older messages past 30 tokens. Mewmory still remembers them.');
+    expect(await hideOverflowAutomatically()).toBe(0);
 });

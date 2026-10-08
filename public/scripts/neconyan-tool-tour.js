@@ -700,7 +700,7 @@ const TOOL_PAGES = Object.freeze({
                 id: 'budgets', tab: '#mewmory-tab-settings',
                 targets: ['[id="mewmory-field-Recent chat target, tokens"]'],
                 title: 'Share the reply model’s available space',
-                body: '**Recent chat target, tokens** is the target for recent chat only. **Selected memory budget, tokens** limits the selected memories added to the reply prompt. Character details, NPC references and other instructions also need space.\n**Recall candidates** limits the memories considered for selection. **Writer tokenizer** counts text for the model writing your replies, separately from each memory role’s tokenizer. **Leave out older chat that Mewmory has already remembered** can shorten the prompt; the older messages stay saved.',
+                body: '**Recent chat target, tokens** is the target for recent chat only. **Selected memory budget, tokens** limits the selected memories added to the reply prompt. Character details, NPC references and other instructions also need space.\n**Recall candidates** limits the memories considered for selection. **Writer tokenizer** counts text for the model writing your replies, separately from each memory role’s tokenizer. **Leave out older chat that Mewmory has already remembered** can shorten the prompt; the older messages stay saved. **Hide old messages automatically** hides the oldest messages after each reply once the chat passes **Hide messages beyond, tokens**; Mewmory still remembers them.',
                 hint: 'Recent chat and memories both need room. Neither gets the whole limit.',
             },
             {
