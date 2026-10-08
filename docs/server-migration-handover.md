@@ -1,5 +1,33 @@
 # Full server migration: continuation
 
+### 8 October: recover replacement ZIP imports and stale security tokens
+
+Investigated on `codex/fix-replacement-zip-import`, based on staging `910356095`.
+The reported upload-key conflict was reproduced in desktop and touch Chromium.
+Explicit ZIP selections now verify their bytes, even when picker metadata is
+unchanged. A confirmed byte conflict starts a separate retained upload; earlier
+uploads remain saved, uncertain attempts keep their key, and accepted imports
+keep their original request. Incomplete earlier uploads remain resumable.
+
+ZIP uploads and the shared native-operation transport now refresh a rejected
+CSRF token once, preserving the request and checking the account again before
+retrying. Production API CSRF rejections return a recognisable, non-cacheable
+JSON error; ordinary permission failures are not retried.
+
+Verified with Node 24: all 442 Jest suites (5,744 passed, two skipped), all 1,960
+server tests, root lint, frontend budgets and changed-test lint. All 25 account
+import Chromium cases passed across two serial runs, including replacement ZIPs,
+reselection/reinstall, production CSRF recovery, process death and page closure.
+The full test-folder lint command still reports 31 existing errors in ten files
+unchanged from staging. Before/after screenshots are in the ignored
+`screenshots/{phone,desktop}-replacement-zip-{before,after}.png` files. Their
+test archive deliberately contains a damaged card to retain the visible report.
+
+The physical Fold/APK and Fennec remain unverified. The supplied screenshots
+were inspected, but the recording could not be played; the cause of the user's
+first interrupted attempt is therefore not established. Next action: review
+the PR against staging and validate the resulting APK on the reporting device.
+
 ## Release preparation: 1.0.0
 
 ### 8 October: 1.2.1 released from main, staging moves to 1.2.2

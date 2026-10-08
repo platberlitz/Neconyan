@@ -67,8 +67,9 @@ async function copyUploadedArchive(base, account, key, filename) {
         for (const name of records) used += readAllocation(path.join(root, name)).value.size;
         let saved = readAllocation(recordPath);
         let value = saved?.value;
-        if (value && (value.rawHash !== source.rawHash || value.size !== source.size || roleplayHash(value.account) !== roleplayHash(account))) {
-            throw operationError('This import key already belongs to a different upload. The earlier upload was kept.');
+        if (value && roleplayHash(value.account) !== roleplayHash(account)) throw operationError('This upload belongs to an earlier account.');
+        if (value && (value.rawHash !== source.rawHash || value.size !== source.size)) {
+            throw Object.assign(operationError('This import key already belongs to a different upload. The earlier upload was kept.'), { code: 'IMPORT_UPLOAD_CONFLICT' });
         }
         if (!value) {
             if (used + source.size > INPUT_CAPACITY) throw operationError('Retained upload storage is full. Earlier uploads and evidence were kept.', 413);

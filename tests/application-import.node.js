@@ -710,11 +710,38 @@ test('uploaded ZIP inputs are immutable, account-bound and shared by identical l
     for await (const chunk of stream) chunks.push(chunk);
     assert.equal(Buffer.concat(chunks).toString(), 'saved chat bytes');
     fs.writeFileSync(upload, 'different upload');
-    await assert.rejects(retainUploadedArchive(p.base, p.f.scope, 'zip', upload), /different upload/);
+    await assert.rejects(retainUploadedArchive(p.base, p.f.scope, 'zip', upload), { code: 'IMPORT_UPLOAD_CONFLICT' });
+    assert.deepEqual(fs.readFileSync(first.filename), original);
+    const replacement = await retainUploadedArchive(p.base, p.f.scope, 'replacement', upload);
+    assert.notEqual(replacement.id, first.id);
+    assert.equal(fs.readFileSync(replacement.filename, 'utf8'), 'different upload');
     assert.deepEqual(fs.readFileSync(first.filename), original);
     resetRoleplayAccount(p.base, p.f.scope, 'reset');
     assert.throws(() => capturedArchiveInput(p.base, p.f.scope, first.id), /account/i);
     assert.equal(fs.existsSync(first.filename), true);
+});
+
+test('a different ZIP can use a new key while the original incomplete upload remains resumable', async t => {
+    const p = setup(t);
+    const original = Buffer.from('Original upload bytes');
+    const upload = sourceFile(p, 'upload.zip', original);
+    const retained = await retainUploadedArchive(p.base, p.f.scope, 'earlier', upload);
+    const allocation = retained.filename.replace(/\.zip$/, '.json');
+    const value = JSON.parse(fs.readFileSync(allocation)); value.state = 'pending';
+    const temporary = path.join(path.dirname(allocation), value.temporary);
+    fs.renameSync(retained.filename, temporary);
+    fs.truncateSync(temporary, 3);
+    fs.writeFileSync(allocation, JSON.stringify(value));
+    assert.equal(readUploadedArchive(p.base, p.f.scope, 'earlier'), null);
+    fs.writeFileSync(upload, 'Replacement bytes');
+    await assert.rejects(retainUploadedArchive(p.base, p.f.scope, 'earlier', upload), { code: 'IMPORT_UPLOAD_CONFLICT' });
+    const replacement = await retainUploadedArchive(p.base, p.f.scope, 'replacement', upload);
+    assert.equal(fs.readFileSync(replacement.filename, 'utf8'), 'Replacement bytes');
+    assert.deepEqual(JSON.parse(fs.readFileSync(allocation)), value);
+    assert.deepEqual(fs.readFileSync(temporary), original.subarray(0, 3));
+    fs.writeFileSync(upload, original);
+    assert.equal((await retainUploadedArchive(p.base, p.f.scope, 'earlier', upload)).id, retained.id);
+    assert.deepEqual(fs.readFileSync(retained.filename), original);
 });
 
 test('retained upload corruption refuses new work without deleting earlier evidence', async t => {

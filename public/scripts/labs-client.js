@@ -1,4 +1,6 @@
 /** Retained submissions and read-only observation of native Labs work. */
+import { fetchWithCsrfRetry } from './csrf-token-refresh.js';
+
 export function createLabClient({ request, observeJob, account, storage, uuid = () => crypto.randomUUID(),
     basePath = '/api/labs', storagePrefix = 'neconyan-labs', label = 'Labs' }) {
     const read = key => request(`${basePath}/records/${encodeURIComponent(key)}`);
@@ -151,8 +153,10 @@ export async function getNativeOperationClient({ basePath = '/api/labs', storage
     const [host, jobs, user] = await Promise.all([import('../script.js'), import('./jobs.js'), import('./user.js')]);
     const account = user.getCurrentUserHandle();
     const request = async (url, options = {}) => {
-        if (user.getCurrentUserHandle() !== account) throw new Error('account_changed');
-        const response = await fetch(url, { ...options, headers: { ...host.getRequestHeaders(), 'X-Neconyan-Account': account } });
+        const response = await fetchWithCsrfRetry(url, () => {
+            if (user.getCurrentUserHandle() !== account) throw new Error('account_changed');
+            return { ...options, headers: { ...host.getRequestHeaders(), 'X-Neconyan-Account': account } };
+        }, { refreshCsrfToken: host.refreshCsrfToken });
         const text = await response.text();
         if (user.getCurrentUserHandle() !== account) throw new Error('account_changed');
         let body;
