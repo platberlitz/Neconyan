@@ -1,5 +1,14 @@
 // Questions and distinguishing facts shared by Node and real-browser retrieval checks.
 export const refreshedKnowledgeCases = [
+    ['Does global Search tolerate a typo?', 'navigation.search', 'notebok finds Notebooks'],
+    ['Can I search all chats and saved notebook notes?', 'navigation.saved-search', 'Unsaved drafts are not searched'],
+    ['Where is the official documentation handbook?', 'navigation.handbook', 'https://platberlitz.github.io/neconyan-docs/'],
+    ['What does User Agency Guard do?', 'agents.reply-rewrites', 'removes invented user actions or thoughts'],
+    ['Has Proofreader replaced Prose Polisher?', 'agents.reply-rewrites', 'Proofreader replaces Prose Polisher'],
+    ['How do I install Intent Reader or Pace Setter?', 'agents.fast-notes', '400-token output limit'],
+    ['Do I need to install the fast pre-generation note agents?', 'agents.fast-notes', 'come already installed, disabled'],
+    ['Can parallel rewrites change my appended tracker blocks?', 'agents.rewrite-order', 'kept outside the body being rewritten'],
+    ['How do I Import as new instance from another installation?', 'recovery.import-new-instance', 'without merging existing history'],
     ['My Termux chats disappeared after I copied folders and reloaded', 'recovery.transferred-data', 'Check transferred data'],
     ['How do I fix ROLEPLAY_SOURCE_CHANGED?', 'recovery.transferred-data', 'Reload repaired account'],
     ['I removed _roleplay and old chats return ROLEPLAY_FOREIGN_SOURCE', 'recovery.transferred-data', 'Keep tracking records and chat markers intact'],
