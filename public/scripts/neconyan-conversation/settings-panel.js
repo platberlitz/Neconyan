@@ -47,16 +47,22 @@ export function setConversationBackdropVisible() {
     }
 
     const settingsOpen = drawer instanceof HTMLElement && !drawer.hidden && !isUiClosing(drawer);
-    const palsOpen = palsRail instanceof HTMLElement && palsRail.dataset.open === 'true';
+    const palsOpen = palsRail instanceof HTMLElement && palsRail.dataset.open === 'true' && !isUiClosing(palsRail);
     setUiVisibility(backdrop, settingsOpen || palsOpen, visible => { backdrop.hidden = !visible; }, { distance: 0 });
 }
 
-export function closePalsRail() {
+export function setPalsRailOpen(open) {
     const palsRail = document.getElementById(CHROME_IDS.palsRail);
     if (palsRail instanceof HTMLElement) {
-        palsRail.dataset.open = 'false';
+        setUiVisibility(palsRail, open, visible => { palsRail.dataset.open = String(visible); }, {
+            animate: window.matchMedia('(max-width: 768px)').matches,
+        });
     }
     setConversationBackdropVisible();
+}
+
+export function closePalsRail() {
+    setPalsRailOpen(false);
 }
 
 export function togglePalsRail() {
@@ -65,8 +71,7 @@ export function togglePalsRail() {
         return;
     }
 
-    palsRail.dataset.open = palsRail.dataset.open === 'true' ? 'false' : 'true';
-    setConversationBackdropVisible();
+    setPalsRailOpen(palsRail.dataset.open !== 'true' || isUiClosing(palsRail));
 }
 
 export function formatScheduleTimestamp(timestamp) {

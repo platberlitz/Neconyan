@@ -18280,9 +18280,6 @@ export async function doNavbarIconClick() {
             finishUiMotion(el);
             $(el).removeClass('openDrawer').addClass('closedDrawer');
         }
-        if ($openDrawers.length && animation_duration) {
-            await delay(animation_duration);
-        }
         icon.toggleClass('openIcon closedIcon');
         setUiVisibility(drawerElement, true, () => drawer.addClass('openDrawer').removeClass('closedDrawer'));
 

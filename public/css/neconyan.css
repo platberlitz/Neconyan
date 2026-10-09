@@ -698,8 +698,7 @@ body.neconyan #neconyan-tour-coachmark button:focus-visible { outline: 2px solid
         --sb-topbar-layout-offset: calc(var(--sb-topbar-stack-height) + env(safe-area-inset-top, 0px));
     }
     body.neconyan.sb-topbar-compact { --sb-topbar-layout-offset: calc(var(--sb-topbar-primary-height) + env(safe-area-inset-top, 0px)); }
-    /* Mobile keeps the workspace rail as the one menu: the hamburger slides it
-       out from the left and the legacy #sb-mobile-nav overlay stays retired. */
+    /* The workspace menu uses the shared drawer motion in ui-motion.js. */
     body.neconyan #neconyan-workspace-rail {
         display: flex;
         z-index: 80;
@@ -711,15 +710,12 @@ body.neconyan #neconyan-tour-coachmark button:focus-visible { outline: 2px solid
         padding-top: 12px;
         padding-bottom: max(12px, env(safe-area-inset-bottom));
         background: var(--neco-rail);
-        transform: translateX(-100%);
         visibility: hidden;
         pointer-events: none;
-        transition: transform 180ms ease-out, visibility 180ms ease-out;
     }
     body.neconyan #neconyan-workspace-rail .neconyan-rail-brand { display: none; }
     body.neconyan #neconyan-workspace-rail button { min-height: 44px; }
     body.neconyan.neconyan-rail-drawer-open #neconyan-workspace-rail {
-        transform: none;
         visibility: visible;
         pointer-events: auto;
     }
@@ -730,15 +726,8 @@ body.neconyan #neconyan-tour-coachmark button:focus-visible { outline: 2px solid
         z-index: 70;
         background: color-mix(in oklch, var(--neco-charcoal) 62%, transparent);
         border: 0;
-        opacity: 0;
-        transition: opacity 180ms ease-out;
     }
-    body.neconyan.neconyan-rail-drawer-open .neconyan-rail-drawer-scrim { opacity: 1; }
     body.neconyan .neconyan-rail-drawer-scrim[hidden] { display: none !important; }
-    @media (prefers-reduced-motion: reduce) {
-        body.neconyan #neconyan-workspace-rail,
-        body.neconyan .neconyan-rail-drawer-scrim { transition: none; }
-    }
     body.neconyan #top-bar {
         height: var(--sb-topbar-layout-offset) !important; min-height: var(--sb-topbar-layout-offset) !important; max-height: none !important;
         padding-top: env(safe-area-inset-top, 0px) !important; padding-bottom: 0 !important; align-items: flex-start !important;

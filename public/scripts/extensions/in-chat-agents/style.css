@@ -1371,7 +1371,7 @@ button.ica--card-pill--version-update {
     max-width: 100%;
 }
 
-/* ── Slide-out Tracker Panel ────────────────────────── */
+/* ── Companion Panel (shared UI motion) ────────────────────────── */
 
 .ica--tpanel {
     --ica--tpanel-viewport-height: var(--sb-shell-viewport-height, 100dvh);
@@ -1388,7 +1388,6 @@ button.ica--card-pill--version-update {
     background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #222) 92%, #000);
     -webkit-backdrop-filter: blur(calc(var(--blurStrength, 10) * 1px));
     backdrop-filter: blur(calc(var(--blurStrength, 10) * 1px));
-    transition: -webkit-clip-path 0.25s ease, clip-path 0.25s ease;
     overflow-y: auto;
     overscroll-behavior: contain;
     contain: layout style;
@@ -1413,8 +1412,6 @@ button.ica--card-pill--version-update {
     left: auto;
     border-left-width: 1px;
     padding-right: calc(12px + env(safe-area-inset-right, 0px));
-    -webkit-clip-path: inset(0 0 0 100%);
-    clip-path: inset(0 0 0 100%);
 }
 
 .ica--tpanel[data-edge="left"] {
@@ -1422,8 +1419,6 @@ button.ica--card-pill--version-update {
     right: auto;
     border-right-width: 1px;
     padding-left: calc(12px + env(safe-area-inset-left, 0px));
-    -webkit-clip-path: inset(0 100% 0 0);
-    clip-path: inset(0 100% 0 0);
 }
 
 /* Opened from the top bar, the sheet starts under the bar so the button that toggles it stays in reach. */
@@ -1445,8 +1440,6 @@ button.ica--card-pill--version-update {
     bottom: auto;
     border-bottom-width: 1px;
     padding-top: calc(12px + env(safe-area-inset-top, 0px));
-    -webkit-clip-path: inset(0 0 100% 0);
-    clip-path: inset(0 0 100% 0);
 }
 
 .ica--tpanel[data-edge="bottom"] {
@@ -1457,23 +1450,11 @@ button.ica--card-pill--version-update {
     bottom: auto;
     border-top-width: 1px;
     padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-    -webkit-clip-path: inset(100% 0 0 0);
-    clip-path: inset(100% 0 0 0);
 }
 
 .ica--tpanel:not(.is-open) {
     visibility: hidden;
     pointer-events: none;
-    /* Delay hiding until the close slide finishes so the backdrop blur leaves in lockstep. */
-    transition: -webkit-clip-path 0.25s ease, clip-path 0.25s ease, visibility 0s linear 0.25s;
-}
-
-.ica--tpanel[data-edge="right"].is-open,
-.ica--tpanel[data-edge="left"].is-open,
-.ica--tpanel[data-edge="top"].is-open,
-.ica--tpanel[data-edge="bottom"].is-open {
-    -webkit-clip-path: inset(0);
-    clip-path: inset(0);
 }
 
 .ica--tpanel-header {

@@ -1827,7 +1827,6 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         visibility: hidden;
         opacity: 0;
         pointer-events: none;
-        transition: opacity var(--sb-transition-fast);
         background: transparent;
     }
 

@@ -1667,7 +1667,6 @@ body:not(.movingUI) .drawer-content.maximized {
     width: 0 !important;
     height: 0 !important;
     overflow: hidden !important;
-    transition: opacity var(--sb-transition-fast), visibility 0s 180ms, width 0s 180ms, height 0s 180ms, overflow 0s 180ms;
 }
 
 .sb-shell-root.fillLeft.openDrawer,
@@ -1676,7 +1675,6 @@ body:not(.movingUI) .drawer-content.maximized {
     opacity: 1;
     visibility: visible;
     z-index: var(--sb-z-shell-panel);
-    transition: opacity var(--sb-transition-fast);
 }
 
 /* WebKit can retain the closed drawer's inherited visibility in the mounted frame. */

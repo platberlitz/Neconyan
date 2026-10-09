@@ -73,12 +73,23 @@ export function revealUi(element, { distance = 6, duration = 180 } = {}) {
 export function setUiVisibility(element, open, applyVisibility, { distance = 6, animate = true } = {}) {
     if (!element) return;
     const previous = activeMotions.get(element);
-    if (!open && previous?.closing && animate && !prefersReducedUiMotion()) return;
+    const immediate = !animate || prefersReducedUiMotion() || typeof element.animate !== 'function';
+    // Repeated state synchronisation must not cancel an arrival halfway through.
+    if (previous && previous.closing === !open && !immediate) {
+        if (open) applyVisibility(true);
+        return;
+    }
+    if (immediate) {
+        previous?.cancel();
+        applyVisibility(open);
+        return;
+    }
     const visible = isVisible(element);
-    const interrupted = previous ? { opacity: getComputedStyle(element).opacity, translate: getComputedStyle(element).translate } : null;
+    const style = previous ? getComputedStyle(element) : null;
+    const interrupted = style ? { opacity: style.opacity, translate: style.translate } : null;
     previous?.cancel();
 
-    if (!animate || prefersReducedUiMotion() || typeof element.animate !== 'function' || (!open && !visible)) {
+    if (!open && !visible) {
         applyVisibility(open);
         return;
     }

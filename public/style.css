@@ -6120,10 +6120,6 @@ body:has(.drawer-content.open) #top-settings-holder:has(.drawer-content.openDraw
     backdrop-filter: var(--SmartThemeBackdropFilter);
     -webkit-backdrop-filter: var(--SmartThemeBackdropFilter);
     box-shadow: 0 18px 80px rgba(2, 8, 5, 0.35);
-    transition-property: height, display;
-    transition-duration: 200ms;
-    transition-timing-function: ease-in-out;
-    transition-behavior: allow-discrete;
 }
 
 #movingDivs>.drawer-content {
@@ -6133,16 +6129,7 @@ body:has(.drawer-content.open) #top-settings-holder:has(.drawer-content.openDraw
 .drawer-content.openDrawer {
     display: block;
     height: auto;
-    height: calc-size(auto, size);
     overflow-y: auto;
-
-    @supports selector(::-webkit-scrollbar-thumb) {
-        animation: hide-scroll var(--animation-duration-2x) backwards;
-    }
-
-    @starting-style {
-        height: 0;
-    }
 }
 
 body.movingUI .inline-drawer-maximize {

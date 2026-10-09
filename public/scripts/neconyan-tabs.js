@@ -508,7 +508,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261010-subtle-motion';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261010-consistent-motion';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -18788,7 +18788,8 @@ function closeMobileNav() {
 let neconyanRailDrawerBound = false;
 
 function isNeconyanRailDrawerOpen() {
-    return document.body.classList.contains('neconyan-rail-drawer-open');
+    return document.body.classList.contains('neconyan-rail-drawer-open')
+        && !isUiClosing(document.getElementById('neconyan-workspace-rail'));
 }
 
 function ensureNeconyanRailScrim() {
@@ -18821,15 +18822,15 @@ function setNeconyanRailDrawerOpen(open, { restoreFocus = false } = {}) {
         setMobileNavOpenState(false);
     }
 
-    document.body.classList.toggle('neconyan-rail-drawer-open', shouldOpen);
     const scrim = ensureNeconyanRailScrim();
     setUiVisibility(scrim, shouldOpen, visible => { scrim.hidden = !visible; }, { distance: 0 });
 
     if (rail instanceof HTMLElement) {
+        setUiVisibility(rail, shouldOpen, visible => {
+            document.body.classList.toggle('neconyan-rail-drawer-open', visible);
+            rail.inert = mobile && !visible;
+        }, { animate: mobile });
         if (mobile) {
-            if ('inert' in rail) {
-                rail.inert = !shouldOpen;
-            }
             rail.setAttribute('aria-hidden', String(!shouldOpen));
         } else {
             if ('inert' in rail) {

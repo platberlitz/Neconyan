@@ -31,7 +31,7 @@ import {
 } from './personas.js';
 import { schedulePalsRailRender } from './render-scheduler.js';
 import { escapeHtmlAttribute, escapeHtmlText, setUserTextSlot } from './render-utils.js';
-import { closePalsRail, setConversationBackdropVisible } from './settings-panel.js';
+import { closePalsRail, setPalsRailOpen } from './settings-panel.js';
 import { conversationState } from './state.js';
 
 export function renderWeeklyScheduleEditor(container, scheduleJson) {
@@ -376,11 +376,7 @@ export function hideConversationStartPicker() {
 }
 
 export function openPalsRail() {
-    const palsRail = document.getElementById(CHROME_IDS.palsRail);
-    if (palsRail instanceof HTMLElement) {
-        palsRail.dataset.open = 'true';
-    }
-    setConversationBackdropVisible();
+    setPalsRailOpen(true);
 }
 
 export function getUniqueConversationGroupMembers(memberAvatars) {

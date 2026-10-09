@@ -78,6 +78,16 @@ describe('interruptible UI motion', () => {
         expect(apply).toHaveBeenCalledTimes(1);
     });
 
+    test('repeated opens keep the in-flight arrival instead of snapping to its end', () => {
+        const { element, apply, animations } = surface(false);
+        motion.setUiVisibility(element, true, apply);
+        motion.setUiVisibility(element, true, apply);
+        expect(animations).toHaveLength(1);
+        expect(animations[0].cancel).not.toHaveBeenCalled();
+        animations[0].onfinish();
+        expect(element.visible).toBe(true);
+    });
+
     test.each(['app', 'device'])('%s reduced motion applies visibility synchronously', preference => {
         if (preference === 'app') bodyClasses.add('reduced-motion');
         else media.matches = true;

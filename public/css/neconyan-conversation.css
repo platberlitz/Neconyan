@@ -2486,14 +2486,15 @@
         z-index: 82;
         width: min(84vw, 320px);
         display: flex;
-        transform: translateX(calc(-100% - 12px));
-        transition: transform 210ms cubic-bezier(0.22, 1, 0.36, 1);
+        visibility: hidden;
+        pointer-events: none;
         background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #1b1f26) 98%, #000000) !important;
         box-shadow: 4px 0 16px rgba(0, 0, 0, 0.5) !important;
     }
 
     #sheld[data-sb-conversation-mode='on'] #sb_conversation_pals_rail[data-open='true'] {
-        transform: translateX(0);
+        visibility: visible;
+        pointer-events: auto;
     }
 
     .sb-conversation-timeline {
