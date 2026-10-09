@@ -19,6 +19,7 @@ import { isChatNavigationBlocked, setChatNavigationBlocked } from './scripts/cha
 import { readMessageExpression, writeMessageExpression, renderMessageExpression } from './scripts/expression-history.js';
 import './scripts/neconyan-message-sleepers.js';
 import { dressSleeper } from './scripts/neconyan-sleeper-coats.js';
+import { measureEchoMessage } from './scripts/echo-message-layout.js';
 import './scripts/neconyan-send-nya.js';
 import { userStatsHandler, statMesProcess, initStats } from './scripts/stats.js';
 import {
@@ -2816,6 +2817,7 @@ async function applyChatMessageResizeAction(element, entry, metadata) {
 }
 
 function updateMessageSleeperPosition(message) {
+    measureEchoMessage(message);
     const text = message?.querySelector('.mes_text');
     if (text) {
         message.style.setProperty('--neconyan-sleeper-text-top', `${text.getBoundingClientRect().top - message.getBoundingClientRect().top - message.clientTop}px`);
@@ -5888,6 +5890,7 @@ export function updateMessageElement(mes, { messageId = chat.length - 1, message
         messageElement.removeAttr('mesid swipeid').attr('data-roleplay-draft', 'true');
         messageElement.find('.mes_buttons, .mes_edit_buttons, .mes_reasoning_actions, .swipe_left, .swipeRightBlock, .for_checkbox, .del_checkbox')
             .addClass('displayNone').attr('inert', '');
+        requestAnimationFrame(() => updateMessageSleeperPosition(messageElement[0]));
     } else {
         observeChatMessageResize(messageElement);
     }
@@ -13786,6 +13789,17 @@ async function inlineMessageScreenshotImages(container) {
                 element.setAttribute(attribute, String(index));
                 pseudoStyleRules.push(`[${attribute}="${index}"]${pseudoElement} { content: ${inlineContent} !important; }`);
             }),
+            ...Array.from(container.querySelectorAll('.mes.nn-echo-layout .mes_text')).map(async (text, index) => {
+                let background = getComputedStyle(text, '::before').backgroundImage;
+                const sources = Array.from(background.matchAll(/url\((?:"([^"]*)"|'([^']*)'|([^)]*))\)/g));
+                for (const match of sources) {
+                    const source = match[1] ?? match[2] ?? match[3]?.trim();
+                    if (!source || isDataURL(source)) continue;
+                    try { background = background.replace(match[0], `url("${await fetchInlineSource(source)}")`); } catch { return; }
+                }
+                text.setAttribute('data-sb-screenshot-echo-portrait', String(index));
+                pseudoStyleRules.push(`[data-sb-screenshot-echo-portrait="${index}"]::before { background-image: ${background} !important; }`);
+            }),
         ]);
 
         if (pseudoStyleRules.length > 0) {
@@ -14058,6 +14072,28 @@ async function renderMessageScreenshotCanvas(startId, endId) {
                 // Keep html2canvas's pseudo-element suppression inside the serialized subtree.
                 clonedSurface.prepend(...clonedDocument.body.querySelectorAll(':scope > style'));
                 clonedDocument.body.replaceChildren(clonedSurface);
+                // Echo's inert plate and cat follow the sanitised, naturally sized header.
+                for (const message of clonedSurface.querySelectorAll('.mes.nn-echo-layout:has(> .nn-echo-header-plate)')) {
+                    // html2canvas copies inherited variables onto descendants; let the row's new measurements inherit again.
+                    for (const descendant of message.querySelectorAll('*')) {
+                        for (const property of [...descendant.style]) if (property.startsWith('--nn-echo-')) descendant.style.removeProperty(property);
+                    }
+                    for (const header of message.querySelectorAll('.ch_name, .ch_name .alignItemsBaseline, .mes_reasoning_details, .mes_reasoning_summary, .mes_reasoning_header')) header.style.width = 'fit-content';
+                    for (const label of message.querySelectorAll('.name_text, .timestamp, .mes_reasoning_header_title')) {
+                        Object.assign(label.style, { width: 'auto', maxWidth: '100%', minWidth: '0', whiteSpace: 'normal', overflowWrap: 'anywhere' });
+                    }
+                    const caption = message.querySelector('.ch_name .alignItemsBaseline');
+                    if (caption) Object.assign(caption.style, { maxWidth: '100%', minWidth: '0', flexWrap: 'wrap' });
+                    const text = message.querySelector('.mes_text');
+                    text.style.marginTop = 'var(--nn-echo-clearance, 44px)';
+                    const plate = message.querySelector('.nn-echo-header-plate');
+                    if (plate) for (const axis of ['top', 'left', 'width', 'height']) plate.style[axis] = `var(--nn-echo-plate-${axis})`;
+                    const cat = message.querySelector('.neconyan-message-sleeper');
+                    if (cat) { cat.style.top = 'var(--nn-echo-cat-top)'; cat.style.left = 'var(--nn-echo-cat-left)'; }
+                    updateMessageSleeperPosition(message);
+                    // The first pass changes header clearance; the second reads its settled text/cat positions.
+                    updateMessageSleeperPosition(message);
+                }
                 // SB: bound the reflowed capture by both raster area and browser canvas-side limits.
                 const captureArea = Math.max(1, clonedSurface.scrollWidth * clonedSurface.scrollHeight);
                 captureOptions.scale = Math.min(

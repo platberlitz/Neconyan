@@ -3327,3 +3327,43 @@ body.neconyan #sb-restore-tour-invitations {
 /* Paint only: the controller keeps chat geometry and its scrollbar intact. */
 #neconyan-bubbles-bottom-boundary { position: fixed; pointer-events: none; box-sizing: border-box; z-index: 29; isolation: isolate; }
 #neconyan-bubbles-bottom-boundary > div { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+/* Echo retains the renderer's avatar/block siblings; only its backing plate is inert. */
+@media (min-width: 769px) {
+    body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout { isolation: isolate; }
+    body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout > .neconyan-message-sleeper {
+        top: var(--nn-echo-cat-top); left: var(--nn-echo-cat-left); right: auto;
+    }
+    body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout .ch_name .alignItemsBaseline { background: transparent; padding: 0; }
+    body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout .mes_buttons .neconyan-message-action:not(:hover, :focus-visible) { background: transparent; }
+}
+@media (min-width: 769px) and (max-width: 1000px) {
+    body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout {
+        padding: 12px; border: 1px solid var(--neco-border); border-radius: 15px;
+    }
+    body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout:not(.selected) { background-color: var(--moonlit-sb-bot-message-bg); }
+    body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout[is_user='true']:not(.selected) { background-color: var(--moonlit-sb-user-message-bg); }
+    body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout::before { display: none; }
+    body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout .mes_text { background: transparent; border: 0; box-shadow: none; }
+    body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout .mes_text + .ica--companion-ledger { background: transparent; box-shadow: none; }
+}
+@media (min-width: 1001px) {
+    body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout {
+        --nn-echo-block-transform: none; --nn-echo-text-padding: 8px 14px;
+    }
+    body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout > .mesAvatarWrapper { position: absolute; top: 12px; z-index: 1; }
+    body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout[is_user='true'] > .mesAvatarWrapper { right: 0; }
+    body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout > .mes_block { padding-top: 12px; }
+    body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout .ch_name { width: fit-content; max-width: calc(100% - var(--custom-echo-avatar) - var(--moonlit-sb-stats-room, 0px) - 18px); }
+    body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout .mes_reasoning_details { clear: both; width: fit-content; max-width: 100%; margin-inline-start: calc(var(--custom-echo-avatar) + var(--moonlit-sb-stats-room, 0px) + 8px); }
+    body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout[is_user='true'] .mes_reasoning_details { margin-inline-start: auto; margin-inline-end: calc(var(--custom-echo-avatar) + var(--moonlit-sb-stats-room, 0px) + 13px); }
+    body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout .mes_reasoning_summary { left: auto; }
+    body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout .mes_text { margin-top: var(--nn-echo-clearance, 44px); min-height: 0; }
+    body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout .mes_text::before { position: relative; float: right; margin: -8px -14px 4px 10px; background-attachment: scroll; background-position: center top; }
+    body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout[is_user='true'] .mes_text::before { float: left; margin: -8px 10px 4px -14px; }
+    .nn-echo-header-plate { position: absolute; pointer-events: none; z-index: -1; top: var(--nn-echo-plate-top); left: var(--nn-echo-plate-left); width: var(--nn-echo-plate-width); height: var(--nn-echo-plate-height); border: 1px solid var(--neco-border); border-radius: 12px; background: var(--neco-surface); }
+    .nn-echo-header-bottom { position: absolute; pointer-events: none; width: 1px; height: 1px; top: calc(var(--nn-echo-plate-top) + var(--nn-echo-plate-height) - 1px); }
+    #chat .mes.nn-echo-cutoff:not(:focus-within):not(:has(.mes_reasoning_details[open], .edit_textarea, .reasoning_edit_textarea, [aria-expanded='true'])) > :is(.mesAvatarWrapper, .nn-echo-header-plate),
+    #chat .mes.nn-echo-cutoff:not(:focus-within):not(:has(.mes_reasoning_details[open], .edit_textarea, .reasoning_edit_textarea, [aria-expanded='true'])) > .mes_block > :is(.ch_name, .mes_reasoning_details) { visibility: hidden; }
+    #chat .sb-message-screenshot-surface .mes.nn-echo-layout :is(.mesAvatarWrapper, .ch_name, .mes_reasoning_details, .nn-echo-header-plate) { visibility: visible; }
+    .sb-message-screenshot-surface .nn-echo-header-bottom { display: none; }
+}

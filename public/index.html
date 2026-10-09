@@ -16,7 +16,7 @@
             background-color: #141514;
         }
     </style>
-    <link rel="preload" as="style" href="style.css?v=20261009-connections">
+    <link rel="preload" as="style" href="style.css?v=20261009-connections-merge">
     <script type="importmap">
         { "imports": { "#macro-vendor": "./lib.js" } }
     </script>
@@ -41,25 +41,25 @@
     <link rel="icon" type="image/png" sizes="192x192" href="img/neconyan-icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="img/neconyan-icon-512.png">
     <link rel="apple-touch-icon" sizes="180x180" href="img/neconyan-icon-180.png" />
-    <link rel="stylesheet" type="text/css" href="style.css?v=20261009-connections">
+    <link rel="stylesheet" type="text/css" href="style.css?v=20261009-connections-merge">
     <link rel="stylesheet" type="text/css" href="css/st-tailwind.css">
     <link rel="stylesheet" type="text/css" href="css/toggle-dependent.css">
     <link rel="stylesheet" type="text/css" href="css/select2-overrides.css?v=20260609a">
-    <link rel="stylesheet" type="text/css" href="css/mobile-styles.css?v=20261009-connections" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-theme.css?v=20261009-connections">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-paper-theme.css?v=20261009-connections" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-tabs.css?v=20261009-connections">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-mobile-shell.css?v=20261009-connections" media="(max-width: 768px)">
-    <link rel="stylesheet" type="text/css" href="css/neconyan.css?v=20261009-connections">
-    <link rel="stylesheet" type="text/css" href="css/neconyan-home.css?v=20261009-connections">
-    <link id="neconyan-calico-stylesheet" rel="stylesheet" type="text/css" href="css/neconyan-calico.css?v=20261009-connections">
-    <link href="css/neconyan-menus.css?v=20261009-connections" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
+    <link rel="stylesheet" type="text/css" href="css/mobile-styles.css?v=20261009-connections-merge" media="(max-width: 768px)">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-theme.css?v=20261009-connections-merge">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-paper-theme.css?v=20261009-connections-merge" media="(max-width: 768px)">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-tabs.css?v=20261009-connections-merge">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-mobile-shell.css?v=20261009-connections-merge" media="(max-width: 768px)">
+    <link rel="stylesheet" type="text/css" href="css/neconyan.css?v=20261009-connections-merge">
+    <link rel="stylesheet" type="text/css" href="css/neconyan-home.css?v=20261009-connections-merge">
+    <link id="neconyan-calico-stylesheet" rel="stylesheet" type="text/css" href="css/neconyan-calico.css?v=20261009-connections-merge">
+    <link href="css/neconyan-menus.css?v=20261009-connections-merge" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <link href="css/neconyan-help.css?v=20260929b" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <link id="mewmory-css" href="css/mewmory.css?v=20260926c" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
-    <link href="css/desktop-response-controls.css?v=20261009-connections" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
+    <link href="css/desktop-response-controls.css?v=20261009-connections-merge" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <link href="css/neconyan-home-compact.css?v=20261003g" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
-    <link href="css/neconyan-visual-toggles.css?v=20261009-connections" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
-    <link href="css/neconyan-chat-writing.css?v=20261009-connections" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
+    <link href="css/neconyan-visual-toggles.css?v=20261009-connections-merge" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
+    <link href="css/neconyan-chat-writing.css?v=20261009-connections-merge" rel="preload" as="style" data-sb-deferred-style data-sb-media="all">
     <script>
         (function () {
             try {
@@ -67,7 +67,7 @@
                 if (['kittyless', 'windows-aero', 'windows-xp', 'windows-98', 'clean-minimal', 'macos-minimal', 'cozy-warm', 'hypr-glow', 'slate-flat'].indexOf(shellStyle) !== -1) {
                     var link = document.createElement('link');
                     link.rel = 'stylesheet';
-                    link.href = 'css/shell-styles/' + shellStyle + '.css?v=20261009-connections';
+                    link.href = 'css/shell-styles/' + shellStyle + '.css?v=20261009-connections-merge';
                     link.setAttribute('data-sb-shell-style', shellStyle);
                     document.documentElement.setAttribute('data-sb-theme', shellStyle);
                     document.head.appendChild(link);
@@ -75,7 +75,7 @@
                 if (shellStyle === 'kittyless' || localStorage.getItem('sb-kittyless') === 'true') {
                     var catless = document.createElement('link');
                     catless.rel = 'stylesheet';
-                    catless.href = 'css/neconyan-kittyless.css?v=20261009-connections';
+                    catless.href = 'css/neconyan-kittyless.css?v=20261009-connections-merge';
                     catless.setAttribute('data-sb-kittyless', 'true');
                     document.documentElement.setAttribute('data-sb-kittyless', 'true');
                     document.head.appendChild(catless);

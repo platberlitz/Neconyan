@@ -136,9 +136,7 @@ body.echostyle #chat {
             padding: 0;
             overflow: visible;
             position: relative;
-            transform: translateY(
-            calc(var(--custom-ChatAvatar) * (-1 + 0.325))
-            ) !important;
+            transform: var(--nn-echo-block-transform, translateY(calc(var(--custom-ChatAvatar) * (-1 + 0.325)))) !important;
             background-color: unset !important;
             box-shadow: none !important;
         }
@@ -247,7 +245,7 @@ body.echostyle #chat {
 
             .mes_text,
             .last_mes .mes_text {
-                padding: 8px 14px 8px var(--custom-EchoAvatarWidth, 22%) !important;
+                padding: var(--nn-echo-text-padding, 8px 14px 8px var(--custom-EchoAvatarWidth, 22%)) !important;
                 background-color: var(--moonlit-sb-user-message-bg);
 
                 @media screen and (max-width: 1000px) {
@@ -299,7 +297,7 @@ body.echostyle #chat {
             }
             .mes_text,
             .last_mes .mes_text {
-                padding: 8px var(--custom-EchoAvatarWidth, 22%) 8px 14px !important;
+                padding: var(--nn-echo-text-padding, 8px var(--custom-EchoAvatarWidth, 22%) 8px 14px) !important;
 
                 @media screen and (max-width: 1000px) {
                     padding: 8px 14px !important;

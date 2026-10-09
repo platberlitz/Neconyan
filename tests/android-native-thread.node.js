@@ -7,12 +7,24 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const available = process.platform === 'linux'
-    && fs.existsSync('/usr/include/node/node.h')
-    && spawnSync('g++', ['--version']).status === 0
-    && spawnSync('javac', ['-version']).status === 0;
+function missingPrerequisite() {
+    if (process.platform !== 'linux') return 'requires Linux';
+    if (!fs.existsSync('/usr/include/node/node.h')) return 'Node development headers are not installed';
+    if (spawnSync('g++', ['--version']).status !== 0) return 'g++ is not installed';
+    // Headers can be installed without the linkable library. Ask the same compiler
+    // used below so its library search paths (including LIBRARY_PATH) are honoured.
+    const hasNodeLibrary = ['libnode.so', 'libnode.a'].some(library => {
+        const result = spawnSync('g++', [`-print-file-name=${library}`], { encoding: 'utf8' });
+        const file = result.stdout?.trim();
+        return result.status === 0 && file !== library && Boolean(file) && fs.existsSync(file);
+    });
+    if (!hasNodeLibrary) return 'linkable libnode is not installed (install the Node development library)';
+    if (spawnSync('javac', ['-version']).status !== 0) return 'javac is not installed';
+    if (spawnSync('java', ['-version']).status !== 0) return 'java is not installed';
+    return false;
+}
 
-test('Android JNI starts Node with its own stack even from a small Java thread', { skip: !available, timeout: 90000 }, t => {
+test('Android JNI starts Node with its own stack even from a small Java thread', { skip: missingPrerequisite(), timeout: 90000 }, t => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-native-thread-'));
     t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
     const javaPath = spawnSync('sh', ['-c', 'command -v javac'], { encoding: 'utf8' }).stdout.trim();
