@@ -7780,7 +7780,7 @@ function setChatSidebarOpenState(shouldOpen) {
     setUiVisibility(refs.root, isOpen, visible => {
         refs.root.style.display = visible ? 'flex' : 'none';
         refs.root.classList.toggle('sb-chat-sidebar-visible', visible);
-    });
+    }, { edge: 'right' });
     setButtonPressed(getChatDesktopRefs()?.toggleSidebarButton, isOpen);
 
     if (isOpen) {
@@ -7956,7 +7956,7 @@ function setMobileChatToolsOpenState(shouldOpen) {
         refs.overlay.setAttribute('aria-hidden', String(!visible));
         refs.overlay.inert = !visible;
         queueMobileModalStateSync();
-    });
+    }, { edge: 'right' });
 
     queueMobileModalStateSync();
 
@@ -9376,7 +9376,7 @@ function forceDrawerState(drawerRootOrId, shouldOpen, drawerIconOrSelector = nul
         el.classList.toggle('closedDrawer', !visible);
         queueMobileModalStateSync();
         queueTopbarPageStateSync();
-    });
+    }, { edge: el.classList.contains('fillLeft') ? 'left' : 'right' });
     syncDrawerIconState(drawerIconOrSelector, shouldOpen);
     queueMobileModalStateSync();
     queueTopbarPageStateSync();
@@ -18829,7 +18829,7 @@ function setNeconyanRailDrawerOpen(open, { restoreFocus = false } = {}) {
         setUiVisibility(rail, shouldOpen, visible => {
             document.body.classList.toggle('neconyan-rail-drawer-open', visible);
             rail.inert = mobile && !visible;
-        }, { animate: mobile });
+        }, { animate: mobile, edge: 'left' });
         if (mobile) {
             rail.setAttribute('aria-hidden', String(!shouldOpen));
         } else {

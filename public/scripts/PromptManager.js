@@ -2671,7 +2671,7 @@ class PromptManager {
         setUiVisibility(popup, true, () => {
             popup.style.display = 'block';
             popup.classList.add('openDrawer');
-        }, { animate: !this.isDesktopSplitLayout() });
+        }, { animate: !this.isDesktopSplitLayout(), edge: 'right' });
 
         this.syncEditorPaneState();
         this.syncListSelection();
@@ -2724,7 +2724,7 @@ class PromptManager {
             this.syncEditorPaneState();
             this.syncListSelection();
             if (!this.isDesktopSplitLayout()) window.dispatchEvent(new CustomEvent('sb-mobile-viewport-reset'));
-        }, { animate: !this.isDesktopSplitLayout() });
+        }, { animate: !this.isDesktopSplitLayout(), edge: 'right' });
     }
 
     /**

@@ -683,7 +683,7 @@ describe('Neconyan workspace rail behavior', () => {
         const closed = [];
         const Element = class {
             constructor(id) { this.id = id; }
-            classList = { toggle() {} };
+            classList = { toggle() {}, contains: () => false };
         };
         const runtime = vm.createContext({
             HTMLElement: Element,

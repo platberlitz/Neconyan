@@ -18281,7 +18281,7 @@ export async function doNavbarIconClick() {
             $(el).removeClass('openDrawer').addClass('closedDrawer');
         }
         icon.toggleClass('openIcon closedIcon');
-        setUiVisibility(drawerElement, true, () => drawer.addClass('openDrawer').removeClass('closedDrawer'));
+        setUiVisibility(drawerElement, true, () => drawer.addClass('openDrawer').removeClass('closedDrawer'), { edge: drawer.hasClass('fillLeft') ? 'left' : 'right' });
 
         if (targetDrawerID === 'right-nav-panel') {
             focusUiSurface(drawerElement);
@@ -18301,7 +18301,7 @@ export async function doNavbarIconClick() {
             document.activeElement.blur();
         }
         icon.toggleClass('closedIcon openIcon');
-        setUiVisibility(drawerElement, false, () => drawer.removeClass('openDrawer').addClass('closedDrawer'));
+        setUiVisibility(drawerElement, false, () => drawer.removeClass('openDrawer').addClass('closedDrawer'), { edge: drawer.hasClass('fillLeft') ? 'left' : 'right' });
     }
 }
 
@@ -19821,7 +19821,7 @@ jQuery(async function () {
                 // Toggle icon and drawer classes
                 $('.openIcon').not('.drawerPinnedOpen').toggleClass('closedIcon openIcon');
                 for (const drawer of $openDrawers) {
-                    setUiVisibility(drawer, false, () => $(drawer).removeClass('openDrawer').addClass('closedDrawer'));
+                    setUiVisibility(drawer, false, () => $(drawer).removeClass('openDrawer').addClass('closedDrawer'), { edge: drawer.classList.contains('fillLeft') ? 'left' : 'right' });
                 }
             }
         }

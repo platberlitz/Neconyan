@@ -23,11 +23,23 @@ async function openApp(page, phone, standalone) {
     await page.addInitScript(() => {
         window.motionSurfaces = [];
         window.motionDetails = {};
+        window.motionGeometry = {};
         const animate = Element.prototype.animate;
         Element.prototype.animate = function (...args) {
             window.motionSurfaces.push(this.id);
             window.motionDetails[this.id] = { frames: args[0], options: args[1] };
-            return animate.apply(this, args);
+            const animation = animate.apply(this, args);
+            if (Array.isArray(args[0]) && args[0].some(frame => frame.translate?.includes('%'))) {
+                animation.pause();
+                window.motionGeometry[this.id] = [0, args[1].duration / 2, args[1].duration].map(time => {
+                    animation.currentTime = time;
+                    const { x, y, width, height } = this.getBoundingClientRect();
+                    return { x, y, width, height };
+                });
+                animation.currentTime = 0;
+                animation.play();
+            }
+            return animation;
         };
     });
     await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -49,6 +61,8 @@ for (const [phone, standalone] of [[false, false], [true, false], [true, true]])
             await expect(panel).toHaveCSS('translate', 'none');
             const drawerMotion = await page.evaluate(() => window.motionDetails['left-nav-panel']);
             const geometry = await panel.boundingBox();
+            const arrival = await page.evaluate(() => window.motionGeometry['left-nav-panel']);
+            expect(arrival[2].x - arrival[0].x).toBeCloseTo(geometry.width, 0);
             const closing = await page.evaluate(() => {
                 window.NeconyanShell.closeWorkspace();
                 const panel = document.getElementById('left-nav-panel');
@@ -66,10 +80,26 @@ for (const [phone, standalone] of [[false, false], [true, false], [true, true]])
             await page.evaluate(() => window.NeconyanShell.closeWorkspace());
             await expect(page.locator('#user-settings-block')).toBeHidden();
 
-            // All drawer entry points use the same frames and timing, without a
-            // second CSS effect animating their height, clipping or opacity.
-            const assertDrawerMotion = async (id) => {
-                expect(await page.evaluate(id => window.motionDetails[id], id)).toEqual(drawerMotion);
+            // Drawers share timing, but enter and leave through their own edge.
+            // Measure actual travel and a stable size, not just the keyframes.
+            const assertSlide = async (id, edge, open) => {
+                const { details, geometry } = await page.evaluate(id => ({
+                    details: window.motionDetails[id], geometry: window.motionGeometry[id],
+                }), id);
+                expect(details.options).toEqual({ ...drawerMotion.options, duration: open ? 180 : 120 });
+                const [start, middle, end] = geometry;
+                expect(end.x - start.x).toBeCloseTo(start.width * (edge === 'left' ? 1 : -1) * (open ? 1 : -1), 0);
+                expect(middle.x).toBeGreaterThan(Math.min(start.x, end.x));
+                expect(middle.x).toBeLessThan(Math.max(start.x, end.x));
+                for (const point of geometry) {
+                    expect(point.y).toBeCloseTo(start.y, 0);
+                    expect(point.width).toBeCloseTo(start.width, 0);
+                    expect(point.height).toBeCloseTo(start.height, 0);
+                }
+                expect(details.frames.every(frame => Number(frame.opacity) === 1)).toBe(true);
+            };
+            const assertDrawerMotion = async (id, edge = 'right') => {
+                await assertSlide(id, edge, true);
                 await expect(page.locator(`#${id}`)).toHaveCSS('translate', 'none');
                 expect(await page.locator(`#${id}`).evaluate(el => ({
                     clip: getComputedStyle(el).clipPath,
@@ -78,9 +108,10 @@ for (const [phone, standalone] of [[false, false], [true, false], [true, true]])
             };
             if (phone) {
                 await page.locator('#sb-hamburger').tap();
-                await assertDrawerMotion('neconyan-workspace-rail');
+                await assertDrawerMotion('neconyan-workspace-rail', 'left');
                 await page.locator('#sb-hamburger').tap();
                 await expect(page.locator('#neconyan-workspace-rail')).toBeHidden();
+                await assertSlide('neconyan-workspace-rail', 'left', false);
                 await page.locator('#sb-hamburger').tap();
                 await expect(page.locator('#neconyan-workspace-rail')).toHaveJSProperty('inert', false);
                 await page.locator('#sb-hamburger').tap();
@@ -94,8 +125,10 @@ for (const [phone, standalone] of [[false, false], [true, false], [true, true]])
                 panel.openCompanionPanel();
             });
             await expect(page.locator('#ica--tracker-panel')).toHaveJSProperty('inert', false);
+            await expect(page.locator('#ica--tracker-panel')).toHaveCSS('translate', 'none');
             await page.evaluate(async () => (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).closeCompanionPanel());
             await expect(page.locator('#ica--tracker-panel')).toBeHidden();
+            await assertSlide('ica--tracker-panel', 'right', false);
 
             const nativeSwitch = await page.evaluate(async () => {
                 const { doNavbarIconClick } = await import('/script.js');
@@ -196,7 +229,7 @@ for (const [phone, standalone] of [[false, false], [true, false], [true, true]])
             await expect(page.locator('#sb_conversation_input')).toHaveValue('Keep this Conversation draft, too.');
             if (phone) {
                 await page.locator('#sb_conversation_pals_toggle').tap();
-                await assertDrawerMotion('sb_conversation_pals_rail');
+                await assertDrawerMotion('sb_conversation_pals_rail', 'left');
                 await page.evaluate(async () => {
                     const { closePalsRail, togglePalsRail } = await import('/scripts/neconyan-conversation/settings-panel.js');
                     closePalsRail();

@@ -70,7 +70,7 @@ export function revealUi(element, { distance = 6, duration = 180 } = {}) {
  * The caller owns its logical state. Closing content becomes inert immediately,
  * and a subsequent opening cancels the obsolete hide callback.
  */
-export function setUiVisibility(element, open, applyVisibility, { distance = 6, animate = true } = {}) {
+export function setUiVisibility(element, open, applyVisibility, { distance = 6, animate = true, edge = null } = {}) {
     if (!element) return;
     const previous = activeMotions.get(element);
     const immediate = !animate || prefersReducedUiMotion() || typeof element.animate !== 'function';
@@ -88,6 +88,9 @@ export function setUiVisibility(element, open, applyVisibility, { distance = 6, 
     const style = previous ? getComputedStyle(element) : null;
     const interrupted = style ? { opacity: style.opacity, translate: style.translate } : null;
     previous?.cancel();
+    // Drawers travel back to their own edge. Menus retain the small fade/reveal.
+    const slide = { left: '-100% 0', right: '100% 0', top: '0 -100%', bottom: '0 100%' }[edge];
+    const hiddenFrame = { opacity: slide ? 1 : 0, translate: slide ?? `0 ${distance}px` };
 
     if (!open && !visible) {
         applyVisibility(open);
@@ -96,11 +99,11 @@ export function setUiVisibility(element, open, applyVisibility, { distance = 6, 
     if (open) {
         applyVisibility(true);
         if (visible && !previous?.closing) return;
-        play(element, [interrupted ?? { opacity: 0, translate: `0 ${distance}px` }, { opacity: 1, translate: '0 0' }], { duration: 180 });
+        play(element, [interrupted ?? hiddenFrame, { opacity: 1, translate: '0 0' }], { duration: 180 });
     } else {
         const wasInert = element.inert;
         element.inert = true;
-        play(element, [interrupted ?? { opacity: 1, translate: '0 0' }, { opacity: 0, translate: `0 ${Math.min(distance, 3)}px` }], {
+        play(element, [interrupted ?? { opacity: 1, translate: '0 0' }, { opacity: slide ? 1 : 0, translate: slide ?? `0 ${Math.min(distance, 3)}px` }], {
             duration: 120,
             closing: true,
             restore: () => { element.inert = wasInert; },

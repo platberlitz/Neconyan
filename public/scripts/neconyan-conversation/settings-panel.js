@@ -56,6 +56,7 @@ export function setPalsRailOpen(open) {
     if (palsRail instanceof HTMLElement) {
         setUiVisibility(palsRail, open, visible => { palsRail.dataset.open = String(visible); }, {
             animate: window.matchMedia('(max-width: 768px)').matches,
+            edge: 'left',
         });
     }
     setConversationBackdropVisible();
@@ -661,7 +662,7 @@ export function openConversationSettings() {
     renderScheduleDisplay();
     renderConversationMemoryPanel();
     updateUserFooter();
-    setUiVisibility(chrome.drawer, true, visible => { chrome.drawer.hidden = !visible; });
+    setUiVisibility(chrome.drawer, true, visible => { chrome.drawer.hidden = !visible; }, { edge: 'right' });
     setConversationBackdropVisible();
     chrome.drawer.querySelector('input, select, textarea, button')?.focus?.({ preventScroll: true });
 }
@@ -677,7 +678,7 @@ export function closeConversationSettings(identity = null) {
                 : drawer.dataset.conversationGroupId || '',
             personaId: identity?.personaId || drawer.dataset.conversationPersonaId || getConversationPersonaId(),
         };
-        setUiVisibility(drawer, false, visible => { drawer.hidden = !visible; });
+        setUiVisibility(drawer, false, visible => { drawer.hidden = !visible; }, { edge: 'right' });
         if (shouldSave) {
             saveCurrentPanelSettings(capturedIdentity);
         }

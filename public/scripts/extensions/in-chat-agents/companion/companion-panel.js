@@ -1068,7 +1068,7 @@ export function openCompanionPanel() {
     panelOpenedAt = Date.now();
     renderPanel();
     const panel = $('#ica--tracker-panel').attr('data-edge', getPanelEdge()).attr('data-launcher', panelLauncher);
-    setUiVisibility(panel[0], true, () => panel.addClass('is-open'));
+    setUiVisibility(panel[0], true, () => panel.addClass('is-open'), { edge: getPanelEdge() });
     panel.attr('aria-hidden', 'false');
     $('#ica--tracker-panel-handle').attr('aria-expanded', 'true');
     globalThis.document?.getElementById?.(TOPBAR_LAUNCHER_ID)?.setAttribute('aria-expanded', 'true');
@@ -1079,7 +1079,7 @@ export function closeCompanionPanel() {
     const restoreFocus = document.activeElement?.closest?.('#ica--tracker-panel');
     panelOpen = false;
     const panel = $('#ica--tracker-panel');
-    setUiVisibility(panel[0], false, () => panel.removeClass('is-open'));
+    setUiVisibility(panel[0], false, () => panel.removeClass('is-open'), { edge: getPanelEdge() });
     panel.attr('aria-hidden', 'true');
     $('#ica--tracker-panel-handle').attr('aria-expanded', 'false');
     globalThis.document?.getElementById?.(TOPBAR_LAUNCHER_ID)?.setAttribute('aria-expanded', 'false');
