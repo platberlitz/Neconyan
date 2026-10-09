@@ -273,6 +273,27 @@ test('reply context ignores hidden and empty messages and resolves the default l
     }
 });
 
+test('post-generation rewrites receive Mewmory and group card macros in both macro modes', async t => {
+    for (const experimentalMacroEngine of [true, false]) {
+        const f = prepared(t, [{ id: 'authenticity', enabled: true, phase: 'post',
+            prompt: 'Full: {{full-mewmory}}\nFacts: {{mewmory-facts}}\nViews: {{mewmory-interview}}\nCast: {{group-cards}}',
+            postProcess: { enabled: false, promptTransformEnabled: true, promptTransformContextMessages: 2 } }]);
+        const options = phases(f);
+        options.snapshot.experimentalMacroEngine = experimentalMacroEngine;
+        options.snapshot.groupCards = [{ name: 'Mira', muted: false, fields: { description: '{{char}} calls {{user}} rookie.', personality: '', scenario: '' } }];
+        const mewmory = { enabled: true, npcText: 'NPC sheet', memoryText: 'Story memory', factsText: 'Fact list', interviewText: 'Interview notes' };
+        prepareRoleplayAgentContributions(f.context, options);
+        let calls = 0;
+        await runRoleplayAgentPostprocessing(f.context, { ...options, mewmory, value: 'Current reply', generate: modelResponse(({ messages }) => {
+            calls++;
+            assert.match(messages[0].content, /Full: NPC sheet\n\nStory memory\nFacts: Fact list\nViews: Interview notes/);
+            assert.match(messages[0].content, /Cast: <character name="Mira">\nDescription:\nMira calls Ari rookie\.\n<\/character>/);
+            return { text: 'Rewritten' };
+        }) });
+        assert.equal(calls, 1);
+    }
+});
+
 test('a chat interceptor cannot inject unbound media or an incomplete tool exchange', async t => {
     for (const content of [[{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'https://unbound.example/picture.png' } }] }],
         [{ role: 'assistant', content: '', tool_calls: [{ id: 'call', type: 'function', function: { name: 'tool', arguments: '{}' } }] }]]) {

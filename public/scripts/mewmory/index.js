@@ -10,6 +10,7 @@ import { getFriendlyTokenizerName, getTokenCountAsync } from '../tokenizers.js';
 import { conversationState } from '../neconyan-conversation/state.js';
 import { cancelJob } from '../jobs.js';
 import { uuidv4 } from '../utils.js';
+import { setPreparedMewmoryContext } from '../extensions/in-chat-agents/agent-context-macros.js';
 import { t, translate } from '../i18n.js';
 
 export const mewmory = {
@@ -328,6 +329,7 @@ export function initMewmory() {
 
 export async function prepareMewmoryGeneration(messages, { signal } = {}) {
     const locator = getMewmoryLocator();
+    setPreparedMewmoryContext(null, null);
     if (!locator) return { enabled: false, chat: messages };
     const generation = getChatGeneration();
     const currentKey = getMewmoryScope();
@@ -352,6 +354,7 @@ export async function prepareMewmoryGeneration(messages, { signal } = {}) {
         mewmory.error = result.inspection?.error || result.inspection?.indexError || '';
         mewmory.view.preview = result;
         mewmory.view.previewCurrent = true;
+        setPreparedMewmoryContext(locator.chat, result);
         return { ...result, locator, tokenizer, chat: messages.filter(message => !excluded.has(message.mewmorySourceIndex)) };
     } catch (error) {
         if (getMewmoryScope() === currentKey) mewmory.error = error.message;

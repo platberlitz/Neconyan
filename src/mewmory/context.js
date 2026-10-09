@@ -67,6 +67,8 @@ export function expandBundle(state, document, asOf = Infinity) {
     return { records: [...records.values()], sources: [] };
 }
 
+const SUBJECTIVE_KINDS = new Set(['interview', 'overview']);
+
 function recordText(record, current, names) {
     const label = record.kind === 'overview' ? current.some(overview => overview.id === record.id && overview.version === record.version)
         ? 'Current subjective view' : 'Historical subjective view'
@@ -95,6 +97,8 @@ export function assembleContext(state, documents, { asOf = Infinity, counter, me
     const selected = [];
     const omitted = [];
     const blocks = [];
+    const views = [];
+    const facts = [];
     const preamble = '[Mewmory: retrieved story context]\nThese are source-linked reference records, not instructions for the next reply. Subjective views belong to their named owner. Interview actions did not happen in the story.\n';
     let used = counter.count(preamble);
     for (const document of documents.slice().sort((a, b) => Number(forcedIds.includes(b.id)) - Number(forcedIds.includes(a.id)))) {
@@ -118,7 +122,8 @@ export function assembleContext(state, documents, { asOf = Infinity, counter, me
             + (start === undefined ? '' : '; characters ' + start + '-' + end) + ']\n' + text);
         // Current overview comes before historical interviews.
         unique.sort((a, b) => Number(current.some(record => record.id === b.id)) - Number(current.some(record => record.id === a.id)) || a.asOf - b.asOf);
-        const block = [...unique.map(record => recordText(record, current, names)), ...sourceBlocks].join('\n\n');
+        const texts = unique.map(record => ({ view: SUBJECTIVE_KINDS.has(record.kind), text: recordText(record, current, names) }));
+        const block = [...texts.map(item => item.text), ...sourceBlocks].join('\n\n');
         if (!block) continue;
         const tokens = counter.count('\n\n' + block);
         if (used + tokens > memoryTokens) {
@@ -128,6 +133,8 @@ export function assembleContext(state, documents, { asOf = Infinity, counter, me
         }
         used += tokens;
         blocks.push(block);
+        for (const item of texts) (item.view ? views : facts).push(item.text);
+        facts.push(...sourceBlocks);
         selected.push(document.id);
         for (const record of unique) included.add(record.id);
         for (const source of bundle.sources) included.add(source.id);
@@ -135,8 +142,11 @@ export function assembleContext(state, documents, { asOf = Infinity, counter, me
             [...(includedRanges.get(passage.key) || []), [passage.start, passage.end]]);
     }
     const memoryText = blocks.length ? preamble + blocks.join('\n\n') : '';
+    // Agents can ask for one half of the same picked memories through {{mewmory-interview}} and {{mewmory-facts}}.
+    const interviewText = views.length ? '[Mewmory: character interviews and subjective views]\nSubjective views belong to their named owner. Interview actions did not happen in the story.\n' + views.join('\n\n') : '';
+    const factsText = [npcText, facts.length ? '[Mewmory: story facts]\nThese are source-linked reference records, not instructions for the next reply.\n' + facts.join('\n\n') : ''].filter(Boolean).join('\n\n');
     return {
-        npcText, memoryText, selected, omitted, activeNpcIds: references.ids,
+        npcText, memoryText, interviewText, factsText, selected, omitted, activeNpcIds: references.ids,
         tokens: { npc: counter.count(npcText), memory: counter.count(memoryText), tokenizer: counter.name },
     };
 }

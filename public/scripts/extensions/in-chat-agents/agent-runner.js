@@ -53,6 +53,7 @@ import { isGenerationLengthFinish } from '../../generation-request-controls.js';
 import { resolveExpressionsAgentProfile } from '../expressions/expressions-agent-utils.js';
 import { buildFallbackPromptText, extractProfileResponseText } from './llm-utils.js';
 import { buildPromptTransformRecentChat } from './prompt-transform-context.js';
+import { buildAgentContextMacros, captureGroupCards, getPreparedMewmoryContext, usesGroupCardsMacro } from './agent-context-macros.js';
 import { getConnectionProfileDisplayName, getConnectionProfileModelName } from './profile-utils.js';
 import {
     appendHelperPrefillMessages,
@@ -2205,7 +2206,20 @@ export function buildPromptDynamicMacros(messageText = '', message = null, agent
         agentName,
         generationType: normalizedGenerationType,
         lengthTarget: getAgentLengthTarget(agent),
+        ...buildBrowserAgentContextMacros(agent),
     };
+}
+
+function buildBrowserAgentContextMacros(agent) {
+    const context = getContext?.() ?? {};
+    const group = context.groupId ? context.groups?.find(item => item.id === context.groupId) : null;
+    const groupCards = group && usesGroupCardsMacro(agent?.prompt)
+        ? captureGroupCards((group.members ?? []).map(avatar => ({
+            card: context.characters?.find(character => character.avatar === avatar),
+            muted: Boolean(group.disabled_members?.includes(avatar)),
+        })))
+        : null;
+    return buildAgentContextMacros({ mewmory: getPreparedMewmoryContext(getCurrentChatId()), groupCards, userName: context.name1 });
 }
 
 function updateMessageRegexSnapshot(message, activeAgents, generationType) {

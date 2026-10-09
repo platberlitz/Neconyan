@@ -18,6 +18,7 @@ import { captureIncomingRoleplayTranslation, captureRoleplayInputTranslation } f
 import { captureRoleplayCaptions } from './roleplay-captions.js';
 import { captureSpeechPolicy } from './speech-config.js';
 import { agentHistorySources, captureRoleplayAgentSet } from './roleplay-agents-source.js';
+import { captureGroupCards, usesGroupCardsMacro } from '../../public/scripts/extensions/in-chat-agents/agent-context-macros.js';
 import { captureCompanionCapacity } from './companion-capacity.js';
 import { captureRoleplayToolBindings } from './roleplay-tool-bindings.js';
 import { activeRoleplayAuthorNote, isWorldInfoAuthorNoteActive, selectRoleplayPromptRecords, savedRoleplayMacroSnapshot } from './roleplay-prompt.js';
@@ -291,6 +292,9 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
                 characterAvatars: source.locator.group ? members.map(member => member.avatar) : [avatar],
                 ...agentHistorySources(saved.records), forcedIds: agentIds }) : null;
         const agents = agentSet?.policy ?? null;
+        // Member cards ride along only when an Agent asks for them, so large groups stay under the snapshot limit.
+        const groupCards = group && agentSet?.definitions.some(agent => usesGroupCardsMacro(agent.prompt))
+            ? captureGroupCards(members.map(member => ({ card: member.card, muted: Boolean(group.disabled_members?.includes(member.avatar)) }))) : null;
         const companionCapacity = agents ? captureCompanionCapacity(agentSet.definitions, saved.records,
             source, { agentContext, trigger, hiddenIds: agents.hiddenIds }) : null;
         const tools = nativeBindingVersion && serverPrompt && !agentContext
@@ -431,6 +435,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             },
             settingsHash: roleplaySettingsHash(savedSettings),
             ...(agents ? { agents } : {}),
+            ...(groupCards ? { groupCards } : {}),
             ...(companionCapacity ? { companionCapacity } : {}),
             ...(tools ? { tools } : {}),
             ...(serverPrompt && !agentContext && !extensions.disabledExtensions?.some(name => normalizeExtensionBootId(name) === 'vectors')

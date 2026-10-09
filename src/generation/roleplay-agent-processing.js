@@ -1,5 +1,6 @@
 import { appendHelperPrefillMessages } from '../../public/scripts/extensions/helper-prefill.js';
 import { buildPromptTransformRecentChat, getAgentLengthTarget } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-context.js';
+import { buildAgentContextMacros } from '../../public/scripts/extensions/in-chat-agents/agent-context-macros.js';
 import { applyRegexScriptList } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 import { buildRegexScriptRefsForAgent } from '../../public/scripts/extensions/in-chat-agents/regex-snapshot-store.js';
 import { inspectTrackerState, mergeTrackerRepairPayload, TRACKER_REPAIR_INSTRUCTION } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
@@ -67,11 +68,15 @@ function activation(agent, records, generationType, random) {
     return { active, draw };
 }
 
-function aliases(environment, agent, text, generationType, assistantName) {
+function aliases(environment, agent, text, generationType, assistantName, contextMacros = {}) {
     for (const key of ['currentmessage', 'lastmessage', 'latestmessage', 'response', 'currentresponse', 'latestresponse', 'assistantmessage']) environment.dynamicMacros[key] = text;
-    Object.assign(environment.dynamicMacros, { assistantname: assistantName, agentname: agent.name, generationtype: generationType,
+    Object.assign(environment.dynamicMacros, contextMacros, { assistantname: assistantName, agentname: agent.name, generationtype: generationType,
         lengthtarget: getAgentLengthTarget(agent) });
     return environment;
+}
+
+function agentContextMacros(snapshot, mewmory = null) {
+    return buildAgentContextMacros({ mewmory, groupCards: snapshot.groupCards, userName: snapshot.speakerNames?.user });
 }
 
 function evaluate(environment, text, snapshot) {
@@ -96,7 +101,7 @@ export function prepareRoleplayAgentContributions(context, { base, snapshot, rec
     const history = { scripts: captureAgentHistoryScripts(records, historyAgents), policies: captureCompanionHistoryPolicies(policyRecords) };
     const extensions = active.filter(agent => inline(agent) && ['pre', 'both'].includes(agent.phase)
         && agent.preProcess.mode !== 'intercept' && agent.prompt.trim()).map(agent => ({
-        key: `inchat_agent_${agent.id}`, content: evaluate(aliases(environment, agent, '', generationType, snapshot.speakerNames?.character || ''), agent.prompt, snapshot),
+        key: `inchat_agent_${agent.id}`, content: evaluate(aliases(environment, agent, '', generationType, snapshot.speakerNames?.character || '', agentContextMacros(snapshot)), agent.prompt, snapshot),
         position: agent.injection.position, depth: agent.injection.depth, role: ['system', 'user', 'assistant'][agent.injection.role], scan: agent.injection.scan,
     }));
     const feedback = prepareCompanionFeedback(active, historyAgents, records, snapshot, environment, history.policies, generationType);
@@ -157,7 +162,7 @@ async function modelRun(context, options, agent, text, name, intercept = false, 
         macros, tokenizer: snapshot.tokenizer, fallbackContext: snapshot.maxContext, assertCurrent, generate,
         buildMessages: environment => {
             if (options.synthesisMessages) return appendHelperPrefillMessages(options.synthesisMessages, snapshot.agents.helperPrefill);
-            aliases(environment, agent, text, generationType, options.assistantName);
+            aliases(environment, agent, text, generationType, options.assistantName, agentContextMacros(snapshot, options.mewmory));
             const prompt = evaluate(environment, agent.prompt, snapshot);
             return appendHelperPrefillMessages(messagesFor(agent, text, prompt, generationType, options.assistantName, format, intercept, recentChat), snapshot.agents.helperPrefill);
         } });
@@ -358,11 +363,11 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     if (!companionOutput && generationType !== 'impersonate' && (!manual || options.repairTrackers)) {
         for (const agent of utilities) {
             if (agent.postProcess.type === 'append') text += options.repairTrackers
-                ? evaluate(aliases(environment, agent, text, generationType, options.assistantName), agent.postProcess.appendText, snapshot) : agent.postProcess.appendText;
+                ? evaluate(aliases(environment, agent, text, generationType, options.assistantName, agentContextMacros(snapshot, options.mewmory)), agent.postProcess.appendText, snapshot) : agent.postProcess.appendText;
         }
     }
     for (const agent of agents.filter(agent => manual || inline(agent))) {
-        aliases(environment, agent, text, generationType, options.assistantName);
+        aliases(environment, agent, text, generationType, options.assistantName, agentContextMacros(snapshot, options.mewmory));
         const regexOptions = { isMarkdown: false, isPrompt: false,
             substituteParamsFn: (input, extra = {}) => environment.evaluate(input, { legacy: !snapshot.experimentalMacroEngine,
                 strictCapabilities: true, postProcess: extra.postProcessFn }),
