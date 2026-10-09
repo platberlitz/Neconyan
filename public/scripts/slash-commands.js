@@ -1877,7 +1877,7 @@ export function initDefaultSlashCommands() {
         ],
         helpString: `
         <div>
-            ${t`Triggers a message generation. If in group, can trigger a message for the specified group member index or name.`}
+            ${t`Triggers a message generation without sending or clearing the composer draft. If in group, can trigger a message for the specified group member index or name.`}
         </div>
         <div>
             ${t`If <code>await=true</code> named argument is passed, the command will await for the triggered generation before continuing.`}
@@ -4530,9 +4530,8 @@ async function generateRawCallback(args, value) {
         return '';
     }
 
-    // Prevent generate recursion
-    $('#send_textarea').val('')[0].dispatchEvent(new Event('input', { bubbles: true }));
-    const lock = isTrueBoolean(args?.lock);
+    // Background prompts do not consume the draft or own an existing reply's controls.
+    const lock = isTrueBoolean(args?.lock) && !isGenerating();
     const as = args?.as || 'system';
     const quietToLoud = as === 'char';
     const systemPrompt = resolveVariable(args?.system) || '';
@@ -4562,7 +4561,7 @@ async function generateRawCallback(args, value) {
         console.error('Error on /genraw generation', err);
         toastr.error(err.message, t`API Error`, { preventDuplicates: true });
     } finally {
-        if (lock) {
+        if (lock && !isGenerating()) {
             activateSendButtons();
         }
         flushEphemeralStoppingStrings();
@@ -4577,9 +4576,8 @@ async function generateRawCallback(args, value) {
  * @returns {Promise<string>} The generated text
  */
 async function generateCallback(args, value) {
-    // Prevent generate recursion
-    $('#send_textarea').val('')[0].dispatchEvent(new Event('input', { bubbles: true }));
-    const lock = isTrueBoolean(args?.lock);
+    // Quiet generation already skips command processing and leaves the draft alone.
+    const lock = isTrueBoolean(args?.lock) && !isGenerating();
     const trim = isTrueBoolean(args?.trim?.toString());
     const as = args?.as || 'system';
     const quietToLoud = as === 'char';
@@ -4608,7 +4606,7 @@ async function generateCallback(args, value) {
         console.error('Error on /gen generation', err);
         toastr.error(err.message, t`API Error`, { preventDuplicates: true });
     } finally {
-        if (lock) {
+        if (lock && !isGenerating()) {
             activateSendButtons();
         }
         flushEphemeralStoppingStrings();
@@ -5080,18 +5078,18 @@ async function addGroupMemberCallback(_, name) {
 
 async function triggerGenerationCallback(args, value) {
     const shouldAwait = isTrueBoolean(args?.await);
-    const outerPromise = new Promise((outerResolve) => setTimeout(async () => {
+    const controller = args?._abortController;
+    const generation = (async () => {
+        await delayWithAbort(100, controller);
+        if (controller?.signal.aborted) return;
         try {
-            await waitUntilCondition(() => !is_send_press && !is_group_generating, 10000, 100);
+            await waitUntilCondition(() => !isGenerating() || controller?.signal.aborted, 10000, 100);
         } catch {
             console.warn('Timeout waiting for generation unlock');
             toastr.warning(t`Cannot run /trigger command while the reply is being generated.`);
-            outerResolve(Promise.resolve(''));
-            return '';
+            return;
         }
-
-        // Prevent generate recursion
-        $('#send_textarea').val('')[0].dispatchEvent(new Event('input', { bubbles: true }));
+        if (controller?.signal.aborted) return;
 
         let chid = undefined;
 
@@ -5103,12 +5101,18 @@ async function triggerGenerationCallback(args, value) {
             }
         }
 
-        outerResolve(new Promise(innerResolve => setTimeout(() => innerResolve(Generate('normal', { force_chid: chid })), 100)));
-    }, 1));
+        // Generate from the chat, never from text typed while the command was waiting.
+        await Generate('normal', { force_chid: chid, suppressUserMessage: true });
+    })();
 
     if (shouldAwait) {
-        const innerPromise = await outerPromise;
-        await innerPromise;
+        await generation;
+    } else {
+        // Detached triggers still need an error handler after their script has ended.
+        generation.catch(error => {
+            console.error('Error on /trigger generation', error);
+            toastr.error(error.message, t`API Error`, { preventDuplicates: true });
+        });
     }
 
     return '';

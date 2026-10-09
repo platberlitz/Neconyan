@@ -123,7 +123,7 @@ for (const phone of [false, true]) {
         await expect(input).toHaveValue('/echo Slash command ran');
 
         // Script cancellation is independent of reply cancellation, including on phones.
-        for (const command of ['/delay 60000 | /echo Should never run', '/wait-generation | /echo Should never run']) {
+        for (const command of ['/delay 60000 | /echo Should never run', '/wait-generation | /echo Should never run', '/trigger await=true | /echo Should never run']) {
             await submit(command);
             const stopScript = page.locator('.stscript_stop');
             await expect(stopScript).toBeVisible();
