@@ -1,8 +1,17 @@
-const segmenter = new Intl.Segmenter(undefined, { granularity: 'word' });
+// A Node built with small ICU data has no word-break rules, and Intl.Segmenter then crashes
+// the whole process instead of throwing (issue 80). Such runtimes split words with a pattern.
+export function canSegmentWords(runtime = globalThis.process) {
+    if (!runtime?.versions?.node || runtime.config?.variables?.icu_small !== true) return true;
+    return Boolean(runtime.env?.NODE_ICU_DATA) || (runtime.execArgv ?? []).some(arg => arg.startsWith('--icu-data-dir'));
+}
+
+const segmenter = canSegmentWords() ? new Intl.Segmenter(undefined, { granularity: 'word' }) : null;
+const WORD = /[\p{L}\p{M}\p{N}_]+(?:['\u2019][\p{L}\p{M}\p{N}_]+)*/gu;
 
 export function terms(value) {
-    return [...segmenter.segment(String(value).normalize('NFKC').toLocaleLowerCase())]
-        .filter(part => part.isWordLike).map(part => part.segment);
+    const text = String(value).normalize('NFKC').toLocaleLowerCase();
+    if (!segmenter) return text.match(WORD) ?? [];
+    return [...segmenter.segment(text)].filter(part => part.isWordLike).map(part => part.segment);
 }
 
 export function lexicalSearch(documents, query, limit = 24) {
