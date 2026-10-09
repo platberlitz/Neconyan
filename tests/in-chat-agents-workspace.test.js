@@ -106,22 +106,46 @@ describe('in-chat agents workspace redesign', () => {
 
     test('uses labelled primary row actions and a compact secondary disclosure', () => {
         expect(indexSource).toContain('<span>${applyLabel}</span>');
-        expect(indexSource).toContain('<span>Edit</span>');
+        expect(indexSource).toContain('<span>Quick settings</span>');
         expect(indexSource).toContain('class="ica--card-secondary"');
         expect(styleSource).toContain('.ica--card-primary-actions .ica--btn-run');
         expect(styleSource).toContain('.ica--card-secondary-actions');
         expect(styleSource).toContain('.ica--card-actions .ica--card-btn:not(:has(> i:only-child))');
     });
 
-    test('keeps Edit visible on the card and opens More actions inside the card on phones', () => {
+    test('keeps a labelled Edit button on the card and Quick settings under More actions', () => {
         const primary = indexSource.slice(indexSource.indexOf('<div class="ica--card-primary-actions">'), indexSource.indexOf('<details class="ica--card-secondary">'));
         const secondary = indexSource.slice(indexSource.indexOf('<details class="ica--card-secondary">'), indexSource.indexOf('</details>', indexSource.indexOf('<details class="ica--card-secondary">')));
         expect(primary).toContain('ica--btn-edit');
-        expect(secondary).not.toContain('ica--btn-edit');
+        expect(primary).toContain('<span>Edit</span>');
+        expect(primary).not.toContain('ica--btn-settings');
+        expect(primary).not.toContain('ica--btn-history');
+        const summary = indexSource.slice(indexSource.indexOf('function buildAgentQuickSummary('), indexSource.indexOf('function getAgentCardPhaseLabel('));
+        expect(summary).toContain("const injectsBeforeReply = agent.phase === 'pre' || agent.phase === 'both';");
+        expect(secondary).toContain('ica--btn-settings');
+        expect(secondary).toContain('<span>Quick settings</span>');
+        expect(indexSource).not.toContain('void openQuickSettings([agent.id]);');
+        expect(indexSource).toContain('onOpenEditor: single ? id => openEditor(id) : null');
+        expect(indexSource).toContain('large: !window.matchMedia?.(\'(max-width: 768px)\').matches,');
+        expect(styleSource).toContain('dialog.popup.wide_dialogue_popup:has(#ica--editor) {');
+        const quickSettingsSource = readRepoFile('public/scripts/extensions/in-chat-agents/quick-settings.js');
+        expect(quickSettingsSource).toContain('text: \'Open full editor\'');
+        expect(quickSettingsSource).toContain('if (result === OPEN_EDITOR) await onOpenEditor(first.id);');
         const mobileShell = readRepoFile('public/css/neconyan-mobile-shell.css');
         expect(mobileShell).toContain('body.neconyan #ica--settings .ica--card-primary-actions { display: contents; }');
-        expect(mobileShell).toContain('body.neconyan #ica--settings .ica--card-primary-actions .ica--btn-edit { order: 2; }');
+        expect(mobileShell).not.toContain('.ica--card-primary-actions .ica--btn-edit');
         expect(mobileShell).toContain('body.neconyan #ica--settings .ica--card-secondary-actions { left: 0; right: auto; }');
+    });
+
+    test('puts kept notes and companion connections on cards, the bulk bar and the Companion panel', () => {
+        expect(indexSource).toContain('${companionExecution ? buildCompanionQuickControlsHtml(agent) : \'\'}');
+        expect(indexSource).toContain('bindCompanionQuickControls(document.getElementById(\'ica--agentList\'), {');
+        const panelSource = readRepoFile('public/scripts/extensions/in-chat-agents/companion/companion-panel.js');
+        expect(panelSource).toContain('buildCompanionQuickControlsHtml(state.agent, { scope: \'panel\' })');
+        expect(panelSource).toContain('bindCompanionQuickControls($(\'#ica--tracker-panel\')[0], {');
+        expect(settingsSource).toContain('id="ica--bulkHistoryDepth"');
+        expect(settingsSource).toContain('id="ica--bulkHistoryOff"');
+        expect(styleSource).toContain('.ica--companion-quick-depth input.text_pole {');
     });
 
     test('keeps More tools above the filters, inside the panel, and in the page flow on phones', () => {

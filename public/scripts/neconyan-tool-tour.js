@@ -730,6 +730,7 @@ const TOOL_PAGES = Object.freeze({
             editor: {
                 root: '#ica--editor',
                 openers: ['#ica--agentList .ica--agent-card .ica--btn-edit', '#ica--addAgent'],
+                hiddenOpeners: true,
                 close: '.popup-button-cancel',
                 sectionSelect: '#ica--editor-section-select',
             },
@@ -781,7 +782,7 @@ const TOOL_PAGES = Object.freeze({
                 id: 'card', tab: '.ica--workspace-tab[data-workspace-view="manage"]',
                 targets: ['#ica--agentList .ica--agent-card .ica--card-header', '#ica--agentList'],
                 title: 'Reading an agent card',
-                body: 'The switch on the left turns this agent on or off. Beside the name, the card shows whether its result goes into the **Prompt or reply** or a **Companion note**, and whether it runs before or after the reply.\nThe small labels underneath summarise its settings, such as its chance to run, its depth, whether it rewrites the reply, its connection and its **Order**. The star pins it, and the handle lets you drag it into a new position.',
+                body: 'The switch on the left turns this agent on or off. Beside the name, the card shows whether its result goes into the **Prompt or reply** or a **Companion note**, and whether it runs before or after the reply.\nThe small labels underneath only appear when they matter: a chance to run below 100%, a reply rewrite, its own connection or model, or an update. The star pins it, and the handle lets you drag it into a new position.',
                 emptyBody: 'Your agent list is empty, so there is no card to show yet. Use **Browse library** or **Create agent** first.\nEach card has a switch, shows where each result goes and when it runs, and lists its main settings underneath.',
                 hint: 'Read the labels. They tell you most of the story without opening anything.',
             },
@@ -789,7 +790,7 @@ const TOOL_PAGES = Object.freeze({
                 id: 'card-actions', tab: '.ica--workspace-tab[data-workspace-view="manage"]',
                 targets: ['#ica--agentList .ica--agent-card .ica--card-actions', '#ica--agentList'],
                 title: 'Card buttons',
-                body: '**Run** or **Apply to reply** runs the agent now on the latest reply. **Settings** opens a short form with the most common options. **Edit** opens the full editor, which we look at next.\n**More actions** holds Preview, Apply to target, **To companion** or **To prompt or reply**, Export and Delete. Companions also get **Batch & connect** and their own history.',
+                body: '**Run** or **Apply to reply** runs the agent now on the latest reply. **Edit** opens every setting, which we look at next.\n**More actions** holds **Quick settings** (a short form with the most common options), Preview, Apply to target, **To companion** or **To prompt or reply**, Export and Delete. Companion cards also show **Keep in chat history**, how many **notes** to keep, and **Connections** to the other companions, all saved as soon as you change them.',
                 hint: 'Run it once by hand before you trust it on autopilot.',
             },
             {
@@ -1686,7 +1687,9 @@ async function openTourDialog(step, token) {
     closeTourDialog();
     let host = findShown(document, config.root);
     if (!host) {
-        const opener = config.openers.map(selector => findShown(tour.root, selector)).find(Boolean);
+        // Some openers live inside a closed menu; those can be clicked without being shown.
+        const findOpener = selector => (config.hiddenOpeners ? tour.root.querySelector(selector) : findShown(tour.root, selector));
+        const opener = config.openers.map(findOpener).find(Boolean);
         if (!opener) return null;
         opener.click();
         for (let attempt = 0; attempt < 40 && !host; attempt++) {

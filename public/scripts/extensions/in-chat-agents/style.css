@@ -16,6 +16,9 @@
     border: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor, #555) 60%, transparent);
     background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #222) 30%, transparent);
     transition: border-color 0.15s;
+}
+
+.ica--agent-card.ica--selectable {
     cursor: pointer;
 }
 
@@ -198,9 +201,10 @@ button.ica--card-pill {
     cursor: default;
 }
 
-.ica--card-pill--order {
+.ica--quick-settings .ica--quick-summary {
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+    font-size: 0.86em;
     font-variant-numeric: tabular-nums;
-    background: color-mix(in srgb, var(--SmartThemeBorderColor) 34%, transparent);
 }
 
 .ica--card-pill--version {
@@ -2016,14 +2020,6 @@ button.ica--card-pill--version-update {
 }
 
 @media (max-width: 720px) {
-    .popup:has(#ica--editor).wide_dialogue_popup {
-        width: calc(100vw - 20px);
-        width: calc(100dvw - 20px);
-        min-width: 0;
-        max-width: calc(100vw - 20px);
-        max-width: calc(100dvw - 20px);
-    }
-
     .popup:has(#ica--editor) .popup-body,
     .popup:has(#ica--editor) .popup-content,
     #ica--editor,
@@ -3138,6 +3134,122 @@ body.neconyan .ica--standalone-title { display: none; }
     padding-left: 42px;
 }
 
+.ica--card-meta:not(:has(> *)) {
+    display: none;
+}
+
+.ica--companion-quick {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 0 0 42px;
+    border-top: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor, #555b66) 45%, transparent);
+    font-size: 0.9em;
+}
+
+.ica--tpanel-agent .ica--companion-quick {
+    margin-top: 6px;
+    padding-left: 0;
+}
+
+.ica--companion-quick-history,
+.ica--bulk-history {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+}
+
+.ica--bulk-history {
+    display: inline-flex;
+    gap: 6px;
+}
+
+.ica--companion-quick-history .checkbox_label {
+    min-height: 36px;
+    margin: 0;
+}
+
+.ica--companion-quick-depth {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    color: var(--ica-muted);
+}
+
+.ica--companion-quick-depth input.text_pole {
+    width: 5.5em;
+    min-height: 36px;
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.ica--companion-quick-links > summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    min-height: 36px;
+    cursor: pointer;
+}
+
+.ica--companion-quick-links > summary small {
+    color: var(--ica-muted);
+    font-size: 0.92em;
+}
+
+.ica--companion-quick-groups {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px 14px;
+    padding: 6px 0;
+}
+
+.ica--companion-quick-group {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.ica--companion-quick-group legend {
+    padding: 0;
+    font-weight: 700;
+}
+
+.ica--companion-quick-help {
+    margin: 2px 0 4px;
+    color: var(--ica-muted);
+    font-size: 0.92em;
+}
+
+.ica--companion-quick-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 12px;
+}
+
+.ica--companion-quick-options .checkbox_label {
+    min-height: 32px;
+    margin: 0;
+}
+
+.ica--companion-quick-more.menu_button {
+    align-self: flex-start;
+    width: auto;
+    margin: 0;
+}
+
+@media (pointer: coarse), (any-pointer: coarse) {
+    .ica--companion-quick-history .checkbox_label,
+    .ica--companion-quick-depth input.text_pole,
+    .ica--companion-quick-links > summary,
+    .ica--companion-quick-options .checkbox_label {
+        min-height: 44px;
+    }
+}
+
 .ica--card-pill {
     padding: 3px 7px;
     background: color-mix(in srgb, var(--SmartThemeBorderColor, #555b66) 24%, transparent);
@@ -3178,7 +3290,7 @@ body.neconyan .ica--standalone-title { display: none; }
 }
 
 .ica--card-primary-actions .ica--btn-run,
-.ica--card-primary-actions .ica--btn-edit {
+.ica--card-primary-actions .ica--btn-settings {
     border: 1px solid var(--ica-border);
     border-radius: var(--sb-radius-sm, 10px);
     background: color-mix(in srgb, var(--SmartThemeBorderColor, #555b66) 20%, transparent);
@@ -3482,6 +3594,11 @@ body.neconyan .ica--standalone-title { display: none; }
     line-height: 1.4;
 }
 
+.ica--editor-titlebar .ica--editor-summary {
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+}
+
 .ica--editor-title-status {
     display: inline-flex;
     align-items: center;
@@ -3622,6 +3739,7 @@ body.neconyan .ica--standalone-title { display: none; }
     }
 
     .ica--card-meta,
+    .ica--companion-quick,
     .ica--card-actions {
         padding-left: 0;
     }
@@ -4253,5 +4371,40 @@ body.neconyan .ica--standalone-title { display: none; }
 @media (pointer: coarse) {
     .neconyan-tool-tour-invite[data-tool-page="agents"] .neconyan-tool-tour-invite-actions .menu_button {
         min-height: 44px;
+    }
+}
+
+/* Phones: the agent editor fills the screen instead of floating as a card. */
+@media (max-width: 768px) {
+    dialog.popup.wide_dialogue_popup:has(#ica--editor) {
+        inset: 0;
+        margin: 0;
+        width: 100vw;
+        width: 100dvw;
+        min-width: 0;
+        max-width: none;
+        height: 100vh;
+        height: 100dvh;
+        max-height: none;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        background: rgb(from var(--neco-canvas, var(--SmartThemeBlurTintColor)) r g b);
+        padding: max(10px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+    }
+
+    /* The paper theme forces a rounded corner on every popup; a matching backdrop hides it. */
+    dialog.popup.wide_dialogue_popup:has(#ica--editor)::backdrop {
+        background: rgb(from var(--neco-canvas, var(--SmartThemeBlurTintColor)) r g b);
+    }
+
+    dialog.popup:has(#ica--editor) .popup-body {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+
+    #ica--editor .ica--editor-titlebar > div > p:not(.ica--editor-summary),
+    #ica--editor .ica--editor-title-status {
+        display: none;
     }
 }

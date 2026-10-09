@@ -16,6 +16,7 @@ import { getCompanionReferenceIds } from './companion/companion-shared.js';
 import { populateConnectionProfileSelect } from './profile-utils.js';
 
 const KEEP = '__ica_keep__';
+const OPEN_EDITOR = POPUP_RESULT.CUSTOM1;
 
 // Change only links between the selected companions, including legacy template references.
 export function changeSelectedCompanionLinks(agents, field, enabled) {
@@ -79,7 +80,7 @@ function addReferenceChecklist(root, agent, field, title, help, onSelect = () =>
     root.append(section);
 }
 
-export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent, onSaved } = {}) {
+export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent, onSaved, summary = '', onOpenEditor = null } = {}) {
     const agents = [...new Set(ids)].map(getAgentById).filter(Boolean);
     if (!agents.length) return;
     const isCurrent = captureAgentSaveGuard(agents.map(agent => agent.id));
@@ -87,9 +88,11 @@ export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent
     const companions = agents.filter(isCompanionAgent);
     const first = agents[0];
     const config = getCompanionConfig(companions[0]);
-    const title = view === 'connections' ? 'Batch & connect' : 'Agent settings';
-    const root = $(`<div class="ica--quick-settings"><h3>${title}</h3><p data-selection></p><p role="alert" hidden></p></div>`);
+    const title = view === 'connections' ? 'Batch & connect' : 'Quick settings';
+    const canOpenEditor = !bulk && typeof onOpenEditor === 'function';
+    const root = $(`<div class="ica--quick-settings"><h3>${title}</h3><p data-selection></p><p class="ica--quick-summary" hidden></p><p role="alert" hidden></p></div>`);
     root.find('[data-selection]').text(bulk ? `${agents.length} agents selected · ${companions.length} companions` : first.name);
+    if (!bulk && summary) root.find('.ica--quick-summary').text(summary).prop('hidden', false);
     const fields = [];
     const addSelect = (section, key, label, options, value, companion = false) => {
         const row = $('<label></label>').text(label);
@@ -170,14 +173,22 @@ export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent
         const batch = addSelect(switches, 'batch', 'Share one request with linked companions', yesNo, config.batch, true);
         const send = addSelect(switches, 'sendContextToCompanions', 'Send latest notes to other companions', yesNo, config.sendContextToCompanions, true);
         addSelect(switches, 'waitForDependencies', 'Wait for linked companions', yesNo, config.waitForDependencies, true);
-        addReferenceChecklist(root, first, 'batchAgentIds', 'Batch with', 'Choosing companions turns batching on. You can pause it above without clearing this list.', () => batch.val('true'));
-        addReferenceChecklist(root, first, 'contextRecipientAgentIds', 'Send notes to', 'Choosing companions turns note sharing on. Each receives this agent’s latest completed note.', () => send.val('true'));
-        addReferenceChecklist(root, first, 'dependencies', 'Run after', 'Read these companions’ notes and re-run when they update. Turn on waiting to let scheduled companions finish first.');
+        addReferenceChecklist(root, first, 'batchAgentIds', 'Shares one request with', 'Choosing companions turns batching on. You can pause it above without clearing this list.', () => batch.val('true'));
+        addReferenceChecklist(root, first, 'contextRecipientAgentIds', 'Sends notes to', 'Choosing companions turns note sharing on. Each receives this agent’s latest completed note.', () => send.val('true'));
+        addReferenceChecklist(root, first, 'dependencies', 'Runs after', 'Read these companions’ notes and re-run when they update. Turn on waiting to let scheduled companions finish first.');
     }
     if (view === 'connections') root.append('<p class="ica--profile-help">Only companions with matching connections, models and context can share a request. Others run separately. Companions must be enabled and scheduled to run.</p>');
     let saving = false;
+    let savedChanges = 0;
     const result = await new Popup(root, POPUP_TYPE.TEXT, '', {
         okButton: 'Save changes', cancelButton: 'Cancel', allowVerticalScrolling: true,
+        customButtons: canOpenEditor ? [{
+            text: 'Open full editor',
+            tooltip: 'Keeps any changes made here, then opens every setting for this agent',
+            icon: 'fa-pen-to-square',
+            classes: ['ica--quick-open-editor'],
+            result: OPEN_EDITOR,
+        }] : null,
         onOpen: popup => {
             popup.dlg.setAttribute('aria-label', title);
             for (const button of [popup.okButton, popup.cancelButton]) {
@@ -188,7 +199,7 @@ export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent
         },
         onClosing: async popup => {
             if (saving) return false;
-            if (popup.result !== POPUP_RESULT.AFFIRMATIVE) return true;
+            if (popup.result !== POPUP_RESULT.AFFIRMATIVE && popup.result !== OPEN_EDITOR) return true;
             const invalid = root.find('input').toArray().find(input => !input.checkValidity());
             if (invalid) { invalid.reportValidity(); return false; }
             if (!isCurrent()) {
@@ -230,8 +241,10 @@ export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent
                     }
                 }
                 const changes = drafts.filter((draft, index) => JSON.stringify(draft) !== JSON.stringify(agents[index]));
+                if (!changes.length && popup.result === OPEN_EDITOR) return true;
                 changes.forEach(draft => lockAgent?.(draft));
                 await saveAgentBatch(changes, title);
+                savedChanges = changes.length;
                 // Refresh after the dialog closes so a successful save cannot be retried.
                 return true;
             } catch (error) {
@@ -243,8 +256,9 @@ export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent
             }
         },
     }).show();
-    if (result === POPUP_RESULT.AFFIRMATIVE) {
+    if (result === POPUP_RESULT.AFFIRMATIVE || (result === OPEN_EDITOR && savedChanges)) {
         await onSaved?.(agents.map(agent => agent.id));
-        toastr.success(escapeHtml(bulk ? 'Agent settings saved.' : `Settings saved for ${first.name}.`));
+        toastr.success(escapeHtml(bulk ? 'Quick settings saved.' : `Settings saved for ${first.name}.`));
     }
+    if (result === OPEN_EDITOR) await onOpenEditor(first.id);
 }

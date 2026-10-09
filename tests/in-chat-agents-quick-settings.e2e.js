@@ -1,6 +1,12 @@
 /* global window, document */
 import { expect, test } from '@playwright/test';
 
+async function openCardConnections(card) {
+    const links = card.locator('.ica--companion-quick-links');
+    if (!await links.evaluate(details => details.open)) await links.locator(':scope > summary').click();
+    await expect(card.locator('.ica--companion-quick-groups')).toBeVisible();
+}
+
 test.use({ serviceWorkers: 'block', actionTimeout: 15000 });
 test.setTimeout(180000);
 
@@ -52,16 +58,19 @@ for (const width of [393, 1280]) {
                 const first = cards.filter({ has: page.locator(`.ica--card-name:text-is("${prefix} 0")`) });
                 storageRequests.length = 0;
                 const historyStart = Date.now();
-                await first.getByRole('button', { name: 'Keep in history', exact: true }).click();
-                await expect(first.getByRole('button', { name: 'In chat history', exact: true })).toHaveAttribute('aria-pressed', 'true');
+                const keep = first.locator('.ica--companion-quick').getByLabel('Keep in chat history', { exact: true });
+                await keep.check();
+                await expect(first.locator('.ica--companion-quick').getByLabel('Keep in chat history', { exact: true })).toBeChecked();
+                await expect(first.locator('.ica--companion-quick').getByLabel('Keep in chat history', { exact: true })).toBeFocused();
                 timings.history = { milliseconds: Date.now() - historyStart, requests: [...storageRequests] };
                 expect(storageRequests.filter(path => path.startsWith('/api/in-chat-agents/'))).toEqual(['/api/in-chat-agents/save']);
                 expect(await page.evaluate(async id => {
                     const companion = await import('/scripts/extensions/in-chat-agents/companion/companion-runner.js');
                     return window.SillyTavern.getContext().chat.some(message => companion.getCompanionResults(message)[id]?.includeInChatHistory);
                 }, ids[0])).toBe(true);
-                await first.getByRole('button', { name: 'Settings', exact: true }).click();
-                const settings = page.getByRole('dialog', { name: 'Agent settings', exact: true });
+                await first.locator('.ica--card-more').click();
+                await first.getByRole('button', { name: 'Quick settings', exact: true }).click();
+                const settings = page.getByRole('dialog', { name: 'Quick settings', exact: true });
                 await settings.getByLabel('Keep all saved notes', { exact: true }).selectOption('false');
                 await settings.getByLabel('Notes to keep when not keeping all').fill('3');
                 await settings.getByLabel('Order', { exact: true }).fill('42');
@@ -111,6 +120,7 @@ for (const width of [393, 1280]) {
                 expect(batched[2].companion.batch).toBe(false);
                 await page.locator('#ica--bulkHistory').click();
                 await expect.poll(async () => (await readAgents())[1].companion.includeInChatHistory).toBe(true);
+                expect((await readAgents())[1].companion.includeAllChatHistory).toBe(true);
                 await page.locator('#ica--bulkSettings').click();
                 await settings.getByLabel('Connection profile', { exact: true }).selectOption('');
                 await settings.getByLabel('Set model for selected agents', { exact: false }).check();
@@ -128,23 +138,44 @@ for (const width of [393, 1280]) {
 
                 await page.locator('#ica--bulkCancel').click();
                 await page.locator('#ica--search').fill(`${prefix} 0`);
-                await first.getByRole('button', { name: 'Batch & connect', exact: true }).click();
-                const send = connections.getByRole('group', { name: 'Send notes to', exact: true });
+                await openCardConnections(first);
+                await first.getByRole('button', { name: 'More connection options', exact: true }).click();
+                const send = connections.getByRole('group', { name: 'Sends notes to', exact: true });
                 await send.getByLabel('Find a companion').fill(`${prefix} 1`);
                 await send.getByRole('button', { name: 'Clear shown' }).click();
                 await connections.getByRole('button', { name: 'Save changes' }).click();
                 await expect(connections).toHaveCount(0);
                 expect((await readAgents())[0].companion.contextRecipientAgentIds).toEqual([]);
-                await first.getByRole('button', { name: 'Batch & connect', exact: true }).click();
-                await connections.getByLabel('Send latest notes', { exact: true }).selectOption('false');
+                await openCardConnections(first);
+                await first.getByRole('button', { name: 'More connection options', exact: true }).click();
+                await connections.getByLabel('Send latest notes to other companions', { exact: true }).selectOption('false');
                 await send.getByLabel('Find a companion').fill(`${prefix} 1`);
                 await send.getByRole('button', { name: 'Select shown' }).click();
-                await expect(connections.getByLabel('Send latest notes', { exact: true })).toHaveValue('true');
+                await expect(connections.getByLabel('Send latest notes to other companions', { exact: true })).toHaveValue('true');
                 await page.screenshot({ path: info.outputPath('agent-connections.png') });
                 await connections.getByRole('button', { name: 'Save changes' }).click();
                 await expect(connections).toHaveCount(0);
                 expect((await readAgents())[0].companion.contextRecipientAgentIds).toEqual([ids[1]]);
-                await first.getByRole('button', { name: 'Settings', exact: true }).click();
+                await openCardConnections(first);
+                const runsAfter = first.getByRole('group', { name: 'Runs after', exact: true });
+                await runsAfter.getByLabel(`${prefix} 1`, { exact: true }).check();
+                await expect.poll(async () => (await readAgents())[0].companion.dependencies).toEqual([ids[1]]);
+                await expect(first.locator('.ica--companion-quick-links')).toHaveAttribute('open', '');
+                await expect(first.locator('.ica--companion-quick-links > summary')).toContainText(`Runs after ${prefix} 1`);
+                await first.getByRole('group', { name: 'Runs after', exact: true }).getByLabel(`${prefix} 1`, { exact: true }).uncheck();
+                await expect.poll(async () => (await readAgents())[0].companion.dependencies).toEqual([]);
+                const depth = first.locator('.ica--companion-quick [data-quick-depth]');
+                await depth.fill('5');
+                await depth.press('Enter');
+                await expect.poll(async () => (await readAgents())[0].companion).toMatchObject({ includeAllChatHistory: false, chatHistoryDepth: 5 });
+                await first.locator('.ica--companion-quick [data-quick-depth]').fill('3');
+                await first.locator('.ica--companion-quick [data-quick-depth]').press('Enter');
+                await expect.poll(async () => (await readAgents())[0].companion.chatHistoryDepth).toBe(3);
+                const quickSizes = await first.locator('.ica--companion-quick').evaluate(root => [...root.querySelectorAll('summary, input[type="number"], .checkbox_label')].filter(el => el.getBoundingClientRect().width).map(el => el.getBoundingClientRect().height));
+                expect(quickSizes.every(height => height >= 32)).toBe(true);
+                await page.screenshot({ path: info.outputPath('companion-quick-controls.png') });
+                await first.locator('.ica--card-more').click();
+                await first.getByRole('button', { name: 'Quick settings', exact: true }).click();
                 const geometry = await settings.evaluate(root => ({
                     document: document.documentElement.scrollWidth, width: root.clientWidth, scroll: root.scrollWidth,
                     controls: [...root.querySelectorAll('.ica--quick-settings select, .ica--quick-settings input')].filter(el => el.getBoundingClientRect().width).map(el => ({ width: el.getBoundingClientRect().width, height: el.getBoundingClientRect().height, font: window.getComputedStyle(el).fontFamily })),
@@ -155,7 +186,7 @@ for (const width of [393, 1280]) {
                 await page.screenshot({ path: info.outputPath('quick-settings.png') });
                 await page.keyboard.press('Escape');
                 await expect(settings).toHaveCount(0);
-                await expect(first.getByRole('button', { name: 'Settings', exact: true })).toBeFocused();
+                await expect(first.locator('.ica--card-more')).toBeFocused();
                 const cardSizes = await first.locator('.ica--card-primary-actions button').evaluateAll(buttons => buttons.map(button => ({ width: button.getBoundingClientRect().width, height: button.getBoundingClientRect().height })));
                 expect(cardSizes.every(size => size.width >= 44 && size.height >= 44)).toBe(true);
                 await page.screenshot({ path: info.outputPath('agent-shortcuts.png') });
@@ -164,9 +195,11 @@ for (const width of [393, 1280]) {
                 await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
                 await expect(page.locator('#ica--settings')).toBeVisible();
                 await page.locator('#ica--search').fill(`${prefix} 0`);
-                await expect(first.getByRole('button', { name: 'In chat history', exact: true })).toHaveAttribute('aria-pressed', 'true');
+                await expect(first.locator('.ica--companion-quick').getByLabel('Keep in chat history', { exact: true })).toBeChecked();
+                await expect(first.locator('.ica--companion-quick [data-quick-depth]')).toHaveValue('3');
                 expect((await readAgents())[0]).toMatchObject({ modelOverride: 'shared-test-model', companion: { batchAgentIds: [ids[3], ids[1]], contextRecipientAgentIds: [ids[1]], chatHistoryDepth: 3 } });
-                await first.getByRole('button', { name: 'Settings', exact: true }).click();
+                await first.locator('.ica--card-more').click();
+                await first.getByRole('button', { name: 'Quick settings', exact: true }).click();
                 await settings.getByLabel('Model override', { exact: true }).fill('stale-dialog-model');
                 await page.evaluate(async id => {
                     const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');

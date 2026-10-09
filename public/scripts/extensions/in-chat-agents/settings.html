@@ -166,9 +166,13 @@
                     <button type="button" id="ica--bulkCancel" class="menu_button">Done</button>
                 </div>
                 <div class="ica--bulk-bar-actions">
-                    <button type="button" id="ica--bulkSettings" class="menu_button menu_button_icon"><i class="fa-solid fa-sliders" aria-hidden="true"></i><span>Settings</span></button>
+                    <button type="button" id="ica--bulkSettings" class="menu_button menu_button_icon"><i class="fa-solid fa-sliders" aria-hidden="true"></i><span>Quick settings</span></button>
                     <button type="button" id="ica--bulkConnect" class="menu_button menu_button_icon" title="Select at least two companions to batch them or share notes"><i class="fa-solid fa-link" aria-hidden="true"></i><span>Batch &amp; connect</span></button>
-                    <button type="button" id="ica--bulkHistory" class="menu_button menu_button_icon"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i><span>Keep in history</span></button>
+                    <span class="ica--bulk-history" role="group" aria-label="Chat history for selected companions">
+                        <button type="button" id="ica--bulkHistory" class="menu_button menu_button_icon"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i><span>Keep in history</span></button>
+                        <label class="ica--companion-quick-depth" title="How many recent notes stay in chat history. Leave blank to keep all of them."><input type="number" id="ica--bulkHistoryDepth" class="text_pole" min="1" step="1" inputmode="numeric" placeholder="All" aria-label="Notes to keep in chat history (blank keeps all)"><span>notes</span></label>
+                        <button type="button" id="ica--bulkHistoryOff" class="menu_button">Stop keeping</button>
+                    </span>
                     <details>
                         <summary class="menu_button">More changes</summary>
                         <div class="ica--bulk-bar-actions">

@@ -73,7 +73,9 @@ for (const phone of [false, true]) {
             await info.attach('agents-open-profile', { path: output, contentType: 'application/json' });
             await profiler.detach();
         }
-        const settingsButton = page.locator('#ica--agentList').getByRole('button', { name: 'Settings', exact: true }).first();
+        const firstCard = page.locator('#ica--agentList .ica--agent-card').first();
+        await firstCard.locator('.ica--card-more').click();
+        const settingsButton = firstCard.getByRole('button', { name: 'Quick settings', exact: true });
         await settingsButton.evaluate(button => button.addEventListener('click', () => {
             window.__settingsClick = performance.now();
             window.__settingsFirstPaint = null;
@@ -85,7 +87,7 @@ for (const phone of [false, true]) {
             observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['open'] });
         }, { capture: true, once: true }));
         await settingsButton.click();
-        const dialog = page.getByRole('dialog', { name: 'Agent settings', exact: true });
+        const dialog = page.getByRole('dialog', { name: 'Quick settings', exact: true });
         await expect(dialog).toBeVisible();
         await page.waitForFunction(() => window.__settingsFirstPaint !== null);
         const settings = await dialog.evaluate(root => ({ milliseconds: performance.now() - window.__settingsClick, paintMilliseconds: window.__settingsFirstPaint, width: root.clientWidth, scrollWidth: root.scrollWidth }));

@@ -53,22 +53,27 @@ The list tabs are **All**, **Pinned**, **Before reply**, **After reply** and **C
 
 ### Agent Cards
 
-Each agent has a card. The round switch turns it on or off, the star pins it to the Pinned tab, and the grip lets you drag it into a new order. The small pills show things like its trigger chance, connection profile, Order and version. A version pill such as 'v3 → v4' means an update is waiting; click it to update just that agent.
+Each agent has a card. The round switch turns it on or off, the star pins it to the Pinned tab, and the grip lets you drag it into a new order. The small labels only show what matters at a glance, such as its trigger chance, connection profile, model or where companion notes go. Order, depth, regex rules and version are listed at the top of the editor and of **Quick settings** instead. Tapping the card itself does nothing, so you cannot open something by accident; use its buttons. A label such as 'Update v3 → v4' means an update is waiting; click it to update just that agent.
 
 | Button | What it does |
 | --- | --- |
 | **Run** / **Apply to reply** | Runs the agent on the last assistant reply now. Companions say Run, inline agents say Apply to reply. |
-| **Settings** | Opens a short **Agent settings** popup with the most used options: connection, model, timing and, for companions, notes and history. |
-| **Edit** | Opens the full agent editor. |
-| **Batch & connect** | Companions only. Sets which companions share a request, receive this one's notes or wait for it. |
-| **Keep in history** | Companions only. Sends this companion's saved notes with later replies. It reads **In chat history** while on. |
-| **More actions** | Opens **Preview feedback** or **Preview prompt**, **Apply to target** (run it on a chosen reply, note or your text box), **To companion** / **To inline**, **Export** and **Delete**. |
+| **Edit** | Opens the full editor with every setting. On phones it fills the whole screen. |
+| **More actions** | Opens **Quick settings** (a short popup with the most used options: connection, model, timing and, for companions, notes and history; its **Open full editor** button keeps your changes and opens the editor), **Preview feedback** or **Preview prompt**, **Apply to target** (run it on a chosen reply, note or your text box), **To companion** / **To prompt or reply**, **Export** and **Delete**. |
 
-The **Agent settings** popup and the editor use the same names for the same fields.
+**Quick settings** and the editor use the same names for the same fields.
+
+Companion cards also show these controls right on the card, and each change saves straight away:
+
+| Control | What it does |
+| --- | --- |
+| **Keep in chat history** | Sends this companion's saved notes with later replies. |
+| **notes** box | How many of its most recent notes to keep. Leave it blank to keep all of them. Typing a number also switches **Keep in chat history** on. |
+| **Connections** | Opens tick boxes for the other companions: **Runs after** (reads their latest notes first and runs again when they change), **Sends notes to** (they get this companion's latest note as extra context) and **Shares one request with** (runs with them in one request when their connections and models match). The line beside it sums up the current links. **More connection options** opens the full list with search. |
 
 ### Changing Several Agents
 
-Press **Select**, tick the agents you want, or use **Select filtered**. The bar then offers **Settings**, **Batch & connect** and **Keep in history**. **More changes** adds **Enable**, **Disable**, **On Companions** (lets the selected after-reply agents also work on companion notes), **System role**, **User role**, **To companion**, **Edit other properties** and **Delete**. **Edit other properties** only changes the fields you move off 'Don't change'.
+Press **Select**, tick the agents you want, or use **Select filtered**. The bar then offers **Quick settings**, **Batch & connect**, **Keep in history** with a **notes** box (blank keeps all notes) and **Stop keeping**. **More changes** adds **Enable**, **Disable**, **On Companions** (lets the selected after-reply agents also work on companion notes), **System role**, **User role**, **To companion**, **Edit other properties** and **Delete**. **Edit other properties** only changes the fields you move off 'Don't change'.
 
 ## Connections & Defaults
 
@@ -100,7 +105,7 @@ Open this with **Connections & defaults** at the top of the Agents panel. These 
 
 ## Agent Editor
 
-Open it with **Edit** on a card, or **Create agent**. Changes only stick when you press **Save**. The tabs are **Basics**, **Instructions & model**, **When it runs**, **Reply changes**, **Companion output** (companions only) and **Regex**. On phones the tabs become a dropdown.
+Open it with **Edit** on a card, **Open full editor** in **Quick settings**, or **Create agent**. The line under the title sums up the agent: when it runs, where its result goes, its order, regex rules and version. On phones the editor fills the whole screen. Changes only stick when you press **Save**. The tabs are **Basics**, **Instructions & model**, **When it runs**, **Reply changes**, **Companion output** (companions only) and **Regex**. On phones the tabs become a dropdown.
 
 ### Basics
 
@@ -218,7 +223,7 @@ Tick **Include character card**, **Include persona**, **Include World Info**, **
 
 **Notes to keep when not keeping all**: how many recent notes stay in history. **Keep all saved notes** keeps every one, which adds up fast in long chats.
 
-**Where kept notes go**: **Newest reply** attaches the kept notes to the latest reply, **Each note's own reply** leaves each note with the reply it came from, and **One labelled block** gathers them under `[<Name> - kept notes]`, placed with this agent's Position, Depth, Role and World Info scan fields from When it runs. Also in the **Agent settings** quick popup.
+**Where kept notes go**: **Newest reply** attaches the kept notes to the latest reply, **Each note's own reply** leaves each note with the reply it came from, and **One labelled block** gathers them under `[<Name> - kept notes]`, placed with this agent's Position, Depth, Role and World Info scan fields from When it runs. Also in **Quick settings**.
 
 **Keep notes in context even when their message is hidden**: keeps a note even after you hide the message it's attached to.
 
@@ -276,7 +281,9 @@ You can drag the floating button to any edge. **Hide the floating button** hides
 | **Regenerate state** | Reruns it on the message its current note came from. |
 | **Fix state** | Reruns it with strict format rules, for broken tracker output. |
 | **Edit state text** | Lets you edit the saved note by hand. |
-| **Agent settings** | Opens its full editor. |
+| **Open full editor** (gear) | Opens its full editor. |
+
+Under each companion's note sit the same **Keep in chat history**, **notes** and **Connections** controls as on its card in the Agents list.
 | **Scroll to source message** | Jumps to the message the note belongs to. |
 
 Each companion also shows its message number, estimated **Input** and **Output** tokens and **Previous states** (the last five notes). **Absorbed** means its message is hidden but the note still counts.
@@ -301,7 +308,7 @@ Companions set to **Show note card** put their note under the reply. Each card h
 
 ## Companion Dashboard
 
-Open it with **More tools → Companion activity**. It lists every companion with its settings as pills, lets you switch each one on or off, and offers **Keep in history**, **Run**, **Edit** and **To inline** per row. Inline agents that could become companions sit in their own section with **To companion**.
+Open it with **More tools → Companion activity**. It lists every companion with its settings as pills, lets you switch each one on or off, and offers **Keep in history**, **Run**, **Edit** and **To prompt or reply** per row. Prompt or reply agents that could become companions sit in their own section with **To companion**.
 
 The toolbar has **Run enabled companions**, **Run automatic companions**, **Retry failed**, **Clean up notes**, **Open live panel**, **Create companion** and **Draft with AI**. **Select** lets you batch or keep several companions at once, and **Reorder** changes their order. **Latest results** shows the 20 newest notes; click one to jump to its message.
 

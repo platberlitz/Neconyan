@@ -181,8 +181,8 @@ describe('in-chat agents generation UI wiring', () => {
         expect(indexSource).toContain('chatHistoryDepth: currentCompanion.chatHistoryDepth');
         expect(indexSource).toContain('includeAllChatHistory: currentCompanion.includeAllChatHistory');
         expect(indexSource).toContain('keepInChatHistoryWhenHostHidden: currentCompanion.keepInChatHistoryWhenHostHidden');
-        expect(extensionStyleSource).toContain('.popup:has(#ica--editor).wide_dialogue_popup');
-        expect(extensionStyleSource).toContain('width: calc(100dvw - 20px);');
+        expect(extensionStyleSource).toContain('dialog.popup.wide_dialogue_popup:has(#ica--editor) {');
+        expect(extensionStyleSource).toContain('width: 100dvw;');
     });
 
     test('keeps the quick-chip target action touch-sized on coarse pointers', () => {

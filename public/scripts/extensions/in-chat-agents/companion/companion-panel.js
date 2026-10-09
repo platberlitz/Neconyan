@@ -35,6 +35,7 @@ import {
     runCompanionsOnMessage,
 } from './companion-runner.js';
 import { isLorebookAgent, sendCompanionResultToLorebook } from './lorebook-sender.js';
+import { bindCompanionQuickControls, buildCompanionQuickControlsHtml } from './companion-quick-controls.js';
 import {
     buildLastRunErrorNotice,
     cleanCompanionAgentName,
@@ -722,7 +723,7 @@ function buildPanelAgentSection(state) {
     const runDisabled = !areAgentsGloballyEnabled() || latest?.result?.status === 'pending' ? ' disabled' : '';
 
     const settingsButton = state.agent
-        ? '<button type="button" class="ica--cdash-action" data-action="panel-edit" title="Open this companion\'s agent settings" aria-label="Agent settings"><i class="fa-solid fa-gear"></i></button>'
+        ? '<button type="button" class="ica--cdash-action" data-action="panel-edit" title="Open this companion\'s full editor" aria-label="Open full editor"><i class="fa-solid fa-gear"></i></button>'
         : '';
     const runLatestButton = state.agent
         ? `<button type="button" class="ica--cdash-action" data-action="panel-run-latest" title="Run this companion on the latest assistant reply" aria-label="Run companion"${runDisabled}><i class="fa-solid fa-play"></i></button>`
@@ -745,6 +746,7 @@ function buildPanelAgentSection(state) {
                 </div>
                 <div class="ica--cdash-empty">No state yet. It will appear after the next reply${getCompanionConfig(state.agent).trigger === 'manual' ? ' you run it on' : ''}.</div>
                 ${buildPanelEntryControls(state)}
+                ${buildCompanionQuickControlsHtml(state.agent, { scope: 'panel' })}
             </section>
         `;
     }
@@ -797,6 +799,7 @@ function buildPanelAgentSection(state) {
             <div class="ica--tpanel-agent-body">${buildPanelEntryBody(agentId, latest)}</div>
             ${buildPanelEntryControls(state)}
             ${buildCompactionButton(state)}
+            ${buildCompanionQuickControlsHtml(state.agent, { scope: 'panel' })}
             ${historyHtml}
         </section>
     `;
@@ -1436,6 +1439,18 @@ export function initCompanionPanel() {
         </button>
     `);
 
+    bindCompanionQuickControls($('#ica--tracker-panel')[0], {
+        scope: 'panel',
+        save: async (_, draft) => {
+            if (typeof panelHooks?.saveCompanionDraft !== 'function') throw new Error('Companion settings are not available.');
+            await panelHooks.saveCompanionDraft(draft);
+        },
+        openMore: agentId => {
+            if (typeof panelHooks?.openConnections !== 'function') return;
+            closeCompanionPanel();
+            return panelHooks.openConnections(agentId);
+        },
+    });
     $('#ica--tracker-panel').on('click', '[data-action]', event =>
         runCompanionViewAction(event.currentTarget, () => handlePanelAction(event)));
     $('#ica--tracker-panel').on('keydown', event => {

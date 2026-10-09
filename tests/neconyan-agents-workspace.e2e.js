@@ -75,6 +75,21 @@ async function chooseEditorSection(page, section) {
     await page.locator(`[data-editor-tab="${section}"]`).click();
 }
 
+async function openFullEditor(page) {
+    const card = page.locator('#ica--agentList .ica--agent-card').first();
+    await card.locator('.ica--card-primary-actions .ica--btn-edit').click();
+    await expect(page.locator('#ica--editor')).toBeVisible();
+}
+
+async function openQuickSettingsFromMoreActions(page) {
+    const card = page.locator('#ica--agentList .ica--agent-card').first();
+    await card.locator('.ica--card-more').click();
+    await card.locator('.ica--card-secondary-actions .ica--btn-settings').click();
+    const quick = page.getByRole('dialog', { name: 'Quick settings', exact: true });
+    await expect(quick).toBeVisible();
+    return quick;
+}
+
 const WIDTHS = [1280, 1024, 997, 768, 390, 393, 320];
 
 for (const width of [1280, 393]) {
@@ -95,7 +110,7 @@ for (const width of [1280, 393]) {
             try {
                 await openAgents(page);
                 await page.locator('#ica--search').fill(agent.name);
-                await page.locator('#ica--agentList .ica--btn-settings').click();
+                await openQuickSettingsFromMoreActions(page);
                 const quick = page.locator('.ica--quick-settings');
                 const length = quick.getByLabel('Target length', { exact: true });
                 const context = quick.getByLabel('Recent messages to read', { exact: true });
@@ -115,7 +130,9 @@ for (const width of [1280, 393]) {
                 await expect(quick).toBeHidden();
                 await openAgents(page);
                 await page.locator('#ica--search').fill(agent.name);
-                await page.locator('#ica--agentList .ica--btn-edit').click();
+                const reopenedQuick = await openQuickSettingsFromMoreActions(page);
+                await expect(reopenedQuick.locator('.ica--quick-summary')).toContainText('Order');
+                await reopenedQuick.locator('.ica--quick-open-editor').click();
                 const editor = page.locator('#ica--editor');
                 await chooseEditorSection(page, 'instructions');
                 await expect(editor.locator('#ica--editor-length-target')).toHaveValue('Two short paragraphs');
@@ -140,7 +157,7 @@ for (const width of [1280, 393]) {
                 await expect(editor).toBeHidden();
                 await openAgents(page);
                 await page.locator('#ica--search').fill(agent.name);
-                await page.locator('#ica--agentList .ica--btn-settings').click();
+                await openQuickSettingsFromMoreActions(page);
                 await expect(length).toHaveValue('About 300 to 450 words');
                 await expect(context).toHaveValue('0');
                 const response = await page.request.post('/api/settings/get', { headers: requestHeaders, data: {} });
@@ -390,14 +407,15 @@ test.describe('Agents navigation with an open chat', () => {
                     await page.locator('#ica--search').fill(name);
                     await expect(page.locator('#ica--agentList .ica--agent-card')).toHaveCount(1);
                     // The filtered card can sit below the phone viewport's setup controls.
-                    await page.locator('#ica--agentList .ica--btn-edit').scrollIntoViewIfNeeded();
-                    await expect(page.locator('#ica--agentList .ica--btn-edit')).toBeInViewport();
-                    expect(await page.locator('#ica--agentList .ica--btn-edit').evaluate(element => {
+                    const editButton = page.locator('#ica--agentList .ica--card-primary-actions .ica--btn-edit');
+                    await editButton.scrollIntoViewIfNeeded();
+                    await expect(editButton).toBeInViewport();
+                    expect(await editButton.evaluate(element => {
                         const box = element.getBoundingClientRect();
                         const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
                         return element === hit || element.contains(hit);
                     })).toBe(true);
-                    await page.locator('#ica--agentList .ica--btn-edit').click();
+                    await openFullEditor(page);
                     await chooseEditorSection(page, 'basics');
                     await expect(editor.locator('#ica--editor-name')).toHaveValue(name);
                     await expect(editor.locator('#ica--editor-description')).toHaveValue('Keep this draft through an unavailable server.');

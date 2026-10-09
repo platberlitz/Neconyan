@@ -1318,8 +1318,10 @@ describe('companion tracker panel', () => {
 
         const html = panel.buildPanelHtml();
         expect(html).toContain('Panel Tracker');
-        expect(html).not.toContain('Card Note');
-        expect(html).not.toContain('Hidden Feedback');
+        expect(html).not.toContain('data-agent-id="card-agent"');
+        expect(html).not.toContain('data-agent-id="hidden-agent"');
+        expect(html).not.toContain('inline card content');
+        expect(html).not.toContain('hidden feedback');
         expect(panel.shouldShowCompanionPanelHandle()).toBe(true);
     });
 
