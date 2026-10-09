@@ -91,7 +91,7 @@ beforeAll(async () => {
         MAX_AGENT_MAX_TOKENS: 64000,
         LEGACY_AGENT_MAX_TOKENS: 2048,
         MAX_AGENT_FALLBACK_CONNECTIONS: 10,
-        MAX_PROMPT_TRANSFORM_CONTEXT_MESSAGES: 20,
+        MAX_PROMPT_TRANSFORM_CONTEXT_MESSAGES: 30,
         LENGTH_TRIMMER_TEMPLATE_ID: 'tpl-length-trimmer',
         DEFAULT_LENGTH_TARGET: 'About 300 to 450 words',
         normalizePromptTransformContextMessages: jest.fn(value => Math.max(0, Math.min(20, Math.trunc(Number(value) || 0)))),
