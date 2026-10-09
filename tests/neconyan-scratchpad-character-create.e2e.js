@@ -6,7 +6,7 @@ import { test } from './neconyan-conversation-durable-fixture.js';
 for (const { phone, textProfile } of [{ phone: false, textProfile: false }, { phone: true, textProfile: false }, { phone: false, textProfile: true }]) {
     test(`${phone ? 'phone' : 'desktop'} creates a reviewed character from ${textProfile ? 'text-completion fallback' : 'a native Scratchpad tool call'}`, async ({ app }) => {
         test.setTimeout(120000);
-        const account = await app.account({ phone, textProfile });
+        const account = await app.account({ phone, textProfile, configureSettings: saved => { saved.oai_settings.function_calling = true; } });
         const original = await account.post('/api/characters/get', { avatar_url: account.avatar });
         const draft = {
             character: { name: 'Durable Nova', description: 'A new travelling botanist.', first_mes: 'Hello, {{user}}. I am {{char}}.' },

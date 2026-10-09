@@ -27,7 +27,7 @@ import {
     writeBucketLocked,
 } from './store.js';
 import { buildScratchpadMessages, buildScratchpadSystemPrompt } from './prompt.js';
-import { characterToolReply, scratchpadCharacterTools } from './character-tools.js';
+import { characterToolReply, scratchpadCharacterTools, scratchpadToolsFor } from './character-tools.js';
 import { clearScratchpadPreview, publishScratchpadPreview } from './preview.js';
 import { notebookContextLocked, withNotebookPreparation, captureReplyNotebookProposalsLocked, notifyScratchpadNotebookResult } from './notebooks.js';
 
@@ -310,10 +310,12 @@ async function runParticipant(context, request, { generate, grouped = false }) {
         let reply = readArtifact(directories, job.id, artifact);
         if (!reply) {
             publish({ stage: 'generating', text: '', reasoning: '' });
+            const functionTools = await scratchpadToolsFor(context, request.binding, request.functionTools,
+                { artifactName: grouped ? `model-capabilities:${request.replyId}` : 'model-capabilities' });
+            requireRunning();
             const response = await generate({
                 binding: request.binding,
-                // Named profiles without a preset skip tool registration for quiet requests.
-                generationType: request.functionTools?.length ? 'normal' : 'quiet',
+                generationType: 'quiet',
                 messages: request.messages,
                 maxTokens: request.maxTokens,
                 macroEnvironment: scratchpadMacroEnvironment({ user: request.userName, char: request.characterName }),
@@ -322,7 +324,7 @@ async function runParticipant(context, request, { generate, grouped = false }) {
                 groupNames: [],
                 rawOptions: request.rawOptions,
                 preparedMessages: request.preparedMessages,
-                functionTools: request.functionTools ?? [],
+                functionTools,
                 stream: true,
                 stepNamespace: grouped ? `scratchpad:${request.replyId}` : '',
                 onStream: value => {
@@ -333,7 +335,7 @@ async function runParticipant(context, request, { generate, grouped = false }) {
                 jobContext: context,
             });
             requireRunning();
-            const { text, hasTools } = characterToolReply(response, request.functionTools ?? []);
+            const { text, hasTools } = characterToolReply(response, functionTools);
             if (!text) throw fail('SCRATCHPAD_EMPTY_REPLY', 'The model returned no text. Try again or pick another connection.', 502);
             if (hasTools && bytes(text) > MAX_MESSAGE_BYTES) throw fail('SCRATCHPAD_TEXT_TOO_LARGE', 'The character drafts are too long. Ask for fewer or shorter cards.', 413);
             reply = { text: clipBytes(text, MAX_MESSAGE_BYTES), reasoning: reasoningFrom(response?.response, streamedReasoning) };

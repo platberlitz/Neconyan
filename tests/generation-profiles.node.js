@@ -1126,3 +1126,26 @@ test('legacy prompt controls survive a pre-dispatch restart without repeating ma
             return new Response(JSON.stringify({ results: [{ text: 'Recovered' }] }));
         } })).text, 'Recovered');
 });
+
+test('quiet requests on a saved profile without a preset still send function tools', async t => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-quiet-tools-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const directories = { root };
+    const profile = { id: 'tools', api: 'custom', model: 'tool-model', 'api-url': 'http://127.0.0.1:6100/v1' };
+    fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify({ main_api: 'openai',
+        oai_settings: { chat_completion_source: 'custom', assistant_prefill: 'Prefill must stay out of side requests.' },
+        power_user: { custom_stopping_strings: '[]' }, extension_settings: { connectionManager: { profiles: [profile] } } }));
+    const tool = { type: 'function', function: { name: 'Fixture_Tool', description: 'A fixture tool.', parameters: { type: 'object', properties: {} } } };
+    const bodies = [];
+    const result = await runChatProfile({ context: { owner: 'tester', directories }, binding: captureChatProfile(directories, 'tools'),
+        messages: [{ role: 'user', content: 'Hello' }], maxTokens: 50, functionTools: [tool], generationType: 'quiet',
+        fetch: async (_url, request) => {
+            bodies.push(JSON.parse(request.body));
+            return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'Done' } }] }), { headers: { 'Content-Type': 'application/json' } });
+        } });
+    assert.equal(result.text, 'Done');
+    assert.equal(bodies.length, 1);
+    assert.deepEqual(bodies[0].tools, [tool]);
+    assert.equal(bodies[0].tool_choice, 'auto');
+    assert.equal(JSON.stringify(bodies[0]).includes('Prefill must stay out'), false);
+});

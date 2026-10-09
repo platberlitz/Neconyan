@@ -30,13 +30,13 @@ const SOURCE = { kind: 'roleplay', key: 'Nova.png::Source', label: 'Nova' };
 const OTHER = { kind: 'conversation', key: 'Nova.png::main', label: 'Nova' };
 let counter = 0;
 
-function account(t) {
+function account(t, { oai = {}, model = 'gpt-4o' } = {}) {
     const f = fixture(t, false, 'scratch');
     const directories = f.scope.directories;
     fs.writeFileSync(path.join(directories.root, SETTINGS_FILE), JSON.stringify({
         _version: 0,
-        extension_settings: { connectionManager: { profiles: [{ id: 'saved', api: 'openai', model: 'gpt-4o' }] } },
-        oai_settings: { chat_completion_source: 'openai' },
+        extension_settings: { connectionManager: { profiles: [{ id: 'saved', api: 'openai', model }] } },
+        oai_settings: { chat_completion_source: 'openai', ...oai },
     }));
     setDirectoriesResolver(() => directories);
     const request = body => ({ user: { profile: { handle: f.scope.owner }, directories }, get: () => undefined, body });
@@ -136,13 +136,13 @@ function sharedNote(a) {
 
 for (const roundTable of [false, true]) {
     test(`native character calls become durable review cards, round table=${roundTable}`, async t => {
-        const a = account(t);
+        const a = account(t, { oai: { function_calling: true } });
         const session = startSession(a, { roundTable, assistantPrompts: { taro: 'Be a concise editor.' } });
         const before = fs.readdirSync(a.directories.characters);
         let generated = 0;
         registerScratchpadJobs({ generate: async options => {
             generated++;
-            assert.equal(options.generationType, 'normal');
+            assert.equal(options.generationType, 'quiet', 'tools must not turn a side request into a main chat turn');
             assert.deepEqual(options.functionTools.map(tool => tool.function.name), ['Neconyan_Assistant_CreateCharacter']);
             assert.match(options.messages[0].content, /Nothing|does not save/);
             return { text: '', response: { choices: [{ message: { tool_calls: [{ id: 'create-card', type: 'function', function: {
@@ -174,6 +174,30 @@ for (const roundTable of [false, true]) {
     });
 }
 
+for (const [label, options] of [
+    ['function calling is off', { oai: { function_calling: false } }],
+    ['the model only takes tools through the Responses API', { oai: { function_calling: true }, model: 'gpt-6-astra' }],
+    ['prompt post-processing strips tools', { oai: { function_calling: true, custom_prompt_post_processing: 'single' } }],
+]) {
+    test(`Scratchpad asks for a text draft instead of sending tools when ${label}`, async t => {
+        const a = account(t, options);
+        const session = startSession(a);
+        let seen;
+        registerScratchpadJobs({ generate: async request => {
+            seen = request;
+            return { text: 'Plain answer.' };
+        } });
+        const body = sendBody(session);
+        const accepted = await acceptScratchpadReply(a.request(body), body);
+        await runJob(getJob(a.directories, accepted.job.id));
+        assert.equal(getJob(a.directories, accepted.job.id).state, 'completed');
+        assert.deepEqual(seen.functionTools, []);
+        assert.equal(seen.generationType, 'quiet');
+        assert.match(seen.messages[0].content, /Without function tools, write the same draft in a scratchpad-change fenced JSON block/);
+        assert.equal(a.read(SOURCE).sessions[0].messages[1].text, 'Plain answer.');
+    });
+}
+
 test('character tools normalise provider formats and reject unsupported or malformed calls', () => {
     const tools = scratchpadCharacterTools();
     const name = tools[0].function.name;
@@ -188,8 +212,10 @@ test('character tools normalise provider formats and reject unsupported or malfo
     }
     const response = argumentsText => ({ response: { output: [{ type: 'function_call', call_id: 'call', name, arguments: argumentsText }] } });
     assert.throws(() => characterToolReply(response('{'), tools), /not JSON/);
-    assert.throws(() => characterToolReply(response('{"character":{"name":"../bad"}}'), tools), /path separators/);
-    assert.throws(() => characterToolReply(response('{"character":{"name":"Nova","extensions":{}}}'), tools), /Invalid character field/);
+    const kept = characterToolReply({ ...response('{"character":{"name":"../bad"}}'), text: 'Here is my idea.' }, tools);
+    assert.match(kept.text, /^Here is my idea\.\n\nA character draft could not be used: .*path separators/, 'one bad draft keeps the reply text');
+    assert.equal(splitReply(kept.text).some(part => part.change), false);
+    assert.match(characterToolReply(response('{"character":{"name":"Nova","extensions":{}}}'), tools).text, /Invalid character field/);
     assert.deepEqual(characterToolReply({ text: 'Ordinary reply.' }, []), { text: 'Ordinary reply.', hasTools: false });
     assert.throws(() => characterToolReply({ ...response(JSON.stringify(args)), text: '```scratchpad-change\n{}\n```\n'.repeat(24) }, tools), /24 changes/);
 });
