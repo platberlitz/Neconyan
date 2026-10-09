@@ -80,7 +80,7 @@ jobs:
 
       - name: Install Chromium
         working-directory: tests
-        run: npx --no-install playwright install --with-deps chromium
+        run: npx --no-install playwright install --with-deps chromium firefox
 
       - name: Initialize server state
         run: |

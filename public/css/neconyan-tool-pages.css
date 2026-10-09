@@ -61,7 +61,8 @@ body.neconyan :is(#left-nav-panel, #user-settings-block, #right-nav-panel) .neco
 }
 
 body.neconyan :is(#left-nav-panel, #user-settings-block, #right-nav-panel) .neconyan-tool-page-intro > .neconyan-page-intro-toggle {
-    display: flex;
+    display: grid;
+    grid-template-columns: 12px minmax(0, 1fr);
     align-items: center;
     gap: 8px;
     min-width: 0;
@@ -79,9 +80,9 @@ body.neconyan :is(#left-nav-panel, #user-settings-block, #right-nav-panel) .neco
 }
 
 .neconyan-page-intro-toggle .neconyan-native-kicker {
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .neconyan-page-intro-toggle > i {
