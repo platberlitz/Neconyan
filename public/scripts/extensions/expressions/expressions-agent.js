@@ -220,7 +220,7 @@ function getExpressionSpritePromptTemplate() {
     return prompt || DEFAULT_EXPRESSION_SPRITE_PROMPT;
 }
 
-function getExpressionSpritePromptContext(characterName, characterAvatar) {
+export function getExpressionSpritePromptContext(characterName, characterAvatar) {
     const context = getContext();
     const characters = Array.isArray(context?.characters) ? context.characters : [];
     const characterIndex = findCharacterIndex(context, characterName, characterAvatar);
@@ -336,7 +336,7 @@ export async function getAgentExpressionLabel(context, allowedExpressions, targe
  * @param {string} [characterAvatar] - Optional avatar filename used to resolve the character card.
  * @returns {Promise<string|null>} A URL/data-URI for the generated image, or null on failure.
  */
-export async function maybeGenerateExpressionSprite(expression, characterName = null, characterAvatar = null) {
+export async function maybeGenerateExpressionSprite(expression, characterName = null, characterAvatar = null, promptContext = getExpressionSpritePromptContext(characterName, characterAvatar)) {
     if (!expression) return null;
 
     const qigBridge = await getQigBridge();
@@ -344,8 +344,6 @@ export async function maybeGenerateExpressionSprite(expression, characterName = 
         console.debug('[Expressions Agent] Quick Image Gen sprite generator is not available');
         return null;
     }
-
-    const promptContext = getExpressionSpritePromptContext(characterName, characterAvatar);
 
     try {
         console.debug(`[Expressions Agent] Requesting sprite for ${expression} from QIG`);
@@ -365,7 +363,7 @@ export async function maybeGenerateExpressionSprite(expression, characterName = 
  * @param {string} [characterAvatar] - Optional avatar filename used to resolve the character card.
  * @returns {Promise<{imageUrl: string, grid: {columns: number, rows: number}}|null>} Generated sheet image and grid metadata.
  */
-export async function maybeGenerateExpressionSpriteSheet(expressions, characterName = null, characterAvatar = null) {
+export async function maybeGenerateExpressionSpriteSheet(expressions, characterName = null, characterAvatar = null, promptContext = getExpressionSpritePromptContext(characterName, characterAvatar)) {
     const labels = Array.isArray(expressions) ? expressions.filter(Boolean) : [];
     if (labels.length === 0) return null;
 
@@ -374,8 +372,6 @@ export async function maybeGenerateExpressionSpriteSheet(expressions, characterN
         console.debug('[Expressions Agent] Quick Image Gen sprite sheet generator is not available');
         return null;
     }
-
-    const promptContext = getExpressionSpritePromptContext(characterName, characterAvatar);
 
     try {
         console.debug(`[Expressions Agent] Requesting sprite sheet for ${labels.length} expressions from QIG`);

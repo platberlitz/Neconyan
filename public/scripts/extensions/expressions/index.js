@@ -19,12 +19,18 @@ import { generateWebLlmChatPrompt, isWebLlmSupported } from '../shared.js';
 import { Popup, POPUP_RESULT } from '../../popup.js';
 import { t } from '../../i18n.js';
 import { removeReasoningFromString } from '../../reasoning.js';
+import { isExpressionLabel, isExpressionSpriteName, parseExpressionLabels, expressionLabelFromFilename, nextExpressionSpriteName } from './expression-labels.js';
+import { cleanSpriteBitmap, splitSpriteBitmap } from './sprite-pixels.js';
+import { getExpressionSpriteSheetGrid } from './sprite-prompts.js';
+import { readExpressionSets, resolveExpressionMember, applyExpressionMemberPrompt } from './expression-sets.js';
+import { bindExpressionSets, renderExpressionSets } from './expression-sets-ui.js';
 import {
     DEFAULT_EXPRESSION_SPRITE_PROMPT,
     LEGACY_DEFAULT_EXPRESSION_SPRITE_PROMPT,
     getAgentExpressionLabel,
     getAgentExpressionState,
     getExpressionsAgentStatus,
+    getExpressionSpritePromptContext,
     maybeGenerateExpressionSprite,
     maybeGenerateExpressionSpriteSheet,
     stopExpressionSpriteGeneration,
@@ -121,20 +127,6 @@ const EXPRESSION_SPRITE_GENERATION_MODE = {
 
 const DEFAULT_EXPRESSION_SPRITE_GENERATION_MODE = EXPRESSION_SPRITE_GENERATION_MODE.individual;
 const DEFAULT_EXPRESSION_SPRITE_REMOVE_BACKGROUND = false;
-const SHEET_BACKGROUND_RGB_THRESHOLD = 238;
-const SHEET_BACKGROUND_CHANNEL_SPREAD = 28;
-const SHEET_BACKGROUND_NEUTRAL_SPREAD = 48;
-const SHEET_BACKGROUND_BUCKET_SIZE = 16;
-const SHEET_BACKGROUND_PALETTE_LIMIT = 5;
-const SHEET_BACKGROUND_COLOR_DISTANCE = 58;
-const SHEET_BACKGROUND_MIN_NEUTRAL_LIGHTNESS = 36;
-const SHEET_TILE_SOURCE_INSET_RATIO = 0.045;
-const SPRITE_FOREGROUND_ALPHA_THRESHOLD = 24;
-/**
- * Minimum fraction of a tile's smaller dimension that foreground content must span
- * before content-aware centering is applied. Prevents centering noise/artifacts.
- */
-const SPRITE_CENTER_MIN_CONTENT_RATIO = 0.08;
 
 let expressionsList = null;
 let processedExpressions = new WeakMap();
@@ -517,10 +509,8 @@ async function moduleWorker({ newChat = false } = {}) {
     }
     let spriteFolderName = getSpriteFolderName(currentLastMessage, currentLastMessage.name);
 
-    // character has no expressions or it is not loaded
-    if (Object.keys(spriteCache).length === 0) {
-        await validateImages(spriteFolderName);
-    }
+    // A shared card can change speaker without changing the chat or card avatar.
+    await validateImages(spriteFolderName, true);
 
     const offlineMode = $('.expression_settings .offline_mode');
     if (extension_settings.expressions.api === EXPRESSION_API.none) {
@@ -606,11 +596,7 @@ async function moduleWorker({ newChat = false } = {}) {
         // This runs after the expression is displayed so it never blocks the UI update.
         if (needsSprite && !inSpriteGeneration) {
             setExpressionGenerationBusy(true);
-            const generationTarget = {
-                characterName: currentLastMessage.name,
-                characterAvatar: target.avatar,
-                uploadName: target.avatar || currentLastMessage.name,
-            };
+            const generationTarget = getExpressionGenerationTarget(spriteFolderName, currentLastMessage);
             generateAndUploadExpressionSprite(expression, spriteFolderName, { showToast: false, generationTarget }).then(async generated => {
                 throwIfExpressionGenerationStopped();
                 if (generated && isExpressionTargetCurrent(target)) {
@@ -633,10 +619,38 @@ async function moduleWorker({ newChat = false } = {}) {
     }
 }
 
+function getExpressionCharacter(message = getLastCharacterMessage()) {
+    const context = getContext();
+    const avatar = getFolderNameByMessage(message);
+    return context.characters.find(character => character.avatar?.replace(/\.[^/.]+$/, '') === avatar)
+        ?? (!context.groupId ? context.characters[context.characterId] : null);
+}
+
+function getExpressionFolderCharacter(folder, message = getLastCharacterMessage()) {
+    const context = getContext();
+    const current = getExpressionCharacter(message);
+    const matches = character => {
+        if (!character) return false;
+        const stem = character.avatar?.replace(/\.[^/.]+$/, '');
+        const override = extension_settings.expressionOverrides.find(item => item.name === stem)?.path;
+        return readExpressionSets(character).members.some(member => member.folder === folder)
+            || (override || character.name || stem) === folder;
+    };
+    // Imported copies can share a set folder. Prefer the actual message author.
+    return (matches(current) ? current : context.characters.find(matches)) ?? current;
+}
+
+function getManagedExpressionCharacter() {
+    const avatar = $('#image_list').data('avatar');
+    return getContext().characters.find(character => character.avatar === avatar) ?? getExpressionCharacter();
+}
+
 function getSpriteFolderName(characterMessage = null, characterName = null) {
     const context = getContext();
     let spriteFolderName = characterName ?? context.name2;
     const message = characterMessage ?? getLastCharacterMessage();
+    const member = resolveExpressionMember(getExpressionCharacter(message), message);
+    if (member) return member.folder;
     const avatarFileName = getFolderNameByMessage(message);
     const expressionOverride = extension_settings.expressionOverrides.find(e => e.name == avatarFileName);
 
@@ -691,7 +705,7 @@ export async function sendExpressionCall(spriteFolderName, expression, { force =
     if (!isCurrent()) return false;
     const src = await setExpression(spriteFolderName, expression, { force, overrideSpriteFile, vnMode, target, isCurrent });
     if (src === undefined || !isCurrent()) return false;
-    lastExpression[spriteFolderName.split('/')[0]] = expression;
+    lastExpression[spriteFolderName] = expression;
     if (target) {
         await recordMessageExpression(target, src);
         if (isCurrent()) rememberExpressionMessage(target.message);
@@ -854,24 +868,22 @@ function setFallBackExpressionSlashCommand(args, expressionName) {
  * @throws {Error} If character not found or avatar not set
  */
 function spriteFolderNameFromCharacter(char) {
+    const member = resolveExpressionMember(char);
+    if (member) return member.folder;
     const avatarFileName = char.avatar.replace(/\.[^/.]+$/, '');
     const expressionOverride = extension_settings.expressionOverrides.find(e => e.name === avatarFileName);
-    return expressionOverride?.path ? expressionOverride.path : avatarFileName;
+    return expressionOverride?.path || char.name || avatarFileName;
 }
 
 /**
- * Generates a unique sprite name by appending an index to the given expression. *
+ * Chooses a name without overwriting another expression or taking its empty slot.
  * @param {string} expression - The base expression to be used as the prefix for the sprite name.
- * @param {ExpressionImage[]} existingFiles - An array of existing file objects, each containing a fileName property.
+ * @param {string} spriteFolderName - The folder whose complete file list must be reserved.
  * @returns {string} - A unique sprite name with the format "expression-index".
  */
-function generateUniqueSpriteName(expression, existingFiles) {
-    let index = existingFiles.length;
-    let newSpriteName;
-    do {
-        newSpriteName = `${expression}-${index++}`;
-    } while (existingFiles.some(file => withoutExtension(file.fileName) === newSpriteName));
-    return newSpriteName;
+function generateUniqueSpriteName(expression, spriteFolderName) {
+    const filenames = (spriteCache[spriteFolderName] || []).flatMap(sprite => sprite.files.map(file => file.fileName));
+    return nextExpressionSpriteName(expression, filenames, extension_settings.expressions.custom || []);
 }
 
 /**
@@ -899,9 +911,9 @@ async function uploadSpriteCommand({ name, label, folder = null, spriteName = nu
         return '';
     }
 
-    label = label.replace(/[^a-z]/gi, '').toLowerCase().trim();
-    if (!label) {
-        toastr.error(t`Expression label must contain at least one letter`, t`Error Uploading Sprite`);
+    label = label.toLowerCase().trim();
+    if (!isExpressionLabel(label)) {
+        toastr.error(t`Use 1 to 80 letters, numbers, dashes or underscores, starting with a letter.`, t`Error Uploading Sprite`);
         return '';
     }
 
@@ -988,20 +1000,16 @@ function getExpressionSpriteGenerationMode() {
         : DEFAULT_EXPRESSION_SPRITE_GENERATION_MODE;
 }
 
-function getExpressionGenerationTarget(spriteFolderName) {
-    const currentLastMessage = getLastCharacterMessage();
+function getExpressionGenerationTarget(spriteFolderName, currentLastMessage = getLastCharacterMessage()) {
     const context = getContext();
     const folderCharacterName = String(spriteFolderName || '').split('/')[0];
-    const character = context.characters?.find(x => x.avatar === currentLastMessage.original_avatar)
-        || context.characters?.find(x => x.name === currentLastMessage.name)
-        || context.characters?.find(x => x.name === folderCharacterName || x.avatar?.replace(/\.[^/.]+$/, '') === folderCharacterName)
-        || context.characters?.[context.characterId];
+    const character = getExpressionFolderCharacter(spriteFolderName, currentLastMessage);
 
-    return {
-        characterName: currentLastMessage.name || character?.name || context.name2 || folderCharacterName || 'character',
-        characterAvatar: currentLastMessage.original_avatar || character?.avatar || null,
-        uploadName: currentLastMessage.original_avatar || currentLastMessage.name || character?.avatar || folderCharacterName || context.name2,
-    };
+    const characterName = character?.name || currentLastMessage.name || context.name2 || folderCharacterName || 'character';
+    const characterAvatar = character?.avatar || currentLastMessage.original_avatar || null;
+    const member = readExpressionSets(character).members.find(item => item.folder === spriteFolderName);
+    return { characterName, characterAvatar, uploadName: characterAvatar || characterName,
+        promptContext: applyExpressionMemberPrompt(getExpressionSpritePromptContext(characterName, characterAvatar), member) };
 }
 
 async function generateAndUploadExpressionSprite(expression, spriteFolderName, { showToast = true, spriteName = null, replaceExisting = false, generationTarget = null } = {}) {
@@ -1016,12 +1024,10 @@ async function generateAndUploadExpressionSprite(expression, spriteFolderName, {
         return false;
     }
 
-    const targetSpriteName = spriteName || (existingFiles.length > 0
-        ? generateUniqueSpriteName(expression, existingFiles)
-        : expression);
-    const { characterName, characterAvatar, uploadName } = generationTarget ?? getExpressionGenerationTarget(spriteFolderName);
+    const targetSpriteName = spriteName || generateUniqueSpriteName(expression, spriteFolderName);
+    const { characterName, characterAvatar, uploadName, promptContext } = generationTarget ?? getExpressionGenerationTarget(spriteFolderName);
     throwIfExpressionGenerationStopped();
-    const imageUrl = await maybeGenerateExpressionSprite(expression, characterName, characterAvatar);
+    const imageUrl = await maybeGenerateExpressionSprite(expression, characterName, characterAvatar, promptContext);
     throwIfExpressionGenerationStopped();
 
     if (!imageUrl) {
@@ -1071,13 +1077,6 @@ async function generateAndUploadExpressionSprite(expression, spriteFolderName, {
     }
 }
 
-function getExpressionSpriteSheetGrid(tileCount) {
-    const count = Math.max(1, Number(tileCount) || 1);
-    const columns = Math.ceil(Math.sqrt(count));
-    const rows = Math.ceil(count / columns);
-    return { columns, rows };
-}
-
 function loadImageElement(src) {
     return new Promise((resolve, reject) => {
         const image = new Image();
@@ -1099,271 +1098,14 @@ function canvasToPngObjectUrl(canvas) {
     });
 }
 
-function getPixelChannels(data, pixelIndex) {
-    return {
-        red: data[pixelIndex],
-        green: data[pixelIndex + 1],
-        blue: data[pixelIndex + 2],
-        alpha: data[pixelIndex + 3],
-    };
-}
-
-function getChannelSpread(red, green, blue) {
-    return Math.max(red, green, blue) - Math.min(red, green, blue);
-}
-
-function isNeutralSheetPixel(red, green, blue) {
-    return getChannelSpread(red, green, blue) <= SHEET_BACKGROUND_NEUTRAL_SPREAD;
-}
-
-function getAverageLightness(red, green, blue) {
-    return (red + green + blue) / 3;
-}
-
-function getSheetBackgroundPalette(data, width, height) {
-    const buckets = new Map();
-    const addPixel = (x, y) => {
-        const pixelIndex = ((y * width) + x) * 4;
-        const { red, green, blue, alpha } = getPixelChannels(data, pixelIndex);
-        if (alpha < 24 || !isNeutralSheetPixel(red, green, blue)) return;
-        if (getAverageLightness(red, green, blue) < SHEET_BACKGROUND_MIN_NEUTRAL_LIGHTNESS) return;
-
-        const key = [
-            Math.floor(red / SHEET_BACKGROUND_BUCKET_SIZE),
-            Math.floor(green / SHEET_BACKGROUND_BUCKET_SIZE),
-            Math.floor(blue / SHEET_BACKGROUND_BUCKET_SIZE),
-        ].join(',');
-        const bucket = buckets.get(key) || { count: 0, red: 0, green: 0, blue: 0 };
-        bucket.count += 1;
-        bucket.red += red;
-        bucket.green += green;
-        bucket.blue += blue;
-        buckets.set(key, bucket);
-    };
-
-    for (let x = 0; x < width; x++) {
-        addPixel(x, 0);
-        addPixel(x, height - 1);
-    }
-
-    for (let y = 1; y < height - 1; y++) {
-        addPixel(0, y);
-        addPixel(width - 1, y);
-    }
-
-    const sortedBuckets = Array.from(buckets.values()).sort((a, b) => b.count - a.count);
-    const maxCount = sortedBuckets[0]?.count || 0;
-    const minCount = Math.max(4, Math.floor(maxCount * 0.08));
-    return sortedBuckets
-        .filter(bucket => bucket.count >= minCount)
-        .slice(0, SHEET_BACKGROUND_PALETTE_LIMIT)
-        .map(bucket => ({
-            red: bucket.red / bucket.count,
-            green: bucket.green / bucket.count,
-            blue: bucket.blue / bucket.count,
-        }));
-}
-
-function isCloseToSheetBackgroundPalette(red, green, blue, backgroundPalette) {
-    const maxDistanceSquared = SHEET_BACKGROUND_COLOR_DISTANCE ** 2;
-    return backgroundPalette.some(color => {
-        const redDistance = red - color.red;
-        const greenDistance = green - color.green;
-        const blueDistance = blue - color.blue;
-        return ((redDistance ** 2) + (greenDistance ** 2) + (blueDistance ** 2)) <= maxDistanceSquared;
-    });
-}
-
-function isSheetBackgroundPixel(data, pixelIndex, backgroundPalette = []) {
-    const { red, green, blue, alpha } = getPixelChannels(data, pixelIndex);
-    if (alpha === 0) return true;
-    if (alpha < SPRITE_FOREGROUND_ALPHA_THRESHOLD) return true;
-
-    const isFlatLightBackground = red >= SHEET_BACKGROUND_RGB_THRESHOLD
-        && green >= SHEET_BACKGROUND_RGB_THRESHOLD
-        && blue >= SHEET_BACKGROUND_RGB_THRESHOLD
-        && getChannelSpread(red, green, blue) <= SHEET_BACKGROUND_CHANNEL_SPREAD;
-
-    return isFlatLightBackground
-        || (isNeutralSheetPixel(red, green, blue)
-            && getAverageLightness(red, green, blue) >= SHEET_BACKGROUND_MIN_NEUTRAL_LIGHTNESS
-            && isCloseToSheetBackgroundPalette(red, green, blue, backgroundPalette));
-}
-
-function makeCanvasBackgroundTransparent(canvas) {
-    const context = canvas.getContext('2d');
-    if (!context) return;
-
-    const { width, height } = canvas;
-    if (!width || !height) return;
-
-    const imageData = context.getImageData(0, 0, width, height);
-    const { data } = imageData;
-    const backgroundPalette = getSheetBackgroundPalette(data, width, height);
-
-    // Determine whether to also do a global flat-white pass.
-    // When the character fills the entire tile boundary (e.g. after scale-to-fill), no edge
-    // pixel qualifies as background and the edge-seeded flood-fill removes nothing.  Detect
-    // this situation by checking the four corners; if at least two corners have flat-white (or
-    // very light neutral) pixels we know the background is present in the image and fall back to
-    // a global removal of pixels that match the flat-light threshold.  We only do this when the
-    // edge palette came back empty, to avoid clobbering interior whites when a proper edge-based
-    // palette was found.
-    const CORNER_INSET = Math.max(2, Math.round(Math.min(width, height) * 0.03));
-    const sampleCorners = [
-        [CORNER_INSET, CORNER_INSET],
-        [width - 1 - CORNER_INSET, CORNER_INSET],
-        [CORNER_INSET, height - 1 - CORNER_INSET],
-        [width - 1 - CORNER_INSET, height - 1 - CORNER_INSET],
-    ];
-    const cornerIsBackground = sampleCorners.map(([cx, cy]) => {
-        const i = ((cy * width) + cx) * 4;
-        return data[i + 3] >= SPRITE_FOREGROUND_ALPHA_THRESHOLD && isSheetBackgroundPixel(data, i, backgroundPalette);
-    });
-    const backgroundCornerCount = cornerIsBackground.filter(Boolean).length;
-    const useGlobalFlatWhitePass = backgroundPalette.length === 0 && backgroundCornerCount >= 2;
-
-    const visited = new Uint8Array(width * height);
-    const stack = [];
-    const enqueue = (x, y) => {
-        if (x < 0 || y < 0 || x >= width || y >= height) return;
-        const pixel = (y * width) + x;
-        if (visited[pixel]) return;
-        visited[pixel] = 1;
-        if (isSheetBackgroundPixel(data, pixel * 4, backgroundPalette)) stack.push(pixel);
-    };
-
-    for (let x = 0; x < width; x++) {
-        enqueue(x, 0);
-        enqueue(x, height - 1);
-    }
-
-    for (let y = 1; y < height - 1; y++) {
-        enqueue(0, y);
-        enqueue(width - 1, y);
-    }
-
-    while (stack.length > 0) {
-        throwIfExpressionGenerationStopped();
-        const pixel = stack.pop();
-        const x = pixel % width;
-        const y = Math.floor(pixel / width);
-        data[(pixel * 4) + 3] = 0;
-
-        enqueue(x + 1, y);
-        enqueue(x - 1, y);
-        enqueue(x, y + 1);
-        enqueue(x, y - 1);
-    }
-
-    // Global flat-white pass: when the edge-seeded flood-fill found no background (character
-    // fills the full tile boundary) but at least two corners are flat-white/light, do a full
-    // image sweep removing all flat-light background pixels.  This handles interior background
-    // regions not connected to any edge.  We use a stricter threshold than the edge-seeded pass
-    // (RGB >= 250, spread <= 10) to avoid clobbering highlights, pale skin, or teeth — we only
-    // want to remove pixels that are essentially pure white.
-    if (useGlobalFlatWhitePass) {
-        for (let pixel = 0; pixel < width * height; pixel++) {
-            throwIfExpressionGenerationStopped();
-            const i = pixel * 4;
-            if (data[i + 3] === 0) continue;
-            const { red, green, blue } = getPixelChannels(data, i);
-            if (red >= 250 && green >= 250 && blue >= 250 && getChannelSpread(red, green, blue) <= 10) {
-                data[i + 3] = 0;
-            }
-        }
-    }
-
-    context.putImageData(imageData, 0, 0);
-}
-
-/**
- * Returns the axis-aligned bounding box of all pixels with alpha > threshold.
- * Returns null when the canvas is fully transparent or too small to be useful.
- * @param {HTMLCanvasElement} canvas
- * @returns {{minX: number, minY: number, maxX: number, maxY: number}|null}
- */
-function getSpriteForegroundBounds(canvas) {
-    const context = canvas.getContext('2d');
-    if (!context) return null;
-
-    const { width, height } = canvas;
-    if (!width || !height) return null;
-
-    const { data } = context.getImageData(0, 0, width, height);
-    let minX = width, minY = height, maxX = -1, maxY = -1;
-
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            if (data[((y * width) + x) * 4 + 3] > SPRITE_FOREGROUND_ALPHA_THRESHOLD) {
-                if (x < minX) minX = x;
-                if (x > maxX) maxX = x;
-                if (y < minY) minY = y;
-                if (y > maxY) maxY = y;
-            }
-        }
-    }
-
-    if (maxX < minX || maxY < minY) return null;
-
-    const contentWidth = maxX - minX + 1;
-    const contentHeight = maxY - minY + 1;
-    const minDimension = Math.min(width, height);
-    if (contentWidth < minDimension * SPRITE_CENTER_MIN_CONTENT_RATIO
-        && contentHeight < minDimension * SPRITE_CENTER_MIN_CONTENT_RATIO) return null;
-
-    return { minX, minY, maxX, maxY };
-}
-
-/**
- * Redraws the foreground content of a canvas centered with equal padding on all sides.
- * The canvas dimensions are preserved. Only acts when centering would move the content
- * by more than 1px in either axis — avoids unnecessary redraws.
- * @param {HTMLCanvasElement} canvas
- */
-function centerSpriteContent(canvas) {
-    const bounds = getSpriteForegroundBounds(canvas);
-    if (!bounds) return;
-
-    const { width, height } = canvas;
-    const contentWidth = bounds.maxX - bounds.minX + 1;
-    const contentHeight = bounds.maxY - bounds.minY + 1;
-
-    // Where the content center currently is vs where it should be
-    const currentCenterX = bounds.minX + contentWidth / 2;
-    const currentCenterY = bounds.minY + contentHeight / 2;
-    const targetCenterX = width / 2;
-    const targetCenterY = height / 2;
-
-    const shiftX = targetCenterX - currentCenterX;
-    const shiftY = targetCenterY - currentCenterY;
-
-    // Skip if the shift is negligible
-    if (Math.abs(shiftX) <= 1 && Math.abs(shiftY) <= 1) return;
-
-    const context = canvas.getContext('2d');
-    if (!context) return;
-
-    // Snapshot the current pixels, clear, redraw shifted
-    const snapshot = context.getImageData(0, 0, width, height);
-    context.clearRect(0, 0, width, height);
-    context.putImageData(snapshot, Math.round(shiftX), Math.round(shiftY));
-}
-
-/**
- * Post-processes a sprite tile canvas after cropping:
- * - Optionally removes solid/near-solid backgrounds (edge-connected flood-fill, opt-in only).
- * - Always re-centers the visible content so off-center tiles from sheet splits align.
- *
- * Background removal is opt-in because full-bleed art (e.g. GPT Image 2) has no plain
- * background to strip and the flood-fill would destroy character pixels.
- * @param {HTMLCanvasElement} canvas
- */
 function postProcessSpriteCanvas(canvas) {
-    if (extension_settings.expressions.agentSpriteRemoveBackground) {
-        makeCanvasBackgroundTransparent(canvas);
-    }
-    centerSpriteContent(canvas);
+    const context = canvas.getContext('2d');
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+    cleanSpriteBitmap(pixels, {
+        removeBackground: extension_settings.expressions.agentSpriteRemoveBackground,
+        check: throwIfExpressionGenerationStopped,
+    });
+    context.putImageData(pixels, 0, 0);
 }
 
 async function postProcessSpriteImage(imageUrl) {
@@ -1407,46 +1149,24 @@ async function splitSpriteSheetImage(imageUrl, grid, tileCount) {
         const sourceHeight = image.naturalHeight || image.height;
         if (!sourceWidth || !sourceHeight) throw new Error('Generated sprite sheet has invalid dimensions.');
 
-        const sourceTileWidth = sourceWidth / grid.columns;
-        const sourceTileHeight = sourceHeight / grid.rows;
-        // Use a fixed, uniform output size for every tile so all sprites share the same canvas.
-        const outputTileWidth = Math.max(1, Math.round(sourceTileWidth));
-        const outputTileHeight = Math.max(1, Math.round(sourceTileHeight));
-
-        for (let index = 0; index < tileCount; index++) {
+        const source = document.createElement('canvas');
+        source.width = sourceWidth;
+        source.height = sourceHeight;
+        const sourceContext = source.getContext('2d');
+        if (!sourceContext) throw new Error('Canvas is not available for sprite sheet splitting.');
+        sourceContext.drawImage(image, 0, 0);
+        const tiles = splitSpriteBitmap(sourceContext.getImageData(0, 0, sourceWidth, sourceHeight), grid, tileCount, {
+            removeBackground: extension_settings.expressions.agentSpriteRemoveBackground,
+            check: throwIfExpressionGenerationStopped,
+        });
+        for (const tile of tiles) {
             throwIfExpressionGenerationStopped();
-            const column = index % grid.columns;
-            const row = Math.floor(index / grid.columns);
-            // Compute integer pixel boundaries per tile from cumulative edges so columns/rows
-            // tile the full image exactly with no accumulated rounding drift.
-            const srcLeft = Math.round(column * sourceTileWidth);
-            const srcRight = Math.round((column + 1) * sourceTileWidth);
-            const srcTop = Math.round(row * sourceTileHeight);
-            const srcBottom = Math.round((row + 1) * sourceTileHeight);
-            const srcTileWidth = Math.max(1, srcRight - srcLeft);
-            const srcTileHeight = Math.max(1, srcBottom - srcTop);
-            // Trim the source edges to cut away any bleed from adjacent cells (gridlines,
-            // neighbour sprites, background fragments), then scale the trimmed region to
-            // fill the entire output canvas so the character is not boxed in by blank borders.
-            const sourceInsetX = Math.min(srcTileWidth / 4, Math.max(1, srcTileWidth * SHEET_TILE_SOURCE_INSET_RATIO));
-            const sourceInsetY = Math.min(srcTileHeight / 4, Math.max(1, srcTileHeight * SHEET_TILE_SOURCE_INSET_RATIO));
             const canvas = document.createElement('canvas');
-            canvas.width = outputTileWidth;
-            canvas.height = outputTileHeight;
+            canvas.width = tile.width;
+            canvas.height = tile.height;
             const context = canvas.getContext('2d');
             if (!context) throw new Error('Canvas is not available for sprite sheet splitting.');
-            context.drawImage(
-                image,
-                srcLeft + sourceInsetX,
-                srcTop + sourceInsetY,
-                srcTileWidth - (sourceInsetX * 2),
-                srcTileHeight - (sourceInsetY * 2),
-                0,
-                0,
-                outputTileWidth,
-                outputTileHeight,
-            );
-            postProcessSpriteCanvas(canvas);
+            context.putImageData(new ImageData(tile.data, tile.width, tile.height), 0, 0);
             tileUrls.push(await canvasToPngObjectUrl(canvas));
         }
 
@@ -1459,7 +1179,10 @@ async function splitSpriteSheetImage(imageUrl, grid, tileCount) {
     }
 }
 
-async function splitAndUploadExpressionSpriteSheet(imageUrl, grid, expressions, spriteFolderName, { splitErrorMessage = t`Sprite sheet could not be split into expression sprites.` } = {}) {
+async function splitAndUploadExpressionSpriteSheet(imageUrl, grid, expressions, spriteFolderName, {
+    splitErrorMessage = t`Sprite sheet could not be split into expression sprites.`,
+    generationTarget = getExpressionGenerationTarget(spriteFolderName),
+} = {}) {
     const labels = Array.isArray(expressions) ? expressions.filter(Boolean) : [];
     if (labels.length === 0) return { generatedCount: 0, failedCount: 0 };
 
@@ -1467,7 +1190,7 @@ async function splitAndUploadExpressionSpriteSheet(imageUrl, grid, expressions, 
         return { generatedCount: 0, failedCount: labels.length };
     }
 
-    const { uploadName } = getExpressionGenerationTarget(spriteFolderName);
+    const { uploadName } = generationTarget;
     /** @type {string[]} */
     let tileUrls = [];
     try {
@@ -1511,13 +1234,13 @@ async function splitAndUploadExpressionSpriteSheet(imageUrl, grid, expressions, 
     return { generatedCount, failedCount };
 }
 
-async function generateAndUploadExpressionSpriteSheet(expressions, spriteFolderName) {
+async function generateAndUploadExpressionSpriteSheet(expressions, spriteFolderName, generationTarget = getExpressionGenerationTarget(spriteFolderName)) {
     const labels = Array.isArray(expressions) ? expressions.filter(Boolean) : [];
     if (labels.length === 0) return { generatedCount: 0, failedCount: 0 };
 
-    const { characterName, characterAvatar } = getExpressionGenerationTarget(spriteFolderName);
+    const { characterName, characterAvatar, promptContext } = generationTarget;
     throwIfExpressionGenerationStopped();
-    const sheet = await maybeGenerateExpressionSpriteSheet(labels, characterName, characterAvatar);
+    const sheet = await maybeGenerateExpressionSpriteSheet(labels, characterName, characterAvatar, promptContext);
     throwIfExpressionGenerationStopped();
     if (!sheet?.imageUrl) {
         return { generatedCount: 0, failedCount: labels.length };
@@ -1525,6 +1248,7 @@ async function generateAndUploadExpressionSpriteSheet(expressions, spriteFolderN
 
     return splitAndUploadExpressionSpriteSheet(sheet.imageUrl, sheet.grid, labels, spriteFolderName, {
         splitErrorMessage: t`Generated sheet could not be split into expression sprites.`,
+        generationTarget,
     });
 }
 
@@ -1621,6 +1345,7 @@ async function onClickExpressionRegenerate(event) {
     const fileName = String(expressionListItem.attr('data-filename') || '');
     const spriteFolderName = $('#image_list').data('name');
     const spriteName = withoutExtension(fileName);
+    const generationTarget = getExpressionGenerationTarget(spriteFolderName);
 
     if (!spriteName) {
         toastr.warning(t`Choose an existing sprite before regenerating.`, t`Sprite Generation`);
@@ -1637,6 +1362,7 @@ async function onClickExpressionRegenerate(event) {
     await withExpressionGenerationLock(async () => generateAndUploadExpressionSprite(expression, spriteFolderName, {
         spriteName,
         replaceExisting: true,
+        generationTarget,
     }));
 }
 
@@ -1654,6 +1380,7 @@ async function onClickRemoveAllSprites(event) {
     }
 
     const name = $('#image_list').data('name');
+    const generation = getChatGeneration();
     if (!name) {
         toastr.warning(t`Open a chat before removing expression sprites.`, t`Sprite Generation`);
         return;
@@ -1673,40 +1400,44 @@ async function onClickRemoveAllSprites(event) {
 
     if (!confirmed) return;
 
-    const deleteToast = toastr.info(t`Removing expression sprites...`, t`Sprite Generation`, { timeOut: 0, extendedTimeOut: 0 });
-    let deletedCount = 0;
-    let failedCount = 0;
+    await withExpressionGenerationLock(async () => {
+        const deleteToast = toastr.info(t`Removing expression sprites...`, t`Sprite Generation`, { timeOut: 0, extendedTimeOut: 0 });
+        let deletedCount = 0;
+        let failedCount = 0;
 
-    try {
-        for (const file of spriteFiles) {
-            try {
-                await deleteExpressionSpriteFile(name, file.label, file.spriteName);
-                deletedCount++;
-            } catch (error) {
-                failedCount++;
-                console.error(`[${MODULE_NAME}] Failed to delete sprite ${file.fileName}:`, error);
+        try {
+            for (const file of spriteFiles) {
+                throwIfExpressionGenerationStopped();
+                try {
+                    await deleteExpressionSpriteFile(name, file.label, file.spriteName);
+                    deletedCount++;
+                } catch (error) {
+                    failedCount++;
+                    console.error(`[${MODULE_NAME}] Failed to delete sprite ${file.fileName}:`, error);
+                }
             }
+        } finally {
+            toastr.clear(deleteToast);
+            delete spriteCache[name];
+            if (generation === getChatGeneration() && $('#image_list').data('name') === name) await validateImages(name, true);
         }
-    } finally {
-        toastr.clear(deleteToast);
-        delete spriteCache[name];
-        await fetchImagesNoCache();
-        await validateImages(name);
-    }
 
-    if (deletedCount > 0) {
-        toastr.success(t`Removed ${deletedCount} expression sprite(s).`, t`Sprite Generation`);
-    }
+        if (deletedCount > 0) {
+            toastr.success(t`Removed ${deletedCount} expression sprite(s).`, t`Sprite Generation`);
+        }
 
-    if (failedCount > 0) {
-        toastr.warning(t`${failedCount} expression sprite(s) could not be removed. Check the console.`, t`Sprite Generation`);
-    }
+        if (failedCount > 0) {
+            toastr.warning(t`${failedCount} expression sprite(s) could not be removed. Check the console.`, t`Sprite Generation`);
+        }
+    });
 }
 
 async function onClickRedoSpriteCleanup(event) {
     event.stopPropagation();
 
     const name = $('#image_list').data('name');
+    const generation = getChatGeneration();
+    const { uploadName } = getExpressionGenerationTarget(name);
     if (!name) {
         toastr.warning(t`Open a chat before cleaning expression sprites.`, t`Sprite Generation`);
         return;
@@ -1728,7 +1459,6 @@ async function onClickRedoSpriteCleanup(event) {
 
     await withExpressionGenerationLock(async () => {
         const cleanupToast = toastr.info(t`Cleaning expression sprites...`, t`Sprite Generation`, { timeOut: 0, extendedTimeOut: 0 });
-        const { uploadName } = getExpressionGenerationTarget(name);
         let cleanedCount = 0;
         let failedCount = 0;
 
@@ -1748,8 +1478,7 @@ async function onClickRedoSpriteCleanup(event) {
         } finally {
             toastr.clear(cleanupToast);
             delete spriteCache[name];
-            await fetchImagesNoCache();
-            await validateImages(name);
+            if (generation === getChatGeneration() && $('#image_list').data('name') === name) await validateImages(name, true);
         }
 
         if (cleanedCount > 0) {
@@ -1766,6 +1495,7 @@ async function onClickUploadSpriteSheet(event) {
     event.stopPropagation();
 
     const spriteFolderName = $('#image_list').data('name');
+    const generationTarget = getExpressionGenerationTarget(spriteFolderName);
     if (!spriteFolderName) {
         toastr.warning(t`Open a chat before uploading a character sheet.`, t`Sprite Generation`);
         return;
@@ -1777,6 +1507,10 @@ async function onClickUploadSpriteSheet(event) {
         return;
     }
 
+    if (missingLabels.length > 64) {
+        toastr.warning(t`A character sheet supports up to 64 expressions. Upload individual images or generate the missing images in batches.`, t`Sprite Generation`);
+        return;
+    }
     const grid = getExpressionSpriteSheetGrid(missingLabels.length);
     const confirmed = await Popup.show.confirm(
         t`Upload Character Sheet`,
@@ -1801,6 +1535,7 @@ async function onClickUploadSpriteSheet(event) {
                 try {
                     const result = await splitAndUploadExpressionSpriteSheet(sourceUrl, grid, missingLabels, spriteFolderName, {
                         splitErrorMessage: t`Uploaded sheet could not be split into expression sprites.`,
+                        generationTarget,
                     });
                     generatedCount = result.generatedCount;
                     failedCount = result.failedCount;
@@ -1832,6 +1567,7 @@ async function onClickGenerateMissingSprites(event) {
     event.stopPropagation();
 
     const spriteFolderName = $('#image_list').data('name');
+    const generationTarget = getExpressionGenerationTarget(spriteFolderName);
     if (!spriteFolderName) {
         toastr.warning(t`Open a chat before generating expression sprites.`, t`Sprite Generation`);
         return;
@@ -1859,12 +1595,14 @@ async function onClickGenerateMissingSprites(event) {
 
         try {
             if (getExpressionSpriteGenerationMode() === EXPRESSION_SPRITE_GENERATION_MODE.sheet && missingLabels.length > 1) {
-                const result = await generateAndUploadExpressionSpriteSheet(missingLabels, spriteFolderName);
-                generatedCount = result.generatedCount;
-                failedCount = result.failedCount;
+                for (let start = 0; start < missingLabels.length; start += 64) {
+                    const result = await generateAndUploadExpressionSpriteSheet(missingLabels.slice(start, start + 64), spriteFolderName, generationTarget);
+                    generatedCount += result.generatedCount;
+                    failedCount += result.failedCount;
+                }
             } else {
                 for (const expression of missingLabels) {
-                    const generated = await generateAndUploadExpressionSprite(expression, spriteFolderName, { showToast: false });
+                    const generated = await generateAndUploadExpressionSprite(expression, spriteFolderName, { showToast: false, generationTarget });
                     if (generated) generatedCount++;
                     else failedCount++;
                 }
@@ -1995,10 +1733,9 @@ function getJsonSchema(emotions) {
     };
 }
 
-function onTextGenSettingsReady(args) {
+function onTextGenSettingsReady(args, emotions = getCachedExpressions()) {
     // Only call if inside an API call
     if (inApiCall && extension_settings.expressions.api === EXPRESSION_API.llm && isJsonSchemaSupported()) {
-        const emotions = DEFAULT_EXPRESSIONS;
         Object.assign(args, {
             top_k: 1,
             stop: [],
@@ -2062,7 +1799,11 @@ export async function getExpressionLabel(text, expressionsApi = extension_settin
 
                 const expressionsList = await getExpressionsList({ filterAvailable: filterAvailable });
                 const prompt = substituteParamsExtended(customPrompt, { labels: expressionsList }) || await getLlmPrompt(expressionsList);
-                eventSource.once(event_types.TEXT_COMPLETION_SETTINGS_READY, onTextGenSettingsReady);
+                const applySchema = args => {
+                    eventSource.removeListener(event_types.TEXT_COMPLETION_SETTINGS_READY, applySchema);
+                    onTextGenSettingsReady(args, expressionsList);
+                };
+                eventSource.on(event_types.TEXT_COMPLETION_SETTINGS_READY, applySchema);
 
                 let emotionResponse;
                 try {
@@ -2076,6 +1817,7 @@ export async function getExpressionLabel(text, expressionsApi = extension_settin
                             break;
                     }
                 } finally {
+                    eventSource.removeListener(event_types.TEXT_COMPLETION_SETTINGS_READY, applySchema);
                     inApiCall = false;
                 }
                 return parseLlmResponse(emotionResponse, expressionsList);
@@ -2163,7 +1905,8 @@ async function validateImages(spriteFolderName, forceRedrawCached = false) {
     if (!isCurrent()) return;
 
     if (spriteCache[spriteFolderName]) {
-        if (forceRedrawCached && $('#image_list').data('name') !== spriteFolderName) {
+        if (forceRedrawCached && ($('#image_list').data('name') !== spriteFolderName
+            || $('#image_list').data('avatar') !== getExpressionFolderCharacter(spriteFolderName)?.avatar)) {
             console.debug('force redrawing character sprites list');
             await drawSpritesList(spriteFolderName, labels, spriteCache[spriteFolderName], isCurrent);
         }
@@ -2183,16 +1926,18 @@ async function validateImages(spriteFolderName, forceRedrawCached = false) {
  * @returns {ExpressionImage}
  */
 function getExpressionImageData(sprite) {
-    const fileName = sprite.path.split('/').pop().split('?')[0];
+    const fileName = decodeURIComponent(sprite.path.split('/').pop().split('?')[0]);
     const fileNameWithoutExtension = fileName.replace(/\.[^/.]+$/, '');
+    // Newly added labels may not have reached the debounced settings save yet.
+    const expression = expressionLabelFromFilename(fileName, extension_settings.expressions.custom);
     return {
-        expression: sprite.label,
+        expression,
         fileName: fileName,
         title: fileNameWithoutExtension,
         imageSrc: sprite.path,
         type: 'success',
         canRegenerate: true,
-        isCustom: extension_settings.expressions.custom?.includes(sprite.label),
+        isCustom: extension_settings.expressions.custom?.includes(expression),
     };
 }
 
@@ -2212,8 +1957,10 @@ async function drawSpritesList(spriteFolderName, labels, sprites, isCurrent = ()
     }
 
     const items = [];
-    for (const expression of [...labels].sort()) {
-        const isCustom = extension_settings.expressions.custom?.includes(expression);
+    const available = new Set(sprites.map(sprite => sprite.label));
+    const sorted = [...new Set([...labels, ...available])].sort((a, b) => Number(available.has(b)) - Number(available.has(a)) || a.localeCompare(b));
+    for (const expression of sorted) {
+        const isCustom = !DEFAULT_EXPRESSIONS.includes(expression);
         const images = sprites
             .filter(s => s.label === expression)
             .map(s => s.files)
@@ -2240,9 +1987,26 @@ async function drawSpritesList(spriteFolderName, labels, sprites, isCurrent = ()
     if (!isCurrent()) return validExpressions;
     $('#no_chat_expressions').hide();
     $('#open_chat_expressions').show();
-    $('#image_list').empty().data('name', spriteFolderName).append(items);
+    const character = getExpressionFolderCharacter(spriteFolderName);
+    $('#image_list').empty().data('name', spriteFolderName).data('avatar', character?.avatar || '').append(items);
     $('#image_list_header_name').text(spriteFolderName);
+    renderExpressionSets(character, spriteFolderName);
+    filterExpressionImages();
     return validExpressions;
+}
+
+function filterExpressionImages() {
+    const query = String($('#expression_search').val() || '').trim().toLowerCase();
+    const mode = $('#expression_visibility').val();
+    let shown = 0;
+    const items = $('#image_list .expression_list_item');
+    items.each(function () {
+        const missing = this.dataset.expressionType === 'failure';
+        const visible = this.dataset.expression.includes(query) && (mode === 'all' || (mode === 'missing' ? missing : !missing));
+        $(this).toggle(visible);
+        if (visible) shown++;
+    });
+    $('#expression_count').text(t`${shown} of ${items.length} images and expression slots`);
 }
 
 /**
@@ -2276,11 +2040,11 @@ async function getSpritesList(name) {
         /** @type {Expression[]} */
         const grouped = sprites.reduce((acc, sprite) => {
             const imageData = getExpressionImageData(sprite);
-            let existingExpression = acc.find(exp => exp.label === sprite.label);
+            let existingExpression = acc.find(exp => exp.label === imageData.expression);
             if (existingExpression) {
                 existingExpression.files.push(imageData);
             } else {
-                acc.push({ label: sprite.label, files: [imageData] });
+                acc.push({ label: imageData.expression, files: [imageData] });
             }
 
             return acc;
@@ -2368,7 +2132,7 @@ function getCachedExpressions() {
         return [];
     }
 
-    return [...expressionsList, ...extension_settings.expressions.custom].filter(onlyUnique);
+    return [...expressionsList, ...(extension_settings.expressions.custom || [])].filter(onlyUnique);
 }
 
 export async function getExpressionsList({ filterAvailable = false } = {}) {
@@ -2485,7 +2249,7 @@ async function setExpression(spriteFolderName, expression, { force = false, over
         : $('#expression-image');
     const prevExpressionSrc = img.attr('src');
     const spriteFile = chooseSpriteForExpression(spriteFolderName, expression, { prevExpressionSrc: prevExpressionSrc, overrideSpriteFile: overrideSpriteFile });
-    const emoji = extension_settings.expressions.custom?.includes(expression) ? DEFAULT_FALLBACK_EXPRESSION : expression;
+    const emoji = DEFAULT_EXPRESSIONS.includes(expression) ? expression : DEFAULT_FALLBACK_EXPRESSION;
     const fallback = extension_settings.expressions.showDefault && expression !== RESET_SPRITE_LABEL
         ? `/img/default-expressions/${emoji}.png` : null;
     const src = await setImage(img, spriteFile?.imageSrc ?? null, { isCurrent, fallback, force });
@@ -2511,31 +2275,22 @@ function onClickExpressionImage() {
 
 async function onClickExpressionAddCustom() {
     const template = await renderExtensionTemplateAsync(MODULE_NAME, 'add-custom-expression');
-    let expressionName = await Popup.show.input(null, template);
+    const expressionName = await Popup.show.input(t`Add expressions`, template, '', { rows: 4 });
 
     if (!expressionName) {
         console.debug('No custom expression name provided');
         return;
     }
 
-    expressionName = expressionName.trim().toLowerCase();
-
-    // a-z, 0-9, dashes and underscores only
-    if (!/^[a-z0-9-_]+$/.test(expressionName)) {
-        toastr.warning('Invalid custom expression name provided', 'Add Custom Expression');
+    const { added, invalid } = parseExpressionLabels(expressionName, await getExpressionsList());
+    if (invalid.length) {
+        toastr.warning(t`Use 1 to 80 letters, numbers, dashes or underscores, starting with a letter.`, t`Add expressions`);
         return;
     }
-    if (DEFAULT_EXPRESSIONS.includes(expressionName) || DEFAULT_EXPRESSIONS.some(x => expressionName.startsWith(x))) {
-        toastr.warning('Expression name already exists', 'Add Custom Expression');
-        return;
-    }
-    if (extension_settings.expressions.custom.includes(expressionName)) {
-        toastr.warning('Custom expression already exists', 'Add Custom Expression');
-        return;
-    }
+    if (!added.length) return;
 
     // Add custom expression into settings
-    extension_settings.expressions.custom.push(expressionName);
+    extension_settings.expressions.custom.push(...added);
     await renderAdditionalExpressionSettings();
     saveSettingsDebounced();
 
@@ -2700,9 +2455,7 @@ function withoutExtension(fileName) {
 }
 
 function validateExpressionSpriteName(expression, spriteName) {
-    const filenameValidationRegex = new RegExp(`^${expression}(?:[-\\.].*?)?$`);
-    const validFileName = filenameValidationRegex.test(spriteName);
-    return validFileName;
+    return isExpressionSpriteName(expression, spriteName, extension_settings.expressions.custom || []);
 }
 
 async function onClickExpressionUpload(event) {
@@ -2756,7 +2509,7 @@ async function onClickExpressionUpload(event) {
                 }
 
                 spriteName = null;
-                const suggestedSpriteName = generateUniqueSpriteName(expression, existingFiles);
+                const suggestedSpriteName = generateUniqueSpriteName(expression, name);
 
                 const message = await renderExtensionTemplateAsync(MODULE_NAME, 'templates/upload-expression', { expression, clickedFileName });
 
@@ -2932,15 +2685,15 @@ async function onClickExpressionDelete(event) {
         return;
     }
 
-    const confirmation = await Popup.show.confirm(t`Delete Expression`, t`Are you sure you want to delete this expression? Once deleted, it\'s gone forever!`
-        + '<br /><br />'
-        + t`Expression:` + ' <tt>' + expressionListItem.attr('data-filename') + '</tt>');
+    const fileName = withoutExtension(expressionListItem.attr('data-filename'));
+    const name = $('#image_list').data('name');
+    const generation = getChatGeneration();
+    const confirmation = await Popup.show.confirm(t`Delete Expression`, $('<div>')
+        .append($('<p>').text(t`Are you sure you want to delete this expression? Once deleted, it's gone forever!`))
+        .append($('<code>').text(expressionListItem.attr('data-filename'))));
     if (!confirmation) {
         return;
     }
-
-    const fileName = withoutExtension(expressionListItem.attr('data-filename'));
-    const name = $('#image_list').data('name');
 
     try {
         await deleteExpressionSpriteFile(name, expression, fileName);
@@ -2950,8 +2703,7 @@ async function onClickExpressionDelete(event) {
 
     // Refresh sprites list
     delete spriteCache[name];
-    await fetchImagesNoCache();
-    await validateImages(name);
+    if (generation === getChatGeneration() && $('#image_list').data('name') === name) await validateImages(name);
 }
 
 function setExpressionOverrideHtml(forceClear = false) {
@@ -3102,6 +2854,19 @@ export async function init() {
     async function addSettings() {
         const template = await renderExtensionTemplateAsync(MODULE_NAME, 'settings');
         $('#expressions_container').append(template);
+        const settings = $('#expressions_container .expression_settings');
+        settings.find('.expression_section_sprites').prependTo(settings.find('.inline-drawer-content'));
+        $('#expression_add_many').on('click', onClickExpressionAddCustom);
+        $('#expression_search, #expression_visibility').on('input change', filterExpressionImages);
+        bindExpressionSets({ getCharacter: getManagedExpressionCharacter, refresh: async () => {
+            const character = getManagedExpressionCharacter();
+            const last = getLastCharacterMessage();
+            const message = getExpressionCharacter(last)?.avatar === character?.avatar ? last
+                : { name: character?.name, original_avatar: character?.avatar };
+            const folder = getSpriteFolderName(message, character?.name);
+            delete spriteCache[folder];
+            await validateImages(folder, true);
+        } });
         $('#expression_override_button').on('click', onClickExpressionOverrideButton);
         $('#expression_upload_pack_button').on('click', onClickExpressionUploadPackButton);
         $('#expressions_generate_missing_sprites')
@@ -3429,7 +3194,8 @@ export async function init() {
             const char = findChar({ name: name });
             if (!char) toastr.warning(t`Couldn't find character ${name}.`, t`Character not found`);
 
-            const sprite = lastExpression[char?.name ?? name] ?? '';
+            const member = resolveExpressionMember(char, getLastCharacterMessage());
+            const sprite = lastExpression[member?.folder ?? (char ? spriteFolderNameFromCharacter(char) : name)] ?? '';
             return sprite;
         },
         returns: 'the last set expression for the named character.',

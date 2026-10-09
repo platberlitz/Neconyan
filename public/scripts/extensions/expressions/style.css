@@ -319,3 +319,120 @@ img.expression.default {
 #expressions_container:has(#expressions_allow_multiple:not(:checked)) #image_list .expression_list_item[data-expression-type="additional"]:focus {
     opacity: unset;
 }
+
+/* Keep the cast and the artwork together; less frequent tools live below the grid. */
+#expressions_container #expression_member_controls,
+#expressions_container .expression_library_toolbar {
+    display: grid;
+    gap: 8px;
+    margin-block: 8px 12px;
+    min-width: 0;
+}
+
+#expressions_container .expression_member_row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+#expressions_container #expression_member {
+    flex: 1 1 140px;
+    min-width: 0;
+    margin: 0;
+}
+
+#expressions_container .expression_library_toolbar {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+#expressions_container #expression_add_many,
+#expressions_container label[for="expression_search"] {
+    grid-column: 1 / -1;
+}
+
+#expressions_container #expression_search,
+#expressions_container #expression_visibility {
+    min-width: 0;
+    margin: 0;
+}
+
+#expressions_container #expression_count {
+    margin: 4px 0;
+    color: var(--neco-muted, var(--SmartThemeBodyColor));
+    font-size: 0.85em;
+}
+
+#expressions_container #image_list {
+    max-height: 480px;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    padding: 2px;
+    align-content: start;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+
+#expressions_container #image_list .expression_list_image {
+    object-fit: contain;
+}
+
+#expressions_container #image_list .expression_list_item {
+    min-height: 190px;
+}
+
+#expressions_container #image_list .expression_list_title {
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+}
+
+#expressions_container .expression_settings .menu_button {
+    min-height: 44px;
+    min-width: 44px;
+    margin: 0;
+    border: 1px solid color-mix(in srgb, var(--neco-ginger) 45%, var(--neco-border));
+    background: var(--neco-surface, var(--SmartThemeBlurTintColor));
+    color: var(--neco-ink, var(--SmartThemeBodyColor));
+    justify-content: center;
+    align-items: center;
+    white-space: normal;
+}
+
+#expressions_container #expression_add_many,
+#expressions_container #expression_member_save {
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+}
+
+#expressions_container #expression_add_many:hover,
+#expressions_container #expression_member_save:hover {
+    background: var(--neco-ginger-hover);
+}
+
+#expressions_container :is(button, select, input, summary):focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+#expressions_container details > summary {
+    min-height: 44px;
+    padding-block: 12px;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+#expressions_container [hidden] {
+    display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .expression_agent_spinner,
+    #expressions_container #image_list .expression_list_item {
+        animation: none;
+        transition: none;
+    }
+}
+
+body.reduced-motion .expression_agent_spinner,
+body.reduced-motion #expressions_container #image_list .expression_list_item {
+    animation: none;
+    transition: none;
+}

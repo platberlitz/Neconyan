@@ -4,17 +4,20 @@ const spread = (r, g, b) => Math.max(r, g, b) - Math.min(r, g, b);
 
 function validateBitmap({ data, width, height }) {
     if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1
-        || width * height > MAX_PIXELS || !ArrayBuffer.isView(data) || data.byteLength !== width * height * 4) {
+        || width * height > MAX_PIXELS || !(data instanceof Uint8Array || data instanceof Uint8ClampedArray)
+        || data.length !== width * height * 4) {
         throw new Error('The sprite bitmap dimensions are invalid.');
     }
 }
 
 function backgroundPalette({ data, width, height }) {
     const buckets = new Map();
+    let transparent = 0, sampled = 0;
     const sample = (x, y) => {
         const i = (y * width + x) * 4;
         const [red, green, blue, alpha] = data.subarray(i, i + 4);
-        if (alpha < ALPHA_THRESHOLD || spread(red, green, blue) > 48 || (red + green + blue) / 3 < 36) return;
+        sampled++;
+        if (alpha < 250) { transparent++; return; }
         const key = [red, green, blue].map(channel => Math.floor(channel / 16)).join(',');
         const bucket = buckets.get(key) || { count: 0, red: 0, green: 0, blue: 0 };
         bucket.count++;
@@ -26,32 +29,33 @@ function backgroundPalette({ data, width, height }) {
     for (let x = 0; x < width; x++) { sample(x, 0); sample(x, height - 1); }
     for (let y = 1; y < height - 1; y++) { sample(0, y); sample(width - 1, y); }
     const sorted = [...buckets.values()].sort((a, b) => b.count - a.count);
-    const minimum = Math.max(4, Math.floor((sorted[0]?.count || 0) * 0.08));
-    return sorted.filter(bucket => bucket.count >= minimum).slice(0, 5)
-        .map(bucket => [bucket.red / bucket.count, bucket.green / bucket.count, bucket.blue / bucket.count]);
+    // Existing alpha is not evidence of a white background. In particular, walking
+    // from transparent pixels into white fur would remove the character itself.
+    if (transparent > sampled * 0.2) return [];
+    const dominant = sorted.filter(bucket => bucket.count >= sampled * 0.12).slice(0, 2);
+    if (dominant.reduce((sum, bucket) => sum + bucket.count, 0) < sampled * 0.65) return [];
+    const palette = dominant.map(bucket => [bucket.red / bucket.count, bucket.green / bucket.count, bucket.blue / bucket.count]);
+    // Two shades are useful for a printed transparency grid. A colourful boundary
+    // is more likely full-bleed artwork than a removable two-colour background.
+    if (palette.length > 1 && palette.some(([r, g, b]) => spread(r, g, b) > 32)) return [];
+    const corners = [0, width - 1, (height - 1) * width, width * height - 1];
+    if (corners.filter(pixel => isBackground(data, pixel * 4, palette)).length < 2) return [];
+    return palette;
 }
 
 function isBackground(data, i, palette) {
     const [red, green, blue, alpha] = data.subarray(i, i + 4);
     if (alpha < ALPHA_THRESHOLD) return true;
-    if (red >= 238 && green >= 238 && blue >= 238 && spread(red, green, blue) <= 28) return true;
-    return spread(red, green, blue) <= 48 && (red + green + blue) / 3 >= 36
-        && palette.some(([r, g, b]) => (red - r) ** 2 + (green - g) ** 2 + (blue - b) ** 2 <= 58 ** 2);
+    return palette.some(([r, g, b]) => (red - r) ** 2 + (green - g) ** 2 + (blue - b) ** 2 <= 32 ** 2);
 }
 
-/** Remove edge-connected neutral backgrounds, retaining the browser's opt-in cleanup policy. */
+/** Remove only edge-connected, confidently sampled backgrounds. Never remove enclosed detail. */
 export function removeSpriteBackground(bitmap, check = () => {}) {
     validateBitmap(bitmap);
     const { data, width, height } = bitmap;
+    check();
     const palette = backgroundPalette(bitmap);
-    const insetX = Math.min(width - 1, Math.max(2, Math.round(Math.min(width, height) * 0.03)));
-    const insetY = Math.min(height - 1, Math.max(2, Math.round(Math.min(width, height) * 0.03)));
-    const corners = [[insetX, insetY], [width - 1 - insetX, insetY],
-        [insetX, height - 1 - insetY], [width - 1 - insetX, height - 1 - insetY]];
-    const globalWhite = !palette.length && corners.filter(([x, y]) => {
-        const i = (y * width + x) * 4;
-        return data[i + 3] >= ALPHA_THRESHOLD && isBackground(data, i, palette);
-    }).length >= 2;
+    if (!palette.length) return bitmap;
     const visited = new Uint8Array(width * height);
     const stack = new Uint32Array(width * height);
     let count = 0;
@@ -72,11 +76,6 @@ export function removeSpriteBackground(bitmap, check = () => {}) {
         const y = Math.floor(pixel / width);
         data[pixel * 4 + 3] = 0;
         enqueue(x + 1, y); enqueue(x - 1, y); enqueue(x, y + 1); enqueue(x, y - 1);
-    }
-    if (globalWhite) for (let pixel = 0; pixel < width * height; pixel++) {
-        if ((pixel & 4095) === 0) check();
-        const i = pixel * 4;
-        if (data[i] >= 250 && data[i + 1] >= 250 && data[i + 2] >= 250 && spread(data[i], data[i + 1], data[i + 2]) <= 10) data[i + 3] = 0;
     }
     return bitmap;
 }

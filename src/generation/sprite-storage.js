@@ -6,6 +6,7 @@ import { assertUntrackedRoleplayFiles, createRoleplayDirectory, readRoleplayFile
     roleplayAccountBase, roleplayAccountStamp, roleplayError, roleplayHash, withRoleplayAccount } from '../roleplay-store.js';
 import { tryWriteFileSync } from '../util.js';
 import { assertNativeMediaTargetIdle } from './media-jobs.js';
+import { expressionLabelFromFilename } from '../../public/scripts/extensions/expressions/expression-labels.js';
 
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 
@@ -101,10 +102,13 @@ export function deleteSpriteFiles(directories, name, spriteName) {
 }
 
 export function listSpriteFiles(directories, name) {
-    return withSprites(directories, name, false, (_lease, folder, files) => files.map(file => {
-        const filename = path.parse(file).name.toLowerCase();
-        const mtime = fs.statSync(path.join(folder, file)).mtime.toISOString().replace(/[^0-9]/g, '').slice(0, 14);
-        return { label: filename.match(/^(.+?)(?:[-.].*?)?$/)?.[1] ?? filename,
-            path: `/characters/${name.split('/').map(encodeURIComponent).join('/')}/${encodeURIComponent(file)}?t=${mtime}` };
-    }));
+    return withSprites(directories, name, false, (_lease, folder, files) => {
+        const settings = readRoleplayFile(path.join(directories.root, 'settings.json'), 8 * 1024 * 1024);
+        const labels = settings ? JSON.parse(settings.bytes.toString('utf8')).extension_settings?.expressions?.custom ?? [] : [];
+        return files.map(file => {
+            const mtime = fs.statSync(path.join(folder, file)).mtimeMs;
+            return { label: expressionLabelFromFilename(file, labels),
+                path: `/characters/${name.split('/').map(encodeURIComponent).join('/')}/${encodeURIComponent(file)}?t=${mtime}` };
+        });
+    });
 }
