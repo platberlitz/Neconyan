@@ -94,7 +94,7 @@ async function lorebookPlan(change, source) {
             target: `${change.book}, entry ${change.uid}`,
             field: 'Whole entry',
             before,
-            after: '(deleted)',
+            after: '',
             editable: false,
             async commit() {
                 const fresh = await readBook(change.book);
@@ -164,6 +164,7 @@ async function characterPlan(change, source) {
         beforeLabel: append ? 'Existing greetings (kept)' : undefined,
         after: formatField(change.field, change.value),
         afterLabel: append ? 'New greetings to append' : undefined,
+        getAfterText: append ? edited => formatField(change.field, [...current, ...parseField(change.field, edited)]) : undefined,
         editable: true,
         hint: append ? 'New greetings go after the last existing alternate greeting. Separate new greetings with a line containing only ---.'
             : change.field === 'alternate_greetings' ? 'Separate greetings with a line containing only ---.' : change.field === 'tags' ? 'Separate tags with commas.' : '',
@@ -303,7 +304,7 @@ function chatPlan(change, source) {
         target,
         field: 'Whole message',
         before: String(message.mes ?? ''),
-        after: '(deleted)',
+        after: '',
         editable: false,
         async commit() {
             if (!isCurrentSource(source) || messageSnapshot(change.message) !== before) conflict();

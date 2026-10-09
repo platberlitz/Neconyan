@@ -84,7 +84,8 @@ for (const phone of [false, true]) {
         expect((await account.post('/api/notebooks/assistant/proposals')).proposals).toHaveLength(1);
         expect((await account.post('/api/notebooks/notes/read', { notebookId, noteId: chosen.noteId })).note.text).not.toContain('Bring a lantern.');
         await page.locator('.scratchpad-change').getByRole('button', { name: 'Review', exact: true }).click();
-        await expect(page.locator('.scratchpad-review-after')).toContainText('Bring a lantern.');
+        await expect(page.locator('.scratchpad-review .ica-transform-diff-part--ins')).toContainText('Bring a lantern.');
+        await expect(page.locator('.scratchpad-review .ica-transform-diff-part--del')).toHaveCount(0);
         await page.getByRole('button', { name: 'Save change', exact: true }).click();
         await expect(page.locator('.scratchpad-change')).toContainText('Saved');
         expect((await account.post('/api/notebooks/notes/read', { notebookId, noteId: chosen.noteId })).note.text).toContain('Bring a lantern.');
