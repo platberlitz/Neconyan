@@ -234,10 +234,19 @@ finally:
 # workspace again and keep a readable crash record plus the requests that preceded it.
 crashed = server_pid()
 private('kill', '-SEGV', crashed)
+
+
+def restarted_server():
+    # While the crash dumper works, the dying process briefly has a forked helper with the
+    # same name, so pidof can list two pids. Only a single, different pid is a restart.
+    pids = server_pid().split()
+    return pids[0] if len(pids) == 1 and pids[0] != crashed else ''
+
+
 deadline = time.monotonic() + 120
-while time.monotonic() < deadline and server_pid() in ('', crashed):
+while time.monotonic() < deadline and not restarted_server():
     time.sleep(1)
-assert server_pid() not in ('', crashed), 'The app did not restart its crashed server'
+assert restarted_server(), 'The app did not restart its crashed server'
 request, token, port, origin = connect()
 try:
     assert json.loads(private('cat', 'files/android-ready.json')).get('safe') is True, 'The restart after an early stop was not in safe mode'
