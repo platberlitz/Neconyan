@@ -8216,6 +8216,33 @@ describe('in-chat agent post-processing runner', () => {
         expect(chat[0].mes).toBe(coloured);
     });
 
+    test('fills the Mewmory and group card macros for agent prompts', async () => {
+        const { buildPromptDynamicMacros } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const { setPreparedMewmoryContext } = await import('../public/scripts/extensions/in-chat-agents/agent-context-macros.js');
+
+        expect(buildPromptDynamicMacros('Reply', null, { prompt: '{{full-mewmory}}' })).toMatchObject({
+            'full-mewmory': '', 'mewmory-facts': '', 'mewmory-interview': '', 'group-cards': '',
+        });
+
+        setPreparedMewmoryContext('chat-b', { enabled: true, npcText: 'Other chat', memoryText: '' });
+        expect(buildPromptDynamicMacros('Reply', null, {})['full-mewmory']).toBe('');
+
+        setPreparedMewmoryContext('chat-a', { enabled: true, npcText: 'NPC sheet', memoryText: 'Story memory', factsText: 'Facts', interviewText: 'Interview' });
+        contextCharacters = [
+            { avatar: 'mira.png', name: 'Mira', data: { name: 'Mira', description: 'A pilot who calls {{user}} rookie.', personality: 'Blunt', scenario: '' } },
+            { avatar: 'oren.png', name: 'Oren', data: { name: 'Oren', description: 'A medic.', personality: 'Gentle', scenario: '' } },
+        ];
+        contextGroups = [{ id: 'group-1', members: ['mira.png', 'oren.png'], disabled_members: ['oren.png'] }];
+        contextGroupId = 'group-1';
+
+        const macros = buildPromptDynamicMacros('Reply', null, { prompt: '{{group-cards}}' });
+        expect(macros).toMatchObject({ 'full-mewmory': 'NPC sheet\n\nStory memory', 'mewmory-facts': 'Facts', 'mewmory-interview': 'Interview' });
+        expect(macros['group-cards']).toContain('<character name="Mira">\nDescription:\nA pilot who calls {{user}} rookie.');
+        expect(macros['group-cards']).toContain('<character name="Oren" muted="true">');
+        expect(buildPromptDynamicMacros('Reply', null, { prompt: 'No cards here' })['group-cards']).toBe('');
+        setPreparedMewmoryContext(null, null);
+    });
+
     test('gives prompt-transform rewrites the recent chat they ask for, and nothing by default', async () => {
         usePromptTransformPostAgent();
         enabledAgents[0].prompt = 'Trim to {{lengthTarget}}.';

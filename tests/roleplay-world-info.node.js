@@ -15,7 +15,8 @@ const { admitRoleplayJob, applyRoleplayJobEffect } = await import('../src/rolepl
 const { getJob, releaseJob } = await import('../src/jobs/store.js');
 const { readArtifact, writeArtifact } = await import('../src/jobs/artifacts.js');
 const { runRoleplayReplyJob: runReply } = await import('../src/generation/roleplay-execution.js');
-const { resetRoleplayAccount } = await import('../src/roleplay-store.js');
+const { resetRoleplayAccount, roleplayAccountStamp, withRoleplayAccount } = await import('../src/roleplay-store.js');
+const { writeAgentRecordLocked } = await import('../src/in-chat-agent-storage.js');
 const { roleplayNativeHost } = await import('../src/endpoints/chats.js');
 const { captureGenerationBinding } = await import('../src/generation/profiles.js');
 const { runChatProfile } = await import('../src/generation/service.js');
@@ -2129,6 +2130,33 @@ test('group swap mode uses the selected character depth prompt instead of compan
         { avatar: 'Nova.png', maxContext: 100 });
     assert.deepEqual(snapshot.global.inject, ['The beacon']);
     assert.deepEqual((await prepareRoleplayWorldInfo(f.scope, snapshot)).activated.map(value => value.uid), [1]);
+});
+
+test('group snapshots carry member cards only when an Agent prompt asks for {{group-cards}}', async t => {
+    const f = fixture(t, true);
+    fs.writeFileSync(path.join(f.scope.directories.characters, 'Nova.png'), writeCard(png, JSON.stringify({
+        name: 'Nova', data: { name: 'Nova', description: 'A pilot', personality: 'Blunt' },
+    })));
+    fs.writeFileSync(path.join(f.scope.directories.characters, 'Other.png'), writeCard(png, JSON.stringify({
+        name: 'Other', data: { name: 'Other', description: 'A medic', scenario: 'On the ship' },
+    })));
+    fs.writeFileSync(path.join(f.scope.directories.groups, 'group.json'), JSON.stringify({
+        id: 'group', members: ['Nova.png', 'Other.png'], disabled_members: ['Other.png'], chats: ['Source', 'New'], generation_mode: 0,
+    }));
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        extension_settings: { inChatAgents: { globalSettings: { enabled: true } } },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const capture = () => captureRoleplayWorldInfo(f.scope, account, f.source(), { avatar: 'Nova.png', maxContext: 100, serverPrompt: true });
+    const writeAgent = prompt => withRoleplayAccount(f.scope, roleplayAccountStamp(f.scope), lease => writeAgentRecordLocked(lease, 'agent',
+        { id: 'authenticity', enabled: true, phase: 'post', prompt, postProcess: { enabled: false, promptTransformEnabled: true } }));
+    writeAgent('Check {{char}}');
+    assert.equal(capture().groupCards, undefined);
+    writeAgent('Cast:\n{{group-cards}}');
+    assert.deepEqual(capture().groupCards, [
+        { name: 'Nova', muted: false, fields: { description: 'A pilot', personality: 'Blunt', scenario: '' } },
+        { name: 'Other', muted: true, fields: { description: 'A medic', personality: '', scenario: 'On the ship' } },
+    ]);
 });
 
 test('the worker saves scan decisions before a provider call and closes timed effects with the reply', async t => {

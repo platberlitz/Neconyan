@@ -1477,6 +1477,12 @@ test('synthetic gestures remain subjective, and old matches bring the present ov
     assert.equal(result.memoryText.includes('SEARCH ONLY'), false);
     assert.equal(hash(state), before, 'retrieval never increases significance or rewrites a dossier');
     assert.ok(result.npcText.includes(fixture.expectations.appearance));
+    assert.ok(result.interviewText.includes(fixture.expectations.current_view));
+    assert.ok(result.interviewText.includes(current.interview[0].answer));
+    assert.equal(result.interviewText.includes(fixture.expectations.appearance), false);
+    assert.ok(result.factsText.startsWith(result.npcText));
+    assert.equal(result.factsText.includes(current.interview[0].answer), false);
+    assert.equal(result.factsText.includes('Historical Pawspective'), false);
 });
 
 test('enabled but untriggered lore and rare source details are searchable; disabled lore cannot support recall', () => {
