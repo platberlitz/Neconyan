@@ -338,8 +338,12 @@ export async function prepareChange(change, source) {
                 if (committed) return committed;
                 let value;
                 try { value = JSON.parse(edited); } catch { fail('The character draft must be valid JSON. Check its quotes and commas.'); }
-                committed = await saveCharacterDraft(normaliseCharacterDraft(value), {
+                const draft = normaliseCharacterDraft(value);
+                committed = saveCharacterDraft(draft, {
                     assert: () => requireSource(source), isCurrent: () => isCurrentSource(source),
+                }).catch(error => {
+                    committed = null;
+                    throw error;
                 });
                 return committed;
             },

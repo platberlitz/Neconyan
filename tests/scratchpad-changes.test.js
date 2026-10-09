@@ -67,6 +67,22 @@ describe('Scratchpad reviewed saves', () => {
         expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     });
 
+    test('two saves started together on one review create the character once', async () => {
+        const plan = await prepareChange({ type: 'character', action: 'create', character: { name: 'New Nova' } }, source);
+        globalThis.fetch.mockResolvedValueOnce({ ok: true, text: async () => 'New Nova.png' });
+        const [first, second] = await Promise.all([plan.commit(plan.after), plan.commit(plan.after)]);
+        expect(second).toBe(first);
+        expect(globalThis.fetch.mock.calls.filter(([url]) => url === '/api/characters/create')).toHaveLength(1);
+    });
+
+    test('a failed character save can be retried from the same review', async () => {
+        const plan = await prepareChange({ type: 'character', action: 'create', character: { name: 'New Nova' } }, source);
+        globalThis.fetch.mockResolvedValueOnce({ ok: false, status: 500, text: async () => 'Failed' });
+        await expect(plan.commit(plan.after)).rejects.toThrow('Character creation failed');
+        globalThis.fetch.mockResolvedValueOnce({ ok: true, text: async () => 'New Nova.png' });
+        await expect(plan.commit(plan.after)).resolves.toMatchObject({ committed: true, avatar: 'New Nova.png' });
+    });
+
     test('refuses invalid reviewed character JSON and a source switch before creation', async () => {
         const plan = await prepareChange({ type: 'character', action: 'create', character: { name: 'Nova' } }, source);
         await expect(plan.commit('{')).rejects.toThrow('valid JSON');

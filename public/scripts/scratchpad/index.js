@@ -959,10 +959,37 @@ function renderChangeCard(session, message, part) {
             part.change.type === 'notebook' && message.notebookProposals?.[part.index] ? null : iconButton(t`Undo`, () => void markChange(session, message, part.index, null), { className: 'scratchpad-link' })));
         return card;
     }
+    const key = changeKey(session, message, part);
+    const busy = busyChanges.has(key);
+    card.dataset.changeKey = key;
     card.append(h('div', { class: 'scratchpad-change-actions' },
-        iconButton(t`Review`, () => void reviewChange(session, message, part), { icon: 'fa-eye', primary: true }),
-        iconButton(t`Dismiss`, () => void dismissChange(session, message, part), { icon: 'fa-xmark' })));
+        iconButton(busy ? t`Saving…` : t`Review`, () => void reviewChange(session, message, part), { icon: 'fa-eye', primary: true, disabled: busy }),
+        iconButton(t`Dismiss`, () => void dismissChange(session, message, part), { icon: 'fa-xmark', disabled: busy })));
     return card;
+}
+
+// A suggestion stays busy from Review until it is marked saved, so repeated clicks cannot save it twice.
+const busyChanges = new Set();
+// Saved changes whose 'Saved' mark failed; the next Review only retries the mark.
+const committedChanges = new Set();
+
+function changeKey(session, message, part) {
+    return `${session.id}:${message.id}:${part.index}`;
+}
+
+function setChangeBusy(key, busy) {
+    if (busy) busyChanges.add(key);
+    else busyChanges.delete(key);
+    for (const card of app.el.messages?.querySelectorAll('.scratchpad-change') ?? []) {
+        if (card.dataset.changeKey !== key) continue;
+        const [review, dismiss] = card.querySelectorAll('.scratchpad-change-actions button');
+        if (review) {
+            review.disabled = busy;
+            const label = review.querySelector('span');
+            if (label) label.textContent = busy ? t`Saving…` : t`Review`;
+        }
+        if (dismiss) dismiss.disabled = busy;
+    }
 }
 
 function markChange(session, message, index, state, source = app.source) {
@@ -971,6 +998,21 @@ function markChange(session, message, index, state, source = app.source) {
 
 async function reviewChange(session, message, part) {
     if (part.change.type === 'notebook') return reviewNotebookChange(session, message, part);
+    const key = changeKey(session, message, part);
+    if (busyChanges.has(key)) return;
+    setChangeBusy(key, true);
+    try {
+        if (committedChanges.has(key)) {
+            if (await markChange(session, message, part.index, 'applied', app.source)) committedChanges.delete(key);
+            return;
+        }
+        await reviewAndSaveChange(session, message, part, key);
+    } finally {
+        setChangeBusy(key, false);
+    }
+}
+
+async function reviewAndSaveChange(session, message, part, key) {
     const source = app.source;
     let plan;
     try {
@@ -1006,8 +1048,9 @@ async function reviewChange(session, message, part) {
         reportError(error, t`That change could not be saved.`);
         return;
     }
+    committedChanges.add(key);
     toastr.success(t`Change saved.`);
-    await markChange(session, message, part.index, 'applied', source);
+    if (await markChange(session, message, part.index, 'applied', source)) committedChanges.delete(key);
 }
 
 async function reviewNotebookChange(session, message, part, { dismiss = false } = {}) {
