@@ -1,4 +1,6 @@
 // One handler covers existing messages and later history, Conversation and Meower rows.
+import { dressAllSleepers, dressSleeper, getSleeperCoat, SLEEPER_COAT_CHANGE_EVENT, SLEEPER_COAT_STORAGE_KEYS } from './neconyan-sleeper-coats.js';
+
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const frames = new Map();
 const active = new Map();
@@ -90,7 +92,8 @@ async function pet(event) {
     event.stopPropagation();
     if (reducedMotion.matches || event.repeat) return;
     const isUser = img.classList.contains('is-user');
-    const src = `/img/neconyan/sleeping-${isUser ? 'tiger-right' : 'calico-left'}.webp`;
+    rest(img);
+    const src = dressSleeper(img, isUser);
     if (!frames.has(src)) {
         const frame = new Image();
         frame.src = src.replace('.webp', '-twitch.webp');
@@ -100,7 +103,7 @@ async function pet(event) {
         }));
     }
     const frame = await frames.get(src);
-    if (!frame || !img.isConnected || img.hidden || reducedMotion.matches || img.classList.contains('is-user') !== isUser) return;
+    if (!frame || !img.isConnected || img.hidden || reducedMotion.matches || img.getAttribute('src') !== src) return;
     rest(img);
     img.src = frame;
     active.set(img, { src, frame, timer: setTimeout(() => rest(img), 240) });
@@ -110,4 +113,10 @@ document.addEventListener('click', pet, true);
 document.addEventListener('keydown', pet, true);
 reducedMotion.addEventListener('change', () => {
     if (reducedMotion.matches) for (const img of active.keys()) rest(img);
+});
+window.addEventListener('storage', event => {
+    if (!Object.values(SLEEPER_COAT_STORAGE_KEYS).includes(event.key)) return;
+    dressAllSleepers();
+    const role = event.key === SLEEPER_COAT_STORAGE_KEYS.user ? 'user' : 'character';
+    document.dispatchEvent(new CustomEvent(SLEEPER_COAT_CHANGE_EVENT, { detail: { role, coat: getSleeperCoat(role) } }));
 });

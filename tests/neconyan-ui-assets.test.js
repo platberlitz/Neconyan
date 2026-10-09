@@ -3,14 +3,18 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from '@jest/globals';
+import { SLEEPER_COATS } from '../public/scripts/neconyan-sleeper-coats.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const readJson = file => JSON.parse(fs.readFileSync(path.join(root, file), 'utf8'));
 
 describe('Neconyan generated UI artwork', () => {
-    test('ships the two transparent sleeping animals with matching provenance', () => {
+    test('ships every transparent sleeping cat coat with matching provenance', () => {
         const provenance = readJson('public/img/neconyan/artwork-provenance.json');
-        for (const name of ['sleeping-calico-left', 'sleeping-tiger-right'].flatMap(name => [name, `${name}-twitch`])) {
+        expect(SLEEPER_COATS).toHaveLength(28);
+        const names = SLEEPER_COATS.map(coat => `sleeping-${coat.id}-${coat.side}`);
+        expect(names.slice(0, 2)).toEqual(['sleeping-calico-left', 'sleeping-tiger-right']);
+        for (const name of names.flatMap(name => [name, `${name}-twitch`])) {
             const file = `public/img/neconyan/${name}.webp`;
             const item = provenance.outputs.find(item => item.path === file);
             const bytes = fs.readFileSync(path.join(root, file));

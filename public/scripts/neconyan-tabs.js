@@ -37,6 +37,7 @@ import { extensionNames, findExtension, getExtensionManifest, getExtensionType }
 import { getCurrentUserHandle } from './user.js';
 import { bindClearJobHistoryButton } from './job-history-cleanup.js';
 import { getAssistantIconSrc } from './neconyan-assistant-art.js';
+import { getSleeperCoat, getSleeperCoatPair, setSleeperCoat, setSleeperCoatPair, SLEEPER_COAT_CHANGE_EVENT, SLEEPER_COAT_GROUPS, SLEEPER_COAT_PAIRS, SLEEPER_COATS, sleeperCoatArt } from './neconyan-sleeper-coats.js';
 import { t, translate } from './i18n.js';
 import {
     MODEL_FILTER_BOTH_VIEWPORTS_SELECTORS,
@@ -506,7 +507,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261009-win98-selected';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261009-sleeper-coats';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -15055,6 +15056,75 @@ function createTopbarLabelOption(mode, part) {
     return option;
 }
 
+function createSleeperCoatSettingsGroup() {
+    const group = createElement('div', { className: 'sb-sleeper-coat-setting' });
+    const caption = createElement('p', {
+        className: 'sb-theme-slider-caption',
+        text: 'Choose the sleeping cat on your messages and the one on character messages, or start from a ready-made pair. Any coat works on either side.',
+    });
+    const rows = createElement('div', { className: 'sb-shortcut-rows' });
+    const syncs = [];
+    const syncAll = () => syncs.forEach(sync => sync());
+
+    const pairRow = createElement('div', { className: 'sb-shortcut-row sb-sleeper-coat-row' });
+    const pairSelect = createElement('select', { id: 'sb-sleeper-coat-pair-select', className: 'sb-shortcut-select' });
+    pairSelect.appendChild(createElement('option', { text: 'Your own mix', attrs: { value: '' } }));
+    for (const pair of SLEEPER_COAT_PAIRS) {
+        pairSelect.appendChild(createElement('option', { text: pair.label, attrs: { value: pair.id } }));
+    }
+    pairSelect.addEventListener('change', () => {
+        if (pairSelect.value) setSleeperCoatPair(pairSelect.value);
+        syncAll();
+    });
+    syncs.push(() => {
+        pairSelect.value = getSleeperCoatPair() ?? '';
+    });
+    pairRow.append(
+        createElement('label', { className: 'sb-shortcut-label', text: 'Pair', attrs: { for: pairSelect.id } }),
+        pairSelect,
+    );
+    rows.appendChild(pairRow);
+
+    for (const role of ['user', 'character']) {
+        const selectId = `sb-sleeper-coat-${role}-select`;
+        const row = createElement('div', { className: 'sb-shortcut-row sb-sleeper-coat-row' });
+        const label = createElement('label', {
+            className: 'sb-shortcut-label',
+            text: role === 'user' ? 'Your cat' : 'Character cat',
+            attrs: { for: selectId },
+        });
+        const select = createElement('select', { id: selectId, className: 'sb-shortcut-select' });
+        for (const coatGroup of SLEEPER_COAT_GROUPS) {
+            const optgroup = createElement('optgroup', { attrs: { label: coatGroup.label } });
+            for (const coat of SLEEPER_COATS.filter(item => item.group === coatGroup.id)) {
+                optgroup.appendChild(createElement('option', { text: coat.label, attrs: { value: coat.id } }));
+            }
+            select.appendChild(optgroup);
+        }
+        const preview = createElement('img', {
+            className: 'sb-sleeper-coat-preview',
+            attrs: { alt: '', width: '384', height: '308', draggable: 'false', 'aria-hidden': 'true' },
+        });
+        const sync = () => {
+            const art = sleeperCoatArt(getSleeperCoat(role), role === 'user');
+            select.value = art.coat;
+            preview.src = art.src;
+            preview.classList.toggle('is-mirrored', art.mirrored);
+        };
+        select.addEventListener('change', () => {
+            setSleeperCoat(role, select.value);
+            syncAll();
+        });
+        syncs.push(sync);
+        row.append(label, select, preview);
+        rows.appendChild(row);
+    }
+    syncAll();
+    document.addEventListener(SLEEPER_COAT_CHANGE_EVENT, syncAll);
+    group.append(caption, rows);
+    return group;
+}
+
 function createShortcutSettingsGroup() {
     const description = createElement('p', {
         className: 'sb-theme-slider-caption',
@@ -15958,7 +16028,7 @@ function injectThemePicker() {
     const shellStyleSettingsGroup = createThemeSettingsDrawer({
         id: 'sb-shell-style-drawer',
         title: 'Shell Style',
-        content: [description, optionRow, kittylessGroup],
+        content: [description, optionRow, kittylessGroup, createSleeperCoatSettingsGroup()],
     });
     const interfaceSettingsGroup = createThemeSettingsDrawer({
         id: 'sb-interface-drawer',

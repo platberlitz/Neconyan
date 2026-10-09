@@ -4453,6 +4453,11 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     box-shadow: inset 0 0 0 2px var(--color-primary, var(--sb-accent));
 }
 
+.sb-sleeper-coat-setting { display: grid; gap: 8px; }
+.sb-shortcut-row.sb-sleeper-coat-row { grid-template-columns: 110px minmax(0, 1fr) 50px; }
+.sb-sleeper-coat-preview { width: 50px; height: 40px; object-fit: contain; }
+.sb-sleeper-coat-preview.is-mirrored { scale: -1 1; }
+
 .sb-mobile-quick-actions-group {
     gap: 12px;
 }

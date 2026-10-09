@@ -146,6 +146,474 @@
         "public/img/neconyan/sleeping-calico-left.webp"
       ],
       "prompt": "Desktop wallpaper, 3:2 landscape. Flat design vector illustration: geometric low-detail slate-blue and grey-blue mountains in flat colour bands, a flat pale sky, simple flat clouds, no gradients or textures. A gigantic sleepy calico cat (white body with large orange and dark grey-brown patches, pink inner ears, closed eyes, tiny smile) rests along the mountains on the right, drawn in the same flat vector style with simple shapes and a couple of shading tones. Muted cool slate palette with the cat's warm orange as the only warm accent. Keep the centre of the image calm and low-detail so text can sit over it. The calico's markings follow the second reference image; gentle feeling like the first reference image. No text, no watermark."
+    },
+    {
+      "path": "grey-tabby-flare.png",
+      "sha256": "e0bcd9c2e0b94763259462f5f8ed6265f412c0e7e43f5a2ec226d8ef8779cf5f",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a classic silver-grey tabby: cool mid-grey base fur with bold dark charcoal tabby stripes across the back, head and legs, a dark-ringed tail, an M-shaped stripe on the forehead, and a pale grey-white muzzle, chest and paws.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "grey-tabby-twitch-flare.png",
+      "sha256": "873971c5c826d4dc0795d693923c4389450078718c114237f927155c834eaaa5",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-grey-tabby-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "leopard-flare.png",
+      "sha256": "25038f3ef394a41ef0c6611d524f27df10f3d41fe89371b1bcd8c70872e8eeda",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a leopard cat (Bengal pattern): warm golden-tan base fur covered in black leopard rosettes (open dark rings around tan-orange centres) and small black spots on the body, head and legs, the tail spotted with dark rings and a black tip, and a cream-white muzzle, chin and paws.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "leopard-twitch-flare.png",
+      "sha256": "c59458ef7b4a90ed4233cae1f2e2c58a73e3304d1088745db601f905fd4b0802",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-leopard-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "tortoiseshell-flare.png",
+      "sha256": "e74d9cdfbb2a9e42828dd5087c6cb40ad66cc15b2d5c3749cf7c8030fd07f60a",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a tortoiseshell cat: a mottled mix of dark chocolate-black and warm ginger-orange patches all over the body, head, legs and tail, with small brindled flecks of amber, and no white areas except a tiny cream muzzle tip.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "tortoiseshell-twitch-flare.png",
+      "sha256": "aa8fba016c4638d906557ea650c980af3697b97b7e71d9a0d9b4b8e548f65f9c",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-tortoiseshell-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "tuxedo-flare.png",
+      "sha256": "8af4fb30b160e825c2996001521a281302553a4f5f32b8cab98d07580af57ced",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a tuxedo cat: charcoal-black fur on the back, the top of the head, both ears and the whole tail, with a crisp white muzzle, white chin and chest bib, white belly and white front paws, like a little black-and-white suit.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "tuxedo-twitch-flare.png",
+      "sha256": "342de2e0cedee42f372f8b8611e85706ac5c9789f8510add8f5cf741e3ef09e8",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-tuxedo-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "siamese-flare.png",
+      "sha256": "b3786f0f3a30ee1bf7ba0e5a91f790ff12fe5f05e3335ffa60ca481ccd5c9c73",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a Siamese cat (colourpoint): pale cream-ivory body fur, with dark seal-brown points: a dark brown mask over the face around the eyes and nose, dark brown ears, dark brown paws and a fully dark brown tail, blending softly into the cream.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "siamese-twitch-flare.png",
+      "sha256": "68d48ea0826572cf358d0d5f93629ec87019af59970a03a7fefc2c91bf5117ec",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-siamese-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "russian-blue-flare.png",
+      "sha256": "9fbabc0c5d49039114563155f0f53041ba24083d6c8e734ad1856c5ace7b4c2b",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a Russian Blue cat: solid smooth blue-grey fur all over (a cool slate-grey with a soft silvery blue tint), slightly lighter silver-blue on the muzzle and paws, no stripes or patches.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "russian-blue-twitch-flare.png",
+      "sha256": "2870735a361dc14dac52b4701f31d8f1b11dd9e9ac4bfd11d230d456f1abccec",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-russian-blue-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "black-flare.png",
+      "sha256": "435ea4b30003329c23685e8e16f8189579ac7a2cbed90093821b7c5779403a17",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a solid black cat: soft charcoal-black fur all over the body, head, legs and tail (a slightly lighter warm charcoal than the outline, so the outline and the fur shapes still read clearly), with the same pink inner ears and pink nose, and a few subtle dark-grey highlight shapes on the back and head.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "black-twitch-flare.png",
+      "sha256": "b50d898fa88cd66649f00cd472d3ef85a254bc8f27d6df97ad45b7a4f6d6af90",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-black-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "white-flare.png",
+      "sha256": "bfe3b16a2499a3659c5c8583dd2ac051f57bc587bcba735e41918c3e3f3f6cd4",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a pure white cat: soft snow-white fur all over the body, head, legs and tail, with very light cool-grey shading shapes on the back and tail so the shape still reads, the same pink inner ears and pink nose.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "white-twitch-flare.png",
+      "sha256": "4491a957406bebde9acf78c25d7c6e495d20e0fce3b739b3ec76c0fac64b8daa",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-white-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "cream-flare.png",
+      "sha256": "fad18874ec38f8d65712729b343383c017e97fe93d8b404c6e40dd7c2afc23d1",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a cream cat: soft pale buttery cream fur all over with faint slightly darker cream tabby stripes on the back, head and tail rings, and a white muzzle and chin.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "cream-twitch-flare.png",
+      "sha256": "bf8ba6c62ea4601ad15bac31914b0a491b6fc9d2d697607cd726b05e76ee6bf3",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-cream-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "brown-tabby-flare.png",
+      "sha256": "d4155507644cc4417a87e2a6dec3510feeabae19c7b3d17969639aadcd79fd62",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a classic brown tabby cat: warm chestnut-brown base fur with bold black-brown swirling tabby stripes on the back and sides, a dark M on the forehead, dark rings on the tail and a cream muzzle and chin.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "brown-tabby-twitch-flare.png",
+      "sha256": "34d11369ad7627fd19b31f5c130c56b6e79670ac477c41a72a400add92eb2c92",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-brown-tabby-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "ginger-white-flare.png",
+      "sha256": "2657d870eab9ca494e0ed0341db74f7caeb812ce2e348b2b6a8dca16b70bc26d",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a ginger-and-white bicolour cat: bright orange ginger fur on the back, head, ears and tail with a few darker ginger stripes, and clean white muzzle, chin, chest, belly and front paws.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "ginger-white-twitch-flare.png",
+      "sha256": "96a6eba862c3dd1a9581785320d460049906a90c43b97b55d9ccee509bfcf385",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-ginger-white-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "cow-flare.png",
+      "sha256": "fbd7cb680e63b6d6ca590c0bafbfb016f1e8d014a7422c9e606781b2169a1744",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a black-and-white cow-pattern cat: mostly white fur with large irregular solid black patches on the back and side, one black ear and a black patch over one eye, and a black tail with a white tip.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "cow-twitch-flare.png",
+      "sha256": "9bf9f47f430c19aeda124fbf7161d3a36578362627c0fc3844379ffbeeb89cd7",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-cow-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "dilute-calico-flare.png",
+      "sha256": "d1eeffc7395856f5872c880b1148268213899bf30d1a53aca4cf1c79af720139",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a dilute calico cat: mostly white fur with large soft patches of blue-grey and pale peach-cream on the back, head and tail, and a white muzzle, chest and paws.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "dilute-calico-twitch-flare.png",
+      "sha256": "20b2daea8573f585e155afdb2a2183e335acacd16fed0be69bab254761728983",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-dilute-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "torbie-flare.png",
+      "sha256": "f146b3703bccc7c5a76df83d42b7e71e7d02966ea21692545648e6ce04ee1f03",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a torbie (tortoiseshell tabby) cat: brown tabby stripes mixed with bright ginger patches across the body, a dark M on the forehead, a striped ginger-and-brown tail, and a cream muzzle.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "torbie-twitch-flare.png",
+      "sha256": "b5112a492dc13f69a3fe2159c5347719e5b30a56daf20891f5e9f1710b744491",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-torbie-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "chocolate-flare.png",
+      "sha256": "f9e9896378e5fedae723522b606362ba8ee2c6948af49cd4813cb758d9ca558c",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a chocolate Havana cat: solid rich warm chocolate-brown fur all over, glossy and even, with pink ears and nose.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "chocolate-twitch-flare.png",
+      "sha256": "13238ab70d82e257ae94a1933a889ffa918021f700cf878a430ddfc17f36d5ad",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-chocolate-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "lilac-flare.png",
+      "sha256": "ac2de70fa7db85f806dee80d3f74d4d47d2909f357e8abaedacadf81a0b714ad",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a lilac cat: solid soft lavender-grey fur with a warm pinkish dove tone all over, even and smooth, with pink ears and nose.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "lilac-twitch-flare.png",
+      "sha256": "3d0a94c9d39ed56b326a65146228082d9638e085b74bbde3d4cb2fbc9f99d233",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-lilac-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "smoke-flare.png",
+      "sha256": "259b4555bb8e2e1b1490f794d501cf758fb9a8739eb61f926118178e1f316d36",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a black smoke cat: charcoal-black fur on the back, head and tail with a pale silver-white undercoat showing on the chest, belly, cheeks and inner legs.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "smoke-twitch-flare.png",
+      "sha256": "ea442560177c022050a78d06f8b0472a5e5b5cc4b75533cdcd3eaab664940bfd",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-smoke-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "abyssinian-flare.png",
+      "sha256": "1963fbb6d63c99665b7c3fb0908580806810fcec091187e461dcb8dc91d1ecdb",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: an Abyssinian cat: warm ruddy orange-brown ticked fur with darker brown tipping along the spine and tail tip, a cream chin and muzzle, and dark-rimmed ears.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "abyssinian-twitch-flare.png",
+      "sha256": "450394c19d522fb15f1f1e05d2b0ce9b824688bfdbdd593b6957f749b789db84",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-abyssinian-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "bengal-flare.png",
+      "sha256": "0bf9b9976bc8a256be5a74f50072604c358ffe2537d32d7251d9957ab8eb6d3f",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a marbled Bengal cat: bright golden-orange fur with bold dark brown marbled swirls outlined in black across the body, spotted legs, a ringed tail with a black tip, and a white muzzle and chin.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "bengal-twitch-flare.png",
+      "sha256": "657969c5c97984208094841cb76f754acd54fda263b63f47db43adc410815656",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-bengal-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "egyptian-mau-flare.png",
+      "sha256": "07e4246c213a02ec4e6648752c02917f8afd9eff90a138bde1967abc06565c20",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: an Egyptian Mau cat: silver-grey fur covered in small round dark charcoal spots on the body, a dark M on the forehead, banded legs, a ringed tail with a dark tip, and a pale chin.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "egyptian-mau-twitch-flare.png",
+      "sha256": "8f72662f5cc2af2c22b16d9d726aa3e1af0d0655f15399f0d7115cdde8f693cd",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-egyptian-mau-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "snow-leopard-flare.png",
+      "sha256": "b6c6f5f3a02d48e34c6e6aa9f41821c2411963cf1a642e9717d35b0ce5d093ac",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a snow leopard pattern cat: pale smoky white-grey fur with large open dark-grey rosettes on the body and head, a thick tail with dark rings, and a white muzzle and belly.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "snow-leopard-twitch-flare.png",
+      "sha256": "18f5e87bdbf6c2debc84610e745c8a4d4377c66cbcf0dc45a098bce0b9d87272",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-snow-leopard-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "cheetah-flare.png",
+      "sha256": "612437c77c985737de1d8d9325cbe3e664c205a826831c0b0fd11dbbf978a92a",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a cheetah pattern cat: golden-yellow fur with solid round black spots all over the body and legs, black tear lines from the eyes down to the mouth, a spotted tail ending in black rings and a white tip, and a white muzzle and belly.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "cheetah-twitch-flare.png",
+      "sha256": "2349575a2b4727ca2e8ddf1720957dcb1abbac3b5a7474fc35a30e7464e31b63",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-cheetah-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "white-tiger-flare.png",
+      "sha256": "454e905889b6c4565200567165e25c40269071d41aab6c1473bbc7da5e3830fc",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a white tiger pattern cat: snow-white fur with bold dark charcoal-black tiger stripes across the body, head and legs, black rings on the tail, and pale icy-blue tinted shading.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "white-tiger-twitch-flare.png",
+      "sha256": "3a366df2fb8654f21b22ddd87db0c072e0299280b24ce934a89eca87f59a5a81",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-white-tiger-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "sphynx-flare.png",
+      "sha256": "34a81cb9739b287424e227027527bf2eaed75c88013808b030be04d1d4635e1f",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a hairless Sphynx cat: smooth warm pink-peach skin with a few soft grey-lavender skin patches and gentle wrinkles on the forehead, large pink ears and a pink tail.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "sphynx-twitch-flare.png",
+      "sha256": "8876eb132cfa3f50355a3dee68ed3a0f91fcebe2fedb6333ca04cb870bb5f74d",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-sphynx-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "ragdoll-flare.png",
+      "sha256": "e127984d819207f122bbd37990bc1fc49bc7d9c46689bd0fb187e1cff61824c3",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a seal-point Ragdoll cat: creamy ivory body fur, a darker seal-brown mask, ears and tail, with clean white mitten paws, a white chin and a white chest bib.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "ragdoll-twitch-flare.png",
+      "sha256": "89c90fcc8d8abe9924eceedcd48a8a22ad5233a7a6fe51dfe71e87736abca64b",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-ragdoll-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
+    },
+    {
+      "path": "serval-flare.png",
+      "sha256": "9ac828509c4dccc84559e0e212947eff1473336492036c29ee8129f82f7b4e40",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp on chroma green",
+      "prompt": "Edit the reference image. Keep EXACTLY the same sleeping cat drawing: identical pose, silhouette, body shape, proportions, size and position in the frame, the same thick dark cocoa outline, closed sleepy eyes, whiskers, tiny pink nose and smile, pink inner ears, chin resting on the tucked front paws, and the long tail hanging straight down on the left. Do not move, resize, rotate or redraw the cat.\n\nChange ONLY the fur colours and markings so the cat becomes: a serval pattern cat: bright golden-orange fur with bold black spots and short stripes on the body and neck, black-and-white backs on the ears, a ringed tail with a black tip, and a white muzzle and belly.\n\nFlat matte colours and the same cute rounded sticker style, a few simple markings that read clearly at 96 pixels wide. Background: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, shadow, glow, props, extra cats or border.",
+      "processing": "Chroma green removed and despilled; the cat was cropped and resized onto the calico cutout's exact 384x308 box so every coat shares its pose and placement. Lossless WebP."
+    },
+    {
+      "path": "serval-twitch-flare.png",
+      "sha256": "74fb7907cdb966ae2de1519f916b28edb673cb69b1db6cd8b286c7a0ef5e0b63",
+      "generated_at": "2026-10-09",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-serval-left.webp on chroma green",
+      "prompt": "Edit the reference image: fold only the large foreground ear (the ear nearer the viewer, on the left of the head) sideways towards the left by about 25 degrees as a sleepy ear flick, so its tip droops back and down. Keep that ear's own fur colours and markings, its pink inner ear and the thick dark outline.\n\nEverything else stays pixel-identical: the same cat, pose, proportions, position and size in the frame, the same fur colours and markings, the other ear, closed eyes, whiskers, paws and the hanging tail. Do not move, resize or redraw the rest of the cat.\n\nBackground: perfectly uniform solid chroma green #00ff00 everywhere outside the cat, and no green anywhere in the cat. No text, motion lines, shadow, glow or border.",
+      "processing": "Chroma green removed; only the folded foreground ear region was composited into the base coat frame. All pixels outside the ear remain from the base. Lossless WebP alternate frame; tap displays it briefly then restores the base."
     }
   ],
   "outputs": [
@@ -769,6 +1237,318 @@
       "model": "gpt-image-2.5-sunburst",
       "processing": "Lossy WebP quality 78 from the generated PNG, no crop.",
       "visualBrief": "Default wallpaper for the slate-flat Shell Style: a giant sleepy calico resting in a scene that matches the style, with a calm centre for chat text."
+    },
+    {
+      "path": "public/img/neconyan/sleeping-grey-tabby-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "cb50d8b44f406ef4133e74e4239761393d6631f6b80a827dc06ab353c13953f1"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-grey-tabby-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "f2ceb80dafc7ec8ef23bb9fd55a840d76c68556ab9b10e481cfacafe06b5d3c4"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-leopard-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "6bd4d86831b5ae252503d20f4f3eb45012463fbe53a2e7d6b91cf52c39c0e363"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-leopard-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "88075986ff74c7134cab3e0145a8475b23ace0ddfe7563742e4194e7e45d789f"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-tortoiseshell-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "13a4b6688beba05f8ed7337488108e201f5dfc87eff1d98399679c660a50d99e"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-tortoiseshell-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "094d06e2e1cd75624ad1df234f6d8a4d3db001f21b648fa2a12de47354be0f94"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-tuxedo-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "2a21bfdfc096a0ee780958d36a5e1124a66dd370a67cd9c26756fb3925ab5212"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-tuxedo-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "6031733e926d245ffa81a14763c905af4235217503d0149a8ba3348d744da66a"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-siamese-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "3cee8f042108091dc7fa9b6395067a5a4e8747d1d64b7685e62d1e215fc88a00"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-siamese-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "1366ae27d2acc197e68dad9331d34aea4e2848af2bada1196c22554b139938b2"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-russian-blue-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "744f0762d01bf6e9c278bd6de80d915027d9971407608979c4d393070105d45d"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-russian-blue-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "8d7e82aa27393d671a0f7a3dddbdf2f36e878c37502d601e68acac9823996535"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-black-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "ff99d1eb0da7a02ef38f560d3ad15d44acbfcca6d1c9dbd66036737aa57d4349"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-black-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "8eff680db9ff395fc9e20bc2c892dcdb5ab8d3b116683b350fe42908f2c09bc1"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-white-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "74aac9f3cc8fa092bf04b3935fb16372d7de76cec740d247692369f9aaef6c73"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-white-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "62ac156275cf1b11f8a9d9e51a1f8b22b50c4b29b91fd8e9c0bdffee1a090fe6"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-cream-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "c1a82f514f97f24cb3870f000f4fc1b074298b4126c0c0eda69cd9b5cd7f8905"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-cream-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "460e766e5d65f9598edfa973886c8fe8db07de1a5226a0034da6f8eebe8f3f63"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-brown-tabby-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "f5a30a8eb5faf54cb0e854886d135931456da1f87a5418d16c8299919daa4f6b"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-brown-tabby-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "4b575c1504eafecfa9f11804348cbb84634905cb9223b3e03cd5def22265c7f2"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-ginger-white-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "ee305135ebb982b7418f4a25d79777f7cc4465d8a585663bad048207d497de27"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-ginger-white-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "09595e30b756a5469c2e3dc74d488a3c064ff1a3155abda0805c0589cfa21d27"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-cow-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "4d93a61c6f94a11d602dc07b5d39cde748f0ac952c0a538d91602cae9ba41e5a"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-cow-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "b3b7153fef190d51bce4d54c0f133815569b8f59f88530a674c3b98939338c56"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-dilute-calico-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "dcc0101fc4e692b13eae7142ac883573d31b6f08dc52f7cbccbe91bfe9652afc"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-dilute-calico-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "5929ba77ddcb7ac83b49e06af2e744c056f1375eff0a03761dc5903279d6f444"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-torbie-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "70837b5f49fb21d566b82a908783fff0d5a2a9c6a11a7eaa8a7397421c351d46"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-torbie-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "1816755ceb875fb5c82fc300c5e41866795a7c463644b2433e6fa778e67e0148"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-chocolate-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "fbdcba5b1270a4b4a2603760e2b744934596e7a1a527ae31441eed9cd407cd72"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-chocolate-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "f07675220a3f14ee659003ff541dafabb1f548d1acdcff228f4ac30835d23394"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-lilac-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "3c676977bf35d6ba45862bffb1db613574841a6d5e6d1510091fbc84ef8e16f1"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-lilac-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "714df5162bb3b18f105d993b69461202998104a90f9bf92367525d1a8beb3616"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-smoke-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "d939340d92e74130347e332e25a2dc57ca6c379e3a69c15bd75f3155bae961ec"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-smoke-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "d6f3fe2c743b8abe5250111e9f906f73d2546fbd260a656e84614496356897ae"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-abyssinian-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "ba602888f4b5d702f3663b0813fb8aa88b5038809cd356527b86ceefa102330b"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-abyssinian-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "b49c6c00635bebdec64a76b2e238a723b5d945b33359a40805498e4901410074"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-bengal-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "9b4771283736c1f213dc5f7fdea3cff6cff53846f73b914c0bdcf13b8999993c"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-bengal-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "ae928327cbdb3027f0a70fd9e4e1a4b7903f2e3bcf13ad7b7aa283311ab5314e"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-egyptian-mau-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "bb2cf4baddb6f7a562b355926e61c668a26f6cd56bd5663d081aeb499fff8206"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-egyptian-mau-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "fb0710dc87ef2d1a3517436069d6546ba9e144398c33cc9ec5fc8401c2b7ae44"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-snow-leopard-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "3dbb5d0cf528bee25e6ee737ad54159f72b8de6086d7063cde84ddc7974e79e8"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-snow-leopard-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "fd30744761ffd4a07e50c17c73a5723c7db3047a14420649f4e26f84dce3e57e"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-cheetah-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "345df44639ab10045d5f5bc1086f00fb7597366bebc141f24114013c78000342"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-cheetah-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "df59fc4e09dcf4de6721b87e707afd3ddcb66c8414468808eb448e1eada2fb15"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-white-tiger-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "1bb35f63af4b699737bc8dd5f3178430397c1e24a42a2e8d35a61da2d8c39f91"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-white-tiger-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "fae07c88f725b2d68959299601550e419dc34d089f7f3e6baa189ad915dfebcb"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-sphynx-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "a387d23148f65d265a56a8a879ff9991508b8915b4b81b987ad5dc08e36cc274"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-sphynx-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "8d119b71e294678693ec27a4c4edc427a3c572f972ab7ee26930269f40d9e641"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-ragdoll-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "2d7ee1f359d57b3b8b42c38b91a8d65569882f224ef765cc140e7b3876ab0835"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-ragdoll-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "18ff99b0e068e3613a28a49074c12725b152da4c0dab61e1d7b3c48aad0ab9b9"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-serval-left.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "3bf5986b191d587336ca2187dbc52b223ef0ae54215f804f3a1e83f57d30382b"
+    },
+    {
+      "path": "public/img/neconyan/sleeping-serval-left-twitch.webp",
+      "size": [384, 308],
+      "frames": 1,
+      "sha256": "319b3b7496e4c2135fb539f045496b7ebfc79ff20a791b50861cadd6347d4f2e"
     }
   ]
 }

@@ -18,6 +18,7 @@ import { favsToHotswap, getMessageTimeStamp, dragElement, isMobile, initRossMods
 import { isChatNavigationBlocked, setChatNavigationBlocked } from './scripts/chat-navigation-flight.js';
 import { readMessageExpression, writeMessageExpression, renderMessageExpression } from './scripts/expression-history.js';
 import './scripts/neconyan-message-sleepers.js';
+import { dressSleeper } from './scripts/neconyan-sleeper-coats.js';
 import './scripts/neconyan-send-nya.js';
 import { userStatsHandler, statMesProcess, initStats } from './scripts/stats.js';
 import {
@@ -5802,8 +5803,7 @@ export function updateMessageElement(mes, { messageId = chat.length - 1, message
     const isNotice = mes.is_system && Object.values(system_message_types).includes(mes.extra?.type)
         && ![system_message_types.NARRATOR, system_message_types.ASSISTANT_MESSAGE].includes(mes.extra?.type);
     messageElement.children('.neconyan-message-sleeper')
-        .toggleClass('is-user', Boolean(mes.is_user))
-        .attr('src', `/img/neconyan/sleeping-${mes.is_user ? 'tiger-right' : 'calico-left'}.webp`)
+        .each((_, sleeper) => void dressSleeper(sleeper, Boolean(mes.is_user)))
         .prop('hidden', Boolean(isNotice));
     const viewportThumbnailSrc = isMobile() ? mobileAvatarImg : avatarImg;
 
