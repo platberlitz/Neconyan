@@ -141,17 +141,19 @@ describe('in-chat agents workspace redesign', () => {
         expect(styleSource).toContain('.ica--card-actions .ica--card-btn:not(:has(> i:only-child))');
     });
 
-    test('keeps a labelled Edit button on the card and Quick settings under More actions', () => {
+    test('keeps Quick settings directly above Edit on the card', () => {
         const primary = indexSource.slice(indexSource.indexOf('<div class="ica--card-primary-actions">'), indexSource.indexOf('<details class="ica--card-secondary">'));
         const secondary = indexSource.slice(indexSource.indexOf('<details class="ica--card-secondary">'), indexSource.indexOf('</details>', indexSource.indexOf('<details class="ica--card-secondary">')));
         expect(primary).toContain('ica--btn-edit');
         expect(primary).toContain('<span>Edit</span>');
-        expect(primary).not.toContain('ica--btn-settings');
+        expect(primary).toContain('ica--card-settings-actions');
+        expect(primary).toContain('<span>Quick settings</span>');
+        expect(primary.indexOf('ica--btn-settings')).toBeLessThan(primary.indexOf('ica--btn-edit'));
         expect(primary).not.toContain('ica--btn-history');
         const summary = indexSource.slice(indexSource.indexOf('function buildAgentQuickSummary('), indexSource.indexOf('function getAgentCardPhaseLabel('));
         expect(summary).toContain('const injectsBeforeReply = agent.phase === \'pre\' || agent.phase === \'both\';');
-        expect(secondary).toContain('ica--btn-settings');
-        expect(secondary).toContain('<span>Quick settings</span>');
+        expect(secondary).not.toContain('ica--btn-settings');
+        expect(styleSource).toMatch(/\.ica--card-settings-actions\s*\{[^}]*flex-direction:\s*column;/);
         expect(indexSource).not.toContain('void openQuickSettings([agent.id]);');
         expect(indexSource).toContain('onOpenEditor: single ? id => openEditor(id) : null');
         expect(indexSource).toContain('large: !window.matchMedia?.(\'(max-width: 768px)\').matches,');

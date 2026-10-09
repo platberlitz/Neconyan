@@ -3310,12 +3310,14 @@ function renderAgentList() {
                     <div class="ica--card-actions">
                         <div class="ica--card-primary-actions">
                             ${isPathfinderAgent(agent) ? '' : `<button type="button" class="ica--card-btn ica--btn-run ica--quick-chip-apply" title="${escapeHtml(applyTitle)}" aria-label="${escapeHtml(applyAria)}"><i class="fa-solid ${applyIcon}"></i><span>${applyLabel}</span></button>`}
-                            <button type="button" class="ica--card-btn ica--btn-edit" title="Open the editor with every setting for this agent" aria-label="${escapeHtml(t`Edit ${agent.name}`)}"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i><span>Edit</span></button>
+                            <div class="ica--card-settings-actions">
+                                <button type="button" class="ica--card-btn ica--btn-settings" title="Change the most common settings without opening the editor"><i class="fa-solid fa-sliders" aria-hidden="true"></i><span>Quick settings</span></button>
+                                <button type="button" class="ica--card-btn ica--btn-edit" title="Open the editor with every setting for this agent" aria-label="${escapeHtml(t`Edit ${agent.name}`)}"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i><span>Edit</span></button>
+                            </div>
                         </div>
                         <details class="ica--card-secondary">
                             <summary class="ica--card-more"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i><span>More actions</span></summary>
                             <div class="ica--card-secondary-actions">
-                                <button type="button" class="ica--card-btn ica--btn-settings" title="Change the most common settings without opening the editor"><i class="fa-solid fa-sliders" aria-hidden="true"></i><span>Quick settings</span></button>
                                 ${previewCompanionButton}
                                 ${previewPromptButton}
                                 ${canApplyToChosenTarget ? '<button type="button" class="ica--card-btn ica--btn-run-target ica--quick-chip-apply-target" title="Apply this agent to a chosen target: the last reply, the composer text, or a companion note" aria-label="Apply to target"><i class="fa-solid fa-crosshairs"></i><span>Apply to target</span></button>' : ''}
@@ -3422,7 +3424,7 @@ function renderAgentList() {
                 await openQuickSettings([agent.id]);
                 const renderedCard = $('#ica--agentList .ica--agent-card').filter((_, el) => el.dataset.agentId === agent.id);
                 renderedCard.find('.ica--btn-settings').prop('disabled', false);
-                renderedCard.find('.ica--card-more').trigger('focus');
+                renderedCard.find('.ica--btn-settings').trigger('focus');
             }));
 
             card.find('.ica--btn-convert-execution').on('click', agentAction(async event => {

@@ -81,12 +81,11 @@ async function openFullEditor(page) {
     await expect(page.locator('#ica--editor')).toBeVisible();
 }
 
-async function openQuickSettingsFromMoreActions(page) {
+async function openCardQuickSettings(page) {
     const allTab = page.locator('#ica--settings').getByRole('tab', { name: 'All', exact: true });
     if (await allTab.getAttribute('aria-selected') !== 'true') await allTab.click();
     const card = page.locator('#ica--agentList .ica--agent-card').first();
-    await card.locator('.ica--card-more').click();
-    await card.locator('.ica--card-secondary-actions .ica--btn-settings').click();
+    await card.locator('.ica--card-primary-actions .ica--btn-settings').click();
     const quick = page.getByRole('dialog', { name: 'Quick settings', exact: true });
     await expect(quick).toBeVisible();
     return quick;
@@ -112,7 +111,7 @@ for (const width of [1280, 393]) {
             try {
                 await openAgents(page);
                 await page.locator('#ica--search').fill(agent.name);
-                await openQuickSettingsFromMoreActions(page);
+                await openCardQuickSettings(page);
                 const quick = page.locator('.ica--quick-settings');
                 const length = quick.getByLabel('Target length', { exact: true });
                 const context = quick.getByLabel('Recent messages to read', { exact: true });
@@ -132,7 +131,7 @@ for (const width of [1280, 393]) {
                 await expect(quick).toBeHidden();
                 await openAgents(page);
                 await page.locator('#ica--search').fill(agent.name);
-                const reopenedQuick = await openQuickSettingsFromMoreActions(page);
+                const reopenedQuick = await openCardQuickSettings(page);
                 await expect(reopenedQuick.locator('.ica--quick-summary')).toContainText('Order');
                 await reopenedQuick.locator('.ica--quick-open-editor').click();
                 const editor = page.locator('#ica--editor');
@@ -159,7 +158,7 @@ for (const width of [1280, 393]) {
                 await expect(editor).toBeHidden();
                 await openAgents(page);
                 await page.locator('#ica--search').fill(agent.name);
-                await openQuickSettingsFromMoreActions(page);
+                await openCardQuickSettings(page);
                 await expect(length).toHaveValue('About 300 to 450 words');
                 await expect(context).toHaveValue('0');
                 const response = await page.request.post('/api/settings/get', { headers: requestHeaders, data: {} });

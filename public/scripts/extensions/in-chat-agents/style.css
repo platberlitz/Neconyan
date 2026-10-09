@@ -3325,6 +3325,12 @@ body.neconyan .ica--standalone-title { display: none; }
     gap: 4px;
 }
 
+.ica--card-settings-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
 .ica--card-actions .ica--card-btn:not(:has(> i:only-child)) {
     width: auto;
     min-width: 0;

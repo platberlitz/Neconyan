@@ -74,7 +74,6 @@ for (const phone of [false, true]) {
             await profiler.detach();
         }
         const firstCard = page.locator('#ica--agentList .ica--agent-card').first();
-        await firstCard.locator('.ica--card-more').click();
         const settingsButton = firstCard.getByRole('button', { name: 'Quick settings', exact: true });
         await settingsButton.evaluate(button => button.addEventListener('click', () => {
             window.__settingsClick = performance.now();

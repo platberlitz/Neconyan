@@ -68,7 +68,6 @@ for (const width of [393, 1280]) {
                     const companion = await import('/scripts/extensions/in-chat-agents/companion/companion-runner.js');
                     return window.SillyTavern.getContext().chat.some(message => companion.getCompanionResults(message)[id]?.includeInChatHistory);
                 }, ids[0])).toBe(true);
-                await first.locator('.ica--card-more').click();
                 await first.getByRole('button', { name: 'Quick settings', exact: true }).click();
                 const settings = page.getByRole('dialog', { name: 'Quick settings', exact: true });
                 await settings.getByLabel('Keep all saved notes', { exact: true }).selectOption('false');
@@ -174,7 +173,6 @@ for (const width of [393, 1280]) {
                 const quickSizes = await first.locator('.ica--companion-quick').evaluate(root => [...root.querySelectorAll('summary, input[type="number"], .checkbox_label')].filter(el => el.getBoundingClientRect().width).map(el => el.getBoundingClientRect().height));
                 expect(quickSizes.every(height => height >= 32)).toBe(true);
                 await page.screenshot({ path: info.outputPath('companion-quick-controls.png') });
-                await first.locator('.ica--card-more').click();
                 await first.getByRole('button', { name: 'Quick settings', exact: true }).click();
                 const geometry = await settings.evaluate(root => ({
                     document: document.documentElement.scrollWidth, width: root.clientWidth, scroll: root.scrollWidth,
@@ -186,7 +184,11 @@ for (const width of [393, 1280]) {
                 await page.screenshot({ path: info.outputPath('quick-settings.png') });
                 await page.keyboard.press('Escape');
                 await expect(settings).toHaveCount(0);
-                await expect(first.locator('.ica--card-more')).toBeFocused();
+                await expect(first.locator('.ica--btn-settings')).toBeFocused();
+                const quickButton = await first.locator('.ica--btn-settings').boundingBox();
+                const editButton = await first.locator('.ica--btn-edit').boundingBox();
+                expect(quickButton.y + quickButton.height).toBeLessThanOrEqual(editButton.y);
+                expect(quickButton.x).toBe(editButton.x);
                 const cardSizes = await first.locator('.ica--card-primary-actions button').evaluateAll(buttons => buttons.map(button => ({ width: button.getBoundingClientRect().width, height: button.getBoundingClientRect().height })));
                 expect(cardSizes.every(size => size.width >= 44 && size.height >= 44)).toBe(true);
                 await page.screenshot({ path: info.outputPath('agent-shortcuts.png') });
@@ -198,7 +200,6 @@ for (const width of [393, 1280]) {
                 await expect(first.locator('.ica--companion-quick').getByLabel('Keep in chat history', { exact: true })).toBeChecked();
                 await expect(first.locator('.ica--companion-quick [data-quick-depth]')).toHaveValue('3');
                 expect((await readAgents())[0]).toMatchObject({ modelOverride: 'shared-test-model', companion: { batchAgentIds: [ids[3], ids[1]], contextRecipientAgentIds: [ids[1]], chatHistoryDepth: 3 } });
-                await first.locator('.ica--card-more').click();
                 await first.getByRole('button', { name: 'Quick settings', exact: true }).click();
                 await settings.getByLabel('Model override', { exact: true }).fill('stale-dialog-model');
                 await page.evaluate(async id => {
