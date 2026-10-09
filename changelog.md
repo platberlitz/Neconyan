@@ -2,7 +2,7 @@
 
 ## v1.2.4.2
 
-Android fix for [#80](https://github.com/platberlitz/Neconyan/issues/80). The crash record from 1.2.4.1 showed where the server died: inside `Intl.Segmenter`, the JavaScript word splitter that Mewmory's memory search uses. That's why the long chat with saved memories crashed on every send or regenerate and a fresh chat didn't.
+Android fix for [#80](https://github.com/platberlitz/Neconyan/issues/80). The crash record from 1.2.4.1 showed where the server died: inside `Intl.Segmenter`, the JavaScript word splitter that Mewmory's memory search uses. That's why the long chat, which has Mewmory switched on, crashed on every send or regenerate and a fresh chat without Mewmory didn't.
 
 ### Highlights
 
