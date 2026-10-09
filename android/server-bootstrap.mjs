@@ -42,6 +42,8 @@ fs.mkdirSync(statePath, { recursive: true });
 writeFileAtomicSync(configPath, YAML.stringify(config), { mode: 0o600 });
 process.env.NECONYAN_SUPERVISED = '1';
 if (mode === 'safe') process.env.NECONYAN_SAFE_START = '1';
+// The launcher reads this after a crash to show which request was in flight.
+process.env.NECONYAN_REQUEST_TRACE = path.join(process.env.TMPDIR, 'requests.txt');
 process.argv = [process.argv[0], path.join(root, 'server.js'), '--configPath', configPath];
 const readyPath = path.join(statePath, 'android-ready.json');
 serverEvents.once(EVENT_NAMES.SERVER_STARTED, () => {

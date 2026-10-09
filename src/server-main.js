@@ -21,6 +21,7 @@ import helmet from 'helmet';
 import './fetch-patch.js';
 import { APP_NAME, isBunRuntime } from './runtime.js';
 import { serverDirectory } from './server-directory.js';
+import { createRequestTrace } from './request-trace.js';
 import { getServerBootId } from './server-boot-marker.js';
 import { AGENT_STORAGE_LIMITS } from '../public/scripts/extensions/in-chat-agents/setup-presets.js';
 import { JOB_INTENT_LIMIT_BYTES } from './jobs/store.js';
@@ -123,6 +124,9 @@ app.use(helmet({
 }));
 app.use(getResponseCompressionMiddleware());
 app.use(responseTime());
+if (process.env.NECONYAN_REQUEST_TRACE) {
+    app.use(createRequestTrace(process.env.NECONYAN_REQUEST_TRACE));
+}
 
 app.use('/api/auth', express.json({ limit: '32kb' }), express.urlencoded({ extended: false, limit: '32kb' }));
 app.use('/api/in-chat-agents', express.json({ limit: AGENT_STORAGE_LIMITS.presetBytes }), express.urlencoded({ extended: false, limit: AGENT_STORAGE_LIMITS.presetBytes }));
