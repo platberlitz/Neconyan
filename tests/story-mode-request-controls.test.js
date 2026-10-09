@@ -17,6 +17,7 @@ import { OVERSWIPE_BEHAVIOR, SWIPE_DIRECTION, SWIPE_SOURCE, SWIPE_STATE } from '
 import { buildAssistantKnowledge, getAssistantKnowledgeBudget } from '../public/scripts/neconyan-assistant-knowledge.js';
 import { combineRoleplayTextPrompt } from '../public/scripts/roleplay-text-format.js';
 import { isChatNavigationBlocked } from '../public/scripts/chat-navigation-flight.js';
+import { isSlashCommandText } from '../public/scripts/slash-commands/SlashCommandRuntimeUtils.js';
 
 const sources = Object.fromEntries(['script.js', 'scripts/openai.js', 'scripts/reasoning.js', 'scripts/generation-format.js', 'scripts/group-chats.js', 'scripts/utils.js', 'scripts/sentence-boundaries.js', 'scripts/st-context.js', 'scripts/sse-stream.js', 'scripts/textgen-settings.js'].map(file => {
     const source = readFileSync(new URL(`../public/${file}`, import.meta.url), 'utf8');
@@ -105,7 +106,7 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
         HTMLElement: class {},
         $: () => dom, chatElement: { find: () => ({}) },
         eventSource, event_types,
-        resolveGenerationOutputBufferState, resolveGenerationUnblockState, resolveStopGenerationState,
+        resolveGenerationOutputBufferState, resolveGenerationUnblockState, resolveStopGenerationState, isSlashCommandText,
         applyGenerationRequestControls, isGenerationLengthFinish, limitGenerationProse,
         createChatGenerationParameters, normalizeContentTextPure, createRawPromptPure, cleanGeneratedText, extractMessageFromDataPure, extractJsonFromDataPure,
         createTextProviderParameters, replaceListMacros,

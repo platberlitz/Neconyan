@@ -100,7 +100,7 @@ import { slashCommandReturnHelper } from './slash-commands/SlashCommandReturnHel
 import { accountStorage } from './util/AccountStorage.js';
 import { SlashCommandDebugController } from './slash-commands/SlashCommandDebugController.js';
 import { SlashCommandScope } from './slash-commands/SlashCommandScope.js';
-import { delayWithAbort } from './slash-commands/SlashCommandRuntimeUtils.js';
+import { delayWithAbort, isSlashCommandText } from './slash-commands/SlashCommandRuntimeUtils.js';
 import { t } from './i18n.js';
 import { kai_settings } from './kai-settings.js';
 import { instruct_presets, selectContextPreset, selectInstructPreset } from './instruct-mode.js';
@@ -7035,6 +7035,7 @@ export async function executeSlashCommandsOnChatInput(text, options = {}) {
     let currentProgress = 0;
     try {
         commandsFromChatInputAbortController = new SlashCommandAbortController();
+        await eventSource.emit(event_types.CHAT_COMMAND_STARTED, text);
         result = await executeSlashCommandsWithOptions(text, {
             abortController: commandsFromChatInputAbortController,
             onProgress: (done, total) => {
@@ -7218,7 +7219,7 @@ export async function setSlashCommandAutoComplete(textarea, isFloating = false) 
     const parser = new SlashCommandParser();
     const ac = new AutoComplete(
         textarea,
-        () => ac.text[0] == '/' && (power_user.stscript.autocomplete.state === AUTOCOMPLETE_STATE.ALWAYS || power_user.stscript.autocomplete.state === AUTOCOMPLETE_STATE.MIN_LENGTH && ac.text.length > 2),
+        () => isSlashCommandText(ac.text) && (power_user.stscript.autocomplete.state === AUTOCOMPLETE_STATE.ALWAYS || power_user.stscript.autocomplete.state === AUTOCOMPLETE_STATE.MIN_LENGTH && ac.text.length > 2),
         async (text, index) => await parser.getNameAt(text, index),
         isFloating,
     );
@@ -7228,11 +7229,15 @@ export async function setSlashCommandAutoComplete(textarea, isFloating = false) 
 export async function initSlashCommandAutoComplete() {
     const sendTextarea = /** @type {HTMLTextAreaElement} */ (document.querySelector('#send_textarea'));
     setSlashCommandAutoComplete(sendTextarea);
-    sendTextarea.addEventListener('input', () => {
-        if (sendTextarea.value && sendTextarea.value[0] == '/') {
+    const updateCommandInput = () => {
+        const isCommand = isSlashCommandText(sendTextarea.value);
+        document.getElementById('send_form')?.classList.toggle('has-slash-command', isCommand);
+        if (isCommand) {
             sendTextarea.style.fontFamily = 'var(--monoFontFamily, monospace)';
         } else {
             sendTextarea.style.fontFamily = null;
         }
-    });
+    };
+    sendTextarea.addEventListener('input', updateCommandInput);
+    updateCommandInput();
 }

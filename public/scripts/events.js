@@ -20,6 +20,7 @@ export const event_types = {
     CHAT_LOADED: 'chatLoaded',
     GENERATION_AFTER_COMMANDS: 'GENERATION_AFTER_COMMANDS',
     GENERATION_STARTED: 'generation_started',
+    CHAT_COMMAND_STARTED: 'chat_command_started',
     GENERATION_STOPPED: 'generation_stopped',
     GENERATION_ENDED: 'generation_ended',
     SD_PROMPT_PROCESSING: 'sd_prompt_processing',

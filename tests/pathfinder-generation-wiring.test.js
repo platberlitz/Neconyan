@@ -8,6 +8,7 @@ import { resolveGenerationUiLockState, resolveGenerationUnblockState, resolveSto
 import { limitGenerationProse, isGenerationLengthFinish } from '../public/scripts/generation-request-controls.js';
 import { buildAssistantKnowledge, getAssistantKnowledgeBudget } from '../public/scripts/neconyan-assistant-knowledge.js';
 import { isChatNavigationBlocked } from '../public/scripts/chat-navigation-flight.js';
+import { isSlashCommandText } from '../public/scripts/slash-commands/SlashCommandRuntimeUtils.js';
 
 await jest.unstable_mockModule('../public/script.js', () => ({ chat: [], getCurrentChatId: () => 'chat-a' }));
 await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/agent-store.js', () => ({ isPathfinderSubmoduleEnabled: () => true }));
@@ -37,7 +38,7 @@ function deferred() {
 function createHost() {
     const events = new EventEmitter();
     const context = vm.createContext({
-        isChatNavigationBlocked,
+        isChatNavigationBlocked, isSlashCommandText,
         // This harness runs the real host generation flow without the Neconyan
         // server lane, so the Stage 9 funnel reports that it has no named workflow.
         nativeRoleplayWorkflowFor: async () => null,
@@ -51,6 +52,7 @@ function createHost() {
         chatId: 'chat-a', chatGeneration: 0, agentRunId: 0, cancelRevision: 0,
         chat: [], chat_metadata: {}, characters: [{ name: 'Assistant', data: { extensions: {} } }],
         this_chid: 0, selected_group: null, is_group_generating: false, is_send_press: false, streamingProcessor: null,
+        isExecutingCommandsFromChatInput: false,
         name1: 'User', name2: 'Assistant', main_api: 'openai', online_status: 'connected', generation_started: null,
         power_user: { instruct: { enabled: false }, sysprompt: {}, context: {} },
         oai_settings: { send_if_empty: '' }, kai_settings: {}, kai_flags: {}, nai_settings: {},
@@ -98,7 +100,7 @@ function createHost() {
         toastr: { error: jest.fn(), warning: jest.fn() },
     });
     const buttons = { visible: false, generatingClass: false };
-    const input = { val(value) { return arguments.length ? input : ''; }, 0: { dispatchEvent() {} } };
+    const input = { value: '', val(value) { if (arguments.length) { input.value = value; return input; } return input.value; }, 0: { dispatchEvent() {} } };
     context.$ = selector => ({
         '#send_textarea': input,
         '#send_form': { addClass() { buttons.generatingClass = true; }, removeClass() { buttons.generatingClass = false; } },
@@ -115,7 +117,7 @@ function createHost() {
     context.setExtensionPrompt = jest.fn((key, value) => { context.extension_prompts[key] = { value }; });
     context.getExtensionPrompt = async () => context.extension_prompts.pathfinder_pipeline_retrieval?.value ?? '';
     context.prepareOpenAIMessages = jest.fn(async data => [[{ role: 'system', content: data.extensionPrompts.pathfinder_pipeline_retrieval?.value ?? '' }], false]);
-    const scriptFunctions = ['setAgentGenerationContextProvider', 'Generate', 'buildRecoveryContext', 'generateQuietPrompt', 'showStopButton', 'hideStopButton', 'activateSendButtons', 'deactivateSendButtons', 'stopGeneration', 'unblockGeneration', 'getNextMessageId'];
+    const scriptFunctions = ['setAgentGenerationContextProvider', 'Generate', 'sendTextareaMessage', 'buildRecoveryContext', 'generateQuietPrompt', 'showStopButton', 'hideStopButton', 'activateSendButtons', 'deactivateSendButtons', 'stopGeneration', 'unblockGeneration', 'getNextMessageId'];
     vm.runInContext(scriptFunctions.map(name => functionSource(scriptSource, name)).join('\n'), context);
     vm.runInContext(functionSource(worldSource, 'getWorldInfoPrompt'), context);
     vm.runInContext(functionSource(runnerSource, 'onWorldInfoActivated'), context);
@@ -142,7 +144,7 @@ function createHost() {
     events.on(event_types.GENERATION_STOPPED, () => { context.cancelRevision++; context.isGenerationInProgress = false; });
     events.on(event_types.GENERATION_ENDED, () => { context.isGenerationInProgress = false; });
     const emitted = jest.spyOn(events, 'emit');
-    return { context, events, emitted, buttons, generate: (type = 'normal', options = {}, dryRun = false) => context.Generate(type, { suppressUserMessage: true, ...options }, dryRun) };
+    return { context, events, emitted, buttons, input, generate: (type = 'normal', options = {}, dryRun = false) => context.Generate(type, { suppressUserMessage: true, ...options }, dryRun) };
 }
 
 afterEach(() => jest.restoreAllMocks());
@@ -163,7 +165,6 @@ describe('Pathfinder integration with the real extracted host generation flow', 
     });
 
     test.each([
-        ['commands', host => host.context.processCommands.mockResolvedValue(true)],
         ['blocked provider', host => host.context.isHordeGenerationNotAllowed.mockReturnValue(true)],
         ['no connection', host => { host.context.online_status = 'no_connection'; }],
     ])('emits one terminal event for %s, including before the Stop button becomes visible', async (_name, setup) => {
@@ -174,6 +175,24 @@ describe('Pathfinder integration with the real extracted host generation flow', 
         expect(host.context.is_send_press).toBe(false);
         expect(host.context.sendGenerationRequest).not.toHaveBeenCalled();
         expect(host.context.activeGenerationRun).toBeNull();
+    });
+
+    test.each(['composer', 'Generate'])('%s runs a command without replacing the active reply or emitting generation events', async source => {
+        const host = createHost();
+        const run = { context: { chatId: 'chat-a' } };
+        const controller = new AbortController();
+        host.context.activeGenerationRun = run;
+        host.context.abortController = controller;
+        host.context.is_send_press = true;
+        host.input.value = ' /echo hello';
+        if (source === 'composer') await host.context.sendTextareaMessage();
+        else await host.generate('normal', { suppressUserMessage: false });
+        expect(host.context.processCommands).toHaveBeenCalledWith(' /echo hello');
+        expect(host.context.activeGenerationRun).toBe(run);
+        expect(host.context.abortController).toBe(controller);
+        expect(host.context.is_send_press).toBe(true);
+        expect(host.context.sendGenerationRequest).not.toHaveBeenCalled();
+        expect(host.emitted).not.toHaveBeenCalled();
     });
 
     test('cleans up a prompt preparation exception that occurs before the API error handler', async () => {
