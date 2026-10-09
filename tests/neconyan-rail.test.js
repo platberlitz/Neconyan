@@ -687,7 +687,9 @@ describe('Neconyan workspace rail behavior', () => {
         };
         const runtime = vm.createContext({
             HTMLElement: Element,
-            document: { body: { classList: { contains: () => true } } },
+            document: { body: { classList: { contains: () => true } }, getElementById: id => new Element(id) },
+            finishUiMotion() {},
+            setUiVisibility: (_element, visible, apply) => apply(visible),
             closeShell: key => closed.push(key),
             displaceCharacterPanel: () => closed.push('characters'),
             syncDrawerIconState() {},
