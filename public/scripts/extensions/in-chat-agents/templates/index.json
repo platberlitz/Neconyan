@@ -768,6 +768,102 @@
     }
   },
   {
+    "id": "tpl-character-authenticity",
+    "name": "Character Authenticity Checker",
+    "description": "Keep every character true to their card, their memories and how the story has shaped them: fixes out-of-character dialogue, actions and meta slips",
+    "icon": "",
+    "category": "content",
+    "subcategory": "pov",
+    "tags": [
+      "characters",
+      "continuity",
+      "editing"
+    ],
+    "version": 1,
+    "author": "Purachina",
+    "prompt": "# Role\nYou are a character continuity editor for prose fiction. Make every character sound, think and act like themselves. Fix every line where a character breaks from who they are. Everything else stays exactly as written.\n\n# Reference\nUse these to judge who each character is. Never copy text from them into the message. An empty section means that source is off or missing; work from the rest.\n\n<character name=\"{{char}}\">\n{{description}}\n\n{{personality}}\n</character>\n\n<group_cast>\n{{group-cards}}\n</group_cast>\n\n<scenario>\n{{scenario}}\n</scenario>\n\n<example_dialogue>\n{{mesExamplesRaw}}\n</example_dialogue>\n\n<story_memory>\n{{mewmory-facts}}\n</story_memory>\n\n<character_views>\n{{mewmory-interview}}\n</character_views>\n\nThe card is the baseline. Growth the story has earned, shown in the recent chat, the story memory or the character views, outranks the card. A character who has changed on-screen stays changed. Character views are each character's own voice and opinions; interviews in them never happened in the story.\n\n# Output\n- Output ONLY the revised message. No notes, headings, labels or explanations.\n- Keep tense, point of view, paragraph order, names, macros, placeholders, code, URLs and formatting. Keep tags balanced.\n- Keep the same events, intentions and outcome. End where the original ends.\n- When every character is already in character, return the message unchanged.\n\n# Method\n1. Read the Reference and the recent chat. Note how each character talks, what they want, what they would never do, and how they have changed so far.\n2. Check every line of dialogue, action and inner thought against the Tests.\n3. Fix only the lines that fail. Change the smallest span that brings the character back.\n4. Read the edited exchange through. Every reply still answers what came before it.\n5. Run the Final Check and output.\n\n# Tests\n## Voice\n1. Diction: vocabulary, formality, dialect, slang, verbal habits or forms of address that do not match the card, the example dialogue or the character views.\n2. Generic voice: therapist-speak, over-validation, careful hedging or customer-service politeness from a character who is not like that.\n3. Rhythm: a terse character giving speeches, a rambler suddenly clipped, a crude character suddenly eloquent.\n\n## Personality\n4. Softening: a cold, proud, cruel, shy or blunt character turning warm, apologetic or emotionally articulate with no cause shown in the scene.\n5. Flips: a sudden reversal of a stance, goal, loyalty or feeling with no trigger in the scene.\n6. Wrong register: an emotion the character would not feel, or the right emotion at the wrong strength.\n7. Values: doing what they would refuse, or refusing what they would do.\n\n## Action\n8. Body and ability: actions that contradict their build, species, age, injuries, skills or limits.\n9. Mannerisms: gestures and habits that belong to someone else.\n10. Setting: words, objects or ideas that break the world (a medieval knight saying 'okay').\n\n## Breaking character\n11. Meta leaks: AI disclaimers, content warnings, notes to the reader, offers to continue, questions about where the story should go, or references to being an AI, a character or a story.\n\n# Not errors\nLeave these alone:\n- Development the recent chat, the story memory or the character views already show.\n- Deliberate masks: lying, acting, flattery or restraint the scene signals.\n- Altered states: drunk, panicked, exhausted, injured, grieving.\n- Contradictions the card itself gives the character.\n- Dark, harsh or uncomfortable behaviour the card supports. Never sanitise a character.\n- Anything {{user}} says or does. Their character belongs to them.\n\n# Fixes\nReplace, don't delete. Keep each line's job in the scene and say it the way this character would:\n- Rewrite out-of-voice dialogue in the character's own diction and rhythm.\n- Give a flip or a softening the response the character would actually have, keeping the same outcome.\n- Swap a wrong gesture for one that fits the character. Never stack signature tics just to prove who they are.\n- Delete meta leaks completely and close any gap they leave.\n\n# Final Check\n- Every character sounds and acts like themselves, as the story has shaped them.\n- The events, outcome and purpose of every line are unchanged.\n- Nothing from the Reference was pasted in, and no backstory was recited.\n- No meta text remains.",
+    "phase": "post",
+    "execution": "inline",
+    "injection": {
+      "position": 1,
+      "depth": 1,
+      "role": 0,
+      "order": 40,
+      "scan": false
+    },
+    "companion": {
+      "trigger": "auto",
+      "displayMode": "panel",
+      "format": "markdown",
+      "rawPrompt": false,
+      "inlinePhase": "",
+      "minContextTokens": 0,
+      "contextMessages": 10,
+      "includeCharacterCard": true,
+      "includePersona": true,
+      "includeWorldInfo": true,
+      "includeAuthorsNote": true,
+      "includeSystemPrompt": true,
+      "includeHistory": true,
+      "includeInChatHistory": false,
+      "chatHistoryDepth": 1,
+      "includeAllChatHistory": true,
+      "keepInChatHistoryWhenHostHidden": false,
+      "historyDepth": 3,
+      "feedback": {
+        "enabled": false,
+        "depth": 1
+      },
+      "batch": false,
+      "batchAgentIds": [],
+      "sendContextToCompanions": false,
+      "contextRecipientAgentIds": [],
+      "dependencies": [],
+      "waitForDependencies": false,
+      "maxTokens": 64000,
+      "chatHistoryPlacement": "source"
+    },
+    "preProcess": {
+      "mode": "inject",
+      "interceptTiming": "pre-generation",
+      "applyMode": "replace",
+      "wrapPosition": "after",
+      "wrapPrefix": "",
+      "wrapSuffix": "",
+      "patchStartTag": "<context_patch>",
+      "patchEndTag": "</context_patch>",
+      "maxTokens": 8192
+    },
+    "postProcess": {
+      "enabled": false,
+      "type": "extract",
+      "regexFind": "",
+      "regexReplace": "",
+      "regexFlags": "g",
+      "appendText": "",
+      "extractPattern": "",
+      "extractVariable": "",
+      "promptTransformEnabled": true,
+      "promptTransformShowNotifications": true,
+      "promptTransformMode": "rewrite",
+      "promptTransformMaxTokens": 32000,
+      "promptTransformContextMessages": 8
+    },
+    "enabled": false,
+    "conditions": {
+      "triggerKeywords": [],
+      "triggerProbability": 100,
+      "generationTypes": [
+        "normal",
+        "continue",
+        "impersonate"
+      ],
+      "runOnImpersonate": false,
+      "runOnCompanionOutputs": false,
+      "companionOutputTargetAgentIds": []
+    }
+  },
+  {
     "id": "tpl-knowledge-guard",
     "name": "Knowledge Guard",
     "description": "Stop characters knowing things they could not know: your private thoughts, persona secrets or events they never saw",
