@@ -1,5 +1,6 @@
 import { formatRoleplayTextMessage, combineRoleplayTextPrompt } from './scripts/roleplay-text-format.js';
 import { roleplayLoadErrorMessage } from './scripts/roleplay-load-error.js';
+import { finishUiMotion, getUiSlideOptions, isUiClosing, setUiVisibility } from './scripts/ui-motion.js';
 import {
     showdown,
     moment,
@@ -18265,7 +18266,7 @@ function doDrawerOpenClick() {
 export async function doNavbarIconClick() {
     const icon = $(this).find('.drawer-icon');
     const drawer = $(this).parent().find('.drawer-content');
-    const drawerWasOpenAlready = $(this).parent().find('.drawer-content').hasClass('openDrawer');
+    const drawerWasOpenAlready = drawer.hasClass('openDrawer') && !isUiClosing(drawer.get(0));
     const targetDrawerID = $(this).parent().find('.drawer-content').attr('id');
     const drawerElement = drawer.get(0);
 
@@ -18276,13 +18277,14 @@ export async function doNavbarIconClick() {
             $(iconEl).toggleClass('closedIcon openIcon');
         }
         for (const el of $openDrawers) {
-            $(el).toggleClass('closedDrawer openDrawer');
+            finishUiMotion(el);
+            $(el).removeClass('openDrawer').addClass('closedDrawer');
         }
         if ($openDrawers.length && animation_duration) {
             await delay(animation_duration);
         }
         icon.toggleClass('openIcon closedIcon');
-        drawer.toggleClass('openDrawer closedDrawer');
+        setUiVisibility(drawerElement, true, () => drawer.addClass('openDrawer').removeClass('closedDrawer'));
 
         if (targetDrawerID === 'right-nav-panel') {
             focusUiSurface(drawerElement);
@@ -18302,7 +18304,7 @@ export async function doNavbarIconClick() {
             document.activeElement.blur();
         }
         icon.toggleClass('closedIcon openIcon');
-        drawer.toggleClass('closedDrawer openDrawer');
+        setUiVisibility(drawerElement, false, () => drawer.removeClass('openDrawer').addClass('closedDrawer'));
     }
 }
 
@@ -19068,13 +19070,13 @@ jQuery(async function () {
 
     function showMenu() {
         showBookmarksButtons();
-        menu.fadeIn(animation_duration);
+        setUiVisibility(menu.get(0), true, () => menu.stop(true, true).show());
         optionsPopper.update();
         isOptionsMenuVisible = true;
     }
 
     function hideMenu() {
-        menu.fadeOut(animation_duration);
+        setUiVisibility(menu.get(0), false, () => menu.stop(true, true).hide());
         optionsPopper.update();
         isOptionsMenuVisible = false;
     }
@@ -19821,7 +19823,9 @@ jQuery(async function () {
             if ($openDrawers.length && targetParentHasOpenDrawer === 0) {
                 // Toggle icon and drawer classes
                 $('.openIcon').not('.drawerPinnedOpen').toggleClass('closedIcon openIcon');
-                $openDrawers.toggleClass('closedDrawer openDrawer');
+                for (const drawer of $openDrawers) {
+                    setUiVisibility(drawer, false, () => $(drawer).removeClass('openDrawer').addClass('closedDrawer'));
+                }
             }
         }
     });
@@ -19839,7 +19843,8 @@ jQuery(async function () {
         if (drawerElement instanceof HTMLElement) {
             drawerElement.dispatchEvent(new CustomEvent('inline-drawer-toggle', { bubbles: true }));
         }
-        drawerContent.stop().slideToggle({
+        drawerContent.stop(true, true).slideToggle({
+            ...getUiSlideOptions(),
             complete: () => {
                 $(this).css('height', '');
             },

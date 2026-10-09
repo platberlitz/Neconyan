@@ -1,4 +1,5 @@
 import { createBubblesBottomBoundary } from './bubbles-bottom-boundary.js';
+import { finishUiMotion, getUiSlideOptions, isUiClosing, revealUi, setUiVisibility } from './ui-motion.js';
 import { DEFAULT_SCROLL_EDGE_SETTLE_DELAYS, jumpScrollElementToEdge } from './chat-scroll-edges.js';
 import {
     clampMobileShellText as clampText,
@@ -164,41 +165,41 @@ const NN_PANEL_STYLESHEETS = Object.freeze({
     ],
     'characters:persona': [
         { href: 'css/personas.css?v=20261006-personaui1', id: 'deferred-personas-css' },
-        { href: 'css/neconyan-tool-pages.css?v=20261009-formatting', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261009-companion-action-row', id: 'deferred-tool-pages-css' },
     ],
     'left:api': [
-        { href: 'css/neconyan-tool-pages.css?v=20261009-formatting', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261009-companion-action-row', id: 'deferred-tool-pages-css' },
     ],
     'left:presets': [
-        { href: 'css/neconyan-tool-pages.css?v=20261009-formatting', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261009-companion-action-row', id: 'deferred-tool-pages-css' },
     ],
     'left:sampling': [
-        { href: 'css/neconyan-tool-pages.css?v=20261009-formatting', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261009-companion-action-row', id: 'deferred-tool-pages-css' },
     ],
     'left:advanced-formatting': [
         { href: 'css/macros.css', id: 'deferred-macros-css' },
-        { href: 'css/neconyan-tool-pages.css?v=20261009-formatting', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261009-companion-action-row', id: 'deferred-tool-pages-css' },
     ],
     'left:mewmory': [
-        { href: 'css/neconyan-tool-pages.css?v=20261009-formatting', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261009-companion-action-row', id: 'deferred-tool-pages-css' },
     ],
     'left:agents': [
-        { href: 'css/neconyan-tool-pages.css?v=20261009-formatting', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261009-companion-action-row', id: 'deferred-tool-pages-css' },
     ],
     'right:extensions': [
         { href: 'css/extensions-panel.css?v=20261006a', id: 'deferred-extensions-panel-css' },
     ],
     'right:background': [
-        { href: 'css/neconyan-tool-pages.css?v=20261009-formatting', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261009-companion-action-row', id: 'deferred-tool-pages-css' },
     ],
     'right:server': [
-        { href: 'css/neconyan-tool-pages.css?v=20261009-formatting', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261009-companion-action-row', id: 'deferred-tool-pages-css' },
     ],
     'right:console-logs': [
-        { href: 'css/neconyan-tool-pages.css?v=20261009-formatting', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261009-companion-action-row', id: 'deferred-tool-pages-css' },
     ],
     'right:included-tool': [
-        { href: 'css/neconyan-tool-pages.css?v=20261009-formatting', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261009-companion-action-row', id: 'deferred-tool-pages-css' },
     ],
 });
 const NN_PANEL_STYLE_HOLD_TIMEOUT_MS = 1500;
@@ -507,7 +508,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261009-expressions';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261010-expressions-review';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -7776,8 +7777,10 @@ function setChatSidebarOpenState(shouldOpen) {
 
     const isOpen = Boolean(shouldOpen);
     getChatbarState().sidebarOpen = isOpen;
-    refs.root.style.display = isOpen ? 'flex' : 'none';
-    refs.root.classList.toggle('sb-chat-sidebar-visible', isOpen);
+    setUiVisibility(refs.root, isOpen, visible => {
+        refs.root.style.display = visible ? 'flex' : 'none';
+        refs.root.classList.toggle('sb-chat-sidebar-visible', visible);
+    });
     setButtonPressed(getChatDesktopRefs()?.toggleSidebarButton, isOpen);
 
     if (isOpen) {
@@ -7947,13 +7950,13 @@ function setMobileChatToolsOpenState(shouldOpen) {
     }
 
     getChatbarState().mobileToolsOpen = isOpen;
-    refs.overlay.hidden = !isOpen;
-    refs.overlay.classList.toggle('sb-chat-tools-open', isOpen);
-    refs.overlay.setAttribute('aria-hidden', String(!isOpen));
-
-    if ('inert' in refs.overlay) {
-        refs.overlay.inert = !isOpen;
-    }
+    setUiVisibility(refs.overlay, isOpen, visible => {
+        refs.overlay.hidden = !visible;
+        refs.overlay.classList.toggle('sb-chat-tools-open', visible);
+        refs.overlay.setAttribute('aria-hidden', String(!visible));
+        refs.overlay.inert = !visible;
+        queueMobileModalStateSync();
+    });
 
     queueMobileModalStateSync();
 
@@ -8071,8 +8074,10 @@ function setConnectionStripOpenState(shouldOpen) {
     }
 
     getChatbarState().connectionStripOpen = nextState;
-    desktopRefs.connectionStrip.classList.toggle('is-open', nextState);
-    desktopRefs.connectionStrip.hidden = !nextState;
+    setUiVisibility(desktopRefs.connectionStrip, nextState, visible => {
+        desktopRefs.connectionStrip.classList.toggle('is-open', visible);
+        desktopRefs.connectionStrip.hidden = !visible;
+    });
     setButtonPressed(desktopRefs.toggleConnectionButton, nextState);
 }
 
@@ -9049,7 +9054,7 @@ function syncDrawerIconState(drawerIconOrSelector, shouldOpen) {
 function isDrawerActuallyOpen(drawerRootOrId) {
     const el = getDrawerRoot(drawerRootOrId);
 
-    if (!(el instanceof HTMLElement) || !el.classList.contains('openDrawer')) {
+    if (!(el instanceof HTMLElement) || !el.classList.contains('openDrawer') || isUiClosing(el)) {
         return false;
     }
 
@@ -9362,9 +9367,16 @@ function forceDrawerState(drawerRootOrId, shouldOpen, drawerIconOrSelector = nul
         if (el.id !== 'left-nav-panel') closeShell('left');
         if (el.id !== 'user-settings-block') closeShell('right');
         if (el.id !== 'right-nav-panel') displaceCharacterPanel();
+        for (const id of ['left-nav-panel', 'user-settings-block', 'right-nav-panel']) {
+            if (id !== el.id) finishUiMotion(document.getElementById(id));
+        }
     }
-    el.classList.toggle('openDrawer', Boolean(shouldOpen));
-    el.classList.toggle('closedDrawer', !shouldOpen);
+    setUiVisibility(el, Boolean(shouldOpen), visible => {
+        el.classList.toggle('openDrawer', visible);
+        el.classList.toggle('closedDrawer', !visible);
+        queueMobileModalStateSync();
+        queueTopbarPageStateSync();
+    });
     syncDrawerIconState(drawerIconOrSelector, shouldOpen);
     queueMobileModalStateSync();
     queueTopbarPageStateSync();
@@ -17357,6 +17369,7 @@ function setActiveTab(shellKey, tabId, { focusButton = false } = {}) {
 
     if (previousTab && previousTab.id !== activeTab.id) {
         previousTab.onDeactivate?.();
+        if (isShellOpen(shellKey)) revealUi(activeTab.panel, { distance: 4 });
     }
 
     activeTab.onActivate?.();
@@ -17444,7 +17457,7 @@ function closeShell(shellKey) {
     const shellState = getShellState(shellKey);
     const shellRoot = document.getElementById(shellConfig.rootPanelId);
 
-    if (!(shellRoot instanceof HTMLElement) || !shellRoot.classList.contains('openDrawer')) {
+    if (!(shellRoot instanceof HTMLElement) || !shellRoot.classList.contains('openDrawer') || isUiClosing(shellRoot)) {
         return;
     }
 
@@ -17464,7 +17477,7 @@ function closeShell(shellKey) {
         document.activeElement.blur();
     }
 
-    // Managed shells do not need the legacy drawer toggle close animation.
+    // The shared visibility lifecycle also handles a rapid close/reopen.
     forceDrawerState(shellRoot, false, shellConfig.hostIconSelector);
     syncMobileShellDrawerBounds();
     queueMobileShellDrawerBoundsSync();
@@ -18317,7 +18330,7 @@ function interceptDrawerOpeners() {
             siblingIcon.classList.replace('fa-circle-chevron-up', 'fa-circle-chevron-down');
             siblingIcon.classList.replace('up', 'down');
             if (window.jQuery && siblingContent) {
-                window.jQuery(siblingContent).stop().slideUp();
+                window.jQuery(siblingContent).stop(true, true).slideUp(getUiSlideOptions());
             } else {
                 siblingContent?.style.setProperty('display', 'none');
             }
@@ -18810,7 +18823,7 @@ function setNeconyanRailDrawerOpen(open, { restoreFocus = false } = {}) {
 
     document.body.classList.toggle('neconyan-rail-drawer-open', shouldOpen);
     const scrim = ensureNeconyanRailScrim();
-    scrim.hidden = !shouldOpen;
+    setUiVisibility(scrim, shouldOpen, visible => { scrim.hidden = !visible; }, { distance: 0 });
 
     if (rail instanceof HTMLElement) {
         if (mobile) {
@@ -20527,6 +20540,7 @@ function initAll() {
     nnState.initObserver?.disconnect();
     nnState.initObserver = null;
     nnState.initialized = true;
+    eventSource.on(event_types.CHAT_CHANGED, () => revealUi(document.getElementById('chat')));
 
     restorePersistedTopbarState();
     seedTopbarScaleDefaults();

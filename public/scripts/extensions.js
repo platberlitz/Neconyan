@@ -1,6 +1,7 @@
 import { DOMPurify, Popper } from '../lib.js';
+import { setUiVisibility } from './ui-motion.js';
 
-import { eventSource, event_types, saveSettings, saveSettingsDebounced, getRequestHeaders, animation_duration, CLIENT_VERSION, getChatGeneration } from '../script.js';
+import { eventSource, event_types, saveSettings, saveSettingsDebounced, getRequestHeaders, CLIENT_VERSION, getChatGeneration } from '../script.js';
 import { POPUP_RESULT, POPUP_TYPE, Popup, callGenericPopup } from './popup.js';
 import { renderTemplate, renderTemplateAsync } from './templates.js';
 import { delay, deleteValueByPath, equalsIgnoreCaseAndAccents, escapeHtml, sanitizeSelector, setValueByPath, versionCompare } from './utils.js';
@@ -1141,10 +1142,10 @@ async function addExtensionsButtonAndMenu() {
 
     $(button).on('click', function () {
         if (isDropdownVisible) {
-            dropdown.fadeOut(animation_duration);
+            setUiVisibility(dropdown.get(0), false, () => dropdown.stop(true, true).hide());
             isDropdownVisible = false;
         } else {
-            dropdown.fadeIn(animation_duration);
+            setUiVisibility(dropdown.get(0), true, () => dropdown.stop(true, true).show());
             isDropdownVisible = true;
         }
         popper.update();
@@ -1155,7 +1156,7 @@ async function addExtensionsButtonAndMenu() {
         const clickTarget = $(e.target);
         const noCloseTargets = ['#sd_gen', '#extensionsMenuButton', '#roll_dice'];
         if (!noCloseTargets.some(id => clickTarget.closest(id).length > 0)) {
-            dropdown.fadeOut(animation_duration);
+            setUiVisibility(dropdown.get(0), false, () => dropdown.stop(true, true).hide());
             isDropdownVisible = false;
         }
     });

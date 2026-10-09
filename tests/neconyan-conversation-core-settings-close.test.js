@@ -19,6 +19,16 @@ const saveCurrentPanelSettings = jest.fn();
 const memoryInput = new globalThis.HTMLTextAreaElement();
 let memoryText = 'Old memory';
 let currentPersonaId = 'persona-b.png';
+const closing = new Set();
+let deferHide = false;
+
+await jest.unstable_mockModule('../public/scripts/ui-motion.js', () => ({
+    isUiClosing: element => closing.has(element),
+    setUiVisibility: (element, visible, apply) => {
+        if (deferHide && !visible) closing.add(element);
+        else apply(visible);
+    },
+}));
 
 globalThis.document = {
     getElementById: (id) => {
@@ -98,6 +108,8 @@ const { closeConversationSettings, refreshConversationMemoryFromPanel } = await 
 describe('Conversation settings close identity', () => {
     beforeEach(() => {
         currentPersonaId = 'persona-b.png';
+        closing.clear();
+        deferHide = false;
         drawer.hidden = false;
         drawer.dataset = {
             conversationAvatar: 'drawer.png',
@@ -137,5 +149,16 @@ describe('Conversation settings close identity', () => {
         memoryText = memoryInput.value = 'Old memory';
         await refreshConversationMemoryFromPanel();
         expect(memoryInput.value).toBe('Fresh memory');
+    });
+
+    test('saves once with the original identity while a closing drawer is still painted', () => {
+        deferHide = true;
+        closeConversationSettings();
+        closeConversationSettings();
+        expect(drawer.hidden).toBe(false);
+        expect(saveCurrentPanelSettings).toHaveBeenCalledTimes(1);
+        expect(saveCurrentPanelSettings).toHaveBeenCalledWith({
+            avatar: 'drawer.png', groupId: 'drawer-group', personaId: 'drawer-persona.png',
+        });
     });
 });

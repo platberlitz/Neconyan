@@ -1482,7 +1482,6 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
         min-width: 0 !important;
         margin-top: 0 !important;
         border-radius: 20px 20px 0 0 !important;
-        animation: sbMobileShellSheetIn 220ms var(--sb-ease-out) both;
         transform-origin: center bottom;
     }
 

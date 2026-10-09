@@ -32,20 +32,22 @@ dialog {
     -webkit-font-smoothing: subpixel-antialiased;
 
     /* Variables setup */
-    --popup-animation-speed: var(--sb-transition);
+    --popup-animation-speed: 180ms;
+    --popup-close-speed: 120ms;
 }
 
 /** Popup styles applied to the main popup */
 .popup--animation-fast {
-    --popup-animation-speed: var(--sb-transition-fast);
+    --popup-animation-speed: 180ms;
 }
 
 .popup--animation-slow {
-    --popup-animation-speed: var(--sb-transition-slow);
+    --popup-animation-speed: 240ms;
 }
 
 .popup--animation-none {
     --popup-animation-speed: 0ms;
+    --popup-close-speed: 0ms;
 }
 
 /* Styling of main popup elements */
@@ -94,7 +96,7 @@ dialog {
 
 /* Opening animation */
 .popup[opening] {
-    animation: pop-in var(--popup-animation-speed) var(--sb-ease-out);
+    animation: popup-arrive var(--popup-animation-speed) var(--sb-ease-out);
 }
 
 .popup[opening]::backdrop {
@@ -124,12 +126,27 @@ body.no-blur .popup[open]::backdrop {
 
 /* Closing animation */
 .popup[closing] {
-    animation: pop-out var(--popup-animation-speed) var(--sb-ease-out);
+    animation: popup-leave var(--popup-close-speed) var(--sb-ease-out) both;
 }
 
 .popup[closing]::backdrop {
-    animation: fade-out var(--popup-animation-speed) var(--sb-ease-out);
+    animation: fade-out var(--popup-close-speed) var(--sb-ease-out) both;
 }
+
+@keyframes popup-arrive {
+    from { opacity: 0; translate: 0 6px; }
+    to { opacity: 1; translate: 0 0; }
+}
+
+@keyframes popup-leave {
+    from { opacity: 1; translate: 0 0; }
+    to { opacity: 0; translate: 0 3px; }
+}
+
+body.reduced-motion .popup[opening],
+body.reduced-motion .popup[opening]::backdrop,
+body.reduced-motion .popup[closing],
+body.reduced-motion .popup[closing]::backdrop { animation: none; }
 
 /* Edge inset to match Toastr default spacing */
 :root {
@@ -260,7 +277,7 @@ body.no-blur .popup[open]::backdrop {
     .popup[opening]::backdrop,
     .popup[closing],
     .popup[closing]::backdrop {
-        animation-duration: 0.01ms !important;
+        animation: none !important;
     }
 }
 
