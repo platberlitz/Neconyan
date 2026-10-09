@@ -164,41 +164,41 @@ const NN_PANEL_STYLESHEETS = Object.freeze({
     ],
     'characters:persona': [
         { href: 'css/personas.css?v=20261006-personaui1', id: 'deferred-personas-css' },
-        { href: 'css/neconyan-tool-pages.css?v=20261009-header-labels', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261009-formatting', id: 'deferred-tool-pages-css' },
     ],
     'left:api': [
-        { href: 'css/neconyan-tool-pages.css?v=20261009-header-labels', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261009-formatting', id: 'deferred-tool-pages-css' },
     ],
     'left:presets': [
-        { href: 'css/neconyan-tool-pages.css?v=20261009-header-labels', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261009-formatting', id: 'deferred-tool-pages-css' },
     ],
     'left:sampling': [
-        { href: 'css/neconyan-tool-pages.css?v=20261009-header-labels', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261009-formatting', id: 'deferred-tool-pages-css' },
     ],
     'left:advanced-formatting': [
         { href: 'css/macros.css', id: 'deferred-macros-css' },
-        { href: 'css/neconyan-tool-pages.css?v=20261009-header-labels', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261009-formatting', id: 'deferred-tool-pages-css' },
     ],
     'left:mewmory': [
-        { href: 'css/neconyan-tool-pages.css?v=20261009-header-labels', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261009-formatting', id: 'deferred-tool-pages-css' },
     ],
     'left:agents': [
-        { href: 'css/neconyan-tool-pages.css?v=20261009-header-labels', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261009-formatting', id: 'deferred-tool-pages-css' },
     ],
     'right:extensions': [
         { href: 'css/extensions-panel.css?v=20261006a', id: 'deferred-extensions-panel-css' },
     ],
     'right:background': [
-        { href: 'css/neconyan-tool-pages.css?v=20261009-header-labels', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261009-formatting', id: 'deferred-tool-pages-css' },
     ],
     'right:server': [
-        { href: 'css/neconyan-tool-pages.css?v=20261009-header-labels', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261009-formatting', id: 'deferred-tool-pages-css' },
     ],
     'right:console-logs': [
-        { href: 'css/neconyan-tool-pages.css?v=20261009-header-labels', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261009-formatting', id: 'deferred-tool-pages-css' },
     ],
     'right:included-tool': [
-        { href: 'css/neconyan-tool-pages.css?v=20261009-header-labels', id: 'deferred-tool-pages-css' },
+        { href: 'css/neconyan-tool-pages.css?v=20261009-formatting', id: 'deferred-tool-pages-css' },
     ],
 });
 const NN_PANEL_STYLE_HOLD_TIMEOUT_MS = 1500;
@@ -507,7 +507,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261009-agent-card-alignment';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261009-formatting';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -14173,15 +14173,23 @@ function buildServerAdminPanel() {
  * @param {string} id Drawer element ID
  * @param {string} title Drawer title
  * @param {string} description Short description
+ * @param {string} sectionIcon Section icon class
  * @returns {HTMLElement} The drawer element
  */
-function createAdvFormattingDrawer(id, title, description) {
+function createAdvFormattingDrawer(id, title, description, sectionIcon) {
     const drawer = createElement('div', {
         id,
         className: 'inline-drawer wide100p flexFlowColumn sb-af-settings-drawer',
     });
-    const header = createElement('div', { className: 'inline-drawer-toggle inline-drawer-header' });
-    const label = createElement('div', { className: 'flex-container flexFlowColumn' });
+    const header = createElement('button', {
+        className: 'inline-drawer-toggle inline-drawer-header',
+        attrs: { type: 'button', 'aria-expanded': 'false', 'aria-controls': `${id}-content` },
+    });
+    header.appendChild(createElement('span', {
+        className: `sb-af-section-icon fa-solid ${sectionIcon}`,
+        attrs: { 'aria-hidden': 'true' },
+    }));
+    const label = createElement('span', { className: 'sb-af-section-copy' });
     const titleEl = createElement('b');
     titleEl.textContent = title;
     label.appendChild(titleEl);
@@ -14191,18 +14199,23 @@ function createAdvFormattingDrawer(id, title, description) {
         label.appendChild(desc);
     }
     header.appendChild(label);
-    const icon = createElement('div', { className: 'fa-solid fa-circle-chevron-down inline-drawer-icon down' });
+    const icon = createElement('span', {
+        className: 'fa-solid fa-circle-chevron-down inline-drawer-icon down',
+        attrs: { 'aria-hidden': 'true', tabindex: '-1' },
+    });
     header.appendChild(icon);
     drawer.appendChild(header);
-    const content = createElement('div', { className: 'inline-drawer-content' });
+    const content = createElement('div', { id: `${id}-content`, className: 'inline-drawer-content' });
     content.style.display = 'none';
     drawer.appendChild(content);
+    drawer.addEventListener('inline-drawer-toggle', event => {
+        if (event.target === drawer) header.setAttribute('aria-expanded', String(icon.classList.contains('up')));
+    });
     return drawer;
 }
 
 /**
- * Wraps Advanced Formatting columns (Context Template, Instruct Template,
- * System Prompt, Reasoning) into collapsible drawers for better UX.
+ * Groups the existing formatting controls by task, keeping their nodes and handlers intact.
  */
 function groupAdvancedFormattingIntoDrawers() {
     const $af = $('#AdvancedFormatting');
@@ -14210,67 +14223,93 @@ function groupAdvancedFormattingIntoDrawers() {
         return;
     }
 
-    // The three-column container
     const $columnsContainer = $af.find('.flex-container.spaceEvenly').first();
     if ($columnsContainer.length === 0) {
         return;
     }
 
+    // Reasoning and reply controls arrive inside SystemPromptColumn, not beside it.
+    const $system = $af.find('#SystemPromptColumn');
+    const $reasoning = $system.children().filter((_, element) => element.querySelector('#reasoning_auto_parse'));
+    $reasoning.attr('id', 'FormattingReasoning');
+    const $reply = $('<div>', { id: 'FormattingReplyControls', class: 'flex-container flexFlowColumn' });
+    $system.children().filter((_, element) => element.querySelector('#custom_stopping_strings, #tokenizer, #start_reply_with')).appendTo($reply);
     const sections = [
         {
             id: 'sb-af-context',
-            title: 'Context Template',
-            description: 'Story string, separators, and context formatting options',
+            title: t`Context & cleanup`,
+            description: t`Story layout, spacing and unfinished sentences.`,
+            icon: 'fa-align-left',
             selector: '#ContextSettings',
         },
         {
             id: 'sb-af-instruct',
-            title: 'Instruct Template',
-            description: 'Instruct mode sequences, wrapping, and activation',
+            title: t`Instruct template`,
+            description: t`The message markers your local model expects.`,
+            icon: 'fa-code',
             selector: '#InstructSettingsColumn',
         },
         {
             id: 'sb-af-sysprompt',
-            title: 'System Prompt',
-            description: 'System prompt, post-history instructions, stopping strings, tokenizer',
+            title: t`System prompt`,
+            description: t`Instructions before and after the chat.`,
+            icon: 'fa-feather-pointed',
             selector: '#SystemPromptColumn',
+        },
+        {
+            id: 'sb-af-reasoning',
+            title: t`Reasoning`,
+            description: t`Show, recognise and reuse thinking blocks.`,
+            icon: 'fa-brain',
+            node: $reasoning,
+        },
+        {
+            id: 'sb-af-replies',
+            title: t`Reply controls`,
+            description: t`Reply prefixes, stopping strings and token counting.`,
+            icon: 'fa-comment-dots',
+            node: $reply,
         },
     ];
 
     const $drawersContainer = $('<div>', { class: 'sb-af-drawers flex-container flexFlowColumn gap10' });
 
     sections.forEach(section => {
-        const $col = $(section.selector).first();
+        const $col = section.node ?? $af.find(section.selector).first();
         if ($col.length === 0) return;
 
         $col.detach();
 
-        const drawer = createAdvFormattingDrawer(section.id, section.title, section.description);
+        const drawer = createAdvFormattingDrawer(section.id, section.title, section.description, section.icon);
+        if (section.id === 'sb-af-instruct' || section.id === 'sb-af-sysprompt') drawer.setAttribute('data-cc-null', '');
         const content = drawer.querySelector('.inline-drawer-content');
 
         // Remove the flex1 class so it fills the full width in stacked layout
         $col.removeClass('flex1');
-        $col.addClass('wide100p');
+        $col.addClass('wide100p sb-af-body');
 
         content.appendChild($col[0]);
         $drawersContainer.append(drawer);
     });
 
-    // Also check if Reasoning section exists after the columns container
-    const $reasoning = $columnsContainer.nextAll().filter(function () {
-        return $(this).find('#reasoning_auto_parse').length > 0 || $(this).find('.sb-reasoning-toggle-grid').length > 0;
-    }).first();
-
-    if ($reasoning.length > 0) {
-        $reasoning.detach();
-        const drawer = createAdvFormattingDrawer('sb-af-reasoning', 'Reasoning', 'Auto-parse, formatting, and reasoning block settings');
-        const content = drawer.querySelector('.inline-drawer-content');
-        content.appendChild($reasoning[0]);
-        $drawersContainer.append(drawer);
-    }
-
     // Replace the columns container with the stacked drawers
     $columnsContainer.replaceWith($drawersContainer);
+
+    // Label the original preset actions rather than replacing their bound controls.
+    const actions = {
+        update: t`Save`, rename: t`Rename`, new: t`Save as`, restore: t`Restore`,
+        import: t`Import`, export: t`Export`, delete: t`Delete`,
+    };
+    for (const [action, label] of Object.entries(actions)) {
+        $af.find(`[data-preset-manager-${action}]`).each((_, element) => {
+            element.classList.add('sb-af-preset-action');
+            element.appendChild(createElement('span', { text: label }));
+        });
+    }
+    $af.find('.sb-af-preset-action').parent('.marginLeft5').removeClass('marginLeft5');
+    $af.find('#af_master_import span').text(t`Import all`);
+    $af.find('#af_master_export span').text(t`Export all`);
+    $af.find('#af_master_import span, #af_master_export span').removeAttr('data-i18n');
 
     $af.data('sb-grouped', true);
 }

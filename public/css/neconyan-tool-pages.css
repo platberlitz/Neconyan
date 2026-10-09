@@ -594,8 +594,7 @@ body.neconyan-tool-tour-active #neconyan-tour-coachmark {
     position: relative;
 }
 
-#left-nav-panel[data-neconyan-native-page='connections'] .neconyan-model-provider-stack,
-#left-nav-panel[data-neconyan-native-page='formatting'] .sb-af-drawers > .sb-af-settings-drawer {
+#left-nav-panel[data-neconyan-native-page='connections'] .neconyan-model-provider-stack {
     padding: 16px 18px;
     border: 1px solid var(--neco-border);
     border-radius: 14px;
@@ -604,12 +603,177 @@ body.neconyan-tool-tour-active #neconyan-tour-coachmark {
 
 #left-nav-panel[data-neconyan-native-page='formatting'] .sb-af-drawers {
     display: grid;
-    gap: 12px;
+    gap: 10px;
+}
+
+#left-nav-panel #AdvancedFormatting .sb-af-settings-drawer {
+    padding: 0;
+    border: 1px solid var(--neco-border);
+    border-radius: 14px;
+    background: var(--neco-surface);
+    overflow: clip;
 }
 
 #left-nav-panel[data-neconyan-native-page='formatting'] .sb-af-settings-drawer > .inline-drawer-header {
-    padding: 0;
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr) 20px;
+    gap: 12px;
+    align-items: center;
+    width: 100%;
+    min-height: 84px;
+    margin: 0;
+    padding: 16px 18px;
     border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--neco-ink);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    box-shadow: none;
+}
+
+#left-nav-panel #AdvancedFormatting .sb-af-settings-drawer > .inline-drawer-header:is(:hover, [aria-expanded='true']) {
+    background: color-mix(in srgb, var(--neco-ginger) 9%, var(--neco-surface));
+}
+
+#left-nav-panel #AdvancedFormatting .sb-af-settings-drawer > .inline-drawer-header:focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: -3px;
+}
+
+#left-nav-panel #AdvancedFormatting .sb-af-section-icon {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border: 1px solid color-mix(in srgb, var(--neco-ginger) 40%, var(--neco-border));
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--neco-ginger) 12%, var(--neco-surface));
+    color: var(--neco-ink);
+    font-size: 16px;
+}
+
+#left-nav-panel #AdvancedFormatting .sb-af-section-copy {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+/* The whole header is the touch target; its decorative chevron must fit its grid track. */
+#left-nav-panel #AdvancedFormatting .sb-af-settings-drawer > .inline-drawer-header > .inline-drawer-icon {
+    --sb-inline-drawer-icon-size: 18px;
+    margin: 0;
+    justify-self: end;
+}
+
+#left-nav-panel #AdvancedFormatting .sb-af-section-copy small {
+    color: var(--neco-muted);
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+#left-nav-panel #AdvancedFormatting .sb-af-settings-drawer > .inline-drawer-content {
+    margin: 0;
+    padding: 16px 18px 18px;
+    border-top: 1px solid var(--neco-border);
+}
+
+#left-nav-panel #AdvancedFormatting .sb-af-body .standoutHeader {
+    margin: 0 0 10px;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+}
+
+#left-nav-panel #AdvancedFormatting :is(#ContextSettings, #InstructSettingsColumn, #SystemPromptColumn) > div > .standoutHeader > strong,
+#left-nav-panel #AdvancedFormatting :is(#InstructSettingsColumn, #SystemPromptColumn) > .standoutHeader > strong,
+#left-nav-panel #AdvancedFormatting #FormattingReasoning > h4 {
+    display: none;
+}
+
+#left-nav-panel #AdvancedFormatting .sb-af-body .title_restorable {
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+#left-nav-panel #AdvancedFormatting .sb-af-body .title_restorable .menu_button {
+    min-width: 44px;
+    min-height: 44px;
+}
+
+#left-nav-panel #AdvancedFormatting .sb-af-preset-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: auto;
+    min-width: 44px;
+    min-height: 44px;
+    height: auto;
+    margin: 0;
+    padding: 8px 10px;
+    border: 1px solid color-mix(in srgb, var(--neco-ginger) 40%, var(--neco-border));
+    border-radius: 10px;
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    font-size: 13px;
+    box-shadow: none;
+}
+
+#left-nav-panel #AdvancedFormatting .sb-af-preset-action span {
+    font: 700 13px/1.2 var(--sb-font-body);
+}
+
+#left-nav-panel #AdvancedFormatting .sb-af-preset-action[data-preset-manager-update] {
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+}
+
+#left-nav-panel #AdvancedFormatting .sb-af-preset-action:hover {
+    border-color: var(--neco-ginger-hover);
+    background: var(--neco-ginger-hover);
+    color: var(--neco-on-accent);
+}
+
+#left-nav-panel #AdvancedFormatting :is(.sb-af-preset-action, #af_master_import, #af_master_export):focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+#left-nav-panel #AdvancedFormatting .flex-container:has(> [data-preset-manager-for]) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+#left-nav-panel #AdvancedFormatting [data-preset-manager-for] {
+    flex: 1 1 100%;
+    min-height: 44px;
+    height: 44px;
+    width: 100%;
+}
+
+#left-nav-panel #AdvancedFormatting .flex-container:has(> .sb-af-preset-action) {
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-left: 0;
+    margin-top: 8px;
+    justify-content: flex-start;
+}
+
+#left-nav-panel #AdvancedFormatting .sb-af-body textarea {
+    background: var(--neco-canvas);
+    color: var(--neco-ink);
+    border-color: var(--neco-border);
+    border-radius: 10px;
+    line-height: 1.6;
+}
+
+#left-nav-panel #AdvancedFormatting.sb-chat-completion-mode > .flex-container:first-child {
+    display: none;
 }
 
 #left-nav-panel[data-neconyan-native-page='formatting'] .sb-af-settings-drawer > .inline-drawer-header b {
@@ -621,6 +785,10 @@ body.neconyan-tool-tour-active #neconyan-tour-coachmark {
 /* The intro names the page; the old heading row keeps only its Text Completion import buttons. */
 #left-nav-panel[data-neconyan-native-page='formatting'] #AdvancedFormatting > .flex-container:first-child > h3 {
     display: none;
+}
+
+#left-nav-panel #AdvancedFormatting > .flex-container:first-child {
+    margin-bottom: 12px;
 }
 
 @media (max-width: 768px) {
@@ -660,8 +828,7 @@ body.neconyan-tool-tour-active #neconyan-tour-coachmark {
         margin-bottom: 12px;
     }
 
-    #left-nav-panel[data-neconyan-native-page='connections'] .neconyan-model-provider-stack,
-    #left-nav-panel[data-neconyan-native-page='formatting'] .sb-af-drawers > .sb-af-settings-drawer {
+    #left-nav-panel[data-neconyan-native-page='connections'] .neconyan-model-provider-stack {
         padding: 12px;
     }
 
