@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.2.4.2
+
+Android fix for [#80](https://github.com/platberlitz/Neconyan/issues/80). The crash record from 1.2.4.1 showed where the server died: inside `Intl.Segmenter`, the JavaScript word splitter that Mewmory's memory search uses. That's why the long chat with saved memories crashed on every send or regenerate and a fresh chat didn't.
+
+### Highlights
+
+- The Node runtime inside the APK only carried English-only ICU data (the language rules behind word splitting, sorting and similar), without word-break rules. Splitting words then crashed the whole server instead of raising an error. The APK now ships the official full ICU 78.3 data file, pinned by checksum, and the server loads it at start.
+- Memory search also splits words with a plain Unicode pattern on any Node runtime that lacks that data, so it can't reach the crash again.
+- The packaged-APK check now splits words inside the installed runtime. The same check on the published 1.2.4.1 APK reproduces the crash, so the check proves the fix rather than just passing.
+- Saved chats, memories and settings aren't changed. Updated the [official handbook](https://platberlitz.github.io/neconyan-docs/start/android/) and the assistants' app-help reference.
+
 ## v1.2.4.1
 
 Diagnostic Android hotfix for [#80](https://github.com/platberlitz/Neconyan/issues/80). After 1.2.4 the reporter's existing chat still restarted the server on send or regenerate, and the copied details only said `signal 11` with no record of where the crash happened.
