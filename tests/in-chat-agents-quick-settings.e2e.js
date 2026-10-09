@@ -187,8 +187,24 @@ for (const width of [393, 1280]) {
                 await expect(first.locator('.ica--btn-settings')).toBeFocused();
                 const quickButton = await first.locator('.ica--btn-settings').boundingBox();
                 const editButton = await first.locator('.ica--btn-edit').boundingBox();
-                expect(quickButton.y + quickButton.height).toBeLessThanOrEqual(editButton.y);
-                expect(quickButton.x).toBe(editButton.x);
+                const runButton = await first.locator('.ica--btn-run').boundingBox();
+                const moreButton = await first.locator('.ica--card-more').boundingBox();
+                expect(runButton.y).toBe(quickButton.y);
+                expect(moreButton.y).toBe(editButton.y);
+                if (width === 393) {
+                    expect(quickButton.y + quickButton.height).toBeLessThanOrEqual(editButton.y);
+                    expect(quickButton.x).toBe(editButton.x);
+                    expect(runButton.x).toBe(moreButton.x);
+                } else {
+                    expect(quickButton.y).toBe(editButton.y);
+                    expect(runButton.x + runButton.width).toBeLessThanOrEqual(quickButton.x);
+                    expect(quickButton.x + quickButton.width).toBeLessThanOrEqual(editButton.x);
+                    expect(editButton.x + editButton.width).toBeLessThanOrEqual(moreButton.x);
+                }
+                expect(runButton.height).toBe(quickButton.height);
+                expect(moreButton.height).toBe(editButton.height);
+                const actions = await first.locator('.ica--card-actions').boundingBox();
+                expect(runButton.x).toBe(actions.x);
                 const cardSizes = await first.locator('.ica--card-primary-actions button').evaluateAll(buttons => buttons.map(button => ({ width: button.getBoundingClientRect().width, height: button.getBoundingClientRect().height })));
                 expect(cardSizes.every(size => size.width >= 44 && size.height >= 44)).toBe(true);
                 await page.screenshot({ path: info.outputPath('agent-shortcuts.png') });

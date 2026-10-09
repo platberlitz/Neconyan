@@ -3121,6 +3121,8 @@ body.neconyan .ica--standalone-title { display: none; }
 .ica--card-name {
     font-size: calc(var(--mainFontSize) * 0.92);
     font-weight: 700;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .ica--card-desc {
@@ -3130,9 +3132,8 @@ body.neconyan .ica--standalone-title { display: none; }
     font-size: calc(var(--mainFontSize) * 0.76);
     line-height: 1.35;
     opacity: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .ica--card-header-actions {
@@ -3309,15 +3310,15 @@ body.neconyan .ica--standalone-title { display: none; }
 
 .ica--card-actions {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
+    flex-wrap: wrap;
+    align-items: stretch;
+    justify-content: start;
+    gap: 6px;
     margin-top: 0;
-    padding: 7px 0 0 42px;
+    padding: 8px 0 0;
     border-top: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor, #555b66) 35%, transparent);
 }
 
-.ica--card-primary-actions,
 .ica--card-secondary-actions {
     display: flex;
     align-items: center;
@@ -3325,19 +3326,22 @@ body.neconyan .ica--standalone-title { display: none; }
     gap: 4px;
 }
 
+.ica--card-primary-actions,
 .ica--card-settings-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+    display: contents;
 }
+
+.ica--card-primary-actions .ica--btn-run { grid-area: run; }
+.ica--card-primary-actions .ica--btn-settings { grid-area: settings; }
+.ica--card-primary-actions .ica--btn-edit { grid-area: edit; }
 
 .ica--card-actions .ica--card-btn:not(:has(> i:only-child)) {
     width: auto;
     min-width: 0;
-    height: 34px;
-    min-height: 34px;
+    height: auto;
+    min-height: 44px;
     padding: 5px 9px;
-    font-size: calc(var(--mainFontSize) * 0.74);
+    font-size: calc(var(--mainFontSize) * 0.85);
     justify-content: center;
 }
 
@@ -3360,6 +3364,7 @@ body.neconyan .ica--standalone-title { display: none; }
 
 .ica--card-secondary {
     position: relative;
+    grid-area: more;
     flex: 0 0 auto;
 }
 
@@ -3367,12 +3372,15 @@ body.neconyan .ica--standalone-title { display: none; }
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    min-height: 34px;
+    justify-content: center;
+    width: 100%;
+    min-height: 44px;
     padding: 5px 8px;
-    border-radius: var(--sb-radius-sm, 10px);
+    border-radius: 10px;
+    border: 1px solid var(--ica-border);
     color: var(--ica-muted);
     cursor: pointer;
-    font-size: calc(var(--mainFontSize) * 0.72);
+    font-size: calc(var(--mainFontSize) * 0.85);
     list-style: none;
 }
 

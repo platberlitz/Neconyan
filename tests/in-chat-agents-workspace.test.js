@@ -141,7 +141,7 @@ describe('in-chat agents workspace redesign', () => {
         expect(styleSource).toContain('.ica--card-actions .ica--card-btn:not(:has(> i:only-child))');
     });
 
-    test('keeps Quick settings directly above Edit on the card', () => {
+    test('keeps card actions in one desktop row and Quick settings above Edit on phones', () => {
         const primary = indexSource.slice(indexSource.indexOf('<div class="ica--card-primary-actions">'), indexSource.indexOf('<details class="ica--card-secondary">'));
         const secondary = indexSource.slice(indexSource.indexOf('<details class="ica--card-secondary">'), indexSource.indexOf('</details>', indexSource.indexOf('<details class="ica--card-secondary">')));
         expect(primary).toContain('ica--btn-edit');
@@ -153,7 +153,8 @@ describe('in-chat agents workspace redesign', () => {
         const summary = indexSource.slice(indexSource.indexOf('function buildAgentQuickSummary('), indexSource.indexOf('function getAgentCardPhaseLabel('));
         expect(summary).toContain('const injectsBeforeReply = agent.phase === \'pre\' || agent.phase === \'both\';');
         expect(secondary).not.toContain('ica--btn-settings');
-        expect(styleSource).toMatch(/\.ica--card-settings-actions\s*\{[^}]*flex-direction:\s*column;/);
+        expect(styleSource).toMatch(/\.ica--card-settings-actions\s*\{[^}]*display:\s*contents;/);
+        expect(styleSource).toMatch(/\.ica--card-actions\s*\{[^}]*flex-wrap:\s*wrap;[^}]*justify-content:\s*start;/);
         expect(indexSource).not.toContain('void openQuickSettings([agent.id]);');
         expect(indexSource).toContain('onOpenEditor: single ? id => openEditor(id) : null');
         expect(indexSource).toContain('large: !window.matchMedia?.(\'(max-width: 768px)\').matches,');
@@ -162,6 +163,7 @@ describe('in-chat agents workspace redesign', () => {
         expect(quickSettingsSource).toContain('text: \'Open full editor\'');
         expect(quickSettingsSource).toContain('if (result === OPEN_EDITOR) await onOpenEditor(first.id);');
         const mobileShell = readRepoFile('public/css/neconyan-mobile-shell.css');
+        expect(mobileShell).toContain('grid-template-areas: \'run settings\' \'more edit\';');
         expect(mobileShell).toContain('body.neconyan #ica--settings .ica--card-primary-actions { display: contents; }');
         expect(mobileShell).not.toContain('.ica--card-primary-actions .ica--btn-edit');
         expect(mobileShell).toContain('body.neconyan #ica--settings .ica--card-secondary-actions { left: 0; right: auto; }');
