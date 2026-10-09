@@ -3034,6 +3034,7 @@ body.neconyan .neconyan-character-filters[open] { padding-bottom: 8px; }
 body.neconyan .neconyan-character-filters #character_sort_order { width: auto; max-width: 100%; min-width: 160px; }
 
 body.neconyan #left-nav-panel #neconyan-model-connections-native {
+    container: connections / inline-size;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     align-items: start;
@@ -3071,18 +3072,73 @@ body.neconyan #left-nav-panel .neconyan-model-service-selector::before { content
 body.neconyan #left-nav-panel .neconyan-provider-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
 body.neconyan .neconyan-provider-fields h4 { font-size: 14px; }
 body.neconyan .neconyan-provider-fields :is(input, select, textarea) { max-width: 100%; }
-body.neconyan .neconyan-connect-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0 18px; }
-body.neconyan .neconyan-connect-actions > .online_status { flex: 1; margin: 0; min-width: 130px; }
-body.neconyan .neconyan-connect-actions > .api_button { min-height: 44px; padding-inline: 22px; }
-body.neconyan .neconyan-connection-tools { flex-basis: 100%; }
-body.neconyan .neconyan-connection-tools > .menu_button { margin: 4px 8px 4px 0; }
+/* Keep feedback and secondary tools out of the button sizing grid. */
+body.neconyan #left-nav-panel #rm_api_block .neconyan-connect-actions {
+    display: grid;
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+    align-items: start;
+    gap: 8px;
+    margin: 12px 0 20px;
+}
+body.neconyan #left-nav-panel #rm_api_block .neconyan-connect-actions > .online_status {
+    grid-column: 1 / -1;
+    justify-self: start;
+    align-self: start;
+    display: inline-flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    min-width: 0;
+    max-width: 100%;
+    margin: 4px 0;
+    padding: 6px 10px;
+    border-radius: 8px;
+    line-height: 1.5;
+}
+body.neconyan #rm_api_block .neconyan-connect-actions .online_status_indicator { flex: 0 0 8px; width: 8px; height: 8px; }
+body.neconyan #rm_api_block .neconyan-connect-actions .online_status_text { min-width: 0; overflow-wrap: anywhere; }
+body.neconyan #left-nav-panel #rm_api_block .neconyan-connect-actions > .menu_button {
+    justify-self: start;
+    width: auto;
+    min-width: 110px;
+    min-height: 44px;
+    margin: 0;
+    padding: 10px 18px;
+}
+body.neconyan #rm_api_block .neconyan-connection-tools {
+    grid-column: 1 / -1;
+    min-width: 0;
+    border-top: 1px solid var(--neco-border);
+}
+body.neconyan #rm_api_block .neconyan-connection-tools > summary { color: var(--neco-muted); font-size: 13px; }
+body.neconyan #rm_api_block .neconyan-connection-tools > .menu_button { min-height: 44px; margin: 0 6px 6px 0; }
+body.neconyan:not([data-sb-theme='windows-98']):not([data-sb-theme='windows-xp']) #rm_api_block .neconyan-connect-actions > .api_button {
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+    border-color: var(--neco-ginger);
+    text-shadow: none;
+}
+body.neconyan:not([data-sb-theme='windows-98']):not([data-sb-theme='windows-xp']) #rm_api_block .neconyan-connect-actions > .api_button:hover {
+    background: var(--neco-ginger-hover);
+}
+body.neconyan #left-nav-panel #rm_api_block .neconyan-model-provider-stack { background: var(--neco-surface); }
+body.neconyan #left-nav-panel #rm_api_block .neconyan-provider-fields h4,
+body.neconyan #left-nav-panel #rm_api_block #openai_api > h4 {
+    font-family: var(--mainFontFamily);
+    text-transform: none;
+    letter-spacing: normal;
+    color: var(--neco-ink);
+    font-size: 14px;
+    padding: 0;
+    border: 0;
+}
 body.neconyan .neconyan-saved-connections label { display: block; }
-@media (max-width: 1100px) {
-    body.neconyan #left-nav-panel #neconyan-model-connections-native.has-saved-connections { grid-template-columns: minmax(0, 1fr); }
+@container connections (max-width: 760px) {
+    body.neconyan .neconyan-model-saved,
+    body.neconyan .neconyan-model-provider-stack { grid-column: 1 / -1; }
     body.neconyan .neconyan-model-saved > .wide100p { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(0, 2fr); align-items: start; gap: 0 10px; }
     body.neconyan .neconyan-model-saved .neconyan-connection-management { grid-column: 1 / -1; }
 }
-@media (max-width: 700px) {
+@container connections (max-width: 540px) {
     body.neconyan #left-nav-panel .neconyan-provider-fields,
     body.neconyan .neconyan-model-saved > .wide100p { display: block; }
     body.neconyan .neconyan-provider-model { margin-top: 20px; }
