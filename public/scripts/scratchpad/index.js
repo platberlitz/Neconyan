@@ -11,6 +11,7 @@ import { t } from '../i18n.js';
 import { getAssistantGender, getAssistantIconSrc } from '../neconyan-assistant-art.js';
 import { append, clear, h } from '../notebooks/dom.js';
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
+import { buildTextDiffMarkup } from '../text-diff.js';
 import { accountStorage } from '../util/AccountStorage.js';
 import * as api from './api.js';
 import { prepareChange } from './changes.js';
@@ -1012,6 +1013,19 @@ async function reviewChange(session, message, part) {
     }
 }
 
+function changeDiff(plan, editor = null) {
+    const diff = h('div', { class: 'ica-transform-diff', 'data-i18n-ignore': '', tabindex: '0', 'aria-label': t`Changes` });
+    const update = () => {
+        const edited = editor ? editor.value : plan.after;
+        // The shared renderer escapes every text segment before adding its fixed markup.
+        diff.innerHTML = buildTextDiffMarkup(plan.before, plan.getAfterText ? plan.getAfterText(edited) : edited);
+    };
+    update();
+    editor?.addEventListener('input', update);
+    return h('div', { class: 'ica-transform-history' },
+        h('strong', { text: t`Changes` }), diff);
+}
+
 async function reviewAndSaveChange(session, message, part, key) {
     const source = app.source;
     let plan;
@@ -1026,13 +1040,12 @@ async function reviewAndSaveChange(session, message, part, key) {
         ? h('textarea', { class: 'text_pole scratchpad-review-editor', rows: '12', value: plan.after, 'aria-label': plan.afterLabel || t`Proposed text` })
         : null;
     const content = h('div', { class: 'neconyan-assistant-review scratchpad-review' },
-        h('p', { text: t`Check this change before it is saved. You can edit the proposed text first.` }),
+        h('p', { text: plan.editable ? t`Check this change before it is saved. You can edit the proposed text first.` : t`Check this change before it is saved.` }),
         h('p', {}, h('strong', { text: t`Where: ` }), plan.target),
         h('p', {}, h('strong', { text: t`What: ` }), plan.field),
-        h('strong', { text: plan.beforeLabel || t`Now` }),
-        h('pre', { class: 'scratchpad-review-before', text: plan.before || t`(empty)` }),
-        h('strong', { text: plan.afterLabel || t`Proposed` }),
-        editor ?? h('pre', { class: 'scratchpad-review-after', text: plan.after }),
+        changeDiff(plan, editor),
+        editor ? h('strong', { text: plan.afterLabel || t`Proposed` }) : null,
+        editor,
         plan.hint ? h('p', { class: 'scratchpad-review-hint', text: plan.hint }) : null);
     const result = await callGenericPopup(content, POPUP_TYPE.CONFIRM, '', {
         wide: true,
@@ -1066,8 +1079,7 @@ async function reviewNotebookChange(session, message, part, { dismiss = false } 
             const content = h('div', { class: 'scratchpad-review' },
                 h('h3', { text: proposal.summary.label || t`Review note change` }),
                 h('p', { text: t`This exact change is also available in Notes under Assistant changes. Note revisions and AI access are checked again when you save.` }),
-                h('strong', { text: t`Now` }), h('pre', { class: 'scratchpad-review-before', text: proposal.before || t`(empty)` }),
-                h('strong', { text: t`Proposed` }), h('pre', { class: 'scratchpad-review-after', text: proposal.after || t`(empty)` }));
+                changeDiff(proposal));
             const result = await callGenericPopup(content, POPUP_TYPE.CONFIRM, '', { wide: true, large: true, okButton: t`Save change`, cancelButton: t`Not now` });
             if (result !== POPUP_RESULT.AFFIRMATIVE) return;
         }

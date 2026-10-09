@@ -1,4 +1,4 @@
-import { DiffMatchPatch } from '../../../lib.js';
+import { buildTextDiffMarkup as buildPromptTransformDiffMarkup } from '../../text-diff.js';
 import { extension_settings, renderExtensionTemplateAsync, getContext } from '../../extensions.js';
 import { Popup, POPUP_TYPE, POPUP_RESULT } from '../../popup.js';
 import { accountStorage } from '../../util/AccountStorage.js';
@@ -5675,23 +5675,6 @@ Requirements:
         console.warn('[InChatAgents] Custom companion generation fell back to local scaffold.', error);
         return fallbackKit;
     }
-}
-
-function buildPromptTransformDiffMarkup(beforeText, afterText) {
-    const dmp = new DiffMatchPatch();
-    const diffs = dmp.diff_main(String(beforeText ?? ''), String(afterText ?? ''));
-    dmp.diff_cleanupSemantic(diffs);
-
-    return diffs.map(([operation, text]) => {
-        const escapedText = escapeHtml(text);
-        if (operation === 1) {
-            return `<span class="ica-transform-diff-part--ins">${escapedText}</span>`;
-        }
-        if (operation === -1) {
-            return `<span class="ica-transform-diff-part--del">${escapedText}</span>`;
-        }
-        return `<span>${escapedText}</span>`;
-    }).join('');
 }
 
 function getPreGenerationInterceptModeLabel(entry) {

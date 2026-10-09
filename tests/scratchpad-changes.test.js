@@ -106,6 +106,7 @@ describe('Scratchpad reviewed saves', () => {
         const existing = structuredClone(character.data.alternate_greetings);
         const plan = await prepareChange({ type: 'character', action: 'append', character: 'Nova', field: 'alternate_greetings', value: ['Proposed greeting.'] }, source);
         expect(plan.after).toBe('Proposed greeting.');
+        expect(plan.getAfterText('Reviewed greeting.\n\n---\n\nOne more greeting.')).toBe([...existing, 'Reviewed greeting.', 'One more greeting.'].join('\n\n---\n\n'));
         await plan.commit('Reviewed greeting.\n\n---\n\nOne more greeting.');
         const body = JSON.parse(globalThis.fetch.mock.calls[1][1].body);
         expect(body).toEqual({ avatar: 'Nova.png', expected_revision: 'a'.repeat(64), data: { alternate_greetings: [...existing, 'Reviewed greeting.', 'One more greeting.'] } });
@@ -122,6 +123,16 @@ describe('Scratchpad reviewed saves', () => {
         const plan = await prepareChange({ type: 'character', character: 'Nova', field: 'alternate_greetings', value: ['Replacement.'] }, source);
         await plan.commit(plan.after);
         expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body).data.alternate_greetings).toEqual(['Replacement.']);
+    });
+
+    test.each([
+        { type: 'lorebook', action: 'delete', book: 'Garden', uid: 0 },
+        { type: 'chat', action: 'delete', message: 0 },
+    ])('reviews $type deletion as removed text without a placeholder addition', async change => {
+        const plan = await prepareChange(change, source);
+        expect(plan.before).toContain(change.type === 'chat' ? 'Original message.' : 'Original lore.');
+        expect(plan.after).toBe('');
+        expect(plan.editable).toBe(false);
     });
 
     test.each(['add', 'edit', 'delete'])('refuses a lorebook %s after switching chats during the review', async action => {

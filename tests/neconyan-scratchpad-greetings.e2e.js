@@ -39,14 +39,17 @@ for (const phone of [false, true]) {
         const first = page.locator('.scratchpad-change').first();
         await expect(first).toContainText('Add alternate greetings to Durable Nova');
         await first.getByRole('button', { name: 'Review', exact: true }).click();
-        await expect(page.locator('.scratchpad-review')).toContainText('Existing greetings (kept)');
-        await expect(page.locator('.scratchpad-review-before')).toContainText(existing[1]);
+        await expect(page.locator('.scratchpad-review .ica-transform-diff')).toContainText(existing[1]);
+        await expect(page.locator('.scratchpad-review .ica-transform-diff-part--del')).toHaveCount(0);
+        await expect(page.locator('.scratchpad-review .ica-transform-diff-part--ins')).toContainText('Proposed addition.');
         const editor = page.getByRole('textbox', { name: 'New greetings to append', exact: true });
         await expect(editor).toHaveValue('Proposed addition.');
         await page.getByRole('button', { name: 'Not now', exact: true }).click();
         expect((await readCharacter()).data.alternate_greetings).toEqual(existing);
         await first.getByRole('button', { name: 'Review', exact: true }).click();
         await editor.fill('Reviewed addition one.\n\n---\n\nReviewed addition two.');
+        await expect(page.locator('.scratchpad-review .ica-transform-diff-part--del')).toHaveCount(0);
+        await expect(page.locator('.scratchpad-review .ica-transform-diff-part--ins')).toContainText('Reviewed addition two.');
         await page.screenshot({ path: test.info().outputPath('greeting-review.png') });
         await page.getByRole('button', { name: 'Save change', exact: true }).click();
         await expect(first).toContainText('Saved');
@@ -63,7 +66,7 @@ for (const phone of [false, true]) {
         await expect(second).not.toHaveClass(/is-applied/);
         expect((await readCharacter()).data.alternate_greetings).toEqual(afterOtherTab);
         await second.getByRole('button', { name: 'Review', exact: true }).click();
-        await expect(page.locator('.scratchpad-review-before')).toContainText('Added in another tab.');
+        await expect(page.locator('.scratchpad-review .ica-transform-diff')).toContainText('Added in another tab.');
         await page.getByRole('button', { name: 'Save change', exact: true }).click();
         await expect(second).toContainText('Saved');
         const saved = await readCharacter();

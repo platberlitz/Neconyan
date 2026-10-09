@@ -356,7 +356,7 @@ test('reviewed character changes reject another tab\'s edit and save a fresh rev
     ] } });
     await openScratchpad(page);
     await page.getByRole('button', { name: 'Review', exact: true }).click();
-    await expect(page.locator('.scratchpad-review-before')).toContainText('Nova belongs to account');
+    await expect(page.locator('.scratchpad-review .ica-transform-diff-part--del')).toContainText('Nova belongs to account');
     const changed = await account.context.request.post('/api/characters/merge-attributes', { headers: account.headers, data: {
         avatar: account.avatar, description: 'Another tab changed this.', data: { description: 'Another tab changed this.' },
     } });
@@ -367,7 +367,8 @@ test('reviewed character changes reject another tab\'s edit and save a fresh rev
     await expect(page.locator('.scratchpad-change.is-applied')).toHaveCount(0);
     expect((await account.post('/api/characters/get', { avatar_url: account.avatar })).data.description).toBe('Another tab changed this.');
     await page.getByRole('button', { name: 'Review', exact: true }).click();
-    await expect(page.locator('.scratchpad-review-before')).toHaveText('Another tab changed this.');
+    await expect.poll(() => page.locator('.scratchpad-review .ica-transform-diff > span:not(.ica-transform-diff-part--ins)')
+        .evaluateAll(parts => parts.map(part => part.textContent).join(''))).toBe('Another tab changed this.');
     await page.getByRole('button', { name: 'Save change', exact: true }).click();
     await expect(page.locator('.scratchpad-change.is-applied')).toContainText('Saved');
     const saved = await account.post('/api/characters/get', { avatar_url: account.avatar });
