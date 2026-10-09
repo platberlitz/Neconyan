@@ -360,70 +360,34 @@ async function finishAgentLibraryInitialization() {
     await migrateStoredLegacyGroups();
     await persistAgentIdentityRepairs();
     await ensureDefaultBundledAgents();
+    const startupCounts = new Map();
+    const startupUpdates = [];
+    const noteUpdate = (count, singular, plural) => {
+        if (count > 0) startupCounts.set(singular, { count: (startupCounts.get(singular)?.count || 0) + count, plural });
+    };
     const latestBundledAgentMigration = await refreshBundledAgentsFromLatestTemplates();
-    if (latestBundledAgentMigration.updatedCount > 0) {
-        toastr.success(`Updated ${latestBundledAgentMigration.updatedCount} bundled agent${latestBundledAgentMigration.updatedCount !== 1 ? 's' : ''} to the latest template defaults.`);
-    }
-    if (latestBundledAgentMigration.removedCount > 0) {
-        toastr.success(`Removed ${latestBundledAgentMigration.removedCount} redundant bundled agent duplicate${latestBundledAgentMigration.removedCount !== 1 ? 's' : ''}.`);
-    }
+    noteUpdate(latestBundledAgentMigration.updatedCount, 'built-in agent refreshed to the latest version', 'built-in agents refreshed to the latest version');
+    noteUpdate(latestBundledAgentMigration.removedCount, 'duplicate built-in agent removed', 'duplicate built-in agents removed');
 
     await migrateBundledRegexScriptsToSavedAgents();
-    const migratedCyoaChoiceRegexCount = await migrateCyoaChoiceRegexCleanupToSavedAgents();
-    if (migratedCyoaChoiceRegexCount > 0) {
-        toastr.success(`Updated ${migratedCyoaChoiceRegexCount} bundled CYOA choice regex script${migratedCyoaChoiceRegexCount !== 1 ? 's' : ''}.`);
+    noteUpdate(await migrateCyoaChoiceRegexCleanupToSavedAgents(), 'CYOA choice regex rule updated', 'CYOA choice regex rules updated');
+    noteUpdate(await migrateBundledTemplateMetadataToSavedAgents(), 'agent credit updated', 'agent credits updated');
+    if (await migrateLegacyParallelTrackerPromptToSavedAgents() > 0) {
+        startupUpdates.push('Parallel Off-Screen now asks for "Person: what they are doing" lines');
     }
-
-    const migratedTemplateMetadataCount = await migrateBundledTemplateMetadataToSavedAgents();
-    if (migratedTemplateMetadataCount > 0) {
-        toastr.success(`Updated ${migratedTemplateMetadataCount} bundled agent credit${migratedTemplateMetadataCount !== 1 ? 's' : ''}.`);
-    }
-
-    const migratedParallelPromptCount = await migrateLegacyParallelTrackerPromptToSavedAgents();
-    if (migratedParallelPromptCount > 0) {
-        toastr.success('Parallel Off-Screen now asks for "Person: what they are doing" lines.');
-    }
-
-    const migratedTrackerPromptPassCount = await migrateBundledTrackerPromptPassesToSavedAgents();
-    if (migratedTrackerPromptPassCount > 0) {
-        toastr.success(`Updated ${migratedTrackerPromptPassCount} bundled tracker agent(s) to pre-generation defaults.`);
-    }
-
-    const migratedRegexPostDefaultsCount = await migrateBundledRegexPostDefaultsToSavedAgents();
-    if (migratedRegexPostDefaultsCount > 0) {
-        toastr.success(`Updated ${migratedRegexPostDefaultsCount} bundled regex agent(s) to post-generation defaults.`);
-    }
-
+    noteUpdate(await migrateBundledTrackerPromptPassesToSavedAgents(), 'tracker agent now runs before the reply', 'tracker agents now run before the reply');
+    noteUpdate(await migrateBundledRegexPostDefaultsToSavedAgents(), 'regex agent now runs after the reply', 'regex agents now run after the reply');
     if (isPathfinderSubmoduleEnabled()) {
-        const migratedPathfinderToolCount = await migratePathfinderAgentToolsFromTemplate();
-        if (migratedPathfinderToolCount > 0) {
-            toastr.success(`Updated ${migratedPathfinderToolCount} Pawthfinder agent(s) with default tool toggles.`);
-        }
+        noteUpdate(await migratePathfinderAgentToolsFromTemplate(), 'Pawthfinder agent given its default tools', 'Pawthfinder agents given their default tools');
     }
-
-    const migratedPromptTransformImpersonateCount = await migrateBundledPromptTransformImpersonateToSavedAgents();
-    if (migratedPromptTransformImpersonateCount > 0) {
-        toastr.success(`Updated ${migratedPromptTransformImpersonateCount} bundled prompt pass agent(s) for impersonations.`);
-    }
-
-    const migratedPromptTransformTokenCount = await migrateLegacyPromptTransformMaxTokens();
-    if (migratedPromptTransformTokenCount > 0) {
-        toastr.success(`Updated ${migratedPromptTransformTokenCount} agent(s) to the new 8192 prompt transform token default.`);
-    }
-
-    const removedBundledAgentCount = await purgeRemovedBundledAgents();
-    if (removedBundledAgentCount > 0) {
-        toastr.success(`Removed ${removedBundledAgentCount} bundled agent(s) from the default catalog.`);
-    }
-
-    const removedDuplicateCount = await removeRedundantBundledAgentDuplicates();
-    if (removedDuplicateCount > 0) {
-        toastr.success(`Removed ${removedDuplicateCount} redundant bundled agent duplicate(s).`);
-    }
-
-    const migratedTrackerCompanionCount = await migrateTrackerCompanionsToAutoLoop();
-    if (migratedTrackerCompanionCount > 0) {
-        toastr.success(`${migratedTrackerCompanionCount} tracker companion(s) now run automatically with their own prompt, feed state back into context, and show in the Tracker panel.`);
+    noteUpdate(await migrateBundledPromptTransformImpersonateToSavedAgents(), 'prompt-rewriting agent now also runs for impersonations', 'prompt-rewriting agents now also run for impersonations');
+    noteUpdate(await migrateLegacyPromptTransformMaxTokens(), 'agent moved to the new 8192-token prompt rewrite limit', 'agents moved to the new 8192-token prompt rewrite limit');
+    noteUpdate(await purgeRemovedBundledAgents(), 'retired built-in agent removed', 'retired built-in agents removed');
+    noteUpdate(await removeRedundantBundledAgentDuplicates(), 'duplicate built-in agent removed', 'duplicate built-in agents removed');
+    noteUpdate(await migrateTrackerCompanionsToAutoLoop(), 'tracker companion now runs automatically and shows in the Tracker panel', 'tracker companions now run automatically and show in the Tracker panel');
+    startupCounts.forEach(({ count, plural }, singular) => startupUpdates.push(`${count} ${count === 1 ? singular : plural}`));
+    if (startupUpdates.length) {
+        toastr.success(startupUpdates.map(item => escapeHtml(item)).join('<br>'), 'Agents updated');
     }
 
     await migrateLevelUpStatsContextLinks();
@@ -464,13 +428,21 @@ async function retryAgentSetupLoading() {
     }
 }
 
+async function confirmAgentSetupChange(header, text, okButton) {
+    const result = await Popup.show.confirm(escapeHtml(header), `<p>${escapeHtml(text)}</p>`, { okButton, cancelButton: 'Cancel' });
+    return result === POPUP_RESULT.AFFIRMATIVE;
+}
+
 async function saveCurrentAgentSetup() {
     if (!agentSetupOperationAllowed()) return;
     const selected = getAgentSetupPresetById(selectedAgentSetupId);
-    const name = window.prompt('Name this agent setup:', selected?.name || '')?.trim();
+    const name = (await Popup.show.input('Save setup',
+        '<p>A saved setup remembers which agents are switched on and your connection choices, so you can switch back to it later.</p>',
+        selected?.name || '', { okButton: 'Save', cancelButton: 'Cancel' }))?.trim();
     if (!name) return;
     const existing = getAgentSetupPresets().find(preset => preset.name.toLocaleLowerCase() === name.toLocaleLowerCase());
-    if (existing && existing.id !== selected?.id && !window.confirm(`Replace the saved setup “${existing.name}”?`)) return;
+    if (existing && existing.id !== selected?.id
+        && !await confirmAgentSetupChange('Replace saved setup?', `A setup called “${existing.name}” already exists. Saving replaces it.`, 'Replace')) return;
     const handle = getCurrentUserHandle();
     const canPersist = () => handle === getCurrentUserHandle();
     agentSetupOperationBusy = true;
@@ -512,7 +484,8 @@ async function loadSelectedAgentSetup() {
     try {
         const loaded = await applyAgentSetupPreset(preset, {
             canPersist, isCurrent,
-            confirmExtras: extras => !extras.length || window.confirm(`Loading “${preset.name}” keeps other agents but pauses: ${extras.map(agent => agent.name || agent.id).join(', ')}. Continue?`),
+            confirmExtras: async extras => !extras.length || confirmAgentSetupChange(`Load ${preset.name}?`,
+                `These agents are not part of this setup and will be switched off: ${extras.map(agent => agent.name || agent.id).join(', ')}. They stay in your list.`, 'Load setup'),
         });
         if (!canPersist()) return;
         if (!loaded) { setAgentSetupStatus('Setup load cancelled.'); return; }
@@ -547,7 +520,7 @@ async function loadSelectedAgentSetup() {
 async function deleteSelectedAgentSetup() {
     if (!agentSetupOperationAllowed()) return;
     const preset = getAgentSetupPresetById(selectedAgentSetupId);
-    if (!preset || !window.confirm(`Delete the saved setup “${preset.name}”? This will not delete its agents.`)) return;
+    if (!preset || !await confirmAgentSetupChange(`Delete ${preset.name}?`, 'This deletes the saved setup only. Your agents stay as they are.', 'Delete')) return;
     const handle = getCurrentUserHandle();
     const canPersist = () => handle === getCurrentUserHandle();
     agentSetupOperationBusy = true;
@@ -1475,7 +1448,7 @@ function getTemplateVersionValue(template) {
 }
 
 function buildAgentOrderPill(agent) {
-    return `<span class="ica--card-pill ica--card-pill--order" title="Lower numbers run earlier when Append Agents Execution is set to Sequential."><i class="fa-solid fa-sort-numeric-down fa-xs"></i> ${escapeHtml(t`Order ${getAgentOrderValue(agent)}`)}</span>`;
+    return `<span class="ica--card-pill ica--card-pill--order" title="Lower numbers run first. Order matters most when agents run one at a time (see Connections &amp; defaults)."><i class="fa-solid fa-sort-numeric-down fa-xs"></i> ${escapeHtml(t`Order ${getAgentOrderValue(agent)}`)}</span>`;
 }
 
 function hasTemplateUpdate(agent) {
@@ -4498,6 +4471,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
                 const updatedScript = await openRegexScriptEditor(script);
                 if (updatedScript) {
                     regexScripts[index] = updatedScript;
+                    editorDirty = true;
                     renderRegexList();
                 }
             });
@@ -4698,6 +4672,13 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         if (this.value.trim() && error.attr('data-error-kind') === 'validation') error.prop('hidden', true).text('');
     });
     let saving = false;
+    let editorDirty = false;
+    editorEl.on('input change', 'input, select, textarea', event => {
+        if (event.originalEvent?.isTrusted) editorDirty = true;
+    });
+    editorEl[0].addEventListener('click', event => {
+        if (event.isTrusted && event.target.closest?.('.ica--regex-up, .ica--regex-down, .ica--regex-delete, #ica--regex-add, #ica--regex-resetTemplate')) editorDirty = true;
+    }, true);
     const popup = new Popup(editorEl, POPUP_TYPE.CONFIRM, '', {
         okButton: 'Save',
         cancelButton: 'Cancel',
@@ -4705,7 +4686,12 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         large: true,
         onClosing: async instance => {
             if (saving) return false;
-            if (instance.result !== POPUP_RESULT.AFFIRMATIVE) return true;
+            if (instance.result !== POPUP_RESULT.AFFIRMATIVE) {
+                if (!editorDirty) return true;
+                const discard = await Popup.show.confirm('Discard changes?', '<p>Your changes to this agent have not been saved.</p>',
+                    { okButton: 'Discard', cancelButton: 'Keep editing' });
+                return discard === POPUP_RESULT.AFFIRMATIVE;
+            }
             const errorElement = editorEl.find('#ica--editor-save-error');
             errorElement.prop('hidden', true).text('').removeAttr('data-error-kind');
             const companion = isEditorCompanionExecution();

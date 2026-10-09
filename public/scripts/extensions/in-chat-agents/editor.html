@@ -208,7 +208,7 @@
             <div class="ica--regex-note">Injected into Plot Compass runs and editable any time from this agent's settings.</div>
         </div>
         <div class="ica--companion-core-grid">
-            <label title="Lower numbers run earlier when Append Agents Execution is set to Sequential.">Order
+            <label title="Lower numbers run first. Order matters most when agents run one at a time (see Connections &amp; defaults).">Order
                 <input type="number" id="ica--editor-companion-order" class="text_pole" min="0" max="999" value="100" />
             </label>
                 <label>Automatic runs
@@ -459,7 +459,7 @@
     <div class="ica--editor-section" id="ica--postprocess-section">
         <strong>Reply changes</strong>
         <div class="ica--editor-subheading">Post-generation rewrites, extracts, and formatting</div>
-        <div class="ica--regex-note">Use Agent Regex above for ST-style regex scripts. This section can run the agent prompt as a second-pass rewrite or append pass and still supports extract/append helpers.</div>
+        <div class="ica--regex-note">After the reply arrives, this agent can rewrite it or add to it using its prompt. Find-and-replace rules live in the Regex tab.</div>
         <label class="checkbox_label">
             <input type="checkbox" id="ica--editor-pp-promptEnabled" />
             <span>Use this agent prompt as a post-generation prompt pass</span>

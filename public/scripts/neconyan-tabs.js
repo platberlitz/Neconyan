@@ -1144,7 +1144,7 @@ const NN_SHELLS = Object.freeze({
                 id: 'agents',
                 label: 'Agents',
                 icon: 'fa-cat',
-                description: 'Enable, disable, or modify in-chat agents here. Can be configured as pre-gen, sidecar, or post-gen.',
+                description: 'Agents run their own prompt before or after each reply, or keep companion notes beside the chat. Switch them on, change them or make your own here.',
             },
             {
                 id: 'mewmory',
