@@ -298,7 +298,7 @@ test('native Agent defaults retain explicit regex identities and unbounded saved
     assert.deepEqual(first.companion.dependencies, ['A', 'B']);
     assert.equal(first.regexScripts[0].id, 'stable-agent:regex:0');
     assert.equal(nativeAgentDefinition({ id: 'legacy', postProcess: { enabled: true, type: 'regex', regexFind: 'one', regexReplace: 'two' } }).regexScripts[0].findRegex, '/one/g');
-    for (const [value, expected] of [[undefined, 0], [-1, 0], ['bad', 0], [2.9, 2], [200, 20]]) {
+    for (const [value, expected] of [[undefined, 0], [-1, 0], ['bad', 0], [2.9, 2], [25, 25], [200, 30]]) {
         assert.equal(nativeAgentDefinition({ id: 'rewrite', postProcess: { promptTransformContextMessages: value } }).postProcess.promptTransformContextMessages, expected);
     }
 });

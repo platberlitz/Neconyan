@@ -1,4 +1,4 @@
-export const MAX_PROMPT_TRANSFORM_CONTEXT_MESSAGES = 20;
+export const MAX_PROMPT_TRANSFORM_CONTEXT_MESSAGES = 30;
 export const LENGTH_TRIMMER_TEMPLATE_ID = 'tpl-length-trimmer';
 export const DEFAULT_LENGTH_TARGET = 'About 300 to 450 words';
 

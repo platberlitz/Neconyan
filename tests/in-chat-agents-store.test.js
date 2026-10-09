@@ -85,7 +85,9 @@ describe('in-chat agent scoped enabled state', () => {
         expect(contextFor('6')).toBe(6);
         expect(contextFor(3.9)).toBe(3);
         expect(contextFor(-2)).toBe(0);
+        expect(contextFor(25)).toBe(25);
         expect(contextFor(500)).toBe(store.MAX_PROMPT_TRANSFORM_CONTEXT_MESSAGES);
+        expect(store.MAX_PROMPT_TRANSFORM_CONTEXT_MESSAGES).toBe(30);
         expect(store.getAgentLengthTarget({ settings: { lengthTarget: '  Under 150 words ' } })).toBe('Under 150 words');
         expect(store.getAgentLengthTarget({ settings: { lengthTarget: '' } })).toBe(store.DEFAULT_LENGTH_TARGET);
         expect(store.getAgentLengthTarget(null)).toBe(store.DEFAULT_LENGTH_TARGET);
