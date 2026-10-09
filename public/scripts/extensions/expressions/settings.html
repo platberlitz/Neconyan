@@ -33,6 +33,9 @@
                         <input id="expressions_agent_use_qig_llm_profile" type="checkbox">
                         <span data-i18n="Share Quick Image Gen LLM override profile">Share Quick Image Gen LLM override profile</span>
                     </label>
+                </div>
+                <details class="expression_generation_options">
+                    <summary data-i18n="Image generation and cleanup">Image generation and cleanup</summary>
                     <div class="expression_agent_generation_controls flex-container flexFlowColumn">
                         <label for="expressions_agent_sprite_generation_mode" data-i18n="Sprite generation mode">Sprite generation mode</label>
                         <small data-i18n="Character sheet mode is used by Generate missing sprites, then split into transparent PNGs for each expression.">Character sheet mode is used by Generate missing sprites, then split into transparent PNGs for each expression.</small>
@@ -61,6 +64,8 @@
                         <small data-i18n="Sent to Quick Image Gen before generating or regenerating expression sprites. Macros: {{generationInstructions}}, {{characterName}}, {{expression}}, {{expressions}}, {{characterCard}}, {{framingInstructions}}, {{sheetInstructions}}.">Sent to Quick Image Gen before generating or regenerating expression sprites. Macros: {{generationInstructions}}, {{characterName}}, {{expression}}, {{expressions}}, {{characterCard}}, {{framingInstructions}}, {{sheetInstructions}}.</small>
                         <textarea id="expressions_agent_sprite_prompt" type="text" class="text_pole textarea_compact autoSetHeight" rows="8" placeholder="Use &lcub;&lcub;generationInstructions&rcub;&rcub;, &lcub;&lcub;characterCard&rcub;&rcub;, &lcub;&lcub;framingInstructions&rcub;&rcub;, and &lcub;&lcub;sheetInstructions&rcub;&rcub; macros."></textarea>
                     </div>
+                </details>
+                <div class="expression_agent_block">
                     <p class="expression_agent_hint hint" data-i18n="Turning on auto-generation switches Classifier API to In-Chat Agent. Enable the bundled Expressions Agent companion in In-Chat Agents if the status says it is not ready.">
                         Turning on auto-generation switches Classifier API to In-Chat Agent. Enable the bundled Expressions Agent companion in In-Chat Agents if the status says it is not ready.
                     </p>
@@ -117,8 +122,8 @@
                     <small><span data-i18n="Can be set manually or with an _space">Can be set manually or with an </span><tt>/emote</tt><span data-i18n="space_ slash command."> slash command.</span></small>
                     <div class="flex-container">
                         <select id="expression_custom" class="flex1 margin0"></select>
-                        <i id="expression_custom_add" class="menu_button fa-solid fa-plus margin0" title="Add"></i>
-                        <i id="expression_custom_remove" class="menu_button fa-solid fa-xmark margin0" title="Remove"></i>
+                        <button type="button" id="expression_custom_add" class="menu_button margin0" data-i18n="Add">Add</button>
+                        <button type="button" id="expression_custom_remove" class="menu_button margin0" data-i18n="Remove">Remove</button>
                     </div>
                 </div>
             </section>
@@ -128,11 +133,48 @@
                     Open a chat to see the character expressions.
                 </div>
                 <div id="open_chat_expressions">
+                    <div id="expression_member_controls">
+                        <label for="expression_member" data-i18n="Character in this card">Character in this card</label>
+                        <div class="expression_member_row">
+                            <select id="expression_member"><option value="" data-i18n="Whole card">Whole card</option></select>
+                            <button type="button" id="expression_member_add" class="menu_button" data-i18n="Add character">Add character</button>
+                        </div>
+                        <label id="expression_member_follow" class="checkbox_label" hidden>
+                            <input type="checkbox" id="expression_member_auto">
+                            <span data-i18n="Follow the first named speaker in each reply">Follow the first named speaker in each reply</span>
+                        </label>
+                        <details id="expression_member_details" hidden>
+                            <summary data-i18n="Character appearance">Character appearance</summary>
+                            <label for="expression_member_description" data-i18n="Appearance notes for image generation">Appearance notes for image generation</label>
+                            <textarea id="expression_member_description" class="text_pole" rows="3" maxlength="2400"></textarea>
+                            <div class="expression_member_row">
+                                <button type="button" id="expression_member_save" class="menu_button" data-i18n="Save appearance">Save appearance</button>
+                                <button type="button" id="expression_member_remove" class="menu_button" data-i18n="Remove character set">Remove character set</button>
+                            </div>
+                        </details>
+                    </div>
                     <div class="offline_mode">
                         <small data-i18n="You are in offline mode. Click on the image below to set the expression.">You are in offline mode. Click on the image below to set the expression.</small>
                     </div>
-                    <label for="expression_override" data-i18n="Sprite Folder Override">Sprite Folder Override</label>
-                    <small><span data-i18n="Use a forward slash to specify a subfolder. Example: _space">Use a forward slash to specify a subfolder. Example: </span><tt>Bob/formal</tt></small>
+                    <div class="expression_library_toolbar">
+                        <button type="button" id="expression_add_many" class="menu_button" data-i18n="Add expressions">Add expressions</button>
+                        <label for="expression_search" data-i18n="Find an expression">Find an expression</label>
+                        <input id="expression_search" class="text_pole" type="search" autocomplete="off">
+                        <select id="expression_visibility" aria-label="Show expressions" data-i18n="[aria-label]Show expressions">
+                            <option value="all" data-i18n="All expressions">All expressions</option>
+                            <option value="ready" data-i18n="With images">With images</option>
+                            <option value="missing" data-i18n="Missing images">Missing images</option>
+                        </select>
+                    </div>
+                    <p id="expression_count" role="status"></p>
+                    <div id="image_list"></div>
+                    <details class="expression_set_tools">
+                    <summary data-i18n="Import, generate and manage images">Import, generate and manage images</summary>
+                    <h3 id="image_list_header">
+                        <strong data-i18n="Sprite set:">Sprite set:</strong>&nbsp;<span id="image_list_header_name"></span>
+                    </h3>
+                    <label class="expression_override_label" for="expression_override" data-i18n="Sprite Folder Override">Sprite Folder Override</label>
+                    <small class="expression_override_label"><span data-i18n="Use a forward slash to specify a subfolder. Example: _space">Use a forward slash to specify a subfolder. Example: </span><tt>Bob/formal</tt></small>
                     <div class="expression_override_controls flex-container flexnowrap">
                         <input id="expression_override" type="text" class="text_pole" placeholder="Override folder name" />
                         <button id="expression_override_button" class="menu_button" type="button" data-i18n="Submit">Submit</button>
@@ -181,11 +223,7 @@
                                 Examples: </span><tt>joy.png</tt>, <tt>joy-1.png</tt>, <tt>joy.expressive.png</tt>
                         </i>
                     </p>
-                    <h3 id="image_list_header">
-                        <strong data-i18n="Sprite set:">Sprite set:</strong>&nbsp;<span id="image_list_header_name"></span>
-                    </h3>
-                    <div id="image_list"></div>
-
+                    </details>
                 </div>
             </section>
         </div>

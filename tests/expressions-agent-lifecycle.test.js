@@ -37,6 +37,7 @@ function setup() {
         validateImages: jest.fn(async () => {}), forceUpdateVisualNovelMode: async () => {},
         sendExpressionCall: jest.fn(async () => true), removeExpression: jest.fn(),
         generateAndUploadExpressionSprite: jest.fn(async () => true),
+        getExpressionGenerationTarget: () => ({ characterName: 'Cat', characterAvatar: 'Cat.png', uploadName: 'Cat.png' }),
         setExpressionGenerationBusy: value => { runtime.inSpriteGeneration = value; },
         throwIfExpressionGenerationStopped: () => {}, isExpressionGenerationAbortError: error => error?.name === 'AbortError',
         MODULE_NAME: 'expressions', EXPRESSION_API: { agent: 4, none: 99 },

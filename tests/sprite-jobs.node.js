@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { fixture } from './roleplay-transactions-fixture.js';
+import { fixture, png } from './roleplay-transactions-fixture.js';
 
 const { captureSpriteRequest, admitSpriteJob, runSpriteJob } = await import('../src/generation/sprite-jobs.js');
 const { withNativeMediaReceipt } = await import('../src/generation/media-jobs.js');
@@ -11,6 +11,7 @@ const { getJob, releaseJob, recoverJobs, updateJob } = await import('../src/jobs
 const { readArtifact } = await import('../src/jobs/artifacts.js');
 const { decodeServerImage, encodeServerImage } = await import('../src/media-codecs.js');
 const { cleanSpriteBitmap, splitSpriteBitmap } = await import('../public/scripts/extensions/expressions/sprite-pixels.js');
+const { write: writeCard } = await import('../src/character-card-parser.js');
 
 function bitmap(width = 16, height = 16, colour = [255, 20, 30, 255]) {
     const data = new Uint8ClampedArray(width * height * 4);
@@ -77,6 +78,31 @@ test('a native sprite target cannot absorb another intent while its accepted wor
     const changed = { ...f.request, negative: 'another intention' };
     assert.throws(() => admitSpriteJob(f.scope, f.account, { operationKey: 'sprite-fixture', source: f.source, request: changed }), { code: 'MEDIA_INTENT_CONFLICT' });
     assert.throws(() => admitSpriteJob(f.scope, f.account, { operationKey: 'another-key', source: f.source, request: changed }), { code: 'MEDIA_TARGET_BUSY' });
+});
+
+test('shared-card jobs capture the selected member, custom label and independent folder', async t => {
+    const f = fixture(t);
+    const directories = f.scope.directories;
+    const members = [
+        { id: 'mira', name: 'Mira', folder: 'cast/mira', description: 'Silver hair.' },
+        { id: 'sol', name: 'Sol', folder: 'cast/sol', description: 'Red hair.' },
+    ];
+    fs.writeFileSync(path.join(directories.characters, 'Nova.png'), writeCard(png, JSON.stringify({ data: { name: 'Mira and Sol',
+        description: 'Two companions.', extensions: { expression_sets: { members, active: 'mira' } } } })));
+    fs.writeFileSync(path.join(directories.root, 'settings.json'), JSON.stringify({ extension_settings: {
+        expressions: { custom: ['joy-soft'] }, 'quick-image-gen': { provider: 'together', togetherKey: 'fixture-key' },
+    } }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch }, source = f.source();
+    const capture = options => captureSpriteRequest(f.scope, account, source, { avatar: 'Nova.png', labels: ['joy-soft'], ...options });
+    const mira = capture({});
+    const sol = capture({ memberId: 'sol' });
+    assert.equal(mira.folder, 'cast/mira');
+    assert.equal(sol.folder, 'cast/sol');
+    assert.match(mira.prompts[0], /Draw only Mira/);
+    assert.match(sol.prompts[0], /Appearance of Sol: Red hair/);
+    assert.equal(sol.targets[0].name, 'joy-soft');
+    assert.throws(() => capture({ memberId: 'missing' }), /unavailable/);
+    assert.throws(() => capture({ memberId: 'sol', folder: 'cast/mira' }), /does not belong/);
 });
 
 test('sprite sheets generate once and split exact row-major cells without adjacent content', async t => {

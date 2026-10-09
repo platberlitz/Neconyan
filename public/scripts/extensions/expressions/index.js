@@ -22,12 +22,15 @@ import { removeReasoningFromString } from '../../reasoning.js';
 import { isExpressionLabel, isExpressionSpriteName, parseExpressionLabels, expressionLabelFromFilename } from './expression-labels.js';
 import { cleanSpriteBitmap, splitSpriteBitmap } from './sprite-pixels.js';
 import { getExpressionSpriteSheetGrid } from './sprite-prompts.js';
+import { readExpressionSets, resolveExpressionMember, applyExpressionMemberPrompt } from './expression-sets.js';
+import { bindExpressionSets, renderExpressionSets } from './expression-sets-ui.js';
 import {
     DEFAULT_EXPRESSION_SPRITE_PROMPT,
     LEGACY_DEFAULT_EXPRESSION_SPRITE_PROMPT,
     getAgentExpressionLabel,
     getAgentExpressionState,
     getExpressionsAgentStatus,
+    getExpressionSpritePromptContext,
     maybeGenerateExpressionSprite,
     maybeGenerateExpressionSpriteSheet,
     stopExpressionSpriteGeneration,
@@ -506,10 +509,8 @@ async function moduleWorker({ newChat = false } = {}) {
     }
     let spriteFolderName = getSpriteFolderName(currentLastMessage, currentLastMessage.name);
 
-    // character has no expressions or it is not loaded
-    if (Object.keys(spriteCache).length === 0) {
-        await validateImages(spriteFolderName);
-    }
+    // A shared card can change speaker without changing the chat or card avatar.
+    await validateImages(spriteFolderName, true);
 
     const offlineMode = $('.expression_settings .offline_mode');
     if (extension_settings.expressions.api === EXPRESSION_API.none) {
@@ -595,11 +596,7 @@ async function moduleWorker({ newChat = false } = {}) {
         // This runs after the expression is displayed so it never blocks the UI update.
         if (needsSprite && !inSpriteGeneration) {
             setExpressionGenerationBusy(true);
-            const generationTarget = {
-                characterName: currentLastMessage.name,
-                characterAvatar: target.avatar,
-                uploadName: target.avatar || currentLastMessage.name,
-            };
+            const generationTarget = getExpressionGenerationTarget(spriteFolderName);
             generateAndUploadExpressionSprite(expression, spriteFolderName, { showToast: false, generationTarget }).then(async generated => {
                 throwIfExpressionGenerationStopped();
                 if (generated && isExpressionTargetCurrent(target)) {
@@ -622,10 +619,19 @@ async function moduleWorker({ newChat = false } = {}) {
     }
 }
 
+function getExpressionCharacter(message = getLastCharacterMessage()) {
+    const context = getContext();
+    const avatar = getFolderNameByMessage(message);
+    return context.characters.find(character => character.avatar?.replace(/\.[^/.]+$/, '') === avatar)
+        ?? (!context.groupId ? context.characters[context.characterId] : null);
+}
+
 function getSpriteFolderName(characterMessage = null, characterName = null) {
     const context = getContext();
     let spriteFolderName = characterName ?? context.name2;
     const message = characterMessage ?? getLastCharacterMessage();
+    const member = resolveExpressionMember(getExpressionCharacter(message), message);
+    if (member) return member.folder;
     const avatarFileName = getFolderNameByMessage(message);
     const expressionOverride = extension_settings.expressionOverrides.find(e => e.name == avatarFileName);
 
@@ -680,7 +686,7 @@ export async function sendExpressionCall(spriteFolderName, expression, { force =
     if (!isCurrent()) return false;
     const src = await setExpression(spriteFolderName, expression, { force, overrideSpriteFile, vnMode, target, isCurrent });
     if (src === undefined || !isCurrent()) return false;
-    lastExpression[spriteFolderName.split('/')[0]] = expression;
+    lastExpression[spriteFolderName] = expression;
     if (target) {
         await recordMessageExpression(target, src);
         if (isCurrent()) rememberExpressionMessage(target.message);
@@ -843,9 +849,11 @@ function setFallBackExpressionSlashCommand(args, expressionName) {
  * @throws {Error} If character not found or avatar not set
  */
 function spriteFolderNameFromCharacter(char) {
+    const member = resolveExpressionMember(char);
+    if (member) return member.folder;
     const avatarFileName = char.avatar.replace(/\.[^/.]+$/, '');
     const expressionOverride = extension_settings.expressionOverrides.find(e => e.name === avatarFileName);
-    return expressionOverride?.path ? expressionOverride.path : avatarFileName;
+    return expressionOverride?.path || char.name || avatarFileName;
 }
 
 /**
@@ -981,16 +989,17 @@ function getExpressionGenerationTarget(spriteFolderName) {
     const currentLastMessage = getLastCharacterMessage();
     const context = getContext();
     const folderCharacterName = String(spriteFolderName || '').split('/')[0];
-    const character = context.characters?.find(x => x.avatar === currentLastMessage.original_avatar)
+    const character = context.characters?.find(x => readExpressionSets(x).members.some(member => member.folder === spriteFolderName))
+        || context.characters?.find(x => x.avatar === currentLastMessage.original_avatar)
         || context.characters?.find(x => x.name === currentLastMessage.name)
         || context.characters?.find(x => x.name === folderCharacterName || x.avatar?.replace(/\.[^/.]+$/, '') === folderCharacterName)
         || context.characters?.[context.characterId];
 
-    return {
-        characterName: currentLastMessage.name || character?.name || context.name2 || folderCharacterName || 'character',
-        characterAvatar: currentLastMessage.original_avatar || character?.avatar || null,
-        uploadName: currentLastMessage.original_avatar || currentLastMessage.name || character?.avatar || folderCharacterName || context.name2,
-    };
+    const characterName = character?.name || currentLastMessage.name || context.name2 || folderCharacterName || 'character';
+    const characterAvatar = character?.avatar || currentLastMessage.original_avatar || null;
+    const member = readExpressionSets(character).members.find(item => item.folder === spriteFolderName);
+    return { characterName, characterAvatar, uploadName: characterAvatar || characterName,
+        promptContext: applyExpressionMemberPrompt(getExpressionSpritePromptContext(characterName, characterAvatar), member) };
 }
 
 async function generateAndUploadExpressionSprite(expression, spriteFolderName, { showToast = true, spriteName = null, replaceExisting = false, generationTarget = null } = {}) {
@@ -1008,9 +1017,9 @@ async function generateAndUploadExpressionSprite(expression, spriteFolderName, {
     const targetSpriteName = spriteName || (existingFiles.length > 0
         ? generateUniqueSpriteName(expression, existingFiles)
         : expression);
-    const { characterName, characterAvatar, uploadName } = generationTarget ?? getExpressionGenerationTarget(spriteFolderName);
+    const { characterName, characterAvatar, uploadName, promptContext } = generationTarget ?? getExpressionGenerationTarget(spriteFolderName);
     throwIfExpressionGenerationStopped();
-    const imageUrl = await maybeGenerateExpressionSprite(expression, characterName, characterAvatar);
+    const imageUrl = await maybeGenerateExpressionSprite(expression, characterName, characterAvatar, promptContext);
     throwIfExpressionGenerationStopped();
 
     if (!imageUrl) {
@@ -1162,7 +1171,10 @@ async function splitSpriteSheetImage(imageUrl, grid, tileCount) {
     }
 }
 
-async function splitAndUploadExpressionSpriteSheet(imageUrl, grid, expressions, spriteFolderName, { splitErrorMessage = t`Sprite sheet could not be split into expression sprites.` } = {}) {
+async function splitAndUploadExpressionSpriteSheet(imageUrl, grid, expressions, spriteFolderName, {
+    splitErrorMessage = t`Sprite sheet could not be split into expression sprites.`,
+    generationTarget = getExpressionGenerationTarget(spriteFolderName),
+} = {}) {
     const labels = Array.isArray(expressions) ? expressions.filter(Boolean) : [];
     if (labels.length === 0) return { generatedCount: 0, failedCount: 0 };
 
@@ -1170,7 +1182,7 @@ async function splitAndUploadExpressionSpriteSheet(imageUrl, grid, expressions, 
         return { generatedCount: 0, failedCount: labels.length };
     }
 
-    const { uploadName } = getExpressionGenerationTarget(spriteFolderName);
+    const { uploadName } = generationTarget;
     /** @type {string[]} */
     let tileUrls = [];
     try {
@@ -1214,13 +1226,13 @@ async function splitAndUploadExpressionSpriteSheet(imageUrl, grid, expressions, 
     return { generatedCount, failedCount };
 }
 
-async function generateAndUploadExpressionSpriteSheet(expressions, spriteFolderName) {
+async function generateAndUploadExpressionSpriteSheet(expressions, spriteFolderName, generationTarget = getExpressionGenerationTarget(spriteFolderName)) {
     const labels = Array.isArray(expressions) ? expressions.filter(Boolean) : [];
     if (labels.length === 0) return { generatedCount: 0, failedCount: 0 };
 
-    const { characterName, characterAvatar } = getExpressionGenerationTarget(spriteFolderName);
+    const { characterName, characterAvatar, promptContext } = generationTarget;
     throwIfExpressionGenerationStopped();
-    const sheet = await maybeGenerateExpressionSpriteSheet(labels, characterName, characterAvatar);
+    const sheet = await maybeGenerateExpressionSpriteSheet(labels, characterName, characterAvatar, promptContext);
     throwIfExpressionGenerationStopped();
     if (!sheet?.imageUrl) {
         return { generatedCount: 0, failedCount: labels.length };
@@ -1228,6 +1240,7 @@ async function generateAndUploadExpressionSpriteSheet(expressions, spriteFolderN
 
     return splitAndUploadExpressionSpriteSheet(sheet.imageUrl, sheet.grid, labels, spriteFolderName, {
         splitErrorMessage: t`Generated sheet could not be split into expression sprites.`,
+        generationTarget,
     });
 }
 
@@ -1324,6 +1337,7 @@ async function onClickExpressionRegenerate(event) {
     const fileName = String(expressionListItem.attr('data-filename') || '');
     const spriteFolderName = $('#image_list').data('name');
     const spriteName = withoutExtension(fileName);
+    const generationTarget = getExpressionGenerationTarget(spriteFolderName);
 
     if (!spriteName) {
         toastr.warning(t`Choose an existing sprite before regenerating.`, t`Sprite Generation`);
@@ -1340,6 +1354,7 @@ async function onClickExpressionRegenerate(event) {
     await withExpressionGenerationLock(async () => generateAndUploadExpressionSprite(expression, spriteFolderName, {
         spriteName,
         replaceExisting: true,
+        generationTarget,
     }));
 }
 
@@ -1357,6 +1372,7 @@ async function onClickRemoveAllSprites(event) {
     }
 
     const name = $('#image_list').data('name');
+    const generation = getChatGeneration();
     if (!name) {
         toastr.warning(t`Open a chat before removing expression sprites.`, t`Sprite Generation`);
         return;
@@ -1376,40 +1392,44 @@ async function onClickRemoveAllSprites(event) {
 
     if (!confirmed) return;
 
-    const deleteToast = toastr.info(t`Removing expression sprites...`, t`Sprite Generation`, { timeOut: 0, extendedTimeOut: 0 });
-    let deletedCount = 0;
-    let failedCount = 0;
+    await withExpressionGenerationLock(async () => {
+        const deleteToast = toastr.info(t`Removing expression sprites...`, t`Sprite Generation`, { timeOut: 0, extendedTimeOut: 0 });
+        let deletedCount = 0;
+        let failedCount = 0;
 
-    try {
-        for (const file of spriteFiles) {
-            try {
-                await deleteExpressionSpriteFile(name, file.label, file.spriteName);
-                deletedCount++;
-            } catch (error) {
-                failedCount++;
-                console.error(`[${MODULE_NAME}] Failed to delete sprite ${file.fileName}:`, error);
+        try {
+            for (const file of spriteFiles) {
+                throwIfExpressionGenerationStopped();
+                try {
+                    await deleteExpressionSpriteFile(name, file.label, file.spriteName);
+                    deletedCount++;
+                } catch (error) {
+                    failedCount++;
+                    console.error(`[${MODULE_NAME}] Failed to delete sprite ${file.fileName}:`, error);
+                }
             }
+        } finally {
+            toastr.clear(deleteToast);
+            delete spriteCache[name];
+            if (generation === getChatGeneration() && $('#image_list').data('name') === name) await validateImages(name, true);
         }
-    } finally {
-        toastr.clear(deleteToast);
-        delete spriteCache[name];
-        await fetchImagesNoCache();
-        await validateImages(name);
-    }
 
-    if (deletedCount > 0) {
-        toastr.success(t`Removed ${deletedCount} expression sprite(s).`, t`Sprite Generation`);
-    }
+        if (deletedCount > 0) {
+            toastr.success(t`Removed ${deletedCount} expression sprite(s).`, t`Sprite Generation`);
+        }
 
-    if (failedCount > 0) {
-        toastr.warning(t`${failedCount} expression sprite(s) could not be removed. Check the console.`, t`Sprite Generation`);
-    }
+        if (failedCount > 0) {
+            toastr.warning(t`${failedCount} expression sprite(s) could not be removed. Check the console.`, t`Sprite Generation`);
+        }
+    });
 }
 
 async function onClickRedoSpriteCleanup(event) {
     event.stopPropagation();
 
     const name = $('#image_list').data('name');
+    const generation = getChatGeneration();
+    const { uploadName } = getExpressionGenerationTarget(name);
     if (!name) {
         toastr.warning(t`Open a chat before cleaning expression sprites.`, t`Sprite Generation`);
         return;
@@ -1431,7 +1451,6 @@ async function onClickRedoSpriteCleanup(event) {
 
     await withExpressionGenerationLock(async () => {
         const cleanupToast = toastr.info(t`Cleaning expression sprites...`, t`Sprite Generation`, { timeOut: 0, extendedTimeOut: 0 });
-        const { uploadName } = getExpressionGenerationTarget(name);
         let cleanedCount = 0;
         let failedCount = 0;
 
@@ -1451,8 +1470,7 @@ async function onClickRedoSpriteCleanup(event) {
         } finally {
             toastr.clear(cleanupToast);
             delete spriteCache[name];
-            await fetchImagesNoCache();
-            await validateImages(name);
+            if (generation === getChatGeneration() && $('#image_list').data('name') === name) await validateImages(name, true);
         }
 
         if (cleanedCount > 0) {
@@ -1469,6 +1487,7 @@ async function onClickUploadSpriteSheet(event) {
     event.stopPropagation();
 
     const spriteFolderName = $('#image_list').data('name');
+    const generationTarget = getExpressionGenerationTarget(spriteFolderName);
     if (!spriteFolderName) {
         toastr.warning(t`Open a chat before uploading a character sheet.`, t`Sprite Generation`);
         return;
@@ -1480,6 +1499,10 @@ async function onClickUploadSpriteSheet(event) {
         return;
     }
 
+    if (missingLabels.length > 64) {
+        toastr.warning(t`A character sheet supports up to 64 expressions. Upload individual images or generate the missing images in batches.`, t`Sprite Generation`);
+        return;
+    }
     const grid = getExpressionSpriteSheetGrid(missingLabels.length);
     const confirmed = await Popup.show.confirm(
         t`Upload Character Sheet`,
@@ -1504,6 +1527,7 @@ async function onClickUploadSpriteSheet(event) {
                 try {
                     const result = await splitAndUploadExpressionSpriteSheet(sourceUrl, grid, missingLabels, spriteFolderName, {
                         splitErrorMessage: t`Uploaded sheet could not be split into expression sprites.`,
+                        generationTarget,
                     });
                     generatedCount = result.generatedCount;
                     failedCount = result.failedCount;
@@ -1535,6 +1559,7 @@ async function onClickGenerateMissingSprites(event) {
     event.stopPropagation();
 
     const spriteFolderName = $('#image_list').data('name');
+    const generationTarget = getExpressionGenerationTarget(spriteFolderName);
     if (!spriteFolderName) {
         toastr.warning(t`Open a chat before generating expression sprites.`, t`Sprite Generation`);
         return;
@@ -1562,12 +1587,14 @@ async function onClickGenerateMissingSprites(event) {
 
         try {
             if (getExpressionSpriteGenerationMode() === EXPRESSION_SPRITE_GENERATION_MODE.sheet && missingLabels.length > 1) {
-                const result = await generateAndUploadExpressionSpriteSheet(missingLabels, spriteFolderName);
-                generatedCount = result.generatedCount;
-                failedCount = result.failedCount;
+                for (let start = 0; start < missingLabels.length; start += 64) {
+                    const result = await generateAndUploadExpressionSpriteSheet(missingLabels.slice(start, start + 64), spriteFolderName, generationTarget);
+                    generatedCount += result.generatedCount;
+                    failedCount += result.failedCount;
+                }
             } else {
                 for (const expression of missingLabels) {
-                    const generated = await generateAndUploadExpressionSprite(expression, spriteFolderName, { showToast: false });
+                    const generated = await generateAndUploadExpressionSprite(expression, spriteFolderName, { showToast: false, generationTarget });
                     if (generated) generatedCount++;
                     else failedCount++;
                 }
@@ -1953,7 +1980,23 @@ async function drawSpritesList(spriteFolderName, labels, sprites, isCurrent = ()
     $('#open_chat_expressions').show();
     $('#image_list').empty().data('name', spriteFolderName).append(items);
     $('#image_list_header_name').text(spriteFolderName);
+    renderExpressionSets(getExpressionCharacter(), spriteFolderName);
+    filterExpressionImages();
     return validExpressions;
+}
+
+function filterExpressionImages() {
+    const query = String($('#expression_search').val() || '').trim().toLowerCase();
+    const mode = $('#expression_visibility').val();
+    let shown = 0;
+    const items = $('#image_list .expression_list_item');
+    items.each(function () {
+        const missing = this.dataset.expressionType === 'failure';
+        const visible = this.dataset.expression.includes(query) && (mode === 'all' || (mode === 'missing' ? missing : !missing));
+        $(this).toggle(visible);
+        if (visible) shown++;
+    });
+    $('#expression_count').text(t`${shown} of ${items.length} images and expression slots`);
 }
 
 /**
@@ -2632,15 +2675,15 @@ async function onClickExpressionDelete(event) {
         return;
     }
 
-    const confirmation = await Popup.show.confirm(t`Delete Expression`, t`Are you sure you want to delete this expression? Once deleted, it\'s gone forever!`
-        + '<br /><br />'
-        + t`Expression:` + ' <tt>' + expressionListItem.attr('data-filename') + '</tt>');
+    const fileName = withoutExtension(expressionListItem.attr('data-filename'));
+    const name = $('#image_list').data('name');
+    const generation = getChatGeneration();
+    const confirmation = await Popup.show.confirm(t`Delete Expression`, $('<div>')
+        .append($('<p>').text(t`Are you sure you want to delete this expression? Once deleted, it's gone forever!`))
+        .append($('<code>').text(expressionListItem.attr('data-filename'))));
     if (!confirmation) {
         return;
     }
-
-    const fileName = withoutExtension(expressionListItem.attr('data-filename'));
-    const name = $('#image_list').data('name');
 
     try {
         await deleteExpressionSpriteFile(name, expression, fileName);
@@ -2650,8 +2693,7 @@ async function onClickExpressionDelete(event) {
 
     // Refresh sprites list
     delete spriteCache[name];
-    await fetchImagesNoCache();
-    await validateImages(name);
+    if (generation === getChatGeneration() && $('#image_list').data('name') === name) await validateImages(name);
 }
 
 function setExpressionOverrideHtml(forceClear = false) {
@@ -2802,6 +2844,15 @@ export async function init() {
     async function addSettings() {
         const template = await renderExtensionTemplateAsync(MODULE_NAME, 'settings');
         $('#expressions_container').append(template);
+        const settings = $('#expressions_container .expression_settings');
+        settings.find('.expression_section_sprites').prependTo(settings.find('.inline-drawer-content'));
+        $('#expression_add_many').on('click', onClickExpressionAddCustom);
+        $('#expression_search, #expression_visibility').on('input change', filterExpressionImages);
+        bindExpressionSets({ getCharacter: getExpressionCharacter, refresh: async () => {
+            const folder = getSpriteFolderName();
+            delete spriteCache[folder];
+            await validateImages(folder, true);
+        } });
         $('#expression_override_button').on('click', onClickExpressionOverrideButton);
         $('#expression_upload_pack_button').on('click', onClickExpressionUploadPackButton);
         $('#expressions_generate_missing_sprites')
@@ -3129,7 +3180,8 @@ export async function init() {
             const char = findChar({ name: name });
             if (!char) toastr.warning(t`Couldn't find character ${name}.`, t`Character not found`);
 
-            const sprite = lastExpression[char?.name ?? name] ?? '';
+            const member = resolveExpressionMember(char, getLastCharacterMessage());
+            const sprite = lastExpression[member?.folder ?? (char ? spriteFolderNameFromCharacter(char) : name)] ?? '';
             return sprite;
         },
         returns: 'the last set expression for the named character.',

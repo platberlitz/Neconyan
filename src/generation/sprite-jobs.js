@@ -12,6 +12,7 @@ import { captureQuickImageReferenceSources } from './quick-image-gen-reference.j
 import { resolveCharacterImageSettings } from '../../public/scripts/extensions/quick-image-gen/lib/character-settings.js';
 import { cleanSpriteBitmap, splitSpriteBitmap } from '../../public/scripts/extensions/expressions/sprite-pixels.js';
 import { expressionLabelFromFilename, isExpressionLabel, isExpressionSpriteName } from '../../public/scripts/extensions/expressions/expression-labels.js';
+import { readExpressionSets, resolveExpressionMember, applyExpressionMemberPrompt } from '../../public/scripts/extensions/expressions/expression-sets.js';
 import { buildCharacterCardSpritePrompt, buildExpressionSpritePrompt, buildExpressionSpriteSheetPrompt,
     DEFAULT_EXPRESSION_SPRITE_PROMPT, EXPRESSION_SPRITE_NEGATIVE, getExpressionSpriteSheetGrid } from '../../public/scripts/extensions/expressions/sprite-prompts.js';
 import { admitNativeMediaJob, ensureNativeMediaDirectory, finishNativeMediaJob, mediaDirectoryEvidence, mediaFileEvidence,
@@ -56,7 +57,7 @@ function selectedSpriteName(label, files, replace, allowMultiple) {
 }
 
 /** Snapshot card, cleanup settings, exact sprite destinations and the configured image connection. */
-export function captureSpriteRequest(base, account, source, { avatar, labels, folder, mode, replacements = {}, missingOnly = false, sheetImage = null } = {}) {
+export function captureSpriteRequest(base, account, source, { avatar, labels, folder, memberId, mode, replacements = {}, missingOnly = false, sheetImage = null } = {}) {
     return withRoleplayAccount(base, account, lease => {
         assertRoleplaySourceLocked(lease, source);
         if (!source.dependencies?.some(item => item.kind === 'character' && item.locator.avatar === avatar)) throw fail('The sprite character is not in the accepted source.');
@@ -69,7 +70,11 @@ export function captureSpriteRequest(base, account, source, { avatar, labels, fo
         const stem = path.parse(avatar).name;
         const overrides = settings.extension_settings?.expressionOverrides ?? [];
         if (!Array.isArray(overrides)) throw fail('The saved sprite folder overrides are invalid.');
-        const configuredFolder = overrides.find(item => item?.name === stem)?.path || card.name || stem;
+        const member = memberId === undefined ? (folder ? readExpressionSets(card).members.find(item => item.folder === folder) : resolveExpressionMember(card))
+            : readExpressionSets(card).members.find(item => item.id === memberId);
+        if (memberId && !member) throw fail('The selected character expression set is unavailable.');
+        if (member && folder && member.folder !== folder) throw fail('The sprite folder does not belong to the selected character expression set.');
+        const configuredFolder = member?.folder || overrides.find(item => item?.name === stem)?.path || card.name || stem;
         folder ??= configuredFolder;
         const parts = typeof folder === 'string' ? folder.split('/') : [];
         if (!parts.length || parts.length > 2 || parts.some(part => !safePart(part))) throw fail('The sprite folder name is invalid.');
@@ -117,10 +122,10 @@ export function captureSpriteRequest(base, account, source, { avatar, labels, fo
             if (!file) throw fail('The saved sprite sheet is missing.');
             sheet = { relative: path.relative(base.directories.root, filename).split(path.sep).join('/'), before: physical(file) };
         }
-        const context = { characterName: card.name || stem, characterCard: buildCharacterCardSpritePrompt({
+        const context = applyExpressionMemberPrompt({ characterName: card.name || stem, characterCard: buildCharacterCardSpritePrompt({
             description: card.description, creatorNotes: card.creator_notes || saved.data.creatorcomment,
             personality: card.personality, scenario: card.scenario, charDepthPrompt: card.extensions?.depth_prompt?.prompt,
-        }), framing: options.agentSpriteFraming || 'bust', promptTemplate: options.agentSpritePrompt || DEFAULT_EXPRESSION_SPRITE_PROMPT };
+        }), framing: options.agentSpriteFraming || 'bust', promptTemplate: options.agentSpritePrompt || DEFAULT_EXPRESSION_SPRITE_PROMPT }, member);
         if (!['bust', 'full_body'].includes(context.framing) || typeof context.promptTemplate !== 'string' || context.promptTemplate.length > 64 * 1024) throw fail('The saved sprite prompt controls are invalid.');
         const grid = ['sheet', 'split'].includes(mode) && targets.length ? getExpressionSpriteSheetGrid(targets.length) : null;
         const prompts = mode === 'sheet' ? [buildExpressionSpriteSheetPrompt(targets.map(item => item.label), context, grid)]
