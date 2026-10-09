@@ -37,6 +37,7 @@ module.exports = {
         'node_modules/**/*',
     ],
     globals: {
+        BigInt: 'readonly',
         SillyTavern: 'readonly',
     },
     rules: {
