@@ -12,7 +12,8 @@ android {
         applicationId 'io.github.platberlitz.neconyan'
         minSdk 30
         targetSdk 36
-        versionCode numbers[0] * 10000 + numbers[1] * 100 + numbers[2]
+        // Hotfixes use a fourth number (1.2.4.1); the code stays above every older three-part code.
+        versionCode numbers[0] * 1000000 + numbers[1] * 10000 + numbers[2] * 100 + (numbers.size() > 3 ? numbers[3] : 0)
         versionName appPackage.version
         externalNativeBuild { cmake { arguments "-DNODE_MOBILE_ROOT=${nodeRoot}", '-DANDROID_STL=c++_shared' } }
         buildConfigField 'String', 'SERVER_SHA256', '"' + file('src/main/assets/server.sha256').text.trim() + '"'
