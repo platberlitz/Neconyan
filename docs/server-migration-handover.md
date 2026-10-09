@@ -69,6 +69,47 @@ the PR against staging and validate the resulting APK on the reporting device.
 
 ## Release preparation: 1.0.0
 
+### 9 October: Android word-splitting hotfix 1.2.4.2, staging returns to 1.2.5
+
+The 1.2.4.1 crash record from the issue #80 reporter showed a null pointer
+dereference on the server's main thread in `libnode.so`. Symbolised against the
+unstripped nodejs-mobile 24.21.0-0 runtime (matching build ID), the frames are
+`JSSegments::Create`, `Builtin_SegmenterPrototypeSegment` and the builtin exit
+stub: the crash is inside `Intl.Segmenter.prototype.segment()`. The runtime is
+built with small, English-only ICU data whose break-iterator folder holds no
+word rules, so creating a word segmenter fails and V8 dereferences the missing
+iterator. Mewmory memory search splits words with `Intl.Segmenter`
+(`public/scripts/util/lexical-search.js`), and recall runs it in every chat with
+Mewmory switched on, which is why the long chat crashed on send or regenerate.
+That the reporter's fresh chat had Mewmory off is inferred.
+
+The APK payload now ships the official ICU 78.3 data file (zip and file
+checksums pinned in `scripts/build-android-payload.js`) and the server starts
+with `--icu-data-dir`. `terms()` also falls back to a Unicode word pattern when a
+Node runtime has small ICU and no external data. Saved chats are not changed.
+
+The Android workflow's baseline job ran the published 1.2.4.1 APK on an
+Android 15 emulator and it crashed in the same V8 functions as the phone. The
+1.2.4.2 build splits words on Android 11 and 15 and passed the existing
+1,600-message, crash-record, safe-mode and runtime guard checks.
+
+`main` was fast-forwarded to `61b8819b5ce3661a91d4f6c2ef5bedf17981979a`.
+Neconyan 1.2.4.2 is published at
+https://github.com/platberlitz/Neconyan/releases/tag/v1.2.4.2 with annotated
+tag `v1.2.4.2` and nine assets. Build checksums, both APK payloads (the arm64
+payload carries the ICU file with the pinned checksum), native 16 KiB page
+alignment, the existing signing identity and all 3,652 source files were
+verified. The published assets were downloaded again and passed the same
+checks.
+
+All 444 unit suites passed (5,787 tests, two skipped), along with 2,032 server
+tests, lint and frontend budgets. The final signed Android run `37881782936`
+passed. The browser run `37881773981` on `main` was still running at
+publication; the previous run on 1.2.4.1 failed one desktop Agents and Quick
+Reply check that passed locally. The handbook update is `bd1c785` in
+`neconyan-docs`. Next: the reporter's confirmation on the phone, then close
+issue #80.
+
 ### 9 October: Android crash-record hotfix 1.2.4.1, staging returns to 1.2.5
 
 The reporter for issue #80 confirmed that 1.2.4 still restarts the server on
