@@ -1,4 +1,4 @@
-import { expressionLabelFromFilename, isExpressionLabel, isExpressionSpriteName, parseExpressionLabels } from '../public/scripts/extensions/expressions/expression-labels.js';
+import { expressionLabelFromFilename, isExpressionLabel, isExpressionSpriteName, parseExpressionLabels, nextExpressionSpriteName } from '../public/scripts/extensions/expressions/expression-labels.js';
 
 describe('custom expression labels', () => {
     test('bulk entry normalises duplicates and rejects invalid or reserved names', () => {
@@ -12,5 +12,12 @@ describe('custom expression labels', () => {
         expect(expressionLabelFromFilename('surprised_2.webp')).toBe('surprised_2');
         expect(isExpressionSpriteName('joy-soft', 'joy-soft-2')).toBe(true);
         expect(isExpressionSpriteName('joy', 'joy/../../other')).toBe(false);
+    });
+    test('variants reserve other labels, nested labels and filenames across formats and case', () => {
+        expect(nextExpressionSpriteName('joy', ['JOY.PNG', 'joy-1.webp'], ['joy-1', 'joy-2'])).toBe('joy-3');
+        expect(nextExpressionSpriteName('joy-soft', ['joy-soft.png'], ['joy-soft', 'joy-soft-1'])).toBe('joy-soft-2');
+        expect(nextExpressionSpriteName('joy-1', [], ['joy', 'joy-1'])).toBe('joy-1');
+        expect(isExpressionSpriteName('joy', 'joy-1', ['joy-1'])).toBe(false);
+        expect(isExpressionSpriteName('joy', 'joy-1-2', ['joy-1'])).toBe(false);
     });
 });

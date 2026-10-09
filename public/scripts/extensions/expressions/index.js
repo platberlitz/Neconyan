@@ -19,7 +19,7 @@ import { generateWebLlmChatPrompt, isWebLlmSupported } from '../shared.js';
 import { Popup, POPUP_RESULT } from '../../popup.js';
 import { t } from '../../i18n.js';
 import { removeReasoningFromString } from '../../reasoning.js';
-import { isExpressionLabel, isExpressionSpriteName, parseExpressionLabels, expressionLabelFromFilename } from './expression-labels.js';
+import { isExpressionLabel, isExpressionSpriteName, parseExpressionLabels, expressionLabelFromFilename, nextExpressionSpriteName } from './expression-labels.js';
 import { cleanSpriteBitmap, splitSpriteBitmap } from './sprite-pixels.js';
 import { getExpressionSpriteSheetGrid } from './sprite-prompts.js';
 import { readExpressionSets, resolveExpressionMember, applyExpressionMemberPrompt } from './expression-sets.js';
@@ -596,7 +596,7 @@ async function moduleWorker({ newChat = false } = {}) {
         // This runs after the expression is displayed so it never blocks the UI update.
         if (needsSprite && !inSpriteGeneration) {
             setExpressionGenerationBusy(true);
-            const generationTarget = getExpressionGenerationTarget(spriteFolderName);
+            const generationTarget = getExpressionGenerationTarget(spriteFolderName, currentLastMessage);
             generateAndUploadExpressionSprite(expression, spriteFolderName, { showToast: false, generationTarget }).then(async generated => {
                 throwIfExpressionGenerationStopped();
                 if (generated && isExpressionTargetCurrent(target)) {
@@ -624,6 +624,25 @@ function getExpressionCharacter(message = getLastCharacterMessage()) {
     const avatar = getFolderNameByMessage(message);
     return context.characters.find(character => character.avatar?.replace(/\.[^/.]+$/, '') === avatar)
         ?? (!context.groupId ? context.characters[context.characterId] : null);
+}
+
+function getExpressionFolderCharacter(folder, message = getLastCharacterMessage()) {
+    const context = getContext();
+    const current = getExpressionCharacter(message);
+    const matches = character => {
+        if (!character) return false;
+        const stem = character.avatar?.replace(/\.[^/.]+$/, '');
+        const override = extension_settings.expressionOverrides.find(item => item.name === stem)?.path;
+        return readExpressionSets(character).members.some(member => member.folder === folder)
+            || (override || character.name || stem) === folder;
+    };
+    // Imported copies can share a set folder. Prefer the actual message author.
+    return (matches(current) ? current : context.characters.find(matches)) ?? current;
+}
+
+function getManagedExpressionCharacter() {
+    const avatar = $('#image_list').data('avatar');
+    return getContext().characters.find(character => character.avatar === avatar) ?? getExpressionCharacter();
 }
 
 function getSpriteFolderName(characterMessage = null, characterName = null) {
@@ -857,18 +876,14 @@ function spriteFolderNameFromCharacter(char) {
 }
 
 /**
- * Generates a unique sprite name by appending an index to the given expression. *
+ * Chooses a name without overwriting another expression or taking its empty slot.
  * @param {string} expression - The base expression to be used as the prefix for the sprite name.
- * @param {ExpressionImage[]} existingFiles - An array of existing file objects, each containing a fileName property.
+ * @param {string} spriteFolderName - The folder whose complete file list must be reserved.
  * @returns {string} - A unique sprite name with the format "expression-index".
  */
-function generateUniqueSpriteName(expression, existingFiles) {
-    let index = existingFiles.length;
-    let newSpriteName;
-    do {
-        newSpriteName = `${expression}-${index++}`;
-    } while (existingFiles.some(file => withoutExtension(file.fileName) === newSpriteName));
-    return newSpriteName;
+function generateUniqueSpriteName(expression, spriteFolderName) {
+    const filenames = (spriteCache[spriteFolderName] || []).flatMap(sprite => sprite.files.map(file => file.fileName));
+    return nextExpressionSpriteName(expression, filenames, extension_settings.expressions.custom || []);
 }
 
 /**
@@ -985,15 +1000,10 @@ function getExpressionSpriteGenerationMode() {
         : DEFAULT_EXPRESSION_SPRITE_GENERATION_MODE;
 }
 
-function getExpressionGenerationTarget(spriteFolderName) {
-    const currentLastMessage = getLastCharacterMessage();
+function getExpressionGenerationTarget(spriteFolderName, currentLastMessage = getLastCharacterMessage()) {
     const context = getContext();
     const folderCharacterName = String(spriteFolderName || '').split('/')[0];
-    const character = context.characters?.find(x => readExpressionSets(x).members.some(member => member.folder === spriteFolderName))
-        || context.characters?.find(x => x.avatar === currentLastMessage.original_avatar)
-        || context.characters?.find(x => x.name === currentLastMessage.name)
-        || context.characters?.find(x => x.name === folderCharacterName || x.avatar?.replace(/\.[^/.]+$/, '') === folderCharacterName)
-        || context.characters?.[context.characterId];
+    const character = getExpressionFolderCharacter(spriteFolderName, currentLastMessage);
 
     const characterName = character?.name || currentLastMessage.name || context.name2 || folderCharacterName || 'character';
     const characterAvatar = character?.avatar || currentLastMessage.original_avatar || null;
@@ -1014,9 +1024,7 @@ async function generateAndUploadExpressionSprite(expression, spriteFolderName, {
         return false;
     }
 
-    const targetSpriteName = spriteName || (existingFiles.length > 0
-        ? generateUniqueSpriteName(expression, existingFiles)
-        : expression);
+    const targetSpriteName = spriteName || generateUniqueSpriteName(expression, spriteFolderName);
     const { characterName, characterAvatar, uploadName, promptContext } = generationTarget ?? getExpressionGenerationTarget(spriteFolderName);
     throwIfExpressionGenerationStopped();
     const imageUrl = await maybeGenerateExpressionSprite(expression, characterName, characterAvatar, promptContext);
@@ -1897,7 +1905,8 @@ async function validateImages(spriteFolderName, forceRedrawCached = false) {
     if (!isCurrent()) return;
 
     if (spriteCache[spriteFolderName]) {
-        if (forceRedrawCached && $('#image_list').data('name') !== spriteFolderName) {
+        if (forceRedrawCached && ($('#image_list').data('name') !== spriteFolderName
+            || $('#image_list').data('avatar') !== getExpressionFolderCharacter(spriteFolderName)?.avatar)) {
             console.debug('force redrawing character sprites list');
             await drawSpritesList(spriteFolderName, labels, spriteCache[spriteFolderName], isCurrent);
         }
@@ -1978,9 +1987,10 @@ async function drawSpritesList(spriteFolderName, labels, sprites, isCurrent = ()
     if (!isCurrent()) return validExpressions;
     $('#no_chat_expressions').hide();
     $('#open_chat_expressions').show();
-    $('#image_list').empty().data('name', spriteFolderName).append(items);
+    const character = getExpressionFolderCharacter(spriteFolderName);
+    $('#image_list').empty().data('name', spriteFolderName).data('avatar', character?.avatar || '').append(items);
     $('#image_list_header_name').text(spriteFolderName);
-    renderExpressionSets(getExpressionCharacter(), spriteFolderName);
+    renderExpressionSets(character, spriteFolderName);
     filterExpressionImages();
     return validExpressions;
 }
@@ -2445,7 +2455,7 @@ function withoutExtension(fileName) {
 }
 
 function validateExpressionSpriteName(expression, spriteName) {
-    return isExpressionSpriteName(expression, spriteName);
+    return isExpressionSpriteName(expression, spriteName, extension_settings.expressions.custom || []);
 }
 
 async function onClickExpressionUpload(event) {
@@ -2499,7 +2509,7 @@ async function onClickExpressionUpload(event) {
                 }
 
                 spriteName = null;
-                const suggestedSpriteName = generateUniqueSpriteName(expression, existingFiles);
+                const suggestedSpriteName = generateUniqueSpriteName(expression, name);
 
                 const message = await renderExtensionTemplateAsync(MODULE_NAME, 'templates/upload-expression', { expression, clickedFileName });
 
@@ -2848,8 +2858,12 @@ export async function init() {
         settings.find('.expression_section_sprites').prependTo(settings.find('.inline-drawer-content'));
         $('#expression_add_many').on('click', onClickExpressionAddCustom);
         $('#expression_search, #expression_visibility').on('input change', filterExpressionImages);
-        bindExpressionSets({ getCharacter: getExpressionCharacter, refresh: async () => {
-            const folder = getSpriteFolderName();
+        bindExpressionSets({ getCharacter: getManagedExpressionCharacter, refresh: async () => {
+            const character = getManagedExpressionCharacter();
+            const last = getLastCharacterMessage();
+            const message = getExpressionCharacter(last)?.avatar === character?.avatar ? last
+                : { name: character?.name, original_avatar: character?.avatar };
+            const folder = getSpriteFolderName(message, character?.name);
             delete spriteCache[folder];
             await validateImages(folder, true);
         } });

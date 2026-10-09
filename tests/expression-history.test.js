@@ -2,7 +2,7 @@ import { describe, expect, test, jest } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { isExpressionSource, readMessageExpression, writeMessageExpression } from '../public/scripts/expression-history.js';
-import { expressionLabelFromFilename, isExpressionLabel } from '../public/scripts/extensions/expressions/expression-labels.js';
+import { expressionLabelFromFilename, isExpressionLabel, nextExpressionSpriteName } from '../public/scripts/extensions/expressions/expression-labels.js';
 import { applyExpressionMemberPrompt, readExpressionSets, resolveExpressionMember } from '../public/scripts/extensions/expressions/expression-sets.js';
 import { EventEmitter } from '../public/lib/eventemitter.js';
 
@@ -99,6 +99,27 @@ describe('exact expression history', () => {
 });
 
 describe('expression asset snapshots', () => {
+    test('generation follows the folder owner rather than a later group speaker or an imported duplicate', () => {
+        const member = { id: 'mira', name: 'Mira', folder: 'cast/mira', description: 'Original notes' };
+        const original = { name: 'Original cast', avatar: 'original.png', data: { extensions: { expression_sets: { members: [member], active: 'mira' } } } };
+        const copy = { name: 'Imported cast', avatar: 'copy.png', data: { extensions: { expression_sets: { members: [{ ...member, description: 'Imported notes' }], active: 'mira' } } } };
+        const nova = { name: 'Nova', avatar: 'nova.png' };
+        let message = { name: copy.name, original_avatar: copy.avatar };
+        const characters = [original, copy, nova];
+        const runtime = vm.createContext({ getContext: () => ({ characters, groupId: 'group' }), getLastCharacterMessage: () => message,
+            getExpressionCharacter: (target = message) => characters.find(character => character.avatar === target.original_avatar),
+            readExpressionSets, applyExpressionMemberPrompt, extension_settings: { expressionOverrides: [] },
+            getExpressionSpritePromptContext: name => ({ characterName: name, characterCard: name }),
+        });
+        const helpers = ['getExpressionFolderCharacter', 'getExpressionGenerationTarget'];
+        vm.runInContext(helpers.map(name => extract(expressions, name)).join('\n'), runtime);
+        expect(runtime.getExpressionGenerationTarget('cast/mira').characterAvatar).toBe('copy.png');
+        expect(runtime.getExpressionGenerationTarget('cast/mira').promptContext.characterCard).toContain('Imported notes');
+        message = { name: 'Nova', original_avatar: 'nova.png' };
+        expect(runtime.getExpressionGenerationTarget('Original cast').characterAvatar).toBe('original.png');
+        expect(runtime.getExpressionGenerationTarget('cast/mira', { original_avatar: 'copy.png' }).characterAvatar).toBe('copy.png');
+    });
+
     test('failed classifications release their settings listener and later schemas include custom labels', async () => {
         const eventSource = new EventEmitter();
         const generateRaw = jest.fn().mockRejectedValueOnce(new Error('Failed before settings were prepared'));
@@ -148,11 +169,12 @@ describe('expression asset snapshots', () => {
         const generate = jest.fn(() => generation);
         const upload = jest.fn(async () => 'joy');
         const runtime = vm.createContext({ getContext: () => context, getLastCharacterMessage: () => ({ name: 'Mira and Sol', original_avatar: 'cast.png' }),
+            getExpressionCharacter: () => context.characters[context.characterId],
             readExpressionSets, applyExpressionMemberPrompt, getExpressionSpritePromptContext: () => ({ characterName: 'Mira and Sol', characterCard: 'Shared history' }),
-            spriteCache: {}, extension_settings: { expressions: {} }, maybeGenerateExpressionSprite: generate, uploadSpriteCommand: upload,
+            spriteCache: {}, extension_settings: { expressions: {}, expressionOverrides: [] }, nextExpressionSpriteName, maybeGenerateExpressionSprite: generate, uploadSpriteCommand: upload,
             throwIfExpressionGenerationStopped: () => {}, setExpressionGenerationBusy: () => {}, inSpriteGeneration: true,
         });
-        vm.runInContext(`${extract(expressions, 'getExpressionGenerationTarget')}\n${extract(expressions, 'generateAndUploadExpressionSprite')}`, runtime);
+        vm.runInContext(['getExpressionFolderCharacter', 'getExpressionGenerationTarget', 'generateUniqueSpriteName', 'generateAndUploadExpressionSprite'].map(name => extract(expressions, name)).join('\n'), runtime);
         const pending = runtime.generateAndUploadExpressionSprite('joy', member.folder, { showToast: false });
         context = { characters: [{ name: 'Another character', avatar: 'other.png' }], characterId: 0 };
         member.description = 'Changed during generation';

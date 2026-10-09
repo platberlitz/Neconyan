@@ -11,7 +11,7 @@ import { generateQuickImageGenJobImage, quickImageGenSettingsFingerprint } from 
 import { captureQuickImageReferenceSources } from './quick-image-gen-reference.js';
 import { resolveCharacterImageSettings } from '../../public/scripts/extensions/quick-image-gen/lib/character-settings.js';
 import { cleanSpriteBitmap, splitSpriteBitmap } from '../../public/scripts/extensions/expressions/sprite-pixels.js';
-import { expressionLabelFromFilename, isExpressionLabel, isExpressionSpriteName } from '../../public/scripts/extensions/expressions/expression-labels.js';
+import { expressionLabelFromFilename, isExpressionLabel, isExpressionSpriteName, nextExpressionSpriteName } from '../../public/scripts/extensions/expressions/expression-labels.js';
 import { readExpressionSets, resolveExpressionMember, applyExpressionMemberPrompt } from '../../public/scripts/extensions/expressions/expression-sets.js';
 import { buildCharacterCardSpritePrompt, buildExpressionSpritePrompt, buildExpressionSpriteSheetPrompt,
     DEFAULT_EXPRESSION_SPRITE_PROMPT, EXPRESSION_SPRITE_NEGATIVE, getExpressionSpriteSheetGrid } from '../../public/scripts/extensions/expressions/sprite-prompts.js';
@@ -43,17 +43,14 @@ function listSprites(directory, labels) {
     });
 }
 
-function selectedSpriteName(label, files, replace, allowMultiple) {
+function selectedSpriteName(label, files, replace, allowMultiple, allFiles, labels) {
     if (replace !== undefined) {
-        if (!safePart(replace) || !isExpressionSpriteName(label, replace)
+        if (!safePart(replace) || !isExpressionSpriteName(label, replace, labels)
             || files.filter(file => file.name === replace).length !== 1) throw fail('The sprite selected for replacement is not unique.');
         return replace;
     }
-    if (!files.length) return label;
-    if (!allowMultiple) throw fail('Enable multiple sprites before adding another version of this expression.');
-    let suffix = files.length;
-    while (files.some(file => file.name === `${label}-${suffix}`)) suffix++;
-    return `${label}-${suffix}`;
+    if (files.length && !allowMultiple) throw fail('Enable multiple sprites before adding another version of this expression.');
+    return nextExpressionSpriteName(label, allFiles.map(file => file.filename), labels);
 }
 
 /** Snapshot card, cleanup settings, exact sprite destinations and the configured image connection. */
@@ -94,12 +91,14 @@ export function captureSpriteRequest(base, account, source, { avatar, labels, fo
         if (!Array.isArray(labels) || labels.length > 64 || labels.some(label => !isExpressionLabel(label))
             || new Set(labels).size !== labels.length || !replacements || typeof replacements !== 'object' || Array.isArray(replacements)) throw fail('The requested sprite labels are invalid.');
         if (!labels.length && mode !== 'cleanup') throw fail('Choose at least one expression for the sprite request.');
+        const knownLabels = [...(Array.isArray(options.custom) ? options.custom : []), ...labels];
+        for (const file of files) file.label = expressionLabelFromFilename(file.filename, knownLabels);
         const targets = [];
         for (const label of labels) {
             const matching = files.filter(file => file.label === label);
             if (missingOnly && matching.length) continue;
             const names = mode === 'cleanup' && replacements[label] === undefined ? matching.map(file => file.name)
-                : [selectedSpriteName(label, matching, replacements[label], options.allowMultiple)];
+                : [selectedSpriteName(label, matching, replacements[label], options.allowMultiple, files, knownLabels)];
             for (const name of names) {
                 if (mode === 'cleanup' && matching.filter(file => file.name === name).length !== 1) throw fail('The sprite cleanup selection is ambiguous.');
                 const filename = `${name}.png`;

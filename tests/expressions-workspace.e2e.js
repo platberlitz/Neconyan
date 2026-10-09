@@ -17,7 +17,7 @@ async function fixture(page, palette = theme) {
     const character = { name: 'Mira and Sol', avatar: 'mira-and-sol.png', chat: 'expressions-workspace', first_mes: 'Mira: Hello!',
         mes_example: '', shallow: false, tags: [], data: { name: 'Mira and Sol', first_mes: 'Mira: Hello!',
             description: 'Mira has silver hair. Sol has red hair.', extensions: {} } };
-    const state = { character, errors: [], folders: [], failSave: false };
+    const state = { character, errors: [], folders: [], failSave: false, spriteNames: ['joy.png', 'neutral.png'], uploads: [] };
     page.on('pageerror', error => state.errors.push(error.message));
     await page.route('**/api/settings/get', async route => {
         envelope ??= await (await route.fetch()).json();
@@ -48,7 +48,14 @@ async function fixture(page, palette = theme) {
     await page.route('**/api/sprites/get?**', route => {
         const folder = new URL(route.request().url()).searchParams.get('name');
         state.folders.push(folder);
-        return route.fulfill({ json: ['joy', 'neutral'].map(label => ({ label, path: `/characters/${folder}/${label}.png` })) });
+        return route.fulfill({ json: state.spriteNames.map(filename => ({ label: filename.split(/[.-]/)[0], path: `/characters/${folder}/${filename}` })) });
+    });
+    await page.route('**/api/sprites/upload', route => {
+        const body = route.request().postDataBuffer().toString();
+        const spriteName = body.match(/name="spriteName"\r\n\r\n([^\r]+)/)[1];
+        state.uploads.push(spriteName);
+        state.spriteNames.push(`${spriteName}.png`);
+        return route.fulfill({ json: {} });
     });
     await page.route(url => url.pathname.startsWith('/characters/'), route => route.fulfill({ path: avatar }));
     await page.route('**/thumbnail?**', route => route.fulfill({ path: avatar }));
@@ -135,6 +142,25 @@ for (const [name, phone] of [['desktop', false], ['phone', true]]) {
             await page.locator('#expression_member_details').evaluate(element => { element.open = false; });
             await page.locator('#expression_member').scrollIntoViewIfNeeded();
             await page.screenshot({ path: `../screenshots/expressions-${name}-${process.env.EXPRESSIONS_SCREENSHOT_PHASE || 'after'}.png` });
+            expect(state.errors).toEqual([]);
+        });
+
+        test('upload suggestions leave custom expression names and existing images intact', async ({ page }) => {
+            const state = await fixture(page);
+            state.spriteNames.push('joy-1.webp');
+            await page.locator('#expression_add_many').click();
+            await inputPopup(page, 'joy-1, joy-2');
+            await expect(page.locator('#image_list [data-expression="joy-1"][data-expression-type="success"]')).toHaveCount(1);
+            await page.locator('#expressions_allow_multiple').check();
+            const chooser = page.waitForEvent('filechooser');
+            await page.locator('#image_list [data-expression="joy"] .expression_list_upload').click();
+            await (await chooser).setFiles({ name: 'another.png', mimeType: 'image/png', buffer: readFileSync(avatar) });
+            const popup = page.locator('dialog[open]').last();
+            await expect(popup.locator('.popup-input')).toHaveValue('joy-3');
+            await popup.locator('.popup-button-ok').click();
+            await expect.poll(() => state.uploads).toEqual(['joy-3']);
+            await expect(page.locator('#image_list [data-filename="joy-1.webp"]')).toHaveAttribute('data-expression', 'joy-1');
+            await expect(page.locator('#image_list [data-filename="joy-3.png"]')).toHaveAttribute('data-expression', 'joy');
             expect(state.errors).toEqual([]);
         });
 

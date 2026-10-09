@@ -105,6 +105,26 @@ test('shared-card jobs capture the selected member, custom label and independent
     assert.throws(() => capture({ memberId: 'sol', folder: 'cast/mira' }), /does not belong/);
 });
 
+test('new variants cannot overwrite another custom expression or take its empty slot', async t => {
+    const f = await prepared(t, { sprites: { 'joy.png': png, 'joy-1.webp': png },
+        settings: { custom: ['joy-1', 'joy-2'], allowMultiple: true } });
+    assert.equal(f.request.targets[0].name, 'joy-3');
+    assert.equal(f.request.targets[0].before, null);
+    assert.deepEqual(f.request.targets[0].obsolete, []);
+    await runSpriteJob(f.context(), { fetchImpl: async () => imageResponse(await encodeServerImage(bitmap())) });
+    assert.deepEqual(fs.readFileSync(path.join(f.folder, 'joy-1.webp')), png);
+    assert.deepEqual(fs.readFileSync(path.join(f.folder, 'joy.png')), png);
+    assert.ok(fs.existsSync(path.join(f.folder, 'joy-3.png')));
+});
+
+test('labels in the same request reserve their names before settings have been saved', async t => {
+    const f = await prepared(t, { labels: ['joy', 'joy-1'], sprites: { 'joy.png': png }, settings: { allowMultiple: true } });
+    assert.deepEqual(f.request.targets.map(target => target.name), ['joy-2', 'joy-1']);
+    assert.throws(() => captureSpriteRequest(f.scope, f.account, f.source, {
+        avatar: 'Nova.png', labels: ['joy', 'joy-1'], folder: 'Nova', replacements: { joy: 'joy-1' },
+    }), /replacement/);
+});
+
 test('sprite sheets generate once and split exact row-major cells without adjacent content', async t => {
     const f = await prepared(t, { mode: 'sheet', labels: ['joy', 'anger'] });
     const pixels = bitmap(42, 20);

@@ -37,7 +37,7 @@ function setup() {
         validateImages: jest.fn(async () => {}), forceUpdateVisualNovelMode: async () => {},
         sendExpressionCall: jest.fn(async () => true), removeExpression: jest.fn(),
         generateAndUploadExpressionSprite: jest.fn(async () => true),
-        getExpressionGenerationTarget: () => ({ characterName: 'Cat', characterAvatar: 'Cat.png', uploadName: 'Cat.png' }),
+        getExpressionGenerationTarget: jest.fn(() => ({ characterName: 'Cat', characterAvatar: 'Cat.png', uploadName: 'Cat.png' })),
         setExpressionGenerationBusy: value => { runtime.inSpriteGeneration = value; },
         throwIfExpressionGenerationStopped: () => {}, isExpressionGenerationAbortError: error => error?.name === 'AbortError',
         MODULE_NAME: 'expressions', EXPRESSION_API: { agent: 4, none: 99 },
@@ -115,6 +115,17 @@ describe('Expressions Agent lifecycle', () => {
         runtime.inSpriteGeneration = false;
         await runtime.moduleWorker();
         expect(runtime.generateAndUploadExpressionSprite).toHaveBeenCalledTimes(1);
+    });
+
+    test('delayed automatic generation keeps the classified author when a later speaker is present', async () => {
+        const { runtime, add, settings } = setup();
+        settings.expressions.agentAutoGenerateSprites = true;
+        const original = add('done', 'anger');
+        const later = add('pending');
+        later.name = 'Another character';
+        later.original_avatar = 'Other.png';
+        await runtime.moduleWorker();
+        expect(runtime.getExpressionGenerationTarget).toHaveBeenCalledWith('Cat', original);
     });
 
     test('loaded history stays untouched until its saved classification actually changes', async () => {
