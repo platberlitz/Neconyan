@@ -1,5 +1,5 @@
 import { Fuse, DOMPurify } from '../lib.js';
-import { canUseNegativeLookbehind, copyText, findPersona, flashHighlight, resolveAvatarData } from './utils.js';
+import { canUseNegativeLookbehind, copyText, escapeHtml, findPersona, flashHighlight, resolveAvatarData } from './utils.js';
 
 import {
     Generate,
@@ -99,6 +99,7 @@ import { slashCommandReturnHelper } from './slash-commands/SlashCommandReturnHel
 import { accountStorage } from './util/AccountStorage.js';
 import { SlashCommandDebugController } from './slash-commands/SlashCommandDebugController.js';
 import { SlashCommandScope } from './slash-commands/SlashCommandScope.js';
+import { delayWithAbort } from './slash-commands/SlashCommandRuntimeUtils.js';
 import { t } from './i18n.js';
 import { kai_settings } from './kai-settings.js';
 import { instruct_presets, selectContextPreset, selectInstructPreset } from './instruct-mode.js';
@@ -4333,7 +4334,7 @@ function abortCallback({ _abortController, quiet }, reason) {
     return '';
 }
 
-async function delayCallback(_, amount) {
+async function delayCallback({ _abortController }, amount) {
     if (!amount) {
         console.warn('WARN: No amount provided for /delay command');
         return '';
@@ -4344,7 +4345,7 @@ async function delayCallback(_, amount) {
         amount = 0;
     }
 
-    await delay(amount);
+    await delayWithAbort(amount, _abortController);
     return '';
 }
 
@@ -6889,7 +6890,7 @@ export function activateScriptButtons() {
  * Hide command execution pause/stop buttons next to chat input.
  */
 export function deactivateScriptButtons() {
-    document.querySelector('#form_sheld').classList.remove('isExecutingCommandsFromChatInput');
+    document.querySelector('#form_sheld').classList.remove('isExecutingCommandsFromChatInput', 'script_paused');
 }
 
 /**
@@ -7014,7 +7015,13 @@ export async function executeSlashCommandsOnChatInput(text, options = {}) {
             scope: options.scope,
             source: options.source,
         });
-        if (commandsFromChatInputAbortController.signal.aborted) {
+        if (result?.isError) {
+            fs.classList.add('script_error');
+            if (options.clearChatInput && ta.value === '') {
+                ta.value = text;
+                ta.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        } else if (commandsFromChatInputAbortController.signal.aborted) {
             document.querySelector('#form_sheld').classList.add('script_aborted');
         } else {
             document.querySelector('#form_sheld').classList.add('script_success');
@@ -7029,9 +7036,9 @@ export async function executeSlashCommandsOnChatInput(text, options = {}) {
                 /**@type {SlashCommandExecutionError}*/
                 const ex = e;
                 const toast = `
-                    <div>${ex.message}</div>
+                    <div>${escapeHtml(ex.message)}</div>
                     <div>${t`Line`}: ${ex.line} ${t`Column`}: ${ex.column}</div>
-                    <pre style="text-align:left;">${ex.hint}</pre>
+                    <pre style="text-align:left;">${escapeHtml(ex.hint)}</pre>
                     `;
                 const clickHint = `<p>${t`Click to see details`}</p>`;
                 toastr.error(
@@ -7086,9 +7093,9 @@ async function executeSlashCommandsWithOptions(text, options = {}) {
             /**@type {SlashCommandParserError}*/
             const ex = e;
             const toast = `
-                <div>${ex.message}</div>
+                <div>${escapeHtml(ex.message)}</div>
                 <div>${t`Line`}: ${ex.line} ${t`Column`}: ${ex.column}</div>
-                <pre style="text-align:left;">${ex.hint}</pre>
+                <pre style="text-align:left;">${escapeHtml(ex.hint)}</pre>
                 `;
             const clickHint = `<p>${t`Click to see details`}</p>`;
             toastr.error(
@@ -7097,6 +7104,8 @@ async function executeSlashCommandsWithOptions(text, options = {}) {
                 { escapeHtml: false, timeOut: 10000, onclick: () => callGenericPopup(toast, POPUP_TYPE.TEXT, '', { allowHorizontalScrolling: true, allowVerticalScrolling: true }) },
             );
             const result = new SlashCommandClosureResult();
+            result.isError = true;
+            result.errorMessage = e.message;
             return result;
         } else {
             throw e;
@@ -7116,9 +7125,9 @@ async function executeSlashCommandsWithOptions(text, options = {}) {
                 /**@type {SlashCommandExecutionError}*/
                 const ex = e;
                 const toast = `
-                    <div>${ex.message}</div>
+                    <div>${escapeHtml(ex.message)}</div>
                     <div>Line: ${ex.line} Column: ${ex.column}</div>
-                    <pre style="text-align:left;">${ex.hint}</pre>
+                    <pre style="text-align:left;">${escapeHtml(ex.hint)}</pre>
                     `;
                 const clickHint = '<p>Click to see details</p>';
                 toastr.error(

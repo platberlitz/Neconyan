@@ -90,6 +90,24 @@ export function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Wait without keeping a stopped script locked until its timer expires. */
+export function delayWithAbort(ms, controller) {
+    if (controller?.signal.aborted) return Promise.resolve();
+    return new Promise(resolve => {
+        const finish = () => {
+            clearTimeout(timer);
+            controller?.removeEventListener('abort', finish);
+            resolve();
+        };
+        const timer = setTimeout(finish, ms);
+        controller?.addEventListener('abort', finish);
+    });
+}
+
+export function isSlashCommandText(text) {
+    return typeof text === 'string' && text.trimStart().startsWith('/');
+}
+
 export function escapeRegex(string) {
     return String(string).replace(/[/\-\\^$*+?.()|[\]{}]/g, '\\$&');
 }

@@ -18,8 +18,10 @@ export class AbstractEventTarget {
         if (!this.listeners[event.type] || this.listeners[event.type].length === 0) {
             return true;
         }
-        this.listeners[event.type].forEach(listener => {
-            listener(event);
+        // A listener may remove itself while handling an abort. Iterate a snapshot
+        // so the next listener still receives it, and defer newly added listeners.
+        [...this.listeners[event.type]].forEach(listener => {
+            if (this.listeners[event.type].includes(listener)) listener(event);
         });
         return true;
     }

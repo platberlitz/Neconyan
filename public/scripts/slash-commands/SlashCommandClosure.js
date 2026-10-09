@@ -182,7 +182,7 @@ export class SlashCommandClosure {
             const match = re.exec(remaining);
             const before = substituteParams(remaining.slice(0, match.index));
             const after = remaining.slice(match.index + match[0].length);
-            const replacer = match.groups.pipe ? scope.pipe : match.groups.var ? scope.getVariable(match.groups.var, match.groups.index) : macroList.find(it => it.key == match.groups.macro || new RegExp(escapeMacro(it, true)).test(match.groups.macro))?.value;
+            const replacer = match.groups.pipe ? scope.pipe : match.groups.var ? scope.getVariable(match.groups.var, match.groups.varIndex) : macroList.find(it => it.key == match.groups.macro || new RegExp(escapeMacro(it, true)).test(match.groups.macro))?.value;
             if (replacer instanceof SlashCommandClosure) {
                 replacer.abortController = this.abortController;
                 replacer.breakController = this.breakController;
@@ -195,7 +195,7 @@ export class SlashCommandClosure {
                     listValues.push(before);
                 }
                 listValues.push(replacer);
-                if (match.index + match[0].length + 1 < remaining.length) {
+                if (after.length > 0) {
                     const rest = this.substituteParams(after, scope);
                     listValues.push(...(Array.isArray(rest) ? rest : [rest]));
                 }
