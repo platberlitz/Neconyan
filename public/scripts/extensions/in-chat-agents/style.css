@@ -1711,6 +1711,33 @@ button.ica--card-pill--version-update {
     margin-bottom: 4px;
 }
 
+.ica--tpanel-history-more {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 8px;
+    font-size: calc(var(--mainFontSize) * 0.8);
+}
+
+.ica--tpanel-history-more > span {
+    color: var(--neco-muted, var(--SmartThemeEmColor));
+}
+
+.ica--tpanel-history-more .menu_button {
+    width: auto;
+    min-height: 36px;
+    margin: 0;
+    padding-inline: 12px;
+}
+
+@media (pointer: coarse) {
+    .ica--tpanel-history-more .menu_button {
+        min-height: 44px;
+    }
+}
+
 .ica--tpanel-handle {
     position: fixed;
     z-index: calc(var(--sb-z-popout, 4000) - 1);

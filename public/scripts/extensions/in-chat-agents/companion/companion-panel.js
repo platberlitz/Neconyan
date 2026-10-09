@@ -60,7 +60,6 @@ import {
     normalizePlotCompassObjective,
 } from './companion-shared.js';
 
-const PANEL_HISTORY_LIMIT = 5;
 // v2: v1 could persist scroll-corrupted positions on iOS (drag hijacked into a page scroll),
 // pinning the handle to a screen edge with no way to drag it back. The old key is abandoned.
 // The value is either a bare number (legacy: fraction along the right edge) or a JSON
@@ -92,6 +91,10 @@ let returnFocus = null;
 let panelDragActive = false;
 let pendingPanelReorders = 0;
 let panelReorderChain = Promise.resolve();
+// Earlier notes render only once their 'Previous states' list is opened, a page at a time:
+// long chats hold hundreds of notes and the panel re-renders after every companion run.
+const PANEL_HISTORY_PAGE_SIZE = 20;
+const panelHistoryShown = new Map();
 
 // Neconyan divergence: Conversation Mode owns the shell while active, so the upstream companion panel must hide behind this DOM-state adapter.
 export function isConversationModeActive() {
@@ -516,7 +519,7 @@ async function savePlotCompassObjective(agent, objective) {
 }
 
 /**
- * Collects the latest stored result (and a short history) per companion agent by walking
+ * Collects the latest stored result and every earlier one per companion agent by walking
  * the chat backwards. Enabled agents without any stored state are included so the panel
  * can explain that they have not run yet.
  */
@@ -565,7 +568,7 @@ export function collectPanelAgentStates() {
             const entry = { messageIndex, result, hostHidden: Boolean(message.is_system) };
             if (!state.latest) {
                 state.latest = entry;
-            } else if (state.history.length < PANEL_HISTORY_LIMIT) {
+            } else {
                 state.history.push(entry);
             }
         }
@@ -751,11 +754,13 @@ function buildPanelAgentSection(state) {
         `;
     }
 
+    const shownHistory = state.history.slice(0, panelHistoryShown.get(agentId) ?? 0);
+    const hiddenHistoryCount = state.history.length - shownHistory.length;
     const historyHtml = state.history.length > 0
         ? `
-            <details class="ica--tpanel-history">
+            <details class="ica--tpanel-history" data-history-agent-id="${escapeHtml(agentId)}">
                 <summary>Previous states (${state.history.length})</summary>
-                ${state.history.map(entry => `
+                ${shownHistory.map(entry => `
                     <div class="ica--tpanel-history-entry" data-message-index="${entry.messageIndex}" data-host-hidden="${Boolean(entry.hostHidden)}">
                         <div class="ica--tpanel-history-head">
                             <span>Message #${entry.messageIndex}</span>
@@ -767,6 +772,11 @@ function buildPanelAgentSection(state) {
                         <div class="ica--tpanel-agent-body">${buildPanelEntryBody(agentId, entry)}</div>
                     </div>
                 `).join('')}
+                ${shownHistory.length > 0 && hiddenHistoryCount > 0 ? `
+                    <div class="ica--tpanel-history-more">
+                        <span>Showing ${shownHistory.length} of ${state.history.length}</span>
+                        <button type="button" class="menu_button" data-action="panel-history-more">Show older notes</button>
+                    </div>` : ''}
             </details>
         `
         : '';
@@ -960,6 +970,30 @@ function setupPanelSortable() {
     });
 }
 
+/** Renders the first `count` earlier notes of one companion; the rest wait behind 'Show older notes'. */
+export function revealPanelHistory(agentId, count = PANEL_HISTORY_PAGE_SIZE) {
+    if (!agentId) {
+        return;
+    }
+
+    panelHistoryShown.set(agentId, Math.max(0, Number(count) || 0));
+    refreshCompanionPanel();
+}
+
+function handlePanelHistoryToggle(event) {
+    const details = event.target;
+    const agentId = details?.dataset?.historyAgentId;
+    if (!agentId) {
+        return;
+    }
+
+    if (!details.open) {
+        panelHistoryShown.delete(agentId);
+    } else if (!panelHistoryShown.has(agentId)) {
+        revealPanelHistory(agentId, PANEL_HISTORY_PAGE_SIZE);
+    }
+}
+
 /** Re-renders the open panel; lets other surfaces (the agents page) push order changes in. */
 export function refreshCompanionPanel() {
     if (panelOpen) {
@@ -1077,6 +1111,12 @@ async function handlePanelAction(event) {
 
     if (action === 'panel-close') {
         closeCompanionPanel();
+        return;
+    }
+
+    if (action === 'panel-history-more') {
+        const agentId = button.closest('[data-history-agent-id]').attr('data-history-agent-id');
+        revealPanelHistory(agentId, (panelHistoryShown.get(agentId) ?? 0) + PANEL_HISTORY_PAGE_SIZE);
         return;
     }
 
@@ -1459,6 +1499,8 @@ export function initCompanionPanel() {
             return panelHooks.openConnections(agentId);
         },
     });
+    // 'toggle' does not bubble, so listen in the capture phase for every history list.
+    $('#ica--tracker-panel')[0]?.addEventListener('toggle', handlePanelHistoryToggle, true);
     $('#ica--tracker-panel').on('click', '[data-action]', event =>
         runCompanionViewAction(event.currentTarget, () => handlePanelAction(event)));
     $('#ica--tracker-panel').on('keydown', event => {

@@ -297,7 +297,7 @@ You can drag the floating button to any edge. **Hide the floating button** hides
 
 Under each companion's note sit the same **Keep in chat history**, **notes** and **Connections** controls as on its card in the Agents list.
 
-Each companion also shows its message number, estimated **Input** and **Output** tokens and **Previous states** (the last five notes). **Absorbed** means its message is hidden but the note still counts.
+Each companion also shows its message number, estimated **Input** and **Output** tokens and **Previous states** (every earlier note it wrote in this chat, 20 at a time: **Show older notes** loads the next 20). **Absorbed** means its message is hidden but the note still counts.
 
 ### Special Controls
 
