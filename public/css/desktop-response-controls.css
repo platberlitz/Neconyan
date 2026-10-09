@@ -5,6 +5,23 @@
 }
 
 @media screen and (min-width: 1001px) {
+    /* Echo paints the manager-owned inside footer; it remains after media, files and bias. */
+    body.neconyan.echostyle #chat .mes.nn-echo-layout > .mes_block > .nn-echo-reading-footer {
+        box-sizing: border-box; width: 100%; padding: 6px 14px;
+        border: 1px solid color-mix(in srgb, var(--SmartThemeBodyColor) 10%, transparent);
+        border-radius: 10px; background: var(--moonlit-sb-bot-message-bg);
+    }
+    body.neconyan.echostyle #chat .mes.nn-echo-layout[is_user='true'] > .mes_block > .nn-echo-reading-footer { background: var(--moonlit-sb-user-message-bg); }
+    body.neconyan.echostyle #chat .nn-echo-footer-adjacent > .mes_block > :is(.mes_text, .ica--companion-ledger) { margin-bottom: 0; vertical-align: top; }
+    body.neconyan.echostyle #chat .nn-echo-footer-adjacent > .mes_block > .nn-echo-reading-footer { margin-top: 0; }
+    body.neconyan.echostyle #chat .mes.nn-echo-layout > .mes_block > .nn-echo-joined-end { border-end-start-radius: 0; border-end-end-radius: 0; border-bottom-width: 0; }
+    body.neconyan.echostyle #chat .mes.nn-echo-layout > .mes_block > .nn-echo-footer-joined { border-start-start-radius: 0; border-start-end-radius: 0; border-top-width: 0; }
+    body.neconyan.echostyle #chat .mes.nn-echo-layout > .mes_block > .mes_text.nn-echo-reserves-footer { --nn-echo-text-padding: 8px 14px calc(8px + var(--nn-echo-footer-space)); }
+    body.neconyan.echostyle #chat .mes.nn-echo-layout > .mes_block > .ica--companion-ledger.nn-echo-reserves-footer { padding-bottom: calc(12px + var(--nn-echo-footer-space)); }
+    body.neconyan.echostyle #chat .mes.nn-echo-layout > .mes_block > .nn-echo-reading-footer.nn-echo-overlay-footer {
+        position: absolute; z-index: 1; top: var(--nn-echo-footer-top); left: var(--nn-echo-footer-left);
+        width: var(--nn-echo-footer-width); margin: 0; border: 0; border-radius: 0; background: transparent;
+    }
     body.neconyan #chat .mes .nn-response-controls {
         display: flex;
         align-items: center;
