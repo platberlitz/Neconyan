@@ -27,6 +27,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PROBE_RELEASE: ${{ inputs.probe_release }}
         run: gh release download "$PROBE_RELEASE" --pattern '*-android-x86_64.apk' --dir baseline
+      - name: Fetch the unstripped Node runtime to name crashing functions
+        run: bash android/prepare-runtime.sh
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -43,7 +45,7 @@ jobs:
           disable-animations: true
           script: |
             python3 tests/android-apk-smoke.py --serial emulator-5554 --release --apk baseline/*-android-x86_64.apk
-            python3 tests/android-native-stack-probe.py --serial emulator-5554 --expect-segmenter-crash
+            python3 tests/android-native-stack-probe.py --serial emulator-5554 --expect-segmenter-crash --symbols android/libnode/bin/x86_64/libnode.so
 
   build:
     if: github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/hotfix/')

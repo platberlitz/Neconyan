@@ -4,6 +4,7 @@ Run after android-apk-smoke.py. This changes only the emulator's extracted runti
 never the APK or saved chats. A caught RangeError must not kill the server process.
 """
 import argparse
+import re
 import subprocess
 import time
 
@@ -11,6 +12,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--serial', required=True)
 parser.add_argument('--expect-segmenter-crash', action='store_true',
                     help='Confirm that a published APK without full ICU data crashes when it splits words.')
+parser.add_argument('--symbols',
+                    help='Unstripped libnode.so used to name the crashing functions; the APK copy has no symbols.')
 args = parser.parse_args()
 if not args.serial.startswith('emulator-'):
     parser.error('This check changes a disposable emulator runtime only.')
@@ -71,9 +74,16 @@ while time.monotonic() < deadline:
     log = adb('shell', f'cat {root}/cache/server.log {root}/cache/server.previous.log 2>/dev/null; true')
     if args.expect_segmenter_crash:
         crash = adb('logcat', '-d', '-b', 'crash')
-        if 'ANDROID_SEGMENTER_START' in log and 'JSSegments' in crash:
+        frames = re.findall(r'#\d\d pc ([0-9a-f]+)\s+\S*/libnode\.so', crash)
+        if 'ANDROID_SEGMENTER_START' in log and 'neconyan:server' in crash and len(frames) >= 2:
             assert 'ANDROID_SEGMENTER_OK' not in log
+            assert 'SIGSEGV' in crash and 'null pointer dereference' in crash, crash[-6000:]
             print(crash[-6000:], flush=True)
+            if args.symbols:
+                names = subprocess.check_output(['addr2line', '-f', '-C', '-e', args.symbols,
+                                                 *('0x' + frame for frame in frames[:3])], text=True, timeout=120)
+                print(names, flush=True)
+                assert 'JSSegments::Create' in names and 'SegmenterPrototypeSegment' in names, names
             print('The published APK crashed in Intl.Segmenter, as on the reporter\'s phone.', flush=True)
             break
     elif 'ANDROID_STACK_GUARD_OK' in log and 'ANDROID_WASM_GUARD_OK' in log and 'ANDROID_SEGMENTER_OK' in log:
