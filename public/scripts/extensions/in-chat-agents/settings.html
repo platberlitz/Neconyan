@@ -24,16 +24,17 @@
         <div class="ica--overview">
             <div class="ica--overview-copy">
                 <strong id="ica--run-status" role="status">Ready</strong>
+                <span class="ica--overview-stats">
+                    <span class="ica--overview-stat"><strong id="ica--agent-count">0</strong><span>agents</span></span>
+                    <span class="ica--overview-stat"><strong id="ica--enabled-count">0</strong><span>switched on</span></span>
+                    <span class="ica--overview-stat"><strong id="ica--companion-count">0</strong><span>companions</span></span>
+                    <span id="ica--agent-token-counter" class="ica--overview-stat ica--token-counter" aria-live="polite" title="Prompt tokens the switched-on agents add to each request">
+                        <strong id="ica--total-tokens-val">0</strong><span class="ica--token-counter-label">prompt tokens</span>
+                    </span>
+                </span>
                 <span id="ica--scope-description" class="ica--overview-help">Switches apply to all chats.</span>
             </div>
-            <div class="ica--overview-stats">
-                <span class="ica--overview-stat"><strong id="ica--agent-count">0</strong><span>agents</span></span>
-                <span class="ica--overview-stat"><strong id="ica--enabled-count">0</strong><span>enabled</span></span>
-                <span class="ica--overview-stat"><strong id="ica--companion-count">0</strong><span>companions</span></span>
-                <div id="ica--agent-token-counter" class="ica--token-counter" aria-live="polite">
-                    <span class="ica--token-counter-label"><i class="fa-solid fa-gauge-high" aria-hidden="true"></i> Prompt tokens</span>
-                    <strong id="ica--total-tokens-val">0</strong>
-                </div>
+            <div class="ica--overview-actions">
                 <button type="button" id="ica--globalEnabled" class="ica--master-toggle menu_button menu_button_icon" title="Pause future runs without changing individual agent switches" aria-pressed="true">
                     <i class="fa-solid fa-power-off" aria-hidden="true"></i><span>Agents On</span>
                 </button>
@@ -58,62 +59,61 @@
                         <i class="fa-solid fa-check-square" aria-hidden="true"></i>
                         <span>Select</span>
                     </button>
-
+                    <details id="ica--moreTools" class="ica--more-tools">
+                        <summary><i class="fa-solid fa-toolbox" aria-hidden="true"></i><span>More tools</span></summary>
+                        <div class="ica--more-tools-menu">
+                            <div class="ica--setup-controls" role="group" aria-labelledby="ica--setupHeading">
+                                <strong id="ica--setupHeading" class="ica--more-tools-heading">Saved setups</strong>
+                                <small class="ica--setup-help">A saved setup remembers which agents are switched on and your connection choices, so you can switch back to it later.</small>
+                                <select id="ica--setupSelect" class="text_pole" aria-label="Saved agent setup">
+                                    <option value="">Choose a setup</option>
+                                </select>
+                                <div class="ica--setup-actions">
+                                    <button type="button" id="ica--setupSave" class="menu_button menu_button_icon" title="Save the current agents and effective switches as a setup">
+                                        <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i><span>Save</span>
+                                    </button>
+                                    <button type="button" id="ica--setupLoad" class="menu_button menu_button_icon" title="Load the selected setup without deleting other agents">
+                                        <i class="fa-solid fa-rotate" aria-hidden="true"></i><span>Load</span>
+                                    </button>
+                                    <button type="button" id="ica--setupDelete" class="menu_button menu_button_icon caution" title="Delete the selected saved setup">
+                                        <i class="fa-solid fa-trash-can" aria-hidden="true"></i><span>Delete</span>
+                                    </button>
+                                </div>
+                                <small id="ica--setupStatus" class="ica--setup-status" role="status" aria-live="polite"></small>
+                                <button type="button" id="ica--setupRefresh" class="menu_button" hidden>Retry loading</button>
+                            </div>
+                            <strong class="ica--more-tools-heading">Tools</strong>
+                            <button type="button" id="ica--updateAllAgents" class="menu_button menu_button_icon" title="Update every agent whose bundled template has a newer version" style="display:none">
+                                <i class="fa-solid fa-arrow-up-right-dots" aria-hidden="true"></i>
+                                <span>Update templates</span>
+                            </button>
+                            <button type="button" id="ica--fixTrackers" class="menu_button menu_button_icon" title="Re-run enabled tracker agents on the last assistant reply">
+                                <i class="fa-solid fa-wrench" aria-hidden="true"></i>
+                                <span>Fix trackers</span>
+                            </button>
+                            <button type="button" id="ica--companionsDashboard" class="menu_button menu_button_icon" title="Open Companion activity: see, run and manage companion agents">
+                                <i class="fa-solid fa-user-astronaut" aria-hidden="true"></i>
+                                <span>Companion activity</span>
+                            </button>
+                            <button type="button" id="ica--convertAllTrackers" class="menu_button menu_button_icon" title="Turn every tracker agent that writes into the prompt into a companion that runs on its own and shows in the Companion panel">
+                                <i class="fa-solid fa-people-arrows" aria-hidden="true"></i>
+                                <span>Move trackers to companions</span>
+                            </button>
+                            <button type="button" id="ica--importAgent" class="menu_button menu_button_icon" title="Import agent(s) from a JSON file">
+                                <i class="fa-solid fa-file-import" aria-hidden="true"></i>
+                                <span>Import agents</span>
+                            </button>
+                            <button type="button" id="ica--exportAll" class="menu_button menu_button_icon" title="Export all agents to a file">
+                                <i class="fa-solid fa-file-export" aria-hidden="true"></i>
+                                <span>Export agents</span>
+                            </button>
+                            <button type="button" id="ica--resetDefaults" class="menu_button menu_button_icon caution" title="Reset all bundled agents to their original template settings (custom agents are not affected)">
+                                <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+                                <span>Reset bundled agents</span>
+                            </button>
+                        </div>
+                    </details>
                 </div>
-                <div class="ica--setup-controls" aria-label="Saved agent setups">
-                    <label class="ica--setup-select-label">
-                        <span>Saved setup</span>
-                        <select id="ica--setupSelect" class="text_pole" aria-label="Saved agent setup">
-                            <option value="">Choose a setup</option>
-                        </select>
-                    </label>
-                    <div class="ica--setup-actions">
-                        <button type="button" id="ica--setupSave" class="menu_button menu_button_icon" title="Save the current agents and effective switches as a setup">
-                            <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i><span>Save setup</span>
-                        </button>
-                        <button type="button" id="ica--setupLoad" class="menu_button menu_button_icon" title="Load the selected setup without deleting other agents">
-                            <i class="fa-solid fa-rotate" aria-hidden="true"></i><span>Load</span>
-                        </button>
-                        <button type="button" id="ica--setupDelete" class="menu_button menu_button_icon caution" title="Delete the selected saved setup">
-                            <i class="fa-solid fa-trash-can" aria-hidden="true"></i><span>Delete</span>
-                        </button>
-                    </div>
-                    <small id="ica--setupStatus" class="ica--setup-status" role="status" aria-live="polite"></small>
-                    <button type="button" id="ica--setupRefresh" class="menu_button" hidden>Retry loading</button>
-                </div>
-                <details id="ica--moreTools" class="ica--more-tools">
-                    <summary><i class="fa-solid fa-toolbox" aria-hidden="true"></i><span>More tools</span></summary>
-                    <div class="ica--more-tools-menu">
-                        <button type="button" id="ica--updateAllAgents" class="menu_button menu_button_icon" title="Update every agent whose bundled template has a newer version" style="display:none">
-                            <i class="fa-solid fa-arrow-up-right-dots" aria-hidden="true"></i>
-                            <span>Update templates</span>
-                        </button>
-                        <button type="button" id="ica--fixTrackers" class="menu_button menu_button_icon" title="Re-run enabled tracker agents on the last assistant reply">
-                            <i class="fa-solid fa-wrench" aria-hidden="true"></i>
-                            <span>Fix trackers</span>
-                        </button>
-                        <button type="button" id="ica--companionsDashboard" class="menu_button menu_button_icon" title="Open Companion activity: see, run and manage companion agents">
-                            <i class="fa-solid fa-user-astronaut" aria-hidden="true"></i>
-                            <span>Companion activity</span>
-                        </button>
-                        <button type="button" id="ica--convertAllTrackers" class="menu_button menu_button_icon" title="Turn every tracker agent that writes into the prompt into a companion that runs on its own and shows in the Companion panel">
-                            <i class="fa-solid fa-people-arrows" aria-hidden="true"></i>
-                            <span>Move trackers to companions</span>
-                        </button>
-                        <button type="button" id="ica--importAgent" class="menu_button menu_button_icon" title="Import agent(s) from a JSON file">
-                            <i class="fa-solid fa-file-import" aria-hidden="true"></i>
-                            <span>Import agents</span>
-                        </button>
-                        <button type="button" id="ica--exportAll" class="menu_button menu_button_icon" title="Export all agents to a file">
-                            <i class="fa-solid fa-file-export" aria-hidden="true"></i>
-                            <span>Export agents</span>
-                        </button>
-                        <button type="button" id="ica--resetDefaults" class="menu_button menu_button_icon caution" title="Reset all bundled agents to their original template settings (custom agents are not affected)">
-                            <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
-                            <span>Reset bundled agents</span>
-                        </button>
-                    </div>
-                </details>
             </div>
 
             <div class="ica--manage-layout">

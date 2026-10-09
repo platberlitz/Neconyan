@@ -2724,11 +2724,12 @@ body.neconyan .ica--standalone-title { display: none; }
 }
 
 .ica--overview {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 18px;
-    padding: 12px 0;
+    justify-content: space-between;
+    gap: 8px 14px;
+    padding: 8px 0;
     border: 0;
     border-bottom: 1px solid var(--ica-border);
     border-radius: 0;
@@ -2737,46 +2738,49 @@ body.neconyan .ica--standalone-title { display: none; }
 
 .ica--overview-copy {
     display: flex;
+    flex: 1 1 260px;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
     min-width: 0;
 }
 
-.ica--overview-copy strong {
+.ica--overview-copy > strong {
     font-size: calc(var(--mainFontSize) * 1.02);
     line-height: 1.25;
 }
 
 .ica--overview-help {
     color: var(--ica-muted);
-    font-size: calc(var(--mainFontSize) * 0.78);
+    font-size: calc(var(--mainFontSize) * 0.74);
     line-height: 1.4;
 }
 
 .ica--overview-stats {
     display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
     flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 12px;
+    color: var(--ica-muted);
+    font-size: calc(var(--mainFontSize) * 0.78);
 }
 
 .ica--overview-stat {
     display: inline-flex;
     align-items: baseline;
-    gap: 5px;
+    gap: 4px;
     min-width: 0;
-    padding: 4px 6px;
-    border-radius: var(--sb-radius-sm, 10px);
-    background: transparent;
-    color: var(--ica-muted);
-    font-size: calc(var(--mainFontSize) * 0.72);
 }
 
 .ica--overview-stat strong {
     color: var(--SmartThemeBodyColor, #d6d2c8);
-    font-size: calc(var(--mainFontSize) * 0.98);
     font-variant-numeric: tabular-nums;
+}
+
+.ica--overview-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 8px;
 }
 
 .ica--master-toggle {
@@ -2801,49 +2805,63 @@ body.neconyan .ica--standalone-title { display: none; }
 
 .ica--toolbar-actions {
     display: flex;
+    flex: 1 1 100%;
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
 }
 
+.ica--more-tools-heading {
+    padding: 4px 4px 0;
+    color: var(--ica-muted);
+    font-size: 12px;
+    font-weight: 700;
+}
+
 .ica--setup-controls {
     display: flex;
-    flex: 1 1 360px;
-    align-items: end;
-    justify-content: flex-end;
-    gap: 8px;
-    min-width: min(100%, 320px);
-}
-
-.ica--setup-select-label {
-    display: flex;
-    flex: 1 1 160px;
     flex-direction: column;
-    gap: 3px;
-    min-width: 0;
-    color: var(--ica-muted);
-    font-size: 11px;
+    gap: 6px;
+    margin-bottom: 4px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--ica-border);
 }
 
-.ica--setup-select-label select {
+.ica--setup-help {
+    padding-inline: 4px;
+    color: var(--ica-muted);
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+.ica--setup-controls select {
+    width: 100%;
     min-width: 0;
     min-height: 40px;
+    margin: 0;
 }
 
 .ica--setup-actions {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 5px;
 }
 
-.ica--setup-actions .menu_button {
+.ica--more-tools-menu .ica--setup-actions .menu_button {
+    justify-content: center;
     min-height: 40px;
+    margin: 0;
+    text-align: center;
 }
 
 .ica--setup-status {
-    max-width: 20ch;
+    padding-inline: 4px;
     color: var(--ica-muted);
     line-height: 1.25;
+}
+
+.ica--setup-status:empty {
+    display: none;
 }
 
 .ica--toolbar-actions .menu_button,
@@ -2908,7 +2926,8 @@ body.neconyan .ica--standalone-title { display: none; }
     display: flex;
     flex-direction: column;
     gap: 4px;
-    min-width: 240px;
+    width: min(340px, calc(100vw - 28px));
+    box-sizing: border-box;
     padding: 8px;
     border: 1px solid var(--ica-border);
     border-radius: var(--sb-radius-md, 12px);
@@ -2956,23 +2975,6 @@ body.neconyan .ica--standalone-title { display: none; }
 
 .ica--list-hint {
     margin-top: 4px;
-}
-
-.ica--token-counter {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    border: 0;
-    flex: 0 0 auto;
-    min-width: 132px;
-    padding: 7px 10px;
-    border-color: var(--ica-border);
-    background: var(--ica-surface);
-}
-
-.ica--token-counter-label {
-    color: var(--ica-muted);
-    font-size: calc(var(--mainFontSize) * 0.74);
 }
 
 .ica--agent-tabs {
@@ -3580,15 +3582,13 @@ body.neconyan .ica--standalone-title { display: none; }
     }
 
     .ica--workspace-nav,
-    .ica--overview,
     .ica--list-heading {
         align-items: stretch;
         grid-template-columns: 1fr;
         flex-direction: column;
     }
 
-    .ica--workspace-tabs,
-    .ica--overview-stats {
+    .ica--workspace-tabs {
         justify-content: flex-start;
     }
 
@@ -3597,41 +3597,9 @@ body.neconyan .ica--standalone-title { display: none; }
         justify-content: center;
     }
 
-    .ica--overview-stats {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-
-    .ica--overview-stat {
-        min-width: 0;
-    }
-
-    .ica--master-toggle {
-        grid-column: 1 / -1;
-        justify-content: center;
-    }
-
-    .ica--toolbar {
-        align-items: stretch;
-    }
-
-    .ica--toolbar-actions {
-        width: 100%;
-    }
-
-    .ica--toolbar-actions .menu_button {
-        flex: 1 1 auto;
-        justify-content: center;
-    }
-
-    .ica--more-tools {
-        align-self: flex-end;
-    }
-
     .ica--more-tools-menu {
         right: 0;
         left: auto;
-        max-width: calc(100vw - 28px);
     }
 
     .ica--filter {
@@ -3758,14 +3726,7 @@ body.neconyan .ica--standalone-title { display: none; }
 
 .ica--card-mobile-phase { display: none; }
 @media (max-width: 768px) {
-    #ica--settings .ica--overview-stats { display: flex; justify-content: flex-start; gap: 8px; flex-wrap: wrap; }
-    #ica--settings .ica--overview-stat { padding: 4px 0; }
     :root[data-neconyan-mode='simple'] #ica--settings :is(.ica--overview-stat:has(#ica--companion-count), #ica--agent-token-counter) { display: none; }
-    #ica--settings .ica--toolbar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-    #ica--settings .ica--toolbar-actions { display: contents; }
-    #ica--settings .ica--setup-controls { grid-column: 1 / -1; align-items: stretch; justify-content: stretch; flex-wrap: wrap; }
-    #ica--settings .ica--setup-status { flex-basis: 100%; max-width: none; }
-    #ica--settings .ica--more-tools { width: 100%; }
     #ica--settings .ica--more-tools > summary { width: 100%; justify-content: center; box-sizing: border-box; }
     #ica--settings .ica--filter { flex-direction: row; }
     #ica--settings .ica--category-field { flex: 0 0 148px; min-width: 0; }
@@ -3939,16 +3900,6 @@ body.neconyan .ica--standalone-title { display: none; }
         width: auto;
         flex: 1 1 11rem;
     }
-    .ica--overview {
-        grid-template-columns: minmax(0, 1fr);
-        align-items: start;
-    }
-    .ica--overview-stats {
-        justify-content: flex-start;
-    }
-    .ica--master-toggle {
-        justify-self: start;
-    }
     .ica--manage-layout { grid-template-columns: minmax(0, 1fr); }
     #ica--settings .ica--manage-nav .ica--agent-tabs { display: none; }
     .ica--agent-view-select-label { display: block; }
@@ -3972,11 +3923,12 @@ body.neconyan .ica--standalone-title { display: none; }
     #ica--settings .ica--filter { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
     #ica--settings .ica--category-field,
     #ica--settings .ica--search-field { width: 100%; min-width: 0; flex: auto; }
-    #ica--settings .ica--toolbar-actions { display: flex; flex-direction: column; align-items: stretch; }
-    #ica--settings .ica--toolbar { display: flex; flex-direction: column; align-items: stretch; }
-    #ica--settings .ica--setup-controls { flex: 0 0 auto; }
-    #ica--settings .ica--toolbar-actions > button { width: 100%; white-space: normal; }
-    #ica--settings .ica--more-tools { width: 100%; }
+    #ica--settings .ica--toolbar-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    #ica--settings .ica--toolbar-actions > button { justify-content: center; width: 100%; min-width: 0; margin: 0; white-space: normal; }
+    #ica--settings .ica--toolbar-actions > [data-neconyan-cat-control] { grid-column: 1 / -1; }
+    #ica--settings .ica--more-tools { width: 100%; margin: 0; }
+    #ica--settings .ica--more-tools > summary { justify-content: center; }
+    #ica--settings .ica--more-tools[open] { grid-column: 1 / -1; }
     #ica--settings select,
     #ica--settings input:not([type='checkbox']):not([type='radio']),
     #ica--editor select,
@@ -4244,5 +4196,62 @@ body.neconyan .ica--standalone-title { display: none; }
 
     .ica--cdash-row .ica--cdash-row-main {
         flex: 1 1 0;
+    }
+}
+
+/* The Agents page keeps Taro's invitation to one short row, so the agent list starts higher. */
+.neconyan-tool-tour-invite[data-tool-page="agents"] {
+    grid-template-columns: 32px minmax(0, 1fr) auto 44px;
+    gap: 6px 10px;
+    padding: 6px 6px 6px 10px;
+}
+
+.neconyan-tool-tour-invite[data-tool-page="agents"] .neconyan-tool-tour-portrait {
+    width: 32px;
+    height: 32px;
+}
+
+.neconyan-tool-tour-invite[data-tool-page="agents"] p {
+    font-size: 13px;
+    line-height: 1.35;
+}
+
+.neconyan-tool-tour-invite[data-tool-page="agents"] .neconyan-tool-tour-invite-actions {
+    flex-wrap: nowrap;
+    grid-column: 3;
+    grid-row: 1;
+    gap: 6px;
+}
+
+.neconyan-tool-tour-invite[data-tool-page="agents"] .neconyan-tool-tour-invite-actions .menu_button {
+    min-height: 36px;
+    padding: 4px 12px;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.neconyan-tool-tour-invite[data-tool-page="agents"] .menu_button.neconyan-tour-invite-dismiss {
+    grid-column: 4;
+    align-self: center;
+}
+
+@media (max-width: 768px) {
+    .neconyan-tool-tour-invite[data-tool-page="agents"] {
+        grid-template-columns: 32px minmax(0, 1fr) 44px;
+    }
+
+    .neconyan-tool-tour-invite[data-tool-page="agents"] .neconyan-tool-tour-invite-actions {
+        grid-column: 2 / 4;
+        grid-row: 2;
+    }
+
+    .neconyan-tool-tour-invite[data-tool-page="agents"] .menu_button.neconyan-tour-invite-dismiss {
+        grid-column: 3;
+    }
+}
+
+@media (pointer: coarse) {
+    .neconyan-tool-tour-invite[data-tool-page="agents"] .neconyan-tool-tour-invite-actions .menu_button {
+        min-height: 44px;
     }
 }

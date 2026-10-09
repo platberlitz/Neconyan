@@ -37,6 +37,10 @@ describe('in-chat agents workspace redesign', () => {
         expect(settingsSource).toContain('id="ica--companion-count"');
         expect(settingsSource).toContain('id="ica--globalEnabled"');
         expect(settingsSource).toContain('id="ica--moreTools"');
+        const moreTools = settingsSource.slice(settingsSource.indexOf('id="ica--moreTools"'), settingsSource.indexOf('</details>', settingsSource.indexOf('id="ica--moreTools"')));
+        for (const id of ['ica--setupSelect', 'ica--setupSave', 'ica--setupLoad', 'ica--setupDelete', 'ica--setupStatus']) {
+            expect(moreTools).toContain(`id="${id}"`);
+        }
         expect(settingsSource).toContain('id="ica--workspaceSelect"');
         expect(settingsSource).toContain('id="ica--agentViewSelect"');
         expect(editorSource).toContain('id="ica--editor-section-select"');

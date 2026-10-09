@@ -488,6 +488,20 @@ test('empty workspace and failed library load can be recovered without losing th
     } finally { release(); }
 });
 
+async function openSavedSetups(page) {
+    const menu = page.locator('#ica--moreTools');
+    if (!(await menu.evaluate(element => element.open))) await menu.locator(':scope > summary').click();
+    await expect(page.locator('#ica--setupSelect')).toBeVisible();
+}
+
+async function answerPopup(page, value) {
+    const popup = page.locator('dialog.popup[open]').last();
+    await expect(popup).toBeVisible();
+    if (value !== undefined) await popup.locator('.popup-input').fill(value);
+    await popup.locator('.popup-button-ok').click();
+    await expect(popup).toBeHidden();
+}
+
 test('saved agent setups survive reload and recover from a failed load without deleting agents', async ({ page }, info) => {
     const { errors, navigate } = trackNavigationErrors(page);
     await page.route(/\/api\/.*\/(?:generate|generate-quiet)(?:\?|$)/, route => route.fulfill({ status: 503, json: { error: 'No model calls during setup checks.' } }));
@@ -506,18 +520,21 @@ test('saved agent setups survive reload and recover from a failed load without d
     try {
         expect((await api.post('/api/in-chat-agents/save', { headers: requestHeaders, data: agent })).ok()).toBe(true);
         await openAgents(page, false, navigate);
-        page.once('dialog', dialog => dialog.accept(name));
+        await openSavedSetups(page);
         await page.locator('#ica--setupSave').click();
+        await answerPopup(page, name);
         await expect(page.locator('#ica--setupStatus')).toHaveAttribute('data-tone', 'saved');
         await expect(page.locator('#ica--setupSelect')).not.toHaveValue('');
         presetId = await page.locator('#ica--setupSelect').inputValue();
         await openAgents(page, false, navigate);
+        await openSavedSetups(page);
         await expect(page.locator('#ica--setupSelect')).toHaveValue(presetId);
         const savedPresets = async () => (await api.post('/api/in-chat-agents/presets/list', { headers: await headers(page), data: {} })).json();
         const saved = (await savedPresets()).find(preset => preset.id === presetId);
         expect(saved.agents.find(item => item.id === id)).toMatchObject({ settings: agent.settings, customSchema: agent.customSchema });
         expect((await api.post('/api/in-chat-agents/save', { headers: await headers(page), data: { ...agent, prompt: 'Changed after saving' } })).ok()).toBe(true);
         await openAgents(page, false, navigate);
+        await openSavedSetups(page);
         await page.locator('#ica--setupSelect').selectOption(presetId);
         let failed = false;
         await page.route('**/api/in-chat-agents/save', async route => {
@@ -543,8 +560,8 @@ test('saved agent setups survive reload and recover from a failed load without d
             expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
             await page.screenshot({ path: info.outputPath(`setups-${width}.png`) });
         }
-        page.once('dialog', dialog => dialog.accept());
         await page.locator('#ica--setupDelete').click();
+        await answerPopup(page);
         await expect(page.locator('#ica--setupSelect')).toHaveValue('');
         expect((await savedPresets()).some(preset => preset.id === presetId)).toBe(false);
         expect((await readAgent()).prompt).toBe(agent.prompt);
@@ -597,6 +614,7 @@ test('setup controls wait for a slow agent library and retry a failed initial lo
         await expect.poll(() => pending, { timeout: 45000 }).toBe(true);
         await page.waitForFunction(() => typeof window.NeconyanShell?.openTab === 'function');
         await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
+        await openSavedSetups(page);
         await expect(page.locator(`#ica--setupSelect option[value="${preset.id}"]`)).toHaveCount(1, { timeout: 15000 });
         await expect(page.locator('#ica--setupSave')).toBeDisabled();
         await expect(page.locator('#ica--setupLoad')).toBeDisabled();
