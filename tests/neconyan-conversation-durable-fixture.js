@@ -74,7 +74,7 @@ export const test = base.extend({
         config.performance.frontendBuild.enabled = process.env.NECONYAN_TEST_FRONTEND_BUILD === '1';
         config.rateLimiting.conversationMessageSendPoints = 0;
         await fs.mkdir(config.dataRoot);
-        await fs.symlink(libraryCache, path.join(config.dataRoot, '_webpack'), 'dir');
+        await fs.symlink(libraryCache, path.join(config.dataRoot, '_webpack'), process.platform === 'win32' ? 'junction' : 'dir');
         const configPath = path.join(directory, 'config.yaml');
         await fs.writeFile(configPath, YAML.stringify(config));
         const contexts = [];
