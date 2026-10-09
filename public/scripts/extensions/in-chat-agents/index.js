@@ -3826,6 +3826,21 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
         editorEl.find('#ica--tracker-builder-view').prop('hidden', category !== 'tracker');
     }
 
+    function updateEditorChoiceHelp(companionExecution) {
+        const phase = editorEl.find('#ica--editor-phase').val()?.toString() || 'pre';
+        const phaseHelp = {
+            pre: t`Runs before the reply is written, so it can add to or change the request.`,
+            post: t`Runs after the reply arrives, so it can check, rewrite or add to it.`,
+            both: t`Runs before the reply and again after it.`,
+        };
+        editorEl.find('#ica--editor-execution-help').text(companionExecution
+            ? t`It writes its own note beside the reply instead of changing it. Its settings are in the Companion notes tab.`
+            : t`Its result goes into the request before the reply, or changes the reply after it.`);
+        editorEl.find('#ica--editor-phase-help')
+            .text(phaseHelp[phase] || phaseHelp.pre)
+            .prop('hidden', companionExecution);
+    }
+
     function isEditorCompanionExecution() {
         const category = editorEl.find('#ica--editor-category').val()?.toString() || '';
         const execution = editorEl.find('#ica--editor-execution').val()?.toString() || 'inline';
@@ -3838,15 +3853,15 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
             && editorEl.find('#ica--editor-companion-chatHistoryPlacement').val() === 'block';
     }
 
-    let activeEditorView = agent.execution === 'companion' || agent.category === 'companion'
-        ? 'companion'
-        : 'basics';
+    let activeEditorView = 'basics';
 
     function syncEditorViewSections() {
         const availability = updatePhaseVisibility();
         const companionExecution = availability.companion;
+        const changesAvailable = availability.reply || availability.placement;
         editorEl.find('#ica--editor-phase').closest('label').prop('hidden', companionExecution);
-        if (!availability.reply && activeEditorView === 'reply') {
+        updateEditorChoiceHelp(companionExecution);
+        if (!changesAvailable && activeEditorView === 'reply') {
             activeEditorView = companionExecution ? 'companion' : 'when';
         } else if (!companionExecution && activeEditorView === 'companion') {
             activeEditorView = 'basics';
@@ -3861,7 +3876,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
             this.setAttribute('tabindex', active ? '0' : '-1');
         });
         editorEl.find('#ica--editor-tab-companion').prop('hidden', !companionExecution);
-        editorEl.find('#ica--editor-tab-reply').prop('hidden', !availability.reply);
+        editorEl.find('#ica--editor-tab-reply').prop('hidden', !changesAvailable);
         const sectionSelect = editorEl.find('#ica--editor-section-select');
         sectionSelect.val(activeEditorView);
         sectionSelect.find('option').each(function () {
@@ -3875,9 +3890,9 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
             if (this.id === 'ica--companion-view') {
                 visible = activeEditorView === 'companion' && companionExecution;
             } else if (this.id === 'ica--tracker-builder-view') {
-                visible = activeEditorView === 'when' && availability.tracker;
+                visible = activeEditorView === 'basics' && availability.tracker;
             } else if (this.id === 'ica--when-view') {
-                visible = activeEditorView === 'when' && availability.placement;
+                visible = activeEditorView === 'reply' && availability.placement;
             } else if (view === 'reply') {
                 visible = activeEditorView === 'reply' && availability.reply;
             }
@@ -4709,7 +4724,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
                 || (!companion && editorEl.find('#ica--editor-pp-promptEnabled').prop('checked'));
             if (needsPrompt && !String(editorEl.find('#ica--editor-prompt').val() || '').trim()) {
                 errorElement.text('Add instructions before saving this agent.').attr('data-error-kind', 'validation').prop('hidden', false);
-                activeEditorView = 'instructions';
+                activeEditorView = 'basics';
                 syncEditorViewSections();
                 editorEl.find('#ica--editor-prompt').trigger('focus');
                 return false;
@@ -6771,13 +6786,13 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
                 return false;
             }
             agent.conditions.runOnCompanionOutputs = true;
-        }, 'Run on companion outputs');
+        }, 'Change companion notes');
         if (changed > 0) {
-            toastr.success(`Enabled ${changed} selected post-generation agent(s) on companion outputs.`);
+            toastr.success(`${changed} selected after-reply ${changed === 1 ? 'agent now changes' : 'agents now change'} companion notes too.`);
         } else if (eligible > 0) {
-            toastr.info('Selected post-generation agents are already enabled on companion outputs.');
+            toastr.info('The selected after-reply agents already change companion notes.');
         } else {
-            toastr.warning('No selected post-generation agents can run on companion outputs.');
+            toastr.warning('Only after-reply agents that change the prompt or reply can change companion notes.');
         }
     }));
     $('#ica--bulkDisable').on('click', agentAction(async () => {

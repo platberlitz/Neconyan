@@ -22,7 +22,7 @@ export const DOCS_READER_PAGES = Object.freeze({
             emptyLine: 'I checked twice. Nothing matches that search.',
             asides: Object.freeze([
                 Object.freeze({ after: 'main-agents-panel', scene: 'tour-03-taro-modes', line: 'Switch agents on one at a time and read a reply after each. When something breaks, you will know which one did it. You will not need to ask me.' }),
-                Object.freeze({ after: 'companion-output', scene: 'tour-08-taro-sampling', line: 'Longest section done. The one everyone misses: Previous notes to read does nothing unless Read its previous notes is on. I once watched someone tune it for an hour. Do not be that someone.' }),
+                Object.freeze({ after: 'companion-notes', scene: 'tour-08-taro-sampling', line: 'Longest section done. The one everyone misses: Previous notes to read does nothing unless Read its previous notes is on. I once watched someone tune it for an hour. Do not be that someone.' }),
                 Object.freeze({ after: 'agent-regex', scene: 'tour-03-taro-modes', line: 'Try new regex on a message you do not care about first. It will happily eat formatting you wanted to keep, and I am not fishing it back out.' }),
                 Object.freeze({ after: 'companion-panel', scene: 'tour-08-taro-sampling', line: 'Run companion works on the newest reply. Regenerate state goes back to the message the note came from. Mix them up and you will blame the wrong Companion.' }),
                 Object.freeze({ after: 'storage-and-recovery', scene: 'tour-05-taro-agents', line: 'That is the lot. You read all of it? … Hm. Not bad. Now go change one thing and see what it does.' }),

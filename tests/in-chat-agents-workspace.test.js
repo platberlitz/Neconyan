@@ -97,11 +97,39 @@ describe('in-chat agents workspace redesign', () => {
         expect(indexSource).toContain('visible = activeEditorView === \'companion\' && companionExecution;');
         expect(indexSource).toContain('this.id === \'ica--tracker-builder-view\'');
         expect(indexSource).toContain('this.id === \'ica--when-view\'');
-        expect(indexSource).toContain('visible = activeEditorView === \'when\' && availability.placement;');
-        expect(indexSource).toContain('if (!availability.reply && activeEditorView === \'reply\')');
+        expect(indexSource).toContain('visible = activeEditorView === \'basics\' && availability.tracker;');
+        expect(indexSource).toContain('visible = activeEditorView === \'reply\' && availability.placement;');
+        expect(indexSource).toContain('const changesAvailable = availability.reply || availability.placement;');
+        expect(indexSource).toContain('if (!changesAvailable && activeEditorView === \'reply\')');
+        expect(indexSource).toContain('let activeEditorView = \'basics\';');
         expect(indexSource).not.toContain('companionExecution && [\'when\', \'reply\'].includes(activeEditorView)');
         expect(indexSource).toContain('editorEl.find(\'#ica--editor-tabs\').on(\'click\', \'[data-editor-tab]\'');
         expect(indexSource).toContain('editorEl.find(\'#ica--editor-tabs\').on(\'keydown\', \'[data-editor-tab]\'');
+    });
+
+    test('groups the editor by what the agent does, when it runs and what it changes', () => {
+        const tabLabels = [...editorSource.matchAll(/data-editor-tab="([a-z]+)"[^>]*>([^<]+)</g)].map(match => [match[1], match[2]]);
+        expect(tabLabels).toEqual([
+            ['basics', 'What it does'],
+            ['when', 'When it runs'],
+            ['reply', 'What it changes'],
+            ['companion', 'Companion notes'],
+            ['instructions', 'Model'],
+            ['regex', 'Regex'],
+        ]);
+        const basics = editorSource.slice(editorSource.indexOf('id="ica--editor-panel-basics"'), editorSource.indexOf('id="ica--editor-panel-instructions"'));
+        expect(basics).toContain('id="ica--editor-prompt"');
+        expect(basics).toContain('id="ica--editor-execution-help"');
+        expect(basics).toContain('id="ica--tracker-builder-view" class="ica--editor-view-section" role="tabpanel" aria-labelledby="ica--editor-tab-basics" data-editor-view="basics"');
+        const when = editorSource.slice(editorSource.indexOf('id="ica--editor-panel-when"'));
+        expect(when).toContain('id="ica--editor-phase"');
+        expect(when).toContain('id="ica--editor-phase-help"');
+        expect(indexSource).toContain('function updateEditorChoiceHelp(companionExecution)');
+        expect(indexSource).toMatch(/needsPrompt[\s\S]*?activeEditorView = 'basics';\n\s*syncEditorViewSections\(\);\n\s*editorEl\.find\('#ica--editor-prompt'\)\.trigger\('focus'\);/);
+        for (const group of ['How it runs', 'What it reads', 'Notes it remembers', 'More companion options', 'Connections to other companions']) {
+            expect(editorSource).toContain(group);
+        }
+        expect(styleSource).not.toContain('#ica--editor-section-select { width: 100%; min-height: 44px; }');
     });
 
     test('uses labelled primary row actions and a compact secondary disclosure', () => {

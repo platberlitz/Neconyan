@@ -1,4 +1,4 @@
-const NN_SW_CACHE_VERSION = 'neconyan-cache-v20261009-agents-quick';
+const NN_SW_CACHE_VERSION = 'neconyan-cache-v20261009-agents-editor';
 const NN_CACHE_PREFIX = 'neconyan-cache-';
 const NN_STATIC_CACHE = `${NN_SW_CACHE_VERSION}-static`;
 const NN_SHELL_CACHE = `${NN_SW_CACHE_VERSION}-shell`;

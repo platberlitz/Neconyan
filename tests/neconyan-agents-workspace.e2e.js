@@ -82,6 +82,8 @@ async function openFullEditor(page) {
 }
 
 async function openQuickSettingsFromMoreActions(page) {
+    const allTab = page.locator('#ica--settings').getByRole('tab', { name: 'All', exact: true });
+    if (await allTab.getAttribute('aria-selected') !== 'true') await allTab.click();
     const card = page.locator('#ica--agentList .ica--agent-card').first();
     await card.locator('.ica--card-more').click();
     await card.locator('.ica--card-secondary-actions .ica--btn-settings').click();
@@ -134,7 +136,7 @@ for (const width of [1280, 393]) {
                 await expect(reopenedQuick.locator('.ica--quick-summary')).toContainText('Order');
                 await reopenedQuick.locator('.ica--quick-open-editor').click();
                 const editor = page.locator('#ica--editor');
-                await chooseEditorSection(page, 'instructions');
+                await chooseEditorSection(page, 'basics');
                 await expect(editor.locator('#ica--editor-length-target')).toHaveValue('Two short paragraphs');
                 await editor.locator('#ica--editor-length-target').fill('');
                 await chooseEditorSection(page, 'reply');

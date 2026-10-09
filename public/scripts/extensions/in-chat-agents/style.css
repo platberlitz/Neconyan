@@ -3660,6 +3660,12 @@ body.neconyan .ica--standalone-title { display: none; }
     padding: 3px 2px 0;
 }
 
+.ica--editor-group-title {
+    margin: 6px 0 -2px;
+    font-weight: 700;
+    font-size: calc(var(--mainFontSize) * 0.86);
+}
+
 .ica--editor-view-heading p,
 .ica--editor-subheading {
     margin: 0;
@@ -4029,13 +4035,10 @@ body.neconyan .ica--standalone-title { display: none; }
     .ica--editor-layout { grid-template-columns: minmax(0, 1fr); gap: 14px; }
     #ica--settings .ica--workspace-nav,
     .ica--template-browser .ica--template-filter-bar { position: static; }
-    #ica--editor .ica--editor-tabs,
     .ica--template-browser .ica--template-pill-row { display: none; }
     #ica--settings .ica--workspace-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
     #ica--settings .ica--workspace-tab { justify-content: center; white-space: normal; min-height: 48px; padding: 8px; font-size: 12px; line-height: 1.25; }
-    .ica--editor-section-select-label,
     .ica--template-category-select { display: block; width: 100%; min-height: 44px; }
-    #ica--editor-section-select { width: 100%; min-height: 44px; }
     .ica--workspace-main,
     .ica--editor-content { padding: 14px; }
     #ica--settings .ica--filter { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
