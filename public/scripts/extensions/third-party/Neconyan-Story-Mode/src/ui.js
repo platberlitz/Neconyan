@@ -1335,7 +1335,9 @@ export function renderDrawer() {
             return (current?.avatar || current) === cardKey;
         };
         const section = el('div');
-        section.append(el('h4', { text: `This card: ${character.name ?? 'character'}` }));
+        // Preserve names when the localiser revisits translated captions.
+        const { t, translate } = api.ctx();
+        section.append(el('h4', { text: t`This card: ${character.name ?? translate('character')}`, attrs: { 'data-i18n-ignore': '' } }));
         section.append(el('small', { text: 'Saved inside the card, so they travel with it.' }));
         const cardDefault = el('select', { className: 'text_pole', attrs: { id: 'sbstory-opt-card-default' } });
         for (const [value, text] of [['', 'Use global default'], ['true', 'On'], ['false', 'Off']]) {

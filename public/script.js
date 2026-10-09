@@ -1586,8 +1586,9 @@ function getCharacterBlock(item, id) {
     template.find('.ch_current_chat').toggle(isCurrentChat);
     template.toggleClass('is-current-chat', isCurrentChat);
     template.attr('aria-current', isCurrentChat ? 'page' : null);
-    template.find('[data-entity-action="open-chat"]').attr('aria-label', `Open chat with ${item.name}`);
-    template.find('[data-entity-action="edit-card"]').attr('aria-label', `Edit ${item.name}`);
+    // Preserve names when the localiser revisits translated captions.
+    template.find('[data-entity-action="open-chat"]').attr('aria-label', t`Open chat with ${item.name}`).attr('data-i18n-ignore', '');
+    template.find('[data-entity-action="edit-card"]').attr('aria-label', t`Edit ${item.name}`).attr('data-i18n-ignore', '');
 
     const auxFieldName = power_user.aux_field || 'character_version';
     const auxFieldValue = (item.data && item.data[auxFieldName]) || '';
