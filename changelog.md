@@ -5,6 +5,7 @@
 ### Merged Staging PRs
 - PR #83 (2026-10-09) `fix(chats): keep the Bubbles lower edge behind the toolbar`
 - PR #93 (2026-10-09) `fix(connections): keep status compact and use native controls`
+- PR #96 (2026-10-09) `feat(agents): make the Agents page easier to follow`
 
 ## v1.2.4.2
 
