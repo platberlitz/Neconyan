@@ -66,10 +66,12 @@ public final class ServerService extends Service {
                     System.loadLibrary("neconyan-node");
                     if (!runtimeClaimed.compareAndSet(false, true)) throw new IOException("The previous local server is still stopping");
                     nodeStarted = true;
-                    // Keep the previous run's log so a crash can still be explained after the restart.
-                    File log = new File(getCacheDir(), "server.log");
-                    if (log.isFile()) Files.move(log.toPath(), new File(getCacheDir(), "server.previous.log").toPath(), StandardCopyOption.REPLACE_EXISTING);
-                    int exit = startNode(new String[] { "node", "--max-old-space-size=" + heapMegabytes(this), "--import", new File(runtime, "file-stats.mjs").getPath(), new File(runtime, "server-bootstrap.mjs").getPath(),
+                    // Keep the previous run's log and request trace so a crash can still be explained after the restart.
+                    rotate("server.log", "server.previous.log");
+                    rotate("requests.txt", "requests.previous.txt");
+                    // Without the WebAssembly trap handler Node leaves SIGSEGV to Android's crash
+                    // dumper, so a native crash produces a tombstone instead of a silent 'signal 11'.
+                    int exit = startNode(new String[] { "node", "--max-old-space-size=" + heapMegabytes(this), "--disable-wasm-trap-handler", "--import", new File(runtime, "file-stats.mjs").getPath(), new File(runtime, "server-bootstrap.mjs").getPath(),
                         getFilesDir().getPath(), credentials.getString("port"), credentials.getString("password"), safe ? "safe" : "normal" }, getCacheDir().getPath());
                     status("Neconyan stopped (" + exit + "). Reopen the app to start it again.");
                     stopSelf();
@@ -81,6 +83,11 @@ public final class ServerService extends Service {
         }
         // Reopen after process loss; do not repeatedly boot a failing native runtime.
         return START_NOT_STICKY;
+    }
+
+    private void rotate(String current, String previous) throws IOException {
+        File file = new File(getCacheDir(), current);
+        if (file.isFile()) Files.move(file.toPath(), new File(getCacheDir(), previous).toPath(), StandardCopyOption.REPLACE_EXISTING);
     }
 
     // Large chats need more than a fixed 512 MB heap; leave most of the phone's memory to Android.

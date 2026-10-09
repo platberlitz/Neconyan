@@ -54,3 +54,24 @@ test('the bootstrap accepts only normal or safe and turns safe into a safe serve
     assert.match(bootstrap, /if \(mode === 'safe'\) process\.env\.NECONYAN_SAFE_START = '1';/);
     assert.match(bootstrap, /safe: mode === 'safe'/);
 });
+
+test('a native crash leaves Android a crash record that the bug report details include', () => {
+    const gradle = read('android/app/build.gradle');
+    const main = read('src/server-main.js');
+    // Node's own SIGSEGV handler would hide the crash from Android's crash dumper.
+    assert.match(service, /"--disable-wasm-trap-handler", "--import"/);
+    assert.match(service, /rotate\("requests\.txt", "requests\.previous\.txt"\);/);
+    const record = block(activity, 'private void recordServerCrash()', 'private void startServer');
+    assert.match(record, /info\.getTraceInputStream\(\)/);
+    assert.match(record, /Tombstone\.describe\(trace\)/);
+    assert.match(record, /"native-crash\.txt"/);
+    assert.match(block(activity, 'private boolean restartAfterStop', 'private void recordServerCrash'), /worker\.execute\(this::recordServerCrash\), 20000\)/);
+    const details = block(activity, 'private void copyDetails()', 'private void showSafeNotice');
+    assert.match(details, /recordServerCrash\(\);\s*text\.append\("\\nCrash record:\\n"\)\.append\(tail\(new File\(getCacheDir\(\), "native-crash\.txt"\), 80\)\)/);
+    assert.match(details, /"requests\.txt"/);
+    assert.match(details, /"requests\.previous\.txt"/);
+    assert.match(bootstrap, /process\.env\.NECONYAN_REQUEST_TRACE = path\.join\(process\.env\.TMPDIR, 'requests\.txt'\);/);
+    assert.match(main, /if \(process\.env\.NECONYAN_REQUEST_TRACE\) \{\s*app\.use\(createRequestTrace\(process\.env\.NECONYAN_REQUEST_TRACE\)\);/);
+    // Four-part hotfix versions such as 1.2.4.1 still produce a version code above every older release.
+    assert.match(gradle, /versionCode numbers\[0\] \* 1000000 \+ numbers\[1\] \* 10000 \+ numbers\[2\] \* 100 \+ \(numbers\.size\(\) > 3 \? numbers\[3\] : 0\)/);
+});

@@ -44,6 +44,7 @@ public final class MainActivity extends Activity {
     private volatile boolean serverSeen;
     private volatile boolean autoRestarted;
     private volatile long healthySince;
+    private volatile long recordedExitAt;
     private volatile boolean failed;
     private boolean loadFailed;
     private int loadFailures;
@@ -305,7 +306,28 @@ public final class MainActivity extends Activity {
         for (int i = 0; i < 30 && serverProcessRunning(); i++) Thread.sleep(500);
         clearStaleMarker();
         startServer(safe);
+        // Android attaches the crash record a little after the process dies; look twice.
+        main.postDelayed(() -> worker.execute(this::recordServerCrash), 5000);
+        main.postDelayed(() -> worker.execute(this::recordServerCrash), 20000);
         return true;
+    }
+    // Keeps the newest crash record for the server process as readable text, so the details copied
+    // for a bug report show which native code failed instead of a bare 'signal 11'.
+    private void recordServerCrash() {
+        try {
+            for (ApplicationExitInfo info : getSystemService(ActivityManager.class).getHistoricalProcessExitReasons(getPackageName(), 0, 10)) {
+                if (info.getProcessName() == null || !info.getProcessName().endsWith(":server")) continue;
+                if (info.getTimestamp() <= recordedExitAt) return;
+                try (InputStream trace = info.getTraceInputStream()) {
+                    if (trace == null) continue;
+                    String text = "Server exit at " + new Date(info.getTimestamp()) + ": " + exitReason(info)
+                        + (info.getDescription() == null ? "" : ", " + info.getDescription()) + "\n" + Tombstone.describe(trace);
+                    Files.write(new File(getCacheDir(), "native-crash.txt").toPath(), text.getBytes(StandardCharsets.UTF_8));
+                    recordedExitAt = info.getTimestamp();
+                    return;
+                }
+            }
+        } catch (Exception ignored) { }
     }
     private void startServer(boolean safe) {
         serverSafe = safe;
@@ -415,7 +437,11 @@ public final class MainActivity extends Activity {
             }
         } catch (Exception error) { text.append("Unavailable: ").append(error.getMessage()).append('\n'); }
         text.append("\nNative runtime:\n").append(tail(new File(getCacheDir(), "native-startup.txt"), 4));
-        text.append("\nServer log (this start):\n").append(tail(new File(getCacheDir(), "server.log"), 40))
+        recordServerCrash();
+        text.append("\nCrash record:\n").append(tail(new File(getCacheDir(), "native-crash.txt"), 80));
+        text.append("\n\nRecent requests (this start):\n").append(tail(new File(getCacheDir(), "requests.txt"), 40))
+            .append("\n\nRecent requests (previous start):\n").append(tail(new File(getCacheDir(), "requests.previous.txt"), 40));
+        text.append("\n\nServer log (this start):\n").append(tail(new File(getCacheDir(), "server.log"), 40))
             .append("\n\nServer log (previous start):\n").append(tail(new File(getCacheDir(), "server.previous.log"), 40));
         getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("Neconyan details", text.toString()));
         Toast.makeText(this, "Details copied. Paste them into your bug report.", Toast.LENGTH_LONG).show();

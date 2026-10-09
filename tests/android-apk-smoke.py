@@ -229,14 +229,15 @@ try:
 finally:
     adb('forward', '--remove', 'tcp:' + port)
 
-# A server killed outright (low memory, native crash) leaves its ready marker behind.
-# The open app must notice, restart it once in safe mode and load the workspace again.
+# A server that dies from a segmentation fault (the real-world native crash) leaves its
+# ready marker behind. The open app must notice, restart it once in safe mode, load the
+# workspace again and keep a readable crash record plus the requests that preceded it.
 crashed = server_pid()
-private('kill', '-9', crashed)
+private('kill', '-SEGV', crashed)
 deadline = time.monotonic() + 120
 while time.monotonic() < deadline and server_pid() in ('', crashed):
     time.sleep(1)
-assert server_pid() not in ('', crashed), 'The app did not restart its killed server'
+assert server_pid() not in ('', crashed), 'The app did not restart its crashed server'
 request, token, port, origin = connect()
 try:
     assert json.loads(private('cat', 'files/android-ready.json')).get('safe') is True, 'The restart after an early stop was not in safe mode'
@@ -247,7 +248,21 @@ try:
     adb('shell', 'input', 'keyevent', '4')
     wait_for_workspace()
     assert name in request('/api/characters/get', {'avatar_url': avatar}, token)
-    print('A killed server restarted in safe mode with its data and the workspace reloaded.', flush=True)
+    previous = private('cat', 'cache/requests.previous.txt')
+    assert '/api/' in previous, 'The previous start left no request trace: ' + previous
+    # Android attaches the crash dumper's tombstone to the exit record from API 31 on, a
+    # few seconds after the process died; the launcher decodes it 5 s and 20 s after the restart.
+    if int(adb('shell', 'getprop', 'ro.build.version.sdk')) >= 31:
+        record = ''
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline and 'Signal 11' not in record:
+            time.sleep(2)
+            record = subprocess.run([args.adb, '-s', args.serial, 'shell', 'cd /data/user/0/' + package + ' && cat cache/native-crash.txt'],
+                                    capture_output=True, text=True, timeout=30).stdout
+        assert 'Signal 11 (SIGSEGV)' in record, 'No decoded crash record was written: ' + record
+        assert 'Crashing thread:' in record and '#00 pc' in record, 'The crash record has no backtrace: ' + record
+        print('The crash left a decoded native crash record with a backtrace.', flush=True)
+    print('A crashed server restarted in safe mode with its data, the workspace reloaded and the request trace survived.', flush=True)
     adb('shell', 'am', 'force-stop', package)
 finally:
     adb('forward', '--remove', 'tcp:' + port)
