@@ -245,6 +245,7 @@ import { debounce_timeout, GENERATION_TYPE_TRIGGERS, IGNORE_SYMBOL, inject_ids, 
 import { cancelDebouncedMetadataSave, doDailyExtensionUpdatesCheck, extension_settings, initExtensions, loadExtensionSettings, runGenerationInterceptors } from './scripts/extensions.js';
 import { CONVERSATION_STORE_KEY } from './scripts/neconyan-conversation/constants.js';
 import { COMMENT_NAME_DEFAULT, CONNECT_API_MAP, executeSlashCommandsOnChatInput, executeSlashCommandsWithOptions, initDefaultSlashCommands, initSlashCommandAutoComplete, isExecutingCommandsFromChatInput, pauseScriptExecution, stopScriptExecution, UNIQUE_APIS } from './scripts/slash-commands.js';
+import { isSlashCommandText } from './scripts/slash-commands/SlashCommandRuntimeUtils.js';
 import { initMacroAutoComplete } from './scripts/autocomplete/MacroAutoComplete.js';
 import {
     tag_map,
@@ -4459,21 +4460,25 @@ export async function reloadCurrentChatUnsafe() {
  * Send the message currently typed into the chat box.
  */
 export async function sendTextareaMessage() {
+    if (isExecutingCommandsFromChatInput) return;
+    const textareaText = String($('#send_textarea').val());
+    if (isSlashCommandText(textareaText)) {
+        await processCommands(textareaText);
+        return;
+    }
     // don't proceed during swipeGenerate()
     if (swipeState == SWIPE_STATE.EDITING) {
         toastr.warning(t`Confirm the edit to start a generation.`, t`You cannot send a message during a swipe-edit.`);
         return;
     }
     if (swipeState !== SWIPE_STATE.NONE) return; // don't proceed if mid-swipe.
-    if (is_send_press) return;
-    if (isExecutingCommandsFromChatInput) return;
+    if (isGenerating()) return;
 
     hideSwipeButtons(); //Swipe buttons must be hidden now, otherwise concurrent generations are possible.
 
     let generateType = 'normal';
     // "Continue on send" is activated when the user hits "send" (or presses enter) on an empty chat box, and the last
     // message was sent from a character (not the user or the system).
-    const textareaText = String($('#send_textarea').val());
     const lastMessage = chat[chat.length - 1];
     if (power_user.continue_on_send &&
         !hasPendingFileAttachment() &&
@@ -6610,7 +6615,7 @@ export async function generateQuietPrompt({ quietPrompt = '', quietToLoud = fals
  * @returns {Promise<boolean>} Whether the message sending was interrupted
  */
 export async function processCommands(message) {
-    if (!message || !message.trim().startsWith('/')) {
+    if (!isSlashCommandText(message)) {
         return false;
     }
     await executeSlashCommandsOnChatInput(message, {
@@ -8246,6 +8251,14 @@ function consumePendingUserMessageExtra(message) {
 export async function Generate(type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, quietName, jsonSchema = null, depth = 0, suppressUserMessage = false, cacheScope = null, preserveLastMessage = false, companionHistoryTarget = null, suppressAutoContinue = false, maxOutputTokens = 0, responseLength = null, preserveReasoningBudget = false, skipNativeRoleplay = false, preparedNativeRoleplay = null } = {}, dryRun = false) {
     if (!dryRun && isChatNavigationBlocked()) return;
     if (!dryRun && signal?.aborted) return;
+    // Commands do not own a reply's cancellation controller or generation events.
+    if (!(dryRun || depth || suppressUserMessage || type === 'regenerate' || type === 'swipe' || type === 'quiet')) {
+        const commandText = String($('#send_textarea').val());
+        if (isSlashCommandText(commandText)) {
+            await processCommands(commandText);
+            return;
+        }
+    }
 
     // Neconyan: keep cancellation and terminal cleanup attached to this invocation,
     // not to a successor group member, tool pass, or a newly selected chat.
@@ -8327,7 +8340,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         await unshallowCharacter(this_chid);
         if (!isCurrent()) return;
 
-        // Occurs every time, even if the generation is aborted due to slash commands execution
+        // Only actual reply generation emits generation lifecycle events.
         await eventSource.emit(event_types.GENERATION_STARTED, type, { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, cacheScope, preserveLastMessage, isAuxiliaryGeneration, depth, ...requestControls }, dryRun);
         if (!isCurrent()) return;
         agentGenerationContext = !dryRun && !isAuxiliaryGeneration && !run?.isGroupDispatch ? getAgentGenerationContext() : null;
@@ -8339,17 +8352,6 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         const resolvedCacheScope = cacheScope ?? (type === 'quiet' ? 'auxiliary' : 'main');
         const shouldConsumeUserInput = type !== 'regenerate' && type !== 'swipe' && type !== 'quiet' && !isImpersonate && !dryRun && !depth && !suppressUserMessage;
         let textareaText = '';
-
-        if (!(dryRun || depth || suppressUserMessage || type == 'regenerate' || type == 'swipe' || type == 'quiet')) {
-            const interruptedByCommand = await processCommands(String($('#send_textarea').val()));
-            if (!isCurrent()) return;
-
-            if (interruptedByCommand) {
-            //$("#send_textarea").val('')[0].dispatchEvent(new Event('input', { bubbles:true }));
-                unblockGeneration(type);
-                return Promise.resolve();
-            }
-        }
 
         const lastMessage = chat[chat.length - 1];
 
@@ -18539,6 +18541,11 @@ jQuery(async function () {
     const userInputGenerateMutex = new SimpleMutex(sendTextareaMessage);
     const sendButtonElement = document.getElementById('send_but');
     bindIOSFastTapSendButton(sendButtonElement, async () => {
+        // The reply mutex lasts until generation finishes; scripts must bypass it.
+        if (isSlashCommandText(String($('#send_textarea').val()))) {
+            await sendTextareaMessage();
+            return;
+        }
         await userInputGenerateMutex.update();
     }, { isIOS: isIOSFocusSensitiveBrowser });
 
