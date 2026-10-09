@@ -111,7 +111,9 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
 
         test('inline repair wrench fits the action row and repairs only its own note', async ({ page }) => {
             await page.addStyleTag({ content: read('../public/scripts/extensions/in-chat-agents/style.css') });
-            await page.addStyleTag({ content: 'body { margin: 0; font: 15px sans-serif; --mainFontSize: 15px; } #chat { padding: 12px; }' });
+            await page.addStyleTag({ content: `body { margin: 0; font: 15px sans-serif; --mainFontSize: 15px; } #chat { padding: 12px; }
+                /* Matches the phone chat column, so the action row meets the same space budget as the app. */
+                .mes { max-width: ${viewport.width === 393 ? 243 : 1200}px; }` });
             await page.addScriptTag({ content: declarations(`${companionPath}companion-ui.js`, [
                 'getResultStatus', 'getStatusLabel', 'RAW_ID_LABEL_RE', 'TRAILING_ID_IN_NAME_RE', 'cleanCompanionAgentName', 'isReadableLabel',
                 'buildCompanionCard', 'getMessageIndexFromElement', 'getCompanionActionContext', 'handleCompanionAction',
@@ -149,22 +151,35 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
             await expect(page.locator('.ica--companion-actions button')).toHaveCount(5);
             await expect(repair).toBeVisible();
             await expect(repair.locator('.fa-wrench')).toHaveCount(1);
-            const geometry = await page.locator('.ica--companion-actions').evaluate(row => ({
-                right: row.getBoundingClientRect().right,
-                buttons: [...row.children].map(button => {
+            const geometry = await page.locator('.ica--companion-card').evaluate(card => ({
+                right: card.querySelector('.ica--companion-actions').getBoundingClientRect().right,
+                cardLeft: card.getBoundingClientRect().left,
+                cardRight: card.getBoundingClientRect().right,
+                summaryRight: card.querySelector('.ica--companion-summary').getBoundingClientRect().right,
+                buttons: [...card.querySelector('.ica--companion-actions').children].map(button => {
                     const rect = button.getBoundingClientRect();
-                    return { left: rect.left, right: rect.right, top: rect.top, width: rect.width, height: rect.height };
+                    return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height };
                 }),
             }));
             expect(geometry.right).toBeLessThanOrEqual(viewport.width);
             expect(new Set(geometry.buttons.map(button => button.top)).size).toBe(1);
             for (const button of geometry.buttons) {
-                expect(button.width).toBe(viewport.width === 393 ? 44 : 30);
-                expect(button.height).toBe(viewport.width === 393 ? 44 : 30);
+                expect(button.width).toBe(viewport.width === 393 ? 36 : 30);
+                expect(button.height).toBe(viewport.width === 393 ? 36 : 30);
             }
             for (const [index, button] of geometry.buttons.slice(1).entries()) {
                 expect(button.left).toBeGreaterThanOrEqual(geometry.buttons[index].right);
+                expect(button.left - geometry.buttons[index].right).toBe(viewport.width === 393 ? 8 : 4);
             }
+            const inset = Math.min(geometry.buttons[0].left - geometry.cardLeft, geometry.cardRight - geometry.buttons.at(-1).right);
+            expect(inset).toBeGreaterThanOrEqual(8);
+            expect(geometry.buttons.at(-1).right).toBeLessThanOrEqual(geometry.summaryRight);
+            // The phone row shrinks the visible target, so an invisible pad has to keep it tappable.
+            const padded = await page.evaluate(pad => [...document.querySelectorAll('.ica--companion-actions button')].map(button => {
+                const rect = button.getBoundingClientRect();
+                return document.elementFromPoint(rect.left - pad + 1, rect.top + rect.height / 2) === button;
+            }), viewport.width === 393 ? 4 : 0);
+            expect(padded.every(Boolean)).toBe(true);
 
             await repair.click();
             await expect(repair).toBeDisabled();

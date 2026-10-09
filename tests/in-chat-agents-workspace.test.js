@@ -202,14 +202,16 @@ describe('in-chat agents workspace redesign', () => {
     });
 
     test('keeps companion card buttons inside the card border on phones', () => {
-        const phoneStart = styleSource.indexOf('@media (max-width: 768px)');
-        const ruleStart = styleSource.indexOf('.ica--companion-actions {', phoneStart);
-        const rule = styleSource.slice(ruleStart, styleSource.indexOf('}', ruleStart));
-        expect(phoneStart).toBeGreaterThan(-1);
-        expect(ruleStart).toBeGreaterThan(phoneStart);
-        expect(rule).toContain('flex-wrap: wrap;');
-        expect(rule).toContain('gap: 0;');
-        expect(rule).toContain('max-width: 100%;');
+        const phoneBlock = styleSource.match(/@media \(max-width: 768px\) \{[\s\S]*?\n\}/)[0];
+        // The base `.ica--companion-actions` rule sits later in this sheet, so the phone rule
+        // carries the extra class that outranks it.
+        expect(phoneBlock).toContain('.ica--companion-summary .ica--companion-actions,');
+        expect(phoneBlock).toContain('#chat .ica--companion-summary .ica--companion-actions {');
+        expect(phoneBlock).toMatch(/#chat \.ica--companion-summary \.ica--companion-actions \{[^}]*flex-wrap:\s*wrap;/);
+        expect(phoneBlock).toMatch(/#chat \.ica--companion-summary \.ica--companion-actions \{[^}]*gap:\s*8px;/);
+        expect(phoneBlock).toMatch(/#chat \.ica--companion-summary \.ica--companion-actions \{[^}]*max-width:\s*100%;/);
+        expect(phoneBlock).toMatch(/#chat \.ica--companion-summary \.ica--companion-actions \.ica--companion-action \{[^}]*width:\s*36px;/);
+        expect(phoneBlock).toMatch(/#chat \.ica--companion-summary \.ica--companion-actions \.ica--companion-action::before \{[^}]*inset:\s*-4px;/);
     });
 });
 

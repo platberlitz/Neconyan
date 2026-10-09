@@ -6,6 +6,7 @@ import {
     name1,
 } from '../../script.js';
 import { user_avatar } from '../personas.js';
+import { revealUi } from '../ui-motion.js';
 import { getCurrentUserHandle } from '../user.js';
 import { timestampToMoment } from '../utils.js';
 import { world_names } from '../world-info.js';
@@ -645,6 +646,7 @@ export function renderConversationTimeline() {
                 </div>
             </div>
         `;
+        revealUi(timeline);
         conversationState.lastRenderedAvatar = null;
         conversationState.lastRenderedThreadKey = '';
         conversationState.lastRenderedMessageCount = 0;
@@ -677,6 +679,7 @@ export function renderConversationTimeline() {
     timeline.dataset.sbConversationFingerprint = fingerprint;
     if (contextChanged) {
         timeline.textContent = '';
+        revealUi(timeline);
     } else {
         removeTimelineTransientNodes(timeline);
     }

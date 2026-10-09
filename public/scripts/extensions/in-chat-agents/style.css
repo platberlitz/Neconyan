@@ -364,14 +364,37 @@ button.ica--card-pill--version-update {
         max-width: 100%;
     }
 
-    /* Five 44px touch targets plus gaps overflowed narrow cards and pushed the delete
-       button past the right border. The transparent targets abut instead, and wrap last. */
-    .ica--companion-actions {
+    /* Five full-size touch targets plus gaps overflowed narrow cards and pushed the delete
+       button past the right border. The visible targets shrink to 36px with an 8px gap, so
+       all five stay on one row inside the card, while an absolutely positioned 44px hit pad
+       keeps the phone touch contract. The extra class outranks the base
+       `.ica--companion-actions` rule, which sits later in this sheet and used to win. */
+    .ica--companion-summary .ica--companion-actions,
+    #chat .ica--companion-summary .ica--companion-actions {
         flex-wrap: wrap;
-        justify-content: flex-end;
-        gap: 0;
+        justify-content: center;
+        gap: 8px;
         max-width: 100%;
-        margin-left: auto;
+        margin-inline: auto;
+    }
+
+    .ica--companion-summary .ica--companion-actions .ica--companion-action,
+    #chat .ica--companion-summary .ica--companion-actions .ica--companion-action {
+        position: relative;
+        width: 36px;
+        min-width: 36px;
+        max-width: 36px;
+        height: 36px;
+        min-height: 36px;
+    }
+
+    /* Invisible, so nothing is drawn outside the 36px circle that appears on hover. */
+    .ica--companion-summary .ica--companion-actions .ica--companion-action::before,
+    #chat .ica--companion-summary .ica--companion-actions .ica--companion-action::before {
+        content: "";
+        position: absolute;
+        inset: -4px;
+        border-radius: 999px;
     }
 
     .ica--cdash-row {
