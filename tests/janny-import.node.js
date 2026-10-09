@@ -93,6 +93,57 @@ test('BotSearcher explains card-specific bridge failures instead of blaming Clou
     assert.match(intakeErrorMessage(new Error('native_download_failed'), 'jannyai'), /Cloudflare/);
 });
 
+test('server refuses a No Proxy hidden card before changing JanitorAI settings', async () => {
+    const { assertCardCapturable, JannyBrowserError } = await import('../public/scripts/extensions/third-party/Neconyan-BotSearcher/server/janny-browser.js');
+    assert.throws(() => assertCardCapturable({ showdefinition: false, allow_proxy: false }), (error) => {
+        assert.ok(error instanceof JannyBrowserError);
+        assert.equal(error.code, 'janny_proxy_disabled');
+        assert.equal(error.status, 422);
+        return true;
+    });
+    assert.doesNotThrow(() => assertCardCapturable({ showdefinition: false, allow_proxy: true }));
+    assert.doesNotThrow(() => assertCardCapturable({ showdefinition: false }));
+    assert.doesNotThrow(() => assertCardCapturable(null));
+
+    const { createJannyBrowser } = await import('../public/scripts/extensions/third-party/Neconyan-BotSearcher/server/janny-browser.js');
+    async function importWith(meta) {
+        const requests = [];
+        const page = {
+            url: () => 'https://janitorai.com/',
+            goto: async () => {},
+            setDefaultTimeout: () => {},
+            close: async () => {},
+            context: () => ({ on: () => {}, off: () => {} }),
+            evaluate: async (_fn, arg) => {
+                if (typeof arg?.target !== 'string') {
+                    return null;
+                }
+                requests.push(`${arg.request?.method ?? 'GET'} ${new URL(arg.target).pathname}`);
+                const body = arg.target.includes('/hampter/characters/') ? { character: meta } : {};
+                return { status: 200, body: JSON.stringify(body) };
+            },
+        };
+        const browser = createJannyBrowser({
+            profileDir: '/tmp/opencode/janny-test-profile',
+            launchContext: async () => ({ pages: () => [page], newPage: async () => page, on: () => {}, close: async () => {} }),
+        });
+        const error = await browser.fetchCard(`https://jannyai.com/characters/${ID}`).catch((caught) => caught);
+        return { error, requests };
+    }
+
+    const blocked = await importWith({ id: ID, name: 'Nick', showdefinition: false, allow_proxy: false });
+    assert.equal(blocked.error?.code, 'janny_proxy_disabled');
+    assert.deepEqual(blocked.requests, [`GET /hampter/characters/${ID}`]);
+
+    const allowed = await importWith({ id: ID, name: 'Nick', showdefinition: false, allow_proxy: true });
+    assert.notEqual(allowed.error?.code, 'janny_proxy_disabled');
+    assert.ok(allowed.requests.length > 1, 'a proxy-friendly hidden card still attempts the capture');
+
+    const guidance = jannyBridgeGuidance('janny_proxy_disabled');
+    assert.equal(guidance.title, 'JannyAI card blocks proxies');
+    assert.doesNotMatch(guidance.message, /Cloudflare/);
+});
+
 test('client fetches the card through the BotSearcher browser import', async () => {
     const calls = [];
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
