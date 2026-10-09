@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.2.4.1
+
+Diagnostic Android hotfix for [#80](https://github.com/platberlitz/Neconyan/issues/80). After 1.2.4 the reporter's existing chat still restarted the server on send or regenerate, and the copied details only said `signal 11` with no record of where the crash happened.
+
+### Highlights
+
+- The Android server now leaves segmentation faults to Android's crash dumper instead of Node's WebAssembly trap handler, so a native crash produces a real crash record (a tombstone) rather than ending silently as `signal 11`. WebAssembly keeps working with explicit bounds checks.
+- The app decodes that crash record after the restart: signal, fault address, the crashing thread, a backtrace with library names and offsets, and the last log lines. **Copy details for a bug report** includes it, together with the native stack size.
+- The server keeps a short trace of the most recent requests on Android, so the copied details name the request that was in flight when the server died. The trace from the previous start is kept across the restart.
+- Hotfix versions now use four parts (`1.2.4.1`), and the Android version code accounts for the fourth part.
+- The packaged-APK check now crashes the server with a real segmentation fault and expects the decoded crash record and the request trace to survive. Updated the [official handbook](https://platberlitz.github.io/neconyan-docs/start/android/) and the assistants' app-help reference. Confirmation on the affected Samsung is still needed.
+
 ## v1.2.4
 
 Follow-up Android hotfix for [#80](https://github.com/platberlitz/Neconyan/issues/80). The recovery in 1.2.3 helped the app reopen, but the reporter still saw native crashes when sending or regenerating in an existing chat.
