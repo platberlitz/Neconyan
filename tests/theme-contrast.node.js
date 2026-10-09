@@ -19,6 +19,22 @@ test('AMOLED Black is bundled, opaque black and stable through theme conversion'
     assert.equal(accessibleTheme({ ...source, name: 'My black theme' }).chat_tint_color, 'rgb(0, 0, 0)');
 });
 
+test('dark XP Olive is bundled with readable olive surfaces before and after conversion', () => {
+    const source = JSON.parse(readFileSync(new URL('../default/content/themes/Windows XP Olive Green Dark.json', import.meta.url), 'utf8'));
+    const index = JSON.parse(readFileSync(new URL('../default/content/index.json', import.meta.url), 'utf8'));
+    assert.ok(index.some(entry => entry.filename === `themes/${source.name}.json` && entry.type === 'theme'));
+    for (const theme of [source, accessibleTheme(source)]) {
+        for (const key of ['blur_tint_color', 'chat_tint_color', 'user_mes_blur_tint_color', 'bot_mes_blur_tint_color']) {
+            const [r, g, b] = theme[key].match(/[\d.]+/g).map(Number);
+            assert.ok(g > r && r > b && g < 64, `${key} stays dark olive`);
+            for (const text of ['main_text_color', 'italics_text_color', 'quote_text_color', 'underline_text_color']) {
+                assert.ok(contrastRatio(theme[text], theme[key]) >= 4.5, `${text} on ${key}`);
+            }
+            assert.ok(contrastRatio(theme.border_color, theme[key]) >= 3);
+        }
+    }
+});
+
 test('near-black and translucent themes retain the normal accessible surface separation', () => {
     const source = JSON.parse(readFileSync(new URL('../default/content/themes/AMOLED Black.json', import.meta.url), 'utf8'));
     for (const blur_tint_color of ['rgba(1, 1, 1, 1)', 'rgba(0, 0, 0, 0.5)']) {
