@@ -25,7 +25,7 @@ test('the interface catalogue collects captions from helpers, fallbacks, templat
     // Helper argument inside an exported function, folder fallback, Home speaker, template, tab array,
     // the In-Chat Agents bulk-edit popup, which sits inside a <template> element, and a filter label that
     // BotSearcher declares in its server folder and its client puts on the page.
-    for (const caption of ['Test keys', 'Unfiled', 'All books', 'Miso, Taro and Nori', 'Close ${0}', 'Pawspective', 'No automatic agents enabled', 'depth ${0}', 'Order ${0}', 'prompt rewrite', 'Characters, lorebooks and presets are snapshotted here, because nothing in Neconyan backs them up. Extension settings from Neconyan\'s own settings backups are available further down.', 'Scan World Info', 'Don\'t change', 'Has all of these tags']) {
+    for (const caption of ['Test keys', 'Unfiled', 'All books', 'Miso, Taro and Nori', 'Close ${0}', 'Pawspective', 'No automatic agents enabled', 'depth ${0}', 'Order ${0}', 'rewrites reply', 'Characters, lorebooks and presets are snapshotted here, because nothing in Neconyan backs them up. Extension settings from Neconyan\'s own settings backups are available further down.', 'Scan World Info', 'Don\'t change', 'Has all of these tags']) {
         assert.ok(keys.has(caption), `missing ${caption}`);
     }
     // Developer-facing errors and identifiers never reach the page.
@@ -42,7 +42,7 @@ test('the interface catalogue collects captions from helpers, fallbacks, templat
     for (const [key, value] of panelCaptions) {
         assert.deepEqual(slots(value), slots(key), `changed placeholders: ${key}`);
     }
-    for (const key of ['Test keys', 'Unfiled', 'All books', 'Pawspective', 'No automatic agents enabled', 'depth ${0}', 'Order ${0}', 'prompt rewrite', 'Snapshot everything now']) {
+    for (const key of ['Test keys', 'Unfiled', 'All books', 'Pawspective', 'No automatic agents enabled', 'depth ${0}', 'Order ${0}', 'rewrites reply', 'Snapshot everything now']) {
         assert.ok(german[key] && german[key] !== key, `missing German panel caption: ${key}`);
     }
 });

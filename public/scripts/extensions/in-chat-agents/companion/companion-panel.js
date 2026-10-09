@@ -982,8 +982,8 @@ function syncCompanionPanelTopbarButton() {
     button.type = 'button';
     button.id = TOPBAR_LAUNCHER_ID;
     button.className = 'sb-proxy-button sb-proxy-button-icon-only ica--tpanel-topbar-button';
-    button.title = 'Open the companion panel';
-    button.setAttribute('aria-label', 'Open the companion panel');
+    button.title = 'Open the Companion panel';
+    button.setAttribute('aria-label', 'Open the Companion panel');
     button.setAttribute('aria-controls', 'ica--tracker-panel');
     button.setAttribute('aria-expanded', String(panelOpen));
     button.setAttribute('data-sb-topbar-adopt', 'true');
@@ -1077,7 +1077,7 @@ async function handlePanelAction(event) {
     if (action === 'panel-hide-handle') {
         setCompanionPanelHandleHidden(true);
         closeCompanionPanel();
-        toastr.info('Floating button hidden. Open Companion Panel from the Extensions menu to bring it back.');
+        toastr.info('Floating button hidden. Open the Companion panel from the Extensions menu to bring it back.');
         return;
     }
 
@@ -1431,7 +1431,7 @@ export function initCompanionPanel() {
     panelInitialized = true;
     $(document.body).append('<div id="ica--tracker-panel" class="ica--tpanel" data-edge="right" role="region" aria-label="Companions" aria-hidden="true"></div>');
     $(document.body).append(`
-        <button type="button" id="ica--tracker-panel-handle" class="ica--tpanel-handle" data-edge="right" title="Open the companion panel" aria-label="Open the companion panel" aria-controls="ica--tracker-panel" aria-expanded="false" style="display:none">
+        <button type="button" id="ica--tracker-panel-handle" class="ica--tpanel-handle" data-edge="right" title="Open the Companion panel" aria-label="Open the Companion panel" aria-controls="ica--tracker-panel" aria-expanded="false" style="display:none">
             <i class="fa-solid fa-cat"></i>
         </button>
     `);
@@ -1496,9 +1496,9 @@ export function initCompanionPanel() {
 
     if (!$('#ica_tracker_panel_wand_item').length) {
         const menuItem = $(`
-            <div id="ica_tracker_panel_wand_item" class="list-group-item flex-container flexGap5 interactable" title="Open the companion panel" tabindex="0">
+            <div id="ica_tracker_panel_wand_item" class="list-group-item flex-container flexGap5 interactable" title="Open the Companion panel" tabindex="0">
                 <div class="fa-solid fa-cat extensionsMenuExtensionButton"></div>
-                <span>Companion Panel</span>
+                <span>Companion panel</span>
             </div>
         `);
         menuItem.on('click', () => openCompanionPanel());

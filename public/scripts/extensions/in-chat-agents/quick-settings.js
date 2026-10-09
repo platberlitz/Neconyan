@@ -154,7 +154,7 @@ export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent
             addSelect(history, 'keepInChatHistoryWhenHostHidden', 'Keep notes when the reply is hidden', yesNo, config.keepInChatHistoryWhenHostHidden, true);
             history.append('<p class="ica--profile-help">Saved companion notes become context for future replies. These settings also update notes in the open chat.</p>');
             const behaviour = addSection('Companion settings');
-            addSelect(behaviour, 'trigger', 'Run companions', [['auto', 'Automatically'], ['manual', 'Manually']], config.trigger, true);
+            addSelect(behaviour, 'trigger', 'Run companion', [['auto', 'Automatically after replies'], ['manual', 'Only when I run it']], config.trigger, true);
             addSelect(behaviour, 'displayMode', 'Show notes', [['panel', 'Companion panel'], ['card', 'Under replies'], ['hidden', 'Hidden']], config.displayMode, true);
             addNumber(behaviour, 'contextMessages', 'Chat messages to read', config.contextMessages, 1, null, true);
             addNumber(behaviour, 'historyDepth', 'Previous notes to read', config.historyDepth, 1, 10, true);
@@ -167,8 +167,8 @@ export async function openAgentQuickSettings(ids, { view = 'settings', lockAgent
         links.append('<p class="ica--profile-help">Connections are added in both directions. Other connections stay as they are. Sharing uses the latest completed notes; it does not wait for a new note.</p>');
     } else if (companions.length) {
         const switches = addSection('Companion connections');
-        const batch = addSelect(switches, 'batch', 'Use batching', yesNo, config.batch, true);
-        const send = addSelect(switches, 'sendContextToCompanions', 'Send latest notes', yesNo, config.sendContextToCompanions, true);
+        const batch = addSelect(switches, 'batch', 'Share one request with linked companions', yesNo, config.batch, true);
+        const send = addSelect(switches, 'sendContextToCompanions', 'Send latest notes to other companions', yesNo, config.sendContextToCompanions, true);
         addSelect(switches, 'waitForDependencies', 'Wait for linked companions', yesNo, config.waitForDependencies, true);
         addReferenceChecklist(root, first, 'batchAgentIds', 'Batch with', 'Choosing companions turns batching on. You can pause it above without clearing this list.', () => batch.val('true'));
         addReferenceChecklist(root, first, 'contextRecipientAgentIds', 'Send notes to', 'Choosing companions turns note sharing on. Each receives this agent’s latest completed note.', () => send.val('true'));

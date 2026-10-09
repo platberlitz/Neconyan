@@ -300,7 +300,7 @@ export function buildCompanionAgentRowHtml(agent, { mode = 'normal', batchSummar
                 ${buildRowActionHtml('toggle-history', 'fa-clock-rotate-left', 'Keep in history', { title: keptInHistory ? 'Its notes are sent with later prompts. Press to stop.' : 'Send its notes with later prompts', pressed: keptInHistory })}
                 ${buildRowActionHtml('run', 'fa-play', 'Run', { title: 'Run this companion on the last assistant reply', ariaLabel: 'Run companion', disabled: runDisabled })}
                 ${buildRowActionHtml('edit', 'fa-pen-to-square', 'Edit', { title: 'Edit companion', ariaLabel: 'Edit companion' })}
-                ${buildRowActionHtml('to-inline', 'fa-right-left', 'To inline', { title: 'Convert back to inline execution', ariaLabel: 'Convert to inline' })}
+                ${buildRowActionHtml('to-inline', 'fa-right-left', 'To prompt or reply', { title: 'Make this a prompt or reply agent again', ariaLabel: 'Make prompt or reply agent' })}
             </div>
         </div>
     `;
@@ -317,7 +317,7 @@ export function buildConvertibleAgentRowHtml(agent) {
                 </div>
             </div>
             <div class="ica--cdash-row-actions">
-                <button type="button" class="ica--cdash-action" data-action="to-companion" title="Convert to Companion (runs as a side note card, never edits the reply)" aria-label="Convert to Companion"${dashboardSaving ? ' disabled' : ''}><i class="fa-solid fa-user-astronaut" aria-hidden="true"></i><span>To companion</span></button>
+                <button type="button" class="ica--cdash-action" data-action="to-companion" title="Make this a companion (it writes a separate note beside replies and never edits the reply)" aria-label="Make companion"${dashboardSaving ? ' disabled' : ''}><i class="fa-solid fa-user-astronaut" aria-hidden="true"></i><span>To companion</span></button>
             </div>
         </div>
     `;
@@ -407,7 +407,7 @@ function buildToolbarHtml({ globallyEnabled, totalNotes }) {
             badge: retryCount,
         }),
         buildToolbarButtonHtml({ action: 'clean-up', icon: 'fa-broom', label: 'Clean up notes', title: 'Remove old companion notes from this chat', disabled: totalNotes === 0 }),
-        buildToolbarButtonHtml({ action: 'open-panel', icon: 'fa-user-astronaut', label: 'Open live panel', title: 'Open the slide-out companion panel with the latest state' }),
+        buildToolbarButtonHtml({ action: 'open-panel', icon: 'fa-user-astronaut', label: 'Open Companion panel', title: 'Open the Companion panel with the latest notes' }),
         buildToolbarButtonHtml({ action: 'new-companion', icon: 'fa-plus', label: 'Create companion', title: 'Create a new companion from scratch' }),
         buildToolbarButtonHtml({ action: 'ai-maker', icon: 'fa-wand-magic-sparkles', label: 'Draft with AI', title: 'Describe a companion and let AI draft it' }),
     ].join('');
@@ -457,13 +457,13 @@ export function buildDashboardHtml() {
     const modeHtml = mode === 'select'
         ? buildBulkBarHtml(companions, notePlan.counts)
         : mode === 'reorder'
-            ? '<p class="ica--cdash-hint">Drag a companion by its grip, or use Up and Down. This order sets the live panel order and the run order when companions run one at a time.</p>'
+            ? '<p class="ica--cdash-hint">Drag a companion by its grip, or use Up and Down. This order sets the Companion panel order and the run order when companions run one at a time.</p>'
             : '';
 
     return `
         <div class="ica--cdash-header">
-            <div class="ica--cdash-title"><i class="fa-solid fa-user-astronaut" aria-hidden="true"></i> Activity &amp; companion results</div>
-            <div class="ica--cdash-subtitle">See what side agents produced, run them again, or convert an existing helper. Companion notes stay separate from the assistant reply.</div>
+            <div class="ica--cdash-title"><i class="fa-solid fa-user-astronaut" aria-hidden="true"></i> Companion activity</div>
+            <div class="ica--cdash-subtitle">See what companion agents produced, run them again, or turn an existing agent into a companion. Companion notes stay separate from the assistant reply.</div>
             ${noticeHtml}
             <div class="ica--cdash-toolbar">${buildToolbarHtml({ globallyEnabled, totalNotes: notePlan.total })}
             </div>
@@ -479,7 +479,7 @@ export function buildDashboardHtml() {
             </div>
         </div>
         <div class="ica--cdash-section" data-section="convertible">
-            <div class="ica--cdash-section-title">Inline helpers you can convert <span class="ica--cdash-count">${convertible.length}</span></div>
+            <div class="ica--cdash-section-title">Agents you can turn into companions <span class="ica--cdash-count">${convertible.length}</span></div>
             <div class="ica--cdash-rows">
                 ${convertible.length > 0
         ? convertible.map(buildConvertibleAgentRowHtml).join('')
@@ -1160,9 +1160,9 @@ export function initCompanionWandMenuItem() {
     }
 
     const menuItem = $(`
-        <div id="ica_companions_wand_item" class="list-group-item flex-container flexGap5 interactable" title="Open the Companion Agents dashboard" tabindex="0">
+        <div id="ica_companions_wand_item" class="list-group-item flex-container flexGap5 interactable" title="Open Companion activity" tabindex="0">
             <div class="fa-solid fa-user-astronaut extensionsMenuExtensionButton"></div>
-            <span>Companion Agents</span>
+            <span>Companion activity</span>
         </div>
     `);
     menuItem.on('click', () => openCompanionDashboard());

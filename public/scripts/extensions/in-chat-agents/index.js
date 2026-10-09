@@ -384,7 +384,7 @@ async function finishAgentLibraryInitialization() {
     noteUpdate(await migrateLegacyPromptTransformMaxTokens(), 'agent moved to the new 8192-token prompt rewrite limit', 'agents moved to the new 8192-token prompt rewrite limit');
     noteUpdate(await purgeRemovedBundledAgents(), 'retired built-in agent removed', 'retired built-in agents removed');
     noteUpdate(await removeRedundantBundledAgentDuplicates(), 'duplicate built-in agent removed', 'duplicate built-in agents removed');
-    noteUpdate(await migrateTrackerCompanionsToAutoLoop(), 'tracker companion now runs automatically and shows in the Tracker panel', 'tracker companions now run automatically and show in the Tracker panel');
+    noteUpdate(await migrateTrackerCompanionsToAutoLoop(), 'tracker companion now runs automatically and shows in the Companion panel', 'tracker companions now run automatically and show in the Companion panel');
     startupCounts.forEach(({ count, plural }, singular) => startupUpdates.push(`${count} ${count === 1 ? singular : plural}`));
     if (startupUpdates.length) {
         toastr.success(startupUpdates.map(item => escapeHtml(item)).join('<br>'), 'Agents updated');
@@ -1411,7 +1411,7 @@ async function applyAgentExecutionConversion(agent, targetExecution) {
     syncToolAgentRegistrations();
     renderAgentList();
     const companionDestination = getCompanionConfig(agent).displayMode === 'panel'
-        ? 'its state now appears in the slide-out Tracker panel'
+        ? 'its state now appears in the Companion panel'
         : 'it now runs as a note card under assistant replies';
     toastr.success(targetExecution === 'companion'
         ? `"${agent.name}" converted to companion: ${companionDestination}.`
@@ -1733,7 +1733,7 @@ function canPreviewPreGenerationPrompt(agent) {
 }
 
 function getPromptTransformLabel(agent) {
-    return getPromptTransformMode(agent) === 'append' ? t`prompt append` : t`prompt rewrite`;
+    return getPromptTransformMode(agent) === 'append' ? t`adds to reply` : t`rewrites reply`;
 }
 
 function getCompanionTriggerLabel(companion) {
@@ -1791,7 +1791,7 @@ async function previewCompanionFeedbackPrompt(agent) {
     const previewText = buildCompanionFeedbackPreviewText(agent);
     const previewHtml = $(
         `<div class="ica--prompt-preview">
-            <div class="ica--regex-note">Preview of the helper prompt inserted before the next generation when feedback is enabled.</div>
+            <div class="ica--regex-note">Preview of the agent prompt added before the next reply when feedback is on.</div>
             <pre>${escapeHtml(previewText)}</pre>
         </div>`,
     );
@@ -3178,7 +3178,7 @@ function renderAgentList() {
             <div class="ica--empty-state" role="status">
                 <img class="ica--empty-illustration" src="img/neconyan/${filtered ? 'curious-search' : 'cozy-library'}.webp" alt="" width="536" height="510" aria-hidden="true" loading="lazy" decoding="async">
                 <h3>${allAgents.length === 0 ? 'No agents yet' : 'No agents match these filters'}</h3>
-                <p>${allAgents.length === 0 ? 'Browse the library for a ready-made helper, or create your own.' : 'Clear the filters to see the rest of your agents.'}</p>
+                <p>${allAgents.length === 0 ? 'Browse the library for a ready-made agent, or create your own.' : 'Clear the filters to see the rest of your agents.'}</p>
                 <div class="ica--empty-actions">
                     ${filtered ? '<button type="button" class="menu_button ica--clear-agent-filters">Clear filters</button>' : ''}
                     ${allAgents.length === 0 ? '<button type="button" class="menu_button ica--empty-library">Browse library</button><button type="button" class="menu_button ica--empty-create">Create agent</button>' : ''}
@@ -3237,7 +3237,7 @@ function renderAgentList() {
             const promptTransformEnabled = !companionExecution && hasPromptTransform(agent);
             const promptTransformLabel = getPromptTransformLabel(agent);
             const preInterceptEnabled = !companionExecution && isPreGenerationInterceptAgent(agent);
-            const preInterceptLabel = isPostMainGenerationInterceptAgent(agent) ? 'post-main intercept' : 'pre intercept';
+            const preInterceptLabel = isPostMainGenerationInterceptAgent(agent) ? 'checks reply first' : 'edits the request';
             const previewPromptButton = canPreviewPreGenerationPrompt(agent)
                 ? `<button type="button" class="ica--card-btn ica--btn-preview-prompt" title="Preview this pre-generation prompt after macro substitution" aria-label="${preInterceptEnabled ? 'Preview instruction' : 'Preview prompt'}"><i class="fa-solid fa-eye"></i><span>${preInterceptEnabled ? 'Preview instruction' : 'Preview prompt'}</span></button>`
                 : '';
@@ -3257,8 +3257,8 @@ function renderAgentList() {
             const convertExecutionButton = isPathfinderAgent(agent) || isToolAgent(agent)
                 ? ''
                 : (companionExecution
-                    ? '<button type="button" class="ica--card-btn ica--btn-convert-execution" title="Convert to inline execution (runs inside the main generation again)" aria-label="Convert to Inline"><i class="fa-solid fa-right-left"></i><span>To inline</span></button>'
-                    : '<button type="button" class="ica--card-btn ica--btn-convert-execution" title="Convert to Companion (runs as a separate note card under replies, never edits the reply)" aria-label="Convert to Companion"><i class="fa-solid fa-user-astronaut"></i><span>To companion</span></button>');
+                    ? '<button type="button" class="ica--card-btn ica--btn-convert-execution" title="Make this a prompt or reply agent again (it works on the main reply instead of writing a separate note)" aria-label="Make prompt or reply agent"><i class="fa-solid fa-right-left"></i><span>To prompt or reply</span></button>'
+                    : '<button type="button" class="ica--card-btn ica--btn-convert-execution" title="Make this a companion (it writes a separate note beside replies and never edits the reply)" aria-label="Make companion"><i class="fa-solid fa-user-astronaut"></i><span>To companion</span></button>');
 
             const card = $(`
                 <div class="ica--agent-card ${enabledClass}${selectModeActive ? ' ica--selectable' : ''}${selectedAgentIds.has(agent.id) ? ' ica--selected' : ''}" data-agent-id="${escapeHtml(agent.id)}">
@@ -3270,7 +3270,7 @@ function renderAgentList() {
                             <span class="ica--card-desc">${escapeHtml(desc)}</span>
                         </div>
                         <div class="ica--card-header-actions">
-                            <span class="ica--card-execution">${companionExecution ? 'Companion' : 'Inline'}</span>
+                            <span class="ica--card-execution">${companionExecution ? 'Companion note' : 'Prompt or reply'}</span>
                             <span class="ica--card-phase">${escapeHtml(getAgentCardPhaseLabel(agent))}</span>
                             <button type="button" class="ica--card-favorite ica--quick-chip-pin ${agent.favorite ? 'is-active' : ''}" title="${agent.favorite ? 'Remove from Pinned' : 'Add to Pinned'}" aria-label="${agent.favorite ? 'Remove from Pinned' : 'Add to Pinned'}">
                                 <i class="fa-solid fa-star"></i>
@@ -4823,14 +4823,14 @@ async function openTemplateBrowser() {
     }
 
     const wrapper = $('<div class="ica--template-browser"></div>');
-    wrapper.append('<header class="ica--library-header"><h2>Agent library</h2><p>Add an individual helper, or choose a starter kit.</p></header>');
+    wrapper.append('<header class="ica--library-header"><h2>Agent library</h2><p>Add a single agent, or choose a starter kit.</p></header>');
 
     // Groups section
     const allGroups = getGroups();
     if (allGroups.length > 0) {
         const groupSection = $('<details class="ica--template-section ica--library-kits"></details>');
         groupSection.append('<summary>Starter kits</summary>');
-        groupSection.append('<p class="ica--template-section-desc">Install a complete set of helpers at once. Existing agents are kept.</p>');
+        groupSection.append('<p class="ica--template-section-desc">Install a complete set of agents at once. Existing agents are kept.</p>');
 
         const groupGrid = $('<div class="ica--group-grid"></div>');
         for (const group of allGroups) {
@@ -4856,11 +4856,11 @@ async function openTemplateBrowser() {
 
             card.find('.ica--grp-delete').on('click', async event => {
                 stopEvent(event);
-                const r = await new Popup(`Delete group "${escapeHtml(group.name)}"?`, POPUP_TYPE.CONFIRM).show();
+                const r = await new Popup(`Delete starter kit "${escapeHtml(group.name)}"? Agents you already installed from it stay.`, POPUP_TYPE.CONFIRM).show();
                 if (r === POPUP_RESULT.AFFIRMATIVE) {
                     await deleteGroup(group.id);
                     card.remove();
-                    toastr.success(`Deleted group "${group.name}".`);
+                    toastr.success(`Deleted starter kit "${group.name}".`);
                 }
             });
 
@@ -4871,7 +4871,7 @@ async function openTemplateBrowser() {
         const createCard = $(`
             <button type="button" class="ica--group-card ica--group-card-create">
                 <strong><i class="fa-solid fa-plus"></i> Create custom kit</strong>
-                <span class="ica--group-card-desc">Save your current agents as a reusable group.</span>
+                <span class="ica--group-card-desc">Save your current agents as a reusable kit.</span>
             </button>
         `);
         createCard.on('click', async () => {
@@ -5121,19 +5121,19 @@ async function applyGroup(group) {
 async function createCustomGroup() {
     const currentAgents = getVisibleInChatAgents();
     if (currentAgents.length === 0) {
-        toastr.info('No agents to group. Add some agents first.');
+        toastr.info('No agents to put in a kit. Add some agents first.');
         return;
     }
 
     const html = $(`
         <div style="display:flex;flex-direction:column;gap:12px;">
             <label style="display:flex;flex-direction:column;gap:4px;">
-                <strong>Group Name</strong>
-                <input type="text" id="ica--grp-name" class="text_pole" placeholder="My Custom Group" />
+                <strong>Kit name</strong>
+                <input type="text" id="ica--grp-name" class="text_pole" placeholder="My starter kit" />
             </label>
             <label style="display:flex;flex-direction:column;gap:4px;">
                 <strong>Description</strong>
-                <input type="text" id="ica--grp-desc" class="text_pole" placeholder="What this group is for" />
+                <input type="text" id="ica--grp-desc" class="text_pole" placeholder="What this kit is for" />
             </label>
             <div>
                 <strong>Select agents to include:</strong>
@@ -5153,7 +5153,7 @@ async function createCustomGroup() {
     }
 
     const result = await new Popup(html, POPUP_TYPE.CONFIRM, '', {
-        okButton: 'Create Group',
+        okButton: 'Create kit',
         cancelButton: 'Cancel',
         wide: true,
     }).show();
@@ -5162,7 +5162,7 @@ async function createCustomGroup() {
 
     const name = html.find('#ica--grp-name').val()?.toString().trim();
     if (!name) {
-        toastr.warning('Please enter a group name.');
+        toastr.warning('Please enter a kit name.');
         return;
     }
 
@@ -5192,13 +5192,13 @@ async function createCustomGroup() {
     group.builtin = false;
 
     if (group.agentTemplateIds.length === 0 && group.customAgents.length === 0) {
-        toastr.warning('Unable to build a reusable group from the selected agents.');
+        toastr.warning('Unable to build a starter kit from the selected agents.');
         return;
     }
 
     await saveGroup(group);
 
-    toastr.success(`Created group "${name}" with ${selectedIds.length} agent(s).`);
+    toastr.success(`Created starter kit "${name}" with ${selectedIds.length} agent(s).`);
 }
 
 // ===================== Import / Export =====================
@@ -6644,7 +6644,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         }
 
         const isCurrent = captureAgentSaveGuard(inlineTrackers.map(agent => agent.id));
-        const result = await new Popup(`Convert ${inlineTrackers.length} tracker agent(s) to companion execution? They will run automatically on their own model and show in the Tracker panel.`, POPUP_TYPE.CONFIRM).show();
+        const result = await new Popup(`Convert ${inlineTrackers.length} tracker agent(s) to companion execution? They will run automatically on their own model and show in the Companion panel.`, POPUP_TYPE.CONFIRM).show();
         if (result !== POPUP_RESULT.AFFIRMATIVE) {
             return;
         }
@@ -6661,7 +6661,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
 
         await saveAgentBatch(changes, 'Convert trackers');
         await refreshSavedAgents(changes.map(agent => agent.id));
-        toastr.success(`Converted ${changes.length} tracker(s) to companions. View their results in the Tracker panel.`);
+        toastr.success(`Converted ${changes.length} tracker(s) to companions. View their results in the Companion panel.`);
     }));
     $('#ica--importAgent').on('click', () => $('#ica--importFile').trigger('click'));
     $('#ica--importFile').on('change', agentAction(handleImport));

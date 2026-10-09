@@ -85,7 +85,7 @@ test('Taro hosts the glossary in the assistant gender the user picked', () => {
         assert.match(src, /^\/img\/neconyan\/tour\/tour-0[358]-taro-[a-z]+-neutral\.webp\?v=/);
         assert.ok(neutral.indexOf(`data-section="${after}"`) < neutral.indexOf(`data-after="${after}"`), `${after} aside sits after its section`);
     }
-    assert.match(neutral, /History Depth does nothing unless Include prior notes is on/);
+    assert.match(neutral, /Previous notes to read does nothing unless Read its previous notes is on/);
 
     const userRoot = mkdtempSync(join(tmpdir(), 'docs-reader-'));
     try {

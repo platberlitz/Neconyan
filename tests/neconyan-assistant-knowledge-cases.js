@@ -86,7 +86,7 @@ export const refreshedKnowledgeCases = [
     ['What does the NSFW Enhancer agent do?', 'agents.nsfw-refusals', 'fades to black'],
     ['An agent refused and the original text was kept', 'agents.nsfw-refusals', 'Refusal phrases that were already in the original text do not count'],
     ['Where kept notes go: what does One labelled block mean?', 'agents.kept-notes-placement', 'Position, Depth, Role and World Info scan fields'],
-    ['What does Reply passes Run together do with rewrites?', 'agents.rewrite-order', 'one extra combining request'],
+    ['What does After-reply agents Run together do with rewrites?', 'agents.rewrite-order', 'one extra combining request'],
     ['How do I search my Input History?', 'chat.shortcuts', 'Search input history filters the list'],
     ['JannyAI login needed on the server when importing a link', 'tools.janny-import-errors', 'logging in from your own browser does not count'],
     ['Termux recovery: how does start-termux-import.sh find my Termux import folder?', 'start.termux-recovery', '~/.neconyan-import-folder on port 5534'],

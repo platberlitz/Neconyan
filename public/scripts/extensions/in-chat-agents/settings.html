@@ -3,7 +3,7 @@
         <div class="ica--workspace-layout">
         <nav id="ica--workspaceNav" class="ica--workspace-nav" aria-label="In-Chat Agents workspace">
             <h2 class="ica--standalone-title">In-Chat Agents</h2>
-            <a class="menu_button" href="/docs/in-chat-agents-glossary" target="_blank" rel="noopener" data-i18n="ICA glossary">ICA glossary</a>
+            <a class="menu_button" href="/docs/in-chat-agents-glossary" target="_blank" rel="noopener" data-i18n="How Agents work">How Agents work</a>
             <select id="ica--workspaceSelect" class="text_pole ica--workspace-select" aria-label="Agent workspace view">
                 <option value="manage">Manage agents</option>
                 <option value="connections">Connections &amp; defaults</option>
@@ -92,11 +92,11 @@
                             <i class="fa-solid fa-wrench" aria-hidden="true"></i>
                             <span>Fix trackers</span>
                         </button>
-                        <button type="button" id="ica--companionsDashboard" class="menu_button menu_button_icon" title="Open the Companions dashboard: manage, run, and convert companion agents">
+                        <button type="button" id="ica--companionsDashboard" class="menu_button menu_button_icon" title="Open Companion activity: see, run and manage companion agents">
                             <i class="fa-solid fa-user-astronaut" aria-hidden="true"></i>
-                            <span>Activity &amp; companions</span>
+                            <span>Companion activity</span>
                         </button>
-                        <button type="button" id="ica--convertAllTrackers" class="menu_button menu_button_icon" title="Convert every inline tracker agent to companion execution (auto loop, tracker panel)">
+                        <button type="button" id="ica--convertAllTrackers" class="menu_button menu_button_icon" title="Turn every tracker agent that writes into the prompt into a companion that runs on its own and shows in the Companion panel">
                             <i class="fa-solid fa-people-arrows" aria-hidden="true"></i>
                             <span>Move trackers to companions</span>
                         </button>
@@ -174,7 +174,7 @@
                         <div class="ica--bulk-bar-actions">
                             <button type="button" id="ica--bulkEnable" class="menu_button">Enable</button>
                             <button type="button" id="ica--bulkDisable" class="menu_button">Disable</button>
-                            <button type="button" id="ica--bulkEnableOnCompanions" class="menu_button" title="Run selected post-generation agents on companion outputs">On Companions</button>
+                            <button type="button" id="ica--bulkEnableOnCompanions" class="menu_button" title="Let the selected after-reply agents also work on companion notes">On Companions</button>
                             <button type="button" id="ica--bulkRoleSystem" class="menu_button">System role</button>
                             <button type="button" id="ica--bulkRoleUser" class="menu_button">User role</button>
                             <button type="button" id="ica--bulkConvertCompanion" class="menu_button">To companion</button>
@@ -200,7 +200,7 @@
                 <section class="ica--settings-group" aria-labelledby="ica--connection-group-title">
                     <div class="ica--settings-group-heading">
                         <span class="ica--settings-group-icon"><i class="fa-solid fa-plug" aria-hidden="true"></i></span>
-                        <div><h4 id="ica--connection-group-title">Connection profiles</h4><p>Choose the model connection used by inline passes and companions.</p></div>
+                        <div><h4 id="ica--connection-group-title">Connection profiles</h4><p>Choose the model connection used by agents and companions.</p></div>
                     </div>
                     <label class="ica--profile-label"><span>Default connection profile</span><select id="ica--connectionProfile" class="text_pole" title="Which connection profile to use when an agent does not have its own editor profile override. Leave this on the selected Connection Manager profile to follow the active profile."><option value="">Current connection</option></select></label>
                     <div id="ica--connectionFallbacks" class="ica--fallback-list" data-ica-fallback-key="connectionFallbacks" data-ica-fallback-noun="post-generation"></div>
@@ -213,10 +213,10 @@
                         <span class="ica--settings-group-icon"><i class="fa-solid fa-shuffle" aria-hidden="true"></i></span>
                         <div><h4 id="ica--execution-group-title">Execution rhythm</h4><p>Running together is faster. Taking turns is easier on rate limits.</p></div>
                     </div>
-                    <label class="ica--profile-label"><span>Reply passes</span><select id="ica--appendAgentsExecutionMode" class="text_pole" title="Run all reply passes together, then combine independent rewrites, or run one at a time in Order."><option value="parallel">Run together</option><option value="sequential">Run one at a time</option></select></label>
+                    <label class="ica--profile-label"><span>After-reply agents</span><select id="ica--appendAgentsExecutionMode" class="text_pole" title="Run all after-reply agents together, then combine their rewrites, or run them one at a time in Order."><option value="parallel">Run together</option><option value="sequential">Run one at a time</option></select></label>
                     <label class="ica--profile-label"><span>Companion agents</span><select id="ica--companionExecutionMode" class="text_pole" title="Run companion agents in parallel or sequentially."><option value="parallel">Run together</option><option value="sequential">Run one at a time</option></select></label>
-                    <small class="ica--profile-help">Together sends every pass the original reply. Different rewrites use one extra combining request on the last rewrite agent's connection. One at a time follows Order.</small>
-                    <label class="checkbox_label" title="Run companion agents at the same time as post-generation passes instead of after them."><input type="checkbox" id="ica--companionConcurrent" /><span>Run companions alongside post-generation passes</span></label>
+                    <small class="ica--profile-help">Together sends every after-reply agent the original reply. Different rewrites use one extra combining request on the last rewrite agent's connection. One at a time follows Order.</small>
+                    <label class="checkbox_label" title="Run companion agents at the same time as after-reply agents instead of after them."><input type="checkbox" id="ica--companionConcurrent" /><span>Run companions at the same time as after-reply agents</span></label>
                 </section>
 
                 <section class="ica--settings-group" aria-labelledby="ica--cleanup-group-title">
@@ -232,14 +232,14 @@
                 <section class="ica--settings-group" aria-labelledby="ica--context-group-title">
                     <div class="ica--settings-group-heading">
                         <span class="ica--settings-group-icon"><i class="fa-solid fa-layer-group" aria-hidden="true"></i></span>
-                        <div><h4 id="ica--context-group-title">Context &amp; notifications</h4><p>Control helper prompts and how their work is shown while you chat.</p></div>
+                        <div><h4 id="ica--context-group-title">Context &amp; notifications</h4><p>Control agent prompts and how their work is shown while you chat.</p></div>
                     </div>
-                    <label class="ica--profile-label ica--helper-prefill-label"><span>Helper prefill messages</span><textarea id="ica--helperPrefillMessages" class="text_pole ica--helper-prefill-field" rows="4" placeholder="[assistant] Start of helper response&#10;&#10;[system] Extra instruction"></textarea><small class="ica--profile-help">Use [system], [user], or [assistant] blocks. Text before a header is treated as [assistant].</small></label>
+                    <label class="ica--profile-label ica--helper-prefill-label"><span>Agent prefill messages</span><textarea id="ica--helperPrefillMessages" class="text_pole ica--helper-prefill-field" rows="4" placeholder="[assistant] Start of agent response&#10;&#10;[system] Extra instruction"></textarea><small class="ica--profile-help">Use [system], [user], or [assistant] blocks. Text before a header is treated as [assistant].</small></label>
                     <label class="checkbox_label" title="Keep enabled In-Chat Agents separate between Individual chats and Group chats."><input type="checkbox" id="ica--separateRecentChats" /><span>Keep individual and group chat switches separate</span></label>
-                    <label class="checkbox_label" title="Master switch for prompt pass toasts."><input type="checkbox" id="ica--promptTransformShowNotifications" /><span>Show prompt pass notifications</span></label>
-                    <label class="checkbox_label" title="View main LLM output before pre-generation intercept."><input type="checkbox" id="ica--postMainInterceptShowMessageFirst" /><span>Show main output before an intercept pass</span></label>
+                    <label class="checkbox_label" title="Show a pop-up message when an agent edits the prompt or the reply."><input type="checkbox" id="ica--promptTransformShowNotifications" /><span>Show agent edit notifications</span></label>
+                    <label class="checkbox_label" title="Show the reply as it arrives, before an agent that checks the reply has finished."><input type="checkbox" id="ica--postMainInterceptShowMessageFirst" /><span>Show the reply before agents check it</span></label>
                     <label class="checkbox_label" title="When an Agent answers with a refusal instead of the text, discard it and keep the original."><input type="checkbox" id="ica--promptTransformRefusalGuard" /><span>Keep the original when an Agent refuses</span></label>
-                    <label class="ica--profile-label"><span>Companion panel button</span><select id="ica--companionPanelLauncher" class="text_pole" title="Choose where the button that opens the Companion Panel lives. Only one of them is shown at a time."><option value="handle">Floating side button</option><option value="topbar">Top bar button</option></select></label>
+                    <label class="ica--profile-label"><span>Companion panel button</span><select id="ica--companionPanelLauncher" class="text_pole" title="Choose where the button that opens the Companion panel lives. Only one of them is shown at a time."><option value="handle">Floating side button</option><option value="topbar">Top bar button</option></select></label>
                 </section>
 
                 <section class="ica--settings-group" aria-labelledby="ica--pathfinder-group-title">
@@ -271,7 +271,7 @@
         </div>
         <div class="ica--editor-row flex-container flexGap5">
             <label class="flex1">How to change the reply<select id="ica--bulkEdit-promptMode" class="text_pole"><option value="" selected>Don't change</option><option value="rewrite">Rewrite</option><option value="append">Append</option></select></label>
-            <label class="flex1">Prompt Pass Enabled<select id="ica--bulkEdit-promptEnabled" class="text_pole"><option value="" selected>Don't change</option><option value="true">Enabled</option><option value="false">Disabled</option></select></label>
+            <label class="flex1">Edits the reply<select id="ica--bulkEdit-promptEnabled" class="text_pole"><option value="" selected>Don't change</option><option value="true">Enabled</option><option value="false">Disabled</option></select></label>
         </div>
         <div class="ica--editor-row flex-container flexGap5">
             <label class="flex1">Utility Post-Process Enabled<select id="ica--bulkEdit-ppEnabled" class="text_pole"><option value="" selected>Don't change</option><option value="true">Enabled</option><option value="false">Disabled</option></select></label>

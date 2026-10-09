@@ -130,7 +130,7 @@ describe('in-chat agents workspace redesign', () => {
     });
 
     test('gives companion activity the same labelled action language', () => {
-        expect(dashboardSource).toContain('Activity &amp; companion results');
+        expect(dashboardSource).toContain('Companion activity</div>');
         expect(dashboardSource).toContain('Run enabled companions');
         expect(dashboardSource).toContain('<span>${escapeHtml(label)}</span></button>');
         expect(dashboardSource).toContain('buildRowActionHtml(\'run\', \'fa-play\', \'Run\'');
