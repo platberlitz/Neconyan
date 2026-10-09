@@ -33,6 +33,7 @@ import {
 import { captureConversationTextBinding, reportConversationGenerationError, requestConversationSelfie, submitConversationRewrite } from './generation.js';
 import { createConversationSubmissionKey } from './message-identity-utils.js';
 import { getCharacterForAvatar, getConversationParticipants, getEffectiveConversationStatus } from './media.js';
+import { dressSleeper } from '../neconyan-sleeper-coats.js';
 import { getConversationMessageAvatar, getConversationMessageReceipt } from './pals-rail.js';
 import { escapeRegExp, getCharacterMentionHandles, parseAvatarList } from './partners.js';
 import { getConnectionProfiles } from './personas.js';
@@ -360,8 +361,7 @@ function createConversationMessageElement(message, { avatar, groupId, settings, 
     if (message.role !== 'system') {
         const sleeper = document.createElement('img');
         sleeper.className = 'neconyan-message-sleeper';
-        sleeper.classList.toggle('is-user', message.role === 'user');
-        sleeper.src = `/img/neconyan/sleeping-${message.role === 'user' ? 'tiger-right' : 'calico-left'}.webp`;
+        dressSleeper(sleeper, message.role === 'user');
         sleeper.width = 384;
         sleeper.height = 308;
         sleeper.alt = '';

@@ -727,6 +727,7 @@ body.neconyan img.neconyan-message-sleeper {
     pointer-events: auto; cursor: pointer; touch-action: pan-y; user-select: none; object-fit: contain;
 }
 body.neconyan img.neconyan-message-sleeper.is-user { left: auto; right: -17px; }
+body.neconyan img.neconyan-message-sleeper.is-mirrored { scale: -1 1; }
 body.neconyan img.neconyan-message-sleeper:focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 2px; }
 
 @media (min-width: 769px) {

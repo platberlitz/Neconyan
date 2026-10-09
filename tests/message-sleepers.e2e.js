@@ -118,6 +118,28 @@ for (const width of [393, 1280]) {
             });
             await expect(page.locator('#chat > .mes[is_user="false"] > img.neconyan-message-sleeper')).toHaveAttribute('src', /calico-left/);
             await expect(page.locator('#chat > .mes[is_user="true"] > img.neconyan-message-sleeper')).toHaveAttribute('src', /tiger-right/);
+            const coats = page.locator('#chat > .mes > img.neconyan-message-sleeper');
+            const setPair = pair => page.evaluate(async pair => {
+                const { setSleeperCoatPair } = await import('/scripts/neconyan-sleeper-coats.js');
+                setSleeperCoatPair(pair);
+            }, pair);
+            await setPair('night-and-day');
+            const userCoat = page.locator('#chat > .mes[is_user="true"] > img.neconyan-message-sleeper');
+            const characterCoat = page.locator('#chat > .mes[is_user="false"] > img.neconyan-message-sleeper');
+            await expect(userCoat).toHaveAttribute('src', /sleeping-black-left\.webp$/);
+            await expect(characterCoat).toHaveAttribute('src', /sleeping-white-left\.webp$/);
+            await expect(page.locator('#sb-sleeper-coat-pair-select')).toHaveValue('night-and-day');
+            await expect(page.locator('#sb-sleeper-coat-user-select')).toHaveValue('black');
+            await expect(page.locator('#sb-sleeper-coat-character-select')).toHaveValue('white');
+            await expect(userCoat).toHaveCSS('scale', '-1 1');
+            await expect(characterCoat).toHaveCSS('scale', 'none');
+            for (const coat of await coats.all()) {
+                expect(await coat.evaluate(async img => (await img.decode(), img.naturalWidth))).toBe(384);
+            }
+            await checkPet(page, userCoat, width === 393);
+            await setPair('classic');
+            await expect(userCoat).toHaveAttribute('src', /tiger-right/);
+            await expect(userCoat).toHaveCSS('scale', 'none');
             for (const mode of ['Story-Mode', 'Terminal-UI']) {
                 await page.addStyleTag({ content: readFileSync(new URL(`../public/scripts/extensions/third-party/Neconyan-${mode}/style.css`, import.meta.url), 'utf8') });
                 await page.evaluate(mode => {

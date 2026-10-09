@@ -165,10 +165,14 @@ function icon(name) {
 }
 
 function messageSleeper(account) {
-    return el('img', { className: `neconyan-message-sleeper${account?.kind === 'persona' ? ' is-user' : ''}`, attrs: {
-        src: `/img/neconyan/sleeping-${account?.kind === 'persona' ? 'tiger-right' : 'calico-left'}.webp`,
+    const isUser = account?.kind === 'persona';
+    const node = el('img', { className: `neconyan-message-sleeper${isUser ? ' is-user' : ''}`, attrs: {
+        src: `/img/neconyan/sleeping-${isUser ? 'tiger-right' : 'calico-left'}.webp`,
         width: 384, height: 308, alt: '', role: 'button', tabindex: '0', title: 'Pet sleeping cat', 'aria-label': 'Pet sleeping cat', draggable: 'false',
     } });
+    // Neconyan applies the coats picked in Shell Style; elsewhere the default cats stay.
+    globalThis.NeconyanSleepers?.dress?.(node, isUser);
+    return node;
 }
 
 /** Generated Neconyan artwork; retain the legacy class for saved custom CSS. */
