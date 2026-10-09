@@ -33,6 +33,7 @@ import {
     getRequestHeaders,
     getThumbnailUrl,
     refreshCharacterAvatar,
+    isGenerating,
     is_send_press,
     main_api,
     name1,
@@ -2406,10 +2407,36 @@ export function initDefaultSlashCommands() {
                 ${t`Stops the generation and any streaming if it is currently running.`}
             </div>
             <div>
-                ${t`Note: This command cannot be executed from the chat input, as sending any message or script from there is blocked during generation. But it can be executed via automations or QR scripts/buttons.`}
+                ${t`You can run this from the chat input while a reply is being generated.`}
             </div>
         `,
         aliases: ['generate-stop'],
+    }));
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'is-generating',
+        callback: () => String(isGenerating()),
+        returns: t`true/false, whether a chat reply is being generated`,
+        helpString: t`Checks whether a solo or group reply is being generated. Example: /is-generating | /echo`,
+    }));
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'wait-generation',
+        callback: async ({ timeout = '0', _abortController }) => {
+            const milliseconds = Number(timeout);
+            if (!Number.isFinite(milliseconds) || milliseconds < 0) throw new Error(t`timeout must be a non-negative number of milliseconds`);
+            const started = Date.now();
+            while (isGenerating()) {
+                if (_abortController?.signal.aborted) return '';
+                if (milliseconds > 0 && Date.now() - started >= milliseconds) return 'false';
+                await delayWithAbort(100, _abortController);
+            }
+            return 'true';
+        },
+        returns: t`true when the reply finishes or stops, false when the timeout expires`,
+        namedArgumentList: [SlashCommandNamedArgument.fromProps({
+            name: 'timeout', typeList: [ARGUMENT_TYPE.NUMBER], defaultValue: '0',
+            description: t`Maximum wait in milliseconds. 0 waits until generation ends.`,
+        })],
+        helpString: t`Waits for the current chat reply before continuing the script. Stop script cancels the wait. Example: /wait-generation timeout=60000 | /echo`,
     }));
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'abort',
@@ -2709,6 +2736,12 @@ export function initDefaultSlashCommands() {
             </ul>
         </div>
     `,
+    }));
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'getinput',
+        callback: () => document.querySelector('#send_textarea')?.value ?? '',
+        returns: t`the current draft in the chat input`,
+        helpString: t`Reads the draft without changing or sending it. Useful in Quick Replies and automations. A command submitted from the chat input has already been cleared. Example: /getinput | /upper | /setinput`,
     }));
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'setinput',
