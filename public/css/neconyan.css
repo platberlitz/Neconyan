@@ -3267,3 +3267,7 @@ body.neconyan #sb-restore-tour-invitations {
     min-height: 44px;
     min-block-size: 44px;
 }
+
+/* Paint only: the controller keeps chat geometry and its scrollbar intact. */
+#neconyan-bubbles-bottom-boundary { position: fixed; pointer-events: none; box-sizing: border-box; z-index: 29; isolation: isolate; }
+#neconyan-bubbles-bottom-boundary > div { position: absolute; inset: 0; z-index: -1; pointer-events: none; }

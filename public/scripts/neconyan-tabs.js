@@ -1,3 +1,4 @@
+import { createBubblesBottomBoundary } from './bubbles-bottom-boundary.js';
 import { DEFAULT_SCROLL_EDGE_SETTLE_DELAYS, jumpScrollElementToEdge } from './chat-scroll-edges.js';
 import {
     clampMobileShellText as clampText,
@@ -505,7 +506,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261008-flat-roleplay-cat-shot';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261009-bubbles-merge';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -20455,6 +20456,7 @@ function initAll() {
     applyTopbarIconsOnlyPreference();
     bindLandingPageObserver();
     buildBottomChatBar();
+    createBubblesBottomBoundary({ chat: getChatScrollElement(), toolbar: bottomChatBarRoot, getMode: getActualNeconyanMode });
     // Neconyan: user input ends the ⬇ scroll-to-bottom ladder so a mid-ladder flick is not snapped back.
     getChatScrollElement()?.addEventListener('wheel', cancelPendingBottomChatScroll, { passive: true });
     getChatScrollElement()?.addEventListener('touchstart', cancelPendingBottomChatScroll, { passive: true });
