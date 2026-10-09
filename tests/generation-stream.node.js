@@ -28,6 +28,18 @@ test('streamed tool-only replies collect split arguments and keep ordinary previ
     assert.equal(toolOnly.choices[0].message.tool_calls.length, 1);
     assert.throws(() => assembleGenerationStream(event(chunks[0]), { allowTools: true }), /JSON|complete/);
     assert.throws(() => assembleGenerationStream(event(chunks[0]) + 'data: [DONE]\n\n', { allowTools: true }), /JSON/);
+    chunks[1].choices[0].delta.tool_calls[0].function.name = 'CreateCharacter';
+    const repeated = assembleGenerationStream(chunks.map(event).join(''), { allowTools: true });
+    assert.equal(repeated.choices[0].message.tool_calls[0].function.name, 'CreateCharacter', 'proxies that repeat the full name do not double it');
+    const split = structuredClone(chunks);
+    split[0].choices[0].delta.tool_calls[0].function.name = 'Create';
+    split[1].choices[0].delta.tool_calls[0].function.name = 'Character';
+    assert.equal(assembleGenerationStream(split.map(event).join(''), { allowTools: true }).choices[0].message.tool_calls[0].function.name, 'CreateCharacter');
+});
+
+test('Responses text streams without tools still assemble their text', () => {
+    const chunks = [{ type: 'response.output_text.delta', delta: 'Hello ' }, { type: 'response.output_text.delta', delta: 'there.' }, { type: 'response.completed' }];
+    assert.equal(assembleGenerationStream(chunks.map(event).join('')).choices[0].message.content, 'Hello there.');
 });
 
 test('native provider tool streams become the same reviewable calls', () => {
