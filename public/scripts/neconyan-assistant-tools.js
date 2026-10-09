@@ -29,7 +29,8 @@ import { extension_settings } from './extensions.js';
 import { getPresetManager } from './preset-manager.js';
 import { getCurrentUserHandle } from './user.js';
 import { uuidv4 } from './utils.js';
-import { getExtensionCapability } from './neconyan-conversation/extension-capabilities.js';
+import { normaliseCharacterDraft } from './neconyan-character-draft.js';
+import { saveCharacterDraft } from './neconyan-character-create.js';
 import { isNeconyanAssistant } from './neconyan-assistant-knowledge.js';
 import { ASK_FIRST, CONFIRM_PROTOCOL, CREATE_CHARACTER_GUIDE, USER_CONFIRMED_DESCRIPTION } from './neconyan-assistant-tool-guidance.js';
 import { CREATE_AGENT_GUIDE, CREATE_AGENT_SCHEMA, buildAssistantAgent, assistantAgentCreated } from './neconyan-assistant-agent.js';
@@ -684,65 +685,13 @@ async function readCharacter(input, guard) {
 }
 
 async function createCharacter(input, guard) {
-    const card = requireObject(input, 'character');
-    const name = requiredString(card, 'name').trim();
-    if (name.length > 200 || /[\\/\x00-\x1f]/.test(name) || /^\.+$/.test(name)) throw new Error('Use a character name of 1–200 characters without path separators.');
-    const fields = {};
-    for (const [key, value] of Object.entries(card)) {
-        if (!editableCharacterFields.includes(key) || typeof value !== 'string' || value.length > 100000) throw new Error(`Invalid character field: ${key}`);
-        fields[key] = value;
-    }
-    fields.name = name;
-    // An empty or null prompt means "no generated avatar": the server then uses the default Neconyan picture.
-    const avatarPrompt = typeof input.avatarPrompt === 'string' ? input.avatarPrompt.trim() : '';
-    if (avatarPrompt.length > 10000) throw new Error('The avatar prompt is too long.');
-    const characterNote = typeof input.characterNote === 'string' ? input.characterNote : '';
-    if (characterNote.length > 100000) throw new Error('The character note is too long.');
-    const alternateGreetings = input.alternateGreetings ?? [];
-    if (!Array.isArray(alternateGreetings) || alternateGreetings.length > 20 || alternateGreetings.some(greeting => typeof greeting !== 'string' || greeting.length > 100000)) throw new Error('alternateGreetings must be a list of up to 20 strings.');
+    const draft = normaliseCharacterDraft(input);
+    const { character: fields, characterNote, alternateGreetings, avatarPrompt } = draft;
+    const name = fields.name;
     if (!await confirmEdit({ resource: 'new character', target: name, field: 'Character and optional generated avatar', before: '', after: JSON.stringify({ ...fields, characterNote, alternateGreetings, avatarPrompt }, null, 2) }, guard)) {
         return { status: 'cancelled', reason: 'Character creation was declined.' };
     }
-    let image = null;
-    if (avatarPrompt) {
-        const qig = getExtensionCapability('quick-image-gen');
-        if (!qig?.generateImage) throw new Error('Enable Quick Image Gen and configure an image provider first.');
-        const entry = await qig.generateImage(avatarPrompt, '', { character: { ...fields, data: fields }, characterName: name, signal: guard.signal });
-        guard.assert();
-        if (!entry?.url) throw new Error('Quick Image Gen returned no avatar.');
-        const url = new URL(entry.url, location.href);
-        if (!['data:', 'blob:'].includes(url.protocol) && url.origin !== location.origin) throw new Error('Quick Image Gen must return a local image.');
-        const response = await fetch(url.href, { signal: guard.signal });
-        if (!response.ok) throw new Error('The generated avatar could not be loaded.');
-        image = await response.blob();
-        if (!/^image\/(png|jpeg|webp)$/.test(image.type) || image.size > 20 * 1024 * 1024) throw new Error('The generated avatar must be a PNG, JPEG or WebP under 20 MiB.');
-    }
-    return enqueueAssistantEdit(async () => {
-        guard.assert();
-        const form = new FormData();
-        for (const [key, value] of Object.entries(fields)) form.set(key === 'name' ? 'ch_name' : key, value);
-        if (characterNote) {
-            form.set('depth_prompt_prompt', characterNote);
-            form.set('depth_prompt_depth', '4');
-            form.set('depth_prompt_role', 'system');
-        }
-        for (const greeting of alternateGreetings) form.append('alternate_greetings', greeting);
-        if (image) form.set('avatar', image, 'avatar.' + image.type.split('/')[1]);
-        // Let the existing creation endpoint allocate a fresh filename; never overwrite a card.
-        const headers = new Headers(getRequestHeaders());
-        headers.delete('Content-Type');
-        const response = await fetch('/api/characters/create', { method: 'POST', headers, body: form });
-        const avatar = await response.text();
-        if (!response.ok) throw new Error('Character creation failed: ' + response.status);
-        let refreshFailed = !guard.isCurrent();
-        if (!refreshFailed) {
-            try {
-                refreshFailed = await getOneCharacter(avatar, { isCurrent: guard.isCurrent, allowInsert: true }) === false;
-                printCharactersDebounced();
-            } catch { refreshFailed = true; }
-        }
-        return { status: 'success', committed: true, avatar, name, generatedAvatar: Boolean(image), refreshFailed };
-    });
+    return saveCharacterDraft(draft, guard, enqueueAssistantEdit);
 }
 
 async function editCharacter(input, guard) {

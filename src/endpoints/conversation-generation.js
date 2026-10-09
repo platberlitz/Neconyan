@@ -613,7 +613,8 @@ export async function runBackendRequest(request, handler, payload, { signal, fet
         },
         body: payload,
     };
-    const preview = payload.stream === true && onStream ? createGenerationStream(onStream) : null;
+    const streamOptions = { allowTools: Array.isArray(payload.tools) && payload.tools.length > 0 };
+    const preview = payload.stream === true && onStream ? createGenerationStream(onStream, streamOptions) : null;
     const capture = createCapturingResponse({ stream: payload.stream === true, onChunk: preview ? chunk => preview.push(chunk) : undefined });
     const finished = payload.stream === true && new Promise(resolve => capture.once('finish', resolve));
     const abort = () => {
@@ -648,7 +649,7 @@ export async function runBackendRequest(request, handler, payload, { signal, fet
     }
 
     if (capture.streamError) throw capture.streamError;
-    return payload.stream === true && typeof body === 'string' ? assembleGenerationStream(body) : body;
+    return payload.stream === true && typeof body === 'string' ? assembleGenerationStream(body, streamOptions) : body;
 }
 
 /**

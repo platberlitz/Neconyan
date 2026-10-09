@@ -27,6 +27,7 @@ import {
     writeBucketLocked,
 } from './store.js';
 import { buildScratchpadMessages, buildScratchpadSystemPrompt } from './prompt.js';
+import { characterToolReply, scratchpadCharacterTools } from './character-tools.js';
 import { clearScratchpadPreview, publishScratchpadPreview } from './preview.js';
 import { notebookContextLocked, withNotebookPreparation, captureReplyNotebookProposalsLocked, notifyScratchpadNotebookResult } from './notebooks.js';
 
@@ -178,7 +179,8 @@ export async function acceptScratchpadReply(request, body = {}) {
         await validateActiveGenerationContext(resolveGenerationProfile(directories, binding), scratchpadMacroEnvironment(names),
             messages, rawOptions, { maxTokens: planned.maxTokens, preparedMessages });
         return { replyId: newScratchpadId(), assistant: speaker.assistant, gender: speaker.gender, binding, messages, maxTokens: planned.maxTokens,
-            userName: names.user, characterName: names.char, rawOptions, preparedMessages };
+            userName: names.user, characterName: names.char, rawOptions, preparedMessages,
+            functionTools: preparedMessages ? scratchpadCharacterTools() : [] };
     }));
     const { job, created } = acceptJob(directories, {
         owner,
@@ -310,6 +312,8 @@ async function runParticipant(context, request, { generate, grouped = false }) {
             publish({ stage: 'generating', text: '', reasoning: '' });
             const response = await generate({
                 binding: request.binding,
+                // Named profiles without a preset skip tool registration for quiet requests.
+                generationType: request.functionTools?.length ? 'normal' : 'quiet',
                 messages: request.messages,
                 maxTokens: request.maxTokens,
                 macroEnvironment: scratchpadMacroEnvironment({ user: request.userName, char: request.characterName }),
@@ -318,6 +322,7 @@ async function runParticipant(context, request, { generate, grouped = false }) {
                 groupNames: [],
                 rawOptions: request.rawOptions,
                 preparedMessages: request.preparedMessages,
+                functionTools: request.functionTools ?? [],
                 stream: true,
                 stepNamespace: grouped ? `scratchpad:${request.replyId}` : '',
                 onStream: value => {
@@ -328,8 +333,9 @@ async function runParticipant(context, request, { generate, grouped = false }) {
                 jobContext: context,
             });
             requireRunning();
-            const text = String(response?.text ?? '').trim();
+            const { text, hasTools } = characterToolReply(response, request.functionTools ?? []);
             if (!text) throw fail('SCRATCHPAD_EMPTY_REPLY', 'The model returned no text. Try again or pick another connection.', 502);
+            if (hasTools && bytes(text) > MAX_MESSAGE_BYTES) throw fail('SCRATCHPAD_TEXT_TOO_LARGE', 'The character drafts are too long. Ask for fewer or shorter cards.', 413);
             reply = { text: clipBytes(text, MAX_MESSAGE_BYTES), reasoning: reasoningFrom(response?.response, streamedReasoning) };
             writeArtifact(directories, job.id, artifact, reply);
         }

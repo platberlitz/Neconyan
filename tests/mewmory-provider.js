@@ -46,6 +46,11 @@ export async function createMewmoryProvider(port = 0) {
             wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(16000, 40);
             return response.end(wav);
         }
+        if (body.stream && mode.streamEvents) {
+            response.setHeader('Content-Type', 'text/event-stream');
+            for (const event of mode.streamEvents) response.write('data: ' + JSON.stringify(event) + '\n\n');
+            return response.end('data: [DONE]\n\n');
+        }
         if (body.stream && mode.streamReply) {
             const reply = typeof mode.streamReply === 'function' ? mode.streamReply(body) : mode.streamReply;
             response.setHeader('Content-Type', 'text/event-stream');

@@ -11,6 +11,45 @@ const { runTextGeneration } = await import('../src/generation/service.js');
 
 const event = value => `data: ${JSON.stringify(value)}\n\n`;
 
+test('streamed tool-only replies collect split arguments and keep ordinary previews', async () => {
+    const chunks = [
+        { choices: [{ delta: { content: 'Here is the draft.', tool_calls: [{ index: 0, id: 'create', type: 'function', function: { name: 'CreateCharacter', arguments: '{"character":' } }] } }] },
+        { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"name":"Nova"}}' } }] }, finish_reason: 'tool_calls' }] },
+    ];
+    const updates = [];
+    const result = await runBackendRequest({}, (_request, response) => response.end(chunks.map(event).join('')),
+        { stream: true, tools: [{ type: 'function', function: { name: 'CreateCharacter' } }] }, { onStream: value => updates.push(value) });
+    assert.equal(updates[0].text, 'Here is the draft.');
+    assert.equal(result.choices[0].message.content, 'Here is the draft.');
+    assert.deepEqual(JSON.parse(result.choices[0].message.tool_calls[0].function.arguments), { character: { name: 'Nova' } });
+    delete chunks[0].choices[0].delta.content;
+    const toolOnly = assembleGenerationStream(chunks.map(event).join(''), { allowTools: true });
+    assert.equal(toolOnly.choices[0].message.content, '');
+    assert.equal(toolOnly.choices[0].message.tool_calls.length, 1);
+    assert.throws(() => assembleGenerationStream(event(chunks[0]), { allowTools: true }), /JSON|complete/);
+    assert.throws(() => assembleGenerationStream(event(chunks[0]) + 'data: [DONE]\n\n', { allowTools: true }), /JSON/);
+});
+
+test('native provider tool streams become the same reviewable calls', () => {
+    const args = { character: { name: 'Nova' } };
+    const providers = [
+        [{ type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'create', name: 'CreateCharacter', input: {} } },
+            { type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{"character":' } },
+            { type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{"name":"Nova"}}' } }, { type: 'message_stop' }],
+        [{ candidates: [{ content: { parts: [{ functionCall: { name: 'CreateCharacter', args } }] }, finishReason: 'STOP' }] }],
+        [{ type: 'response.output_item.added', output_index: 0, item: { type: 'function_call', call_id: 'create', name: 'CreateCharacter', arguments: '' } },
+            { type: 'response.function_call_arguments.delta', output_index: 0, delta: JSON.stringify(args) }, { type: 'response.completed' }],
+    ];
+    for (const chunks of providers) {
+        const call = assembleGenerationStream(chunks.map(event).join(''), { allowTools: true }).choices[0].message.tool_calls[0];
+        assert.equal(call.function.name, 'CreateCharacter');
+        assert.deepEqual(JSON.parse(call.function.arguments), args);
+        assert.throws(() => assembleGenerationStream(chunks.map(event).join('')), /cannot save/);
+    }
+    assert.throws(() => assembleGenerationStream(event({ choices: [{ delta: { tool_calls: Array.from({ length: 33 }, (_, index) => ({ index })) } }] }), { allowTools: true }), /too many/);
+    assert.throws(() => assembleGenerationStream(event({ choices: [{ delta: { tool_calls: [{ index: -1 }] } }] }), { allowTools: true }), /index/);
+});
+
 test('a dropped model connection retains a readable reason without runtime details', async () => {
     let calls = 0;
     await assert.rejects(runBackendRequest({ headers: {}, user: { directories: { root: '/tmp/opencode' } } },
