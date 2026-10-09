@@ -69,6 +69,46 @@ the PR against staging and validate the resulting APK on the reporting device.
 
 ## Release preparation: 1.0.0
 
+### 9 October: Android native-stack hotfix 1.2.4, staging moves to 1.2.5
+
+The reporter for issue #80 could reopen the app with 1.2.3, but sending or
+regenerating in the existing chat still stopped the server with signal 11.
+A new chat with the same character and persona worked. This does not establish
+chat corruption or an out-of-memory failure. The issue remains open for physical
+Samsung confirmation.
+
+The APK now runs Node on a dedicated native thread with an explicit 8 MiB stack,
+rather than relying on the Java caller's default stack. A constrained-stack host
+reproduction crashes the original JNI code and survives with the fix. The old
+1.2.3 APK also passed a simpler recursion check on an Android emulator, so the
+exact handset cause remains unconfirmed. Copied diagnostics include the native
+stack size. Saved chats are not rewritten by this change.
+
+`main` was fast-forwarded to `1d72f4bbb209e26574d6c290541d0933b5e812d7`.
+Neconyan 1.2.4 is published at
+https://github.com/platberlitz/Neconyan/releases/tag/v1.2.4 with annotated tag
+`v1.2.4` and nine assets. Build checksums, both APK payloads, native 16 KiB page
+alignment, the existing signing identity and all 3,647 source files were verified.
+The published assets were downloaded again and passed the same checks.
+
+All 444 unit suites passed (5,787 tests, two skipped), along with 2,023 server
+tests, lint, frontend budgets and the production build. The final signed Android
+run `37868199420` passed Android 11 and 15: 1,600-message token counts, a combined
+long prompt, sends and streaming regeneration against a local test provider,
+forced-server-stop recovery, saved-data retention and caught JavaScript/Wasm
+runtime errors. These checks do not exercise the reporter's NanoGPT account.
+
+Browser run `37867561826` is tracked separately; publication did not wait for its
+result. The duplicate automatic main run `37868199377` was cancelled. Earlier
+1.2.3 browser validation retained an unresolved Story-navigation metadata check;
+do not report a full browser pass without confirming the new run.
+
+Assistant crash guidance was refreshed and its retrieval tests passed. Handbook
+commit `8b2ba40` is published with generation-crash reporting instructions; strict
+build, links and phone/desktop Chromium checks passed. Next: confirm sends and
+regeneration in the reporter's existing chat, collect the complete updated report
+if it still fails, and record the remaining browser result.
+
 ### 9 October: Android recovery hotfix 1.2.3, staging moves to 1.2.4
 
 Issue #80 reported a dead local server after an overnight phone restart, with
