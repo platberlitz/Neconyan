@@ -580,6 +580,7 @@ let autoSeededTemplateIds = new Set();
 const DEFAULT_BUNDLED_TEMPLATE_IDS = new Set([
     'tpl-proofreader',
     'tpl-dialogue-humaniser',
+    'tpl-character-authenticity',
     'tpl-format-fixer',
     'tpl-user-agency-guard',
     'tpl-knowledge-guard',

@@ -24,6 +24,7 @@ const sourceFilenames = [
     'afflictions-blessings.json',
     'almanac-generator.json',
     'beat-planner.json',
+    'character-authenticity.json',
     'chat-only-companion.json',
     'chatroom-companion.json',
     'clock-is-lying.json',
@@ -806,6 +807,7 @@ describe('in-chat agent bundled templates', () => {
     test('installs the reply rewrite chain by default in a fixed running order with the recent chat each pass needs', () => {
         const defaults = readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS');
         const chain = [
+            ['character-authenticity.json', 'tpl-character-authenticity', 'Character Authenticity Checker', 8],
             ['format-fixer.json', 'tpl-format-fixer', 'Format Fixer', 0],
             ['user-agency-guard.json', 'tpl-user-agency-guard', 'User Agency Guard', 2],
             ['knowledge-guard.json', 'tpl-knowledge-guard', 'Knowledge Guard', 6],
@@ -837,6 +839,9 @@ describe('in-chat agent bundled templates', () => {
         expect(readTemplate('length-trimmer.json').settings).toEqual({ lengthTarget: 'About 300 to 450 words' });
         expect(readTemplate('length-trimmer.json').prompt).toContain('{{lengthTarget}}');
         expect(readTemplate('knowledge-guard.json').prompt).toContain('{{persona}}');
+        for (const macro of ['{{group-cards}}', '{{mewmory-facts}}', '{{mewmory-interview}}', '{{mesExamplesRaw}}']) {
+            expect(readTemplate('character-authenticity.json').prompt).toContain(macro);
+        }
     });
 
     test('installs the fast pre-generation wrap notes by default, disabled, and says which agents not to run them with', () => {
