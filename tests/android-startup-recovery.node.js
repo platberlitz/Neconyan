@@ -59,7 +59,7 @@ test('a native crash leaves Android a crash record that the bug report details i
     const gradle = read('android/app/build.gradle');
     const main = read('src/server-main.js');
     // Node's own SIGSEGV handler would hide the crash from Android's crash dumper.
-    assert.match(service, /"--disable-wasm-trap-handler", "--import"/);
+    assert.match(service, /"--disable-wasm-trap-handler", "--icu-data-dir=/);
     assert.match(service, /rotate\("requests\.txt", "requests\.previous\.txt"\);/);
     const record = block(activity, 'private void recordServerCrash()', 'private void startServer');
     assert.match(record, /info\.getTraceInputStream\(\)/);
@@ -74,4 +74,14 @@ test('a native crash leaves Android a crash record that the bug report details i
     assert.match(main, /if \(process\.env\.NECONYAN_REQUEST_TRACE\) \{\s*app\.use\(createRequestTrace\(process\.env\.NECONYAN_REQUEST_TRACE\)\);/);
     // Four-part hotfix versions such as 1.2.4.1 still produce a version code above every older release.
     assert.match(gradle, /versionCode numbers\[0\] \* 1000000 \+ numbers\[1\] \* 10000 \+ numbers\[2\] \* 100 \+ \(numbers\.size\(\) > 3 \? numbers\[3\] : 0\)/);
+});
+
+test('the Android server loads full ICU data so word splitting cannot crash it', () => {
+    const payload = read('scripts/build-android-payload.js');
+    // The runtime's built-in English-only ICU data has no word-break rules (issue 80).
+    assert.match(service, /"--icu-data-dir=" \+ new File\(runtime, "icu"\)\.getPath\(\), "--import"/);
+    assert.match(payload, /release-78\.3\/icu4c-78\.3-data-bin-l\.zip/);
+    assert.match(payload, /zipSha256: '982619632b78887f1895b063e96e8c3cc7f99283337c8abbd05aa71635de613c'/);
+    assert.match(payload, /sha256: 'd5cf2a40dccbe471781ec7af85693bff542ff12f0b670c9630c4e72d60714b8b'/);
+    assert.match(payload, /path\.join\(staging, 'icu', icu\.file\)/);
 });
