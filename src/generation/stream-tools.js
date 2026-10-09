@@ -19,7 +19,11 @@ export function createStreamTools() {
                 const call = entry(`openai:${index(part.index ?? position)}`);
                 if (part.type && part.type !== 'function') throw new Error('The model returned an unsupported tool call.');
                 if (part.id) call.id = part.id;
-                if (part.function?.name) call.function.name += part.function.name;
+                // Some OpenAI-compatible proxies repeat the full name in every delta instead of sending it once.
+                if (part.function?.name) {
+                    const name = part.function.name;
+                    call.function.name = call.function.name && name.startsWith(call.function.name) ? name : call.function.name + name;
+                }
                 if (part.function?.arguments) call.function.arguments += part.function.arguments;
             }
             if (chunk.content_block?.type === 'tool_use') {
