@@ -357,6 +357,8 @@ async function prepareChatRequest({ context, binding, messages, maxTokens, macro
         }, { jsonSchema: rawOptions.jsonSchema, cacheScope: rawOptions.cacheScope });
     };
     const payload = await buildChatProfileRequest(context.directories, binding, structuredClone(messages), maxTokens, generate, { modelOverride, overridePayload, rawOptions, generationType });
+    // Quiet requests on profiles without a preset skip the request builder that registers tools.
+    if (functionTools.length && !payload.tools) Object.assign(payload, { tools: structuredClone(functionTools), tool_choice: 'auto' });
     if (payload.chat_completion_source === 'nanogpt' && ['flex', 'priority'].includes(payload.service_tier)) {
         payload.service_tier = serviceTier({ ...payload, nanogpt_service_tier: payload.service_tier }, payload.model, await getCatalog('nanogpt'));
     }
