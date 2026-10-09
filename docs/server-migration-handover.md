@@ -69,6 +69,49 @@ the PR against staging and validate the resulting APK on the reporting device.
 
 ## Release preparation: 1.0.0
 
+### 9 October: Android crash-record hotfix 1.2.4.1, staging returns to 1.2.5
+
+The reporter for issue #80 confirmed that 1.2.4 still restarts the server on
+send or regenerate in the existing chat, while a new chat with the same card and
+persona works. A read-only console check showed the chat is 44 messages, about
+225,000 text characters, with 40 to 105 KB of message metadata per message and
+Agents data in the chat metadata, so it is a few megabytes at most. Exit records
+say signal 11 with no crash record, which rules out memory (an out-of-memory
+abort is signal 6) and points to an unrecognised fault. The exact cause remains
+unproven and the issue remains open.
+
+Hotfix versions now use four parts (`X.Y.Z.A`), so this release is 1.2.4.1 and
+the Android version code accounts for the fourth part (1.2.4.1 becomes
+1020401). The Android server starts with `--disable-wasm-trap-handler`, so
+Android's crash dumper keeps SIGSEGV and a tombstone is produced. After the
+restart the app decodes the tombstone (signal, crashing thread, backtrace, last
+log lines) into `native-crash.txt`, and 'Copy details for a bug report' includes
+it with a trace of the most recent server requests that survives the restart.
+Saved chats are not rewritten.
+
+`main` was fast-forwarded to `09bb4d296242b994ad3436afee7980ea20c59533`.
+Neconyan 1.2.4.1 is published at
+https://github.com/platberlitz/Neconyan/releases/tag/v1.2.4.1 with annotated
+tag `v1.2.4.1` and nine assets. Build checksums, both APK payloads, native
+16 KiB page alignment, the existing signing identity and all 3,651 source files
+were verified. The published assets were downloaded again and passed the same
+checks.
+
+All 444 unit suites passed (5,787 tests, two skipped), along with 2,029 server
+tests, lint and frontend budgets. The final signed Android run `37876597957`
+passed Android 11 and 15: the packaged check now stops the server with a real
+segmentation fault and, on Android 12 and later, expects the decoded crash
+record with a backtrace and the surviving request trace, alongside the existing
+1,600-message, safe-mode restart and runtime guard checks.
+
+Browser run `37872584269` on the previous staging commit failed two groups not
+attributed to this change: the Story-navigation exact-bytes check (flaky since
+1.2.3) and a Notes button-colour test whose fixture intercepted a request after
+its page had closed. The automatic main run `37876597945` was still in progress
+at publication. Handbook commit `259910c` is published with the crash-record
+instructions. Next: collect the reporter's full copied details from 1.2.4.1 and
+read the backtrace and in-flight request.
+
 ### 9 October: Android native-stack hotfix 1.2.4, staging moves to 1.2.5
 
 The reporter for issue #80 could reopen the app with 1.2.3, but sending or
