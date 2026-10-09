@@ -5569,40 +5569,6 @@ input[type='range']::-moz-range-thumb {
 }
 
 @media screen and (max-width: 480px) {
-    #AdvancedFormatting .title_restorable.standoutHeader {
-        gap: 6px;
-    }
-
-    #AdvancedFormatting .title_restorable.standoutHeader > .flex-container,
-    #AdvancedFormatting .flex-container.flexNoGap:has(> select[data-preset-manager-for]) > .flex-container.marginLeft5 {
-        gap: 5px;
-    }
-
-    #AdvancedFormatting .title_restorable.standoutHeader .menu_button,
-    #AdvancedFormatting .title_restorable.standoutHeader .menu_button_icon,
-    #AdvancedFormatting .flex-container.flexNoGap:has(> select[data-preset-manager-for]) > .flex-container.marginLeft5 > .menu_button,
-    #AdvancedFormatting .flex-container.flexNoGap:has(> select[data-preset-manager-for]) > .flex-container.marginLeft5 > .menu_button_icon {
-        width: 38px !important;
-        min-width: 38px !important;
-        max-width: 38px !important;
-        height: 38px !important;
-        min-height: 38px !important;
-        max-height: 38px !important;
-        padding: 0 !important;
-        border-radius: 12px;
-    }
-
-    #AdvancedFormatting .title_restorable.standoutHeader .menu_button i,
-    #AdvancedFormatting .title_restorable.standoutHeader .menu_button_icon i,
-    #AdvancedFormatting .flex-container.flexNoGap:has(> select[data-preset-manager-for]) > .flex-container.marginLeft5 > .menu_button i,
-    #AdvancedFormatting .flex-container.flexNoGap:has(> select[data-preset-manager-for]) > .flex-container.marginLeft5 > .menu_button_icon i {
-        font-size: calc(var(--mainFontSize) * 0.95);
-    }
-
-    #AdvancedFormatting .flex-container.flexNoGap:has(> select[data-preset-manager-for]) {
-        --sb-preset-row-control-size: 38px;
-    }
-
     .sb-sampling-control-card.sb-sampling-textgen-card:not(.sb-sampling-large-card):not(.sb-sampling-multi-card) > [data-tg-samplers='rep_pen_slope']:has(> input[type='range'].neo-range-slider),
     .sb-sampling-control-card.sb-sampling-textgen-card:not(.sb-sampling-large-card):not(.sb-sampling-multi-card) > [data-tg-samplers='rep_pen_frequency']:has(> input[type='range'].neo-range-slider),
     .sb-sampling-control-card.sb-sampling-textgen-card:not(.sb-sampling-large-card):not(.sb-sampling-multi-card) > [data-tg-samplers='rep_pen_presence']:has(> input[type='range'].neo-range-slider),
