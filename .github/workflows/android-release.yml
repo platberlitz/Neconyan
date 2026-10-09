@@ -183,7 +183,9 @@ jobs:
           heap-size: 512M
           disk-size: 4096M
           disable-animations: true
-          script: python3 tests/android-apk-smoke.py --serial emulator-5554 --release --apk release/*-android-x86_64.apk ${{ matrix.api == 30 && '--update-webview webview/webview.apk' || '' }}
+          script: |
+            python3 tests/android-apk-smoke.py --serial emulator-5554 --release --apk release/*-android-x86_64.apk ${{ matrix.api == 30 && '--update-webview webview/webview.apk' || '' }}
+            python3 tests/android-native-stack-probe.py --serial emulator-5554
       - name: Capture emulator log on failure
         if: failure()
         run: |

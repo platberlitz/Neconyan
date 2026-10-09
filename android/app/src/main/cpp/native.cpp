@@ -10,6 +10,38 @@
 #include <linux/stat.h>
 #include <sys/syscall.h>
 #include <sys/sysmacros.h>
+#include <pthread.h>
+
+namespace {
+// V8's default stack guard allows almost 1 MiB of JavaScript frames alone.
+// An ART-created Java thread is not guaranteed to leave that much native stack
+// available after JNI entry. Give Node its own stack, with room for C++/Wasm
+// calls beyond the JavaScript guard. This reserves address space, not an 8 MiB heap.
+constexpr size_t kNodeStackBytes = 8 * 1024 * 1024;
+struct NodeLaunch {
+    int argc;
+    char** argv;
+    std::string diagnostics;
+    int result = 1;
+};
+
+void* RunNode(void* opaque) {
+    auto& launch = *static_cast<NodeLaunch*>(opaque);
+    pthread_attr_t attributes;
+    size_t bytes = 0;
+    if (pthread_getattr_np(pthread_self(), &attributes) == 0) {
+        pthread_attr_getstacksize(&attributes, &bytes);
+        pthread_attr_destroy(&attributes);
+    }
+    if (FILE* report = fopen(launch.diagnostics.c_str(), "w")) {
+        fprintf(report, "Node runs on a dedicated native thread. Stack: %zu KiB.\n", bytes / 1024);
+        fclose(report);
+    }
+    printf("Native server stack: %zu KiB\n", bytes / 1024);
+    launch.result = node::Start(launch.argc, launch.argv);
+    return nullptr;
+}
+}
 
 // libnode targets Android 24, so libuv compiles out statx and substitutes ctime
 // for birthtime. Android 30+ permits statx. Returns null when the filesystem has
@@ -59,6 +91,7 @@ Java_io_github_platberlitz_neconyan_ServerService_startNode(JNIEnv* env, jclass,
     freopen((std::string(cache) + "/server.log").c_str(), "w", stdout);
     dup2(fileno(stdout), STDERR_FILENO);
     setvbuf(stdout, nullptr, _IOLBF, 0);
+    std::string diagnostics = std::string(cache) + "/native-startup.txt";
     env->ReleaseStringUTFChars(cachePath, cache);
     int count = env->GetArrayLength(arguments);
     std::vector<std::string> values;
@@ -79,5 +112,23 @@ Java_io_github_platberlitz_neconyan_ServerService_startNode(JNIEnv* env, jclass,
         memcpy(cursor, values[i].c_str(), values[i].size() + 1);
         cursor += values[i].size() + 1;
     }
-    return node::Start(count, argv.data());
+    // Keep the argument storage alive on the calling thread until Node returns.
+    // The native thread never accesses JNI objects or attaches to the Java VM.
+    NodeLaunch launch{count, argv.data(), diagnostics};
+    pthread_attr_t attributes;
+    int error = pthread_attr_init(&attributes);
+    pthread_t thread;
+    if (error == 0) {
+        error = pthread_attr_setstacksize(&attributes, kNodeStackBytes);
+        if (error == 0) error = pthread_create(&thread, &attributes, RunNode, &launch);
+        pthread_attr_destroy(&attributes);
+    }
+    if (error != 0) {
+        std::string message = std::string("Cannot start the native server thread: ") + strerror(error);
+        env->ThrowNew(env->FindClass("java/io/IOException"), message.c_str());
+        return 1;
+    }
+    // This is a joinable thread created here; no other caller can join it.
+    if (pthread_join(thread, nullptr) != 0) std::abort();
+    return launch.result;
 }

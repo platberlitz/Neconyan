@@ -414,6 +414,7 @@ public final class MainActivity extends Activity {
                     .append(", memory ").append(info.getPss() / 1024).append(" MB\n");
             }
         } catch (Exception error) { text.append("Unavailable: ").append(error.getMessage()).append('\n'); }
+        text.append("\nNative runtime:\n").append(tail(new File(getCacheDir(), "native-startup.txt"), 4));
         text.append("\nServer log (this start):\n").append(tail(new File(getCacheDir(), "server.log"), 40))
             .append("\n\nServer log (previous start):\n").append(tail(new File(getCacheDir(), "server.previous.log"), 40));
         getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("Neconyan details", text.toString()));

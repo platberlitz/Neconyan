@@ -6,10 +6,12 @@ root-capable emulator and checks the official signed application instead.
 """
 import argparse
 import http.cookiejar
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import subprocess
 import time
+import threading
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -99,7 +101,7 @@ def connect():
                 if csrf:
                     headers['X-CSRF-Token'] = csrf
                 payload = None if body is None else json.dumps(body).encode()
-                with client.open(urllib.request.Request(origin + path, data=payload, headers=headers), timeout=15) as response:
+                with client.open(urllib.request.Request(origin + path, data=payload, headers=headers), timeout=120) as response:
                     return response.read().decode()
             token = json.loads(request('/csrf-token'))['token']
             request('/api/auth/browser/login', {'username': 'neconyan', 'password': credentials['password'], 'remember': True}, token)
@@ -111,6 +113,56 @@ def connect():
                 adb('forward', '--remove', 'tcp:' + port)
             time.sleep(1)
     raise RuntimeError('Android server did not start: ' + str(failure))
+
+
+def check_long_chat(request, token):
+    """Exercise the packaged tokenizer and completion transport without a paid API."""
+    messages = [{'role': 'assistant' if i % 2 else 'user',
+                 'content': f'Message {i}. ' + 'The old story continues, with a familiar character and another choice. ' * 5}
+                for i in range(1600)]
+    pid = server_pid()
+    counts = json.loads(request('/api/tokenizers/openai/count?model=mimo-2.5-pro&per_message=1', messages, token))
+    assert len(counts['token_counts']) == len(messages) and min(counts['token_counts']) > 0, counts
+    combined = json.loads(request('/api/tokenizers/openai/count?model=mimo-2.5-pro',
+                                  [{'role': 'user', 'content': '\n'.join(m['content'] for m in messages)}], token))
+    assert combined['token_count'] > 100000, combined
+    assert server_pid() == pid, 'Token counting restarted the server'
+    received = []
+
+    class Provider(BaseHTTPRequestHandler):
+        def log_message(self, *unused):
+            pass
+
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+            received.append(body)
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream' if body.get('stream') else 'application/json')
+            self.end_headers()
+            if body.get('stream'):
+                payload = 'data: ' + json.dumps({'choices': [{'index': 0, 'delta': {'content': 'Android long chat survived.'}}]})
+                self.wfile.write((payload + '\n\ndata: [DONE]\n\n').encode())
+            else:
+                self.wfile.write(json.dumps({'choices': [{'message': {'role': 'assistant', 'content': 'Android long chat survived.'}, 'finish_reason': 'stop'}]}).encode())
+
+    provider = ThreadingHTTPServer(('127.0.0.1', 0), Provider)
+    provider_port = str(provider.server_address[1])
+    threading.Thread(target=provider.serve_forever, daemon=True).start()
+    adb('reverse', 'tcp:' + provider_port, 'tcp:' + provider_port)
+    try:
+        for kind, streaming in [('normal', False), ('regenerate', True), ('normal', True)]:
+            response = request('/api/backends/chat-completions/generate', {
+                'chat_completion_source': 'custom', 'custom_url': 'http://127.0.0.1:' + provider_port + '/v1',
+                'model': 'mimo-2.5-pro', 'messages': messages, 'type': kind, 'stream': streaming, 'max_tokens': 32,
+            }, token)
+            assert 'Android long chat survived.' in response, response
+            assert server_pid() == pid, 'A long-chat completion restarted the server'
+        assert len(received) == 3 and all(body['messages'] == messages for body in received)
+        print('1600-message token counts, a combined long prompt, sends and streaming regeneration passed without a server restart.', flush=True)
+    finally:
+        adb('reverse', '--remove', 'tcp:' + provider_port)
+        provider.shutdown()
+        provider.server_close()
 
 
 if args.release:
@@ -159,6 +211,7 @@ try:
     avatar = request('/api/characters/create', {'ch_name': name, 'description': 'Retain this card through Android process death and APK replacement.', 'first_mes': 'Saved on this phone.'}, token)
     assert avatar.endswith('.png'), avatar
     print('Startup, private login, unauthenticated refusal and character creation passed.', flush=True)
+    check_long_chat(request, token)
     adb('shell', 'input', 'keyevent', '3')
     time.sleep(2)
     assert name in request('/api/characters/get', {'avatar_url': avatar}, token)
