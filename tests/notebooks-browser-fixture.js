@@ -1,22 +1,34 @@
 import { expect } from '@playwright/test';
 
+const CLOSED_TARGET = /Target page, context or browser has been closed/;
+
 export async function openWorkspace(page, { preserveNotesPrefs = false } = {}) {
     page.setDefaultTimeout(15000);
     await page.route('**/api/settings/get', async route => {
-        const response = await route.fetch();
-        const envelope = await response.json();
-        if (typeof envelope.settings !== 'string') return route.fulfill({ json: envelope });
-        const settings = JSON.parse(envelope.settings);
-        settings.firstRun = false;
-        let notePrefs = {};
-        if (preserveNotesPrefs) {
-            try { notePrefs = JSON.parse(settings.accountStorage?.neconyan_notes_prefs ?? '{}'); } catch { /* Use the normal first-open layout for malformed preferences. */ }
+        try {
+            await fulfillSettings(route, preserveNotesPrefs);
+        } catch (error) {
+            // Background settings reads can still be in flight when a test closes its context.
+            if (page.isClosed() || CLOSED_TARGET.test(String(error?.message))) return;
+            throw error;
         }
-        settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', neconyan_notes_prefs: JSON.stringify({ ...notePrefs, layout: 'full' }) };
-        await route.fulfill({ json: { ...envelope, settings: JSON.stringify(settings) } });
     });
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 60000 });
+}
+
+async function fulfillSettings(route, preserveNotesPrefs) {
+    const response = await route.fetch();
+    const envelope = await response.json();
+    if (typeof envelope.settings !== 'string') return route.fulfill({ json: envelope });
+    const settings = JSON.parse(envelope.settings);
+    settings.firstRun = false;
+    let notePrefs = {};
+    if (preserveNotesPrefs) {
+        try { notePrefs = JSON.parse(settings.accountStorage?.neconyan_notes_prefs ?? '{}'); } catch { /* Use the normal first-open layout for malformed preferences. */ }
+    }
+    settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped', neconyan_notes_prefs: JSON.stringify({ ...notePrefs, layout: 'full' }) };
+    await route.fulfill({ json: { ...envelope, settings: JSON.stringify(settings) } });
 }
 
 export async function openNotes(page, viewport) {
