@@ -81,6 +81,18 @@ test('client guidance names the real failure instead of always blaming Cloudflar
     }
 });
 
+test('BotSearcher explains card-specific bridge failures instead of blaming Cloudflare', async () => {
+    const { JANNY_CARD_ERRORS, intakeErrorMessage } = await import('../public/scripts/extensions/third-party/Neconyan-BotSearcher/client/copy.js');
+    assert.ok(JANNY_CARD_ERRORS.includes('janny_private_capture_failed'));
+    for (const code of JANNY_CARD_ERRORS) {
+        const message = intakeErrorMessage(Object.assign(new Error(code), { code }), 'jannyai');
+        assert.doesNotMatch(message, /Cloudflare/, code);
+        assert.notEqual(message, 'The card could not be inspected.', code);
+    }
+    assert.match(intakeErrorMessage(new Error('janny_private_capture_failed'), 'jannyai'), /hides its definition/);
+    assert.match(intakeErrorMessage(new Error('native_download_failed'), 'jannyai'), /Cloudflare/);
+});
+
 test('client fetches the card through the BotSearcher browser import', async () => {
     const calls = [];
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);

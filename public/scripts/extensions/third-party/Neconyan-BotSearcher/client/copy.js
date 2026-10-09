@@ -958,6 +958,16 @@ export function tokenFootprint(counts) {
     };
 }
 
+/**
+ * Browser bridge errors that explain the card itself. They outrank the native
+ * download failure, which for JannyAI can only guess at Cloudflare.
+ */
+export const JANNY_CARD_ERRORS = Object.freeze([
+    'janny_private_card_unsupported',
+    'janny_private_capture_failed',
+    'janny_card_unavailable',
+]);
+
 export function intakeErrorMessage(error, sourceId) {
     if (error?.name === 'TimeoutError') {
         return 'The card request took too long. Try again.';
@@ -979,7 +989,7 @@ export function intakeErrorMessage(error, sourceId) {
             return 'The card was not fully inspected, so clean import is unavailable.';
         case 'native_download_failed':
             if (sourceId === 'jannyai') {
-            return 'Neconyan could not download this JannyAI card. JannyAI\'s Cloudflare check is probably blocking the server.';
+                return 'Neconyan could not download this JannyAI card. JannyAI\'s Cloudflare check is probably blocking the server.';
             }
             return 'Neconyan could not download this card from the source.';
         case 'bad_import_url':
@@ -992,8 +1002,12 @@ export function intakeErrorMessage(error, sourceId) {
             return 'JannyAI\'s Cloudflare check has not been passed yet. Press "Open JannyAI login window" below, finish the check (and log in if asked), then press Try again.';
         case 'janny_browser_unavailable':
             return 'The optional JannyAI browser bridge is unavailable on this host. Install Playwright and Chromium to enable it.';
+        case 'janny_private_card_unsupported':
+            return 'This JannyAI card hides its definition, so it cannot be imported from the link. Download the card PNG from JannyAI and import the file instead.';
         case 'janny_private_capture_failed':
-            return 'JannyAI did not expose this private card through the browser session. Try again or download the card manually.';
+            return 'This JannyAI card hides its definition and the server browser could not read it through a chat. Try again, or download the card PNG from JannyAI and import the file.';
+        case 'janny_card_unavailable':
+            return 'JannyAI could not return this card. Check that the link opens a public character on JannyAI, or download the card PNG and import the file.';
         case 'not_a_character':
             return 'That link is not a character card.';
         case 'import_url_rejected':
