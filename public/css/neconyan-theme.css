@@ -3851,10 +3851,8 @@ input[type='range']::-moz-range-thumb {
     width: 100%;
 }
 
-#rm_api_block .flex-container:has(> .manage-api-keys) > .text_pole,
-#rm_api_block .flex-container:has(> #openai_proxy_password_show) > .text_pole,
-#openai_settings .flex-container:has(> .manage-api-keys) > .text_pole,
-#openai_settings .flex-container:has(> #openai_proxy_password_show) > .text_pole {
+:is(#rm_api_block, #openai_settings) .flex-container:has(> .manage-api-keys) > .text_pole,
+:is(#rm_api_block, #openai_settings) .flex-container:has(> #openai_proxy_password_show) > .text_pole {
     min-height: 44px;
     margin-block: 0;
     line-height: 1.25;
@@ -3886,9 +3884,7 @@ input[type='range']::-moz-range-thumb {
     line-height: 1;
 }
 
-#openai_api .flex-container:has(> :is([data-preset-manager-update], [data-preset-manager-rename], [data-preset-manager-new], [data-preset-manager-restore], [data-preset-manager-import], [data-preset-manager-export], [data-preset-manager-delete], .editor_maximize, .right_menu_button, .menu_button_icon)),
-#openai_settings .flex-container:has(> :is([data-preset-manager-update], [data-preset-manager-rename], [data-preset-manager-new], [data-preset-manager-restore], [data-preset-manager-import], [data-preset-manager-export], [data-preset-manager-delete], .editor_maximize, .right_menu_button, .menu_button_icon)),
-#range_block_openai .flex-container:has(> :is([data-preset-manager-update], [data-preset-manager-rename], [data-preset-manager-new], [data-preset-manager-restore], [data-preset-manager-import], [data-preset-manager-export], [data-preset-manager-delete], .editor_maximize, .right_menu_button, .menu_button_icon)) {
+:is(#openai_api, #openai_settings, #range_block_openai) .flex-container:has(> :is([data-preset-manager-update], [data-preset-manager-rename], [data-preset-manager-new], [data-preset-manager-restore], [data-preset-manager-import], [data-preset-manager-export], [data-preset-manager-delete], .editor_maximize, .right_menu_button, .menu_button_icon)) {
     align-items: center;
     gap: 6px;
 }
@@ -4037,8 +4033,7 @@ input[type='range']::-moz-range-thumb {
     justify-content: flex-start;
 }
 
-#openai_api-presets .flex-container.flexNoGap:has(> select[data-preset-manager-for]) > .flex-container.marginLeft5,
-#AdvancedFormatting .flex-container.flexNoGap:has(> select[data-preset-manager-for]) > .flex-container.marginLeft5 {
+:is(#openai_api-presets, #AdvancedFormatting) .flex-container.flexNoGap:has(> select[data-preset-manager-for]) > .flex-container.marginLeft5 {
     height: var(--sb-preset-row-control-size);
     align-items: center;
     align-self: center;
@@ -4046,10 +4041,7 @@ input[type='range']::-moz-range-thumb {
     gap: 6px;
 }
 
-#openai_api-presets .flex-container.flexNoGap:has(> select[data-preset-manager-for]) > .flex-container.marginLeft5 > .menu_button,
-#openai_api-presets .flex-container.flexNoGap:has(> select[data-preset-manager-for]) > .flex-container.marginLeft5 > .menu_button_icon,
-#AdvancedFormatting .flex-container.flexNoGap:has(> select[data-preset-manager-for]) > .flex-container.marginLeft5 > .menu_button,
-#AdvancedFormatting .flex-container.flexNoGap:has(> select[data-preset-manager-for]) > .flex-container.marginLeft5 > .menu_button_icon {
+:is(#openai_api-presets, #AdvancedFormatting) .flex-container.flexNoGap:has(> select[data-preset-manager-for]) > .flex-container.marginLeft5 > :is(.menu_button, .menu_button_icon) {
     width: var(--sb-preset-row-control-size) !important;
     min-width: var(--sb-preset-row-control-size) !important;
     max-width: var(--sb-preset-row-control-size) !important;

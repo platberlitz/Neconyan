@@ -106,6 +106,24 @@
     --xp-field-edge: #a4b97f;
 }
 
+/* The dark Homestead palette keeps olive faces and compact, shaded XP controls.
+   Caption and Start colours still follow Accent Profiles. */
+:root[data-sb-theme='windows-xp'][data-neconyan-ui-theme='windows-xp-olive-green-dark'] body.neconyan:not(.sbterm) {
+    --xp-face: var(--neco-canvas);
+    --xp-field: var(--neco-surface);
+    --xp-button: linear-gradient(180deg, color-mix(in srgb, var(--neco-ginger) 28%, var(--xp-face)), color-mix(in srgb, var(--neco-ginger) 14%, var(--xp-face)) 45%, var(--xp-face));
+    --xp-button-down: linear-gradient(180deg, var(--xp-field), var(--xp-face));
+    --xp-button-edge: var(--neco-border);
+    --xp-group-edge: var(--neco-border);
+    --xp-tab: var(--xp-button);
+    --xp-tab-edge: var(--neco-border);
+    --xp-pane: linear-gradient(180deg, color-mix(in srgb, var(--neco-ginger) 15%, var(--xp-face)), var(--xp-face));
+    --xp-start: linear-gradient(180deg, color-mix(in srgb, var(--neco-accent-deep) 85%, var(--neco-on-accent)), var(--neco-accent-deep) 18%, color-mix(in srgb, var(--neco-accent-deep) 80%, var(--xp-face)) 86%, var(--xp-face));
+    --xp-start-ink: var(--xp-caption-ink);
+    --xp-start-edge: var(--xp-frame);
+    --neco-raised: color-mix(in srgb, var(--neco-ginger) 14%, var(--xp-face));
+}
+
 :root[data-sb-theme='windows-xp'][data-neconyan-ui-theme='windows-xp-silver'] body.neconyan:not(.sbterm) {
     --xp-hue: #6d7290;
     --xp-caption: linear-gradient(180deg, #fff 0, #e6e7ef 8%, #d3d4df 40%, #c0c2d1 88%, #b2b4c6 96%, #9a9cb0 100%);

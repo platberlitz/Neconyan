@@ -1,11 +1,14 @@
 /* global document, window, getComputedStyle, NeconyanShell, Image, jQuery */
 import { expect, test } from '@playwright/test';
+import { mkdir } from 'node:fs/promises';
+import { contrastRatio } from '../public/scripts/theme-contrast.js';
 import { acknowledgeSettingsSave } from './chat-scroll-regression-helpers.js';
 import { IPHONE_SAFARI_CONTEXT, installIPhoneSafari, applyIOSOnlyCss } from './ios-safari-emulation.js';
 
 const SCHEMES = [
     ['Windows XP Blue', 'windows-xp-blue'],
     ['Windows XP Olive Green', 'windows-xp-olive-green'],
+    ['Windows XP Olive Green Dark', 'windows-xp-olive-green-dark'],
     ['Windows XP Silver', 'windows-xp-silver'],
     ['Windows XP Royale', 'windows-xp-royale'],
     ['Windows XP Zune', 'windows-xp-zune'],
@@ -33,6 +36,25 @@ async function useUiTheme(page, name, slug) {
 
 function captionOf(locator) {
     return locator.evaluate(el => getComputedStyle(el).backgroundImage);
+}
+
+async function buttonColours(locator) {
+    return locator.evaluate(el => {
+        const style = getComputedStyle(el);
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        const ctx = canvas.getContext('2d');
+        const rgb = colour => {
+            ctx.clearRect(0, 0, 1, 1);
+            ctx.fillStyle = colour;
+            ctx.fillRect(0, 0, 1, 1);
+            return `rgb(${[...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3).join(', ')})`;
+        };
+        return {
+            ink: rgb(style.color),
+            stops: (style.backgroundImage.match(/(?:rgba?|color)\([^)]+\)/g) || [style.backgroundColor]).map(rgb),
+        };
+    });
 }
 
 async function expectXpWallpaper(page) {
@@ -105,6 +127,32 @@ for (const phone of [false, true]) {
         await expect(page.locator('#sb-topbar-title')).toHaveCSS('color', 'rgb(255, 255, 255)');
         expect(silverInk).not.toBe('rgb(255, 255, 255)');
         await page.screenshot({ path: info.outputPath('windows-xp-home.png') });
+
+        // Record the existing light Olive and its new dark counterpart at both sizes.
+        const screenshots = new URL('../screenshots/', import.meta.url);
+        await mkdir(screenshots, { recursive: true });
+        const device = phone ? 'phone' : 'desktop';
+        for (const [name, slug, label] of [
+            ['Windows XP Olive Green', 'windows-xp-olive-green', 'before'],
+            ['Windows XP Olive Green Dark', 'windows-xp-olive-green-dark', 'after'],
+        ]) {
+            await useUiTheme(page, name, slug);
+            await page.screenshot({ path: new URL(`xp-olive-${device}-${label}.png`, screenshots).pathname });
+        }
+        await expect(intro).toHaveCSS('background-color', 'rgb(34, 42, 28)');
+        await expect(page.locator('html')).toHaveAttribute('data-sb-surface-tone', 'dark');
+        const accents = new Set();
+        for (const profile of [null, 'Pearl', 'Midnight Ink']) {
+            if (profile) {
+                await page.locator(`.sb-accent-profile-apply[aria-label="Apply ${profile} accent profile"]`).evaluate(el => el.click());
+            }
+            const button = page.locator('.neconyan-home-actions > button').nth(1);
+            accents.add(await captionOf(button));
+            const colours = await buttonColours(button);
+            for (const stop of colours.stops) expect(contrastRatio(colours.ink, stop)).toBeGreaterThanOrEqual(4.5);
+            await expect(intro).toHaveCSS('background-color', 'rgb(34, 42, 28)');
+        }
+        expect(accents.size).toBe(3);
 
         const geometry = await page.evaluate(() => ({ width: window.innerWidth, scrollWidth: document.documentElement.scrollWidth }));
         expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.width);
