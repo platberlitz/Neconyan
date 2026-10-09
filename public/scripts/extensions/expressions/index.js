@@ -19,6 +19,7 @@ import { generateWebLlmChatPrompt, isWebLlmSupported } from '../shared.js';
 import { Popup, POPUP_RESULT } from '../../popup.js';
 import { t } from '../../i18n.js';
 import { removeReasoningFromString } from '../../reasoning.js';
+import { isExpressionLabel, isExpressionSpriteName, parseExpressionLabels, expressionLabelFromFilename } from './expression-labels.js';
 import { cleanSpriteBitmap, splitSpriteBitmap } from './sprite-pixels.js';
 import { getExpressionSpriteSheetGrid } from './sprite-prompts.js';
 import {
@@ -887,9 +888,9 @@ async function uploadSpriteCommand({ name, label, folder = null, spriteName = nu
         return '';
     }
 
-    label = label.replace(/[^a-z]/gi, '').toLowerCase().trim();
-    if (!label) {
-        toastr.error(t`Expression label must contain at least one letter`, t`Error Uploading Sprite`);
+    label = label.toLowerCase().trim();
+    if (!isExpressionLabel(label)) {
+        toastr.error(t`Use 1 to 80 letters, numbers, dashes or underscores, starting with a letter.`, t`Error Uploading Sprite`);
         return '';
     }
 
@@ -1697,10 +1698,9 @@ function getJsonSchema(emotions) {
     };
 }
 
-function onTextGenSettingsReady(args) {
+function onTextGenSettingsReady(args, emotions = getCachedExpressions()) {
     // Only call if inside an API call
     if (inApiCall && extension_settings.expressions.api === EXPRESSION_API.llm && isJsonSchemaSupported()) {
-        const emotions = DEFAULT_EXPRESSIONS;
         Object.assign(args, {
             top_k: 1,
             stop: [],
@@ -1764,7 +1764,11 @@ export async function getExpressionLabel(text, expressionsApi = extension_settin
 
                 const expressionsList = await getExpressionsList({ filterAvailable: filterAvailable });
                 const prompt = substituteParamsExtended(customPrompt, { labels: expressionsList }) || await getLlmPrompt(expressionsList);
-                eventSource.once(event_types.TEXT_COMPLETION_SETTINGS_READY, onTextGenSettingsReady);
+                const applySchema = args => {
+                    eventSource.removeListener(event_types.TEXT_COMPLETION_SETTINGS_READY, applySchema);
+                    onTextGenSettingsReady(args, expressionsList);
+                };
+                eventSource.on(event_types.TEXT_COMPLETION_SETTINGS_READY, applySchema);
 
                 let emotionResponse;
                 try {
@@ -1778,6 +1782,7 @@ export async function getExpressionLabel(text, expressionsApi = extension_settin
                             break;
                     }
                 } finally {
+                    eventSource.removeListener(event_types.TEXT_COMPLETION_SETTINGS_READY, applySchema);
                     inApiCall = false;
                 }
                 return parseLlmResponse(emotionResponse, expressionsList);
@@ -1885,16 +1890,18 @@ async function validateImages(spriteFolderName, forceRedrawCached = false) {
  * @returns {ExpressionImage}
  */
 function getExpressionImageData(sprite) {
-    const fileName = sprite.path.split('/').pop().split('?')[0];
+    const fileName = decodeURIComponent(sprite.path.split('/').pop().split('?')[0]);
     const fileNameWithoutExtension = fileName.replace(/\.[^/.]+$/, '');
+    // Newly added labels may not have reached the debounced settings save yet.
+    const expression = expressionLabelFromFilename(fileName, extension_settings.expressions.custom);
     return {
-        expression: sprite.label,
+        expression,
         fileName: fileName,
         title: fileNameWithoutExtension,
         imageSrc: sprite.path,
         type: 'success',
         canRegenerate: true,
-        isCustom: extension_settings.expressions.custom?.includes(sprite.label),
+        isCustom: extension_settings.expressions.custom?.includes(expression),
     };
 }
 
@@ -1914,8 +1921,10 @@ async function drawSpritesList(spriteFolderName, labels, sprites, isCurrent = ()
     }
 
     const items = [];
-    for (const expression of [...labels].sort()) {
-        const isCustom = extension_settings.expressions.custom?.includes(expression);
+    const available = new Set(sprites.map(sprite => sprite.label));
+    const sorted = [...new Set([...labels, ...available])].sort((a, b) => Number(available.has(b)) - Number(available.has(a)) || a.localeCompare(b));
+    for (const expression of sorted) {
+        const isCustom = !DEFAULT_EXPRESSIONS.includes(expression);
         const images = sprites
             .filter(s => s.label === expression)
             .map(s => s.files)
@@ -1978,11 +1987,11 @@ async function getSpritesList(name) {
         /** @type {Expression[]} */
         const grouped = sprites.reduce((acc, sprite) => {
             const imageData = getExpressionImageData(sprite);
-            let existingExpression = acc.find(exp => exp.label === sprite.label);
+            let existingExpression = acc.find(exp => exp.label === imageData.expression);
             if (existingExpression) {
                 existingExpression.files.push(imageData);
             } else {
-                acc.push({ label: sprite.label, files: [imageData] });
+                acc.push({ label: imageData.expression, files: [imageData] });
             }
 
             return acc;
@@ -2070,7 +2079,7 @@ function getCachedExpressions() {
         return [];
     }
 
-    return [...expressionsList, ...extension_settings.expressions.custom].filter(onlyUnique);
+    return [...expressionsList, ...(extension_settings.expressions.custom || [])].filter(onlyUnique);
 }
 
 export async function getExpressionsList({ filterAvailable = false } = {}) {
@@ -2187,7 +2196,7 @@ async function setExpression(spriteFolderName, expression, { force = false, over
         : $('#expression-image');
     const prevExpressionSrc = img.attr('src');
     const spriteFile = chooseSpriteForExpression(spriteFolderName, expression, { prevExpressionSrc: prevExpressionSrc, overrideSpriteFile: overrideSpriteFile });
-    const emoji = extension_settings.expressions.custom?.includes(expression) ? DEFAULT_FALLBACK_EXPRESSION : expression;
+    const emoji = DEFAULT_EXPRESSIONS.includes(expression) ? expression : DEFAULT_FALLBACK_EXPRESSION;
     const fallback = extension_settings.expressions.showDefault && expression !== RESET_SPRITE_LABEL
         ? `/img/default-expressions/${emoji}.png` : null;
     const src = await setImage(img, spriteFile?.imageSrc ?? null, { isCurrent, fallback, force });
@@ -2213,31 +2222,22 @@ function onClickExpressionImage() {
 
 async function onClickExpressionAddCustom() {
     const template = await renderExtensionTemplateAsync(MODULE_NAME, 'add-custom-expression');
-    let expressionName = await Popup.show.input(null, template);
+    const expressionName = await Popup.show.input(t`Add expressions`, template, '', { rows: 4 });
 
     if (!expressionName) {
         console.debug('No custom expression name provided');
         return;
     }
 
-    expressionName = expressionName.trim().toLowerCase();
-
-    // a-z, 0-9, dashes and underscores only
-    if (!/^[a-z0-9-_]+$/.test(expressionName)) {
-        toastr.warning('Invalid custom expression name provided', 'Add Custom Expression');
+    const { added, invalid } = parseExpressionLabels(expressionName, await getExpressionsList());
+    if (invalid.length) {
+        toastr.warning(t`Use 1 to 80 letters, numbers, dashes or underscores, starting with a letter.`, t`Add expressions`);
         return;
     }
-    if (DEFAULT_EXPRESSIONS.includes(expressionName) || DEFAULT_EXPRESSIONS.some(x => expressionName.startsWith(x))) {
-        toastr.warning('Expression name already exists', 'Add Custom Expression');
-        return;
-    }
-    if (extension_settings.expressions.custom.includes(expressionName)) {
-        toastr.warning('Custom expression already exists', 'Add Custom Expression');
-        return;
-    }
+    if (!added.length) return;
 
     // Add custom expression into settings
-    extension_settings.expressions.custom.push(expressionName);
+    extension_settings.expressions.custom.push(...added);
     await renderAdditionalExpressionSettings();
     saveSettingsDebounced();
 
@@ -2402,9 +2402,7 @@ function withoutExtension(fileName) {
 }
 
 function validateExpressionSpriteName(expression, spriteName) {
-    const filenameValidationRegex = new RegExp(`^${expression}(?:[-\\.].*?)?$`);
-    const validFileName = filenameValidationRegex.test(spriteName);
-    return validFileName;
+    return isExpressionSpriteName(expression, spriteName);
 }
 
 async function onClickExpressionUpload(event) {

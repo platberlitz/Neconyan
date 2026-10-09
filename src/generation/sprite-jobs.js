@@ -11,6 +11,7 @@ import { generateQuickImageGenJobImage, quickImageGenSettingsFingerprint } from 
 import { captureQuickImageReferenceSources } from './quick-image-gen-reference.js';
 import { resolveCharacterImageSettings } from '../../public/scripts/extensions/quick-image-gen/lib/character-settings.js';
 import { cleanSpriteBitmap, splitSpriteBitmap } from '../../public/scripts/extensions/expressions/sprite-pixels.js';
+import { expressionLabelFromFilename, isExpressionLabel, isExpressionSpriteName } from '../../public/scripts/extensions/expressions/expression-labels.js';
 import { buildCharacterCardSpritePrompt, buildExpressionSpritePrompt, buildExpressionSpriteSheetPrompt,
     DEFAULT_EXPRESSION_SPRITE_PROMPT, EXPRESSION_SPRITE_NEGATIVE, getExpressionSpriteSheetGrid } from '../../public/scripts/extensions/expressions/sprite-prompts.js';
 import { admitNativeMediaJob, ensureNativeMediaDirectory, finishNativeMediaJob, mediaDirectoryEvidence, mediaFileEvidence,
@@ -30,20 +31,20 @@ function savedSettings(directories) {
     try { return JSON.parse(file.bytes.toString('utf8')); } catch { throw fail('The saved sprite settings are unavailable.'); }
 }
 
-function listSprites(directory) {
+function listSprites(directory, labels) {
     if (!mediaDirectoryEvidence(directory)) return [];
     return fs.readdirSync(directory).filter(name => /\.(?:png|jpg|jpeg|webp|gif|bmp|tiff|avif)$/i.test(name)).sort().map(filename => {
         if (!safePart(filename)) throw fail('An existing sprite filename needs an explicit supported name.');
         const file = readRoleplayFile(path.join(directory, filename), IMAGE_LIMIT);
         if (!file) throw fail('An existing sprite disappeared during capture.');
         const name = path.parse(filename).name;
-        return { filename, name, label: name.toLowerCase().match(/^(.+?)(?:[-.].*?)?$/)?.[1] ?? name, before: physical(file) };
+        return { filename, name, label: expressionLabelFromFilename(filename, labels), before: physical(file) };
     });
 }
 
 function selectedSpriteName(label, files, replace, allowMultiple) {
     if (replace !== undefined) {
-        if (!safePart(replace) || !new RegExp(`^${label}(?:[-.].*)?$`).test(replace)
+        if (!safePart(replace) || !isExpressionSpriteName(label, replace)
             || files.filter(file => file.name === replace).length !== 1) throw fail('The sprite selected for replacement is not unique.');
         return replace;
     }
@@ -81,11 +82,11 @@ export function captureSpriteRequest(base, account, source, { avatar, labels, fo
             parent = path.join(parent, part);
             parents.push({ relative: path.relative(base.directories.root, parent).split(path.sep).join('/'), before: mediaDirectoryEvidence(parent) });
         }
-        const files = listSprites(directory);
+        const files = listSprites(directory, options.custom);
         mode ??= options.agentSpriteGenerationMode || 'individual';
         if (!['individual', 'sheet', 'cleanup', 'split'].includes(mode)) throw fail('The sprite generation mode is invalid.');
         if (mode === 'cleanup' && labels === undefined) labels = [...new Set(files.map(file => file.label))];
-        if (!Array.isArray(labels) || labels.length > 64 || labels.some(label => typeof label !== 'string' || !/^[a-z]{1,80}$/.test(label))
+        if (!Array.isArray(labels) || labels.length > 64 || labels.some(label => !isExpressionLabel(label))
             || new Set(labels).size !== labels.length || !replacements || typeof replacements !== 'object' || Array.isArray(replacements)) throw fail('The requested sprite labels are invalid.');
         if (!labels.length && mode !== 'cleanup') throw fail('Choose at least one expression for the sprite request.');
         const targets = [];

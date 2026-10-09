@@ -1,6 +1,7 @@
 import { describe, expect, test, jest } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { isExpressionLabel } from '../public/scripts/extensions/expressions/expression-labels.js';
 import { isExpressionSource, readMessageExpression, writeMessageExpression } from '../public/scripts/expression-history.js';
 
 const core = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8');
@@ -115,6 +116,7 @@ describe('sprite upload failures are not reported as success', () => {
             fetchImagesNoCache: async () => {},
             validateImages: async () => {},
             validateExpressionSpriteName: () => true,
+            isExpressionLabel,
             getLastCharacterMessage: () => ({ name: 'Cat', original_avatar: 'Cat.png' }),
             findChar: () => ({ name: 'Cat' }),
             spriteFolderNameFromCharacter: () => 'Cat',

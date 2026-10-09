@@ -25,6 +25,12 @@ export function resolveExpressionsAgentProfile(agent, settings = {}) {
 export function normalizeAgentExpressionLabel(raw, allowedExpressions) {
     if (typeof raw !== 'string' || !raw.trim()) return null;
 
+    try {
+        const parsed = JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, '').trim());
+        if (typeof parsed === 'string') raw = parsed;
+        else if (typeof parsed?.emotion === 'string') raw = parsed.emotion;
+    } catch { /* Plain labels are the normal response. */ }
+
     // Strip Markdown, quotes, punctuation and extraneous whitespace.
     let label = raw
         .replace(/<[^>]+>/g, '')
@@ -42,7 +48,7 @@ export function normalizeAgentExpressionLabel(raw, allowedExpressions) {
         if (exact) return exact;
 
         // Allow a leading prefix match for numbered variants such as desire1/desire2.
-        const prefix = allowedExpressions.find((e) => label.startsWith(e.toLowerCase()));
+        const prefix = allowedExpressions.find((e) => label.startsWith(e.toLowerCase()) && /^\d+$/.test(label.slice(e.length)));
         if (prefix) return prefix;
     }
 
