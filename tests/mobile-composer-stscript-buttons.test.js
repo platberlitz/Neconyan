@@ -9,12 +9,9 @@ const mobileStylesCss = readFileSync(path.join(repoRoot, 'public', 'css', 'mobil
 const indexHtml = readFileSync(path.join(repoRoot, 'public', 'index.html'), 'utf8');
 
 describe('mobile composer STscript controls', () => {
-    test('hides the unused stscript play/pause/stop buttons unconditionally', () => {
-        // #533 forced .stscript_btn to display:flex !important in mobile-styles.css,
-        // which let the unused script execution controls overlap the textarea.
-        // neconyan-mobile-shell.css loads later (verified below) so its
-        // display:none !important wins and keeps them hidden.
-        expect(mobileShellCss).toMatch(/#rightSendForm\s*>\s*\.stscript_btn\s*\{[^}]*display:\s*none\s*!important/);
+    test('hides idle script controls but permits Stop during script execution', () => {
+        expect(mobileShellCss).toMatch(/#form_sheld:not\(\.isExecutingCommandsFromChatInput\) #rightSendForm > \.stscript_btn,[^}]*display:\s*none\s*!important/);
+        expect(mobileShellCss).toMatch(/#rightSendForm > \.stscript_btn:not\(\.stscript_stop\),[^}]*display:\s*none\s*!important/);
     });
 
     test('the override sheet still loads after the sheet that forces display:flex', () => {
@@ -26,11 +23,9 @@ describe('mobile composer STscript controls', () => {
         expect(mobileShellIdx).toBeGreaterThan(mobileStylesIdx);
     });
 
-    test('documents why the override is needed', () => {
-        // Keep the explanatory comment so a future cleanup does not delete the
-        // rule without understanding the #533 interaction.
-        expect(mobileShellCss).toContain('stscript_btn');
-        expect(mobileShellCss).toContain('#533');
+    test('makes room for command and reply controls in the two-slot action rail', () => {
+        expect(mobileShellCss).toMatch(/#form_sheld\.isExecutingCommandsFromChatInput #qig-input-btn,[^}]*display:\s*none\s*!important/);
+        expect(mobileShellCss).toMatch(/#send_form\.sb-generating-controls\.has-slash-command #qig-input-btn\s*\{[^}]*display:\s*none\s*!important/);
     });
 
     test('mobile-styles.css still forces the controls visible (the thing being overridden)', () => {

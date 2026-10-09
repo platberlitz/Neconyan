@@ -350,6 +350,9 @@ eventSource.on(event_types.APP_READY, async () => {
 eventSource.on(event_types.GENERATION_STARTED, () => {
     addToInputHistory(taValue);
 });
+eventSource.on(event_types.CHAT_COMMAND_STARTED, text => {
+    addToInputHistory(text);
+});
 
 
 let inputHistoryIdx = -1;
