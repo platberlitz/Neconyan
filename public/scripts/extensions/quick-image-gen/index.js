@@ -239,6 +239,8 @@ import {
 } from "./lib/action-controls.js";
 // Neconyan divergence: Conversation capability registry bridge.
 import { registerExtensionCapability } from "../../neconyan-conversation/extension-capabilities.js";
+// Neconyan divergence: translated captions keep names exact.
+import { t, translate } from "../../i18n.js";
 
 // Artist lists for random selection
 const ARTISTS_NATURAL = ["a1 (initial-g)", "abubu", "afrobull", "aiue oka", "akairiot", "akamatsu ken", "alex ahad", "alzi xiaomi", "amazuyu tatsuki", "aoi nagisa (metalder)", "ask (askzy)", "atdan", "awa", "ayami kojima", "azasuke", "azto dio", "bkub", "blade (galaxist)", "boris (noborhys)", "bow (bhp)", "butcha-u", "chouzuki maryou", "ciloranko", "circle anco", "crote", "dagasi", "dairi", "dino (dinoartforame)", "dishwasher1910", "drawfag", "dsmile", "ebifurya", "eroquis", "fkey", "fuzichoco", "gomennasai", "hammer (sunset beach)", "hana kazari", "hara (harayutaka)", "haruyama kazunori", "hews", "hiroki (yyqw7151)", "hiten", "hoshi (snacherubi)", "inoino", "itomugi-kun", "ixy", "kagami hirotaka", "kanon (kurogane knights)", "kantoku", "kawacy", "ke-ta", "kou hiyoyo", "kouji (campus life)", "kuavera", "kuon (kwonchan)", "lack", "lm7", "lolita channel", "m-da s-tarou", "matsunaga kouyou", "mika pikazo", "mikeinel", "mizuki hitoshi", "mizumizuni", "morikura en", "naga u", "nardack", "neco", "nel-zel formula", "neocoill", "nian", "nixeu", "nyamota", "nyantcha", "ojipon", "onikobe rin", "piromizu", "pochi (pochi-goya)", "qp:flapper", "rebecca (keinelove)", "redjuice", "rei (sanbonzakura)", "rurudo", "ruu (tksymkw)", "shirataki", "sincos", "sky-freedom", "tofuubear", "tony taka", "tukiwani", "wanke", "yaegashi nan", "yamakaze", "yoko juusuke", "yoshiaki", "yuuki tatsuya"];
@@ -14592,10 +14594,10 @@ function showFilterDialog(filter) {
                             <label for="qig-fd-scope">Scope</label>
                             <select id="qig-fd-scope">
                                 <option value="global" ${scopeInfo.scope === FILTER_SCOPE_GLOBAL ? "selected" : ""}>Global (all characters)</option>
-                                ${currentCard.cardKey ? `<option value="card:${escapeHtml(String(currentCard.cardKey))}" ${scopeInfo.scope === FILTER_SCOPE_CARD && scopeInfo.cardKey === currentCard.cardKey ? "selected" : ""}>Card Only: ${escapeHtml(currentCard.cardLabel || "Current Card")}</option>` : ""}
-                                ${currentCharId != null ? `<option value="char:${escapeHtml(String(currentCharId))}" ${scopeInfo.scope === FILTER_SCOPE_CHAR && String(scopeInfo.charId) === String(currentCharId) ? "selected" : ""}>Character: ${escapeHtml(charName || "Unknown")}</option>` : ""}
-                                ${editingDifferentCard ? `<option value="card:${escapeHtml(String(scopeInfo.cardKey))}" selected>Card: ${escapeHtml(scopeInfo.cardLabel || getCardNameForFilters(scopeInfo.cardKey))}</option>` : ""}
-                                ${editingDifferentChar ? `<option value="char:${escapeHtml(String(scopeInfo.charId))}" selected>Character: ${escapeHtml(getCharacterNameForFilters(scopeInfo.charId))}</option>` : ""}
+                                ${currentCard.cardKey ? `<option value="card:${escapeHtml(String(currentCard.cardKey))}" data-i18n-ignore ${scopeInfo.scope === FILTER_SCOPE_CARD && scopeInfo.cardKey === currentCard.cardKey ? "selected" : ""}>${escapeHtml(t`Card Only: ${currentCard.cardLabel || translate("Current Card")}`)}</option>` : ""}
+                                ${currentCharId != null ? `<option value="char:${escapeHtml(String(currentCharId))}" data-i18n-ignore ${scopeInfo.scope === FILTER_SCOPE_CHAR && String(scopeInfo.charId) === String(currentCharId) ? "selected" : ""}>${escapeHtml(t`Character: ${charName || translate("Unknown")}`)}</option>` : ""}
+                                ${editingDifferentCard ? `<option value="card:${escapeHtml(String(scopeInfo.cardKey))}" data-i18n-ignore selected>${escapeHtml(t`Card: ${scopeInfo.cardLabel || getCardNameForFilters(scopeInfo.cardKey)}`)}</option>` : ""}
+                                ${editingDifferentChar ? `<option value="char:${escapeHtml(String(scopeInfo.charId))}" data-i18n-ignore selected>${escapeHtml(t`Character: ${getCharacterNameForFilters(scopeInfo.charId)}`)}</option>` : ""}
                             </select>
                         </div>
                         <div class="qig-form-field qig-form-field--full">
@@ -15566,7 +15568,7 @@ function renderContextualFilterManager(popup = document.getElementById("qig-filt
     }
 
     const scopeOptionsHtml = viewState.scopeOptions.map(option => `
-        <option value="${escapeHtml(String(option.value))}" ${String(option.value) === String(viewState.selectedScopeValue) ? "selected" : ""}>
+        <option value="${escapeHtml(String(option.value))}" data-i18n-ignore ${String(option.value) === String(viewState.selectedScopeValue) ? "selected" : ""}>
             ${escapeHtml(option.label)}
         </option>
     `).join("");
@@ -15934,7 +15936,10 @@ function updateCharacterSettingsUI() {
     }
     if (saveButton) {
         saveButton.disabled = !storageKey;
-        saveButton.querySelector("span:last-child").textContent = !storageKey ? "Save for character" : `Save for ${charName || "character"}`;
+        // Preserve names when the localiser revisits translated captions.
+        const saveLabel = saveButton.querySelector("span:last-child");
+        saveLabel.setAttribute("data-i18n-ignore", "");
+        saveLabel.textContent = storageKey && charName ? t`Save for ${charName}` : translate("Save for character");
     }
     if (resetButton) resetButton.disabled = !storageKey || !override;
 }
@@ -16098,7 +16103,7 @@ function getContextualFilterScopeOptions() {
             value: FILTER_MANAGER_SCOPE_CURRENT_CARD,
             scope: FILTER_SCOPE_CARD,
             cardKey: currentCard.cardKey,
-            label: `Current Card: ${getCardNameForFilters(currentCard.cardKey, cardMap)}`,
+            label: t`Current Card: ${getCardNameForFilters(currentCard.cardKey, cardMap)}`,
             isCurrent: true,
         });
     }
@@ -16107,7 +16112,7 @@ function getContextualFilterScopeOptions() {
             value: FILTER_MANAGER_SCOPE_CURRENT_CHAR,
             scope: FILTER_SCOPE_CHAR,
             charId: currentKey,
-            label: `Current Character: ${getCharacterNameForFilters(currentKey, nameMap)}`,
+            label: t`Current Character: ${getCharacterNameForFilters(currentKey, nameMap)}`,
             isCurrent: true,
         });
     }
@@ -16115,7 +16120,7 @@ function getContextualFilterScopeOptions() {
     options.push({
         value: FILTER_MANAGER_SCOPE_GLOBAL_ONLY,
         scope: FILTER_SCOPE_GLOBAL,
-        label: "Global only",
+        label: translate("Global only"),
         isCurrent: false,
     });
 
@@ -16125,7 +16130,7 @@ function getContextualFilterScopeOptions() {
             value: getFilterManagerScopeValue(FILTER_SCOPE_CARD, { cardKey }),
             scope: FILTER_SCOPE_CARD,
             cardKey,
-            label: `Card: ${getCardNameForFilters(cardKey, cardMap)}`,
+            label: t`Card: ${getCardNameForFilters(cardKey, cardMap)}`,
             isCurrent: false,
         }))
         .sort((a, b) => a.label.localeCompare(b.label));
@@ -16136,7 +16141,7 @@ function getContextualFilterScopeOptions() {
             value: getFilterManagerScopeValue(FILTER_SCOPE_CHAR, { charId }),
             scope: FILTER_SCOPE_CHAR,
             charId,
-            label: `Character: ${getCharacterNameForFilters(charId, nameMap)}`,
+            label: t`Character: ${getCharacterNameForFilters(charId, nameMap)}`,
             isCurrent: false,
         }))
         .sort((a, b) => a.label.localeCompare(b.label));

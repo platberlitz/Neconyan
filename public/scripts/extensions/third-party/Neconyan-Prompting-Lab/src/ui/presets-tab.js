@@ -513,7 +513,16 @@ export function createPresetsTab({ onChanged = null, onPromptSaved = null } = {}
 
         const toggle = element('input', { className: 'sbpl-checkbox', attributes: { type: 'checkbox' } });
         toggle.checked = module.enabled;
-        toggle.setAttribute('aria-label', `Use ${prompt.name || prompt.identifier}`);
+        // Preserve names when the localiser revisits translated captions.
+        // Without the host's t the caption stays English and unmarked, as before.
+        const hostT = getContext()?.t;
+        const moduleName = prompt.name || prompt.identifier;
+        if (typeof hostT === 'function') {
+            toggle.setAttribute('aria-label', hostT`Use ${moduleName}`);
+            toggle.setAttribute('data-i18n-ignore', '');
+        } else {
+            toggle.setAttribute('aria-label', `Use ${moduleName}`);
+        }
         toggle.addEventListener('change', () => {
             editing.payload = setPromptModuleEnabled(editing.payload, prompt.identifier, toggle.checked);
         });

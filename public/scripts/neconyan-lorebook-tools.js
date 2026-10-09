@@ -1,4 +1,5 @@
 import { eventSource, event_types, getMaxPromptTokens, getRequestHeaders } from '../script.js';
+import { t } from './i18n.js';
 import { renderTemplateAsync } from './templates.js';
 import { debounce, download } from './utils.js';
 import { getTokenCountAsync } from './tokenizers.js';
@@ -595,7 +596,8 @@ export async function mountLorebookTools(root) {
                     }
                     updateDirty();
                 });
-                remove.setAttribute('aria-label', `Close ${title}`);
+                remove.setAttribute('aria-label', t`Close ${title}`);
+                remove.setAttribute('data-i18n-ignore', '');
                 const item = node('div', '', 'neco-lore-entry-tab');
                 item.append(tab, remove);
                 entryTabs.append(item);

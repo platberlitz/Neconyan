@@ -18,6 +18,7 @@ function getStore(personaId, avatar = 'char.png', groupId = '') {
 }
 
 await jest.unstable_mockModule('../public/script.js', () => ({ online_status: 'no_connection' }));
+await jest.unstable_mockModule('../public/scripts/i18n.js', () => ({ t: (strings, ...values) => String.raw({ raw: strings }, ...values), translate: text => text }));
 
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/chrome.js', () => ({ setConversationInterfaceActive: jest.fn() }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/presentation.js', () => ({ markConversationBranchRead: jest.fn() }));

@@ -1634,8 +1634,9 @@ export function getGroupBlock(group) {
     template.find('.group_current_chat').toggle(isCurrentChat);
     template.toggleClass('is-current-chat', isCurrentChat);
     template.attr('aria-current', isCurrentChat ? 'page' : null);
-    template.find('[data-entity-action="open-chat"]').attr('aria-label', t`Open ${group.name}`);
-    template.find('[data-entity-action="edit-group"]').attr('aria-label', `Edit ${group.name}`);
+    // Preserve names when the localiser revisits translated captions.
+    template.find('[data-entity-action="open-chat"]').attr('aria-label', t`Open ${group.name}`).attr('data-i18n-ignore', '');
+    template.find('[data-entity-action="edit-group"]').attr('aria-label', t`Edit ${group.name}`).attr('data-i18n-ignore', '');
 
     // Display inline tags
     const tagsElement = template.find('.tags');

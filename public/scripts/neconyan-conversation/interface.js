@@ -1,4 +1,5 @@
 import { online_status } from '../../script.js';
+import { t, translate } from '../i18n.js';
 import { setConversationInterfaceActive } from './chrome.js';
 import { CHROME_IDS, DEFAULT_BRANCH_ID, DEFAULT_SETTINGS, SETTINGS_FIELDS } from './constants.js';
 import {
@@ -214,11 +215,14 @@ export function renderPalsRail() {
         deleteButton.dataset.sbConversationAction = 'delete-dm';
         deleteButton.dataset.avatar = character.avatar;
         deleteButton.dataset.groupId = groupId || '';
+        // Preserve names when the localiser revisits translated captions.
+        const deleteName = character.name || translate('Character');
         const deleteTitle = groupId
-            ? `Delete group Conversation history with ${character.name || 'Character'}`
-            : `Delete solo DM history with ${character.name || 'Character'}`;
+            ? t`Delete group Conversation history with ${deleteName}`
+            : t`Delete solo DM history with ${deleteName}`;
         deleteButton.title = deleteTitle;
         deleteButton.setAttribute('aria-label', deleteTitle);
+        deleteButton.setAttribute('data-i18n-ignore', '');
 
         const avatarStack = button.querySelector('.sb-conversation-pal-avatar');
         const name = button.querySelector('.sb-conversation-pal-name');
@@ -254,6 +258,9 @@ export function renderPalsRail() {
         const branchList = document.createElement('div');
         branchList.className = 'sb-conversation-branch-list';
         for (const branch of getConversationBranches(character.avatar, { groupId })) {
+            // The default branch is called 'Main' by the app, so that name translates (in the row and in the captions); any other stored name shows as stored.
+            const appNamedMain = branch.id === DEFAULT_BRANCH_ID && branch.name === 'Main';
+            const captionName = appNamedMain ? translate('Main') : (branch.name || 'conversation');
             const branchRow = document.createElement('div');
             branchRow.className = 'sb-conversation-branch-row';
             branchRow.dataset.active = String(branch.id === activeBranchId);
@@ -273,8 +280,7 @@ export function renderPalsRail() {
             const branchUnread = branchButton.querySelector('.sb-conversation-branch-unread');
             if (branchName instanceof HTMLElement) {
                 branchName.textContent = branch.name || 'Conversation';
-                // The default branch is called 'Main' by the app, so that name translates; any other stored name shows as stored.
-                setUserTextSlot(branchName, Boolean(branch.name) && !(branch.id === DEFAULT_BRANCH_ID && branch.name === 'Main'));
+                setUserTextSlot(branchName, Boolean(branch.name) && !appNamedMain);
             }
             if (branchPreview instanceof HTMLElement) {
                 branchPreview.textContent = branch.preview || 'Conversation ready';
@@ -295,8 +301,9 @@ export function renderPalsRail() {
             renameBranch.dataset.avatar = character.avatar;
             renameBranch.dataset.groupId = groupId || '';
             renameBranch.dataset.branchId = branch.id;
-            renameBranch.title = `Rename ${branch.name || 'conversation'}`;
+            renameBranch.title = t`Rename ${captionName}`;
             renameBranch.setAttribute('aria-label', renameBranch.title);
+            renameBranch.setAttribute('data-i18n-ignore', '');
 
             const deleteBranch = document.createElement('button');
             deleteBranch.type = 'button';
@@ -305,8 +312,9 @@ export function renderPalsRail() {
             deleteBranch.dataset.avatar = character.avatar;
             deleteBranch.dataset.groupId = groupId || '';
             deleteBranch.dataset.branchId = branch.id;
-            deleteBranch.title = `Delete ${branch.name || 'conversation'}`;
+            deleteBranch.title = t`Delete ${captionName}`;
             deleteBranch.setAttribute('aria-label', deleteBranch.title);
+            deleteBranch.setAttribute('data-i18n-ignore', '');
 
             branchRow.append(branchButton, renameBranch, deleteBranch);
             branchList.appendChild(branchRow);
