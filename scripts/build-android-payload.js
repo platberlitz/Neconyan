@@ -27,6 +27,28 @@ for (const name of files) {
 }
 fs.copyFileSync(path.join(root, 'android/server-bootstrap.mjs'), path.join(staging, 'server-bootstrap.mjs'));
 fs.copyFileSync(path.join(root, 'android/file-stats.mjs'), path.join(staging, 'file-stats.mjs'));
+// The Android Node runtime carries English-only ICU data without word-break rules, so
+// Intl.Segmenter crashes it (issue 80). Ship the full official data for the same ICU major.
+const icu = {
+    url: 'https://github.com/unicode-org/icu/releases/download/release-78.3/icu4c-78.3-data-bin-l.zip',
+    zipSha256: '982619632b78887f1895b063e96e8c3cc7f99283337c8abbd05aa71635de613c',
+    file: 'icudt78l.dat',
+    sha256: 'd5cf2a40dccbe471781ec7af85693bff542ff12f0b670c9630c4e72d60714b8b',
+};
+const sha256 = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+const icuCache = path.join(root, '.local-runtime/icu');
+const icuZip = path.join(icuCache, path.basename(icu.url));
+fs.mkdirSync(icuCache, { recursive: true });
+if (!fs.existsSync(icuZip) || sha256(icuZip) !== icu.zipSha256) {
+    const response = await fetch(icu.url);
+    if (!response.ok) throw new Error(`Could not download ICU data: HTTP ${response.status}`);
+    fs.writeFileSync(icuZip, Buffer.from(await response.arrayBuffer()));
+    if (sha256(icuZip) !== icu.zipSha256) throw new Error('The downloaded ICU data does not match its pinned checksum.');
+}
+fs.mkdirSync(path.join(staging, 'icu'));
+fs.writeFileSync(path.join(staging, 'icu', icu.file), execFileSync('unzip', ['-p', icuZip, icu.file], { maxBuffer: 64 * 1024 * 1024 }));
+if (sha256(path.join(staging, 'icu', icu.file)) !== icu.sha256) throw new Error('The ICU data file does not match its pinned checksum.');
+fs.writeFileSync(path.join(staging, 'icu', 'LICENSE'), execFileSync('unzip', ['-p', icuZip, 'LICENSE']));
 const bundledExtensions = [...new Set(files.filter(name => name.startsWith('public/scripts/extensions/third-party/')).map(name => name.split('/')[4]))].filter(Boolean).sort();
 fs.writeFileSync(path.join(staging, 'bundled-extensions.json'), JSON.stringify(bundledExtensions));
 fs.cpSync(path.join(root, 'dist/frontend'), path.join(staging, 'dist/frontend'), { recursive: true });

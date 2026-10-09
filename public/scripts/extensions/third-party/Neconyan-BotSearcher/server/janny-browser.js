@@ -808,7 +808,19 @@ async function createChat(page, id, snapshot) {
     return data?.id === null || data?.id === undefined ? null : String(data.id);
 }
 
+/**
+ * A creator who turns proxies off limits the card to JanitorAI's own models,
+ * so the capture, which reads the prompt a proxy would receive, can never see
+ * it. Refusing first leaves the account settings and chat list untouched.
+ */
+export function assertCardCapturable(meta) {
+    if (meta?.allow_proxy === false) {
+        throw new JannyBrowserError('janny_proxy_disabled', 422);
+    }
+}
+
 async function capturePrivateCard(page, id, meta, recovery) {
+    assertCardCapturable(meta);
     try {
         const snapshot = await enterCaptureMode(page, recovery);
         const chatId = await createChat(page, id, snapshot);
@@ -831,7 +843,7 @@ async function capturePrivateCard(page, id, meta, recovery) {
         if (error instanceof JannyBrowserError) {
             throw error;
         }
-        throw new JannyBrowserError('janny_private_capture_failed', 502);
+        throw new JannyBrowserError('janny_private_capture_failed', 502, error?.message);
     } finally {
         await restoreCaptureMode(page, recovery);
     }

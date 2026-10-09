@@ -62,6 +62,8 @@ export function jannyBridgeGuidance(code, retryAfter) {
             return { title: 'JannyAI card definition is hidden', message: 'This JannyAI card hides its definition, so it cannot be imported from the link. Download the card PNG from JannyAI and import the file instead.' };
         case 'janny_private_capture_failed':
             return { title: 'JannyAI hidden card not captured', message: 'This JannyAI card hides its definition and the server browser could not read it through a chat. Try again, or download the card PNG from JannyAI and import the file.' };
+        case 'janny_proxy_disabled':
+            return { title: 'JannyAI card blocks proxies', message: 'This JannyAI card hides its definition and its creator turned proxies off, so Neconyan cannot read it from the link. If JannyAI offers a download for this card, import that file instead.' };
         case 'rate_limited':
             return { title: 'JannyAI import rate limited', message: `Too many JannyAI imports in a short time. Try again ${retryAfterText(retryAfter)}.` };
         case 'source_busy':

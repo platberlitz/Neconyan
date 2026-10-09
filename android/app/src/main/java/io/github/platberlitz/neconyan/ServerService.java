@@ -71,7 +71,9 @@ public final class ServerService extends Service {
                     rotate("requests.txt", "requests.previous.txt");
                     // Without the WebAssembly trap handler Node leaves SIGSEGV to Android's crash
                     // dumper, so a native crash produces a tombstone instead of a silent 'signal 11'.
-                    int exit = startNode(new String[] { "node", "--max-old-space-size=" + heapMegabytes(this), "--disable-wasm-trap-handler", "--import", new File(runtime, "file-stats.mjs").getPath(), new File(runtime, "server-bootstrap.mjs").getPath(),
+                    // The runtime's built-in ICU data has no word-break rules and Intl.Segmenter
+                    // crashes without them, so Node loads the full data shipped in the payload.
+                    int exit = startNode(new String[] { "node", "--max-old-space-size=" + heapMegabytes(this), "--disable-wasm-trap-handler", "--icu-data-dir=" + new File(runtime, "icu").getPath(), "--import", new File(runtime, "file-stats.mjs").getPath(), new File(runtime, "server-bootstrap.mjs").getPath(),
                         getFilesDir().getPath(), credentials.getString("port"), credentials.getString("password"), safe ? "safe" : "normal" }, getCacheDir().getPath());
                     status("Neconyan stopped (" + exit + "). Reopen the app to start it again.");
                     stopSelf();

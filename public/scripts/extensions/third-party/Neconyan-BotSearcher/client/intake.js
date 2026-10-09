@@ -43,6 +43,7 @@ import {
     importErrorMessage,
     INTAKE_COPY,
     intakeCompletionMessage,
+    JANNY_CARD_ERRORS,
     intakeErrorMessage,
     intakeIdentity,
     intakeSections,
@@ -373,8 +374,9 @@ async function loadBytes(request, signal) {
  * The zero-setup native downloader first, the browser bridge as the fallback
  * for hosts Cloudflare blocks and for private cards.
  *
- * Preserve actionable bridge errors, including permissions, restoration and
- * rate limits, rather than hiding them behind the native download failure.
+ * Preserve actionable bridge errors, including permissions, restoration,
+ * rate limits and reasons about the card itself, rather than hiding them
+ * behind the native download failure.
  */
 async function nativeThenBridge(card, source, signal) {
     // A native reply is only trusted once it inspects as a real card. A JSON
@@ -405,6 +407,11 @@ async function nativeThenBridge(card, source, signal) {
         }
         if (fallback) {
             return fallback;
+        }
+        if (JANNY_CARD_ERRORS.includes(bridgeError?.message)) {
+            // The bridge reached the card, so its reason beats the native
+            // downloader's Cloudflare guess.
+            throw bridgeError;
         }
         if (bridgeError?.message === 'janny_browser_unavailable') {
             // Lets the recovery text suggest setting the bridge up.
