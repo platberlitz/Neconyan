@@ -13,8 +13,11 @@ describe('expressions agent bridge', () => {
             expect(normalizeAgentExpressionLabel('joy.', ['joy', 'anger'])).toBe('joy');
         });
 
-        test('only uses the first word of multi-word output', () => {
-            expect(normalizeAgentExpressionLabel('joyful expression', ['joy', 'anger'])).toBe('joy');
+        test('only uses complete labels, not unrelated words sharing a prefix', () => {
+            expect(normalizeAgentExpressionLabel('joyless expression', ['joy', 'anger'])).toBeNull();
+            expect(normalizeAgentExpressionLabel('joy expression', ['joy', 'anger'])).toBe('joy');
+            expect(normalizeAgentExpressionLabel('{"emotion":"joy-soft"}', ['joy', 'joy-soft'])).toBe('joy-soft');
+            expect(normalizeAgentExpressionLabel('surprised_2', ['surprised_2'])).toBe('surprised_2');
         });
 
         test('returns null for unknown labels', () => {

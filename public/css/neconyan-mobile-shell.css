@@ -166,16 +166,15 @@
         gap: 3px !important;
     }
 
-    /* Neconyan: name what the phone composer hides instead of allow-listing what it keeps.
-       The old allow-list also swallowed every third-party button injected into the right rail;
-       those are now relocated into the scrollable left rail by placeComposerControls().
-       The STscript play/pause/stop controls are unused by this fork's roleplay-focused audience
-       and mobile-styles.css forces them to display:flex (see #533), where they overlap the
-       textarea -- this sheet loads after it so the !important wins. */
+    /* Keep two compact action slots. A running script gets its own Stop control. */
     #rightSendForm > #mes_impersonate,
     #rightSendForm > #mes_continue,
     #rightSendForm > #sb_prose_polisher_but,
-    #rightSendForm > .stscript_btn {
+    #rightSendForm > .stscript_btn:not(.stscript_stop),
+    #form_sheld:not(.isExecutingCommandsFromChatInput) #rightSendForm > .stscript_btn,
+    #form_sheld.isExecutingCommandsFromChatInput #send_but,
+    #form_sheld.isExecutingCommandsFromChatInput #qig-input-btn,
+    #send_form.sb-generating-controls.has-slash-command #qig-input-btn {
         display: none !important;
     }
 

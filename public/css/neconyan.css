@@ -944,6 +944,8 @@ body.neconyan #send_form #neconyan_connect_button { display: none; }
     body.neconyan #send_form #neconyan_connect_button { min-height: 44px; padding: 8px 10px; }
 }
 body.neconyan #send_form :is(#options_button, #send_but) { display: inline-flex; align-items: center; }
+/* A command can run alongside a reply; keep its Send control beside Stop. */
+body.neconyan #form_sheld:not(.isExecutingCommandsFromChatInput) #send_form.has-slash-command #send_but { display: inline-flex !important; }
 body.neconyan #send_form.no-connection #neconyan_connect_button {
     display: inline-flex;
     min-height: 36px;

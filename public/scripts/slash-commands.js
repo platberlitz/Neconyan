@@ -1,5 +1,5 @@
 import { Fuse, DOMPurify } from '../lib.js';
-import { canUseNegativeLookbehind, copyText, findPersona, flashHighlight, resolveAvatarData } from './utils.js';
+import { canUseNegativeLookbehind, copyText, escapeHtml, findPersona, flashHighlight, resolveAvatarData } from './utils.js';
 
 import {
     Generate,
@@ -33,6 +33,7 @@ import {
     getRequestHeaders,
     getThumbnailUrl,
     refreshCharacterAvatar,
+    isGenerating,
     is_send_press,
     main_api,
     name1,
@@ -99,6 +100,7 @@ import { slashCommandReturnHelper } from './slash-commands/SlashCommandReturnHel
 import { accountStorage } from './util/AccountStorage.js';
 import { SlashCommandDebugController } from './slash-commands/SlashCommandDebugController.js';
 import { SlashCommandScope } from './slash-commands/SlashCommandScope.js';
+import { delayWithAbort, isSlashCommandText } from './slash-commands/SlashCommandRuntimeUtils.js';
 import { t } from './i18n.js';
 import { kai_settings } from './kai-settings.js';
 import { instruct_presets, selectContextPreset, selectInstructPreset } from './instruct-mode.js';
@@ -1875,7 +1877,7 @@ export function initDefaultSlashCommands() {
         ],
         helpString: `
         <div>
-            ${t`Triggers a message generation. If in group, can trigger a message for the specified group member index or name.`}
+            ${t`Triggers a message generation without sending or clearing the composer draft. If in group, can trigger a message for the specified group member index or name.`}
         </div>
         <div>
             ${t`If <code>await=true</code> named argument is passed, the command will await for the triggered generation before continuing.`}
@@ -2405,10 +2407,36 @@ export function initDefaultSlashCommands() {
                 ${t`Stops the generation and any streaming if it is currently running.`}
             </div>
             <div>
-                ${t`Note: This command cannot be executed from the chat input, as sending any message or script from there is blocked during generation. But it can be executed via automations or QR scripts/buttons.`}
+                ${t`You can run this from the chat input while a reply is being generated.`}
             </div>
         `,
         aliases: ['generate-stop'],
+    }));
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'is-generating',
+        callback: () => String(isGenerating()),
+        returns: t`true/false, whether a chat reply is being generated`,
+        helpString: t`Checks whether a solo or group reply is being generated. Example: /is-generating | /echo`,
+    }));
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'wait-generation',
+        callback: async ({ timeout = '0', _abortController }) => {
+            const milliseconds = Number(timeout);
+            if (!Number.isFinite(milliseconds) || milliseconds < 0) throw new Error(t`timeout must be a non-negative number of milliseconds`);
+            const started = Date.now();
+            while (isGenerating()) {
+                if (_abortController?.signal.aborted) return '';
+                if (milliseconds > 0 && Date.now() - started >= milliseconds) return 'false';
+                await delayWithAbort(100, _abortController);
+            }
+            return 'true';
+        },
+        returns: t`true when the reply finishes or stops, false when the timeout expires`,
+        namedArgumentList: [SlashCommandNamedArgument.fromProps({
+            name: 'timeout', typeList: [ARGUMENT_TYPE.NUMBER], defaultValue: '0',
+            description: t`Maximum wait in milliseconds. 0 waits until generation ends.`,
+        })],
+        helpString: t`Waits for the current chat reply before continuing the script. Stop script cancels the wait. Example: /wait-generation timeout=60000 | /echo`,
     }));
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'abort',
@@ -2708,6 +2736,12 @@ export function initDefaultSlashCommands() {
             </ul>
         </div>
     `,
+    }));
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'getinput',
+        callback: () => document.querySelector('#send_textarea')?.value ?? '',
+        returns: t`the current draft in the chat input`,
+        helpString: t`Reads the draft without changing or sending it. Useful in Quick Replies and automations. A command submitted from the chat input has already been cleared. Example: /getinput | /upper | /setinput`,
     }));
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'setinput',
@@ -4333,7 +4367,7 @@ function abortCallback({ _abortController, quiet }, reason) {
     return '';
 }
 
-async function delayCallback(_, amount) {
+async function delayCallback({ _abortController }, amount) {
     if (!amount) {
         console.warn('WARN: No amount provided for /delay command');
         return '';
@@ -4344,7 +4378,7 @@ async function delayCallback(_, amount) {
         amount = 0;
     }
 
-    await delay(amount);
+    await delayWithAbort(amount, _abortController);
     return '';
 }
 
@@ -4496,9 +4530,8 @@ async function generateRawCallback(args, value) {
         return '';
     }
 
-    // Prevent generate recursion
-    $('#send_textarea').val('')[0].dispatchEvent(new Event('input', { bubbles: true }));
-    const lock = isTrueBoolean(args?.lock);
+    // Background prompts do not consume the draft or own an existing reply's controls.
+    const lock = isTrueBoolean(args?.lock) && !isGenerating();
     const as = args?.as || 'system';
     const quietToLoud = as === 'char';
     const systemPrompt = resolveVariable(args?.system) || '';
@@ -4528,7 +4561,7 @@ async function generateRawCallback(args, value) {
         console.error('Error on /genraw generation', err);
         toastr.error(err.message, t`API Error`, { preventDuplicates: true });
     } finally {
-        if (lock) {
+        if (lock && !isGenerating()) {
             activateSendButtons();
         }
         flushEphemeralStoppingStrings();
@@ -4543,9 +4576,8 @@ async function generateRawCallback(args, value) {
  * @returns {Promise<string>} The generated text
  */
 async function generateCallback(args, value) {
-    // Prevent generate recursion
-    $('#send_textarea').val('')[0].dispatchEvent(new Event('input', { bubbles: true }));
-    const lock = isTrueBoolean(args?.lock);
+    // Quiet generation already skips command processing and leaves the draft alone.
+    const lock = isTrueBoolean(args?.lock) && !isGenerating();
     const trim = isTrueBoolean(args?.trim?.toString());
     const as = args?.as || 'system';
     const quietToLoud = as === 'char';
@@ -4574,7 +4606,7 @@ async function generateCallback(args, value) {
         console.error('Error on /gen generation', err);
         toastr.error(err.message, t`API Error`, { preventDuplicates: true });
     } finally {
-        if (lock) {
+        if (lock && !isGenerating()) {
             activateSendButtons();
         }
         flushEphemeralStoppingStrings();
@@ -5046,18 +5078,18 @@ async function addGroupMemberCallback(_, name) {
 
 async function triggerGenerationCallback(args, value) {
     const shouldAwait = isTrueBoolean(args?.await);
-    const outerPromise = new Promise((outerResolve) => setTimeout(async () => {
+    const controller = args?._abortController;
+    const generation = (async () => {
+        await delayWithAbort(100, controller);
+        if (controller?.signal.aborted) return;
         try {
-            await waitUntilCondition(() => !is_send_press && !is_group_generating, 10000, 100);
+            await waitUntilCondition(() => !isGenerating() || controller?.signal.aborted, 10000, 100);
         } catch {
             console.warn('Timeout waiting for generation unlock');
             toastr.warning(t`Cannot run /trigger command while the reply is being generated.`);
-            outerResolve(Promise.resolve(''));
-            return '';
+            return;
         }
-
-        // Prevent generate recursion
-        $('#send_textarea').val('')[0].dispatchEvent(new Event('input', { bubbles: true }));
+        if (controller?.signal.aborted) return;
 
         let chid = undefined;
 
@@ -5069,12 +5101,18 @@ async function triggerGenerationCallback(args, value) {
             }
         }
 
-        outerResolve(new Promise(innerResolve => setTimeout(() => innerResolve(Generate('normal', { force_chid: chid })), 100)));
-    }, 1));
+        // Generate from the chat, never from text typed while the command was waiting.
+        await Generate('normal', { force_chid: chid, suppressUserMessage: true });
+    })();
 
     if (shouldAwait) {
-        const innerPromise = await outerPromise;
-        await innerPromise;
+        await generation;
+    } else {
+        // Detached triggers still need an error handler after their script has ended.
+        generation.catch(error => {
+            console.error('Error on /trigger generation', error);
+            toastr.error(error.message, t`API Error`, { preventDuplicates: true });
+        });
     }
 
     return '';
@@ -6889,7 +6927,7 @@ export function activateScriptButtons() {
  * Hide command execution pause/stop buttons next to chat input.
  */
 export function deactivateScriptButtons() {
-    document.querySelector('#form_sheld').classList.remove('isExecutingCommandsFromChatInput');
+    document.querySelector('#form_sheld').classList.remove('isExecutingCommandsFromChatInput', 'script_paused');
 }
 
 /**
@@ -7001,6 +7039,7 @@ export async function executeSlashCommandsOnChatInput(text, options = {}) {
     let currentProgress = 0;
     try {
         commandsFromChatInputAbortController = new SlashCommandAbortController();
+        await eventSource.emit(event_types.CHAT_COMMAND_STARTED, text);
         result = await executeSlashCommandsWithOptions(text, {
             abortController: commandsFromChatInputAbortController,
             onProgress: (done, total) => {
@@ -7014,7 +7053,13 @@ export async function executeSlashCommandsOnChatInput(text, options = {}) {
             scope: options.scope,
             source: options.source,
         });
-        if (commandsFromChatInputAbortController.signal.aborted) {
+        if (result?.isError) {
+            fs.classList.add('script_error');
+            if (options.clearChatInput && ta.value === '') {
+                ta.value = text;
+                ta.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        } else if (commandsFromChatInputAbortController.signal.aborted) {
             document.querySelector('#form_sheld').classList.add('script_aborted');
         } else {
             document.querySelector('#form_sheld').classList.add('script_success');
@@ -7029,9 +7074,9 @@ export async function executeSlashCommandsOnChatInput(text, options = {}) {
                 /**@type {SlashCommandExecutionError}*/
                 const ex = e;
                 const toast = `
-                    <div>${ex.message}</div>
+                    <div>${escapeHtml(ex.message)}</div>
                     <div>${t`Line`}: ${ex.line} ${t`Column`}: ${ex.column}</div>
-                    <pre style="text-align:left;">${ex.hint}</pre>
+                    <pre style="text-align:left;">${escapeHtml(ex.hint)}</pre>
                     `;
                 const clickHint = `<p>${t`Click to see details`}</p>`;
                 toastr.error(
@@ -7086,9 +7131,9 @@ async function executeSlashCommandsWithOptions(text, options = {}) {
             /**@type {SlashCommandParserError}*/
             const ex = e;
             const toast = `
-                <div>${ex.message}</div>
+                <div>${escapeHtml(ex.message)}</div>
                 <div>${t`Line`}: ${ex.line} ${t`Column`}: ${ex.column}</div>
-                <pre style="text-align:left;">${ex.hint}</pre>
+                <pre style="text-align:left;">${escapeHtml(ex.hint)}</pre>
                 `;
             const clickHint = `<p>${t`Click to see details`}</p>`;
             toastr.error(
@@ -7097,6 +7142,8 @@ async function executeSlashCommandsWithOptions(text, options = {}) {
                 { escapeHtml: false, timeOut: 10000, onclick: () => callGenericPopup(toast, POPUP_TYPE.TEXT, '', { allowHorizontalScrolling: true, allowVerticalScrolling: true }) },
             );
             const result = new SlashCommandClosureResult();
+            result.isError = true;
+            result.errorMessage = e.message;
             return result;
         } else {
             throw e;
@@ -7116,9 +7163,9 @@ async function executeSlashCommandsWithOptions(text, options = {}) {
                 /**@type {SlashCommandExecutionError}*/
                 const ex = e;
                 const toast = `
-                    <div>${ex.message}</div>
+                    <div>${escapeHtml(ex.message)}</div>
                     <div>Line: ${ex.line} Column: ${ex.column}</div>
-                    <pre style="text-align:left;">${ex.hint}</pre>
+                    <pre style="text-align:left;">${escapeHtml(ex.hint)}</pre>
                     `;
                 const clickHint = '<p>Click to see details</p>';
                 toastr.error(
@@ -7176,7 +7223,7 @@ export async function setSlashCommandAutoComplete(textarea, isFloating = false) 
     const parser = new SlashCommandParser();
     const ac = new AutoComplete(
         textarea,
-        () => ac.text[0] == '/' && (power_user.stscript.autocomplete.state === AUTOCOMPLETE_STATE.ALWAYS || power_user.stscript.autocomplete.state === AUTOCOMPLETE_STATE.MIN_LENGTH && ac.text.length > 2),
+        () => isSlashCommandText(ac.text) && (power_user.stscript.autocomplete.state === AUTOCOMPLETE_STATE.ALWAYS || power_user.stscript.autocomplete.state === AUTOCOMPLETE_STATE.MIN_LENGTH && ac.text.length > 2),
         async (text, index) => await parser.getNameAt(text, index),
         isFloating,
     );
@@ -7186,11 +7233,15 @@ export async function setSlashCommandAutoComplete(textarea, isFloating = false) 
 export async function initSlashCommandAutoComplete() {
     const sendTextarea = /** @type {HTMLTextAreaElement} */ (document.querySelector('#send_textarea'));
     setSlashCommandAutoComplete(sendTextarea);
-    sendTextarea.addEventListener('input', () => {
-        if (sendTextarea.value && sendTextarea.value[0] == '/') {
+    const updateCommandInput = () => {
+        const isCommand = isSlashCommandText(sendTextarea.value);
+        document.getElementById('send_form')?.classList.toggle('has-slash-command', isCommand);
+        if (isCommand) {
             sendTextarea.style.fontFamily = 'var(--monoFontFamily, monospace)';
         } else {
             sendTextarea.style.fontFamily = null;
         }
-    });
+    };
+    sendTextarea.addEventListener('input', updateCommandInput);
+    updateCommandInput();
 }

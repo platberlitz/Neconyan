@@ -11,6 +11,8 @@ import { generateQuickImageGenJobImage, quickImageGenSettingsFingerprint } from 
 import { captureQuickImageReferenceSources } from './quick-image-gen-reference.js';
 import { resolveCharacterImageSettings } from '../../public/scripts/extensions/quick-image-gen/lib/character-settings.js';
 import { cleanSpriteBitmap, splitSpriteBitmap } from '../../public/scripts/extensions/expressions/sprite-pixels.js';
+import { expressionLabelFromFilename, isExpressionLabel, isExpressionSpriteName, nextExpressionSpriteName } from '../../public/scripts/extensions/expressions/expression-labels.js';
+import { readExpressionSets, resolveExpressionMember, applyExpressionMemberPrompt } from '../../public/scripts/extensions/expressions/expression-sets.js';
 import { buildCharacterCardSpritePrompt, buildExpressionSpritePrompt, buildExpressionSpriteSheetPrompt,
     DEFAULT_EXPRESSION_SPRITE_PROMPT, EXPRESSION_SPRITE_NEGATIVE, getExpressionSpriteSheetGrid } from '../../public/scripts/extensions/expressions/sprite-prompts.js';
 import { admitNativeMediaJob, ensureNativeMediaDirectory, finishNativeMediaJob, mediaDirectoryEvidence, mediaFileEvidence,
@@ -30,32 +32,29 @@ function savedSettings(directories) {
     try { return JSON.parse(file.bytes.toString('utf8')); } catch { throw fail('The saved sprite settings are unavailable.'); }
 }
 
-function listSprites(directory) {
+function listSprites(directory, labels) {
     if (!mediaDirectoryEvidence(directory)) return [];
     return fs.readdirSync(directory).filter(name => /\.(?:png|jpg|jpeg|webp|gif|bmp|tiff|avif)$/i.test(name)).sort().map(filename => {
         if (!safePart(filename)) throw fail('An existing sprite filename needs an explicit supported name.');
         const file = readRoleplayFile(path.join(directory, filename), IMAGE_LIMIT);
         if (!file) throw fail('An existing sprite disappeared during capture.');
         const name = path.parse(filename).name;
-        return { filename, name, label: name.toLowerCase().match(/^(.+?)(?:[-.].*?)?$/)?.[1] ?? name, before: physical(file) };
+        return { filename, name, label: expressionLabelFromFilename(filename, labels), before: physical(file) };
     });
 }
 
-function selectedSpriteName(label, files, replace, allowMultiple) {
+function selectedSpriteName(label, files, replace, allowMultiple, allFiles, labels) {
     if (replace !== undefined) {
-        if (!safePart(replace) || !new RegExp(`^${label}(?:[-.].*)?$`).test(replace)
+        if (!safePart(replace) || !isExpressionSpriteName(label, replace, labels)
             || files.filter(file => file.name === replace).length !== 1) throw fail('The sprite selected for replacement is not unique.');
         return replace;
     }
-    if (!files.length) return label;
-    if (!allowMultiple) throw fail('Enable multiple sprites before adding another version of this expression.');
-    let suffix = files.length;
-    while (files.some(file => file.name === `${label}-${suffix}`)) suffix++;
-    return `${label}-${suffix}`;
+    if (files.length && !allowMultiple) throw fail('Enable multiple sprites before adding another version of this expression.');
+    return nextExpressionSpriteName(label, allFiles.map(file => file.filename), labels);
 }
 
 /** Snapshot card, cleanup settings, exact sprite destinations and the configured image connection. */
-export function captureSpriteRequest(base, account, source, { avatar, labels, folder, mode, replacements = {}, missingOnly = false, sheetImage = null } = {}) {
+export function captureSpriteRequest(base, account, source, { avatar, labels, folder, memberId, mode, replacements = {}, missingOnly = false, sheetImage = null } = {}) {
     return withRoleplayAccount(base, account, lease => {
         assertRoleplaySourceLocked(lease, source);
         if (!source.dependencies?.some(item => item.kind === 'character' && item.locator.avatar === avatar)) throw fail('The sprite character is not in the accepted source.');
@@ -68,7 +67,11 @@ export function captureSpriteRequest(base, account, source, { avatar, labels, fo
         const stem = path.parse(avatar).name;
         const overrides = settings.extension_settings?.expressionOverrides ?? [];
         if (!Array.isArray(overrides)) throw fail('The saved sprite folder overrides are invalid.');
-        const configuredFolder = overrides.find(item => item?.name === stem)?.path || card.name || stem;
+        const member = memberId === undefined ? (folder ? readExpressionSets(card).members.find(item => item.folder === folder) : resolveExpressionMember(card))
+            : readExpressionSets(card).members.find(item => item.id === memberId);
+        if (memberId && !member) throw fail('The selected character expression set is unavailable.');
+        if (member && folder && member.folder !== folder) throw fail('The sprite folder does not belong to the selected character expression set.');
+        const configuredFolder = member?.folder || overrides.find(item => item?.name === stem)?.path || card.name || stem;
         folder ??= configuredFolder;
         const parts = typeof folder === 'string' ? folder.split('/') : [];
         if (!parts.length || parts.length > 2 || parts.some(part => !safePart(part))) throw fail('The sprite folder name is invalid.');
@@ -81,19 +84,21 @@ export function captureSpriteRequest(base, account, source, { avatar, labels, fo
             parent = path.join(parent, part);
             parents.push({ relative: path.relative(base.directories.root, parent).split(path.sep).join('/'), before: mediaDirectoryEvidence(parent) });
         }
-        const files = listSprites(directory);
+        const files = listSprites(directory, options.custom);
         mode ??= options.agentSpriteGenerationMode || 'individual';
         if (!['individual', 'sheet', 'cleanup', 'split'].includes(mode)) throw fail('The sprite generation mode is invalid.');
         if (mode === 'cleanup' && labels === undefined) labels = [...new Set(files.map(file => file.label))];
-        if (!Array.isArray(labels) || labels.length > 64 || labels.some(label => typeof label !== 'string' || !/^[a-z]{1,80}$/.test(label))
+        if (!Array.isArray(labels) || labels.length > 64 || labels.some(label => !isExpressionLabel(label))
             || new Set(labels).size !== labels.length || !replacements || typeof replacements !== 'object' || Array.isArray(replacements)) throw fail('The requested sprite labels are invalid.');
         if (!labels.length && mode !== 'cleanup') throw fail('Choose at least one expression for the sprite request.');
+        const knownLabels = [...(Array.isArray(options.custom) ? options.custom : []), ...labels];
+        for (const file of files) file.label = expressionLabelFromFilename(file.filename, knownLabels);
         const targets = [];
         for (const label of labels) {
             const matching = files.filter(file => file.label === label);
             if (missingOnly && matching.length) continue;
             const names = mode === 'cleanup' && replacements[label] === undefined ? matching.map(file => file.name)
-                : [selectedSpriteName(label, matching, replacements[label], options.allowMultiple)];
+                : [selectedSpriteName(label, matching, replacements[label], options.allowMultiple, files, knownLabels)];
             for (const name of names) {
                 if (mode === 'cleanup' && matching.filter(file => file.name === name).length !== 1) throw fail('The sprite cleanup selection is ambiguous.');
                 const filename = `${name}.png`;
@@ -116,10 +121,10 @@ export function captureSpriteRequest(base, account, source, { avatar, labels, fo
             if (!file) throw fail('The saved sprite sheet is missing.');
             sheet = { relative: path.relative(base.directories.root, filename).split(path.sep).join('/'), before: physical(file) };
         }
-        const context = { characterName: card.name || stem, characterCard: buildCharacterCardSpritePrompt({
+        const context = applyExpressionMemberPrompt({ characterName: card.name || stem, characterCard: buildCharacterCardSpritePrompt({
             description: card.description, creatorNotes: card.creator_notes || saved.data.creatorcomment,
             personality: card.personality, scenario: card.scenario, charDepthPrompt: card.extensions?.depth_prompt?.prompt,
-        }), framing: options.agentSpriteFraming || 'bust', promptTemplate: options.agentSpritePrompt || DEFAULT_EXPRESSION_SPRITE_PROMPT };
+        }), framing: options.agentSpriteFraming || 'bust', promptTemplate: options.agentSpritePrompt || DEFAULT_EXPRESSION_SPRITE_PROMPT }, member);
         if (!['bust', 'full_body'].includes(context.framing) || typeof context.promptTemplate !== 'string' || context.promptTemplate.length > 64 * 1024) throw fail('The saved sprite prompt controls are invalid.');
         const grid = ['sheet', 'split'].includes(mode) && targets.length ? getExpressionSpriteSheetGrid(targets.length) : null;
         const prompts = mode === 'sheet' ? [buildExpressionSpriteSheetPrompt(targets.map(item => item.label), context, grid)]

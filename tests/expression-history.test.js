@@ -2,6 +2,9 @@ import { describe, expect, test, jest } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { isExpressionSource, readMessageExpression, writeMessageExpression } from '../public/scripts/expression-history.js';
+import { expressionLabelFromFilename, isExpressionLabel, nextExpressionSpriteName } from '../public/scripts/extensions/expressions/expression-labels.js';
+import { applyExpressionMemberPrompt, readExpressionSets, resolveExpressionMember } from '../public/scripts/extensions/expressions/expression-sets.js';
+import { EventEmitter } from '../public/lib/eventemitter.js';
 
 const core = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8');
 const expressions = readFileSync(new URL('../public/scripts/extensions/expressions/index.js', import.meta.url), 'utf8');
@@ -95,6 +98,94 @@ describe('exact expression history', () => {
     }
 });
 
+describe('expression asset snapshots', () => {
+    test('generation follows the folder owner rather than a later group speaker or an imported duplicate', () => {
+        const member = { id: 'mira', name: 'Mira', folder: 'cast/mira', description: 'Original notes' };
+        const original = { name: 'Original cast', avatar: 'original.png', data: { extensions: { expression_sets: { members: [member], active: 'mira' } } } };
+        const copy = { name: 'Imported cast', avatar: 'copy.png', data: { extensions: { expression_sets: { members: [{ ...member, description: 'Imported notes' }], active: 'mira' } } } };
+        const nova = { name: 'Nova', avatar: 'nova.png' };
+        let message = { name: copy.name, original_avatar: copy.avatar };
+        const characters = [original, copy, nova];
+        const runtime = vm.createContext({ getContext: () => ({ characters, groupId: 'group' }), getLastCharacterMessage: () => message,
+            getExpressionCharacter: (target = message) => characters.find(character => character.avatar === target.original_avatar),
+            readExpressionSets, applyExpressionMemberPrompt, extension_settings: { expressionOverrides: [] },
+            getExpressionSpritePromptContext: name => ({ characterName: name, characterCard: name }),
+        });
+        const helpers = ['getExpressionFolderCharacter', 'getExpressionGenerationTarget'];
+        vm.runInContext(helpers.map(name => extract(expressions, name)).join('\n'), runtime);
+        expect(runtime.getExpressionGenerationTarget('cast/mira').characterAvatar).toBe('copy.png');
+        expect(runtime.getExpressionGenerationTarget('cast/mira').promptContext.characterCard).toContain('Imported notes');
+        message = { name: 'Nova', original_avatar: 'nova.png' };
+        expect(runtime.getExpressionGenerationTarget('Original cast').characterAvatar).toBe('original.png');
+        expect(runtime.getExpressionGenerationTarget('cast/mira', { original_avatar: 'copy.png' }).characterAvatar).toBe('copy.png');
+    });
+
+    test('failed classifications release their settings listener and later schemas include custom labels', async () => {
+        const eventSource = new EventEmitter();
+        const generateRaw = jest.fn().mockRejectedValueOnce(new Error('Failed before settings were prepared'));
+        const runtime = vm.createContext({ eventSource, event_types: { TEXT_COMPLETION_SETTINGS_READY: 'ready' },
+            extension_settings: { expressions: { api: 2, promptType: 0, fallback_expression: 'neutral' } },
+            EXPRESSION_API: { local: 0, llm: 2, webllm: 3, agent: 4, none: 99 }, PROMPT_TYPE: { raw: 0, full: 1 },
+            sampleClassifyText: text => text, waitUntilCondition: async () => {}, online_status: 'connected',
+            getExpressionsList: async () => ['joy', 'joy-soft'], substituteParamsExtended: () => 'Classify',
+            generateRaw, isJsonSchemaSupported: () => true, parseLlmResponse: response => response,
+            toastr: { error: jest.fn() }, console: { error: jest.fn() },
+        });
+        vm.runInContext(`let inApiCall = false;\n${['getJsonSchema', 'onTextGenSettingsReady', 'getExpressionLabel'].map(name => extract(expressions, name)).join('\n')}`, runtime);
+        expect(await runtime.getExpressionLabel('Hello')).toBe('neutral');
+        expect(eventSource.events.ready).toHaveLength(0);
+        const args = {};
+        generateRaw.mockImplementationOnce(async () => { await eventSource.emit('ready', args); return 'joy-soft'; });
+        expect(await runtime.getExpressionLabel('Hello again')).toBe('joy-soft');
+        expect(args.json_schema.properties.emotion.enum).toEqual(['joy', 'joy-soft']);
+        expect(eventSource.events.ready).toHaveLength(0);
+    });
+
+    test('uploads and the last-expression lookup use the displayed card name, including folder overrides', () => {
+        const overrides = [];
+        const runtime = vm.createContext({ resolveExpressionMember, extension_settings: { expressionOverrides: overrides } });
+        vm.runInContext(extract(expressions, 'spriteFolderNameFromCharacter'), runtime);
+        const character = { name: 'Mira and Sol', avatar: 'cast-2.png' };
+        expect(runtime.spriteFolderNameFromCharacter(character)).toBe('Mira and Sol');
+        overrides.push({ name: 'cast-2', path: 'cast/formal' });
+        expect(runtime.spriteFolderNameFromCharacter(character)).toBe('cast/formal');
+    });
+
+    test('a newly added custom label wins over a stale server label before settings finish saving', () => {
+        const runtime = vm.createContext({ expressionLabelFromFilename, extension_settings: { expressions: { custom: ['joy-soft'] } } });
+        vm.runInContext(extract(expressions, 'getExpressionImageData'), runtime);
+        const image = runtime.getExpressionImageData({ label: 'joy', path: '/characters/cast/joy-soft-2%20variant.png?t=12' });
+        expect(image.expression).toBe('joy-soft');
+        expect(image.fileName).toBe('joy-soft-2 variant.png');
+        expect(image.isCustom).toBe(true);
+    });
+
+    test('switching cards while an image is generated keeps its original person, prompt and destination', async () => {
+        const member = { id: 'mira', name: 'Mira', folder: 'cast/mira', description: 'Silver hair.' };
+        const character = { name: 'Mira and Sol', avatar: 'cast.png', data: { extensions: { expression_sets: { members: [member], active: 'mira' } } } };
+        let context = { characters: [character], characterId: 0 };
+        let release;
+        const generation = new Promise(resolve => { release = resolve; });
+        const generate = jest.fn(() => generation);
+        const upload = jest.fn(async () => 'joy');
+        const runtime = vm.createContext({ getContext: () => context, getLastCharacterMessage: () => ({ name: 'Mira and Sol', original_avatar: 'cast.png' }),
+            getExpressionCharacter: () => context.characters[context.characterId],
+            readExpressionSets, applyExpressionMemberPrompt, getExpressionSpritePromptContext: () => ({ characterName: 'Mira and Sol', characterCard: 'Shared history' }),
+            spriteCache: {}, extension_settings: { expressions: {}, expressionOverrides: [] }, nextExpressionSpriteName, maybeGenerateExpressionSprite: generate, uploadSpriteCommand: upload,
+            throwIfExpressionGenerationStopped: () => {}, setExpressionGenerationBusy: () => {}, inSpriteGeneration: true,
+        });
+        vm.runInContext(['getExpressionFolderCharacter', 'getExpressionGenerationTarget', 'generateUniqueSpriteName', 'generateAndUploadExpressionSprite'].map(name => extract(expressions, name)).join('\n'), runtime);
+        const pending = runtime.generateAndUploadExpressionSprite('joy', member.folder, { showToast: false });
+        context = { characters: [{ name: 'Another character', avatar: 'other.png' }], characterId: 0 };
+        member.description = 'Changed during generation';
+        release('/generated/mira.png');
+        expect(await pending).toBe(true);
+        expect(generate.mock.calls[0][3].characterName).toBe('Mira');
+        expect(generate.mock.calls[0][3].characterCard).toContain('Silver hair.');
+        expect(upload).toHaveBeenCalledWith({ name: 'cast.png', label: 'joy', folder: 'cast/mira', spriteName: 'joy' }, '/generated/mira.png');
+    });
+});
+
 describe('sprite upload failures are not reported as success', () => {
     function uploadRuntime(fetchImpl) {
         const spriteCache = { Cat: [] };
@@ -115,6 +206,7 @@ describe('sprite upload failures are not reported as success', () => {
             fetchImagesNoCache: async () => {},
             validateImages: async () => {},
             validateExpressionSpriteName: () => true,
+            isExpressionLabel,
             getLastCharacterMessage: () => ({ name: 'Cat', original_avatar: 'Cat.png' }),
             findChar: () => ({ name: 'Cat' }),
             spriteFolderNameFromCharacter: () => 'Cat',

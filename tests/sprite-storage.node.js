@@ -46,6 +46,20 @@ test('sprite HTTP/import writers reject symlink folders and exact-path aliases',
     }
 });
 
+test('custom labels and rapid replacements retain their identity and invalidate the image URL', t => {
+    const f = fixture(t);
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({ extension_settings: { expressions: { custom: ['joy-soft'] } } }));
+    saveSpriteFiles(f.scope.directories, 'cast/mira', [{ filename: 'joy-soft-2.png', bytes: image }]);
+    const filename = path.join(f.scope.directories.characters, 'cast', 'mira', 'joy-soft-2.png');
+    fs.utimesSync(filename, 1000, 1000.1);
+    const first = listSpriteFiles(f.scope.directories, 'cast/mira')[0];
+    fs.utimesSync(filename, 1000, 1000.2);
+    const second = listSpriteFiles(f.scope.directories, 'cast/mira')[0];
+    assert.equal(first.label, 'joy-soft');
+    assert.equal(second.label, 'joy-soft');
+    assert.notEqual(first.path, second.path);
+});
+
 test('ordinary sprite writes cannot absorb a native accepted target or another account epoch', t => {
     const f = fixture(t);
     fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({ extension_settings: {

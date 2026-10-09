@@ -43,6 +43,8 @@ export class AutoComplete {
     /**@type {boolean}*/ canBeAutoHidden = false;
     /**@type {boolean}*/ isNativeReplacing = false;
     /**@type {boolean}*/ isComposing = false;
+    /**@type {boolean}*/ isApplyingCompletion = false;
+    /**@type {number}*/ showRequest = 0;
 
     /**@type {string}*/ text;
     /**@type {AutoCompleteNameResult}*/ parserResult;
@@ -136,7 +138,7 @@ export class AutoComplete {
             this.selectionStart = this.textarea.selectionStart;
             this.selectionEnd = this.textarea.selectionEnd;
 
-            if (this.isComposing || this.isNativeReplacing) {
+            if (this.isComposing || this.isNativeReplacing || this.isApplyingCompletion) {
                 this.text = this.textarea.value;
                 this.isNativeReplacing = false;
                 return;
@@ -186,11 +188,32 @@ export class AutoComplete {
      */
     makeItem(option) {
         const li = option.renderItem();
-        // gotta listen to pointerdown (happens before textarea-blur)
+        let touchStart = null;
+        const choose = (useNativeInsert) => {
+            if (!this.result.includes(option)) return;
+            this.selectedItem = option;
+            this.select(useNativeInsert);
+        };
+        // Keep focus on the input, but let a touch scroll finish before choosing.
         li.addEventListener('pointerdown', (evt) => {
+            if (evt.button !== 0) return;
             evt.preventDefault();
-            this.selectedItem = this.result.find(it => it.name == li.getAttribute('data-name'));
-            this.select();
+            if (evt.pointerType === 'mouse') choose(true);
+            else touchStart = { id: evt.pointerId, x: evt.clientX, y: evt.clientY };
+        });
+        li.addEventListener('pointermove', (evt) => {
+            if (touchStart && Math.hypot(evt.clientX - touchStart.x, evt.clientY - touchStart.y) > 10) touchStart = null;
+        });
+        li.addEventListener('pointercancel', () => { touchStart = null; });
+        li.addEventListener('pointerup', (evt) => {
+            if (touchStart?.id !== evt.pointerId) return;
+            touchStart = null;
+            evt.preventDefault();
+            choose(false);
+        });
+        li.addEventListener('click', (evt) => {
+            evt.preventDefault();
+            evt.stopPropagation();
         });
         return li;
     }
@@ -323,6 +346,7 @@ export class AutoComplete {
      * @param {boolean} isSelect Whether an autocomplete option was just selected.
      */
     async show(isInput = false, isForced = false, isSelect = false) {
+        const request = ++this.showRequest;
         //TODO check if isInput and isForced are both required
         this.text = this.textarea.value;
         this.selectionStart = this.textarea.selectionStart;
@@ -344,7 +368,12 @@ export class AutoComplete {
 
         // request provider to get name result (potentially "incomplete", i.e. not an actual existing name) for
         // cursor position
-        this.parserResult = await this.getNameAt(this.text, this.textarea.selectionStart);
+        const text = this.text;
+        const cursor = this.selectionStart;
+        const result = await this.getNameAt(text, cursor);
+        if (request !== this.showRequest || text !== this.textarea.value
+            || cursor !== this.textarea.selectionStart || document.activeElement !== this.textarea) return;
+        this.parserResult = result;
         this.secondaryParserResult = null;
 
         if (!this.parserResult) {
@@ -505,6 +534,7 @@ export class AutoComplete {
      * Hide autocomplete.
      */
     hide() {
+        this.showRequest++;
         this.domWrap?.remove();
         this.detailsWrap?.remove();
         this.isActive = false;
@@ -773,7 +803,11 @@ export class AutoComplete {
     /**
      * Select an item for autocomplete and put text into textarea.
      */
-    async select() {
+    async select(useNativeInsert = true) {
+        if (this.textarea.value !== this.text || !this.selectedItem?.isSelectable) {
+            this.hide();
+            return;
+        }
         let didUseNativeInsert = false;
         if (this.isReplaceable && this.selectedItem.value !== null) {
             // Apply per-option replacement offset (e.g., for closing tags that need to replace leading whitespace)
@@ -781,18 +815,30 @@ export class AutoComplete {
             const replaceEnd = this.effectiveParserResult.start + this.effectiveParserResult.name.length + (this.startQuote ? 1 : 0) + (this.endQuote ? 1 : 0);
             const replacementText = this.selectedItem.replacer;
             const nextCursor = effectiveStart + replacementText.length;
-            const supportsExecCommand = !this.isNativeReplacing && !this.isComposing && typeof document.execCommand === 'function';
+            const originalText = this.textarea.value;
+            const expectedText = `${originalText.slice(0, effectiveStart)}${replacementText}${originalText.slice(replaceEnd)}`;
+            const supportsExecCommand = useNativeInsert && !this.isNativeReplacing && !this.isComposing && typeof document.execCommand === 'function';
+            if (!Number.isInteger(effectiveStart) || !Number.isInteger(replaceEnd)
+                || effectiveStart < 0 || replaceEnd < effectiveStart || replaceEnd > originalText.length) return;
 
             this.textarea.focus({ preventScroll: true });
             this.textarea.setSelectionRange(effectiveStart, replaceEnd);
 
-            if (supportsExecCommand && document.execCommand('insertText', false, replacementText)) {
-                this.text = this.textarea.value;
-                didUseNativeInsert = true;
-            } else {
-                this.textarea.value = `${this.text.slice(0, effectiveStart)}${replacementText}${this.text.slice(replaceEnd)}`;
-                this.text = this.textarea.value;
+            this.isApplyingCompletion = true;
+            try {
+                if (supportsExecCommand) {
+                    didUseNativeInsert = document.execCommand('insertText', false, replacementText)
+                        && this.textarea.value === expectedText;
+                }
+            } catch {
+                // Some mobile browsers reject native insertion while settling focus.
+            } finally {
+                this.isApplyingCompletion = false;
             }
+            // Native insertion can report success after replacing the wrong range.
+            // Always recover from the snapshot, never from an input listener's state.
+            if (!didUseNativeInsert) this.textarea.value = expectedText;
+            this.text = this.textarea.value;
 
             this.textarea.selectionStart = nextCursor;
             this.textarea.selectionEnd = nextCursor;
