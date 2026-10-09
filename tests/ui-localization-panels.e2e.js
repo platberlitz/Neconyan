@@ -46,7 +46,12 @@ for (const [layout, viewport, hasTouch] of [
 
             await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
             await expect(page.locator('#ica--run-status')).toHaveText(german['No automatic agents enabled']);
-            await expect(page.locator('.ica--card-pill--order').first()).toContainText('Reihenfolge');
+            const clearFilters = page.locator('#ica--agentList .ica--clear-agent-filters');
+            if (await clearFilters.isVisible()) await clearFilters.click();
+            await page.locator('#ica--agentList .ica--card-primary-actions .ica--btn-edit').first().click();
+            await expect(page.locator('#ica--editor-summary')).toContainText('Reihenfolge');
+            await page.keyboard.press('Escape');
+            await expect(page.locator('#ica--editor')).toHaveCount(0);
             await page.evaluate(() => window.NeconyanShell.openTab('left', 'mewmory'));
             await expect(page.getByText(german['No Roleplay chat selected'], { exact: true })).toBeVisible();
 

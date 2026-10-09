@@ -30,7 +30,7 @@ Open **Agents** to find everything below. The top of the panel shows a status li
 | **Browse library** | Opens the Agent library of ready-made agents and starter kits. |
 | **Select** | Lets you tick several agents and change them together. |
 | **Saved setup** | Saves your agents and their switches under a name, then loads or deletes that setup later. Loading keeps agents that aren't in the setup. |
-| **ICA glossary** | Opens this page. |
+| **How Agents work** | Opens this page. |
 | **More tools** | Opens the menu below. |
 
 **More tools** menu:
@@ -39,7 +39,7 @@ Open **Agents** to find everything below. The top of the panel shows a status li
 | --- | --- |
 | **Update templates** | Updates bundled agents that have a newer version. Only shown when an update is waiting, and it then reads **Update All** with a count. |
 | **Fix trackers** | Reruns your enabled trackers, and the companions linked to them, on the last reply. |
-| **Activity & companions** | Opens the Companion dashboard. |
+| **Companion activity** | Opens the list of your companions with their latest results. |
 | **Move trackers to companions** | Turns inline tracker agents into companions that run on their own. |
 | **Import agents** | Adds agents from a JSON file. |
 | **Export agents** | Downloads all your agents as `in-chat-agents.json`. |
@@ -49,26 +49,31 @@ Open **Agents** to find everything below. The top of the panel shows a status li
 
 The list tabs are **All**, **Pinned**, **Before reply**, **After reply** and **Companions**. The **Search agents** box and the category filter (Tracker, Randomizer, Content, Companion, Custom) only change what you see. They never switch anything off.
 
-**Prompt tokens** counts the agent prompts added to the main request. Companion requests and other helper requests cost extra on top of that.
+**Prompt tokens** counts the agent prompts added to the main request. Companion requests and other agent requests cost extra on top of that.
 
 ### Agent Cards
 
-Each agent has a card. The round switch turns it on or off, the star pins it to the Pinned tab, and the grip lets you drag it into a new order. The small pills show things like its trigger chance, connection profile, Order and version. A version pill such as 'v3 → v4' means an update is waiting; click it to update just that agent.
+Each agent has a card. The round switch turns it on or off, the star pins it to the Pinned tab, and the grip lets you drag it into a new order. The small labels only show what matters at a glance, such as its trigger chance, connection profile, model or where companion notes go. Order, depth, regex rules and version are listed at the top of the editor and of **Quick settings** instead. Tapping the card itself does nothing, so you cannot open something by accident; use its buttons. A label such as 'Update v3 → v4' means an update is waiting; click it to update just that agent.
 
 | Button | What it does |
 | --- | --- |
 | **Run** / **Apply to reply** | Runs the agent on the last assistant reply now. Companions say Run, inline agents say Apply to reply. |
-| **Settings** | Opens a short **Agent settings** popup with the most used options: connection, model, timing and, for companions, notes and history. |
-| **Edit** | Opens the full agent editor. |
-| **Batch & connect** | Companions only. Sets which companions share a request, receive this one's notes or wait for it. |
-| **Keep in history** | Companions only. Sends this companion's saved notes with later replies. It reads **In chat history** while on. |
-| **More actions** | Opens **Preview feedback** or **Preview prompt**, **Apply to target** (run it on a chosen reply, note or your text box), **To companion** / **To inline**, **Export** and **Delete**. |
+| **Edit** | Opens the full editor with every setting. On phones it fills the whole screen. |
+| **More actions** | Opens **Quick settings** (a short popup with the most used options: connection, model, timing and, for companions, notes and history; its **Open full editor** button keeps your changes and opens the editor), **Preview feedback** or **Preview prompt**, **Apply to target** (run it on a chosen reply, note or your text box), **To companion** / **To prompt or reply**, **Export** and **Delete**. |
 
-The **Agent settings** popup uses friendlier names for some editor fields: **Chat messages to read** is Context Messages, **Previous notes to read** is History Depth, **Maximum output tokens** is Max Tokens, and **Show notes** is Display.
+**Quick settings** and the editor use the same names for the same fields.
+
+Companion cards also show these controls right on the card, and each change saves straight away:
+
+| Control | What it does |
+| --- | --- |
+| **Keep in chat history** | Sends this companion's saved notes with later replies. |
+| **notes** box | How many of its most recent notes to keep. Leave it blank to keep all of them. Typing a number also switches **Keep in chat history** on. |
+| **Connections** | Opens tick boxes for the other companions: **Runs after** (reads their latest notes first and runs again when they change), **Sends notes to** (they get this companion's latest note as extra context) and **Shares one request with** (runs with them in one request when their connections and models match). The line beside it sums up the current links. **More connection options** opens the full list with search. |
 
 ### Changing Several Agents
 
-Press **Select**, tick the agents you want, or use **Select filtered**. The bar then offers **Settings**, **Batch & connect** and **Keep in history**. **More changes** adds **Enable**, **Disable**, **On Companions** (lets the selected after-reply agents also work on companion notes), **System role**, **User role**, **To companion**, **Edit other properties** and **Delete**. **Edit other properties** only changes the fields you move off 'Don't change'.
+Press **Select**, tick the agents you want, or use **Select filtered**. The bar then offers **Quick settings**, **Batch & connect**, **Keep in history** with a **notes** box (blank keeps all notes) and **Stop keeping**. **More changes** adds **Enable**, **Disable**, **On Companions** (lets the selected after-reply agents also work on companion notes), **System role**, **User role**, **To companion**, **Edit other properties** and **Delete**. **Edit other properties** only changes the fields you move off 'Don't change'.
 
 ## Connections & Defaults
 
@@ -78,162 +83,164 @@ Open this with **Connections & defaults** at the top of the Agents panel. These 
 
 **Companion connection profile**: a separate default just for companions. A quick, cheap model works well here. **Default connection** means 'use the one above'. A companion's own profile, set in its editor, beats both.
 
-**Reply passes**: how after-reply rewrite and append agents run. **Run together** sends every agent the original reply at once. When several agents return different rewrites, one extra request combines their compatible edits into a coherent reply, using the last participating rewrite agent's connection and the largest output limit among those rewrites. Later agents take priority where their edits conflict. The combining request also reads the added blocks for consistency. Identical rewrites, a single rewrite and append-only runs need no extra request. **Run one at a time** follows each agent's Order, so later rewrites read the earlier edits, and is kinder to rate limits. Either way, rewrite agents only edit the reply itself: added blocks such as choices or trackers are set aside, cleaned of any copy of the reply and of duplicates, then placed back around the finished reply.
+**After-reply agents**: how after-reply rewrite and append agents run. **Run together** sends every agent the original reply at once. When several agents return different rewrites, one extra request combines their compatible edits into a coherent reply, using the last participating rewrite agent's connection and the largest output limit among those rewrites. Later agents take priority where their edits conflict. The combining request also reads the added blocks for consistency. Identical rewrites, a single rewrite and append-only runs need no extra request. **Run one at a time** follows each agent's Order, so later rewrites read the earlier edits, and is kinder to rate limits. Either way, rewrite agents only edit the reply itself: added blocks such as choices or trackers are set aside, cleaned of any copy of the reply and of duplicates, then placed back around the finished reply.
 
 **Companion agents**: the same choice for companions. Batching and 'wait for' links can still group or delay particular companions.
 
-**Run companions alongside post-generation passes**: starts companions while reply changes are still running. Faster, but companions then read the reply before it's been rewritten. Leave it off if a companion needs the final text.
+**Run companions at the same time as after-reply agents**: starts companions while reply changes are still running. Faster, but companions then read the reply before it's been rewritten. Leave it off if a companion needs the final text.
 
-**Helper prefill messages**: extra text sent at the start of helper requests, split into `[system]`, `[user]` and `[assistant]` blocks. Most people should leave it empty. Models that refuse prefills can fail when there's anything in it.
+**Agent prefill messages**: extra text sent at the start of agent requests, split into `[system]`, `[user]` and `[assistant]` blocks. Most people should leave it empty. Models that refuse prefills can fail when there's anything in it.
 
 **Keep individual and group chat switches separate**: remembers which agents are on separately for one-to-one chats and group chats.
 
-**Show prompt pass notifications**: the master switch for pop-up notices from reply changes. Each agent also has its own switch.
+**Show agent edit notifications**: the master switch for pop-up notices from reply changes. Each agent also has its own switch.
 
 **Keep the original when an Agent refuses**: in **Context & notifications**, on by default. When a rewrite, append, intercept or combining pass answers with a refusal instead of the text, Neconyan discards it, keeps the original and says so in a notice. Refusal wording already in the original doesn't count, so characters can still refuse things in the story.
 
-**Show main output before an intercept pass**: a testing aid. Leave it off unless you're debugging an intercept.
+**Show the reply before agents check it**: shows the reply as it arrives, before an agent that checks the reply has finished. A testing aid; leave it off unless you're debugging such an agent.
 
 **Companion panel button**: opens the Companion panel from a **Floating side button** or a **Top bar button**.
 
-**Enable Pawthfinder submodule**: turns Pawthfinder on or off without touching other agents. **Open Pawthfinder** opens its own settings.
+**Keep Pawthfinder available**: keeps Pawthfinder and its lorebook tools loaded. Turning it off unloads them everywhere without touching other agents. The status line under it says whether Pawthfinder is on, or what is still missing: the Pawthfinder agent, the main **Agents On** switch, or the Pawthfinder agent's own switch (the same switch as its card and the top of **Open Pawthfinder**). **Open Pawthfinder** opens its own settings.
 
 ## Agent Editor
 
-Open it with **Edit** on a card, or **Create agent**. Changes only stick when you press **Save**. The tabs are **Basics**, **Instructions & model**, **When it runs**, **Reply changes**, **Companion output** (companions only) and **Regex**. On phones the tabs become a dropdown.
+Open it with **Edit** on a card, **Open full editor** in **Quick settings**, or **Create agent**. The line under the title sums up the agent: when it runs, where its result goes, its order, regex rules and version. On phones the editor fills the whole screen and the tabs sit in a row you can scroll sideways. Changes only stick when you press **Save**; **Cancel** asks before throwing away unsaved changes.
 
-### Basics
+The tabs follow the order you usually need them: **What it does**, **When it runs**, **What it changes**, **Companion notes** (companions only), **Model** and **Regex**. Only **What it does** needs filling in; the other tabs are optional. **What it changes** only shows when there is something to change: a prompt placed in the request, a change to the reply, or a companion feeding its notes back.
+
+### What It Does
 
 **Name** and **Description**: what the agent list shows.
 
-**Category**: Tracker, Randomizer, Content, Companion or Custom. Tracker also unlocks the Custom Tracker Builder and tracker repair.
+**Category**: Tracker, Randomizer, Content, Companion, Tool or Custom. Tracker also unlocks the Custom Tracker Builder and tracker repair.
 
-**Run timing**: **Before reply**, **After reply** or **Before and after**. Mostly matters for inline agents.
-
-**Where results go**: **Prompt or reply** makes it an inline agent. **Companion note** makes it a companion that saves a separate note. Companion category always uses Companion note.
+**Where results go**: **Prompt or reply** puts the result into the request before the reply, or changes the reply after it. **Companion note** makes it a companion that writes its own note beside the reply instead, and adds the **Companion notes** tab. Companion category always uses Companion note. A line under the choice explains the one you picked.
 
 **Pin this agent**: adds it to the Pinned tab.
 
-### Instructions & Model
-
-**Prompt**: the agent's instructions. Say what to look at, what to produce and what not to do. Tell a companion not to continue the roleplay.
-
-**Connection profile** and **Model override**: use a different connection or model for this agent only. Leave them on **Use extension default** and empty to follow Connections & defaults.
+**Prompt**: the agent's instructions. Say what to look at, what to produce and what not to do. Tell a companion not to continue the roleplay. Saving with an empty prompt brings you back here.
 
 **Preview**: shows the prompt with macros filled in, exactly as the model will get it.
 
 **Refine**: asks AI to improve the prompt (clarity, shorter, more specific, less slop or your own instruction). Read the result before you press **Accept**, especially for trackers with an exact format.
 
+**Custom Tracker Builder**: shown under the prompt when Category is Tracker. Fill in **Tracker Format Example** (the exact output you want), optional **Rules / Behavior Notes** and **HTML / Style Notes**, then press **Generate Kit**. It drafts the prompt, extraction and display regex for you. Check what it made before using it in a chat you care about.
+
 ## When It Runs
 
-This tab decides where an inline prompt, or a companion's fed-back notes, go in the main request, and when the agent is allowed to run.
+**Run timing**: **Before reply** runs before the reply is written, so it can add to or change the request. **After reply** runs after the reply arrives, so it can check, rewrite or add to it. **Before and after** does both. Companions don't show this choice; they always run after the reply.
 
-### Advanced Context Processing
+**Order**: lower numbers run first. It sets the sequence, not importance, and matters most when agents run one at a time (see Connections & defaults).
 
-**Mode**: **Inject prompt into context** adds the prompt straight into the main request with no extra cost, like a preset toggle. **Run agent to modify outgoing context** makes a separate request (an intercept) that can rework the context or the reply. Intercepts cost more.
+**Chance to run (%)**: the chance the agent runs when everything else matches. 100 is always, 0 is never on its own.
+
+**Only run when these words appear**: comma-separated words the chat must contain. Leave it empty to run every time.
+
+**Run for these kinds of reply**: which actions can trigger it: **Normal** replies, **Continue**, **Impersonate** and **Quiet** background requests from other tools.
+
+## What It Changes
+
+### Where Its Prompt Goes
+
+Decides where a before-reply prompt, or a companion's fed-back notes, go in the request the AI receives.
+
+**Add to the request or change it** (before-reply agents): **Add its prompt to the request** adds the prompt straight into the main request with no extra cost, like a preset toggle. **Run first and change the request** makes a separate request first (an intercept) that can rework the request or the reply. Intercepts cost more.
 
 The next settings only appear for intercepts:
 
 | Setting | What it does |
 | --- | --- |
-| **Timing** | **Pre-generation** reworks the context before the main model sees it. **Post-main generation** works on the reply after it's written. |
+| **Timing** | **Pre-generation** reworks the request before the main model sees it. **Post-main generation** works on the reply after it's written. |
 | **Apply Mode** | **Replace context** swaps in the agent's result. **Wrap / append** keeps the original and adds the result. **Patch via tags** only replaces what sits between the patch tags. |
 | **Insert Position** | Puts a wrapped result **After original context** or **Before original context**. |
 | **Wrap Prefix** / **Wrap Suffix** | Fixed text placed around a wrapped result. |
 | **Patch Start Tag** / **Patch End Tag** | The tags Patch mode looks for, `<context_patch>` and `</context_patch>` by default. |
-| **Max Tokens** | Output limit for the intercept request. |
-
-### Placement
+| **Maximum output tokens** | Output limit for the intercept request. |
 
 **Position**: **In Prompt** (with the normal prompt), **In Chat** (among the messages) or **Before Prompt**.
 
-**Depth**: for In Chat, how many messages back from the newest it goes. 0 is the very end. Companion feedback uses it too.
+**Depth**: for In Chat, how many messages up from the newest one it goes. 0 is the very end. Companion feedback uses it too.
 
-**Role**: sends the text as **System**, **User** or **Assistant**. Some models take User instructions more seriously than late System ones.
+**More placement options** holds two rarer settings. **Sent as** sends the text as **System**, **User** or **Assistant**; some models take User instructions more seriously than late System ones. **Let World Info entries trigger on this text** lets words in this prompt or note trigger World Info entries; turn it off if the prompt names lots of things that set off unrelated lore.
 
-**Scan for World Info keywords**: lets words in this prompt or note trigger World Info entries. Turn it off if the prompt names lots of things that set off unrelated lore.
+### Changes to the Reply
 
-### Run Order and Conditions
+Shown for after-reply agents that write into the prompt or reply.
 
-**Order**: lower numbers run first. It sets the sequence, not importance.
+**Use this agent's prompt to rewrite or add to the reply**: after the reply is written, sends it to the agent for a separate edit. **How it changes the reply**: **Rewrite the reply** replaces the reply, so the agent has to return the whole message; **Add to the end of the reply** keeps the reply and adds the agent's text after it. **Maximum output tokens** is the limit for that request; rewrites need enough room for the full reply. **Recent messages** lets it read up to 30 earlier messages as context; they are never rewritten.
 
-**Probability (%)**: the chance the agent runs when everything else matches. 100 is always, 0 is never on its own.
+**Show a notification while it works**: shows progress, as long as the global notification switch is on too.
 
-**Trigger Keywords**: comma-separated words the chat must contain. Leave blank to run every time.
+**Also change text written with Impersonate**: also runs this agent's reply changes and regex on text written for you.
 
-**Generation Types**: which actions can trigger it: **Normal** replies, **Continue**, **Impersonate** and **Quiet** background generations.
+**Also change companion notes**: also runs them on companion notes before they're saved. **Companions to change** limits this to chosen companions; none picked means all. Don't point a prose rewriter at a strict tracker unless its prompt keeps the tracker's format.
 
-### Custom Tracker Builder
+**Save or add text without the AI**: simple non-AI steps. **Extract to Variable** saves text matched by a pattern into a variable. **Append Text** adds fixed text after the reply.
 
-Shown when Category is Tracker. Fill in **Tracker Format Example** (the exact output you want), optional **Rules / Behavior Notes** and **HTML / Style Notes**, then press **Generate Kit**. It drafts the prompt, extraction and display regex for you. Check what it made before using it in a chat you care about.
+## Companion Notes
 
-## Reply Changes
-
-**Use this agent prompt as a post-generation prompt pass**: after the reply is written, sends it to the agent for a separate edit. **Rewrite current message** replaces the reply, so the agent has to return the whole message. **Append generated content** keeps the reply and adds the agent's text after it. **Max Tokens** is the limit for that request; rewrites need enough room for the full reply.
-
-**Show toast notifications while this prompt pass runs**: shows progress, as long as the global notification switch is on too.
-
-**…on generated impersonation text**: also runs this agent's reply changes and regex on text written for you.
-
-**…on companion agent outputs**: also runs them on companion notes before they're saved. **Companion targets** limits this to chosen companions; none selected means all. Don't point a prose rewriter at a strict tracker unless its prompt keeps the tracker's format.
-
-**Enable utility post-processing**: simple non-AI steps. **Extract to Variable** saves text matched by a pattern into a variable. **Append Text** adds fixed text after the reply.
-
-## Companion Output
-
-Shown when Where results go is Companion note. This is where a companion's own settings live.
+Shown when Where results go is Companion note. This is where a companion's own settings live, in three groups.
 
 **AI Maker**: writes a draft companion prompt from your description. **Preview Feedback**: shows the notes this companion would feed into the next reply.
+
+### How It Runs
 
 | Setting | What it does |
 | --- | --- |
 | **Order** | Lower runs first when companions run one at a time, and sets their order in the panel. |
-| **Automatic runs** | **After matching replies** runs by itself. **Only when I run it** is manual only. |
-| **Display** | **Show note card** under the reply, **Tracker panel only** (the Companion panel), or **Hidden feedback note** (saved but not shown). |
+| **Run companion** | **Automatically after replies** runs by itself. **Only when I run it** is manual only. |
+| **Show notes** | **Under replies** as a note card, in the **Companion panel**, or **Hidden** (saved but not shown). |
 | **Format** | Asks for **Markdown**, **Safe HTML** or **Plain text**. |
-| **Context Messages** | The fewest recent messages the companion reads. 10 means at least ten. |
-| **Min Context Tokens** | Waits until the chat is about this long before running automatically, and keeps reading older messages until it has this many tokens. 0 turns it off. |
-| **History Depth** | How many of its own earlier notes it rereads, 1 to 10. Needs Include prior notes. |
-| **Max Tokens** | Output limit for the companion's note. |
 
 > [!NOTE]
-> Hidden feedback note isn't the same as the eye button in the Companion panel. Display decides where a note shows up. The eye button just stops the companion running automatically, without changing Display or deleting notes.
+> Hidden isn't the same as the eye button in the Companion panel. Show notes decides where a note shows up. The eye button just stops the companion running automatically, without changing Show notes or deleting notes.
 
-**Order** doesn't make one companion wait for another when they run together. Use **Re-run After These Companions Update** for that.
+**Order** doesn't make one companion wait for another when they run together. Use **Runs after** under **Connections to other companions** for that.
 
 ### What It Reads
+
+**Chat messages to read**: the fewest recent messages the companion reads. 10 means at least ten.
+
+**Start after chat tokens**: waits until the chat is about this long before running automatically, and keeps reading older messages until it has this many tokens. 0 turns it off.
+
+**Previous notes to read**: how many of its own earlier notes it rereads, 1 to 10. Needs **Read its previous notes**.
 
 Tick **Include character card**, **Include persona**, **Include World Info**, **Include Author's Note** and **Include System Prompt** to add those to its request. The character card part skips the greeting and example dialogue.
 
 > [!NOTE]
 > Every extra source costs tokens and can distract the companion. A simple tracker usually only needs recent messages and its own last note.
 
-**Include prior notes**: sends this companion's earlier notes back to it, so a tracker can update its last state instead of starting over. History Depth sets how many. Empty or failed notes are skipped.
+**Read its previous notes**: sends this companion's earlier notes back to it, so a tracker can update its last state instead of starting over. Empty or failed notes are skipped.
 
-**Use agent prompt as-is (no added instructions)**: stops ICA adding its usual format instruction. Handy when the prompt already spells out the exact output.
+### Notes It Remembers
 
-### Notes in Later Replies
+**Keep in chat history**: sends saved notes to the main model with later replies. Read its previous notes is for the companion's own memory; this one is for the main model's. Also on the companion card, in the Select bar and in the Companion panel.
 
-**Keep this agent in Chat History**: sends saved notes to the main model with later replies. Include prior notes is for the companion's own memory; this one is for the main model's.
+**Notes to keep when not keeping all**: how many recent notes stay in history. **Keep all saved notes** keeps every one, which adds up fast in long chats.
 
-**Notes to keep**: how many recent notes stay in history. **Keep all notes instead** keeps every one, which adds up fast in long chats.
+**Where kept notes go**: **Newest reply** attaches the kept notes to the latest reply, **Each note's own reply** leaves each note with the reply it came from, and **One labelled block** gathers them under `[<Name> - kept notes]`, placed with this agent's Position, Depth, Sent as and World Info fields under What it changes. Also in **Quick settings**.
 
-**Where kept notes go**: **Newest reply** attaches the kept notes to the latest reply, **Each note's own reply** leaves each note with the reply it came from, and **One labelled block** gathers them under `[<Name> - kept notes]`, placed with this agent's Position, Depth, Role and World Info scan fields from When it runs. Also in the **Agent settings** quick popup.
+**Keep notes when the reply is hidden**: keeps a note even after you hide the message it's attached to.
 
-**Keep notes in context even when their message is hidden**: keeps a note even after you hide the message it's attached to.
-
-**Feed recent notes into future generations**: slips recent notes into the main request using this agent's Position, Depth and Role from When it runs. **Feedback Depth** sets how many, 1 to 10.
+**Feed recent notes into future generations**: slips recent notes into the main request using this agent's Position, Depth and Sent as from What it changes. **Recent notes to feed back** sets how many, 1 to 10.
 
 > [!NOTE]
 > Feedback and Chat History are two routes for the same notes. Feedback puts them at a set position; Chat History carries them with the messages. A note already in Chat History isn't fed back again.
 
-### Advanced Routing and Batches
+### More Companion Options
 
-**Run selected companions in one request**: lets this companion share one request with those picked in **Batch With Enabled Companions**. They only batch when their connection, model, context and target match; otherwise they run separately.
+**Maximum output tokens**: output limit for the companion's note.
 
-**Send context to the following Companion Agents before generation**: passes this companion's latest note to the ones picked in **Companion Agents Receiving This Context**. It only goes one way.
+**Use agent prompt as-is (no added instructions)**: stops Agents adding its usual format instruction. Handy when the prompt already spells out the exact output.
 
-**Re-run After These Companions Update**: reruns this companion when a chosen companion's note changes. **Delay until selected companions finish** makes it wait for them in the same run instead of running twice. Long chains add requests and time.
+### Connections to Other Companions
+
+**Share one request with linked companions**: lets this companion share one request with those picked in **Companions that share this request**. They only batch when their connection, model, context and target match; otherwise they run separately.
+
+**Send latest notes to other companions**: passes this companion's latest note to the ones picked in **Companions that receive its notes**. It only goes one way.
+
+**Runs after**: it reads the notes of the companions picked here, and runs again when any of them writes a new note. **Delay until selected companions finish** makes it wait for them in the same run instead of running twice. Long chains add requests and time.
 
 ### Template-Only Settings
 
@@ -243,6 +250,10 @@ Tick **Include character card**, **Include persona**, **Include World Info**, **
 
 **Plot Objective** (Plot Compass): where you'd like the story to go, without forcing the current scene.
 
+## Model
+
+**Connection profile** and **Model override**: use a different connection or model for this agent only. Leave them on **Use the shared default** and empty to follow Connections & defaults.
+
 ## Agent Regex
 
 **Add Regex** attaches a regex script to this agent; **Load Bundled Regex** restores the scripts a bundled agent came with. Scripts run when the agent does, and can find, remove or reformat text. Bundled trackers use them to turn raw output into a tidy display. Each script has its own **Find Regex**, **Replace String**, **Placement**, **Min Depth** and **Max Depth**, and can be moved up, moved down, edited or deleted from the list.
@@ -251,7 +262,7 @@ Regex can eat formatting you wanted to keep, so try new scripts on a message you
 
 ## Companion Panel
 
-The Companion panel is titled **Companions** and slides out from the side. It shows companions set to **Tracker panel only**. Open it with the floating side button, the **Companions** top bar button or **Companion Panel** in the Extensions menu.
+The Companion panel is titled **Companions** and slides out from the side. It shows companions whose **Show notes** is **Companion panel**. Open it with the floating side button, the **Companions** top bar button or **Companion panel** in the Extensions menu.
 
 You can drag the floating button to any edge. **Hide the floating button** hides it; bring the panel back from the Extensions menu or switch to the top bar button in Connections & defaults. A companion with nothing saved yet shows 'No state yet'.
 
@@ -260,11 +271,16 @@ You can drag the floating button to any edge. **Hide the floating button** hides
 | Button | What it does |
 | --- | --- |
 | **Lock panel** / **Unlock panel** | Keeps the panel open when you click elsewhere. |
-| **Retry failed** (warning icon) | Reruns companions that failed, with a count of how many. |
-| **Run automatic companions** (bolt icon) | Runs your automatic companions on the last reply. |
-| **Regenerate all companions** | Reruns every enabled companion, manual ones included, on the latest reply. |
 | **Hide the floating button** | Hides the side button. |
 | **Close panel** | Closes it. |
+
+**Run buttons** sit in their own row under the header, with the same names as in Companion activity:
+
+| Button | What it does |
+| --- | --- |
+| **Run all** | Runs every switched-on companion on the latest reply, including those set to run only when you ask. |
+| **Run automatic** | Runs only the companions set to run after replies, with a count of how many. |
+| **Run failed again** | Shows only when something failed, with a count. Runs the failed companions again. |
 
 **Buttons on each companion**:
 
@@ -273,13 +289,15 @@ You can drag the floating button to any edge. **Hide the floating button** hides
 | **Reorder companion** (grip) | Drag, or use the arrow keys, to change its Order. |
 | **Hide companion** / **Unhide companion** (eye) | Stops or restarts automatic runs. The agent and its notes stay. |
 | **Run companion** | Runs it on the latest reply. |
-| **Regenerate state** | Reruns it on the message its current note came from. |
-| **Fix state** | Reruns it with strict format rules, for broken tracker output. |
-| **Edit state text** | Lets you edit the saved note by hand. |
-| **Agent settings** | Opens its full editor. |
+| **Write note again** | Reruns it on the message its current note came from. |
+| **Fix note format** | Reruns it with strict format rules, for broken tracker output. |
+| **Edit note** | Lets you edit the saved note by hand. |
+| **Open full editor** (gear) | Opens its full editor. |
 | **Scroll to source message** | Jumps to the message the note belongs to. |
 
-Each companion also shows its message number, estimated **Input** and **Output** tokens and **Previous states** (the last five notes). **Absorbed** means its message is hidden but the note still counts.
+Under each companion's note sit the same **Keep in chat history**, **notes** and **Connections** controls as on its card in the Agents list.
+
+Each companion also shows its message number, estimated **Input** and **Output** tokens and **Previous states** (every earlier note it wrote in this chat, 20 at a time: **Show older notes** loads the next 20). **Absorbed** means its message is hidden but the note still counts.
 
 ### Special Controls
 
@@ -299,11 +317,11 @@ Some notes contain clickable choices. Clicking one puts its text in your message
 
 Companions set to **Show note card** put their note under the reply. Each card has **Regenerate companion note**, **Edit companion note**, **Copy companion note** and **Delete companion note**, plus **Send companion note to lorebook** for Lorebook Scout.
 
-## Companion Dashboard
+## Companion Activity
 
-Open it with **More tools → Activity & companions**. It lists every companion with its settings as pills, lets you switch each one on or off, and offers **Keep in history**, **Run**, **Edit** and **To inline** per row. Inline agents that could become companions sit in their own section with **To companion**.
+Open it with **More tools → Companion activity**. It lists every companion with its settings as pills, lets you switch each one on or off, and offers **Keep in history**, **Run**, **Edit** and **To prompt or reply** per row. Prompt or reply agents that could become companions sit in their own section with **To companion**.
 
-The toolbar has **Run enabled companions**, **Run automatic companions**, **Retry failed**, **Clean up notes**, **Open live panel**, **Create companion** and **Draft with AI**. **Select** lets you batch or keep several companions at once, and **Reorder** changes their order. **Latest results** shows the 20 newest notes; click one to jump to its message.
+The toolbar has **Run all**, **Run automatic**, **Run failed again**, **Clean up notes**, **Open Companion panel**, **Create companion** and **Draft with AI**. **Select** lets you batch or keep several companions at once, and **Reorder** changes their order. **Latest results** shows the 20 newest notes; click one to jump to its message.
 
 **Clean up notes** removes **Old notes** (keeps each companion's newest) or **Every note** from the companions you pick.
 

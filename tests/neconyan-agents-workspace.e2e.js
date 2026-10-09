@@ -75,6 +75,23 @@ async function chooseEditorSection(page, section) {
     await page.locator(`[data-editor-tab="${section}"]`).click();
 }
 
+async function openFullEditor(page) {
+    const card = page.locator('#ica--agentList .ica--agent-card').first();
+    await card.locator('.ica--card-primary-actions .ica--btn-edit').click();
+    await expect(page.locator('#ica--editor')).toBeVisible();
+}
+
+async function openQuickSettingsFromMoreActions(page) {
+    const allTab = page.locator('#ica--settings').getByRole('tab', { name: 'All', exact: true });
+    if (await allTab.getAttribute('aria-selected') !== 'true') await allTab.click();
+    const card = page.locator('#ica--agentList .ica--agent-card').first();
+    await card.locator('.ica--card-more').click();
+    await card.locator('.ica--card-secondary-actions .ica--btn-settings').click();
+    const quick = page.getByRole('dialog', { name: 'Quick settings', exact: true });
+    await expect(quick).toBeVisible();
+    return quick;
+}
+
 const WIDTHS = [1280, 1024, 997, 768, 390, 393, 320];
 
 for (const width of [1280, 393]) {
@@ -95,7 +112,7 @@ for (const width of [1280, 393]) {
             try {
                 await openAgents(page);
                 await page.locator('#ica--search').fill(agent.name);
-                await page.locator('#ica--agentList .ica--btn-settings').click();
+                await openQuickSettingsFromMoreActions(page);
                 const quick = page.locator('.ica--quick-settings');
                 const length = quick.getByLabel('Target length', { exact: true });
                 const context = quick.getByLabel('Recent messages to read', { exact: true });
@@ -115,9 +132,11 @@ for (const width of [1280, 393]) {
                 await expect(quick).toBeHidden();
                 await openAgents(page);
                 await page.locator('#ica--search').fill(agent.name);
-                await page.locator('#ica--agentList .ica--btn-edit').click();
+                const reopenedQuick = await openQuickSettingsFromMoreActions(page);
+                await expect(reopenedQuick.locator('.ica--quick-summary')).toContainText('Order');
+                await reopenedQuick.locator('.ica--quick-open-editor').click();
                 const editor = page.locator('#ica--editor');
-                await chooseEditorSection(page, 'instructions');
+                await chooseEditorSection(page, 'basics');
                 await expect(editor.locator('#ica--editor-length-target')).toHaveValue('Two short paragraphs');
                 await editor.locator('#ica--editor-length-target').fill('');
                 await chooseEditorSection(page, 'reply');
@@ -140,7 +159,7 @@ for (const width of [1280, 393]) {
                 await expect(editor).toBeHidden();
                 await openAgents(page);
                 await page.locator('#ica--search').fill(agent.name);
-                await page.locator('#ica--agentList .ica--btn-settings').click();
+                await openQuickSettingsFromMoreActions(page);
                 await expect(length).toHaveValue('About 300 to 450 words');
                 await expect(context).toHaveValue('0');
                 const response = await page.request.post('/api/settings/get', { headers: requestHeaders, data: {} });
@@ -390,14 +409,15 @@ test.describe('Agents navigation with an open chat', () => {
                     await page.locator('#ica--search').fill(name);
                     await expect(page.locator('#ica--agentList .ica--agent-card')).toHaveCount(1);
                     // The filtered card can sit below the phone viewport's setup controls.
-                    await page.locator('#ica--agentList .ica--btn-edit').scrollIntoViewIfNeeded();
-                    await expect(page.locator('#ica--agentList .ica--btn-edit')).toBeInViewport();
-                    expect(await page.locator('#ica--agentList .ica--btn-edit').evaluate(element => {
+                    const editButton = page.locator('#ica--agentList .ica--card-primary-actions .ica--btn-edit');
+                    await editButton.scrollIntoViewIfNeeded();
+                    await expect(editButton).toBeInViewport();
+                    expect(await editButton.evaluate(element => {
                         const box = element.getBoundingClientRect();
                         const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
                         return element === hit || element.contains(hit);
                     })).toBe(true);
-                    await page.locator('#ica--agentList .ica--btn-edit').click();
+                    await openFullEditor(page);
                     await chooseEditorSection(page, 'basics');
                     await expect(editor.locator('#ica--editor-name')).toHaveValue(name);
                     await expect(editor.locator('#ica--editor-description')).toHaveValue('Keep this draft through an unavailable server.');
@@ -488,6 +508,20 @@ test('empty workspace and failed library load can be recovered without losing th
     } finally { release(); }
 });
 
+async function openSavedSetups(page) {
+    const menu = page.locator('#ica--moreTools');
+    if (!(await menu.evaluate(element => element.open))) await menu.locator(':scope > summary').click();
+    await expect(page.locator('#ica--setupSelect')).toBeVisible();
+}
+
+async function answerPopup(page, value) {
+    const popup = page.locator('dialog.popup[open]').last();
+    await expect(popup).toBeVisible();
+    if (value !== undefined) await popup.locator('.popup-input').fill(value);
+    await popup.locator('.popup-button-ok').click();
+    await expect(popup).toBeHidden();
+}
+
 test('saved agent setups survive reload and recover from a failed load without deleting agents', async ({ page }, info) => {
     const { errors, navigate } = trackNavigationErrors(page);
     await page.route(/\/api\/.*\/(?:generate|generate-quiet)(?:\?|$)/, route => route.fulfill({ status: 503, json: { error: 'No model calls during setup checks.' } }));
@@ -506,18 +540,21 @@ test('saved agent setups survive reload and recover from a failed load without d
     try {
         expect((await api.post('/api/in-chat-agents/save', { headers: requestHeaders, data: agent })).ok()).toBe(true);
         await openAgents(page, false, navigate);
-        page.once('dialog', dialog => dialog.accept(name));
+        await openSavedSetups(page);
         await page.locator('#ica--setupSave').click();
+        await answerPopup(page, name);
         await expect(page.locator('#ica--setupStatus')).toHaveAttribute('data-tone', 'saved');
         await expect(page.locator('#ica--setupSelect')).not.toHaveValue('');
         presetId = await page.locator('#ica--setupSelect').inputValue();
         await openAgents(page, false, navigate);
+        await openSavedSetups(page);
         await expect(page.locator('#ica--setupSelect')).toHaveValue(presetId);
         const savedPresets = async () => (await api.post('/api/in-chat-agents/presets/list', { headers: await headers(page), data: {} })).json();
         const saved = (await savedPresets()).find(preset => preset.id === presetId);
         expect(saved.agents.find(item => item.id === id)).toMatchObject({ settings: agent.settings, customSchema: agent.customSchema });
         expect((await api.post('/api/in-chat-agents/save', { headers: await headers(page), data: { ...agent, prompt: 'Changed after saving' } })).ok()).toBe(true);
         await openAgents(page, false, navigate);
+        await openSavedSetups(page);
         await page.locator('#ica--setupSelect').selectOption(presetId);
         let failed = false;
         await page.route('**/api/in-chat-agents/save', async route => {
@@ -543,8 +580,8 @@ test('saved agent setups survive reload and recover from a failed load without d
             expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
             await page.screenshot({ path: info.outputPath(`setups-${width}.png`) });
         }
-        page.once('dialog', dialog => dialog.accept());
         await page.locator('#ica--setupDelete').click();
+        await answerPopup(page);
         await expect(page.locator('#ica--setupSelect')).toHaveValue('');
         expect((await savedPresets()).some(preset => preset.id === presetId)).toBe(false);
         expect((await readAgent()).prompt).toBe(agent.prompt);
@@ -597,6 +634,7 @@ test('setup controls wait for a slow agent library and retry a failed initial lo
         await expect.poll(() => pending, { timeout: 45000 }).toBe(true);
         await page.waitForFunction(() => typeof window.NeconyanShell?.openTab === 'function');
         await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
+        await openSavedSetups(page);
         await expect(page.locator(`#ica--setupSelect option[value="${preset.id}"]`)).toHaveCount(1, { timeout: 15000 });
         await expect(page.locator('#ica--setupSave')).toBeDisabled();
         await expect(page.locator('#ica--setupLoad')).toBeDisabled();

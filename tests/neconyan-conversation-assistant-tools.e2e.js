@@ -54,7 +54,7 @@ for (const phone of [false, true]) {
         await expect(card.locator('.ica--card-toggle')).toHaveAttribute('aria-pressed', 'false');
         await card.locator('.ica--card-toggle').click();
         await expect(card.locator('.ica--card-toggle')).toHaveAttribute('aria-pressed', 'true');
-        await card.locator('.ica--btn-edit').click();
+        await card.locator('.ica--card-primary-actions .ica--btn-edit').click();
         await expect(reopened.locator('#ica--editor-name')).toHaveValue(agent.name);
         await expect(reopened.locator('#ica--editor-execution')).toHaveValue('companion');
         await reopened.screenshot({ path: info.outputPath('assistant-created-agent-editor.png') });

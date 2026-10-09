@@ -64,7 +64,7 @@ test('only registered pages render, and the glossary uses current Agents labels'
     assert.doesNotMatch(html, /explained in plain words/);
     assert.match(html, /href="\/docs\/in-chat-agents-glossary\.md"/);
     assert.equal((html.match(/class="callout callout-note"/g) || []).length, 3);
-    for (const label of ['Create agent', 'Browse library', 'Connections &amp; Defaults', 'Companion Output']) {
+    for (const label of ['Create agent', 'Browse library', 'Connections &amp; Defaults', 'Companion Notes', 'What It Changes']) {
         assert.ok(html.includes(label), `missing ${label}`);
     }
     assert.doesNotMatch(glossary, /sillybunny/i);
@@ -79,13 +79,13 @@ test('Taro hosts the glossary in the assistant gender the user picked', () => {
     assert.match(neutral, /I checked twice\. Nothing matches that search\./);
 
     const asides = [...neutral.matchAll(/<\/section>\s*<aside class="host-aside host-aside-(left|right)" role="note" aria-label="Taro says" data-after="([^"]+)">[\s\S]*?<img class="host-aside-art" src="([^"]+)"/g)];
-    assert.deepEqual(asides.map(match => match[2]), ['main-agents-panel', 'companion-output', 'agent-regex', 'companion-panel', 'storage-and-recovery']);
+    assert.deepEqual(asides.map(match => match[2]), ['main-agents-panel', 'companion-notes', 'agent-regex', 'companion-panel', 'storage-and-recovery']);
     assert.deepEqual(asides.map(match => match[1]), ['right', 'left', 'right', 'left', 'right']);
     for (const [, , after, src] of asides) {
         assert.match(src, /^\/img\/neconyan\/tour\/tour-0[358]-taro-[a-z]+-neutral\.webp\?v=/);
         assert.ok(neutral.indexOf(`data-section="${after}"`) < neutral.indexOf(`data-after="${after}"`), `${after} aside sits after its section`);
     }
-    assert.match(neutral, /History Depth does nothing unless Include prior notes is on/);
+    assert.match(neutral, /Previous notes to read does nothing unless Read its previous notes is on/);
 
     const userRoot = mkdtempSync(join(tmpdir(), 'docs-reader-'));
     try {

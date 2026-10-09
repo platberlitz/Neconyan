@@ -170,7 +170,7 @@ describe('companion tracker panel', () => {
         globalThis.$ = jest.fn(() => ({ length: 0, on: jest.fn(), append: jest.fn(), html: jest.fn(), toggle: jest.fn() }));
     });
 
-    test('collects the latest state and a capped history per agent', async () => {
+    test('collects the latest state and the full history per agent', async () => {
         const tracker = { id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true, companion: { displayMode: 'panel' } };
         agents = [tracker];
         const panel = await importPanel();
@@ -188,8 +188,9 @@ describe('companion tracker panel', () => {
         expect(states).toHaveLength(1);
         expect(states[0].latest.messageIndex).toBe(7);
         expect(states[0].latest.result.content).toBe('state 7');
-        expect(states[0].history).toHaveLength(5);
+        expect(states[0].history).toHaveLength(7);
         expect(states[0].history[0].messageIndex).toBe(6);
+        expect(states[0].history.at(-1).messageIndex).toBe(0);
     });
 
     test('orders panel sections by agents-page order with orphans last', async () => {
@@ -348,7 +349,7 @@ describe('companion tracker panel', () => {
         expect(html).toMatch(/<section class="ica--tpanel-agent"[\s\S]*?data-message-index="0"[\s\S]*?data-action="panel-run-latest"[\s\S]*?<\/section>/);
     });
 
-    test('offers automatic runs and a failed-companion retry in the panel header', async () => {
+    test('offers labelled Run all, Run automatic and Run failed again buttons under the panel header', async () => {
         agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true, companion: { displayMode: 'panel' } }];
         chat.push({ is_user: false, is_system: false, mes: 'reply' });
         const panel = await importPanel();
@@ -362,9 +363,13 @@ describe('companion tracker panel', () => {
         html = panel.buildPanelHtml();
 
         expect(html).not.toMatch(/data-action="panel-run-auto"[^>]*disabled/);
-        expect(html).toContain('Run the 1 automatic companion on the last reply');
+        expect(html).toContain('Run the 1 automatic companion on the latest reply');
+        expect(html).toContain('<span>Run all</span>');
+        expect(html).toContain('<span>Run automatic</span>');
+        expect(html).toMatch(/<div class="ica--tpanel-header">[\s\S]*?<\/div>\s*<div class="ica--tpanel-run" role="group" aria-label="Run companions">/);
         expect(html).toContain('data-action="panel-retry-failed"');
-        expect(html).toContain('Retry 2 failed companions on message #0');
+        expect(html).toContain('Run the 2 companions that failed on message #0 again');
+        expect(html).toContain('<span>Run failed again</span>');
         expect(html).toContain('<span class="ica--tpanel-action-count">2</span>');
 
         globallyEnabled = false;
@@ -490,6 +495,7 @@ describe('companion tracker panel', () => {
             });
         }
 
+        panel.revealPanelHistory('tracker-1');
         const html = panel.buildPanelHtml();
 
         expect(html).toContain('Previous states (2)');
@@ -497,6 +503,38 @@ describe('companion tracker panel', () => {
         expect(html).toMatch(/ica--tpanel-history-entry[\s\S]*?data-message-index="0"/);
         const editNoteMatches = html.match(/data-action="panel-edit-note"/g);
         expect(editNoteMatches).toHaveLength(3);
+    });
+
+    test('lists every earlier note, not only the newest five', async () => {
+        const tracker = { id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true };
+        agents = [tracker];
+        const panel = await importPanel();
+
+        for (let index = 0; index < 12; index++) {
+            const message = { is_user: false, is_system: false, mes: `reply ${index}` };
+            chat.push(message);
+            companionResultsByMessage.set(message, {
+                'tracker-1': { status: 'done', content: `state ${index}`, agentName: 'Scene Tracker' },
+            });
+        }
+
+        const [state] = panel.collectPanelAgentStates();
+        expect(state.latest.messageIndex).toBe(11);
+        expect(state.history.map(entry => entry.messageIndex)).toEqual([10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0]);
+        const closed = panel.buildPanelHtml();
+        expect(closed).toContain('Previous states (11)');
+        expect(closed).not.toContain('class="ica--tpanel-history-entry"');
+
+        panel.revealPanelHistory('tracker-1', 5);
+        const firstPage = panel.buildPanelHtml();
+        expect(firstPage.match(/class="ica--tpanel-history-entry"/g)).toHaveLength(5);
+        expect(firstPage).toContain('Showing 5 of 11');
+        expect(firstPage).toContain('data-action="panel-history-more"');
+
+        panel.revealPanelHistory('tracker-1', 20);
+        const everything = panel.buildPanelHtml();
+        expect(everything.match(/class="ica--tpanel-history-entry"/g)).toHaveLength(11);
+        expect(everything).not.toContain('data-action="panel-history-more"');
     });
 
     test('shows lorebook actions on every stored state only for tagged agents', async () => {
@@ -512,6 +550,7 @@ describe('companion tracker panel', () => {
             });
         }
 
+        panel.revealPanelHistory('scout');
         expect(panel.buildPanelHtml().match(/data-action="panel-send-to-lorebook"/g)).toHaveLength(3);
 
         scout.tags = ['notes'];
@@ -574,6 +613,7 @@ describe('companion tracker panel', () => {
         olderShardHost.is_system = true;
         filler.is_system = true;
 
+        panel.revealPanelHistory('memory-shard');
         const html = panel.buildPanelHtml();
         expect(html).toContain('Previous states (1)');
         expect(html).toMatch(/ica--tpanel-history-entry[\s\S]*?data-message-index="0"/);
@@ -631,7 +671,7 @@ describe('companion tracker panel', () => {
 
         globallyEnabled = false;
         expect(panel.shouldShowCompanionPanelHandle()).toBe(true);
-        expect(panel.buildPanelHtml()).toContain('data-action="panel-regenerate-all" title="Regenerate every companion on the last reply" aria-label="Regenerate all companions" disabled');
+        expect(panel.buildPanelHtml()).toContain('data-action="panel-regenerate-all" title="Switch Agents on to run companions" disabled');
     });
 
     test('defaults the launcher to the floating button and normalises unknown values', async () => {
@@ -1318,8 +1358,10 @@ describe('companion tracker panel', () => {
 
         const html = panel.buildPanelHtml();
         expect(html).toContain('Panel Tracker');
-        expect(html).not.toContain('Card Note');
-        expect(html).not.toContain('Hidden Feedback');
+        expect(html).not.toContain('data-agent-id="card-agent"');
+        expect(html).not.toContain('data-agent-id="hidden-agent"');
+        expect(html).not.toContain('inline card content');
+        expect(html).not.toContain('hidden feedback');
         expect(panel.shouldShowCompanionPanelHandle()).toBe(true);
     });
 

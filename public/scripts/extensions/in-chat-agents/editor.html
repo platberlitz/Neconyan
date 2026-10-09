@@ -3,41 +3,48 @@
         <div>
             <span class="ica--section-kicker">Agent editor</span>
             <h2 id="ica--editor-title">New agent</h2>
-            <p>Start with the job, then move through timing and output when you need more control.</p>
+            <p>Write what the agent does first. The other tabs are optional.</p>
+            <p id="ica--editor-summary" class="ica--editor-summary" hidden></p>
         </div>
         <span class="ica--editor-title-status" aria-hidden="true"><i class="fa-solid fa-sliders"></i></span>
     </header>
     <div id="ica--editor-save-error" class="ica--editor-save-error" role="alert" hidden></div>
     <div class="ica--editor-layout">
     <nav id="ica--editor-tabs" class="ica--editor-tabs" role="tablist" aria-orientation="vertical" aria-label="Agent editor sections">
-        <button type="button" id="ica--editor-tab-basics" class="ica--editor-tab is-active" data-editor-tab="basics" aria-controls="ica--editor-panel-basics" role="tab" aria-selected="true" tabindex="0">Basics</button>
-        <button type="button" id="ica--editor-tab-instructions" class="ica--editor-tab" data-editor-tab="instructions" aria-controls="ica--editor-panel-instructions" role="tab" aria-selected="false" tabindex="-1">Instructions &amp; model</button>
-        <button type="button" id="ica--editor-tab-when" class="ica--editor-tab" data-editor-tab="when" aria-controls="ica--tracker-builder-view ica--when-view ica--editor-panel-when" role="tab" aria-selected="false" tabindex="-1">When it runs</button>
-        <button type="button" id="ica--editor-tab-reply" class="ica--editor-tab" data-editor-tab="reply" aria-controls="ica--editor-panel-reply" role="tab" aria-selected="false" tabindex="-1">Reply changes</button>
-        <button type="button" id="ica--editor-tab-companion" class="ica--editor-tab" data-editor-tab="companion" aria-controls="ica--companion-view" role="tab" aria-selected="false" tabindex="-1" hidden>Companion output</button>
+        <button type="button" id="ica--editor-tab-basics" class="ica--editor-tab is-active" data-editor-tab="basics" aria-controls="ica--editor-panel-basics" role="tab" aria-selected="true" tabindex="0">What it does</button>
+        <button type="button" id="ica--editor-tab-when" class="ica--editor-tab" data-editor-tab="when" aria-controls="ica--editor-panel-when" role="tab" aria-selected="false" tabindex="-1">When it runs</button>
+        <button type="button" id="ica--editor-tab-reply" class="ica--editor-tab" data-editor-tab="reply" aria-controls="ica--when-view ica--editor-panel-reply" role="tab" aria-selected="false" tabindex="-1">What it changes</button>
+        <button type="button" id="ica--editor-tab-companion" class="ica--editor-tab" data-editor-tab="companion" aria-controls="ica--companion-view" role="tab" aria-selected="false" tabindex="-1" hidden>Companion notes</button>
+        <button type="button" id="ica--editor-tab-instructions" class="ica--editor-tab" data-editor-tab="instructions" aria-controls="ica--editor-panel-instructions" role="tab" aria-selected="false" tabindex="-1">Model</button>
         <button type="button" id="ica--editor-tab-regex" class="ica--editor-tab" data-editor-tab="regex" aria-controls="ica--editor-panel-regex" role="tab" aria-selected="false" tabindex="-1">Regex</button>
     </nav>
     <label class="ica--editor-section-select-label">
         <span class="sr-only">Editor section</span>
         <select id="ica--editor-section-select" class="text_pole" aria-label="Editor section">
-            <option value="basics">Basics</option>
-            <option value="instructions">Instructions &amp; model</option>
+            <option value="basics">What it does</option>
             <option value="when">When it runs</option>
-            <option value="reply">Reply changes</option>
-            <option value="companion">Companion output</option>
+            <option value="reply">What it changes</option>
+            <option value="companion">Companion notes</option>
+            <option value="instructions">Model</option>
             <option value="regex">Regex</option>
         </select>
     </label>
     <div class="ica--editor-content neconyan-cat-panel">
+
     <section id="ica--editor-panel-basics" class="ica--editor-view-section" role="tabpanel" aria-labelledby="ica--editor-tab-basics" data-editor-view="basics">
         <div class="ica--editor-view-heading">
-            <span class="ica--section-kicker">Basics</span>
-            <p>Name this helper and decide where it belongs.</p>
+            <span class="ica--section-kicker">What it does</span>
+            <p>Name the agent, say where its result goes, then write its instructions.</p>
         </div>
         <div class="ica--editor-section">
         <div class="ica--editor-row">
             <label>Name
                 <input type="text" id="ica--editor-name" class="text_pole" placeholder="Agent name" />
+            </label>
+        </div>
+        <div class="ica--editor-row">
+            <label>Description
+                <input type="text" id="ica--editor-description" class="text_pole" placeholder="Short description" />
             </label>
         </div>
         <div class="ica--editor-row flex-container flexGap5">
@@ -50,39 +57,18 @@
                     <option value="custom">Custom</option>
                 </select>
             </label>
-            <label class="flex1">Run timing
-                <select id="ica--editor-phase" class="text_pole">
-                    <option value="pre">Before reply</option>
-                    <option value="post">After reply</option>
-                    <option value="both">Before and after</option>
-                </select>
-            </label>
-        </div>
-        <div class="ica--editor-row">
-            <label>Where results go
-                <select id="ica--editor-execution" class="text_pole">
+            <label class="flex1">Where results go
+                <select id="ica--editor-execution" class="text_pole" aria-describedby="ica--editor-execution-help">
                     <option value="inline">Prompt or reply</option>
                     <option value="companion">Companion note</option>
                 </select>
             </label>
-            <div class="ica--regex-note">Companions save separate notes beside the reply.</div>
         </div>
-        <div class="ica--editor-row">
-            <label>Description
-                <input type="text" id="ica--editor-description" class="text_pole" placeholder="Short description" />
-            </label>
-        </div>
+        <div class="ica--regex-note" id="ica--editor-execution-help" aria-live="polite"></div>
         <label class="checkbox_label">
             <input type="checkbox" id="ica--editor-favorite" />
             <span>Pin this agent</span>
         </label>
-        </div>
-    </section>
-
-    <section id="ica--editor-panel-instructions" class="ica--editor-view-section" role="tabpanel" aria-labelledby="ica--editor-tab-instructions" data-editor-view="instructions">
-        <div class="ica--editor-view-heading">
-            <span class="ica--section-kicker">Instructions &amp; model</span>
-            <p>Give the helper a clear job, then choose the connection it should use.</p>
         </div>
         <div class="ica--editor-section">
         <div class="ica--editor-section-header">
@@ -101,18 +87,6 @@
                 </button>
             </div>
         </div>
-        <div class="ica--editor-row">
-            <label>Connection profile <small>Overrides the shared default for this agent.</small>
-                <select id="ica--editor-connectionProfile" class="text_pole">
-                    <option value="">Use extension default</option>
-                </select>
-            </label>
-        </div>
-        <div class="ica--editor-row">
-            <label>Model override <small>Optional model name for the chosen connection profile.</small>
-                <input type="text" id="ica--editor-modelOverride" class="text_pole" placeholder="Leave empty to use profile default" />
-            </label>
-        </div>
         <div class="ica--editor-row" id="ica--length-target-row" style="display:none">
             <label>Target length <small>Say it in plain words, such as 'About 300 words', 'Two short paragraphs' or 'Under 150 words'.</small>
                 <input type="text" id="ica--editor-length-target" class="text_pole" maxlength="200" placeholder="About 300 to 450 words" />
@@ -122,10 +96,61 @@
         </div>
     </section>
 
+    <section id="ica--tracker-builder-view" class="ica--editor-view-section" role="tabpanel" aria-labelledby="ica--editor-tab-basics" data-editor-view="basics" hidden>
+    <div class="ica--editor-section" id="ica--tracker-builder-section" style="display:none">
+        <div class="ica--editor-section-header">
+            <strong>Custom Tracker Builder</strong>
+            <div class="ica--editor-section-actions">
+                <button type="button" id="ica--tracker-builder-generate" class="menu_button menu_button_icon">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    <span>Generate Kit</span>
+                </button>
+            </div>
+        </div>
+        <div class="ica--regex-note">Paste an example of the tracker you want, plus any rules or style notes. Generate Kit writes the prompt and the regex rules for you.</div>
+        <div class="ica--editor-row">
+            <label>Tracker Format Example
+                <textarea id="ica--tracker-builder-format" class="text_pole textarea_compact" rows="7" placeholder="[TRACKER|Detail 1|Detail 2]&#10;note: describe what changed&#10;[/TRACKER]"></textarea>
+            </label>
+        </div>
+        <div class="ica--editor-row">
+            <label>Rules / Behavior Notes <small>(optional)</small>
+                <textarea id="ica--tracker-builder-rules" class="text_pole textarea_compact" rows="4" placeholder="When it should appear, what should count as a change, any mandatory fields, etc."></textarea>
+            </label>
+        </div>
+        <div class="ica--editor-row">
+            <label>HTML / Style Notes <small>(optional)</small>
+                <textarea id="ica--tracker-builder-style" class="text_pole textarea_compact" rows="4" placeholder="Example: soft blue card, compact badge chips, show the note body in a bordered block"></textarea>
+            </label>
+        </div>
+    </div>
+    </section>
+
+    <section id="ica--editor-panel-instructions" class="ica--editor-view-section" role="tabpanel" aria-labelledby="ica--editor-tab-instructions" data-editor-view="instructions">
+        <div class="ica--editor-view-heading">
+            <span class="ica--section-kicker">Model</span>
+            <p>Leave these empty to use the connection chosen under Connections &amp; defaults.</p>
+        </div>
+        <div class="ica--editor-section">
+        <div class="ica--editor-row">
+            <label>Connection profile <small>Overrides the shared default for this agent.</small>
+                <select id="ica--editor-connectionProfile" class="text_pole">
+                    <option value="">Use the shared default</option>
+                </select>
+            </label>
+        </div>
+        <div class="ica--editor-row">
+            <label>Model override <small>Optional model name for the chosen connection profile.</small>
+                <input type="text" id="ica--editor-modelOverride" class="text_pole" placeholder="Leave empty to use profile default" />
+            </label>
+        </div>
+        </div>
+    </section>
+
     <section id="ica--companion-view" class="ica--editor-view-section" role="tabpanel" aria-labelledby="ica--editor-tab-companion" data-editor-view="companion" hidden>
     <div class="ica--editor-section ica--companion-editor-section" id="ica--companion-section" style="display:none">
         <div class="ica--editor-section-header">
-            <strong>Companion output</strong>
+            <strong>Companion notes</strong>
             <div class="ica--editor-section-actions">
                 <button type="button" id="ica--editor-companion-maker" class="menu_button menu_button_icon" title="Create a companion prompt with AI">
                     <i class="fa-solid fa-wand-magic-sparkles"></i>
@@ -137,7 +162,7 @@
                 </button>
             </div>
         </div>
-        <div class="ica--regex-note">Companions run after the main reply and render below it. Use Hidden when the note should only feed future prompts through feedback.</div>
+        <div class="ica--regex-note">A companion writes its own note after each reply instead of changing the reply. Choose Hidden when the note should only be fed back into later replies.</div>
         <div class="ica--editor-row" id="ica--chatroom-style-row" style="display:none">
             <label>Chatroom Style
                 <select id="ica--editor-chatroom-style" class="text_pole">
@@ -207,21 +232,22 @@
             </label>
             <div class="ica--regex-note">Injected into Plot Compass runs and editable any time from this agent's settings.</div>
         </div>
+        <div class="ica--editor-group-title">How it runs</div>
         <div class="ica--companion-core-grid">
-            <label title="Lower numbers run earlier when Append Agents Execution is set to Sequential.">Order
+            <label title="Lower numbers run first. Order matters most when agents run one at a time (see Connections &amp; defaults).">Order
                 <input type="number" id="ica--editor-companion-order" class="text_pole" min="0" max="999" value="100" />
             </label>
-                <label>Automatic runs
-                    <select id="ica--editor-companion-trigger" class="text_pole">
-                    <option value="auto">After matching replies</option>
+            <label>Run companion
+                <select id="ica--editor-companion-trigger" class="text_pole">
+                    <option value="auto">Automatically after replies</option>
                     <option value="manual">Only when I run it</option>
                 </select>
             </label>
-            <label>Display
+            <label>Show notes
                 <select id="ica--editor-companion-displayMode" class="text_pole">
-                    <option value="card">Show note card</option>
-                    <option value="panel">Tracker panel only</option>
-                    <option value="hidden">Hidden feedback note</option>
+                    <option value="card">Under replies</option>
+                    <option value="panel">Companion panel</option>
+                    <option value="hidden">Hidden</option>
                 </select>
             </label>
             <label>Format
@@ -231,17 +257,17 @@
                     <option value="text">Plain text</option>
                 </select>
             </label>
-            <label>Context Messages
+        </div>
+        <div class="ica--editor-group-title">What it reads</div>
+        <div class="ica--companion-core-grid">
+            <label>Chat messages to read
                 <input type="number" id="ica--editor-companion-contextMessages" class="text_pole" min="1" value="10" />
             </label>
-            <label title="Only auto-run once the chat reaches roughly this many tokens. 0 runs always.">Min Context Tokens
+            <label title="Only auto-run once the chat reaches roughly this many tokens. 0 runs always.">Start after chat tokens
                 <input type="number" id="ica--editor-companion-minContextTokens" class="text_pole" min="0" max="200000" step="1000" value="0" />
             </label>
-            <label>History Depth
+            <label>Previous notes to read
                 <input type="number" id="ica--editor-companion-historyDepth" class="text_pole" min="1" max="10" value="3" />
-            </label>
-            <label>Max Tokens
-                <input type="number" id="ica--editor-companion-maxTokens" class="text_pole" min="16" max="64000" value="64000" />
             </label>
         </div>
         <div class="ica--companion-toggle-grid">
@@ -250,13 +276,15 @@
             <label class="checkbox_label"><input type="checkbox" id="ica--editor-companion-includeWorldInfo" /><span>Include World Info</span></label>
             <label class="checkbox_label"><input type="checkbox" id="ica--editor-companion-includeAuthorsNote" /><span>Include Author's Note</span></label>
             <label class="checkbox_label"><input type="checkbox" id="ica--editor-companion-includeSystemPrompt" /><span>Include System Prompt</span></label>
-            <label class="checkbox_label"><input type="checkbox" id="ica--editor-companion-includeHistory" /><span>Include prior notes</span></label>
-            <label class="checkbox_label"><input type="checkbox" id="ica--editor-companion-includeInChatHistory" /><span>Keep this agent in Chat History</span></label>
+            <label class="checkbox_label"><input type="checkbox" id="ica--editor-companion-includeHistory" /><span>Read its previous notes</span></label>
+        </div>
+        <div class="ica--editor-group-title">Notes it remembers</div>
+        <div class="ica--companion-toggle-grid">
+            <label class="checkbox_label"><input type="checkbox" id="ica--editor-companion-includeInChatHistory" /><span>Keep in chat history</span></label>
             <label class="checkbox_label"><input type="checkbox" id="ica--editor-companion-feedbackEnabled" /><span>Feed recent notes into future generations</span></label>
-            <label class="checkbox_label" title="Send the agent prompt exactly as written, without appending format instructions. Recommended for trackers that define their own output format."><input type="checkbox" id="ica--editor-companion-rawPrompt" /><span>Use agent prompt as-is (no added instructions)</span></label>
         </div>
         <div class="ica--editor-row" id="ica--companion-chat-history-row">
-            <label>Notes to keep
+            <label>Notes to keep when not keeping all
                 <input type="number" id="ica--editor-companion-chatHistoryDepth" class="text_pole" min="1" value="1" />
             </label>
             <div class="ica--regex-note">Keeps this agent's most recent notes in the AI's context. Only notes that finished generating are counted.</div>
@@ -267,87 +295,67 @@
                     <option value="block">One labelled block</option>
                 </select>
             </label>
-            <div class="ica--regex-note" id="ica--companion-chat-history-placement-note">A labelled block uses the agent's Position, Depth, Role, and World Info scan fields under When it runs.</div>
-            <label class="checkbox_label"><input type="checkbox" id="ica--editor-companion-includeAllChatHistory" /><span>Keep all notes instead</span></label>
-            <label class="checkbox_label"><input type="checkbox" id="ica--editor-companion-keepInChatHistoryWhenHostHidden" /><span>Keep notes in context even when their message is hidden</span></label>
+            <div class="ica--regex-note" id="ica--companion-chat-history-placement-note">A labelled block uses the agent's Position, Depth, Role, and World Info scan fields under What it changes.</div>
+            <label class="checkbox_label"><input type="checkbox" id="ica--editor-companion-includeAllChatHistory" /><span>Keep all saved notes</span></label>
+            <label class="checkbox_label"><input type="checkbox" id="ica--editor-companion-keepInChatHistoryWhenHostHidden" /><span>Keep notes when the reply is hidden</span></label>
         </div>
         <div class="ica--editor-row" id="ica--companion-feedback-depth-row">
-            <label>Feedback Depth
+            <label>Recent notes to feed back
                 <input type="number" id="ica--editor-companion-feedbackDepth" class="text_pole" min="1" max="10" value="1" />
             </label>
-            <div class="ica--regex-note">Feedback notes use the agent's Position, Depth, Role, and World Info scan fields under When it runs.</div>
+            <div class="ica--regex-note">Feedback notes use the agent's Position, Depth, Role, and World Info scan fields under What it changes.</div>
         </div>
-        <details class="ica--advanced-options"><summary>Advanced routing and batches</summary>
+        <details class="ica--advanced-options"><summary>More companion options</summary>
+        <div class="ica--companion-core-grid">
+            <label>Maximum output tokens
+                <input type="number" id="ica--editor-companion-maxTokens" class="text_pole" min="16" max="64000" value="64000" />
+            </label>
+        </div>
+        <div class="ica--companion-toggle-grid">
+            <label class="checkbox_label" title="Send the agent prompt exactly as written, without appending format instructions. Recommended for trackers that define their own output format."><input type="checkbox" id="ica--editor-companion-rawPrompt" /><span>Use agent prompt as-is (no added instructions)</span></label>
+        </div>
+        </details>
+        <details class="ica--advanced-options"><summary>Connections to other companions</summary>
         <div class="ica--editor-row" id="ica--companion-batch-row">
-            <label class="checkbox_label" title="When selected companions use the same profile, model, and context settings, they share one model request."><input type="checkbox" id="ica--editor-companion-batch" /><span>Run selected companions in one request</span></label>
-            <div class="ica--regex-note">Off by default. Turn it on to fetch currently enabled side companions, then pick which ones can share this agent's request.</div>
+            <label class="checkbox_label" title="When selected companions use the same profile, model, and context settings, they share one model request."><input type="checkbox" id="ica--editor-companion-batch" /><span>Share one request with linked companions</span></label>
+            <div class="ica--regex-note">Off by default. Turn it on to list your enabled companions, then pick which ones can share this agent's request.</div>
         </div>
         <div class="ica--editor-row" id="ica--companion-batch-select-row" style="display:none">
-            <label>Batch With Enabled Companions
+            <label>Companions that share this request
                 <select id="ica--editor-companion-batchAgentIds" class="text_pole" multiple size="5"></select>
             </label>
             <div class="ica--regex-note">Only selected companions can batch together. Agents with different models, profiles, or context settings still run separately.</div>
         </div>
         <div class="ica--editor-row" id="ica--companion-context-recipient-row">
-            <label class="checkbox_label" title="Send this companion's latest completed output to selected companions as extra prompt context before they generate."><input type="checkbox" id="ica--editor-companion-sendContextToCompanions" /><span>Send context to the following Companion Agents before generation</span></label>
+            <label class="checkbox_label" title="Send this companion's latest completed output to selected companions as extra prompt context before they generate."><input type="checkbox" id="ica--editor-companion-sendContextToCompanions" /><span>Send latest notes to other companions</span></label>
         </div>
         <div class="ica--editor-row" id="ica--companion-context-recipient-select-row" style="display:none">
-            <label>Companion Agents Receiving This Context
+            <label>Companions that receive its notes
                 <select id="ica--editor-companion-contextRecipientAgentIds" class="text_pole" multiple size="5"></select>
             </label>
             <div class="ica--regex-note">Selected companions receive this companion's latest available output in their prompt context before they generate.</div>
         </div>
         <div class="ica--editor-row" id="ica--companion-dependency-row">
-            <label>Re-run After These Companions Update
+            <label>Runs after
                 <select id="ica--editor-companion-dependencies" class="text_pole" multiple size="5"></select>
             </label>
             <label class="checkbox_label" title="When selected companions are also running, wait for them to finish before this companion generates."><input type="checkbox" id="ica--editor-companion-waitForDependencies" /><span>Delay until selected companions finish</span></label>
-            <div class="ica--regex-note">This companion will automatically re-run when any selected companion produces new output.</div>
+            <div class="ica--regex-note">It reads the notes of the companions picked here, and runs again when any of them writes a new note.</div>
         </div>
         </details>
     </div>
     </section>
 
-    <section id="ica--tracker-builder-view" class="ica--editor-view-section" role="tabpanel" aria-labelledby="ica--editor-tab-when" data-editor-view="when" hidden>
-    <div class="ica--editor-section" id="ica--tracker-builder-section" style="display:none">
-        <div class="ica--editor-section-header">
-            <strong>Custom Tracker Builder</strong>
-            <div class="ica--editor-section-actions">
-                <button type="button" id="ica--tracker-builder-generate" class="menu_button menu_button_icon">
-                    <i class="fa-solid fa-wand-magic-sparkles"></i>
-                    <span>Generate Kit</span>
-                </button>
-            </div>
-        </div>
-        <div class="ica--regex-note">Paste a tracker example and optional rules/style notes. The builder will generate the prompt, extract pattern, and beautification regex for you.</div>
-        <div class="ica--editor-row">
-            <label>Tracker Format Example
-                <textarea id="ica--tracker-builder-format" class="text_pole textarea_compact" rows="7" placeholder="[TRACKER|Detail 1|Detail 2]&#10;note: describe what changed&#10;[/TRACKER]"></textarea>
-            </label>
-        </div>
-        <div class="ica--editor-row">
-            <label>Rules / Behavior Notes <small>(optional)</small>
-                <textarea id="ica--tracker-builder-rules" class="text_pole textarea_compact" rows="4" placeholder="When it should appear, what should count as a change, any mandatory fields, etc."></textarea>
-            </label>
-        </div>
-        <div class="ica--editor-row">
-            <label>HTML / Style Notes <small>(optional)</small>
-                <textarea id="ica--tracker-builder-style" class="text_pole textarea_compact" rows="4" placeholder="Example: soft blue card, compact badge chips, show the note body in a bordered block"></textarea>
-            </label>
-        </div>
-    </div>
-    </section>
-
     <section id="ica--when-view" class="ica--editor-view-section" role="tabpanel" aria-labelledby="ica--editor-tab-when" data-editor-view="when">
     <div class="ica--editor-section" id="ica--injection-section">
-        <strong>When it runs</strong>
-        <div class="ica--editor-subheading">Prompt placement for instructions and companion feedback</div>
-        <details id="ica--before-mode-controls" class="ica--advanced-options"><summary>Advanced context processing</summary>
+        <strong>Where its prompt goes</strong>
+        <div class="ica--editor-subheading">Where the agent's text is placed in the request the AI receives</div>
+        <details id="ica--before-mode-controls" class="ica--advanced-options"><summary>Add to the request or change it</summary>
         <div class="ica--editor-row">
-            <label>Mode
+            <label>What it does with the request
                 <select id="ica--editor-pre-mode" class="text_pole">
-                    <option value="inject">Inject prompt into context</option>
-                    <option value="intercept">Run agent to modify outgoing context</option>
+                    <option value="inject">Add its prompt to the request</option>
+                    <option value="intercept">Run first and change the request</option>
                 </select>
             </label>
         </div>
@@ -368,7 +376,7 @@
                         <option value="patch">Patch via tags</option>
                     </select>
                 </label>
-                <label class="flex1">Max Tokens
+                <label class="flex1">Maximum output tokens
                     <input type="number" id="ica--editor-pre-maxTokens" class="text_pole" min="16" max="64000" value="8192" />
                 </label>
             </div>
@@ -404,7 +412,7 @@
             </div>
             <div class="ica--regex-note">Pre-generation timing runs before the main model receives the assembled context. Post-main timing runs after the main model finishes and before the response is shown or saved. Agents run by Order. Replace mode expects a full replacement context in pre-generation timing; for chat completion that must be a JSON array of chat messages. Wrap and patch add a new message on chat-completion APIs using the Role below.</div>
         </div>
-        <div class="ica--regex-note" id="ica--pre-injection-note">Inject mode uses the existing extension prompt path. Position, Depth, Role, and World Info scanning control where the prompt is inserted.</div>
+        <div class="ica--regex-note" id="ica--pre-injection-note">Its prompt is added to the request. Position and Depth below choose where.</div>
         </details>
         <div class="ica--editor-row flex-container flexGap5">
             <label class="flex1">Position
@@ -418,20 +426,22 @@
                 <input type="number" id="ica--editor-depth" class="text_pole" min="0" max="99" value="1" />
             </label>
         </div>
+        <div class="ica--regex-note">Depth counts messages up from the newest one when Position is In Chat.</div>
+        <details class="ica--advanced-options"><summary>More placement options</summary>
         <div class="ica--editor-row flex-container flexGap5">
-            <label class="flex1">Role
+            <label class="flex1">Sent as
                 <select id="ica--editor-role" class="text_pole">
                     <option value="0">System</option>
                     <option value="1">User</option>
                     <option value="2">Assistant</option>
                 </select>
             </label>
-
         </div>
         <label class="checkbox_label">
             <input type="checkbox" id="ica--editor-scan" />
-            <span>Scan for World Info keywords</span>
+            <span>Let World Info entries trigger on this text</span>
         </label>
+        </details>
     </div>
     </section>
 
@@ -457,22 +467,22 @@
 
     <section id="ica--editor-panel-reply" class="ica--editor-view-section" role="tabpanel" aria-labelledby="ica--editor-tab-reply" data-editor-view="reply">
     <div class="ica--editor-section" id="ica--postprocess-section">
-        <strong>Reply changes</strong>
-        <div class="ica--editor-subheading">Post-generation rewrites, extracts, and formatting</div>
-        <div class="ica--regex-note">Use Agent Regex above for ST-style regex scripts. This section can run the agent prompt as a second-pass rewrite or append pass and still supports extract/append helpers.</div>
+        <strong>Changes to the reply</strong>
+        <div class="ica--editor-subheading">Rewrite, add to or pull details out of the reply after it arrives</div>
+        <div class="ica--regex-note">After the reply arrives, this agent can rewrite it or add to it using its prompt. Find-and-replace rules live in the Regex tab.</div>
         <label class="checkbox_label">
             <input type="checkbox" id="ica--editor-pp-promptEnabled" />
-            <span>Use this agent prompt as a post-generation prompt pass</span>
+            <span>Use this agent's prompt to rewrite or add to the reply</span>
         </label>
         <div id="ica--pp-prompt-options" style="display:none">
             <div class="ica--editor-row flex-container flexGap5">
-                <label class="flex1">Mode
+                <label class="flex1">How it changes the reply
                     <select id="ica--editor-pp-promptMode" class="text_pole">
-                        <option value="rewrite">Rewrite current message</option>
-                        <option value="append">Append generated content</option>
+                        <option value="rewrite">Rewrite the reply</option>
+                        <option value="append">Add to the end of the reply</option>
                     </select>
                 </label>
-                <label class="flex1">Max Tokens
+                <label class="flex1">Maximum output tokens
                     <input type="number" id="ica--editor-pp-promptMaxTokens" class="text_pole" min="16" max="64000" value="8192" />
                 </label>
                 <label class="flex1" title="How many earlier chat messages this pass can read. They are context only and are never rewritten.">Recent messages
@@ -481,30 +491,30 @@
             </div>
             <label class="checkbox_label">
                 <input type="checkbox" id="ica--editor-pp-promptShowNotifications" />
-                <span>Show toast notifications while this prompt pass runs</span>
+                <span>Show a notification while it works</span>
             </label>
             <div class="ica--regex-note">The prompt pass runs after the main reply using this agent's prompt and connection profile. In <b>rewrite</b> mode it replaces the message. In <b>append</b> mode it only adds newly generated text after the original reply. <b>Recent messages</b> lets the pass read that many earlier chat messages as context, which helps it spot repeats and knowledge slips; 0 sends the reply alone. Useful macros inside the prompt include <code>&#123;&#123;currentMessage&#125;&#125;</code>, <code>&#123;&#123;response&#125;&#125;</code>, and <code>&#123;&#123;original&#125;&#125;</code>.</div>
         </div>
         <label class="checkbox_label">
             <input type="checkbox" id="ica--editor-pp-runOnImpersonate" />
-            <span>Run this agent's post passes (prompt pass + Agent Regex) on generated impersonation text</span>
+            <span>Also change text written with Impersonate</span>
         </label>
         <label class="checkbox_label">
             <input type="checkbox" id="ica--editor-pp-runOnCompanionOutputs" />
-            <span>Run this agent's post passes (prompt pass + Agent Regex) on companion agent outputs</span>
+            <span>Also change companion notes</span>
         </label>
         <div id="ica--pp-companion-target-options" style="display:none">
             <div class="ica--editor-row">
-                <label class="flex1">Companion targets <small>(none selected = all companions)</small>
+                <label class="flex1">Companions to change <small>(none picked = all companions)</small>
                     <select id="ica--editor-pp-companionTargets" class="text_pole" multiple size="5"></select>
                 </label>
             </div>
             <div class="ica--regex-note">When a targeted companion finishes a note, this agent's post-generation prompt pass and Agent Regex scripts run on that note before it is stored, so the panel, message cards, feedback injection, and dependent companions all see the transformed version. Avoid targeting structured tracker companions with prose rewrites.</div>
         </div>
-        <details class="ica--advanced-options"><summary>Advanced utility processing</summary>
+        <details class="ica--advanced-options"><summary>Save or add text without the AI</summary>
         <label class="checkbox_label">
             <input type="checkbox" id="ica--editor-pp-enabled" />
-            <span>Enable utility post-processing</span>
+            <span>Save part of the reply or add fixed text</span>
         </label>
         <div id="ica--pp-options" style="display:none">
             <div class="ica--editor-row">
@@ -540,26 +550,36 @@
     </section>
 
     <section id="ica--editor-panel-when" class="ica--editor-view-section" role="tabpanel" aria-labelledby="ica--editor-tab-when" data-editor-view="when">
+        <div class="ica--editor-view-heading">
+            <span class="ica--section-kicker">When it runs</span>
+            <p>Choose when the agent runs and what has to happen first.</p>
+        </div>
     <div class="ica--editor-section">
-        <strong>Run order and conditions</strong>
         <div class="ica--editor-row">
-            <label class="flex1">Order
+            <label>Run timing
+                <select id="ica--editor-phase" class="text_pole" aria-describedby="ica--editor-phase-help">
+                    <option value="pre">Before reply</option>
+                    <option value="post">After reply</option>
+                    <option value="both">Before and after</option>
+                </select>
+            </label>
+            <div class="ica--regex-note" id="ica--editor-phase-help" aria-live="polite"></div>
+        </div>
+        <div class="ica--editor-row flex-container flexGap5">
+            <label class="flex1" title="Lower numbers run first. Order matters most when agents run one at a time (see Connections &amp; defaults).">Order
                 <input type="number" id="ica--editor-order" class="text_pole" min="0" max="999" value="100" />
             </label>
-        </div>
-        <div class="ica--editor-subheading">Trigger rules for this helper</div>
-        <div class="ica--editor-row flex-container flexGap5">
-            <label class="flex1">Probability (%)
+            <label class="flex1">Chance to run (%)
                 <input type="number" id="ica--editor-probability" class="text_pole" min="0" max="100" value="100" />
             </label>
         </div>
         <div class="ica--editor-row">
-            <label>Trigger Keywords <small>(comma-separated, blank = always)</small>
+            <label>Only run when these words appear <small>Separate words with commas. Leave empty to run every time.</small>
                 <input type="text" id="ica--editor-keywords" class="text_pole" placeholder="keyword1, keyword2, ..." />
             </label>
         </div>
         <div class="ica--editor-row">
-            <span>Generation Types:</span>
+            <span>Run for these kinds of reply <small>Quiet covers background requests from other tools.</small></span>
             <label class="checkbox_label"><input type="checkbox" id="ica--editor-type-normal" checked /><span>Normal</span></label>
             <label class="checkbox_label"><input type="checkbox" id="ica--editor-type-continue" checked /><span>Continue</span></label>
             <label class="checkbox_label"><input type="checkbox" id="ica--editor-type-impersonate" checked /><span>Impersonate</span></label>

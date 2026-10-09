@@ -105,19 +105,19 @@ describe('in-chat agents generation UI wiring', () => {
         expect(editorTemplateSource).toContain('ica--companion-core-grid');
         expect(extensionStyleSource).toContain('.ica--companion-core-grid');
         expect(extensionStyleSource).toContain('grid-template-columns: repeat(4, minmax(0, 1fr));');
-        expect(editorTemplateSource).toContain('Run selected companions in one request');
-        expect(editorTemplateSource).toContain('Batch With Enabled Companions');
-        expect(editorTemplateSource).toContain('Turn it on to fetch currently enabled side companions');
+        expect(editorTemplateSource).toContain('Share one request with linked companions');
+        expect(editorTemplateSource).toContain('Companions that share this request');
+        expect(editorTemplateSource).toContain('Turn it on to list your enabled companions');
         expect(editorTemplateSource).toContain('ica--editor-companion-sendContextToCompanions');
-        expect(editorTemplateSource).toContain('Send context to the following Companion Agents before generation');
+        expect(editorTemplateSource).toContain('Send latest notes to other companions');
         expect(editorTemplateSource).toContain('ica--editor-companion-contextRecipientAgentIds');
         expect(editorTemplateSource).toContain('ica--editor-companion-waitForDependencies');
         expect(editorTemplateSource).toContain('Delay until selected companions finish');
-        expect(editorTemplateSource).toContain('<span>Keep this agent in Chat History</span>');
+        expect(editorTemplateSource).toContain('<span>Keep in chat history</span>');
         expect(editorTemplateSource).toContain('Notes to keep');
         expect(editorTemplateSource).toContain('Keeps this agent\'s most recent notes in the AI\'s context. Only notes that finished generating are counted.');
-        expect(editorTemplateSource).toContain('<span>Keep all notes instead</span>');
-        expect(editorTemplateSource).toContain('<span>Keep notes in context even when their message is hidden</span>');
+        expect(editorTemplateSource).toContain('<span>Keep all saved notes</span>');
+        expect(editorTemplateSource).toContain('<span>Keep notes when the reply is hidden</span>');
         // The depth input disables itself when "keep all" is on, so no prose warning is needed.
         expect(editorTemplateSource).not.toContain('Cannot be turned on with');
         expect(editorTemplateSource).not.toContain('Batch with compatible companions');
@@ -181,8 +181,8 @@ describe('in-chat agents generation UI wiring', () => {
         expect(indexSource).toContain('chatHistoryDepth: currentCompanion.chatHistoryDepth');
         expect(indexSource).toContain('includeAllChatHistory: currentCompanion.includeAllChatHistory');
         expect(indexSource).toContain('keepInChatHistoryWhenHostHidden: currentCompanion.keepInChatHistoryWhenHostHidden');
-        expect(extensionStyleSource).toContain('.popup:has(#ica--editor).wide_dialogue_popup');
-        expect(extensionStyleSource).toContain('width: calc(100dvw - 20px);');
+        expect(extensionStyleSource).toContain('dialog.popup.wide_dialogue_popup:has(#ica--editor) {');
+        expect(extensionStyleSource).toContain('width: 100dvw;');
     });
 
     test('keeps the quick-chip target action touch-sized on coarse pointers', () => {

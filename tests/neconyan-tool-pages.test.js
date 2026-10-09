@@ -333,7 +333,7 @@ describe('Agents page tour led by Taro', () => {
     test('walks the page, the agent editor and the shared defaults in order', () => {
         const ids = getToolTourSteps('agents', { isShown: () => true }).map(step => step.id);
         expect(ids).toEqual(['welcome', 'overview', 'create', 'setups', 'more-tools', 'filters', 'card', 'card-actions',
-            'editor-basics', 'editor-instructions', 'editor-before', 'editor-conditions', 'editor-reply', 'editor-companion',
+            'editor-basics', 'editor-conditions', 'editor-before', 'editor-reply', 'editor-companion', 'editor-instructions',
             'editor-regex', 'editor-save', 'connections', 'rhythm', 'context', 'pawthfinder', 'glossary', 'done']);
         expect(getToolPage('agents').assistant).toBe('taro');
     });
@@ -343,8 +343,8 @@ describe('Agents page tour led by Taro', () => {
         expect(page.dialogs.editor).toMatchObject({ root: '#ica--editor', close: '.popup-button-cancel', sectionSelect: '#ica--editor-section-select' });
         expect(page.dialogs.editor.openers).toEqual(['#ica--agentList .ica--agent-card .ica--btn-edit', '#ica--addAgent']);
         const editorSteps = page.steps.filter(step => step.dialog === 'editor').map(step => step.id);
-        expect(editorSteps).toEqual(['editor-basics', 'editor-instructions', 'editor-before', 'editor-conditions',
-            'editor-reply', 'editor-companion', 'editor-regex', 'editor-save']);
+        expect(editorSteps).toEqual(['editor-basics', 'editor-conditions', 'editor-before', 'editor-reply',
+            'editor-companion', 'editor-instructions', 'editor-regex', 'editor-save']);
     });
 
     test('the tour moves its card into the modal, follows the phone section menu and closes the editor without saving', () => {

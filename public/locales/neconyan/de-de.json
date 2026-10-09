@@ -10714,6 +10714,8 @@
   "Inline": "In der Hauptgenerierung",
   "prompt append": "Prompt ergänzen",
   "prompt rewrite": "Prompt umschreiben",
+  "rewrites reply": "schreibt Antwort um",
+  "adds to reply": "ergänzt Antwort",
   "depth ${0}": "Tiefe ${0}",
   "Order ${0}": "Reihenfolge ${0}",
   "Apply to reply": "Auf Antwort anwenden",

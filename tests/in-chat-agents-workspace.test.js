@@ -37,6 +37,10 @@ describe('in-chat agents workspace redesign', () => {
         expect(settingsSource).toContain('id="ica--companion-count"');
         expect(settingsSource).toContain('id="ica--globalEnabled"');
         expect(settingsSource).toContain('id="ica--moreTools"');
+        const moreTools = settingsSource.slice(settingsSource.indexOf('id="ica--moreTools"'), settingsSource.indexOf('</details>', settingsSource.indexOf('id="ica--moreTools"')));
+        for (const id of ['ica--setupSelect', 'ica--setupSave', 'ica--setupLoad', 'ica--setupDelete', 'ica--setupStatus']) {
+            expect(moreTools).toContain(`id="${id}"`);
+        }
         expect(settingsSource).toContain('id="ica--workspaceSelect"');
         expect(settingsSource).toContain('id="ica--agentViewSelect"');
         expect(editorSource).toContain('id="ica--editor-section-select"');
@@ -93,31 +97,83 @@ describe('in-chat agents workspace redesign', () => {
         expect(indexSource).toContain('visible = activeEditorView === \'companion\' && companionExecution;');
         expect(indexSource).toContain('this.id === \'ica--tracker-builder-view\'');
         expect(indexSource).toContain('this.id === \'ica--when-view\'');
-        expect(indexSource).toContain('visible = activeEditorView === \'when\' && availability.placement;');
-        expect(indexSource).toContain('if (!availability.reply && activeEditorView === \'reply\')');
+        expect(indexSource).toContain('visible = activeEditorView === \'basics\' && availability.tracker;');
+        expect(indexSource).toContain('visible = activeEditorView === \'reply\' && availability.placement;');
+        expect(indexSource).toContain('const changesAvailable = availability.reply || availability.placement;');
+        expect(indexSource).toContain('if (!changesAvailable && activeEditorView === \'reply\')');
+        expect(indexSource).toContain('let activeEditorView = \'basics\';');
         expect(indexSource).not.toContain('companionExecution && [\'when\', \'reply\'].includes(activeEditorView)');
         expect(indexSource).toContain('editorEl.find(\'#ica--editor-tabs\').on(\'click\', \'[data-editor-tab]\'');
         expect(indexSource).toContain('editorEl.find(\'#ica--editor-tabs\').on(\'keydown\', \'[data-editor-tab]\'');
     });
 
+    test('groups the editor by what the agent does, when it runs and what it changes', () => {
+        const tabLabels = [...editorSource.matchAll(/data-editor-tab="([a-z]+)"[^>]*>([^<]+)</g)].map(match => [match[1], match[2]]);
+        expect(tabLabels).toEqual([
+            ['basics', 'What it does'],
+            ['when', 'When it runs'],
+            ['reply', 'What it changes'],
+            ['companion', 'Companion notes'],
+            ['instructions', 'Model'],
+            ['regex', 'Regex'],
+        ]);
+        const basics = editorSource.slice(editorSource.indexOf('id="ica--editor-panel-basics"'), editorSource.indexOf('id="ica--editor-panel-instructions"'));
+        expect(basics).toContain('id="ica--editor-prompt"');
+        expect(basics).toContain('id="ica--editor-execution-help"');
+        expect(basics).toContain('id="ica--tracker-builder-view" class="ica--editor-view-section" role="tabpanel" aria-labelledby="ica--editor-tab-basics" data-editor-view="basics"');
+        const when = editorSource.slice(editorSource.indexOf('id="ica--editor-panel-when"'));
+        expect(when).toContain('id="ica--editor-phase"');
+        expect(when).toContain('id="ica--editor-phase-help"');
+        expect(indexSource).toContain('function updateEditorChoiceHelp(companionExecution)');
+        expect(indexSource).toMatch(/needsPrompt[\s\S]*?activeEditorView = 'basics';\n\s*syncEditorViewSections\(\);\n\s*editorEl\.find\('#ica--editor-prompt'\)\.trigger\('focus'\);/);
+        for (const group of ['How it runs', 'What it reads', 'Notes it remembers', 'More companion options', 'Connections to other companions']) {
+            expect(editorSource).toContain(group);
+        }
+        expect(styleSource).not.toContain('#ica--editor-section-select { width: 100%; min-height: 44px; }');
+    });
+
     test('uses labelled primary row actions and a compact secondary disclosure', () => {
         expect(indexSource).toContain('<span>${applyLabel}</span>');
-        expect(indexSource).toContain('<span>Edit</span>');
+        expect(indexSource).toContain('<span>Quick settings</span>');
         expect(indexSource).toContain('class="ica--card-secondary"');
         expect(styleSource).toContain('.ica--card-primary-actions .ica--btn-run');
         expect(styleSource).toContain('.ica--card-secondary-actions');
         expect(styleSource).toContain('.ica--card-actions .ica--card-btn:not(:has(> i:only-child))');
     });
 
-    test('keeps Edit visible on the card and opens More actions inside the card on phones', () => {
+    test('keeps a labelled Edit button on the card and Quick settings under More actions', () => {
         const primary = indexSource.slice(indexSource.indexOf('<div class="ica--card-primary-actions">'), indexSource.indexOf('<details class="ica--card-secondary">'));
         const secondary = indexSource.slice(indexSource.indexOf('<details class="ica--card-secondary">'), indexSource.indexOf('</details>', indexSource.indexOf('<details class="ica--card-secondary">')));
         expect(primary).toContain('ica--btn-edit');
-        expect(secondary).not.toContain('ica--btn-edit');
+        expect(primary).toContain('<span>Edit</span>');
+        expect(primary).not.toContain('ica--btn-settings');
+        expect(primary).not.toContain('ica--btn-history');
+        const summary = indexSource.slice(indexSource.indexOf('function buildAgentQuickSummary('), indexSource.indexOf('function getAgentCardPhaseLabel('));
+        expect(summary).toContain('const injectsBeforeReply = agent.phase === \'pre\' || agent.phase === \'both\';');
+        expect(secondary).toContain('ica--btn-settings');
+        expect(secondary).toContain('<span>Quick settings</span>');
+        expect(indexSource).not.toContain('void openQuickSettings([agent.id]);');
+        expect(indexSource).toContain('onOpenEditor: single ? id => openEditor(id) : null');
+        expect(indexSource).toContain('large: !window.matchMedia?.(\'(max-width: 768px)\').matches,');
+        expect(styleSource).toContain('dialog.popup.wide_dialogue_popup:has(#ica--editor) {');
+        const quickSettingsSource = readRepoFile('public/scripts/extensions/in-chat-agents/quick-settings.js');
+        expect(quickSettingsSource).toContain('text: \'Open full editor\'');
+        expect(quickSettingsSource).toContain('if (result === OPEN_EDITOR) await onOpenEditor(first.id);');
         const mobileShell = readRepoFile('public/css/neconyan-mobile-shell.css');
         expect(mobileShell).toContain('body.neconyan #ica--settings .ica--card-primary-actions { display: contents; }');
-        expect(mobileShell).toContain('body.neconyan #ica--settings .ica--card-primary-actions .ica--btn-edit { order: 2; }');
+        expect(mobileShell).not.toContain('.ica--card-primary-actions .ica--btn-edit');
         expect(mobileShell).toContain('body.neconyan #ica--settings .ica--card-secondary-actions { left: 0; right: auto; }');
+    });
+
+    test('puts kept notes and companion connections on cards, the bulk bar and the Companion panel', () => {
+        expect(indexSource).toContain('${companionExecution ? buildCompanionQuickControlsHtml(agent) : \'\'}');
+        expect(indexSource).toContain('bindCompanionQuickControls(document.getElementById(\'ica--agentList\'), {');
+        const panelSource = readRepoFile('public/scripts/extensions/in-chat-agents/companion/companion-panel.js');
+        expect(panelSource).toContain('buildCompanionQuickControlsHtml(state.agent, { scope: \'panel\' })');
+        expect(panelSource).toContain('bindCompanionQuickControls($(\'#ica--tracker-panel\')[0], {');
+        expect(settingsSource).toContain('id="ica--bulkHistoryDepth"');
+        expect(settingsSource).toContain('id="ica--bulkHistoryOff"');
+        expect(styleSource).toContain('.ica--companion-quick-depth input.text_pole {');
     });
 
     test('keeps More tools above the filters, inside the panel, and in the page flow on phones', () => {
@@ -130,8 +186,11 @@ describe('in-chat agents workspace redesign', () => {
     });
 
     test('gives companion activity the same labelled action language', () => {
-        expect(dashboardSource).toContain('Activity &amp; companion results');
-        expect(dashboardSource).toContain('Run enabled companions');
+        expect(dashboardSource).toContain('Companion activity</div>');
+        expect(dashboardSource).toContain('label: \'Run all\'');
+        expect(dashboardSource).toContain('label: \'Run automatic\'');
+        expect(dashboardSource).toContain('label: \'Run failed again\'');
+        expect(readRepoFile('public/scripts/extensions/in-chat-agents/companion/companion-panel.js')).toContain('label: \'Run all\'');
         expect(dashboardSource).toContain('<span>${escapeHtml(label)}</span></button>');
         expect(dashboardSource).toContain('buildRowActionHtml(\'run\', \'fa-play\', \'Run\'');
         expect(dashboardSource).toContain('buildRowActionHtml(\'edit\', \'fa-pen-to-square\', \'Edit\'');
@@ -191,6 +250,7 @@ describe('agent workbench state', () => {
             areAgentsGloballyEnabled: () => state.enabled,
             getGlobalSettings: () => ({ enabled: state.enabled, separateRecentChats: false }),
             getAgentChatScopeLabel: () => 'Individual chats',
+            updatePathfinderStatusLine() {},
         });
         vm.runInContext(getFunction('updateAgentOverview'), runtime);
         const agents = [{ enabled: true, execution: 'companion' }];
@@ -276,7 +336,10 @@ test('new generation clears the previous manual result', () => {
 
 test('Pawthfinder opens its own panel and the settings cards do not stretch', () => {
     expect(settingsSource).toContain('Open Pawthfinder');
-    expect(settingsSource).toContain('Opens the full Pawthfinder settings panel.');
+    expect(settingsSource).toContain('id="ica--pathfinderStatus"');
+    expect(settingsSource).toContain('Keep Pawthfinder available');
+    expect(indexSource).toContain('function getPathfinderStatusText()');
+    expect(indexSource).toContain('Loaded, but the Pawthfinder agent is switched off.');
     expect(settingsSource).not.toContain('Detailed Pawthfinder controls are in Extensions.');
     expect(indexSource).not.toContain('PATHFINDER_EXTENSIONS_HOST_ID');
     expect(indexSource).not.toContain('openPathfinderExtensionsDrawer');

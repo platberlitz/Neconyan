@@ -511,7 +511,7 @@ describe('Agent setup apply and recovery', () => {
                 selectedAgentSetupId: runtime.preset.id,
                 getCurrentUserHandle: () => 'test', getChatGeneration: () => 1,
                 is_send_press: false, is_group_generating: false, isAgentGenerationActive: () => false,
-                document: { querySelectorAll: () => [] }, window: { confirm: () => outcome !== 'cancel' },
+                document: { querySelectorAll: () => [] }, confirmAgentSetupChange: async () => outcome !== 'cancel',
                 applyingAgentSetup: false, agentSetupOperationBusy: false,
                 setAgentSetupStatus() {}, applyAgentSetupPreset: runtime.store.applyAgentSetupPreset,
                 buildConnectionProfileNameMap: () => new Map(), rememberAgentSetupSelection: async () => false,

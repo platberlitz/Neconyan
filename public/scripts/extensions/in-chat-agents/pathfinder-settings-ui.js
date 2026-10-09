@@ -1079,12 +1079,12 @@ function updateStatusBanner() {
     let ready = false;
 
     if (!areAgentsGloballyEnabled() || !isPathfinderSubmoduleEnabled() || !isAgentEnabledForCurrentScope(agent)) {
-        title = 'Pawthfinder is disabled';
+        title = 'Pawthfinder is off';
         message = !areAgentsGloballyEnabled()
-            ? 'In-Chat Agents disabled.'
+            ? 'Agents are switched off. Turn them on at the top of the Agents page.'
             : !isPathfinderSubmoduleEnabled()
-                ? 'Pawthfinder is disabled in In-Chat Agents settings.'
-                : 'Enable Pawthfinder above to use the current setup';
+                ? 'Pawthfinder is unloaded. Turn on Keep Pawthfinder available under Agents, Connections & defaults.'
+                : 'Switch Pawthfinder on above to use this setup.';
     } else if (books.length > 0) {
         title = 'Lorebooks selected';
         message = 'Enable Tool Mode or Pipeline Mode above';

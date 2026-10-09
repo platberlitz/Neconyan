@@ -27,14 +27,14 @@ const TOOL_PAGES = Object.freeze({
                 id: 'status',
                 targets: ['#pf--status-banner'],
                 title: 'The status line',
-                body: 'This line says whether Pawthfinder is ready. **Not configured** means no lorebook is chosen yet. **Disabled** means the main switch is off.\nLook here first whenever lore stops turning up.',
+                body: 'This line says whether Pawthfinder is ready. **Not configured** means no lorebook is chosen yet. **Pawthfinder is off** names the switch that is still off.\nLook here first whenever lore stops turning up.',
                 hint: 'Read the sign before you knock. It saves us both time.',
             },
             {
                 id: 'switch',
                 targets: ['.pf--master-section'],
                 title: 'The main switch',
-                body: '**Enable Pawthfinder for all chats** turns the whole feature on or off. Changing other settings never flips it, so it stays where you left it.',
+                body: '**Enable Pawthfinder for all chats** is the same switch as the Pawthfinder card in the Agents list. Changing other settings never flips it, so it stays where you left it.',
                 hint: 'One switch. On or off. I like things that know what they are.',
             },
             {
@@ -722,14 +722,15 @@ const TOOL_PAGES = Object.freeze({
     agents: {
         assistant: 'taro',
         name: 'Agents',
-        kicker: 'Helpers beside the chat',
-        description: 'Agents are saved helper prompts that run around each reply. They can steer the reply before it is written, rewrite it afterwards, or keep notes of their own.',
-        invite: 'Taro will show you how agents work, including the advanced settings, one step at a time.',
+        kicker: 'Prompts that work beside the chat',
+        description: 'Agents are saved prompts that run around each reply. They can steer the reply before it is written, rewrite it afterwards, or keep notes of their own.',
+        invite: 'Taro can walk you through this page, one step at a time.',
         emptyWhen: '#ica--agentList .ica--empty-state',
         dialogs: {
             editor: {
                 root: '#ica--editor',
                 openers: ['#ica--agentList .ica--agent-card .ica--btn-edit', '#ica--addAgent'],
+                hiddenOpeners: true,
                 close: '.popup-button-cancel',
                 sectionSelect: '#ica--editor-section-select',
             },
@@ -739,14 +740,14 @@ const TOOL_PAGES = Object.freeze({
                 id: 'welcome',
                 targets: ['.neconyan-tool-page-intro'],
                 title: 'What agents do',
-                body: 'An **agent** is a saved prompt with rules for when it runs, which model it uses and where its result goes.\nAn **inline** agent works on the reply itself: it adds instructions before the reply is written, or changes the reply afterwards. A **companion** makes its own request after a reply and saves a separate note. It never replaces the reply.',
+                body: 'An **agent** is a saved prompt with rules for when it runs, which model it uses and where its result goes.\nA **prompt or reply** agent works on the reply itself: it adds instructions before the reply is written, or changes the reply afterwards. A **companion** makes its own request after a reply and saves a separate note. It never replaces the reply.',
                 hint: 'Think of them as staff. Good staff, when you tell them exactly what to do.',
             },
             {
                 id: 'overview', tab: '.ica--workspace-tab[data-workspace-view="manage"]',
                 targets: ['.ica--overview'],
                 title: 'The status line',
-                body: 'This line shows whether agents are running, how many you have, how many are switched on, and how many **Prompt tokens** the switched-on agents add to each request. Tokens are the pieces of text models count.\n**Agents On** pauses every agent at once and keeps each agent’s own switch as it was. **Stop agent** appears only while an agent is running.',
+                body: 'This line shows whether agents are running, how many you have, how many are switched on, and how many **prompt tokens** the switched-on agents add to each request. Tokens are the pieces of text models count.\n**Agents On** pauses every agent at once and keeps each agent’s own switch as it was. **Stop agent** appears only while an agent is running.',
                 hint: 'One switch to silence the lot. Use it before you start blaming the model.',
             },
             {
@@ -757,17 +758,17 @@ const TOOL_PAGES = Object.freeze({
                 hint: 'Start from the library. Writing everything yourself is how people end up writing it twice.',
             },
             {
-                id: 'setups', tab: '.ica--workspace-tab[data-workspace-view="manage"]',
+                id: 'setups', tab: '.ica--workspace-tab[data-workspace-view="manage"]', open: '#ica--moreTools > summary',
                 targets: ['.ica--setup-controls'],
                 title: 'Saved setups',
-                body: 'A **saved setup** remembers your agents and which ones are switched on. **Save setup** stores the current state under a name, and **Load** brings it back later without deleting agents that are not in it.\nUse setups to swap between, say, a quiet setup for short chats and a full setup for long stories.',
+                body: '**Saved setups** sit at the top of **More tools**. A saved setup remembers your agents and which ones are switched on. **Save** stores the current state under a name, and **Load** brings it back later without deleting agents that are not in it.\nUse setups to swap between, say, a quiet setup for short chats and a full setup for long stories.',
                 hint: 'Name them properly. ‘Setup 3 final’ helps nobody.',
             },
             {
                 id: 'more-tools', tab: '.ica--workspace-tab[data-workspace-view="manage"]', open: '#ica--moreTools > summary',
                 targets: ['#ica--moreTools'],
                 title: 'More tools',
-                body: '**Fix trackers** runs your tracker agents again on the last reply. Trackers are agents that keep a running record, such as clothes, location or health. **Activity & companions** opens the companion dashboard, where you can run companions and read their history.\n**Move trackers to companions** turns inline trackers into companions so they stop changing the reply. **Import agents** and **Export agents** use files. **Reset bundled agents** restores the agents that came with Neconyan and leaves your own agents alone.',
+                body: 'Below your saved setups, **Fix trackers** runs your tracker agents again on the last reply. Trackers are agents that keep a running record, such as clothes, location or health. **Companion activity** opens a list of your companions, where you can run companions and read their history.\n**Move trackers to companions** turns trackers that change the reply into companions, so they write notes instead. **Import agents** and **Export agents** use files. **Reset bundled agents** restores the agents that came with Neconyan and leaves your own agents alone.',
                 hint: 'Reset only touches the bundled ones. Your own work is safe. Mostly from you.',
             },
             {
@@ -781,58 +782,58 @@ const TOOL_PAGES = Object.freeze({
                 id: 'card', tab: '.ica--workspace-tab[data-workspace-view="manage"]',
                 targets: ['#ica--agentList .ica--agent-card .ica--card-header', '#ica--agentList'],
                 title: 'Reading an agent card',
-                body: 'The switch on the left turns this agent on or off. Beside the name, the card shows whether it works **Inline** or as a **Companion**, and whether it runs before or after the reply.\nThe small labels underneath summarise its settings, such as its chance to run, its depth, whether it rewrites the reply, its connection and its **Order**. The star pins it, and the handle lets you drag it into a new position.',
-                emptyBody: 'Your agent list is empty, so there is no card to show yet. Use **Browse library** or **Create agent** first.\nEach card has a switch, shows whether the agent works inline or as a companion and when it runs, and lists its main settings underneath.',
+                body: 'The switch on the left turns this agent on or off. Beside the name, the card shows whether its result goes into the **Prompt or reply** or a **Companion note**, and whether it runs before or after the reply.\nThe small labels underneath only appear when they matter: a chance to run below 100%, a reply rewrite, its own connection or model, or an update. The star pins it, and the handle lets you drag it into a new position.',
+                emptyBody: 'Your agent list is empty, so there is no card to show yet. Use **Browse library** or **Create agent** first.\nEach card has a switch, shows where each result goes and when it runs, and lists its main settings underneath.',
                 hint: 'Read the labels. They tell you most of the story without opening anything.',
             },
             {
                 id: 'card-actions', tab: '.ica--workspace-tab[data-workspace-view="manage"]',
                 targets: ['#ica--agentList .ica--agent-card .ica--card-actions', '#ica--agentList'],
                 title: 'Card buttons',
-                body: '**Run** or **Apply to reply** runs the agent now on the latest reply. **Settings** opens a short form with the most common options. **Edit** opens the full editor, which we look at next.\n**More actions** holds Preview, Apply to target, a switch between inline and companion, Export and Delete. Companions also get **Batch & connect** and their own history.',
+                body: '**Run** or **Apply to reply** runs the agent now on the latest reply. **Edit** opens every setting, which we look at next.\n**More actions** holds **Quick settings** (a short form with the most common options), Preview, Apply to target, **To companion** or **To prompt or reply**, Export and Delete. Companion cards also show **Keep in chat history**, how many **notes** to keep, and **Connections** to the other companions, all saved as soon as you change them.',
                 hint: 'Run it once by hand before you trust it on autopilot.',
             },
             {
                 id: 'editor-basics', dialog: 'editor', tab: '#ica--editor-tab-basics',
                 targets: ['#ica--editor-panel-basics'],
-                title: 'The editor: basics',
-                body: 'The tour opened the editor for you. It closes again without saving when we move on.\n**Run timing** decides when the agent works: before the reply is written, after it, or both. **Where results go** decides the kind of agent: **Prompt or reply** makes it inline, **Companion note** makes it a companion with its own **Companion output** tab.',
-                hint: 'Timing and destination. Get those two right and the rest is detail.',
-            },
-            {
-                id: 'editor-instructions', dialog: 'editor', tab: '#ica--editor-tab-instructions',
-                targets: ['#ica--editor-panel-instructions'],
-                title: 'Instructions and model',
-                body: 'The large box holds the agent’s instructions. **Macros** such as {{char}} and {{user}} are filled in when it runs, and the preview button shows the finished text.\nEach agent can use its own **Connection profile** and **Model override**, so a cheap, fast model can do the small jobs. The refine button asks a model to improve the instructions and shows the original and new versions side by side before anything changes.',
-                hint: 'Small jobs, small model. Your wallet will thank you.',
-            },
-            {
-                id: 'editor-before', dialog: 'editor', tab: '#ica--editor-tab-when', open: '#ica--before-mode-controls > summary',
-                targets: ['#ica--injection-section', '#ica--editor-panel-when'],
-                title: 'Before the reply: inject or intercept',
-                body: 'These controls appear when the agent runs before the reply. **Inject** adds the agent’s prompt to the main request, which costs nothing extra. **Intercept** makes a separate request first and can **Replace**, **Wrap** or **Patch** part of the context, so it costs more.\n**Position**, **Depth** and **Role** choose where injected text goes: in the prompt, or a number of messages back in the chat, sent as system, user or assistant text. The scan option lets words in this prompt trigger lorebook entries.',
-                hint: 'Inject is free. Intercept is a second request. Choose like you pay for it, because you do.',
+                title: 'The editor: what it does',
+                body: 'The tour opened the editor for you. It closes again without saving when we move on.\n**What it does** holds the name, **Where results go** and the agent’s instructions. **Prompt or reply** lets it work on the request or the reply; **Companion note** makes it a companion that writes its own note. **Macros** such as {{char}} and {{user}} are filled in when it runs, and the refine button asks a model to improve the instructions before anything changes.',
+                hint: 'Write the job first. Every other tab is optional.',
             },
             {
                 id: 'editor-conditions', dialog: 'editor', tab: '#ica--editor-tab-when',
                 targets: ['#ica--editor-panel-when'],
                 title: 'When it runs',
-                body: '**Order** decides which agent goes first; lower numbers run earlier. It is a sequence, not a ranking of importance. **Probability** is the chance it runs when everything else matches.\n**Trigger keywords** limit it to chats that mention certain words; leave them empty to run every time. **Generation types** choose whether it runs for normal replies, Continue, Impersonate or background requests.',
+                body: '**Run timing** decides whether it works before the reply is written, after it, or both. **Order** decides which agent goes first; lower numbers run earlier.\n**Chance to run** is the odds it runs when everything else matches. **Only run when these words appear** keeps it quiet until the chat mentions them, and the reply kinds choose normal replies, Continue, Impersonate or background requests.',
                 hint: 'Keywords keep a specialist agent quiet until it is actually needed.',
+            },
+            {
+                id: 'editor-before', dialog: 'editor', tab: '#ica--editor-tab-reply', open: '#ica--before-mode-controls > summary',
+                targets: ['#ica--injection-section', '#ica--editor-panel-reply'],
+                title: 'What it changes: the request',
+                body: 'An agent that runs before the reply can **Add its prompt to the request**, which costs nothing extra, or **Run first and change the request**, which makes a separate request and so costs more.\n**Position** and **Depth** choose where its text goes: in the prompt, or a number of messages back in the chat. **More placement options** sets who it is sent as and whether it can trigger lorebook entries.',
+                hint: 'Adding is free. Changing is a second request. Choose like you pay for it, because you do.',
             },
             {
                 id: 'editor-reply', dialog: 'editor', tab: '#ica--editor-tab-reply', optional: true,
                 targets: ['#ica--editor-panel-reply'],
-                title: 'After the reply: reply changes',
-                body: 'A **post-generation pass** sends the finished reply to the agent for a second look. **Rewrite current message** replaces the reply with the agent’s version; **Append generated content** adds its text to the end instead.\nYou can also run these passes on text written for you with Impersonate, or on companion notes before they are saved. Every change is kept in the message’s history, where you can compare the old and new text and undo it.',
+                title: 'What it changes: the reply',
+                body: 'An **after-reply** agent gets the finished reply for a second look. **Rewrite the reply** replaces it with the agent’s version; **Add to the end of the reply** keeps the original and adds its text.\nIt can also change text written with Impersonate, or companion notes before they are saved. Every change is kept in the message’s history, where you can compare the old and new text and undo it.',
                 hint: 'A proofreader that never sleeps. Check its work anyway.',
             },
             {
                 id: 'editor-companion', dialog: 'editor', tab: '#ica--editor-tab-basics',
                 targets: ['#ica--editor-execution', '#ica--editor-panel-basics'],
                 title: 'Companions in depth',
-                body: 'Set **Where results go** to **Companion note** and the **Companion output** tab appears. There you choose whether the companion runs automatically or only when asked, how its note is shown, and how much of the chat, character card, persona and lorebooks it reads.\nNotes can be fed back into later replies, so a companion can keep a plot outline or a tracker that the main model follows. Advanced routing lets companions run in a batch, share context or wait for each other.',
+                body: 'Set **Where results go** to **Companion note** and the **Companion notes** tab appears. It is split into **How it runs**, **What it reads** and **Notes it remembers**, so you can choose when it runs, where its notes show, what it reads and how many notes stay in chat history.\n**Connections to other companions** lets companions share one request, send each other notes or run after each other.',
                 hint: 'Companions take notes. The reply stays yours.',
+            },
+            {
+                id: 'editor-instructions', dialog: 'editor', tab: '#ica--editor-tab-instructions',
+                targets: ['#ica--editor-panel-instructions'],
+                title: 'Model',
+                body: 'Each agent can use its own **Connection profile** and **Model override**, so a cheap, fast model can do the small jobs.\nLeave both empty and the agent uses the shared connection from **Connections & defaults**.',
+                hint: 'Small jobs, small model. Your wallet will thank you.',
             },
             {
                 id: 'editor-regex', dialog: 'editor', tab: '#ica--editor-tab-regex',
@@ -866,14 +867,14 @@ const TOOL_PAGES = Object.freeze({
                 id: 'context', tab: '.ica--workspace-tab[data-workspace-view="connections"]',
                 targets: ['#ica--panel-connections .ica--settings-group:nth-of-type(3)'],
                 title: 'Context and notices',
-                body: '**Helper prefill messages** add text to the start of every agent request, written as [system], [user] or [assistant] blocks. **Keep individual and group chat switches separate** lets group chats use different agents.\nThe notification switches control the small notices about reply changes. **Companion panel button** chooses where the button for the companion panel sits.',
+                body: '**Agent prefill messages** add text to the start of every agent request, written as [system], [user] or [assistant] blocks. **Keep individual and group chat switches separate** lets group chats use different agents.\nThe notification switches control the small notices about reply changes. **Companion panel button** chooses where the button for the companion panel sits.',
                 hint: 'Fewer notices, calmer chat. Your call.',
             },
             {
                 id: 'pawthfinder', tab: '.ica--workspace-tab[data-workspace-view="connections"]', optional: true,
                 targets: ['#ica--panel-connections .ica--settings-group:nth-of-type(4)'],
                 title: 'Pawthfinder',
-                body: '**Pawthfinder** is a bundled agent with its own page. It looks things up in your lorebooks while you chat. This switch keeps it available, and **Open Pawthfinder** takes you to its settings.',
+                body: '**Pawthfinder** is a bundled agent with its own page. It looks things up in your lorebooks while you chat. **Keep Pawthfinder available** keeps it loaded, the line under it says what is still missing, and **Open Pawthfinder** takes you to its settings.',
                 hint: 'My own little project. Treat it kindly.',
             },
             {
@@ -881,7 +882,7 @@ const TOOL_PAGES = Object.freeze({
                 targets: ['#ica--workspaceNav a[href="/docs/in-chat-agents-glossary"]'],
                 optional: true,
                 title: 'The glossary',
-                body: 'The **ICA glossary** explains every term on this page in more detail. It opens in a new tab, so you will not lose your place here.',
+                body: '**How Agents work** explains every term on this page in more detail. It opens in a new tab, so you will not lose your place here.',
                 hint: 'I wrote notes in the margins. You will find them.',
             },
             {
@@ -1686,7 +1687,9 @@ async function openTourDialog(step, token) {
     closeTourDialog();
     let host = findShown(document, config.root);
     if (!host) {
-        const opener = config.openers.map(selector => findShown(tour.root, selector)).find(Boolean);
+        // Some openers live inside a closed menu; those can be clicked without being shown.
+        const findOpener = selector => (config.hiddenOpeners ? tour.root.querySelector(selector) : findShown(tour.root, selector));
+        const opener = config.openers.map(findOpener).find(Boolean);
         if (!opener) return null;
         opener.click();
         for (let attempt = 0; attempt < 40 && !host; attempt++) {

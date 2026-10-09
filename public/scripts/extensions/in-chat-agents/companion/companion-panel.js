@@ -35,6 +35,7 @@ import {
     runCompanionsOnMessage,
 } from './companion-runner.js';
 import { isLorebookAgent, sendCompanionResultToLorebook } from './lorebook-sender.js';
+import { bindCompanionQuickControls, buildCompanionQuickControlsHtml } from './companion-quick-controls.js';
 import {
     buildLastRunErrorNotice,
     cleanCompanionAgentName,
@@ -59,7 +60,6 @@ import {
     normalizePlotCompassObjective,
 } from './companion-shared.js';
 
-const PANEL_HISTORY_LIMIT = 5;
 // v2: v1 could persist scroll-corrupted positions on iOS (drag hijacked into a page scroll),
 // pinning the handle to a screen edge with no way to drag it back. The old key is abandoned.
 // The value is either a bare number (legacy: fraction along the right edge) or a JSON
@@ -91,6 +91,10 @@ let returnFocus = null;
 let panelDragActive = false;
 let pendingPanelReorders = 0;
 let panelReorderChain = Promise.resolve();
+// Earlier notes render only once their 'Previous states' list is opened, a page at a time:
+// long chats hold hundreds of notes and the panel re-renders after every companion run.
+const PANEL_HISTORY_PAGE_SIZE = 20;
+const panelHistoryShown = new Map();
 
 // Neconyan divergence: Conversation Mode owns the shell while active, so the upstream companion panel must hide behind this DOM-state adapter.
 export function isConversationModeActive() {
@@ -515,7 +519,7 @@ async function savePlotCompassObjective(agent, objective) {
 }
 
 /**
- * Collects the latest stored result (and a short history) per companion agent by walking
+ * Collects the latest stored result and every earlier one per companion agent by walking
  * the chat backwards. Enabled agents without any stored state are included so the panel
  * can explain that they have not run yet.
  */
@@ -564,7 +568,7 @@ export function collectPanelAgentStates() {
             const entry = { messageIndex, result, hostHidden: Boolean(message.is_system) };
             if (!state.latest) {
                 state.latest = entry;
-            } else if (state.history.length < PANEL_HISTORY_LIMIT) {
+            } else {
                 state.history.push(entry);
             }
         }
@@ -722,7 +726,7 @@ function buildPanelAgentSection(state) {
     const runDisabled = !areAgentsGloballyEnabled() || latest?.result?.status === 'pending' ? ' disabled' : '';
 
     const settingsButton = state.agent
-        ? '<button type="button" class="ica--cdash-action" data-action="panel-edit" title="Open this companion\'s agent settings" aria-label="Agent settings"><i class="fa-solid fa-gear"></i></button>'
+        ? '<button type="button" class="ica--cdash-action" data-action="panel-edit" title="Open this companion\'s full editor" aria-label="Open full editor"><i class="fa-solid fa-gear"></i></button>'
         : '';
     const runLatestButton = state.agent
         ? `<button type="button" class="ica--cdash-action" data-action="panel-run-latest" title="Run this companion on the latest assistant reply" aria-label="Run companion"${runDisabled}><i class="fa-solid fa-play"></i></button>`
@@ -745,15 +749,18 @@ function buildPanelAgentSection(state) {
                 </div>
                 <div class="ica--cdash-empty">No state yet. It will appear after the next reply${getCompanionConfig(state.agent).trigger === 'manual' ? ' you run it on' : ''}.</div>
                 ${buildPanelEntryControls(state)}
+                ${buildCompanionQuickControlsHtml(state.agent, { scope: 'panel' })}
             </section>
         `;
     }
 
+    const shownHistory = state.history.slice(0, panelHistoryShown.get(agentId) ?? 0);
+    const hiddenHistoryCount = state.history.length - shownHistory.length;
     const historyHtml = state.history.length > 0
         ? `
-            <details class="ica--tpanel-history">
+            <details class="ica--tpanel-history" data-history-agent-id="${escapeHtml(agentId)}">
                 <summary>Previous states (${state.history.length})</summary>
-                ${state.history.map(entry => `
+                ${shownHistory.map(entry => `
                     <div class="ica--tpanel-history-entry" data-message-index="${entry.messageIndex}" data-host-hidden="${Boolean(entry.hostHidden)}">
                         <div class="ica--tpanel-history-head">
                             <span>Message #${entry.messageIndex}</span>
@@ -765,6 +772,11 @@ function buildPanelAgentSection(state) {
                         <div class="ica--tpanel-agent-body">${buildPanelEntryBody(agentId, entry)}</div>
                     </div>
                 `).join('')}
+                ${shownHistory.length > 0 && hiddenHistoryCount > 0 ? `
+                    <div class="ica--tpanel-history-more">
+                        <span>Showing ${shownHistory.length} of ${state.history.length}</span>
+                        <button type="button" class="menu_button" data-action="panel-history-more">Show older notes</button>
+                    </div>` : ''}
             </details>
         `
         : '';
@@ -774,8 +786,8 @@ function buildPanelAgentSection(state) {
     const rerunButtons = latest.hostHidden || !state.agent
         ? ''
         : `
-                    <button type="button" class="ica--cdash-action" data-action="panel-regenerate" title="Regenerate this state" aria-label="Regenerate state"${runDisabled}><i class="fa-solid fa-rotate-right"></i></button>
-                    <button type="button" class="ica--cdash-action" data-action="panel-fix" title="Fix: re-run with strict output enforcement (use when the model wrote roleplay instead)" aria-label="Fix state"${runDisabled}><i class="fa-solid fa-wrench"></i></button>`;
+                    <button type="button" class="ica--cdash-action" data-action="panel-regenerate" title="Write this note again from the message it came from" aria-label="Write note again"${runDisabled}><i class="fa-solid fa-rotate-right"></i></button>
+                    <button type="button" class="ica--cdash-action" data-action="panel-fix" title="Write this note again with strict format rules (use when the model wrote roleplay instead)" aria-label="Fix note format"${runDisabled}><i class="fa-solid fa-wrench"></i></button>`;
 
     return `
         <section class="ica--tpanel-agent" data-agent-id="${escapeHtml(agentId)}" data-message-index="${latest.messageIndex}" data-hidden="${isHidden}" data-host-hidden="${Boolean(latest.hostHidden)}">
@@ -789,7 +801,7 @@ function buildPanelAgentSection(state) {
                     ${hiddenButton}
                     ${runLatestButton}${rerunButtons}
                     ${canSendToLorebook && String(latest.result?.status ?? 'done') === 'done' ? '<button type="button" class="ica--cdash-action" data-action="panel-send-to-lorebook" title="Send this state to the attached lorebook" aria-label="Send state to lorebook"><i class="fa-solid fa-book-medical"></i></button>' : ''}
-                    <button type="button" class="ica--cdash-action" data-action="panel-edit-note" title="Edit this state's text by hand (e.g. type your Plot Compass objective)" aria-label="Edit state text"><i class="fa-solid fa-pen-to-square"></i></button>
+                    <button type="button" class="ica--cdash-action" data-action="panel-edit-note" title="Edit this note by hand (for example, type your Plot Compass objective)" aria-label="Edit note"><i class="fa-solid fa-pen-to-square"></i></button>
                     ${settingsButton}
                     <button type="button" class="ica--cdash-action" data-action="panel-jump" title="Scroll to the source message" aria-label="Scroll to source message"><i class="fa-solid fa-comment-dots"></i></button>
                 </span>
@@ -797,6 +809,7 @@ function buildPanelAgentSection(state) {
             <div class="ica--tpanel-agent-body">${buildPanelEntryBody(agentId, latest)}</div>
             ${buildPanelEntryControls(state)}
             ${buildCompactionButton(state)}
+            ${buildCompanionQuickControlsHtml(state.agent, { scope: 'panel' })}
             ${historyHtml}
         </section>
     `;
@@ -822,23 +835,31 @@ function buildCompactionButton(state) {
     `;
 }
 
+function buildPanelRunButtonHtml({ action, icon, label, title, count = 0, disabled = false, extraClass = '' }) {
+    const countHtml = count > 0 ? `<span class="ica--tpanel-action-count">${count}</span>` : '';
+    return `<button type="button" class="menu_button menu_button_icon ica--tpanel-run-btn${extraClass}" data-action="${action}" title="${escapeHtml(title)}"${disabled ? ' disabled' : ''}><i class="fa-solid ${icon}" aria-hidden="true"></i><span>${escapeHtml(label)}</span>${countHtml}</button>`;
+}
+
 function buildPanelRunButtonsHtml() {
+    const runAllTitle = 'Run every switched-on companion on the latest reply, including those set to run only when you ask';
     if (!areAgentsGloballyEnabled()) {
-        return '<button type="button" class="ica--cdash-action" data-action="panel-regenerate-all" title="Regenerate every companion on the last reply" aria-label="Regenerate all companions" disabled><i class="fa-solid fa-rotate-right"></i></button>';
+        return `<div class="ica--tpanel-run" role="group" aria-label="Run companions">${buildPanelRunButtonHtml({ action: 'panel-regenerate-all', icon: 'fa-play', label: 'Run all', title: 'Switch Agents on to run companions', disabled: true })}</div>`;
     }
 
     const automaticCount = getAutomaticCompanionAgents(getLatestAssistantCompanionMessageIndex()).length;
     const retryIndex = getLatestCompanionResultsMessageIndex();
     const retryCount = getRetryableCompanionAgents(retryIndex).length;
-    const automaticLabel = automaticCount > 0
-        ? `Run the ${automaticCount} automatic companion${automaticCount === 1 ? '' : 's'} on the last reply`
-        : 'No automatic companions are ready to run on the last reply';
-    const retryLabel = `Retry ${retryCount} failed companion${retryCount === 1 ? '' : 's'} on message #${retryIndex}`;
+    const automaticTitle = automaticCount > 0
+        ? `Run the ${automaticCount} automatic companion${automaticCount === 1 ? '' : 's'} on the latest reply`
+        : 'No automatic companions are ready to run on the latest reply';
+    const retryTitle = `Run the ${retryCount} companion${retryCount === 1 ? '' : 's'} that failed on message #${retryIndex} again`;
 
     return `
-        ${retryCount > 0 ? `<button type="button" class="ica--cdash-action ica--tpanel-retry" data-action="panel-retry-failed" title="${escapeHtml(retryLabel)}" aria-label="${escapeHtml(retryLabel)}"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span class="ica--tpanel-action-count">${retryCount}</span></button>` : ''}
-        <button type="button" class="ica--cdash-action" data-action="panel-run-auto" title="${escapeHtml(automaticLabel)}" aria-label="${escapeHtml(automaticLabel)}"${automaticCount > 0 ? '' : ' disabled'}><i class="fa-solid fa-bolt" aria-hidden="true"></i></button>
-        <button type="button" class="ica--cdash-action" data-action="panel-regenerate-all" title="Regenerate every companion on the last reply" aria-label="Regenerate all companions"><i class="fa-solid fa-rotate-right"></i></button>
+        <div class="ica--tpanel-run" role="group" aria-label="Run companions">
+            ${buildPanelRunButtonHtml({ action: 'panel-regenerate-all', icon: 'fa-play', label: 'Run all', title: runAllTitle })}
+            ${buildPanelRunButtonHtml({ action: 'panel-run-auto', icon: 'fa-bolt', label: 'Run automatic', title: automaticTitle, count: automaticCount, disabled: automaticCount === 0 })}
+            ${retryCount > 0 ? buildPanelRunButtonHtml({ action: 'panel-retry-failed', icon: 'fa-triangle-exclamation', label: 'Run failed again', title: retryTitle, count: retryCount, extraClass: ' ica--tpanel-retry' }) : ''}
+        </div>
     `;
 }
 
@@ -853,11 +874,11 @@ export function buildPanelHtml() {
             <span class="ica--tpanel-title"><i class="fa-solid fa-cat"></i> Companions</span>
             <span class="ica--tpanel-agent-actions">
                 <button type="button" class="ica--cdash-action${panelLocked ? ' is-active' : ''}" data-action="panel-lock" title="${panelLocked ? 'Unlock panel auto-close' : 'Keep panel open until unlocked'}" aria-label="${panelLocked ? 'Unlock panel' : 'Lock panel'}" aria-pressed="${panelLocked}"><i class="fa-solid ${panelLocked ? 'fa-lock' : 'fa-lock-open'}"></i></button>
-                ${buildPanelRunButtonsHtml()}
                 ${panelLauncher === 'handle' ? '<button type="button" class="ica--cdash-action" data-action="panel-hide-handle" title="Hide the floating button" aria-label="Hide the floating button"><i class="fa-solid fa-eye-slash"></i></button>' : ''}
                 <button type="button" class="ica--cdash-action" data-action="panel-close" title="Close panel" aria-label="Close panel"><i class="fa-solid fa-xmark"></i></button>
             </span>
         </div>
+        ${buildPanelRunButtonsHtml()}
         <div class="ica--tpanel-body">${body}</div>
     `;
 }
@@ -949,6 +970,30 @@ function setupPanelSortable() {
     });
 }
 
+/** Renders the first `count` earlier notes of one companion; the rest wait behind 'Show older notes'. */
+export function revealPanelHistory(agentId, count = PANEL_HISTORY_PAGE_SIZE) {
+    if (!agentId) {
+        return;
+    }
+
+    panelHistoryShown.set(agentId, Math.max(0, Number(count) || 0));
+    refreshCompanionPanel();
+}
+
+function handlePanelHistoryToggle(event) {
+    const details = event.target;
+    const agentId = details?.dataset?.historyAgentId;
+    if (!agentId) {
+        return;
+    }
+
+    if (!details.open) {
+        panelHistoryShown.delete(agentId);
+    } else if (!panelHistoryShown.has(agentId)) {
+        revealPanelHistory(agentId, PANEL_HISTORY_PAGE_SIZE);
+    }
+}
+
 /** Re-renders the open panel; lets other surfaces (the agents page) push order changes in. */
 export function refreshCompanionPanel() {
     if (panelOpen) {
@@ -982,8 +1027,8 @@ function syncCompanionPanelTopbarButton() {
     button.type = 'button';
     button.id = TOPBAR_LAUNCHER_ID;
     button.className = 'sb-proxy-button sb-proxy-button-icon-only ica--tpanel-topbar-button';
-    button.title = 'Open the companion panel';
-    button.setAttribute('aria-label', 'Open the companion panel');
+    button.title = 'Open the Companion panel';
+    button.setAttribute('aria-label', 'Open the Companion panel');
     button.setAttribute('aria-controls', 'ica--tracker-panel');
     button.setAttribute('aria-expanded', String(panelOpen));
     button.setAttribute('data-sb-topbar-adopt', 'true');
@@ -1069,6 +1114,12 @@ async function handlePanelAction(event) {
         return;
     }
 
+    if (action === 'panel-history-more') {
+        const agentId = button.closest('[data-history-agent-id]').attr('data-history-agent-id');
+        revealPanelHistory(agentId, (panelHistoryShown.get(agentId) ?? 0) + PANEL_HISTORY_PAGE_SIZE);
+        return;
+    }
+
     if (action === 'panel-lock') {
         setCompanionPanelLocked(!panelLocked);
         return;
@@ -1077,7 +1128,7 @@ async function handlePanelAction(event) {
     if (action === 'panel-hide-handle') {
         setCompanionPanelHandleHidden(true);
         closeCompanionPanel();
-        toastr.info('Floating button hidden. Open Companion Panel from the Extensions menu to bring it back.');
+        toastr.info('Floating button hidden. Open the Companion panel from the Extensions menu to bring it back.');
         return;
     }
 
@@ -1431,11 +1482,25 @@ export function initCompanionPanel() {
     panelInitialized = true;
     $(document.body).append('<div id="ica--tracker-panel" class="ica--tpanel" data-edge="right" role="region" aria-label="Companions" aria-hidden="true"></div>');
     $(document.body).append(`
-        <button type="button" id="ica--tracker-panel-handle" class="ica--tpanel-handle" data-edge="right" title="Open the companion panel" aria-label="Open the companion panel" aria-controls="ica--tracker-panel" aria-expanded="false" style="display:none">
+        <button type="button" id="ica--tracker-panel-handle" class="ica--tpanel-handle" data-edge="right" title="Open the Companion panel" aria-label="Open the Companion panel" aria-controls="ica--tracker-panel" aria-expanded="false" style="display:none">
             <i class="fa-solid fa-cat"></i>
         </button>
     `);
 
+    bindCompanionQuickControls($('#ica--tracker-panel')[0], {
+        scope: 'panel',
+        save: async (_, draft) => {
+            if (typeof panelHooks?.saveCompanionDraft !== 'function') throw new Error('Companion settings are not available.');
+            await panelHooks.saveCompanionDraft(draft);
+        },
+        openMore: agentId => {
+            if (typeof panelHooks?.openConnections !== 'function') return;
+            closeCompanionPanel();
+            return panelHooks.openConnections(agentId);
+        },
+    });
+    // 'toggle' does not bubble, so listen in the capture phase for every history list.
+    $('#ica--tracker-panel')[0]?.addEventListener('toggle', handlePanelHistoryToggle, true);
     $('#ica--tracker-panel').on('click', '[data-action]', event =>
         runCompanionViewAction(event.currentTarget, () => handlePanelAction(event)));
     $('#ica--tracker-panel').on('keydown', event => {
@@ -1496,9 +1561,9 @@ export function initCompanionPanel() {
 
     if (!$('#ica_tracker_panel_wand_item').length) {
         const menuItem = $(`
-            <div id="ica_tracker_panel_wand_item" class="list-group-item flex-container flexGap5 interactable" title="Open the companion panel" tabindex="0">
+            <div id="ica_tracker_panel_wand_item" class="list-group-item flex-container flexGap5 interactable" title="Open the Companion panel" tabindex="0">
                 <div class="fa-solid fa-cat extensionsMenuExtensionButton"></div>
-                <span>Companion Panel</span>
+                <span>Companion panel</span>
             </div>
         `);
         menuItem.on('click', () => openCompanionPanel());
