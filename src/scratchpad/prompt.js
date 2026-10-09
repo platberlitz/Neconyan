@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { serverDirectory } from '../server-directory.js';
+import { CHARACTER_CREATION_INSTRUCTIONS } from './character-tools.js';
 import { normaliseAssistant, normaliseGender } from './store.js';
 import { NOTE_TOOL_DEFINITIONS, NOTE_MUTATING_KINDS, NOTE_TOOL_NOTICE } from '../../public/scripts/notebooks/assistant-note-tools.js';
 
@@ -106,7 +107,7 @@ function changeInstructions({ lore, character, chat, members, notebook }) {
         ].join('\n'));
     }
     if (!kinds.length) {
-        return 'You cannot propose changes from this Scratchpad. Offer drafts as plain text instead.';
+        return 'No existing story resources are shared for edits. You can still draft new character cards.';
     }
     return [
         'When the user asks you to change something, or a change would clearly help, propose it as a change block the user can apply with one press.',
@@ -138,7 +139,7 @@ export function buildScratchpadSystemPrompt({ assistant, gender, userName, chara
         ? [customPrompt, capabilities.notebook ? changeInstructions({ notebook: true }) : ''].filter(Boolean).join('\n\n')
         : sections.filter(Boolean).join('\n\n');
     const reference = help ? `Neconyan reference for app questions (use it only when ${names.user} asks how something in Neconyan works):\n${help}` : '';
-    return { text: [instructions, reference].filter(Boolean).join('\n\n'), persona };
+    return { text: [instructions, CHARACTER_CREATION_INSTRUCTIONS, reference].filter(Boolean).join('\n\n'), persona };
 }
 
 export const SCRATCHPAD_CONTEXT_ACK = 'I have read the shared story context. What would you like to work on?';

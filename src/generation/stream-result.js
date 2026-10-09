@@ -1,16 +1,18 @@
 import { normalizeContentText } from '../../public/scripts/generation-format.js';
+import { createStreamTools } from './stream-tools.js';
 
 const STREAM_LIMIT = 2 * 1024 * 1024;
 
 /** Assemble a complete provider stream; never turn an EOF without a final event into a reply. */
-export function assembleGenerationStream(raw) {
-    const stream = createGenerationStream();
+export function assembleGenerationStream(raw, options) {
+    const stream = createGenerationStream(undefined, options);
     stream.push(String(raw));
     return stream.finish();
 }
 
 /** Preview deltas share the final parser, but only finish() can accept a reply. */
-export function createGenerationStream(onUpdate) {
+export function createGenerationStream(onUpdate, { allowTools = false } = {}) {
+    const tools = allowTools ? createStreamTools() : null;
     let pending = '';
     let bytes = 0;
     let text = '';
@@ -38,10 +40,13 @@ export function createGenerationStream(onUpdate) {
         const candidate = chunk.candidates?.[0];
         const parts = candidate?.content?.parts;
         if (choice?.index > 0 || candidate?.index > 0) return;
-        if (delta?.tool_calls?.length || parts?.some(part => part?.functionCall || part?.inlineData)) {
+        if (parts?.some(part => part?.inlineData) || !tools && (delta?.tool_calls?.length || parts?.some(part => part?.functionCall)
+            || chunk.content_block?.type === 'tool_use' || chunk.item?.type === 'function_call')) {
             throw new Error('The provider stream contains an output this Roleplay reply cannot save.');
         }
+        tools?.push(chunk);
         let nextText = normalizeContentText(delta?.content ?? delta?.text ?? choice?.text ?? chunk.delta?.text
+            ?? (chunk.type === 'response.output_text.delta' ? chunk.delta : undefined)
             ?? chunk.delta?.message?.content?.text ?? chunk.token ?? (typeof chunk.content === 'string' ? chunk.content : ''), { excludeReasoning: true });
         let nextReasoning = normalizeContentText(delta?.reasoning_content ?? delta?.reasoning ?? delta?.thinking
             ?? chunk.delta?.thinking ?? choice?.thinking ?? '', { excludeReasoning: false });
@@ -61,7 +66,7 @@ export function createGenerationStream(onUpdate) {
         if (textBytes > STREAM_LIMIT || reasoningBytes > STREAM_LIMIT) throw new Error('The generated stream exceeded the saved result limit.');
         text += nextText;
         reasoning += nextReasoning;
-        if (chunk.type === 'message_stop' || chunk.type === 'message-end' || chunk.done === true || choice?.finish_reason != null
+        if (chunk.type === 'message_stop' || chunk.type === 'message-end' || chunk.type === 'response.completed' || chunk.done === true || choice?.finish_reason != null
             || candidate?.finishReason || chunk.event === 'done') complete = true;
         if (nextText || nextReasoning) onUpdate?.({ text, reasoning });
     };
@@ -78,8 +83,10 @@ export function createGenerationStream(onUpdate) {
         },
         finish() {
             if (pending) { accept(pending.replace(/\r\n/g, '\n')); pending = ''; }
-            if (!complete || !text.trim()) throw new Error('The provider stream ended without a complete reply.');
+            const toolCalls = tools?.finish() ?? [];
+            if (!complete || !text.trim() && !toolCalls.length) throw new Error('The provider stream ended without a complete reply.');
             return { choices: [{ text, reasoning, message: { content: text, reasoning_content: reasoning, reasoning,
+                ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
                 ...(signature ? { reasoning_details: [{ id: 'thought', type: 'reasoning.encrypted', data: signature }] } : {}) } }],
             content: [{ type: 'thinking', thinking: reasoning }, { type: 'text', text }], thinking: reasoning,
             responseContent: { parts: [...(reasoning ? [{ thought: true, text: reasoning }] : []),

@@ -3,6 +3,7 @@
  * app, so it can be tested on its own.
  */
 import { NOTE_TOOL_DEFINITIONS, NOTE_MUTATING_KINDS } from '../notebooks/assistant-note-tools.js';
+import { normaliseCharacterDraft } from '../neconyan-character-draft.js';
 
 export const CHANGE_FENCE = 'scratchpad-change';
 const FENCE_PATTERN = /```scratchpad-change[^\n]*\n([\s\S]*?)```/g;
@@ -118,6 +119,11 @@ export function normaliseChange(value) {
         fail('This lorebook change has an unknown action.');
     }
     if (value.type === 'character') {
+        if (value.action === 'create') {
+            try {
+                return { type: 'character', action: 'create', ...normaliseCharacterDraft(value), reason };
+            } catch (error) { fail(error.message); }
+        }
         const character = text(value.character, 200).trim();
         const field = String(value.field ?? '');
         if (!character) fail('This character change does not say which character.');
@@ -199,6 +205,7 @@ export function describeChange(change) {
         return `Delete lorebook entry ${change.uid} from ${change.book}`;
     }
     if (change.type === 'character') {
+        if (change.action === 'create') return `Create character '${change.character.name}'`;
         if (change.action === 'append') return `Add alternate greetings to ${change.character}`;
         const label = TEXT_FIELDS[change.field] || LIST_FIELDS[change.field];
         return `Change ${change.character}'s ${label}`;

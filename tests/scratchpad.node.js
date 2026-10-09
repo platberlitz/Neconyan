@@ -21,6 +21,8 @@ const { applyPolicyPatch } = await import('../src/notebooks/permissions.js');
 const { readRoleplayChat } = await import('../src/generation/roleplay-source.js');
 const { commitRoleplayLifecycleLocked } = await import('../src/roleplay-lifecycle.js');
 const { roleplayNativeHost } = await import('../src/endpoints/chats.js');
+const { splitReply } = await import('../public/scripts/scratchpad/proposals.js');
+const { characterToolReply, scratchpadCharacterTools } = await import('../src/scratchpad/character-tools.js');
 
 after(() => cancelAutoSaves());
 
@@ -131,6 +133,66 @@ function sharedNote(a) {
         return { notebookId, noteId: created.noteId, revision: created.revision };
     });
 }
+
+for (const roundTable of [false, true]) {
+    test(`native character calls become durable review cards, round table=${roundTable}`, async t => {
+        const a = account(t);
+        const session = startSession(a, { roundTable, assistantPrompts: { taro: 'Be a concise editor.' } });
+        const before = fs.readdirSync(a.directories.characters);
+        let generated = 0;
+        registerScratchpadJobs({ generate: async options => {
+            generated++;
+            assert.equal(options.generationType, 'normal');
+            assert.deepEqual(options.functionTools.map(tool => tool.function.name), ['Neconyan_Assistant_CreateCharacter']);
+            assert.match(options.messages[0].content, /Nothing|does not save/);
+            return { text: '', response: { choices: [{ message: { tool_calls: [{ id: 'create-card', type: 'function', function: {
+                name: 'Neconyan_Assistant_CreateCharacter', arguments: JSON.stringify({ character: { name: options.characterName + ' draft',
+                    description: 'Keeps a journal.\n```text\nAn excerpt.\n```', first_mes: '{{char}} smiles at {{user}}.' },
+                characterNote: '[curious;]', alternateGreetings: ['An alternate greeting.'] }),
+            } }] } }] } };
+        } });
+        const body = sendBody(session, { capabilities: {}, context: '' });
+        const accepted = await acceptScratchpadReply(a.request(body), body);
+        await runJob(getJob(a.directories, accepted.job.id));
+        assert.equal(getJob(a.directories, accepted.job.id).state, 'completed');
+        const replies = a.read(SOURCE).sessions[0].messages.filter(message => message.role === 'assistant');
+        assert.equal(replies.length, roundTable ? 3 : 1);
+        for (const reply of replies) {
+            assert.equal(reply.state, 'done');
+            const parts = splitReply(reply.text);
+            assert.equal(parts.length, 1);
+            assert.equal(parts[0].error, '');
+            assert.equal(parts[0].change.action, 'create');
+            assert.match(parts[0].change.character.description, /```text/);
+            assert.equal(parts[0].change.character.first_mes, '{{char}} smiles at {{user}}.');
+            assert.deepEqual(parts[0].change.alternateGreetings, ['An alternate greeting.']);
+        }
+        assert.deepEqual(fs.readdirSync(a.directories.characters), before, 'the owner has not saved a review yet');
+        await jobs.runScratchpadReply({ directories: a.directories, job: getJob(a.directories, accepted.job.id) }, { generate: () => { throw new Error('Must not regenerate'); } });
+        assert.equal(generated, replies.length);
+        assert.deepEqual(a.read(SOURCE).sessions[0].messages.filter(message => message.role === 'assistant'), replies);
+    });
+}
+
+test('character tools normalise provider formats and reject unsupported or malformed calls', () => {
+    const tools = scratchpadCharacterTools();
+    const name = tools[0].function.name;
+    const args = { character: { name: 'Nova' } };
+    for (const response of [
+        { output: [{ type: 'function_call', call_id: 'call', name, arguments: JSON.stringify(args) }] },
+        { content: [{ type: 'tool_use', id: 'call', name, input: args }] },
+        { candidates: [{ content: { parts: [{ functionCall: { name, args } }] } }] },
+    ]) {
+        assert.equal(splitReply(characterToolReply({ response }, tools).text)[0].change.character.name, 'Nova');
+        assert.throws(() => characterToolReply({ response }, []), /unregistered/);
+    }
+    const response = argumentsText => ({ response: { output: [{ type: 'function_call', call_id: 'call', name, arguments: argumentsText }] } });
+    assert.throws(() => characterToolReply(response('{'), tools), /not JSON/);
+    assert.throws(() => characterToolReply(response('{"character":{"name":"../bad"}}'), tools), /path separators/);
+    assert.throws(() => characterToolReply(response('{"character":{"name":"Nova","extensions":{}}}'), tools), /Invalid character field/);
+    assert.deepEqual(characterToolReply({ text: 'Ordinary reply.' }, []), { text: 'Ordinary reply.', hasTools: false });
+    assert.throws(() => characterToolReply({ ...response(JSON.stringify(args)), text: '```scratchpad-change\n{}\n```\n'.repeat(24) }, tools), /24 changes/);
+});
 
 test('server-built note context reaches the provider and finished suggestions register one shared review without saving', async t => {
     const a = account(t);

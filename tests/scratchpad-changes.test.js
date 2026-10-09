@@ -17,7 +17,7 @@ const saveWorldInfo = jest.fn(async () => 'Garden');
 jest.unstable_mockModule('../public/script.js', () => ({
     chat, chat_metadata: {}, characters: [], deleteMessage, getOneCharacter: jest.fn(), getRequestHeaders: () => ({}),
     getThumbnailUrl: jest.fn(), name1: 'User', reloadCurrentChat: jest.fn(), saveChatConditional,
-    select_selected_character: jest.fn(), syncMesToSwipe: jest.fn(), this_chid: 0, updateMessageBlock,
+    select_selected_character: jest.fn(), syncMesToSwipe: jest.fn(), this_chid: 0, updateMessageBlock, printCharactersDebounced: jest.fn(),
 }));
 jest.unstable_mockModule('../public/scripts/chats.js', () => ({ hideChatMessageRange }));
 jest.unstable_mockModule('../public/scripts/events.js', () => ({ event_types: { MESSAGE_EDITED: 'edited', MESSAGE_UPDATED: 'updated' }, eventSource: { emit } }));
@@ -48,6 +48,43 @@ beforeEach(() => {
 afterEach(() => jest.restoreAllMocks());
 
 describe('Scratchpad reviewed saves', () => {
+    test('creates the reviewed character only on save, including its note and greetings', async () => {
+        const plan = await prepareChange({ type: 'character', action: 'create', character: { name: 'New Nova', description: 'Draft.' },
+            characterNote: '[curious;]', alternateGreetings: ['First alternate.', 'Second alternate.'] }, source);
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+        const edited = JSON.parse(plan.after);
+        edited.character.description = 'Reviewed description.';
+        globalThis.fetch.mockResolvedValueOnce({ ok: true, text: async () => 'New Nova.png' });
+        await expect(plan.commit(JSON.stringify(edited))).resolves.toMatchObject({ committed: true, avatar: 'New Nova.png' });
+        const [url, options] = globalThis.fetch.mock.calls[0];
+        expect(url).toBe('/api/characters/create');
+        expect(options.body.get('ch_name')).toBe('New Nova');
+        expect(options.body.get('description')).toBe('Reviewed description.');
+        expect(options.body.get('depth_prompt_prompt')).toBe('[curious;]');
+        expect(options.body.getAll('alternate_greetings')).toEqual(['First alternate.', 'Second alternate.']);
+        expect(options.body.has('avatar')).toBe(false);
+        await plan.commit(JSON.stringify(edited));
+        expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    test('refuses invalid reviewed character JSON and a source switch before creation', async () => {
+        const plan = await prepareChange({ type: 'character', action: 'create', character: { name: 'Nova' } }, source);
+        await expect(plan.commit('{')).rejects.toThrow('valid JSON');
+        await expect(plan.commit('{"character":{"name":"../Nova"}}')).rejects.toThrow('path separators');
+        current = false;
+        await expect(plan.commit(plan.after)).rejects.toThrow('changed');
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
+    test('an unavailable avatar provider or failed save leaves the draft unapplied', async () => {
+        const image = await prepareChange({ type: 'character', action: 'create', character: { name: 'Nova' }, avatarPrompt: 'A portrait.' }, source);
+        await expect(image.commit(image.after)).rejects.toThrow('Quick Image Gen');
+        expect(globalThis.fetch).not.toHaveBeenCalled();
+        const plain = await prepareChange({ type: 'character', action: 'create', character: { name: 'Nova' } }, source);
+        globalThis.fetch.mockResolvedValueOnce({ ok: false, status: 500, text: async () => 'Failed' });
+        await expect(plain.commit(plain.after)).rejects.toThrow('Character creation failed');
+    });
+
     test.each([false, true])('appends reviewed greetings after the saved list, empty=%s', async empty => {
         character.data.alternate_greetings = empty ? [] : character.data.alternate_greetings;
         const existing = structuredClone(character.data.alternate_greetings);

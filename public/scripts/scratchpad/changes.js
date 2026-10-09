@@ -16,6 +16,8 @@ import {
 } from '../../script.js';
 import { hideChatMessageRange } from '../chats.js';
 import { event_types, eventSource } from '../events.js';
+import { saveCharacterDraft } from '../neconyan-character-create.js';
+import { normaliseCharacterDraft } from '../neconyan-character-draft.js';
 import { user_avatar } from '../personas.js';
 import { power_user } from '../power-user.js';
 import { getMessageTimeStamp } from '../RossAscends-mods.js';
@@ -321,6 +323,28 @@ function chatPlan(change, source) {
 export async function prepareChange(change, source) {
     if (!isCurrentSource(source)) fail('Open the chat this Scratchpad belongs to before applying changes.');
     change = normaliseChange(change);
+    if (change.type === 'character' && change.action === 'create') {
+        const draft = normaliseCharacterDraft(change);
+        let committed;
+        return {
+            target: draft.character.name,
+            field: 'New character card',
+            before: '',
+            after: JSON.stringify(draft, null, 2),
+            editable: true,
+            hint: 'Edit the character fields in this JSON. Leave avatarPrompt empty to use the default picture.',
+            async commit(edited) {
+                requireSource(source);
+                if (committed) return committed;
+                let value;
+                try { value = JSON.parse(edited); } catch { fail('The character draft must be valid JSON. Check its quotes and commas.'); }
+                committed = await saveCharacterDraft(normaliseCharacterDraft(value), {
+                    assert: () => requireSource(source), isCurrent: () => isCurrentSource(source),
+                });
+                return committed;
+            },
+        };
+    }
     if (change.type === 'lorebook') return lorebookPlan(change, source);
     if (change.type === 'character') return characterPlan(change, source);
     return chatPlan(change, source);
