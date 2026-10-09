@@ -7,6 +7,7 @@
 - PR #93 (2026-10-09) `fix(connections): keep status compact and use native controls`
 - PR #96 (2026-10-09) `feat(agents): make the Agents page easier to follow`
 - PR #99 (2026-10-09) `fix(stscript): preserve drafts and run commands during replies`
+- PR #100 (2026-10-09) `feat(expressions): expand expression sets and improve cleanup`
 
 ## v1.2.4.2
 
