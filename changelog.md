@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.2.4
+
+Follow-up Android hotfix for [#80](https://github.com/platberlitz/Neconyan/issues/80). The recovery in 1.2.3 helped the app reopen, but the reporter still saw native crashes when sending or regenerating in an existing chat.
+
+### Highlights
+
+- The Android server now runs on its own native thread with an explicit 8 MiB stack, the memory used for active function calls. It no longer depends on the default Java thread leaving enough space for Node and the tokenisers. Saved chats aren't changed.
+- Copied bug reports include the native stack size. A signal-11 crash alone doesn't establish damaged chat data or an out-of-memory failure.
+- Added packaged-APK checks for a 1,600-message context, long-input token counting, streamed and non-streamed replies against a test provider, and recoverable JavaScript and WebAssembly errors.
+- Updated the [official handbook](https://platberlitz.github.io/neconyan-docs/start/android/) and assistants' app-help reference. Confirmation on the affected Samsung is still needed.
+
 ## v1.2.3
 
 Android hotfix for [#80](https://github.com/platberlitz/Neconyan/issues/80), where the app stopped opening and showed `ERR_CONNECTION_RESET` or `kill failed: ESRCH`.
