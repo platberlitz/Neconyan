@@ -12,6 +12,8 @@ const captureConversationTextBinding = jest.fn(async () => ({}));
 const buildConversationPromptMessages = jest.fn(async () => []);
 const saveConversationThread = jest.fn();
 const commitCharacterReplyCommands = jest.fn();
+const revealUi = jest.fn();
+await jest.unstable_mockModule('../public/scripts/ui-motion.js', () => ({ revealUi }));
 
 function storeKey(personaId, avatar, groupId = '') {
     return [personaId, avatar, groupId].join('|');
@@ -183,6 +185,7 @@ describe('conversation timeline operation identity', () => {
         extractCharacterReplyCommands.mockReset().mockImplementation(rawText => ({ text: String(rawText || '').trim(), selfieRequests: [] }));
         saveConversationThread.mockClear();
         commitCharacterReplyCommands.mockClear();
+        revealUi.mockClear();
         stateModule.regenerationBusyKeys.clear();
         stateModule.activeConversationGenerationOperations.clear();
         stateModule.activeConversationReplyOperations.clear();
@@ -335,5 +338,8 @@ describe('conversation timeline operation identity', () => {
         expect(personaAThreadKey).toContain('persona-a.png');
         expect(stateModule.conversationState.lastRenderedThreadKey).toContain('persona-b.png');
         expect(stateModule.conversationState.lastRenderedThreadKey).not.toBe(personaAThreadKey);
+        expect(revealUi).toHaveBeenCalledTimes(2);
+        renderConversationTimeline();
+        expect(revealUi).toHaveBeenCalledTimes(2);
     });
 });

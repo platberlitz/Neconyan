@@ -1704,12 +1704,6 @@ body:not(.movingUI) .drawer-content.maximized {
     margin-right: auto !important;
 }
 
-.sb-shell-root.fillLeft.openDrawer,
-.sb-shell-root.fillRight.openDrawer {
-    animation: sbShellReveal 240ms var(--sb-ease-out);
-    transform-origin: center;
-}
-
 #right-nav-panel.openDrawer {
     --sb-character-scroll-gutter: 8px;
     display: flex;
@@ -1721,7 +1715,6 @@ body:not(.movingUI) .drawer-content.maximized {
     right: 0 !important;
     margin-left: auto !important;
     margin-right: auto !important;
-    animation: sbShellReveal 240ms var(--sb-ease-out);
     transform-origin: center;
 }
 
@@ -1740,27 +1733,6 @@ body.movingUI #right-nav-panel.openDrawer > .sb-shell-resize-handle {
     margin-left: 0 !important;
     margin-right: 0 !important;
     transform-origin: right center;
-}
-
-.sb-shell-root.openDrawer .sb-shell-nav-wrapper {
-    animation: sbShellContentReveal 280ms var(--sb-ease-out) both;
-}
-
-.sb-shell-root.openDrawer .sb-shell-main {
-    animation: sbShellContentReveal 320ms var(--sb-ease-out) both;
-}
-
-#right-nav-panel.openDrawer > .sb-character-shell-nav-wrapper,
-#right-nav-panel.openDrawer > .sb-character-editor-subtabs-wrapper,
-#right-nav-panel.openDrawer > #CharListButtonAndHotSwaps,
-#right-nav-panel.openDrawer > #rm_PinAndTabs {
-    animation: sbShellContentReveal 280ms var(--sb-ease-out) both;
-}
-
-#right-nav-panel.openDrawer > .sb-character-shell-header,
-#right-nav-panel.openDrawer > .scrollableInner,
-#right-nav-panel.openDrawer > .scrollableInnerFull {
-    animation: sbShellContentReveal 320ms var(--sb-ease-out) both;
 }
 
 #right-nav-panel.openDrawer > .scrollableInner,
@@ -7774,30 +7746,6 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 
 .sb-search-hit {
     animation: sb-search-hit 2.2s var(--sb-ease-out);
-}
-
-@keyframes sbShellReveal {
-    from {
-        opacity: 0;
-        transform: scale(0.96);
-    }
-
-    to {
-        opacity: 1;
-        transform: scale(1);
-    }
-}
-
-@keyframes sbMobileShellSheetIn {
-    from {
-        opacity: 0;
-        transform: translateY(14px) scale(0.99);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-    }
 }
 
 @keyframes sb-search-hit {

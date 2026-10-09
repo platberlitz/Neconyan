@@ -1,3 +1,4 @@
+import { isUiClosing, setUiVisibility } from '../ui-motion.js';
 import {
     CHROME_IDS,
     DEFAULT_INACTIVITY_THRESHOLD,
@@ -45,9 +46,9 @@ export function setConversationBackdropVisible() {
         return;
     }
 
-    const settingsOpen = drawer instanceof HTMLElement && !drawer.hidden;
+    const settingsOpen = drawer instanceof HTMLElement && !drawer.hidden && !isUiClosing(drawer);
     const palsOpen = palsRail instanceof HTMLElement && palsRail.dataset.open === 'true';
-    backdrop.hidden = !(settingsOpen || palsOpen);
+    setUiVisibility(backdrop, settingsOpen || palsOpen, visible => { backdrop.hidden = !visible; }, { distance: 0 });
 }
 
 export function closePalsRail() {
@@ -655,7 +656,7 @@ export function openConversationSettings() {
     renderScheduleDisplay();
     renderConversationMemoryPanel();
     updateUserFooter();
-    chrome.drawer.hidden = false;
+    setUiVisibility(chrome.drawer, true, visible => { chrome.drawer.hidden = !visible; });
     setConversationBackdropVisible();
     chrome.drawer.querySelector('input, select, textarea, button')?.focus?.({ preventScroll: true });
 }
@@ -663,7 +664,7 @@ export function openConversationSettings() {
 export function closeConversationSettings(identity = null) {
     const drawer = document.getElementById(CHROME_IDS.settingsDrawer);
     if (drawer instanceof HTMLElement) {
-        const shouldSave = drawer.hidden === false;
+        const shouldSave = drawer.hidden === false && !isUiClosing(drawer);
         const capturedIdentity = {
             avatar: identity?.avatar || drawer.dataset.conversationAvatar || getCurrentCharAvatar(),
             groupId: Object.prototype.hasOwnProperty.call(identity || {}, 'groupId')
@@ -671,7 +672,7 @@ export function closeConversationSettings(identity = null) {
                 : drawer.dataset.conversationGroupId || '',
             personaId: identity?.personaId || drawer.dataset.conversationPersonaId || getConversationPersonaId(),
         };
-        drawer.hidden = true;
+        setUiVisibility(drawer, false, visible => { drawer.hidden = !visible; });
         if (shouldSave) {
             saveCurrentPanelSettings(capturedIdentity);
         }
