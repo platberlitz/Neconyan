@@ -54,6 +54,21 @@ describe('Windows 98 shell style stays readable with custom colours', () => {
         expect(css).toMatch(/:is\(\.menu_button,[^{]*\{[^}]*transform: none;/);
     });
 
+    test('a selected push button takes the caption fill instead of the plain face', () => {
+        const pushButton = ':is(.menu_button, .sb-proxy-button, .neconyan-cat-control, #neconyan-workspace-rail .neconyan-rail-new):not(#sb-topbar-inner *):not(.menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset, .neconyan-home-primary)';
+        const selected = ':is(.is-active, .active, .selected, .is-selected, .is-current, [aria-pressed=\'true\'], [aria-selected=\'true\'], [aria-current]):not(.disabled, .is-disabled, [disabled])';
+        const selector = `:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) ${pushButton}${selected}`;
+        const plainIndex = css.indexOf(`:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) ${pushButton} {`);
+        const selectedIndex = css.indexOf(`${selector} {`);
+        expect(plainIndex).toBeGreaterThan(-1);
+        expect(selectedIndex).toBeGreaterThan(plainIndex);
+        const rule = css.slice(selectedIndex).match(/\{([^}]*)\}/);
+        expect(rule[1]).toContain('background: var(--w98-title);');
+        expect(rule[1]).toContain('color: var(--w98-title-ink);');
+        expect(rule[1]).toContain('box-shadow: var(--w98-sunken);');
+        expect(css).toContain(`${selector} :is(i, span, small) {\n    color: inherit;`);
+    });
+
     test('the phone drawer description beats the muted drawer rule', () => {
         expect(css).toMatch(/:is\(#left-nav-panel, #user-settings-block\)\.openDrawer \.sb-shell-header \.sb-shell-description \{\s*color: var\(--w98-title-ink\);/);
     });

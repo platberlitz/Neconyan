@@ -260,6 +260,17 @@
     transform: none;
 }
 
+/* A selected push button stays pressed in and takes the navy selection highlight. */
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button, .neconyan-cat-control, #neconyan-workspace-rail .neconyan-rail-new):not(#sb-topbar-inner *):not(.menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset, .neconyan-home-primary):is(.is-active, .active, .selected, .is-selected, .is-current, [aria-pressed='true'], [aria-selected='true'], [aria-current]):not(.disabled, .is-disabled, [disabled]) {
+    background: var(--w98-title);
+    color: var(--w98-title-ink);
+    box-shadow: var(--w98-sunken);
+}
+
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button, .neconyan-cat-control, #neconyan-workspace-rail .neconyan-rail-new):not(#sb-topbar-inner *):not(.menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset, .neconyan-home-primary):is(.is-active, .active, .selected, .is-selected, .is-current, [aria-pressed='true'], [aria-selected='true'], [aria-current]):not(.disabled, .is-disabled, [disabled]) :is(i, span, small) {
+    color: inherit;
+}
+
 /* Accent-filled buttons keep their fill and label colour, with the bevel and a default-button frame. */
 :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]),
 :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .neconyan-home-actions > .neconyan-home-primary {
