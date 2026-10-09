@@ -776,8 +776,8 @@ function buildPanelAgentSection(state) {
     const rerunButtons = latest.hostHidden || !state.agent
         ? ''
         : `
-                    <button type="button" class="ica--cdash-action" data-action="panel-regenerate" title="Regenerate this state" aria-label="Regenerate state"${runDisabled}><i class="fa-solid fa-rotate-right"></i></button>
-                    <button type="button" class="ica--cdash-action" data-action="panel-fix" title="Fix: re-run with strict output enforcement (use when the model wrote roleplay instead)" aria-label="Fix state"${runDisabled}><i class="fa-solid fa-wrench"></i></button>`;
+                    <button type="button" class="ica--cdash-action" data-action="panel-regenerate" title="Write this note again from the message it came from" aria-label="Write note again"${runDisabled}><i class="fa-solid fa-rotate-right"></i></button>
+                    <button type="button" class="ica--cdash-action" data-action="panel-fix" title="Write this note again with strict format rules (use when the model wrote roleplay instead)" aria-label="Fix note format"${runDisabled}><i class="fa-solid fa-wrench"></i></button>`;
 
     return `
         <section class="ica--tpanel-agent" data-agent-id="${escapeHtml(agentId)}" data-message-index="${latest.messageIndex}" data-hidden="${isHidden}" data-host-hidden="${Boolean(latest.hostHidden)}">
@@ -791,7 +791,7 @@ function buildPanelAgentSection(state) {
                     ${hiddenButton}
                     ${runLatestButton}${rerunButtons}
                     ${canSendToLorebook && String(latest.result?.status ?? 'done') === 'done' ? '<button type="button" class="ica--cdash-action" data-action="panel-send-to-lorebook" title="Send this state to the attached lorebook" aria-label="Send state to lorebook"><i class="fa-solid fa-book-medical"></i></button>' : ''}
-                    <button type="button" class="ica--cdash-action" data-action="panel-edit-note" title="Edit this state's text by hand (e.g. type your Plot Compass objective)" aria-label="Edit state text"><i class="fa-solid fa-pen-to-square"></i></button>
+                    <button type="button" class="ica--cdash-action" data-action="panel-edit-note" title="Edit this note by hand (for example, type your Plot Compass objective)" aria-label="Edit note"><i class="fa-solid fa-pen-to-square"></i></button>
                     ${settingsButton}
                     <button type="button" class="ica--cdash-action" data-action="panel-jump" title="Scroll to the source message" aria-label="Scroll to source message"><i class="fa-solid fa-comment-dots"></i></button>
                 </span>
@@ -825,23 +825,31 @@ function buildCompactionButton(state) {
     `;
 }
 
+function buildPanelRunButtonHtml({ action, icon, label, title, count = 0, disabled = false, extraClass = '' }) {
+    const countHtml = count > 0 ? `<span class="ica--tpanel-action-count">${count}</span>` : '';
+    return `<button type="button" class="menu_button menu_button_icon ica--tpanel-run-btn${extraClass}" data-action="${action}" title="${escapeHtml(title)}"${disabled ? ' disabled' : ''}><i class="fa-solid ${icon}" aria-hidden="true"></i><span>${escapeHtml(label)}</span>${countHtml}</button>`;
+}
+
 function buildPanelRunButtonsHtml() {
+    const runAllTitle = 'Run every switched-on companion on the latest reply, including those set to run only when you ask';
     if (!areAgentsGloballyEnabled()) {
-        return '<button type="button" class="ica--cdash-action" data-action="panel-regenerate-all" title="Regenerate every companion on the last reply" aria-label="Regenerate all companions" disabled><i class="fa-solid fa-rotate-right"></i></button>';
+        return `<div class="ica--tpanel-run" role="group" aria-label="Run companions">${buildPanelRunButtonHtml({ action: 'panel-regenerate-all', icon: 'fa-play', label: 'Run all', title: 'Switch Agents on to run companions', disabled: true })}</div>`;
     }
 
     const automaticCount = getAutomaticCompanionAgents(getLatestAssistantCompanionMessageIndex()).length;
     const retryIndex = getLatestCompanionResultsMessageIndex();
     const retryCount = getRetryableCompanionAgents(retryIndex).length;
-    const automaticLabel = automaticCount > 0
-        ? `Run the ${automaticCount} automatic companion${automaticCount === 1 ? '' : 's'} on the last reply`
-        : 'No automatic companions are ready to run on the last reply';
-    const retryLabel = `Retry ${retryCount} failed companion${retryCount === 1 ? '' : 's'} on message #${retryIndex}`;
+    const automaticTitle = automaticCount > 0
+        ? `Run the ${automaticCount} automatic companion${automaticCount === 1 ? '' : 's'} on the latest reply`
+        : 'No automatic companions are ready to run on the latest reply';
+    const retryTitle = `Run the ${retryCount} companion${retryCount === 1 ? '' : 's'} that failed on message #${retryIndex} again`;
 
     return `
-        ${retryCount > 0 ? `<button type="button" class="ica--cdash-action ica--tpanel-retry" data-action="panel-retry-failed" title="${escapeHtml(retryLabel)}" aria-label="${escapeHtml(retryLabel)}"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span class="ica--tpanel-action-count">${retryCount}</span></button>` : ''}
-        <button type="button" class="ica--cdash-action" data-action="panel-run-auto" title="${escapeHtml(automaticLabel)}" aria-label="${escapeHtml(automaticLabel)}"${automaticCount > 0 ? '' : ' disabled'}><i class="fa-solid fa-bolt" aria-hidden="true"></i></button>
-        <button type="button" class="ica--cdash-action" data-action="panel-regenerate-all" title="Regenerate every companion on the last reply" aria-label="Regenerate all companions"><i class="fa-solid fa-rotate-right"></i></button>
+        <div class="ica--tpanel-run" role="group" aria-label="Run companions">
+            ${buildPanelRunButtonHtml({ action: 'panel-regenerate-all', icon: 'fa-play', label: 'Run all', title: runAllTitle })}
+            ${buildPanelRunButtonHtml({ action: 'panel-run-auto', icon: 'fa-bolt', label: 'Run automatic', title: automaticTitle, count: automaticCount, disabled: automaticCount === 0 })}
+            ${retryCount > 0 ? buildPanelRunButtonHtml({ action: 'panel-retry-failed', icon: 'fa-triangle-exclamation', label: 'Run failed again', title: retryTitle, count: retryCount, extraClass: ' ica--tpanel-retry' }) : ''}
+        </div>
     `;
 }
 
@@ -856,11 +864,11 @@ export function buildPanelHtml() {
             <span class="ica--tpanel-title"><i class="fa-solid fa-cat"></i> Companions</span>
             <span class="ica--tpanel-agent-actions">
                 <button type="button" class="ica--cdash-action${panelLocked ? ' is-active' : ''}" data-action="panel-lock" title="${panelLocked ? 'Unlock panel auto-close' : 'Keep panel open until unlocked'}" aria-label="${panelLocked ? 'Unlock panel' : 'Lock panel'}" aria-pressed="${panelLocked}"><i class="fa-solid ${panelLocked ? 'fa-lock' : 'fa-lock-open'}"></i></button>
-                ${buildPanelRunButtonsHtml()}
                 ${panelLauncher === 'handle' ? '<button type="button" class="ica--cdash-action" data-action="panel-hide-handle" title="Hide the floating button" aria-label="Hide the floating button"><i class="fa-solid fa-eye-slash"></i></button>' : ''}
                 <button type="button" class="ica--cdash-action" data-action="panel-close" title="Close panel" aria-label="Close panel"><i class="fa-solid fa-xmark"></i></button>
             </span>
         </div>
+        ${buildPanelRunButtonsHtml()}
         <div class="ica--tpanel-body">${body}</div>
     `;
 }

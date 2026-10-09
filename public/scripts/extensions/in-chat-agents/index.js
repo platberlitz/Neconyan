@@ -3099,6 +3099,7 @@ function updateAgentOverview(agentList = getVisibleInChatAgents()) {
     const agents = Array.isArray(agentList) ? agentList : [];
     const enabledCount = agents.filter(agent => isAgentEnabledForCurrentScope(agent)).length;
     const companionCount = agents.filter(agent => isCompanionAgent(agent)).length;
+    updatePathfinderStatusLine();
     const values = [
         ['#ica--agent-count', agents.length],
         ['#ica--enabled-count', enabledCount],
@@ -6253,6 +6254,20 @@ function populateGlobalNotificationToggle() {
 
 function populatePathfinderSubmoduleToggle() {
     $('#ica--pathfinderSubmoduleEnabled').prop('checked', isPathfinderSubmoduleEnabled());
+    updatePathfinderStatusLine();
+}
+
+function getPathfinderStatusText() {
+    if (!isPathfinderSubmoduleEnabled()) return t`Off. Pawthfinder and its tools are unloaded.`;
+    const pathfinderAgent = getAgents().find(agent => isPathfinderAgent(agent));
+    if (!pathfinderAgent) return t`Add the Pawthfinder agent from Browse library to use it.`;
+    if (!areAgentsGloballyEnabled()) return t`Waiting. Agents are switched off at the top of Manage agents.`;
+    if (!isAgentEnabledForCurrentScope(pathfinderAgent)) return t`Loaded, but the Pawthfinder agent is switched off. Switch it on in the agent list or in Open Pawthfinder.`;
+    return t`On. Open Pawthfinder to choose lorebooks and how it searches them.`;
+}
+
+function updatePathfinderStatusLine() {
+    $('#ica--pathfinderStatus').text(getPathfinderStatusText());
 }
 
 function populateGlobalExecutionModeDropdown() {
@@ -6923,7 +6938,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
                 }
                 initPathfinder(getContext());
                 syncToolAgentRegistrations();
-                toastr.info('Pawthfinder submodule enabled.');
+                toastr.info('Pawthfinder is available again.');
             } catch (err) {
                 console.warn('[InChatAgents] Failed to enable Pawthfinder submodule:', err);
                 toastr.error('Could not enable Pawthfinder.');
@@ -6934,7 +6949,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         teardownPathfinder();
         deactivatePathfinderRuntime();
         closePathfinderSettings();
-        toastr.info('Pawthfinder submodule disabled.');
+        toastr.info('Pawthfinder and its tools are unloaded. Your other agents keep working.');
     });
     $('#ica--appendAgentsExecutionMode').on('change', function () {
         setGlobalSettings({ appendAgentsExecutionMode: this.value });

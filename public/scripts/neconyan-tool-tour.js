@@ -27,14 +27,14 @@ const TOOL_PAGES = Object.freeze({
                 id: 'status',
                 targets: ['#pf--status-banner'],
                 title: 'The status line',
-                body: 'This line says whether Pawthfinder is ready. **Not configured** means no lorebook is chosen yet. **Disabled** means the main switch is off.\nLook here first whenever lore stops turning up.',
+                body: 'This line says whether Pawthfinder is ready. **Not configured** means no lorebook is chosen yet. **Pawthfinder is off** names the switch that is still off.\nLook here first whenever lore stops turning up.',
                 hint: 'Read the sign before you knock. It saves us both time.',
             },
             {
                 id: 'switch',
                 targets: ['.pf--master-section'],
                 title: 'The main switch',
-                body: '**Enable Pawthfinder for all chats** turns the whole feature on or off. Changing other settings never flips it, so it stays where you left it.',
+                body: '**Enable Pawthfinder for all chats** is the same switch as the Pawthfinder card in the Agents list. Changing other settings never flips it, so it stays where you left it.',
                 hint: 'One switch. On or off. I like things that know what they are.',
             },
             {
@@ -874,7 +874,7 @@ const TOOL_PAGES = Object.freeze({
                 id: 'pawthfinder', tab: '.ica--workspace-tab[data-workspace-view="connections"]', optional: true,
                 targets: ['#ica--panel-connections .ica--settings-group:nth-of-type(4)'],
                 title: 'Pawthfinder',
-                body: '**Pawthfinder** is a bundled agent with its own page. It looks things up in your lorebooks while you chat. This switch keeps it available, and **Open Pawthfinder** takes you to its settings.',
+                body: '**Pawthfinder** is a bundled agent with its own page. It looks things up in your lorebooks while you chat. **Keep Pawthfinder available** keeps it loaded, the line under it says what is still missing, and **Open Pawthfinder** takes you to its settings.',
                 hint: 'My own little project. Treat it kindly.',
             },
             {

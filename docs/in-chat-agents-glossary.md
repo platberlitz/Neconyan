@@ -101,7 +101,7 @@ Open this with **Connections & defaults** at the top of the Agents panel. These 
 
 **Companion panel button**: opens the Companion panel from a **Floating side button** or a **Top bar button**.
 
-**Enable Pawthfinder submodule**: turns Pawthfinder on or off without touching other agents. **Open Pawthfinder** opens its own settings.
+**Keep Pawthfinder available**: keeps Pawthfinder and its lorebook tools loaded. Turning it off unloads them everywhere without touching other agents. The status line under it says whether Pawthfinder is on, or what is still missing: the Pawthfinder agent, the main **Agents On** switch, or the Pawthfinder agent's own switch (the same switch as its card and the top of **Open Pawthfinder**). **Open Pawthfinder** opens its own settings.
 
 ## Agent Editor
 
@@ -271,11 +271,16 @@ You can drag the floating button to any edge. **Hide the floating button** hides
 | Button | What it does |
 | --- | --- |
 | **Lock panel** / **Unlock panel** | Keeps the panel open when you click elsewhere. |
-| **Retry failed** (warning icon) | Reruns companions that failed, with a count of how many. |
-| **Run automatic companions** (bolt icon) | Runs your automatic companions on the last reply. |
-| **Regenerate all companions** | Reruns every enabled companion, manual ones included, on the latest reply. |
 | **Hide the floating button** | Hides the side button. |
 | **Close panel** | Closes it. |
+
+**Run buttons** sit in their own row under the header, with the same names as in Companion activity:
+
+| Button | What it does |
+| --- | --- |
+| **Run all** | Runs every switched-on companion on the latest reply, including those set to run only when you ask. |
+| **Run automatic** | Runs only the companions set to run after replies, with a count of how many. |
+| **Run failed again** | Shows only when something failed, with a count. Runs the failed companions again. |
 
 **Buttons on each companion**:
 
@@ -284,13 +289,13 @@ You can drag the floating button to any edge. **Hide the floating button** hides
 | **Reorder companion** (grip) | Drag, or use the arrow keys, to change its Order. |
 | **Hide companion** / **Unhide companion** (eye) | Stops or restarts automatic runs. The agent and its notes stay. |
 | **Run companion** | Runs it on the latest reply. |
-| **Regenerate state** | Reruns it on the message its current note came from. |
-| **Fix state** | Reruns it with strict format rules, for broken tracker output. |
-| **Edit state text** | Lets you edit the saved note by hand. |
+| **Write note again** | Reruns it on the message its current note came from. |
+| **Fix note format** | Reruns it with strict format rules, for broken tracker output. |
+| **Edit note** | Lets you edit the saved note by hand. |
 | **Open full editor** (gear) | Opens its full editor. |
+| **Scroll to source message** | Jumps to the message the note belongs to. |
 
 Under each companion's note sit the same **Keep in chat history**, **notes** and **Connections** controls as on its card in the Agents list.
-| **Scroll to source message** | Jumps to the message the note belongs to. |
 
 Each companion also shows its message number, estimated **Input** and **Output** tokens and **Previous states** (the last five notes). **Absorbed** means its message is hidden but the note still counts.
 
@@ -312,11 +317,11 @@ Some notes contain clickable choices. Clicking one puts its text in your message
 
 Companions set to **Show note card** put their note under the reply. Each card has **Regenerate companion note**, **Edit companion note**, **Copy companion note** and **Delete companion note**, plus **Send companion note to lorebook** for Lorebook Scout.
 
-## Companion Dashboard
+## Companion Activity
 
 Open it with **More tools → Companion activity**. It lists every companion with its settings as pills, lets you switch each one on or off, and offers **Keep in history**, **Run**, **Edit** and **To prompt or reply** per row. Prompt or reply agents that could become companions sit in their own section with **To companion**.
 
-The toolbar has **Run enabled companions**, **Run automatic companions**, **Retry failed**, **Clean up notes**, **Open live panel**, **Create companion** and **Draft with AI**. **Select** lets you batch or keep several companions at once, and **Reorder** changes their order. **Latest results** shows the 20 newest notes; click one to jump to its message.
+The toolbar has **Run all**, **Run automatic**, **Run failed again**, **Clean up notes**, **Open Companion panel**, **Create companion** and **Draft with AI**. **Select** lets you batch or keep several companions at once, and **Reorder** changes their order. **Latest results** shows the 20 newest notes; click one to jump to its message.
 
 **Clean up notes** removes **Old notes** (keeps each companion's newest) or **Every note** from the companions you pick.
 

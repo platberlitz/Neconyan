@@ -348,7 +348,7 @@ describe('companion tracker panel', () => {
         expect(html).toMatch(/<section class="ica--tpanel-agent"[\s\S]*?data-message-index="0"[\s\S]*?data-action="panel-run-latest"[\s\S]*?<\/section>/);
     });
 
-    test('offers automatic runs and a failed-companion retry in the panel header', async () => {
+    test('offers labelled Run all, Run automatic and Run failed again buttons under the panel header', async () => {
         agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true, companion: { displayMode: 'panel' } }];
         chat.push({ is_user: false, is_system: false, mes: 'reply' });
         const panel = await importPanel();
@@ -362,9 +362,13 @@ describe('companion tracker panel', () => {
         html = panel.buildPanelHtml();
 
         expect(html).not.toMatch(/data-action="panel-run-auto"[^>]*disabled/);
-        expect(html).toContain('Run the 1 automatic companion on the last reply');
+        expect(html).toContain('Run the 1 automatic companion on the latest reply');
+        expect(html).toContain('<span>Run all</span>');
+        expect(html).toContain('<span>Run automatic</span>');
+        expect(html).toMatch(/<div class="ica--tpanel-header">[\s\S]*?<\/div>\s*<div class="ica--tpanel-run" role="group" aria-label="Run companions">/);
         expect(html).toContain('data-action="panel-retry-failed"');
-        expect(html).toContain('Retry 2 failed companions on message #0');
+        expect(html).toContain('Run the 2 companions that failed on message #0 again');
+        expect(html).toContain('<span>Run failed again</span>');
         expect(html).toContain('<span class="ica--tpanel-action-count">2</span>');
 
         globallyEnabled = false;
@@ -631,7 +635,7 @@ describe('companion tracker panel', () => {
 
         globallyEnabled = false;
         expect(panel.shouldShowCompanionPanelHandle()).toBe(true);
-        expect(panel.buildPanelHtml()).toContain('data-action="panel-regenerate-all" title="Regenerate every companion on the last reply" aria-label="Regenerate all companions" disabled');
+        expect(panel.buildPanelHtml()).toContain('data-action="panel-regenerate-all" title="Switch Agents on to run companions" disabled');
     });
 
     test('defaults the launcher to the floating button and normalises unknown values', async () => {

@@ -249,10 +249,10 @@
                 <section class="ica--settings-group" aria-labelledby="ica--pathfinder-group-title">
                     <div class="ica--settings-group-heading">
                         <span class="ica--settings-group-icon"><i class="fa-solid fa-route" aria-hidden="true"></i></span>
-                        <div><h4 id="ica--pathfinder-group-title">Pawthfinder</h4><p>Keep the optional tool submodule available to the bundled Pawthfinder agent.</p></div>
+                        <div><h4 id="ica--pathfinder-group-title">Pawthfinder</h4><p>Pawthfinder lets an agent search your lorebooks with tools. This switch keeps it loaded; the Pawthfinder agent&#39;s own switch turns it on for your chats.</p></div>
                     </div>
-                    <label class="checkbox_label" title="Enable or disable the built-in Pawthfinder submodule without disabling shared In-Chat Agents."><input type="checkbox" id="ica--pathfinderSubmoduleEnabled" /><span>Enable Pawthfinder submodule</span></label>
-                    <p class="ica--profile-help">Opens the full Pawthfinder settings panel.</p>
+                    <label class="checkbox_label" title="Turning this off unloads Pawthfinder and its tools everywhere. Your other agents keep working."><input type="checkbox" id="ica--pathfinderSubmoduleEnabled" aria-describedby="ica--pathfinderStatus" /><span>Keep Pawthfinder available</span></label>
+                    <p id="ica--pathfinderStatus" class="ica--profile-help" role="status" aria-live="polite"></p>
                     <button type="button" id="ica--pathfinderSettings" class="menu_button">Open Pawthfinder</button>
                 </section>
             </div>

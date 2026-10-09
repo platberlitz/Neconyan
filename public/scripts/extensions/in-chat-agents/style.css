@@ -1460,6 +1460,29 @@ button.ica--card-pill--version-update {
     gap: 8px;
 }
 
+.ica--tpanel-run {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.ica--tpanel-run .ica--tpanel-run-btn {
+    flex: 1 1 auto;
+    justify-content: center;
+    gap: 6px;
+    width: auto;
+    min-height: 36px;
+    margin: 0;
+    padding-inline: 10px;
+    white-space: nowrap;
+}
+
+@media (pointer: coarse) {
+    .ica--tpanel-run .ica--tpanel-run-btn {
+        min-height: 44px;
+    }
+}
+
 .ica--tpanel-title {
     display: inline-flex;
     align-items: center;

@@ -149,7 +149,7 @@ describe('in-chat agents workspace redesign', () => {
         expect(primary).not.toContain('ica--btn-settings');
         expect(primary).not.toContain('ica--btn-history');
         const summary = indexSource.slice(indexSource.indexOf('function buildAgentQuickSummary('), indexSource.indexOf('function getAgentCardPhaseLabel('));
-        expect(summary).toContain("const injectsBeforeReply = agent.phase === 'pre' || agent.phase === 'both';");
+        expect(summary).toContain('const injectsBeforeReply = agent.phase === \'pre\' || agent.phase === \'both\';');
         expect(secondary).toContain('ica--btn-settings');
         expect(secondary).toContain('<span>Quick settings</span>');
         expect(indexSource).not.toContain('void openQuickSettings([agent.id]);');
@@ -187,7 +187,10 @@ describe('in-chat agents workspace redesign', () => {
 
     test('gives companion activity the same labelled action language', () => {
         expect(dashboardSource).toContain('Companion activity</div>');
-        expect(dashboardSource).toContain('Run enabled companions');
+        expect(dashboardSource).toContain('label: \'Run all\'');
+        expect(dashboardSource).toContain('label: \'Run automatic\'');
+        expect(dashboardSource).toContain('label: \'Run failed again\'');
+        expect(readRepoFile('public/scripts/extensions/in-chat-agents/companion/companion-panel.js')).toContain('label: \'Run all\'');
         expect(dashboardSource).toContain('<span>${escapeHtml(label)}</span></button>');
         expect(dashboardSource).toContain('buildRowActionHtml(\'run\', \'fa-play\', \'Run\'');
         expect(dashboardSource).toContain('buildRowActionHtml(\'edit\', \'fa-pen-to-square\', \'Edit\'');
@@ -247,6 +250,7 @@ describe('agent workbench state', () => {
             areAgentsGloballyEnabled: () => state.enabled,
             getGlobalSettings: () => ({ enabled: state.enabled, separateRecentChats: false }),
             getAgentChatScopeLabel: () => 'Individual chats',
+            updatePathfinderStatusLine() {},
         });
         vm.runInContext(getFunction('updateAgentOverview'), runtime);
         const agents = [{ enabled: true, execution: 'companion' }];
@@ -332,7 +336,10 @@ test('new generation clears the previous manual result', () => {
 
 test('Pawthfinder opens its own panel and the settings cards do not stretch', () => {
     expect(settingsSource).toContain('Open Pawthfinder');
-    expect(settingsSource).toContain('Opens the full Pawthfinder settings panel.');
+    expect(settingsSource).toContain('id="ica--pathfinderStatus"');
+    expect(settingsSource).toContain('Keep Pawthfinder available');
+    expect(indexSource).toContain('function getPathfinderStatusText()');
+    expect(indexSource).toContain('Loaded, but the Pawthfinder agent is switched off.');
     expect(settingsSource).not.toContain('Detailed Pawthfinder controls are in Extensions.');
     expect(indexSource).not.toContain('PATHFINDER_EXTENSIONS_HOST_ID');
     expect(indexSource).not.toContain('openPathfinderExtensionsDrawer');

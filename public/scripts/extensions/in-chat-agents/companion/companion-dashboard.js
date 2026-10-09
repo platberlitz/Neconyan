@@ -387,19 +387,19 @@ function buildToolbarHtml({ globallyEnabled, totalNotes }) {
     const retryCount = globallyEnabled && retryIndex >= 0 ? getRetryableCompanionAgents(retryIndex).length : 0;
 
     return [
-        buildToolbarButtonHtml({ action: 'run-all', icon: 'fa-play', label: 'Run enabled companions', title: 'Run every enabled companion on the last message', disabled: !globallyEnabled }),
+        buildToolbarButtonHtml({ action: 'run-all', icon: 'fa-play', label: 'Run all', title: 'Run every switched-on companion on the latest message', disabled: !globallyEnabled }),
         buildToolbarButtonHtml({
             action: 'run-auto',
             icon: 'fa-bolt',
-            label: 'Run automatic companions',
-            title: 'Run only the enabled companions set to run after each reply, on the latest reply. Manual companions are skipped.',
+            label: 'Run automatic',
+            title: 'Run only the switched-on companions set to run after each reply, on the latest reply. Companions set to run only when you ask are skipped.',
             disabled: automaticCount === 0,
             badge: automaticCount,
         }),
         buildToolbarButtonHtml({
             action: 'retry-failed',
             icon: 'fa-rotate-right',
-            label: 'Retry failed',
+            label: 'Run failed again',
             title: retryCount > 0
                 ? `Run again the companions on message #${retryIndex} that failed from a connection error, a blank reply or an interruption`
                 : 'Nothing failed on the latest message',

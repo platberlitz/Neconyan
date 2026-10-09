@@ -457,7 +457,7 @@ describe('companion dashboard', () => {
         html = dashboard.buildDashboardHtml();
 
         expect(openingTag(html, 'run-auto')).not.toContain(' disabled');
-        expect(fullButton(html, 'run-auto')).toContain('Run automatic companions');
+        expect(fullButton(html, 'run-auto')).toContain('Run automatic');
         expect(fullButton(html, 'run-auto')).toContain('<span class="ica--cdash-badge">1</span>');
         expect(openingTag(html, 'retry-failed')).toContain('message #0');
         expect(fullButton(html, 'retry-failed')).toContain('<span class="ica--cdash-badge">2</span>');
