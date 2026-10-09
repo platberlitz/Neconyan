@@ -19,6 +19,8 @@ import { generateWebLlmChatPrompt, isWebLlmSupported } from '../shared.js';
 import { Popup, POPUP_RESULT } from '../../popup.js';
 import { t } from '../../i18n.js';
 import { removeReasoningFromString } from '../../reasoning.js';
+import { cleanSpriteBitmap, splitSpriteBitmap } from './sprite-pixels.js';
+import { getExpressionSpriteSheetGrid } from './sprite-prompts.js';
 import {
     DEFAULT_EXPRESSION_SPRITE_PROMPT,
     LEGACY_DEFAULT_EXPRESSION_SPRITE_PROMPT,
@@ -121,20 +123,6 @@ const EXPRESSION_SPRITE_GENERATION_MODE = {
 
 const DEFAULT_EXPRESSION_SPRITE_GENERATION_MODE = EXPRESSION_SPRITE_GENERATION_MODE.individual;
 const DEFAULT_EXPRESSION_SPRITE_REMOVE_BACKGROUND = false;
-const SHEET_BACKGROUND_RGB_THRESHOLD = 238;
-const SHEET_BACKGROUND_CHANNEL_SPREAD = 28;
-const SHEET_BACKGROUND_NEUTRAL_SPREAD = 48;
-const SHEET_BACKGROUND_BUCKET_SIZE = 16;
-const SHEET_BACKGROUND_PALETTE_LIMIT = 5;
-const SHEET_BACKGROUND_COLOR_DISTANCE = 58;
-const SHEET_BACKGROUND_MIN_NEUTRAL_LIGHTNESS = 36;
-const SHEET_TILE_SOURCE_INSET_RATIO = 0.045;
-const SPRITE_FOREGROUND_ALPHA_THRESHOLD = 24;
-/**
- * Minimum fraction of a tile's smaller dimension that foreground content must span
- * before content-aware centering is applied. Prevents centering noise/artifacts.
- */
-const SPRITE_CENTER_MIN_CONTENT_RATIO = 0.08;
 
 let expressionsList = null;
 let processedExpressions = new WeakMap();
@@ -1071,13 +1059,6 @@ async function generateAndUploadExpressionSprite(expression, spriteFolderName, {
     }
 }
 
-function getExpressionSpriteSheetGrid(tileCount) {
-    const count = Math.max(1, Number(tileCount) || 1);
-    const columns = Math.ceil(Math.sqrt(count));
-    const rows = Math.ceil(count / columns);
-    return { columns, rows };
-}
-
 function loadImageElement(src) {
     return new Promise((resolve, reject) => {
         const image = new Image();
@@ -1099,271 +1080,14 @@ function canvasToPngObjectUrl(canvas) {
     });
 }
 
-function getPixelChannels(data, pixelIndex) {
-    return {
-        red: data[pixelIndex],
-        green: data[pixelIndex + 1],
-        blue: data[pixelIndex + 2],
-        alpha: data[pixelIndex + 3],
-    };
-}
-
-function getChannelSpread(red, green, blue) {
-    return Math.max(red, green, blue) - Math.min(red, green, blue);
-}
-
-function isNeutralSheetPixel(red, green, blue) {
-    return getChannelSpread(red, green, blue) <= SHEET_BACKGROUND_NEUTRAL_SPREAD;
-}
-
-function getAverageLightness(red, green, blue) {
-    return (red + green + blue) / 3;
-}
-
-function getSheetBackgroundPalette(data, width, height) {
-    const buckets = new Map();
-    const addPixel = (x, y) => {
-        const pixelIndex = ((y * width) + x) * 4;
-        const { red, green, blue, alpha } = getPixelChannels(data, pixelIndex);
-        if (alpha < 24 || !isNeutralSheetPixel(red, green, blue)) return;
-        if (getAverageLightness(red, green, blue) < SHEET_BACKGROUND_MIN_NEUTRAL_LIGHTNESS) return;
-
-        const key = [
-            Math.floor(red / SHEET_BACKGROUND_BUCKET_SIZE),
-            Math.floor(green / SHEET_BACKGROUND_BUCKET_SIZE),
-            Math.floor(blue / SHEET_BACKGROUND_BUCKET_SIZE),
-        ].join(',');
-        const bucket = buckets.get(key) || { count: 0, red: 0, green: 0, blue: 0 };
-        bucket.count += 1;
-        bucket.red += red;
-        bucket.green += green;
-        bucket.blue += blue;
-        buckets.set(key, bucket);
-    };
-
-    for (let x = 0; x < width; x++) {
-        addPixel(x, 0);
-        addPixel(x, height - 1);
-    }
-
-    for (let y = 1; y < height - 1; y++) {
-        addPixel(0, y);
-        addPixel(width - 1, y);
-    }
-
-    const sortedBuckets = Array.from(buckets.values()).sort((a, b) => b.count - a.count);
-    const maxCount = sortedBuckets[0]?.count || 0;
-    const minCount = Math.max(4, Math.floor(maxCount * 0.08));
-    return sortedBuckets
-        .filter(bucket => bucket.count >= minCount)
-        .slice(0, SHEET_BACKGROUND_PALETTE_LIMIT)
-        .map(bucket => ({
-            red: bucket.red / bucket.count,
-            green: bucket.green / bucket.count,
-            blue: bucket.blue / bucket.count,
-        }));
-}
-
-function isCloseToSheetBackgroundPalette(red, green, blue, backgroundPalette) {
-    const maxDistanceSquared = SHEET_BACKGROUND_COLOR_DISTANCE ** 2;
-    return backgroundPalette.some(color => {
-        const redDistance = red - color.red;
-        const greenDistance = green - color.green;
-        const blueDistance = blue - color.blue;
-        return ((redDistance ** 2) + (greenDistance ** 2) + (blueDistance ** 2)) <= maxDistanceSquared;
-    });
-}
-
-function isSheetBackgroundPixel(data, pixelIndex, backgroundPalette = []) {
-    const { red, green, blue, alpha } = getPixelChannels(data, pixelIndex);
-    if (alpha === 0) return true;
-    if (alpha < SPRITE_FOREGROUND_ALPHA_THRESHOLD) return true;
-
-    const isFlatLightBackground = red >= SHEET_BACKGROUND_RGB_THRESHOLD
-        && green >= SHEET_BACKGROUND_RGB_THRESHOLD
-        && blue >= SHEET_BACKGROUND_RGB_THRESHOLD
-        && getChannelSpread(red, green, blue) <= SHEET_BACKGROUND_CHANNEL_SPREAD;
-
-    return isFlatLightBackground
-        || (isNeutralSheetPixel(red, green, blue)
-            && getAverageLightness(red, green, blue) >= SHEET_BACKGROUND_MIN_NEUTRAL_LIGHTNESS
-            && isCloseToSheetBackgroundPalette(red, green, blue, backgroundPalette));
-}
-
-function makeCanvasBackgroundTransparent(canvas) {
-    const context = canvas.getContext('2d');
-    if (!context) return;
-
-    const { width, height } = canvas;
-    if (!width || !height) return;
-
-    const imageData = context.getImageData(0, 0, width, height);
-    const { data } = imageData;
-    const backgroundPalette = getSheetBackgroundPalette(data, width, height);
-
-    // Determine whether to also do a global flat-white pass.
-    // When the character fills the entire tile boundary (e.g. after scale-to-fill), no edge
-    // pixel qualifies as background and the edge-seeded flood-fill removes nothing.  Detect
-    // this situation by checking the four corners; if at least two corners have flat-white (or
-    // very light neutral) pixels we know the background is present in the image and fall back to
-    // a global removal of pixels that match the flat-light threshold.  We only do this when the
-    // edge palette came back empty, to avoid clobbering interior whites when a proper edge-based
-    // palette was found.
-    const CORNER_INSET = Math.max(2, Math.round(Math.min(width, height) * 0.03));
-    const sampleCorners = [
-        [CORNER_INSET, CORNER_INSET],
-        [width - 1 - CORNER_INSET, CORNER_INSET],
-        [CORNER_INSET, height - 1 - CORNER_INSET],
-        [width - 1 - CORNER_INSET, height - 1 - CORNER_INSET],
-    ];
-    const cornerIsBackground = sampleCorners.map(([cx, cy]) => {
-        const i = ((cy * width) + cx) * 4;
-        return data[i + 3] >= SPRITE_FOREGROUND_ALPHA_THRESHOLD && isSheetBackgroundPixel(data, i, backgroundPalette);
-    });
-    const backgroundCornerCount = cornerIsBackground.filter(Boolean).length;
-    const useGlobalFlatWhitePass = backgroundPalette.length === 0 && backgroundCornerCount >= 2;
-
-    const visited = new Uint8Array(width * height);
-    const stack = [];
-    const enqueue = (x, y) => {
-        if (x < 0 || y < 0 || x >= width || y >= height) return;
-        const pixel = (y * width) + x;
-        if (visited[pixel]) return;
-        visited[pixel] = 1;
-        if (isSheetBackgroundPixel(data, pixel * 4, backgroundPalette)) stack.push(pixel);
-    };
-
-    for (let x = 0; x < width; x++) {
-        enqueue(x, 0);
-        enqueue(x, height - 1);
-    }
-
-    for (let y = 1; y < height - 1; y++) {
-        enqueue(0, y);
-        enqueue(width - 1, y);
-    }
-
-    while (stack.length > 0) {
-        throwIfExpressionGenerationStopped();
-        const pixel = stack.pop();
-        const x = pixel % width;
-        const y = Math.floor(pixel / width);
-        data[(pixel * 4) + 3] = 0;
-
-        enqueue(x + 1, y);
-        enqueue(x - 1, y);
-        enqueue(x, y + 1);
-        enqueue(x, y - 1);
-    }
-
-    // Global flat-white pass: when the edge-seeded flood-fill found no background (character
-    // fills the full tile boundary) but at least two corners are flat-white/light, do a full
-    // image sweep removing all flat-light background pixels.  This handles interior background
-    // regions not connected to any edge.  We use a stricter threshold than the edge-seeded pass
-    // (RGB >= 250, spread <= 10) to avoid clobbering highlights, pale skin, or teeth — we only
-    // want to remove pixels that are essentially pure white.
-    if (useGlobalFlatWhitePass) {
-        for (let pixel = 0; pixel < width * height; pixel++) {
-            throwIfExpressionGenerationStopped();
-            const i = pixel * 4;
-            if (data[i + 3] === 0) continue;
-            const { red, green, blue } = getPixelChannels(data, i);
-            if (red >= 250 && green >= 250 && blue >= 250 && getChannelSpread(red, green, blue) <= 10) {
-                data[i + 3] = 0;
-            }
-        }
-    }
-
-    context.putImageData(imageData, 0, 0);
-}
-
-/**
- * Returns the axis-aligned bounding box of all pixels with alpha > threshold.
- * Returns null when the canvas is fully transparent or too small to be useful.
- * @param {HTMLCanvasElement} canvas
- * @returns {{minX: number, minY: number, maxX: number, maxY: number}|null}
- */
-function getSpriteForegroundBounds(canvas) {
-    const context = canvas.getContext('2d');
-    if (!context) return null;
-
-    const { width, height } = canvas;
-    if (!width || !height) return null;
-
-    const { data } = context.getImageData(0, 0, width, height);
-    let minX = width, minY = height, maxX = -1, maxY = -1;
-
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            if (data[((y * width) + x) * 4 + 3] > SPRITE_FOREGROUND_ALPHA_THRESHOLD) {
-                if (x < minX) minX = x;
-                if (x > maxX) maxX = x;
-                if (y < minY) minY = y;
-                if (y > maxY) maxY = y;
-            }
-        }
-    }
-
-    if (maxX < minX || maxY < minY) return null;
-
-    const contentWidth = maxX - minX + 1;
-    const contentHeight = maxY - minY + 1;
-    const minDimension = Math.min(width, height);
-    if (contentWidth < minDimension * SPRITE_CENTER_MIN_CONTENT_RATIO
-        && contentHeight < minDimension * SPRITE_CENTER_MIN_CONTENT_RATIO) return null;
-
-    return { minX, minY, maxX, maxY };
-}
-
-/**
- * Redraws the foreground content of a canvas centered with equal padding on all sides.
- * The canvas dimensions are preserved. Only acts when centering would move the content
- * by more than 1px in either axis — avoids unnecessary redraws.
- * @param {HTMLCanvasElement} canvas
- */
-function centerSpriteContent(canvas) {
-    const bounds = getSpriteForegroundBounds(canvas);
-    if (!bounds) return;
-
-    const { width, height } = canvas;
-    const contentWidth = bounds.maxX - bounds.minX + 1;
-    const contentHeight = bounds.maxY - bounds.minY + 1;
-
-    // Where the content center currently is vs where it should be
-    const currentCenterX = bounds.minX + contentWidth / 2;
-    const currentCenterY = bounds.minY + contentHeight / 2;
-    const targetCenterX = width / 2;
-    const targetCenterY = height / 2;
-
-    const shiftX = targetCenterX - currentCenterX;
-    const shiftY = targetCenterY - currentCenterY;
-
-    // Skip if the shift is negligible
-    if (Math.abs(shiftX) <= 1 && Math.abs(shiftY) <= 1) return;
-
-    const context = canvas.getContext('2d');
-    if (!context) return;
-
-    // Snapshot the current pixels, clear, redraw shifted
-    const snapshot = context.getImageData(0, 0, width, height);
-    context.clearRect(0, 0, width, height);
-    context.putImageData(snapshot, Math.round(shiftX), Math.round(shiftY));
-}
-
-/**
- * Post-processes a sprite tile canvas after cropping:
- * - Optionally removes solid/near-solid backgrounds (edge-connected flood-fill, opt-in only).
- * - Always re-centers the visible content so off-center tiles from sheet splits align.
- *
- * Background removal is opt-in because full-bleed art (e.g. GPT Image 2) has no plain
- * background to strip and the flood-fill would destroy character pixels.
- * @param {HTMLCanvasElement} canvas
- */
 function postProcessSpriteCanvas(canvas) {
-    if (extension_settings.expressions.agentSpriteRemoveBackground) {
-        makeCanvasBackgroundTransparent(canvas);
-    }
-    centerSpriteContent(canvas);
+    const context = canvas.getContext('2d');
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+    cleanSpriteBitmap(pixels, {
+        removeBackground: extension_settings.expressions.agentSpriteRemoveBackground,
+        check: throwIfExpressionGenerationStopped,
+    });
+    context.putImageData(pixels, 0, 0);
 }
 
 async function postProcessSpriteImage(imageUrl) {
@@ -1407,46 +1131,24 @@ async function splitSpriteSheetImage(imageUrl, grid, tileCount) {
         const sourceHeight = image.naturalHeight || image.height;
         if (!sourceWidth || !sourceHeight) throw new Error('Generated sprite sheet has invalid dimensions.');
 
-        const sourceTileWidth = sourceWidth / grid.columns;
-        const sourceTileHeight = sourceHeight / grid.rows;
-        // Use a fixed, uniform output size for every tile so all sprites share the same canvas.
-        const outputTileWidth = Math.max(1, Math.round(sourceTileWidth));
-        const outputTileHeight = Math.max(1, Math.round(sourceTileHeight));
-
-        for (let index = 0; index < tileCount; index++) {
+        const source = document.createElement('canvas');
+        source.width = sourceWidth;
+        source.height = sourceHeight;
+        const sourceContext = source.getContext('2d');
+        if (!sourceContext) throw new Error('Canvas is not available for sprite sheet splitting.');
+        sourceContext.drawImage(image, 0, 0);
+        const tiles = splitSpriteBitmap(sourceContext.getImageData(0, 0, sourceWidth, sourceHeight), grid, tileCount, {
+            removeBackground: extension_settings.expressions.agentSpriteRemoveBackground,
+            check: throwIfExpressionGenerationStopped,
+        });
+        for (const tile of tiles) {
             throwIfExpressionGenerationStopped();
-            const column = index % grid.columns;
-            const row = Math.floor(index / grid.columns);
-            // Compute integer pixel boundaries per tile from cumulative edges so columns/rows
-            // tile the full image exactly with no accumulated rounding drift.
-            const srcLeft = Math.round(column * sourceTileWidth);
-            const srcRight = Math.round((column + 1) * sourceTileWidth);
-            const srcTop = Math.round(row * sourceTileHeight);
-            const srcBottom = Math.round((row + 1) * sourceTileHeight);
-            const srcTileWidth = Math.max(1, srcRight - srcLeft);
-            const srcTileHeight = Math.max(1, srcBottom - srcTop);
-            // Trim the source edges to cut away any bleed from adjacent cells (gridlines,
-            // neighbour sprites, background fragments), then scale the trimmed region to
-            // fill the entire output canvas so the character is not boxed in by blank borders.
-            const sourceInsetX = Math.min(srcTileWidth / 4, Math.max(1, srcTileWidth * SHEET_TILE_SOURCE_INSET_RATIO));
-            const sourceInsetY = Math.min(srcTileHeight / 4, Math.max(1, srcTileHeight * SHEET_TILE_SOURCE_INSET_RATIO));
             const canvas = document.createElement('canvas');
-            canvas.width = outputTileWidth;
-            canvas.height = outputTileHeight;
+            canvas.width = tile.width;
+            canvas.height = tile.height;
             const context = canvas.getContext('2d');
             if (!context) throw new Error('Canvas is not available for sprite sheet splitting.');
-            context.drawImage(
-                image,
-                srcLeft + sourceInsetX,
-                srcTop + sourceInsetY,
-                srcTileWidth - (sourceInsetX * 2),
-                srcTileHeight - (sourceInsetY * 2),
-                0,
-                0,
-                outputTileWidth,
-                outputTileHeight,
-            );
-            postProcessSpriteCanvas(canvas);
+            context.putImageData(new ImageData(tile.data, tile.width, tile.height), 0, 0);
             tileUrls.push(await canvasToPngObjectUrl(canvas));
         }
 
