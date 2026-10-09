@@ -730,6 +730,11 @@ body.neconyan img.neconyan-message-sleeper.is-user { left: auto; right: -17px; }
 body.neconyan img.neconyan-message-sleeper:focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 2px; }
 
 @media (min-width: 769px) {
+    /* Flat keeps an in-flow checkbox before the avatar; public/style.css hides it on native previews. With neconyan.css's two 18px gaps and the 17px tail overhang, saved rows need avatar width + 19px and drafts need +1px. */
+    body.neconyan.flatchat[data-neconyan-chat-mode='roleplay']:not(.nnchat):not(.sbterm):not(.sbstory) #chat .mes[is_user='false'][mesid] > .neconyan-message-sleeper { left: calc(var(--avatar-base-width, 50px) + 19px); }
+    body.neconyan.flatchat[data-neconyan-chat-mode='roleplay']:not(.nnchat):not(.sbterm):not(.sbstory) #chat .mes[is_user='false'][data-roleplay-draft] > .neconyan-message-sleeper { left: calc(var(--avatar-base-width, 50px) + 1px); }
+    /* Screenshot export also removes .for_checkbox, while the message stays under #chat until html2canvas clones computed positions. */
+    body.neconyan.flatchat[data-neconyan-chat-mode='roleplay']:not(.nnchat):not(.sbterm):not(.sbstory) #chat .sb-message-screenshot-surface .mes[is_user='false'][mesid] > .neconyan-message-sleeper { left: calc(var(--avatar-base-width, 50px) + 1px); }
     /* Document row padding/block margin: toggle-dependent.css; last-row padding: style.css. Paws sit 41px below the image top; tails overhang 17px. */
     body.neconyan.documentstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm):not(.sbstory) #chat .mes:is([mesid], [data-roleplay-draft]) > .neconyan-message-sleeper { top: -37px; left: -9px; right: auto; }
     body.neconyan.documentstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm):not(.sbstory) #chat .mes.last_mes:is([mesid], [data-roleplay-draft]) > .neconyan-message-sleeper { top: -41px; left: calc(10px * var(--messageMarginScale, 1) - 17px); }
