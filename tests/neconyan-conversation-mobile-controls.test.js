@@ -81,3 +81,36 @@ describe('Conversation mobile controls', () => {
         }
     });
 });
+
+describe('Conversation messenger grouping styles', () => {
+    const topLevelRules = ast.stylesheet.rules.filter(rule => rule.type === 'rule');
+    const findRule = fragment => topLevelRules.find(rule => rule.selectors.some(selector => selector.includes(fragment)));
+    const declarationsOf = rule => Object.fromEntries(rule.declarations
+        .filter(declaration => declaration.type === 'declaration')
+        .map(declaration => [declaration.property, declaration.value]));
+
+    test('day labels render as a chip from the data attribute', () => {
+        const rule = findRule('[data-sb-day-label]::before');
+        expect(rule).toBeDefined();
+        expect(declarationsOf(rule).content).toBe('attr(data-sb-day-label)');
+    });
+
+    test('only the last message of a run keeps its avatar', () => {
+        const rule = findRule('[data-sb-run=\'middle\']) > .sb-conversation-message-avatar');
+        expect(rule).toBeDefined();
+        expect(rule.selectors.join(' ')).toContain('[data-sb-run=\'start\']');
+        expect(rule.selectors.join(' ')).not.toContain('[data-sb-run=\'end\']');
+        expect(declarationsOf(rule).visibility).toBe('hidden');
+    });
+
+    test('messenger rules leave the Windows 98 and XP shells alone', () => {
+        const runRules = topLevelRules.filter(rule => rule.selectors.some(selector => selector.includes('[data-sb-run=')));
+        expect(runRules.length).toBeGreaterThan(0);
+        for (const rule of runRules) {
+            for (const selector of rule.selectors) {
+                expect(selector).toContain(':not([data-sb-theme=\'windows-98\'])');
+                expect(selector).toContain(':not([data-sb-theme=\'windows-xp\'])');
+            }
+        }
+    });
+});

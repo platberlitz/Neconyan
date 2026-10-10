@@ -31,7 +31,8 @@ await jest.unstable_mockModule('../public/script.js', () => ({
     messageFormatting: value => value,
     name1: 'User',
 }));
-await jest.unstable_mockModule('../public/scripts/utils.js', () => ({ timestampToMoment: () => ({ isValid: () => false }) }));
+let momentFactory = () => ({ isValid: () => false });
+await jest.unstable_mockModule('../public/scripts/utils.js', () => ({ timestampToMoment: value => momentFactory(value) }));
 await jest.unstable_mockModule('../public/scripts/personas.js', () => ({ user_avatar: 'persona-a.png' }));
 await jest.unstable_mockModule('../public/scripts/world-info.js', () => ({ world_names: [] }));
 await jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.js', () => ({
@@ -141,6 +142,7 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/typing.j
 const stateModule = await import('../public/scripts/neconyan-conversation/state.js');
 const {
     getActiveConversationReplyTarget,
+    markConversationMessageRuns,
     regenerateConversationMessage,
     renderConversationTimeline,
 } = await import('../public/scripts/neconyan-conversation/timeline-render.js');
@@ -342,5 +344,98 @@ describe('conversation timeline operation identity', () => {
         expect(revealUi).toHaveBeenCalledTimes(2);
         renderConversationTimeline();
         expect(revealUi).toHaveBeenCalledTimes(2);
+    });
+});
+
+describe('conversation message runs and day labels', () => {
+    class FakeNode {
+        constructor() {
+            this.dataset = {};
+        }
+    }
+
+    function fakeMoment(value) {
+        const date = new Date(value);
+        const sameDay = other => date.getFullYear() === other.toDate().getFullYear()
+            && date.getMonth() === other.toDate().getMonth()
+            && date.getDate() === other.toDate().getDate();
+        return {
+            isValid: () => !Number.isNaN(date.getTime()),
+            toDate: () => date,
+            isSame: (other, unit) => unit === 'day' && sameDay(other),
+            diff: other => date.getTime() - other.toDate().getTime(),
+            format: pattern => `${pattern}:${date.getDate()}`,
+        };
+    }
+
+    function markRuns(messages) {
+        const timeline = { children: messages.map(() => new FakeNode()) };
+        markConversationMessageRuns(timeline, messages);
+        return timeline.children.map(node => ({ run: node.dataset.sbRun, day: node.dataset.sbDayLabel }));
+    }
+
+    function at(daysAgo, hour, minute) {
+        const date = new Date();
+        date.setDate(date.getDate() - daysAgo);
+        date.setHours(hour, minute, 0, 0);
+        return date.toISOString();
+    }
+
+    const message = (role, name, sendDate, extra = {}) => ({ role, name, send_date: sendDate, mes: 'hi', extra });
+
+    beforeEach(() => {
+        globalThis.HTMLElement = FakeNode;
+        momentFactory = fakeMoment;
+    });
+
+    afterEach(() => {
+        momentFactory = () => ({ isValid: () => false });
+    });
+
+    test('groups close messages from the same sender and labels each new day', () => {
+        const marks = markRuns([
+            message('character', 'Miso', at(1, 9, 0)),
+            message('character', 'Miso', at(0, 9, 0)),
+            message('character', 'Miso', at(0, 9, 4)),
+            message('character', 'Miso', at(0, 9, 8)),
+            message('user', 'You', at(0, 9, 9)),
+            message('user', 'You', at(0, 9, 40)),
+            message('system', 'System', at(0, 9, 41)),
+            message('system', 'System', at(0, 9, 41)),
+        ]);
+
+        expect(marks).toEqual([
+            { run: 'single', day: 'Yesterday' },
+            { run: 'start', day: 'Today' },
+            { run: 'middle', day: undefined },
+            { run: 'end', day: undefined },
+            { run: 'single', day: undefined },
+            { run: 'single', day: undefined },
+            { run: 'single', day: undefined },
+            { run: 'single', day: undefined },
+        ]);
+    });
+
+    test('keeps different partners apart and names older days', () => {
+        const marks = markRuns([
+            message('partner', 'Ash', at(3, 12, 0), { partner_avatar: 'ash.png' }),
+            message('partner', 'Ash', at(3, 12, 1), { partner_avatar: 'ash.png' }),
+            message('partner', 'Bo', at(3, 12, 2), { partner_avatar: 'bo.png' }),
+            message('character', 'Miso', at(30, 12, 0)),
+        ]);
+
+        expect(marks.map(mark => mark.run)).toEqual(['start', 'end', 'single', 'single']);
+        expect(marks[0].day).toMatch(/^dddd:/);
+        expect(marks[3].day).toMatch(/^LL:/);
+    });
+
+    test('still groups a sender when dates are missing, without a day label', () => {
+        momentFactory = () => ({ isValid: () => false });
+        const marks = markRuns([
+            message('character', 'Miso', ''),
+            message('character', 'Miso', ''),
+        ]);
+
+        expect(marks).toEqual([{ run: 'start', day: undefined }, { run: 'end', day: undefined }]);
     });
 });
