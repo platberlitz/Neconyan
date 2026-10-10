@@ -117,7 +117,7 @@ test('a reply runs as a server job, streams a preview and settles into the saved
     assert.equal(reply.assistant, 'taro');
     assert.equal(seen.binding.kind, 'profile');
     assert.equal(seen.stream, true);
-    assert.equal(seen.maxTokens, 16000, 'new sessions send the new reply limit to the model');
+    assert.equal(seen.maxTokens, 32000, 'new sessions send the new reply limit to the model');
     assert.equal(seen.preparedMessages, true);
     assert.equal(seen.characterName, 'Taro');
     assert.equal(seen.macroEnvironment.extra.characterScope, 'none', 'Scratchpad never speaks as a chat character, so character output rules are skipped');
@@ -165,6 +165,16 @@ test('streaming defaults on and a saved choice survives unrelated settings and n
     assert.equal(a.read(SOURCE).sessions[0].settings.stream, false);
     const next = a.mutate(SOURCE, bucket => store.createSession(bucket));
     assert.equal(next.settings.stream, false);
+});
+
+test('the reply limit defaults to 32000 without replacing saved limits', t => {
+    assert.equal(store.normaliseSettings({}).maxTokens, 32000);
+    assert.equal(store.normaliseSettings({ maxTokens: 'invalid' }).maxTokens, 32000);
+    const a = account(t);
+    const session = startSession(a, { maxTokens: 16000 });
+    a.mutate(SOURCE, bucket => store.updateSession(bucket, session.id, { settings: { stream: false } }));
+    assert.equal(a.read(SOURCE).sessions[0].settings.maxTokens, 16000);
+    assert.equal(a.mutate(SOURCE, bucket => store.createSession(bucket)).settings.maxTokens, 16000);
 });
 
 test('finished thinking is retained across provider formats when streaming is off', () => {

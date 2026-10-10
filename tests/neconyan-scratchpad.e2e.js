@@ -33,7 +33,7 @@ test('assistant connection choices survive reopening and route each speaker to i
     const page = await account.open();
     const source = await openScratchpad(page);
     await page.getByRole('tab', { name: 'Context', exact: true }).click();
-    await expect(page.locator('#scratchpad-max-tokens')).toHaveValue('16000');
+    await expect(page.locator('#scratchpad-max-tokens')).toHaveValue('32000');
     for (const assistant of ['miso', 'taro', 'nori']) {
         await page.locator(`#scratchpad-connection-${assistant}`).selectOption(`scratch-${assistant}`);
     }

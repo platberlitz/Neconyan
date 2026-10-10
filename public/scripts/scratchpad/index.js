@@ -80,7 +80,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     assistantConnections: {},
     roundTable: false,
     participants: ['miso', 'taro', 'nori'],
-    maxTokens: 16000,
+    maxTokens: 32000,
     stream: true,
 });
 
