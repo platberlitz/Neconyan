@@ -11,8 +11,10 @@ export const UI_MOTION_TIMING = Object.freeze({
     drawerInMs: 380,
     drawerOutMs: 280,
     chatRevealMs: 360,
+    swipeMs: 320,
 });
 const CHAT_REVEAL_DISTANCE = 16;
+const SWIPE_DISTANCE = 48;
 let preferencesBound = false;
 // A page follows the control that opened it: down from the top bar, out of the sidebar.
 const ORIGIN_EDGES = [['#top-bar', 'top'], ['#neconyan-workspace-rail', 'left']];
@@ -161,6 +163,21 @@ export function revealUi(element, { distance = 6, duration = UI_MOTION_TIMING.re
 /** An opened chat rises into place, a little further and slower than a menu, so the change of chat reads. */
 export function revealChat(element) {
     revealUi(element, { distance: CHAT_REVEAL_DISTANCE, duration: UI_MOTION_TIMING.chatRevealMs });
+}
+
+/**
+ * A swiped reply slides in from the side it was swiped towards: the next reply from the
+ * right, the previous one from the left. `pace` shortens the motion for rapid repeats,
+ * and a new swipe takes over at once, so nothing waits for the slide to end.
+ */
+export function slideSwipe(element, fromRight, pace = 1) {
+    if (!element) return;
+    finishUiMotion(element);
+    if (prefersReducedUiMotion() || !isVisible(element) || typeof element.animate !== 'function') return;
+    const offset = `${fromRight ? SWIPE_DISTANCE : -SWIPE_DISTANCE}px 0`;
+    play(element, [{ opacity: 0, translate: offset }, { opacity: 1, translate: '0 0' }], {
+        duration: UI_MOTION_TIMING.swipeMs * Math.min(1, Math.max(0, pace)),
+    });
 }
 
 /**

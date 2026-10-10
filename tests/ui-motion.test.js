@@ -388,4 +388,28 @@ describe('chat and swipe motion', () => {
         expect(animations[0].options.duration).toBe(motion.UI_MOTION_TIMING.chatRevealMs);
         expect(motion.UI_MOTION_TIMING.chatRevealMs).toBeGreaterThan(motion.UI_MOTION_TIMING.revealMs);
     });
+
+    test.each([[true, '48px 0'], [false, '-48px 0']])('a swiped reply slides in from the side it was swiped towards (from right: %s)', (fromRight, translate) => {
+        const { element, animations } = surface();
+        motion.slideSwipe(element, fromRight);
+        expect(animations[0].frames).toEqual([{ opacity: 0, translate }, { opacity: 1, translate: '0 0' }]);
+        expect(animations[0].options.duration).toBe(motion.UI_MOTION_TIMING.swipeMs);
+        expect(motion.UI_MOTION_TIMING.swipeMs).toBeGreaterThanOrEqual(280);
+    });
+
+    test('rapid swipes run quicker, and each new swipe takes over from the last at once', () => {
+        const { element, animations } = surface();
+        motion.slideSwipe(element, true);
+        motion.slideSwipe(element, true, 0.5);
+        expect(animations[0].cancel).toHaveBeenCalled();
+        expect(animations[1].options.duration).toBe(motion.UI_MOTION_TIMING.swipeMs / 2);
+    });
+
+    test('swipes and chat openings stay still when reduced motion is on', () => {
+        bodyClasses.add('reduced-motion');
+        const { element, animations } = surface();
+        motion.slideSwipe(element, true);
+        motion.revealChat(element);
+        expect(animations).toHaveLength(0);
+    });
 });

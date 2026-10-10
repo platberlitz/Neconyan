@@ -1,6 +1,6 @@
 import { formatRoleplayTextMessage, combineRoleplayTextPrompt } from './scripts/roleplay-text-format.js';
 import { roleplayLoadErrorMessage } from './scripts/roleplay-load-error.js';
-import { finishUiMotion, getUiDrawerEdge, getUiSlideOptions, isUiClosing, revealUi, setUiVisibility } from './scripts/ui-motion.js';
+import { finishUiMotion, getUiDrawerEdge, getUiSlideOptions, isUiClosing, revealUi, setUiVisibility, slideSwipe } from './scripts/ui-motion.js';
 import {
     showdown,
     moment,
@@ -17548,8 +17548,13 @@ export async function swipe(event, direction, { source, repeated, message = chat
             generation = Generate('swipe', generationOptions);
         }
 
-        //Swipe in from the opposite side.
-        await animateSwipeTransition(mesId, { xStart: `${-swipeRange}px`, xEnd: `${0}px`, duration: swipeDuration });
+        // Neconyan: the new swipe slides a short way in from the side it was swiped towards.
+        // It starts on the first painted frame, so the work after the swap cannot skip it,
+        // and the next swipe does not wait for it.
+        if (swipeDuration > 50) {
+            const pace = swipeDuration / Math.max(animation_duration, 1);
+            for (const block of thisMesDiv.children('.mes_block')) slideSwipe(block, swipeRange < 0, pace);
+        }
 
         await settleSwipeReplacementAnchor(swipeViewportUpdate);
     }
