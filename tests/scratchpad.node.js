@@ -419,32 +419,32 @@ test('empty sessions follow the chosen assistant without overwriting custom or e
     const session = startSession(a);
     const switchTo = assistant => a.mutate(SOURCE, bucket => store.updateSession(bucket, session.id, { assistant }));
     switchTo('nori');
-    assert.equal(a.read(SOURCE).sessions[0].name, "Nori's notes");
+    assert.equal(a.read(SOURCE).sessions[0].name, 'Nori\'s notes');
     switchTo('taro');
-    assert.equal(a.read(SOURCE).sessions[0].name, "Taro's notes");
+    assert.equal(a.read(SOURCE).sessions[0].name, 'Taro\'s notes');
     const other = a.mutate(SOURCE, bucket => store.createSession(bucket, { assistant: 'nori' }));
     switchTo('nori');
-    assert.equal(a.read(SOURCE).sessions.find(item => item.id === session.id).name, "Nori's notes 2");
+    assert.equal(a.read(SOURCE).sessions.find(item => item.id === session.id).name, 'Nori\'s notes 2');
     switchTo('nori');
-    assert.equal(a.read(SOURCE).sessions.find(item => item.id === session.id).name, "Nori's notes 2");
-    a.mutate(SOURCE, bucket => store.updateSession(bucket, session.id, { name: "Miso's notes" }));
+    assert.equal(a.read(SOURCE).sessions.find(item => item.id === session.id).name, 'Nori\'s notes 2');
+    a.mutate(SOURCE, bucket => store.updateSession(bucket, session.id, { name: 'Miso\'s notes' }));
     switchTo('taro');
-    assert.equal(a.read(SOURCE).sessions.find(item => item.id === session.id).name, "Miso's notes", 'an explicitly chosen name stays even if it resembles a default');
+    assert.equal(a.read(SOURCE).sessions.find(item => item.id === session.id).name, 'Miso\'s notes', 'an explicitly chosen name stays even if it resembles a default');
     a.mutate(SOURCE, bucket => {
         store.findSession(bucket, other.id).messages.push({ id: 'question', role: 'user', text: 'An established discussion.' });
         store.updateSession(bucket, other.id, { assistant: 'miso' });
     });
-    assert.equal(a.read(SOURCE).sessions.find(item => item.id === other.id).name, "Nori's notes");
+    assert.equal(a.read(SOURCE).sessions.find(item => item.id === other.id).name, 'Nori\'s notes');
 });
 
 test('legacy empty sessions recognise generated names and preserve custom names', () => {
     const bucket = store.normaliseBucket({ version: 1, sessions: [
-        { id: 'legacy', assistant: 'taro', name: "Miso's notes 2", messages: [] },
+        { id: 'legacy', assistant: 'taro', name: 'Miso\'s notes 2', messages: [] },
         { id: 'custom', assistant: 'taro', name: 'My plan', messages: [] },
     ] }, SOURCE);
     store.updateSession(bucket, 'legacy', { assistant: 'nori' });
     store.updateSession(bucket, 'custom', { assistant: 'nori' });
-    assert.equal(bucket.sessions[0].name, "Nori's notes");
+    assert.equal(bucket.sessions[0].name, 'Nori\'s notes');
     assert.equal(bucket.sessions[1].name, 'My plan');
 });
 
@@ -503,6 +503,7 @@ test('round tables run all selected assistants together, keep successful replies
         const gate = Promise.withResolvers();
         gates.set(options.characterName, gate);
         options.onStream({ text: `${options.characterName} thinking` });
+        options.onStream({ text: `${options.characterName} thinking`, reasoning: `${options.characterName} reasoning` });
         if (gates.size === 3) started.resolve();
         return gate.promise;
     } });
@@ -513,6 +514,7 @@ test('round tables run all selected assistants together, keep successful replies
     await started.promise;
     const preview = readScratchpadPreview(a.f.scope.owner, accepted.job.id);
     assert.deepEqual(Object.values(preview.replies).map(reply => reply.text), ['Miso thinking', 'Taro thinking', 'Nori thinking']);
+    assert.deepEqual(Object.values(preview.replies).map(reply => reply.reasoning), ['Miso reasoning', 'Taro reasoning', 'Nori reasoning']);
     gates.get('Miso').resolve({ text: 'Miso suggests reading.' });
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(a.read(SOURCE).sessions[0].messages[1].state, 'done', 'one answer is saved while the others are still running');

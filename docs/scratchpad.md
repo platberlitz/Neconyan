@@ -67,6 +67,14 @@ Saved-note text and permissions are read again on the server for every send. If 
 
 Context settings belong to the session, and a new session starts with the settings of the one you were using (without picked messages or temporary note grants).
 
+## Macros in drafts
+
+When writing reusable cards and greetings, the assistants are instructed to use `{{user}}` for the chatting persona and `{{char}}` for the card's character. Names used to find a character or lorebook stay concrete.
+
+They can also suggest relevant Macro Enhanced features: adaptable pronouns, repeatable scene variations, conditional greetings, shared lore or custom helpers. Suggestions should include usable syntax, why it helps and any setup it needs. Macro Enhanced needs the extension and experimental macro support enabled; its Reference and Playground help check a snippet. A suggestion does not install a custom macro or set up its variables.
+
+This guidance applies to Miso, Taro and Nori, including round tables and edited assistant prompts. Draft placeholders stay literal when sent to a model, including through text-completion connections.
+
 ## Suggested changes
 
 When you ask for a change, the assistant can suggest one as a card in its reply instead of describing it. Nothing changes until you save it.

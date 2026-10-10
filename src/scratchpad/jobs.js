@@ -1,6 +1,5 @@
 import { runChatProfile, validateActiveGenerationContext } from '../generation/service.js';
 import { captureGenerationBinding, resolveGenerationProfile } from '../generation/profiles.js';
-import { createMacroEnvironment } from '../macros/index.js';
 import { extractProviderReasoning } from '../../public/scripts/generation-format.js';
 import { hash } from '../mewmory/core.js';
 import { createProviderScope, readArtifact, writeArtifact } from '../jobs/artifacts.js';
@@ -30,6 +29,7 @@ import {
 import { buildScratchpadMessages, buildScratchpadSystemPrompt } from './prompt.js';
 import { characterToolReply, scratchpadCharacterTools, scratchpadToolsFor } from './character-tools.js';
 import { clearScratchpadPreview, publishScratchpadPreview } from './preview.js';
+import { scratchpadMacroEnvironment } from './macros.js';
 import { notebookContextLocked, withNotebookPreparation, captureReplyNotebookProposalsLocked, notifyScratchpadNotebookResult } from './notebooks.js';
 
 export const SCRATCHPAD_JOB_TYPE = 'scratchpad.reply';
@@ -40,8 +40,6 @@ const MAX_HISTORY_BYTES = 512 * 1024;
 const PREPARE_TIMEOUT_MS = 60 * 1000;
 
 const fail = (code, message, status = 400) => new ScratchpadError(code, message, status);
-// Scratchpad assistants never speak as the chat character, so its output scripts do not apply.
-const scratchpadMacroEnvironment = names => createMacroEnvironment({ names, extra: { characterScope: 'none' } }, {}, { readOnly: true });
 const bytes = value => Buffer.byteLength(String(value ?? ''), 'utf8');
 
 function boundedText(value, max, label, { required = false } = {}) {
@@ -177,7 +175,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         const rawOptions = binding.kind === 'active' ? { trimNames: false } : {};
         const preparedMessages = !binding.backend || binding.backend === 'chat';
         const names = { user: input.names.user, char: system.persona.name };
-        await validateActiveGenerationContext(resolveGenerationProfile(directories, binding), scratchpadMacroEnvironment(names),
+        await validateActiveGenerationContext(resolveGenerationProfile(directories, binding), scratchpadMacroEnvironment(names, messages),
             messages, rawOptions, { maxTokens: planned.maxTokens, preparedMessages });
         return { replyId: newScratchpadId(), assistant: speaker.assistant, gender: speaker.gender, binding, messages, maxTokens: planned.maxTokens,
             userName: names.user, characterName: names.char, rawOptions, preparedMessages, stream: planned.stream,
@@ -321,7 +319,7 @@ async function runParticipant(context, request, { generate, grouped = false }) {
                 generationType: 'quiet',
                 messages: request.messages,
                 maxTokens: request.maxTokens,
-                macroEnvironment: scratchpadMacroEnvironment({ user: request.userName, char: request.characterName }),
+                macroEnvironment: scratchpadMacroEnvironment({ user: request.userName, char: request.characterName }, request.messages),
                 userName: request.userName,
                 characterName: request.characterName,
                 groupNames: [],

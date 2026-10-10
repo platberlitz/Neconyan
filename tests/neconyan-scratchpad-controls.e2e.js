@@ -39,9 +39,9 @@ for (const phone of [false, true]) {
         expect((await account.post('/api/scratchpad/bucket', { source })).bucket.sessions).toHaveLength(0);
         await page.screenshot({ path: `../screenshots/scratchpad-identity-${size}-after.png` });
         await page.locator('.scratchpad-header .scratchpad-new-session').click();
-        await checkEmptyAssistant(page, 'Taro', "Taro's notes");
+        await checkEmptyAssistant(page, 'Taro', 'Taro\'s notes');
         await picker.getByRole('button', { name: 'Nori', exact: true }).click();
-        await checkEmptyAssistant(page, 'Nori', "Nori's notes");
+        await checkEmptyAssistant(page, 'Nori', 'Nori\'s notes');
         const saved = (await account.post('/api/scratchpad/bucket', { source })).bucket;
         await account.post('/api/scratchpad/session/update', { source, sessionId: saved.activeSessionId, changes: { name: 'My planning' } });
         await openScratchpad(page);
@@ -77,6 +77,9 @@ for (const phone of [false, true]) {
         let response = await accepted;
         expect(response.ok(), await response.text()).toBe(true);
         await expect.poll(() => app.provider.calls.find(call => call.messages?.at(-1)?.content === 'Wait until the answer is ready.')?.stream).toBe(false);
+        const sent = app.provider.calls.find(call => call.messages?.at(-1)?.content === 'Wait until the answer is ready.');
+        expect(sent.messages[0].content).toContain('{{char}} holds the door for {{user}}.');
+        expect(sent.messages[0].content).toContain('{{pverb::is::are}}');
         await expect(page.locator('.scratchpad-stream')).toHaveText('');
         await expect(page.locator('.scratchpad-message.is-pending .scratchpad-reasoning')).toBeHidden();
         await app.release();
@@ -97,6 +100,7 @@ for (const phone of [false, true]) {
         await page.locator('.scratchpad-send').click();
         response = await accepted;
         expect(response.ok(), await response.text()).toBe(true);
+        const streamedJobId = (await response.json()).job.id;
         let reasoning = page.locator('.scratchpad-message.is-pending .scratchpad-reasoning');
         await expect(reasoning.locator('.scratchpad-plain')).toBeVisible();
         await expect(reasoning).toContainText('Checking the scene.');
@@ -114,7 +118,7 @@ for (const phone of [false, true]) {
         await expect(reasoning.locator('.scratchpad-plain')).toBeVisible();
         await expect(reasoning).toContainText('Checking the scene. Comparing the details.');
         app.provider.mode.finishStream();
-        await account.settled((await response.json()).job.id);
+        await account.settled(streamedJobId);
         await expect(page.locator('.scratchpad-message.is-pending')).toHaveCount(0);
         await expect(page.locator('.scratchpad-reply').last()).toHaveText('A streamed answer is ready.');
         await expect(page.locator('.scratchpad-reasoning .scratchpad-plain').last()).toHaveText('Checking the scene. Comparing the details.');
