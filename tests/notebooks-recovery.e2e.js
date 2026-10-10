@@ -278,8 +278,9 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
             await expect(page.locator('.neconyan-note-proposal-review')).toContainText('Live lore is not touched.');
             await measureControls(page, '.popup:visible', viewport, info, `review-${choice.split(' ')[0]}`);
             await page.locator('.popup:visible').getByRole('button', { name: choice, exact: true }).click();
-            const detail = await notesApi(page, '/assistant/proposal', { proposalId: proposed.proposalId });
-            expect(detail.state).toBe(choice === 'Not now' ? 'waiting' : choice === 'Decline' ? 'denied' : 'applied');
+            await expect(page.locator('.neconyan-note-proposal-review')).toBeHidden();
+            await expect.poll(async () => (await notesApi(page, '/assistant/proposal', { proposalId: proposed.proposalId })).state)
+                .toBe(choice === 'Not now' ? 'waiting' : choice === 'Decline' ? 'denied' : 'applied');
             const saved = await readNote(page, notebookId, note.id);
             expect(saved.text.includes(addition)).toBe(choice === 'Save change');
             if (choice === 'Not now') await notesApi(page, '/assistant/decide', { proposalId: proposed.proposalId, proposalHash: proposed.proposalHash, decision: 'deny' });

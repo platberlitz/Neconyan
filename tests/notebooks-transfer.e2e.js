@@ -73,7 +73,9 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
         const noteId = notes.notes.find(note => note.path === 'One.md').id;
         await expect.poll(async () => (await notesApi(page, '/notes/read', { notebookId, noteId })).note.text).toBe('# First\nSelected update.\n');
         await chooseArchive(page, `Cancel ${name}`, files);
+        const cancelled = page.waitForResponse('**/api/notebooks/import/cancel');
         await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+        expect((await cancelled).ok()).toBe(true);
         expect((await notesApi(page, '/import/list')).stages.filter(stage => stage.name.includes(name))).toHaveLength(0);
     });
 }

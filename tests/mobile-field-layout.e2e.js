@@ -74,6 +74,11 @@ test('memory corrections and expression actions fit phone, tablet and desktop wi
         await page.evaluate(() => window.NeconyanShell.openIncludedTool('expressions'));
         await expect(page.locator('#user-settings-block .neconyan-shell-page-intro')).toHaveAttribute('data-tool-page', 'expressions', { timeout: 15_000 });
         await expect(page.locator('#expression_override')).toBeAttached();
+        const tools = page.locator('#open_chat_expressions .expression_set_tools');
+        if (await tools.getAttribute('open') === null) {
+            await tools.locator('summary').click();
+        }
+        await expect(tools).toHaveAttribute('open', '');
         await expect(stop).toBeHidden();
         await expressionActions.scrollIntoViewIfNeeded({ timeout: 10_000 });
         const field = await page.locator('#expression_override').boundingBox();
