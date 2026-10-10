@@ -104,8 +104,8 @@ section and wait for the notebook action to complete, keeping the original
 layout, saved-text and cancelled-import assertions. All five corrected checks
 passed locally in 2.8 minutes, and the test-only fix is `297799e`. The six
 project-boundary checks for the 1.2.6 version bump and changed-test lint also
-passed. The release notes explicitly record the browser failures; the full
-suite is not yet a clean pass. Follow-up staging run `38016971324` started with
+passed. At that point the release notes recorded the browser failures, and the
+full suite had not passed. Follow-up staging run `38016971324` started with
 those five corrections. Use a 60-second watch interval for large runs.
 
 The completed main run reported ten failed checks across six jobs. Two more
@@ -153,8 +153,23 @@ and inert. The helpers now use the immediate open state and check that the
 sidebar is interactive. The keyboard test also waits for a visible, stable
 target before taking focus; its exact CI failure remains unreproduced. All
 nine repeated phone and desktop checks passed in 6.4 minutes. Lint reported
-no errors and 55 existing warnings. The full run with these test-only guards
-still needs its actual result.
+no errors and 55 existing warnings.
+
+Browser validation is now complete: run `38028494153` passed all sixteen groups
+on `3f6777fa29d7472b3f8e50c3dbd07c52a54b721b`. Its first attempt passed fifteen
+groups; the remaining group had one failed check and 99 passes. The failed
+check expected a saved Conversation branch within five seconds of a server
+restart, while the captured page still showed its loading screen. It passed
+three unchanged local repeats in 3.7 minutes. Only the failed group was rerun,
+on the same commit, and it passed; the other fifteen results were retained.
+No application changes were needed during the browser follow-up. The published
+release notes now record the successful result and the retry explicitly.
+
+Commit `7eba28c` adds the requested rerun-scope rules to `AGENTS.md`: preserve
+unaffected passing results, check isolated fixes on their actual commit, and
+justify full reruns by broad or uncertain impact. A new commit alone isn't a
+reason to repeat the whole matrix. The root remains clean on `staging`, now
+version 1.2.6; `main` and the published 1.2.5 assets remain at the release commit.
 
 ### 9 October: Android word-splitting hotfix 1.2.4.2, staging returns to 1.2.5
 
