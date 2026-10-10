@@ -401,6 +401,13 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     object-fit: cover;
 }
 
+.scratchpad-empty-portraits {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+}
+
 .scratchpad-message {
     display: flex;
     flex-direction: column;

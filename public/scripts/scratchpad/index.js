@@ -35,7 +35,7 @@ import {
 import { describeChange, splitReply } from './proposals.js';
 import { chooseNote, sessionNoteText } from './notebooks.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261006-notebook-feedback1';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261010-scratchpad-round-table1';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -334,7 +334,7 @@ function build() {
     if (characterPanel) new MutationObserver(() => app.open && applyLayout()).observe(characterPanel, { attributes: true, attributeFilter: ['class'] });
     eventSource.on(event_types.CHAT_CHANGED, () => app.open && checkSource());
     globalThis.addEventListener('sb:conversation-workspace-state-changed', () => app.open && checkSource());
-    globalThis.addEventListener('neconyan:assistant-gender-changed', () => app.open && renderHeader());
+    globalThis.addEventListener('neconyan:assistant-gender-changed', () => app.open && render());
 }
 
 function buildChatPanel() {
@@ -850,10 +850,11 @@ function renderMessages() {
     }
     const session = activeSession();
     if (!session?.messages.length) {
-        const assistant = assistantInfo(session?.assistant ?? app.assistant);
-        const names = sessionAssistants(session).map(id => assistantInfo(id).name).join(', ');
+        const participants = sessionAssistants(session).map(id => assistantInfo(id));
+        const names = participants.map(assistant => assistant.name).join(', ');
         list.append(h('div', { class: 'scratchpad-empty' },
-            h('img', { src: getAssistantIconSrc(assistant.id), alt: '', width: 72, height: 72 }),
+            h('div', { class: 'scratchpad-empty-portraits' }, participants.map(assistant =>
+                h('img', { src: getAssistantIconSrc(assistant.id), alt: assistant.name, width: 72, height: 72 }))),
             h('p', { text: t`Ask ${names} anything. Nothing you write here goes into the story.` }),
             h('p', { text: app.source?.kind === 'notebook'
                 ? t`Suggested note changes appear as cards you can review before anything is saved.`
