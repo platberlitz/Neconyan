@@ -13,7 +13,7 @@ import { syncNeconyanAssistantTools } from './neconyan-assistant-tools.js';
 import { accountStorage } from './util/AccountStorage.js';
 import { getAssistantGender, getAssistantTourSrc, setAssistantGender } from './neconyan-assistant-art.js';
 import { clamp, flashHighlight, getSortableDelay, isElementInViewport, sortMoments, timestampToMoment } from './utils.js';
-import { revealUi } from './ui-motion.js';
+import { revealChat, revealUi } from './ui-motion.js';
 
 const assistantAvatarKey = 'assistant';
 const assistantVariantKey = 'neconyanAssistantVariant';
@@ -2065,7 +2065,7 @@ export function concealWelcomeHome() {
     document.body.classList.remove('neconyan-home-visible');
     if (wasVisible) {
         // Every way out of Home passes here, so the chat it uncovers eases in.
-        revealUi(document.getElementById('chat'));
+        revealChat(document.getElementById('chat'));
         window.dispatchEvent(new Event('neconyan:home-hidden'));
     }
 }

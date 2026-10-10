@@ -28,9 +28,13 @@ describe('surfaces that used to appear without motion', () => {
 
     test('leaving Home eases the chat in, and returning eases Home in once', () => {
         const conceal = functionBody(welcomeJs, 'export function concealWelcomeHome(');
-        expect(conceal).toContain('revealUi(document.getElementById(\'chat\'));');
-        expect(conceal.indexOf('classList.remove(\'neconyan-home-visible\')')).toBeLessThan(conceal.indexOf('revealUi('));
+        expect(conceal).toContain('revealChat(document.getElementById(\'chat\'));');
+        expect(conceal.indexOf('classList.remove(\'neconyan-home-visible\')')).toBeLessThan(conceal.indexOf('revealChat('));
         expect(welcomeJs).toMatch(/const homeArriving = !document\.body\.classList\.contains\('neconyan-home-visible'\);\n\s+document\.body\.classList\.add\('neconyan-home-visible'\);\n\s+if \(homeArriving\) revealUi\(welcomeHost\);/);
+    });
+
+    test('switching chats lets the new chat rise into place', () => {
+        expect(tabsJs).toContain('eventSource.on(event_types.CHAT_CHANGED, () => revealChat(document.getElementById(\'chat\')));');
     });
 
     test('Input History fades in and fades out before it is removed', () => {

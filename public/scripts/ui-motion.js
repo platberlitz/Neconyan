@@ -10,7 +10,9 @@ export const UI_MOTION_TIMING = Object.freeze({
     fadeOutMs: 160,
     drawerInMs: 380,
     drawerOutMs: 280,
+    chatRevealMs: 360,
 });
+const CHAT_REVEAL_DISTANCE = 16;
 let preferencesBound = false;
 // A page follows the control that opened it: down from the top bar, out of the sidebar.
 const ORIGIN_EDGES = [['#top-bar', 'top'], ['#neconyan-workspace-rail', 'left']];
@@ -154,6 +156,11 @@ export function revealUi(element, { distance = 6, duration = UI_MOTION_TIMING.re
         ? [{ opacity: 0, translate: `0 ${distance}px` }, { opacity: 1, translate: '0 0' }]
         : [{ opacity: 0 }, { opacity: 1 }];
     play(element, frames, { duration });
+}
+
+/** An opened chat rises into place, a little further and slower than a menu, so the change of chat reads. */
+export function revealChat(element) {
+    revealUi(element, { distance: CHAT_REVEAL_DISTANCE, duration: UI_MOTION_TIMING.chatRevealMs });
 }
 
 /**
