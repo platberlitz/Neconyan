@@ -24,6 +24,7 @@ export const MAX_MAX_TOKENS = 32000;
 export const DEFAULT_MAX_TOKENS = 32000;
 export const DEFAULT_DEPTH = 15;
 export const MAX_DEPTH = 200;
+export const DEFAULT_CLEANUP_KEEP = 10;
 const FILE_LIMIT = AUTHORING_FILE_LIMIT;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const IDENTITY_LIMIT = 4 * 1024 * 1024;
@@ -273,15 +274,62 @@ function normaliseSession(input) {
     };
 }
 
+export function defaultCleanup() {
+    return { enabled: false, keep: DEFAULT_CLEANUP_KEEP };
+}
+
+export function normaliseCleanup(input, previous = defaultCleanup()) {
+    const source = isPlainObject(input) ? input : {};
+    const cleanup = { ...previous };
+    if (typeof source.enabled === 'boolean') cleanup.enabled = source.enabled;
+    if (source.keep !== undefined) {
+        const keep = Math.round(Number(source.keep));
+        if (Number.isFinite(keep)) cleanup.keep = Math.min(MAX_SESSIONS, Math.max(1, keep));
+    }
+    return cleanup;
+}
+
 export function emptyBucket(source) {
-    return { version: SCRATCHPAD_SCHEMA, source, activeSessionId: null, sessions: [] };
+    return { version: SCRATCHPAD_SCHEMA, source, activeSessionId: null, cleanup: defaultCleanup(), sessions: [] };
 }
 
 export function normaliseBucket(input, source) {
     if (!isPlainObject(input) || input.version !== SCRATCHPAD_SCHEMA) return emptyBucket(source);
     const sessions = Array.isArray(input.sessions) ? input.sessions.map(normaliseSession).filter(Boolean).slice(0, MAX_SESSIONS) : [];
     const activeSessionId = sessions.some(session => session.id === input.activeSessionId) ? input.activeSessionId : (sessions[0]?.id ?? null);
-    return { version: SCRATCHPAD_SCHEMA, source: { ...source, label: source.label || input.source?.label || '' }, activeSessionId, sessions };
+    return { version: SCRATCHPAD_SCHEMA, source: { ...source, label: source.label || input.source?.label || '' }, activeSessionId,
+        cleanup: normaliseCleanup(input.cleanup), sessions };
+}
+
+/**
+ * Sessions automatic cleanup may delete, least recently used first. The open
+ * session, the most recently used one and any with a reply in progress stay.
+ */
+function cleanupCandidates(bucket) {
+    const byUpdated = (a, b) => String(a.updated).localeCompare(String(b.updated));
+    const newest = [...bucket.sessions].sort(byUpdated).at(-1)?.id;
+    return bucket.sessions
+        .filter(session => session.id !== bucket.activeSessionId && session.id !== newest
+            && !session.messages.some(message => message.state === 'pending'))
+        .sort(byUpdated);
+}
+
+function removeOldestSessions(bucket, count) {
+    if (count <= 0) return 0;
+    const doomed = new Set(cleanupCandidates(bucket).slice(0, count).map(session => session.id));
+    bucket.sessions = bucket.sessions.filter(session => !doomed.has(session.id));
+    return doomed.size;
+}
+
+/** With automatic cleanup on, keep only the newest sessions the owner asked for. */
+export function applyCleanup(bucket) {
+    if (!bucket.cleanup?.enabled) return 0;
+    return removeOldestSessions(bucket, bucket.sessions.length - bucket.cleanup.keep);
+}
+
+export function updateCleanup(bucket, input) {
+    bucket.cleanup = normaliseCleanup(input, bucket.cleanup ?? defaultCleanup());
+    return bucket.cleanup;
 }
 
 export function scratchpadFile(root, source) {
@@ -395,16 +443,23 @@ export function readBucketLocked(lease, source) {
 export function writeBucketLocked(lease, bucket) {
     const storage = bucket[STORAGE_SOURCE] ?? storageSourceLocked(lease, bucket.source);
     const filename = scratchpadFile(rootOf(lease), storage);
-    if (!bucket.sessions.length) {
+    applyCleanup(bucket);
+    const cleanup = bucket.cleanup ?? defaultCleanup();
+    if (!bucket.sessions.length && !cleanup.enabled && cleanup.keep === DEFAULT_CLEANUP_KEEP) {
         deleteAuthoringFileLocked(lease, filename);
         return;
     }
-    const saved = { ...bucket, source: { kind: storage.kind, key: storage.key, label: bucket.source.label || '' } };
+    const serialise = () => `${JSON.stringify({ ...bucket, source: { kind: storage.kind, key: storage.key, label: bucket.source.label || '' } }, null, 2)}\n`;
+    let text = serialise();
+    // A full file loses its oldest sessions first when automatic cleanup is on.
+    while (cleanup.enabled && Buffer.byteLength(text) > FILE_LIMIT && removeOldestSessions(bucket, 1)) text = serialise();
     try {
-        writeAuthoringFileLocked(lease, filename, `${JSON.stringify(saved, null, 2)}\n`, { limit: FILE_LIMIT });
+        writeAuthoringFileLocked(lease, filename, text, { limit: FILE_LIMIT });
     } catch (error) {
         if (error?.code !== 'AUTHORING_FILE_TOO_LARGE') throw error;
-        throw fail('SCRATCHPAD_STORAGE_FULL', 'Scratchpad is full for this chat. Delete old sessions or long replies, then try again.', 413);
+        throw fail('SCRATCHPAD_STORAGE_FULL', cleanup.enabled
+            ? 'Scratchpad is full for this chat. Delete long replies from the open session, then try again.'
+            : 'Scratchpad is full for this chat. Delete old sessions or long replies, or turn on automatic cleanup in Sessions, then try again.', 413);
     }
 }
 
@@ -466,6 +521,7 @@ function nextName(bucket, assistant, excludeId) {
 }
 
 export function createSession(bucket, input = {}) {
+    if (bucket.cleanup?.enabled) removeOldestSessions(bucket, bucket.sessions.length - MAX_SESSIONS + 1);
     if (bucket.sessions.length >= MAX_SESSIONS) {
         throw fail('SCRATCHPAD_SESSION_LIMIT', `This chat already has ${MAX_SESSIONS} Scratchpad sessions. Delete one to start another.`, 409);
     }
@@ -602,6 +658,7 @@ export function publicBucket(bucket) {
     return {
         source: bucket.source,
         activeSessionId: bucket.activeSessionId,
+        cleanup: bucket.cleanup ?? defaultCleanup(),
         sessions: bucket.sessions,
         limits: { sessions: MAX_SESSIONS, messages: MAX_MESSAGES, messageBytes: MAX_MESSAGE_BYTES, inputBytes: MAX_INPUT_BYTES, maxTokens: MAX_MAX_TOKENS, depth: MAX_DEPTH, notes: MAX_NOTE_REFERENCES },
     };

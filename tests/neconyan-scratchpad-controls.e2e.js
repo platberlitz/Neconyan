@@ -127,4 +127,53 @@ for (const phone of [false, true]) {
         await expect(page.locator('.scratchpad-reasoning .scratchpad-plain').last()).toHaveText('Checking the scene. Comparing the details.');
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(phone ? 393 : 1280);
     });
+
+    test(`${size} deletes old sessions automatically only after asking`, async ({ app }) => {
+        test.setTimeout(150000);
+        const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {} });
+        if (phone) await installIPhoneSafari(account.context, { standalone: true });
+        const page = await account.open();
+        const source = await openScratchpad(page);
+        for (const name of ['First plan', 'Second plan', 'Third plan', 'Fourth plan']) {
+            await account.post('/api/scratchpad/session/create', { source, assistant: 'miso', name });
+        }
+        await openScratchpad(page);
+        if (phone) await applyIOSOnlyCss(page);
+        await page.getByRole('tab', { name: 'Sessions', exact: true }).click();
+        const enabled = page.getByRole('checkbox', { name: 'Delete old sessions automatically' });
+        const keep = page.getByLabel('Sessions to keep');
+        await expect(enabled).not.toBeChecked();
+        await expect(keep).toHaveValue('10');
+        await expect(keep).toBeDisabled();
+        await page.locator('.scratchpad-cleanup').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: `../screenshots/scratchpad-cleanup-${size}-off.png` });
+
+        await enabled.check();
+        await expect(enabled).toBeChecked();
+        await expect(keep).toBeEnabled();
+        await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.cleanup).toEqual({ enabled: true, keep: 10 });
+
+        await keep.fill('');
+        await keep.blur();
+        await expect(keep).toHaveValue('10');
+        await keep.fill('2');
+        await keep.blur();
+        const popup = page.locator('dialog.popup[open]');
+        await expect(popup).toContainText('This deletes up to 2 older sessions in this chat now.');
+        await page.screenshot({ path: `../screenshots/scratchpad-cleanup-${size}-confirm.png` });
+        await popup.getByText('Keep', { exact: true }).click();
+        await expect(keep).toHaveValue('10');
+        expect((await account.post('/api/scratchpad/bucket', { source })).bucket.sessions).toHaveLength(4);
+
+        await keep.fill('2');
+        await keep.blur();
+        await popup.getByText('Delete', { exact: true }).click();
+        await expect(keep).toHaveValue('2');
+        const bucket = (await account.post('/api/scratchpad/bucket', { source })).bucket;
+        expect(bucket.cleanup).toEqual({ enabled: true, keep: 2 });
+        expect(bucket.sessions.map(session => session.name).sort()).toEqual(['Fourth plan', 'Third plan']);
+        await page.locator('.scratchpad-cleanup').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: `../screenshots/scratchpad-cleanup-${size}-on.png` });
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(phone ? 393 : 1280);
+    });
 }

@@ -37,7 +37,7 @@ To give the conversation more room, press **Talking with** (just the arrow on ph
 
 Replies are written on the server with streaming on or off. Once your message has been accepted, they keep going when you switch tabs on your phone, close Scratchpad, reload the page or close the browser. The finished reply and any thinking the model sends are saved for when you come back. **Stop** ends a reply early. While a reply is being written you cannot send another message in the same session.
 
-Streaming has a separate 64 MiB transfer allowance because the provider repeats data around each small piece of text. Scratchpad saves up to 2 MiB each for the answer and thinking. These byte limits are separate from the model's token limit; long replies are no longer cut off at the old 64 KiB saving limit. Messages you type stay limited to 64 KiB. When a long reply is sent back to the model as earlier conversation, only its first 128 KiB is included, so one long answer does not push older turns out. Each open chat's Scratchpad file holds up to 32 MiB; if it fills up, Scratchpad asks you to delete old sessions or long replies before it saves more.
+Streaming has a separate 64 MiB transfer allowance because the provider repeats data around each small piece of text. Scratchpad saves up to 2 MiB each for the answer and thinking. These byte limits are separate from the model's token limit; long replies are no longer cut off at the old 64 KiB saving limit. Messages you type stay limited to 64 KiB. When a long reply is sent back to the model as earlier conversation, only its first 128 KiB is included, so one long answer does not push older turns out. Each open chat's Scratchpad file holds up to 32 MiB; if it fills up, Scratchpad asks you to delete old sessions or long replies before it saves more, unless automatic cleanup in **Sessions** is on, in which case it deletes the oldest sessions to make room.
 
 Each message has a few buttons:
 
@@ -107,6 +107,7 @@ The **Sessions** tab lists the sessions for the open chat. Each chat keeps its o
 - **Search sessions** filters by session name and message text.
 - **Export current** downloads the open session as a file. **Import** adds a session from one of those files to the open chat.
 - **Save session to note** saves the completed conversation as a quotation in a new or existing note. It leaves out reasoning, unfinished replies and change-card instructions.
+- **Delete old sessions automatically** is off by default. Turn it on and set **Sessions to keep** (1 to 40, 10 by default) to keep only the most recently used sessions in this chat. Older ones are deleted for good, and if the Scratchpad file fills up, the oldest go first. The open session, the one that just got a reply and any session with a reply in progress are never deleted. Turning it on asks first when it would delete sessions straight away.
 
 Sessions are saved on the server under your account, separately from the chat itself. Deleting a session never touches the story.
 
