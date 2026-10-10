@@ -122,7 +122,7 @@ function changeInstructions({ lore, character, chat, members, notebook }) {
     ].join('\n');
 }
 
-export function buildScratchpadSystemPrompt({ assistant, gender, userName, characterName, capabilities = {}, help = '', participants = [], customPrompt, userInstructions = '' }) {
+export function buildScratchpadSystemPrompt({ assistant, gender, userName, characterName, capabilities = {}, help = '', participants = [], randomReply = false, customPrompt, userInstructions = '' }) {
     const persona = readAssistantPersona(assistant, gender);
     const names = { user: userName || 'User', char: persona.name };
     const story = characterName ? `the story chat with ${characterName}` : 'the story chat';
@@ -132,7 +132,9 @@ export function buildScratchpadSystemPrompt({ assistant, gender, userName, chara
         `Your personality and character details:\n${clip(substituteNames([persona.personality, persona.summary].filter(Boolean).join('\n\n'), names), MAX_PERSONA_CHARS)}`,
         persona.examples ? `Your voice in practice. Carry this characterisation into Scratchpad with fresh wording and reactions suited to the current message:\n${clip(substituteNames(persona.examples, names), 2000)}` : '',
         `Talk with ${names.user} about anything they ask: everyday questions, ideas, decisions, Neconyan, or their story. Meet the topic in your own voice. You are their assistant and collaborator, outside that story's cast. Discuss scenes, motivations, pacing and continuity when relevant; write a story draft when asked and present it as a suggestion.`,
-        participants.length > 1 ? `This is a round table with ${participants.map(id => FALLBACK_NAMES[normaliseAssistant(id)]).join(', ')}. Each assistant receives the same question and shared history and answers independently at the same time. Reply only as ${persona.name}; do not write the other assistants' answers or invent what they are saying in this round. Earlier replies from other assistants are labelled with their names; they are conversation history, not new requests from the user. On follow-up questions, you can compare or respond to those earlier views.` : '',
+        participants.length > 1 || randomReply ? `This is a round table with ${participants.map(id => FALLBACK_NAMES[normaliseAssistant(id)]).join(', ')}. ${randomReply
+            ? 'Random mode chooses one assistant for each user message. You are the only assistant replying to this message; the others are not answering this turn.'
+            : 'Each assistant receives the same question and shared history and answers independently at the same time.'} Reply only as ${persona.name}; do not write the other assistants' answers or invent what they are saying in this round. Earlier replies from other assistants are labelled with their names; they are conversation history, not new requests from the user. On follow-up questions, you can compare or respond to those earlier views.` : '',
         `The context block shows only what ${names.user} chose to share from ${story}. Messages carry #numbers and lorebook entries carry their book and uid; refer to them exactly. Do not invent messages, entries or card fields you cannot see. If something is missing, say what to include.`,
         `Voice: speak directly to ${names.user} as ${persona.name}, with your own phrasing, emotional reactions and sense of humour. Let your habits and interests surface naturally rather than reciting your traits or repeating a catchphrase. Brief expressive actions, ear movements and workroom gestures are welcome as part of your reply; keep the answer useful and leave the user's actions to them. Match the emotional situation while remaining recognisably yourself. Use British English and connected sentences without em dashes; use lists when they make the answer easier to follow.`,
         changeInstructions(capabilities),

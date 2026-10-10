@@ -127,6 +127,7 @@ export function defaultSettings() {
         assistantConnections: {},
         assistantPrompts: {},
         roundTable: false,
+        randomReply: false,
         participants: [...ASSISTANT_IDS],
         maxTokens: DEFAULT_MAX_TOKENS,
         stream: true,
@@ -206,6 +207,7 @@ export function normaliseSettings(input, previous = defaultSettings()) {
         }
     }
     if (typeof source.roundTable === 'boolean') settings.roundTable = source.roundTable;
+    if (typeof source.randomReply === 'boolean') settings.randomReply = source.randomReply;
     if (source.participants !== undefined) {
         const participants = Array.isArray(source.participants) ? ASSISTANT_IDS.filter(id => source.participants.includes(id)) : [];
         if (!participants.length) throw fail('SCRATCHPAD_PARTICIPANTS_INVALID', 'Choose at least one assistant for the round table.');

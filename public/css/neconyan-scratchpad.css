@@ -135,6 +135,16 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     cursor: not-allowed;
 }
 
+#neconyan-scratchpad :is(.scratchpad-round-table, .scratchpad-random)[aria-pressed="true"] {
+    background: var(--neco-ginger);
+    border-color: var(--neco-ginger);
+    color: var(--neco-on-accent);
+}
+
+#neconyan-scratchpad :is(.scratchpad-round-table, .scratchpad-random)[aria-pressed="true"]:hover:not(:disabled) {
+    background: var(--neco-ginger-hover);
+}
+
 .scratchpad-app .scratchpad-link {
     min-height: 32px;
     padding: 4px 8px;

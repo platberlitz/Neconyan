@@ -98,7 +98,7 @@ router.post('/prompt', (request, response) => {
         const body = request.body ?? {};
         response.json(buildScratchpadSystemPrompt({ assistant: body.assistant, gender: body.gender,
             userName: body.names?.user, characterName: body.names?.character, capabilities: body.capabilities ?? {},
-            participants: Array.isArray(body.participants) ? body.participants.slice(0, 3) : [] }));
+            participants: Array.isArray(body.participants) ? body.participants.slice(0, 3) : [], randomReply: body.randomReply === true }));
     } catch (error) {
         sendError(response, error);
     }

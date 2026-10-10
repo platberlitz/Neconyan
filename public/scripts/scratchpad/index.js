@@ -81,6 +81,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     connection: { kind: 'current' },
     assistantConnections: {},
     roundTable: false,
+    randomReply: false,
     participants: ['miso', 'taro', 'nori'],
     maxTokens: 32000,
     stream: true,
@@ -179,6 +180,11 @@ function assistantConnection(settings, assistant) {
 
 function sessionAssistants(session = activeSession()) {
     return session?.settings.roundTable ? session.settings.participants : [session?.assistant ?? app.assistant];
+}
+
+function randomReplyEnabled() {
+    const settings = currentSettings();
+    return settings.roundTable && settings.randomReply;
 }
 
 function pendingReply(session = activeSession()) {
@@ -335,6 +341,8 @@ function buildChatPanel() {
     const el = app.el;
     el.roundTable = iconButton(t`Round table`, () => void updateSettings(settings => ({ roundTable: !settings.roundTable })),
         { icon: 'fa-users', pressed: false, className: 'scratchpad-round-table', title: t`Ask up to three assistants together` });
+    el.randomReply = iconButton(t`Random`, () => void updateSettings(settings => ({ randomReply: !settings.randomReply })),
+        { icon: 'fa-shuffle', pressed: false, className: 'scratchpad-random', title: t`One random assistant replies per message` });
     el.assistantPicker = h('div', { class: 'scratchpad-assistants', role: 'group', 'aria-label': t`Talking with` });
     el.summary = h('div', { class: 'scratchpad-summary' });
     el.messages = h('div', { class: 'scratchpad-messages', role: 'log', 'aria-live': 'polite', 'aria-relevant': 'additions' });
@@ -366,8 +374,8 @@ function buildChatPanel() {
         onclick: toggleOverview,
     });
     el.overview = h('div', { id: 'scratchpad-overview', class: 'scratchpad-overview' },
-        // Round table comes last so a narrow panel wraps it, not Miso, Taro and Nori.
-        h('div', { class: 'scratchpad-chat-top' }, el.overviewToggle, el.assistantPicker, el.roundTable),
+        // Reply modes come last so a narrow panel wraps them, not Miso, Taro and Nori.
+        h('div', { class: 'scratchpad-chat-top' }, el.overviewToggle, el.assistantPicker, el.roundTable, el.randomReply),
         el.summary);
     append(el.panels.chat, [
         el.overviewBar,
@@ -723,6 +731,10 @@ function renderHeader() {
     app.el.roundTable.setAttribute('aria-pressed', String(roundTable));
     app.el.roundTable.classList.toggle('menu_button_primary', roundTable);
     app.el.roundTable.disabled = !app.source || app.sending || Boolean(pendingReply());
+    app.el.randomReply.hidden = !roundTable;
+    app.el.randomReply.setAttribute('aria-pressed', String(Boolean(randomReplyEnabled())));
+    app.el.randomReply.classList.toggle('menu_button_primary', Boolean(randomReplyEnabled()));
+    app.el.randomReply.disabled = app.el.roundTable.disabled;
     clear(app.el.assistantPicker);
     for (const item of ASSISTANTS) {
         const selected = participants.includes(item.id);
@@ -778,6 +790,7 @@ function renderOverview() {
         h('i', { class: 'fa-solid fa-chevron-right', 'aria-hidden': 'true' }),
         ...sessionAssistants(session).map(id => h('img', { src: getAssistantIconSrc(id), alt: assistantInfo(id).name, width: 24, height: 24 })),
         h('span', { class: 'scratchpad-overview-name', text: name }),
+        randomReplyEnabled() ? h('span', { class: 'scratchpad-badge', text: t`Random` }) : null,
         session?.temporary ? h('span', { class: 'scratchpad-badge', text: t`Temporary` }) : null,
         app.source ? h('span', { class: 'scratchpad-overview-context', text: contextSummary(currentSettings()) }) : null,
     ]);
@@ -803,6 +816,7 @@ function renderChat() {
         append(el.summary, [
             h('span', { text: session ? session.name : t`New session with ${assistant.name}` }),
             settings.roundTable ? h('span', { class: 'scratchpad-badge', text: t`Round table: ${sessionAssistants(session).length}` }) : null,
+            randomReplyEnabled() ? h('span', { class: 'scratchpad-summary-context', text: t`One random assistant replies per message` }) : null,
             session?.temporary ? h('span', { class: 'scratchpad-badge', text: t`Temporary` }) : null,
             h('span', { class: 'scratchpad-summary-context', text: contextSummary(settings) }),
             iconButton(t`Change`, () => selectTab('context'), { className: 'scratchpad-link' }),
@@ -915,7 +929,7 @@ function renderMessage(session, message, { latest }) {
                 h('summary', { text: t`Thinking` }),
                 h('p', { class: 'scratchpad-plain', text: preview?.reasoning ?? '' })),
             h('p', { class: 'scratchpad-plain scratchpad-stream', text: preview?.text ?? '' }),
-            iconButton(session.settings.roundTable ? t`Stop all` : t`Stop`, () => void stopReply(), { icon: 'fa-stop', className: 'scratchpad-stop' }));
+            iconButton(session.settings.roundTable && !randomReplyEnabled() ? t`Stop all` : t`Stop`, () => void stopReply(), { icon: 'fa-stop', className: 'scratchpad-stop' }));
         return article;
     } else {
         if (message.reasoning) {
@@ -1219,9 +1233,9 @@ function renderComposer() {
     const disabled = !app.source || !app.bucket || app.sending;
     el.composer.disabled = !app.source || !app.bucket;
     el.send.disabled = disabled && !pending;
-    const count = sessionAssistants().length;
-    el.send.querySelector('span').textContent = pending ? (activeSession()?.settings.roundTable ? t`Stop all` : t`Stop`)
-        : (app.sending ? t`Sending...` : count > 1 ? t`Ask ${count}` : t`Send`);
+    const count = randomReplyEnabled() ? 1 : sessionAssistants().length;
+    el.send.querySelector('span').textContent = pending ? (activeSession()?.settings.roundTable && !randomReplyEnabled() ? t`Stop all` : t`Stop`)
+        : (app.sending ? t`Sending...` : count > 1 || randomReplyEnabled() ? t`Ask ${count}` : t`Send`);
     el.send.querySelector('i').className = `fa-solid ${pending ? 'fa-stop' : 'fa-paper-plane'}`;
     for (const chip of el.quick.querySelectorAll('button')) chip.disabled = !app.source;
 }
@@ -1306,7 +1320,7 @@ async function editAssistantPrompt(assistant) {
         const previous = session.settings.assistantPrompts?.[assistant.id];
         const context = await buildContext({ source, settings: session.settings });
         const defaults = await api.readPrompt({ assistant: assistant.id, gender: getAssistantGender(assistant.id),
-            names: context.names, capabilities: { ...context.capabilities, notebook: true }, participants: sessionAssistants(session) });
+            names: context.names, capabilities: { ...context.capabilities, notebook: true }, participants: sessionAssistants(session), randomReply: randomReplyEnabled() });
         requireScope(source, session.id);
         const editor = h('textarea', { class: 'text_pole scratchpad-review-editor', rows: '16', value: previous ?? defaults.text, 'aria-label': t`Assistant prompt` });
         const initialPrompt = editor.value;
