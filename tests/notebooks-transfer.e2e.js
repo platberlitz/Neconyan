@@ -36,7 +36,10 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
         await info.attach('Native import dialog geometry', { body: JSON.stringify({ viewport, ...geometry }), contentType: 'application/json' });
         await page.screenshot({ path: info.outputPath('import-preview.png') });
         await page.route('**/api/notebooks/import/commit', route => route.abort());
+        const failedCommit = page.waitForEvent('requestfailed', request => new URL(request.url()).pathname === '/api/notebooks/import/commit');
         await page.getByRole('button', { name: 'Import as new notebook', exact: true }).click();
+        // The preview already shows Unfinished imports before the closing dialog sends its request.
+        await failedCommit;
         await expect(page.locator('#neconyan-notes').getByRole('button', { name: 'Unfinished imports', exact: true })).toBeVisible();
         await page.unroute('**/api/notebooks/import/commit');
         await page.reload({ waitUntil: 'domcontentloaded' });

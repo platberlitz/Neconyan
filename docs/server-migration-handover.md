@@ -128,8 +128,21 @@ local runs unchanged. Its helper now reads the header and close-button
 positions together, preventing drawer motion between separate measurements;
 the exact timing behind the CI failure remains inferred. All seven screen
 widths passed with that change, and lint reported no errors and 21 existing
-warnings. The final full staging run must include all these test corrections;
-the release notes and this handover still need its actual result.
+warnings. Full staging run `38019269682` included those corrections and passed
+fourteen of sixteen groups. Four checks failed: the desktop Notes review
+matched both the closing list and the opening review dialog; both import
+checks removed their simulated connection failure before the closing dialog
+sent its request; and the phone hidden-Companions check received a reset
+connection while reading a job.
+
+The import failure reproduced locally. The review and hidden-Companions cases
+each passed three unchanged runs; the connection reset's cause remains
+unproven. The follow-up tests target the actual review dialog, wait for the
+aborted import request before removing the simulation, and allow two retries
+for reset connections on read-only job requests. HTTP errors and failed jobs
+still reach the original assertions. All fifteen repeated checks passed in
+11.6 minutes, with no lint errors and 24 existing warnings. These changes
+affect tests only. The next full browser run still needs its actual result.
 
 ### 9 October: Android word-splitting hotfix 1.2.4.2, staging returns to 1.2.5
 

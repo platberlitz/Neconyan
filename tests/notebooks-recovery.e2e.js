@@ -276,8 +276,9 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
             await row.getByRole('button', { name: 'Review', exact: true }).click();
             await expect(page.locator('.neconyan-note-proposal-review')).toContainText(addition);
             await expect(page.locator('.neconyan-note-proposal-review')).toContainText('Live lore is not touched.');
-            await measureControls(page, '.popup:visible', viewport, info, `review-${choice.split(' ')[0]}`);
-            await page.locator('.popup:visible').getByRole('button', { name: choice, exact: true }).click();
+            const reviewDialog = '.popup:visible:has(.neconyan-note-proposal-review)';
+            await measureControls(page, reviewDialog, viewport, info, `review-${choice.split(' ')[0]}`);
+            await page.locator(reviewDialog).getByRole('button', { name: choice, exact: true }).click();
             await expect(page.locator('.neconyan-note-proposal-review')).toBeHidden();
             await expect.poll(async () => (await notesApi(page, '/assistant/proposal', { proposalId: proposed.proposalId })).state)
                 .toBe(choice === 'Not now' ? 'waiting' : choice === 'Decline' ? 'denied' : 'applied');

@@ -221,7 +221,10 @@ export const test = base.extend({
                         const slot = (await account.store()).characters[thread.threadKey];
                         return slot?.branches[id || slot.activeBranchId];
                     },
-                    async job(id) { return (await (await context.request.get('/api/jobs/' + id)).json()).job; },
+                    async job(id) {
+                        // Retry only reset connections on this read; HTTP errors and job failures still reach the assertions.
+                        return (await (await context.request.get('/api/jobs/' + id, { maxRetries: 2 })).json()).job;
+                    },
                     async settled(id, state = 'completed') {
                         await expect.poll(async () => terminal.includes((await account.job(id)).state), { timeout: 60000 }).toBe(true);
                         const job = await account.job(id);
