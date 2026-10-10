@@ -237,6 +237,117 @@ for (const phone of [false, true]) {
         expect(app.provider.calls).toHaveLength(2);
     });
 
+    test(`${viewport} a live preview whose connection went silent in the background catches up`, async ({ app }) => {
+        app.provider.mode.streamReply = { first: 'First words', rest: ' and the finished reply.' };
+        app.provider.mode.reply = { choices: [{ message: { content: 'A saved Companion note.' }, finish_reason: 'stop' }] };
+        app.provider.mode.hold = 'unused-named-model';
+        const account = await app.account({ phone, activeConnection: true,
+            contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings(saved) {
+                saved.oai_settings.stream_openai = true;
+                saved.extension_settings.inChatAgents = { globalSettings: { enabled: true, separateRecentChats: false,
+                    connectionProfile: 'durable', companionConcurrentWithPostGen: true } };
+            } });
+        if (phone) await installIPhoneSafari(account.context);
+        const native = owned(app);
+        await fs.mkdir(native.directories.inChatAgents, { recursive: true });
+        await fs.writeFile(path.join(native.directories.inChatAgents, 'silent-note.json'), JSON.stringify({
+            id: 'silent-note', name: 'Silent note', enabled: true, category: 'companion', execution: 'companion', prompt: 'Keep a note.',
+        }));
+        const locator = await savedChat(account, `Silent preview ${viewport}`);
+        const page = await account.open({ workspace: false, readyTimeout: 120000 });
+        await openChat(page, locator);
+        if (phone) await applyIOSOnlyCss(page);
+        await page.evaluate(() => {
+            // A suspended phone tab can lose a streaming connection without any error:
+            // the reader simply never hears from it again until it gives up itself.
+            const original = window.fetch;
+            const open = new Set();
+            window.previewAttempts = 0;
+            window.previewLive = () => [...open].filter(connection => !connection.silent).length;
+            window.silencePreviews = () => { for (const connection of open) connection.silent = true; };
+            window.fetch = async (input, init = {}) => {
+                const url = typeof input === 'string' ? input : input.url;
+                if (!/\/api\/jobs\/[^/]+\/preview$/.test(url)) return original(input, init);
+                window.previewAttempts += 1;
+                const response = await original(input, init);
+                if (!response.ok || !response.body) return response;
+                const connection = { silent: false };
+                const source = response.body.getReader();
+                const lost = () => new Promise((_, reject) => {
+                    const fail = () => reject(new DOMException('The connection was abandoned.', 'AbortError'));
+                    if (init.signal?.aborted) fail(); else init.signal?.addEventListener('abort', fail, { once: true });
+                });
+                open.add(connection);
+                const body = new ReadableStream({
+                    async pull(controller) {
+                        try {
+                            if (connection.silent) { void source.cancel().catch(() => {}); await lost(); }
+                            const chunk = await source.read();
+                            if (connection.silent) { void source.cancel().catch(() => {}); await lost(); }
+                            if (chunk.done) { open.delete(connection); controller.close(); } else controller.enqueue(chunk.value);
+                        } catch (error) { open.delete(connection); throw error; }
+                    },
+                    cancel() { open.delete(connection); return source.cancel(); },
+                });
+                return new Response(body, { status: response.status, headers: response.headers });
+            };
+        });
+        const setVisibility = state => page.evaluate(state => {
+            if (state === 'hidden') {
+                Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+                Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+            } else {
+                delete document.visibilityState;
+                delete document.hidden;
+            }
+            document.dispatchEvent(new Event('visibilitychange'));
+        }, state);
+        const submitted = page.waitForResponse(acceptedSubmission);
+        await page.locator('#send_textarea').fill('Keep writing while I check another tab.');
+        await page.locator('#send_textarea').press('Enter');
+        const response = await submitted;
+        expect(response.status(), await response.text()).toBe(202);
+        const { jobId } = await response.json();
+        const preview = page.locator('#neconyan-roleplay-preview');
+        const status = preview.locator('[role="status"]');
+        try {
+            await expect(preview).toContainText('First words', { timeout: 60000 });
+            await expect(status).toHaveText('Writing reply…');
+            await page.evaluate(() => window.silencePreviews());
+            await setVisibility('hidden');
+            app.provider.mode.finishStream();
+            await expect.poll(() => app.provider.calls.length, { timeout: 30000 }).toBe(2);
+            await page.waitForTimeout(1500);
+            await expect(preview).not.toContainText('the finished reply.');
+            await expect(status).toHaveText('Writing reply…');
+            // Back on the tab: the preview shows the finished text and the real stage
+            // well before the silence limit would have noticed the lost connection.
+            await setVisibility('visible');
+            await expect(preview).toContainText('First words and the finished reply.', { timeout: 3000 });
+            await expect(status).toHaveText('Running Companions…');
+            // Without a tab change, silence alone reconnects, and a refused
+            // reconnection is retried instead of ending the preview for good.
+            let refusals = 0;
+            await page.route('**/api/jobs/*/preview', route => { refusals += 1; return route.fulfill({ status: 502, body: 'Bad gateway' }); }, { times: 1 });
+            const attempts = await page.evaluate(() => window.previewAttempts);
+            await page.evaluate(() => window.silencePreviews());
+            await expect.poll(() => page.evaluate(() => window.previewLive()), { timeout: 15000 }).toBe(1);
+            expect(refusals).toBe(1);
+            expect(await page.evaluate(() => window.previewAttempts)).toBeGreaterThanOrEqual(attempts + 2);
+            await expect(status).toHaveText('Running Companions…');
+            expect(readRoleplayChat(native.scope, locator).records.at(-1).is_user).toBe(true);
+        } finally {
+            app.provider.mode.finishStream?.();
+            await app.release();
+        }
+        await account.settled(jobId);
+        await expect(page.locator('#chat .mes').last()).toContainText('First words and the finished reply.', { timeout: 30000 });
+        await expect(preview).toHaveCount(0);
+        const records = readRoleplayChat(native.scope, locator).records;
+        expect(records.filter(row => row.mes === 'First words and the finished reply.')).toHaveLength(1);
+        expect(app.provider.calls).toHaveLength(2);
+    });
+
     test(`${viewport} Agents can be switched off during setup recovery and the Companion paw stays available`, async ({ app }, info) => {
         const agent = { id: 'controls-companion', name: 'Controls companion', enabled: true, category: 'companion',
             execution: 'companion', prompt: 'Keep a note.', companion: { displayMode: 'panel' } };
