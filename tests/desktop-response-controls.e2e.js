@@ -1,4 +1,4 @@
-/* global window, document */
+/* global window, document, getComputedStyle */
 /* eslint-disable playwright/no-force-option -- Exercise the style matrix without repeatedly opening Appearance. */
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
@@ -46,11 +46,24 @@ test('desktop response placement persists, preserves swipe actions, and restores
                 const message = element.closest('.mes');
                 const bubble = message.querySelector('.mes_block').getBoundingClientRect();
                 const box = element.getBoundingClientRect();
-                const text = message.querySelector('.mes_text').getBoundingClientRect();
+                const textElement = message.querySelector('.mes_text');
+                const text = textElement.getBoundingClientRect();
+                const overlay = element.classList.contains('nn-echo-overlay-footer');
+                const padding = parseFloat(getComputedStyle(textElement).paddingBottom);
+                const border = parseFloat(getComputedStyle(textElement).borderBottomWidth);
                 const controls = [...element.querySelectorAll('.swipe_left, .swipe_right, .swipes-counter')].map(control => control.getBoundingClientRect().toJSON());
-                return { bubble: bubble.toJSON(), box: box.toJSON(), text: text.toJSON(), controls };
+                return { bubble: bubble.toJSON(), box: box.toJSON(), text: text.toJSON(), controls, overlay, padding,
+                    contentBottom: overlay ? text.bottom - padding - border : text.bottom };
             });
-            expect(geometry.box.top, `style ${style}, ${position}: content clearance`).toBeGreaterThanOrEqual(geometry.text.bottom - 1);
+            // Echo's inside footer can occupy reserved padding, without covering the reply.
+            expect(geometry.box.top, `style ${style}, ${position}: content clearance`).toBeGreaterThanOrEqual(geometry.contentBottom - 1);
+            /* eslint-disable playwright/no-conditional-in-test, playwright/no-conditional-expect -- Only Echo's overlay layout reserves padding for the controls. */
+            if (geometry.overlay) {
+                expect({ style, position }).toEqual({ style: '3', position: 'inside' });
+                expect(geometry.padding).toBeGreaterThan(geometry.box.height);
+                expect(geometry.box.bottom).toBeLessThanOrEqual(geometry.text.bottom);
+            }
+            /* eslint-enable playwright/no-conditional-in-test, playwright/no-conditional-expect */
             expect(geometry.box.right).toBeLessThanOrEqual(1280);
             expect(geometry.controls.every(control => control.top >= geometry.box.top - 1 && control.bottom <= geometry.box.bottom + 1)).toBe(true);
             expect(position === 'inside' ? geometry.box.bottom <= geometry.bubble.bottom + 1 : geometry.box.top >= geometry.bubble.bottom).toBe(true);

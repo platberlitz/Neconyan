@@ -407,9 +407,24 @@ test('Roleplay change cards wait for successful saves and persist message and lo
     const refused = page.waitForResponse('**/api/chats/save');
     await page.getByRole('button', { name: 'Save change', exact: true }).click();
     expect((await refused).status()).toBe(503);
+    // Keep the failure in place until retries settle and the app requests a reload.
+    await expect(page.getByText('The save could not be confirmed. Keep a copy of your edits before reloading.', { exact: true })).toBeVisible();
     await expect(page.locator('.scratchpad-change.is-applied')).toHaveCount(0);
+    const failedBucket = (await account.post('/api/scratchpad/bucket', { source })).bucket;
+    expect(failedBucket.sessions[0].messages[0].proposals?.['0']).not.toBe('applied');
     expect(await readChat()).toEqual(original);
     await page.unroute('**/api/chats/save');
+
+    // An uncertain save requires a reload before a new attempt can use the saved chat.
+    await page.reload();
+    await expect(page.locator('body')).toHaveClass(/neconyan-rail-ready/, { timeout: 60000 });
+    await page.evaluate(async ({ avatar, chatId }) => {
+        const context = window.SillyTavern.getContext();
+        await context.getCharacters();
+        await context.selectCharacterById(context.characters.findIndex(character => character.avatar === avatar), { switchMenu: false });
+        await (await import('/script.js')).openCharacterChat(chatId);
+    }, { avatar: account.avatar, chatId });
+    expect(await openScratchpad(page)).toEqual(source);
 
     const expectedMessages = [
         [{ mes: 'Reviewed original.' }],
