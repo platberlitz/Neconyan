@@ -62,3 +62,13 @@ describe('page introductions mount in the frame their drawer opens', () => {
         expect(functionBody(tabsJs, 'function scheduleIdlePanelStylesheetWarmup(')).toContain('loadNeconyanToolTour()');
     });
 });
+
+describe('pages follow the control that opened them', () => {
+    test('shell pages and navbar drawers take their edge from the shared origin helper', () => {
+        const forceDrawerState = functionBody(tabsJs, 'function forceDrawerState(');
+        expect(forceDrawerState).toContain('edge: getUiDrawerEdge(el, Boolean(shouldOpen), el.classList.contains(\'fillLeft\') ? \'left\' : \'right\')');
+        expect(scriptJs.match(/getUiDrawerEdge\(/g)?.length).toBeGreaterThanOrEqual(3);
+        expect(scriptJs).not.toMatch(/edge: drawer\.hasClass\('fillLeft'\) \? 'left' : 'right'/);
+    });
+});
+

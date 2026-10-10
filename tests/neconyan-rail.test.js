@@ -690,6 +690,7 @@ describe('Neconyan workspace rail behavior', () => {
             document: { body: { classList: { contains: () => true } }, getElementById: id => new Element(id) },
             finishUiMotion() {},
             setUiVisibility: (_element, visible, apply) => apply(visible),
+            getUiDrawerEdge: (_element, _open, fallback) => fallback,
             closeShell: key => closed.push(key),
             displaceCharacterPanel: () => closed.push('characters'),
             syncDrawerIconState() {},
