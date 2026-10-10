@@ -19809,6 +19809,8 @@ jQuery(async function () {
             '#neconyan-lorebook-tour',
             // The same goes for the assistant tours on full-page tools.
             '#neconyan-tool-tour',
+            // World Info Lab returns to the Lorebooks drawer that opened it.
+            '#sbwil-page',
             '#neconyan-chat-route',
             '#neconyan-chat-link-settings',
             '#world_popup',

@@ -23,6 +23,7 @@ export function mountRuntimeUi({ signal = null } = {}) {
     }
 
     let menuItem = null;
+    let lorebooksButton = null;
     let settingsRoot = null;
     let settingsDrawer = null;
     let drawerToggle = null;
@@ -393,6 +394,35 @@ export function mountRuntimeUi({ signal = null } = {}) {
         host.append(menuItem);
     }
 
+    function ensureLorebooksButton() {
+        if (lorebooksButton?.isConnected) {
+            return;
+        }
+        const host = document.getElementById('world_popup_primary_actions');
+        if (!host) {
+            return;
+        }
+        document.getElementById('sbwil-lorebooks-button')?.remove();
+
+        lorebooksButton = element('button', {
+            id: 'sbwil-lorebooks-button',
+            className: 'menu_button menu_button_icon',
+            attributes: {
+                type: 'button',
+                title: 'Open World Info Lab to test lorebook activation',
+                'data-i18n': '[title]Open World Info Lab to test lorebook activation',
+                'aria-haspopup': 'dialog',
+            },
+        });
+        lorebooksButton.append(
+            element('span', { className: 'fa-solid fa-flask', attributes: { 'aria-hidden': 'true' } }),
+            element('span', { text: 'World Info Lab', attributes: { 'data-i18n': 'World Info Lab' } }),
+        );
+        lorebooksButton.addEventListener('click', () => openPage(lorebooksButton));
+        // Keep it outside the picker group, which hides while editing a book.
+        host.prepend(lorebooksButton);
+    }
+
     function ensureSettingsDrawer() {
         if (settingsRoot?.isConnected && settingsDrawer?.isConnected && settingsRoot.contains(settingsDrawer)) {
             return;
@@ -516,6 +546,7 @@ export function mountRuntimeUi({ signal = null } = {}) {
 
     function ensureEntrypoints() {
         ensureMenuItem();
+        ensureLorebooksButton();
         ensureSettingsDrawer();
     }
 
@@ -544,13 +575,16 @@ export function mountRuntimeUi({ signal = null } = {}) {
             drawerObserver?.disconnect();
             workbench.dispose();
             menuItem?.remove();
+            lorebooksButton?.remove();
             settingsRoot?.remove();
             page?.remove();
             document.getElementById('sbwil-menu-item')?.remove();
+            document.getElementById('sbwil-lorebooks-button')?.remove();
             document.getElementById('sbwil-page')?.remove();
             const staleDrawer = document.getElementById('sbwil-settings');
             (staleDrawer?.closest('.extension_container') ?? staleDrawer)?.remove();
             menuItem = null;
+            lorebooksButton = null;
             settingsRoot = null;
             settingsDrawer = null;
             drawerToggle = null;
