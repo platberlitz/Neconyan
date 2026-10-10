@@ -2,6 +2,19 @@
 
 ## v1.2.5
 
+### Highlights
+
+- Reorganised Agents around Manage agents and Connections & defaults, with Quick settings on each card, shared edits for selected Agents, and Batch & connect for Companions.
+- Added Character Authenticity Checker, an initially disabled reply rewriter that preserves story-earned character growth. Rewriters can read up to 30 recent messages, and Agent prompts can include prepared Mewmory context and group cards.
+- Scratchpad can propose new character cards for review, including from a notebook discussion. Change reviews highlight additions and removals, and saving a reviewed character creates it only once.
+- Character Expressions supports separate sets for people sharing a card, automatic selection from named speakers, custom expression lists, search and image filters, and improved sheet cropping and background cleanup.
+- Slash-command scripts run during replies, can check, wait for or stop generation, and preserve composer drafts when requesting a reply.
+- Rebuilt Formatting into task-based sections, kept Connections status compact and made Companion actions easier to reach on phones.
+- Improved Echo's reading layout, fixed the Bubbles lower edge and Flat assistant artwork, added per-side sleeping-cat choices and a dark Windows XP Olive theme, and removed drawer animation stalls. Reduced-motion settings remain respected.
+- Refreshed German, Italian and Portuguese interface translations. JannyAI imports now identify cards whose creators have disabled proxy access, and compatible streamed tool calls accept repeated tool names.
+- Fixed Android exports started from detached download links and expanded the native runtime checks in the test suite.
+- Updated the [official handbook](https://platberlitz.github.io/neconyan-docs/) for these controls and checked the assistants' refreshed app-help reference.
+
 ### Merged Staging PRs
 - PR #83 (2026-10-09) `fix(chats): keep the Bubbles lower edge behind the toolbar`
 - PR #93 (2026-10-09) `fix(connections): keep status compact and use native controls`
