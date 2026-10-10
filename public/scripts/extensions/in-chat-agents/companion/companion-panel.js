@@ -3,6 +3,7 @@ import { hideChatMessageRange } from '../../../chats.js';
 import { captureVisibleMessageAnchor, restoreVisibleMessageAnchor } from '../../../chat-render-lifecycle/anchor.js';
 import { eventSource, event_types } from '../../../events.js';
 import { Popup, POPUP_RESULT, POPUP_TYPE } from '../../../popup.js';
+import { setUiVisibility } from '../../../ui-motion.js';
 import { accountStorage } from '../../../util/AccountStorage.js';
 import { escapeHtml } from '../../../utils.js';
 import { captureMessageTargetState, isMessageTargetCurrent } from '../agent-runner.js';
@@ -1066,7 +1067,9 @@ export function openCompanionPanel() {
     panelOpen = true;
     panelOpenedAt = Date.now();
     renderPanel();
-    $('#ica--tracker-panel').attr('data-edge', getPanelEdge()).attr('data-launcher', panelLauncher).addClass('is-open').attr('aria-hidden', 'false');
+    const panel = $('#ica--tracker-panel').attr('data-edge', getPanelEdge()).attr('data-launcher', panelLauncher);
+    setUiVisibility(panel[0], true, () => panel.addClass('is-open'), { edge: getPanelEdge() });
+    panel.attr('aria-hidden', 'false');
     $('#ica--tracker-panel-handle').attr('aria-expanded', 'true');
     globalThis.document?.getElementById?.(TOPBAR_LAUNCHER_ID)?.setAttribute('aria-expanded', 'true');
     document.querySelector('#ica--tracker-panel [data-action="panel-close"]')?.focus({ preventScroll: true });
@@ -1075,7 +1078,9 @@ export function openCompanionPanel() {
 export function closeCompanionPanel() {
     const restoreFocus = document.activeElement?.closest?.('#ica--tracker-panel');
     panelOpen = false;
-    $('#ica--tracker-panel').removeClass('is-open').attr('aria-hidden', 'true');
+    const panel = $('#ica--tracker-panel');
+    setUiVisibility(panel[0], false, () => panel.removeClass('is-open'), { edge: getPanelEdge() });
+    panel.attr('aria-hidden', 'true');
     $('#ica--tracker-panel-handle').attr('aria-expanded', 'false');
     globalThis.document?.getElementById?.(TOPBAR_LAUNCHER_ID)?.setAttribute('aria-expanded', 'false');
     if (restoreFocus && returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });

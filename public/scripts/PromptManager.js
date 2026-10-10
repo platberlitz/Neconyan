@@ -10,6 +10,7 @@ import { debounce, waitUntilCondition, escapeHtml, uuidv4 } from './utils.js';
 import { debounce_timeout } from './constants.js';
 import { renderTemplateAsync } from './templates.js';
 import { Popup } from './popup.js';
+import { isUiClosing, setUiVisibility } from './ui-motion.js';
 import { t } from './i18n.js';
 import { isMobile } from './RossAscends-mods.js';
 import { accountStorage } from './util/AccountStorage.js';
@@ -2639,7 +2640,7 @@ class PromptManager {
     }
 
     /**
-     * Slides down the edit form and adds the class 'openDrawer' to the first element of '#openai_prompt_manager_popup'.
+     * Opens the editor with the same motion as the surrounding drawers.
      * @returns {void}
      */
     showPopup(area = 'edit') {
@@ -2667,14 +2668,10 @@ class PromptManager {
 
         areaElement.style.display = 'flex';
 
-        if (this.isDesktopSplitLayout()) {
+        setUiVisibility(popup, true, () => {
             popup.style.display = 'block';
             popup.classList.add('openDrawer');
-        } else {
-            $('#' + this.configuration.prefix + 'prompt_manager_popup').first()
-                .slideDown(200, 'swing')
-                .addClass('openDrawer');
-        }
+        }, { animate: !this.isDesktopSplitLayout(), edge: 'right' });
 
         this.syncEditorPaneState();
         this.syncListSelection();
@@ -2684,7 +2681,8 @@ class PromptManager {
             this.updatePromptPreview();
         }
 
-        window.setTimeout(() => {
+        window.requestAnimationFrame(() => {
+            if (!popup.classList.contains('openDrawer') || isUiClosing(popup) || this.activePopupArea !== area) return;
             const focusTarget = area === 'edit'
                 ? document.getElementById(this.configuration.prefix + 'prompt_manager_popup_entry_form_prompt')
                 : document.getElementById(this.configuration.prefix + 'prompt_manager_popup_' + area + '_close_button')
@@ -2698,25 +2696,19 @@ class PromptManager {
                     focusTarget.setSelectionRange(length, length);
                 }
             }
-        }, 240);
+        });
 
         // Scroll to top of edit form on mobile
         if (!this.isDesktopSplitLayout() && window.matchMedia('(max-width: 768px)').matches) {
-            setTimeout(() => {
-                if (popup) {
-                    popup.scrollTop = 0;
-                    const shellScroller = popup.closest('.sb-shell-scroller');
-                    if (shellScroller) {
-                        shellScroller.scrollTop = 0;
-                    }
-                    window.dispatchEvent(new CustomEvent('sb-mobile-viewport-reset'));
-                }
-            }, 250); // Wait for slideDown animation
+            popup.scrollTop = 0;
+            const shellScroller = popup.closest('.sb-shell-scroller');
+            if (shellScroller) shellScroller.scrollTop = 0;
+            window.dispatchEvent(new CustomEvent('sb-mobile-viewport-reset'));
         }
     }
 
     /**
-     * Slides up the edit form and removes the class 'openDrawer' from the first element of '#openai_prompt_manager_popup'.
+     * Closes the editor without animating its layout height.
      * @returns {void}
      */
     hidePopup() {
@@ -2726,19 +2718,13 @@ class PromptManager {
             return;
         }
 
-        if (this.isDesktopSplitLayout()) {
+        setUiVisibility(popup, false, () => {
             popup.style.display = 'none';
             popup.classList.remove('openDrawer');
             this.syncEditorPaneState();
             this.syncListSelection();
-            return;
-        }
-
-        $('#' + this.configuration.prefix + 'prompt_manager_popup').first()
-            .slideUp(200, 'swing', () => window.dispatchEvent(new CustomEvent('sb-mobile-viewport-reset')))
-            .removeClass('openDrawer');
-        this.syncEditorPaneState();
-        this.syncListSelection();
+            if (!this.isDesktopSplitLayout()) window.dispatchEvent(new CustomEvent('sb-mobile-viewport-reset'));
+        }, { animate: !this.isDesktopSplitLayout(), edge: 'right' });
     }
 
     /**

@@ -47,16 +47,23 @@ export function setConversationBackdropVisible() {
     }
 
     const settingsOpen = drawer instanceof HTMLElement && !drawer.hidden && !isUiClosing(drawer);
-    const palsOpen = palsRail instanceof HTMLElement && palsRail.dataset.open === 'true';
+    const palsOpen = palsRail instanceof HTMLElement && palsRail.dataset.open === 'true' && !isUiClosing(palsRail);
     setUiVisibility(backdrop, settingsOpen || palsOpen, visible => { backdrop.hidden = !visible; }, { distance: 0 });
 }
 
-export function closePalsRail() {
+export function setPalsRailOpen(open) {
     const palsRail = document.getElementById(CHROME_IDS.palsRail);
     if (palsRail instanceof HTMLElement) {
-        palsRail.dataset.open = 'false';
+        setUiVisibility(palsRail, open, visible => { palsRail.dataset.open = String(visible); }, {
+            animate: window.matchMedia('(max-width: 768px)').matches,
+            edge: 'left',
+        });
     }
     setConversationBackdropVisible();
+}
+
+export function closePalsRail() {
+    setPalsRailOpen(false);
 }
 
 export function togglePalsRail() {
@@ -65,8 +72,7 @@ export function togglePalsRail() {
         return;
     }
 
-    palsRail.dataset.open = palsRail.dataset.open === 'true' ? 'false' : 'true';
-    setConversationBackdropVisible();
+    setPalsRailOpen(palsRail.dataset.open !== 'true' || isUiClosing(palsRail));
 }
 
 export function formatScheduleTimestamp(timestamp) {
@@ -656,7 +662,7 @@ export function openConversationSettings() {
     renderScheduleDisplay();
     renderConversationMemoryPanel();
     updateUserFooter();
-    setUiVisibility(chrome.drawer, true, visible => { chrome.drawer.hidden = !visible; });
+    setUiVisibility(chrome.drawer, true, visible => { chrome.drawer.hidden = !visible; }, { edge: 'right' });
     setConversationBackdropVisible();
     chrome.drawer.querySelector('input, select, textarea, button')?.focus?.({ preventScroll: true });
 }
@@ -672,7 +678,7 @@ export function closeConversationSettings(identity = null) {
                 : drawer.dataset.conversationGroupId || '',
             personaId: identity?.personaId || drawer.dataset.conversationPersonaId || getConversationPersonaId(),
         };
-        setUiVisibility(drawer, false, visible => { drawer.hidden = !visible; });
+        setUiVisibility(drawer, false, visible => { drawer.hidden = !visible; }, { edge: 'right' });
         if (shouldSave) {
             saveCurrentPanelSettings(capturedIdentity);
         }

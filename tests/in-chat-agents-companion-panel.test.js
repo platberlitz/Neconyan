@@ -36,6 +36,10 @@ describe('companion tracker panel', () => {
     async function importPanel() {
         jest.resetModules();
 
+        await jest.unstable_mockModule('../public/scripts/ui-motion.js', () => ({
+            setUiVisibility: jest.fn((element, open, apply) => apply(open)),
+        }));
+
         await jest.unstable_mockModule('../public/script.js', () => ({
             chat,
         }));

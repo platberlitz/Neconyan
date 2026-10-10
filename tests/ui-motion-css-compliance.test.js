@@ -105,13 +105,12 @@ describe('audited UI motion CSS', () => {
         expect(mobileShellSource).not.toContain('border-radius: 22px 22px 0 0 !important;');
     });
 
-    test('retains WebKit companions in the audited motion surfaces', () => {
+    test('uses shared companion motion without repainting a clipped, blurred panel', () => {
         const inChatAgentsSource = stylesheets.find(stylesheet => stylesheet.name === 'in-chat agents').source;
         const mobileShellSource = stylesheets.find(stylesheet => stylesheet.name === 'mobile shell').source;
 
-        expect(inChatAgentsSource).toContain('transition: -webkit-clip-path 0.25s ease, clip-path 0.25s ease;');
-        expect(inChatAgentsSource).toContain('-webkit-clip-path: inset(0 0 0 100%);');
-        expect(inChatAgentsSource).toContain('clip-path: inset(0 0 0 100%);');
+        const panelRules = inChatAgentsSource.slice(inChatAgentsSource.indexOf('.ica--tpanel {'), inChatAgentsSource.indexOf('.ica--tpanel-header {'));
+        expect(panelRules).not.toMatch(/clip-path|transition:/);
         expect(mobileShellSource).toContain('-webkit-backdrop-filter: blur(22px);');
         expect(mobileShellSource).toContain('backdrop-filter: blur(22px);');
     });

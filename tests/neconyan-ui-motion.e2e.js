@@ -1,6 +1,7 @@
 /* global document, window, Element, getComputedStyle */
 import { expect, test } from '@playwright/test';
 import { isolateSettingsSaves } from './chat-scroll-regression-helpers.js';
+import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 
 test.use({ serviceWorkers: 'block', reducedMotion: 'no-preference' });
 test.setTimeout(90000);
@@ -13,36 +14,55 @@ const enableReducedMotion = {
     }),
 };
 
-async function openApp(page) {
+async function openApp(page, phone, standalone) {
+    if (phone) await installIPhoneSafari(page.context(), { standalone });
     await isolateSettingsSaves(page, settings => {
         settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
         settings.power_user.reduced_motion = false;
     });
     await page.addInitScript(() => {
         window.motionSurfaces = [];
+        window.motionDetails = {};
+        window.motionGeometry = {};
         const animate = Element.prototype.animate;
         Element.prototype.animate = function (...args) {
             window.motionSurfaces.push(this.id);
-            return animate.apply(this, args);
+            window.motionDetails[this.id] = { frames: args[0], options: args[1] };
+            const animation = animate.apply(this, args);
+            if (Array.isArray(args[0]) && args[0].some(frame => frame.translate?.includes('%'))) {
+                animation.pause();
+                window.motionGeometry[this.id] = [0, args[1].duration / 2, args[1].duration].map(time => {
+                    animation.currentTime = time;
+                    const { x, y, width, height } = this.getBoundingClientRect();
+                    return { x, y, width, height };
+                });
+                animation.currentTime = 0;
+                animation.play();
+            }
+            return animation;
         };
     });
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 45000 });
+    if (phone) await applyIOSOnlyCss(page);
 }
 
-for (const phone of [false, true]) {
+for (const [phone, standalone] of [[false, false], [true, false], [true, true]]) {
     const press = phone ? 'tap' : 'click';
-    test.describe(`${phone ? 'phone' : 'desktop'} motion`, () => {
-        test.use({ viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 }, isMobile: phone, hasTouch: phone });
+    test.describe(`${phone ? (standalone ? 'iPhone home-screen' : 'iPhone Safari') : 'desktop'} motion`, () => {
+        test.use(phone ? IPHONE_SAFARI_CONTEXT : { viewport: { width: 1280, height: 900 } });
 
         test('panels reverse cleanly, dialogs animate both ways and chat navigation settles', async ({ page }) => {
-            await openApp(page);
+            await openApp(page, phone, standalone);
             const panel = page.locator('#left-nav-panel');
             await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
             await expect(panel).toBeVisible();
             await expect.poll(() => page.evaluate(() => window.motionSurfaces.includes('left-nav-panel'))).toBe(true);
             await expect(panel).toHaveCSS('translate', 'none');
+            const drawerMotion = await page.evaluate(() => window.motionDetails['left-nav-panel']);
             const geometry = await panel.boundingBox();
+            const arrival = await page.evaluate(() => window.motionGeometry['left-nav-panel']);
+            expect(arrival[2].x - arrival[0].x).toBeCloseTo(geometry.width, 0);
             const closing = await page.evaluate(() => {
                 window.NeconyanShell.closeWorkspace();
                 const panel = document.getElementById('left-nav-panel');
@@ -59,6 +79,71 @@ for (const phone of [false, true]) {
             await expect(page.locator('#user-settings-block')).toBeVisible();
             await page.evaluate(() => window.NeconyanShell.closeWorkspace());
             await expect(page.locator('#user-settings-block')).toBeHidden();
+
+            // Drawers share timing, but enter and leave through their own edge.
+            // Measure actual travel and a stable size, not just the keyframes.
+            const assertSlide = async (id, edge, open) => {
+                const { details, geometry } = await page.evaluate(id => ({
+                    details: window.motionDetails[id], geometry: window.motionGeometry[id],
+                }), id);
+                expect(details.options).toEqual({ ...drawerMotion.options, duration: open ? 180 : 120 });
+                const [start, middle, end] = geometry;
+                expect(end.x - start.x).toBeCloseTo(start.width * (edge === 'left' ? 1 : -1) * (open ? 1 : -1), 0);
+                expect(middle.x).toBeGreaterThan(Math.min(start.x, end.x));
+                expect(middle.x).toBeLessThan(Math.max(start.x, end.x));
+                for (const point of geometry) {
+                    expect(point.y).toBeCloseTo(start.y, 0);
+                    expect(point.width).toBeCloseTo(start.width, 0);
+                    expect(point.height).toBeCloseTo(start.height, 0);
+                }
+                expect(details.frames.every(frame => Number(frame.opacity) === 1)).toBe(true);
+            };
+            const assertDrawerMotion = async (id, edge = 'right') => {
+                await assertSlide(id, edge, true);
+                await expect(page.locator(`#${id}`)).toHaveCSS('translate', 'none');
+                expect(await page.locator(`#${id}`).evaluate(el => ({
+                    clip: getComputedStyle(el).clipPath,
+                    animations: el.getAnimations().length,
+                }))).toEqual({ clip: 'none', animations: 0 });
+            };
+            if (phone) {
+                await page.locator('#sb-hamburger').tap();
+                await assertDrawerMotion('neconyan-workspace-rail', 'left');
+                await page.locator('#sb-hamburger').tap();
+                await expect(page.locator('#neconyan-workspace-rail')).toBeHidden();
+                await assertSlide('neconyan-workspace-rail', 'left', false);
+                await page.locator('#sb-hamburger').tap();
+                await expect(page.locator('#neconyan-workspace-rail')).toHaveJSProperty('inert', false);
+                await page.locator('#sb-hamburger').tap();
+                await expect(page.locator('#neconyan-workspace-rail')).toBeHidden();
+            }
+            await page.evaluate(async () => (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).openCompanionPanel());
+            await assertDrawerMotion('ica--tracker-panel');
+            await page.evaluate(async () => {
+                const panel = await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js');
+                panel.closeCompanionPanel();
+                panel.openCompanionPanel();
+            });
+            await expect(page.locator('#ica--tracker-panel')).toHaveJSProperty('inert', false);
+            await expect(page.locator('#ica--tracker-panel')).toHaveCSS('translate', 'none');
+            await page.evaluate(async () => (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).closeCompanionPanel());
+            await expect(page.locator('#ica--tracker-panel')).toBeHidden();
+            await assertSlide('ica--tracker-panel', 'right', false);
+
+            const nativeSwitch = await page.evaluate(async () => {
+                const { doNavbarIconClick } = await import('/script.js');
+                window.NeconyanShell.openTab('left', 'api');
+                const panel = document.getElementById('right-nav-panel');
+                void doNavbarIconClick.call(panel.parentElement.querySelector('.drawer-toggle'));
+                return panel.classList.contains('openDrawer');
+            });
+            expect(nativeSwitch).toBe(true);
+            await assertDrawerMotion('right-nav-panel');
+            await page.evaluate(async () => {
+                const { doNavbarIconClick } = await import('/script.js');
+                void doNavbarIconClick.call(document.getElementById('right-nav-panel').parentElement.querySelector('.drawer-toggle'));
+            });
+            await expect(page.locator('#right-nav-panel')).toBeHidden();
 
             const dialogMotion = await page.evaluate(async () => {
                 const { Popup, POPUP_TYPE } = await import('/scripts/popup.js');
@@ -90,6 +175,7 @@ for (const phone of [false, true]) {
             await page.evaluate(() => window.NeconyanShell.openChatTools());
             const tools = page.locator(phone ? '#sb-mobile-chat-tools' : '#sb-chat-sidebar');
             await expect(tools).toBeVisible();
+            await assertDrawerMotion(phone ? 'sb-mobile-chat-tools' : 'sb-chat-sidebar');
             await expect.poll(() => page.evaluate(id => window.motionSurfaces.includes(id), phone ? 'sb-mobile-chat-tools' : 'sb-chat-sidebar')).toBe(true);
             await page.evaluate(phone => phone ? window.NeconyanShell.toggleMobileChatTools() : window.NeconyanShell.toggleChatSidebar(), phone);
             await expect(tools).toBeHidden();
@@ -127,6 +213,7 @@ for (const phone of [false, true]) {
             await page.evaluate(async () => (await import('/scripts/neconyan-conversation/settings-panel.js')).openConversationSettings());
             const settings = page.locator('#sb_conversation_settings_drawer');
             await expect(settings).toBeVisible();
+            await assertDrawerMotion('sb_conversation_settings_drawer');
             await expect.poll(() => page.evaluate(() => window.motionSurfaces.includes('sb_conversation_settings_drawer'))).toBe(true);
             await expect(settings).toHaveCSS('translate', 'none');
             await page.evaluate(async () => {
@@ -140,11 +227,68 @@ for (const phone of [false, true]) {
             await expect(settings).toBeHidden();
             await expect(page.locator('#sb_conversation_settings_backdrop')).toBeHidden();
             await expect(page.locator('#sb_conversation_input')).toHaveValue('Keep this Conversation draft, too.');
+            if (phone) {
+                await page.locator('#sb_conversation_pals_toggle').tap();
+                await assertDrawerMotion('sb_conversation_pals_rail', 'left');
+                await page.evaluate(async () => {
+                    const { closePalsRail, togglePalsRail } = await import('/scripts/neconyan-conversation/settings-panel.js');
+                    closePalsRail();
+                    togglePalsRail();
+                });
+                await expect(page.locator('#sb_conversation_pals_rail')).toHaveJSProperty('inert', false);
+                await page.evaluate(async () => (await import('/scripts/neconyan-conversation/settings-panel.js')).closePalsRail());
+                await expect(page.locator('#sb_conversation_pals_rail')).toBeHidden();
+                await expect(page.locator('#sb_conversation_settings_backdrop')).toBeHidden();
+            }
+        });
+
+        test('prompt editor opens at its final size and preserves an interrupted draft', async ({ page }) => {
+            await openApp(page, phone, standalone);
+            await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
+            await page.locator('#main_api').selectOption('openai');
+            await page.evaluate(() => window.NeconyanShell.openTab('left', 'presets'));
+            await page.getByRole('tab', { name: /Prompts/ }).click();
+            await expect(page.locator('#completion_prompt_manager')).toBeVisible();
+            await page.getByRole('button', { name: /^Expand Prompts/ }).click();
+            await page.evaluate(() => new Promise(resolve => {
+                window.$('#completion_prompt_manager_drawer > .inline-drawer-content').promise().done(() => resolve());
+            }));
+            const geometry = await page.evaluate(async () => {
+                const { promptManager } = await import('/scripts/openai.js');
+                promptManager.showPopup();
+                const popup = promptManager.getPopupElement();
+                const animation = popup.getAnimations()[0];
+                const heights = [0, 90, 179].map(time => {
+                    if (animation) { animation.pause(); animation.currentTime = time; }
+                    return popup.getBoundingClientRect().height;
+                });
+                animation?.finish();
+                return { heights, split: promptManager.isDesktopSplitLayout(), motion: window.motionDetails[popup.id] };
+            });
+            expect(geometry.heights[0]).toBeGreaterThan(100);
+            expect(new Set(geometry.heights).size).toBe(1);
+            if (!geometry.split) expect(geometry.motion.options.duration).toBe(180);
+            const field = page.locator('#completion_prompt_manager_popup_entry_form_prompt');
+            await field.fill('Keep this prompt draft.');
+            await page.evaluate(async () => {
+                const { promptManager } = await import('/scripts/openai.js');
+                promptManager.hidePopup();
+                promptManager.showPopup();
+            });
+            await expect(field).toHaveValue('Keep this prompt draft.');
+            await expect(page.locator('#completion_prompt_manager_popup')).toHaveJSProperty('inert', false);
+            await enableReducedMotion.device(page);
+            const closed = await page.evaluate(async () => {
+                const { promptManager } = await import('/scripts/openai.js');
+                promptManager.hidePopup();
+                return promptManager.isPopupVisible();
+            });
+            expect(closed).toBe(false);
         });
 
         for (const preference of ['app', 'device']) {
             test(`${preference} reduced motion settles an interrupted close and disables subsequent reveals`, async ({ page }) => {
-                await openApp(page);
+                await openApp(page, phone, standalone);
                 await page.evaluate(() => window.NeconyanShell.openTab('left', 'api'));
                 await expect(page.locator('#left-nav-panel')).toHaveCSS('translate', 'none');
                 await page.evaluate(() => {
@@ -155,6 +299,20 @@ for (const phone of [false, true]) {
                 await expect(page.locator('#left-nav-panel')).toBeHidden();
                 await page.evaluate(() => { window.motionSurfaces = []; window.NeconyanShell.openTab('left', 'api'); });
                 await expect(page.locator('#left-nav-panel')).toBeVisible();
+                await page.evaluate(async () => {
+                    window.NeconyanShell.closeWorkspace();
+                    const panel = await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js');
+                    panel.openCompanionPanel();
+                });
+                await expect(page.locator('#ica--tracker-panel')).toBeVisible();
+                await page.evaluate(async () => (await import('/scripts/extensions/in-chat-agents/companion/companion-panel.js')).closeCompanionPanel());
+                await expect(page.locator('#ica--tracker-panel')).toBeHidden();
+                if (phone) {
+                    await page.locator('#sb-hamburger').tap();
+                    await expect(page.locator('#neconyan-workspace-rail')).toBeVisible();
+                    await page.locator('#sb-hamburger').tap();
+                    await expect(page.locator('#neconyan-workspace-rail')).toBeHidden();
+                }
                 expect(await page.evaluate(() => window.motionSurfaces)).toEqual([]);
                 const popupMotion = await page.evaluate(async () => {
                     const { Popup, POPUP_TYPE } = await import('/scripts/popup.js');

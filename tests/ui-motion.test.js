@@ -10,7 +10,7 @@ beforeEach(async () => {
     media = { matches: false, addEventListener: jest.fn() };
     globalThis.document = { body: { classList: { contains: value => bodyClasses.has(value) } } };
     globalThis.window = { matchMedia: () => media };
-    globalThis.getComputedStyle = element => ({ visibility: 'visible', opacity: element.opacity ?? '1', translate: '0px 0px' });
+    globalThis.getComputedStyle = element => ({ visibility: 'visible', opacity: element.opacity ?? '1', translate: element.translate ?? '0px 0px' });
     globalThis.MutationObserver = class {
         constructor(callback) { preferenceChanged = callback; }
         observe() {}
@@ -40,6 +40,26 @@ function surface(visible = true) {
 }
 
 describe('interruptible UI motion', () => {
+    test.each([
+        ['left', '-100% 0'], ['right', '100% 0'], ['top', '0 -100%'], ['bottom', '0 100%'],
+    ])('%s drawers leave through their entry edge and reverse from the current position', (edge, translate) => {
+        const { element, apply, animations } = surface(false);
+        motion.setUiVisibility(element, true, apply, { edge });
+        expect(animations[0].frames).toEqual([{ opacity: 1, translate }, { opacity: 1, translate: '0 0' }]);
+        animations[0].onfinish();
+        motion.setUiVisibility(element, false, apply, { edge });
+        expect(animations[1].frames).toEqual([...animations[0].frames].reverse());
+        expect(element.visible).toBe(true);
+        expect(element.inert).toBe(true);
+        element.translate = translate.replace('100%', '110px');
+        const obsoleteFinish = animations[1].onfinish;
+        motion.setUiVisibility(element, true, apply, { edge });
+        obsoleteFinish();
+        expect(animations[2].frames[0].translate).toBe(element.translate);
+        expect(element.visible).toBe(true);
+        expect(element.inert).toBe(false);
+    });
+
     test('closing disables interaction immediately and hides only after its short exit', () => {
         const { element, apply, animations } = surface();
         motion.setUiVisibility(element, false, apply);
@@ -76,6 +96,16 @@ describe('interruptible UI motion', () => {
         expect(animations).toHaveLength(1);
         motion.finishUiMotion(element);
         expect(apply).toHaveBeenCalledTimes(1);
+    });
+
+    test('repeated opens keep the in-flight arrival instead of snapping to its end', () => {
+        const { element, apply, animations } = surface(false);
+        motion.setUiVisibility(element, true, apply);
+        motion.setUiVisibility(element, true, apply);
+        expect(animations).toHaveLength(1);
+        expect(animations[0].cancel).not.toHaveBeenCalled();
+        animations[0].onfinish();
+        expect(element.visible).toBe(true);
     });
 
     test.each(['app', 'device'])('%s reduced motion applies visibility synchronously', preference => {
