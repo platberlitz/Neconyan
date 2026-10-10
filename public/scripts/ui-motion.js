@@ -56,6 +56,21 @@ function play(element, frames, { duration, easing = easeOut, closing = false, li
     // Linked parts settle with their surface, so neither can snap back on its own.
     const parts = linked.map(([part, partFrames]) => part.animate(partFrames, options));
     let settled = false;
+    let started = false;
+    // Safari starts the clock when animate() is called, so the rest of the tap's
+    // work is taken out of the motion and a busy frame can skip it entirely.
+    // Rewinding on the first frame makes every browser start from the first keyframe.
+    const rewind = () => {
+        for (const motion of [animation, ...parts]) {
+            motion.currentTime = 0;
+            if (motion.playState === 'finished') motion.play();
+        }
+    };
+    requestAnimationFrame(() => {
+        if (settled) return;
+        started = true;
+        rewind();
+    });
     const cancel = () => {
         if (settled) return;
         settled = true;
@@ -72,7 +87,11 @@ function play(element, frames, { duration, easing = easeOut, closing = false, li
         complete();
     };
     activeMotions.set(element, { closing, cancel, finish });
-    animation.onfinish = finish;
+    animation.onfinish = () => {
+        // A hidden page paints no frames, so it would never reach the rewind.
+        if (started || document.hidden) finish();
+        else rewind();
+    };
     animation.oncancel = finish;
 }
 
