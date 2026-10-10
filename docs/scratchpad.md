@@ -35,7 +35,7 @@ Round-table assistants answer at the same time. They share your question and the
 
 To give the conversation more room, press **Talking with** (just the arrow on phones) and the assistant picker and session line fold into one slim bar. Press the bar to bring them back. Scratchpad remembers which way you left it.
 
-Replies are written on the server. They keep going if you close Scratchpad, reload the page or close the browser, and the finished reply is there when you come back. **Stop** ends a reply early. While a reply is being written you cannot send another message in the same session.
+Replies are written on the server with streaming on or off. Once your message has been accepted, they keep going when you switch tabs on your phone, close Scratchpad, reload the page or close the browser. The finished reply and any thinking the model sends are saved for when you come back. **Stop** ends a reply early. While a reply is being written you cannot send another message in the same session.
 
 Each message has a few buttons:
 
