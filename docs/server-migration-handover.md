@@ -142,7 +142,19 @@ aborted import request before removing the simulation, and allow two retries
 for reset connections on read-only job requests. HTTP errors and failed jobs
 still reach the original assertions. All fifteen repeated checks passed in
 11.6 minutes, with no lint errors and 24 existing warnings. These changes
-affect tests only. The next full browser run still needs its actual result.
+affect tests only.
+
+Full staging run `38024345908` then passed fifteen of sixteen groups. Two
+phone-sidebar checks failed: changing chat views with drafts, and keyboard
+section toggles. Both passed three unchanged local runs. A separate browser
+probe confirmed that the old body-class check reads 'open' during the closing
+animation even though the sidebar is already hidden from accessibility tools
+and inert. The helpers now use the immediate open state and check that the
+sidebar is interactive. The keyboard test also waits for a visible, stable
+target before taking focus; its exact CI failure remains unreproduced. All
+nine repeated phone and desktop checks passed in 6.4 minutes. Lint reported
+no errors and 55 existing warnings. The full run with these test-only guards
+still needs its actual result.
 
 ### 9 October: Android word-splitting hotfix 1.2.4.2, staging returns to 1.2.5
 

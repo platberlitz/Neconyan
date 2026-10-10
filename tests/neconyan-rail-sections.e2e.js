@@ -13,8 +13,13 @@ async function ready(page) {
 
 async function openRail(page, phone) {
     await page.evaluate(() => window.NeconyanShell.closeWorkspace());
-    if (phone && !await page.locator('body').evaluate(body => body.classList.contains('neconyan-rail-drawer-open'))) {
-        await page.locator('#sb-hamburger').click();
+    if (phone) {
+        const rail = page.locator('#neconyan-workspace-rail');
+        if (await rail.getAttribute('aria-hidden') !== 'false') {
+            await page.locator('#sb-hamburger').click();
+        }
+        await expect(rail).toHaveAttribute('aria-hidden', 'false');
+        await expect(rail).toHaveJSProperty('inert', false);
     }
 }
 
@@ -74,7 +79,11 @@ for (const phone of [false, true]) {
                 await expect(heading).toHaveAttribute('aria-expanded', 'true');
                 const panelId = await heading.getAttribute('aria-controls');
                 const panel = page.locator(`#${panelId}`);
+                // Keyboard presses skip visibility/stability checks. Let the drawer
+                // finish opening and restoring focus before taking keyboard focus.
+                await heading.click({ trial: true });
                 await heading.focus();
+                await expect(heading).toBeFocused();
                 await heading.press('Enter');
                 await expect(panel).toBeHidden();
                 await expect(heading).toHaveAttribute('aria-expanded', 'false');

@@ -106,11 +106,13 @@ async function openMisoChat(page) {
 async function modeButton(page, width, mode) {
     if (width < 769) {
         const nav = page.locator('#neconyan-workspace-rail');
-        const drawerOpen = await page.evaluate(() => document.body.classList.contains('neconyan-rail-drawer-open'));
+        // The body class stays set during closing; aria-hidden changes immediately.
+        const drawerOpen = await nav.getAttribute('aria-hidden') === 'false';
         if (!drawerOpen) {
             await page.locator('#sb-hamburger').tap();
-            await expect.poll(() => page.evaluate(() => document.body.classList.contains('neconyan-rail-drawer-open'))).toBe(true);
         }
+        await expect(nav).toHaveAttribute('aria-hidden', 'false');
+        await expect(nav).toHaveJSProperty('inert', false);
         return nav.locator(`[data-neconyan-chat-mode="${mode}"]`);
     }
     return page.locator(`#neconyan-workspace-rail [data-neconyan-chat-mode="${mode}"]`);
