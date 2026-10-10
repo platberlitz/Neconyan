@@ -1447,7 +1447,7 @@ function setReasoningEventHandlers() {
         }
 
         await copyText(reasoning);
-        toastr.info(t`Copied!`, '', { timeOut: 2000 });
+        toastr.info(t`Copied!`, '', { timeOut: 5000 });
     });
 
     $(document).on('input', '.reasoning_edit_textarea', function () {

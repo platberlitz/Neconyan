@@ -4227,7 +4227,7 @@ function requestGenerationCancel(reason = "Generation cancelled by user", { forc
     } catch (e) { /* best-effort */ }
     a1111SubmittedRunIds.delete(run.id);
 
-    qigToast.info("Stopped waiting. Remote work may continue if the provider cannot cancel it.", "Image Gen", { timeOut: 3500 });
+    qigToast.info("Stopped waiting. Remote work may continue if the provider cannot cancel it.", "Image Gen", { timeOut: 5000 });
     return true;
 }
 

@@ -305,7 +305,7 @@ async function openSwipePicker(messageId) {
         const copyButton = createSwipeAction('swipe_picker_copy', 'fa-regular fa-copy', t`Copy`, t`Copy this swipe`);
         copyButton.addEventListener('click', async () => {
             await copyText(swipeText);
-            toastr.info(t`Copied!`, '', { timeOut: 2000 });
+            toastr.info(t`Copied!`, '', { timeOut: 5000 });
         });
 
         const branchButton = createSwipeAction('swipe_picker_branch', 'fa-solid fa-code-branch', t`Branch`, t`Start a new chat branch from this swipe`);

@@ -855,7 +855,7 @@ export function setFloatingPrompt() {
 
 function onANMenuItemClick() {
     if (!selected_group && this_chid === undefined) {
-        toastr.warning(t`Select a character before trying to use Author's Note`, '', { timeOut: 2000 });
+        toastr.warning(t`Select a character before trying to use Author's Note`, '', { timeOut: 5000 });
         return;
     }
 

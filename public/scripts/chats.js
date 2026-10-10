@@ -2088,8 +2088,8 @@ export function addDOMPurifyHooks() {
                     t`Use the 'Ext. Media' button to allow it. Click on this message to dismiss.`,
                     t`External media has been blocked`,
                     {
-                        timeOut: 2000,
-                        extendedTimeOut: 2000,
+                        timeOut: 5000,
+                        extendedTimeOut: 5000,
                         preventDuplicates: true,
                         onclick: () => toastr.clear(warningToast),
                     },

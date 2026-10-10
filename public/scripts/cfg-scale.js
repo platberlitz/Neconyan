@@ -114,7 +114,7 @@ function setChatCfg(tempValue, setting) {
 // TODO: Only change CFG when character is selected
 function onCfgMenuItemClick() {
     if (!selected_group && this_chid === undefined) {
-        toastr.warning('Select a character before trying to configure CFG', '', { timeOut: 2000 });
+        toastr.warning('Select a character before trying to configure CFG', '', { timeOut: 5000 });
         return;
     }
 

@@ -400,6 +400,7 @@ import {
 } from './scripts/card-script-detection.js';
 import { configureCardScriptRuntime, initCardScriptRuntime } from './scripts/card-script-runtime.js';
 import { bindPortraitUrls } from './scripts/portrait-urls.js';
+import { installToastMinimumDuration } from './scripts/toast-duration.js';
 
 const DEFERRED_STARTUP_STYLESHEETS = Object.freeze([
     { href: 'css/bright.min.css', id: 'deferred-highlight-theme-css' },
@@ -472,7 +473,7 @@ toastr.options = {
     progressBar: false,
     showDuration: 250,
     hideDuration: 250,
-    timeOut: 4000,
+    timeOut: 5000,
     extendedTimeOut: 10000,
     showEasing: 'linear',
     hideEasing: 'linear',
@@ -485,6 +486,7 @@ toastr.options = {
         fixToastrForDialogs();
     },
 };
+installToastMinimumDuration(toastr);
 
 // Run once during startup
 toastr.subscribe(function (args) {
@@ -5477,7 +5479,7 @@ export function addCopyToCodeBlocks(messageElement) {
         copyButton.addEventListener('pointerup', async function () {
             const text = codeBlocks.get(i).textContent;
             await copyText(text);
-            toastr.info(t`Copied!`, '', { timeOut: 2000 });
+            toastr.info(t`Copied!`, '', { timeOut: 5000 });
         });
     }
 }
@@ -19387,7 +19389,7 @@ jQuery(async function () {
                 const messageId = $(this).closest('.mes').attr('mesid');
                 const text = chat[messageId].mes;
                 await copyText(text);
-                toastr.info('Copied!', '', { timeOut: 2000 });
+                toastr.info('Copied!', '', { timeOut: 5000 });
             } catch (err) {
                 console.error('Failed to copy: ', err);
             }

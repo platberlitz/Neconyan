@@ -149,7 +149,7 @@ let agentRunnerInitialized = false;
 let postGenerationRecoveryHooksInitialized = false;
 let postGenerationRecoveryObserver = null;
 const activePromptTransformToasts = new Set();
-const POST_GEN_RUNNING_TOAST_TIMEOUT_MS = 2000;
+const POST_GEN_RUNNING_TOAST_TIMEOUT_MS = 5000;
 const agentGenerationStateListeners = new Set();
 // Manual message rewrites must not wait behind Companions, including manually started ones.
 const manualAgentRunQueues = [false, true].map(companion => ({
@@ -2797,10 +2797,10 @@ function showPromptTransformResultToast(agent, result) {
 
     switch (result?.status) {
         case 'changed':
-            toastr.success('', agentName, { timeOut: 3000 });
+            toastr.success('', agentName, { timeOut: 5000 });
             break;
         case 'unchanged':
-            toastr.info('no change', agentName, { timeOut: 2000 });
+            toastr.info('no change', agentName, { timeOut: 5000 });
             break;
         case 'empty-response': {
             const targetLabel = describePromptTransformTarget(result?.profileId, result?.runner);

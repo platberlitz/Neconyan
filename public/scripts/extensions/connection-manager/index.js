@@ -1699,7 +1699,7 @@ export async function init() {
         await renderDetailsContent(detailsContent);
         await saveSettings();
         await eventSource.emit(event_types.CONNECTION_PROFILE_LOADED, profile.name);
-        toastr.success('Connection profile reloaded', '', { timeOut: 1500 });
+        toastr.success('Connection profile reloaded', '', { timeOut: 5000 });
     });
 
     const createButton = document.getElementById('create_connection_profile');
@@ -1736,7 +1736,7 @@ export async function init() {
         await saveSettings();
         await eventSource.emit(event_types.CONNECTION_PROFILE_UPDATED, oldProfile, profile);
         await eventSource.emit(event_types.CONNECTION_PROFILE_LOADED, profile.name);
-        toastr.success('Connection profile updated', '', { timeOut: 1500 });
+        toastr.success('Connection profile updated', '', { timeOut: 5000 });
     });
 
     const deleteAllButton = document.getElementById('delete_all_connection_profiles');
