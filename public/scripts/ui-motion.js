@@ -15,6 +15,11 @@ export const UI_MOTION_TIMING = Object.freeze({
 });
 const CHAT_REVEAL_DISTANCE = 16;
 const SWIPE_DISTANCE = 48;
+// A held reveal starts once two frames in a row arrive this quickly. A device that
+// stays slow starts it on the first quick frame after the cap, and always by the limit.
+const QUIET_FRAME_MS = 50;
+const HOLD_CAP_MS = 1200;
+const HOLD_LIMIT_MS = 2000;
 let preferencesBound = false;
 // A page follows the control that opened it: down from the top bar, out of the sidebar.
 const ORIGIN_EDGES = [['#top-bar', 'top'], ['#neconyan-workspace-rail', 'left']];
@@ -101,7 +106,7 @@ function isVisible(element) {
         && getComputedStyle(element).visibility !== 'hidden';
 }
 
-function play(element, frames, { duration, easing = easeOut, closing = false, linked = [], complete = () => {}, restore = () => {} }) {
+function play(element, frames, { duration, easing = easeOut, closing = false, linked = [], complete = () => {}, restore = () => {}, holdWhileBusy = false }) {
     bindPreferences();
     const options = { duration, easing, fill: 'both' };
     const animation = element.animate(frames, options);
@@ -118,10 +123,35 @@ function play(element, frames, { duration, easing = easeOut, closing = false, li
             if (motion.playState === 'finished') motion.play();
         }
     };
-    requestAnimationFrame(() => {
+    // Opening a chat keeps the page busy for a while after the first paint. Safari
+    // runs the clock through that work, so the chat appeared already in place.
+    // There a held reveal waits on its first keyframe until frames flow again.
+    // Other browsers keep the motion running beside that work, so they start at once.
+    const hold = since => {
+        let previous = since;
+        let quiet = 0;
+        const check = now => {
+            if (settled) return;
+            const flowing = typeof now === 'number' && now - previous < QUIET_FRAME_MS;
+            quiet = flowing ? quiet + 1 : 0;
+            previous = now;
+            const waited = now - since;
+            if (typeof now !== 'number' || quiet >= 2 || (flowing && waited >= HOLD_CAP_MS) || waited >= HOLD_LIMIT_MS) {
+                rewind();
+                for (const motion of [animation, ...parts]) motion.play();
+                return;
+            }
+            requestAnimationFrame(check);
+        };
+        for (const motion of [animation, ...parts]) motion.pause();
+        if (typeof since === 'number') requestAnimationFrame(check);
+        else check();
+    };
+    requestAnimationFrame(now => {
         if (settled) return;
         started = true;
         rewind();
+        if (holdWhileBusy && document.body?.classList.contains('safari')) hold(now);
     });
     const cancel = () => {
         if (settled) return;
@@ -148,7 +178,7 @@ function play(element, frames, { duration, easing = easeOut, closing = false, li
 }
 
 /** Reveal newly rendered content once, never individual streaming tokens. */
-export function revealUi(element, { distance = 6, duration = UI_MOTION_TIMING.revealMs } = {}) {
+export function revealUi(element, { distance = 6, duration = UI_MOTION_TIMING.revealMs, holdWhileBusy = false } = {}) {
     if (!element) return;
     // Restarting an arrival that is already under way would blink it back to transparent.
     if (activeMotions.get(element)?.closing === false) return;
@@ -157,12 +187,12 @@ export function revealUi(element, { distance = 6, duration = UI_MOTION_TIMING.re
     const frames = distance
         ? [{ opacity: 0, translate: `0 ${distance}px` }, { opacity: 1, translate: '0 0' }]
         : [{ opacity: 0 }, { opacity: 1 }];
-    play(element, frames, { duration });
+    play(element, frames, { duration, holdWhileBusy });
 }
 
 /** An opened chat rises into place, a little further and slower than a menu, so the change of chat reads. */
 export function revealChat(element) {
-    revealUi(element, { distance: CHAT_REVEAL_DISTANCE, duration: UI_MOTION_TIMING.chatRevealMs });
+    revealUi(element, { distance: CHAT_REVEAL_DISTANCE, duration: UI_MOTION_TIMING.chatRevealMs, holdWhileBusy: true });
 }
 
 /**

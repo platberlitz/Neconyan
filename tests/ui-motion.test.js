@@ -43,7 +43,7 @@ function surface(visible = true) {
         },
         getClientRects: () => element.visible ? [{}] : [],
         animate: jest.fn((frames, options) => {
-            const animation = { cancel: jest.fn(), play: jest.fn(), frames, options, currentTime: null, playState: 'running' };
+            const animation = { cancel: jest.fn(), play: jest.fn(), pause: jest.fn(), frames, options, currentTime: null, playState: 'running' };
             animations.push(animation);
             return animation;
         }),
@@ -387,6 +387,71 @@ describe('chat and swipe motion', () => {
         expect(animations[0].frames).toEqual([{ opacity: 0, translate: '0 16px' }, { opacity: 1, translate: '0 0' }]);
         expect(animations[0].options.duration).toBe(motion.UI_MOTION_TIMING.chatRevealMs);
         expect(motion.UI_MOTION_TIMING.chatRevealMs).toBeGreaterThan(motion.UI_MOTION_TIMING.revealMs);
+    });
+
+    test('an opened chat waits on its first frame in Safari while the page is still busy, then rises', () => {
+        bodyClasses.add('safari');
+        pendingFrames = [];
+        const { element, animations } = surface();
+        motion.revealChat(element);
+        const animation = animations[0];
+        pendingFrames.shift()(1000);
+        expect(animation.pause).toHaveBeenCalled();
+        expect(animation.currentTime).toBe(0);
+        // A long busy frame, then frames start to flow again.
+        for (const now of [2000, 2016]) pendingFrames.shift()(now);
+        expect(animation.play).not.toHaveBeenCalled();
+        animation.currentTime = 0;
+        pendingFrames.shift()(2032);
+        expect(animation.currentTime).toBe(0);
+        expect(animation.play).toHaveBeenCalledTimes(1);
+        expect(pendingFrames).toHaveLength(0);
+    });
+
+    test('a chat that was held for a while rises on the first quick frame', () => {
+        bodyClasses.add('safari');
+        pendingFrames = [];
+        const { element, animations } = surface();
+        motion.revealChat(element);
+        pendingFrames.shift()(1000);
+        pendingFrames.shift()(2400);
+        expect(animations[0].play).not.toHaveBeenCalled();
+        pendingFrames.shift()(2416);
+        expect(animations[0].play).toHaveBeenCalledTimes(1);
+    });
+
+    test('a chat that stays busy still rises within the time limit', () => {
+        bodyClasses.add('safari');
+        pendingFrames = [];
+        const { element, animations } = surface();
+        motion.revealChat(element);
+        pendingFrames.shift()(1000);
+        for (const now of [1500, 2000, 2500]) pendingFrames.shift()(now);
+        expect(animations[0].play).not.toHaveBeenCalled();
+        pendingFrames.shift()(3000);
+        expect(animations[0].play).toHaveBeenCalledTimes(1);
+    });
+
+    test('menu reveals and swipes start on the first frame without waiting, even in Safari', () => {
+        bodyClasses.add('safari');
+        pendingFrames = [];
+        const menu = surface();
+        const reply = surface();
+        motion.revealUi(menu.element);
+        motion.slideSwipe(reply.element, true);
+        pendingFrames.splice(0).forEach(frame => frame(1000));
+        expect(menu.animations[0].pause).not.toHaveBeenCalled();
+        expect(reply.animations[0].pause).not.toHaveBeenCalled();
+        expect(pendingFrames).toHaveLength(0);
+    });
+
+    test('other browsers start an opened chat on the first frame, as their motion runs beside the work', () => {
+        pendingFrames = [];
+        const { element, animations } = surface();
+        motion.revealChat(element);
+        pendingFrames.shift()(1000);
+        expect(animations[0].pause).not.toHaveBeenCalled();
+        expect(pendingFrames).toHaveLength(0);
     });
 
     test.each([[true, '48px 0'], [false, '-48px 0']])('a swiped reply slides in from the side it was swiped towards (from right: %s)', (fromRight, translate) => {
