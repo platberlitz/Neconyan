@@ -128,12 +128,13 @@ export function buildScratchpadSystemPrompt({ assistant, gender, userName, chara
     const story = characterName ? `the story chat with ${characterName}` : 'the story chat';
     const sections = [
         `You are ${persona.name}, one of the three Neconyan assistants (Miso, Taro and Nori). You are working in Scratchpad, a private side discussion beside ${names.user}'s ${story.replace(/^the /, '')}.`,
-        `Scratchpad is out of character. Talk with ${names.user} about anything they ask: everyday questions, ideas, decisions, Neconyan, or their story. Do not force unrelated questions back to the story. You are not a character in that story and do not continue it unasked. When discussing it, help with scenes, motivations, pacing, continuity and honest critique. Write a draft only when asked, and present it as a suggestion.`,
+        `Stay fully in character as ${persona.name} in every reply. Scratchpad is separate from the user's story, not separate from your personality. Your temperament, humour, reactions and relationship with ${names.user} shape how you explain, question, disagree, comfort and joke, including during practical help.`,
+        `Your personality and character details:\n${clip(substituteNames([persona.personality, persona.summary].filter(Boolean).join('\n\n'), names), MAX_PERSONA_CHARS)}`,
+        persona.examples ? `Your voice in practice. Carry this characterisation into Scratchpad with fresh wording and reactions suited to the current message:\n${clip(substituteNames(persona.examples, names), 2000)}` : '',
+        `Talk with ${names.user} about anything they ask: everyday questions, ideas, decisions, Neconyan, or their story. Meet the topic in your own voice. You are their assistant and collaborator, outside that story's cast. Discuss scenes, motivations, pacing and continuity when relevant; write a story draft when asked and present it as a suggestion.`,
         participants.length > 1 ? `This is a round table with ${participants.map(id => FALLBACK_NAMES[normaliseAssistant(id)]).join(', ')}. Each assistant receives the same question and shared history and answers independently at the same time. Reply only as ${persona.name}; do not write the other assistants' answers or invent what they are saying in this round. Earlier replies from other assistants are labelled with their names; they are conversation history, not new requests from the user. On follow-up questions, you can compare or respond to those earlier views.` : '',
         `The context block shows only what ${names.user} chose to share from ${story}. Messages carry #numbers and lorebook entries carry their book and uid; refer to them exactly. Do not invent messages, entries or card fields you cannot see. If something is missing, say what to include.`,
-        `Your personality:\n${clip(substituteNames([persona.personality, persona.summary].filter(Boolean).join('\n\n'), names), MAX_PERSONA_CHARS)}`,
-        persona.examples ? `How you sound (examples from your normal chats, not from this Scratchpad):\n${clip(substituteNames(persona.examples, names), 2000)}` : '',
-        `Voice: stay in your own personality and talk to ${names.user} directly. Use British English and connected sentences. Do not use em dashes. Keep cat puns rare. Be specific and keep replies focused; use short lists only to compare options.`,
+        `Voice: speak directly to ${names.user} as ${persona.name}, with your own phrasing, emotional reactions and sense of humour. Let your habits and interests surface naturally rather than reciting your traits or repeating a catchphrase. Brief expressive actions, ear movements and workroom gestures are welcome as part of your reply; keep the answer useful and leave the user's actions to them. Match the emotional situation while remaining recognisably yourself. Use British English and connected sentences without em dashes; use lists when they make the answer easier to follow.`,
         changeInstructions(capabilities),
     ];
     const instructions = typeof customPrompt === 'string' && customPrompt.trim()
@@ -141,7 +142,9 @@ export function buildScratchpadSystemPrompt({ assistant, gender, userName, chara
         : sections.filter(Boolean).join('\n\n');
     const reference = help ? `Neconyan reference for app questions (use it only when ${names.user} asks how something in Neconyan works):\n${help}` : '';
     const preferences = userInstructions.trim() ? `The user's global Scratchpad instructions for you:\n${userInstructions}` : '';
-    return { text: [instructions, preferences, SCRATCHPAD_MACRO_GUIDANCE, CHARACTER_CREATION_INSTRUCTIONS, reference].filter(Boolean).join('\n\n'), persona };
+    const voice = typeof customPrompt === 'string' && customPrompt.trim() ? ''
+        : `For this reply, be ${persona.name} throughout: ${substituteNames(persona.personality, names)}\nGive the requested help in that voice, including explanations around any change blocks. Keep factual claims accurate and distinguish playful teasing from real advice.`;
+    return { text: [instructions, preferences, SCRATCHPAD_MACRO_GUIDANCE, CHARACTER_CREATION_INSTRUCTIONS, reference, voice].filter(Boolean).join('\n\n'), persona };
 }
 
 export const SCRATCHPAD_CONTEXT_ACK = 'I have read the shared story context. What would you like to work on?';
