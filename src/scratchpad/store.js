@@ -14,6 +14,7 @@ export const MAX_SESSIONS = 40;
 export const MAX_MESSAGES = 400;
 export const MAX_MESSAGE_BYTES = MAX_GENERATION_TEXT_BYTES;
 export const MAX_REASONING_BYTES = MAX_GENERATION_TEXT_BYTES;
+export const MAX_INPUT_BYTES = 64 * 1024;
 export const MAX_NAME_LENGTH = 80;
 export const MAX_PICKED = 400;
 export const MAX_NOTE_REFERENCES = 12;
@@ -544,7 +545,7 @@ export function updateMessage(bucket, sessionId, messageId, text) {
     const message = findMessage(session, messageId);
     if (message.state === 'pending') throw fail('SCRATCHPAD_REPLY_PENDING', 'Wait for the reply to finish before editing it.', 409);
     if (typeof text !== 'string' || !text.trim()) throw fail('SCRATCHPAD_TEXT_REQUIRED', 'A message needs some text.');
-    if (byteLength(text) > MAX_MESSAGE_BYTES) throw fail('SCRATCHPAD_TEXT_TOO_LARGE', 'That message is too long.', 413);
+    if (byteLength(text) > (message.role === 'user' ? MAX_INPUT_BYTES : MAX_MESSAGE_BYTES)) throw fail('SCRATCHPAD_TEXT_TOO_LARGE', 'That message is too long.', 413);
     message.text = text;
     message.edited = true;
     if (message.role === 'assistant') {
@@ -602,7 +603,7 @@ export function publicBucket(bucket) {
         source: bucket.source,
         activeSessionId: bucket.activeSessionId,
         sessions: bucket.sessions,
-        limits: { sessions: MAX_SESSIONS, messages: MAX_MESSAGES, messageBytes: MAX_MESSAGE_BYTES, maxTokens: MAX_MAX_TOKENS, depth: MAX_DEPTH, notes: MAX_NOTE_REFERENCES },
+        limits: { sessions: MAX_SESSIONS, messages: MAX_MESSAGES, messageBytes: MAX_MESSAGE_BYTES, inputBytes: MAX_INPUT_BYTES, maxTokens: MAX_MAX_TOKENS, depth: MAX_DEPTH, notes: MAX_NOTE_REFERENCES },
     };
 }
 

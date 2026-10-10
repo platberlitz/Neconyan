@@ -7,6 +7,7 @@ import { acceptJob, canonical, getJob, listJobs, releaseJob, requestCancellation
 import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { roleplayAccountBase } from '../roleplay-store.js';
 import {
+    MAX_INPUT_BYTES,
     MAX_MESSAGE_BYTES,
     MAX_MESSAGES,
     MAX_REASONING_BYTES,
@@ -37,6 +38,7 @@ const MAX_CONTEXT_BYTES = 1536 * 1024;
 const MAX_HELP_BYTES = 96 * 1024;
 const MAX_HISTORY_MESSAGES = 50;
 const MAX_HISTORY_BYTES = 512 * 1024;
+const MAX_HISTORY_MESSAGE_BYTES = 128 * 1024;
 const PREPARE_TIMEOUT_MS = 60 * 1000;
 
 const fail = (code, message, status = 400) => new ScratchpadError(code, message, status);
@@ -74,7 +76,7 @@ export function normaliseReplyRequest(body = {}) {
     const source = normaliseSource(body.source);
     const sessionId = requireId(body.sessionId, 'session');
     const regenerate = body.regenerate ? requireId(body.regenerate, 'reply') : null;
-    const text = regenerate ? '' : boundedText(body.text, MAX_MESSAGE_BYTES, 'The message', { required: true });
+    const text = regenerate ? '' : boundedText(body.text, MAX_INPUT_BYTES, 'The message', { required: true });
     if (!regenerate && !text.trim()) throw fail('SCRATCHPAD_TEXT_REQUIRED', 'Write a message first.');
     return {
         submissionKey,
@@ -100,10 +102,11 @@ function historyFrom(messages) {
     const history = [];
     let total = 0;
     for (let index = usable.length - 1; index >= 0 && history.length < MAX_HISTORY_MESSAGES; index--) {
-        const size = bytes(usable[index].text);
+        const text = clipBytes(usable[index].text, MAX_HISTORY_MESSAGE_BYTES);
+        const size = bytes(text);
         if (total + size > MAX_HISTORY_BYTES) break;
         total += size;
-        history.unshift({ role: usable[index].role, text: usable[index].text, ...(usable[index].assistant ? { assistant: usable[index].assistant } : {}) });
+        history.unshift({ role: usable[index].role, text, ...(usable[index].assistant ? { assistant: usable[index].assistant } : {}) });
     }
     while (history.length && history[0].role !== 'user') history.shift();
     return history;
