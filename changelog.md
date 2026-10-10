@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.2.6
+
+### Merged Staging PRs
+- PR #108 (2026-10-10) `fix(dialogue-colors): allow deletion after background saves`
+
 ## v1.2.5
 
 ### Highlights
