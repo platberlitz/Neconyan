@@ -414,11 +414,18 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
 
 .scratchpad-author {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 6px;
     color: var(--neco-muted);
     font-size: 0.8rem;
     font-weight: 700;
+}
+
+.scratchpad-author .nn-message-token-counts {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    font-weight: 400;
 }
 
 .scratchpad-author img {

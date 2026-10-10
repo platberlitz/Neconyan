@@ -8,6 +8,7 @@ import { loadStylesheetAsync } from '../dynamic-styles.js';
 import { event_types, eventSource } from '../events.js';
 import { extension_settings } from '../extensions.js';
 import { t } from '../i18n.js';
+import { updateMessageTokenCounts } from '../message-token-counts.js';
 import { getAssistantGender, getAssistantIconSrc } from '../neconyan-assistant-art.js';
 import { append, clear, h } from '../notebooks/dom.js';
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
@@ -867,6 +868,7 @@ function updateStream(jobId) {
     const stick = nearBottom(app.el.messages);
     for (const node of nodes) {
         const preview = replyPreview({ jobId, id: node.dataset.messageId });
+        updateMessageTokenCounts(node.querySelector('.scratchpad-author'), preview, { pending: true });
         node.querySelector('.scratchpad-stage').textContent = stageLabel(preview);
         node.querySelector('.scratchpad-stream').textContent = preview?.text ?? '';
         const reasoning = node.querySelector('.scratchpad-reasoning');
@@ -891,6 +893,7 @@ function renderMessage(session, message, { latest }) {
         ? h('div', { class: 'scratchpad-author' }, h('img', { src: getAssistantIconSrc(assistant.id), alt: '', width: 24, height: 24 }), h('span', { text: assistant.name }))
         : h('div', { class: 'scratchpad-author' }, h('span', { text: sourceUserName(app.source) || t`You` }));
     article.append(author);
+    if (assistant) updateMessageTokenCounts(author, message.state === 'pending' ? replyPreview(message) : message, { pending: message.state === 'pending' });
 
     if (app.editing === message.id) {
         article.append(renderEditor(session, message));

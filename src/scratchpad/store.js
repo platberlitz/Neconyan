@@ -240,6 +240,9 @@ function normaliseMessage(input) {
         if (typeof input.jobId === 'string' && input.jobId.length <= 128) message.jobId = input.jobId;
         if (typeof input.error === 'string' && input.error) message.error = input.error.slice(0, 1000);
         if (typeof input.reasoning === 'string' && input.reasoning && byteLength(input.reasoning) <= MAX_REASONING_BYTES) message.reasoning = input.reasoning;
+        for (const field of ['token_count', 'reasoning_tokens']) {
+            if (Number.isSafeInteger(input[field]) && input[field] >= 0) message[field] = input[field];
+        }
         if (typeof input.assistant === 'string') message.assistant = normaliseAssistant(input.assistant);
         if (typeof input.gender === 'string') message.gender = normaliseGender(input.gender);
         const proposals = normaliseProposals(input.proposals);
@@ -603,6 +606,7 @@ export function updateMessage(bucket, sessionId, messageId, text) {
     if (typeof text !== 'string' || !text.trim()) throw fail('SCRATCHPAD_TEXT_REQUIRED', 'A message needs some text.');
     if (byteLength(text) > (message.role === 'user' ? MAX_INPUT_BYTES : MAX_MESSAGE_BYTES)) throw fail('SCRATCHPAD_TEXT_TOO_LARGE', 'That message is too long.', 413);
     message.text = text;
+    delete message.token_count;
     message.edited = true;
     if (message.role === 'assistant') {
         message.state = 'done';

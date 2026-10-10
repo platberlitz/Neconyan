@@ -114,6 +114,8 @@ test('a reply runs as a server job, streams a preview and settles into the saved
     assert.equal(reply.state, 'done');
     assert.equal(reply.text, 'Nova is hiding the letter.');
     assert.equal(reply.reasoning, 'thought it through');
+    assert.ok(reply.token_count > 0);
+    assert.ok(reply.reasoning_tokens > 0);
     assert.equal(reply.assistant, 'taro');
     assert.equal(seen.binding.kind, 'profile');
     assert.equal(seen.stream, true);
