@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 import { readAuthoringFileLocked, writeAuthoringFileLocked, deleteAuthoringFileLocked } from '../authoring-store.js';
 import { roleplayAccountBase, roleplayAccountStamp, roleplayLease, withRoleplayAccount } from '../roleplay-store.js';
+import { MAX_GENERATION_TEXT_BYTES } from '../generation/stream-limits.js';
 
 export const SCRATCHPAD_SCHEMA = 1;
 export const ASSISTANT_IDS = Object.freeze(['miso', 'taro', 'nori']);
@@ -11,8 +12,8 @@ export const ASSISTANT_GENDERS = Object.freeze(['male', 'female', 'neutral']);
 export const SOURCE_KINDS = Object.freeze(['roleplay', 'conversation', 'notebook']);
 export const MAX_SESSIONS = 40;
 export const MAX_MESSAGES = 400;
-export const MAX_MESSAGE_BYTES = 64 * 1024;
-export const MAX_REASONING_BYTES = 64 * 1024;
+export const MAX_MESSAGE_BYTES = MAX_GENERATION_TEXT_BYTES;
+export const MAX_REASONING_BYTES = MAX_GENERATION_TEXT_BYTES;
 export const MAX_NAME_LENGTH = 80;
 export const MAX_PICKED = 400;
 export const MAX_NOTE_REFERENCES = 12;

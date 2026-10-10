@@ -1,7 +1,6 @@
 import { normalizeContentText } from '../../public/scripts/generation-format.js';
 import { createStreamTools } from './stream-tools.js';
-
-const STREAM_LIMIT = 2 * 1024 * 1024;
+import { MAX_GENERATION_STREAM_BYTES, MAX_GENERATION_TEXT_BYTES } from './stream-limits.js';
 
 /** Assemble a complete provider stream; never turn an EOF without a final event into a reply. */
 export function assembleGenerationStream(raw, options) {
@@ -63,7 +62,9 @@ export function createGenerationStream(onUpdate, { allowTools = false } = {}) {
         }
         textBytes += Buffer.byteLength(nextText);
         reasoningBytes += Buffer.byteLength(nextReasoning);
-        if (textBytes > STREAM_LIMIT || reasoningBytes > STREAM_LIMIT) throw new Error('The generated stream exceeded the saved result limit.');
+        if (textBytes > MAX_GENERATION_TEXT_BYTES || reasoningBytes > MAX_GENERATION_TEXT_BYTES) {
+            throw new Error('The generated answer or thinking exceeded the 2 MiB text limit.');
+        }
         text += nextText;
         reasoning += nextReasoning;
         if (chunk.type === 'message_stop' || chunk.type === 'message-end' || chunk.type === 'response.completed' || chunk.done === true || choice?.finish_reason != null
@@ -73,7 +74,7 @@ export function createGenerationStream(onUpdate, { allowTools = false } = {}) {
     return {
         push(chunk) {
             bytes += Buffer.byteLength(chunk);
-            if (bytes > STREAM_LIMIT) throw new Error('The generated stream exceeded the saved result limit.');
+            if (bytes > MAX_GENERATION_STREAM_BYTES) throw new Error('The streamed response exceeded the 64 MiB transport limit.');
             pending += chunk;
             let boundary;
             while ((boundary = /\r?\n\r?\n/.exec(pending))) {
