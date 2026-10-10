@@ -1,6 +1,6 @@
 import { formatRoleplayTextMessage, combineRoleplayTextPrompt } from './scripts/roleplay-text-format.js';
 import { roleplayLoadErrorMessage } from './scripts/roleplay-load-error.js';
-import { finishUiMotion, getUiSlideOptions, isUiClosing, setUiVisibility } from './scripts/ui-motion.js';
+import { finishUiMotion, getUiSlideOptions, isUiClosing, revealUi, setUiVisibility } from './scripts/ui-motion.js';
 import {
     showdown,
     moment,
@@ -5723,6 +5723,8 @@ export function addOneMessage(mes, { type = undefined, insertAfter = null, scrol
         ? insertedElement
         : Array.from(chatNode?.querySelectorAll('.mes') ?? []).at(-1);
     lastMessageElement?.classList.add('last_mes');
+    // Whole-chat renders bypass this path, so only a newly arrived message eases in.
+    if (type !== 'swipe') revealUi(insertedElement);
 
     if (isTailAppend && type !== 'swipe') {
         pruneRenderedChatMessagesToWindow({ windowSize: getChatRenderWindowSize(), pruneFrom: 'start' });

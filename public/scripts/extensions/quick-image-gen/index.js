@@ -22,6 +22,7 @@ import {
     formatQuietSlashResult,
     getQuietSlashOverrides,
 } from "./lib/generation.js";
+import { revealUi, setUiVisibility } from "../../ui-motion.js";
 import { GenerationRunManager, OwnedTransientValue, snapshotGenerationRunSettings, snapshotGenerationSettings } from "./lib/generation-run.js";
 import { normalizeProviderResult, sanitizeEffectiveRequest } from "./lib/provider-contract.js";
 import {
@@ -9666,8 +9667,9 @@ function hidePopup(popup, { restoreFocus = true } = {}) {
     const wasTop = getTopQigPopup() === popup;
     popup._qigFocusToken = null;
     clearTimeout(popup._qigFocusTimer);
-    popup.style.display = "none";
+    // Set inert first: the fade restores the value it found once it finishes.
     popup.inert = true;
+    setUiVisibility(popup, false, () => { popup.style.display = "none"; }, { distance: 0 });
     noteQigPopupHidden(popup);
     if (restoreFocus && wasTop) restoreQigPopupFocus(popup._qigReturnFocus);
 }
@@ -9797,7 +9799,11 @@ function createPopup(id, title, content, onShow, options = {}) {
             first.focus();
         }
     };
-    popup.style.display = "flex";
+    const arriving = popup.style.display !== "flex" || !openQigPopups.includes(popup);
+    setUiVisibility(popup, true, () => { popup.style.display = "flex"; }, { distance: 0 });
+    // Reopening mid-fade restores the closing inert state; this window is live again.
+    popup.inert = false;
+    if (arriving) revealUi(popup.querySelector(".qig-popup-content"));
     noteQigPopupShown(popup);
     if (onShow) onShow(popup);
     const focusPopup = () => {

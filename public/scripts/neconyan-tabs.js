@@ -508,7 +508,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261010-message-tokens';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261010-message-tokens2';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -2853,11 +2853,11 @@ function buildIncludedToolPanel() {
         }, 4000);
         if (token !== activationToken) return;
         setToolPageKey('');
-        void import('./neconyan-tool-tour.js').then(({ getToolPageKey, mountToolPage }) => {
+        withNeconyanToolTour(({ getToolPageKey, mountToolPage }) => {
             if (token !== activationToken) return;
             setToolPageKey(mounted ? getToolPageKey(tool.id) : '');
             mountToolPage(mounted ? tool.id : '', heading, host, shell?.headerIntro);
-        }).catch(error => console.warn('[Neconyan] Could not load the tool page tour:', error));
+        }, '[Neconyan] Could not load the tool page tour:');
         if (!mounted) {
             const message = createElement('p', { className: 'neconyan-included-tool-unavailable', text: `No settings are available for ${tool.label}. Use Manage extensions to install or enable it.` });
             const manage = createElement('button', { className: 'menu_button', text: 'Manage extensions', attrs: { type: 'button' } });
@@ -2876,7 +2876,7 @@ function buildIncludedToolPanel() {
     panelBundle.onDeactivate = () => {
         activationToken += 1;
         setToolPageKey('');
-        void import('./neconyan-tool-tour.js').then(({ endToolTour }) => endToolTour({ restoreFocus: false })).catch(() => {});
+        withNeconyanToolTour(({ endToolTour }) => endToolTour({ restoreFocus: false }));
         neconyanIncludedToolRestore?.();
         neconyanIncludedToolRestore = null;
     };
@@ -2895,6 +2895,32 @@ function getIncludedToolRailRoute() {
     const selected = normalizeNeconyanNativeToolId(neconyanIncludedToolSelection);
     const key = Object.keys(NECONYAN_TOOL_PAGE_ROUTES).find(id => selected === id || selected.endsWith(`/${id}`));
     return key ? NECONYAN_TOOL_PAGE_ROUTES[key] : 'extensions';
+}
+
+let neconyanToolTourModule = null;
+let neconyanToolTourLoad = null;
+
+function loadNeconyanToolTour() {
+    neconyanToolTourLoad ??= import('./neconyan-tool-tour.js').then(module => (neconyanToolTourModule = module));
+    return neconyanToolTourLoad;
+}
+
+/**
+ * Runs page-tour work in the same frame once the module is loaded. A fresh
+ * import always resolves a frame later, which blanked the page introduction
+ * and pushed the page down while its drawer was still sliding in.
+ * @param {(module: typeof import('./neconyan-tool-tour.js')) => void} callback
+ * @param {string} failure Warning shown if the module cannot load
+ */
+function withNeconyanToolTour(callback, failure) {
+    if (neconyanToolTourModule) {
+        callback(neconyanToolTourModule);
+        return;
+    }
+    void loadNeconyanToolTour().then(callback).catch(error => {
+        neconyanToolTourLoad = null;
+        if (failure) console.warn(failure, error);
+    });
 }
 
 // Shell tabs that get the same introduction and assistant tour as the full-page Included tools.
@@ -2934,13 +2960,11 @@ function mountNeconyanNativePage(key, host, headerHeading = null) {
     }
     if (!headerHeading && heading.dataset.toolPage === key && heading.querySelector('.neconyan-tool-page-intro')) return;
     heading.dataset.toolPage = key;
-    void import('./neconyan-tool-tour.js')
-        .then(({ mountToolPage }) => {
-            if (headerHeading && headerHeading.dataset.toolPage !== key) return;
-            if (heading.dataset.toolPage !== key) return;
-            mountToolPage(key, heading, host, headerHeading);
-        })
-        .catch(error => console.warn('[Neconyan] Could not load the page tour:', error));
+    withNeconyanToolTour(({ mountToolPage }) => {
+        if (headerHeading && headerHeading.dataset.toolPage !== key) return;
+        if (heading.dataset.toolPage !== key) return;
+        mountToolPage(key, heading, host, headerHeading);
+    }, '[Neconyan] Could not load the page tour:');
 }
 
 function syncNeconyanNativeShellPage(shellKey, tabId) {
@@ -7956,7 +7980,7 @@ function setMobileChatToolsOpenState(shouldOpen) {
         refs.overlay.setAttribute('aria-hidden', String(!visible));
         refs.overlay.inert = !visible;
         queueMobileModalStateSync();
-    }, { edge: 'right' });
+    }, { edge: 'right', slideTarget: document.getElementById('sb-mobile-chat-tools-panel') });
 
     queueMobileModalStateSync();
 
@@ -9059,10 +9083,14 @@ function isDrawerActuallyOpen(drawerRootOrId) {
     }
 
     const styles = getComputedStyle(el);
+    // checkVisibility answers from styles alone instead of forcing a layout.
+    const rendered = typeof el.checkVisibility === 'function'
+        ? el.checkVisibility()
+        : el.getClientRects().length > 0;
     return styles.display !== 'none'
         && styles.visibility !== 'hidden'
         && styles.pointerEvents !== 'none'
-        && el.getClientRects().length > 0;
+        && rendered;
 }
 
 function isMobileOverlayActuallyOpen(overlayRootOrId, openClass) {
@@ -9078,10 +9106,14 @@ function isMobileOverlayActuallyOpen(overlayRootOrId, openClass) {
     }
 
     const styles = getComputedStyle(el);
+    // checkVisibility answers from styles alone instead of forcing a layout.
+    const rendered = typeof el.checkVisibility === 'function'
+        ? el.checkVisibility()
+        : el.getClientRects().length > 0;
     return styles.display !== 'none'
         && styles.visibility !== 'hidden'
         && styles.pointerEvents !== 'none'
-        && el.getClientRects().length > 0;
+        && rendered;
 }
 
 function getMobileModalRootCandidates() {
@@ -10962,6 +10994,8 @@ function scheduleIdlePanelStylesheetWarmup() {
         for (const [shellKey, tabId] of NN_IDLE_WARM_PANEL_STYLESHEETS) {
             preloadPanelStylesheets(shellKey, tabId, { priority: 'high' });
         }
+        // Page introductions then mount in the frame their drawer opens.
+        void loadNeconyanToolTour().catch(() => { neconyanToolTourLoad = null; });
     };
 
     if ('requestIdleCallback' in window) {
@@ -18822,14 +18856,21 @@ function setNeconyanRailDrawerOpen(open, { restoreFocus = false } = {}) {
         setMobileNavOpenState(false);
     }
 
+    // Opening a settings sheet asks an already closed rail to close again; skip
+    // the motion checks then so they cannot delay the sheet's first frame.
+    const settledClosed = !shouldOpen && !wasOpen && !(rail instanceof HTMLElement && isUiClosing(rail));
     const scrim = ensureNeconyanRailScrim();
-    setUiVisibility(scrim, shouldOpen, visible => { scrim.hidden = !visible; }, { distance: 0 });
+    setUiVisibility(scrim, shouldOpen, visible => { scrim.hidden = !visible; }, {
+        distance: 0,
+        drawerPace: true,
+        animate: !settledClosed || isUiClosing(scrim),
+    });
 
     if (rail instanceof HTMLElement) {
         setUiVisibility(rail, shouldOpen, visible => {
             document.body.classList.toggle('neconyan-rail-drawer-open', visible);
             rail.inert = mobile && !visible;
-        }, { animate: mobile, edge: 'left' });
+        }, { animate: mobile && !settledClosed, edge: 'left' });
         if (mobile) {
             rail.setAttribute('aria-hidden', String(!shouldOpen));
         } else {
