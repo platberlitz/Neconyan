@@ -20,7 +20,7 @@ import { escapeHtml, eventSource, event_types, getContext } from './st-api.js';
 import { autoRecolorHintShown, characterColors, expandedCharacterRows, groupProfiles, isDomEngine, searchTerm, selectedCharacterKeys, setAutoRecolorHintShown, setCharacterColors, setGroupProfiles, setSearchTerm, setSwapMode, settings, swapMode, synchronizeEnabledLifecycle } from './state.js';
 import { analyzeColorImport, analyzeSettingsImport, analyzeStylePackImport, applyCardData, applyColorImport, applySettingsImport, applyStylePackImport, archiveStoredColorData, deleteCustomGradientPreset, disableAutoSync, enableAutoSync, exportColors, exportSettings, getArchivedColorData, getCurrentStorageScope, getCustomGradientPresets, getLegendPosition, getPinnedPersonaColors, getStorageKey, getStorageKeyForScope, getStorageLabelForKey, getStorageScopeDescriptor, getStoredColorDataFingerprint, getStylePackRegistry, getUserColorDataStore, markCardCharactersKept, markCurrentPersonaKept, normalizeColorDataEntry, normalizeToggleSettings, readCardData, removePinnedCharacterKey, renameCustomGradientPreset, renamePinnedPersonaColor, resolveCustomGradientPresetName, restoreAllSettingsToDefaults, restoreArchivedColorData, restorePinnedPersonaColor, saveCustomGradientPreset, saveData, saveLegendPosition, saveToCard, switchColorStorageScope, syncPinnedPersonaColors, updateAutoSyncUI } from './storage.js';
 import { buildStylePackEnvelope } from './style-pack-adapter.js';
-import { escapeAttr, getGoogleFontFamily, htmlToNode, normalizeEntryGradientGenerator, normalizeGoogleFontName, normalizeHexColor, normalizeManualColorInput, toast } from './utils.js';
+import { escapeAttr, getGoogleFontFamily, htmlToNode, normalizeCharacterEntry, normalizeEntryGradientGenerator, normalizeGoogleFontName, normalizeHexColor, normalizeManualColorInput, toast } from './utils.js';
 import { AUTO_HIGH_ATTRIBUTION_CONFIDENCE, cancelStreamingAttributionVerification, clearAutoAttributionVerificationQueue, getAttributionVerifyPasses, queueAutoAttributionVerificationForRenderedMessages, runAttributionVerification, verifyLatestAttributionsWithLLM, verifyVisibleAttributionsWithLLM } from './verify.js';
 
 export const DYNAMIC_CONTROL_HELP_TEXT = Object.freeze({
@@ -96,12 +96,16 @@ function captureUiMutationContext() {
     };
 }
 
-function isUiMutationContextCurrent(binding) {
+function isUiStorageContextCurrent(binding) {
     const scope = getCurrentStorageScope();
     return !!binding
         && binding.scope === scope
         && binding.storageKey === getStorageKeyForScope(scope, { persistMetadata: false })
-        && binding.cardKey === getStorageKeyForScope('card')
+        && binding.cardKey === getStorageKeyForScope('card');
+}
+
+function isUiMutationContextCurrent(binding) {
+    return isUiStorageContextCurrent(binding)
         && binding.colors === characterColors
         && binding.profiles === groupProfiles;
 }
@@ -4171,6 +4175,30 @@ export function renderStylePackRegistry() {
         : '<p class="dc-section-note">No style packs have been installed.</p>';
 }
 
+function getCharacterRemovalFingerprint(key) {
+    if (!characterColors[key]) return null;
+    const entry = normalizeCharacterEntry(characterColors[key], key);
+    if (!entry) return null;
+    // Saves replace entry objects, and recounts update display-only dialogue totals.
+    // Neither changes the character the user reviewed for deletion.
+    entry.dialogueCount = 0;
+    return JSON.stringify(entry);
+}
+
+function captureCharacterRemovalReview(keys) {
+    return {
+        context: captureUiMutationContext(),
+        chat: captureChatBinding(),
+        entries: new Map(keys.map(key => [key, getCharacterRemovalFingerprint(key)])),
+    };
+}
+
+function isCharacterRemovalReviewCurrent(review) {
+    return isUiStorageContextCurrent(review.context)
+        && isUiChatBindingCurrent(review.chat)
+        && [...review.entries].every(([key, fingerprint]) => getCharacterRemovalFingerprint(key) === fingerprint);
+}
+
 async function confirmCharacterRemoval(keys, options = {}) {
     const getCandidates = () => [...new Set(typeof options.getCandidates === 'function' ? options.getCandidates() : keys)]
         .filter(key => characterColors[key]);
@@ -4179,9 +4207,7 @@ async function confirmCharacterRemoval(keys, options = {}) {
     const removable = candidates.filter(key => !characterColors[key]?.keep);
     if (!candidates.length) { toast.info(options.emptyMessage || 'No matching characters.'); return false; }
     if (!removable.length) { toast.info(options.blockedMessage || 'All matching characters are pinned.'); return false; }
-    const binding = captureUiMutationContext();
-    const reviewedEntries = new Map(candidates.map(key => [key, characterColors[key]]));
-    const reviewedKeep = new Map(candidates.map(key => [key, characterColors[key].keep === true]));
+    const review = captureCharacterRemovalReview(candidates);
     const confirmed = await confirmReviewedAction({
         title: options.title || 'Delete characters?',
         description: `${removable.length} character${removable.length === 1 ? '' : 's'} will be deleted. ${pinned.length ? `${pinned.length} pinned ${pinned.length === 1 ? 'entry is' : 'entries are'} protected.` : 'No pinned entries are affected.'}`,
@@ -4193,11 +4219,9 @@ async function confirmCharacterRemoval(keys, options = {}) {
     if (!confirmed) return false;
     const currentCandidates = getCandidates();
     const reviewedCandidateSet = new Set(candidates);
-    if (!isUiMutationContextCurrent(binding)
+    if (!isCharacterRemovalReviewCurrent(review)
         || currentCandidates.length !== candidates.length
-        || currentCandidates.some(key => !reviewedCandidateSet.has(key))
-        || candidates.some(key => characterColors[key] !== reviewedEntries.get(key)
-            || (characterColors[key]?.keep === true) !== reviewedKeep.get(key))) {
+        || currentCandidates.some(key => !reviewedCandidateSet.has(key))) {
         return notifyUiContextChanged('The active color table or reviewed characters changed. Review the deletion again.');
     }
     return removeCharacterKeys(candidates, options);
@@ -4226,9 +4250,7 @@ async function deleteSelectedCharacters(opener) {
     const removableKeys = selectedKeys.filter(key => characterColors[key] && !characterColors[key].keep);
     if (!selectedKeys.length) { toast.info('Select at least one character.'); return; }
     if (!removableKeys.length) { toast.info('All selected characters are kept. Unkeep them before deleting.'); return; }
-    const binding = captureUiMutationContext();
-    const reviewedEntries = new Map(selectedKeys.map(key => [key, characterColors[key]]));
-    const reviewedKeep = new Map(selectedKeys.map(key => [key, characterColors[key]?.keep === true]));
+    const review = captureCharacterRemovalReview(selectedKeys);
     const confirmed = await confirmReviewedAction({
         title: `Delete ${removableKeys.length} selected character${removableKeys.length === 1 ? '' : 's'}?`,
         description: `${removableKeys.length} selected character${removableKeys.length === 1 ? '' : 's'} will be deleted. ${keptKeys.length ? `${keptKeys.length} kept ${keptKeys.length === 1 ? 'character is' : 'characters are'} protected.` : 'No kept characters are affected.'}`,
@@ -4239,11 +4261,9 @@ async function deleteSelectedCharacters(opener) {
     });
     if (!confirmed) return;
     const currentSelection = getSelectedCharacterKeys();
-    if (!isUiMutationContextCurrent(binding)
+    if (!isCharacterRemovalReviewCurrent(review)
         || currentSelection.length !== selectedKeys.length
-        || currentSelection.some((key, index) => key !== selectedKeys[index])
-        || selectedKeys.some(key => characterColors[key] !== reviewedEntries.get(key)
-            || (characterColors[key]?.keep === true) !== reviewedKeep.get(key))) {
+        || currentSelection.some((key, index) => key !== selectedKeys[index])) {
         return notifyUiContextChanged('The active color table or selected characters changed. Review the deletion again.');
     }
     const restore = createRestoreSnapshot();
