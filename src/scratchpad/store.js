@@ -2,7 +2,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 
-import { readAuthoringFileLocked, writeAuthoringFileLocked, deleteAuthoringFileLocked } from '../authoring-store.js';
+import { AUTHORING_FILE_LIMIT, readAuthoringFileLocked, writeAuthoringFileLocked, deleteAuthoringFileLocked } from '../authoring-store.js';
 import { roleplayAccountBase, roleplayAccountStamp, roleplayLease, withRoleplayAccount } from '../roleplay-store.js';
 import { MAX_GENERATION_TEXT_BYTES } from '../generation/stream-limits.js';
 
@@ -23,7 +23,7 @@ export const MAX_MAX_TOKENS = 32000;
 export const DEFAULT_MAX_TOKENS = 32000;
 export const DEFAULT_DEPTH = 15;
 export const MAX_DEPTH = 200;
-const FILE_LIMIT = 16 * 1024 * 1024;
+const FILE_LIMIT = AUTHORING_FILE_LIMIT;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const IDENTITY_LIMIT = 4 * 1024 * 1024;
 const STABLE_KEY_PATTERN = /^roleplay:([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})(?::group:([^\0\r\n]{1,256}))?$/;
@@ -399,7 +399,12 @@ export function writeBucketLocked(lease, bucket) {
         return;
     }
     const saved = { ...bucket, source: { kind: storage.kind, key: storage.key, label: bucket.source.label || '' } };
-    writeAuthoringFileLocked(lease, filename, `${JSON.stringify(saved, null, 2)}\n`, { limit: FILE_LIMIT });
+    try {
+        writeAuthoringFileLocked(lease, filename, `${JSON.stringify(saved, null, 2)}\n`, { limit: FILE_LIMIT });
+    } catch (error) {
+        if (error?.code !== 'AUTHORING_FILE_TOO_LARGE') throw error;
+        throw fail('SCRATCHPAD_STORAGE_FULL', 'Scratchpad is full for this chat. Delete old sessions or long replies, then try again.', 413);
+    }
 }
 
 export function scratchpadAccountBase(request) {
