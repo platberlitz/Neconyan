@@ -14,6 +14,7 @@ import { append, clear, h } from '../notebooks/dom.js';
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
 import { buildTextDiffMarkup } from '../text-diff.js';
 import { accountStorage } from '../util/AccountStorage.js';
+import { getCurrentUserHandle } from '../user.js';
 import * as api from './api.js';
 import { prepareChange } from './changes.js';
 import {
@@ -1237,6 +1238,64 @@ function checkbox(label, checked, onChange, hint = '') {
     return h('label', { class: 'scratchpad-check' }, input, h('span', { text: label }), hint ? h('small', { text: hint }) : null);
 }
 
+let instructionsEditorOpen = false;
+
+async function editUserInstructions() {
+    if (instructionsEditorOpen) return;
+    instructionsEditorOpen = true;
+    const owner = getCurrentUserHandle();
+    const checkAccount = () => {
+        if (getCurrentUserHandle() !== owner) throw new Error(t`The account changed. Reopen the editor.`);
+    };
+    try {
+        const { instructions } = await api.readInstructions();
+        checkAccount();
+        const selected = new Set(instructions.assistants);
+        const editor = h('textarea', { id: 'scratchpad-user-instructions', class: 'text_pole scratchpad-review-editor', rows: '8', value: instructions.text });
+        const initialText = editor.value;
+        const choices = h('div', { role: 'group', 'aria-label': t`Selected assistants` }, ASSISTANTS.map(assistant =>
+            checkbox(assistant.name, selected.has(assistant.id), checked => checked ? selected.add(assistant.id) : selected.delete(assistant.id))));
+        choices.hidden = instructions.scope === 'all';
+        const scope = h('select', { id: 'scratchpad-instructions-scope', class: 'text_pole', onchange: () => { choices.hidden = scope.value === 'all'; } },
+            h('option', { value: 'all', text: t`All assistants` }), h('option', { value: 'selected', text: t`Selected assistants` }));
+        scope.value = instructions.scope;
+        const errorText = h('p', { role: 'alert', hidden: true });
+        const content = h('div', { class: 'scratchpad-review scratchpad-section' },
+            h('h3', { text: t`Global user instructions` }),
+            h('p', { class: 'scratchpad-review-hint', text: t`Saved for your account. Applies to future replies in every Scratchpad, including existing sessions and round tables. Added alongside each assistant's prompt.` }),
+            h('div', { class: 'scratchpad-field' }, h('label', { for: scope.id, text: t`Apply to` }), scope, choices),
+            h('div', { class: 'scratchpad-field' }, h('label', { for: editor.id, text: t`User instructions` }), editor,
+                h('small', { text: t`Leave blank to turn off. Replies already in progress keep their original instructions.` })), errorText);
+        let saving = false;
+        await callGenericPopup(content, POPUP_TYPE.CONFIRM, '', {
+            wide: true, okButton: t`Save instructions`, cancelButton: t`Cancel`,
+            onClosing: async popup => {
+                if (saving) return false;
+                if (popup.result !== POPUP_RESULT.AFFIRMATIVE) return true;
+                saving = true;
+                errorText.hidden = true;
+                try {
+                    checkAccount();
+                    if (scope.value === 'selected' && !selected.size) throw new Error(t`Choose at least one assistant.`);
+                    const text = editor.value === initialText ? instructions.text : editor.value;
+                    await api.updateInstructions({ text, scope: scope.value, assistants: [...selected] }, instructions.revision);
+                    return true;
+                } catch (error) {
+                    errorText.textContent = error.message || t`User instructions could not be saved.`;
+                    errorText.hidden = false;
+                    return false;
+                } finally {
+                    saving = false;
+                }
+            },
+        });
+    } catch (error) {
+        reportError(error, t`User instructions could not be loaded.`);
+    } finally {
+        instructionsEditorOpen = false;
+    }
+}
+
 async function editAssistantPrompt(assistant) {
     const source = app.source;
     try {
@@ -1276,6 +1335,10 @@ function renderContext({ force = true } = {}) {
     if (!force && key === app.contextKey && panel.childElementCount) return;
     app.contextKey = key;
     clear(panel);
+    panel.append(h('section', { class: 'scratchpad-section' },
+        h('h3', { class: 'scratchpad-section-title', text: t`Global user instructions` }),
+        h('p', { class: 'scratchpad-muted', text: t`Your preferences across all Scratchpads, for all assistants or just the ones you choose.` }),
+        iconButton(t`Edit user instructions`, () => void editUserInstructions(), { icon: 'fa-pen' })));
     if (!app.source) {
         panel.append(h('p', { class: 'scratchpad-empty', text: t`Open a chat to choose what Scratchpad reads.` }));
         return;

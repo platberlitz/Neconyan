@@ -21,6 +21,8 @@ Scratchpad follows the chat you have open. Switch chats and it shows that chat's
 
 ## Talking
 
+Under **Context → Global user instructions → Edit user instructions**, save preferences that apply across every Scratchpad in your account. Choose **All assistants**, or **Selected assistants** and tick one or more of Miso, Taro and Nori. Your text accompanies each chosen assistant's prompt in existing and new sessions, including round tables and note discussions. It is saved on the server, so it follows your account across devices. Leave the text blank and press **Save instructions** to turn it off. Replies already in progress keep their original instructions. Session exports do not include these account-wide preferences.
+
 Under **Context → Assistant prompts**, choose **View or edit Miso's prompt** (or Taro's or Nori's) to read and edit the complete instructions, including personality and change-card formats. **Save prompt** applies your text to that assistant in the current session. New sessions in the same chat inherit your choices. **Reset to default**, followed by **Save prompt**, restores the built-in instructions. App-reference knowledge and the Notebook permissions contract are appended automatically. Defaults reflect the current chat and round-table selection; saved custom text is otherwise used as written.
 
 Pick who you are talking to under **Talking with**, type in the box at the bottom and press **Send** (or Enter on desktop; Shift+Enter adds a new line). **Quick prompts** fill the box with a ready-made request you can edit before sending: **Read the scene**, **Plot ideas**, **Catch me up**, **Continuity check** and **Lore gaps**.

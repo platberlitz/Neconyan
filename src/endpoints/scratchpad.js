@@ -23,6 +23,7 @@ import {
 import { SCRATCHPAD_JOB_TYPE, acceptScratchpadReply } from '../scratchpad/jobs.js';
 import { readScratchpadPreview, subscribeScratchpadPreview } from '../scratchpad/preview.js';
 import { buildScratchpadSystemPrompt } from '../scratchpad/prompt.js';
+import { readInstructionsLocked, updateInstructionsLocked } from '../scratchpad/instructions.js';
 import { notebookContextLocked, withNotebookPreparation, prepareNotebookProposalLocked, decideNotebookProposalLocked,
     projectNotebookProposalsLocked, notifyScratchpadNotebookResult } from '../scratchpad/notebooks.js';
 
@@ -71,6 +72,25 @@ router.post('/bucket', (request, response) => {
 router.post('/session/create', (request, response) => change(request, response, (bucket, body) => {
     createSession(bucket, { assistant: body.assistant, gender: body.gender, name: body.name, temporary: body.temporary, settings: body.settings });
 }));
+
+router.post('/instructions', (request, response) => {
+    try {
+        const instructions = withScratchpad(scratchpadAccountBase(request), readInstructionsLocked);
+        response.json({ instructions });
+    } catch (error) {
+        sendError(response, error);
+    }
+});
+
+router.post('/instructions/update', (request, response) => {
+    try {
+        const instructions = withScratchpad(scratchpadAccountBase(request), lease =>
+            updateInstructionsLocked(lease, request.body?.instructions, request.body?.expectedRevision));
+        response.json({ instructions });
+    } catch (error) {
+        sendError(response, error);
+    }
+});
 
 router.post('/prompt', (request, response) => {
     try {

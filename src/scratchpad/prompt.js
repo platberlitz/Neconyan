@@ -122,7 +122,7 @@ function changeInstructions({ lore, character, chat, members, notebook }) {
     ].join('\n');
 }
 
-export function buildScratchpadSystemPrompt({ assistant, gender, userName, characterName, capabilities = {}, help = '', participants = [], customPrompt }) {
+export function buildScratchpadSystemPrompt({ assistant, gender, userName, characterName, capabilities = {}, help = '', participants = [], customPrompt, userInstructions = '' }) {
     const persona = readAssistantPersona(assistant, gender);
     const names = { user: userName || 'User', char: persona.name };
     const story = characterName ? `the story chat with ${characterName}` : 'the story chat';
@@ -140,7 +140,8 @@ export function buildScratchpadSystemPrompt({ assistant, gender, userName, chara
         ? [customPrompt, capabilities.notebook ? changeInstructions({ notebook: true }) : ''].filter(Boolean).join('\n\n')
         : sections.filter(Boolean).join('\n\n');
     const reference = help ? `Neconyan reference for app questions (use it only when ${names.user} asks how something in Neconyan works):\n${help}` : '';
-    return { text: [instructions, SCRATCHPAD_MACRO_GUIDANCE, CHARACTER_CREATION_INSTRUCTIONS, reference].filter(Boolean).join('\n\n'), persona };
+    const preferences = userInstructions.trim() ? `The user's global Scratchpad instructions for you:\n${userInstructions}` : '';
+    return { text: [instructions, preferences, SCRATCHPAD_MACRO_GUIDANCE, CHARACTER_CREATION_INSTRUCTIONS, reference].filter(Boolean).join('\n\n'), persona };
 }
 
 export const SCRATCHPAD_CONTEXT_ACK = 'I have read the shared story context. What would you like to work on?';
