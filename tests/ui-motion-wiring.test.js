@@ -37,6 +37,14 @@ describe('surfaces that used to appear without motion', () => {
         expect(tabsJs).toContain('eventSource.on(event_types.CHAT_CHANGED, () => revealChat(document.getElementById(\'chat\')));');
     });
 
+    test('a swipe slides the reply in from the side it was swiped towards without holding up the next swipe', () => {
+        const swipe = functionBody(scriptJs, 'export async function swipe(');
+        const animateSwipe = swipe.slice(swipe.indexOf('async function animateSwipe('));
+        expect(animateSwipe).toContain('for (const block of thisMesDiv.children(\'.mes_block\')) slideSwipe(block, swipeRange < 0, pace);');
+        expect(animateSwipe).not.toContain('xStart: `${-swipeRange}px`');
+        expect(swipe).toContain('let swipeRange = (direction === SWIPE_DIRECTION.RIGHT) ? -thisMesDivWidth : thisMesDivWidth;');
+    });
+
     test('Input History fades in and fades out before it is removed', () => {
         expect(functionBody(inputHistoryJs, 'const showHistoryMenu = () => {')).toContain('revealUi(historyMenu, { distance: 0 });');
         const hide = functionBody(inputHistoryJs, 'const hideHistoryMenu = () => {');
