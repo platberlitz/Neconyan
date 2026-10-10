@@ -6,6 +6,7 @@ import {
     name1,
 } from '../../script.js';
 import { user_avatar } from '../personas.js';
+import { updateMessageTokenCounts } from '../message-token-counts.js';
 import { revealUi } from '../ui-motion.js';
 import { getCurrentUserHandle } from '../user.js';
 import { timestampToMoment } from '../utils.js';
@@ -109,7 +110,7 @@ function buildTimelineFingerprint({ avatar, groupId, branchId, personaId, settin
     });
 
     const typingPart = activeTyping
-        .map(participant => `${participant?.avatar || ''}:${participant?.name || ''}`)
+        .map(participant => JSON.stringify([participant?.avatar, participant?.name, participant?.token_count, participant?.reasoning_tokens, participant?.text]))
         .join(',');
     const statusPart = Array.from(statusAvatars)
         .filter(Boolean)
@@ -118,6 +119,7 @@ function buildTimelineFingerprint({ avatar, groupId, branchId, personaId, settin
     const settingsPart = [
         settings?.editable_messages ? '1' : '0',
         settings?.prose_polisher ? '1' : '0',
+        settings?.streaming ? '1' : '0',
     ].join(':');
 
     return hashConversationRenderFingerprint([
@@ -388,6 +390,7 @@ function createConversationMessageElement(message, { avatar, groupId, settings, 
         time.title = sentAt.format('LLLL');
     }
     meta.append(name, time);
+    if (message.role === 'character' || message.role === 'partner') updateMessageTokenCounts(meta, message.extra);
 
     const receiptText = getConversationMessageReceipt(message, avatar, { groupId });
     if (receiptText) {
@@ -684,7 +687,8 @@ export function renderConversationTimeline() {
         removeTimelineTransientNodes(timeline);
     }
 
-    if (!allMessages.length) {
+    const typingParticipants = getActiveTypingParticipants(avatar, { branchId, groupId, personaId });
+    if (!allMessages.length && !typingParticipants.length) {
         timeline.textContent = '';
         const empty = document.createElement('div');
         empty.className = 'sb-conversation-thread-empty neconyan-cat-panel';
@@ -709,7 +713,7 @@ export function renderConversationTimeline() {
         return;
     }
 
-    if (!messages.length) {
+    if (!messages.length && allMessages.length) {
         timeline.textContent = '';
         const empty = document.createElement('div');
         empty.className = 'sb-conversation-thread-empty neconyan-cat-panel';
@@ -731,8 +735,7 @@ export function renderConversationTimeline() {
 
     reconcileConversationMessageNodes(timeline, messages, { avatar, groupId, personaId, settings });
 
-    const typingParticipants = getActiveTypingParticipants(avatar, { branchId, groupId, personaId });
-    if (typingParticipants.length > 2) {
+    if (typingParticipants.length > 2 && !typingParticipants.some(participant => participant.token_count !== undefined)) {
         const typingItem = document.createElement('div');
         typingItem.className = 'sb-conversation-message sb-conversation-typing-indicator';
         typingItem.dataset.role = 'partner';
@@ -784,6 +787,12 @@ export function renderConversationTimeline() {
                     <span></span><span></span><span></span>
                 </div>
             `;
+            if (typingParticipant.token_count !== undefined) updateMessageTokenCounts(typingBubble.querySelector('.sb-conversation-message-meta'), typingParticipant, { pending: true });
+            if (settings.streaming && typingParticipant.text) {
+                const text = typingBubble.querySelector('.sb-conversation-message-text');
+                text.className = 'sb-conversation-message-text sb-conversation-live-text';
+                text.textContent = typingParticipant.text;
+            }
             typingItem.append(typingAvatarWrap, typingBubble);
             timeline.appendChild(typingItem);
         }
@@ -1509,6 +1518,11 @@ export function buildSettingsDrawerHtml() {
                     </div>
                 </div>
                 <p class="sb-conversation-field-hint">${proactiveHint}</p>
+                <label class="checkbox_label" for="sb_conv_streaming">
+                    <input id="sb_conv_streaming" type="checkbox" />
+                    <span>Streaming</span>
+                </label>
+                <p class="sb-conversation-field-hint">Show reply text as it arrives. Token counts update either way.</p>
                 <div class="sb-conversation-field-row">
                     <label class="checkbox_label" title="Let the character turn [selfie: prompt] into a Quick Image Gen request">
                         <input id="sb_conv_selfie_command_enabled" type="checkbox" />

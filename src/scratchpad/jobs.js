@@ -1,4 +1,5 @@
 import { runChatProfile, validateActiveGenerationContext } from '../generation/service.js';
+import { createMessageTokenCounter } from '../generation/message-token-counts.js';
 import { captureGenerationBinding, resolveGenerationProfile } from '../generation/profiles.js';
 import { extractProviderReasoning } from '../../public/scripts/generation-format.js';
 import { hash } from '../mewmory/core.js';
@@ -302,6 +303,7 @@ async function runParticipant(context, request, { generate, grouped = false }) {
     const artifact = grouped ? `reply:${request.replyId}` : 'reply';
     const outcome = grouped ? `outcome:${request.replyId}` : 'outcome';
     const publish = patch => publishScratchpadPreview(job.owner, job.id, { ...patch, ...(grouped ? { replyId: request.replyId } : {}) });
+    const counter = await createMessageTokenCounter(publish, { signal });
     let streamedReasoning = '';
     const stopped = () => signal?.aborted || getJob(directories, job.id)?.cancellation?.requested;
     const requireRunning = () => {
@@ -333,7 +335,11 @@ async function runParticipant(context, request, { generate, grouped = false }) {
                 stepNamespace: grouped ? `scratchpad:${request.replyId}` : '',
                 onStream: value => {
                     if (typeof value?.reasoning === 'string' && value.reasoning) streamedReasoning = value.reasoning;
-                    if (request.stream !== false) publish({ stage: 'generating', text: value?.text ?? '', reasoning: streamedReasoning });
+                    if (request.stream !== false) {
+                        const preview = { stage: 'generating', text: value?.text ?? '', reasoning: streamedReasoning };
+                        publish(preview);
+                        counter.publish(preview);
+                    }
                 },
                 context,
                 jobContext: context,
@@ -346,10 +352,12 @@ async function runParticipant(context, request, { generate, grouped = false }) {
             writeArtifact(directories, job.id, artifact, reply);
         }
         requireRunning();
-        if (!await settleReply(context, request, { state: 'done', text: reply.text, reasoning: reply.reasoning })) {
+        counter.stop();
+        const counts = counter.counts(reply.text, reply.reasoning);
+        if (!await settleReply(context, request, { state: 'done', text: reply.text, reasoning: reply.reasoning, ...counts })) {
             throw fail('SCRATCHPAD_CHANGED', 'The saved reply changed before this result could be saved.', 409);
         }
-        publish({ stage: 'done', text: reply.text, reasoning: reply.reasoning });
+        publish({ stage: 'done', text: reply.text, reasoning: reply.reasoning, ...counts });
     } catch (error) {
         const cancelled = stopped();
         const message = cancelled ? 'Stopped before it finished.' : (error?.message || 'The reply failed.');
@@ -361,6 +369,8 @@ async function runParticipant(context, request, { generate, grouped = false }) {
         }
         publish({ stage: 'failed', error: message });
         throw error;
+    } finally {
+        counter.stop();
     }
 }
 
