@@ -1,6 +1,6 @@
 import { formatRoleplayTextMessage, combineRoleplayTextPrompt } from './scripts/roleplay-text-format.js';
 import { roleplayLoadErrorMessage } from './scripts/roleplay-load-error.js';
-import { finishUiMotion, getUiSlideOptions, isUiClosing, revealUi, setUiVisibility } from './scripts/ui-motion.js';
+import { finishUiMotion, getUiDrawerEdge, getUiSlideOptions, isUiClosing, revealUi, setUiVisibility, slideSwipe } from './scripts/ui-motion.js';
 import {
     showdown,
     moment,
@@ -17548,8 +17548,13 @@ export async function swipe(event, direction, { source, repeated, message = chat
             generation = Generate('swipe', generationOptions);
         }
 
-        //Swipe in from the opposite side.
-        await animateSwipeTransition(mesId, { xStart: `${-swipeRange}px`, xEnd: `${0}px`, duration: swipeDuration });
+        // Neconyan: the new swipe slides a short way in from the side it was swiped towards.
+        // It starts on the first painted frame, so the work after the swap cannot skip it,
+        // and the next swipe does not wait for it.
+        if (swipeDuration > 50) {
+            const pace = swipeDuration / Math.max(animation_duration, 1);
+            for (const block of thisMesDiv.children('.mes_block')) slideSwipe(block, swipeRange < 0, pace);
+        }
 
         await settleSwipeReplacementAnchor(swipeViewportUpdate);
     }
@@ -18287,7 +18292,7 @@ export async function doNavbarIconClick() {
             $(el).removeClass('openDrawer').addClass('closedDrawer');
         }
         icon.toggleClass('openIcon closedIcon');
-        setUiVisibility(drawerElement, true, () => drawer.addClass('openDrawer').removeClass('closedDrawer'), { edge: drawer.hasClass('fillLeft') ? 'left' : 'right' });
+        setUiVisibility(drawerElement, true, () => drawer.addClass('openDrawer').removeClass('closedDrawer'), { edge: getUiDrawerEdge(drawerElement, true, drawer.hasClass('fillLeft') ? 'left' : 'right') });
 
         if (targetDrawerID === 'right-nav-panel') {
             focusUiSurface(drawerElement);
@@ -18307,7 +18312,7 @@ export async function doNavbarIconClick() {
             document.activeElement.blur();
         }
         icon.toggleClass('closedIcon openIcon');
-        setUiVisibility(drawerElement, false, () => drawer.removeClass('openDrawer').addClass('closedDrawer'), { edge: drawer.hasClass('fillLeft') ? 'left' : 'right' });
+        setUiVisibility(drawerElement, false, () => drawer.removeClass('openDrawer').addClass('closedDrawer'), { edge: getUiDrawerEdge(drawerElement, false, drawer.hasClass('fillLeft') ? 'left' : 'right') });
     }
 }
 
@@ -19834,7 +19839,7 @@ jQuery(async function () {
                 // Toggle icon and drawer classes
                 $('.openIcon').not('.drawerPinnedOpen').toggleClass('closedIcon openIcon');
                 for (const drawer of $openDrawers) {
-                    setUiVisibility(drawer, false, () => $(drawer).removeClass('openDrawer').addClass('closedDrawer'), { edge: drawer.classList.contains('fillLeft') ? 'left' : 'right' });
+                    setUiVisibility(drawer, false, () => $(drawer).removeClass('openDrawer').addClass('closedDrawer'), { edge: getUiDrawerEdge(drawer, false, drawer.classList.contains('fillLeft') ? 'left' : 'right') });
                 }
             }
         }
