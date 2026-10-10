@@ -119,6 +119,7 @@ function buildTimelineFingerprint({ avatar, groupId, branchId, personaId, settin
     const settingsPart = [
         settings?.editable_messages ? '1' : '0',
         settings?.prose_polisher ? '1' : '0',
+        settings?.streaming ? '1' : '0',
     ].join(':');
 
     return hashConversationRenderFingerprint([
@@ -787,6 +788,11 @@ export function renderConversationTimeline() {
                 </div>
             `;
             if (typingParticipant.token_count !== undefined) updateMessageTokenCounts(typingBubble.querySelector('.sb-conversation-message-meta'), typingParticipant, { pending: true });
+            if (settings.streaming && typingParticipant.text) {
+                const text = typingBubble.querySelector('.sb-conversation-message-text');
+                text.className = 'sb-conversation-message-text sb-conversation-live-text';
+                text.textContent = typingParticipant.text;
+            }
             typingItem.append(typingAvatarWrap, typingBubble);
             timeline.appendChild(typingItem);
         }
@@ -1512,6 +1518,11 @@ export function buildSettingsDrawerHtml() {
                     </div>
                 </div>
                 <p class="sb-conversation-field-hint">${proactiveHint}</p>
+                <label class="checkbox_label" for="sb_conv_streaming">
+                    <input id="sb_conv_streaming" type="checkbox" />
+                    <span>Streaming</span>
+                </label>
+                <p class="sb-conversation-field-hint">Show reply text as it arrives. Token counts update either way.</p>
                 <div class="sb-conversation-field-row">
                     <label class="checkbox_label" title="Let the character turn [selfie: prompt] into a Quick Image Gen request">
                         <input id="sb_conv_selfie_command_enabled" type="checkbox" />

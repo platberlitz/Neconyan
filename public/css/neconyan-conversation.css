@@ -921,6 +921,11 @@
     animation: none;
 }
 
+.sb-conversation-live-text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .sb-conversation-message[data-role='user'] .sb-conversation-message-meta {
     justify-content: flex-end;
     inline-size: 100%;
