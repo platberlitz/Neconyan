@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { assembleGenerationStream, createGenerationStream } from '../generation/stream-result.js';
+import { MAX_GENERATION_STREAM_BYTES } from '../generation/stream-limits.js';
 import sanitize from 'sanitize-filename';
 
 import { parse as parseCharacterCard } from '../character-card-parser.js';
@@ -478,8 +479,8 @@ export function createCapturingResponse({ stream = false, onChunk } = {}) {
             if (writableEnded) return false;
             const bytes = stream ? (Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk ?? ''))) : null;
             if (stream) streamBytes += bytes.length;
-            if (stream && streamBytes > 2 * 1024 * 1024) {
-                streamError = new Error('The generated stream exceeded the saved result limit.');
+            if (stream && streamBytes > MAX_GENERATION_STREAM_BYTES) {
+                streamError = new Error('The streamed response exceeded the 64 MiB transport limit.');
                 events.emit('close');
                 this.end();
                 return false;

@@ -127,6 +127,30 @@ test('a reply runs as a server job, streams a preview and settles into the saved
     assert.deepEqual(readArtifact(a.directories, accepted.job.id, 'result'), { replyId: reply.id, sessionId: session.id });
 });
 
+for (const stream of [true, false]) {
+    test(`long answers and thinking survive saving and reopening with streaming=${stream}`, async t => {
+        const a = account(t);
+        const session = startSession(a, { stream });
+        const text = 'A complete paragraph. '.repeat(6000) + 'The final answer sentence.';
+        const reasoning = 'Checking another detail. '.repeat(8000) + 'The final thinking sentence.';
+        assert.ok(Buffer.byteLength(text) > 64 * 1024);
+        assert.ok(Buffer.byteLength(reasoning) > 64 * 1024);
+        registerScratchpadJobs({ generate: async options => {
+            assert.equal(options.stream, stream);
+            if (stream) options.onStream({ text, reasoning });
+            return { text, response: { choices: [{ message: { content: text, reasoning_content: reasoning } }] } };
+        } });
+        const body = sendBody(session);
+        const accepted = await acceptScratchpadReply(a.request(body), body);
+        await runJob(getJob(a.directories, accepted.job.id));
+        assert.equal(getJob(a.directories, accepted.job.id).state, 'completed');
+        const reply = a.read(SOURCE).sessions[0].messages.at(-1);
+        assert.equal(reply.text, text);
+        assert.equal(reply.reasoning, reasoning);
+        assert.equal(reply.state, 'done');
+    });
+}
+
 for (const roundTable of [false, true]) {
     test(`streaming off is captured for every accepted reply, round table=${roundTable}`, async t => {
         const a = account(t);

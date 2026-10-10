@@ -3,8 +3,9 @@ import { EventEmitter } from 'node:events';
 import { Readable } from 'node:stream';
 import { test } from 'node:test';
 import './roleplay-transactions-fixture.js';
-import { assembleGenerationStream } from '../src/generation/stream-result.js';
-const { runBackendRequest } = await import('../src/endpoints/conversation-generation.js');
+import { assembleGenerationStream, createGenerationStream } from '../src/generation/stream-result.js';
+import { MAX_GENERATION_STREAM_BYTES, MAX_GENERATION_TEXT_BYTES } from '../src/generation/stream-limits.js';
+const { runBackendRequest, createCapturingResponse } = await import('../src/endpoints/conversation-generation.js');
 const { handleChatCompletionsGenerate } = await import('../src/endpoints/backends/chat-completions.js');
 const { forwardFetchResponse } = await import('../src/util.js');
 const { runTextGeneration } = await import('../src/generation/service.js');
@@ -156,7 +157,7 @@ test('incomplete and malformed provider streams are never completed', async () =
     await assert.rejects(runBackendRequest({}, handler, { stream: true }), /without a complete reply/);
     assert.throws(() => assembleGenerationStream('data: {invalid}\n\ndata: [DONE]\n\n'), /invalid event/);
     assert.throws(() => assembleGenerationStream('data: {"error":"provider refused"}\n\ndata: [DONE]\n\n'), /rejected/);
-    assert.throws(() => assembleGenerationStream(event({ choices: [{ delta: { content: 'A'.repeat(2 * 1024 * 1024) } }] }) + 'data: [DONE]\n\n'), /limit/);
+    assert.throws(() => assembleGenerationStream(event({ choices: [{ delta: { content: 'A'.repeat(MAX_GENERATION_TEXT_BYTES + 1) } }] }) + 'data: [DONE]\n\n'), /text limit/);
     assert.throws(() => assembleGenerationStream(event({ choices: [{ delta: { content: 'Partial' }, finish_reason: 'stop' }] })
         + 'event: error\ndata: {"message":"provider failed"}\n\n'), /rejected/);
     assert.throws(() => assembleGenerationStream(event({ choices: [{ delta: { content: 'Partial' }, finish_reason: 'stop' }] })
@@ -188,10 +189,41 @@ test('a Responses API stream without its completion event is refused', async () 
 
 test('the capture refuses an oversized streamed response before saving it', async () => {
     const handler = async (request, response) => forwardFetchResponse({ ok: true, status: 200, statusText: 'OK',
-        body: Readable.from([event({ choices: [{ delta: { content: 'A'.repeat(2 * 1024 * 1024) } }] })]) }, response, request);
-    await assert.rejects(runBackendRequest({}, handler, { stream: true }), /limit/);
-    await assert.rejects(runBackendRequest({}, (_, response) => response.end('A'.repeat(2 * 1024 * 1024 + 1)),
-        { stream: true }), /limit/);
+        body: Readable.from([event({ choices: [{ delta: { content: 'A'.repeat(MAX_GENERATION_TEXT_BYTES + 1) } }] })]) }, response, request);
+    await assert.rejects(runBackendRequest({}, handler, { stream: true }), /text limit/);
+    const parser = createGenerationStream();
+    const capture = createCapturingResponse({ stream: true });
+    const keepalive = ':' + ' '.repeat(1024 * 1024 - 3) + '\n\n';
+    for (let size = 0; size < MAX_GENERATION_STREAM_BYTES; size += Buffer.byteLength(keepalive)) {
+        parser.push(keepalive);
+        assert.equal(capture.write(keepalive), true);
+    }
+    assert.throws(() => parser.push(':\n\n'), /64 MiB transport limit/);
+    assert.equal(capture.write(':\n\n'), false);
+    assert.match(capture.streamError.message, /64 MiB transport limit/);
+    assert.equal(capture.writableEnded, true);
+});
+
+test('32,000 small answer and thinking deltas can exceed 2 MiB of transfer metadata', async () => {
+    const reasoning = 'thought '.repeat(24000);
+    const text = 'response '.repeat(8000);
+    const chunks = Array.from({ length: 32000 }, (_, index) => event({ id: 'long-generation-fixture',
+        object: 'chat.completion.chunk', model: 'fixture', choices: [{ index: 0,
+            delta: index < 24000 ? { reasoning_content: 'thought ' } : { content: 'response ' } }] }));
+    chunks.push('data: [DONE]\n\n');
+    const transferBytes = chunks.reduce((size, chunk) => size + Buffer.byteLength(chunk), 0);
+    assert.ok(transferBytes > 2 * 1024 * 1024);
+    assert.ok(transferBytes < MAX_GENERATION_STREAM_BYTES);
+    for (const live of [false, true]) {
+        let lastPreview;
+        const result = await runBackendRequest({}, (_, response) => {
+            for (const chunk of chunks) response.write(chunk);
+            response.end();
+        }, { stream: true }, live ? { onStream: value => { lastPreview = value; } } : {});
+        assert.equal(result.choices[0].message.content, text);
+        assert.equal(result.choices[0].message.reasoning_content, reasoning);
+        if (live) assert.deepEqual(lastPreview, { text, reasoning });
+    }
 });
 
 test('cancelling a bound stream closes its upstream body without a saved reply', async () => {
