@@ -25,8 +25,14 @@ afterEach(() => {
 
 function surface(visible = true) {
     const animations = [];
+    const declarations = new Map();
     const element = {
         isConnected: true, visible, inert: false,
+        style: {
+            getPropertyValue: name => declarations.get(name)?.[0] ?? '',
+            getPropertyPriority: name => declarations.get(name)?.[1] ?? '',
+            setProperty: (name, value, priority = '') => value ? declarations.set(name, [value, priority]) : declarations.delete(name),
+        },
         getClientRects: () => element.visible ? [{}] : [],
         animate: jest.fn((frames, options) => {
             const animation = { cancel: jest.fn(), frames, options };
@@ -72,6 +78,22 @@ describe('interruptible UI motion', () => {
         expect(element.visible).toBe(false);
         expect(motion.isUiClosing(element)).toBe(false);
         expect(animations[0].cancel).toHaveBeenCalledTimes(1);
+    });
+
+    test('a closing surface lets taps through to what lies beneath, then gets its own value back', () => {
+        const { element, apply, animations } = surface();
+        element.style.setProperty('pointer-events', 'auto');
+        motion.setUiVisibility(element, false, apply);
+        expect(element.style.getPropertyValue('pointer-events')).toBe('none');
+        expect(element.style.getPropertyPriority('pointer-events')).toBe('important');
+        animations[0].onfinish();
+        expect(element.style.getPropertyValue('pointer-events')).toBe('auto');
+        expect(element.style.getPropertyPriority('pointer-events')).toBe('');
+
+        const fresh = surface();
+        motion.setUiVisibility(fresh.element, false, fresh.apply);
+        motion.setUiVisibility(fresh.element, true, fresh.apply);
+        expect(fresh.element.style.getPropertyValue('pointer-events')).toBe('');
     });
 
     test('reopening cancels an obsolete hide even if its completion was already queued', () => {
@@ -152,5 +174,88 @@ describe('interruptible UI motion', () => {
         expect(element.scrollTop).toBe(375);
         expect(animations[0].cancel).toHaveBeenCalledTimes(1);
         expect(animations[0].frames.every(frame => Object.keys(frame).every(key => ['opacity', 'translate'].includes(key)))).toBe(true);
+    });
+
+    test('a second reveal leaves an arrival under way alone, and plays again once it settles', () => {
+        const { element, animations } = surface();
+        motion.revealUi(element);
+        motion.revealUi(element);
+        expect(animations).toHaveLength(1);
+        expect(animations[0].cancel).not.toHaveBeenCalled();
+        animations[0].onfinish();
+        motion.revealUi(element);
+        expect(animations).toHaveLength(2);
+    });
+
+    test('drawers glide on the iOS sheet curve for longer than menus fade', () => {
+        const drawer = surface(false);
+        motion.setUiVisibility(drawer.element, true, drawer.apply, { edge: 'left' });
+        drawer.animations[0].onfinish();
+        motion.setUiVisibility(drawer.element, false, drawer.apply, { edge: 'left' });
+        const menu = surface(false);
+        motion.setUiVisibility(menu.element, true, menu.apply);
+        menu.animations[0].onfinish();
+        motion.setUiVisibility(menu.element, false, menu.apply);
+
+        const { drawerInMs, drawerOutMs, fadeInMs, fadeOutMs } = motion.UI_MOTION_TIMING;
+        expect(drawer.animations.map(animation => animation.options.duration)).toEqual([drawerInMs, drawerOutMs]);
+        expect(menu.animations.map(animation => animation.options.duration)).toEqual([fadeInMs, fadeOutMs]);
+        expect(drawerInMs).toBeGreaterThanOrEqual(340);
+        expect(drawerOutMs).toBeGreaterThanOrEqual(240);
+        expect(drawerOutMs).toBeLessThan(drawerInMs);
+        expect(fadeInMs).toBeGreaterThanOrEqual(200);
+        expect(fadeOutMs).toBeLessThan(fadeInMs);
+        expect(drawer.animations[0].options.easing).toBe('cubic-bezier(0.32, 0.72, 0, 1)');
+        expect(menu.animations[0].options.easing).toBe('cubic-bezier(0.22, 1, 0.36, 1)');
+    });
+
+    test('a scrim paced with its drawer fades on the drawer timing', () => {
+        const { element, apply, animations } = surface(false);
+        motion.setUiVisibility(element, true, apply, { distance: 0, drawerPace: true });
+        expect(animations[0].frames).toEqual([{ opacity: 0 }, { opacity: 1 }]);
+        expect(animations[0].options).toMatchObject({ duration: motion.UI_MOTION_TIMING.drawerInMs, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' });
+    });
+
+    test('a surface that does not travel leaves the translate that positions it alone', () => {
+        const { element, apply, animations } = surface(false);
+        motion.setUiVisibility(element, true, apply, { distance: 0 });
+        element.opacity = '0.4';
+        element.translate = '0px -100%';
+        motion.setUiVisibility(element, false, apply, { distance: 0 });
+        expect(animations[1].frames).toEqual([{ opacity: '0.4' }, { opacity: 0 }]);
+        expect(animations.flatMap(animation => animation.frames).some(frame => 'translate' in frame)).toBe(false);
+
+        const reveal = surface(true);
+        motion.revealUi(reveal.element, { distance: 0 });
+        expect(reveal.animations[0].frames).toEqual([{ opacity: 0 }, { opacity: 1 }]);
+    });
+
+    test('a blurred overlay fades in place while only its panel slides from the edge', () => {
+        const { element, apply, animations } = surface(false);
+        const panel = surface(false);
+        motion.setUiVisibility(element, true, apply, { edge: 'right', slideTarget: panel.element });
+        expect(animations[0].frames).toEqual([{ opacity: 0 }, { opacity: 1 }]);
+        expect(panel.animations[0].frames).toEqual([{ translate: '100% 0' }, { translate: '0 0' }]);
+        expect(panel.animations[0].options.duration).toBe(animations[0].options.duration);
+        animations[0].onfinish();
+        expect(panel.animations[0].cancel).toHaveBeenCalledTimes(1);
+
+        motion.setUiVisibility(element, false, apply, { edge: 'right', slideTarget: panel.element });
+        expect(panel.animations[1].frames).toEqual([{ translate: '0 0' }, { translate: '100% 0' }]);
+        expect(element.visible).toBe(true);
+        panel.element.translate = '40px 0px';
+        motion.setUiVisibility(element, true, apply, { edge: 'right', slideTarget: panel.element });
+        expect(panel.animations[1].cancel).toHaveBeenCalledTimes(1);
+        expect(panel.animations[2].frames[0]).toEqual({ translate: '40px 0px' });
+        expect(element.visible).toBe(true);
+    });
+
+    test('visibility checks read styles instead of forcing a layout when the browser can', () => {
+        const { element, apply, animations } = surface(true);
+        element.checkVisibility = jest.fn(() => true);
+        element.getClientRects = jest.fn(() => { throw new Error('forced layout'); });
+        motion.setUiVisibility(element, false, apply, { edge: 'left' });
+        expect(element.checkVisibility).toHaveBeenCalledWith({ visibilityProperty: true });
+        expect(animations).toHaveLength(1);
     });
 });

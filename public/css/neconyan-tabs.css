@@ -2151,7 +2151,6 @@ body.sb-shell-resizing * {
     border-bottom: 1px solid color-mix(in srgb, var(--sb-shell-border) 80%, transparent);
     background: transparent;
     text-align: left;
-    transition: padding var(--sb-transition-fast), gap var(--sb-transition-fast);
 }
 
 .sb-shell-header::before {

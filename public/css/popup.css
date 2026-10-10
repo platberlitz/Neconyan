@@ -32,17 +32,17 @@ dialog {
     -webkit-font-smoothing: subpixel-antialiased;
 
     /* Variables setup */
-    --popup-animation-speed: 180ms;
-    --popup-close-speed: 120ms;
+    --popup-animation-speed: 220ms;
+    --popup-close-speed: 160ms;
 }
 
 /** Popup styles applied to the main popup */
 .popup--animation-fast {
-    --popup-animation-speed: 180ms;
+    --popup-animation-speed: 220ms;
 }
 
 .popup--animation-slow {
-    --popup-animation-speed: 240ms;
+    --popup-animation-speed: 300ms;
 }
 
 .popup--animation-none {
@@ -134,13 +134,13 @@ body.no-blur .popup[open]::backdrop {
 }
 
 @keyframes popup-arrive {
-    from { opacity: 0; translate: 0 6px; }
-    to { opacity: 1; translate: 0 0; }
+    from { opacity: 0; scale: 0.96; }
+    to { opacity: 1; scale: 1; }
 }
 
 @keyframes popup-leave {
-    from { opacity: 1; translate: 0 0; }
-    to { opacity: 0; translate: 0 3px; }
+    from { opacity: 1; scale: 1; }
+    to { opacity: 0; scale: 0.98; }
 }
 
 body.reduced-motion .popup[opening],

@@ -48,7 +48,7 @@ export function setConversationBackdropVisible() {
 
     const settingsOpen = drawer instanceof HTMLElement && !drawer.hidden && !isUiClosing(drawer);
     const palsOpen = palsRail instanceof HTMLElement && palsRail.dataset.open === 'true' && !isUiClosing(palsRail);
-    setUiVisibility(backdrop, settingsOpen || palsOpen, visible => { backdrop.hidden = !visible; }, { distance: 0 });
+    setUiVisibility(backdrop, settingsOpen || palsOpen, visible => { backdrop.hidden = !visible; }, { distance: 0, drawerPace: true });
 }
 
 export function setPalsRailOpen(open) {
