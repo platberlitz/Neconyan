@@ -92,6 +92,8 @@ test('a reply runs as a server job, streams a preview and settles into the saved
         seen = options;
         options.onStream({ text: 'Nova is', reasoning: 'thinking' });
         assert.equal(readScratchpadPreview(a.f.scope.owner, options.jobContext.job.id).text, 'Nova is');
+        options.onStream({ text: 'Nova is hiding' });
+        assert.equal(readScratchpadPreview(a.f.scope.owner, options.jobContext.job.id).reasoning, 'thinking', 'text-only chunks keep the thinking preview');
         return { text: '  Nova is hiding the letter.  ', response: { choices: [{ message: { reasoning_content: 'thought it through' } }] } };
     } });
     const body = sendBody(session);
@@ -123,6 +125,57 @@ test('a reply runs as a server job, streams a preview and settles into the saved
     assert.match(seen.messages[1].content, /<story_context>\n#1 User: Original/);
     assert.equal(seen.messages.at(-1).content, 'What is Nova hiding in this scene?');
     assert.deepEqual(readArtifact(a.directories, accepted.job.id, 'result'), { replyId: reply.id, sessionId: session.id });
+});
+
+for (const roundTable of [false, true]) {
+    test(`streaming off is captured for every accepted reply, round table=${roundTable}`, async t => {
+        const a = account(t);
+        const session = startSession(a, { stream: false, roundTable });
+        assert.equal(a.read(SOURCE).sessions[0].settings.stream, false);
+        let calls = 0;
+        registerScratchpadJobs({ generate: async options => {
+            calls++;
+            assert.equal(options.stream, false);
+            options.onStream({ text: 'Do not show a partial reply.', reasoning: 'Private until finished.' });
+            const preview = readScratchpadPreview(a.f.scope.owner, options.jobContext.job.id);
+            for (const reply of preview.replies ? Object.values(preview.replies) : [preview]) {
+                if (reply.stage === 'generating') assert.equal(reply.text + reply.reasoning, '');
+            }
+            return { text: 'Finished reply.', response: { choices: [{ message: { reasoning_content: 'Finished thinking.' } }] } };
+        } });
+        const body = sendBody(session);
+        const accepted = await acceptScratchpadReply(a.request(body), body);
+        a.mutate(SOURCE, bucket => store.updateSession(bucket, session.id, { settings: { stream: true } }));
+        await runJob(getJob(a.directories, accepted.job.id));
+        assert.equal(getJob(a.directories, accepted.job.id).state, 'completed');
+        assert.equal(calls, roundTable ? 3 : 1);
+        for (const reply of a.read(SOURCE).sessions[0].messages.filter(message => message.role === 'assistant')) {
+            assert.equal(reply.text, 'Finished reply.');
+            assert.equal(reply.reasoning, 'Finished thinking.');
+        }
+    });
+}
+
+test('streaming defaults on and a saved choice survives unrelated settings and new sessions', t => {
+    const a = account(t);
+    assert.equal(store.normaliseSettings({}).stream, true);
+    assert.equal(store.normaliseSettings({ stream: 'false' }).stream, true);
+    const session = startSession(a, { stream: false });
+    a.mutate(SOURCE, bucket => store.updateSession(bucket, session.id, { settings: { depth: 3 } }));
+    assert.equal(a.read(SOURCE).sessions[0].settings.stream, false);
+    const next = a.mutate(SOURCE, bucket => store.createSession(bucket));
+    assert.equal(next.settings.stream, false);
+});
+
+test('finished thinking is retained across provider formats when streaming is off', () => {
+    const cases = [
+        ['claude', { content: [{ type: 'thinking', thinking: 'Consider the scene.' }, { type: 'text', text: 'Answer.' }] }],
+        ['makersuite', { responseContent: { parts: [{ thought: true, text: 'Consider the scene.' }, { text: 'Answer.' }] } }],
+        ['mistralai', { choices: [{ message: { content: [{ thinking: [{ text: 'Consider the scene.' }] }] } }] }],
+        ['custom', { choices: [{ message: { reasoning_content: 'Consider the scene.' } }] }],
+    ];
+    for (const [source, response] of cases) assert.equal(jobs.reasoningFrom({ response, generation: { backend: 'chat', source } }), 'Consider the scene.');
+    assert.equal(jobs.reasoningFrom({ response: { thinking: 'Consider the scene.' }, generation: { backend: 'text', source: 'ollama' } }), 'Consider the scene.');
 });
 
 function sharedNote(a) {
