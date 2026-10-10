@@ -3318,6 +3318,41 @@ body.neconyan #sb-restore-tour-invitations {
 /* Paint only: the controller keeps chat geometry and its scrollbar intact. */
 #neconyan-bubbles-bottom-boundary { position: fixed; pointer-events: none; box-sizing: border-box; z-index: 29; isolation: isolate; }
 #neconyan-bubbles-bottom-boundary > div { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+/* Native and extension arrows centre the same glyph within their existing hit boxes. */
+body.neconyan.whisperstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes:not(.smallSysMes, [is_system='true']) :is(.swipe_left, .swipe_right, .deep-swipe-left-outer, .deep-swipe-right) {
+    align-items: center; justify-content: center; line-height: 1 !important; font-size: 20px;
+}
+/* Whisper reading sections share the card width below the header on phones and tablets. */
+@media (max-width: 1000px) {
+    body.neconyan.whisperstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes:not(.smallSysMes, [is_system='true']) {
+        --moonlit-sb-swipe-edge-offset: 12px;
+        > .mes_block {
+            display: grid; grid-column: 1 / -1; grid-row: 1 / span 7;
+            grid-template-columns: subgrid; grid-template-rows: subgrid;
+            > :not(.ch_name) { grid-column: 1 / -1; min-width: 0; text-align: left; }
+            > .ch_name {
+                grid-column: 2; grid-row: 1; min-width: 0;
+                > .flex-container.flex1 { flex: 0 1 auto; }
+            }
+        }
+        /* Raise controls without increasing the existing footer reservation. */
+        &:is(.last_mes, :has(.deep-swipe-right, .deep-swipe-counter), body.swipeAllMessages *) {
+            padding-bottom: calc(var(--moonlit-sb-swipe-control-size) + 16px) !important;
+        }
+        .swipes-counter {
+            box-sizing: border-box; block-size: var(--moonlit-sb-swipe-control-size);
+            inline-size: var(--moonlit-sb-swipe-counter-width);
+            min-inline-size: var(--moonlit-sb-swipe-counter-width);
+            max-inline-size: var(--moonlit-sb-swipe-counter-width);
+            padding: 0; margin: 0 !important;
+        }
+        /* Earlier assistant messages reuse the native counter beside separate Deep Swipe arrows. */
+        &:not(.last_mes):has(> .deep-swipe-right) > .swipeRightBlock:not(.deep-swipe-right-block) {
+            block-size: var(--moonlit-sb-swipe-control-size); align-items: center; justify-content: center;
+            > .swipe_right { display: none; }
+        }
+    }
+}
 /* Echo retains the renderer's avatar/block siblings; only its backing plate is inert. */
 @media (min-width: 769px) {
     body.neconyan.echostyle:not(.sbterm) #chat .mes.nn-echo-layout { isolation: isolate; }

@@ -5,6 +5,29 @@
 }
 
 @media screen and (min-width: 1001px) {
+    /* Whisper lifts its block without shortening the enclosing card. */
+    body.neconyan.whisperstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm):not(.sbstory) #chat .mes:not(.smallSysMes, [is_system='true']) > .mes_block {
+        margin-bottom: calc(var(--custom-ChatAvatar) * (-1 + 0.325));
+    }
+    body.neconyan.whisperstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm):not(.sbstory) #chat .mes.lastInContext:not(.smallSysMes, [is_system='true']) > .mes_block {
+        margin-bottom: calc(var(--custom-ChatAvatar) * (-1 + 0.17));
+    }
+    body.neconyan.whisperstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm):not(.sbstory) #chat .mes:not(.smallSysMes, [is_system='true']):has(> .nn-response-controls, > .mes_block > .nn-response-controls) {
+        padding-bottom: 0 !important;
+    }
+    /* Equal slots remove native/extension width drift; translate preserves reserved space. */
+    body.neconyan.whisperstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes:not(.smallSysMes, [is_system='true']) .nn-response-controls {
+        translate: 0 -4px;
+        .swipeRightBlock {
+            gap: 4px !important;
+            inline-size: auto !important; min-inline-size: 0 !important; max-inline-size: none !important;
+        }
+        .swipes-counter {
+            flex: 0 0 44px; inline-size: 44px !important;
+            min-inline-size: 44px !important; max-inline-size: 44px !important;
+            padding: 0; margin: 0 !important; justify-content: center;
+        }
+    }
     /* Echo paints the manager-owned inside footer; it remains after media, files and bias. */
     body.neconyan.echostyle #chat .mes.nn-echo-layout > .mes_block > .nn-echo-reading-footer {
         box-sizing: border-box; width: 100%; padding: 6px 14px;

@@ -727,6 +727,7 @@ body.neconyan img.neconyan-message-sleeper {
     pointer-events: auto; cursor: pointer; touch-action: pan-y; user-select: none; object-fit: contain;
 }
 body.neconyan img.neconyan-message-sleeper.is-user { left: auto; right: -17px; }
+body.neconyan.whisperstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm):not(.sbstory) #chat .mes:not(.smallSysMes, [is_system='true']) > .neconyan-message-sleeper.is-user { right: -13px; }
 body.neconyan img.neconyan-message-sleeper.is-mirrored { scale: -1 1; }
 body.neconyan img.neconyan-message-sleeper:focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 2px; }
 
