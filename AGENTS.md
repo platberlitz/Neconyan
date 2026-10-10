@@ -20,6 +20,15 @@ UI work, in short:
 - Local preview that serves `public/` live: `node server.js --configPath <config> --dataRoot <data> --port <port> --browserLaunchEnabled false`. With `performance.frontendBuild.enabled: true` the server serves the hashed build in `dist/frontend` instead, so either run `npm run build:frontend` or disable that flag while iterating.
 - Translations: `node scripts/build-interface-locales.js` inventories UI strings; `--list` prints the keys and `--write-catalogue` refreshes `public/locales/neconyan/en.json`, neither touching a translator. Set `NECONYAN_TRANSLATION_COMMAND` to a translator command to fill `public/locales/neconyan/<lang>.json`, and `NECONYAN_TRANSLATION_LANGS=pt-pt` (comma-separated) to fill one language at a time. Coverage audit: `node --test tests/locale-coverage.node.js`.
 
+## Browser CI rerun scope
+
+- Choose the rerun scope from what changed. Preserve passing shard results (a shard is one test group); an isolated failure isn't a reason to restart the whole suite.
+- With no code changes, inspect the failure first. If the evidence supports an intermittent failure, rerun only failed jobs with `gh run rerun <run-id> --failed`.
+- After an isolated test fix, run the affected tests or shards against the new commit. GitHub's failed-job rerun reuses the original commit and cannot validate later fixes. A new commit alone doesn't justify another full run.
+- Use a full rerun when application behaviour, shared test setup or workflow changes have broad or uncertain effects. State the reason before starting it.
+- If a failure repeats, return to diagnosis before another retry. Keep the logs and distinguish a corrected test from an unchanged test that passed on retry; don't weaken assertions or skip failures to get a green result.
+- Record the commit and scope each result covers. Reuse unaffected results honestly and keep the owner informed of what still needs checking, rather than repeatedly spending an hour on the entire matrix.
+
 ## CSS shipping rules
 
 - Blocking stylesheets share a 1 MiB budget and sit within a couple of KiB of it. Delete dead rules before adding; the phone-gated sheets (`mobile-styles.css`, `neconyan-paper-theme.css`, `neconyan-mobile-shell.css`) do not count towards bytes. Non-critical styles can go in a deferred sheet instead (`<link rel="preload" as="style" data-sb-deferred-style data-sb-media="all">` in `public/index.html`, as `neconyan-menus.css` and `neconyan-help.css` do); budgets ignore it, but a new sheet with transitions must be listed in `tests/ui-motion-css-compliance.test.js`.
