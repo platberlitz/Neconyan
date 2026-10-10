@@ -201,6 +201,26 @@ test('the reply limit defaults to 32000 without replacing saved limits', t => {
     assert.equal(a.mutate(SOURCE, bucket => store.createSession(bucket)).settings.maxTokens, 16000);
 });
 
+test('long replies fit with room to spare and a full Scratchpad file explains what to do', t => {
+    const a = account(t);
+    const session = startSession(a);
+    const long = 'x'.repeat(store.MAX_MESSAGE_BYTES);
+    a.mutate(SOURCE, bucket => {
+        const target = bucket.sessions.find(item => item.id === session.id);
+        for (let index = 0; index < 6; index++) {
+            target.messages.push({ id: `long-${index}`, role: 'assistant', assistant: 'taro', state: 'done', text: long, reasoning: long, created: new Date().toISOString() });
+        }
+    });
+    assert.equal(a.read(SOURCE).sessions[0].messages.length, 6);
+    assert.throws(() => a.mutate(SOURCE, bucket => {
+        const target = bucket.sessions.find(item => item.id === session.id);
+        for (let index = 6; index < 10; index++) {
+            target.messages.push({ id: `long-${index}`, role: 'assistant', assistant: 'taro', state: 'done', text: long, reasoning: long, created: new Date().toISOString() });
+        }
+    }), error => error.code === 'SCRATCHPAD_STORAGE_FULL' && error.status === 413 && /Delete old sessions/.test(error.message));
+    assert.equal(a.read(SOURCE).sessions[0].messages.length, 6);
+});
+
 test('finished thinking is retained across provider formats when streaming is off', () => {
     const cases = [
         ['claude', { content: [{ type: 'thinking', thinking: 'Consider the scene.' }, { type: 'text', text: 'Answer.' }] }],
