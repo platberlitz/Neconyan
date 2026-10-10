@@ -1,5 +1,5 @@
 import { createBubblesBottomBoundary } from './bubbles-bottom-boundary.js';
-import { finishUiMotion, getUiSlideOptions, isUiClosing, revealUi, setUiVisibility } from './ui-motion.js';
+import { finishUiMotion, getUiDrawerEdge, getUiSlideOptions, isUiClosing, revealUi, setUiVisibility } from './ui-motion.js';
 import { DEFAULT_SCROLL_EDGE_SETTLE_DELAYS, jumpScrollElementToEdge } from './chat-scroll-edges.js';
 import {
     clampMobileShellText as clampText,
@@ -9408,7 +9408,7 @@ function forceDrawerState(drawerRootOrId, shouldOpen, drawerIconOrSelector = nul
         el.classList.toggle('closedDrawer', !visible);
         queueMobileModalStateSync();
         queueTopbarPageStateSync();
-    }, { edge: el.classList.contains('fillLeft') ? 'left' : 'right' });
+    }, { edge: getUiDrawerEdge(el, Boolean(shouldOpen), el.classList.contains('fillLeft') ? 'left' : 'right') });
     syncDrawerIconState(drawerIconOrSelector, shouldOpen);
     queueMobileModalStateSync();
     queueTopbarPageStateSync();

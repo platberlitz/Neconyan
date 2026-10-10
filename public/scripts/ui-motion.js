@@ -12,6 +12,54 @@ export const UI_MOTION_TIMING = Object.freeze({
     drawerOutMs: 280,
 });
 let preferencesBound = false;
+// A page follows the control that opened it: down from the top bar, out of the sidebar.
+const ORIGIN_EDGES = [['#top-bar', 'top'], ['#neconyan-workspace-rail', 'left']];
+// Some controls open their page after an import or a settled state, so the tap stays valid briefly.
+const ORIGIN_WINDOW_MS = 1000;
+let lastOrigin = null;
+
+function rememberOrigin(event) {
+    const target = typeof event.target?.closest === 'function' ? event.target : null;
+    const edge = target ? ORIGIN_EDGES.find(([selector]) => target.closest(selector))?.[1] : null;
+    lastOrigin = edge ? { edge, at: performance.now() } : null;
+}
+
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    document.addEventListener('click', rememberOrigin, true);
+}
+
+/**
+ * The edge a drawer page travels on. Opening takes the side of the control that was
+ * just pressed, or the page's own side; closing returns along the edge it opened from.
+ */
+export function getUiDrawerEdge(element, open, fallback) {
+    if (!element?.dataset) return fallback;
+    if (open) {
+        const origin = lastOrigin && performance.now() - lastOrigin.at < ORIGIN_WINDOW_MS ? lastOrigin.edge : null;
+        lastOrigin = null;
+        element.dataset.uiMotionEdge = origin ?? fallback;
+    }
+    return element.dataset.uiMotionEdge || fallback;
+}
+
+/**
+ * While a page travels to or from the bar it belongs to, that bar stays in front,
+ * so the page emerges from under the top bar or out of the sidebar edge.
+ * Returns a function that restores the bar.
+ */
+function raiseOriginBar(element, edge) {
+    if (element.dataset?.uiMotionEdge !== edge) return () => {};
+    const bar = document.querySelector(ORIGIN_EDGES.find(([, side]) => side === edge)?.[0] ?? null);
+    if (!bar || bar.contains(element)) return () => {};
+    let layer = element;
+    for (let node = element; node && node !== document.body; node = node.parentElement) {
+        if (getComputedStyle(node).zIndex !== 'auto') layer = node;
+    }
+    const value = bar.style.getPropertyValue('z-index');
+    const priority = bar.style.getPropertyPriority('z-index');
+    bar.style.setProperty('z-index', String((Number.parseInt(getComputedStyle(layer).zIndex, 10) || 0) + 1), 'important');
+    return () => bar.style.setProperty('z-index', value, priority);
+}
 
 export function prefersReducedUiMotion() {
     return document.body?.classList.contains('reduced-motion')
@@ -164,6 +212,7 @@ export function setUiVisibility(element, open, applyVisibility, { distance = 6, 
             duration: drawerTiming ? UI_MOTION_TIMING.drawerInMs : UI_MOTION_TIMING.fadeInMs,
             easing,
             linked,
+            restore: surfaceSlide ? raiseOriginBar(element, edge) : undefined,
         });
     } else {
         const wasInert = element.inert;
@@ -172,6 +221,7 @@ export function setUiVisibility(element, open, applyVisibility, { distance = 6, 
         element.inert = true;
         // Inert content still wins the hit test, so a fading surface would swallow taps meant for what lies beneath.
         element.style.setProperty('pointer-events', 'none', 'important');
+        const lowerOriginBar = surfaceSlide ? raiseOriginBar(element, edge) : () => {};
         play(element, [interrupted ?? restFrame, hiddenFrame], {
             duration: drawerTiming ? UI_MOTION_TIMING.drawerOutMs : UI_MOTION_TIMING.fadeOutMs,
             easing,
@@ -180,6 +230,7 @@ export function setUiVisibility(element, open, applyVisibility, { distance = 6, 
             restore: () => {
                 element.inert = wasInert;
                 element.style.setProperty('pointer-events', pointerEvents, pointerPriority);
+                lowerOriginBar();
             },
             complete: () => applyVisibility(false),
         });

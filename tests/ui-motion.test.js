@@ -1,7 +1,7 @@
 /* global globalThis */
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 
-let motion, media, bodyClasses, preferenceChanged, pendingFrames;
+let motion, media, bodyClasses, preferenceChanged, pendingFrames, pressed, bars;
 const elements = [];
 
 beforeEach(async () => {
@@ -9,11 +9,16 @@ beforeEach(async () => {
     bodyClasses = new Set();
     pendingFrames = null;
     media = { matches: false, addEventListener: jest.fn() };
-    globalThis.document = { body: { classList: { contains: value => bodyClasses.has(value) } } };
+    bars = {};
+    globalThis.document = {
+        body: { classList: { contains: value => bodyClasses.has(value) } },
+        addEventListener: (type, listener) => { if (type === 'click') pressed = listener; },
+        querySelector: selector => bars[selector] ?? null,
+    };
     globalThis.window = { matchMedia: () => media };
     // Frames run at once unless a test queues them to step through the first paint.
     globalThis.requestAnimationFrame = callback => pendingFrames ? pendingFrames.push(callback) : callback();
-    globalThis.getComputedStyle = element => ({ visibility: 'visible', opacity: element.opacity ?? '1', translate: element.translate ?? '0px 0px' });
+    globalThis.getComputedStyle = element => ({ visibility: 'visible', opacity: element.opacity ?? '1', translate: element.translate ?? '0px 0px', zIndex: element.zIndex ?? 'auto' });
     globalThis.MutationObserver = class {
         constructor(callback) { preferenceChanged = callback; }
         observe() {}
@@ -309,5 +314,68 @@ describe('interruptible UI motion', () => {
         motion.setUiVisibility(element, false, apply, { edge: 'left' });
         expect(element.checkVisibility).toHaveBeenCalledWith({ visibilityProperty: true });
         expect(animations).toHaveLength(1);
+    });
+});
+
+describe('motion that follows what was pressed', () => {
+    const press = selector => pressed({ target: { closest: candidate => candidate === selector ? {} : null } });
+
+    test('a page opened from the top bar drops from it and goes back up when it closes', () => {
+        const page = { dataset: {} };
+        press('#top-bar');
+        expect(motion.getUiDrawerEdge(page, true, 'left')).toBe('top');
+        expect(motion.getUiDrawerEdge(page, false, 'left')).toBe('top');
+    });
+
+    test('a page opened from the sidebar slides out of it, and one opened elsewhere keeps its own side', () => {
+        const page = { dataset: {} };
+        press('#neconyan-workspace-rail');
+        expect(motion.getUiDrawerEdge(page, true, 'right')).toBe('left');
+        press('#chat');
+        expect(motion.getUiDrawerEdge(page, true, 'right')).toBe('right');
+        expect(motion.getUiDrawerEdge(page, false, 'right')).toBe('right');
+    });
+
+    test('a tap counts for one opening and only for a moment', () => {
+        const now = jest.spyOn(performance, 'now').mockReturnValue(1000);
+        const page = { dataset: {} };
+        press('#top-bar');
+        expect(motion.getUiDrawerEdge(page, true, 'left')).toBe('top');
+        expect(motion.getUiDrawerEdge(page, true, 'left')).toBe('left');
+        press('#top-bar');
+        now.mockReturnValue(2500);
+        expect(motion.getUiDrawerEdge(page, true, 'left')).toBe('left');
+        now.mockRestore();
+    });
+
+    test('the top bar stays in front of a page travelling to or from it, then gets its own value back', () => {
+        const { element, apply, animations } = surface(false);
+        const holder = { zIndex: '1100', parentElement: globalThis.document.body };
+        Object.assign(element, { dataset: {}, parentElement: holder });
+        const topBar = surface();
+        topBar.element.contains = () => false;
+        bars['#top-bar'] = topBar.element;
+        press('#top-bar');
+        const edge = motion.getUiDrawerEdge(element, true, 'left');
+        motion.setUiVisibility(element, true, apply, { edge });
+        expect(animations[0].frames[0]).toEqual({ opacity: 1, translate: '0 -100%' });
+        expect(topBar.element.style.getPropertyValue('z-index')).toBe('1101');
+        expect(topBar.element.style.getPropertyPriority('z-index')).toBe('important');
+        animations[0].onfinish();
+        expect(topBar.element.style.getPropertyValue('z-index')).toBe('');
+        motion.setUiVisibility(element, false, apply, { edge: motion.getUiDrawerEdge(element, false, 'left') });
+        expect(topBar.element.style.getPropertyValue('z-index')).toBe('1101');
+        animations[1].onfinish();
+        expect(topBar.element.style.getPropertyValue('z-index')).toBe('');
+    });
+
+    test('a page on its own side leaves the bars where they are', () => {
+        const { element, apply } = surface(false);
+        element.dataset = {};
+        const topBar = surface();
+        topBar.element.contains = () => false;
+        bars['#top-bar'] = topBar.element;
+        motion.setUiVisibility(element, true, apply, { edge: motion.getUiDrawerEdge(element, true, 'left') });
+        expect(topBar.element.style.getPropertyValue('z-index')).toBe('');
     });
 });
