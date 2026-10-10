@@ -1,3 +1,4 @@
+/* global globalThis */
 import { describe, expect, jest, test } from '@jest/globals';
 
 async function importHelper({ resolvedProfileId = 'profile-1', result = { applied: true, customCss: '.done {}', previousVersion: 3, version: 4, settingsRevision: 9 } } = {}) {
@@ -53,12 +54,41 @@ describe('Neconyan Custom CSS AI helper', () => {
         expect(messages[1].content).toContain('Replace mode: return the complete updated stylesheet');
     });
 
+    test('reads active body colours and inherited fonts, while respecting an explicit snapshot element', async () => {
+        const { helper } = await importHelper();
+        const body = {};
+        const root = {};
+        const oldDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+        const oldComputedStyle = Object.getOwnPropertyDescriptor(globalThis, 'getComputedStyle');
+        Object.defineProperty(globalThis, 'document', { configurable: true, value: { body, documentElement: root } });
+        Object.defineProperty(globalThis, 'getComputedStyle', { configurable: true, value: element => ({
+            getPropertyValue: name => ({
+                '--neco-ginger': element === body ? ' #aabbcc ' : '',
+                '--neco-on-accent': element === body ? '#111111' : '',
+                '--sb-font-display': 'Fredoka One',
+            })[name] ?? '',
+        }) });
+        try {
+            const [, user] = helper.buildCustomCssAIMessages({ instruction: 'Rounder buttons' });
+            expect(user.content).toContain('--neco-ginger: #aabbcc;');
+            expect(user.content).toContain('--neco-on-accent: #111111;');
+            expect(user.content).toContain('--sb-font-display: Fredoka One;');
+            expect(helper.getCustomCssPaletteSnapshot(root)).toBe('--sb-font-display: Fredoka One;');
+            expect(helper.getCustomCssPaletteSnapshot(null)).toBe('');
+        } finally {
+            if (oldDocument) Object.defineProperty(globalThis, 'document', oldDocument);
+            else delete globalThis.document;
+            if (oldComputedStyle) Object.defineProperty(globalThis, 'getComputedStyle', oldComputedStyle);
+            else delete globalThis.getComputedStyle;
+        }
+    });
+
     test('append requests only additions and describes the current shell and both chat renderers', async () => {
         const { helper } = await importHelper();
         const [system, user] = helper.buildCustomCssAIMessages({ instruction: 'Larger DM text', mode: 'append', currentCss: '.existing {}' });
         expect(user.content).toContain('Append mode: return only the new rules');
         expect(user.content).toContain('.existing {}');
-        for (const hook of ['data-sb-theme', 'windows-aero', '#sb-mobile-nav-content', '#neconyan-workspace-rail', '#sb-bottom-chat-bar', '#chat .mes', '.sb-conversation-message-text', ':focus-visible', ':not(.reduced-motion)', '44px']) {
+        for (const hook of ['data-sb-theme', 'windows-aero', '#sb-mobile-nav-content', '#neconyan-workspace-rail', '#sb-bottom-chat-bar', '#chat .mes', '.sb-conversation-message-text', ':focus-visible', ':not(.reduced-motion)', '44px', '--neco-on-accent', '--sb-font-display', '--mainFontSize', '.custom-example', 'Append or Replace']) {
             expect(system.content).toContain(hook);
         }
     });

@@ -12,7 +12,8 @@ export {
     normalizeGeneratedCustomCss,
 } from './neconyan-custom-css-core.js';
 
-export function getCustomCssPaletteSnapshot(root = typeof document === 'undefined' ? null : document.documentElement) {
+// Neconyan palettes are declared on body; reading only :root misses the active colours.
+export function getCustomCssPaletteSnapshot(root = typeof document === 'undefined' ? null : (document.body || document.documentElement)) {
     if (!root || typeof getComputedStyle !== 'function') {
         return '';
     }

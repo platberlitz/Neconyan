@@ -78,6 +78,52 @@ async function dialogue(page) {
 }
 
 for (const { width, height, tone } of [{ width: 1280, height: 900, tone: 'dark' }, { width: 393, height: 852, tone: 'light' }]) {
+    test(`CSS generation reads the active ${tone} body palette at ${width}px`, async ({ app }, info) => {
+        const account = await app.account({ phone: width < 768 });
+        const page = await account.context.newPage();
+        await page.setViewportSize({ width, height });
+        await fixture(page, tone, app.url);
+        const palette = await page.evaluate(async () => {
+            const { buildCustomCssAIMessages, getCustomCssPaletteSnapshot } = await import('/scripts/neconyan-custom-css-ai.js');
+            const { power_user } = await import('/scripts/power-user.js');
+            const root = document.documentElement;
+            const read = name => window.getComputedStyle(document.body).getPropertyValue(name).trim();
+            const variables = ['--neco-ginger', '--neco-on-accent', '--neco-surface', '--neco-rail', '--mainFontFamily', '--sb-font-display'];
+            const values = variables.map(name => ({ name, value: read(name) }));
+            const snapshot = getCustomCssPaletteSnapshot();
+            const oldSnapshot = getCustomCssPaletteSnapshot(root);
+            const originalScale = root.style.getPropertyValue('--fontScale');
+            const scales = [];
+            try {
+                for (const scale of ['0.8', '1.3']) {
+                    root.style.setProperty('--fontScale', scale);
+                    const [, message] = buildCustomCssAIMessages({ instruction: 'Make the buttons rounder', mode: 'append' });
+                    scales.push({ scale, size: read('--mainFontSize'), message: message.content });
+                }
+            } finally {
+                if (originalScale) root.style.setProperty('--fontScale', originalScale);
+                else root.style.removeProperty('--fontScale');
+            }
+            return { values, snapshot, oldSnapshot, scales, theme: power_user.theme, colourScheme: window.getComputedStyle(document.body).colorScheme, touchPoints: window.navigator.maxTouchPoints };
+        });
+        // Contrast normalisation can mark the light palette as custom; check its actual appearance.
+        expect(palette.theme).toBe(`Neconyan Calico${tone === 'dark' ? ' Dark' : ''}`);
+        expect(palette.colourScheme).toBe(tone);
+        expect(palette.touchPoints > 0).toBe(width < 768);
+        for (const { name, value } of palette.values) {
+            expect(value, name).not.toBe('');
+            expect(palette.snapshot).toContain(`${name}: ${value};`);
+        }
+        expect(palette.oldSnapshot).not.toContain(`--neco-ginger: ${palette.values[0].value};`);
+        expect(palette.scales[0].size).not.toBe(palette.scales[1].size);
+        for (const { scale, size, message } of palette.scales) {
+            expect(message).toContain(`--fontScale: ${scale};`);
+            expect(message).toContain(`--mainFontSize: ${size};`);
+            expect(message).toContain('Append mode: return only the new rules');
+        }
+        await info.attach('active-css-palette', { body: JSON.stringify(palette), contentType: 'application/json' });
+    });
+
     test(`documented colour routes save and reload at ${width}px in ${tone} theme`, async ({ app }, info) => {
         const account = await app.account({ phone: width < 768 });
         const page = await account.context.newPage();
