@@ -8,6 +8,7 @@
 - PR #96 (2026-10-09) `feat(agents): make the Agents page easier to follow`
 - PR #99 (2026-10-09) `fix(stscript): preserve drafts and run commands during replies`
 - PR #100 (2026-10-09) `feat(expressions): expand expression sets and improve cleanup`
+- PR #103 (2026-10-10) `fix(ui): unify drawer motion and remove animation stalls`
 
 ## v1.2.4.2
 
