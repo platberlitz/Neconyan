@@ -6,6 +6,7 @@ import { SlashCommand } from '../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from '../../slash-commands/SlashCommandArgument.js';
 import { SlashCommandParser } from '../../slash-commands/SlashCommandParser.js';
 import { t } from '../../i18n.js';
+import { revealUi, setUiVisibility } from '../../ui-motion.js';
 
 const INPUT_HISTORY_STORAGE_KEY = 'st--inputHistory';
 
@@ -168,8 +169,15 @@ const onHistoryMenuKeydown = (event) => {
 };
 
 const hideHistoryMenu = () => {
-    historyMenu?.remove();
+    const menu = historyMenu;
     historyMenu = null;
+    if (menu) {
+        // A reopened menu takes the id while this one fades out.
+        menu.removeAttribute('id');
+        // A list still gliding from a swipe would turn the next tap into a scroll stop instead of a click.
+        menu.querySelector('.stih--list')?.style.setProperty('overflow', 'hidden');
+        setUiVisibility(menu, false, () => menu.remove(), { distance: 0 });
+    }
     window.removeEventListener('resize', positionHistoryMenu);
     window.visualViewport?.removeEventListener('resize', positionHistoryMenu);
     window.visualViewport?.removeEventListener('scroll', positionHistoryMenu);
@@ -248,6 +256,8 @@ const showHistoryMenu = () => {
     historyMenu.addEventListener('keydown', onHistoryMenuKeydown);
     document.body.append(historyMenu);
     positionHistoryMenu();
+    // Its translate lifts it above the composer, so only the opacity animates.
+    revealUi(historyMenu, { distance: 0 });
     window.addEventListener('resize', positionHistoryMenu);
     window.visualViewport?.addEventListener('resize', positionHistoryMenu);
     window.visualViewport?.addEventListener('scroll', positionHistoryMenu);

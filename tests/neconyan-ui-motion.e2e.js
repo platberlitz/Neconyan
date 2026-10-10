@@ -86,7 +86,7 @@ for (const [phone, standalone] of [[false, false], [true, false], [true, true]])
                 const { details, geometry } = await page.evaluate(id => ({
                     details: window.motionDetails[id], geometry: window.motionGeometry[id],
                 }), id);
-                expect(details.options).toEqual({ ...drawerMotion.options, duration: open ? 180 : 120 });
+                expect(details.options).toEqual({ ...drawerMotion.options, duration: open ? 380 : 280 });
                 const [start, middle, end] = geometry;
                 expect(end.x - start.x).toBeCloseTo(start.width * (edge === 'left' ? 1 : -1) * (open ? 1 : -1), 0);
                 expect(middle.x).toBeGreaterThan(Math.min(start.x, end.x));
@@ -96,7 +96,7 @@ for (const [phone, standalone] of [[false, false], [true, false], [true, true]])
                     expect(point.width).toBeCloseTo(start.width, 0);
                     expect(point.height).toBeCloseTo(start.height, 0);
                 }
-                expect(details.frames.every(frame => Number(frame.opacity) === 1)).toBe(true);
+                expect(details.frames.every(frame => !('opacity' in frame) || Number(frame.opacity) === 1)).toBe(true);
             };
             const assertDrawerMotion = async (id, edge = 'right') => {
                 await assertSlide(id, edge, true);
@@ -153,7 +153,7 @@ for (const [phone, standalone] of [[false, false], [true, false], [true, true]])
                 const style = getComputedStyle(popup.dlg);
                 return { name: style.animationName, duration: style.animationDuration };
             });
-            expect(dialogMotion).toEqual({ name: 'popup-arrive', duration: '0.18s' });
+            expect(dialogMotion).toEqual({ name: 'popup-arrive', duration: '0.22s' });
             const dialog = page.locator('dialog.popup[open]');
             await expect(dialog).not.toHaveAttribute('opening');
             const exit = await page.evaluate(() => {
@@ -175,7 +175,12 @@ for (const [phone, standalone] of [[false, false], [true, false], [true, true]])
             await page.evaluate(() => window.NeconyanShell.openChatTools());
             const tools = page.locator(phone ? '#sb-mobile-chat-tools' : '#sb-chat-sidebar');
             await expect(tools).toBeVisible();
-            await assertDrawerMotion(phone ? 'sb-mobile-chat-tools' : 'sb-chat-sidebar');
+            // On phones the blurred overlay fades in place and only its panel travels.
+            await assertDrawerMotion(phone ? 'sb-mobile-chat-tools-panel' : 'sb-chat-sidebar');
+            if (phone) {
+                const overlay = await page.evaluate(() => window.motionDetails['sb-mobile-chat-tools']);
+                expect(overlay.frames).toEqual([{ opacity: 0 }, { opacity: 1 }]);
+            }
             await expect.poll(() => page.evaluate(id => window.motionSurfaces.includes(id), phone ? 'sb-mobile-chat-tools' : 'sb-chat-sidebar')).toBe(true);
             await page.evaluate(phone => phone ? window.NeconyanShell.toggleMobileChatTools() : window.NeconyanShell.toggleChatSidebar(), phone);
             await expect(tools).toBeHidden();
@@ -258,7 +263,7 @@ for (const [phone, standalone] of [[false, false], [true, false], [true, true]])
                 promptManager.showPopup();
                 const popup = promptManager.getPopupElement();
                 const animation = popup.getAnimations()[0];
-                const heights = [0, 90, 179].map(time => {
+                const heights = [0, 190, 379].map(time => {
                     if (animation) { animation.pause(); animation.currentTime = time; }
                     return popup.getBoundingClientRect().height;
                 });
@@ -267,7 +272,7 @@ for (const [phone, standalone] of [[false, false], [true, false], [true, true]])
             });
             expect(geometry.heights[0]).toBeGreaterThan(100);
             expect(new Set(geometry.heights).size).toBe(1);
-            if (!geometry.split) expect(geometry.motion.options.duration).toBe(180);
+            if (!geometry.split) expect(geometry.motion.options.duration).toBe(380);
             const field = page.locator('#completion_prompt_manager_popup_entry_form_prompt');
             await field.fill('Keep this prompt draft.');
             await page.evaluate(async () => {
