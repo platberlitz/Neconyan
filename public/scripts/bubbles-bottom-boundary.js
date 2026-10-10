@@ -60,7 +60,8 @@ export function createBubblesBottomBoundary({ chat, toolbar, getMode, documentRe
         const body = documentRef.body;
         const sheld = documentRef.getElementById('sheld');
         const echo = body.classList?.contains('echostyle') === true;
-        if (windowRef.innerWidth <= 768 || !body.matches(echo ? '.neconyan.echostyle:not(.sbterm):not(.sbstory)' : '.neconyan.bubblechat:not(.sbterm):not(.sbstory)')
+        const whisper = !echo && body.classList?.contains('whisperstyle') === true;
+        if (windowRef.innerWidth <= 768 || !body.matches(echo ? '.neconyan.echostyle:not(.sbterm):not(.sbstory)' : whisper ? '.neconyan.whisperstyle:not(.sbterm):not(.sbstory)' : '.neconyan.bubblechat:not(.sbterm):not(.sbstory)')
             || getMode() !== 'roleplay' || sheld?.dataset.sbtwMode === 'on' || sheld?.dataset.sbConversationMode === 'on'
             || windowRef.getComputedStyle(chat).clipPath !== 'none') {
             setRow(null); return;
@@ -85,14 +86,15 @@ export function createBubblesBottomBoundary({ chat, toolbar, getMode, documentRe
         }
         const descriptor = row && echo ? resolveEchoSurface(row, y, windowRef) : null;
         setRow(row, descriptor?.targets, descriptor?.paint || row);
-        if (!row || (!echo && row.querySelector('.edit_textarea, .reasoning_edit_textarea'))) return;
+        if (!row || (!echo && !whisper && row.querySelector('.edit_textarea, .reasoning_edit_textarea'))) return;
+        if (whisper && row.matches('.smallSysMes, [is_system="true"]')) return;
         if (echo && !descriptor) return;
         const box = descriptor?.box || row.getBoundingClientRect(), style = windowRef.getComputedStyle(descriptor?.paint || row);
         const corners = descriptor ? windowRef.getComputedStyle(descriptor.radius) : style;
         const underlay = descriptor?.underlay ? windowRef.getComputedStyle(descriptor.underlay) : style;
         const paint = echo ? descriptor.underlay ? { background: style.background, opacity: style.opacity, display: 'block' }
-            : { background: 'none', opacity: '1', display: 'none' } : windowRef.getComputedStyle(row, '::before');
-        if (echo && box.right - box.left <= bar.width + 1) return;
+            : { background: 'none', opacity: '1', display: 'none' } : whisper ? { background: 'none', opacity: '1', display: 'none' } : windowRef.getComputedStyle(row, '::before');
+        if ((echo || whisper) && box.right - box.left <= bar.width + 1) return;
         const bottom = bar.top + 4;
         const height = Math.max(4, parseFloat(corners.borderBottomLeftRadius) || 0, parseFloat(corners.borderBottomRightRadius) || 0);
         const top = bottom - height;
@@ -104,12 +106,15 @@ export function createBubblesBottomBoundary({ chat, toolbar, getMode, documentRe
         previousClip = chat.style.getPropertyValue('clip-path');
         previousPriority = chat.style.getPropertyPriority('clip-path');
         let lane = null;
-        const editor = echo && row.querySelector('.mes_text .edit_textarea');
-        if (editor && editor.scrollHeight > editor.clientHeight) {
+        const editors = whisper ? [...row.querySelectorAll('.edit_textarea, .reasoning_edit_textarea')] : [echo && row.querySelector('.mes_text .edit_textarea')];
+        for (const editor of editors) {
+            if (!editor || editor.scrollHeight <= editor.clientHeight) continue;
             const editorBox = editor.getBoundingClientRect(), editorStyle = windowRef.getComputedStyle(editor);
             const start = Math.max(left, editorBox.left + editor.clientLeft + editor.clientWidth);
             const end = Math.min(right, editorBox.right - (parseFloat(editorStyle.borderRightWidth) || 0));
-            if (y > editorBox.top && y < editorBox.bottom && end - start > 0.5) lane = { start, end };
+            if (y > editorBox.top && y < editorBox.bottom && end - start > 0.5) {
+                lane = { start, end }; break;
+            }
         }
         const laneNotch = lane ? `,${lane.end - viewport.left}px ${notchTop}px,${lane.end - viewport.left}px 100%,${lane.start - viewport.left}px 100%,${lane.start - viewport.left}px ${notchTop}px` : '';
         chat.style.clipPath = `polygon(0 0,100% 0,100% 100%,${r}px 100%,${r}px ${notchTop}px${laneNotch},${l}px ${notchTop}px,${l}px 100%,0 100%)`;
@@ -118,6 +123,7 @@ export function createBubblesBottomBoundary({ chat, toolbar, getMode, documentRe
         Object.assign(cap.style, {
             left: `${left}px`, top: `${top}px`, width: `${right - left}px`, height: `${height}px`,
             background: underlay.background, borderLeft: style.borderLeft, borderRight: style.borderRight, borderBottom: style.borderBottom,
+            opacity: whisper ? style.opacity : '1',
             borderBottomLeftRadius: corners.borderBottomLeftRadius, borderBottomRightRadius: corners.borderBottomRightRadius,
             clipPath: lane ? `polygon(0 0,${lane.start - left}px 0,${lane.start - left}px 100%,${lane.end - left}px 100%,${lane.end - left}px 0,100% 0,100% 100%,0 100%)` : 'none',
         });
