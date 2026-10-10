@@ -69,6 +69,46 @@ the PR against staging and validate the resulting APK on the reporting device.
 
 ## Release preparation: 1.0.0
 
+### 10 October: 1.2.5 release, staging starts 1.2.6
+
+The handbook now covers the rebuilt Agents and Formatting pages, Companion
+batching, Character Authenticity Checker, reviewed Scratchpad character
+creation, expression sets, reply-aware scripts and the new appearance choices.
+Its practical guides were checked against `41e6ff6`; the shared assistant help
+reference was already refreshed at revision 22. The handbook update is
+`64be603bdec9897b0df806666c66f2e44f5240bc` in `neconyan-docs`. Strict build,
+local links, assets, all 201 registered macro references and phone and desktop
+browser checks passed. Pages run `38013904383` published it, and the changed
+Agents, Scratchpad and review-date text was checked on the live site.
+
+`main` was fast-forwarded to `a9f5a18873f8f95366900d9304df672cf22815b4`,
+including the release highlights in the changelog. Neconyan 1.2.5 is published
+at https://github.com/platberlitz/Neconyan/releases/tag/v1.2.5 with annotated
+tag `v1.2.5` and nine assets. Both APK payloads, checksums, the existing signing
+identity, native 16 KiB page alignment and all 3,749 source files were verified.
+The source ZIP was compared with `git archive`, including the repository's
+line-ending conversion rules. The published files were downloaded again and
+passed the same checks.
+
+All 457 unit suites passed (5,892 tests, two skipped), along with 2,057 server
+tests, 91 dedicated Mewmory tests, root lint, frontend budgets and the production
+build. Signed Android run `38013934210` passed the Android 11 and 15 emulator
+lifecycle and native runtime checks.
+
+The full browser runs `38013187823` on staging and `38013934880` on main were
+still running at publication. Five failed checks from the completed staging
+jobs were reproduced locally: one tried to measure expression actions before
+opening their new collapsed section, and four read notebook state before
+Decline or Cancel had finished. The follow-up tests open the real expression
+section and wait for the notebook action to complete, keeping the original
+layout, saved-text and cancelled-import assertions. All five corrected checks
+passed locally in 2.8 minutes, and the test-only fix is `297799e`. The six
+project-boundary checks for the 1.2.6 version bump and changed-test lint also
+passed. The release notes explicitly record the browser failures; the full
+suite is not yet a clean pass. Dispatch a fresh staging run with these test
+corrections after GitHub's API allowance resets, then update the release notes
+with the final browser result. Use a 60-second watch interval for large runs.
+
 ### 9 October: Android word-splitting hotfix 1.2.4.2, staging returns to 1.2.5
 
 The 1.2.4.1 crash record from the issue #80 reporter showed a null pointer
