@@ -126,6 +126,7 @@ export function defaultSettings() {
         roundTable: false,
         participants: [...ASSISTANT_IDS],
         maxTokens: DEFAULT_MAX_TOKENS,
+        stream: true,
     };
 }
 
@@ -189,6 +190,7 @@ export function normaliseSettings(input, previous = defaultSettings()) {
         }
     }
     if (source.maxTokens !== undefined) settings.maxTokens = normaliseMaxTokens(source.maxTokens);
+    if (typeof source.stream === 'boolean') settings.stream = source.stream;
     if (isPlainObject(source.assistantPrompts)) {
         settings.assistantPrompts ??= {};
         for (const assistant of ASSISTANT_IDS) {

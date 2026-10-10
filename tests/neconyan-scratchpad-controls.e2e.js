@@ -1,7 +1,7 @@
 /* global document */
 /* eslint-disable playwright/no-standalone-expect -- Shared helpers verify the visible Scratchpad state. */
 import { expect } from '@playwright/test';
-import { test } from './neconyan-conversation-durable-fixture.js';
+import { MODEL, test } from './neconyan-conversation-durable-fixture.js';
 import { applyIOSOnlyCss, installIPhoneSafari, IPHONE_SAFARI_CONTEXT } from './ios-safari-emulation.js';
 
 async function openScratchpad(page) {
@@ -47,6 +47,76 @@ for (const phone of [false, true]) {
         await openScratchpad(page);
         await picker.getByRole('button', { name: 'Miso', exact: true }).click();
         await checkEmptyAssistant(page, 'Miso', 'My planning');
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(phone ? 393 : 1280);
+    });
+
+    test(`${size} saves the streaming choice and streams thinking before the answer`, async ({ app }) => {
+        test.setTimeout(150000);
+        const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {},
+            configureSettings: saved => { saved.oai_settings.show_thoughts = true; } });
+        if (phone) await installIPhoneSafari(account.context, { standalone: true });
+        let page = await account.open();
+        const source = await openScratchpad(page);
+        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await expect(page.getByRole('checkbox', { name: 'Stream replies' })).toBeChecked();
+        await page.getByRole('checkbox', { name: 'Stream replies' }).uncheck();
+        await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0]?.settings.stream).toBe(false);
+        await page.close();
+        page = await account.open();
+        await openScratchpad(page);
+        if (phone) await applyIOSOnlyCss(page);
+        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await expect(page.getByRole('checkbox', { name: 'Stream replies' })).not.toBeChecked();
+        await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+        app.provider.mode.hold = MODEL;
+        app.provider.mode.reply = { choices: [{ message: { content: 'The finished answer.', reasoning_content: 'The finished thinking.' } }] };
+        await page.locator('.scratchpad-composer').fill('Wait until the answer is ready.');
+        let accepted = page.waitForResponse('**/api/scratchpad/send');
+        await page.locator('.scratchpad-send').click();
+        let response = await accepted;
+        expect(response.ok(), await response.text()).toBe(true);
+        await expect.poll(() => app.provider.calls.find(call => call.messages?.at(-1)?.content === 'Wait until the answer is ready.')?.stream).toBe(false);
+        await expect(page.locator('.scratchpad-stream')).toHaveText('');
+        await expect(page.locator('.scratchpad-message.is-pending .scratchpad-reasoning')).toBeHidden();
+        await app.release();
+        await account.settled((await response.json()).job.id);
+        await expect(page.locator('.scratchpad-message.is-pending')).toHaveCount(0);
+        await expect(page.locator('.scratchpad-reasoning .scratchpad-plain')).toHaveText('The finished thinking.');
+
+        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await page.getByRole('checkbox', { name: 'Stream replies' }).check();
+        await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0]?.settings.stream).toBe(true);
+        await page.locator('#scratchpad-max-tokens').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: `../screenshots/scratchpad-settings-${size}-after.png` });
+        await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+        app.provider.mode.streamReply = { reasoning: 'Checking the scene.', holdReasoning: true,
+            reasoningRest: ' Comparing the details.', first: 'A streamed answer', rest: ' is ready.' };
+        await page.locator('.scratchpad-composer').fill('Show your thinking as it arrives.');
+        accepted = page.waitForResponse('**/api/scratchpad/send');
+        await page.locator('.scratchpad-send').click();
+        response = await accepted;
+        expect(response.ok(), await response.text()).toBe(true);
+        let reasoning = page.locator('.scratchpad-message.is-pending .scratchpad-reasoning');
+        await expect(reasoning.locator('.scratchpad-plain')).toBeVisible();
+        await expect(reasoning).toContainText('Checking the scene.');
+        await expect(page.locator('.scratchpad-stream')).toHaveText('');
+        await page.screenshot({ path: `../screenshots/scratchpad-thinking-${size}-after.png` });
+        await reasoning.locator('summary').click();
+        app.provider.mode.finishReasoning();
+        await expect(reasoning.locator('.scratchpad-plain')).toHaveText('Checking the scene. Comparing the details.');
+        await expect(reasoning).not.toHaveAttribute('open');
+        await expect(page.locator('.scratchpad-stream')).toHaveText('A streamed answer');
+        await page.close();
+        page = await account.open();
+        await openScratchpad(page);
+        reasoning = page.locator('.scratchpad-message.is-pending .scratchpad-reasoning');
+        await expect(reasoning.locator('.scratchpad-plain')).toBeVisible();
+        await expect(reasoning).toContainText('Checking the scene. Comparing the details.');
+        app.provider.mode.finishStream();
+        await account.settled((await response.json()).job.id);
+        await expect(page.locator('.scratchpad-message.is-pending')).toHaveCount(0);
+        await expect(page.locator('.scratchpad-reply').last()).toHaveText('A streamed answer is ready.');
+        await expect(page.locator('.scratchpad-reasoning .scratchpad-plain').last()).toHaveText('Checking the scene. Comparing the details.');
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(phone ? 393 : 1280);
     });
 }

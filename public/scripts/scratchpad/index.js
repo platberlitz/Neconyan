@@ -81,6 +81,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     roundTable: false,
     participants: ['miso', 'taro', 'nori'],
     maxTokens: 16000,
+    stream: true,
 });
 
 const app = {
@@ -862,6 +863,9 @@ function updateStream(jobId) {
         const preview = replyPreview({ jobId, id: node.dataset.messageId });
         node.querySelector('.scratchpad-stage').textContent = stageLabel(preview);
         node.querySelector('.scratchpad-stream').textContent = preview?.text ?? '';
+        const reasoning = node.querySelector('.scratchpad-reasoning');
+        reasoning.hidden = !preview?.reasoning;
+        reasoning.querySelector('.scratchpad-plain').textContent = preview?.reasoning ?? '';
     }
     if (stick) scrollMessages(true);
 }
@@ -893,6 +897,9 @@ function renderMessage(session, message, { latest }) {
         const preview = replyPreview(message);
         article.append(
             h('p', { class: 'scratchpad-stage', text: stageLabel(preview) }),
+            h('details', { class: 'scratchpad-reasoning', hidden: !preview?.reasoning, open: true },
+                h('summary', { text: t`Thinking` }),
+                h('p', { class: 'scratchpad-plain', text: preview?.reasoning ?? '' })),
             h('p', { class: 'scratchpad-plain scratchpad-stream', text: preview?.text ?? '' }),
             iconButton(session.settings.roundTable ? t`Stop all` : t`Stop`, () => void stopReply(), { icon: 'fa-stop', className: 'scratchpad-stop' }));
         return article;
@@ -1323,6 +1330,8 @@ function renderContext({ force = true } = {}) {
             ...connections,
             h('h3', { class: 'scratchpad-section-title', text: t`Assistant prompts` }),
             ...ASSISTANTS.map(assistant => iconButton(t`View or edit ${assistant.name}'s prompt`, () => void editAssistantPrompt(assistant), { icon: 'fa-pen' })),
+            checkbox(t`Stream replies`, settings.stream !== false, value => void updateSettings({ stream: value }),
+                t`Show the reply and any thinking as they arrive. Turn off to wait for the finished reply.`),
             h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-max-tokens', text: t`Longest reply (tokens)` }), maxTokens)),
         notebook ? null : renderPicks(settings),
         notebook ? null : renderLore(settings),

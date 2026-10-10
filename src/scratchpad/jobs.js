@@ -1,6 +1,7 @@
 import { runChatProfile, validateActiveGenerationContext } from '../generation/service.js';
 import { captureGenerationBinding, resolveGenerationProfile } from '../generation/profiles.js';
 import { createMacroEnvironment } from '../macros/index.js';
+import { extractProviderReasoning } from '../../public/scripts/generation-format.js';
 import { hash } from '../mewmory/core.js';
 import { createProviderScope, readArtifact, writeArtifact } from '../jobs/artifacts.js';
 import { acceptJob, canonical, getJob, listJobs, releaseJob, requestCancellation, updateJob } from '../jobs/store.js';
@@ -161,7 +162,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         const plan = planReply(session, input);
         const notebook = notebookContextLocked(lease, session.settings);
         writeBucketLocked(lease, bucket);
-        return { ...plan, notebook, revision: hash(canonical(session)), maxTokens: session.settings.maxTokens,
+        return { ...plan, notebook, revision: hash(canonical(session)), maxTokens: session.settings.maxTokens, stream: session.settings.stream !== false,
             participants: sessionAssistants(session),
             speakers: plan.assistants.map(assistant => ({ assistant, customPrompt: session.settings.assistantPrompts?.[assistant], gender: input.genders[assistant] ?? (assistant === session.assistant ? session.gender : 'neutral'), connection: assistantConnection(session.settings, assistant) })) };
     });
@@ -179,7 +180,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         await validateActiveGenerationContext(resolveGenerationProfile(directories, binding), scratchpadMacroEnvironment(names),
             messages, rawOptions, { maxTokens: planned.maxTokens, preparedMessages });
         return { replyId: newScratchpadId(), assistant: speaker.assistant, gender: speaker.gender, binding, messages, maxTokens: planned.maxTokens,
-            userName: names.user, characterName: names.char, rawOptions, preparedMessages,
+            userName: names.user, characterName: names.char, rawOptions, preparedMessages, stream: planned.stream,
             functionTools: preparedMessages ? scratchpadCharacterTools() : [] };
     }));
     const { job, created } = acceptJob(directories, {
@@ -263,9 +264,11 @@ function clipBytes(text, max) {
     return Buffer.from(value, 'utf8').subarray(0, max).toString('utf8').replace(/\uFFFD+$/, '');
 }
 
-function reasoningFrom(response, streamed) {
+function reasoningFrom({ response, generation } = {}, streamed) {
     const message = response?.choices?.[0]?.message;
-    const value = message?.reasoning_content || message?.reasoning || response?.thinking || streamed || '';
+    const provider = extractProviderReasoning(response, { mainApi: generation?.backend === 'text' ? 'textgenerationwebui' : 'openai',
+        textGenType: generation?.source, chatCompletionSource: generation?.source });
+    const value = provider || message?.reasoning_content || message?.reasoning || response?.thinking || streamed || '';
     return typeof value === 'string' ? clipBytes(value, MAX_REASONING_BYTES) : '';
 }
 
@@ -325,11 +328,11 @@ async function runParticipant(context, request, { generate, grouped = false }) {
                 rawOptions: request.rawOptions,
                 preparedMessages: request.preparedMessages,
                 functionTools,
-                stream: true,
+                stream: request.stream !== false,
                 stepNamespace: grouped ? `scratchpad:${request.replyId}` : '',
                 onStream: value => {
                     if (typeof value?.reasoning === 'string' && value.reasoning) streamedReasoning = value.reasoning;
-                    publish({ stage: 'generating', text: value?.text ?? '', reasoning: value?.reasoning ?? '' });
+                    if (request.stream !== false) publish({ stage: 'generating', text: value?.text ?? '', reasoning: streamedReasoning });
                 },
                 context,
                 jobContext: context,
@@ -338,7 +341,7 @@ async function runParticipant(context, request, { generate, grouped = false }) {
             const { text, hasTools } = characterToolReply(response, functionTools);
             if (!text) throw fail('SCRATCHPAD_EMPTY_REPLY', 'The model returned no text. Try again or pick another connection.', 502);
             if (hasTools && bytes(text) > MAX_MESSAGE_BYTES) throw fail('SCRATCHPAD_TEXT_TOO_LARGE', 'The character drafts are too long. Ask for fewer or shorter cards.', 413);
-            reply = { text: clipBytes(text, MAX_MESSAGE_BYTES), reasoning: reasoningFrom(response?.response, streamedReasoning) };
+            reply = { text: clipBytes(text, MAX_MESSAGE_BYTES), reasoning: reasoningFrom(response, streamedReasoning) };
             writeArtifact(directories, job.id, artifact, reply);
         }
         requireRunning();
@@ -382,4 +385,4 @@ export function registerScratchpadJobs({ generate = runChatProfile } = {}) {
 
 registerScratchpadJobs();
 
-export const testExports = { historyFrom, planReply, normaliseReplyRequest, runScratchpadReply, settleReply };
+export const testExports = { historyFrom, planReply, normaliseReplyRequest, runScratchpadReply, settleReply, reasoningFrom };
