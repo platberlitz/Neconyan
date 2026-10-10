@@ -58,6 +58,7 @@ for (const phone of [false, true]) {
         let page = await account.open();
         const source = await openScratchpad(page);
         await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await expect(page.locator('#scratchpad-max-tokens')).toHaveValue('32000');
         await expect(page.getByRole('checkbox', { name: 'Stream replies' })).toBeChecked();
         await page.getByRole('checkbox', { name: 'Stream replies' }).uncheck();
         await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.sessions[0]?.settings.stream).toBe(false);
