@@ -810,6 +810,62 @@ test('round tables require a recognised speaker and reserve room for every answe
     assert.throws(() => jobs.planReply({ settings, messages }, { text: 'Question' }), error => error.code === 'SCRATCHPAD_SESSION_FULL');
 });
 
+test('Random selects each eligible assistant, reserves one answer and never changes a retry speaker', () => {
+    const settings = store.normaliseSettings({ roundTable: true, randomReply: true, participants: ['miso', 'nori'] });
+    const session = { assistant: 'taro', settings, messages: [] };
+    for (const index of [0, 1]) {
+        assert.deepEqual(jobs.planReply(session, { text: 'Hi' }, length => {
+            assert.equal(length, 2);
+            return index;
+        }).assistants, [settings.participants[index]]);
+    }
+    session.messages = Array.from({ length: store.MAX_MESSAGES - 2 }, (_, index) => ({ id: String(index), role: 'user', text: 'Hi' }));
+    assert.equal(jobs.planReply(session, { text: 'Hi' }).assistants.length, 1);
+    session.messages.push({ id: 'last-user', role: 'user', text: 'Question' }, { id: 'answer', role: 'assistant', assistant: 'miso', state: 'done', text: 'Answer' });
+    assert.throws(() => jobs.planReply(session, { text: 'Hi' }), error => error.code === 'SCRATCHPAD_SESSION_FULL');
+    session.settings.participants = ['nori'];
+    assert.deepEqual(jobs.planReply(session, { regenerate: 'answer' }, () => assert.fail('Retries must not choose again')).assistants, ['miso']);
+    session.messages = [];
+    assert.deepEqual(jobs.planReply(session, { text: 'Hi' }).assistants, ['nori']);
+    session.settings.roundTable = false;
+    assert.deepEqual(jobs.planReply(session, { text: 'Hi' }).assistants, ['taro']);
+});
+
+test('Random is saved with the session and an accepted send keeps exactly one durable speaker', async t => {
+    const a = account(t);
+    const session = startSession(a, { roundTable: true, randomReply: true, participants: ['miso', 'nori'] });
+    a.mutate(SOURCE, bucket => store.updateSession(bucket, session.id, { settings: { depth: 3 } }));
+    assert.equal(a.read(SOURCE).sessions[0].settings.randomReply, true);
+    assert.equal(store.defaultSettings().randomReply, false);
+    const calls = [];
+    registerScratchpadJobs({ generate: async options => { calls.push(options); return { text: 'One answer.' }; } });
+    const body = sendBody(session, { genders: { miso: 'female', nori: 'male' } });
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    const pending = accepted.bucket.sessions[0].messages;
+    assert.equal(pending.length, 2);
+    assert.ok(['miso', 'nori'].includes(pending[1].assistant));
+    assert.equal(pending[1].gender, body.genders[pending[1].assistant]);
+    const captured = readArtifact(a.directories, accepted.job.id, 'request');
+    assert.equal(captured.assistant, pending[1].assistant);
+    assert.match(captured.messages[0].content, /only assistant replying to this message/);
+    assert.doesNotMatch(captured.messages[0].content, /answers independently at the same time/);
+    a.mutate(SOURCE, bucket => store.updateSession(bucket, session.id, { settings: { randomReply: false } }));
+    const duplicate = await acceptScratchpadReply(a.request(body), body);
+    assert.equal(duplicate.job.id, accepted.job.id);
+    assert.equal(duplicate.created, false);
+    await runJob(getJob(a.directories, accepted.job.id));
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].characterName.toLowerCase(), pending[1].assistant);
+    assert.equal(a.read(SOURCE).sessions[0].messages.at(-1).text, 'One answer.');
+    const next = sendBody(session);
+    const all = await acceptScratchpadReply(a.request(next), next);
+    await runJob(getJob(a.directories, all.job.id));
+    assert.equal(calls.length, 3, 'turning Random off restores replies from both participants');
+    a.mutate(SOURCE, bucket => store.updateSession(bucket, session.id, { settings: { randomReply: true } }));
+    const inherited = a.mutate(SOURCE, bucket => store.createSession(bucket, {}));
+    assert.equal(inherited.settings.randomReply, true);
+});
+
 test('a provider response arriving after Stop is not saved as a completed reply', async t => {
     const a = account(t);
     const session = startSession(a);

@@ -33,7 +33,9 @@ Press **New session** at the top of Scratchpad to start a fresh conversation for
 
 Turn on **Round table** to ask up to three assistants together. Press their portraits to include or exclude them; keep at least one selected. **Ask 2** or **Ask 3** sends one question to everyone selected, using each assistant's own connection profile and personality. Each answer is labelled and saved separately in the same session. The reply limit applies to each assistant.
 
-Round-table assistants answer at the same time. They share your question and the earlier conversation, but do not see the other answers being written in that round. Ask a follow-up to compare their views or have them respond to one another. **Stop all** stops unfinished replies and keeps answers already saved. If one connection fails, the other answers are kept and you can retry just the failed assistant.
+Turn on **Random** beside **Round table** for one reply per message. **Ask 1** picks one of the selected assistants at random, using that assistant's personality and connection. The same assistant can be picked again on your next message. **Try again** keeps the speaker of the answer you are replacing. Random is saved with the session; turn it off to ask everyone selected again.
+
+With **Random** off, round-table assistants answer at the same time. They share your question and the earlier conversation, but do not see the other answers being written in that round. Ask a follow-up to compare their views or have them respond to one another. **Stop all** stops unfinished replies and keeps answers already saved. If one connection fails, the other answers are kept and you can retry just the failed assistant. Random uses **Stop** for its single reply.
 
 To give the conversation more room, press **Talking with** (just the arrow on phones) and the assistant picker and session line fold into one slim bar. Press the bar to bring them back. Scratchpad remembers which way you left it.
 

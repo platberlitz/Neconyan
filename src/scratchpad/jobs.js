@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import { runChatProfile, validateActiveGenerationContext } from '../generation/service.js';
 import { createMessageTokenCounter } from '../generation/message-token-counts.js';
 import { captureGenerationBinding, resolveGenerationProfile } from '../generation/profiles.js';
@@ -115,11 +116,13 @@ function historyFrom(messages) {
 }
 
 /** Work out what the model sees for a new message or a regenerated reply. */
-export function planReply(session, request) {
+export function planReply(session, request, chooseIndex = randomInt) {
     if (hasPending(session)) throw fail('SCRATCHPAD_REPLY_PENDING', 'This session is still replying. Wait for it or press Stop.', 409);
     const messages = session.messages;
     if (!request.regenerate) {
-        const assistants = sessionAssistants(session);
+        const participants = sessionAssistants(session);
+        const assistants = session.settings.roundTable && session.settings.randomReply
+            ? [participants[chooseIndex(participants.length)]] : participants;
         if (messages.length + 1 + assistants.length > MAX_MESSAGES) throw fail('SCRATCHPAD_SESSION_FULL', 'This session is full. Start a new session to keep talking.', 409);
         return { prompt: request.text, history: historyFrom(messages), replace: null, assistants };
     }
@@ -169,6 +172,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         return { ...plan, notebook, revision: hash(canonical(session)), maxTokens: session.settings.maxTokens, stream: session.settings.stream !== false,
             instructionsRevision: instructions.revision,
             participants: sessionAssistants(session),
+            randomReply: session.settings.roundTable && session.settings.randomReply,
             speakers: plan.assistants.map(assistant => ({ assistant, userInstructions: instructionsForAssistant(instructions, assistant),
                 customPrompt: session.settings.assistantPrompts?.[assistant], gender: input.genders[assistant] ?? (assistant === session.assistant ? session.gender : 'neutral'), connection: assistantConnection(session.settings, assistant) })) };
     });
@@ -177,7 +181,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         const profileId = speaker.connection.kind === 'profile' ? speaker.connection.profileId : input.chatProfileId;
         const selection = profileId ? { kind: 'profile', profileId } : { kind: 'active' };
         const binding = captureGenerationBinding(directories, selection, body.acknowledgement);
-        const system = buildScratchpadSystemPrompt({ ...speaker, userName: input.names.user, participants: planned.participants,
+        const system = buildScratchpadSystemPrompt({ ...speaker, userName: input.names.user, participants: planned.participants, randomReply: planned.randomReply,
             characterName: input.names.character, capabilities: { ...input.capabilities, notebook: Boolean(planned.notebook.text) }, help: input.help });
         const messages = buildScratchpadMessages({ system: system.text, context: input.context, notebookContext: planned.notebook.text, history: planned.history, text: planned.prompt, assistant: speaker.assistant });
         const rawOptions = binding.kind === 'active' ? { trimNames: false } : {};
