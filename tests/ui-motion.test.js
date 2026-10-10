@@ -1,15 +1,18 @@
 /* global globalThis */
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 
-let motion, media, bodyClasses, preferenceChanged;
+let motion, media, bodyClasses, preferenceChanged, pendingFrames;
 const elements = [];
 
 beforeEach(async () => {
     jest.resetModules();
     bodyClasses = new Set();
+    pendingFrames = null;
     media = { matches: false, addEventListener: jest.fn() };
     globalThis.document = { body: { classList: { contains: value => bodyClasses.has(value) } } };
     globalThis.window = { matchMedia: () => media };
+    // Frames run at once unless a test queues them to step through the first paint.
+    globalThis.requestAnimationFrame = callback => pendingFrames ? pendingFrames.push(callback) : callback();
     globalThis.getComputedStyle = element => ({ visibility: 'visible', opacity: element.opacity ?? '1', translate: element.translate ?? '0px 0px' });
     globalThis.MutationObserver = class {
         constructor(callback) { preferenceChanged = callback; }
@@ -20,7 +23,7 @@ beforeEach(async () => {
 
 afterEach(() => {
     elements.splice(0).forEach(element => motion.finishUiMotion(element));
-    for (const key of ['document', 'window', 'getComputedStyle', 'MutationObserver']) delete globalThis[key];
+    for (const key of ['document', 'window', 'getComputedStyle', 'MutationObserver', 'requestAnimationFrame']) delete globalThis[key];
 });
 
 function surface(visible = true) {
@@ -35,7 +38,7 @@ function surface(visible = true) {
         },
         getClientRects: () => element.visible ? [{}] : [],
         animate: jest.fn((frames, options) => {
-            const animation = { cancel: jest.fn(), frames, options };
+            const animation = { cancel: jest.fn(), play: jest.fn(), frames, options, currentTime: null, playState: 'running' };
             animations.push(animation);
             return animation;
         }),
@@ -248,6 +251,55 @@ describe('interruptible UI motion', () => {
         expect(panel.animations[1].cancel).toHaveBeenCalledTimes(1);
         expect(panel.animations[2].frames[0]).toEqual({ translate: '40px 0px' });
         expect(element.visible).toBe(true);
+    });
+
+    test('the first frame rewinds a drawer and its linked parts, so tap work cannot eat the slide', () => {
+        pendingFrames = [];
+        const { element, apply, animations } = surface(false);
+        const panel = surface(false);
+        motion.setUiVisibility(element, true, apply, { edge: 'right', slideTarget: panel.element });
+        // Safari has already advanced the clock by the time the tap's work is done.
+        animations[0].currentTime = 220;
+        panel.animations[0].currentTime = 220;
+        pendingFrames.shift()();
+        expect(animations[0].currentTime).toBe(0);
+        expect(panel.animations[0].currentTime).toBe(0);
+        expect(animations[0].play).not.toHaveBeenCalled();
+    });
+
+    test('a slide that ran out before its first frame plays again instead of snapping open or shut', () => {
+        pendingFrames = [];
+        const { element, apply, animations } = surface();
+        motion.setUiVisibility(element, false, apply, { edge: 'right' });
+        animations[0].currentTime = 280;
+        animations[0].playState = 'finished';
+        animations[0].onfinish();
+        expect(element.visible).toBe(true);
+        expect(motion.isUiClosing(element)).toBe(true);
+        expect(animations[0].currentTime).toBe(0);
+        expect(animations[0].play).toHaveBeenCalledTimes(1);
+        pendingFrames.shift()();
+        animations[0].onfinish();
+        expect(element.visible).toBe(false);
+    });
+
+    test('a hidden page settles its motion without waiting for a frame that never comes', () => {
+        pendingFrames = [];
+        globalThis.document.hidden = true;
+        const { element, apply, animations } = surface();
+        motion.setUiVisibility(element, false, apply, { edge: 'right' });
+        animations[0].onfinish();
+        expect(element.visible).toBe(false);
+    });
+
+    test('a motion cancelled before its first frame is not rewound afterwards', () => {
+        pendingFrames = [];
+        const { element, apply, animations } = surface();
+        motion.setUiVisibility(element, false, apply, { edge: 'right' });
+        motion.finishUiMotion(element);
+        animations[0].currentTime = 140;
+        pendingFrames.shift()();
+        expect(animations[0].currentTime).toBe(140);
     });
 
     test('visibility checks read styles instead of forcing a layout when the browser can', () => {
