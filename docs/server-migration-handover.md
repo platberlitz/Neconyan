@@ -105,9 +105,23 @@ layout, saved-text and cancelled-import assertions. All five corrected checks
 passed locally in 2.8 minutes, and the test-only fix is `297799e`. The six
 project-boundary checks for the 1.2.6 version bump and changed-test lint also
 passed. The release notes explicitly record the browser failures; the full
-suite is not yet a clean pass. Dispatch a fresh staging run with these test
-corrections after GitHub's API allowance resets, then update the release notes
-with the final browser result. Use a 60-second watch interval for large runs.
+suite is not yet a clean pass. Follow-up staging run `38016971324` started with
+those five corrections. Use a 60-second watch interval for large runs.
+
+The completed main run reported ten failed checks across six jobs. Two more
+were reproduced and corrected in test-only commit `867025d`: the desktop
+layout check now measures reply clearance outside Echo's reserved button
+padding, and the Scratchpad check keeps its simulated save failure in place
+until automatic retries finish. It then follows the requested page reload
+before retrying, checking that the failed attempt changed neither the saved
+chat nor the proposal's saved state. Each corrected check passed three
+consecutive local runs. The phone sidebar and Story-link checks also passed
+three consecutive runs without changes; their original failures have not
+been reproduced. Changed-test lint passed with no errors and nine existing
+warnings. One additional desktop workflow check reported a reset connection
+while reading a job; its local reproduction is still pending. A final full
+staging run must include `867025d`, then the release notes and this handover
+need the actual browser result.
 
 ### 9 October: Android word-splitting hotfix 1.2.4.2, staging returns to 1.2.5
 
