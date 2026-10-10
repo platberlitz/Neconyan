@@ -89,6 +89,8 @@ export function getConversationMessageExtraFingerprint(message) {
 
     return [
         extra.partner_avatar || '',
+        extra.token_count ?? '',
+        extra.reasoning_tokens ?? '',
         extra.image_url || '',
         extra.image_prompt || '',
         extra.media_display || '',

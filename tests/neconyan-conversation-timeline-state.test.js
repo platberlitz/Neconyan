@@ -1,5 +1,6 @@
 /* global globalThis */
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
+await jest.unstable_mockModule('../public/scripts/i18n.js', () => ({ t: strings => strings[0] }));
 await jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => 'tester' }));
 
 let currentAvatar = 'char.png';

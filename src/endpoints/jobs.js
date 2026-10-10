@@ -11,6 +11,7 @@ import { retainConversationAutomaticAcceptance } from '../generation/conversatio
 import { decideJobApproval, readJobApproval } from '../generation/job-approvals.js';
 import { closeUnstartedRoleplayWorkflow } from '../generation/roleplay-workflow-cancellation.js';
 import { readRoleplayPreview, subscribeRoleplayPreview } from '../generation/roleplay-preview.js';
+import { readConversationPreview, subscribeConversationPreview } from '../generation/conversation-preview.js';
 import { subscribeJobsChanged } from '../jobs/notifications.js';
 
 export const router = express.Router();
@@ -105,20 +106,22 @@ router.get('/:id/preview', (request, response) => {
     try {
         const { owner, directories } = directoriesFor(request);
         const job = getJob(directories, request.params.id);
-        if (!job || job.owner !== owner || job.type !== 'media.roleplay-workflow') return response.sendStatus(404);
+        if (!job || job.owner !== owner || !['media.roleplay-workflow', 'conversation.reply', 'conversation.rewrite'].includes(job.type)) return response.sendStatus(404);
+        const conversation = ['conversation.reply', 'conversation.rewrite'].includes(job.type);
         const base = { owner, directories };
         const account = job.intent.media;
-        const initial = withRoleplayAccount(base, account, () => readRoleplayPreview({ ...base, job }));
+        const initial = conversation ? readConversationPreview(owner, job.id) : withRoleplayAccount(base, account, () => readRoleplayPreview({ ...base, job }));
         response.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store, no-transform', 'X-Accel-Buffering': 'no' });
         response.flushHeaders();
         const send = value => {
             if (response.destroyed || response.writableEnded) return;
             // A slow/disconnected reader must never hold up the generation worker.
             if (response.writableLength > 1024 * 1024) { response.end(); return; }
-            try { response.write(`data: ${JSON.stringify(value)}\n\n`); } catch { response.end(); }
+            try { response.write(`data: ${JSON.stringify(value)}\n\n`); response.flush?.(); } catch { response.end(); }
         };
         let nextPreview = null, previewTimer = null;
-        const unsubscribe = subscribeRoleplayPreview(owner, job.id, preview => {
+        const subscribe = conversation ? subscribeConversationPreview : subscribeRoleplayPreview;
+        const unsubscribe = subscribe(owner, job.id, preview => {
             nextPreview = preview;
             if (previewTimer) return;
             previewTimer = setTimeout(() => {
@@ -130,7 +133,7 @@ router.get('/:id/preview', (request, response) => {
         const terminal = new Set(['completed', 'cancelled', 'failed', 'interrupted', 'conflict']);
         const check = () => {
             try {
-                const current = withRoleplayAccount(base, account, () => getJob(directories, job.id));
+                const current = conversation ? getJob(directories, job.id) : withRoleplayAccount(base, account, () => getJob(directories, job.id));
                 if (!current || terminal.has(current.state)) {
                     send({ state: current?.state ?? 'missing', error: current?.error?.message ?? null });
                     response.end();

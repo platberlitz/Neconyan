@@ -81,6 +81,14 @@ describe('Neconyan Conversation REST API', () => {
                 response.end(JSON.stringify({ error: { type: 'upstream_test_error', message: 'Upstream rejected the request' } }));
                 return;
             }
+            if (body.stream) {
+                response.writeHead(200, { 'Content-Type': 'text/event-stream' });
+                const chunk = request.url === '/v1/responses'
+                    ? { type: 'response.output_text.delta', delta: upstreamReplyText }
+                    : { choices: [{ delta: { content: upstreamReplyText }, text: upstreamReplyText }] };
+                response.end(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`);
+                return;
+            }
             response.writeHead(200, { 'Content-Type': 'application/json' });
             if (request.url === '/v1/completions') {
                 response.end(JSON.stringify({ choices: [{ text: upstreamReplyText }] }));
@@ -406,6 +414,8 @@ describe('Neconyan Conversation REST API', () => {
         expect(root.result.participants).toHaveLength(1);
         const branch = readConversationStore().characters['nova.png'].branches.main;
         expect(branch.messages.map(message => message.mes)).toEqual(['Please reply', 'First reply.', 'Second reply.']);
+        expect(branch.messages.slice(1).every(message => message.extra.token_count > 0)).toBe(true);
+        expect(upstreamRequests[0].stream).toBe(true);
         expect(branch.unread).toBe(2);
         expect(Object.keys(branch.pendingPresentations)).toHaveLength(2);
         expect(readConversationStore().reminders).toHaveLength(1);

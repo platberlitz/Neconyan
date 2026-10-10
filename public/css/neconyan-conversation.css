@@ -903,12 +903,22 @@
 
 .sb-conversation-message-meta {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
     align-items: center;
     margin-block-end: 1px;
     color: color-mix(in srgb, var(--SmartThemeBodyColor) 64%, transparent);
     font-size: var(--sb-type-meta);
     line-height: var(--sb-line-compact);
+}
+
+.sb-conversation-message-meta .nn-message-token-counts {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.sb-conversation-typing-indicator:has(.nn-message-token-counts) {
+    animation: none;
 }
 
 .sb-conversation-message[data-role='user'] .sb-conversation-message-meta {

@@ -341,6 +341,8 @@ export async function buildConversationParticipantSnapshot(request, current, tar
         ? resolveCharacterImageSettings(current.settings.extension_settings?.['quick-image-gen'] || {}, { avatar }) : null;
     const snapshot = {
         target, binding, settings, force, purpose: plan.purpose || 'reply', timeZone,
+        // Freeze transport at acceptance so pre-upgrade paid steps keep their identity.
+        streamPreview: ['chat', 'text'].includes(binding.backend || 'chat'),
         ...(imageEnabled ? { quickImageGenCharacterScope: { avatar }, quickImageGenSettingsFingerprint:
             quickImageGenSettingsFingerprint(imageSettings),
         quickImageGenSDSettingsFingerprint: quickImageGenSettingsFingerprint(

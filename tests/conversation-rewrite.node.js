@@ -19,6 +19,7 @@ const { readArtifact } = await import('../src/jobs/artifacts.js');
 const { prepareSettingsSave } = await import('../src/settings-version.js');
 const { write: writeCard } = await import('../src/character-card-parser.js');
 const { getConversationMessageRevision } = await import('../public/scripts/neconyan-conversation/message-identity-utils.js');
+const { readConversationPreview } = await import('../src/generation/conversation-preview.js');
 
 after(() => cancelAutoSaves());
 
@@ -107,7 +108,9 @@ test('a polish replaces only the reply text, once, even after an unrelated messa
     assert.equal(getJob(directories, accepted.job.id).state, 'completed');
     const messages = readMessages(directories);
     assert.equal(messages[1].mes, 'Hello there, friend!');
-    assert.deepEqual(messages[1].extra, { conversation_commands: { selfieRequests: ['old'] } });
+    assert.deepEqual(messages[1].extra.conversation_commands, { selfieRequests: ['old'] });
+    assert.ok(messages[1].extra.token_count > 0);
+    assert.equal(messages[1].extra.reasoning_tokens, 0);
     assert.equal(messages[3].mes, 'still there?');
     await runJob(getJob(directories, accepted.job.id));
     assert.equal(calls, 1);
@@ -115,7 +118,16 @@ test('a polish replaces only the reply text, once, even after an unrelated messa
 
 test('a regeneration saves the reply, its commands and reminders in one write', async () => {
     const directories = makeDirectories();
-    registerConversationRewriteJobs({ generate: async () => ({ text: 'Fresh reply [selfie: context="at the park"] [reminder: 10 minutes | tea]' }) });
+    registerConversationRewriteJobs({ generate: async options => {
+        assert.equal(options.stream, true);
+        options.onStream({ text: 'Fresh', reasoning: 'Choose a new reply.' });
+        const preview = readConversationPreview('tester', options.context.job.id).participants[0];
+        assert.equal(preview.avatar, 'nova.png');
+        assert.ok(preview.token_count > 0);
+        assert.ok(preview.reasoning_tokens > 0);
+        return { text: 'Fresh reply [selfie: context="at the park"] [reminder: 10 minutes | tea]',
+            response: { choices: [{ message: { reasoning_content: 'Choose a new reply.' } }] } };
+    } });
     const { request, body } = await submission(directories);
     const accepted = await acceptConversationRewrite(request, body);
     await runJob(getJob(directories, accepted.job.id));
@@ -124,6 +136,9 @@ test('a regeneration saves the reply, its commands and reminders in one write', 
     const store = readStore(directories);
     const message = store.characters['nova.png'].branches.main.messages[1];
     assert.equal(message.mes, 'Fresh reply');
+    assert.ok(message.extra.token_count > 0);
+    assert.ok(message.extra.reasoning_tokens > 0);
+    assert.deepEqual(readConversationPreview('tester', accepted.job.id), { participants: [] });
     assert.deepEqual(message.extra.conversation_commands.selfieRequests, ['at the park']);
     assert.equal(typeof message.extra.regenerated_at, 'number');
     assert.equal(store.reminders.length, 1);

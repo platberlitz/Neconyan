@@ -212,6 +212,7 @@ export function updateConversationThreadMessage(avatar, messageId, messageText, 
         return;
     }
 
+    if (message.mes !== messageText && message.extra) delete message.extra.token_count;
     message.mes = messageText;
     if (extra && typeof extra === 'object') {
         message.extra = { ...message.extra, ...extra };

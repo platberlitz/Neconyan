@@ -20,6 +20,8 @@ import { noteOwner, registerHandler } from '../jobs/runner.js';
 import { getConversationSettings } from '../endpoints/conversation-generation.js';
 import { getConversationThreadKey } from '../endpoints/conversation-store.js';
 import { refreshBranchPreview } from '../endpoints/conversation-messages.js';
+import { createMessageTokenCounter, getReplyReasoning } from './message-token-counts.js';
+import { publishConversationPreview } from './conversation-preview.js';
 import { applyConversationJobCommands, captureConversationTarget, commitConversationEffect, readConversationTarget } from './conversation-effects.js';
 
 const REWRITE_MODES = new Set(['regenerate', 'polish']);
@@ -77,6 +79,7 @@ function generationOptions(snapshot) {
         characterName: snapshot.characterName || 'Character',
         groupNames: snapshot.groupNames || [],
         rawOptions: snapshot.rawOptions,
+        stream: snapshot.streamPreview === true,
     };
 }
 
@@ -149,6 +152,7 @@ export async function acceptConversationRewrite(request, body = {}) {
     const settings = getConversationSettings(request, current.store, speakerAvatar, target.groupId, {}, { personaId: target.personaId });
     const snapshot = {
         mode: body.mode, messageId: body.messageId, target, anchors, speakerAvatar, binding, timeZone,
+        speaker: participant.speaker, streamPreview: participant.streamPreview,
         messages: binding.kind === 'active' ? prompt : [
             ...(rawOptions.systemPrompt ? [{ role: 'system', content: rawOptions.systemPrompt }] : []),
             ...(Array.isArray(prompt) ? prompt : [{ role: 'user', content: prompt }]),
@@ -186,8 +190,16 @@ async function runConversationRewriteJob(context, { generate }) {
     if (!reply) {
         const assertSource = () => verify(readConversationTarget(request, snapshot.target));
         assertSource();
-        const response = await generate({ ...generationOptions(snapshot), context, jobContext: context, beforeDispatch: assertSource });
-        reply = { text: String(response?.text ?? '') };
+        const counter = await createMessageTokenCounter(value => publishConversationPreview(context, snapshot, value), { signal: context.signal });
+        try {
+            const response = await generate({ ...generationOptions(snapshot), context, jobContext: context, beforeDispatch: assertSource,
+                onStream: value => counter.publish(value) });
+            const reasoning = getReplyReasoning(response);
+            reply = { text: String(response?.text ?? ''), ...(reasoning ? { reasoning } : {}) };
+        } finally {
+            counter.stop();
+            publishConversationPreview(context, snapshot, null);
+        }
         writeArtifact(directories, job.id, 'reply', reply);
     }
     const rewrite = prepareConversationRewrite(snapshot, reply.text);
@@ -195,12 +207,15 @@ async function runConversationRewriteJob(context, { generate }) {
         throw fail(snapshot.mode === 'polish' ? 'Could not rewrite the reply. The model returned no text.' : 'Regenerate returned no message.', 502);
     }
     setJobResume(directories, job.id, 'apply');
+    const counter = await createMessageTokenCounter(() => {});
+    const counts = counter.counts(rewrite.text, reply.reasoning);
     const now = Date.now();
     await commitConversationEffect(context, snapshot.target, 'rewrite', (branch, store) => {
         const index = branch.messages.findIndex(item => String(item?.id || '') === snapshot.messageId);
         if (index < 0) throw fail('The message was deleted before it could be rewritten.', 409);
         const message = branch.messages[index];
         message.mes = rewrite.text;
+        message.extra = { ...message.extra, ...counts };
         let reminders = [];
         if (snapshot.mode === 'regenerate') {
             const extra = { ...message.extra };

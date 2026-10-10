@@ -1,4 +1,5 @@
 import { DEFAULT_SETTINGS } from './constants.js';
+import { getNativeConversationPreviews } from './native-preview.js';
 import {
     getActiveConversationBranch,
     getConversationGroupIdForAvatar,
@@ -49,8 +50,11 @@ export function getTypingParticipantMap(avatar = getCurrentCharAvatar(), { branc
 }
 
 export function getActiveTypingParticipants(avatar = getCurrentCharAvatar(), { branchId = '', groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId() } = {}) {
+    branchId ||= getConversationThreadStore(avatar, { create: false, groupId, personaId })?.activeBranchId || '';
     const participantMap = getTypingParticipantMap(avatar, { branchId, groupId, personaId });
-    return participantMap ? Array.from(participantMap.values()).filter(participant => participant?.avatar) : [];
+    const participants = new Map(participantMap ?? []);
+    for (const preview of getNativeConversationPreviews(avatar, { branchId, groupId, personaId })) participants.set(preview.avatar, preview);
+    return [...participants.values()].filter(participant => participant?.avatar);
 }
 
 export function getPrimaryTypingParticipant(avatar = getCurrentCharAvatar(), { branchId = '', groupId = getConversationGroupIdForAvatar(avatar), personaId = getConversationPersonaId() } = {}) {

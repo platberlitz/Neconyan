@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { createMessageTokenCounter, getReplyReasoning } from './message-token-counts.js';
+import { publishConversationPreview } from './conversation-preview.js';
 import { deliverConversationReply } from '../../public/scripts/neconyan-conversation/reply-delivery.js';
 import { getConversationMessageRevision } from '../../public/scripts/neconyan-conversation/message-identity-utils.js';
 import { MAX_THREAD_MESSAGES } from '../../public/scripts/neconyan-conversation/constants.js';
@@ -876,14 +878,21 @@ async function runConversationParticipantJob(context, deps) {
         if (automation?.roleplaySource) {
             captureConversationRoleplaySource({ user: { directories } }, automation.roleplaySource, { characterName: speaker.name, userName });
         }
+        const counter = await createMessageTokenCounter(value => publishConversationPreview(context, snapshot, value), { signal: context.signal });
         const separateSystem = binding.kind === 'active' && snapshot.messages[0]?.role === 'system';
         const options = { context, jobContext: context, binding, messages: separateSystem ? snapshot.messages.slice(1) : snapshot.messages,
             maxTokens: settings.reply_max_tokens, userName, characterName: speaker.name,
             groupNames: snapshot.groupNames || [], rawOptions: separateSystem ? { systemPrompt: snapshot.messages[0].content } : {},
-            macroEnvironment: createMacroEnvironment(snapshot.macros) };
-        response = snapshot.assistantTools
-            ? await generateConversationAssistantReply(context, snapshot, options, deps.generate)
-            : await deps.generate(options);
+            macroEnvironment: createMacroEnvironment(snapshot.macros), stream: snapshot.streamPreview === true,
+            onStream: value => counter.publish(value) };
+        try {
+            response = snapshot.assistantTools
+                ? await generateConversationAssistantReply(context, snapshot, options, deps.generate)
+                : await deps.generate(options);
+        } finally {
+            counter.stop();
+            publishConversationPreview(context, snapshot, null);
+        }
         if (response === null) return { waiting: true };
         writeArtifact(directories, context.job.id, 'reply', response);
     }
@@ -892,6 +901,10 @@ async function runConversationParticipantJob(context, deps) {
     setJobResume(directories, context.job.id, 'delivery');
     let imageDelivered = false;
     let bookkeepingApplied = false;
+    const counter = await createMessageTokenCounter(() => {});
+    const reasoning = getReplyReasoning(response);
+    const { reasoning_tokens } = counter.counts('', reasoning);
+    let firstBubble = true;
     const metadata = snapshot.extra && typeof snapshot.extra === 'object' ? snapshot.extra : {};
     const result = await deliverConversationReply(response.text, settings, {
         fallbackSpeaker: speaker, groupId: target.groupId, splitEveryLine: speaker.avatar !== target.avatar,
@@ -899,6 +912,8 @@ async function runConversationParticipantJob(context, deps) {
         validateTarget: () => assertDeliverable(),
         append: async (text, author, delivery) => {
             assertDeliverable(author.avatar);
+            const counts = { ...counter.counts(text), reasoning_tokens: firstBubble ? reasoning_tokens : 0 };
+            firstBubble = false;
             const effectId = `bubble:${delivery.chunk}:${delivery.bubble}`;
             const delivered = readConversationEffectReceipt(context, target, effectId);
             if (delivered !== undefined) return delivered;
@@ -909,7 +924,7 @@ async function runConversationParticipantJob(context, deps) {
             assertDeliverable(author.avatar);
             return appendConversationJobMessage(context, target, effectId, {
                 role: author.avatar === target.avatar ? 'character' : 'partner', name: author.name, mes: text,
-                extra: { ...metadata, ...delivery.extra, ...(author.avatar !== target.avatar ? { partner_avatar: author.avatar } : {}),
+                extra: { ...metadata, ...delivery.extra, ...counts, ...(author.avatar !== target.avatar ? { partner_avatar: author.avatar } : {}),
                     ...(delivery.attachReplyReference && snapshot.replyReference ? { conversation_reply_to: snapshot.replyReference } : {}) },
             }, {
                 // The first committed bubble consumes the occurrence and applies
