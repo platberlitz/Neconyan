@@ -878,6 +878,25 @@ test('the system prompt keeps each assistant identity and only offers the change
     assert.match(characterPrompt, /after the last existing alternate greeting/);
 });
 
+test('default prompts carry the bundled personality through practical help for every assistant variant', () => {
+    for (const assistant of store.ASSISTANT_IDS) {
+        for (const gender of store.ASSISTANT_GENDERS) {
+            const { text, persona } = buildScratchpadSystemPrompt({ assistant, gender, userName: 'Kris', help: 'REFERENCE-END' });
+            assert.match(text, new RegExp(`Stay fully in character as ${persona.name} in every reply`));
+            assert.ok(text.includes(persona.personality));
+            assert.ok(text.includes(persona.summary));
+            assert.ok(text.indexOf('Your personality and character details:') < text.indexOf('context block'));
+            assert.ok(text.lastIndexOf(persona.personality) > text.indexOf('REFERENCE-END'), 'personality remains active after the technical reference');
+            assert.doesNotMatch(text, /Scratchpad is out of character|not from this Scratchpad|Keep cat puns rare/);
+            assert.match(text, /Brief expressive actions/);
+        }
+    }
+    const { text } = buildScratchpadSystemPrompt({ assistant: 'taro', customPrompt: 'My own voice.', userInstructions: 'Keep it short.' });
+    assert.match(text, /^My own voice\./);
+    assert.match(text, /Keep it short\./);
+    assert.doesNotMatch(text, /Stay fully in character|For this reply, be Taro/);
+});
+
 test('the endpoint checks the account and answers with the saved Scratchpad', async t => {
     const a = account(t);
     const app = express();
