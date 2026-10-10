@@ -221,6 +221,16 @@ test('long replies fit with room to spare and a full Scratchpad file explains wh
     assert.equal(a.read(SOURCE).sessions[0].messages.length, 6);
 });
 
+test('edited replies keep the long reply limit while typed messages keep the short one', () => {
+    const bucket = { sessions: [{ id: 's1', messages: [
+        { id: 'u1', role: 'user', text: 'question' },
+        { id: 'r1', role: 'assistant', assistant: 'taro', state: 'done', text: 'answer' },
+    ] }] };
+    assert.equal(store.updateMessage(bucket, 's1', 'r1', 'z'.repeat(store.MAX_INPUT_BYTES + 1)).text.length, store.MAX_INPUT_BYTES + 1);
+    assert.throws(() => store.updateMessage(bucket, 's1', 'u1', 'z'.repeat(store.MAX_INPUT_BYTES + 1)), error => error.code === 'SCRATCHPAD_TEXT_TOO_LARGE');
+    assert.equal(store.updateMessage(bucket, 's1', 'u1', 'z'.repeat(store.MAX_INPUT_BYTES)).text.length, store.MAX_INPUT_BYTES);
+});
+
 test('finished thinking is retained across provider formats when streaming is off', () => {
     const cases = [
         ['claude', { content: [{ type: 'thinking', thinking: 'Consider the scene.' }, { type: 'text', text: 'Answer.' }] }],
@@ -667,6 +677,16 @@ test('history keeps the newest turns that fit and always starts with a user turn
         { role: 'assistant', state: 'done', text: 'c' },
     ]);
     assert.deepEqual(history.map(item => item.text), ['a', 'b', 'c']);
+    const long = jobs.historyFrom([
+        { role: 'user', text: 'first question' },
+        { role: 'assistant', state: 'done', text: 'first answer' },
+        { role: 'user', text: 'second question' },
+        { role: 'assistant', state: 'done', text: 'y'.repeat(store.MAX_MESSAGE_BYTES) },
+    ]);
+    assert.deepEqual(long.slice(0, 3).map(item => item.text), ['first question', 'first answer', 'second question'], 'one very long reply does not push out earlier turns');
+    assert.ok(Buffer.byteLength(long[3].text) <= 128 * 1024);
+    assert.throws(() => jobs.normaliseReplyRequest({ submissionKey: 'k', source: SOURCE, sessionId: 'abc', text: 'x'.repeat(store.MAX_INPUT_BYTES + 1) }), error => error.code === 'SCRATCHPAD_TEXT_TOO_LARGE');
+    assert.equal(jobs.normaliseReplyRequest({ submissionKey: 'k', source: SOURCE, sessionId: 'abc', text: 'x'.repeat(store.MAX_INPUT_BYTES) }).text.length, store.MAX_INPUT_BYTES);
     assert.throws(() => jobs.normaliseReplyRequest({ submissionKey: 'k', source: SOURCE, sessionId: 'abc', text: '   ' }), error => error.code === 'SCRATCHPAD_TEXT_REQUIRED');
     assert.throws(() => jobs.normaliseReplyRequest({ submissionKey: 'k', source: { kind: 'roleplay', key: '' }, sessionId: 'abc', text: 'x' }), error => error.code === 'SCRATCHPAD_SOURCE_INVALID');
 });
