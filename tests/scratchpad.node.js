@@ -12,6 +12,7 @@ const { readArtifact } = await import('../src/jobs/artifacts.js');
 const { testExports: { runJob }, setDirectoriesResolver } = await import('../src/jobs/runner.js');
 const { acceptScratchpadReply, finalizeScratchpadSubmission, registerScratchpadJobs, testExports: jobs } = await import('../src/scratchpad/jobs.js');
 const store = await import('../src/scratchpad/store.js');
+const { readInstructionsLocked, updateInstructionsLocked } = await import('../src/scratchpad/instructions.js');
 const { buildScratchpadMessages, buildScratchpadSystemPrompt } = await import('../src/scratchpad/prompt.js');
 const { readScratchpadPreview } = await import('../src/scratchpad/preview.js');
 const { router } = await import('../src/endpoints/scratchpad.js');
@@ -64,6 +65,101 @@ function sendBody(session, extra = {}) {
         ...extra,
     };
 }
+
+function readInstructions(a) {
+    return store.withScratchpad(a.base, readInstructionsLocked);
+}
+
+function saveInstructions(a, text, assistants = null) {
+    return store.withScratchpad(a.base, lease => updateInstructionsLocked(lease,
+        { text, scope: assistants ? 'selected' : 'all', assistants: assistants ?? store.ASSISTANT_IDS }, readInstructionsLocked(lease).revision));
+}
+
+test('global instructions are account-owned, bounded and protected against stale saves or damaged files', t => {
+    const a = account(t);
+    const b = account(t);
+    assert.equal(readInstructions(a).text, '');
+    const saved = saveInstructions(a, 'Use short paragraphs.\r\nKeep my wording.', ['nori']);
+    assert.deepEqual(readInstructions(a), saved);
+    assert.equal(readInstructions(b).text, '');
+    const update = (input, revision = saved.revision) => store.withScratchpad(a.base, lease => updateInstructionsLocked(lease, input, revision));
+    assert.throws(() => update({ ...saved, text: 'Stale' }, 0), error => error.code === 'SCRATCHPAD_INSTRUCTIONS_CHANGED');
+    assert.throws(() => update({ ...saved, assistants: [] }), /Choose at least one/);
+    assert.throws(() => update({ ...saved, assistants: ['unknown'] }), /Choose all assistants/);
+    assert.throws(() => update({ ...saved, text: '字'.repeat(22000) }), error => error.status === 413);
+    assert.throws(() => update({ ...saved, text: null }), error => error.status === 400);
+    assert.deepEqual(readInstructions(a), saved);
+    const filename = path.join(a.directories.root, 'scratchpad', 'global-instructions.json');
+    fs.writeFileSync(filename, '{broken');
+    assert.throws(() => saveInstructions(a, 'Do not overwrite'), error => error.code === 'SCRATCHPAD_INSTRUCTIONS_DAMAGED');
+    assert.equal(fs.readFileSync(filename, 'utf8'), '{broken');
+});
+
+test('global instructions select each round-table speaker and accepted replies keep their captured instructions', async t => {
+    const a = account(t);
+    const session = startSession(a, { roundTable: true, participants: ['miso', 'taro', 'nori'], assistantPrompts: { taro: 'Custom Taro prompt.' } });
+    const prompts = [];
+    registerScratchpadJobs({ generate: async options => { prompts.push({ name: options.characterName, text: options.messages[0].content }); return { text: 'A reply.' }; } });
+    saveInstructions(a, 'GLOBAL-ONE', ['taro', 'nori']);
+    const body = sendBody(session);
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    saveInstructions(a, 'GLOBAL-TWO');
+    const retry = await acceptScratchpadReply(a.request(body), body);
+    assert.equal(retry.job.id, accepted.job.id);
+    assert.equal(retry.created, false);
+    await runJob(getJob(a.directories, accepted.job.id));
+    assert.equal(prompts.length, 3);
+    for (const prompt of prompts) {
+        assert.equal(prompt.text.includes('GLOBAL-ONE'), prompt.name !== 'Miso');
+        assert.equal(prompt.text.includes('GLOBAL-TWO'), false);
+    }
+    assert.match(prompts.find(prompt => prompt.name === 'Taro').text, /^Custom Taro prompt\./);
+    const next = sendBody(session);
+    const all = await acceptScratchpadReply(a.request(next), next);
+    await runJob(getJob(a.directories, all.job.id));
+    assert.ok(prompts.slice(3).every(prompt => prompt.text.includes('GLOBAL-TWO')));
+    // Regeneration follows the original speaker, even after the active assistant changes.
+    const taroReply = a.read(SOURCE).sessions[0].messages.filter(message => message.assistant === 'taro').at(-1);
+    a.mutate(SOURCE, bucket => store.updateSession(bucket, session.id, { assistant: 'miso' }));
+    saveInstructions(a, 'TARO-ONLY', ['taro']);
+    const regenerated = sendBody(session, { text: undefined, regenerate: taroReply.id });
+    const replacement = await acceptScratchpadReply(a.request(regenerated), regenerated);
+    await runJob(getJob(a.directories, replacement.job.id));
+    assert.equal(prompts.at(-1).name, 'Taro');
+    assert.match(prompts.at(-1).text, /TARO-ONLY/);
+});
+
+test('global instructions reach existing and new sessions across source kinds and blank text disables them', async t => {
+    const a = account(t);
+    const old = startSession(a);
+    saveInstructions(a, 'EVERYWHERE');
+    const prompts = [];
+    registerScratchpadJobs({ generate: async options => { prompts.push(options.messages[0].content); return { text: 'A reply.' }; } });
+    for (const source of [SOURCE, OTHER, { kind: 'notebook', key: 'note-global-test', label: 'Note' }]) {
+        const session = source === SOURCE ? old : a.mutate(source, bucket => store.createSession(bucket, { assistant: 'miso', settings: old.settings }));
+        const body = sendBody(session, { source });
+        const accepted = await acceptScratchpadReply(a.request(body), body);
+        await runJob(getJob(a.directories, accepted.job.id));
+        assert.match(prompts.at(-1), /EVERYWHERE/);
+        assert.equal(JSON.stringify(a.read(source)).includes('EVERYWHERE'), false, 'global text is not copied into session data');
+    }
+    saveInstructions(a, '  \n');
+    const body = sendBody(old);
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    await runJob(getJob(a.directories, accepted.job.id));
+    assert.doesNotMatch(prompts.at(-1), /global Scratchpad instructions|EVERYWHERE/);
+});
+
+test('changing global instructions during preparation rejects the send before messages are added', async t => {
+    const a = account(t);
+    const session = startSession(a);
+    saveInstructions(a, 'Before');
+    const body = sendBody(session);
+    const sending = acceptScratchpadReply(a.request(body), body);
+    saveInstructions(a, 'After');
+    await assert.rejects(sending, error => error.code === 'SCRATCHPAD_INSTRUCTIONS_CHANGED');
+    assert.equal(a.read(SOURCE).sessions[0].messages.length, 0);
+});
 
 test('a reply accepted with the old filename still settles after a protected chat rename', async t => {
     const a = account(t);
@@ -798,6 +894,18 @@ test('the endpoint checks the account and answers with the saved Scratchpad', as
     const url = `http://127.0.0.1:${server.address().port}/scratchpad`;
     const post = (route, body, owner = a.f.scope.owner) => fetch(url + route, { method: 'POST',
         headers: { 'Content-Type': 'application/json', Connection: 'close', 'X-Neconyan-Account': owner }, body: JSON.stringify(body) });
+
+    const initial = await post('/instructions', {});
+    assert.equal(initial.status, 200, 'instructions do not need an open chat');
+    const { instructions } = await initial.json();
+    const payload = { instructions: { ...instructions, text: 'ENDPOINT-GLOBAL', scope: 'selected', assistants: ['miso'] }, expectedRevision: instructions.revision };
+    assert.equal((await post('/instructions/update', payload)).status, 200);
+    assert.equal((await (await post('/instructions', {})).json()).instructions.text, 'ENDPOINT-GLOBAL');
+    assert.equal((await post('/instructions/update', payload)).status, 409);
+    assert.equal((await post('/instructions', {}, 'someone-else')).status, 409);
+    assert.equal((await post('/instructions/update', payload, 'someone-else')).status, 409);
+    const defaults = await (await post('/prompt', { assistant: 'miso' })).json();
+    assert.doesNotMatch(defaults.text, /ENDPOINT-GLOBAL/, 'editing a base prompt must not bake in global text');
 
     const created = await post('/session/create', { source: SOURCE, assistant: 'nori', gender: 'male' });
     assert.equal(created.status, 200);

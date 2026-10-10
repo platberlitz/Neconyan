@@ -29,6 +29,7 @@ import {
     writeBucketLocked,
 } from './store.js';
 import { buildScratchpadMessages, buildScratchpadSystemPrompt } from './prompt.js';
+import { instructionsForAssistant, readInstructionsLocked } from './instructions.js';
 import { characterToolReply, scratchpadCharacterTools, scratchpadToolsFor } from './character-tools.js';
 import { clearScratchpadPreview, publishScratchpadPreview } from './preview.js';
 import { scratchpadMacroEnvironment } from './macros.js';
@@ -163,10 +164,13 @@ export async function acceptScratchpadReply(request, body = {}) {
         const session = findSession(bucket, input.sessionId);
         const plan = planReply(session, input);
         const notebook = notebookContextLocked(lease, session.settings);
+        const instructions = readInstructionsLocked(lease);
         writeBucketLocked(lease, bucket);
         return { ...plan, notebook, revision: hash(canonical(session)), maxTokens: session.settings.maxTokens, stream: session.settings.stream !== false,
+            instructionsRevision: instructions.revision,
             participants: sessionAssistants(session),
-            speakers: plan.assistants.map(assistant => ({ assistant, customPrompt: session.settings.assistantPrompts?.[assistant], gender: input.genders[assistant] ?? (assistant === session.assistant ? session.gender : 'neutral'), connection: assistantConnection(session.settings, assistant) })) };
+            speakers: plan.assistants.map(assistant => ({ assistant, userInstructions: instructionsForAssistant(instructions, assistant),
+                customPrompt: session.settings.assistantPrompts?.[assistant], gender: input.genders[assistant] ?? (assistant === session.assistant ? session.gender : 'neutral'), connection: assistantConnection(session.settings, assistant) })) };
     });
 
     const replies = await Promise.all(planned.speakers.map(async speaker => {
@@ -208,6 +212,9 @@ export async function acceptScratchpadReply(request, body = {}) {
             const session = findSession(current, input.sessionId);
             if (hasPending(session) || hash(canonical(session)) !== planned.revision) {
                 throw fail('SCRATCHPAD_CHANGED', 'This session changed while the message was being sent. Try again.', 409);
+            }
+            if (readInstructionsLocked(lease).revision !== planned.instructionsRevision) {
+                throw fail('SCRATCHPAD_INSTRUCTIONS_CHANGED', 'User instructions changed while the message was being sent. Try again.', 409);
             }
             if (notebookContextLocked(lease, session.settings).fingerprint !== planned.notebook.fingerprint) {
                 throw fail('SCRATCHPAD_NOTES_CHANGED', 'The shared notes or their permissions changed while sending. Check the preview and try again.', 409);
