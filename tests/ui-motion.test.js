@@ -379,3 +379,13 @@ describe('motion that follows what was pressed', () => {
         expect(topBar.element.style.getPropertyValue('z-index')).toBe('');
     });
 });
+
+describe('chat and swipe motion', () => {
+    test('an opened chat rises further and more slowly than a menu reveal', () => {
+        const { element, animations } = surface();
+        motion.revealChat(element);
+        expect(animations[0].frames).toEqual([{ opacity: 0, translate: '0 16px' }, { opacity: 1, translate: '0 0' }]);
+        expect(animations[0].options.duration).toBe(motion.UI_MOTION_TIMING.chatRevealMs);
+        expect(motion.UI_MOTION_TIMING.chatRevealMs).toBeGreaterThan(motion.UI_MOTION_TIMING.revealMs);
+    });
+});

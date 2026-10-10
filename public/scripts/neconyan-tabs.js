@@ -1,5 +1,5 @@
 import { createBubblesBottomBoundary } from './bubbles-bottom-boundary.js';
-import { finishUiMotion, getUiDrawerEdge, getUiSlideOptions, isUiClosing, revealUi, setUiVisibility } from './ui-motion.js';
+import { finishUiMotion, getUiDrawerEdge, getUiSlideOptions, isUiClosing, revealChat, revealUi, setUiVisibility } from './ui-motion.js';
 import { DEFAULT_SCROLL_EDGE_SETTLE_DELAYS, jumpScrollElementToEdge } from './chat-scroll-edges.js';
 import {
     clampMobileShellText as clampText,
@@ -20582,7 +20582,7 @@ function initAll() {
     nnState.initObserver?.disconnect();
     nnState.initObserver = null;
     nnState.initialized = true;
-    eventSource.on(event_types.CHAT_CHANGED, () => revealUi(document.getElementById('chat')));
+    eventSource.on(event_types.CHAT_CHANGED, () => revealChat(document.getElementById('chat')));
 
     restorePersistedTopbarState();
     seedTopbarScaleDefaults();
