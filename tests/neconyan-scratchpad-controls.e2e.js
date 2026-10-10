@@ -110,6 +110,9 @@ for (const phone of [false, true]) {
         app.provider.mode.finishReasoning();
         await expect(reasoning.locator('.scratchpad-plain')).toHaveText('Checking the scene. Comparing the details.');
         await expect(reasoning).not.toHaveAttribute('open');
+        await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'chat' }));
+        await expect(reasoning.locator('.scratchpad-plain')).toHaveText('Checking the scene. Comparing the details.');
+        await expect(reasoning).not.toHaveAttribute('open');
         await expect(page.locator('.scratchpad-stream')).toHaveText('A streamed answer');
         await page.close();
         page = await account.open();

@@ -101,6 +101,7 @@ const app = {
     drafts: new Map(),
     draftKey: '',
     previews: new Map(),
+    foldedThinking: new Set(),
     watchers: new Map(),
     pickLimit: PICK_PAGE,
     sessionQuery: '',
@@ -525,11 +526,16 @@ async function updateSettings(patch, { rerenderContext = false } = {}) {
 
 function syncWatchers() {
     const wanted = new Set();
+    const pending = new Set();
     for (const session of app.bucket?.sessions ?? []) {
         for (const message of session.messages) {
-            if (message.role === 'assistant' && message.state === 'pending' && message.jobId) wanted.add(message.jobId);
+            if (message.role === 'assistant' && message.state === 'pending' && message.jobId) {
+                wanted.add(message.jobId);
+                pending.add(message.id);
+            }
         }
     }
+    for (const id of app.foldedThinking) if (!pending.has(id)) app.foldedThinking.delete(id);
     for (const [jobId, stop] of app.watchers) {
         if (!wanted.has(jobId)) {
             stop();
@@ -895,9 +901,13 @@ function renderMessage(session, message, { latest }) {
         article.append(h('p', { class: 'scratchpad-plain', text: message.text }));
     } else if (message.state === 'pending') {
         const preview = replyPreview(message);
+        const thinking = {
+            class: 'scratchpad-reasoning', hidden: !preview?.reasoning, open: !app.foldedThinking.has(message.id),
+            ontoggle: event => app.foldedThinking[event.currentTarget.open ? 'delete' : 'add'](message.id),
+        };
         article.append(
             h('p', { class: 'scratchpad-stage', text: stageLabel(preview) }),
-            h('details', { class: 'scratchpad-reasoning', hidden: !preview?.reasoning, open: true },
+            h('details', thinking,
                 h('summary', { text: t`Thinking` }),
                 h('p', { class: 'scratchpad-plain', text: preview?.reasoning ?? '' })),
             h('p', { class: 'scratchpad-plain scratchpad-stream', text: preview?.text ?? '' }),
