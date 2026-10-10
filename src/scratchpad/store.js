@@ -256,6 +256,9 @@ function normaliseSession(input) {
     return {
         id,
         name: boundedString(input.name, MAX_NAME_LENGTH, { trim: true }) || 'Scratchpad',
+        // Older sessions did not record whether the owner had chosen the name.
+        automaticName: typeof input.automaticName === 'boolean' ? input.automaticName
+            : /^(Miso|Taro|Nori)'s notes(?: [1-9]\d*)?$/.test(input.name),
         assistant: normaliseAssistant(input.assistant),
         gender: normaliseGender(input.gender),
         temporary: input.temporary === true,
@@ -443,9 +446,9 @@ function dropTemporary(bucket, keepId) {
         || session.messages.some(message => message.state === 'pending'));
 }
 
-function nextName(bucket, assistant) {
+function nextName(bucket, assistant, excludeId) {
     const label = assistant.charAt(0).toUpperCase() + assistant.slice(1);
-    const used = new Set(bucket.sessions.map(session => session.name));
+    const used = new Set(bucket.sessions.filter(session => session.id !== excludeId).map(session => session.name));
     for (let index = 1; index <= MAX_SESSIONS + 1; index++) {
         const name = index === 1 ? `${label}'s notes` : `${label}'s notes ${index}`;
         if (!used.has(name)) return name;
@@ -459,9 +462,11 @@ export function createSession(bucket, input = {}) {
     }
     const assistant = normaliseAssistant(input.assistant);
     const previous = bucket.sessions.find(item => item.id === bucket.activeSessionId);
+    const name = boundedString(input.name, MAX_NAME_LENGTH, { trim: true });
     const session = {
         id: newScratchpadId(),
-        name: boundedString(input.name, MAX_NAME_LENGTH, { trim: true }) || nextName(bucket, assistant),
+        name: name || nextName(bucket, assistant),
+        automaticName: !name,
         assistant,
         gender: normaliseGender(input.gender),
         temporary: input.temporary === true,
@@ -486,8 +491,15 @@ export function updateSession(bucket, sessionId, input = {}) {
         const name = boundedString(input.name, MAX_NAME_LENGTH, { trim: true });
         if (!name) throw fail('SCRATCHPAD_NAME_REQUIRED', 'Give the session a name.');
         session.name = name;
+        session.automaticName = false;
     }
-    if (input.assistant !== undefined) session.assistant = normaliseAssistant(input.assistant);
+    if (input.assistant !== undefined) {
+        const assistant = normaliseAssistant(input.assistant);
+        if (assistant !== session.assistant && session.automaticName && !session.messages.length) {
+            session.name = nextName(bucket, assistant, session.id);
+        }
+        session.assistant = assistant;
+    }
     if (input.gender !== undefined) session.gender = normaliseGender(input.gender);
     if (typeof input.temporary === 'boolean') session.temporary = input.temporary;
     if (input.settings !== undefined) session.settings = normaliseSettings(input.settings, session.settings);
