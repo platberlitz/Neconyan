@@ -351,6 +351,40 @@ test('sessions are kept per source chat and temporary sessions disappear when an
     assert.equal(a.read(SOURCE).sessions[0].settings.maxTokens, 4096, 'a saved reply limit is not replaced by a new default');
 });
 
+test('empty sessions follow the chosen assistant without overwriting custom or established names', t => {
+    const a = account(t);
+    const session = startSession(a);
+    const switchTo = assistant => a.mutate(SOURCE, bucket => store.updateSession(bucket, session.id, { assistant }));
+    switchTo('nori');
+    assert.equal(a.read(SOURCE).sessions[0].name, "Nori's notes");
+    switchTo('taro');
+    assert.equal(a.read(SOURCE).sessions[0].name, "Taro's notes");
+    const other = a.mutate(SOURCE, bucket => store.createSession(bucket, { assistant: 'nori' }));
+    switchTo('nori');
+    assert.equal(a.read(SOURCE).sessions.find(item => item.id === session.id).name, "Nori's notes 2");
+    switchTo('nori');
+    assert.equal(a.read(SOURCE).sessions.find(item => item.id === session.id).name, "Nori's notes 2");
+    a.mutate(SOURCE, bucket => store.updateSession(bucket, session.id, { name: "Miso's notes" }));
+    switchTo('taro');
+    assert.equal(a.read(SOURCE).sessions.find(item => item.id === session.id).name, "Miso's notes", 'an explicitly chosen name stays even if it resembles a default');
+    a.mutate(SOURCE, bucket => {
+        store.findSession(bucket, other.id).messages.push({ id: 'question', role: 'user', text: 'An established discussion.' });
+        store.updateSession(bucket, other.id, { assistant: 'miso' });
+    });
+    assert.equal(a.read(SOURCE).sessions.find(item => item.id === other.id).name, "Nori's notes");
+});
+
+test('legacy empty sessions recognise generated names and preserve custom names', () => {
+    const bucket = store.normaliseBucket({ version: 1, sessions: [
+        { id: 'legacy', assistant: 'taro', name: "Miso's notes 2", messages: [] },
+        { id: 'custom', assistant: 'taro', name: 'My plan', messages: [] },
+    ] }, SOURCE);
+    store.updateSession(bucket, 'legacy', { assistant: 'nori' });
+    store.updateSession(bucket, 'custom', { assistant: 'nori' });
+    assert.equal(bucket.sessions[0].name, "Nori's notes");
+    assert.equal(bucket.sessions[1].name, 'My plan');
+});
+
 test('Conversation uses its saved chat connection without changing the session default', async t => {
     const a = account(t);
     const session = a.mutate(OTHER, bucket => store.createSession(bucket, { assistant: 'miso' }));

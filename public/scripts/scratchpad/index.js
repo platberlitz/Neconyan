@@ -740,7 +740,7 @@ async function chooseAssistant(id) {
     writePrefs();
     const session = activeSession();
     if (!session) {
-        renderHeader();
+        render();
         return;
     }
     await change(source => api.updateSession(source, session.id, { assistant: id, gender: getAssistantGender(id) }), t`Scratchpad could not switch assistants.`);
