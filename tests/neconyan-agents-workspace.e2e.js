@@ -47,8 +47,11 @@ async function capture(page, info, name) {
 async function checkClose(page, root = '#left-nav-panel') {
     const container = page.locator(`${root} .sb-shell-header`);
     await expect(container).toBeVisible();
-    const parent = await container.boundingBox();
-    const close = await container.locator('.sb-shell-close').boundingBox();
+    // Measure both together so drawer motion cannot advance between the bounds.
+    const { parent, close } = await container.evaluate(element => ({
+        parent: element.getBoundingClientRect().toJSON(),
+        close: element.querySelector('.sb-shell-close').getBoundingClientRect().toJSON(),
+    }));
     expect(close.y).toBeGreaterThanOrEqual(parent.y);
     expect(close.y + close.height).toBeLessThanOrEqual(parent.y + parent.height + 1);
     expect(close.x + close.width).toBeLessThanOrEqual(parent.x + parent.width + 1);

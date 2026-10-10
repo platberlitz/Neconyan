@@ -118,10 +118,18 @@ chat nor the proposal's saved state. Each corrected check passed three
 consecutive local runs. The phone sidebar and Story-link checks also passed
 three consecutive runs without changes; their original failures have not
 been reproduced. Changed-test lint passed with no errors and nine existing
-warnings. One additional desktop workflow check reported a reset connection
-while reading a job; its local reproduction is still pending. A final full
-staging run must include `867025d`, then the release notes and this handover
-need the actual browser result.
+warnings. The desktop workflow check that reported a reset connection while
+reading a job passed three consecutive local runs unchanged. That failure has
+not been reproduced either.
+
+The intermediate staging run passed the five expression and notebook checks,
+but reported an Agents close-button layout failure. That case passed three
+local runs unchanged. Its helper now reads the header and close-button
+positions together, preventing drawer motion between separate measurements;
+the exact timing behind the CI failure remains inferred. All seven screen
+widths passed with that change, and lint reported no errors and 21 existing
+warnings. The final full staging run must include all these test corrections;
+the release notes and this handover still need its actual result.
 
 ### 9 October: Android word-splitting hotfix 1.2.4.2, staging returns to 1.2.5
 
