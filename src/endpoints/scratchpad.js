@@ -15,6 +15,7 @@ import {
     readBucketLocked,
     requireId,
     scratchpadAccountBase,
+    updateCleanup,
     updateMessage,
     updateSession,
     withScratchpad,
@@ -96,6 +97,10 @@ router.post('/session/update', (request, response) => change(request, response, 
 
 router.post('/session/delete', (request, response) => change(request, response, (bucket, body) => {
     deleteSession(bucket, requireId(body.sessionId, 'session'));
+}));
+
+router.post('/cleanup', (request, response) => change(request, response, (bucket, body) => {
+    updateCleanup(bucket, body.cleanup);
 }));
 
 router.post('/session/activate', (request, response) => change(request, response, (bucket, body) => {

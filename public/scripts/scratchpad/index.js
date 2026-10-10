@@ -1607,6 +1607,42 @@ async function removeSession(session) {
     await change(source => api.deleteSession(source, session.id), t`Scratchpad could not delete that session.`, scope);
 }
 
+async function updateCleanup(patch) {
+    const scope = app.source;
+    if ('keep' in patch) {
+        if (!Number.isFinite(patch.keep) || patch.keep < 1) {
+            renderSessions();
+            return;
+        }
+        patch = { ...patch, keep: Math.min(app.bucket?.limits?.sessions ?? 40, Math.round(patch.keep)) };
+    }
+    const next = { ...(app.bucket?.cleanup ?? { enabled: false, keep: 10 }), ...patch };
+    const extra = next.enabled ? (app.bucket?.sessions.length ?? 0) - next.keep : 0;
+    if (extra > 0) {
+        const ok = await callGenericPopup(t`This deletes up to ${extra} older sessions in this chat now. The open session stays. This cannot be undone.`,
+            POPUP_TYPE.CONFIRM, '', { okButton: t`Delete`, cancelButton: t`Keep` });
+        if (ok !== POPUP_RESULT.AFFIRMATIVE) {
+            renderSessions();
+            return;
+        }
+    }
+    await change(source => api.updateCleanup(source, patch), t`Scratchpad could not save that setting.`, scope);
+    renderSessions();
+}
+
+function renderCleanup() {
+    const cleanup = app.bucket?.cleanup ?? { enabled: false, keep: 10 };
+    const keep = h('input', {
+        type: 'number', class: 'text_pole', id: 'scratchpad-cleanup-keep', min: '1', max: String(app.bucket?.limits?.sessions ?? 40), step: '1',
+        value: String(cleanup.keep), disabled: !cleanup.enabled,
+        onchange: event => void updateCleanup({ keep: event.currentTarget.value.trim() ? Number(event.currentTarget.value) : NaN }),
+    });
+    return h('section', { class: 'scratchpad-section scratchpad-cleanup' },
+        checkbox(t`Delete old sessions automatically`, cleanup.enabled, value => void updateCleanup({ enabled: value }),
+            t`Keeps the newest sessions in this chat and deletes older ones for good. If Scratchpad fills up, the oldest go first. The open session and replies in progress are never deleted.`),
+        h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-cleanup-keep', text: t`Sessions to keep` }), keep));
+}
+
 function exportSession(session) {
     const payload = {
         format: 'neconyan-scratchpad',
@@ -1679,6 +1715,7 @@ function renderSessions() {
             current ? iconButton(t`Export current`, () => exportSession(current), { icon: 'fa-file-export' }) : null,
             current ? iconButton(t`Save session to note`, () => void saveToNote(current), { icon: 'fa-book-bookmark', disabled: !current.messages.length }) : null),
         h('p', { class: 'scratchpad-muted', text: t`Exports keep the conversation but leave out saved-note sharing. Imported sessions need notes to be added again.` }),
+        renderCleanup(),
         search,
     ]);
     const list = h('ul', { class: 'scratchpad-sessions' });

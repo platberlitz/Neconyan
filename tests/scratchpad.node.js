@@ -217,8 +217,80 @@ test('long replies fit with room to spare and a full Scratchpad file explains wh
         for (let index = 6; index < 10; index++) {
             target.messages.push({ id: `long-${index}`, role: 'assistant', assistant: 'taro', state: 'done', text: long, reasoning: long, created: new Date().toISOString() });
         }
-    }), error => error.code === 'SCRATCHPAD_STORAGE_FULL' && error.status === 413 && /Delete old sessions/.test(error.message));
+    }), error => error.code === 'SCRATCHPAD_STORAGE_FULL' && error.status === 413 && /Delete old sessions/.test(error.message)
+        && /automatic cleanup/.test(error.message));
     assert.equal(a.read(SOURCE).sessions[0].messages.length, 6);
+});
+
+function datedSessions(a, count) {
+    const ids = [];
+    for (let index = 0; index < count; index++) ids.push(a.mutate(SOURCE, bucket => store.createSession(bucket)).id);
+    a.mutate(SOURCE, bucket => {
+        for (const session of bucket.sessions) session.updated = `2026-01-${String(ids.indexOf(session.id) + 1).padStart(2, '0')}T00:00:00.000Z`;
+    });
+    return ids;
+}
+
+test('automatic cleanup is off by default and keeps a sensible number of sessions', () => {
+    assert.deepEqual(store.normaliseCleanup(undefined), { enabled: false, keep: 10 });
+    assert.deepEqual(store.normaliseCleanup({ enabled: 'yes', keep: 'many' }), { enabled: false, keep: 10 });
+    assert.equal(store.normaliseCleanup({ keep: 0 }).keep, 1);
+    assert.equal(store.normaliseCleanup({ keep: 999 }).keep, store.MAX_SESSIONS);
+    assert.deepEqual(store.normaliseCleanup({ keep: 4 }, { enabled: true, keep: 7 }), { enabled: true, keep: 4 });
+});
+
+test('automatic cleanup keeps the newest sessions and never the open one', t => {
+    const a = account(t);
+    const ids = datedSessions(a, 5);
+    a.mutate(SOURCE, bucket => store.activateSession(bucket, ids[0]));
+    assert.equal(a.read(SOURCE).sessions.length, 5);
+    a.mutate(SOURCE, bucket => store.updateCleanup(bucket, { enabled: true, keep: 3 }));
+    assert.deepEqual(a.read(SOURCE).sessions.map(session => session.id).sort(), [ids[0], ids[3], ids[4]].sort());
+    a.mutate(SOURCE, bucket => store.updateCleanup(bucket, { keep: 1 }));
+    assert.deepEqual(a.read(SOURCE).sessions.map(session => session.id).sort(), [ids[0], ids[4]].sort());
+    const saved = a.read(SOURCE);
+    assert.deepEqual(saved.cleanup, { enabled: true, keep: 1 });
+});
+
+test('automatic cleanup never deletes a session with a reply in progress', t => {
+    const a = account(t);
+    const ids = datedSessions(a, 3);
+    a.mutate(SOURCE, bucket => {
+        bucket.sessions.find(session => session.id === ids[0]).messages.push({ id: 'waiting', role: 'assistant', state: 'pending', jobId: 'job-1', text: '' });
+        store.updateCleanup(bucket, { enabled: true, keep: 1 });
+    });
+    assert.deepEqual(a.read(SOURCE).sessions.map(session => session.id).sort(), [ids[0], ids[2]].sort());
+});
+
+test('automatic cleanup makes room for a new session at the session limit', t => {
+    const a = account(t);
+    datedSessions(a, store.MAX_SESSIONS);
+    assert.throws(() => a.mutate(SOURCE, bucket => store.createSession(bucket)), error => error.code === 'SCRATCHPAD_SESSION_LIMIT');
+    a.mutate(SOURCE, bucket => store.updateCleanup(bucket, { enabled: true, keep: store.MAX_SESSIONS }));
+    const created = a.mutate(SOURCE, bucket => store.createSession(bucket));
+    const saved = a.read(SOURCE);
+    assert.equal(saved.sessions.length, store.MAX_SESSIONS);
+    assert.equal(saved.activeSessionId, created.id);
+});
+
+test('with automatic cleanup on, a full Scratchpad file drops its oldest sessions instead of failing', t => {
+    const a = account(t);
+    const [oldest, newest] = datedSessions(a, 2);
+    const long = 'x'.repeat(store.MAX_MESSAGE_BYTES);
+    const fill = (id, from, to) => a.mutate(SOURCE, bucket => {
+        const target = bucket.sessions.find(item => item.id === id);
+        for (let index = from; index < to; index++) {
+            target.messages.push({ id: `long-${index}`, role: 'assistant', assistant: 'taro', state: 'done', text: long, reasoning: long, created: new Date().toISOString() });
+        }
+    });
+    fill(oldest, 0, 6);
+    a.mutate(SOURCE, bucket => store.updateCleanup(bucket, { enabled: true }));
+    fill(newest, 6, 10);
+    const saved = a.read(SOURCE);
+    assert.deepEqual(saved.sessions.map(session => session.id), [newest]);
+    assert.equal(saved.sessions[0].messages.length, 4);
+    assert.throws(() => fill(newest, 10, 20), error => error.code === 'SCRATCHPAD_STORAGE_FULL' && /open session/.test(error.message));
+    assert.equal(a.read(SOURCE).sessions[0].messages.length, 4);
 });
 
 test('edited replies keep the long reply limit while typed messages keep the short one', () => {
@@ -732,6 +804,8 @@ test('the endpoint checks the account and answers with the saved Scratchpad', as
     assert.equal(bucket.sessions[0].name, 'Nori\'s notes');
     const renamed = await post('/session/update', { source: SOURCE, sessionId: bucket.sessions[0].id, changes: { name: 'Plot holes' } });
     assert.equal((await renamed.json()).bucket.sessions[0].name, 'Plot holes');
+    const cleaned = await post('/cleanup', { source: SOURCE, cleanup: { enabled: true, keep: 3 } });
+    assert.deepEqual((await cleaned.json()).bucket.cleanup, { enabled: true, keep: 3 });
     const wrong = await post('/bucket', { source: SOURCE }, 'someone-else');
     assert.equal(wrong.status, 409);
     const missing = await post('/session/delete', { source: SOURCE, sessionId: 'nope' });
