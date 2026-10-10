@@ -3149,6 +3149,7 @@ body.neconyan #neconyan-lorebook-library .neconyan-lorebook-primary-actions { fl
 body.neconyan #neconyan-lorebook-library .world_popup_action_group--select { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 12px 36px; }
 body.neconyan #neconyan-lorebook-library .world_popup_action_group--select > button { width: 100%; margin: 0; }
 body.neconyan #neconyan-lorebook-library .neconyan-lorebook-toolbar { align-items: center; }
+body.neconyan #WorldInfo #sbwil-lorebooks-button { min-height: 44px; align-self: center; }
 body.neconyan #neconyan-lorebook-library .neconyan-legacy-book-picker[hidden],
 body.neconyan #neconyan-lorebook-library[data-view='book'] .world_popup_action_group--select { display: none !important; }
 
