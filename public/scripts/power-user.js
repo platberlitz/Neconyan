@@ -2051,10 +2051,10 @@ function applyNeconyanPalettePreset(presetId) {
     toastr.success(`${preset.label} applied.`, 'Neconyan palette');
 
     if (power_user.fast_ui_mode && preset.values.blur_strength !== undefined) {
-        toastr.warning('Blur effects are disabled while Fast UI Mode is on.', 'Neconyan palette', { timeOut: 4000 });
+        toastr.warning('Blur effects are disabled while Fast UI Mode is on.', 'Neconyan palette', { timeOut: 5000 });
     }
     if (power_user.noShadows && preset.values.shadow_width !== undefined) {
-        toastr.warning('Text shadows are disabled while No Shadows mode is on.', 'Neconyan palette', { timeOut: 4000 });
+        toastr.warning('Text shadows are disabled while No Shadows mode is on.', 'Neconyan palette', { timeOut: 5000 });
     }
 }
 
