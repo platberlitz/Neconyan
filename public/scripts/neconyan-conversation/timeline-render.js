@@ -5,6 +5,7 @@ import {
     messageFormatting,
     name1,
 } from '../../script.js';
+import { t } from '../i18n.js';
 import { user_avatar } from '../personas.js';
 import { updateMessageTokenCounts } from '../message-token-counts.js';
 import { revealUi } from '../ui-motion.js';
@@ -611,6 +612,59 @@ function reconcileConversationMessageNodes(timeline, messages, { avatar, groupId
     });
 
     existingNodes.forEach(node => node.remove());
+    markConversationMessageRuns(timeline, messages);
+}
+
+const CONVERSATION_RUN_GAP_MS = 10 * 60 * 1000;
+
+function getConversationRunSender(message) {
+    if (!message || message.role === 'system') return '';
+    const partner = message.role === 'partner' ? String(message.extra?.partner_avatar || '') : '';
+    return `${message.role || 'character'}\u0000${message.name || ''}\u0000${partner}`;
+}
+
+function getConversationDayLabel(sentAt) {
+    const startOfDay = date => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+    const days = Math.round((startOfDay(new Date()) - startOfDay(sentAt.toDate())) / 86_400_000);
+    if (days === 0) return t`Today`;
+    if (days === 1) return t`Yesterday`;
+    if (days > 1 && days < 7) return sentAt.format('dddd');
+    return sentAt.format('LL');
+}
+
+/**
+ * Tags each message with its place in a run of messages from the same sender,
+ * and the first message of each day with a day label, so the stylesheet can
+ * group bubbles the way messaging apps do.
+ */
+export function markConversationMessageRuns(timeline, messages) {
+    const nodes = Array.from(timeline.children).slice(0, messages.length);
+    const moments = messages.map(message => timestampToMoment(message?.send_date));
+    const joinsPrevious = messages.map((message, index) => {
+        if (index === 0) return false;
+        const sender = getConversationRunSender(message);
+        if (!sender || sender !== getConversationRunSender(messages[index - 1])) return false;
+        const current = moments[index];
+        const previous = moments[index - 1];
+        if (!current?.isValid?.() || !previous?.isValid?.()) return true;
+        return current.isSame(previous, 'day') && Math.abs(current.diff(previous)) < CONVERSATION_RUN_GAP_MS;
+    });
+
+    nodes.forEach((node, index) => {
+        if (!(node instanceof HTMLElement)) return;
+        const startsRun = !joinsPrevious[index];
+        const endsRun = !joinsPrevious[index + 1];
+        node.dataset.sbRun = startsRun && endsRun ? 'single' : startsRun ? 'start' : endsRun ? 'end' : 'middle';
+
+        const sentAt = moments[index];
+        const previous = moments[index - 1];
+        const newDay = sentAt?.isValid?.() && (index === 0 || !previous?.isValid?.() || !sentAt.isSame(previous, 'day'));
+        if (newDay) {
+            node.dataset.sbDayLabel = getConversationDayLabel(sentAt);
+        } else {
+            delete node.dataset.sbDayLabel;
+        }
+    });
 }
 
 export function renderConversationTimeline() {

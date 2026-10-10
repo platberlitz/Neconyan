@@ -366,6 +366,7 @@ export function updateConversationHeader(settings = getSettings()) {
         const kicker = document.querySelector(`#${CHROME_IDS.header} .sb-conversation-header-kicker`);
         if (kicker) {
             kicker.textContent = 'Conversation';
+            kicker.dataset.sbBranch = 'false';
             setUserTextSlot(kicker, false);
         }
         if (name instanceof HTMLElement) {
@@ -407,6 +408,7 @@ export function updateConversationHeader(settings = getSettings()) {
         if (kicker) {
             const showsBranch = branchLabel.text !== identityLabel;
             kicker.textContent = showsBranch ? branchLabel.text : 'Conversation';
+            kicker.dataset.sbBranch = String(showsBranch);
             setUserTextSlot(kicker, showsBranch && branchLabel.isValue);
         }
     }
