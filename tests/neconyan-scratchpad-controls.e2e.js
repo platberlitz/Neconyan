@@ -194,6 +194,8 @@ for (const phone of [false, true]) {
         await keep.fill('2');
         await keep.blur();
         await popup.getByText('Apply to all chats', { exact: true }).click();
+        // The typed value shows before the save; the whole Sessions panel is rebuilt once the server answers.
+        await expect(page.locator('.scratchpad-sessions .scratchpad-session')).toHaveCount(2);
         await expect(keep).toHaveValue('2');
         const bucket = (await account.post('/api/scratchpad/bucket', { source })).bucket;
         expect(bucket.cleanup).toEqual({ enabled: true, keep: 2 });
