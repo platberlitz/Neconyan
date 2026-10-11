@@ -114,6 +114,9 @@ for (const phone of [false, true]) {
             for (const tone of ['dark', 'light']) {
                 await page.locator('#themes').evaluate((el, name) => window.jQuery(el).val(name).trigger('change'), tone === 'dark' ? 'Neconyan Calico Dark' : 'Neconyan Calico');
                 await page.evaluate(() => document.querySelector('.sb-accent-profile-apply').click());
+                // Each applied profile leaves a notice up for 5 s; one under the pointer takes the hover away.
+                await page.evaluate(() => window.toastr.remove());
+                await page.locator('#auto_background').hover();
                 const samples = [];
                 const selectedSamples = [];
                 const railSamples = [];
