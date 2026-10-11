@@ -168,7 +168,7 @@ describe('Guided Generations steering commands', () => {
 
         expect(context.executeSlashCommandsWithOptions).toHaveBeenCalledTimes(2);
         const command = context.executeSlashCommandsWithOptions.mock.calls[0][0];
-        expect(command).toContain('/inject id=gg-guided-response position=chat ephemeral=true scan=true depth=2 role=assistant GUIDE: aim for a colder, suspicious reply|');
+        expect(command).toContain('/inject id=gg-guided-response position=chat ephemeral=true scan=true depth=2 role=assistant GUIDE: aim for a colder, suspicious reply |');
         expect(command).toContain('/trigger await=true|');
         expect(context.executeSlashCommandsWithOptions).toHaveBeenLastCalledWith('/flushinject gg-guided-response');
         expect(context.chatMetadata.script_injects['gg-guided-response']).toBeUndefined();
@@ -187,6 +187,29 @@ describe('Guided Generations steering commands', () => {
         expect(context.chatMetadata.script_injects['gg-guided-swipe']).toBeUndefined();
         expect(textarea.value).toBe('aim for a colder, suspicious reply');
         expect(textarea.dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'input' }));
+    });
+
+    test('a pipe in the guide stays part of the injected instruction', async () => {
+        textarea.value = 'be suspicious | then laugh';
+        const { guidedResponse } = await import('../public/scripts/extensions/guided-generations/scripts/guidedResponse.js');
+        const { guidedSwipe } = await import('../public/scripts/extensions/guided-generations/scripts/guidedSwipe.js');
+
+        await guidedResponse();
+        await guidedSwipe();
+
+        const [responseCommand] = context.executeSlashCommandsWithOptions.mock.calls[0];
+        expect(responseCommand).toContain('role=assistant GUIDE: be suspicious \\| then laugh |\n/trigger await=true|');
+        expect(context.executeSlashCommandsWithOptions).toHaveBeenCalledWith('/inject id=gg-guided-swipe position=chat ephemeral=true scan=true depth=3 role=assistant SWIPE GUIDE: be suspicious \\| then laugh |');
+    });
+
+    test('a closure opener or a backslash before a pipe cannot swallow the guided command', async () => {
+        textarea.value = 'open {: brace, keep a\\|b';
+        const { guidedResponse } = await import('../public/scripts/extensions/guided-generations/scripts/guidedResponse.js');
+
+        await guidedResponse();
+
+        const [responseCommand] = context.executeSlashCommandsWithOptions.mock.calls[0];
+        expect(responseCommand).toContain('role=assistant GUIDE: open \\{: brace, keep a\\\\\\|b |\n/trigger await=true|');
     });
 
     test('guided response cancels before injecting or generating when the group picker is dismissed', async () => {

@@ -3,6 +3,7 @@ import { is_group_generating } from '../../../group-chats.js';
 import {
     applyPromptTemplate,
     debugLog,
+    escapeSlashCommandText,
     extensionName,
     extension_settings,
     getContext,
@@ -208,7 +209,7 @@ async function guidedReplacement(regenerate) {
 
         if (hasGuide) {
             // A literal pipe in the direction must not become another slash command.
-            const escapedPrompt = filledPrompt.replace(/\|/g, '\\|');
+            const escapedPrompt = escapeSlashCommandText(filledPrompt);
             const stscriptCommand = `/inject id=${injectId} position=chat ephemeral=true scan=true depth=${depth} role=${injectionRole} ${escapedPrompt} |`;
             injectionAttempted = true;
             await executeSTScriptCommand(stscriptCommand);
