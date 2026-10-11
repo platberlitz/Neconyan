@@ -69,6 +69,54 @@ the PR against staging and validate the resulting APK on the reporting device.
 
 ## Release preparation: 1.0.0
 
+### 11 October: 1.3.0 release, staging starts 1.3.1
+
+The handbook now covers Scratchpad assistants, round tables, global instructions,
+shared cleanup, full character cards and sharing the current preset, alongside the
+Conversation, appearance and server prompt changes. Its 1.3.0 update was merged in
+`neconyan-docs` at `03d88025524091b71e15311801dde7fcd4a11ede`; strict build, link
+checks and phone and desktop browser checks passed. Pages run `38125906628`
+published it. The shared assistant help reference and release highlights were
+refreshed before promotion.
+
+`main` was fast-forwarded to `3103e133364e3991294027e781bf017a8dc692e3`.
+Neconyan 1.3.0 is published at
+https://github.com/platberlitz/Neconyan/releases/tag/v1.3.0 with annotated tag
+`v1.3.0` and nine assets. Both APK payloads, checksums, the existing signing
+identity, native 16 KiB page alignment and all 3,874 source files were verified.
+The source ZIP was compared with `git archive`, including the repository's
+line-ending conversion rules. All nine uploaded files were downloaded again and
+matched the verified build files byte for byte; GitHub's asset checksums also
+matched.
+
+All 462 unit suites passed (5,993 tests, two skipped), along with 2,117 server
+tests (one additional test skipped), 91 dedicated Mewmory tests, root lint,
+frontend budgets and the production build. Signed Android run `38136987750`
+passed the Android 11 and 15 emulator launch, lifecycle and native runtime checks.
+
+The first browser run exposed two application bugs: Conversation rejected a
+complete JSON reply from a provider that ignored streaming, and Notebooks list
+windows could remain open when tapped during their opening animation. Fixes
+`b3bc8867e` and `a65d1f066` are included in the release, with regression tests.
+The focused 170-test Conversation group passed locally, and the previously
+failing Conversation groups passed in the subsequent GitHub run. Test-only
+corrections also isolated settings changes and waited for animations, background
+metadata, notices and Scratchpad saves before checking their results.
+
+Full browser run `38136983756` had not finished at publication and was not all
+green: completed groups reported server-status, restarted-import, input-validation
+and Streaming failures. The server-status, import and input-validation checks each
+passed three times unchanged locally. The unmodified focused repeat run passed
+13 of 15 checks, reproducing the desktop Streaming failure twice. That test
+closed its page before the delayed setting save;
+waiting for the saved setting made both phone and desktop checks pass without an
+application change. Follow-up staging commit `fd016c3cf` adds that wait. The
+server-status fixture's background update request can consume its planned first
+failure; that explanation is inferred from its request ordering. The owner
+approved publication with timing-only browser failures, and the release notes
+record the incomplete browser result. The six project-boundary checks for the
+1.3.1 version bump and changed-test lint passed.
+
 ### 10 October: 1.2.5 release, staging starts 1.2.6
 
 The handbook now covers the rebuilt Agents and Formatting pages, Companion
