@@ -10,7 +10,18 @@ import { confirmRoleplayAccount, createRoleplayDirectory, readRoleplayFile, role
 
 const FILE_LIMIT = Math.max(64 * 1024 * 1024, FILE_WRITE_RECOVERY_MAX_BYTES);
 const FILE_COUNT_LIMIT = 100000;
+// Retained import uploads and saved downloads are binary copies of up to 8 GiB owned by
+// their operation records, not Roleplay evidence. Repair never rewrites or moves them.
+const OPERATION_BINARY_DIRECTORIES = new Set(['_roleplay/application-inputs', '_roleplay/application-binaries']);
 const changed = () => roleplayError('ROLEPLAY_RECOVERY_CHANGED', 'The files changed after the check. Check transferred data again.');
+
+function checked(relative, read) {
+    try { return read(); } catch (error) {
+        if (error.code !== 'ROLEPLAY_STORE_DAMAGED') throw error;
+        throw roleplayError(error.code, `Repair cannot check ${relative}: it is a link, larger than ${Math.floor(FILE_LIMIT / 1024 / 1024)} MB,`
+            + ' or changed while it was read. Nothing was changed.');
+    }
+}
 
 /** Includes staged writes and journals, but never follows links or copies live locks. */
 function inventory(lease) {
@@ -18,15 +29,16 @@ function inventory(lease) {
     const files = [];
     const walk = (directory, prefix, library) => {
         // Validate every parent through the protected reader, including empty directories.
-        readRoleplayFile(path.join(directory, '.neconyan-recovery-check'), 0, { allowMissingParent: true });
+        checked(prefix, () => readRoleplayFile(path.join(directory, '.neconyan-recovery-check'), 0, { allowMissingParent: true }));
         if (!fs.existsSync(directory)) return;
         for (const entry of fs.readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
             if (entry.name.endsWith('.lock') || entry.name.endsWith('.lock.owner')) continue;
             const filename = path.join(directory, entry.name);
             const relative = path.posix.join(prefix, entry.name);
-            if (entry.isDirectory()) walk(filename, relative, library);
-            else {
-                const file = readRoleplayFile(filename, FILE_LIMIT);
+            if (entry.isDirectory()) {
+                if (!OPERATION_BINARY_DIRECTORIES.has(relative)) walk(filename, relative, library);
+            } else {
+                const file = checked(relative, () => readRoleplayFile(filename, FILE_LIMIT));
                 if (!file) throw changed();
                 files.push({ filename, relative, library, rawHash: file.rawHash, physical: file.physical, size: file.bytes.length });
                 if (files.length > FILE_COUNT_LIMIT) throw roleplayError('ROLEPLAY_RECOVERY_LIMIT', 'There are too many files for one repair.', 413);

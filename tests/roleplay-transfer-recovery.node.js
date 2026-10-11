@@ -129,8 +129,40 @@ for (const link of ['hard', 'symbolic']) test(`repair refuses ${link} links with
     if (link === 'hard') fs.linkSync(f.filename, other);
     else fs.symlinkSync(f.filename, other);
     const before = fs.readFileSync(f.filename);
-    assert.throws(() => inspectTransferredRoleplay(f.scope), { code: 'ROLEPLAY_STORE_DAMAGED' });
+    assert.throws(() => inspectTransferredRoleplay(f.scope), error => error.code === 'ROLEPLAY_STORE_DAMAGED'
+        && error.message.includes('chats/Nova/Other.jsonl'));
     assert.deepEqual(fs.readFileSync(f.filename), before);
+});
+
+test('large retained uploads and saved downloads do not block repair and stay where they are', t => {
+    const f = fixture(t);
+    replaceFile(f.filename);
+    const root = roleplayStoreDirectory(f.scope);
+    const large = [
+        path.join(root, 'application-inputs', `${'a'.repeat(64)}.${'0'.repeat(8)}-0000-4000-8000-${'0'.repeat(12)}.pending`),
+        path.join(root, 'application-binaries', `${'b'.repeat(64)}.data`),
+    ];
+    for (const filename of large) {
+        fs.mkdirSync(path.dirname(filename), { recursive: true });
+        fs.writeFileSync(filename, '');
+        fs.truncateSync(filename, 90 * 1024 * 1024);
+    }
+    const before = large.map(filename => fs.statSync(filename).ino);
+    const result = repair(f);
+    assert.deepEqual(large.map(filename => fs.statSync(filename).ino), before);
+    assert.ok(!fs.existsSync(path.join(result.backup, '_roleplay', 'application-inputs')));
+    assert.ok(!fs.existsSync(path.join(result.backup, '_roleplay', 'application-binaries')));
+    assert.ok(captureRoleplayStorageSource({ ...f.scope, dataEpoch: result.dataEpoch }, f.locator).instanceId);
+});
+
+test('an oversized file elsewhere is named in the refusal', t => {
+    const f = fixture(t);
+    const filename = path.join(roleplayStoreDirectory(f.scope), 'media', 'huge.json');
+    fs.mkdirSync(path.dirname(filename), { recursive: true });
+    fs.writeFileSync(filename, '');
+    fs.truncateSync(filename, 90 * 1024 * 1024);
+    assert.throws(() => inspectTransferredRoleplay(f.scope), error => error.code === 'ROLEPLAY_STORE_DAMAGED'
+        && error.message.includes('_roleplay/media/huge.json'));
 });
 
 test('backup failure leaves the old ledger and original files untouched', t => {
