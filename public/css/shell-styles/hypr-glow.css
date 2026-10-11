@@ -276,7 +276,6 @@
 /* Accent-filled primary buttons keep their fill and label colour; only this style's finish is added. */
 :root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]),
 :root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]):hover {
-    background-image: var(--hypr-edge);
     border-radius: 8px;
     box-shadow: var(--hypr-glow);
 }

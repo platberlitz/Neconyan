@@ -13,7 +13,7 @@
     --aero-select: linear-gradient(180deg, color-mix(in srgb, var(--neco-ginger) 18%, transparent), color-mix(in srgb, var(--neco-ginger) 40%, transparent));
     --aero-select-border: color-mix(in srgb, var(--neco-ginger) 65%, transparent);
     --aero-button: linear-gradient(180deg, color-mix(in srgb, var(--neco-raised) 72%, #fff 28%) 0, var(--neco-raised) 50%, color-mix(in srgb, var(--neco-raised) 88%, #000) 100%);
-    --aero-button-hover: linear-gradient(180deg, color-mix(in srgb, var(--neco-raised) 60%, var(--aero-hue-light) 40%) 0, color-mix(in srgb, var(--neco-raised) 78%, var(--aero-hue) 22%) 50%, color-mix(in srgb, var(--neco-raised) 70%, color-mix(in srgb, var(--aero-hue) 70%, #000) 30%) 100%);
+    --aero-button-hover: linear-gradient(180deg, color-mix(in srgb, var(--neco-raised) 80%, var(--aero-hue-light) 20%) 0, color-mix(in srgb, var(--neco-raised) 78%, var(--aero-hue) 22%) 50%, color-mix(in srgb, var(--neco-raised) 70%, color-mix(in srgb, var(--aero-hue) 70%, #000) 30%) 100%);
     --sb-radius-button: 3px;
     --sb-radius-sm: 3px;
     --sb-radius-md: 4px;
@@ -229,7 +229,6 @@
 /* Accent-filled primary buttons keep their fill and label colour; only this style's finish is added. */
 :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]),
 :root[data-sb-theme='windows-aero'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]):hover {
-    background-image: var(--aero-shine);
     border: 1px solid color-mix(in srgb, var(--color-primary, var(--sb-accent)) 55%, #000);
     border-radius: 3px;
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5), 0 0 10px color-mix(in srgb, var(--color-primary, var(--sb-accent)) 45%, transparent);
