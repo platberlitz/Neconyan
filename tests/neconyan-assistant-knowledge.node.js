@@ -104,6 +104,7 @@ test('real help questions retrieve the appropriate topic', () => {
         ['Is there a Pawthfinder tour with Taro?', 'pathfinder.setup'],
         ['How do I open Quick Image Gen?', 'images.quick'],
         ['How do I add saved notes to Scratchpad?', 'scratchpad.notebooks'],
+        ['Can Scratchpad see my preset?', 'scratchpad.preset'],
         ['How do I use Ask Scratchpad for a private note?', 'notes.scratchpad'],
         ['How do I add sprites in Character Expressions?', 'images.expressions'],
         ['Can the regex editor explain what this pattern does?', 'tools.regex-helpers'],
