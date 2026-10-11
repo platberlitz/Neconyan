@@ -2882,15 +2882,18 @@ function updateFixTrackersButtonVisibility() {
     const hasCompanionCandidates = getAgents().some(agent => isCompanionAgent(agent) && isTrackerFixAgent(agent));
     const hasInstalledFixables = hasInlineCandidates || hasCompanionCandidates;
     const shouldShowMessageButtons = areAgentsGloballyEnabled() && hasInstalledFixables;
-    $('.mes_fix_trackers').each(function () {
-        const $message = $(this).closest('.mes');
-        const isNonSystemMessage = $message.attr('is_system') !== 'true';
-        const isAssistantMessage = isNonSystemMessage && $message.attr('is_user') !== 'true';
-        $(this).toggle(shouldShowMessageButtons && (
+    // Plain display writes, and only on change: jQuery's toggle reads each
+    // button's computed style first, which recalculates styles once per message.
+    for (const button of document.querySelectorAll('.mes_fix_trackers')) {
+        const message = button.closest('.mes');
+        const isNonSystemMessage = message?.getAttribute('is_system') !== 'true';
+        const isAssistantMessage = isNonSystemMessage && message?.getAttribute('is_user') !== 'true';
+        const display = shouldShowMessageButtons && (
             (hasInlineCandidates && isAssistantMessage) ||
             (hasCompanionCandidates && isNonSystemMessage)
-        ));
-    });
+        ) ? '' : 'none';
+        if (button.style.display !== display) button.style.display = display;
+    }
 
     const $agentsButton = $('#ica--fixTrackers');
     const canRun = hasAnyFixableAgents();

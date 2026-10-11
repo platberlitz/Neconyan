@@ -72,6 +72,10 @@ let gradientGallerySearch = '';
 let gradientGalleryFilter = 'all';
 let gradientGalleryMotionActive = false;
 let gradientGalleryTarget = 'selected';
+let gradientGalleryObserver = null;
+let gradientGalleryObservedHost = null;
+let gradientGalleryHostVisible = false;
+let gradientGalleryPendingPreset = null;
 let lastRenderedTableKey = null;
 let lastColorVisionPreviewSignature = '';
 const STYLE_PACK_COPY_LIMIT = 100 * 1024;
@@ -2767,9 +2771,36 @@ function focusGradientGalleryControl(focusId) {
     requestAnimationFrame(() => document.querySelector(`#dc-gradient-gallery [data-gallery-focus="${CSS.escape(focusId)}"]`)?.focus({ preventScroll: true }));
 }
 
+// The gallery previews every preset, which costs a few hundred milliseconds,
+// and chat changes ask for it while it usually sits in a closed settings page.
+// A hidden gallery is rebuilt once, when it comes into view.
+function deferHiddenGradientGallery(host, preferredPreset, focusId) {
+    if (focusId || typeof IntersectionObserver !== 'function') return false;
+    if (gradientGalleryObservedHost !== host) {
+        gradientGalleryObserver ??= new IntersectionObserver(entries => {
+            const entry = entries[entries.length - 1];
+            if (entry.target !== gradientGalleryObservedHost) return;
+            gradientGalleryHostVisible = entry.isIntersecting;
+            if (!gradientGalleryHostVisible || gradientGalleryPendingPreset === null) return;
+            const pending = gradientGalleryPendingPreset;
+            gradientGalleryPendingPreset = null;
+            renderGradientPresetGallery(pending);
+        }, { rootMargin: '200px' });
+        if (gradientGalleryObservedHost) gradientGalleryObserver.unobserve(gradientGalleryObservedHost);
+        gradientGalleryObservedHost = host;
+        gradientGalleryHostVisible = false;
+        gradientGalleryObserver.observe(host);
+    }
+    if (gradientGalleryHostVisible || host.contains(document.activeElement)) return false;
+    gradientGalleryPendingPreset = preferredPreset || gradientGalleryPendingPreset || '';
+    return true;
+}
+
 export function renderGradientPresetGallery(preferredPreset = '', focusId = '') {
     const host = document.getElementById('dc-gradient-gallery');
     if (!host) return;
+    if (deferHiddenGradientGallery(host, preferredPreset, focusId)) return;
+    gradientGalleryPendingPreset = null;
     const catalog = getGradientPresetCatalog();
     if (preferredPreset && catalog.some(item => item.id === preferredPreset)) selectedGradientGalleryPreset = preferredPreset;
     if (!catalog.some(item => item.id === selectedGradientGalleryPreset)) selectedGradientGalleryPreset = catalog[0]?.id || '';
