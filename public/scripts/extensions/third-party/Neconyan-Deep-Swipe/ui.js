@@ -69,6 +69,12 @@ export function shouldAddUiComponents(messageElement) {
     return true;
 }
 
+// Messages live in #chat. Searching it instead of the whole page (over 20,000 elements)
+// is about 25 times quicker, and this runs for every message when a chat opens.
+function findMessageElement(messageId) {
+    return (document.getElementById('chat') ?? document).querySelector(`.mes[mesid="${messageId}"]`);
+}
+
 /**
  * Update swipe UI for a message (counter, arrow states)
  * @param {number} messageId - The message ID to update
@@ -81,7 +87,7 @@ export function updateMessageSwipeUI(messageId, forceCurrentId) {
 
     if (!message) return;
 
-    const messageElement = document.querySelector(`.mes[mesid="${messageId}"]`);
+    const messageElement = findMessageElement(messageId);
     if (!messageElement) return;
 
     const swipeCount = message.swipes?.length || 0;
@@ -165,7 +171,7 @@ export function addSwipeNavigationToMessage(messageId) {
         return;
     }
 
-    const messageElement = document.querySelector(`.mes[mesid="${messageId}"]`);
+    const messageElement = findMessageElement(messageId);
     if (!messageElement) {
         return;
     }
@@ -179,6 +185,18 @@ export function addSwipeNavigationToMessage(messageId) {
         return;
     }
 
+    // A chat open asks for the arrows several times over. Rebuilding unchanged arrows
+    // moves them in and out of the reply footer, and each move re-styles every message.
+    const swipeCount = message.swipes?.length || 1;
+    const currentSwipe = Math.min(message.swipe_id || 0, swipeCount - 1);
+    const signature = `${messageId}:${message.is_user ? 'user' : 'assistant'}:${swipeCount}:${currentSwipe}`;
+    if (messageElement.dataset.deepSwipeNavigation === signature
+        && messageElement.querySelector('.deep-swipe-right')
+        && (swipeCount <= 1 || messageElement.querySelector('.deep-swipe-left'))) {
+        return;
+    }
+    messageElement.dataset.deepSwipeNavigation = signature;
+
     // Remove existing navigation. Our container goes first: upstream removed
     // .deep-swipe-right before looking for a .swipeRightBlock containing one, so the
     // lookup always came up empty and a fresh block stacked up on every call.
@@ -190,8 +208,6 @@ export function addSwipeNavigationToMessage(messageId) {
 
     // Show navigation for both user and assistant messages
     // But only show counter for user messages (assistant messages have native counter)
-    const swipeCount = message.swipes?.length || 1;
-    const currentSwipe = Math.min(message.swipe_id || 0, swipeCount - 1);
 
     const navContainer = document.createElement('div');
     navContainer.className = 'deep-swipe-navigation deep-swipe-nav-container';
@@ -483,7 +499,7 @@ export function createSwipeOverlay(messageId, message, options = {}) {
     const { showThrobber = true, onComplete = null, onStop = null } = options;
 
     // Get message element
-    const mesElement = document.querySelector(`.mes[mesid="${messageId}"]`);
+    const mesElement = findMessageElement(messageId);
     if (!mesElement) return null;
 
     // Remove any existing overlay first
@@ -698,7 +714,7 @@ export function removeSwipeOverlay(messageId) {
  * @param {number} messageId - The message ID
  */
 export function removeInlineSwipeOverlay(messageId) {
-    const mesElement = document.querySelector(`.mes[mesid="${messageId}"]`);
+    const mesElement = findMessageElement(messageId);
     if (mesElement) {
         const overlay = mesElement.querySelector('.deep-swipe-overlay');
         if (overlay) {
@@ -731,7 +747,7 @@ export function highlightLatestSwipeMessage(messageId) {
     removeLatestSwipeHighlight();
 
     // Add highlight to the target message
-    const mesElement = document.querySelector(`.mes[mesid="${messageId}"]`);
+    const mesElement = findMessageElement(messageId);
     if (!mesElement) return;
 
     mesElement.classList.add('deep-swipe-latest-swipe');

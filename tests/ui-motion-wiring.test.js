@@ -28,9 +28,21 @@ describe('surfaces that used to appear without motion', () => {
 
     test('leaving Home eases the chat in, and returning eases Home in once', () => {
         const conceal = functionBody(welcomeJs, 'export function concealWelcomeHome(');
-        expect(conceal).toContain('revealUi(document.getElementById(\'chat\'));');
-        expect(conceal.indexOf('classList.remove(\'neconyan-home-visible\')')).toBeLessThan(conceal.indexOf('revealUi('));
+        expect(conceal).toContain('revealChat(document.getElementById(\'chat\'));');
+        expect(conceal.indexOf('classList.remove(\'neconyan-home-visible\')')).toBeLessThan(conceal.indexOf('revealChat('));
         expect(welcomeJs).toMatch(/const homeArriving = !document\.body\.classList\.contains\('neconyan-home-visible'\);\n\s+document\.body\.classList\.add\('neconyan-home-visible'\);\n\s+if \(homeArriving\) revealUi\(welcomeHost\);/);
+    });
+
+    test('switching chats lets the new chat rise into place', () => {
+        expect(tabsJs).toContain('eventSource.on(event_types.CHAT_CHANGED, () => revealChat(document.getElementById(\'chat\')));');
+    });
+
+    test('a swipe slides the reply in from the side it was swiped towards without holding up the next swipe', () => {
+        const swipe = functionBody(scriptJs, 'export async function swipe(');
+        const animateSwipe = swipe.slice(swipe.indexOf('async function animateSwipe('));
+        expect(animateSwipe).toContain('for (const block of thisMesDiv.children(\'.mes_block\')) slideSwipe(block, swipeRange < 0, pace);');
+        expect(animateSwipe).not.toContain('xStart: `${-swipeRange}px`');
+        expect(swipe).toContain('let swipeRange = (direction === SWIPE_DIRECTION.RIGHT) ? -thisMesDivWidth : thisMesDivWidth;');
     });
 
     test('Input History fades in and fades out before it is removed', () => {
@@ -62,3 +74,13 @@ describe('page introductions mount in the frame their drawer opens', () => {
         expect(functionBody(tabsJs, 'function scheduleIdlePanelStylesheetWarmup(')).toContain('loadNeconyanToolTour()');
     });
 });
+
+describe('pages follow the control that opened them', () => {
+    test('shell pages and navbar drawers take their edge from the shared origin helper', () => {
+        const forceDrawerState = functionBody(tabsJs, 'function forceDrawerState(');
+        expect(forceDrawerState).toContain('edge: getUiDrawerEdge(el, Boolean(shouldOpen), el.classList.contains(\'fillLeft\') ? \'left\' : \'right\')');
+        expect(scriptJs.match(/getUiDrawerEdge\(/g)?.length).toBeGreaterThanOrEqual(3);
+        expect(scriptJs).not.toMatch(/edge: drawer\.hasClass\('fillLeft'\) \? 'left' : 'right'/);
+    });
+});
+

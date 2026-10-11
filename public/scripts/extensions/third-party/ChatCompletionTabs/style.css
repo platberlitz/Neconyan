@@ -121,7 +121,7 @@
 
 /* -- OpenAI Specific Styles -- */
 
-body:has(.openai-tab-buttons) {
+body.has-openai-tab-buttons {
     #completion_prompt_manager .completion_prompt_manager_header {
         margin-top: unset;
     }

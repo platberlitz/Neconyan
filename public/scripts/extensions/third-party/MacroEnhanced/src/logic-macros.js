@@ -1,4 +1,4 @@
-import { safeRegister } from './registration.js';
+import { safeRegister as defaultRegister } from './registration.js';
 import { conditionIsTrue, isCompatActive } from './compat-macros.js';
 import { CATEGORY_LIST, CATEGORY_MATH, CATEGORY_TEXT } from './utility-macros.js';
 import { JsonPathError, formatNumber, splitList, truncateText } from './utility-impl.js';
@@ -47,7 +47,7 @@ function argIsTrue(value, warn) {
     return isCompatActive() ? conditionIsTrue(value, warn) : isTruthyText(value);
 }
 
-export function registerLogicMacros() {
+export function registerLogicMacros(safeRegister = defaultRegister) {
     // ---- comparisons (compose with {{if}}: they return "true"/"false", and the
     // engine's {{if}} treats the string "false" as falsy) ----
 

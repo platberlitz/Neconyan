@@ -1,7 +1,7 @@
 /* global globalThis */
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 
-let motion, media, bodyClasses, preferenceChanged, pendingFrames;
+let motion, media, bodyClasses, preferenceChanged, pendingFrames, pressed, bars;
 const elements = [];
 
 beforeEach(async () => {
@@ -9,11 +9,16 @@ beforeEach(async () => {
     bodyClasses = new Set();
     pendingFrames = null;
     media = { matches: false, addEventListener: jest.fn() };
-    globalThis.document = { body: { classList: { contains: value => bodyClasses.has(value) } } };
+    bars = {};
+    globalThis.document = {
+        body: { classList: { contains: value => bodyClasses.has(value) } },
+        addEventListener: (type, listener) => { if (type === 'click') pressed = listener; },
+        querySelector: selector => bars[selector] ?? null,
+    };
     globalThis.window = { matchMedia: () => media };
     // Frames run at once unless a test queues them to step through the first paint.
     globalThis.requestAnimationFrame = callback => pendingFrames ? pendingFrames.push(callback) : callback();
-    globalThis.getComputedStyle = element => ({ visibility: 'visible', opacity: element.opacity ?? '1', translate: element.translate ?? '0px 0px' });
+    globalThis.getComputedStyle = element => ({ visibility: 'visible', opacity: element.opacity ?? '1', translate: element.translate ?? '0px 0px', zIndex: element.zIndex ?? 'auto' });
     globalThis.MutationObserver = class {
         constructor(callback) { preferenceChanged = callback; }
         observe() {}
@@ -38,7 +43,7 @@ function surface(visible = true) {
         },
         getClientRects: () => element.visible ? [{}] : [],
         animate: jest.fn((frames, options) => {
-            const animation = { cancel: jest.fn(), play: jest.fn(), frames, options, currentTime: null, playState: 'running' };
+            const animation = { cancel: jest.fn(), play: jest.fn(), pause: jest.fn(), frames, options, currentTime: null, playState: 'running' };
             animations.push(animation);
             return animation;
         }),
@@ -309,5 +314,167 @@ describe('interruptible UI motion', () => {
         motion.setUiVisibility(element, false, apply, { edge: 'left' });
         expect(element.checkVisibility).toHaveBeenCalledWith({ visibilityProperty: true });
         expect(animations).toHaveLength(1);
+    });
+});
+
+describe('motion that follows what was pressed', () => {
+    const press = selector => pressed({ target: { closest: candidate => candidate === selector ? {} : null } });
+
+    test('a page opened from the top bar drops from it and goes back up when it closes', () => {
+        const page = { dataset: {} };
+        press('#top-bar');
+        expect(motion.getUiDrawerEdge(page, true, 'left')).toBe('top');
+        expect(motion.getUiDrawerEdge(page, false, 'left')).toBe('top');
+    });
+
+    test('a page opened from the sidebar slides out of it, and one opened elsewhere keeps its own side', () => {
+        const page = { dataset: {} };
+        press('#neconyan-workspace-rail');
+        expect(motion.getUiDrawerEdge(page, true, 'right')).toBe('left');
+        press('#chat');
+        expect(motion.getUiDrawerEdge(page, true, 'right')).toBe('right');
+        expect(motion.getUiDrawerEdge(page, false, 'right')).toBe('right');
+    });
+
+    test('a tap counts for one opening and only for a moment', () => {
+        const now = jest.spyOn(performance, 'now').mockReturnValue(1000);
+        const page = { dataset: {} };
+        press('#top-bar');
+        expect(motion.getUiDrawerEdge(page, true, 'left')).toBe('top');
+        expect(motion.getUiDrawerEdge(page, true, 'left')).toBe('left');
+        press('#top-bar');
+        now.mockReturnValue(2500);
+        expect(motion.getUiDrawerEdge(page, true, 'left')).toBe('left');
+        now.mockRestore();
+    });
+
+    test('the top bar stays in front of a page travelling to or from it, then gets its own value back', () => {
+        const { element, apply, animations } = surface(false);
+        const holder = { zIndex: '1100', parentElement: globalThis.document.body };
+        Object.assign(element, { dataset: {}, parentElement: holder });
+        const topBar = surface();
+        topBar.element.contains = () => false;
+        bars['#top-bar'] = topBar.element;
+        press('#top-bar');
+        const edge = motion.getUiDrawerEdge(element, true, 'left');
+        motion.setUiVisibility(element, true, apply, { edge });
+        expect(animations[0].frames[0]).toEqual({ opacity: 1, translate: '0 -100%' });
+        expect(topBar.element.style.getPropertyValue('z-index')).toBe('1101');
+        expect(topBar.element.style.getPropertyPriority('z-index')).toBe('important');
+        animations[0].onfinish();
+        expect(topBar.element.style.getPropertyValue('z-index')).toBe('');
+        motion.setUiVisibility(element, false, apply, { edge: motion.getUiDrawerEdge(element, false, 'left') });
+        expect(topBar.element.style.getPropertyValue('z-index')).toBe('1101');
+        animations[1].onfinish();
+        expect(topBar.element.style.getPropertyValue('z-index')).toBe('');
+    });
+
+    test('a page on its own side leaves the bars where they are', () => {
+        const { element, apply } = surface(false);
+        element.dataset = {};
+        const topBar = surface();
+        topBar.element.contains = () => false;
+        bars['#top-bar'] = topBar.element;
+        motion.setUiVisibility(element, true, apply, { edge: motion.getUiDrawerEdge(element, true, 'left') });
+        expect(topBar.element.style.getPropertyValue('z-index')).toBe('');
+    });
+});
+
+describe('chat and swipe motion', () => {
+    test('an opened chat rises further and more slowly than a menu reveal', () => {
+        const { element, animations } = surface();
+        motion.revealChat(element);
+        expect(animations[0].frames).toEqual([{ opacity: 0, translate: '0 16px' }, { opacity: 1, translate: '0 0' }]);
+        expect(animations[0].options.duration).toBe(motion.UI_MOTION_TIMING.chatRevealMs);
+        expect(motion.UI_MOTION_TIMING.chatRevealMs).toBeGreaterThan(motion.UI_MOTION_TIMING.revealMs);
+    });
+
+    test('an opened chat waits on its first frame in Safari while the page is still busy, then rises', () => {
+        bodyClasses.add('safari');
+        pendingFrames = [];
+        const { element, animations } = surface();
+        motion.revealChat(element);
+        const animation = animations[0];
+        pendingFrames.shift()(1000);
+        expect(animation.pause).toHaveBeenCalled();
+        expect(animation.currentTime).toBe(0);
+        // A long busy frame, then frames start to flow again.
+        for (const now of [2000, 2016]) pendingFrames.shift()(now);
+        expect(animation.play).not.toHaveBeenCalled();
+        animation.currentTime = 0;
+        pendingFrames.shift()(2032);
+        expect(animation.currentTime).toBe(0);
+        expect(animation.play).toHaveBeenCalledTimes(1);
+        expect(pendingFrames).toHaveLength(0);
+    });
+
+    test('a chat that was held for a while rises on the first quick frame', () => {
+        bodyClasses.add('safari');
+        pendingFrames = [];
+        const { element, animations } = surface();
+        motion.revealChat(element);
+        pendingFrames.shift()(1000);
+        pendingFrames.shift()(2400);
+        expect(animations[0].play).not.toHaveBeenCalled();
+        pendingFrames.shift()(2416);
+        expect(animations[0].play).toHaveBeenCalledTimes(1);
+    });
+
+    test('a chat that stays busy still rises within the time limit', () => {
+        bodyClasses.add('safari');
+        pendingFrames = [];
+        const { element, animations } = surface();
+        motion.revealChat(element);
+        pendingFrames.shift()(1000);
+        for (const now of [1500, 2000, 2500]) pendingFrames.shift()(now);
+        expect(animations[0].play).not.toHaveBeenCalled();
+        pendingFrames.shift()(3000);
+        expect(animations[0].play).toHaveBeenCalledTimes(1);
+    });
+
+    test('menu reveals and swipes start on the first frame without waiting, even in Safari', () => {
+        bodyClasses.add('safari');
+        pendingFrames = [];
+        const menu = surface();
+        const reply = surface();
+        motion.revealUi(menu.element);
+        motion.slideSwipe(reply.element, true);
+        pendingFrames.splice(0).forEach(frame => frame(1000));
+        expect(menu.animations[0].pause).not.toHaveBeenCalled();
+        expect(reply.animations[0].pause).not.toHaveBeenCalled();
+        expect(pendingFrames).toHaveLength(0);
+    });
+
+    test('other browsers start an opened chat on the first frame, as their motion runs beside the work', () => {
+        pendingFrames = [];
+        const { element, animations } = surface();
+        motion.revealChat(element);
+        pendingFrames.shift()(1000);
+        expect(animations[0].pause).not.toHaveBeenCalled();
+        expect(pendingFrames).toHaveLength(0);
+    });
+
+    test.each([[true, '48px 0'], [false, '-48px 0']])('a swiped reply slides in from the side it was swiped towards (from right: %s)', (fromRight, translate) => {
+        const { element, animations } = surface();
+        motion.slideSwipe(element, fromRight);
+        expect(animations[0].frames).toEqual([{ opacity: 0, translate }, { opacity: 1, translate: '0 0' }]);
+        expect(animations[0].options.duration).toBe(motion.UI_MOTION_TIMING.swipeMs);
+        expect(motion.UI_MOTION_TIMING.swipeMs).toBeGreaterThanOrEqual(280);
+    });
+
+    test('rapid swipes run quicker, and each new swipe takes over from the last at once', () => {
+        const { element, animations } = surface();
+        motion.slideSwipe(element, true);
+        motion.slideSwipe(element, true, 0.5);
+        expect(animations[0].cancel).toHaveBeenCalled();
+        expect(animations[1].options.duration).toBe(motion.UI_MOTION_TIMING.swipeMs / 2);
+    });
+
+    test('swipes and chat openings stay still when reduced motion is on', () => {
+        bodyClasses.add('reduced-motion');
+        const { element, animations } = surface();
+        motion.slideSwipe(element, true);
+        motion.revealChat(element);
+        expect(animations).toHaveLength(0);
     });
 });

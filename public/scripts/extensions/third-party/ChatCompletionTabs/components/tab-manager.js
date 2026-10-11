@@ -66,6 +66,7 @@ export class TabManager {
         // Remove tab buttons container
         const tabButtons = document.querySelectorAll(`.${this.config.className}-buttons`);
         tabButtons.forEach(el => el.remove());
+        document.body.classList.remove(`has-${this.config.className}-buttons`);
 
         this.tabButtonsContainer = null;
         this.isTabsCreated = false;
@@ -128,6 +129,9 @@ export class TabManager {
         `);
 
         this.tabButtonsContainer = document.querySelector(`.${this.config.className}-buttons`);
+        // A body class instead of body:has(...) in style.css: that selector made the browser
+        // search the whole page on every style update.
+        document.body.classList.add(`has-${this.config.className}-buttons`);
         this.organizeContent();
         this.bindEvents();
         this.setInitialState();
@@ -223,6 +227,7 @@ export class TabManager {
             this.tabButtonsContainer.remove();
             this.tabButtonsContainer = null;
         }
+        document.body.classList.remove(`has-${this.config.className}-buttons`);
 
         const originalContainer = document.querySelector(this.config.containerSelector);
 

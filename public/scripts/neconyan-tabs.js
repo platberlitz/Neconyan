@@ -1,5 +1,5 @@
 import { createBubblesBottomBoundary } from './bubbles-bottom-boundary.js';
-import { finishUiMotion, getUiSlideOptions, isUiClosing, revealUi, setUiVisibility } from './ui-motion.js';
+import { finishUiMotion, getUiDrawerEdge, getUiSlideOptions, isUiClosing, revealChat, revealUi, setUiVisibility } from './ui-motion.js';
 import { DEFAULT_SCROLL_EDGE_SETTLE_DELAYS, jumpScrollElementToEdge } from './chat-scroll-edges.js';
 import {
     clampMobileShellText as clampText,
@@ -232,6 +232,7 @@ const NN_SHELL_FOCUSABLE_SELECTOR = [
 
 let nnInlineDrawerPersistenceObserver = null;
 let nnInlineDrawerPersistenceQueued = false;
+const nnInlineDrawerPersistencePendingRoots = new Set();
 let nnChatScriptModulePromise = null;
 let nnMainScriptModulePromise = null;
 let nnComposerControlsObserver = null;
@@ -508,7 +509,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261010-bottom-bar-width1';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261010-bottom-bar-width3';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -4260,9 +4261,13 @@ function scheduleMobilePopupKeyboardSync() {
 }
 
 function getMobileShellBoundDrawers() {
+    // Looked up by id and class name rather than a selector search of the whole page,
+    // which cost a few milliseconds each time and runs several times per page open.
     return Array.from(new Set([
-        ...document.querySelectorAll('#left-nav-panel, #user-settings-block, .sb-shell-root, #right-nav-panel'),
-        ...document.querySelectorAll('#top-settings-holder #right-nav-panel'),
+        document.getElementById('left-nav-panel'),
+        document.getElementById('user-settings-block'),
+        ...document.getElementsByClassName('sb-shell-root'),
+        document.getElementById('right-nav-panel'),
     ])).filter(drawer => drawer instanceof HTMLElement);
 }
 
@@ -9408,7 +9413,7 @@ function forceDrawerState(drawerRootOrId, shouldOpen, drawerIconOrSelector = nul
         el.classList.toggle('closedDrawer', !visible);
         queueMobileModalStateSync();
         queueTopbarPageStateSync();
-    }, { edge: el.classList.contains('fillLeft') ? 'left' : 'right' });
+    }, { edge: getUiDrawerEdge(el, Boolean(shouldOpen), el.classList.contains('fillLeft') ? 'left' : 'right') });
     syncDrawerIconState(drawerIconOrSelector, shouldOpen);
     queueMobileModalStateSync();
     queueTopbarPageStateSync();
@@ -19337,15 +19342,33 @@ function bindInlineDrawerPersistence(root = document) {
     }
 }
 
-function queueInlineDrawerPersistenceBind() {
-    if (nnInlineDrawerPersistenceQueued) {
+// Only the drawers that were added, or whose parts were replaced, are restored:
+// deriving a key for every drawer in the app on each change cost 100 ms or more
+// whenever a chat opened.
+function queueInlineDrawerPersistenceBind(records = []) {
+    for (const record of records) {
+        for (const node of record.addedNodes) {
+            const root = node.parentElement?.closest('.inline-drawer') ?? (node instanceof HTMLElement ? node : null);
+            if (root) {
+                nnInlineDrawerPersistencePendingRoots.add(root);
+            }
+        }
+    }
+
+    if (nnInlineDrawerPersistenceQueued || !nnInlineDrawerPersistencePendingRoots.size) {
         return;
     }
 
     nnInlineDrawerPersistenceQueued = true;
     window.requestAnimationFrame(() => {
         nnInlineDrawerPersistenceQueued = false;
-        bindInlineDrawerPersistence(document.body);
+        const roots = [...nnInlineDrawerPersistencePendingRoots];
+        nnInlineDrawerPersistencePendingRoots.clear();
+        for (const root of roots) {
+            if (root.isConnected && !roots.some(other => other !== root && other.contains(root))) {
+                bindInlineDrawerPersistence(root);
+            }
+        }
     });
 }
 
@@ -19370,7 +19393,7 @@ function ensureInlineDrawerPersistenceObserver() {
         return;
     }
 
-    nnInlineDrawerPersistenceObserver = new MutationObserver(() => queueInlineDrawerPersistenceBind());
+    nnInlineDrawerPersistenceObserver = new MutationObserver(records => queueInlineDrawerPersistenceBind(records));
     for (const root of roots) {
         nnInlineDrawerPersistenceObserver.observe(root, { childList: true, subtree: true });
     }
@@ -20582,7 +20605,7 @@ function initAll() {
     nnState.initObserver?.disconnect();
     nnState.initObserver = null;
     nnState.initialized = true;
-    eventSource.on(event_types.CHAT_CHANGED, () => revealUi(document.getElementById('chat')));
+    eventSource.on(event_types.CHAT_CHANGED, () => revealChat(document.getElementById('chat')));
 
     restorePersistedTopbarState();
     seedTopbarScaleDefaults();

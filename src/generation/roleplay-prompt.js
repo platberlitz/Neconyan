@@ -157,6 +157,9 @@ export function savedRoleplayMacroSnapshot(snapshot, records) {
     const group = snapshot.groupNames ?? [];
     return {
         chatId: snapshot.source.locator.chat,
+        browserMacros: snapshot.browserMacros,
+        browserMacroSyntax: snapshot.browserMacroSyntax,
+        ...(snapshot.macroPolicyVersion === 1 ? { writableScopes: ['local'] } : {}),
         names: { user: names.user, char: names.character, group: group.join(', ') || names.character,
             groupNotMuted: (snapshot.unmutedGroupNames ?? group).join(', ') || names.character,
             notChar: [...group.filter(name => name !== names.character), names.user].join(', ') },

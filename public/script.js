@@ -1,6 +1,6 @@
 import { formatRoleplayTextMessage, combineRoleplayTextPrompt } from './scripts/roleplay-text-format.js';
 import { roleplayLoadErrorMessage } from './scripts/roleplay-load-error.js';
-import { finishUiMotion, getUiSlideOptions, isUiClosing, revealUi, setUiVisibility } from './scripts/ui-motion.js';
+import { finishUiMotion, getUiDrawerEdge, getUiSlideOptions, isUiClosing, revealUi, setUiVisibility, slideSwipe } from './scripts/ui-motion.js';
 import {
     showdown,
     moment,
@@ -2828,6 +2828,34 @@ function updateMessageSleeperPosition(message) {
     }
 }
 
+const pendingMessageSleeperPositions = new Set();
+
+// Neconyan: one resize callback reports every message of a freshly opened chat. Measuring all of
+// them before writing any position lays the chat out once instead of once per message.
+function flushMessageSleeperPositions() {
+    const positions = [];
+    for (const message of pendingMessageSleeperPositions) {
+        if (!message.isConnected) continue;
+        measureEchoMessage(message);
+        const text = message.querySelector('.mes_text');
+        if (text) {
+            positions.push([message, `${text.getBoundingClientRect().top - message.getBoundingClientRect().top - message.clientTop}px`]);
+        }
+    }
+    pendingMessageSleeperPositions.clear();
+    for (const [message, top] of positions) {
+        if (message.style.getPropertyValue('--neconyan-sleeper-text-top') !== top) {
+            message.style.setProperty('--neconyan-sleeper-text-top', top);
+        }
+    }
+}
+
+function queueMessageSleeperPosition(message) {
+    if (!message) return;
+    if (pendingMessageSleeperPositions.size === 0) queueMicrotask(flushMessageSleeperPositions);
+    pendingMessageSleeperPositions.add(message);
+}
+
 function onChatMessageResize(element, entry, metadata) {
     if (!element?.isConnected) {
         unobserveChatMessageResizeBlock(element);
@@ -2835,7 +2863,7 @@ function onChatMessageResize(element, entry, metadata) {
     }
 
     // Echo's painted surface follows a wrapping header; reuse the existing resize observer.
-    updateMessageSleeperPosition(element.closest('.mes'));
+    queueMessageSleeperPosition(element.closest('.mes'));
     void applyChatMessageResizeAction(element, entry, metadata);
 }
 
@@ -17548,8 +17576,13 @@ export async function swipe(event, direction, { source, repeated, message = chat
             generation = Generate('swipe', generationOptions);
         }
 
-        //Swipe in from the opposite side.
-        await animateSwipeTransition(mesId, { xStart: `${-swipeRange}px`, xEnd: `${0}px`, duration: swipeDuration });
+        // Neconyan: the new swipe slides a short way in from the side it was swiped towards.
+        // It starts on the first painted frame, so the work after the swap cannot skip it,
+        // and the next swipe does not wait for it.
+        if (swipeDuration > 50) {
+            const pace = swipeDuration / Math.max(animation_duration, 1);
+            for (const block of thisMesDiv.children('.mes_block')) slideSwipe(block, swipeRange < 0, pace);
+        }
 
         await settleSwipeReplacementAnchor(swipeViewportUpdate);
     }
@@ -18287,7 +18320,7 @@ export async function doNavbarIconClick() {
             $(el).removeClass('openDrawer').addClass('closedDrawer');
         }
         icon.toggleClass('openIcon closedIcon');
-        setUiVisibility(drawerElement, true, () => drawer.addClass('openDrawer').removeClass('closedDrawer'), { edge: drawer.hasClass('fillLeft') ? 'left' : 'right' });
+        setUiVisibility(drawerElement, true, () => drawer.addClass('openDrawer').removeClass('closedDrawer'), { edge: getUiDrawerEdge(drawerElement, true, drawer.hasClass('fillLeft') ? 'left' : 'right') });
 
         if (targetDrawerID === 'right-nav-panel') {
             focusUiSurface(drawerElement);
@@ -18307,7 +18340,7 @@ export async function doNavbarIconClick() {
             document.activeElement.blur();
         }
         icon.toggleClass('closedIcon openIcon');
-        setUiVisibility(drawerElement, false, () => drawer.removeClass('openDrawer').addClass('closedDrawer'), { edge: drawer.hasClass('fillLeft') ? 'left' : 'right' });
+        setUiVisibility(drawerElement, false, () => drawer.removeClass('openDrawer').addClass('closedDrawer'), { edge: getUiDrawerEdge(drawerElement, false, drawer.hasClass('fillLeft') ? 'left' : 'right') });
     }
 }
 
@@ -19834,7 +19867,7 @@ jQuery(async function () {
                 // Toggle icon and drawer classes
                 $('.openIcon').not('.drawerPinnedOpen').toggleClass('closedIcon openIcon');
                 for (const drawer of $openDrawers) {
-                    setUiVisibility(drawer, false, () => $(drawer).removeClass('openDrawer').addClass('closedDrawer'), { edge: drawer.classList.contains('fillLeft') ? 'left' : 'right' });
+                    setUiVisibility(drawer, false, () => $(drawer).removeClass('openDrawer').addClass('closedDrawer'), { edge: getUiDrawerEdge(drawer, false, drawer.classList.contains('fillLeft') ? 'left' : 'right') });
                 }
             }
         }

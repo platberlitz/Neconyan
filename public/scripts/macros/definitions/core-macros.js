@@ -146,7 +146,7 @@ export function registerCoreMacros() {
         returns: 'The content if condition is truthy, else branch or empty string otherwise.',
         // Delay argument resolution so nested macros are only evaluated in the chosen branch
         delayArgResolution: true,
-        handler: ({ unnamedArgs: [rawCondition, rawContent], flags, resolve, trimContent }) => {
+        handler: ({ unnamedArgs: [rawCondition, rawContent], flags, resolve, trimContent, env }) => {
             // With delayArgResolution: true, args contain raw (unresolved) text.
             // We resolve the condition first, then only resolve the chosen branch.
 
@@ -172,6 +172,7 @@ export function registerCoreMacros() {
             } else {
                 // Check if condition is a registered macro name (without braces)
                 // If so, resolve it first (only for macros that accept 0 required args)
+                env.extra?.assertMacroCondition?.(condition);
                 const macroDef = MacroRegistry.getPrimaryMacro(condition);
                 if (macroDef && macroDef.minArgs === 0) {
                     condition = resolve(`{{${condition}}}`);

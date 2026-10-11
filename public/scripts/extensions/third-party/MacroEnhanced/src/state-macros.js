@@ -1,4 +1,4 @@
-import { safeRegister } from './registration.js';
+import { safeRegister as defaultRegister } from './registration.js';
 import { getChatState, touchChatState } from './chat-state.js';
 import { splitList, truncateText } from './utility-impl.js';
 import {
@@ -79,7 +79,7 @@ function storeEntry(ctx, state, kind, key, entry) {
     state[kind][key] = entry;
 }
 
-export function registerStateMacros() {
+export function registerStateMacros(safeRegister = defaultRegister) {
     safeRegister('freeze', {
         category: CATEGORY_STATE,
         delayArgResolution: true,

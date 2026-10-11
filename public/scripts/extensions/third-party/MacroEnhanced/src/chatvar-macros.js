@@ -9,7 +9,7 @@
  * would render scratch values as loop items. These live in the extension's own
  * chat state instead, so the two never collide.
  */
-import { safeRegister } from './registration.js';
+import { safeRegister as defaultRegister } from './registration.js';
 import { getChatState, touchChatState } from './chat-state.js';
 import {
     CHAT_VAR_ENTRIES_WARN_AT,
@@ -86,7 +86,7 @@ function readKey(ctx, rawKey, macroName) {
     return key;
 }
 
-export function registerChatVarMacros() {
+export function registerChatVarMacros(safeRegister = defaultRegister) {
     safeRegister('setchatvar', {
         category: CATEGORY_CHATVAR,
         unnamedArgs: [

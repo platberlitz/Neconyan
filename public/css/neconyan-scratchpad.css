@@ -34,11 +34,11 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
 /* A pinned character panel keeps the right edge (neconyan.css), so Scratchpad sits to its left.
    Anchored on #top-settings-holder, not body, so page changes do not restyle everything. */
 @media (min-width: 769px) {
-    body.neconyan #top-settings-holder:has(#right-nav-panel.openDrawer.pinnedOpen:not(.sb-character-editor-fullscreen)) ~ .scratchpad-app {
+    body.neconyan #top-settings-holder:has(> * > #right-nav-panel.openDrawer.pinnedOpen:not(.sb-character-editor-fullscreen)) ~ .scratchpad-app {
         right: min(400px, 38vw);
     }
 
-    body.neconyan.neconyan-scratchpad-beside #top-settings-holder:has(#right-nav-panel.openDrawer.pinnedOpen:not(.sb-character-editor-fullscreen)) ~ #sheld {
+    body.neconyan.neconyan-scratchpad-beside #top-settings-holder:has(> * > #right-nav-panel.openDrawer.pinnedOpen:not(.sb-character-editor-fullscreen)) ~ #sheld {
         right: calc(min(400px, 38vw) + var(--neco-scratchpad-width, 420px));
     }
 }

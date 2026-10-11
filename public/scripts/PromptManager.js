@@ -1936,10 +1936,10 @@ class PromptManager {
                 content: renderedMarkerPrompt.content,
                 identifier: selectedPrompt.identifier,
             }
-            : this.preparePrompt({
+            : withReadOnlyVariables(() => this.preparePrompt({
                 role: roleField.value || 'system',
                 content: promptField.value || '',
-            });
+            }));
         const previewContent = preparedPrompt.content || '';
 
         roleValue.textContent = preparedPrompt.role || 'system';

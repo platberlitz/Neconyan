@@ -1,6 +1,6 @@
-:root:has(body.neconyan) { --mainFontFamily: 'Nunito', 'Figtree', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', sans-serif; --sb-font-display: 'Fredoka One', var(--mainFontFamily); }
+:root:has(> body.neconyan) { --mainFontFamily: 'Nunito', 'Figtree', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', sans-serif; --sb-font-display: 'Fredoka One', var(--mainFontFamily); }
 /* Theme fonts override Nunito and Fredoka One inline on :root. */
-:root[style*='--mainFontFamily']:has(body.neconyan) { --sb-font-display: var(--mainFontFamily); }
+:root[style*='--mainFontFamily']:has(> body.neconyan) { --sb-font-display: var(--mainFontFamily); }
 body.neconyan:not(.sbterm) :is(h1, h2, h3, h4, h5, h6, .sb-topbar-brand, .neconyan-rail-brand) { font-family: var(--sb-font-display); }
 
 /* Import consent stays readable and easy to press as the panel grows. */
@@ -117,10 +117,10 @@ body.neconyan {
 body.neconyan #bg-header-fixed .bg-header-row-1 > h3 { flex: 0 1 auto; padding: 0; border: 0; background: transparent; }
 body.neconyan #background_fitting { flex: 1 0 auto; width: auto; min-width: calc(7ch + 52px); max-width: none; }
 /* The built-in wallpaper follows the same fit as selected images. */
-body.neconyan:has(#bg1.cover)::before { background-size: cover; background-position: var(--neconyan-wallpaper-focus, center); }
-body.neconyan:has(#bg1.contain)::before { background-size: contain; background-position: var(--neconyan-wallpaper-focus, center); }
-body.neconyan:has(#bg1.stretch)::before { background-size: 100% 100%; }
-body.neconyan:has(#bg1.center)::before { background-size: auto; background-position: var(--neconyan-wallpaper-focus, center); }
+body.neconyan:has(> #bg1.cover)::before { background-size: cover; background-position: var(--neconyan-wallpaper-focus, center); }
+body.neconyan:has(> #bg1.contain)::before { background-size: contain; background-position: var(--neconyan-wallpaper-focus, center); }
+body.neconyan:has(> #bg1.stretch)::before { background-size: 100% 100%; }
+body.neconyan:has(> #bg1.center)::before { background-size: auto; background-position: var(--neconyan-wallpaper-focus, center); }
 /* Background Position: the part of the picture kept in view when the screen crops it. */
 :root[data-sb-bg-position] #bg1,
 :root[data-sb-bg-position] body.neconyan::before { background-position: var(--sb-bg-position) !important; }
@@ -310,11 +310,12 @@ body.neconyan :is(.sb-shell-root, #right-nav-panel).openDrawer {
     transform: none !important; animation: none !important; pointer-events: auto !important;
 }
 /* Anchored on the drawer holder, not body: a body-level :has() here made Chromium restyle the
-   whole page on every small DOM change (about 350ms each with a long chat open). */
-body.neconyan :where(#top-settings-holder):has(:is(.sb-shell-root, #right-nav-panel).openDrawer) ~ #sheld {
+   whole page on every small DOM change (about 350ms each with a long chat open). The shell pages
+   sit two levels down, so '> * >' keeps the check to those levels instead of all 18k elements. */
+body.neconyan :where(#top-settings-holder):has(> * > :is(.sb-shell-root, #right-nav-panel).openDrawer) ~ #sheld {
     visibility: hidden !important; pointer-events: none !important;
 }
-body.neconyan :where(#top-settings-holder):has(:is(.sb-shell-root, #right-nav-panel).openDrawer) ~ :where(#sheld) #neconyan-home-host {
+body.neconyan :where(#top-settings-holder):has(> * > :is(.sb-shell-root, #right-nav-panel).openDrawer) ~ :where(#sheld) #neconyan-home-host {
     visibility: hidden !important; pointer-events: none !important;
 }
 body.neconyan #left-nav-panel[data-sb-active-tab='agents'] .sb-shell-nav-wrapper { display: none; }
@@ -1822,12 +1823,12 @@ body.neconyan #right-nav-panel .sb-character-library-primary-actions > #characte
         width: min(400px, 38vw) !important;
         border-left: 1px solid var(--neco-border) !important;
     }
-    body.neconyan :where(#top-settings-holder):has(#right-nav-panel.openDrawer.pinnedOpen) ~ #sheld {
+    body.neconyan :where(#top-settings-holder):has(> * > #right-nav-panel.openDrawer.pinnedOpen) ~ #sheld {
         right: min(400px, 38vw);
         visibility: visible !important;
         pointer-events: auto !important;
     }
-    body.neconyan :where(#top-settings-holder):has(#right-nav-panel.openDrawer.pinnedOpen) ~ :where(#sheld) #neconyan-home-host {
+    body.neconyan :where(#top-settings-holder):has(> * > #right-nav-panel.openDrawer.pinnedOpen) ~ :where(#sheld) #neconyan-home-host {
         visibility: visible !important;
         pointer-events: auto !important;
     }

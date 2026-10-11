@@ -10,8 +10,65 @@ export const UI_MOTION_TIMING = Object.freeze({
     fadeOutMs: 160,
     drawerInMs: 380,
     drawerOutMs: 280,
+    chatRevealMs: 360,
+    swipeMs: 320,
 });
+const CHAT_REVEAL_DISTANCE = 16;
+const SWIPE_DISTANCE = 48;
+// A held reveal starts once two frames in a row arrive this quickly. A device that
+// stays slow starts it on the first quick frame after the cap, and always by the limit.
+const QUIET_FRAME_MS = 50;
+const HOLD_CAP_MS = 1200;
+const HOLD_LIMIT_MS = 2000;
 let preferencesBound = false;
+// A page follows the control that opened it: down from the top bar, out of the sidebar.
+const ORIGIN_EDGES = [['#top-bar', 'top'], ['#neconyan-workspace-rail', 'left']];
+// Some controls open their page after an import or a settled state, so the tap stays valid briefly.
+const ORIGIN_WINDOW_MS = 1000;
+let lastOrigin = null;
+
+function rememberOrigin(event) {
+    const target = typeof event.target?.closest === 'function' ? event.target : null;
+    const edge = target ? ORIGIN_EDGES.find(([selector]) => target.closest(selector))?.[1] : null;
+    lastOrigin = edge ? { edge, at: performance.now() } : null;
+}
+
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    document.addEventListener('click', rememberOrigin, true);
+}
+
+/**
+ * The edge a drawer page travels on. Opening takes the side of the control that was
+ * just pressed, or the page's own side; closing returns along the edge it opened from.
+ */
+export function getUiDrawerEdge(element, open, fallback) {
+    if (!element?.dataset) return fallback;
+    if (open) {
+        const origin = lastOrigin && performance.now() - lastOrigin.at < ORIGIN_WINDOW_MS ? lastOrigin.edge : null;
+        lastOrigin = null;
+        element.dataset.uiMotionEdge = origin ?? fallback;
+    }
+    return element.dataset.uiMotionEdge || fallback;
+}
+
+/**
+ * While a page travels to or from the bar it belongs to, that bar stays in front,
+ * so the page emerges from under the top bar or out of the sidebar edge.
+ * Returns a function that restores the bar.
+ */
+function raiseOriginBar(element, edge) {
+    if (element.dataset?.uiMotionEdge !== edge) return () => {};
+    const bar = document.querySelector(ORIGIN_EDGES.find(([, side]) => side === edge)?.[0] ?? null);
+    if (!bar || bar.contains(element)) return () => {};
+    let layer = element;
+    for (let node = element; node && node !== document.body; node = node.parentElement) {
+        if (getComputedStyle(node).zIndex !== 'auto') layer = node;
+    }
+    const value = bar.style.getPropertyValue('z-index');
+    const priority = bar.style.getPropertyPriority('z-index');
+    bar.style.setProperty('z-index', String((Number.parseInt(getComputedStyle(layer).zIndex, 10) || 0) + 1), 'important');
+    return () => bar.style.setProperty('z-index', value, priority);
+}
 
 export function prefersReducedUiMotion() {
     return document.body?.classList.contains('reduced-motion')
@@ -49,7 +106,7 @@ function isVisible(element) {
         && getComputedStyle(element).visibility !== 'hidden';
 }
 
-function play(element, frames, { duration, easing = easeOut, closing = false, linked = [], complete = () => {}, restore = () => {} }) {
+function play(element, frames, { duration, easing = easeOut, closing = false, linked = [], complete = () => {}, restore = () => {}, holdWhileBusy = false }) {
     bindPreferences();
     const options = { duration, easing, fill: 'both' };
     const animation = element.animate(frames, options);
@@ -66,10 +123,35 @@ function play(element, frames, { duration, easing = easeOut, closing = false, li
             if (motion.playState === 'finished') motion.play();
         }
     };
-    requestAnimationFrame(() => {
+    // Opening a chat keeps the page busy for a while after the first paint. Safari
+    // runs the clock through that work, so the chat appeared already in place.
+    // There a held reveal waits on its first keyframe until frames flow again.
+    // Other browsers keep the motion running beside that work, so they start at once.
+    const hold = since => {
+        let previous = since;
+        let quiet = 0;
+        const check = now => {
+            if (settled) return;
+            const flowing = typeof now === 'number' && now - previous < QUIET_FRAME_MS;
+            quiet = flowing ? quiet + 1 : 0;
+            previous = now;
+            const waited = now - since;
+            if (typeof now !== 'number' || quiet >= 2 || (flowing && waited >= HOLD_CAP_MS) || waited >= HOLD_LIMIT_MS) {
+                rewind();
+                for (const motion of [animation, ...parts]) motion.play();
+                return;
+            }
+            requestAnimationFrame(check);
+        };
+        for (const motion of [animation, ...parts]) motion.pause();
+        if (typeof since === 'number') requestAnimationFrame(check);
+        else check();
+    };
+    requestAnimationFrame(now => {
         if (settled) return;
         started = true;
         rewind();
+        if (holdWhileBusy && document.body?.classList.contains('safari')) hold(now);
     });
     const cancel = () => {
         if (settled) return;
@@ -96,7 +178,7 @@ function play(element, frames, { duration, easing = easeOut, closing = false, li
 }
 
 /** Reveal newly rendered content once, never individual streaming tokens. */
-export function revealUi(element, { distance = 6, duration = UI_MOTION_TIMING.revealMs } = {}) {
+export function revealUi(element, { distance = 6, duration = UI_MOTION_TIMING.revealMs, holdWhileBusy = false } = {}) {
     if (!element) return;
     // Restarting an arrival that is already under way would blink it back to transparent.
     if (activeMotions.get(element)?.closing === false) return;
@@ -105,7 +187,27 @@ export function revealUi(element, { distance = 6, duration = UI_MOTION_TIMING.re
     const frames = distance
         ? [{ opacity: 0, translate: `0 ${distance}px` }, { opacity: 1, translate: '0 0' }]
         : [{ opacity: 0 }, { opacity: 1 }];
-    play(element, frames, { duration });
+    play(element, frames, { duration, holdWhileBusy });
+}
+
+/** An opened chat rises into place, a little further and slower than a menu, so the change of chat reads. */
+export function revealChat(element) {
+    revealUi(element, { distance: CHAT_REVEAL_DISTANCE, duration: UI_MOTION_TIMING.chatRevealMs, holdWhileBusy: true });
+}
+
+/**
+ * A swiped reply slides in from the side it was swiped towards: the next reply from the
+ * right, the previous one from the left. `pace` shortens the motion for rapid repeats,
+ * and a new swipe takes over at once, so nothing waits for the slide to end.
+ */
+export function slideSwipe(element, fromRight, pace = 1) {
+    if (!element) return;
+    finishUiMotion(element);
+    if (prefersReducedUiMotion() || !isVisible(element) || typeof element.animate !== 'function') return;
+    const offset = `${fromRight ? SWIPE_DISTANCE : -SWIPE_DISTANCE}px 0`;
+    play(element, [{ opacity: 0, translate: offset }, { opacity: 1, translate: '0 0' }], {
+        duration: UI_MOTION_TIMING.swipeMs * Math.min(1, Math.max(0, pace)),
+    });
 }
 
 /**
@@ -164,6 +266,7 @@ export function setUiVisibility(element, open, applyVisibility, { distance = 6, 
             duration: drawerTiming ? UI_MOTION_TIMING.drawerInMs : UI_MOTION_TIMING.fadeInMs,
             easing,
             linked,
+            restore: surfaceSlide ? raiseOriginBar(element, edge) : undefined,
         });
     } else {
         const wasInert = element.inert;
@@ -172,6 +275,7 @@ export function setUiVisibility(element, open, applyVisibility, { distance = 6, 
         element.inert = true;
         // Inert content still wins the hit test, so a fading surface would swallow taps meant for what lies beneath.
         element.style.setProperty('pointer-events', 'none', 'important');
+        const lowerOriginBar = surfaceSlide ? raiseOriginBar(element, edge) : () => {};
         play(element, [interrupted ?? restFrame, hiddenFrame], {
             duration: drawerTiming ? UI_MOTION_TIMING.drawerOutMs : UI_MOTION_TIMING.fadeOutMs,
             easing,
@@ -180,6 +284,7 @@ export function setUiVisibility(element, open, applyVisibility, { distance = 6, 
             restore: () => {
                 element.inert = wasInert;
                 element.style.setProperty('pointer-events', pointerEvents, pointerPriority);
+                lowerOriginBar();
             },
             complete: () => applyVisibility(false),
         });

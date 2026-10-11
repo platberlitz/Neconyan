@@ -59,6 +59,105 @@ async function promptFor(t, prompts, order, settings = {}) {
 const main = { identifier: 'main', role: 'system', system_prompt: true, content: 'Main' };
 const history = { identifier: 'chatHistory', marker: true, system_prompt: true };
 
+function macroJob(t, content, prepare = () => {}) {
+    return promptJob(t, [{ ...main, content }, history], ['main', 'chatHistory'],
+        { power_user: { experimental_macro_engine: true } }, prepare, undefined, {}, { serverPrompt: true });
+}
+
+test('history macro bodies expand and prompt-local writes commit once with the accepted reply', async t => {
+    const job = macroJob(t, '{{setvar::weather::rain}}Main', f => {
+        f.records[0].chat_metadata.variables = { turns: 4, untouched: 'saved' };
+        f.records[1].mes = '{{user}} asks {{char}}: {{incvar::turns}}';
+        f.records[2].mes = 'Weather: {{getvar::weather}}';
+    });
+    let calls = 0;
+    const generate = async ({ messages, beforeDispatch }) => {
+        calls++;
+        beforeDispatch();
+        assert.deepEqual(messages.map(message => message.content), ['Main', 'User asks Nova: 5', 'Weather: rain']);
+        assert.equal(readRoleplayChat(job.f.scope, job.f.source().locator).records[0].chat_metadata.variables.turns, 4);
+        return { text: 'Saved result' };
+    };
+    await job.run(generate);
+    await job.run(generate);
+    assert.equal(calls, 1);
+    const records = readRoleplayChat(job.f.scope, job.f.source().locator).records;
+    assert.deepEqual(records[0].chat_metadata.variables, { turns: 5, untouched: 'saved', weather: 'rain' });
+    assert.equal(records[1].mes, '{{user}} asks {{char}}: {{incvar::turns}}');
+    assert.equal(records.at(-1).mes, 'Saved result');
+});
+
+test('failed prompts leave saved variables alone and retries retain the prepared mutations', async t => {
+    const job = macroJob(t, '{{incvar::turns}}', f => { f.records[0].chat_metadata.variables = { turns: 4 }; });
+    await assert.rejects(job.run(async () => { throw new Error('Not dispatched'); }), /Not dispatched/);
+    assert.equal(readRoleplayChat(job.f.scope, job.f.source().locator).records[0].chat_metadata.variables.turns, 4);
+    await job.run(async ({ messages }) => {
+        assert.equal(messages[0].content, '5');
+        return { text: 'Accepted' };
+    });
+    assert.equal(readRoleplayChat(job.f.scope, job.f.source().locator).records[0].chat_metadata.variables.turns, 5);
+});
+
+test('unsupported extension macros in presets, history and lore refuse before dispatch', async t => {
+    for (const location of ['preset', 'history', 'lore']) {
+        const input = '{{switch::x::x=yes::default=no}} {{getchatvar::n_yseult}}';
+        const job = macroJob(t, location === 'preset' ? input : 'Main', f => {
+            if (location === 'history') f.records[1].mes = input;
+            if (location === 'lore') {
+                f.records[0].chat_metadata.world_info = 'Macro lore';
+                f.scope.directories.worlds = path.join(f.scope.directories.root, 'worlds');
+                fs.mkdirSync(f.scope.directories.worlds);
+                fs.writeFileSync(path.join(f.scope.directories.worlds, 'Macro lore.json'), JSON.stringify({ entries: {
+                    0: { uid: 0, key: [], constant: true, content: input, order: 100, position: 0, disable: false },
+                } }));
+            }
+        });
+        await assert.rejects(job.run(async () => assert.fail('Provider must stay idle')), { code: 'MACRO_BROWSER_ONLY' }, location);
+        assert.equal(readRoleplayChat(job.f.scope, job.f.source().locator).records.length, 3);
+    }
+});
+
+test('provider-formatting mutations survive a completed provider retry and reject damaged receipts', async t => {
+    for (const damage of [false, true]) {
+        const prompts = [{ ...main, content: '{{incvar::turns}}' }, history];
+        const order = ['main', 'chatHistory'];
+        const settings = { _settingsRevision: 1, username: 'User', main_api: 'openai',
+            active_generation: { api: 'openai', source: 'custom', model: 'gpt-4o' },
+            oai_settings: { chat_completion_source: 'custom', custom_url: 'http://127.0.0.1:6000', custom_model: 'gpt-4o',
+                openai_max_context: 4096, prompts, custom_prompt_post_processing: '',
+                prompt_order: [{ character_id: 100001, order: order.map(identifier => ({ identifier, enabled: true })) }] },
+            power_user: { experimental_macro_engine: true, custom_stopping_strings_macro: true,
+                custom_stopping_strings: '["{{incvar::formatting}}STOP"]' } };
+        const job = promptJob(t, prompts, order, settings, f => { f.records[0].chat_metadata.variables = { turns: 4 }; },
+            directories => captureGenerationBinding(directories, { kind: 'active' }, { settingsRevision: 1 }), {}, { serverPrompt: true });
+        job.options.promptBackend = resolveGenerationProfile;
+        let calls = 0;
+        await assert.rejects(job.run(async options => {
+            await runChatProfile({ ...options, fetch: async (_url, init) => {
+                calls++;
+                const payload = JSON.parse(init.body);
+                assert.deepEqual(payload.stop, ['1STOP']);
+                assert.equal(payload.macroState, undefined);
+                return new Response(JSON.stringify({ choices: [{ message: { content: 'Saved reply' } }] }));
+            } });
+            throw new Error('Interrupted after provider result');
+        }), /Interrupted after provider result/);
+        assert.equal(readRoleplayChat(job.f.scope, job.f.locator).records[0].chat_metadata.variables.turns, 4);
+        if (damage) {
+            const receipt = readArtifact(job.context.directories, job.context.job.id, 'roleplay-macro-commit');
+            receipt.local.turns = 999;
+            writeArtifact(job.context.directories, job.context.job.id, 'roleplay-macro-commit', receipt);
+            await assert.rejects(job.run(async () => assert.fail('Never repeat a paid result')), { code: 'ROLEPLAY_MACRO_RECOVERY' });
+            assert.equal(readRoleplayChat(job.f.scope, job.f.locator).records.length, 3);
+        } else {
+            await job.run(async () => assert.fail('Never repeat a paid result'));
+            assert.deepEqual(readRoleplayChat(job.f.scope, job.f.locator).records[0].chat_metadata.variables,
+                { turns: 5, formatting: 1 });
+        }
+        assert.equal(calls, 1);
+    }
+});
+
 test('empty Main Prompt markers retain history and relative Author notes', async t => {
     const messages = await promptFor(t, [{ ...main, marker: true, content: '' }, history], ['main', 'chatHistory'], {
         extension_settings: { note: { default: 'Remember the rain', defaultInterval: 1, defaultPosition: 0 } },

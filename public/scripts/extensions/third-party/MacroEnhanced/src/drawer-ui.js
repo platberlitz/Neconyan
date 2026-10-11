@@ -46,6 +46,13 @@ export function renderDrawer({ engineAvailable }) {
     const content = drawer.querySelector('.inline-drawer-content');
     content.innerHTML = '';
 
+    const boundary = el('div', 'me-drawer-notice');
+    boundary.dataset.meServerBoundary = '';
+    boundary.appendChild(el('b', undefined, 'Server prompts have a smaller macro vocabulary. '));
+    boundary.appendChild(document.createTextNode('Most Macro Enhanced macros, including switch, chat variables, counters and custom macros, are browser-only. Roleplay stops with an error if a server prompt uses them. The Playground can still evaluate them locally.'));
+    boundary.appendChild(helpButton('Server prompts and saved variables', () => openWorkbench({ tab: 'Reference', topic: 'server-prompts' })));
+    content.appendChild(boundary);
+
     if (!engineAvailable) {
         const notice = el('div', 'me-drawer-notice');
         notice.textContent = 'Macro Enhanced needs the Experimental Macro Engine. Turn it on under User Settings → Experimental Macro Engine, and this extension will activate automatically.';

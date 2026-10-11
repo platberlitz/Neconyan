@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createMacroEnvironment, MacroRegistry, evaluateLegacyMacros } from '../src/macros/index.js';
 import { modern, legacy } from './fixtures/macro-baseline.js';
+import { capturedBrowserMacros } from '../src/macros/browser-only.js';
 
 function snapshot(user = 'User') {
     return {
@@ -20,6 +21,57 @@ const capabilities = {
     getMaxContextTokens: () => 1300, getMaxResponseTokens: () => 300, getFirstDisplayedMessageId: () => null,
     isMobile: () => false, findExtension: () => ({ enabled: true }), populateEnv: () => {},
 };
+
+test('strict server hosts reject the extension vocabulary in modern and legacy prompts', () => {
+    const env = createMacroEnvironment(snapshot());
+    for (const legacy of [false, true]) {
+        for (const input of ['{{switch::x::x=yes::default=no}}', '{{getchatvar::n_yseult}}', '{{setchatvar::n_yseult::1}}',
+            '{{usermsgcount}}', '{{ME-UPPER::x}}', '{{chatvarexists::x}}', '{{if::1}}{{freeze::key}}x{{/freeze}}{{/if}}']) {
+            assert.throws(() => env.evaluate(input, { legacy, strictCapabilities: true }), { code: 'MACRO_BROWSER_ONLY', status: 409 }, input);
+        }
+    }
+    assert.equal(env.evaluate('{{user}} / {{char}} / {{reverse::abc}}', { strictCapabilities: true }), 'User / Char / cba');
+    assert.equal(env.evaluate('{{// {{getchatvar::x}} }}', { strictCapabilities: true }), '');
+    assert.equal(MacroRegistry.hasMacro('switch'), false);
+    for (const condition of ['usermsgcount', '!usermsgcount', '{{reverse::tnuocgsmresu}}']) {
+        assert.throws(() => env.evaluate(`{{if::${condition}}}yes{{/if}}`, { strictCapabilities: true }), { code: 'MACRO_BROWSER_ONLY' });
+    }
+});
+
+test('custom vocabulary and syntax settings stay private while server lore overrides remain available', () => {
+    const browserMacros = capturedBrowserMacros({ MacroEnhanced: { customMacros: [{ name: 'privateGreeting', enabled: true }] } }, {}, {});
+    const env = createMacroEnvironment({ ...snapshot(), browserMacros }, {}, { dynamicMacros: {
+        lore: { unnamedArgs: [{ name: 'entry' }, { name: 'book' }], handler: () => 'Saved lore' },
+    } });
+    assert.throws(() => env.evaluate('{{privateGreeting}}', { strictCapabilities: true }), { code: 'MACRO_BROWSER_ONLY' });
+    assert.equal(createMacroEnvironment().evaluate('{{privateGreeting}}', { strictCapabilities: true }), '{{privateGreeting}}');
+    assert.equal(env.evaluate('{{lore::book::key}}', { strictCapabilities: true }), 'Saved lore');
+    for (const [setting, input] of [['compatExpressions', '{{if::1 > 0}}yes{{/if}}'], ['fixImportedSyntax', '{{@name}}']]) {
+        const syntax = createMacroEnvironment({ browserMacroSyntax: { [setting]: true } });
+        assert.throws(() => syntax.evaluate(input, { strictCapabilities: true }), { code: 'MACRO_BROWSER_ONLY' });
+    }
+});
+
+test('Roleplay variable policy refuses unsaveable writes, including read-only forks', () => {
+    const state = { ...snapshot(), writableScopes: ['local'] };
+    const env = createMacroEnvironment(state);
+    assert.equal(env.evaluate('{{setvar::weather::rain}}{{getvar::weather}}', { strictCapabilities: true }), 'rain');
+    assert.throws(() => env.evaluate('{{setglobalvar::weather::rain}}', { strictCapabilities: true }), { code: 'MACRO_WRITE_UNSUPPORTED' });
+    for (const legacy of [false, true]) {
+        const readOnly = createMacroEnvironment(state, {}, { readOnly: true }).fork();
+        assert.throws(() => readOnly.evaluate('{{setvar::weather::rain}}', { strictCapabilities: true, legacy }), { code: 'MACRO_WRITE_UNSUPPORTED' });
+        assert.equal(readOnly.extra.variables.local.get('weather'), '');
+    }
+});
+
+test('nested dynamic evaluation cannot swallow a server macro policy error', () => {
+    const env = createMacroEnvironment({ writableScopes: ['local'] }, {}, { dynamicMacros: {
+        nested: () => env.evaluate('{{setglobalvar::x::1}}', { strictCapabilities: true }),
+        innocent: () => env.evaluate('{{user}}'),
+    } });
+    assert.throws(() => env.evaluate('{{nested}}{{innocent}}', { strictCapabilities: true }), { code: 'MACRO_WRITE_UNSUPPORTED' });
+    assert.equal(env.evaluate('{{setvar::x::ok}}{{getvar::x}}', { strictCapabilities: true }), 'ok');
+});
 function evaluate(input, env) {
     return env.evaluate(input);
 }

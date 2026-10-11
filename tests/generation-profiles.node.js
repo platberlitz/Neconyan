@@ -454,7 +454,7 @@ test('active output transformations preserve scope, order and refusal before dis
     fixture.settings.extension_settings.regex.push(script('Final', '{{setvar::unsafe::1}}'));
     fixture.save();
     options.binding = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 3 });
-    await assert.rejects(runChatProfile(options), /Macro-dependent/);
+    await assert.rejects(runChatProfile(options), { status: 409, message: /plain replacements.*browser-only/ });
     assert.equal(calls, 1);
     fixture.settings.extension_settings.disabledExtensions = ['regex']; fixture.save();
     assert.throws(() => resolveGenerationProfile(fixture.directories, options.binding), /changed/);
@@ -584,12 +584,12 @@ test('active capability checks cover indirect macros and refuse dynamic regex on
     for (const findRegex of ['<GROUP>', '<CHARIFNOTGROUP>']) {
         fixture.settings.extension_settings.regex = [{ findRegex, replaceString: 'replacement', substituteRegex: 1, placement: [2] }];
         options.binding = capture();
-        await assert.rejects(runChatProfile({ ...options, messages: [{ role: 'user', content: 'hello' }] }), /Macro-dependent/i);
+        await assert.rejects(runChatProfile({ ...options, messages: [{ role: 'user', content: 'hello' }] }), { status: 409, message: /plain replacements.*browser-only/ });
     }
     for (const replaceString of ['<USER>', '<GROUP>', '<CHARIFNOTGROUP>', '$1', '{{match}}', '$<name>']) {
         fixture.settings.extension_settings.regex = [{ findRegex: '(hello)', replaceString, placement: [2] }];
         options.binding = capture();
-        await assert.rejects(runChatProfile({ ...options, messages: [{ role: 'user', content: 'hello' }] }), /Macro-dependent|capture-dependent/i);
+        await assert.rejects(runChatProfile({ ...options, messages: [{ role: 'user', content: 'hello' }] }), { status: 409, message: /plain replacements.*browser-only/ });
     }
     assert.equal(calls, 0);
     const result = await runChatProfile({ ...options, messages: [{ role: 'user', content: 'hello' }],
