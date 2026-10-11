@@ -38,7 +38,7 @@ export function prepareActiveRegex(material, macroEnvironment) {
             if (Number(script.substituteRegex)) macroFields.push(script.findRegex);
             if (macroFields.some(value => value.includes('{{') || /<(?:USER|BOT|CHAR|GROUP|CHARIFNOTGROUP)>/i.test(value))
                 || /{{match}}|\$\d+|\$<[^>]+>/i.test(script.replaceString)) {
-                fail('Macro-dependent output transformations require the browser and cannot run in this server request.', 409);
+                fail('Server AI-output regex rules require plain replacements. Macros and capture substitutions are browser-only; remove them or use a prompt-only rule with supported core macros.', 409);
             }
             scripts.push({ ...script, markdownOnly: false, promptOnly: false });
         }

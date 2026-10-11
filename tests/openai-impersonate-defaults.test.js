@@ -12,7 +12,7 @@ describe('OpenAI impersonate defaults', () => {
         expect(openAiSource).toContain('assistant_impersonation: default_assistant_impersonation,');
         expect(openAiSource).toContain('function getEffectiveImpersonationPrompt()');
         expect(openAiSource).toContain('String(oai_settings.impersonation_prompt ?? \'\').trim() || default_impersonation_prompt');
-        expect(openAiSource).toContain('const impersonationPrompt = getEffectiveImpersonationPrompt();');
+        expect(openAiSource).toContain('const impersonationPrompt = evaluateMacros(() => getEffectiveImpersonationPrompt());');
         expect(openAiSource).toContain('function getEffectiveAssistantImpersonationPrefill(settings)');
         expect(openAiSource).toContain('String(settings?.assistant_impersonation ?? \'\').trim() || default_assistant_impersonation');
         expect(openAiSource).toContain('? getEffectiveAssistantImpersonationPrefill(settings)');

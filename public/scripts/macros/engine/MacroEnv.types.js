@@ -97,6 +97,7 @@
  * @property {(hash: number) => void} [setChatIdHash]
  * @property {Object} [generationState]
  * @property {(name: string) => Object} [findExtension]
+ * @property {(condition: string) => void} [assertMacroCondition] - Host validation before resolving a bare macro condition.
  * @property {() => number|null} [getFirstDisplayedMessageId]
  * @property {() => number} [getMaxPromptTokens]
  * @property {() => number} [getMaxContextTokens]

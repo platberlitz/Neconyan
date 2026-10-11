@@ -19,6 +19,7 @@ import { assertRoleplaySourceLocked, captureRoleplayMessage, captureRoleplayRang
 import { commitSingleChatWriteLocked } from './roleplay-lifecycle.js';
 import { applyCaptionRecords } from './generation/caption-records.js';
 import { applyAgentCompletionRecords } from './generation/agent-completion-records.js';
+import { applyRoleplayMacroCommit } from './generation/roleplay-macro-commit.js';
 import { assertRoleplayQuickReplyProof } from './generation/roleplay-quick-replies.js';
 import { applyManualAgentRecords } from './generation/agent-manual-records.js';
 import { applyPathfinderNotebookRecords } from './generation/pathfinder-notebook-records.js';
@@ -122,12 +123,13 @@ function effectRecords(records, source, effect, output, request, job, directorie
         record.mes = change.text;
         record.extra = { ...record.extra, display_text: change.displayText };
     }
-    const agentBaseline = output?.quickReply ? structuredClone(next) : next;
+    const agentBaseline = output?.quickReply || output?.macroCommit ? structuredClone(next) : next;
     if (output?.quickReply) assertRoleplayQuickReplyProof(directories, job, next, output);
     else if (request?.worldInfo?.hookPolicy?.quickReply?.enabled && output?.quickReply === undefined
         && readArtifact(directories, job.id, 'roleplay-quick-replies') !== undefined) {
         throw invalid('The saved Quick Reply actions were not included with this reply.');
     }
+    applyRoleplayMacroCommit(directories, job, next, output, agentBaseline);
     applyAgentCompletionRecords(directories, job, next, output, agentBaseline);
     if (output?.timedWorldInfo) {
         if (next.length - 1 !== output.timedChatLength
