@@ -232,6 +232,7 @@ const NN_SHELL_FOCUSABLE_SELECTOR = [
 
 let nnInlineDrawerPersistenceObserver = null;
 let nnInlineDrawerPersistenceQueued = false;
+const nnInlineDrawerPersistencePendingRoots = new Set();
 let nnChatScriptModulePromise = null;
 let nnMainScriptModulePromise = null;
 let nnComposerControlsObserver = null;
@@ -19337,15 +19338,33 @@ function bindInlineDrawerPersistence(root = document) {
     }
 }
 
-function queueInlineDrawerPersistenceBind() {
-    if (nnInlineDrawerPersistenceQueued) {
+// Only the drawers that were added, or whose parts were replaced, are restored:
+// deriving a key for every drawer in the app on each change cost 100 ms or more
+// whenever a chat opened.
+function queueInlineDrawerPersistenceBind(records = []) {
+    for (const record of records) {
+        for (const node of record.addedNodes) {
+            const root = node.parentElement?.closest('.inline-drawer') ?? (node instanceof HTMLElement ? node : null);
+            if (root) {
+                nnInlineDrawerPersistencePendingRoots.add(root);
+            }
+        }
+    }
+
+    if (nnInlineDrawerPersistenceQueued || !nnInlineDrawerPersistencePendingRoots.size) {
         return;
     }
 
     nnInlineDrawerPersistenceQueued = true;
     window.requestAnimationFrame(() => {
         nnInlineDrawerPersistenceQueued = false;
-        bindInlineDrawerPersistence(document.body);
+        const roots = [...nnInlineDrawerPersistencePendingRoots];
+        nnInlineDrawerPersistencePendingRoots.clear();
+        for (const root of roots) {
+            if (root.isConnected && !roots.some(other => other !== root && other.contains(root))) {
+                bindInlineDrawerPersistence(root);
+            }
+        }
     });
 }
 
@@ -19370,7 +19389,7 @@ function ensureInlineDrawerPersistenceObserver() {
         return;
     }
 
-    nnInlineDrawerPersistenceObserver = new MutationObserver(() => queueInlineDrawerPersistenceBind());
+    nnInlineDrawerPersistenceObserver = new MutationObserver(records => queueInlineDrawerPersistenceBind(records));
     for (const root of roots) {
         nnInlineDrawerPersistenceObserver.observe(root, { childList: true, subtree: true });
     }

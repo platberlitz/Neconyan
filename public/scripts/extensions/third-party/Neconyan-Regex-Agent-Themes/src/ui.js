@@ -1440,10 +1440,39 @@ async function renderView({ interaction = captureInteraction() } = {}) {
     queueMicrotask(() => restoreInteraction(interaction));
 }
 
+// Chat changes and settings saves ask for a redraw while the panel is usually
+// off screen; a redraw costs a few hundred milliseconds, so it waits until the
+// panel is shown.
+let viewOnScreen = false;
+let viewRenderPending = false;
+let viewVisibilityObserver = null;
+
+function watchViewVisibility(container) {
+    viewVisibilityObserver?.disconnect();
+    viewVisibilityObserver = null;
+    viewOnScreen = typeof IntersectionObserver !== 'function';
+    if (viewOnScreen) {
+        return;
+    }
+    viewVisibilityObserver = new IntersectionObserver((entries) => {
+        viewOnScreen = entries[entries.length - 1].isIntersecting;
+        if (viewOnScreen && viewRenderPending) {
+            viewRenderPending = false;
+            refresh();
+        }
+    }, { rootMargin: '200px' });
+    viewVisibilityObserver.observe(container);
+}
+
 function refresh() {
     if (uiState.busy) {
         return;
     }
+    if (!viewOnScreen && view?.container?.isConnected && !view.container.contains(document.activeElement)) {
+        viewRenderPending = true;
+        return;
+    }
+    viewRenderPending = false;
     clearTimeout(refreshHandle);
     refreshHandle = setTimeout(() => {
         void renderView();
@@ -1496,6 +1525,7 @@ export function mountSettings() {
         return () => {};
     }
     view = createView(host);
+    watchViewVisibility(view.container);
     void renderView({ interaction: null });
     return refresh;
 }
@@ -1506,6 +1536,9 @@ export function removeSettings() {
     renderGeneration++;
     disconnectThumbnailObserver();
     disconnectDrawerStateObservers();
+    viewVisibilityObserver?.disconnect();
+    viewVisibilityObserver = null;
+    viewRenderPending = false;
     view?.container?.remove();
     view = null;
 }

@@ -1215,6 +1215,26 @@ import { t } from './i18n.js';
             || candidates.includes(normalizeExtensionLookup(extension.displayName))) || null;
     }
 
+    // Search text reads every settings control, and the list refreshes whenever an
+    // extension redraws its settings, so it is only built when a search reads it.
+    function createExtensionGroup(fields, registrySearchText, firstUnit, firstName, firstId) {
+        let searchText = null;
+        const group = { ...fields, units: [], searchSources: [] };
+        Object.defineProperty(group, 'searchText', {
+            enumerable: true,
+            get() {
+                if (searchText === null) {
+                    searchText = normalizeSettingsSearchText([registrySearchText, firstName, firstId, firstUnit.textContent].filter(Boolean).join(' '));
+                    for (const [unit, name, id] of group.searchSources) {
+                        searchText = normalizeSettingsSearchText(`${searchText} ${getExtensionUnitSearchText(unit, name, id)}`);
+                    }
+                }
+                return searchText;
+            },
+        });
+        return group;
+    }
+
     function collectExtensionGroups(units, thirdPartyExtensions) {
         const groups = new Map();
         for (const unit of units) {
@@ -1225,17 +1245,15 @@ import { t } from './i18n.js';
             const key = registryEntry?.key || `built-in:${normalizedName || id}`;
             let group = groups.get(key);
             if (!group) {
-                group = {
+                group = createExtensionGroup({
                     key,
                     scope: registryEntry ? 'third-party' : 'built-in',
                     name: registryEntry?.displayName || name,
-                    units: [],
-                    searchText: normalizeSettingsSearchText([registryEntry?.searchText, name, id, unit.textContent].filter(Boolean).join(' ')),
-                };
+                }, registryEntry?.searchText, unit, name, id);
                 groups.set(key, group);
             }
             group.units.push(unit);
-            group.searchText = normalizeSettingsSearchText(`${group.searchText} ${getExtensionUnitSearchText(unit, name, id)}`);
+            group.searchSources.push([unit, name, id]);
         }
 
         for (const extension of thirdPartyExtensions) {

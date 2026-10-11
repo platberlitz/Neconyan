@@ -2828,6 +2828,34 @@ function updateMessageSleeperPosition(message) {
     }
 }
 
+const pendingMessageSleeperPositions = new Set();
+
+// Neconyan: one resize callback reports every message of a freshly opened chat. Measuring all of
+// them before writing any position lays the chat out once instead of once per message.
+function flushMessageSleeperPositions() {
+    const positions = [];
+    for (const message of pendingMessageSleeperPositions) {
+        if (!message.isConnected) continue;
+        measureEchoMessage(message);
+        const text = message.querySelector('.mes_text');
+        if (text) {
+            positions.push([message, `${text.getBoundingClientRect().top - message.getBoundingClientRect().top - message.clientTop}px`]);
+        }
+    }
+    pendingMessageSleeperPositions.clear();
+    for (const [message, top] of positions) {
+        if (message.style.getPropertyValue('--neconyan-sleeper-text-top') !== top) {
+            message.style.setProperty('--neconyan-sleeper-text-top', top);
+        }
+    }
+}
+
+function queueMessageSleeperPosition(message) {
+    if (!message) return;
+    if (pendingMessageSleeperPositions.size === 0) queueMicrotask(flushMessageSleeperPositions);
+    pendingMessageSleeperPositions.add(message);
+}
+
 function onChatMessageResize(element, entry, metadata) {
     if (!element?.isConnected) {
         unobserveChatMessageResizeBlock(element);
@@ -2835,7 +2863,7 @@ function onChatMessageResize(element, entry, metadata) {
     }
 
     // Echo's painted surface follows a wrapping header; reuse the existing resize observer.
-    updateMessageSleeperPosition(element.closest('.mes'));
+    queueMessageSleeperPosition(element.closest('.mes'));
     void applyChatMessageResizeAction(element, entry, metadata);
 }
 
