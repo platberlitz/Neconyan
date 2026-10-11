@@ -23,14 +23,15 @@ Scratchpad follows the chat you have open. Switch chats and it shows that chat's
 
 ### Your own assistants
 
-Press **Assistants** beside the portraits to open your library. I kept the library separate so a long list of assistants doesn't take over the conversation.
+Press **Assistants** beside the portraits to open your library. It opens in its own window, so a long list of assistants doesn't crowd the conversation.
 
-- **Use a character card** searches your saved characters. **Add** copies the picture, description, personality and example dialogue into a Scratchpad assistant. Later edits to either copy are independent. Scenario, greetings, lorebooks and card-specific system instructions aren't copied.
+- **Use a character card** searches your saved characters. **Add** copies the picture, description, personality and example dialogue into a Scratchpad assistant. Later edits to either copy are independent. Scenario, greetings, lorebooks and card-specific system instructions aren't copied. A very long card is shortened to fit: names keep their first 80 characters, and the personality and example dialogue keep their first 64,000 bytes each.
 - **Add a new assistant** starts with a name and personality you write yourself. **Choose picture** accepts PNG, JPEG or WebP images up to 16 MB, cropped to a square portrait. A picture and example dialogue are optional.
 - **Edit** changes a saved assistant's name, personality, picture or example dialogue. **Save assistant** makes those changes available to future replies across your account. Replies already accepted keep their original personality; saved replies keep their original speaker names.
+- **Delete**, inside **Edit**, removes an assistant from your library after you confirm. Sessions that already used them keep their own copy, so earlier conversations still read correctly; they show as **Only in this session** there.
 - **Use** selects an assistant. In a round table it includes or excludes them, with up to three selected at once.
 
-You can save up to 24 of your own assistants. They have the same connections, global instructions and prompt controls as the included assistants. A session-specific prompt still takes priority over personality edits; reset it under **Context → Assistant prompts** to use the saved personality again. Session exports include copies of the assistants used there, so importing a session keeps their identities without adding them to your account library. Use **Edit** to save an imported assistant to your library.
+You can save up to 24 of your own assistants; delete one to make room. They have the same connections, global instructions and prompt controls as the included assistants. A session-specific prompt still takes priority over personality edits; reset it under **Context → Assistant prompts** to use the saved personality again. Session exports include copies of the assistants used there, so importing a session keeps their identities without adding them to your account library. Use **Edit** to save an imported assistant to your library.
 
 Under **Context → Global user instructions → Edit user instructions**, save preferences that apply across every Scratchpad in your account. Choose **All assistants**, or **Selected assistants** and tick the ones you want. Your text accompanies each chosen assistant's prompt in existing and new sessions, including round tables and note discussions. It is saved on the server, so it follows your account across devices. Leave the text blank and press **Save instructions** to turn it off. Replies already in progress keep their original instructions. Session exports do not include these account-wide preferences.
 

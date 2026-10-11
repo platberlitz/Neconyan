@@ -24,7 +24,7 @@ import { SCRATCHPAD_JOB_TYPE, acceptScratchpadReply } from '../scratchpad/jobs.j
 import { readScratchpadPreview, subscribeScratchpadPreview } from '../scratchpad/preview.js';
 import { buildScratchpadSystemPrompt } from '../scratchpad/prompt.js';
 import { readInstructionsLocked, updateInstructionsLocked } from '../scratchpad/instructions.js';
-import { assistantPortrait, readAssistantCardLocked, readAssistantsLocked, refreshSessionAssistants, resolveAssistant, saveAssistantLocked } from '../scratchpad/assistants.js';
+import { assistantPortrait, deleteAssistantLocked, readAssistantCardLocked, readAssistantsLocked, refreshSessionAssistants, resolveAssistant, saveAssistantLocked } from '../scratchpad/assistants.js';
 import { normaliseAssistantProfile } from '../scratchpad/assistant-profiles.js';
 import { notebookContextLocked, withNotebookPreparation, prepareNotebookProposalLocked, decideNotebookProposalLocked,
     projectNotebookProposalsLocked, notifyScratchpadNotebookResult } from '../scratchpad/notebooks.js';
@@ -84,8 +84,14 @@ function sessionSettings(lease, input, assistant) {
 
 router.post('/session/create', (request, response) => change(request, response, (bucket, body, lease) => {
     const previous = bucket.sessions.find(item => item.id === bucket.activeSessionId);
-    createSession(bucket, { assistant: body.assistant, gender: body.gender, name: body.name, temporary: body.temporary,
-        settings: sessionSettings(lease, { assistants: previous?.settings.assistants ?? {}, ...body.settings }, body.assistant) });
+    const session = createSession(bucket, { assistant: body.assistant, gender: body.gender, name: body.name, temporary: body.temporary,
+        settings: sessionSettings(lease, { assistants: previous?.settings.assistants, ...body.settings }, body.assistant) });
+    // New sessions inherit the previous session's copies; drop the ones the library can supply again, so copies do not pile up towards the session limit.
+    const saved = new Set(readAssistantsLocked(lease).assistants.map(item => item.id));
+    const used = new Set([session.assistant, ...session.settings.participants]);
+    for (const id of Object.keys(session.settings.assistants)) {
+        if (saved.has(id) && !used.has(id)) delete session.settings.assistants[id];
+    }
 }));
 
 router.post('/assistants', (request, response) => {
@@ -107,6 +113,12 @@ router.post('/assistants/save', async (request, response) => {
             if (input.avatar) input.avatar = await assistantPortrait(Buffer.from(input.avatar.split(',')[1], 'base64'));
         }
         response.json(withScratchpad(base, lease => saveAssistantLocked(lease, input, request.body?.expectedRevision)));
+    } catch (error) { sendError(response, error); }
+});
+
+router.post('/assistants/delete', (request, response) => {
+    try {
+        response.json(withScratchpad(scratchpadAccountBase(request), lease => deleteAssistantLocked(lease, request.body?.id, request.body?.expectedRevision)));
     } catch (error) { sendError(response, error); }
 });
 

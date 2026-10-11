@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { after } from 'node:test';
 import express from 'express';
-import { fixture } from './roleplay-transactions-fixture.js';
+import { fixture, png } from './roleplay-transactions-fixture.js';
 
 const { SETTINGS_FILE } = await import('../src/constants.js');
 const { cancelAutoSaves } = await import('../src/endpoints/settings.js');
@@ -13,7 +13,8 @@ const { testExports: { runJob }, setDirectoriesResolver } = await import('../src
 const { acceptScratchpadReply, finalizeScratchpadSubmission, registerScratchpadJobs, testExports: jobs } = await import('../src/scratchpad/jobs.js');
 const store = await import('../src/scratchpad/store.js');
 const { readInstructionsLocked, updateInstructionsLocked } = await import('../src/scratchpad/instructions.js');
-const { readAssistantsLocked, saveAssistantLocked, readAssistantCardLocked, assistantPortrait, resolveAssistant } = await import('../src/scratchpad/assistants.js');
+const { readAssistantsLocked, saveAssistantLocked, deleteAssistantLocked, readAssistantCardLocked, assistantPortrait, resolveAssistant } = await import('../src/scratchpad/assistants.js');
+const { write: writeCard } = await import('../src/character-card-parser.js');
 const { buildScratchpadMessages, buildScratchpadSystemPrompt } = await import('../src/scratchpad/prompt.js');
 const { readScratchpadPreview } = await import('../src/scratchpad/preview.js');
 const { router } = await import('../src/endpoints/scratchpad.js');
@@ -111,6 +112,35 @@ test('character-card assistants copy characterisation and a metadata-free portra
     assert.deepEqual(fs.readFileSync(filename), before);
     assert.throws(() => store.withScratchpad(a.base, lease => readAssistantCardLocked(lease, '../Nova.png')));
     await assert.rejects(assistantPortrait(Buffer.from('not an image')), /could not be read/);
+});
+
+test('long character cards are shortened to fit an assistant instead of being refused', t => {
+    const a = account(t);
+    fs.writeFileSync(path.join(a.directories.characters, 'Long.png'), writeCard(png, JSON.stringify({
+        name: `${'N'.repeat(79)}😀 tail`, description: '字'.repeat(30000), mes_example: 'e'.repeat(70000),
+    })));
+    const card = store.withScratchpad(a.base, lease => readAssistantCardLocked(lease, 'Long.png'));
+    assert.equal(card.profile.name, 'N'.repeat(79));
+    assert.ok(Buffer.byteLength(card.profile.personality) <= 64000);
+    assert.ok(card.profile.personality.length > 21000);
+    assert.doesNotMatch(card.profile.personality, /\uFFFD/);
+    assert.equal(card.profile.examples.length, 64000);
+    assert.equal(saveAssistant(a, card.profile).assistant.name, 'N'.repeat(79));
+});
+
+test('deleting a library assistant needs the current revision and leaves session copies usable', t => {
+    const a = account(t);
+    const { assistant, library } = saveAssistant(a, { name: 'Jun', personality: 'Patient and direct.' });
+    const remove = (id, revision) => store.withScratchpad(a.base, lease => deleteAssistantLocked(lease, id, revision));
+    assert.throws(() => remove(assistant.id, library.revision - 1), error => error.status === 409);
+    assert.throws(() => remove('miso', library.revision), error => error.status === 404);
+    assert.throws(() => remove('assistant_222222222222222222222222', library.revision), error => error.status === 404);
+    const deleted = remove(assistant.id, library.revision);
+    assert.equal(deleted.library.assistants.length, 0);
+    assert.equal(deleted.library.revision, library.revision + 1);
+    assert.equal(store.withScratchpad(a.base, readAssistantsLocked).assistants.length, 0);
+    assert.equal(resolveAssistant(deleted.library, assistant.id, { [assistant.id]: assistant }).personality, 'Patient and direct.');
+    assert.throws(() => resolveAssistant(deleted.library, assistant.id), /unavailable/);
 });
 
 test('custom assistants keep their accepted personality, names, round-table history and portable session copies', async t => {
@@ -1083,6 +1113,20 @@ test('the endpoint checks the account and answers with the saved Scratchpad', as
     const missingProfile = await post('/session/import', { source: OTHER, session: { assistant: 'assistant_222222222222222222222222' } });
     assert.equal(missingProfile.status, 404, 'an import cannot leave an unusable assistant behind');
     assert.equal((await (await post('/bucket', { source: OTHER })).json()).bucket.sessions.length, 2);
+    const active = bucket => bucket.sessions.find(item => item.id === bucket.activeSessionId);
+    const withJun = active((await (await post('/session/create', { source: OTHER, assistant: assistant.id })).json()).bucket);
+    assert.deepEqual(Object.keys(withJun.settings.assistants).sort(), [assistant.id, portable.id].sort());
+    const fresh = active((await (await post('/session/create', { source: OTHER, assistant: 'miso' })).json()).bucket);
+    assert.deepEqual(Object.keys(fresh.settings.assistants ?? {}), [portable.id], 'library assistants are not copied into every new session');
+
+    assert.equal((await post('/assistants/delete', { id: assistant.id, expectedRevision: 0 })).status, 409);
+    assert.equal((await post('/assistants/delete', { id: assistant.id, expectedRevision: 1 }, 'someone-else')).status, 409);
+    const removed = await post('/assistants/delete', { id: assistant.id, expectedRevision: 1 });
+    assert.equal(removed.status, 200);
+    assert.deepEqual((await removed.json()).library.assistants, []);
+    assert.equal((await post('/assistants/delete', { id: assistant.id, expectedRevision: 2 })).status, 404);
+    assert.match((await (await post('/prompt', { source: OTHER, sessionId: inheritedSession.id, assistant: portable.id })).json()).text, /ENDPOINT-PERSONALITY/,
+        'sessions keep their own copy after a library delete');
 
     const created = await post('/session/create', { source: SOURCE, assistant: 'nori', gender: 'male' });
     assert.equal(created.status, 200);

@@ -15,6 +15,7 @@ for (const phone of [false, true]) {
         const manage = page.getByRole('button', { name: 'Assistants', exact: true });
         await manage.click();
         await page.getByRole('button', { name: 'Add a new assistant', exact: true }).click();
+        await expect(page.getByRole('button', { name: 'Remove picture', exact: true })).toBeHidden();
         await page.getByRole('textbox', { name: 'Assistant name', exact: true }).fill('Jun');
         await page.getByRole('textbox', { name: 'Personality', exact: true }).fill('You are Jun, a patient, dry-humoured editor. Ask precise questions and keep suggestions practical.');
         await page.getByLabel('Assistant picture', { exact: true }).setInputFiles('../public/img/neconyan/assistant-icons/nori-neutral.png');
@@ -122,6 +123,17 @@ for (const phone of [false, true]) {
         await save();
         await expect(page.getByRole('button', { name: 'Use June', exact: true })).toHaveAttribute('aria-pressed', 'true');
         await expect(page.locator('.scratchpad-library-button[aria-pressed="true"]')).toHaveCount(3);
+
+        await page.getByRole('button', { name: 'Edit Durable Nova', exact: true }).click();
+        await expect(page.getByRole('button', { name: 'Remove picture', exact: true })).toBeVisible();
+        await page.screenshot({ path: `${prefix}-edit-card.png` });
+        await page.getByRole('button', { name: 'Delete Durable Nova', exact: true }).click();
+        const deleted = page.waitForResponse('**/api/scratchpad/assistants/delete');
+        await page.locator('dialog[open] .popup-button-ok').last().click();
+        expect((await deleted).ok()).toBe(true);
+        await expect(page.getByRole('heading', { name: 'Your assistants', exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Use Durable Nova', exact: true })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Use June', exact: true })).toHaveAttribute('aria-pressed', 'true');
         await page.getByRole('button', { name: 'Done', exact: true }).click();
     });
 }
