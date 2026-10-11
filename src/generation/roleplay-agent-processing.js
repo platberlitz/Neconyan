@@ -118,6 +118,20 @@ function activeAgents(context, base, snapshot) {
     return { pre: saved, agents: readRoleplayAgents(base, snapshot).filter(agent => data.activeIds.includes(agent.id)) };
 }
 
+function displaySnapshot(pre, agents, generationType) {
+    const regexAgents = agents.filter(agent => inline(agent) && agent.regexScripts.length);
+    return { activeAgentIds: pre.activeIds, generationType, edited: false,
+        regexScriptRefs: regexAgents.flatMap(agent => buildRegexScriptRefsForAgent(agent.id, agent.regexScripts)),
+        nativeRegexScripts: regexAgents.flatMap(agent => agent.regexScripts.map(script => ({ agentId: agent.id, script }))) };
+}
+
+/** Use the accepted activation and bound scripts while the main reply is still streaming. */
+export function roleplayAgentDisplaySnapshot(context, { base, snapshot, generationType }) {
+    if (!snapshot?.agents) return undefined;
+    const { pre, agents } = activeAgents(context, base, snapshot);
+    return displaySnapshot(pre, agents, generationType);
+}
+
 function unwrap(value) {
     let text = String(value || '').trim();
     for (let index = 0; index < 8; index++) {
@@ -383,10 +397,7 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     else if (effect === 'replace' && context.job.intent.source?.range) trackerRecords.splice(context.job.intent.source.range.start + 1, context.job.intent.source.range.count, { mes: text, is_user: false });
     else trackerRecords.push({ mes: text, is_user: false });
     const metadata = generationType === 'impersonate' ? {} : reconcileAgentTrackerMetadata(utilities, trackerRecords);
-    const regexAgents = agents.filter(agent => inline(agent) && agent.regexScripts.length);
-    const extra = { inChatAgentPromptRuns: runs, inChatAgents: { activeAgentIds: pre.activeIds, generationType, edited: false,
-        regexScriptRefs: regexAgents.flatMap(agent => buildRegexScriptRefsForAgent(agent.id, agent.regexScripts)),
-        nativeRegexScripts: regexAgents.flatMap(agent => agent.regexScripts.map(script => ({ agentId: agent.id, script }))) } };
+    const extra = { inChatAgentPromptRuns: runs, inChatAgents: displaySnapshot(pre, agents, generationType) };
     if (text !== baseline && options.recordHistory !== false) {
         const previous = agentMessageExtra(records.at(-1), 'inChatAgentTransformHistory');
         const history = agentTransformHistory(previous, baseline);
