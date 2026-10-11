@@ -560,6 +560,17 @@ function generationFailureMessage(body, status) {
     return message ? message.trim().slice(0, 500) : `The model provider could not complete the reply (HTTP ${status}).`;
 }
 
+/** Some providers and proxies ignore stream: true and answer with one complete JSON reply. */
+function parseUnstreamedReply(body) {
+    if (typeof body !== 'string' || !/^\s*\{/.test(body)) return body;
+    try {
+        const parsed = JSON.parse(body);
+        return isObject(parsed) ? parsed : body;
+    } catch {
+        return body;
+    }
+}
+
 /**
  * Run backend generation with error handling
  */
@@ -637,7 +648,7 @@ export async function runBackendRequest(request, handler, payload, { signal, fet
         throw error;
     }
 
-    const body = capture.body;
+    const body = payload.stream === true ? parseUnstreamedReply(capture.body) : capture.body;
     if (capture.statusCode >= 400 || body?.error) {
         const reportedStatus = capture.statusCode >= 400 ? capture.statusCode : body?.status;
         const status = getSafeConversationGenerationStatus(reportedStatus);

@@ -166,6 +166,16 @@ test('incomplete and malformed provider streams are never completed', async () =
         + 'data: [DONE]\n\n' + event({ choices: [{ delta: { content: ' late output' } }] })), /after completion/);
 });
 
+test('a provider that ignores stream: true can still answer with one complete JSON reply', async () => {
+    const reply = { choices: [{ message: { role: 'assistant', content: 'Whole reply.' }, finish_reason: 'stop' }] };
+    const result = await runBackendRequest({}, (_, response) => response.end(JSON.stringify(reply)), { stream: true });
+    assert.deepEqual(result, reply);
+    await assert.rejects(runBackendRequest({}, (_, response) => response.end(JSON.stringify({ error: { message: 'Quota spent.' } })), { stream: true }),
+        /Quota spent/);
+    await assert.rejects(runBackendRequest({}, (_, response) => response.end(JSON.stringify(reply).slice(0, 40)), { stream: true }),
+        /without a complete reply/);
+});
+
 test('an upstream error after a completion marker does not commit a partial result', async () => {
     const failure = new Error('upstream connection failed');
     const handler = async (request, response) => forwardFetchResponse({ ok: true, status: 200, statusText: 'OK',
