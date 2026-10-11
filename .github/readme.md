@@ -24,6 +24,7 @@ If you want SillyTavern with everything working exactly like upstream, use [Sill
 - **The good stuff comes built in.** Agents, Chat Archive, Quick Image Gen, Guided Generations, BotSearcher and a few more, each with their own settings. [Here's the full list and who made them.](../docs/neconyan-native-tools.md)
 - **Somewhere to keep notes.** [Notebooks](../docs/notebooks.md) gives you space for character drafts, places, scene plans and session journals, right next to your chats. Notes link to each other and to your lorebooks, and the assistants can edit them if you let them.
 - **Little helpers.** Miso, Taro and Nori can use tool calls to create characters with portraits, edit lorebooks and adjust presets or agents. The short First paws tour walks you through the basics.
+- **Someone to talk the story over with.** [Scratchpad](../docs/scratchpad.md) is a side chat next to your story where the assistants, your own characters or a whole round table of them can read the scene and give you ideas, without any of it ending up in the chat.
 - **It's cute.** Calico themes, cats napping on your messages and a pixel cat on Home. That was the whole point, really.
 - **Your files are still your files.** It reads the same character cards, chats, lorebooks and presets as SillyTavern, and there's no telemetry.
 
@@ -31,7 +32,7 @@ If you want SillyTavern with everything working exactly like upstream, use [Sill
   <img src="../docs/readme/banner-modes.webp" alt="Modes">
 </p>
 
-These are staged demo chats and notes with the bundled assistants, so don't read too much into the replies.
+These are staged demo chats, notes and Scratchpad replies with the bundled assistants, so don't read too much into them.
 
 ### Home
 
@@ -96,6 +97,17 @@ A notebook that lives next to your chats, for the character drafts and scene pla
   <tr>
     <td width="72%"><img src="../docs/readme/desktop-notes.webp" alt="Notebooks on desktop"></td>
     <td width="28%"><img src="../docs/readme/phone-notes.webp" alt="Notebooks on a phone"></td>
+  </tr>
+</table>
+
+### Scratchpad
+
+A side chat that sits next to your story, for when you want to talk about the scene without the characters hearing it. Ask Miso, Taro or Nori, copy one of your character cards, or make your own assistant, then put up to three of them at a round table and let them argue about whether your plot twist lands. Nothing you write there goes into the story. [More on Scratchpad.](../docs/scratchpad.md)
+
+<table>
+  <tr>
+    <td width="72%"><img src="../docs/readme/desktop-scratchpad.webp" alt="Scratchpad beside a Story Mode chat on desktop"></td>
+    <td width="28%"><img src="../docs/readme/phone-scratchpad.webp" alt="Scratchpad on a phone"></td>
   </tr>
 </table>
 
