@@ -40,6 +40,15 @@ describe('Neconyan generated UI artwork', () => {
             expect(createHash('sha256').update(bytes).digest('hex')).toBe(item.finalSha256);
         }
     });
+    test('ships the repaired Windows 98 hind paw in both petting frames', () => {
+        const provenance = readJson('public/img/neconyan/win98/artwork-provenance.json');
+        const repair = provenance.sources.find(item => item.path === 'win98-paw-sunburst.png');
+        expect(repair.outputs.map(item => path.basename(item.path))).toEqual(['sleeping-tiger-right.webp', 'sleeping-tiger-right-twitch.webp']);
+        for (const item of repair.outputs) {
+            const bytes = fs.readFileSync(path.join(root, item.path));
+            expect(createHash('sha256').update(bytes).digest('hex')).toBe(item.sha256);
+        }
+    });
     test('ships 52 distinct Sunburst backgrounds at the browser dimensions', () => {
         const provenance = readJson('default/content/backgrounds/artwork-provenance.json');
         const index = readJson('default/content/index.json');

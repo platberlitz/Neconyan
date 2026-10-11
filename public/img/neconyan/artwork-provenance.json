@@ -7,6 +7,15 @@
   "processing": "Chroma green removed, transparent raster cutouts resized. Pixel sprite frames encoded as lossless animated WebP; derived rotations keep the generated mascot inside its frame.",
   "sources": [
     {
+      "path": "tiger-paw-sunburst.png",
+      "sha256": "c594b01c74c2a5afffbd5cfa0a49909b623b6c19e45fc4c1d7faffa2574b49ef",
+      "generated_at": "2026-10-11",
+      "image_model": "gpt-image-2.5-sunburst",
+      "references": ["public/img/neconyan/sleeping-tiger-right.webp", "public/img/neconyan/sleeping-calico-left.webp"],
+      "prompt": "Edit the FIRST reference, the orange striped sleeping tiger facing left with its tail hanging down on the RIGHT. Repair its missing visible hind paw: at the bottom of its rounded back thigh, add one small rounded cream-and-orange hind foot pointing LEFT, tucked beneath the belly and visibly distinct from the bent orange haunch. Give the foot two short toe lines and the same thick dark outline. The second reference shows how a tucked hind paw should read on a sleeping cat; it is an anatomy reference only. Preserve absolutely everything else in the FIRST image: exact position, size, face, both front paws, stripes, ear shapes, tail, outline and solid chroma green background. The added back paw rests on exactly the same horizontal baseline as the front paws. No extra limbs, no ground, shadow or text.",
+      "processing": "References enlarged 2x on a 1024px green canvas at (128,160). Generated image cropped back to [128,160,896,776] and resized to 384x308. Only the paw region, bounded by [217,130,272,165], is composited into both original frames with a 1px feather. Every pixel outside that region is unchanged. Lossless WebP."
+    },
+    {
       "path": "calico-twitch-sunburst.png",
       "sha256": "14ec05cb2a6e0edb9960159d86e14592b0455a6e40aaf92c2b697ae725542844",
       "generated_at": "2026-09-17",
@@ -627,7 +636,7 @@
       "path": "public/img/neconyan/sleeping-tiger-right-twitch.webp",
       "size": [384, 308],
       "frames": 1,
-      "sha256": "703bfd192b0aadc318561082353ecbc00b8ba58c235b37f0520403b507ead3bb"
+      "sha256": "5d1d63e60595ef71b47ba096f78c9a1fa296bad3d6499ccd2f574da246f8e4b7"
     },
     {
       "path": "public/img/neconyan/sleeping-calico-left.webp",
@@ -639,7 +648,7 @@
       "path": "public/img/neconyan/sleeping-tiger-right.webp",
       "size": [384, 308],
       "frames": 1,
-      "sha256": "31f1b85f0687191f60d867b42ea6392e2c7344e83ce15df98e56be9f355103f6"
+      "sha256": "f72625a73603bfee06b7e160d82044f5a4765d9df866ba96f076289d6fd1f859"
     },
     {
       "path": "default/content/user-default.png",
