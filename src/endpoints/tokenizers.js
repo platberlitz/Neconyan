@@ -28,9 +28,9 @@ const WEB_TOKENIZERS_MODULE_URL = pathToFileURL(require.resolve('@agnai/web-toke
  */
 
 /**
- * @type {{[key: string]: import('tiktoken').Tiktoken}} Tokenizers cache
+ * @type {Map<string, import('tiktoken').Tiktoken>} One allocation per encoding, shared across model aliases.
  */
-const tokenizersCache = {};
+const tokenizersCache = new Map();
 
 /**
  * @type {string[]}
@@ -680,13 +680,14 @@ export function getTokenizerModel(requestModel) {
 }
 
 export function getTiktokenTokenizer(model) {
-    if (tokenizersCache[model]) {
-        return tokenizersCache[model];
+    const encoding = tiktoken.get_encoding_name_for_model(model);
+    if (tokenizersCache.has(encoding)) {
+        return tokenizersCache.get(encoding);
     }
 
-    const tokenizer = tiktoken.encoding_for_model(model);
-    console.info('Instantiated the tokenizer for', model);
-    tokenizersCache[model] = tokenizer;
+    const tokenizer = tiktoken.get_encoding(encoding);
+    console.info('Instantiated the tokenizer for', encoding);
+    tokenizersCache.set(encoding, tokenizer);
     return tokenizer;
 }
 
