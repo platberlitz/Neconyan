@@ -222,7 +222,7 @@ export function addSwipeNavigationToMessage(messageId) {
         leftArrow.title = 'Previous swipe';
         // Force visibility to override native SillyTavern hiding rules
         leftArrow.style.setProperty('display', 'flex', 'important');
-        leftArrow.style.setProperty('opacity', '0.5', 'important');
+        leftArrow.style.setProperty('opacity', 'var(--deep-swipe-arrow-opacity, 0.5)', 'important');
         leftArrow.style.setProperty('visibility', 'visible', 'important');
         leftArrow.style.setProperty('pointer-events', 'auto', 'important');
 
@@ -274,7 +274,7 @@ export function addSwipeNavigationToMessage(messageId) {
     rightArrow.title = currentSwipe >= swipeCount - 1 ? 'Generate new swipe' : 'Next swipe';
     // Force visibility to override native SillyTavern hiding rules
     rightArrow.style.setProperty('display', 'flex', 'important');
-    rightArrow.style.setProperty('opacity', '0.5', 'important');
+    rightArrow.style.setProperty('opacity', 'var(--deep-swipe-arrow-opacity, 0.5)', 'important');
     rightArrow.style.setProperty('visibility', 'visible', 'important');
     rightArrow.style.setProperty('pointer-events', 'auto', 'important');
 

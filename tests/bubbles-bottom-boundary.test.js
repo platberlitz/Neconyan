@@ -12,7 +12,8 @@ function fixture() {
         addEventListener: (name, handler) => handlers.set(name, handler), removeEventListener: jest.fn(),
     };
     chat.parentElement = element();
-    const toolbar = { ...element(), getBoundingClientRect: () => ({ top: 700, height: 40 }) };
+    const toolbarBox = { top: 700, height: 40, width: 300 };
+    const toolbar = { ...element(), getBoundingClientRect: () => toolbarBox };
     const row = { ...element(), parentElement: chat, getAttribute: () => '7', querySelector: () => null,
         getBoundingClientRect: () => ({ left: 90, right: 500, top: 150, bottom: 1000 }), closest: () => null };
     const rowStyle = { background: 'red', borderBottomLeftRadius: '10px', borderBottomRightRadius: '10px' };
@@ -28,11 +29,20 @@ function fixture() {
         MutationObserver: class { constructor(fn) { observers.push(fn); } observe() {} disconnect() {} },
     };
     const controller = createBubblesBottomBoundary({ chat, toolbar, getMode: () => mode, documentRef, windowRef });
-    return { cap, surface, chat, row, rowStyle, paint, frames, observers, handlers, controller, windowRef,
+    return { cap, surface, chat, row, rowStyle, paint, frames, observers, handlers, controller, windowRef, toolbarBox,
         flush: () => frames.shift()(), clip: () => clip, setMode: value => { mode = value; } };
 }
 
 describe('Bubbles bottom boundary lifecycle', () => {
+    test('clears the lower edge when the complete painted row is no wider than the toolbar', () => {
+        const f = fixture(); f.flush(); expect(f.cap.hidden).toBe(false);
+        for (const width of [410, 500]) {
+            f.toolbarBox.width = width; f.handlers.get('scroll')(); f.flush();
+            expect(f.cap.hidden).toBe(true); expect(f.clip()).toBe('');
+        }
+        f.toolbarBox.width = 408; f.handlers.get('scroll')(); f.flush();
+        expect(f.cap.hidden).toBe(false); f.controller.dispose();
+    });
     test('notches only the bubble inside the content box and clears stale paint synchronously', () => {
         const f = fixture(); f.flush();
         expect(f.cap.style.left).toBe('100px');
