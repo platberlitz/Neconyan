@@ -34,6 +34,7 @@ import {
 } from './context.js';
 import { describeChange, splitReply } from './proposals.js';
 import { chooseNote, sessionNoteText } from './notebooks.js';
+import { currentPresetName } from './preset.js';
 import { openAssistantLibrary } from './assistants.js';
 
 const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261011b-scratchpad-assistants';
@@ -78,7 +79,7 @@ const DEFAULT_SETTINGS = Object.freeze({
     depth: 15,
     picked: [],
     notes: [],
-    include: { card: true, persona: true, authorsNote: true, lore: true, hidden: false },
+    include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false },
     loreOverrides: {},
     connection: { kind: 'current' },
     assistantConnections: {},
@@ -373,6 +374,9 @@ function build() {
     const characterPanel = document.getElementById('right-nav-panel');
     if (characterPanel) new MutationObserver(() => app.open && applyLayout()).observe(characterPanel, { attributes: true, attributeFilter: ['class'] });
     eventSource.on(event_types.CHAT_CHANGED, () => app.open && checkSource());
+    for (const event of [event_types.PRESET_CHANGED, event_types.MAIN_API_CHANGED, event_types.OAI_PRESET_CHANGED_AFTER]) {
+        eventSource.on(event, () => app.open && render());
+    }
     globalThis.addEventListener('sb:conversation-workspace-state-changed', () => app.open && checkSource());
     globalThis.addEventListener('neconyan:assistant-gender-changed', () => app.open && render());
 }
@@ -756,8 +760,7 @@ function render() {
     if (!app.built) return;
     renderHeader();
     renderChat();
-    const key = JSON.stringify([app.source?.key ?? '', activeSession()?.id ?? '', currentSettings().notes]);
-    if (app.tab === 'context' && key !== app.contextKey) renderContext({ force: true });
+    if (app.tab === 'context' && contextKey() !== app.contextKey) renderContext({ force: true });
     if (app.tab === 'sessions') renderSessions();
 }
 
@@ -1304,6 +1307,12 @@ function checkbox(label, checked, onChange, hint = '') {
     return h('label', { class: 'scratchpad-check' }, input, h('span', { text: label }), hint ? h('small', { text: hint }) : null);
 }
 
+function presetCheckbox(checked, onChange) {
+    const name = currentPresetName();
+    return checkbox(name ? t`Current preset: ${name}` : t`Current preset`, checked, onChange,
+        t`Shared as its own section, apart from the cards, persona and lorebooks. Every module is listed in order and marked on or off.`);
+}
+
 let instructionsEditorOpen = false;
 
 async function editUserInstructions() {
@@ -1395,9 +1404,13 @@ async function editAssistantPrompt(assistant) {
     }
 }
 
+function contextKey() {
+    return JSON.stringify([app.source?.key ?? '', activeSession()?.id ?? '', currentSettings().notes, currentPresetName()]);
+}
+
 function renderContext({ force = true } = {}) {
     const panel = app.el.panels.context;
-    const key = JSON.stringify([app.source?.key ?? '', activeSession()?.id ?? '', currentSettings().notes]);
+    const key = contextKey();
     if (!force && key === app.contextKey && panel.childElementCount) return;
     app.contextKey = key;
     clear(panel);
@@ -1465,7 +1478,8 @@ function renderContext({ force = true } = {}) {
             checkbox(t`Character cards`, include.card, value => setInclude('card', value)),
             checkbox(t`Your persona`, include.persona, value => setInclude('persona', value)),
             roleplay ? checkbox(t`Author's Note`, include.authorsNote, value => setInclude('authorsNote', value)) : null,
-            checkbox(t`Lorebook entries`, include.lore, value => setInclude('lore', value), t`Entries are shared when their keywords appear, or when you set them to Always below.`)),
+            checkbox(t`Lorebook entries`, include.lore, value => setInclude('lore', value), t`Entries are shared when their keywords appear, or when you set them to Always below.`),
+            roleplay ? presetCheckbox(include.preset, value => setInclude('preset', value)) : null),
         h('section', { class: 'scratchpad-section' },
             h('h3', { class: 'scratchpad-section-title', text: t`Assistant connections` }),
             h('p', { class: 'scratchpad-muted', text: t`Choose a saved profile for each assistant. Profiles include the model and connection settings.` }),
@@ -1682,6 +1696,7 @@ function renderPreview() {
             append(output, [
                 h('p', { text: t`About ${tokens} tokens. Chat messages: ${context.messageCount} of ${context.totalMessages}. Lorebook entries: ${context.lore.entries.filter(entry => entry.included).length}.` }),
                 context.swipeCount ? h('p', { text: t`Swipes shared for comparison: ${context.swipeCount}.` }) : null,
+                context.preset ? h('p', { text: t`Preset modules on: ${context.preset.on}. Off: ${context.preset.off}.` }) : null,
                 h('p', { text: t`Saved notes or sections: ${notes.notes.filter(note => !note.unavailable).length}.` }),
                 h('pre', { class: 'scratchpad-preview-text', text: preview }),
             ]);

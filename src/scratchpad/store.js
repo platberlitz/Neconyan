@@ -122,7 +122,7 @@ export function defaultSettings() {
         depth: DEFAULT_DEPTH,
         picked: [],
         notes: [],
-        include: { card: true, persona: true, authorsNote: true, lore: true, hidden: false },
+        include: { card: true, persona: true, authorsNote: true, lore: true, preset: false, hidden: false },
         loreOverrides: {},
         connection: { kind: 'current' },
         assistantConnections: {},

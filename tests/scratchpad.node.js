@@ -397,6 +397,21 @@ test('streaming defaults on and a saved choice survives unrelated settings and n
     assert.equal(next.settings.stream, false);
 });
 
+test('sharing the current preset starts off, is saved when chosen and carries to new sessions', t => {
+    assert.equal(store.defaultSettings().include.preset, false);
+    assert.equal(store.normaliseSettings({ include: { card: false } }).include.preset, false);
+    assert.equal(store.normaliseSettings({ include: { preset: 'true' } }).include.preset, false);
+    const a = account(t);
+    const session = startSession(a, {});
+    assert.equal(session.settings.include.preset, false);
+    a.mutate(SOURCE, bucket => store.updateSession(bucket, session.id, { settings: { include: { preset: true } } }));
+    const saved = a.read(SOURCE).sessions[0].settings.include;
+    assert.equal(saved.preset, true);
+    assert.equal(saved.card, true);
+    const next = a.mutate(SOURCE, bucket => store.createSession(bucket));
+    assert.equal(next.settings.include.preset, true);
+});
+
 test('the reply limit defaults to 32000 without replacing saved limits', t => {
     assert.equal(store.normaliseSettings({}).maxTokens, 32000);
     assert.equal(store.normaliseSettings({ maxTokens: 'invalid' }).maxTokens, 32000);

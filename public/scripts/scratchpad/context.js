@@ -16,6 +16,7 @@ import { power_user } from '../power-user.js';
 import { getRoleplaySourceId } from '../roleplay-save-chain.js';
 import { getTokenCountAsync } from '../tokenizers.js';
 import { loadWorldInfo, selected_world_info, world_info } from '../world-info.js';
+import { readCurrentPreset } from './preset.js';
 
 const MAX_CONTEXT_BYTES = 1_400_000;
 const MAX_MESSAGE_CHARS = 16_000;
@@ -368,6 +369,44 @@ function formatCharacter(character, source) {
     return [[`## Character: ${name}${scope}`, ...details].join('\n'), ...fields].join('\n\n');
 }
 
+const PRESET_SLOT_SOURCES = {
+    charDescription: 'the character card',
+    charPersonality: 'the character card',
+    scenario: 'the character card',
+    dialogueExamples: 'the character card\'s example messages',
+    personaDescription: 'the user\'s persona',
+    worldInfoBefore: 'lorebooks',
+    worldInfoAfter: 'lorebooks',
+    chatHistory: 'the chat messages',
+};
+
+/**
+ * The preset is its own section so its instructions are never mixed up with the
+ * card, persona or lorebooks. Text stays exactly as saved, so no card text fills in.
+ */
+export function formatPreset(preset) {
+    const name = preset?.name || 'Unnamed preset';
+    const modules = Array.isArray(preset?.modules) ? preset.modules : [];
+    const lines = [
+        `## Current preset: ${name}`,
+        [
+            preset?.api ? `API: ${preset.api}` : '',
+            `Modules: ${modules.filter(item => item.enabled).length} on, ${modules.filter(item => !item.enabled).length} off`,
+        ].filter(Boolean).join(' | '),
+        'This is the generation preset, shared separately from the character cards, persona and lorebooks. Modules are listed in prompt order and marked [on] or [off]; only [on] modules are sent when the story generates. Text is exactly as saved, macros included. A slot is a placeholder the app fills from elsewhere, not preset text.',
+    ];
+    for (const item of modules) {
+        const where = item.depth !== null && item.depth !== undefined ? `in chat at depth ${item.depth}` : '';
+        const tags = item.marker
+            ? [`slot, filled from ${PRESET_SLOT_SOURCES[item.id] || 'elsewhere'}`]
+            : [item.role, where].filter(Boolean);
+        const heading = `### [${item.enabled ? 'on' : 'off'}] ${item.name}${tags.length ? ` (${tags.join(', ')})` : ''}`;
+        lines.push(item.content ? `${heading}\n${item.content}` : heading);
+    }
+    if (!modules.length) lines.push('(This preset has no modules to show.)');
+    return lines.join('\n\n');
+}
+
 /** Lazy loading keeps only a card's summary in memory, so load full cards before sharing them. */
 async function loadSourceCharacters(source) {
     const people = sourceCharacters(source);
@@ -391,7 +430,7 @@ export async function buildContext({ source, settings, pendingText = '', session
     requireCurrentSource(source);
     if (source.kind === 'notebook') return {
         text: `Notebook discussion: ${source.label}\nOnly the explicitly shared notes are included. No story messages, persona, character cards or lorebooks are shared.`,
-        names: { user: name1, character: '' }, lore: { books: [], entries: [] }, messageCount: 0, swipeCount: 0, totalMessages: 0, picked: false,
+        names: { user: name1, character: '' }, lore: { books: [], entries: [] }, messageCount: 0, swipeCount: 0, totalMessages: 0, picked: false, preset: null,
         capabilities: { lore: false, character: false, chat: false, members: [] },
     };
     const include = settings?.include || {};
@@ -434,6 +473,14 @@ export async function buildContext({ source, settings, pendingText = '', session
         if (text) sections.push(`## Lorebooks\n${text}`);
     }
 
+    let preset = null;
+    if (include.preset && source.kind === 'roleplay') {
+        const snapshot = readCurrentPreset();
+        sections.push(formatPreset(snapshot));
+        const modules = Array.isArray(snapshot?.modules) ? snapshot.modules : [];
+        preset = { name: snapshot?.name || '', on: modules.filter(item => item.enabled).length, off: modules.filter(item => !item.enabled).length };
+    }
+
     const messageCount = new Set(selection.messages.map(item => item.messageRef ?? item.ref)).size;
     const swipeCount = selection.messages.filter(item => item.swipe).length;
     const heading = selection.picked
@@ -459,6 +506,7 @@ export async function buildContext({ source, settings, pendingText = '', session
         swipeCount,
         totalMessages: all.length,
         picked: selection.picked,
+        preset,
         capabilities: {
             lore: loreBooks.length > 0,
             character: people.length > 0,

@@ -3,7 +3,7 @@ import vm from 'node:vm';
 import { describe, expect, test } from '@jest/globals';
 
 const source = fs.readFileSync(new URL('../public/scripts/scratchpad/index.js', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
-const functions = ['activeSession', 'allAssistants', 'currentSettings', 'applyBucket', 'render', 'renderContext', 'renderNotes'];
+const functions = ['activeSession', 'allAssistants', 'currentSettings', 'applyBucket', 'render', 'contextKey', 'renderContext', 'renderNotes'];
 const code = functions.map(name => source.match(new RegExp(`^function ${name}\\([\\s\\S]*?^}`, 'm'))[0]).join('\n');
 const defaults = { notes: [], picked: [], include: {}, assistantConnections: {}, depth: 15, maxTokens: 16000 };
 const ref = id => ({ notebookId: 'book', noteId: id });
@@ -43,6 +43,7 @@ function fixture() {
     panel.root = true;
     const requests = [];
     const scope = { kind: 'roleplay', key: 'chat' };
+    const preset = { name: 'Lantern' };
     const app = { built: true, open: true, tab: 'context', source: scope, bucket: null, contextKey: '', ticket: 1,
         library: { assistants: [] }, el: { panels: { context: panel } } };
     const h = (tag, attributes, ...children) => new Element(tag, attributes, children);
@@ -51,7 +52,8 @@ function fixture() {
         t: (strings, ...values) => strings.reduce((text, part, index) => text + part + (values[index] ?? ''), ''),
         renderHeader() {}, renderChat() {}, renderSessions() {}, syncDraft() {}, syncWatchers() {},
         rememberedConnections: () => ({}), connectionProfiles: () => [],
-        checkbox: () => h('label'), renderPicks: () => h('section'), renderLore: () => h('section'), renderPreview: () => h('section'),
+        checkbox: () => h('label'), presetCheckbox: () => h('label', { text: `Current preset: ${preset.name}` }),
+        currentPresetName: () => preset.name, renderPicks: () => h('section'), renderLore: () => h('section'), renderPreview: () => h('section'),
         iconButton: (text, onclick) => h('button', { text, onclick }), wireSource: value => value,
         isCurrentSource: value => value.key === app.source?.key,
         api: { readNotebookContext: (_source, sessionId) => new Promise((resolve, reject) => requests.push({ sessionId, resolve, reject })) },
@@ -63,7 +65,7 @@ function fixture() {
     const rows = () => panel.find('scratchpad-note').map(row => row.textContent);
     const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
     const reply = (request, notes) => request.resolve({ notes: notes.map(reference => ({ reference, title: reference.noteId, nextOffset: null })) });
-    return { app, panel, requests, runtime, apply, rows, settle, reply };
+    return { app, panel, preset, requests, runtime, apply, rows, settle, reply };
 }
 
 describe('Scratchpad Context refresh lifecycle', () => {
@@ -112,6 +114,20 @@ describe('Scratchpad Context refresh lifecycle', () => {
         expect(f.requests).toHaveLength(2);
         f.apply([{ ...ref('new'), offset: 24000 }]);
         expect(f.requests).toHaveLength(3);
+    });
+
+    test('redraws the Current preset label when the chat switches presets', () => {
+        const f = fixture();
+        f.apply([]);
+        const originalPanel = f.panel.children[1];
+        expect(f.panel.textContent).toContain('Current preset: Lantern');
+        f.runtime.render();
+        expect(f.panel.children[1]).toBe(originalPanel);
+        f.preset.name = 'Ember';
+        f.runtime.render();
+        expect(f.panel.children[1]).not.toBe(originalPanel);
+        expect(f.panel.textContent).toContain('Current preset: Ember');
+        expect(f.panel.textContent).not.toContain('Lantern');
     });
 
     test('redraws empty and populated lists and rejects an outdated bucket ticket', async () => {

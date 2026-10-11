@@ -46,8 +46,20 @@ jest.unstable_mockModule('../public/scripts/tokenizers.js', () => ({ getTokenCou
 jest.unstable_mockModule('../public/scripts/world-info.js', () => ({
     loadWorldInfo, selected_world_info: ['Global lore'], world_info: { charLore: [{ name: 'Nova', extraBooks: ['Extra lore'] }] },
 }));
+const presetSnapshot = {
+    kind: 'chat', api: 'Chat Completion', name: 'Lantern',
+    modules: [
+        { id: 'main', name: 'Main Prompt', enabled: true, marker: false, role: 'system', depth: null, content: 'Write {{char}}\'s next reply.' },
+        { id: 'charDescription', name: 'Char Description', enabled: true, marker: true, role: '', depth: null, content: '' },
+        { id: 'nsfw', name: 'Spice', enabled: false, marker: false, role: 'system', depth: null, content: 'Off module text.' },
+        { id: 'reminder', name: 'Reminder', enabled: true, marker: false, role: 'user', depth: 2, content: 'Stay in tense.' },
+        { id: 'chatHistory', name: 'Chat History', enabled: true, marker: true, role: '', depth: null, content: '' },
+    ],
+};
+const readCurrentPreset = jest.fn(() => presetSnapshot);
+jest.unstable_mockModule('../public/scripts/scratchpad/preset.js', () => ({ readCurrentPreset, currentPresetName: () => presetSnapshot.name }));
 
-const { buildContext, collectLore, currentSource, isCurrentSource, wireSource, sourceMessages, sourceCharacters, setNotebookSource } = await import('../public/scripts/scratchpad/context.js');
+const { buildContext, collectLore, currentSource, formatPreset, isCurrentSource, wireSource, sourceMessages, sourceCharacters, setNotebookSource } = await import('../public/scripts/scratchpad/context.js');
 const settings = { depth: 15, include: { lore: true, card: true, persona: true } };
 
 beforeEach(() => {
@@ -248,5 +260,53 @@ describe('Scratchpad source context', () => {
         branch.messages = Array.from({ length: 200 }, (_, index) => ({ id: String(index), role: 'user', mes: '猫'.repeat(16000) }));
         const result = await buildContext({ source: currentSource(), settings: { depth: 200 } });
         expect(Buffer.byteLength(result.text, 'utf8')).toBeLessThanOrEqual(1536 * 1024);
+    });
+});
+
+describe('Scratchpad current preset', () => {
+    beforeEach(() => {
+        conversationState.conversationWorkspaceOpen = false;
+        characters[0].data.description = 'Roleplay card text.';
+        chat.push({ name: 'Roleplay user', is_user: true, mes: 'A lighthouse.' });
+        readCurrentPreset.mockClear();
+    });
+
+    test('is not shared unless chosen', async () => {
+        const result = await buildContext({ source: currentSource(), settings });
+        expect(result.text).not.toContain('Current preset');
+        expect(result.preset).toBeNull();
+        expect(readCurrentPreset).not.toHaveBeenCalled();
+    });
+
+    test('shares the preset as its own section, apart from the card, persona and lore', async () => {
+        const result = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, preset: true } } });
+        const { text } = result;
+        const section = text.slice(text.indexOf('## Current preset: Lantern'), text.indexOf('## Latest messages'));
+        expect(section).toContain('API: Chat Completion | Modules: 4 on, 1 off');
+        expect(section).not.toContain('Roleplay card text.');
+        expect(section).not.toContain('Roleplay persona');
+        expect(section).not.toContain('Roleplay lore:');
+        expect(text.indexOf('## Character: Roleplay')).toBeLessThan(text.indexOf('## Current preset'));
+        expect(text.indexOf('## Lorebooks')).toBeLessThan(text.indexOf('## Current preset'));
+        expect(result.preset).toEqual({ name: 'Lantern', on: 4, off: 1 });
+    });
+
+    test('lists every module in order, marks it on or off and leaves its text as saved', () => {
+        const text = formatPreset(presetSnapshot);
+        const order = ['Main Prompt', 'Char Description', 'Spice', 'Reminder', 'Chat History'].map(name => text.indexOf(`] ${name}`));
+        expect(order).toEqual([...order].sort((a, b) => a - b));
+        expect(order.every(index => index > 0)).toBe(true);
+        expect(text).toContain('### [on] Main Prompt (system)\nWrite {{char}}\'s next reply.');
+        expect(text).toContain('### [off] Spice (system)\nOff module text.');
+        expect(text).toContain('### [on] Reminder (user, in chat at depth 2)\nStay in tense.');
+        expect(text).toContain('### [on] Char Description (slot, filled from the character card)');
+        expect(text).toContain('### [on] Chat History (slot, filled from the chat messages)');
+    });
+
+    test('stays out of Conversation chats, which do not use the preset', async () => {
+        conversationState.conversationWorkspaceOpen = true;
+        const result = await buildContext({ source: currentSource(), settings: { ...settings, include: { ...settings.include, preset: true } } });
+        expect(result.text).not.toContain('Current preset');
+        expect(readCurrentPreset).not.toHaveBeenCalled();
     });
 });
