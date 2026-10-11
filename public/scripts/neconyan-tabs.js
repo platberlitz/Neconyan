@@ -4261,9 +4261,13 @@ function scheduleMobilePopupKeyboardSync() {
 }
 
 function getMobileShellBoundDrawers() {
+    // Looked up by id and class name rather than a selector search of the whole page,
+    // which cost a few milliseconds each time and runs several times per page open.
     return Array.from(new Set([
-        ...document.querySelectorAll('#left-nav-panel, #user-settings-block, .sb-shell-root, #right-nav-panel'),
-        ...document.querySelectorAll('#top-settings-holder #right-nav-panel'),
+        document.getElementById('left-nav-panel'),
+        document.getElementById('user-settings-block'),
+        ...document.getElementsByClassName('sb-shell-root'),
+        document.getElementById('right-nav-panel'),
     ])).filter(drawer => drawer instanceof HTMLElement);
 }
 
