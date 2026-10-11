@@ -57,6 +57,8 @@ export const readNotebookContext = (source, sessionId) => post('/notes/context',
 export const readNotebookProposal = (source, sessionId, messageId, index) => post('/notes/proposal', { source, sessionId, messageId, index });
 export const decideNotebookProposal = (source, sessionId, messageId, index, proposalHash, decision) => post('/notes/decide', { source, sessionId, messageId, index, proposalHash, decision });
 export const readPrompt = body => post('/prompt', body);
+export const readAssistants = () => post('/assistants');
+export const saveAssistant = (assistant, expectedRevision, card) => post('/assistants/save', { assistant, expectedRevision, card });
 export const readInstructions = () => post('/instructions');
 export const updateInstructions = (instructions, expectedRevision) => post('/instructions/update', { instructions, expectedRevision });
 export const createSession = (source, input) => post('/session/create', { source, ...input });

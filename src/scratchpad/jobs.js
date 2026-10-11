@@ -31,6 +31,7 @@ import {
 } from './store.js';
 import { buildScratchpadMessages, buildScratchpadSystemPrompt } from './prompt.js';
 import { instructionsForAssistant, readInstructionsLocked } from './instructions.js';
+import { readAssistantsLocked, refreshSessionAssistants, resolveAssistant } from './assistants.js';
 import { characterToolReply, scratchpadCharacterTools, scratchpadToolsFor } from './character-tools.js';
 import { clearScratchpadPreview, publishScratchpadPreview } from './preview.js';
 import { scratchpadMacroEnvironment } from './macros.js';
@@ -109,7 +110,7 @@ function historyFrom(messages) {
         const size = bytes(text);
         if (total + size > MAX_HISTORY_BYTES) break;
         total += size;
-        history.unshift({ role: usable[index].role, text, ...(usable[index].assistant ? { assistant: usable[index].assistant } : {}) });
+        history.unshift({ role: usable[index].role, text, ...(usable[index].assistant ? { assistant: usable[index].assistant, assistantName: usable[index].assistantName } : {}) });
     }
     while (history.length && history[0].role !== 'user') history.shift();
     return history;
@@ -168,12 +169,17 @@ export async function acceptScratchpadReply(request, body = {}) {
         const plan = planReply(session, input);
         const notebook = notebookContextLocked(lease, session.settings);
         const instructions = readInstructionsLocked(lease);
+        const library = readAssistantsLocked(lease);
+        const snapshots = refreshSessionAssistants(session, library);
         writeBucketLocked(lease, bucket);
         return { ...plan, notebook, revision: hash(canonical(session)), maxTokens: session.settings.maxTokens, stream: session.settings.stream !== false,
             instructionsRevision: instructions.revision,
+            assistantsRevision: library.revision,
+            assistantNames: Object.fromEntries(Object.entries(snapshots).map(([id, profile]) => [id, profile.name])),
             participants: sessionAssistants(session),
             randomReply: session.settings.roundTable && session.settings.randomReply,
             speakers: plan.assistants.map(assistant => ({ assistant, userInstructions: instructionsForAssistant(instructions, assistant),
+                persona: resolveAssistant(library, assistant, snapshots),
                 customPrompt: session.settings.assistantPrompts?.[assistant], gender: input.genders[assistant] ?? (assistant === session.assistant ? session.gender : 'neutral'), connection: assistantConnection(session.settings, assistant) })) };
     });
 
@@ -181,9 +187,9 @@ export async function acceptScratchpadReply(request, body = {}) {
         const profileId = speaker.connection.kind === 'profile' ? speaker.connection.profileId : input.chatProfileId;
         const selection = profileId ? { kind: 'profile', profileId } : { kind: 'active' };
         const binding = captureGenerationBinding(directories, selection, body.acknowledgement);
-        const system = buildScratchpadSystemPrompt({ ...speaker, userName: input.names.user, participants: planned.participants, randomReply: planned.randomReply,
+        const system = buildScratchpadSystemPrompt({ ...speaker, assistantNames: planned.assistantNames, userName: input.names.user, participants: planned.participants, randomReply: planned.randomReply,
             characterName: input.names.character, capabilities: { ...input.capabilities, notebook: Boolean(planned.notebook.text) }, help: input.help });
-        const messages = buildScratchpadMessages({ system: system.text, context: input.context, notebookContext: planned.notebook.text, history: planned.history, text: planned.prompt, assistant: speaker.assistant });
+        const messages = buildScratchpadMessages({ system: system.text, context: input.context, notebookContext: planned.notebook.text, history: planned.history, text: planned.prompt, assistant: speaker.assistant, assistantNames: planned.assistantNames });
         const rawOptions = binding.kind === 'active' ? { trimNames: false } : {};
         const preparedMessages = !binding.backend || binding.backend === 'chat';
         const names = { user: input.names.user, char: system.persona.name };
@@ -220,12 +226,15 @@ export async function acceptScratchpadReply(request, body = {}) {
             if (readInstructionsLocked(lease).revision !== planned.instructionsRevision) {
                 throw fail('SCRATCHPAD_INSTRUCTIONS_CHANGED', 'User instructions changed while the message was being sent. Try again.', 409);
             }
+            if (readAssistantsLocked(lease).revision !== planned.assistantsRevision) {
+                throw fail('SCRATCHPAD_ASSISTANTS_CHANGED', 'An assistant changed while the message was being sent. Try again.', 409);
+            }
             if (notebookContextLocked(lease, session.settings).fingerprint !== planned.notebook.fingerprint) {
                 throw fail('SCRATCHPAD_NOTES_CHANGED', 'The shared notes or their permissions changed while sending. Check the preview and try again.', 409);
             }
             const created = new Date().toISOString();
             if (!input.regenerate) session.messages.push({ id: newScratchpadId(), role: 'user', text: input.text, created });
-            const pending = replies.map(reply => ({ id: reply.replyId, role: 'assistant', text: '', created, state: 'pending', jobId: job.id, assistant: reply.assistant, gender: reply.gender }));
+            const pending = replies.map(reply => ({ id: reply.replyId, role: 'assistant', text: '', created, state: 'pending', jobId: job.id, assistant: reply.assistant, assistantName: reply.characterName, gender: reply.gender }));
             if (planned.replace) session.messages.splice(session.messages.findIndex(message => message.id === planned.replace), 1, ...pending);
             else session.messages.push(...pending);
             session.updated = created;

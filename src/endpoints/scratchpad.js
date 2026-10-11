@@ -24,6 +24,8 @@ import { SCRATCHPAD_JOB_TYPE, acceptScratchpadReply } from '../scratchpad/jobs.j
 import { readScratchpadPreview, subscribeScratchpadPreview } from '../scratchpad/preview.js';
 import { buildScratchpadSystemPrompt } from '../scratchpad/prompt.js';
 import { readInstructionsLocked, updateInstructionsLocked } from '../scratchpad/instructions.js';
+import { assistantPortrait, readAssistantCardLocked, readAssistantsLocked, refreshSessionAssistants, resolveAssistant, saveAssistantLocked } from '../scratchpad/assistants.js';
+import { normaliseAssistantProfile } from '../scratchpad/assistant-profiles.js';
 import { notebookContextLocked, withNotebookPreparation, prepareNotebookProposalLocked, decideNotebookProposalLocked,
     projectNotebookProposalsLocked, notifyScratchpadNotebookResult } from '../scratchpad/notebooks.js';
 
@@ -47,9 +49,9 @@ function change(request, response, operation) {
     try {
         const base = scratchpadAccountBase(request);
         const source = normaliseSource(request.body?.source);
-        const bucket = mutateBucket(base, source, bucket => {
+        const bucket = mutateBucket(base, source, (bucket, lease) => {
             projectPending(bucket, id => getJob(base.directories, id));
-            operation(bucket, request.body ?? {});
+            operation(bucket, request.body ?? {}, lease);
             return bucket;
         });
         response.json({ bucket: publicBucket(bucket) });
@@ -69,9 +71,44 @@ router.post('/bucket', (request, response) => {
     }
 });
 
-router.post('/session/create', (request, response) => change(request, response, (bucket, body) => {
-    createSession(bucket, { assistant: body.assistant, gender: body.gender, name: body.name, temporary: body.temporary, settings: body.settings });
+function sessionSettings(lease, input, assistant) {
+    const settings = { ...input };
+    const library = readAssistantsLocked(lease);
+    const snapshots = { ...settings.assistants };
+    for (const id of [assistant, ...(settings.participants ?? [])]) {
+        const profile = resolveAssistant(library, id, snapshots);
+        if (profile) snapshots[id] = profile;
+    }
+    return { ...settings, assistants: snapshots };
+}
+
+router.post('/session/create', (request, response) => change(request, response, (bucket, body, lease) => {
+    const previous = bucket.sessions.find(item => item.id === bucket.activeSessionId);
+    createSession(bucket, { assistant: body.assistant, gender: body.gender, name: body.name, temporary: body.temporary,
+        settings: sessionSettings(lease, { assistants: previous?.settings.assistants ?? {}, ...body.settings }, body.assistant) });
 }));
+
+router.post('/assistants', (request, response) => {
+    try {
+        response.json({ library: withScratchpad(scratchpadAccountBase(request), readAssistantsLocked) });
+    } catch (error) { sendError(response, error); }
+});
+
+router.post('/assistants/save', async (request, response) => {
+    try {
+        const base = scratchpadAccountBase(request);
+        let input = { ...request.body?.assistant };
+        if (request.body?.card) {
+            const card = withScratchpad(base, lease => readAssistantCardLocked(lease, request.body.card));
+            input = { ...card.profile, avatar: await assistantPortrait(card.bytes) };
+        } else {
+            // Validate encoded size and MIME before decoding any browser-supplied picture.
+            normaliseAssistantProfile({ ...input, id: input.id || 'assistant_000000000000000000000000' });
+            if (input.avatar) input.avatar = await assistantPortrait(Buffer.from(input.avatar.split(',')[1], 'base64'));
+        }
+        response.json(withScratchpad(base, lease => saveAssistantLocked(lease, input, request.body?.expectedRevision)));
+    } catch (error) { sendError(response, error); }
+});
 
 router.post('/instructions', (request, response) => {
     try {
@@ -94,9 +131,16 @@ router.post('/instructions/update', (request, response) => {
 
 router.post('/prompt', (request, response) => {
     try {
-        scratchpadAccountBase(request);
+        const base = scratchpadAccountBase(request);
         const body = request.body ?? {};
+        const profiles = withScratchpad(base, lease => {
+            const library = readAssistantsLocked(lease);
+            const session = body.sessionId ? findSession(readBucketLocked(lease, normaliseSource(body.source)), requireId(body.sessionId, 'session')) : null;
+            const ids = [body.assistant, ...(Array.isArray(body.participants) ? body.participants.slice(0, 3) : [])];
+            return Object.fromEntries(ids.map(id => [id, resolveAssistant(library, id, session?.settings.assistants)]));
+        });
         response.json(buildScratchpadSystemPrompt({ assistant: body.assistant, gender: body.gender,
+            persona: profiles[body.assistant], assistantNames: Object.fromEntries(Object.entries(profiles).map(([id, profile]) => [id, profile?.name])),
             userName: body.names?.user, characterName: body.names?.character, capabilities: body.capabilities ?? {},
             participants: Array.isArray(body.participants) ? body.participants.slice(0, 3) : [], randomReply: body.randomReply === true }));
     } catch (error) {
@@ -104,15 +148,20 @@ router.post('/prompt', (request, response) => {
     }
 });
 
-router.post('/session/import', (request, response) => change(request, response, (bucket, body) => {
+router.post('/session/import', (request, response) => change(request, response, (bucket, body, lease) => {
     const session = body.session && typeof body.session === 'object' ? body.session : {};
     const settings = { ...session.settings, notes: [] };
-    createSession(bucket, { assistant: session.assistant, gender: session.gender, name: session.name, settings,
+    const imported = createSession(bucket, { assistant: session.assistant, gender: session.gender, name: session.name, settings,
         messages: Array.isArray(session.messages) ? session.messages : [] });
+    refreshSessionAssistants(imported, readAssistantsLocked(lease));
 }));
 
-router.post('/session/update', (request, response) => change(request, response, (bucket, body) => {
-    updateSession(bucket, requireId(body.sessionId, 'session'), body.changes ?? {});
+router.post('/session/update', (request, response) => change(request, response, (bucket, body, lease) => {
+    const session = findSession(bucket, requireId(body.sessionId, 'session'));
+    const changes = body.changes ?? {};
+    const settings = sessionSettings(lease, { ...session.settings, ...changes.settings }, changes.assistant ?? session.assistant);
+    updateSession(bucket, session.id, { ...changes, settings });
+    refreshSessionAssistants(session, readAssistantsLocked(lease));
 }));
 
 router.post('/session/delete', (request, response) => change(request, response, (bucket, body) => {

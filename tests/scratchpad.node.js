@@ -13,6 +13,7 @@ const { testExports: { runJob }, setDirectoriesResolver } = await import('../src
 const { acceptScratchpadReply, finalizeScratchpadSubmission, registerScratchpadJobs, testExports: jobs } = await import('../src/scratchpad/jobs.js');
 const store = await import('../src/scratchpad/store.js');
 const { readInstructionsLocked, updateInstructionsLocked } = await import('../src/scratchpad/instructions.js');
+const { readAssistantsLocked, saveAssistantLocked, readAssistantCardLocked, assistantPortrait, resolveAssistant } = await import('../src/scratchpad/assistants.js');
 const { buildScratchpadMessages, buildScratchpadSystemPrompt } = await import('../src/scratchpad/prompt.js');
 const { readScratchpadPreview } = await import('../src/scratchpad/preview.js');
 const { router } = await import('../src/endpoints/scratchpad.js');
@@ -74,6 +75,83 @@ function saveInstructions(a, text, assistants = null) {
     return store.withScratchpad(a.base, lease => updateInstructionsLocked(lease,
         { text, scope: assistants ? 'selected' : 'all', assistants: assistants ?? store.ASSISTANT_IDS }, readInstructionsLocked(lease).revision));
 }
+
+function saveAssistant(a, input, revision) {
+    return store.withScratchpad(a.base, lease => saveAssistantLocked(lease, input, revision ?? readAssistantsLocked(lease).revision));
+}
+
+test('assistant libraries are account-owned, validate profiles and reject stale saves without losing edits', t => {
+    const a = account(t), b = account(t);
+    const saved = saveAssistant(a, { name: 'Jun', personality: 'Patient and direct.', avatar: '' });
+    assert.match(saved.assistant.id, /^assistant_[a-f0-9]{24}$/);
+    assert.equal(store.withScratchpad(b.base, readAssistantsLocked).assistants.length, 0);
+    assert.throws(() => saveAssistant(a, { ...saved.assistant, personality: 'Stale' }, 0), error => error.status === 409);
+    for (const input of [{ name: '', personality: 'Valid' }, { name: 'Jun', personality: '' },
+        { name: 'Jun', personality: '字'.repeat(22000) }, { name: 'Jun', personality: 'Valid', avatar: 'data:image/svg+xml;base64,AAAA' }]) {
+        assert.throws(() => saveAssistant(a, input), error => error.code === 'SCRATCHPAD_ASSISTANT_INVALID');
+    }
+    assert.throws(() => resolveAssistant({ assistants: [] }, saved.assistant.id), /unavailable/);
+    assert.equal(store.withScratchpad(a.base, readAssistantsLocked).assistants[0].personality, 'Patient and direct.');
+    const file = path.join(a.directories.root, 'scratchpad', 'assistants.json');
+    fs.writeFileSync(file, '{broken');
+    assert.throws(() => saveAssistant(a, saved.assistant), error => error.code === 'SCRATCHPAD_ASSISTANTS_DAMAGED');
+    assert.equal(fs.readFileSync(file, 'utf8'), '{broken');
+});
+
+test('character-card assistants copy characterisation and a metadata-free portrait without changing the card', async t => {
+    const a = account(t);
+    const filename = path.join(a.directories.characters, 'Nova.png');
+    const before = fs.readFileSync(filename);
+    const card = store.withScratchpad(a.base, lease => readAssistantCardLocked(lease, 'Nova.png'));
+    assert.equal(card.profile.name, 'Nova');
+    const avatar = await assistantPortrait(card.bytes);
+    assert.match(avatar, /^data:image\/jpeg;base64,/);
+    const saved = saveAssistant(a, { ...card.profile, avatar });
+    assert.ok(saved.assistant.personality.trim());
+    assert.deepEqual(fs.readFileSync(filename), before);
+    assert.throws(() => store.withScratchpad(a.base, lease => readAssistantCardLocked(lease, '../Nova.png')));
+    await assert.rejects(assistantPortrait(Buffer.from('not an image')), /could not be read/);
+});
+
+test('custom assistants keep their accepted personality, names, round-table history and portable session copies', async t => {
+    const a = account(t);
+    const { assistant } = saveAssistant(a, { name: 'Jun', personality: 'ORIGINAL-VOICE. Call {{user}} by name.', examples: '{{char}}: Let us check.' });
+    const session = a.mutate(SOURCE, bucket => store.createSession(bucket, {
+        assistant: assistant.id, settings: { assistants: { [assistant.id]: assistant }, roundTable: true, participants: ['taro', assistant.id],
+            assistantConnections: { [assistant.id]: { kind: 'profile', profileId: 'saved' }, taro: { kind: 'profile', profileId: 'saved' } } },
+    }));
+    assert.equal(session.name, 'Jun\'s notes');
+    saveInstructions(a, 'JUN-ONLY', [assistant.id]);
+    const prompts = [];
+    registerScratchpadJobs({ generate: async options => { prompts.push({ name: options.characterName, messages: options.messages }); return { text: 'Saved answer.' }; } });
+    const body = sendBody(session);
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    saveAssistant(a, { ...assistant, name: 'June', personality: 'EDITED-VOICE' });
+    await runJob(getJob(a.directories, accepted.job.id));
+    const original = prompts.find(item => item.name === 'Jun').messages[0].content;
+    assert.match(original, /ORIGINAL-VOICE/);
+    assert.match(original, /Call Kris by name/);
+    assert.match(original, /Jun: Let us check/);
+    assert.match(original, /JUN-ONLY/);
+    assert.match(original, /round table with Taro, Jun/);
+    assert.doesNotMatch(original, /one of the three Neconyan assistants|EDITED-VOICE/);
+    const next = sendBody(session);
+    const second = await acceptScratchpadReply(a.request(next), next);
+    await runJob(getJob(a.directories, second.job.id));
+    assert.match(prompts.find(item => item.name === 'June').messages[0].content, /EDITED-VOICE/);
+    assert.ok(prompts.filter(item => item.name === 'Taro').at(-1).messages.some(item => item.content.includes('[Earlier reply from Jun in Scratchpad]')));
+    const persisted = a.read(SOURCE).sessions[0];
+    assert.equal(persisted.messages.find(item => item.assistant === assistant.id).assistantName, 'Jun');
+    assert.equal(persisted.settings.assistants[assistant.id].name, 'June');
+    const b = account(t);
+    const imported = b.mutate(SOURCE, bucket => store.createSession(bucket, persisted));
+    const importedBody = sendBody(imported);
+    const copy = await acceptScratchpadReply(b.request(importedBody), importedBody);
+    await runJob(getJob(b.directories, copy.job.id));
+    assert.equal(prompts.at(-1).name, 'June');
+    assert.equal(store.withScratchpad(b.base, readAssistantsLocked).assistants.length, 0);
+    assert.throws(() => store.normaliseSettings({ participants: ['miso', 'taro', 'nori', assistant.id] }), /up to three/);
+});
 
 test('global instructions are account-owned, bounded and protected against stale saves or damaged files', t => {
     const a = account(t);
@@ -981,6 +1059,30 @@ test('the endpoint checks the account and answers with the saved Scratchpad', as
     assert.equal((await post('/instructions/update', payload, 'someone-else')).status, 409);
     const defaults = await (await post('/prompt', { assistant: 'miso' })).json();
     assert.doesNotMatch(defaults.text, /ENDPOINT-GLOBAL/, 'editing a base prompt must not bake in global text');
+
+    const profile = { name: 'Jun', personality: 'ENDPOINT-PERSONALITY' };
+    const saved = await post('/assistants/save', { assistant: profile, expectedRevision: 0 });
+    assert.equal(saved.status, 200);
+    const { assistant } = await saved.json();
+    assert.equal((await post('/assistants/save', { assistant, expectedRevision: 0 })).status, 409);
+    assert.equal((await post('/assistants', {}, 'someone-else')).status, 409);
+    assert.equal((await post('/assistants/save', { assistant, expectedRevision: 1 }, 'someone-else')).status, 409);
+    assert.equal((await post('/assistants/save', { card: '../Nova.png', expectedRevision: 1 })).status, 400);
+    assert.match((await (await post('/prompt', { assistant: assistant.id })).json()).text, /ENDPOINT-PERSONALITY/);
+
+    const portable = { ...assistant, id: 'assistant_111111111111111111111111', name: 'Imported Jun' };
+    const imported = await post('/session/import', { source: OTHER, session: { assistant: portable.id,
+        settings: { assistants: { [portable.id]: portable } } } });
+    assert.equal(imported.status, 200);
+    const inherited = await post('/session/create', { source: OTHER, assistant: portable.id });
+    assert.equal(inherited.status, 200, 'new sessions inherit the imported assistant copy');
+    const inheritedBucket = (await inherited.json()).bucket;
+    const inheritedSession = inheritedBucket.sessions.find(item => item.id === inheritedBucket.activeSessionId);
+    assert.equal(inheritedSession.settings.assistants[portable.id].personality, portable.personality);
+    assert.match((await (await post('/prompt', { source: OTHER, sessionId: inheritedSession.id, assistant: portable.id })).json()).text, /ENDPOINT-PERSONALITY/);
+    const missingProfile = await post('/session/import', { source: OTHER, session: { assistant: 'assistant_222222222222222222222222' } });
+    assert.equal(missingProfile.status, 404, 'an import cannot leave an unusable assistant behind');
+    assert.equal((await (await post('/bucket', { source: OTHER })).json()).bucket.sessions.length, 2);
 
     const created = await post('/session/create', { source: SOURCE, assistant: 'nori', gender: 'male' });
     assert.equal(created.status, 200);
