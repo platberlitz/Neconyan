@@ -10727,6 +10727,8 @@
   "Connection Manager is off": "Connection Manager is off",
   "Selected connection profile is unavailable": "Selected connection profile is unavailable",
   "The cast was changed, but the account list could not be refreshed.": "The cast was changed, but the account list could not be refreshed.",
+  "Add all": "Add all",
+  "Invite every available character, including those hidden by search": "Invite every available character, including those hidden by search",
   "Clear invites": "Clear invites",
   "Uninvite everyone": "Uninvite everyone",
   "Search characters or tags": "Search characters or tags",

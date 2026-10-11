@@ -2431,6 +2431,9 @@ function settingsView() {
         return row;
     });
     const inviteCount = el('span', { className: 'sbtw-invite-count' });
+    const addAllInvites = button('Add all', 'sbtw-btn sbtw-btn-quiet', () => {
+        setInvited([...api.getSession(session.id).invited, ...inviteRows.map(row => row.dataset.avatar)]);
+    }, { title: 'Invite every available character, including those hidden by search' });
     const clearInvites = button('Clear invites', 'sbtw-btn sbtw-btn-quiet', () => setInvited([]), { title: 'Uninvite everyone' });
     const inviteEmpty = el('p', { className: 'sbtw-invite-empty' });
     const invites = el('div', { className: 'sbtw-invites' }, [...inviteRows, inviteEmpty]);
@@ -2457,8 +2460,10 @@ function settingsView() {
         }
         inviteEmpty.hidden = visible > 0;
         inviteEmpty.textContent = query ? 'No characters match this search.' : 'No characters are available.';
-        const invitedCount = (api.getSession(session.id) ?? session).invited.length;
+        const invited = (api.getSession(session.id) ?? session).invited;
+        const invitedCount = invited.length;
         inviteCount.textContent = query ? `${visible} of ${inviteRows.length}` : `${invitedCount} invited`;
+        addAllInvites.disabled = inviteRows.every(row => invited.includes(row.dataset.avatar));
         clearInvites.disabled = !invitedCount;
     };
     let searchTimer = null;
@@ -2513,9 +2518,9 @@ function settingsView() {
         groups.length ? field('Use a host group as this timeline\'s cast', groupSelect, 'This copies the group members; you can then adjust the character list below.') : null,
         // A group of checkboxes cannot live inside a single <label>; each has its own.
         el('div', { className: 'sbtw-field' }, [
-            el('div', { className: 'sbtw-field-heading' }, [
+            el('div', { className: 'sbtw-field-heading sbtw-row' }, [
                 el('span', { className: 'sbtw-field-label', text: 'Characters' }),
-                el('span', { className: 'sbtw-field-tools' }, [inviteCount, clearInvites]),
+                el('span', { className: 'sbtw-field-tools' }, [inviteCount, addAllInvites, clearInvites]),
             ]),
             inviteSearch,
             invites,
