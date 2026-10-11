@@ -1208,6 +1208,27 @@ function clearPendingPostProcessingForChatChange() {
     notifyAgentGenerationStateChanged();
 }
 
+function hasGenerationWorkFromBeforeChatChange() {
+    return Boolean(
+        isGenerationInProgress
+        || pendingGenerationSnapshot
+        || deferredPostProcessingQueue.size > 0
+        || isCurrentGenerationChatStale(),
+    );
+}
+
+// The invalidation stays set until the next generation starts, and recovery
+// checks run on every chat DOM change. Once the old generation's work is gone,
+// clearing again only cancels later agent runs and forces a page-wide layout
+// through the state listeners, which on a long chat freezes the page.
+function discardPostProcessingInvalidatedByChatChange() {
+    if (postProcessingInvalidatedByChatChange && !hasGenerationWorkFromBeforeChatChange()) {
+        return;
+    }
+
+    clearPendingPostProcessingForChatChange();
+}
+
 function clearStalePendingGenerationSnapshot() {
     if (!pendingGenerationSnapshot || isActivationSnapshotForCurrentChat(pendingGenerationSnapshot)) {
         return false;
@@ -1831,7 +1852,7 @@ function scheduleLatestAssistantPostProcessingFallback(delayMs = DEFERRED_POST_P
 
 function hasPostGenerationRecoveryWork() {
     if (postProcessingInvalidatedByChatChange || isCurrentGenerationChatStale()) {
-        clearPendingPostProcessingForChatChange();
+        discardPostProcessingInvalidatedByChatChange();
         return false;
     }
 
@@ -1875,7 +1896,7 @@ function schedulePostGenerationRecoveryCheck(delayMs = 0) {
 
 function hasRecoverableAssistantPostProcessingCandidate() {
     if (postProcessingInvalidatedByChatChange || isCurrentGenerationChatStale()) {
-        clearPendingPostProcessingForChatChange();
+        discardPostProcessingInvalidatedByChatChange();
         return false;
     }
 
@@ -2112,7 +2133,7 @@ function isGenerationAssistantCandidate(messageIndex, message) {
 
 function queueLatestAssistantPostProcessingFromSnapshot() {
     if (postProcessingInvalidatedByChatChange || isCurrentGenerationChatStale()) {
-        clearPendingPostProcessingForChatChange();
+        discardPostProcessingInvalidatedByChatChange();
         return { queued: false, retry: false };
     }
 
@@ -4842,7 +4863,7 @@ async function onMessageReceived(messageIndex, generationType, generationContext
     }
 
     if (postProcessingInvalidatedByChatChange || isCurrentGenerationChatStale()) {
-        clearPendingPostProcessingForChatChange();
+        discardPostProcessingInvalidatedByChatChange();
         return;
     }
 
