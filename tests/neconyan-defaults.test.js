@@ -365,8 +365,8 @@ describe('Meower prompt defaults', () => {
         expect(style).toContain('--mainFontFamily: \'Nunito\', \'Figtree\'');
         expect(neconyanCss).toContain('--mainFontFamily: \'Nunito\', \'Figtree\'');
         expect(neconyanCss).toContain('--sb-font-display: \'Fredoka One\', var(--mainFontFamily);');
-        // The picked-font override must carry :has(body.neconyan) or the (0,2,1) default above outranks it.
-        expect(neconyanCss).toContain(':root[style*=\'--mainFontFamily\']:has(body.neconyan) { --sb-font-display: var(--mainFontFamily); }');
+        // The picked-font override must carry :has(> body.neconyan) or the (0,2,1) default above outranks it.
+        expect(neconyanCss).toContain(':root[style*=\'--mainFontFamily\']:has(> body.neconyan) { --sb-font-display: var(--mainFontFamily); }');
         expect(neconyanCss).toContain('body.neconyan:not(.sbterm) :is(h1, h2, h3, h4, h5, h6, .sb-topbar-brand, .neconyan-rail-brand) { font-family: var(--sb-font-display); }');
         expect(nunito).toContain('font-family: \'Nunito\';');
         expect(nunito).toContain('font-weight: 200 1000;');

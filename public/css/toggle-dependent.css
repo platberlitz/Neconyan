@@ -547,7 +547,7 @@ label[for="model_sampling_profiles_enabled"]:has(input:checked)~#model_sampling_
 }
 
 #openai_settings input[type="checkbox"]:not(:checked)~[data-cc-toggle],
-#openai_settings input[type="checkbox"]:not(:checked)~*:has([data-cc-toggle]) {
+#openai_settings input[type="checkbox"]:not(:checked)~:has(> [data-cc-toggle]) {
     display: none;
 }
 

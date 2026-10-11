@@ -151,7 +151,7 @@
     box-shadow: 0 4px 8px color-mix(in srgb, var(--color-primary, var(--sb-accent)) 14%, transparent);
 }
 
-#chat:has(.welcomePanel) {
+#chat:has(> .welcomePanel) {
     padding-bottom: 12px;
     scroll-padding-bottom: 12px;
 }
@@ -1950,7 +1950,7 @@ body.big-avatars .welcomeRecent .recentChatList .recentChat .chatMessageContaine
 }
 
 @media screen and (max-width: 520px), screen and (max-height: 760px) {
-    #chat:has(.welcomePanel) {
+    #chat:has(> .welcomePanel) {
         padding-bottom: 16px;
         scroll-padding-bottom: 16px;
     }
