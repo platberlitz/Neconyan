@@ -21,8 +21,8 @@ export default [
     },
     {
         id: 'lorebooks.start', title: 'Creating, importing and attaching lorebooks', keys: ['lorebook', 'World Info', 'world information', 'attach book', 'import lorebook'],
-        covers: ['core:lorebooks'], sources: [world, 'public/scripts/neconyan-native-workspaces.js'], anchors: ['world_info'],
-        content: 'Open Lorebooks to create/import a book and edit its entries. Books can be active globally or attached to a character, chat or persona; these are different scopes. A character can have additional linked books. Importing a book does not necessarily activate it everywhere. Embedded character lore has an import/link flow; merely seeing a book name is not proof its contents were inserted into a request. Use World Info Lab or prompt inspection to check activation.',
+        covers: ['core:lorebooks'], sources: [world, 'public/scripts/neconyan-native-workspaces.js', 'public/scripts/extensions/third-party/Neconyan-WorldInfo-Lab/src/ui/runtime.js'], anchors: ['world_info', 'World Info Lab'],
+        content: 'Open Lorebooks to create/import a book and edit its entries. The World Info Lab button in the Lorebooks library or an open book opens its activation workspace. Books can be active globally or attached to a character, chat or persona; these are different scopes. A character can have additional linked books. Importing a book does not necessarily activate it everywhere. Embedded character lore has an import/link flow; merely seeing a book name is not proof its contents were inserted into a request. Use World Info Lab or prompt inspection to check activation.',
     },
     {
         id: 'lorebooks.batch-import', title: 'Batch importing lorebook files or embedded character lore', keys: ['Batch import', 'batch import lorebooks', 'import JSON lorebooks', 'Lorebook files', 'embedded character lorebooks'],
