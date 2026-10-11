@@ -105,6 +105,47 @@ function isRootAnchoredNonSubjectHas(selector) {
         && compounds.slice(index + 1).some(later => !/^::[\w-]+/.test(later)));
 }
 
+// The browser answers `body:has(.x)` by searching every element under body, and it asks again
+// whenever body is restyled, which happens many times while a chat opens. With no match the
+// search covers all ~21k elements; measured at 6ms per body restyle against 0.3ms without
+// such rules, and the main cause of 1.5s of style work when a chat opened. A child step
+// (`body:has(> #bg1.cover)`) keeps the search to one level. The same holds for a :has() whose
+// element is not narrowed at all (`~ *:has(.x)`), since every restyled element runs it.
+const PAGE_WIDE_SEARCH_ALLOWED = [
+    ...ALLOWED,
+    {
+        // Short-circuits on the conversation and narrow-phone classes before the search runs.
+        file: 'css/neconyan.css',
+        matches: selector => selector.startsWith('body.neconyan.neconyan-conversation-active:not(.neconyan-home-visible):not(:has('),
+    },
+];
+
+function hasArguments(compound) {
+    const args = [];
+    let start = compound.indexOf(':has(');
+    while (start !== -1) {
+        let depth = 0;
+        let end = start + 4;
+        for (; end < compound.length; end++) {
+            if (compound[end] === '(') depth++;
+            if (compound[end] === ')' && --depth === 0) break;
+        }
+        args.push(compound.slice(start + 5, end).trim());
+        start = compound.indexOf(':has(', end);
+    }
+    return args;
+}
+
+function searchesWholeSubtree(selector) {
+    return splitTopLevel(selector, /[\s>+~]/).some(compound => {
+        if (!compound.includes(':has(')) return false;
+        const head = compound.slice(0, compound.indexOf(':has('));
+        const pageWide = /^(html|body|:root)(?![\w-])/.test(head) || /#(chat|sheld|top-settings-holder)(?![\w-])/.test(head);
+        const unnarrowed = /^\*?$/.test(head);
+        return (pageWide || unnarrowed) && hasArguments(compound).some(argument => !/^[>+~]/.test(argument));
+    });
+}
+
 describe('root-anchored :has() selectors', () => {
     const files = listCssFiles(publicDir);
 
@@ -142,5 +183,31 @@ describe('root-anchored :has() selectors', () => {
         expect(isRootAnchoredNonSubjectHas('body.neconyan #sheld:has(.x) .y')).toBe(true);
         expect(isRootAnchoredNonSubjectHas('#chat:not([data-x="true"]) .mes:has(.mes_reasoning:empty):not(:has(.reasoning_edit_textarea)) .mes_reasoning_details')).toBe(false);
         expect(isRootAnchoredNonSubjectHas('#chatx:has(.a) .b')).toBe(false);
+    });
+
+    test('no html, body, :root, page container or unnarrowed :has() searches the whole page', () => {
+        const offenders = [];
+        for (const file of files) {
+            const relative = path.relative(publicDir, file).split(path.sep).join('/');
+            for (const selector of collectSelectors(stripComments(readFileSync(file, 'utf8')))) {
+                if (!searchesWholeSubtree(selector)) continue;
+                if (PAGE_WIDE_SEARCH_ALLOWED.some(rule => rule.file === relative && rule.matches(selector))) continue;
+                offenders.push(`${relative}: ${selector}`);
+            }
+        }
+        expect(offenders).toEqual([]);
+    });
+
+    test('the page-wide search check recognises what it guards against', () => {
+        expect(searchesWholeSubtree('body.neconyan:has(#bg1.cover)::before')).toBe(true);
+        expect(searchesWholeSubtree('body.neconyan:has(> #bg1.cover)::before')).toBe(false);
+        expect(searchesWholeSubtree(':root:has(body.neconyan)')).toBe(true);
+        expect(searchesWholeSubtree(':root:has(> body.neconyan)')).toBe(false);
+        expect(searchesWholeSubtree('body.neconyan :where(#top-settings-holder):has(.openDrawer) ~ #sheld')).toBe(true);
+        expect(searchesWholeSubtree('body.neconyan :where(#top-settings-holder):has(> * > .openDrawer) ~ #sheld')).toBe(false);
+        expect(searchesWholeSubtree('#a input:not(:checked)~*:has([data-cc-toggle])')).toBe(true);
+        expect(searchesWholeSubtree('#a input:not(:checked)~:has(> [data-cc-toggle])')).toBe(false);
+        expect(searchesWholeSubtree('.mes:has(.mes_reasoning:empty) .mes_reasoning_header')).toBe(false);
+        expect(searchesWholeSubtree('body.has-openai-tab-buttons')).toBe(false);
     });
 });
