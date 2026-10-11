@@ -550,6 +550,17 @@ body.neconyan #sheld .sb-conversation-message[data-message-id] { gap: 20px; alig
 /* Centre on the bubble itself, not on the room reserved above it for the sleeping cat. */
 body.neconyan #sheld .sb-conversation-message:has(> .sb-conversation-message-bubble > .neconyan-message-sleeper) > .sb-conversation-message-avatar { margin-top: var(--neconyan-sleeper-space, 44px); }
 @media (min-width: 769px) {
+    body.neconyan #form_sheld { container-type: inline-size; }
+    body.neconyan #sb-bottom-chat-bar { display: flex; overflow-x: auto; }
+    body.neconyan #sb-bottom-chat-bar:not(.sb-bottom-chat-secondary-collapsed) .sb-bottom-chat-secondary-row { display: contents; }
+    body.neconyan #sb-bottom-chat-select { min-width: min(72px, 100%); }
+    @container (max-width: 300px) {
+        body.neconyan #form_sheld #nonQRFormItems {
+            --sb-composer-columns: minmax(0, 1fr) max-content;
+            --sb-composer-areas: 'tools action' 'input input';
+            --sb-composer-tools-max-width: 100%;
+        }
+    }
     body.neconyan.documentstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm):not(.sbstory) #chat .mes .mes_block { padding: 8px var(--neco-bubble-pad); }
     body.neconyan.documentstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm):not(.sbstory) #chat .mes .mes_text { margin-left: 0; }
     body.neconyan:is(.sbterm, :not(.flatchat)) #chat { padding-inline: max(var(--neco-gutter), calc(50% * (1 - var(--neconyanPageWidthScale, 1)))); }
@@ -565,7 +576,7 @@ body.neconyan.flatchat:not(.sbterm) #chat .mes[is_user='true'] .mes_block { padd
 body.neconyan.flatchat:not(.sbterm) #chat .mes :is(.mes_text, .mes_reasoning) { font-size: 1em; line-height: var(--neco-line-height); }
 body.neconyan.flatchat:not(.sbterm) #chat .mes .name_text { font-weight: 600; font-size: 13px; }
 body.neconyan.flatchat:not(.sbterm) #chat .mes :is(.mes_button, .extraMesButtons > div) { border-radius: 5px; box-shadow: none; background: transparent; }
-body.neconyan #form_sheld { width: 100%; max-width: max(420px, calc(860px * var(--neconyanPageWidthScale, 1))); margin: 0 auto; padding: 0 24px max(18px, env(safe-area-inset-bottom)); }
+body.neconyan #form_sheld { width: 100%; max-width: max(420px, calc(860px * var(--sb-bottom-bar-scale, 1))); margin: 0 auto; padding: 0 24px max(18px, env(safe-area-inset-bottom)); }
 body.neconyan :is(#send_form, #sb-bottom-chat-bar) { background: var(--neco-surface); }
 body.neconyan #sb-bottom-chat-bar { padding-inline: 0; }
 body.neconyan #send_form { padding: 4px; border: 1px solid var(--neco-border); border-radius: 10px; box-shadow: none; }

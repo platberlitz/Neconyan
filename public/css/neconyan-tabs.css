@@ -4602,8 +4602,8 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
 /* Bottom chat management bar */
 #nonQRFormItems {
     display: grid !important;
-    grid-template-columns: max-content minmax(0, 1fr) max-content !important;
-    grid-template-areas: 'tools input action' !important;
+    grid-template-columns: var(--sb-composer-columns, max-content minmax(0, 1fr) max-content) !important;
+    grid-template-areas: var(--sb-composer-areas, 'tools input action') !important;
     align-items: center !important;
     gap: 0 6px !important;
     min-width: 0 !important;
@@ -4615,7 +4615,7 @@ body #right-nav-panel #HotSwapWrapper .hotswap > :is(.avatar, .character_select,
     grid-area: tools !important;
     width: max-content !important;
     min-width: 0 !important;
-    max-width: min(35vw, calc(var(--sb-composer-action-size, 38px) * 6 + 30px)) !important;
+    max-width: var(--sb-composer-tools-max-width, min(35vw, calc(var(--sb-composer-action-size, 38px) * 6 + 30px))) !important;
     overflow-x: auto !important;
     overflow-y: hidden !important;
     scrollbar-width: none !important;

@@ -6202,6 +6202,39 @@ describe('in-chat agent post-processing runner', () => {
         expect(chat[chat.length - 1].extra.inChatAgentPreGenerationInterceptHistory).toBeUndefined();
     });
 
+    test('recovery checks after a chat change mid-generation clear the old work only once', async () => {
+        useAppendPostAgent();
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+        const notifications = [];
+        runner.onAgentGenerationStateChanged(active => notifications.push(active));
+
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+        await eventSource.emit(eventTypes.CHAT_CHANGED);
+        const revision = runner.getAgentGenerationCancelRevision();
+        const notificationCount = notifications.length;
+
+        for (let i = 0; i < 5; i++) {
+            emitDocumentEvent('visibilitychange');
+        }
+        chat.push({ name: 'Assistant', mes: 'Reply from before the change', is_user: false, is_system: false, extra: {} });
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, chat.length - 1, 'normal');
+        await new Promise(resolve => setTimeout(resolve, 5));
+
+        expect(runner.getAgentGenerationCancelRevision()).toBe(revision);
+        expect(notifications).toHaveLength(notificationCount);
+        expect(chat[chat.length - 1].mes).not.toContain('[post processed]');
+
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+        chat.push({ name: 'Assistant', mes: 'Next reply', is_user: false, is_system: false, extra: {} });
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, chat.length - 1, 'normal');
+        await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length);
+        await waitFor(() => chat[chat.length - 1].mes.includes('[post processed]'));
+        await new Promise(resolve => setTimeout(resolve, 20));
+
+        expect(chat[chat.length - 1].mes).toContain('[post processed]');
+    });
+
     test('keyword conditions see the user message inserted after generation started', async () => {
         useAppendPostAgent();
         enabledAgents[0].conditions.triggerKeywords = ['urgent'];
