@@ -98,6 +98,8 @@ for (const phone of [false, true]) {
         await page.screenshot({ path: `../screenshots/tokens-streaming-${viewport}-after.png` });
         await page.locator('[data-sb-conversation-action="close-settings"]').click();
         await expect(pending).toContainText(first);
+        // Streaming saves after a short delay; wait for the server before closing the page.
+        await expect.poll(async () => (await account.store()).characters[account.threadKey].settings.streaming).toBe(true);
         await page.close();
         const reopened = await account.open();
         if (phone) await applyIOSOnlyCss(reopened);
