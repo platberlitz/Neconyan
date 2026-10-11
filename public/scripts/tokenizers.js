@@ -160,8 +160,11 @@ const objectStore = localforage.createInstance({ name: 'SillyTavern_ChatCompleti
 // Counts are disposable: an evicted value is counted exactly again when needed.
 // Bound both dimensions so neither a long chat nor visiting many chats grows RAM
 // and the IndexedDB snapshot indefinitely. Maps retain least-recently-used order.
+// The entry budget is shared rather than per chat: the prompt builder rescans the
+// whole included history on every generation, so a per-chat cap shorter than that
+// history evicts each count just before the next pass needs it.
 const TOKEN_CACHE_MAX_CHATS = 8;
-const TOKEN_CACHE_MAX_ENTRIES_PER_CHAT = 2048;
+const TOKEN_CACHE_MAX_ENTRIES = 16384;
 /** @type {Map<string, Map<string, number>>} */
 const tokenCache = new Map();
 
@@ -174,13 +177,33 @@ function getCachedTokenCount(cache, key) {
     return value;
 }
 
+/**
+ * Evicts the oldest counts of the least recently used chats until the shared budget fits.
+ * @param {Map<string, number>} cache Chat cache that just grew; it may already be evicted.
+ */
+function trimTokenCache(cache) {
+    while (cache.size > TOKEN_CACHE_MAX_ENTRIES) {
+        cache.delete(cache.keys().next().value);
+    }
+
+    let total = 0;
+    for (const counts of tokenCache.values()) total += counts.size;
+
+    for (const [chatId, counts] of tokenCache) {
+        if (total <= TOKEN_CACHE_MAX_ENTRIES) return;
+        while (total > TOKEN_CACHE_MAX_ENTRIES && counts.size) {
+            counts.delete(counts.keys().next().value);
+            total--;
+        }
+        if (!counts.size) tokenCache.delete(chatId);
+    }
+}
+
 function setCachedTokenCount(cache, key, value) {
     if (!Number.isFinite(value)) return;
     cache.delete(key);
     cache.set(key, value);
-    while (cache.size > TOKEN_CACHE_MAX_ENTRIES_PER_CHAT) {
-        cache.delete(cache.keys().next().value);
-    }
+    trimTokenCache(cache);
 }
 
 /**
@@ -202,8 +225,10 @@ async function loadTokenCache() {
 
         const chatIds = Object.keys(saved);
         let trimmed = chatIds.length > TOKEN_CACHE_MAX_CHATS;
+        let savedEntries = 0;
         // Keep the persisted object format compatible with older versions. Only
         // copy the retained tail, rather than duplicating every legacy entry.
+        // Chats are restored oldest first, so the shared budget favours recent ones.
         for (const chatId of chatIds.slice(-TOKEN_CACHE_MAX_CHATS)) {
             const counts = saved[chatId];
             if (!counts || typeof counts !== 'object' || Array.isArray(counts)) {
@@ -211,13 +236,16 @@ async function loadTokenCache() {
                 continue;
             }
             const cache = new Map();
+            tokenCache.set(chatId, cache);
             const keys = Object.keys(counts);
-            for (const key of keys.slice(-TOKEN_CACHE_MAX_ENTRIES_PER_CHAT)) {
+            savedEntries += keys.length;
+            for (const key of keys.slice(-TOKEN_CACHE_MAX_ENTRIES)) {
                 setCachedTokenCount(cache, key, counts[key]);
             }
-            trimmed ||= cache.size !== keys.length;
-            tokenCache.set(chatId, cache);
         }
+        let retainedEntries = 0;
+        for (const cache of tokenCache.values()) retainedEntries += cache.size;
+        trimmed ||= retainedEntries !== savedEntries;
         // Migrate once on load so subsequent visits do not read the oversized
         // legacy snapshot again, even if this session never saves a chat.
         if (trimmed) await saveTokenCache();
