@@ -36,7 +36,7 @@ import { describeChange, splitReply } from './proposals.js';
 import { chooseNote, sessionNoteText } from './notebooks.js';
 import { openAssistantLibrary } from './assistants.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261011-scratchpad-assistants';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261011b-scratchpad-assistants';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -190,7 +190,15 @@ async function manageAssistants() {
     app.libraryOpen = true;
     try {
         await openAssistantLibrary({ assistants: allAssistants, portrait: assistantPortrait, selected: sessionAssistants,
-            canChoose: canChooseAssistant, choose: chooseAssistant, onSave: library => { app.library = library; render(); app.contextKey = ''; } });
+            canChoose: canChooseAssistant, choose: chooseAssistant, onSave: library => {
+                app.library = library;
+                if (!allAssistants().some(item => item.id === app.assistant)) {
+                    app.assistant = 'miso';
+                    writePrefs();
+                }
+                app.contextKey = '';
+                render();
+            } });
     } catch (error) {
         reportError(error, t`Your assistants could not be loaded.`);
     } finally { app.libraryOpen = false; }
@@ -371,10 +379,13 @@ function build() {
 
 function buildChatPanel() {
     const el = app.el;
-    el.roundTable = iconButton(t`Round table`, () => void updateSettings(settings => ({
-        roundTable: !settings.roundTable,
-        ...(!settings.roundTable && !settings.participants.includes(app.assistant) ? { participants: [app.assistant, ...settings.participants.slice(0, 2)] } : {}),
-    })),
+    el.roundTable = iconButton(t`Round table`, () => void updateSettings(settings => {
+        const current = activeSession()?.assistant ?? app.assistant;
+        return {
+            roundTable: !settings.roundTable,
+            ...(!settings.roundTable && !settings.participants.includes(current) ? { participants: [current, ...settings.participants.slice(0, 2)] } : {}),
+        };
+    }),
     { icon: 'fa-users', pressed: false, className: 'scratchpad-round-table', title: t`Ask up to three assistants together` });
     el.randomReply = iconButton(t`Random`, () => void updateSettings(settings => ({ randomReply: !settings.randomReply })),
         { icon: 'fa-shuffle', pressed: false, className: 'scratchpad-random', title: t`One random assistant replies per message` });
@@ -1765,7 +1776,7 @@ function renderCleanup() {
 }
 
 function exportSession(session) {
-    const used = new Set([session.assistant, ...session.settings.participants, ...Object.keys(session.settings.assistants ?? {}), ...session.messages.map(item => item.assistant)]);
+    const used = new Set([session.assistant, ...session.settings.participants, ...session.messages.map(item => item.assistant)]);
     const payload = {
         format: 'neconyan-scratchpad',
         version: 1,
@@ -1874,17 +1885,18 @@ function renderSessions() {
 /* Opening and closing */
 
 export async function openScratchpad({ tab = '', note = null } = {}) {
-    await loadStylesheetAsync(STYLESHEET, { id: 'neconyan-scratchpad-css' }).catch(() => null);
+    const owner = getCurrentUserHandle();
+    // A library that cannot be read only hides saved assistants; Scratchpad still opens with the included ones.
+    const [library] = await Promise.all([
+        api.readAssistants().then(result => result.library, error => {
+            reportError(error, t`Your assistants could not be loaded.`);
+            return null;
+        }),
+        loadStylesheetAsync(STYLESHEET, { id: 'neconyan-scratchpad-css' }).catch(() => null),
+    ]);
+    if (owner !== getCurrentUserHandle()) return;
+    app.library = library ?? { assistants: [], revision: 0 };
     build();
-    try {
-        const owner = getCurrentUserHandle();
-        const { library } = await api.readAssistants();
-        if (owner !== getCurrentUserHandle()) return;
-        app.library = library;
-    } catch (error) {
-        reportError(error, t`Your assistants could not be loaded.`);
-        return;
-    }
     readPrefs();
     globalThis.NeconyanNotes?.hide?.();
     setNotebookSource(note);

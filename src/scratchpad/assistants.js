@@ -39,6 +39,26 @@ export function saveAssistantLocked(lease, input, expectedRevision) {
     return { library, assistant };
 }
 
+/** Sessions keep their own copies, so deleting from the library leaves earlier conversations readable. */
+export function deleteAssistantLocked(lease, id, expectedRevision) {
+    const library = readAssistantsLocked(lease);
+    if (expectedRevision !== library.revision) throw new ScratchpadError('SCRATCHPAD_ASSISTANTS_CHANGED', 'Your assistants changed elsewhere. Reopen the editor and try again.', 409);
+    const index = library.assistants.findIndex(item => item.id === id);
+    if (!isCustomAssistant(id) || index < 0) throw assistantProfileError('This assistant no longer exists.', 404);
+    library.assistants.splice(index, 1);
+    library.revision++;
+    writeAuthoringFileLocked(lease, filename(lease), JSON.stringify(library), { limit: FILE_LIMIT });
+    return { library };
+}
+
+const clipBytes = (text, limit) => {
+    let value = typeof text === 'string' ? text : '';
+    if (Buffer.byteLength(value) <= limit) return value;
+    value = Buffer.from(value).subarray(0, limit).toString('utf8');
+    while (Buffer.byteLength(value) > limit || value.endsWith('\uFFFD')) value = value.slice(0, -1);
+    return value;
+};
+
 /** Decode and re-encode portraits so neither card metadata nor active image content is retained. */
 export async function assistantPortrait(bytes) {
     try {
@@ -57,10 +77,12 @@ export function readAssistantCardLocked(lease, avatar) {
     if (!file) throw assistantProfileError('That character card no longer exists.', 404);
     const card = roleplayEntityContent('character', avatar, file.bytes).data;
     const data = card.data ?? card;
+    // Cards often run past the assistant limits; keep the opening of each field instead of refusing the card.
+    const name = String(data.name ?? '').trim().slice(0, 80).replace(/[\uD800-\uDBFF]$/, '').trim();
     return { bytes: file.bytes, profile: {
-        name: data.name,
-        personality: [data.description, data.personality].filter(Boolean).join('\n\n') || `You are ${data.name}.`,
-        examples: data.mes_example || '',
+        name,
+        personality: clipBytes([data.description, data.personality].filter(Boolean).join('\n\n'), 64000) || `You are ${name}.`,
+        examples: clipBytes(data.mes_example, 64000),
         sourceCard: avatar,
     } };
 }

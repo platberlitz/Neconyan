@@ -22,6 +22,8 @@
   "From a character card": "From a character card",
   "Your assistant": "Your assistant",
   "Included assistant": "Included assistant",
+  "Only in this session": "Only in this session",
+  "Delete '${0}' from your assistants? Sessions that already use them keep their own copy.": "Delete '${0}' from your assistants? Sessions that already use them keep their own copy.",
   "Selected": "Selected",
   "No assistants match that search.": "No assistants match that search.",
   "Your assistants": "Your assistants",

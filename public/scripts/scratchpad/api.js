@@ -59,6 +59,7 @@ export const decideNotebookProposal = (source, sessionId, messageId, index, prop
 export const readPrompt = body => post('/prompt', body);
 export const readAssistants = () => post('/assistants');
 export const saveAssistant = (assistant, expectedRevision, card) => post('/assistants/save', { assistant, expectedRevision, card });
+export const deleteAssistant = (id, expectedRevision) => post('/assistants/delete', { id, expectedRevision });
 export const readInstructions = () => post('/instructions');
 export const updateInstructions = (instructions, expectedRevision) => post('/instructions/update', { instructions, expectedRevision });
 export const createSession = (source, input) => post('/session/create', { source, ...input });

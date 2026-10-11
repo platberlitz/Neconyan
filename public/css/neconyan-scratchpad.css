@@ -1021,12 +1021,15 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     background: var(--neco-raised);
 }
 
-.scratchpad-library-row strong {
-    overflow-wrap: anywhere;
+.scratchpad-library-description strong,
+.scratchpad-library-description small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .scratchpad-library-description small {
-    display: block;
     color: var(--neco-muted);
 }
 
@@ -1039,8 +1042,15 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
 }
 
 .scratchpad-library-row .scratchpad-library-actions {
-    flex-direction: column;
-    gap: 4px;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+}
+
+.scratchpad-library-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
 }
 
 .scratchpad-library .scratchpad-library-button {
@@ -1052,6 +1062,38 @@ body.neconyan.neconyan-scratchpad-beside #sheld {
     background: var(--neco-surface);
     color: var(--neco-ink);
     white-space: normal;
+}
+
+.scratchpad-library .scratchpad-library-back,
+.scratchpad-library .scratchpad-library-edit {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+}
+
+.scratchpad-library .scratchpad-library-use {
+    min-width: 5.75rem;
+}
+
+@media (max-width: 520px) {
+    .scratchpad-library .scratchpad-library-edit {
+        justify-content: center;
+        min-width: 44px;
+        padding-inline: 0;
+    }
+
+    .scratchpad-library .scratchpad-library-edit span {
+        display: none;
+    }
+
+    .scratchpad-library .scratchpad-library-use {
+        min-width: 5rem;
+    }
+}
+
+.scratchpad-library .scratchpad-library-delete {
+    margin-inline-start: auto;
 }
 
 :root body.neconyan dialog.popup .scratchpad-library .scratchpad-library-button:is(.menu_button_primary, [aria-pressed='true']) {
