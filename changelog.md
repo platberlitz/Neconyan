@@ -1,12 +1,43 @@
 # Changelog
 
-## v1.2.6
+## v1.3.0
+
+### Highlights
+
+- Scratchpad can now talk with your own assistants as well as Miso, Taro and Nori. Copy one from a character card or write one from scratch, keep up to 24 in your library, and seat up to three at a round table. Random picks who answers, global user instructions apply across every Scratchpad in your account, the included assistants have stronger personalities, automatic cleanup is shared across chats, the story's character cards are now shared in full instead of three fields cut at 8,000 characters, and a new Current preset option shares the Roleplay preset as its own section, listing every module in order and whether it is on or off.
+- Restyled Conversation as a messenger, with replies that stream in as they are written and live token counts on messages.
+- Page, chat and swipe motion now follows what you tapped, Safari slides start from the first frame and missing animations are filled in. Reduced-motion settings remain respected.
+- Added cat pairs, Windows 98 pixel coats and dark backgrounds, and the bottom bar width no longer follows the page width.
+- Cut the freeze after opening a long chat, bounded browser caches and shared server tokenisers between requests.
+- Server-built Roleplay prompts now enforce macro boundaries and save prompt variables, so browser-only Macro Enhanced macros no longer run there. Transferred-data repair no longer stops at a single bad file.
+- Added a World Info Lab shortcut to Lorebooks, kept auto-closing notices up for at least 5 seconds, and fixed the Whisper reading layout, Guided Generations previews, Agents recovery checks after a chat change and dialogue colour deletion.
+- Refreshed the README screenshots and added Scratchpad to them, updated the [official handbook](https://platberlitz.github.io/neconyan-docs/) for these changes and refreshed the assistants' app-help reference.
 
 ### Merged Staging PRs
+- PR #107 (2026-10-10) `fix(chats): correct the Whisper reading layout and controls`
 - PR #108 (2026-10-10) `fix(dialogue-colors): allow deletion after background saves`
+- PR #109 (2026-10-10) `fix(scratchpad): refresh assistants and improve reply controls`
 - PR #110 (2026-10-10) `feat(chat): add live token counts and conversation streaming`
+- PR #111 (2026-10-10) `fix(ui): smooth iOS motion and fill in missing animations`
+- PR #112 (2026-10-10) `fix(toasts): keep auto-closing toasts up for at least 5 seconds`
+- PR #113 (2026-10-10) `feat(scratchpad): add global user instructions`
+- PR #114 (2026-10-10) `fix(motion): start slides from the first frame on Safari`
+- PR #115 (2026-10-10) `feat(lorebooks): add a World Info Lab shortcut`
+- PR #116 (2026-10-10) `feat(scratchpad): strengthen personalities and add random replies`
+- PR #117 (2026-10-10) `feat(conversation): restyle Conversation as a messenger`
+- PR #118 (2026-10-11) `fix(guided-generations): keep guides and live previews intact`
+- PR #119 (2026-10-11) `feat(motion): make page, chat and swipe motion follow what you tapped`
+- PR #120 (2026-10-11) `perf(chat): cut the freeze after opening a chat`
 - PR #121 (2026-10-11) `fix(ui): decouple the bottom bar width from the page width`
+- PR #122 (2026-10-11) `fix(roleplay): stop single files blocking transferred-data repair`
+- PR #123 (2026-10-11) `fix(roleplay): enforce macro boundaries and save prompt variables`
+- PR #124 (2026-10-11) `fix(agents): stop recovery checks re-clearing after a chat change`
 - PR #125 (2026-10-11) `feat(art): add cat pairs, pixel coats and dark backgrounds`
+- PR #126 (2026-10-11) `feat(scratchpad): add custom and character-card assistants`
+- PR #127 (2026-10-11) `perf(tokens): bound browser caches and share server tokenisers`
+- PR #128 (2026-10-11) `fix(scratchpad): share automatic cleanup across chats`
+- PR #129 (2026-10-11) `fix(scratchpad): share every part of the character card in full`
+- PR #131 (2026-10-11) `feat(scratchpad): share the current preset as its own section`
 
 ## v1.2.5
 
