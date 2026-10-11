@@ -113,14 +113,39 @@ test('changes between checking and repairing require a fresh check', t => {
     assert.deepEqual(fs.readFileSync(path.join(roleplayStoreDirectory(f.scope), 'state.json')), before);
 });
 
-test('invalid chats are reported and nothing is adopted', t => {
+test('a damaged chat is left out unchanged while the rest is adopted', t => {
     const f = fixture(t);
     fs.appendFileSync(f.filename, '\n{"unfinished":');
+    const bytes = fs.readFileSync(f.filename);
     const check = inspectTransferredRoleplay(f.scope);
-    assert.equal(check.canRepair, false);
-    assert.equal(check.issues[0].file, 'chats/Nova/Source.jsonl');
-    assert.throws(() => repairTransferredRoleplay(f.scope, check.token), { code: 'ROLEPLAY_RECOVERY_INVALID' });
-    assert.equal(readRoleplayAccount(f.scope).dataEpoch, f.scope.dataEpoch);
+    assert.deepEqual(check.issues, []);
+    assert.deepEqual(check.skipped.map(item => item.file), ['chats/Nova/Source.jsonl']);
+    assert.equal(check.counts.characters, 1);
+    const result = repair(f);
+    assert.equal(result.skipped, 1);
+    assert.deepEqual(fs.readFileSync(f.filename), bytes);
+    assert.deepEqual(fs.readFileSync(path.join(result.backup, 'chats/Nova/Source.jsonl')), bytes);
+    const manifest = JSON.parse(fs.readFileSync(path.join(result.backup, 'manifest.json'), 'utf8'));
+    assert.deepEqual(manifest.skipped.map(item => item.file), ['chats/Nova/Source.jsonl']);
+    readRoleplayEntity({ ...f.scope, dataEpoch: result.dataEpoch }, 'character', 'Nova.png', { storage: true });
+});
+
+test('a group chat whose name ends with a space is left out with a rename hint', t => {
+    const f = fixture(t, true);
+    const odd = path.join(f.scope.directories.groupChats, 'Bad End .jsonl');
+    fs.copyFileSync(f.filename, odd);
+    const check = inspectTransferredRoleplay(f.scope);
+    assert.deepEqual(check.issues, []);
+    assert.equal(check.skipped.length, 1);
+    assert.equal(check.skipped[0].file, 'groupChats/Bad End .jsonl');
+    assert.match(check.skipped[0].reason, /ends with a space or a full stop/);
+    assert.equal(check.warnings.some(item => item.reason.includes('Bad End')), false);
+    assert.deepEqual(check.counts, { chats: 1, characters: 1, groups: 1 });
+    const result = repair(f);
+    const scope = { ...f.scope, dataEpoch: result.dataEpoch };
+    captureRoleplayStorageSource(scope, f.locator);
+    readRoleplayEntity(scope, 'group', 'group', { storage: true });
+    assert.equal(fs.existsSync(odd), true);
 });
 
 for (const link of ['hard', 'symbolic']) test(`repair refuses ${link} links without touching their targets`, t => {
