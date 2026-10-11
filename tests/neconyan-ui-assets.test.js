@@ -49,6 +49,33 @@ describe('Neconyan generated UI artwork', () => {
             expect(createHash('sha256').update(bytes).digest('hex')).toBe(item.sha256);
         }
     });
+    test('ships pixel counterparts and ear frames for every sleeping coat', () => {
+        const provenance = readJson('public/img/neconyan/win98/sleeper-coat-provenance.json');
+        const css = fs.readFileSync(path.join(root, 'public/css/shell-styles/windows-98.css'), 'utf8');
+        expect(provenance.coats.map(coat => coat.id)).toEqual(SLEEPER_COATS.slice(2).map(coat => coat.id));
+        expect(new Set(provenance.coats.map(coat => coat.model))).toEqual(new Set(['gpt-image-2.5-sunburst', 'gpt-image-2.5-flare']));
+        for (const coat of SLEEPER_COATS) {
+            for (const suffix of ['', '-twitch']) {
+                const name = `sleeping-${coat.id}-${coat.side}${suffix}.webp`;
+                expect(fs.existsSync(path.join(root, 'public/img/neconyan/win98', name))).toBe(true);
+                expect(css).toContain(`img[src*='img/neconyan/${name}'] { content: url('../../img/neconyan/win98/${name}`);
+            }
+        }
+        for (const coat of provenance.coats) {
+            expect(coat.outputs).toHaveLength(2);
+            expect(coat.outputs[0].sha256).not.toBe(coat.outputs[1].sha256);
+            for (const item of coat.outputs) {
+                const bytes = fs.readFileSync(path.join(root, item.path));
+                expect(createHash('sha256').update(bytes).digest('hex')).toBe(item.sha256);
+                expect(item.size).toEqual([768, 616]);
+                expect(bytes.toString('ascii', 8, 16)).toBe('WEBPVP8L');
+                const header = bytes.readUInt32LE(21);
+                expect((header & 0x3fff) + 1).toBe(768);
+                expect(((header >>> 14) & 0x3fff) + 1).toBe(616);
+                expect((header >>> 28) & 1).toBe(1);
+            }
+        }
+    });
     test('ships 58 distinct backgrounds at the browser dimensions, with both requested models', () => {
         const provenance = readJson('default/content/backgrounds/artwork-provenance.json');
         const index = readJson('default/content/index.json');

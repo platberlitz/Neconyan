@@ -1,5 +1,6 @@
 {
   "generated_at": "2026-09-30",
+  "additional_sleeper_coats": "sleeper-coat-provenance.json",
   "image_model": "gpt-image-2.5-sunburst",
   "command": "smol-image sunburst (edit mode: each job sent the original Neconyan asset as the reference image)",
   "style": "Windows 98 era 256-colour dithered pixel art on a flat magenta key background",
