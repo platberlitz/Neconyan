@@ -1,0 +1,1648 @@
+{
+  "generated_at": "2026-10-11",
+  "coordinator": "gpt-5.5",
+  "models": [
+    "gpt-image-2.5-sunburst",
+    "gpt-image-2.5-flare"
+  ],
+  "style_reference": [
+    "public/img/neconyan/win98/sleeping-calico-left.webp",
+    "public/img/neconyan/win98/sleeping-calico-left-twitch.webp"
+  ],
+  "prompt_template": "Redraw the FIRST reference sheet, the {coatLabel} sleeping cat, as authentic Windows 98 era 256-colour pixel art. The SECOND reference is the actual existing Windows 98 calico sprite pair: use its crisp stepped dark outlines, blocky pixels, sparse ordered dithering and limited flat palette. Keep the FIRST reference's distinctive {coatLabel} colours, markings, breed features, pose, closed eyes, nose, visible tucked hind paw, front paws, and tail hanging down on the LEFT. This is the same cat, never recolour it as a calico.\nOutput a two-frame sprite sheet at exactly 1024x1536 on perfectly solid chroma green #00ff00. One cat in the TOP half, identical cat in the BOTTOM half. Each cat stays inside x=128..896, with top frame y=64..680 and bottom frame y=832..1448. Top cat rests with both ears upright. Bottom cat has ONLY its foreground ear folded outwards in a small twitch, just like the second reference. Everything else in both frames is pixel-identical: face, coat, body, three visible paws and hanging tail. Both cats face RIGHT. All paws share one horizontal baseline. Keep the full tail visible with green padding. Match the first sheet's position and proportions exactly. Use hard square pixels, dark cocoa-black outlines, simple colour clusters and sparse checker dithering, without smooth shading or anti-aliasing. No ground, shadow, scene, motion marks, text, border or checkerboard background. Green appears ONLY outside the cats.",
+  "processing": "Two-frame 1024x1536 source sheets. Green chroma-keyed to binary alpha, trimmed, nearest-neighbour fitted to 756px width at x=6 on 768x616 canvases. Paw baseline at y=400 and tail ending at y=608, matching the existing pixel cats. Each frame uses a 255-colour palette. Only ear regions from the second frame are copied into the first, so the face, body, paws and tail stay pixel-identical when petted. Lossless WebP.",
+  "coats": [
+    {
+      "id": "grey-tabby",
+      "label": "Grey tabby",
+      "model": "gpt-image-2.5-sunburst",
+      "source": "grey-tabby-sunburst.png",
+      "sourceSha256": "b1a7f77422b6e2ce117b916e6858d6fadb66474d9fc545694efbcc6e0d2abad4",
+      "references": [
+        "public/img/neconyan/sleeping-grey-tabby-left.webp",
+        "public/img/neconyan/sleeping-grey-tabby-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            135,
+            191,
+            904,
+            696
+          ],
+          "bodyBaseline": 288,
+          "upperHeight": 283
+        },
+        {
+          "bounds": [
+            135,
+            192,
+            904,
+            696
+          ],
+          "bodyBaseline": 286,
+          "upperHeight": 281
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-grey-tabby-left.webp",
+          "sha256": "65af9f2d0996eb6d160c4f6b750b63e167bad6f98762b2a993bb0e369b921189",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-grey-tabby-left-twitch.webp",
+          "sha256": "588d246dd4f6ca5f21e550f7a3c28e7969eb7af67feb090eda802e45c579f9c2",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "brown-tabby",
+      "label": "Brown tabby",
+      "model": "gpt-image-2.5-flare",
+      "source": "brown-tabby-flare.png",
+      "sourceSha256": "da7b51590f08a13ebb8167b3367861360212fb176b493022f732987106185f45",
+      "references": [
+        "public/img/neconyan/sleeping-brown-tabby-left.webp",
+        "public/img/neconyan/sleeping-brown-tabby-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            142,
+            107,
+            897,
+            714
+          ],
+          "bodyBaseline": 312,
+          "upperHeight": 312
+        },
+        {
+          "bounds": [
+            142,
+            107,
+            897,
+            714
+          ],
+          "bodyBaseline": 312,
+          "upperHeight": 312
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-brown-tabby-left.webp",
+          "sha256": "64f6251c21c8e203312c9a73bb95df487d28db619e3c4dcf542eb3e2337e4ce4",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-brown-tabby-left-twitch.webp",
+          "sha256": "4cafb520fbc54421c6fa9c3cb919f79c6503cdd23fca58169a081bad5b973df3",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cream",
+      "label": "Cream",
+      "model": "gpt-image-2.5-sunburst",
+      "source": "cream-sunburst.png",
+      "sourceSha256": "346fb48aa9774de86ff3c1d70ff1cc8b3ca6b1dca1836926e13d4ae04c7fd194",
+      "references": [
+        "public/img/neconyan/sleeping-cream-left.webp",
+        "public/img/neconyan/sleeping-cream-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            138,
+            184,
+            900,
+            728
+          ],
+          "bodyBaseline": 287,
+          "upperHeight": 285
+        },
+        {
+          "bounds": [
+            138,
+            160,
+            900,
+            696
+          ],
+          "bodyBaseline": 279,
+          "upperHeight": 277
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-cream-left.webp",
+          "sha256": "0e50b6900d4ed49399a402d55b0e9276d9687596f1a15d95a321c7bf1fad6882",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-cream-left-twitch.webp",
+          "sha256": "23b366852029f61600d7fd40856ebc4438c5be51889782e1cf7d113578d5798f",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ginger-white",
+      "label": "Ginger and white",
+      "model": "gpt-image-2.5-flare",
+      "source": "ginger-white-flare.png",
+      "sourceSha256": "29977674426673fe65e23f10536cfff0fdd3c9ca12b5de65337fb2a6d003b4b0",
+      "references": [
+        "public/img/neconyan/sleeping-ginger-white-left.webp",
+        "public/img/neconyan/sleeping-ginger-white-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            133,
+            130,
+            905,
+            714
+          ],
+          "bodyBaseline": 320,
+          "upperHeight": 313
+        },
+        {
+          "bounds": [
+            133,
+            120,
+            905,
+            702
+          ],
+          "bodyBaseline": 321,
+          "upperHeight": 314
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-ginger-white-left.webp",
+          "sha256": "8313d6a4fd8711f44716f0777d56853eb1c9be7b717a1053726e99c1a05d97ed",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-ginger-white-left-twitch.webp",
+          "sha256": "11e0d39da0c9b31187629326bf0d6f55fa4ff520ac7f68debcfee6cdccfd7eb2",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tortoiseshell",
+      "label": "Tortoiseshell",
+      "model": "gpt-image-2.5-sunburst",
+      "source": "tortoiseshell-sunburst.png",
+      "sourceSha256": "cd1b904482afa60d9e203042a7b88adb4134373c5fbce80a65120f0f3c72d5d4",
+      "references": [
+        "public/img/neconyan/sleeping-tortoiseshell-left.webp",
+        "public/img/neconyan/sleeping-tortoiseshell-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            133,
+            183,
+            905,
+            759
+          ],
+          "bodyBaseline": 298,
+          "upperHeight": 292
+        },
+        {
+          "bounds": [
+            133,
+            150,
+            905,
+            727
+          ],
+          "bodyBaseline": 298,
+          "upperHeight": 292
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-tortoiseshell-left.webp",
+          "sha256": "0f0f24c221d3c3477c25a3e47f3a6c4fe8cc8c088588eee60b048f57fbab8961",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-tortoiseshell-left-twitch.webp",
+          "sha256": "91c4639ce67ffb5fd88363f0d249bcc4705e227aad4d670a98e9d40d8ec97636",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "torbie",
+      "label": "Torbie",
+      "model": "gpt-image-2.5-flare",
+      "source": "torbie-flare.png",
+      "sourceSha256": "275f4b5eca38f9f5d295f5c4cdda93ab4acf4b9d0f5e4d4cefa292d4e3500c40",
+      "references": [
+        "public/img/neconyan/sleeping-torbie-left.webp",
+        "public/img/neconyan/sleeping-torbie-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            138,
+            109,
+            901,
+            719
+          ],
+          "bodyBaseline": 318,
+          "upperHeight": 315
+        },
+        {
+          "bounds": [
+            137,
+            107,
+            901,
+            707
+          ],
+          "bodyBaseline": 317,
+          "upperHeight": 314
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-torbie-left.webp",
+          "sha256": "c86becda42c43a3d3cf3f5ff182980a094cdd936ca14b3343ffce7526c8f659a",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-torbie-left-twitch.webp",
+          "sha256": "155c2ec1b5efa1049df530f0e9d351b3900a08c80f88c83e548c79aac2256461",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dilute-calico",
+      "label": "Dilute calico",
+      "model": "gpt-image-2.5-sunburst",
+      "source": "dilute-calico-sunburst.png",
+      "sourceSha256": "5261e3032d0c01c42393671016f5ec8ee1ef6e03fe4d5da272cebaf07f6588e9",
+      "references": [
+        "public/img/neconyan/sleeping-dilute-calico-left.webp",
+        "public/img/neconyan/sleeping-dilute-calico-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            134,
+            155,
+            907,
+            715
+          ],
+          "bodyBaseline": 308,
+          "upperHeight": 301
+        },
+        {
+          "bounds": [
+            134,
+            126,
+            907,
+            681
+          ],
+          "bodyBaseline": 302,
+          "upperHeight": 295
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-dilute-calico-left.webp",
+          "sha256": "c9ad708ffbae3ab340331084b6fc5444cf726a4aee4b77193447acfc9609df20",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-dilute-calico-left-twitch.webp",
+          "sha256": "d112eb6e03e14569a0f29b5972a419ce2bf683a22ed16563261d3d36b84e691d",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tuxedo",
+      "label": "Tuxedo",
+      "model": "gpt-image-2.5-flare",
+      "source": "tuxedo-flare.png",
+      "sourceSha256": "3f13ee2c9e96fc7ad8f92c55a35275dceb94903f5586609f9b846fea0d9c9295",
+      "references": [
+        "public/img/neconyan/sleeping-tuxedo-left.webp",
+        "public/img/neconyan/sleeping-tuxedo-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            132,
+            106,
+            909,
+            711
+          ],
+          "bodyBaseline": 325,
+          "upperHeight": 316
+        },
+        {
+          "bounds": [
+            132,
+            106,
+            909,
+            711
+          ],
+          "bodyBaseline": 325,
+          "upperHeight": 316
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-tuxedo-left.webp",
+          "sha256": "683f30cc38842eedf58e3b6293be1d9a144dd0921a685a1f811222279ddd5a72",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-tuxedo-left-twitch.webp",
+          "sha256": "03abf6205d9799425eb32ba58af15c5ccc611298b0d3fe3a1f371a76eb6c3c8d",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cow",
+      "label": "Cow cat",
+      "model": "gpt-image-2.5-sunburst",
+      "source": "cow-sunburst.png",
+      "sourceSha256": "a4a782f092dd79d0307b4ad4e33d5027c922819cf0e049b43bef51939002f910",
+      "references": [
+        "public/img/neconyan/sleeping-cow-left.webp",
+        "public/img/neconyan/sleeping-cow-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            135,
+            158,
+            908,
+            751
+          ],
+          "bodyBaseline": 313,
+          "upperHeight": 306
+        },
+        {
+          "bounds": [
+            135,
+            128,
+            908,
+            719
+          ],
+          "bodyBaseline": 311,
+          "upperHeight": 304
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-cow-left.webp",
+          "sha256": "b5f14b3f05b419ae24cb1763ccfb427b630e463e1434d0a293b0becabaaa4698",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-cow-left-twitch.webp",
+          "sha256": "c38a878f216d27b26bc8d3a2305a605aca8ff6cdcace6c9a269771d679b1e581",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "siamese",
+      "label": "Siamese",
+      "model": "gpt-image-2.5-flare",
+      "source": "siamese-flare.png",
+      "sourceSha256": "ffaf348be96d2d5e9eba59b3131ee5b1735507d50abe9f4e40b80e4bbc5ab1fe",
+      "references": [
+        "public/img/neconyan/sleeping-siamese-left.webp",
+        "public/img/neconyan/sleeping-siamese-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            140,
+            96,
+            894,
+            695
+          ],
+          "bodyBaseline": 331,
+          "upperHeight": 332
+        },
+        {
+          "bounds": [
+            140,
+            89,
+            894,
+            695
+          ],
+          "bodyBaseline": 338,
+          "upperHeight": 339
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-siamese-left.webp",
+          "sha256": "26953bfca0a2429cccefe0305aa20487c391739de1a6d92fc821963ac933e40d",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-siamese-left-twitch.webp",
+          "sha256": "7647cb3eb83860a7f8985b64d3850f35ae7a49d37349b0345d5933d224b87818",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ragdoll",
+      "label": "Ragdoll",
+      "model": "gpt-image-2.5-sunburst",
+      "source": "ragdoll-sunburst.png",
+      "sourceSha256": "97bbb7623a1022249b2db5e15a854db8f7868491f12a5a9aedf672b779bdcf5c",
+      "references": [
+        "public/img/neconyan/sleeping-ragdoll-left.webp",
+        "public/img/neconyan/sleeping-ragdoll-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            134,
+            109,
+            909,
+            696
+          ],
+          "bodyBaseline": 316,
+          "upperHeight": 308
+        },
+        {
+          "bounds": [
+            135,
+            74,
+            909,
+            652
+          ],
+          "bodyBaseline": 308,
+          "upperHeight": 301
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-ragdoll-left.webp",
+          "sha256": "8472b79fafd8c380976948bc1281a1e09137f1aecbf155fb53a5385c2a28974e",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-ragdoll-left-twitch.webp",
+          "sha256": "9bfb4b7bb772d3b46708883761f59a2102f8f46b0cd26c315c3b0d169e2e6487",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "birman",
+      "label": "Birman",
+      "model": "gpt-image-2.5-flare",
+      "source": "birman-flare.png",
+      "sourceSha256": "7b2f7b92681e2cd06b52106460c3d9f25ce8f8911c749f8937ea16483d222eb6",
+      "references": [
+        "public/img/neconyan/sleeping-birman-left.webp",
+        "public/img/neconyan/sleeping-birman-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            137,
+            158,
+            898,
+            707
+          ],
+          "bodyBaseline": 319,
+          "upperHeight": 317
+        },
+        {
+          "bounds": [
+            137,
+            158,
+            898,
+            707
+          ],
+          "bodyBaseline": 319,
+          "upperHeight": 317
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-birman-left.webp",
+          "sha256": "591dfa3fac18a5908ee191c35dafa16d9145bdde006e759c1f7cc28fc8a9f3f1",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-birman-left-twitch.webp",
+          "sha256": "575aff843d475cd64acf7fd2bde4dfbb69a1106736bdb0fe09b185e48b11fd77",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "snowshoe",
+      "label": "Snowshoe",
+      "model": "gpt-image-2.5-sunburst",
+      "source": "snowshoe-sunburst.png",
+      "sourceSha256": "b28cb6f944b59adf6dc31a9ebdef1c040442f87b7e6f9999f348f3b004ce7342",
+      "references": [
+        "public/img/neconyan/sleeping-snowshoe-left.webp",
+        "public/img/neconyan/sleeping-snowshoe-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            139,
+            153,
+            902,
+            735
+          ],
+          "bodyBaseline": 318,
+          "upperHeight": 315
+        },
+        {
+          "bounds": [
+            139,
+            94,
+            902,
+            669
+          ],
+          "bodyBaseline": 311,
+          "upperHeight": 308
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-snowshoe-left.webp",
+          "sha256": "cdf134b6d5c5d44e49653e3a642bfd43691e8949f9a56bc4c139824743f9459f",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-snowshoe-left-twitch.webp",
+          "sha256": "00cf8717c9ae82733e0cc06c69acb39f3f9fb48d50ba2d0c01088355e30a127f",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "russian-blue",
+      "label": "Russian Blue",
+      "model": "gpt-image-2.5-flare",
+      "source": "russian-blue-flare.png",
+      "sourceSha256": "d171a378ae08603b77acef8ca5f3eadd798c85a18893289f97370d1ea48bf163",
+      "references": [
+        "public/img/neconyan/sleeping-russian-blue-left.webp",
+        "public/img/neconyan/sleeping-russian-blue-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            138,
+            136,
+            894,
+            703
+          ],
+          "bodyBaseline": 308,
+          "upperHeight": 308
+        },
+        {
+          "bounds": [
+            138,
+            127,
+            894,
+            694
+          ],
+          "bodyBaseline": 309,
+          "upperHeight": 309
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-russian-blue-left.webp",
+          "sha256": "c6265b61cd2f0974afd5dce53a7b3f16388775e6f9d7bf95c76ffde0c6ee0153",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-russian-blue-left-twitch.webp",
+          "sha256": "666c7456d43be3867ebaff2cc47f5a7687dfeed653ae3b26912769482a671218",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lilac",
+      "label": "Lilac",
+      "model": "gpt-image-2.5-sunburst",
+      "source": "lilac-sunburst.png",
+      "sourceSha256": "7f1f5dcf83947e3f4c9f476da068408dbc5edfe5e0111e2bdd4f41152a142366",
+      "references": [
+        "public/img/neconyan/sleeping-lilac-left.webp",
+        "public/img/neconyan/sleeping-lilac-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            156,
+            135,
+            893,
+            686
+          ],
+          "bodyBaseline": 297,
+          "upperHeight": 305
+        },
+        {
+          "bounds": [
+            156,
+            106,
+            893,
+            649
+          ],
+          "bodyBaseline": 289,
+          "upperHeight": 296
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-lilac-left.webp",
+          "sha256": "0e4fcc5ff54f6ac50cdafdc5c0333bc2968c333bc43e0303a9962bcd29705190",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-lilac-left-twitch.webp",
+          "sha256": "336495144d5bc4af06c27f72fe5b9f2adc5c53081093e1f46493a9c3c945aee8",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chocolate",
+      "label": "Chocolate",
+      "model": "gpt-image-2.5-flare",
+      "source": "chocolate-flare.png",
+      "sourceSha256": "5080ec88c561cfad3317dcd276da6d21ed3d1e3a5af5c92d6803f1c893210f23",
+      "references": [
+        "public/img/neconyan/sleeping-chocolate-left.webp",
+        "public/img/neconyan/sleeping-chocolate-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            133,
+            105,
+            899,
+            718
+          ],
+          "bodyBaseline": 323,
+          "upperHeight": 319
+        },
+        {
+          "bounds": [
+            133,
+            105,
+            899,
+            718
+          ],
+          "bodyBaseline": 323,
+          "upperHeight": 319
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-chocolate-left.webp",
+          "sha256": "dfbc413b79c1e9446ff351bafaa9ba1c3ab8364406a2877456652f8b75fb787a",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-chocolate-left-twitch.webp",
+          "sha256": "820c3691b4e679b0417013785e3f5d7bf7721b2250bec582866fe4bc9ec494d2",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cinnamon",
+      "label": "Cinnamon",
+      "model": "gpt-image-2.5-sunburst",
+      "source": "cinnamon-sunburst.png",
+      "sourceSha256": "02292cddd7dd6338bb24cdd4ae9337bd0a149bdb740f1a51adcb6f16618c936a",
+      "references": [
+        "public/img/neconyan/sleeping-cinnamon-left.webp",
+        "public/img/neconyan/sleeping-cinnamon-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            140,
+            143,
+            899,
+            742
+          ],
+          "bodyBaseline": 304,
+          "upperHeight": 303
+        },
+        {
+          "bounds": [
+            140,
+            76,
+            899,
+            677
+          ],
+          "bodyBaseline": 306,
+          "upperHeight": 305
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-cinnamon-left.webp",
+          "sha256": "05ac7c24d696ad36e594ef4a7a71ffe0b53e75be2a3316638347b70c053e1bd9",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-cinnamon-left-twitch.webp",
+          "sha256": "35eeedb13be3d0e351cae1cfe1d5bf9b035f7a09c4ea1c41625f3fa526c27e23",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fawn",
+      "label": "Fawn",
+      "model": "gpt-image-2.5-flare",
+      "source": "fawn-flare.png",
+      "sourceSha256": "c65e8f5a25b65290694c37b66736d4d9206b4526db837746c37250a9d8ab8527",
+      "references": [
+        "public/img/neconyan/sleeping-fawn-left.webp",
+        "public/img/neconyan/sleeping-fawn-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            137,
+            112,
+            895,
+            712
+          ],
+          "bodyBaseline": 316,
+          "upperHeight": 315
+        },
+        {
+          "bounds": [
+            137,
+            115,
+            895,
+            712
+          ],
+          "bodyBaseline": 313,
+          "upperHeight": 312
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-fawn-left.webp",
+          "sha256": "56a18020ebbdce09466a753c3a9637f5bcb6e56f891b9bb22d2525bd16ee85c7",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-fawn-left-twitch.webp",
+          "sha256": "42beff14370d27b0aef374b0e867d67a9ec3a6a7229a0651226ce8dcc7c6927c",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "smoke",
+      "label": "Black smoke",
+      "model": "gpt-image-2.5-sunburst",
+      "source": "smoke-sunburst.png",
+      "sourceSha256": "fb6b74eaee26340a5c2844b1505ac6c19c58438b1a19c18d39eba3d8ff181e88",
+      "references": [
+        "public/img/neconyan/sleeping-smoke-left.webp",
+        "public/img/neconyan/sleeping-smoke-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            128,
+            182,
+            894,
+            717
+          ],
+          "bodyBaseline": 286,
+          "upperHeight": 282
+        },
+        {
+          "bounds": [
+            128,
+            190,
+            894,
+            717
+          ],
+          "bodyBaseline": 278,
+          "upperHeight": 274
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-smoke-left.webp",
+          "sha256": "232ef81c6a7345c79d1ae769a74bf2691e201f021700734080dd2d86fbfce723",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-smoke-left-twitch.webp",
+          "sha256": "4e23d5987e1018748683816fae48b5749ea1dd4906bcce41b8b5501f1a36bb38",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "black",
+      "label": "Black",
+      "model": "gpt-image-2.5-flare",
+      "source": "black-flare.png",
+      "sourceSha256": "0748aaf306a23dd9fc34ec5a41dfccc19fbbe4497aff371d887985f7c0a401c1",
+      "references": [
+        "public/img/neconyan/sleeping-black-left.webp",
+        "public/img/neconyan/sleeping-black-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            138,
+            120,
+            911,
+            706
+          ],
+          "bodyBaseline": 315,
+          "upperHeight": 308
+        },
+        {
+          "bounds": [
+            138,
+            119,
+            911,
+            706
+          ],
+          "bodyBaseline": 315,
+          "upperHeight": 308
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-black-left.webp",
+          "sha256": "0689e6fa50a959a7104d59355dc8ba9f17ddd3f26fdeba72f0ee86142efaf1bf",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-black-left-twitch.webp",
+          "sha256": "513ea3b9dcf8b704408d27f0a68298fe74053a7ff6c94b2ea4228b15b5cbfddb",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "white",
+      "label": "White",
+      "model": "gpt-image-2.5-sunburst",
+      "source": "white-sunburst.png",
+      "sourceSha256": "cd79a293068d71cc90a623f7e1a221e281d28fc8946c8f83f78a9c9ce0fed159",
+      "references": [
+        "public/img/neconyan/sleeping-white-left.webp",
+        "public/img/neconyan/sleeping-white-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            148,
+            134,
+            895,
+            722
+          ],
+          "bodyBaseline": 307,
+          "upperHeight": 311
+        },
+        {
+          "bounds": [
+            148,
+            121,
+            895,
+            707
+          ],
+          "bodyBaseline": 306,
+          "upperHeight": 310
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-white-left.webp",
+          "sha256": "34f5edafb91ab1b130555e8f41b179613fa56eeee2cd69397deb76bba3b10b32",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-white-left-twitch.webp",
+          "sha256": "3cf5033a490456a11bef71ceb52d2da17a9965e68ab3075c5a9d491d022fb803",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "abyssinian",
+      "label": "Abyssinian",
+      "model": "gpt-image-2.5-flare",
+      "source": "abyssinian-flare.png",
+      "sourceSha256": "efcfb81642ae4aeab300c55cada718f909ca2b78e0d8bb9ec495c21e47731886",
+      "references": [
+        "public/img/neconyan/sleeping-abyssinian-left.webp",
+        "public/img/neconyan/sleeping-abyssinian-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            135,
+            102,
+            898,
+            708
+          ],
+          "bodyBaseline": 315,
+          "upperHeight": 312
+        },
+        {
+          "bounds": [
+            135,
+            101,
+            898,
+            707
+          ],
+          "bodyBaseline": 315,
+          "upperHeight": 312
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-abyssinian-left.webp",
+          "sha256": "77ad277eb4f12be204682b6840b0cd0c8f5f954989053cbee49827330607fb3b",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-abyssinian-left-twitch.webp",
+          "sha256": "237372052730c9ebaa945a003d63fbff655adc917257670765eed6bf2e5c53f5",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sphynx",
+      "label": "Sphynx",
+      "model": "gpt-image-2.5-sunburst",
+      "source": "sphynx-sunburst.png",
+      "sourceSha256": "9384c4970c88b94db10a4774cd816b4f1db81005251662614bcf647f6fec72e1",
+      "references": [
+        "public/img/neconyan/sleeping-sphynx-left.webp",
+        "public/img/neconyan/sleeping-sphynx-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            154,
+            130,
+            896,
+            738
+          ],
+          "bodyBaseline": 318,
+          "upperHeight": 324
+        },
+        {
+          "bounds": [
+            154,
+            93,
+            896,
+            677
+          ],
+          "bodyBaseline": 295,
+          "upperHeight": 301
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-sphynx-left.webp",
+          "sha256": "2b561b1f370d56029336303b5ccda69325cea19ad8e5f60033ea209abd415064",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-sphynx-left-twitch.webp",
+          "sha256": "54f527ad98c46eea5079f14e9eb34184c8aa24d56ec2776c20647aa5d7680c4f",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "leopard",
+      "label": "Leopard",
+      "model": "gpt-image-2.5-flare",
+      "source": "leopard-flare.png",
+      "sourceSha256": "d1b34916cd8e7b4fb34cd987be2e0dea9e710778f183da1db87865bd8125363e",
+      "references": [
+        "public/img/neconyan/sleeping-leopard-left.webp",
+        "public/img/neconyan/sleeping-leopard-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            146,
+            93,
+            886,
+            696
+          ],
+          "bodyBaseline": 314,
+          "upperHeight": 321
+        },
+        {
+          "bounds": [
+            145,
+            106,
+            886,
+            688
+          ],
+          "bodyBaseline": 298,
+          "upperHeight": 304
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-leopard-left.webp",
+          "sha256": "63c70c108b1981294bff64467a18e83ac57714fd4c502b8c9545f05448768d9e",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-leopard-left-twitch.webp",
+          "sha256": "91fd13bc6772fc83092e7d152541d33affef92b5f050af0aa658c47067c4367c",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bengal",
+      "label": "Marbled Bengal",
+      "model": "gpt-image-2.5-sunburst",
+      "source": "bengal-sunburst.png",
+      "sourceSha256": "4d5bcecdfa3034c387046ea86dd8665821ae418949d803341f81779e07f67971",
+      "references": [
+        "public/img/neconyan/sleeping-bengal-left.webp",
+        "public/img/neconyan/sleeping-bengal-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            139,
+            102,
+            899,
+            710
+          ],
+          "bodyBaseline": 323,
+          "upperHeight": 321
+        },
+        {
+          "bounds": [
+            139,
+            96,
+            899,
+            704
+          ],
+          "bodyBaseline": 324,
+          "upperHeight": 322
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-bengal-left.webp",
+          "sha256": "c375a518278c61d7b718218162ecb82d8d274b8aa27e37a88bf4b582e94854d5",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-bengal-left-twitch.webp",
+          "sha256": "749e4c40fd3f184a5d6ebf1caaea74ef98df98e324576d5576498460605d44a9",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "egyptian-mau",
+      "label": "Egyptian Mau",
+      "model": "gpt-image-2.5-flare",
+      "source": "egyptian-mau-flare.png",
+      "sourceSha256": "c842e58ac06845372622a0f180d1cdcd6807653f53a31447ec43d1cd8645da9c",
+      "references": [
+        "public/img/neconyan/sleeping-egyptian-mau-left.webp",
+        "public/img/neconyan/sleeping-egyptian-mau-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            134,
+            123,
+            892,
+            692
+          ],
+          "bodyBaseline": 323,
+          "upperHeight": 322
+        },
+        {
+          "bounds": [
+            134,
+            115,
+            892,
+            686
+          ],
+          "bodyBaseline": 324,
+          "upperHeight": 323
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-egyptian-mau-left.webp",
+          "sha256": "be266b4cad104e4712354e35db8a597eed0d39d97c117906016f6ffc9f8d39df",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-egyptian-mau-left-twitch.webp",
+          "sha256": "18c04e05695e1c787d668b77d41e4e6191036232cf823c30dbfaf1b88d6d50cb",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cheetah",
+      "label": "Cheetah",
+      "model": "gpt-image-2.5-sunburst",
+      "source": "cheetah-sunburst.png",
+      "sourceSha256": "f38713c5c84dc0ff20117c37ee024af61ee85ff25c4d0ad8960c91c1e1f59555",
+      "references": [
+        "public/img/neconyan/sleeping-cheetah-left.webp",
+        "public/img/neconyan/sleeping-cheetah-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            138,
+            138,
+            898,
+            728
+          ],
+          "bodyBaseline": 322,
+          "upperHeight": 320
+        },
+        {
+          "bounds": [
+            138,
+            105,
+            898,
+            696
+          ],
+          "bodyBaseline": 323,
+          "upperHeight": 321
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-cheetah-left.webp",
+          "sha256": "bb0daa1c1d517609c0e10bd8eeac5b6f1121987aa78ef68e5331024f2a616393",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-cheetah-left-twitch.webp",
+          "sha256": "5fedc0e6ea0d5cdb9b571de80105b12a2f28c2a9318cdc6cc96fa68ba4c1091c",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "serval",
+      "label": "Serval",
+      "model": "gpt-image-2.5-flare",
+      "source": "serval-flare.png",
+      "sourceSha256": "5021542092808f7a9777a7180db5c2ee2082f8aa0d008431511d85bccd6b7616",
+      "references": [
+        "public/img/neconyan/sleeping-serval-left.webp",
+        "public/img/neconyan/sleeping-serval-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            118,
+            111,
+            911,
+            732
+          ],
+          "bodyBaseline": 324,
+          "upperHeight": 309
+        },
+        {
+          "bounds": [
+            118,
+            76,
+            911,
+            700
+          ],
+          "bodyBaseline": 327,
+          "upperHeight": 312
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-serval-left.webp",
+          "sha256": "e6a28956cd75681e8af1c0ffea0e45dda6bef5363ce51d6153388422fe353b8b",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-serval-left-twitch.webp",
+          "sha256": "a61febcb33e4319495941a480eacde60f512af5c777396c988ee634e095cb808",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "caracal",
+      "label": "Caracal",
+      "model": "gpt-image-2.5-sunburst",
+      "source": "caracal-sunburst.png",
+      "sourceSha256": "db4a29897b3c2f6c8aa201e969d197edce3de4dd6497790d89a8ece5f9368ad6",
+      "references": [
+        "public/img/neconyan/sleeping-caracal-left.webp",
+        "public/img/neconyan/sleeping-caracal-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            138,
+            104,
+            924,
+            735
+          ],
+          "bodyBaseline": 352,
+          "upperHeight": 339
+        },
+        {
+          "bounds": [
+            138,
+            93,
+            897,
+            718
+          ],
+          "bodyBaseline": 351,
+          "upperHeight": 350
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-caracal-left.webp",
+          "sha256": "a93b3921acfb7981fe167a95a10de6fefe1c2133cdaf82115ac02c2e63f57b47",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-caracal-left-twitch.webp",
+          "sha256": "60b4de2d7e86432af953eece0757f4b6bcdb2c5b77358be185937820d7707dea",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lynx",
+      "label": "Lynx",
+      "model": "gpt-image-2.5-flare",
+      "source": "lynx-flare.png",
+      "sourceSha256": "5a658d2d89cdd5132bcd97851b18ef998e2c6b37234b94e3b98b78c0322cfa0c",
+      "references": [
+        "public/img/neconyan/sleeping-lynx-left.webp",
+        "public/img/neconyan/sleeping-lynx-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            132,
+            96,
+            892,
+            709
+          ],
+          "bodyBaseline": 333,
+          "upperHeight": 331
+        },
+        {
+          "bounds": [
+            132,
+            99,
+            892,
+            709
+          ],
+          "bodyBaseline": 330,
+          "upperHeight": 328
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-lynx-left.webp",
+          "sha256": "1082b985bcc2b09a34b026ef1e0892353c70379a1eaf86d3a8289e72aed0395d",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-lynx-left-twitch.webp",
+          "sha256": "34703f7879d9aee73e6371677e245daacc2dfda5abd79ba7024686c3024d7baa",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "snow-leopard",
+      "label": "Snow leopard",
+      "model": "gpt-image-2.5-sunburst",
+      "source": "snow-leopard-sunburst.png",
+      "sourceSha256": "72a342bdb85d485197b03f54e8e7a0110a4b4120c7c8ee2fc5683f157ff7ee63",
+      "references": [
+        "public/img/neconyan/sleeping-snow-leopard-left.webp",
+        "public/img/neconyan/sleeping-snow-leopard-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            135,
+            186,
+            893,
+            698
+          ],
+          "bodyBaseline": 282,
+          "upperHeight": 281
+        },
+        {
+          "bounds": [
+            135,
+            187,
+            893,
+            698
+          ],
+          "bodyBaseline": 281,
+          "upperHeight": 280
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-snow-leopard-left.webp",
+          "sha256": "96c4bc90d9aa81f0cbcbc8879a95763da9d4809729ab9b419debff2b4f203e48",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-snow-leopard-left-twitch.webp",
+          "sha256": "daecbdc9f1156ce4616818601dffdea77c712f3fd1da89da766effed02f43480",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    },
+    {
+      "id": "white-tiger",
+      "label": "White tiger",
+      "model": "gpt-image-2.5-flare",
+      "source": "white-tiger-flare.png",
+      "sourceSha256": "733853bb7ae94f3326140e99c6ca57c62df77b442eac240755b007d03e7a9401",
+      "references": [
+        "public/img/neconyan/sleeping-white-tiger-left.webp",
+        "public/img/neconyan/sleeping-white-tiger-left-twitch.webp"
+      ],
+      "fit": [
+        {
+          "bounds": [
+            132,
+            139,
+            914,
+            757
+          ],
+          "bodyBaseline": 326,
+          "upperHeight": 315
+        },
+        {
+          "bounds": [
+            139,
+            151,
+            913,
+            715
+          ],
+          "bodyBaseline": 328,
+          "upperHeight": 320
+        }
+      ],
+      "outputs": [
+        {
+          "path": "public/img/neconyan/win98/sleeping-white-tiger-left.webp",
+          "sha256": "919a1f9f15ebd2209ff226e0c2167fc315056b152185b5e8c23642d091182ab4",
+          "size": [
+            768,
+            616
+          ]
+        },
+        {
+          "path": "public/img/neconyan/win98/sleeping-white-tiger-left-twitch.webp",
+          "sha256": "3f7f25b8b3998c8c7ae2c7cac3e1fbcfc04b5afc200b0010e001610d9f63a344",
+          "size": [
+            768,
+            616
+          ]
+        }
+      ]
+    }
+  ]
+}

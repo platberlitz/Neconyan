@@ -1,10 +1,24 @@
 {
   "generated_at": "2026-09-30",
+  "additional_sleeper_coats": "sleeper-coat-provenance.json",
   "image_model": "gpt-image-2.5-sunburst",
   "command": "smol-image sunburst (edit mode: each job sent the original Neconyan asset as the reference image)",
   "style": "Windows 98 era 256-colour dithered pixel art on a flat magenta key background",
   "processing": "Magenta chroma-keyed to transparency with fringe despill, trimmed, then fitted into the original asset's visible area on a canvas with the original aspect ratio (2x size for small art, 1x for illustrations, paws and portraits), because CSS content: url() keeps the replaced image box. Lossy WebP q88 with lossless alpha. The wallpaper has no key and is resized to 1536x1024.",
   "sources": [
+    {
+      "path": "win98-paw-sunburst.png",
+      "sha256": "db4a317bd9826dee4b7917a4824db4966d4bc3c4c30f0b63021ff692953bb858",
+      "generated_at": "2026-10-11",
+      "image_model": "gpt-image-2.5-sunburst",
+      "reference": "public/img/neconyan/win98/sleeping-tiger-right.webp",
+      "prompt": "Edit the actual pixel-art tiger reference. Add its missing small cream hind paw tucked immediately LEFT of the large orange rear haunch, sitting on the same horizontal baseline as the front paws. The hind paw has a small dark outline and two little toe marks. Preserve the exact pixel-art style, hard pixel grid, limited warm orange/cream/cocoa palette, dithering, existing silhouette, size, placement, two front paws, face, body stripes and tail. Only the small hind-paw area changes. Retain transparency or use perfectly uniform chroma green #00ff00 outside the cat. No additional scene, shadow, text, motion lines or extra limbs.",
+      "processing": "Aligned the generated 1024px drawing to the original 768x616 sprite using nearest-neighbour sampling. Removed neutral checkerboard pixels and composited only the paw inside [375,322,506,379], respecting the original alpha. Identical repair in both resting and twitch frames; every pixel outside the paw region is unchanged. Lossless WebP.",
+      "outputs": [
+        { "path": "public/img/neconyan/win98/sleeping-tiger-right.webp", "sha256": "2bd527c31b9c86afa7492a9fe46cbe07f2ef28540b56dac71b3501a6bc6efb5b" },
+        { "path": "public/img/neconyan/win98/sleeping-tiger-right-twitch.webp", "sha256": "e7af315926d10652c824c951dba0b1646d90041b76bb8eecf6af6c9c98c80d72" }
+      ]
+    },
     {
       "path": "badge-calico-a-sunburst.png",
       "sha256": "57f521eee90fbc4ca07a94bda5a6657492e17688c739bff111e618dc4bc9644b",

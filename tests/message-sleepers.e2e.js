@@ -1,7 +1,7 @@
 /* global document, window, getComputedStyle */
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
-import { acknowledgeSettingsSave, openQuietChatForSmoke } from './chat-scroll-regression-helpers.js';
+import { acknowledgeSettingsSave, isolateSettingsSaves, openQuietChatForSmoke } from './chat-scroll-regression-helpers.js';
 
 const styles = ['flatchat', 'bubblechat', 'documentstyle', 'echostyle', 'whisperstyle', 'hushstyle', 'ripplestyle', 'tidestyle'];
 const hopper = '/scripts/extensions/third-party/Neconyan-Hopper/src/ui.js';
@@ -137,6 +137,21 @@ for (const width of [393, 1280]) {
                 expect(await coat.evaluate(async img => (await img.decode(), img.naturalWidth))).toBe(384);
             }
             await checkPet(page, userCoat, width === 393);
+            for (const [pair, user, character] of [
+                ['snow-mittens', 'birman', 'snowshoe'],
+                ['warm-biscuits', 'cinnamon', 'fawn'],
+                ['tufted-twins', 'caracal', 'lynx'],
+            ]) {
+                await setPair(pair);
+                await expect(page.locator('#sb-sleeper-coat-pair-select')).toHaveValue(pair);
+                await expect(userCoat).toHaveAttribute('src', `/img/neconyan/sleeping-${user}-left.webp`);
+                await expect(characterCoat).toHaveAttribute('src', `/img/neconyan/sleeping-${character}-left.webp`);
+                await expect(userCoat).toHaveCSS('scale', '-1 1');
+                for (const coat of await coats.all()) {
+                    expect(await coat.evaluate(async img => (await img.decode(), img.naturalWidth))).toBe(384);
+                    await checkPet(page, coat, width === 393);
+                }
+            }
             await setPair('classic');
             await expect(userCoat).toHaveAttribute('src', /tiger-right/);
             await expect(userCoat).toHaveCSS('scale', 'none');
@@ -163,7 +178,9 @@ for (const width of [393, 1280]) {
         });
 
         test('Conversation and nested Meower authors use their own animals', async ({ page }, info) => {
-            await page.route('**/api/settings/save', route => acknowledgeSettingsSave(route));
+            await isolateSettingsSaves(page, settings => {
+                settings.accountStorage = { ...settings.accountStorage, 'NeconyanTutorialStatus.v1': 'skipped' };
+            });
             // Exercise the real private renderers without creating a saved social timeline.
             await page.route(`**${hopper}`, async route => {
                 const response = await route.fetch();
