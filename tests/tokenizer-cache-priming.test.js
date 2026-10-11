@@ -5,24 +5,27 @@ const mockOaiSettings = {
     chat_completion_source: 'openai',
     openai_model: 'gpt-4-turbo',
 };
+const mockCharacters = [{ chat: 'cache-test' }];
+const mockStorage = {
+    getItem: jest.fn(async () => ({})),
+    setItem: jest.fn(async () => undefined),
+    removeItem: jest.fn(async () => undefined),
+};
 
 await jest.unstable_mockModule('../public/lib.js', () => ({
     localforage: {
-        createInstance: () => ({
-            getItem: jest.fn(async () => ({})),
-            setItem: jest.fn(async () => undefined),
-        }),
+        createInstance: () => mockStorage,
     },
 }));
 
 await jest.unstable_mockModule('../public/script.js', () => ({
-    characters: [],
+    characters: mockCharacters,
     event_types: {},
     eventSource: { on: jest.fn() },
     main_api: 'openai',
     nai_settings: {},
     online_status: 'no_connection',
-    this_chid: undefined,
+    this_chid: 0,
 }));
 
 await jest.unstable_mockModule('../public/scripts/power-user.js', () => ({
@@ -72,9 +75,16 @@ await jest.unstable_mockModule('../public/scripts/textgen-models.js', () => ({
 }));
 
 const {
+    countTokensOpenAI,
     countTokensOpenAIAsync,
+    getTokenCount,
+    getTokenCountAsync,
     getTokenizerModel,
+    guesstimate,
+    initTokenizers,
     primeOpenAITokenCache,
+    resetTokenCache,
+    saveTokenCache,
 } = await import('../public/scripts/tokenizers.js');
 
 /**
@@ -86,10 +96,14 @@ function makeMessages(count, tag) {
 }
 
 describe('OpenAI token cache priming', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         globalThis.jQuery = { ajax: jest.fn() };
         mockOaiSettings.chat_completion_source = 'openai';
         mockOaiSettings.openai_model = 'gpt-4-turbo';
+        mockCharacters[0].chat = 'cache-test';
+        mockStorage.setItem.mockClear();
+        mockStorage.getItem.mockResolvedValue({});
+        await resetTokenCache({ toast: false });
     });
 
     test.each(['openai', 'openai_responses'])('uses the selected Astra model for %s token counts', async (source) => {
@@ -176,5 +190,160 @@ describe('OpenAI token cache priming', () => {
         await primeOpenAITokenCache(undefined);
 
         expect(globalThis.jQuery.ajax).not.toHaveBeenCalled();
+    });
+
+    test('bounds saved counts in a long-running chat and recounts evicted messages exactly', async () => {
+        const messages = makeMessages(2049, 'long-chat');
+        globalThis.jQuery.ajax.mockResolvedValue({ token_counts: messages.map(() => 17) });
+        await primeOpenAITokenCache(messages);
+        await saveTokenCache();
+
+        const saved = mockStorage.setItem.mock.calls.at(-1)[1];
+        expect(Object.keys(saved['cache-test'])).toHaveLength(2048);
+        expect(await countTokensOpenAIAsync(messages.at(-1), true)).toBe(16);
+        expect(globalThis.jQuery.ajax).toHaveBeenCalledTimes(1);
+
+        globalThis.jQuery.ajax.mockResolvedValue({ token_count: 17 });
+        expect(await countTokensOpenAIAsync(messages[0], true)).toBe(16);
+        expect(globalThis.jQuery.ajax).toHaveBeenCalledTimes(2);
+    });
+
+    test('keeps recently read counts when a full chat cache needs space', async () => {
+        const messages = makeMessages(2048, 'recent-count');
+        globalThis.jQuery.ajax.mockResolvedValue({ token_counts: messages.map(() => 17), token_count: 17 });
+        await primeOpenAITokenCache(messages);
+        await countTokensOpenAIAsync(messages[0], true);
+        await countTokensOpenAIAsync({ role: 'user', content: 'new count' }, true);
+        await countTokensOpenAIAsync(messages[0], true);
+        expect(globalThis.jQuery.ajax).toHaveBeenCalledTimes(2);
+
+        await countTokensOpenAIAsync(messages[1], true);
+        expect(globalThis.jQuery.ajax).toHaveBeenCalledTimes(3);
+    });
+
+    test('bounds visited chats while keeping a recently revisited chat', async () => {
+        const message = { role: 'user', content: 'chat cache lifetime' };
+        globalThis.jQuery.ajax.mockResolvedValue({ token_count: 9 });
+        for (let index = 0; index < 8; index++) {
+            mockCharacters[0].chat = `chat-${index}`;
+            await countTokensOpenAIAsync(message, true);
+        }
+        mockCharacters[0].chat = 'chat-0';
+        await countTokensOpenAIAsync(message, true);
+        mockCharacters[0].chat = 'chat-8';
+        await countTokensOpenAIAsync(message, true);
+        await saveTokenCache();
+
+        const saved = mockStorage.setItem.mock.calls.at(-1)[1];
+        expect(Object.keys(saved)).toHaveLength(8);
+        expect(saved['chat-0']).toBeDefined();
+        expect(saved['chat-1']).toBeUndefined();
+        expect(saved['chat-8']).toBeDefined();
+    });
+
+    test('trims a legacy cache on load and preserves recent reusable counts', async () => {
+        const messages = makeMessages(2049, 'persisted');
+        globalThis.jQuery.ajax.mockResolvedValue({ token_counts: messages.map(() => 17) });
+        await primeOpenAITokenCache(messages);
+        await saveTokenCache();
+        const counts = mockStorage.setItem.mock.calls.at(-1)[1]['cache-test'];
+        const oversizedCounts = { old: 1, ...counts, extra: 2 };
+        mockStorage.getItem.mockResolvedValue(Object.fromEntries(
+            Array.from({ length: 20 }, (_, index) => [`saved-${index}`, oversizedCounts]),
+        ));
+
+        await initTokenizers();
+        await saveTokenCache();
+        const saved = mockStorage.setItem.mock.calls.at(-1)[1];
+        expect(Object.keys(saved)).toHaveLength(8);
+        expect(Object.values(saved).every(chat => Object.keys(chat).length <= 2048)).toBe(true);
+        expect(saved['saved-0']).toBeUndefined();
+        mockCharacters[0].chat = 'saved-19';
+        expect(await countTokensOpenAIAsync(messages.at(-1), true)).toBe(16);
+        expect(globalThis.jQuery.ajax).toHaveBeenCalledTimes(1);
+    });
+
+    test('an in-flight count cannot return its evicted chat to the cache', async () => {
+        let finish;
+        globalThis.jQuery.ajax.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+        const pending = countTokensOpenAIAsync({ role: 'user', content: 'pending' }, true);
+        globalThis.jQuery.ajax.mockResolvedValue({ token_count: 9 });
+        for (let index = 0; index < 9; index++) {
+            mockCharacters[0].chat = `other-${index}`;
+            await countTokensOpenAIAsync({ role: 'user', content: 'other' }, true);
+        }
+        finish({ token_count: 15 });
+        expect(await pending).toBe(14);
+        await saveTokenCache();
+        const saved = mockStorage.setItem.mock.calls.at(-1)[1];
+        expect(Object.keys(saved)).toHaveLength(8);
+        expect(saved['cache-test']).toBeUndefined();
+    });
+
+    test('loading a bounded cache avoids rewriting browser storage', async () => {
+        mockStorage.getItem.mockResolvedValue({ 'cache-test': { 'gpt-4-123': 5 } });
+        await initTokenizers();
+        expect(mockStorage.setItem).not.toHaveBeenCalled();
+        await saveTokenCache();
+        expect(mockStorage.setItem.mock.calls.at(-1)[1]).toEqual({ 'cache-test': { 'gpt-4-123': 5 } });
+    });
+
+    test('invalid persisted buckets and counts are discarded rather than reused', async () => {
+        mockStorage.getItem.mockResolvedValue({
+            invalid: [12],
+            'cache-test': { valid: 0, notNumeric: '12', notFinite: Infinity, missing: null },
+        });
+        await initTokenizers();
+        expect(mockStorage.setItem.mock.calls.at(-1)[1]).toEqual({ 'cache-test': { valid: 0 } });
+    });
+
+    test('a history longer than the cache still counts in windows without per-message requests', async () => {
+        const messages = makeMessages(4096, 'windowed-history');
+        globalThis.jQuery.ajax.mockImplementation(async ({ data }) => ({ token_counts: JSON.parse(data).map(() => 17) }));
+
+        // The prompt builder prepares 64 messages at a time, then reads those counts.
+        for (let offset = 0; offset < messages.length; offset += 64) {
+            const window = messages.slice(offset, offset + 64);
+            await primeOpenAITokenCache(window);
+            for (const message of window) {
+                expect(await countTokensOpenAIAsync(message, true)).toBe(16);
+            }
+        }
+        expect(globalThis.jQuery.ajax).toHaveBeenCalledTimes(64);
+        await saveTokenCache();
+        expect(Object.keys(mockStorage.setItem.mock.calls.at(-1)[1]['cache-test'])).toHaveLength(2048);
+    });
+
+    test('legacy synchronous counts share the bounded cache with asynchronous counts', async () => {
+        const messages = makeMessages(2049, 'sync-count');
+        globalThis.jQuery.ajax.mockImplementation(({ success }) => success({ token_count: 17 }));
+        for (const message of messages) expect(countTokensOpenAI(message, true)).toBe(16);
+        expect(await countTokensOpenAIAsync(messages.at(-1), true)).toBe(16);
+        expect(globalThis.jQuery.ajax).toHaveBeenCalledTimes(2049);
+        await saveTokenCache();
+        expect(Object.keys(mockStorage.setItem.mock.calls.at(-1)[1]['cache-test'])).toHaveLength(2048);
+    });
+
+    test('plain-text counts stay bounded across synchronous and asynchronous callers', async () => {
+        for (let index = 0; index < 2049; index++) {
+            const text = `plain-text ${index}`;
+            // Unset padding matches the shadow-prompt path for this mocked connection.
+            const count = index % 2 ? getTokenCount(text) : await getTokenCountAsync(text);
+            expect(count).toBe(guesstimate(text));
+        }
+        await saveTokenCache();
+        expect(Object.keys(mockStorage.setItem.mock.calls.at(-1)[1]['cache-test'])).toHaveLength(2048);
+        expect(globalThis.jQuery.ajax).not.toHaveBeenCalled();
+    });
+
+    test('resetting during an in-flight count keeps the cleared cache empty', async () => {
+        let finish;
+        globalThis.jQuery.ajax.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+        const pending = countTokensOpenAIAsync({ role: 'user', content: 'reset while pending' }, true);
+        await resetTokenCache({ toast: false });
+        finish({ token_count: 15 });
+        expect(await pending).toBe(14);
+        await saveTokenCache();
+        expect(mockStorage.setItem.mock.calls.at(-1)[1]).toEqual({});
     });
 });
