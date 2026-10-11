@@ -1181,7 +1181,7 @@ function ensureComposerCancelButton() {
     rightForm.prepend(button);
 }
 
-function updateAgentGenerationSendControls(active = isAgentGenerationActive()) {
+function updateAgentGenerationSendControls(active = isAgentGenerationActive(), { generationStarting = false } = {}) {
     ensureComposerCancelButton();
     const cancelButton = document.getElementById('ica--cancel-agents');
     if (cancelButton instanceof HTMLElement) {
@@ -1193,15 +1193,17 @@ function updateAgentGenerationSendControls(active = isAgentGenerationActive()) {
         return;
     }
 
-    if (!is_send_press && !is_group_generating) {
+    // A starting reply (or the dry run measuring its prompt) can fire before is_send_press is set.
+    // Restoring Send then hides Stop, which ends the reply early and drops its ephemeral injections.
+    if (!generationStarting && !is_send_press && !is_group_generating) {
         activateSendButtons();
     }
 }
 
-function refreshGenerationUi(active = isAgentGenerationActive()) {
+function refreshGenerationUi(active = isAgentGenerationActive(), options = {}) {
     if (active) lastManualRunFeedback = null;
     updateCancelGenerationButton();
-    updateAgentGenerationSendControls(active);
+    updateAgentGenerationSendControls(active, options);
     updateAgentTokenCounter();
     updateAgentOverview();
 }
@@ -7077,9 +7079,11 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         cancelAgentGeneration();
         refreshGenerationUi();
     });
-    eventSource.on(event_types.GENERATION_STARTED, () => { lastManualRunFeedback = null; });
+    eventSource.on(event_types.GENERATION_STARTED, () => {
+        lastManualRunFeedback = null;
+        refreshGenerationUi(isAgentGenerationActive(), { generationStarting: true });
+    });
     for (const eventName of [
-        event_types.GENERATION_STARTED,
         event_types.GENERATION_ENDED,
         event_types.GENERATION_STOPPED,
     ]) {

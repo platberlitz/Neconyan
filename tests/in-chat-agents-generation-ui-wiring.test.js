@@ -43,10 +43,29 @@ describe('in-chat agents generation UI wiring', () => {
         const updateSource = getFunctionSource('updateAgentGenerationSendControls');
 
         expect(indexSource).toContain('activateSendButtons');
-        expect(updateSource).toContain('if (!is_send_press && !is_group_generating)');
+        expect(updateSource).toContain('if (!generationStarting && !is_send_press && !is_group_generating)');
         expect(updateSource).toContain('activateSendButtons();');
         // Agent passes must not hide Send: the owner wants to keep chatting while they finish.
         expect(indexSource).not.toContain('deactivateSendButtons');
+    });
+
+    test('a starting reply never restores Send, so it cannot end itself and drop its injections', () => {
+        const runtime = vm.createContext({
+            is_send_press: false,
+            is_group_generating: false,
+            activations: 0,
+            ensureComposerCancelButton: () => {},
+            isAgentGenerationActive: () => false,
+            document: { getElementById: () => null },
+            HTMLElement: class {},
+        });
+        runtime.activateSendButtons = () => { runtime.activations++; };
+        vm.runInContext(getFunctionSource('updateAgentGenerationSendControls'), runtime);
+
+        runtime.updateAgentGenerationSendControls(false, { generationStarting: true });
+        expect(runtime.activations).toBe(0);
+        runtime.updateAgentGenerationSendControls(false);
+        expect(runtime.activations).toBe(1);
     });
 
     test('subscribes agent state changes and routes send-bar stop clicks to agent cancel', () => {
@@ -61,6 +80,7 @@ describe('in-chat agents generation UI wiring', () => {
         expect(indexSource).toContain('event_types.GENERATION_STOPPED');
         expect(indexSource).toContain('eventSource.on(eventName, () => refreshGenerationUi());');
         expect(indexSource).not.toContain('eventSource.on(eventName, refreshGenerationUi);');
+        expect(indexSource).toContain('refreshGenerationUi(isAgentGenerationActive(), { generationStarting: true });');
     });
 
     test('wires companion message cards and actions into chat rendering', () => {
