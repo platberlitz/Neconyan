@@ -163,7 +163,25 @@ describe('Scratchpad source context', () => {
 
     test('a not-yet-protected Roleplay chat keeps its original filename key', () => {
         conversationState.conversationWorkspaceOpen = false;
-        expect(wireSource(currentSource())).toEqual({ kind: 'roleplay', key: 'character:Roleplay.png:chat', label: 'Roleplay - chat' });
+        expect(wireSource(currentSource())).toEqual({ kind: 'roleplay', key: 'character:Roleplay.png:chat', label: 'Roleplay - chat', scope: { kind: 'character', id: 'Roleplay.png' } });
+    });
+
+    test('shares a character scope without weakening the exact-chat context guard', () => {
+        const first = currentSource();
+        branch.id = 'other';
+        expect(currentSource().scope).toEqual(first.scope);
+        expect(isCurrentSource(first)).toBe(false);
+        branch.id = 'main';
+    });
+
+    test('picks from another chat cannot select matching message numbers or fall back to recent messages', async () => {
+        conversationState.conversationWorkspaceOpen = false;
+        chat.push({ name: 'Roleplay', mes: 'Do not share this other scene.' });
+        const source = currentSource();
+        const result = await buildContext({ source, settings: { depth: 15, picked: ['0'], pickedSource: { kind: 'roleplay', key: 'character:Roleplay.png:other' } } });
+        expect(result.messageCount).toBe(0);
+        expect(result.picked).toBe(true);
+        expect(result.text).not.toContain('Do not share this other scene.');
     });
 
     test('note-only discussions never borrow the open story, persona, characters or lore', async () => {

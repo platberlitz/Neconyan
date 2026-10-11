@@ -514,7 +514,7 @@ test('damaged shared cleanup settings are kept rather than replaced or applied',
     const a = account(t);
     datedSessions(a, 3);
     const filename = path.join(a.directories.root, 'scratchpad', 'cleanup.json');
-    for (const damaged of ['{', '{"version":2,"enabled":true,"keep":1}', '{"version":1,"enabled":true,"keep":0}']) {
+    for (const damaged of ['{', '{"version":3,"enabled":true,"keep":1}', '{"version":1,"enabled":true,"keep":0}']) {
         fs.writeFileSync(filename, damaged);
         assert.throws(() => a.read(SOURCE), error => error.code === 'SCRATCHPAD_CLEANUP_DAMAGED');
         assert.throws(() => store.withScratchpad(a.base, lease => store.updateCleanupLocked(lease, { enabled: false })),
@@ -785,6 +785,26 @@ test('regenerating replaces only the latest reply and keeps earlier turns as his
     assert.deepEqual(after.map(message => message.text), ['One?', 'First answer.', 'Two?', 'Better second answer.']);
     assert.equal(after[3].id === before[3].id, false);
     assert.deepEqual(prompts.at(-1), ['user:One?', 'assistant:First answer.', 'user:Two?']);
+});
+
+test('shared sessions keep pending replies and retries tied to their original chat', async t => {
+    const a = account(t);
+    const source = { kind: 'roleplay', key: 'character:Nova.png:Source', scope: { kind: 'character', id: 'Nova.png' } };
+    const other = { ...source, key: 'character:Nova.png:Other' };
+    const session = a.mutate(source, bucket => store.createSession(bucket, { settings: { connection: { kind: 'profile', profileId: 'saved' } } }));
+    registerScratchpadJobs({ generate: async () => ({ text: 'A shared answer.' }) });
+    const body = sendBody(session, { source });
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    assert.equal(a.read(other).sessions[0].messages.at(-1).state, 'pending');
+    await runJob(getJob(a.directories, accepted.job.id));
+    const reply = a.read(other).sessions[0].messages.at(-1);
+    assert.equal(reply.text, 'A shared answer.');
+    const wrongChat = sendBody(session, { source: other, text: undefined, regenerate: reply.id });
+    await assert.rejects(acceptScratchpadReply(a.request(wrongChat), wrongChat), { code: 'SCRATCHPAD_REGENERATE_INVALID' });
+    const original = sendBody(session, { source, text: undefined, regenerate: reply.id });
+    const retry = await acceptScratchpadReply(a.request(original), original);
+    await runJob(getJob(a.directories, retry.job.id));
+    assert.equal(a.read(other).sessions[0].messages.filter(message => message.role === 'assistant').length, 1);
 });
 
 test('a failed or stopped reply is saved as failed and no longer blocks the session', async t => {

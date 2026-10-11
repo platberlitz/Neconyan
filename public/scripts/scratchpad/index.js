@@ -24,6 +24,8 @@ import {
     currentSource,
     estimateTokens,
     isCurrentSource,
+    sameChat,
+    picksMatchSource,
     loreOverrideKey,
     loreScanText,
     sourceConnectionProfile,
@@ -675,6 +677,9 @@ async function send({ regenerate = '' } = {}) {
         const chatProfileId = sourceConnectionProfile(source);
         const lastUser = [...session.messages].reverse().find(item => item.role === 'user');
         const retried = regenerate ? session.messages.find(message => message.id === regenerate) : null;
+        if (retried && source.scope && !sameChat(retried.contextSource, source)) {
+            throw new Error(t`Open the original chat before trying this reply again.`);
+        }
         const assistants = retried ? [retried.assistant || session.assistant] : sessionAssistants(session);
         const genders = Object.fromEntries(ASSISTANTS.map(item => [item.id, getAssistantGender(item.id)]));
         const query = regenerate ? (lastUser?.text ?? '') : text;
@@ -824,7 +829,8 @@ async function chooseAssistant(id) {
 function contextSummary(settings) {
     const notes = settings.notes?.length || 0;
     if (notes) return t`${notes} saved notes or sections shared`;
-    if (settings.picked?.length) return t`Reading ${settings.picked.length} picked messages`;
+    if (settings.picked?.length) return picksMatchSource(settings, app.source)
+        ? t`Reading ${settings.picked.length} picked messages` : t`Not reading any chat messages`;
     if (!settings.depth) return t`Not reading any chat messages`;
     return t`Reading the latest ${settings.depth} messages`;
 }
@@ -1120,6 +1126,9 @@ async function reviewAndSaveChange(session, message, part, key) {
     const source = app.source;
     let plan;
     try {
+        if (part.change.type === 'chat' && source.scope && !sameChat(message.contextSource, source)) {
+            throw new Error(t`Open the original chat before reviewing this message change.`);
+        }
         plan = await prepareChange(part.change, source);
         requireScope(source, session.id);
     } catch (error) {
@@ -1566,14 +1575,18 @@ function renderNotes(settings) {
 function renderPicks(settings) {
     const section = h('section', { class: 'scratchpad-section' }, h('h3', { class: 'scratchpad-section-title', text: t`Pick specific messages and swipes` }));
     const messages = sourceMessages(app.source);
+    const matches = picksMatchSource(settings, app.source);
+    const picked = new Set(matches ? settings.picked : []);
+    if (!matches && settings.picked.length) {
+        section.append(h('p', { class: 'scratchpad-muted', text: t`These picks belong to another chat. Clear them or pick messages here.` }));
+    }
+    section.append(h('p', { class: 'scratchpad-muted', text: t`Picked messages and swipes replace the recent messages above. Expand Swipes to compare versions without changing the story.` }));
+    if (settings.picked.length) {
+        section.append(iconButton(t`Clear picks (${settings.picked.length})`, () => void updateSettings({ picked: [] }, { rerenderContext: true }), { icon: 'fa-eraser' }));
+    }
     if (!messages.length) {
         section.append(h('p', { class: 'scratchpad-muted', text: t`This chat has no messages yet.` }));
         return section;
-    }
-    const picked = new Set(settings.picked);
-    section.append(h('p', { class: 'scratchpad-muted', text: t`Picked messages and swipes replace the recent messages above. Expand Swipes to compare versions without changing the story.` }));
-    if (picked.size) {
-        section.append(iconButton(t`Clear picks (${picked.size})`, () => void updateSettings({ picked: [] }, { rerenderContext: true }), { icon: 'fa-eraser' }));
     }
     const list = h('ul', { class: 'scratchpad-picks' });
     const latestFirst = [...messages].reverse();
@@ -1586,13 +1599,13 @@ function renderPicks(settings) {
             onchange: event => {
                 const checked = event.currentTarget.checked;
                 void updateSettings(latest => {
-                    const next = new Set(latest.picked);
+                    const next = new Set(picksMatchSource(latest, app.source) ? latest.picked : []);
                     if (checked) {
                         next.add(item.ref);
                         if (item.swipe && item.current) next.delete(item.messageRef);
                         else if (!item.swipe) for (const swipe of item.swipes ?? []) if (swipe.current) next.delete(swipe.ref);
                     } else next.delete(item.ref);
-                    return { picked: choices.map(entry => entry.ref).filter(ref => next.has(ref)) };
+                    return { picked: choices.map(entry => entry.ref).filter(ref => next.has(ref)), pickedSource: wireSource(app.source) };
                 }, { rerenderContext: true });
             },
         });
@@ -1766,7 +1779,7 @@ async function updateCleanup(patch) {
     const previous = app.bucket?.cleanup ?? { enabled: false, keep: 10 };
     const next = { ...previous, ...patch };
     if (next.enabled && (!previous.enabled || next.keep < previous.keep)) {
-        const ok = await callGenericPopup(t`This sets automatic cleanup for all chats in your account. Older sessions are deleted in this chat now and in other chats when their Scratchpad is next saved. Open sessions and replies in progress stay. Deletions cannot be undone.`,
+        const ok = await callGenericPopup(t`This sets automatic cleanup for your account. Older sessions are deleted for this character, group or note now, and for others when their Scratchpad is next saved. Open sessions and replies in progress stay. Deletions cannot be undone.`,
             POPUP_TYPE.CONFIRM, '', { okButton: t`Apply to all chats`, cancelButton: t`Cancel` });
         if (ok !== POPUP_RESULT.AFFIRMATIVE) {
             renderSessions();
@@ -1786,8 +1799,8 @@ function renderCleanup() {
     });
     return h('section', { class: 'scratchpad-section scratchpad-cleanup' },
         checkbox(t`Delete old sessions automatically`, cleanup.enabled, value => void updateCleanup({ enabled: value }),
-            t`Shared across all chats in your account. Keeps the newest sessions in each chat and deletes older ones for good when its Scratchpad is saved. The open session and replies in progress are never deleted.`),
-        h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-cleanup-keep', text: t`Sessions to keep per chat` }), keep));
+            t`Shared across your account. Keeps the newest sessions per character, group or note and deletes older ones for good when its Scratchpad is saved. The open session and replies in progress are never deleted.`),
+        h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-cleanup-keep', text: t`Sessions to keep per character, group or note` }), keep));
 }
 
 function exportSession(session) {
@@ -1800,7 +1813,7 @@ function exportSession(session) {
             name: session.name,
             assistant: session.assistant,
             gender: session.gender,
-            settings: { ...session.settings, assistants: Object.fromEntries(allAssistants(session).filter(item => item.personality && used.has(item.id)).map(item => [item.id, item])), notes: [] },
+            settings: { ...session.settings, assistants: Object.fromEntries(allAssistants(session).filter(item => item.personality && used.has(item.id)).map(item => [item.id, item])), notes: [], picked: [], pickedSource: undefined },
             messages: session.messages.filter(item => item.state !== 'pending').map(item => ({ role: item.role, text: item.text, created: item.created, assistant: item.assistant, assistantName: item.assistantName, gender: item.gender })),
         },
     };
@@ -1855,14 +1868,16 @@ function renderSessions() {
         },
     });
     append(panel, [
-        h('p', { class: 'scratchpad-muted', text: app.source.kind === 'notebook' ? t`Sessions belong to this note. Temporary sessions disappear when you open another one.` : t`Sessions belong to this chat. Temporary sessions disappear when you open another one.` }),
+        h('p', { class: 'scratchpad-muted', text: app.source.kind === 'notebook' ? t`Sessions belong to this note. Temporary sessions disappear when you open another one.`
+            : app.source.scope?.kind === 'group' ? t`Sessions are shared across this group's chats. Temporary sessions disappear when you open another one.`
+                : t`Sessions are shared across this character's chats. Temporary sessions disappear when you open another one.` }),
         h('div', { class: 'scratchpad-session-tools' },
             iconButton(t`New session`, () => void newSession(false), { icon: 'fa-plus', primary: true }),
             iconButton(t`Temporary session`, () => void newSession(true), { icon: 'fa-hourglass-half' }),
             iconButton(t`Import`, importSessionFile, { icon: 'fa-file-import' }),
             current ? iconButton(t`Export current`, () => exportSession(current), { icon: 'fa-file-export' }) : null,
             current ? iconButton(t`Save session to note`, () => void saveToNote(current), { icon: 'fa-book-bookmark', disabled: !current.messages.length }) : null),
-        h('p', { class: 'scratchpad-muted', text: t`Exports keep the conversation but leave out saved-note sharing. Imported sessions need notes to be added again.` }),
+        h('p', { class: 'scratchpad-muted', text: t`Exports keep the conversation but leave out message picks and saved-note sharing. Add these again after importing.` }),
         renderCleanup(),
         search,
     ]);

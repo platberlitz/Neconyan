@@ -133,6 +133,11 @@ export function planReply(session, request, chooseIndex = randomInt) {
         throw fail('SCRATCHPAD_REGENERATE_INVALID', 'Only replies to the latest message can be regenerated.', 409);
     }
     const reply = messages[replyIndex];
+    if (request.source?.scope && (!reply.contextSource || reply.contextSource.kind !== request.source.kind
+        || !(request.source.key === reply.contextSource.key || request.source.legacyKey === reply.contextSource.key
+            || request.source.key === reply.contextSource.legacyKey))) {
+        throw fail('SCRATCHPAD_REGENERATE_INVALID', 'Open the original chat before trying this reply again.', 409);
+    }
     return { prompt: messages[userIndex].text, history: historyFrom(messages.slice(0, userIndex)), replace: reply.id, assistants: [reply.assistant || session.assistant] };
 }
 
@@ -233,8 +238,9 @@ export async function acceptScratchpadReply(request, body = {}) {
                 throw fail('SCRATCHPAD_NOTES_CHANGED', 'The shared notes or their permissions changed while sending. Check the preview and try again.', 409);
             }
             const created = new Date().toISOString();
-            if (!input.regenerate) session.messages.push({ id: newScratchpadId(), role: 'user', text: input.text, created });
-            const pending = replies.map(reply => ({ id: reply.replyId, role: 'assistant', text: '', created, state: 'pending', jobId: job.id, assistant: reply.assistant, assistantName: reply.characterName, gender: reply.gender }));
+            const contextSource = { kind: input.source.kind, key: input.source.key, label: input.source.label, ...(input.source.legacyKey ? { legacyKey: input.source.legacyKey } : {}) };
+            if (!input.regenerate) session.messages.push({ id: newScratchpadId(), role: 'user', text: input.text, created, contextSource });
+            const pending = replies.map(reply => ({ id: reply.replyId, role: 'assistant', text: '', created, contextSource, state: 'pending', jobId: job.id, assistant: reply.assistant, assistantName: reply.characterName, gender: reply.gender }));
             if (planned.replace) session.messages.splice(session.messages.findIndex(message => message.id === planned.replace), 1, ...pending);
             else session.messages.push(...pending);
             session.updated = created;
