@@ -1,4 +1,4 @@
-/* global document */
+/* global document, getComputedStyle */
 /* eslint-disable playwright/no-standalone-expect -- Shared helpers verify the visible Scratchpad state. */
 import { expect } from '@playwright/test';
 import { MODEL, test } from './neconyan-conversation-durable-fixture.js';
@@ -128,7 +128,7 @@ for (const phone of [false, true]) {
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(phone ? 393 : 1280);
     });
 
-    test(`${size} deletes old sessions automatically only after asking`, async ({ app }) => {
+    test(`${size} shares automatic cleanup across chats only after asking`, async ({ app }) => {
         test.setTimeout(150000);
         const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {} });
         if (phone) await installIPhoneSafari(account.context, { standalone: true });
@@ -137,11 +137,31 @@ for (const phone of [false, true]) {
         for (const name of ['First plan', 'Second plan', 'Third plan', 'Fourth plan']) {
             await account.post('/api/scratchpad/session/create', { source, assistant: 'miso', name });
         }
+        const branches = await page.evaluate(async () => {
+            const context = await import('/scripts/neconyan-conversation/context.js');
+            const avatar = context.getCurrentCharAvatar();
+            const first = context.getActiveConversationBranch(avatar).id;
+            const second = context.createConversationBranchForAvatar(avatar, 'Another cleanup chat').id;
+            return { first, second };
+        });
+        const other = await openScratchpad(page);
+        for (const name of ['Other first', 'Other second', 'Other third', 'Other fourth']) {
+            await account.post('/api/scratchpad/session/create', { source: other, name });
+        }
+        const switchChat = async branchId => {
+            await page.evaluate(async id => {
+                const context = await import('/scripts/neconyan-conversation/context.js');
+                context.setActiveConversationBranch(context.getCurrentCharAvatar(), id);
+            }, branchId);
+            await openScratchpad(page);
+            await page.getByRole('tab', { name: 'Sessions', exact: true }).click();
+        };
+        await switchChat(branches.first);
         await openScratchpad(page);
         if (phone) await applyIOSOnlyCss(page);
         await page.getByRole('tab', { name: 'Sessions', exact: true }).click();
         const enabled = page.getByRole('checkbox', { name: 'Delete old sessions automatically' });
-        const keep = page.getByLabel('Sessions to keep');
+        const keep = page.getByLabel('Sessions to keep per chat');
         await expect(enabled).not.toBeChecked();
         await expect(keep).toHaveValue('10');
         await expect(keep).toBeDisabled();
@@ -149,6 +169,13 @@ for (const phone of [false, true]) {
         await page.screenshot({ path: `../screenshots/scratchpad-cleanup-${size}-off.png` });
 
         await enabled.check();
+        const popup = page.locator('dialog.popup[open]');
+        await expect(popup).toContainText('all chats in your account');
+        await popup.getByText('Cancel', { exact: true }).click();
+        await expect(enabled).not.toBeChecked();
+        expect((await account.post('/api/scratchpad/bucket', { source: other })).bucket.cleanup.enabled).toBe(false);
+        await enabled.check();
+        await popup.getByText('Apply to all chats', { exact: true }).click();
         await expect(enabled).toBeChecked();
         await expect(keep).toBeEnabled();
         await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.cleanup).toEqual({ enabled: true, keep: 10 });
@@ -158,16 +185,15 @@ for (const phone of [false, true]) {
         await expect(keep).toHaveValue('10');
         await keep.fill('2');
         await keep.blur();
-        const popup = page.locator('dialog.popup[open]');
-        await expect(popup).toContainText('This deletes up to 2 older sessions in this chat now.');
+        await expect(popup).toContainText('all chats in your account');
         await page.screenshot({ path: `../screenshots/scratchpad-cleanup-${size}-confirm.png` });
-        await popup.getByText('Keep', { exact: true }).click();
+        await popup.getByText('Cancel', { exact: true }).click();
         await expect(keep).toHaveValue('10');
         expect((await account.post('/api/scratchpad/bucket', { source })).bucket.sessions).toHaveLength(4);
 
         await keep.fill('2');
         await keep.blur();
-        await popup.getByText('Delete', { exact: true }).click();
+        await popup.getByText('Apply to all chats', { exact: true }).click();
         await expect(keep).toHaveValue('2');
         const bucket = (await account.post('/api/scratchpad/bucket', { source })).bucket;
         expect(bucket.cleanup).toEqual({ enabled: true, keep: 2 });
@@ -175,5 +201,33 @@ for (const phone of [false, true]) {
         await page.locator('.scratchpad-cleanup').scrollIntoViewIfNeeded();
         await page.screenshot({ path: `../screenshots/scratchpad-cleanup-${size}-on.png` });
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(phone ? 393 : 1280);
+        const geometry = await page.locator('.scratchpad-cleanup').evaluate(element => {
+            const input = element.querySelector('input[type="number"]');
+            const bounds = input.getBoundingClientRect();
+            return { width: bounds.width, right: bounds.right, fontSize: Number.parseFloat(getComputedStyle(input).fontSize) };
+        });
+        expect(geometry.width).toBeGreaterThan(0);
+        expect(geometry.right).toBeLessThanOrEqual(phone ? 393 : 1280);
+        if (phone) expect(geometry.fontSize).toBeGreaterThanOrEqual(16);
+
+        await switchChat(branches.second);
+        await expect(enabled).toBeChecked();
+        await expect(keep).toHaveValue('2');
+        expect((await account.post('/api/scratchpad/bucket', { source: other })).bucket.sessions).toHaveLength(4);
+        const savedOther = (await account.post('/api/scratchpad/session/create', { source: other, name: 'Other newest' })).bucket;
+        expect(savedOther.sessions).toHaveLength(2);
+        expect(savedOther.sessions.some(session => session.name === 'Other newest')).toBe(true);
+        await enabled.uncheck();
+        await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.cleanup).toEqual({ enabled: false, keep: 2 });
+        await switchChat(branches.first);
+        await expect(enabled).not.toBeChecked();
+        await expect(keep).toHaveValue('2');
+        await page.close();
+        const reopened = await account.open();
+        await openScratchpad(reopened);
+        if (phone) await applyIOSOnlyCss(reopened);
+        await reopened.getByRole('tab', { name: 'Sessions', exact: true }).click();
+        await expect(reopened.getByRole('checkbox', { name: 'Delete old sessions automatically' })).not.toBeChecked();
+        await expect(reopened.getByLabel('Sessions to keep per chat', { exact: true })).toHaveValue('2');
     });
 }

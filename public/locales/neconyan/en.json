@@ -1,4 +1,8 @@
 {
+  "This sets automatic cleanup for all chats in your account. Older sessions are deleted in this chat now and in other chats when their Scratchpad is next saved. Open sessions and replies in progress stay. Deletions cannot be undone.": "This sets automatic cleanup for all chats in your account. Older sessions are deleted in this chat now and in other chats when their Scratchpad is next saved. Open sessions and replies in progress stay. Deletions cannot be undone.",
+  "Apply to all chats": "Apply to all chats",
+  "Shared across all chats in your account. Keeps the newest sessions in each chat and deletes older ones for good when its Scratchpad is saved. The open session and replies in progress are never deleted.": "Shared across all chats in your account. Keeps the newest sessions in each chat and deletes older ones for good when its Scratchpad is saved. The open session and replies in progress are never deleted.",
+  "Sessions to keep per chat": "Sessions to keep per chat",
   "Choose a PNG, JPEG or WebP picture under 16 MB.": "Choose a PNG, JPEG or WebP picture under 16 MB.",
   "The assistant could not be saved.": "The assistant could not be saved.",
   "Assistant name": "Assistant name",

@@ -445,14 +445,79 @@ test('automatic cleanup is off by default and keeps a sensible number of session
     assert.deepEqual(store.normaliseCleanup({ keep: 4 }, { enabled: true, keep: 7 }), { enabled: true, keep: 4 });
 });
 
+test('cleanup is shared by existing and future chats and notes, but not other accounts', t => {
+    const a = account(t), b = account(t);
+    datedSessions(a, 4);
+    const stale = a.read(SOURCE);
+    a.mutate(OTHER, (bucket, lease) => store.updateCleanupLocked(lease, { enabled: true, keep: 2 }));
+    assert.equal(fs.existsSync(store.scratchpadFile(a.directories.root, OTHER)), false);
+    for (const source of [SOURCE, OTHER, { kind: 'notebook', key: 'note-1' }, { ...SOURCE, key: 'future-chat' }]) {
+        assert.deepEqual(a.read(source).cleanup, { enabled: true, keep: 2 });
+    }
+    assert.deepEqual(b.read(SOURCE).cleanup, store.defaultCleanup());
+    // Reading another chat does not delete anything. Its next save uses the shared choice,
+    // even if that caller retained an older bucket (as a background operation might).
+    assert.equal(a.read(SOURCE).sessions.length, 4);
+    store.withScratchpad(a.base, lease => store.writeBucketLocked(lease, stale));
+    assert.equal(a.read(SOURCE).sessions.length, 2);
+    assert.equal(JSON.parse(fs.readFileSync(store.scratchpadFile(a.directories.root, SOURCE))).cleanup, undefined);
+    a.mutate(OTHER, (bucket, lease) => store.updateCleanupLocked(lease, { enabled: false }));
+    a.mutate(SOURCE, bucket => store.createSession(bucket));
+    assert.equal(a.read(SOURCE).sessions.length, 3);
+    assert.deepEqual(a.read(SOURCE).cleanup, { enabled: false, keep: 2 });
+});
+
+test('legacy per-chat cleanup cannot enable or override the shared choice', t => {
+    const a = account(t);
+    datedSessions(a, 4);
+    const filename = store.scratchpadFile(a.directories.root, SOURCE);
+    const legacy = JSON.parse(fs.readFileSync(filename));
+    legacy.cleanup = { enabled: true, keep: 1 };
+    fs.writeFileSync(filename, JSON.stringify(legacy));
+    assert.deepEqual(a.read(SOURCE).cleanup, store.defaultCleanup());
+    a.mutate(SOURCE, () => {});
+    assert.equal(a.read(SOURCE).sessions.length, 4);
+    a.mutate(OTHER, (bucket, lease) => store.updateCleanupLocked(lease, { enabled: true, keep: 3 }));
+    fs.writeFileSync(filename, JSON.stringify(legacy));
+    assert.deepEqual(a.read(SOURCE).cleanup, { enabled: true, keep: 3 });
+    a.mutate(SOURCE, () => {});
+    assert.equal(a.read(SOURCE).sessions.length, 3);
+});
+
+test('a stale bucket cannot re-enable cleanup after another chat disables it', t => {
+    const a = account(t);
+    datedSessions(a, 4);
+    a.mutate(OTHER, (bucket, lease) => store.updateCleanupLocked(lease, { enabled: true, keep: 1 }));
+    const stale = a.read(SOURCE);
+    a.mutate(OTHER, (bucket, lease) => store.updateCleanupLocked(lease, { enabled: false }));
+    store.withScratchpad(a.base, lease => store.writeBucketLocked(lease, stale));
+    assert.equal(a.read(SOURCE).sessions.length, 4);
+    assert.deepEqual(a.read(SOURCE).cleanup, { enabled: false, keep: 1 });
+});
+
+test('damaged shared cleanup settings are kept rather than replaced or applied', t => {
+    const a = account(t);
+    datedSessions(a, 3);
+    const filename = path.join(a.directories.root, 'scratchpad', 'cleanup.json');
+    for (const damaged of ['{', '{"version":2,"enabled":true,"keep":1}', '{"version":1,"enabled":true,"keep":0}']) {
+        fs.writeFileSync(filename, damaged);
+        assert.throws(() => a.read(SOURCE), error => error.code === 'SCRATCHPAD_CLEANUP_DAMAGED');
+        assert.throws(() => store.withScratchpad(a.base, lease => store.updateCleanupLocked(lease, { enabled: false })),
+            error => error.code === 'SCRATCHPAD_CLEANUP_DAMAGED');
+        assert.equal(fs.readFileSync(filename, 'utf8'), damaged);
+    }
+    fs.unlinkSync(filename);
+    assert.equal(a.read(SOURCE).sessions.length, 3);
+});
+
 test('automatic cleanup keeps the newest sessions and never the open one', t => {
     const a = account(t);
     const ids = datedSessions(a, 5);
     a.mutate(SOURCE, bucket => store.activateSession(bucket, ids[0]));
     assert.equal(a.read(SOURCE).sessions.length, 5);
-    a.mutate(SOURCE, bucket => store.updateCleanup(bucket, { enabled: true, keep: 3 }));
+    a.mutate(SOURCE, (bucket, lease) => store.updateCleanupLocked(lease, { enabled: true, keep: 3 }));
     assert.deepEqual(a.read(SOURCE).sessions.map(session => session.id).sort(), [ids[0], ids[3], ids[4]].sort());
-    a.mutate(SOURCE, bucket => store.updateCleanup(bucket, { keep: 1 }));
+    a.mutate(SOURCE, (bucket, lease) => store.updateCleanupLocked(lease, { keep: 1 }));
     assert.deepEqual(a.read(SOURCE).sessions.map(session => session.id).sort(), [ids[0], ids[4]].sort());
     const saved = a.read(SOURCE);
     assert.deepEqual(saved.cleanup, { enabled: true, keep: 1 });
@@ -461,9 +526,9 @@ test('automatic cleanup keeps the newest sessions and never the open one', t => 
 test('automatic cleanup never deletes a session with a reply in progress', t => {
     const a = account(t);
     const ids = datedSessions(a, 3);
-    a.mutate(SOURCE, bucket => {
+    a.mutate(SOURCE, (bucket, lease) => {
         bucket.sessions.find(session => session.id === ids[0]).messages.push({ id: 'waiting', role: 'assistant', state: 'pending', jobId: 'job-1', text: '' });
-        store.updateCleanup(bucket, { enabled: true, keep: 1 });
+        store.updateCleanupLocked(lease, { enabled: true, keep: 1 });
     });
     assert.deepEqual(a.read(SOURCE).sessions.map(session => session.id).sort(), [ids[0], ids[2]].sort());
 });
@@ -472,7 +537,7 @@ test('automatic cleanup makes room for a new session at the session limit', t =>
     const a = account(t);
     datedSessions(a, store.MAX_SESSIONS);
     assert.throws(() => a.mutate(SOURCE, bucket => store.createSession(bucket)), error => error.code === 'SCRATCHPAD_SESSION_LIMIT');
-    a.mutate(SOURCE, bucket => store.updateCleanup(bucket, { enabled: true, keep: store.MAX_SESSIONS }));
+    a.mutate(SOURCE, (bucket, lease) => store.updateCleanupLocked(lease, { enabled: true, keep: store.MAX_SESSIONS }));
     const created = a.mutate(SOURCE, bucket => store.createSession(bucket));
     const saved = a.read(SOURCE);
     assert.equal(saved.sessions.length, store.MAX_SESSIONS);
@@ -490,7 +555,7 @@ test('with automatic cleanup on, a full Scratchpad file drops its oldest session
         }
     });
     fill(oldest, 0, 6);
-    a.mutate(SOURCE, bucket => store.updateCleanup(bucket, { enabled: true }));
+    a.mutate(SOURCE, (bucket, lease) => store.updateCleanupLocked(lease, { enabled: true }));
     fill(newest, 6, 10);
     const saved = a.read(SOURCE);
     assert.deepEqual(saved.sessions.map(session => session.id), [newest]);
@@ -1137,6 +1202,11 @@ test('the endpoint checks the account and answers with the saved Scratchpad', as
     assert.equal((await renamed.json()).bucket.sessions[0].name, 'Plot holes');
     const cleaned = await post('/cleanup', { source: SOURCE, cleanup: { enabled: true, keep: 3 } });
     assert.deepEqual((await cleaned.json()).bucket.cleanup, { enabled: true, keep: 3 });
+    assert.deepEqual((await (await post('/bucket', { source: OTHER })).json()).bucket.cleanup, { enabled: true, keep: 3 });
+    assert.equal((await post('/cleanup', { source: OTHER, cleanup: { keep: 1 } }, 'someone-else')).status, 409);
+    const disabled = await post('/cleanup', { source: OTHER, cleanup: { enabled: false } });
+    assert.deepEqual((await disabled.json()).bucket.cleanup, { enabled: false, keep: 3 });
+    assert.deepEqual((await (await post('/bucket', { source: SOURCE })).json()).bucket.cleanup, { enabled: false, keep: 3 });
     const wrong = await post('/bucket', { source: SOURCE }, 'someone-else');
     assert.equal(wrong.status, 409);
     const missing = await post('/session/delete', { source: SOURCE, sessionId: 'nope' });

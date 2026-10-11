@@ -123,7 +123,9 @@ The **Sessions** tab lists the sessions for the open chat. Each chat keeps its o
 - **Search sessions** filters by session name and message text.
 - **Export current** downloads the open session as a file. **Import** adds a session from one of those files to the open chat.
 - **Save session to note** saves the completed conversation as a quotation in a new or existing note. It leaves out reasoning, unfinished replies and change-card instructions.
-- **Delete old sessions automatically** is off by default. Turn it on and set **Sessions to keep** (1 to 40, 10 by default) to keep only the most recently used sessions in this chat. Older ones are deleted for good, and if the Scratchpad file fills up, the oldest go first. The open session, the one that just got a reply and any session with a reply in progress are never deleted. Turning it on asks first when it would delete sessions straight away.
+- **Delete old sessions automatically** is one setting shared across all chats and notes in your account, off by default. Set **Sessions to keep per chat** (1 to 40, 10 by default) to keep the most recently used sessions in each chat. Changing it here changes it everywhere. Cleanup runs in the current chat when you save the setting, and in other chats when their Scratchpad is next saved, including when a reply finishes. Older sessions are deleted for good, and if a Scratchpad file fills up, the oldest go first. The open session, the one that just got a reply and any session with a reply in progress are never deleted. Enabling cleanup or lowering the limit while it is on asks you to confirm the account-wide change.
+
+Earlier per-chat cleanup choices are not copied to the shared setting. Enable it once in Sessions to use automatic cleanup across your account.
 
 Sessions are saved on the server under your account, separately from the chat itself. Deleting a session never touches the story.
 
