@@ -12878,9 +12878,10 @@ async function showUpdateToast(repository) {
         <button type="button" class="nn-update-toast-close" aria-label="Dismiss" title="Dismiss">
             <i class="fa-solid fa-xmark" aria-hidden="true"></i>
         </button>`;
-    toast.querySelector('.nn-update-toast-text > span').textContent = behind === 1
-        ? '1 new change. Open Server to update.'
-        : `${behind} new changes. Open Server to update.`;
+    toast.querySelector('.nn-update-toast-text > span').textContent = repository.kind === 'apk'
+        ? `APK v${repository.latestVersion} is ready. Open Server to update.`
+        : behind === 1 ? '1 new change. Open Server to update.'
+            : `${behind} new changes. Open Server to update.`;
     toast.querySelector('.nn-update-toast-open').addEventListener('click', () => {
         dismissUpdateToast();
         openShell('right', 'server');
@@ -12895,6 +12896,14 @@ async function checkForNeconyanUpdate() {
     nnUpdateToastChecking = true;
     try {
         const status = await requestServerAdmin('/api/server-admin/status');
+        const androidRelease = status?.androidRelease;
+        if (androidRelease?.supported) {
+            if (!androidRelease.checked || !androidRelease.assetAvailable || !androidRelease.canUpdate || !androidRelease.latestVersion) return;
+            const notificationKey = `apk:${androidRelease.architecture}:${androidRelease.latestVersion}`;
+            if (notificationKey === readNotifiedUpdateCommit()) return;
+            await showUpdateToast({ ...androidRelease, kind: 'apk', remoteCommit: notificationKey });
+            return;
+        }
         const repository = status?.repository;
         if (!repository?.isRepo || !repository.remoteCommit || !(Number(repository.behind) > 0)) return;
         if (repository.remoteCommit === readNotifiedUpdateCommit()) return;

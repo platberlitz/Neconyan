@@ -61,6 +61,29 @@ describe('update toast', () => {
         expect(vm.runInContext('nnUpdateToastTimer', forbidden.context)).toBeNull();
     });
 
+    test('announces compatible APK releases once per version, without requiring Git', async () => {
+        const status = { repository: { isRepo: false }, androidRelease: {
+            supported: true, checked: true, assetAvailable: true, canUpdate: true, latestVersion: '1.3.0', architecture: 'arm64',
+        } };
+        const { context, shown } = createContext(status);
+        await context.checkForNeconyanUpdate();
+        await context.checkForNeconyanUpdate();
+        expect(shown).toEqual(['apk:arm64:1.3.0']);
+        status.androidRelease.latestVersion = '1.3.0.1';
+        await context.checkForNeconyanUpdate();
+        expect(shown).toEqual(['apk:arm64:1.3.0', 'apk:arm64:1.3.0.1']);
+        expect(extract('showUpdateToast')).toContain('APK v${repository.latestVersion} is ready. Open Server to update.');
+    });
+
+    test.each([{ checked: false }, { assetAvailable: false }, { canUpdate: false }, { latestVersion: '' }])(
+        'never announces an unavailable, failed or unnecessary APK update: %j', async override => {
+            const { context, shown } = createContext({ androidRelease: {
+                supported: true, checked: true, assetAvailable: true, canUpdate: true, latestVersion: '1.3.0', architecture: 'arm64', ...override,
+            } });
+            await context.checkForNeconyanUpdate();
+            expect(shown).toEqual([]);
+        });
+
     test('starts after the app is ready, opens Server, and respects reduced motion', () => {
         expect(tabsSource).toMatch(/window\.addEventListener\('neconyan:ready'[\s\S]*?startNeconyanUpdateToast\(\);/);
         expect(extract('showUpdateToast')).toContain('openShell(\'right\', \'server\')');
