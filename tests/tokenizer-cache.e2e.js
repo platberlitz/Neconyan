@@ -27,10 +27,9 @@ for (const phone of [false, true]) {
             const { localforage } = await import('/lib.js');
             const saved = await localforage.createInstance({ name: 'SillyTavern_ChatCompletions' }).getItem('tokenCache');
             const entries = Object.values(saved).map(chat => Object.keys(chat).length);
-            return { chats: Object.keys(saved).length, largestChat: Math.max(...entries), entries: entries.reduce((sum, count) => sum + count, 0), bytes: JSON.stringify(saved).length };
+            return { chats: Object.keys(saved).length, entries: entries.reduce((sum, count) => sum + count, 0), bytes: JSON.stringify(saved).length };
         });
         expect(after.chats).toBeLessThanOrEqual(8);
-        expect(after.largestChat).toBeLessThanOrEqual(2048);
         expect(after.entries).toBeLessThanOrEqual(16384);
         expect(after.bytes).toBeLessThan(before.bytes / 8);
 
@@ -49,7 +48,7 @@ for (const phone of [false, true]) {
             await resetTokenCache({ toast: false });
             const message = { role: 'user', content: '日本語 café 👋 count this exactly after eviction.' };
             const beforeEviction = await countTokensOpenAIAsync(message, true);
-            const messages = Array.from({ length: 2049 }, (_, index) => ({ role: 'user', content: `Browser cache entry ${index}.` }));
+            const messages = Array.from({ length: 16384 }, (_, index) => ({ role: 'user', content: `Browser cache entry ${index}.` }));
             // Exercise the real server batch endpoint while applying the chat-history window size.
             for (let offset = 0; offset < messages.length; offset += 64) {
                 await primeOpenAITokenCache(messages.slice(offset, offset + 64));
@@ -62,7 +61,7 @@ for (const phone of [false, true]) {
         });
         expect(result.beforeEviction).toBeGreaterThan(0);
         expect(result.afterEviction).toBe(result.beforeEviction);
-        expect(result.entries).toBe(2048);
+        expect(result.entries).toBe(16384);
         await expect(greeting).toBeVisible();
         await info.attach('token-cache-measurements', { body: JSON.stringify({ before, after, counting: result }, null, 2), contentType: 'application/json' });
     });

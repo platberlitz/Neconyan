@@ -91,6 +91,9 @@ const {
  * Distinct messages, so every one of them needs its own cache entry. The token cache is
  * module state that outlives a single test, so each test passes its own tag to stay isolated.
  */
+/** Shared token-count budget across every cached chat in public/scripts/tokenizers.js. */
+const CACHE_LIMIT = 16384;
+
 function makeMessages(count, tag) {
     return Array.from({ length: count }, (_, i) => ({ role: 'assistant', content: `${tag} message number ${i}` }));
 }
@@ -193,13 +196,13 @@ describe('OpenAI token cache priming', () => {
     });
 
     test('bounds saved counts in a long-running chat and recounts evicted messages exactly', async () => {
-        const messages = makeMessages(2049, 'long-chat');
+        const messages = makeMessages(CACHE_LIMIT + 1, 'long-chat');
         globalThis.jQuery.ajax.mockResolvedValue({ token_counts: messages.map(() => 17) });
         await primeOpenAITokenCache(messages);
         await saveTokenCache();
 
         const saved = mockStorage.setItem.mock.calls.at(-1)[1];
-        expect(Object.keys(saved['cache-test'])).toHaveLength(2048);
+        expect(Object.keys(saved['cache-test'])).toHaveLength(CACHE_LIMIT);
         expect(await countTokensOpenAIAsync(messages.at(-1), true)).toBe(16);
         expect(globalThis.jQuery.ajax).toHaveBeenCalledTimes(1);
 
@@ -209,7 +212,7 @@ describe('OpenAI token cache priming', () => {
     });
 
     test('keeps recently read counts when a full chat cache needs space', async () => {
-        const messages = makeMessages(2048, 'recent-count');
+        const messages = makeMessages(CACHE_LIMIT, 'recent-count');
         globalThis.jQuery.ajax.mockResolvedValue({ token_counts: messages.map(() => 17), token_count: 17 });
         await primeOpenAITokenCache(messages);
         await countTokensOpenAIAsync(messages[0], true);
@@ -256,7 +259,7 @@ describe('OpenAI token cache priming', () => {
         await saveTokenCache();
         const saved = mockStorage.setItem.mock.calls.at(-1)[1];
         expect(Object.keys(saved)).toHaveLength(8);
-        expect(Object.values(saved).every(chat => Object.keys(chat).length <= 2048)).toBe(true);
+        expect(Object.values(saved).reduce((total, chat) => total + Object.keys(chat).length, 0)).toBe(CACHE_LIMIT);
         expect(saved['saved-0']).toBeUndefined();
         mockCharacters[0].chat = 'saved-19';
         expect(await countTokensOpenAIAsync(messages.at(-1), true)).toBe(16);
@@ -311,28 +314,68 @@ describe('OpenAI token cache priming', () => {
         }
         expect(globalThis.jQuery.ajax).toHaveBeenCalledTimes(64);
         await saveTokenCache();
-        expect(Object.keys(mockStorage.setItem.mock.calls.at(-1)[1]['cache-test'])).toHaveLength(2048);
+        expect(Object.keys(mockStorage.setItem.mock.calls.at(-1)[1]['cache-test'])).toHaveLength(4096);
+    });
+
+    test('regenerating a long chat history reuses its counts instead of recounting every window', async () => {
+        // A 3,000-message history, scanned newest to oldest on every generation. A per-chat
+        // cap below the history length makes each pass evict the counts the next pass needs.
+        const messages = makeMessages(3000, 'regenerated-history');
+        globalThis.jQuery.ajax.mockImplementation(async ({ data }) => ({ token_counts: JSON.parse(data).map(() => 17) }));
+        const generate = async () => {
+            for (let offset = 0; offset < messages.length; offset += 64) {
+                const window = messages.slice(offset, offset + 64);
+                await primeOpenAITokenCache(window);
+                for (const message of window) await countTokensOpenAIAsync(message, true);
+            }
+        };
+
+        await generate();
+        const firstPassRequests = globalThis.jQuery.ajax.mock.calls.length;
+        expect(firstPassRequests).toBe(Math.ceil(messages.length / 64));
+        await generate();
+        expect(globalThis.jQuery.ajax).toHaveBeenCalledTimes(firstPassRequests);
+    });
+
+    test('a long active chat takes space from older chats before losing its own counts', async () => {
+        const message = { role: 'user', content: 'older chat count' };
+        globalThis.jQuery.ajax.mockImplementation(async ({ data }) => ({ token_counts: JSON.parse(data).map(() => 17), token_count: 9 }));
+        mockCharacters[0].chat = 'older-chat';
+        await countTokensOpenAIAsync(message, true);
+        await saveTokenCache();
+        expect(Object.keys(mockStorage.setItem.mock.calls.at(-1)[1]['older-chat'])).toHaveLength(1);
+
+        mockCharacters[0].chat = 'active-chat';
+        const messages = makeMessages(CACHE_LIMIT, 'active-chat');
+        for (let offset = 0; offset < messages.length; offset += 64) {
+            await primeOpenAITokenCache(messages.slice(offset, offset + 64));
+        }
+        await saveTokenCache();
+
+        const saved = mockStorage.setItem.mock.calls.at(-1)[1];
+        expect(saved['older-chat']).toBeUndefined();
+        expect(Object.keys(saved['active-chat'])).toHaveLength(CACHE_LIMIT);
     });
 
     test('legacy synchronous counts share the bounded cache with asynchronous counts', async () => {
-        const messages = makeMessages(2049, 'sync-count');
+        const messages = makeMessages(CACHE_LIMIT + 1, 'sync-count');
         globalThis.jQuery.ajax.mockImplementation(({ success }) => success({ token_count: 17 }));
         for (const message of messages) expect(countTokensOpenAI(message, true)).toBe(16);
         expect(await countTokensOpenAIAsync(messages.at(-1), true)).toBe(16);
-        expect(globalThis.jQuery.ajax).toHaveBeenCalledTimes(2049);
+        expect(globalThis.jQuery.ajax).toHaveBeenCalledTimes(CACHE_LIMIT + 1);
         await saveTokenCache();
-        expect(Object.keys(mockStorage.setItem.mock.calls.at(-1)[1]['cache-test'])).toHaveLength(2048);
+        expect(Object.keys(mockStorage.setItem.mock.calls.at(-1)[1]['cache-test'])).toHaveLength(CACHE_LIMIT);
     });
 
     test('plain-text counts stay bounded across synchronous and asynchronous callers', async () => {
-        for (let index = 0; index < 2049; index++) {
+        for (let index = 0; index < CACHE_LIMIT + 1; index++) {
             const text = `plain-text ${index}`;
             // Unset padding matches the shadow-prompt path for this mocked connection.
             const count = index % 2 ? getTokenCount(text) : await getTokenCountAsync(text);
             expect(count).toBe(guesstimate(text));
         }
         await saveTokenCache();
-        expect(Object.keys(mockStorage.setItem.mock.calls.at(-1)[1]['cache-test'])).toHaveLength(2048);
+        expect(Object.keys(mockStorage.setItem.mock.calls.at(-1)[1]['cache-test'])).toHaveLength(CACHE_LIMIT);
         expect(globalThis.jQuery.ajax).not.toHaveBeenCalled();
     });
 
