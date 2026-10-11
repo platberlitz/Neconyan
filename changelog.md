@@ -6,6 +6,7 @@
 - PR #108 (2026-10-10) `fix(dialogue-colors): allow deletion after background saves`
 - PR #110 (2026-10-10) `feat(chat): add live token counts and conversation streaming`
 - PR #121 (2026-10-11) `fix(ui): decouple the bottom bar width from the page width`
+- PR #125 (2026-10-11) `feat(art): add cat pairs, pixel coats and dark backgrounds`
 
 ## v1.2.5
 
