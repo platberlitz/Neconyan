@@ -16,10 +16,17 @@ let groupId = '';
 let chatId = 'chat';
 const loadWorldInfo = jest.fn(async name => books.get(name));
 const getRoleplaySourceId = jest.fn(() => null);
+const fullCards = new Map();
+const unshallowCharacter = jest.fn(async index => {
+    const full = fullCards.get(characters[index]?.avatar);
+    if (characters[index]?.shallow && full) characters[index] = structuredClone(full);
+});
+const originalCharacters = structuredClone(characters);
 
 jest.unstable_mockModule('../public/script.js', () => ({
     characters, chat, chat_metadata: { world_info: 'Chat lore' }, this_chid: 0, name1: 'Roleplay user', getCurrentChatId: () => chatId,
     substituteParams: (text, options = {}) => text.replaceAll('{{char}}', options.name2Override || 'Roleplay').replaceAll('{{user}}', options.name1Override || 'Roleplay user'),
+    unshallowCharacter,
 }));
 jest.unstable_mockModule('../public/scripts/group-chats.js', () => ({ getGroupMembers: () => characters.slice(1), groups: [], selected_group: null }));
 jest.unstable_mockModule('../public/scripts/neconyan-assistant-knowledge.js', () => ({ buildAssistantKnowledge: async () => ({}) }));
@@ -50,6 +57,9 @@ beforeEach(() => {
     groupId = '';
     chatId = 'chat';
     getRoleplaySourceId.mockReset().mockReturnValue(null);
+    characters.splice(0, characters.length, ...structuredClone(originalCharacters));
+    fullCards.clear();
+    unshallowCharacter.mockClear();
     branch.messages = [{ id: 'one', role: 'user', mes: 'A lighthouse.' }];
     chat.length = 0;
     books.clear();
@@ -161,6 +171,56 @@ describe('Scratchpad source context', () => {
         expect(context.text).not.toMatch(/Roleplay lore|Chat lore|Roleplay persona|Roleplay user/);
         expect(context.text).toContain('Conversation user is a Conversation persona with Nova.');
         expect(context.text).toContain('Nova lore: Nova and Conversation user.');
+        expect(context.text).toContain('### Description [description]\n{{char}} talks to {{user}}.');
+    });
+
+    test('shares every part of a character card whole and exactly as saved', async () => {
+        const long = `${'{{char}} remembers the lighthouse. '.repeat(1200)}The final line.`;
+        Object.assign(characters[1], {
+            tags: ['sea', 'mystery'],
+            data: {
+                ...characters[1].data,
+                creator: 'Ash', character_version: '2.1', description: long,
+                personality: 'Patient.', scenario: 'A storm.', first_mes: '{{char}} waves at {{user}}.',
+                alternate_greetings: ['Hello again.', 'A quieter hello.'], group_only_greetings: ['Hello, everyone.'],
+                mes_example: '<START>\n{{char}}: Hi.', creator_notes: 'Use with care.', system_prompt: 'Stay in voice.',
+                post_history_instructions: 'Keep it short.',
+                extensions: { ...characters[1].data.extensions, depth_prompt: { prompt: 'Nova hates rain.', depth: 2, role: 'user' } },
+            },
+        });
+        const { text } = await buildContext({ source: currentSource(), settings });
+        expect(long.length).toBeGreaterThan(8_000);
+        expect(text).toContain(long);
+        expect(text).not.toContain('[...]');
+        for (const part of [
+            'Creator: Ash', 'Version: 2.1', 'Tags [tags]: sea, mystery', 'Linked lorebook: Nova lore', 'Extra lorebooks: Extra lore',
+            '### Personality [personality]\nPatient.', '### Scenario [scenario]\nA storm.',
+            '### First message [first_mes]\n{{char}} waves at {{user}}.',
+            '### Alternate greetings [alternate_greetings] (2)\n\nGreeting 1:\nHello again.\n\nGreeting 2:\nA quieter hello.',
+            '### Group-only greetings [group_only_greetings] (1)\n\nGreeting 1:\nHello, everyone.',
+            '### Example messages [mes_example]\n<START>\n{{char}}: Hi.', '### Creator\'s notes [creator_notes]\nUse with care.',
+            '### System prompt [system_prompt]\nStay in voice.', '### Post-history instructions [post_history_instructions]\nKeep it short.',
+            '### Character\'s note (inserted at depth 2 as user)\nNova hates rain.',
+        ]) expect(text).toContain(part);
+    });
+
+    test('loads lazily loaded group members in full before sharing their cards', async () => {
+        groupId = 'friends';
+        fullCards.set('Kit.png', { ...characters[2], data: { ...characters[2].data, description: 'Kit keeps the light.', first_mes: 'Kit looks up.' } });
+        characters[2] = { avatar: 'Kit.png', name: 'Kit', shallow: true, data: { name: 'Kit', extensions: { world: 'Empty lore' } } };
+        const { text } = await buildContext({ source: currentSource(), settings });
+        expect(unshallowCharacter).toHaveBeenCalledWith('2');
+        expect(text).toContain('## Character: Kit (group member)');
+        expect(text).toContain('### Description [description]\nKit keeps the light.');
+        expect(text).toContain('### First message [first_mes]\nKit looks up.');
+        expect(text).not.toContain('Only part of this card could be loaded');
+    });
+
+    test('says so when a lazily loaded card cannot be loaded in full', async () => {
+        characters[1] = { ...characters[1], shallow: true };
+        const { text } = await buildContext({ source: currentSource(), settings });
+        expect(unshallowCharacter).toHaveBeenCalledWith('1');
+        expect(text).toContain('Only part of this card could be loaded');
     });
 
     test('includes every group member and keeps empty attached books available for new entries', async () => {

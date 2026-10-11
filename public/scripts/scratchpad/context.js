@@ -1,4 +1,4 @@
-import { chat, chat_metadata, characters, getCurrentChatId, name1, substituteParams, this_chid } from '../../script.js';
+import { chat, chat_metadata, characters, getCurrentChatId, name1, substituteParams, this_chid, unshallowCharacter } from '../../script.js';
 import { getGroupMembers, groups, selected_group } from '../group-chats.js';
 import { buildAssistantKnowledge } from '../neconyan-assistant-knowledge.js';
 import {
@@ -18,7 +18,6 @@ import { getTokenCountAsync } from '../tokenizers.js';
 import { loadWorldInfo, selected_world_info, world_info } from '../world-info.js';
 
 const MAX_CONTEXT_BYTES = 1_400_000;
-const MAX_CARD_FIELD = 8_000;
 const MAX_MESSAGE_CHARS = 16_000;
 const MAX_LORE_ENTRIES = 40;
 const MAX_LORE_CHARS = 24_000;
@@ -34,7 +33,15 @@ const CARD_FIELDS = [
     ['description', 'Description'],
     ['personality', 'Personality'],
     ['scenario', 'Scenario'],
+    ['first_mes', 'First message'],
+    ['alternate_greetings', 'Alternate greetings'],
+    ['group_only_greetings', 'Group-only greetings'],
+    ['mes_example', 'Example messages'],
+    ['creator_notes', 'Creator\'s notes'],
+    ['system_prompt', 'System prompt'],
+    ['post_history_instructions', 'Post-history instructions'],
 ];
+const CARD_TOP_LEVEL_FIELDS = { creator_notes: 'creatorcomment' };
 
 function clip(text, limit) {
     const value = String(text ?? '');
@@ -310,18 +317,70 @@ function formatLore(lore, macros) {
     return lines.join('\n\n');
 }
 
-function formatCharacter(character, source, macros) {
+function cardText(character, field) {
+    const data = character?.data?.[field];
+    if (typeof data === 'string' && data.trim()) return data.trim();
+    return String(character?.[CARD_TOP_LEVEL_FIELDS[field] || field] ?? '').trim();
+}
+
+function cardList(value) {
+    return Array.isArray(value) ? value.map(item => String(item ?? '').trim()).filter(Boolean) : [];
+}
+
+function cardField(character, field, label) {
+    if (field.endsWith('_greetings')) {
+        const greetings = cardList(character?.data?.[field]);
+        if (!greetings.length) return '';
+        return [`### ${label} [${field}] (${greetings.length})`, ...greetings.map((text, index) => `Greeting ${index + 1}:\n${text}`)].join('\n\n');
+    }
+    const text = cardText(character, field);
+    return text ? `### ${label} [${field}]\n${text}` : '';
+}
+
+/**
+ * Card fields are shared whole and exactly as saved, macros included, because
+ * Scratchpad's card edits replace a whole field and must keep what it does not change.
+ */
+function formatCharacter(character, source) {
     const name = character.name || 'Character';
-    const fields = CARD_FIELDS
-        .map(([field, label]) => {
-            const raw = String(character?.data?.[field] ?? character?.[field] ?? '').trim();
-            if (!raw) return '';
-            const text = substituteParams(raw, { ...macros, name2Override: name });
-            return `${label}:\n${clip(text, MAX_CARD_FIELD)}`;
-        })
-        .filter(Boolean);
+    const data = character?.data || {};
+    const tags = cardList(Array.isArray(character?.tags) ? character.tags : data.tags);
+    const filename = character.avatar?.replace(/\.[^.]+$/, '');
+    const extraBooks = cardList(world_info.charLore?.find(item => item.name === filename)?.extraBooks);
+    const depthPrompt = String(data.extensions?.depth_prompt?.prompt ?? '').trim();
+    const talkativeness = data.extensions?.talkativeness ?? character?.talkativeness;
+    const details = [
+        data.creator ? `Creator: ${data.creator}` : '',
+        data.character_version ? `Version: ${data.character_version}` : '',
+        tags.length ? `Tags [tags]: ${tags.join(', ')}` : '',
+        data.extensions?.world ? `Linked lorebook: ${data.extensions.world}` : '',
+        extraBooks.length ? `Extra lorebooks: ${extraBooks.join(', ')}` : '',
+        source.groupId && talkativeness !== undefined && talkativeness !== '' ? `Talkativeness: ${talkativeness}` : '',
+    ].filter(Boolean);
+    const fields = CARD_FIELDS.map(([field, label]) => cardField(character, field, label)).filter(Boolean);
+    if (depthPrompt) {
+        const depth = data.extensions.depth_prompt.depth ?? 4;
+        const role = data.extensions.depth_prompt.role || 'system';
+        fields.push(`### Character's note (inserted at depth ${depth} as ${role})\n${depthPrompt}`);
+    }
+    if (character.shallow) fields.push('(Only part of this card could be loaded, so some fields may be missing.)');
     const scope = source.groupId ? ' (group member)' : '';
-    return [`## Character: ${name}${scope}`, ...fields].join('\n');
+    return [[`## Character: ${name}${scope}`, ...details].join('\n'), ...fields].join('\n\n');
+}
+
+/** Lazy loading keeps only a card's summary in memory, so load full cards before sharing them. */
+async function loadSourceCharacters(source) {
+    const people = sourceCharacters(source);
+    await Promise.all(people.filter(item => item?.shallow).map(async item => {
+        try {
+            const index = characters.indexOf(item);
+            if (index !== -1) await unshallowCharacter(String(index));
+        } catch (error) {
+            console.warn('Scratchpad could not load the full character card', item.avatar, error);
+        }
+    }));
+    requireCurrentSource(source);
+    return people.some(item => item?.shallow) ? sourceCharacters(source) : people;
 }
 
 /**
@@ -338,7 +397,7 @@ export async function buildContext({ source, settings, pendingText = '', session
     const include = settings?.include || {};
     const all = sourceMessages(source);
     const selection = selectMessages(all, settings);
-    const people = sourceCharacters(source);
+    const people = include.card ? await loadSourceCharacters(source) : sourceCharacters(source);
     const names = { user: sourceUserName(source), character: people.map(item => item.name).filter(Boolean).join(', ') };
     const macros = { name1Override: names.user, name2Override: names.character, replaceCharacterCard: false };
     const sections = [];
@@ -354,16 +413,17 @@ export async function buildContext({ source, settings, pendingText = '', session
             ? composeConversationPersonaDescription(source.personaId, source)
             : power_user.persona_description;
         const persona = substituteParams(String(description ?? '').trim(), macros);
-        if (persona) sections.push(`## ${names.user} (the user's persona)\n${clip(persona, MAX_CARD_FIELD)}`);
+        if (persona) sections.push(`## ${names.user} (the user's persona)\n${persona}`);
     }
 
-    if (include.card) {
-        for (const character of people) sections.push(formatCharacter(character, source, macros));
+    if (include.card && people.length) {
+        sections.push('Character cards follow in full, exactly as saved. Macros such as {{char}} and {{user}} are left in place; {{char}} means that card\'s character. Field keys are shown in [brackets].');
+        for (const character of people) sections.push(formatCharacter(character, source));
     }
 
     if (include.authorsNote && source.kind === 'roleplay') {
         const note = substituteParams(String(chat_metadata?.note_prompt ?? '').trim(), macros);
-        if (note) sections.push(`## Author's Note\n${clip(note, MAX_CARD_FIELD)}`);
+        if (note) sections.push(`## Author's Note\n${note}`);
     }
 
     let lore = { books: [], entries: [] };
