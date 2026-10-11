@@ -87,7 +87,7 @@ export function sessionNoteText(session, cleanReply) {
     return session.messages.filter(message => message.role === 'user' || message.state === 'done').flatMap(message => {
         const text = message.role === 'assistant' ? cleanReply(message.text) : message.text;
         if (!text.trim()) return [];
-        const name = message.role === 'user' ? 'You' : (message.assistant || session.assistant);
+        const name = message.role === 'user' ? 'You' : (message.assistantName || session.settings?.assistants?.[message.assistant || session.assistant]?.name || message.assistant || session.assistant);
         return [`## ${name}\n\n${text}`];
     }).join('\n\n');
 }

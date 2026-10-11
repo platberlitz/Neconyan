@@ -419,8 +419,9 @@ export async function estimateTokens(text) {
 /** App help for questions about Neconyan itself, shared with the bundled assistants. */
 export async function buildHelp({ assistant, gender, text }) {
     try {
+        const referenceAssistant = ['miso', 'taro', 'nori'].includes(assistant) ? assistant : 'miso';
         const result = await buildAssistantKnowledge({
-            character: { data: { extensions: { neconyan_assistant: { id: `${assistant}-${gender}` } } } },
+            character: { data: { extensions: { neconyan_assistant: { id: `${referenceAssistant}-${gender || 'neutral'}` } } } },
             messages: [{ role: 'user', content: text }],
             maxTokens: 4096,
         });

@@ -1,5 +1,5 @@
 /**
- * Scratchpad: a private planning chat with Miso, Taro or Nori that sits beside
+ * Scratchpad: a private planning chat with your chosen assistants beside
  * the story. Nothing written here goes into the chat unless the user presses
  * Save change on a reviewed suggestion.
  */
@@ -34,8 +34,9 @@ import {
 } from './context.js';
 import { describeChange, splitReply } from './proposals.js';
 import { chooseNote, sessionNoteText } from './notebooks.js';
+import { openAssistantLibrary } from './assistants.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261011-chat-open-speed';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261011-scratchpad-assistants';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -51,6 +52,7 @@ const ASSISTANTS = Object.freeze([
 ]);
 
 function assistantRole(id) {
+    if (!ASSISTANTS.some(item => item.id === id)) return assistantInfo(id).sourceCard ? t`From a character card` : t`Your assistant`;
     if (id === 'taro') return t`Careful troubleshooter`;
     if (id === 'nori') return t`Playful writing partner`;
     return t`Cheerful guide`;
@@ -94,6 +96,8 @@ const app = {
     width: DEFAULT_WIDTH,
     assistant: 'miso',
     connections: {},
+    library: { assistants: [], revision: 0 },
+    libraryOpen: false,
     tab: 'chat',
     overviewCollapsed: false,
     source: null,
@@ -123,9 +127,9 @@ function readPrefs() {
         const saved = JSON.parse(accountStorage.getItem(PREFS_KEY) || '{}');
         if (saved.layout === 'full' || saved.layout === 'beside') app.layout = saved.layout;
         if (Number.isFinite(saved.width)) app.width = saved.width;
-        if (ASSISTANTS.some(item => item.id === saved.assistant)) app.assistant = saved.assistant;
+        if (allAssistants().some(item => item.id === saved.assistant)) app.assistant = saved.assistant;
         if (typeof saved.collapsed === 'boolean') app.overviewCollapsed = saved.collapsed;
-        for (const { id } of ASSISTANTS) {
+        for (const { id } of allAssistants()) {
             const connection = saved.connections?.[id];
             if (connection?.kind === 'current') app.connections[id] = { kind: 'current' };
             if (connection?.kind === 'profile' && typeof connection.profileId === 'string' && connection.profileId) {
@@ -160,8 +164,36 @@ function sessionInput(extra = {}) {
     return input;
 }
 
-function assistantInfo(id) {
-    return ASSISTANTS.find(item => item.id === id) ?? ASSISTANTS[0];
+function allAssistants(session = activeSession()) {
+    const profiles = new Map(Object.values(session?.settings.assistants ?? {}).map(item => [item.id, item]));
+    for (const item of app.library.assistants) profiles.set(item.id, item);
+    return [...ASSISTANTS, ...profiles.values()];
+}
+
+function assistantInfo(id, session = activeSession()) {
+    return allAssistants(session).find(item => item.id === id) ?? { id, name: t`Unavailable assistant` };
+}
+
+function assistantPortrait(id, session = activeSession()) {
+    return assistantInfo(id, session).avatar || getAssistantIconSrc(id);
+}
+
+function canChooseAssistant(id) {
+    const session = activeSession();
+    const participants = sessionAssistants();
+    if (app.sending || pendingReply()) return false;
+    return !session?.settings.roundTable || (participants.includes(id) ? participants.length > 1 : participants.length < 3);
+}
+
+async function manageAssistants() {
+    if (app.libraryOpen) return;
+    app.libraryOpen = true;
+    try {
+        await openAssistantLibrary({ assistants: allAssistants, portrait: assistantPortrait, selected: sessionAssistants,
+            canChoose: canChooseAssistant, choose: chooseAssistant, onSave: library => { app.library = library; render(); app.contextKey = ''; } });
+    } catch (error) {
+        reportError(error, t`Your assistants could not be loaded.`);
+    } finally { app.libraryOpen = false; }
 }
 
 function activeSession() {
@@ -339,11 +371,15 @@ function build() {
 
 function buildChatPanel() {
     const el = app.el;
-    el.roundTable = iconButton(t`Round table`, () => void updateSettings(settings => ({ roundTable: !settings.roundTable })),
-        { icon: 'fa-users', pressed: false, className: 'scratchpad-round-table', title: t`Ask up to three assistants together` });
+    el.roundTable = iconButton(t`Round table`, () => void updateSettings(settings => ({
+        roundTable: !settings.roundTable,
+        ...(!settings.roundTable && !settings.participants.includes(app.assistant) ? { participants: [app.assistant, ...settings.participants.slice(0, 2)] } : {}),
+    })),
+    { icon: 'fa-users', pressed: false, className: 'scratchpad-round-table', title: t`Ask up to three assistants together` });
     el.randomReply = iconButton(t`Random`, () => void updateSettings(settings => ({ randomReply: !settings.randomReply })),
         { icon: 'fa-shuffle', pressed: false, className: 'scratchpad-random', title: t`One random assistant replies per message` });
     el.assistantPicker = h('div', { class: 'scratchpad-assistants', role: 'group', 'aria-label': t`Talking with` });
+    el.manageAssistants = iconButton(t`Assistants`, () => void manageAssistants(), { icon: 'fa-user-plus', title: t`Choose or add an assistant` });
     el.summary = h('div', { class: 'scratchpad-summary' });
     el.messages = h('div', { class: 'scratchpad-messages', role: 'log', 'aria-live': 'polite', 'aria-relevant': 'additions' });
     el.quick = h('div', { class: 'scratchpad-quick', role: 'group', 'aria-label': t`Quick prompts` },
@@ -374,8 +410,8 @@ function buildChatPanel() {
         onclick: toggleOverview,
     });
     el.overview = h('div', { id: 'scratchpad-overview', class: 'scratchpad-overview' },
-        // Reply modes come last so a narrow panel wraps them, not Miso, Taro and Nori.
-        h('div', { class: 'scratchpad-chat-top' }, el.overviewToggle, el.assistantPicker, el.roundTable, el.randomReply),
+        // Library and reply controls wrap after the current assistant choices.
+        h('div', { class: 'scratchpad-chat-top' }, el.overviewToggle, el.assistantPicker, el.manageAssistants, el.roundTable, el.randomReply),
         el.summary);
     append(el.panels.chat, [
         el.overviewBar,
@@ -722,7 +758,7 @@ function renderHeader() {
     }
     const session = activeSession();
     const assistant = session?.assistant ?? app.assistant;
-    app.el.portrait.src = getAssistantIconSrc(assistant);
+    app.el.portrait.src = assistantPortrait(assistant);
     app.el.sourceLabel.textContent = app.source ? app.source.label : t`No chat open`;
     app.el.newSession.disabled = !app.source;
     app.el.close.querySelector('span').textContent = app.source?.kind === 'notebook' ? t`Back to Notes` : t`Back to chat`;
@@ -736,22 +772,26 @@ function renderHeader() {
     app.el.randomReply.classList.toggle('menu_button_primary', Boolean(randomReplyEnabled()));
     app.el.randomReply.disabled = app.el.roundTable.disabled;
     clear(app.el.assistantPicker);
-    for (const item of ASSISTANTS) {
+    const choices = allAssistants().filter(item => ASSISTANTS.includes(item) || participants.includes(item.id));
+    app.el.assistantPicker.classList.toggle('has-custom', choices.some(item => !ASSISTANTS.includes(item)));
+    for (const item of choices) {
         const selected = participants.includes(item.id);
         const choice = h('button', {
             type: 'button',
-            class: `scratchpad-assistant${selected ? ' is-selected' : ''}`,
+            class: `scratchpad-assistant${selected ? ' is-selected' : ''}${ASSISTANTS.includes(item) ? ' is-included' : ''}`,
+            'aria-label': item.name,
             'aria-pressed': String(selected),
             title: assistantRole(item.id),
-            disabled: !app.source || app.sending || Boolean(pendingReply()) || (roundTable && selected && participants.length === 1),
+            disabled: !canChooseAssistant(item.id),
             onclick: () => chooseAssistant(item.id),
-        }, h('img', { src: getAssistantIconSrc(item.id), alt: '', width: 32, height: 32 }), h('span', { text: item.name }));
+        }, h('img', { src: assistantPortrait(item.id), alt: '', width: 32, height: 32 }), h('span', { text: item.name, 'data-i18n-ignore': '' }));
         app.el.assistantPicker.append(choice);
     }
     renderOverview();
 }
 
 async function chooseAssistant(id) {
+    if (!canChooseAssistant(id)) return;
     if (activeSession()?.settings.roundTable) {
         await updateSettings(settings => ({ participants: settings.participants.includes(id)
             ? settings.participants.filter(item => item !== id) : [...settings.participants, id] }));
@@ -788,7 +828,7 @@ function renderOverview() {
     clear(el.overviewBar);
     append(el.overviewBar, [
         h('i', { class: 'fa-solid fa-chevron-right', 'aria-hidden': 'true' }),
-        ...sessionAssistants(session).map(id => h('img', { src: getAssistantIconSrc(id), alt: assistantInfo(id).name, width: 24, height: 24 })),
+        ...sessionAssistants(session).map(id => h('img', { src: assistantPortrait(id), alt: assistantInfo(id).name, width: 24, height: 24 })),
         h('span', { class: 'scratchpad-overview-name', text: name }),
         randomReplyEnabled() ? h('span', { class: 'scratchpad-badge', text: t`Random` }) : null,
         session?.temporary ? h('span', { class: 'scratchpad-badge', text: t`Temporary` }) : null,
@@ -845,7 +885,7 @@ function renderMessages() {
     clear(list);
     if (!app.source) {
         list.append(h('div', { class: 'scratchpad-empty' },
-            h('p', { text: t`Open a Roleplay or Conversation chat, then come back here to talk with Miso, Taro or Nori.` })));
+            h('p', { text: t`Open a Roleplay or Conversation chat, then come back here to talk with your chosen assistant.` })));
         return;
     }
     const session = activeSession();
@@ -854,7 +894,7 @@ function renderMessages() {
         const names = participants.map(assistant => assistant.name).join(', ');
         list.append(h('div', { class: 'scratchpad-empty' },
             h('div', { class: 'scratchpad-empty-portraits' }, participants.map(assistant =>
-                h('img', { src: getAssistantIconSrc(assistant.id), alt: assistant.name, width: 72, height: 72 }))),
+                h('img', { src: assistantPortrait(assistant.id), alt: assistant.name, width: 72, height: 72 }))),
             h('p', { text: t`Ask ${names} anything. Nothing you write here goes into the story.` }),
             h('p', { text: app.source?.kind === 'notebook'
                 ? t`Suggested note changes appear as cards you can review before anything is saved.`
@@ -906,7 +946,7 @@ function renderMessage(session, message, { latest }) {
         dataset: { messageId: message.id, ...(message.jobId ? { jobId: message.jobId } : {}) },
     });
     const author = assistant
-        ? h('div', { class: 'scratchpad-author' }, h('img', { src: getAssistantIconSrc(assistant.id), alt: '', width: 24, height: 24 }), h('span', { text: assistant.name }))
+        ? h('div', { class: 'scratchpad-author' }, h('img', { src: assistantPortrait(assistant.id), alt: '', width: 24, height: 24 }), h('span', { text: message.assistantName || assistant.name, 'data-i18n-ignore': '' }))
         : h('div', { class: 'scratchpad-author' }, h('span', { text: sourceUserName(app.source) || t`You` }));
     article.append(author);
     if (assistant) updateMessageTokenCounts(author, message.state === 'pending' ? replyPreview(message) : message, { pending: message.state === 'pending' });
@@ -1150,7 +1190,7 @@ async function saveToNote(session, message = null) {
         const { captureFromChat } = await import('../notebooks/notes-app.js');
         requireScope(source, session.id);
         await captureFromChat({ title: session.name, text, source: { kind: 'scratchpad', sourceKind: source.kind, chat: source.key,
-            sessionId: session.id, scratchpadMessageId: message?.id, speaker: message?.assistant ? assistantInfo(message.assistant).name : message ? sourceUserName(source) : t`Scratchpad session`, messageSendDate: message?.created } });
+            sessionId: session.id, scratchpadMessageId: message?.id, speaker: message?.assistant ? message.assistantName || assistantInfo(message.assistant, session).name : message ? sourceUserName(source) : t`Scratchpad session`, messageSendDate: message?.created } });
     } catch (error) { reportError(error, t`That text could not be saved to Notes.`); }
 }
 
@@ -1268,7 +1308,7 @@ async function editUserInstructions() {
         const selected = new Set(instructions.assistants);
         const editor = h('textarea', { id: 'scratchpad-user-instructions', class: 'text_pole scratchpad-review-editor', rows: '8', value: instructions.text });
         const initialText = editor.value;
-        const choices = h('div', { role: 'group', 'aria-label': t`Selected assistants` }, ASSISTANTS.map(assistant =>
+        const choices = h('div', { role: 'group', 'aria-label': t`Selected assistants` }, allAssistants().map(assistant =>
             checkbox(assistant.name, selected.has(assistant.id), checked => checked ? selected.add(assistant.id) : selected.delete(assistant.id))));
         choices.hidden = instructions.scope === 'all';
         const scope = h('select', { id: 'scratchpad-instructions-scope', class: 'text_pole', onchange: () => { choices.hidden = scope.value === 'all'; } },
@@ -1320,7 +1360,7 @@ async function editAssistantPrompt(assistant) {
         requireScope(source, session.id);
         const previous = session.settings.assistantPrompts?.[assistant.id];
         const context = await buildContext({ source, settings: session.settings });
-        const defaults = await api.readPrompt({ assistant: assistant.id, gender: getAssistantGender(assistant.id),
+        const defaults = await api.readPrompt({ source, sessionId: session.id, assistant: assistant.id, gender: getAssistantGender(assistant.id),
             names: context.names, capabilities: { ...context.capabilities, notebook: true }, participants: sessionAssistants(session), randomReply: randomReplyEnabled() });
         requireScope(source, session.id);
         const editor = h('textarea', { class: 'text_pole scratchpad-review-editor', rows: '16', value: previous ?? defaults.text, 'aria-label': t`Assistant prompt` });
@@ -1374,7 +1414,7 @@ function renderContext({ force = true } = {}) {
         onchange: event => void updateSettings({ maxTokens: Number(event.currentTarget.value) }),
     });
     const profiles = connectionProfiles();
-    const connections = ASSISTANTS.map(assistant => {
+    const connections = allAssistants().map(assistant => {
         const id = `scratchpad-connection-${assistant.id}`;
         const selected = assistantConnection(settings, assistant.id);
         const value = selected.kind === 'profile' ? selected.profileId : '';
@@ -1420,7 +1460,7 @@ function renderContext({ force = true } = {}) {
             h('p', { class: 'scratchpad-muted', text: t`Choose a saved profile for each assistant. Profiles include the model and connection settings.` }),
             ...connections,
             h('h3', { class: 'scratchpad-section-title', text: t`Assistant prompts` }),
-            ...ASSISTANTS.map(assistant => iconButton(t`View or edit ${assistant.name}'s prompt`, () => void editAssistantPrompt(assistant), { icon: 'fa-pen' })),
+            ...allAssistants().map(assistant => iconButton(t`View or edit ${assistant.name}'s prompt`, () => void editAssistantPrompt(assistant), { icon: 'fa-pen' })),
             checkbox(t`Stream replies`, settings.stream !== false, value => void updateSettings({ stream: value }),
                 t`Show the reply and any thinking as they arrive. Turn off to wait for the finished reply.`),
             h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-max-tokens', text: t`Longest reply (tokens)` }), maxTokens)),
@@ -1725,6 +1765,7 @@ function renderCleanup() {
 }
 
 function exportSession(session) {
+    const used = new Set([session.assistant, ...session.settings.participants, ...Object.keys(session.settings.assistants ?? {}), ...session.messages.map(item => item.assistant)]);
     const payload = {
         format: 'neconyan-scratchpad',
         version: 1,
@@ -1733,8 +1774,8 @@ function exportSession(session) {
             name: session.name,
             assistant: session.assistant,
             gender: session.gender,
-            settings: { ...session.settings, notes: [] },
-            messages: session.messages.filter(item => item.state !== 'pending').map(item => ({ role: item.role, text: item.text, created: item.created, assistant: item.assistant, gender: item.gender })),
+            settings: { ...session.settings, assistants: Object.fromEntries(allAssistants(session).filter(item => item.personality && used.has(item.id)).map(item => [item.id, item])), notes: [] },
+            messages: session.messages.filter(item => item.state !== 'pending').map(item => ({ role: item.role, text: item.text, created: item.created, assistant: item.assistant, assistantName: item.assistantName, gender: item.gender })),
         },
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -1806,9 +1847,9 @@ function renderSessions() {
     }
     for (const session of visible) {
         const active = session.id === current?.id;
-        const assistant = assistantInfo(session.assistant);
+        const assistant = assistantInfo(session.assistant, session);
         list.append(h('li', { class: `scratchpad-session${active ? ' is-active' : ''}` },
-            h('img', { src: getAssistantIconSrc(assistant.id), alt: '', width: 32, height: 32 }),
+            h('img', { src: assistantPortrait(assistant.id, session), alt: '', width: 32, height: 32 }),
             h('div', { class: 'scratchpad-session-info' },
                 h('strong', { text: session.name }),
                 h('small', { text: [assistant.name, t`${session.messages.length} messages`, formatDate(session.updated), session.temporary ? t`Temporary` : ''].filter(Boolean).join(' · ') })),
@@ -1835,6 +1876,15 @@ function renderSessions() {
 export async function openScratchpad({ tab = '', note = null } = {}) {
     await loadStylesheetAsync(STYLESHEET, { id: 'neconyan-scratchpad-css' }).catch(() => null);
     build();
+    try {
+        const owner = getCurrentUserHandle();
+        const { library } = await api.readAssistants();
+        if (owner !== getCurrentUserHandle()) return;
+        app.library = library;
+    } catch (error) {
+        reportError(error, t`Your assistants could not be loaded.`);
+        return;
+    }
     readPrefs();
     globalThis.NeconyanNotes?.hide?.();
     setNotebookSource(note);

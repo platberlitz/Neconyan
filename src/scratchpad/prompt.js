@@ -4,6 +4,7 @@ import path from 'node:path';
 import { serverDirectory } from '../server-directory.js';
 import { CHARACTER_CREATION_INSTRUCTIONS } from './character-tools.js';
 import { normaliseAssistant, normaliseGender } from './store.js';
+import { isCustomAssistant, assistantProfileError } from './assistant-profiles.js';
 import { SCRATCHPAD_MACRO_GUIDANCE } from './macros.js';
 import { NOTE_TOOL_DEFINITIONS, NOTE_MUTATING_KINDS, NOTE_TOOL_NOTICE } from '../../public/scripts/notebooks/assistant-note-tools.js';
 
@@ -26,6 +27,7 @@ function plainName(name, fallback) {
 /** The bundled card for one assistant variant. Users' own edited copies never change Scratchpad. */
 export function readAssistantPersona(assistant, gender) {
     const id = normaliseAssistant(assistant);
+    if (isCustomAssistant(id)) throw assistantProfileError('Choose a saved assistant personality.');
     const variant = `${id}-${normaliseGender(gender)}`;
     if (CARD_CACHE.has(variant)) return CARD_CACHE.get(variant);
     let persona;
@@ -122,17 +124,17 @@ function changeInstructions({ lore, character, chat, members, notebook }) {
     ].join('\n');
 }
 
-export function buildScratchpadSystemPrompt({ assistant, gender, userName, characterName, capabilities = {}, help = '', participants = [], randomReply = false, customPrompt, userInstructions = '' }) {
-    const persona = readAssistantPersona(assistant, gender);
+export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedPersona, assistantNames = {}, userName, characterName, capabilities = {}, help = '', participants = [], randomReply = false, customPrompt, userInstructions = '' }) {
+    const persona = savedPersona ?? readAssistantPersona(assistant, gender);
     const names = { user: userName || 'User', char: persona.name };
     const story = characterName ? `the story chat with ${characterName}` : 'the story chat';
     const sections = [
-        `You are ${persona.name}, one of the three Neconyan assistants (Miso, Taro and Nori). You are working in Scratchpad, a private side discussion beside ${names.user}'s ${story.replace(/^the /, '')}.`,
+        `You are ${persona.name}, ${savedPersona ? 'the user\'s chosen assistant' : 'one of the three Neconyan assistants (Miso, Taro and Nori)'}. You are working in Scratchpad, a private side discussion beside ${names.user}'s ${story.replace(/^the /, '')}.`,
         `Stay fully in character as ${persona.name} in every reply. Scratchpad is separate from the user's story, not separate from your personality. Your temperament, humour, reactions and relationship with ${names.user} shape how you explain, question, disagree, comfort and joke, including during practical help.`,
-        `Your personality and character details:\n${clip(substituteNames([persona.personality, persona.summary].filter(Boolean).join('\n\n'), names), MAX_PERSONA_CHARS)}`,
-        persona.examples ? `Your voice in practice. Carry this characterisation into Scratchpad with fresh wording and reactions suited to the current message:\n${clip(substituteNames(persona.examples, names), 2000)}` : '',
+        `Your personality and character details:\n${clip(substituteNames([persona.personality, persona.summary].filter(Boolean).join('\n\n'), names), savedPersona ? 64000 : MAX_PERSONA_CHARS)}`,
+        persona.examples ? `Your voice in practice. Carry this characterisation into Scratchpad with fresh wording and reactions suited to the current message:\n${clip(substituteNames(persona.examples, names), savedPersona ? 64000 : 2000)}` : '',
         `Talk with ${names.user} about anything they ask: everyday questions, ideas, decisions, Neconyan, or their story. Meet the topic in your own voice. You are their assistant and collaborator, outside that story's cast. Discuss scenes, motivations, pacing and continuity when relevant; write a story draft when asked and present it as a suggestion.`,
-        participants.length > 1 || randomReply ? `This is a round table with ${participants.map(id => FALLBACK_NAMES[normaliseAssistant(id)]).join(', ')}. ${randomReply
+        participants.length > 1 || randomReply ? `This is a round table with ${participants.map(id => assistantNames[id] || FALLBACK_NAMES[normaliseAssistant(id)] || 'Assistant').join(', ')}. ${randomReply
             ? 'Random mode chooses one assistant for each user message. You are the only assistant replying to this message; the others are not answering this turn.'
             : 'Each assistant receives the same question and shared history and answers independently at the same time.'} Reply only as ${persona.name}; do not write the other assistants' answers or invent what they are saying in this round. Earlier replies from other assistants are labelled with their names; they are conversation history, not new requests from the user. On follow-up questions, you can compare or respond to those earlier views.` : '',
         `The context block shows only what ${names.user} chose to share from ${story}. Messages carry #numbers and lorebook entries carry their book and uid; refer to them exactly. Do not invent messages, entries or card fields you cannot see. If something is missing, say what to include.`,
@@ -151,7 +153,7 @@ export function buildScratchpadSystemPrompt({ assistant, gender, userName, chara
 
 export const SCRATCHPAD_CONTEXT_ACK = 'I have read the shared story context. What would you like to work on?';
 
-export function buildScratchpadMessages({ system, context, notebookContext = '', history, text, assistant }) {
+export function buildScratchpadMessages({ system, context, notebookContext = '', history, text, assistant, assistantNames = {} }) {
     const messages = [{ role: 'system', content: system }];
     if (context) {
         messages.push({ role: 'user', content: `<story_context>\n${context}\n</story_context>` });
@@ -164,7 +166,7 @@ export function buildScratchpadMessages({ system, context, notebookContext = '',
     for (const message of history) {
         const peer = message.role === 'assistant' && message.assistant && assistant && message.assistant !== assistant;
         messages.push({ role: peer ? 'user' : message.role,
-            content: peer ? `[Earlier reply from ${FALLBACK_NAMES[normaliseAssistant(message.assistant)]} in Scratchpad]\n${message.text}` : message.text });
+            content: peer ? `[Earlier reply from ${message.assistantName || assistantNames[message.assistant] || FALLBACK_NAMES[normaliseAssistant(message.assistant)] || 'Assistant'} in Scratchpad]\n${message.text}` : message.text });
     }
     messages.push({ role: 'user', content: text });
     return messages;

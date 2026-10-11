@@ -5,9 +5,10 @@ import fs from 'node:fs';
 import { AUTHORING_FILE_LIMIT, readAuthoringFileLocked, writeAuthoringFileLocked, deleteAuthoringFileLocked } from '../authoring-store.js';
 import { roleplayAccountBase, roleplayAccountStamp, roleplayLease, withRoleplayAccount } from '../roleplay-store.js';
 import { MAX_GENERATION_TEXT_BYTES } from '../generation/stream-limits.js';
+import { BUILTIN_ASSISTANT_IDS, isAssistantId, orderedAssistants, normaliseAssistantSnapshots } from './assistant-profiles.js';
 
 export const SCRATCHPAD_SCHEMA = 1;
-export const ASSISTANT_IDS = Object.freeze(['miso', 'taro', 'nori']);
+export const ASSISTANT_IDS = BUILTIN_ASSISTANT_IDS;
 export const ASSISTANT_GENDERS = Object.freeze(['male', 'female', 'neutral']);
 export const SOURCE_KINDS = Object.freeze(['roleplay', 'conversation', 'notebook']);
 export const MAX_SESSIONS = 40;
@@ -88,7 +89,7 @@ export function normaliseSource(input) {
 }
 
 export function normaliseAssistant(value) {
-    return ASSISTANT_IDS.includes(value) ? value : 'miso';
+    return isAssistantId(value) ? value : 'miso';
 }
 
 export function normaliseGender(value) {
@@ -126,6 +127,7 @@ export function defaultSettings() {
         connection: { kind: 'current' },
         assistantConnections: {},
         assistantPrompts: {},
+        assistants: {},
         roundTable: false,
         randomReply: false,
         participants: [...ASSISTANT_IDS],
@@ -138,6 +140,8 @@ export function normaliseSettings(input, previous = defaultSettings()) {
     const source = isPlainObject(input) ? input : {};
     const settings = structuredClone(previous);
     settings.notes ??= [];
+    settings.assistants ??= {};
+    if (source.assistants !== undefined) settings.assistants = normaliseAssistantSnapshots({ ...settings.assistants, ...normaliseAssistantSnapshots(source.assistants) });
     if (source.notes !== undefined) {
         if (!Array.isArray(source.notes) || source.notes.length > MAX_NOTE_REFERENCES) throw fail('SCRATCHPAD_NOTES_INVALID', `Choose up to ${MAX_NOTE_REFERENCES} notes or sections.`);
         const seen = new Set();
@@ -187,7 +191,7 @@ export function normaliseSettings(input, previous = defaultSettings()) {
     if (source.connection !== undefined) settings.connection = normaliseConnection(source.connection);
     if (isPlainObject(source.assistantConnections)) {
         settings.assistantConnections ??= {};
-        for (const assistant of ASSISTANT_IDS) {
+        for (const assistant of Object.keys(source.assistantConnections).filter(isAssistantId).slice(0, 27)) {
             if (Object.hasOwn(source.assistantConnections, assistant)) {
                 settings.assistantConnections[assistant] = normaliseConnection(source.assistantConnections[assistant]);
             }
@@ -197,7 +201,7 @@ export function normaliseSettings(input, previous = defaultSettings()) {
     if (typeof source.stream === 'boolean') settings.stream = source.stream;
     if (isPlainObject(source.assistantPrompts)) {
         settings.assistantPrompts ??= {};
-        for (const assistant of ASSISTANT_IDS) {
+        for (const assistant of Object.keys(source.assistantPrompts).filter(isAssistantId).slice(0, 27)) {
             if (!Object.hasOwn(source.assistantPrompts, assistant)) continue;
             const text = source.assistantPrompts[assistant];
             if (text === null) delete settings.assistantPrompts[assistant];
@@ -209,8 +213,9 @@ export function normaliseSettings(input, previous = defaultSettings()) {
     if (typeof source.roundTable === 'boolean') settings.roundTable = source.roundTable;
     if (typeof source.randomReply === 'boolean') settings.randomReply = source.randomReply;
     if (source.participants !== undefined) {
-        const participants = Array.isArray(source.participants) ? ASSISTANT_IDS.filter(id => source.participants.includes(id)) : [];
+        const participants = Array.isArray(source.participants) ? orderedAssistants(source.participants) : [];
         if (!participants.length) throw fail('SCRATCHPAD_PARTICIPANTS_INVALID', 'Choose at least one assistant for the round table.');
+        if (participants.length > 3) throw fail('SCRATCHPAD_PARTICIPANTS_INVALID', 'Choose up to three assistants for the round table.');
         settings.participants = participants;
     }
     return settings;
@@ -246,6 +251,7 @@ function normaliseMessage(input) {
             if (Number.isSafeInteger(input[field]) && input[field] >= 0) message[field] = input[field];
         }
         if (typeof input.assistant === 'string') message.assistant = normaliseAssistant(input.assistant);
+        if (typeof input.assistantName === 'string') message.assistantName = boundedString(input.assistantName, MAX_NAME_LENGTH, { trim: true });
         if (typeof input.gender === 'string') message.gender = normaliseGender(input.gender);
         const proposals = normaliseProposals(input.proposals);
         if (Object.keys(proposals).length) message.proposals = proposals;
@@ -515,8 +521,8 @@ function dropTemporary(bucket, keepId) {
         || session.messages.some(message => message.state === 'pending'));
 }
 
-function nextName(bucket, assistant, excludeId) {
-    const label = assistant.charAt(0).toUpperCase() + assistant.slice(1);
+function nextName(bucket, assistant, excludeId, settings) {
+    const label = (settings?.assistants?.[assistant]?.name || assistant.charAt(0).toUpperCase() + assistant.slice(1)).slice(0, 65);
     const used = new Set(bucket.sessions.filter(session => session.id !== excludeId).map(session => session.name));
     for (let index = 1; index <= MAX_SESSIONS + 1; index++) {
         const name = index === 1 ? `${label}'s notes` : `${label}'s notes ${index}`;
@@ -533,16 +539,17 @@ export function createSession(bucket, input = {}) {
     const assistant = normaliseAssistant(input.assistant);
     const previous = bucket.sessions.find(item => item.id === bucket.activeSessionId);
     const name = boundedString(input.name, MAX_NAME_LENGTH, { trim: true });
+    const settings = normaliseSettings(input.settings, previous ? { ...previous.settings, picked: [], notes: previous.settings.notes.filter(ref => !ref.grantId) } : defaultSettings());
     const session = {
         id: newScratchpadId(),
-        name: name || nextName(bucket, assistant),
+        name: name || nextName(bucket, assistant, undefined, settings),
         automaticName: !name,
         assistant,
         gender: normaliseGender(input.gender),
         temporary: input.temporary === true,
         created: now(),
         updated: now(),
-        settings: normaliseSettings(input.settings, previous ? { ...previous.settings, picked: [], notes: previous.settings.notes.filter(ref => !ref.grantId) } : defaultSettings()),
+        settings,
         messages: [],
     };
     if (Array.isArray(input.messages)) {
@@ -557,6 +564,7 @@ export function createSession(bucket, input = {}) {
 
 export function updateSession(bucket, sessionId, input = {}) {
     const session = findSession(bucket, sessionId);
+    if (input.settings !== undefined) session.settings = normaliseSettings(input.settings, session.settings);
     if (input.name !== undefined) {
         const name = boundedString(input.name, MAX_NAME_LENGTH, { trim: true });
         if (!name) throw fail('SCRATCHPAD_NAME_REQUIRED', 'Give the session a name.');
@@ -566,13 +574,12 @@ export function updateSession(bucket, sessionId, input = {}) {
     if (input.assistant !== undefined) {
         const assistant = normaliseAssistant(input.assistant);
         if (assistant !== session.assistant && session.automaticName && !session.messages.length) {
-            session.name = nextName(bucket, assistant, session.id);
+            session.name = nextName(bucket, assistant, session.id, session.settings);
         }
         session.assistant = assistant;
     }
     if (input.gender !== undefined) session.gender = normaliseGender(input.gender);
     if (typeof input.temporary === 'boolean') session.temporary = input.temporary;
-    if (input.settings !== undefined) session.settings = normaliseSettings(input.settings, session.settings);
     touch(session);
     return session;
 }

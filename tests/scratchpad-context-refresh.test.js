@@ -3,7 +3,7 @@ import vm from 'node:vm';
 import { describe, expect, test } from '@jest/globals';
 
 const source = fs.readFileSync(new URL('../public/scripts/scratchpad/index.js', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
-const functions = ['activeSession', 'currentSettings', 'applyBucket', 'render', 'renderContext', 'renderNotes'];
+const functions = ['activeSession', 'allAssistants', 'currentSettings', 'applyBucket', 'render', 'renderContext', 'renderNotes'];
 const code = functions.map(name => source.match(new RegExp(`^function ${name}\\([\\s\\S]*?^}`, 'm'))[0]).join('\n');
 const defaults = { notes: [], picked: [], include: {}, assistantConnections: {}, depth: 15, maxTokens: 16000 };
 const ref = id => ({ notebookId: 'book', noteId: id });
@@ -44,7 +44,7 @@ function fixture() {
     const requests = [];
     const scope = { kind: 'roleplay', key: 'chat' };
     const app = { built: true, open: true, tab: 'context', source: scope, bucket: null, contextKey: '', ticket: 1,
-        el: { panels: { context: panel } } };
+        library: { assistants: [] }, el: { panels: { context: panel } } };
     const h = (tag, attributes, ...children) => new Element(tag, attributes, children);
     const runtime = vm.createContext({ app, structuredClone, DEFAULT_SETTINGS: defaults, ASSISTANTS: [],
         h, append: (element, children) => element.append(children), clear: element => element.replaceChildren(),

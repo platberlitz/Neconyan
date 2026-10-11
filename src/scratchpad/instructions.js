@@ -2,6 +2,7 @@ import path from 'node:path';
 import { readAuthoringFileLocked, writeAuthoringFileLocked } from '../authoring-store.js';
 import { roleplayLease } from '../roleplay-store.js';
 import { ASSISTANT_IDS, ScratchpadError } from './store.js';
+import { isAssistantId, MAX_ASSISTANTS, orderedAssistants } from './assistant-profiles.js';
 
 export const MAX_USER_INSTRUCTIONS_BYTES = 64000;
 const FILE_LIMIT = 512 * 1024;
@@ -12,14 +13,14 @@ function instructionsFile(lease) {
 
 function normaliseInstructions(input) {
     if (!input || typeof input.text !== 'string' || !['all', 'selected'].includes(input.scope)
-        || !Array.isArray(input.assistants) || input.assistants.length > ASSISTANT_IDS.length
-        || input.assistants.some(id => !ASSISTANT_IDS.includes(id))) {
-        throw new ScratchpadError('SCRATCHPAD_INSTRUCTIONS_INVALID', 'Choose all assistants or a selection of Miso, Taro and Nori.');
+        || !Array.isArray(input.assistants) || input.assistants.length > MAX_ASSISTANTS + ASSISTANT_IDS.length
+        || input.assistants.some(id => !isAssistantId(id))) {
+        throw new ScratchpadError('SCRATCHPAD_INSTRUCTIONS_INVALID', 'Choose all assistants or a selection from your assistants.');
     }
     if (Buffer.byteLength(input.text, 'utf8') > MAX_USER_INSTRUCTIONS_BYTES) {
         throw new ScratchpadError('SCRATCHPAD_INSTRUCTIONS_TOO_LARGE', 'User instructions must be no longer than 64,000 bytes.', 413);
     }
-    const assistants = ASSISTANT_IDS.filter(id => input.assistants.includes(id));
+    const assistants = orderedAssistants(input.assistants);
     if (input.scope === 'selected' && !assistants.length) {
         throw new ScratchpadError('SCRATCHPAD_INSTRUCTIONS_TARGET_REQUIRED', 'Choose at least one assistant.');
     }
