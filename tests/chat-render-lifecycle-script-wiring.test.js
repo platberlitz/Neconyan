@@ -596,6 +596,16 @@ describe('chat render lifecycle script wiring', () => {
         expect(source).toContain('refreshChatMessageResizeState(element, metadata, entry);');
     });
 
+    test('native Roleplay previews use shared bottom scrolling to retire stale resize anchors', () => {
+        const previewSource = readFileSync(path.join(repoRoot, 'public/scripts/neconyan-conversation/roleplay-preview.js'), 'utf8');
+        const previewAst = parse(previewSource, { ecmaVersion: 'latest', sourceType: 'module' });
+        const coreImport = previewAst.body.find(node => node.type === 'ImportDeclaration' && node.source.value === '../../script.js');
+        expect(coreImport.specifiers.some(node => node.imported?.name === 'scrollChatToBottom')).toBe(true);
+        expect(previewSource).toContain('if (nearBottom) scrollChatToBottom({ isNearBottom: nearBottom });');
+        expect(findNode(previewAst, node => node.type === 'AssignmentExpression'
+            && node.left.type === 'MemberExpression' && node.left.property.name === 'scrollTop')).toBeNull();
+    });
+
     test('message resize metadata refreshes viewport anchors on chat scroll', () => {
         const refreshObservedChatMessageResizeViewportStates = findFunctionDeclaration('refreshObservedChatMessageResizeViewportStates');
         const source = getSource(refreshObservedChatMessageResizeViewportStates);
