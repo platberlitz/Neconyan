@@ -1,6 +1,8 @@
+/* global globalThis */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { EventEmitter } from 'node:events';
 import test, { after } from 'node:test';
 import express from 'express';
 import { fixture, png } from './roleplay-transactions-fixture.js';
@@ -16,7 +18,7 @@ const { readInstructionsLocked, updateInstructionsLocked } = await import('../sr
 const { readAssistantsLocked, saveAssistantLocked, deleteAssistantLocked, readAssistantCardLocked, assistantPortrait, resolveAssistant } = await import('../src/scratchpad/assistants.js');
 const { write: writeCard } = await import('../src/character-card-parser.js');
 const { buildScratchpadMessages, buildScratchpadSystemPrompt } = await import('../src/scratchpad/prompt.js');
-const { readScratchpadPreview } = await import('../src/scratchpad/preview.js');
+const { readScratchpadPreview, publishScratchpadPreview } = await import('../src/scratchpad/preview.js');
 const { router } = await import('../src/endpoints/scratchpad.js');
 const notebooks = await import('../src/notebooks/store.js');
 const notebookAssistant = await import('../src/notebooks/assistant.js');
@@ -286,6 +288,32 @@ test('a reply accepted with the old filename still settles after a protected cha
     assert.equal(messages[1].state, 'done');
     assert.equal(messages[1].text, 'This unfinished reply was kept.');
     assert.equal(a.read(legacy).sessions[0].messages[1].id, messages[1].id);
+});
+
+test('a Bun request-only abort releases Scratchpad preview checks without cancelling its reply', async t => {
+    const a = account(t);
+    const accepted = await acceptScratchpadReply(a.request({}), sendBody(startSession(a)));
+    const request = Object.assign(new EventEmitter(), a.request({}), { params: { id: accepted.job.id } });
+    const writes = [];
+    const response = Object.assign(new EventEmitter(), {
+        set: () => response, flushHeaders() {}, write: value => writes.push(value), end() { this.writableEnded = true; },
+    });
+    const timers = new Set();
+    const clearInterval = globalThis.clearInterval;
+    t.mock.method(globalThis, 'setInterval', callback => { timers.add(callback); return callback; });
+    t.mock.method(globalThis, 'clearInterval', timer => { if (!timers.delete(timer)) clearInterval(timer); });
+    try {
+        router.stack.find(layer => layer.route?.path === '/preview/:id').route.stack[0].handle(request, response);
+        assert.equal(timers.size, 1);
+        request.emit('aborted');
+        assert.equal(timers.size, 0);
+        const before = writes.length;
+        publishScratchpadPreview(a.base.owner, accepted.job.id, { stage: 'generating', text: 'Still working' });
+        await new Promise(resolve => setTimeout(resolve, 80));
+        assert.equal(writes.length, before);
+        assert.equal(getJob(a.directories, accepted.job.id).cancellation.requested, false);
+        response.emit('finish');
+    } finally { response.emit('close'); }
 });
 
 test('a reply runs as a server job, streams a preview and settles into the saved session', async t => {

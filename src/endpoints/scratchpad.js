@@ -284,7 +284,10 @@ router.get('/preview/:id', (request, response) => {
             }
         };
         const timer = setInterval(check, 1000);
-        response.once('close', () => { clearInterval(timer); clearTimeout(previewTimer); unsubscribe(); });
+        const cleanup = () => { clearInterval(timer); clearTimeout(previewTimer); unsubscribe(); };
+        request.once('aborted', cleanup);
+        response.once('finish', cleanup);
+        response.once('close', cleanup);
         check();
     } catch (error) {
         sendError(response, error);

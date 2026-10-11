@@ -71,7 +71,11 @@ router.get('/events', (request, response) => {
             pending = setTimeout(() => { pending = null; send('data: {}\n\n'); }, 25);
         });
         const keepalive = setInterval(() => send(': keepalive\n\n'), 15000);
-        response.once('close', () => { clearInterval(keepalive); clearTimeout(pending); unsubscribe(); });
+        const cleanup = () => { clearInterval(keepalive); clearTimeout(pending); unsubscribe(); };
+        // Bun reports an abandoned stream on the request without closing the response.
+        request.once('aborted', cleanup);
+        response.once('finish', cleanup);
+        response.once('close', cleanup);
         send('data: {}\n\n');
     } catch (error) { return fail(response, error); }
 });
@@ -141,7 +145,10 @@ router.get('/:id/preview', (request, response) => {
             } catch { response.end(); }
         };
         const timer = setInterval(check, 1000);
-        response.once('close', () => { clearInterval(timer); clearTimeout(previewTimer); unsubscribe(); });
+        const cleanup = () => { clearInterval(timer); clearTimeout(previewTimer); unsubscribe(); };
+        request.once('aborted', cleanup);
+        response.once('finish', cleanup);
+        response.once('close', cleanup);
         check();
     } catch (error) { return fail(response, error); }
 });

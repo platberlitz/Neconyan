@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { EventEmitter } from 'node:events';
 import express from 'express';
 import { setConfigFilePath } from '../src/util.js';
 
@@ -208,6 +209,47 @@ test('live reply previews are account-scoped and disconnecting never cancels the
     await reopenedReader.cancel();
     assert.equal(getJob(aliceDirs, job.id).cancellation.requested, false);
 });
+
+for (const routePath of ['/events', '/:id/preview']) {
+    test(`${routePath} releases its timers when Bun aborts only the request`, async () => {
+        const base = { owner: 'alice', directories: aliceDirs };
+        const { job } = acceptJob(aliceDirs, { owner: 'alice', type: 'media.roleplay-workflow', submissionKey: `abort-${routePath}`,
+            intent: { media: roleplayAccountStamp(base), request: {} } });
+        const request = Object.assign(new EventEmitter(), {
+            user: { profile: { handle: 'alice' }, directories: aliceDirs }, params: { id: job.id }, get: () => 'alice',
+        });
+        const writes = [];
+        const response = Object.assign(new EventEmitter(), {
+            set: () => response, flushHeaders() {}, write: value => writes.push(value), end() { this.writableEnded = true; },
+        });
+        const timers = new Set();
+        const setInterval = globalThis.setInterval;
+        const clearInterval = globalThis.clearInterval;
+        globalThis.setInterval = callback => { timers.add(callback); return callback; };
+        globalThis.clearInterval = timer => { if (!timers.delete(timer)) clearInterval(timer); };
+        try {
+            jobsRouter.stack.find(layer => layer.route?.path === routePath).route.stack[0].handle(request, response);
+            assert.equal(timers.size, 1);
+            // Bun 1.3 reports request.aborted without response.close on client disconnect.
+            request.emit('aborted');
+            assert.equal(timers.size, 0, 'an abandoned preview must stop re-reading the account and job');
+            const before = writes.length;
+            updateJob(aliceDirs, job.id, { progress: { message: 'Still running without its viewer' } });
+            publishRoleplayPreview({ ...base, job: { id: 'aborted-child', intent: { request: { workflowCandidate: { parentJobId: job.id } } } } },
+                { stage: 'generating', text: 'Still running' });
+            await new Promise(resolve => setTimeout(resolve, 80));
+            assert.equal(writes.length, before, 'the abandoned stream unsubscribes from further updates');
+            assert.equal(getJob(aliceDirs, job.id).cancellation.requested, false);
+            response.emit('finish');
+            response.emit('close');
+            assert.equal(timers.size, 0, 'cleanup tolerates later completion signals');
+        } finally {
+            response.emit('close');
+            globalThis.setInterval = setInterval;
+            globalThis.clearInterval = clearInterval;
+        }
+    });
+}
 
 test('cancelling a root interrupts a running vector grandchild before another stage', { timeout: 10000 }, async () => {
     const root = acceptJob(aliceDirs, { owner: 'alice', type: 'media.roleplay-workflow', submissionKey: 'nested-root', intent: {} }).job;
