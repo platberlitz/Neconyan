@@ -1,4 +1,4 @@
-import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
+import { callGenericPopup, Popup, POPUP_RESULT, POPUP_TYPE } from '../popup.js';
 import { buildNoteProposalReview } from '../neconyan-assistant-review.js';
 import { newOperationId, notesDownload, notesUpload } from './api.js';
 import { button, choiceRow, clear, field, formatTime, h } from './dom.js';
@@ -21,6 +21,12 @@ async function dialog(content, options = {}) {
         wide: true, ...options, onOpen: opened => { popup = opened; options.onOpen?.(opened); },
     });
     return { ok: result === POPUP_RESULT.AFFIRMATIVE, result, popup };
+}
+
+// List buttons can close their popup during its opening animation, before onOpen would hand it over.
+function listPopup(content, options) {
+    const popup = new Popup(content, POPUP_TYPE.TEXT, '', { wide: true, ...options });
+    return { popup, closed: popup.show() };
 }
 
 async function askText(message, value = '', okButton = 'Save') {
@@ -240,7 +246,9 @@ export async function chooseNote(app, message, candidates = []) {
             h('span', { class: 'notes-note-title', text: candidate.title ?? candidate.path, 'data-i18n-ignore': '' }),
             h('span', { class: 'notes-note-meta', text: candidate.path ?? '', 'data-i18n-ignore': '' })))));
     const content = h('div', { class: 'notes-dialog' }, h('p', {}, message), list);
-    await callGenericPopup(content, POPUP_TYPE.TEXT, '', { wide: true, okButton: 'Cancel', onOpen: opened => { popup = opened; } });
+    const shown = listPopup(content, { okButton: 'Cancel' });
+    popup = shown.popup;
+    await shown.closed;
     return chosen;
 }
 
@@ -277,7 +285,9 @@ export async function linkPicker(app) {
     search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => void refresh(), 200); });
     const content = h('div', { class: 'notes-dialog' }, h('h3', { text: 'Link to a note' }), field('Note', search), results);
     void refresh();
-    await callGenericPopup(content, POPUP_TYPE.TEXT, '', { wide: true, okButton: 'Close', onOpen: opened => { popup = opened; search.focus(); } });
+    const shown = listPopup(content, { okButton: 'Close', onOpen: () => search.focus() });
+    popup = shown.popup;
+    await shown.closed;
 }
 
 export async function uploadAttachment(app) {
@@ -349,7 +359,9 @@ export async function trash(app) {
                 }, { icon: 'fa-trash', className: 'notes-danger' })));
         list.append(row);
     }
-    await callGenericPopup(content, POPUP_TYPE.TEXT, '', { wide: true, okButton: 'Close', onOpen: opened => { popup = opened; } });
+    const shown = listPopup(content, { okButton: 'Close' });
+    popup = shown.popup;
+    await shown.closed;
 }
 
 /* ---------- assistant proposals ---------- */
@@ -388,7 +400,9 @@ export async function proposals(app) {
     }
     const content = h('div', { class: 'notes-dialog' }, h('h3', { text: 'Assistant changes' }),
         h('p', { class: 'notes-hint', text: 'Changes an assistant asked to make. Nothing here is saved until you choose Save change.' }), list);
-    await callGenericPopup(content, POPUP_TYPE.TEXT, '', { wide: true, okButton: 'Close', onOpen: opened => { popup = opened; } });
+    const shown = listPopup(content, { okButton: 'Close' });
+    popup = shown.popup;
+    await shown.closed;
 }
 
 /* ---------- import and export ---------- */
@@ -437,9 +451,10 @@ export async function unfinishedImports(app) {
             stage.recovery ? null : button('Remove preview', async () => { await app.request('/import/cancel', { stageId: stage.stageId }); popup?.completeCancelled(); await refreshImportStages(app); }, { icon: 'fa-trash' })));
     }
     if (!stages.length) list.append(h('li', { class: 'notes-hint', text: 'No unfinished imports.' }));
-    await callGenericPopup(h('div', { class: 'notes-dialog' }, h('h3', { text: 'Unfinished imports' }),
-        h('p', { class: 'notes-hint', text: 'Previews survive a restart for 30 minutes. An import that has started stays here until it finishes.' }), list),
-    POPUP_TYPE.TEXT, '', { wide: true, okButton: 'Close', onOpen: opened => { popup = opened; } });
+    const shown = listPopup(h('div', { class: 'notes-dialog' }, h('h3', { text: 'Unfinished imports' }),
+        h('p', { class: 'notes-hint', text: 'Previews survive a restart for 30 minutes. An import that has started stays here until it finishes.' }), list), { okButton: 'Close' });
+    popup = shown.popup;
+    await shown.closed;
 }
 
 async function previewImport(app, stage) {
