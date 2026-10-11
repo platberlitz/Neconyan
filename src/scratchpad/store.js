@@ -300,6 +300,32 @@ export function normaliseCleanup(input, previous = defaultCleanup()) {
     return cleanup;
 }
 
+function cleanupFile(lease) {
+    return path.join(rootOf(lease), 'scratchpad', 'cleanup.json');
+}
+
+/** One account-wide choice; old per-chat preferences never enable it implicitly. */
+export function readCleanupLocked(lease) {
+    const file = readAuthoringFileLocked(lease, cleanupFile(lease), 4096);
+    if (!file) return defaultCleanup();
+    try {
+        const input = JSON.parse(file.bytes.toString('utf8'));
+        if (input?.version !== 1 || typeof input.enabled !== 'boolean'
+            || !Number.isInteger(input.keep) || input.keep < 1 || input.keep > MAX_SESSIONS) {
+            throw new Error('Invalid cleanup settings.');
+        }
+        return { enabled: input.enabled, keep: input.keep };
+    } catch {
+        throw fail('SCRATCHPAD_CLEANUP_DAMAGED', 'The saved Scratchpad cleanup setting could not be read.', 500);
+    }
+}
+
+export function updateCleanupLocked(lease, input) {
+    const cleanup = normaliseCleanup(input, readCleanupLocked(lease));
+    writeAuthoringFileLocked(lease, cleanupFile(lease), JSON.stringify({ version: 1, ...cleanup }), { limit: 4096 });
+    return cleanup;
+}
+
 export function emptyBucket(source) {
     return { version: SCRATCHPAD_SCHEMA, source, activeSessionId: null, cleanup: defaultCleanup(), sessions: [] };
 }
@@ -309,7 +335,7 @@ export function normaliseBucket(input, source) {
     const sessions = Array.isArray(input.sessions) ? input.sessions.map(normaliseSession).filter(Boolean).slice(0, MAX_SESSIONS) : [];
     const activeSessionId = sessions.some(session => session.id === input.activeSessionId) ? input.activeSessionId : (sessions[0]?.id ?? null);
     return { version: SCRATCHPAD_SCHEMA, source: { ...source, label: source.label || input.source?.label || '' }, activeSessionId,
-        cleanup: normaliseCleanup(input.cleanup), sessions };
+        cleanup: defaultCleanup(), sessions };
 }
 
 /**
@@ -336,11 +362,6 @@ function removeOldestSessions(bucket, count) {
 export function applyCleanup(bucket) {
     if (!bucket.cleanup?.enabled) return 0;
     return removeOldestSessions(bucket, bucket.sessions.length - bucket.cleanup.keep);
-}
-
-export function updateCleanup(bucket, input) {
-    bucket.cleanup = normaliseCleanup(input, bucket.cleanup ?? defaultCleanup());
-    return bucket.cleanup;
 }
 
 export function scratchpadFile(root, source) {
@@ -447,6 +468,7 @@ export function readBucketLocked(lease, source) {
     const storage = storageSourceLocked(lease, source);
     const parsed = readStoredBucketLocked(lease, storage);
     const bucket = parsed ? normaliseBucket(parsed, source) : emptyBucket(source);
+    bucket.cleanup = readCleanupLocked(lease);
     Object.defineProperty(bucket, STORAGE_SOURCE, { value: storage });
     return bucket;
 }
@@ -454,13 +476,15 @@ export function readBucketLocked(lease, source) {
 export function writeBucketLocked(lease, bucket) {
     const storage = bucket[STORAGE_SOURCE] ?? storageSourceLocked(lease, bucket.source);
     const filename = scratchpadFile(rootOf(lease), storage);
+    // A background reply or an older client must use the latest account choice.
+    bucket.cleanup = readCleanupLocked(lease);
     applyCleanup(bucket);
-    const cleanup = bucket.cleanup ?? defaultCleanup();
-    if (!bucket.sessions.length && !cleanup.enabled && cleanup.keep === DEFAULT_CLEANUP_KEEP) {
+    const cleanup = bucket.cleanup;
+    if (!bucket.sessions.length) {
         deleteAuthoringFileLocked(lease, filename);
         return;
     }
-    const serialise = () => `${JSON.stringify({ ...bucket, source: { kind: storage.kind, key: storage.key, label: bucket.source.label || '' } }, null, 2)}\n`;
+    const serialise = () => `${JSON.stringify({ ...bucket, cleanup: undefined, source: { kind: storage.kind, key: storage.key, label: bucket.source.label || '' } }, null, 2)}\n`;
     let text = serialise();
     // A full file loses its oldest sessions first when automatic cleanup is on.
     while (cleanup.enabled && Buffer.byteLength(text) > FILE_LIMIT && removeOldestSessions(bucket, 1)) text = serialise();

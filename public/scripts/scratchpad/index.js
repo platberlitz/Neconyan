@@ -1748,11 +1748,11 @@ async function updateCleanup(patch) {
         }
         patch = { ...patch, keep: Math.min(app.bucket?.limits?.sessions ?? 40, Math.round(patch.keep)) };
     }
-    const next = { ...(app.bucket?.cleanup ?? { enabled: false, keep: 10 }), ...patch };
-    const extra = next.enabled ? (app.bucket?.sessions.length ?? 0) - next.keep : 0;
-    if (extra > 0) {
-        const ok = await callGenericPopup(t`This deletes up to ${extra} older sessions in this chat now. The open session stays. This cannot be undone.`,
-            POPUP_TYPE.CONFIRM, '', { okButton: t`Delete`, cancelButton: t`Keep` });
+    const previous = app.bucket?.cleanup ?? { enabled: false, keep: 10 };
+    const next = { ...previous, ...patch };
+    if (next.enabled && (!previous.enabled || next.keep < previous.keep)) {
+        const ok = await callGenericPopup(t`This sets automatic cleanup for all chats in your account. Older sessions are deleted in this chat now and in other chats when their Scratchpad is next saved. Open sessions and replies in progress stay. Deletions cannot be undone.`,
+            POPUP_TYPE.CONFIRM, '', { okButton: t`Apply to all chats`, cancelButton: t`Cancel` });
         if (ok !== POPUP_RESULT.AFFIRMATIVE) {
             renderSessions();
             return;
@@ -1771,8 +1771,8 @@ function renderCleanup() {
     });
     return h('section', { class: 'scratchpad-section scratchpad-cleanup' },
         checkbox(t`Delete old sessions automatically`, cleanup.enabled, value => void updateCleanup({ enabled: value }),
-            t`Keeps the newest sessions in this chat and deletes older ones for good. If Scratchpad fills up, the oldest go first. The open session and replies in progress are never deleted.`),
-        h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-cleanup-keep', text: t`Sessions to keep` }), keep));
+            t`Shared across all chats in your account. Keeps the newest sessions in each chat and deletes older ones for good when its Scratchpad is saved. The open session and replies in progress are never deleted.`),
+        h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-cleanup-keep', text: t`Sessions to keep per chat` }), keep));
 }
 
 function exportSession(session) {
