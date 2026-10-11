@@ -2898,7 +2898,8 @@ function updateFixTrackersButtonVisibility() {
     const $agentsButton = $('#ica--fixTrackers');
     const canRun = hasAnyFixableAgents();
     const unavailableMessage = getFixTrackersUnavailableMessage();
-    $agentsButton.show();
+    // Not .show(): it reads the computed style to check, and nothing but this inline style hides the button.
+    if ($agentsButton[0]?.style.display === 'none') $agentsButton[0].style.display = '';
     $agentsButton.prop('disabled', fixTrackersRunning);
     $agentsButton.attr('aria-disabled', String(!canRun || fixTrackersRunning));
     $agentsButton.attr('title', unavailableMessage || 'Re-run enabled tracker and connected companion agents on the last message');
@@ -3165,6 +3166,7 @@ function syncAgentSelection() {
 }
 
 function renderAgentList() {
+    agentListRenderPending = false;
     if (!applyingAgentSetup && selectedAgentSetupId && ['saved', 'modified'].includes(document.getElementById('ica--setupStatus')?.dataset.tone)) showAgentSetupMatch();
     const container = $('#ica--agentList');
     const scrollState = captureAgentListScrollState(container[0]);
@@ -6219,7 +6221,48 @@ function refreshConnectionProfileUi() {
         });
     }
 
-    renderAgentList();
+    renderAgentListWhenShown();
+}
+
+let agentListObserver = null;
+let agentListObserved = null;
+let agentListShown = true;
+let agentListRenderPending = false;
+
+// Rebuilding every agent card takes about 100 ms, and a chat or connection change asks for it
+// even while the Agents page is closed. Off screen, only the controls beside the chat are
+// refreshed and the list is rebuilt once it comes into view.
+function watchAgentList() {
+    const list = document.getElementById('ica--agentList');
+    if (!(list instanceof HTMLElement) || typeof IntersectionObserver !== 'function') return null;
+    if (agentListObserved !== list) {
+        agentListObserver?.disconnect();
+        agentListObserved = list;
+        agentListShown = true;
+        agentListObserver = new IntersectionObserver(entries => {
+            agentListShown = entries.some(entry => entry.isIntersecting);
+            if (agentListShown && agentListRenderPending) renderAgentList();
+        }, { rootMargin: '200px' });
+        agentListObserver.observe(list);
+    }
+    return list;
+}
+
+function renderAgentListWhenShown() {
+    const list = watchAgentList();
+    if (!list) {
+        renderAgentList();
+        return;
+    }
+    if (agentListShown || list.contains(document.activeElement)) {
+        renderAgentList();
+        return;
+    }
+    agentListRenderPending = true;
+    updateCancelGenerationButton();
+    updateFixTrackersButtonVisibility();
+    updateCompanionButtonVisibility();
+    updateCompanionPanelHandleVisibility();
 }
 
 function populateGlobalNotificationToggle() {
@@ -7011,6 +7054,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         populateGlobalExecutionModeDropdown();
     };
 
+    watchAgentList();
     eventSource.on(event_types.CHAT_CHANGED, refreshProfileUi);
 
     const connectionProfileEvents = [
