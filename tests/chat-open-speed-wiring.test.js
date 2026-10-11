@@ -85,4 +85,49 @@ describe('opening a chat skips work for panels that are not on screen', () => {
         expect(tabsStyleCss).toContain('body.has-openai-tab-buttons {');
         expect(tabsStyleCss).not.toContain('body:has(.openai-tab-buttons)');
     });
+
+    test('the Agents list is rebuilt only while it is on screen', () => {
+        const refresh = functionBody(agentsJs, 'function refreshConnectionProfileUi(');
+        expect(refresh).toContain('renderAgentListWhenShown();');
+        expect(refresh).not.toMatch(/\n\s+renderAgentList\(\);/);
+
+        const whenShown = functionBody(agentsJs, 'function renderAgentListWhenShown(');
+        expect(whenShown).toContain('agentListRenderPending = true;');
+        expect(whenShown).toContain('list.contains(document.activeElement)');
+        expect(whenShown).toContain('updateFixTrackersButtonVisibility();');
+
+        const watch = functionBody(agentsJs, 'function watchAgentList(');
+        expect(watch).toContain('new IntersectionObserver(');
+        expect(watch).toContain('if (agentListShown && agentListRenderPending) renderAgentList();');
+        expect(functionBody(agentsJs, 'function renderAgentList(')).toContain('agentListRenderPending = false;');
+
+        const watchCall = agentsJs.indexOf('    watchAgentList();');
+        expect(watchCall).toBeGreaterThan(-1);
+        expect(agentsJs.indexOf('eventSource.on(event_types.CHAT_CHANGED, refreshProfileUi);')).toBeGreaterThan(watchCall);
+    });
+
+    test('the Fix trackers toolbar button is shown without a computed style read', () => {
+        const update = functionBody(agentsJs, 'function updateFixTrackersButtonVisibility(');
+        expect(update).not.toContain('$agentsButton.show()');
+        expect(update).not.toContain('$(this).toggle(');
+        expect(update).toContain('if ($agentsButton[0]?.style.display === \'none\') $agentsButton[0].style.display = \'\';');
+    });
+
+    test('Deep Swipe searches only the chat and keeps unchanged arrows', () => {
+        const deepSwipeUiJs = read('public/scripts/extensions/third-party/Neconyan-Deep-Swipe/ui.js');
+        expect(functionBody(deepSwipeUiJs, 'function findMessageElement(')).toContain('document.getElementById(\'chat\') ?? document');
+        expect(deepSwipeUiJs).not.toContain('document.querySelector(`.mes[mesid="${messageId}"]`)');
+
+        const add = functionBody(deepSwipeUiJs, 'export function addSwipeNavigationToMessage(');
+        const skip = add.indexOf('messageElement.dataset.deepSwipeNavigation === signature');
+        expect(skip).toBeGreaterThan(-1);
+        expect(add).toContain('const signature = `${messageId}:${message.is_user ? \'user\' : \'assistant\'}:${swipeCount}:${currentSwipe}`;');
+        expect(add.indexOf('.deep-swipe-right-block\').forEach(el => el.remove())')).toBeGreaterThan(skip);
+    });
+
+    test('opening a page finds the shell drawers without searching the whole page', () => {
+        const drawers = functionBody(tabsJs, 'function getMobileShellBoundDrawers(');
+        expect(drawers).toContain('document.getElementsByClassName(\'sb-shell-root\')');
+        expect(drawers).not.toContain('querySelectorAll(');
+    });
 });
