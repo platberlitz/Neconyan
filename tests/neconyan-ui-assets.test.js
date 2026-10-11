@@ -49,12 +49,15 @@ describe('Neconyan generated UI artwork', () => {
             expect(createHash('sha256').update(bytes).digest('hex')).toBe(item.sha256);
         }
     });
-    test('ships 52 distinct Sunburst backgrounds at the browser dimensions', () => {
+    test('ships 58 distinct backgrounds at the browser dimensions, with both requested models', () => {
         const provenance = readJson('default/content/backgrounds/artwork-provenance.json');
         const index = readJson('default/content/index.json');
-        expect(provenance.backgrounds).toHaveLength(52);
-        expect(new Set(provenance.backgrounds.map(item => item.id)).size).toBe(52);
-        expect(new Set(provenance.backgrounds.map(item => item.finalSha256)).size).toBe(52);
+        expect(provenance.backgrounds).toHaveLength(58);
+        expect(new Set(provenance.backgrounds.map(item => item.id)).size).toBe(58);
+        expect(new Set(provenance.backgrounds.map(item => item.finalSha256)).size).toBe(58);
+        const darkBackgrounds = provenance.backgrounds.filter(item => item.batch === 'darkModeBatch');
+        expect(darkBackgrounds).toHaveLength(6);
+        expect(new Set(darkBackgrounds.map(item => item.model))).toEqual(new Set(['gpt-image-2.5-sunburst', 'gpt-image-2.5-flare']));
         for (const item of provenance.backgrounds) {
             expect(item.width).toBe(1536);
             expect(item.height).toBe(1024);

@@ -1,5 +1,29 @@
 [
     {
+        "filename": "backgrounds/Neconyan - Velvet Moon.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Rainy Lantern Loft.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Mosslight Grotto.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Indigo Tide.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Ember Hearth.jpg",
+        "type": "background"
+    },
+    {
+        "filename": "backgrounds/Neconyan - Starlit Snow.jpg",
+        "type": "background"
+    },
+    {
         "filename": "settings.json",
         "type": "settings"
     },
