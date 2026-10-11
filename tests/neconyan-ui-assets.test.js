@@ -11,7 +11,7 @@ const readJson = file => JSON.parse(fs.readFileSync(path.join(root, file), 'utf8
 describe('Neconyan generated UI artwork', () => {
     test('ships every transparent sleeping cat coat with matching provenance', () => {
         const provenance = readJson('public/img/neconyan/artwork-provenance.json');
-        expect(SLEEPER_COATS).toHaveLength(28);
+        expect(SLEEPER_COATS).toHaveLength(34);
         const names = SLEEPER_COATS.map(coat => `sleeping-${coat.id}-${coat.side}`);
         expect(names.slice(0, 2)).toEqual(['sleeping-calico-left', 'sleeping-tiger-right']);
         for (const name of names.flatMap(name => [name, `${name}-twitch`])) {

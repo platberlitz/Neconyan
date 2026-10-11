@@ -130,4 +130,25 @@ describe('sleeping cat coats', () => {
         expect(typeof global.NeconyanSleepers.dress).toBe('function');
         expect(global.NeconyanSleepers.coats.map(coat => coat.id)).toContain('russian-blue');
     });
+
+    test.each([
+        ['snow-mittens', 'birman', 'snowshoe'],
+        ['warm-biscuits', 'cinnamon', 'fawn'],
+        ['tufted-twins', 'caracal', 'lynx'],
+        ['cream-socks', 'fawn', 'birman'],
+        ['spice-cupboard', 'cinnamon', 'chocolate'],
+        ['forest-and-frost', 'lynx', 'snow-leopard'],
+    ])('%s dresses both messages and remembers the selected pair', (pair, userId, characterId) => {
+        const user = new FakeImage(true);
+        const character = new FakeImage(false);
+        images.push(user, character);
+        expect(setSleeperCoatPair(pair)).toBe(pair);
+        expect(getSleeperCoatPair()).toBe(pair);
+        expect(store.get(SLEEPER_COAT_STORAGE_KEYS.user)).toBe(userId);
+        expect(store.get(SLEEPER_COAT_STORAGE_KEYS.character)).toBe(characterId);
+        expect(user.getAttribute('src')).toBe(`/img/neconyan/sleeping-${userId}-left.webp`);
+        expect(character.getAttribute('src')).toBe(`/img/neconyan/sleeping-${characterId}-left.webp`);
+        expect(user.classList.contains('is-mirrored')).toBe(true);
+        expect(character.classList.contains('is-mirrored')).toBe(false);
+    });
 });

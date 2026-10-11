@@ -7,6 +7,66 @@
   "processing": "Chroma green removed, transparent raster cutouts resized. Pixel sprite frames encoded as lossless animated WebP; derived rotations keep the generated mascot inside its frame.",
   "sources": [
     {
+      "path": "birman-flare.png",
+      "sha256": "a805f0bbe543dc6c1f10f28e61057b9e4702ab9f6237f4717ef8c9097142b59a",
+      "generated_at": "2026-10-11",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp, enlarged 2x on green at (128,160)",
+      "promptSummary": "Keep the reference pose, left hanging tail, thick cocoa outline and visible hind paw. Change the coat to Birman: ivory body, seal-brown face, ears and tail, white mitten paws. Uniform chroma green background.",
+      "twitch": { "path": "birman-twitch-flare.png", "sha256": "f7936412520d3ff9fd4f948b19e13fc331f5ab203612b551c9e4cb0aaccb2f42", "reference": "sleeping-birman-left.webp", "promptSummary": "Fold only the foreground ear outwards left by 25 degrees; preserve the entire remaining reference on chroma green." },
+      "processing": "Chroma green and spill removed. Alpha bounds fitted to 374px width on a 384x308 canvas at (5,4), with body contact at y164 and tail ending at y304. Ear-only twitch composite bounded by [187,0,287,85]; all other visible pixels retained from the base. Lossless WebP."
+    },
+    {
+      "path": "snowshoe-flare.png",
+      "sha256": "2de3c848205847577cf37cab8fe08931b84d55ad378b1a551a1f63e2c1c5f0a9",
+      "generated_at": "2026-10-11",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp, enlarged 2x on green at (128,160)",
+      "promptSummary": "Keep the reference pose, left hanging tail, thick cocoa outline and visible hind paw. Change the coat to Snowshoe: taupe body, cocoa face and ears, white inverted V on the face, white chest and sock paws, brown tail. Uniform chroma green background.",
+      "twitch": { "path": "snowshoe-twitch-flare.png", "sha256": "13ecec9dc00aedb355aaa2f017066ec197b9329278e09956b9f18c639912f29b", "reference": "sleeping-snowshoe-left.webp", "promptSummary": "Fold only the foreground ear outwards left by 25 degrees; preserve the entire remaining reference on chroma green." },
+      "processing": "Same cutout, y164 body alignment and ear-only compositing process as birman-flare.png. Lossless 384x308 WebP."
+    },
+    {
+      "path": "cinnamon-flare.png",
+      "sha256": "b7a5c0c820dcf35b33ddff744a73de5fc3335ce45297ab8db79754090fae6f75",
+      "generated_at": "2026-10-11",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp, enlarged 2x on green at (128,160)",
+      "promptSummary": "Keep the reference pose, left hanging tail, thick cocoa outline and visible hind paw. Change to solid reddish cinnamon-brown fur, lighter cinnamon muzzle and paws, rosy pink nose. Uniform chroma green background.",
+      "twitch": { "path": "cinnamon-twitch-flare.png", "sha256": "fb720eb0036ec5c2a881ae17cdff54035263739bd367cb8bc55872cb941e3455", "reference": "sleeping-cinnamon-left.webp", "promptSummary": "Fold only the foreground ear outwards left by 25 degrees; preserve the entire remaining reference on chroma green." },
+      "processing": "Same cutout, y164 body alignment and ear-only compositing process as birman-flare.png. Lossless 384x308 WebP."
+    },
+    {
+      "path": "fawn-flare.png",
+      "sha256": "0d2d7abf011489e09e7861189acdffa67d8a872932db6158a6b21b9321912b59",
+      "generated_at": "2026-10-11",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp, enlarged 2x on green at (128,160)",
+      "promptSummary": "Keep the reference pose, left hanging tail, thick cocoa outline and visible hind paw. Change to solid pale mushroom-beige fur with rosy undertones, lighter biscuit muzzle and paws, dusty pink nose. Uniform chroma green background.",
+      "twitch": { "path": "fawn-twitch-flare.png", "sha256": "1561f37d4eeb7e4f6d5bc3f749d890dc1cade93c49612ff3e5f0a036ed09f9ef", "reference": "sleeping-fawn-left.webp", "promptSummary": "Fold only the foreground ear outwards left by 25 degrees; preserve the entire remaining reference on chroma green." },
+      "processing": "Same cutout, y164 body alignment and ear-only compositing process as birman-flare.png. Lossless 384x308 WebP."
+    },
+    {
+      "path": "caracal-flare.png",
+      "sha256": "205690cec398f5b1aec783520e7fee734f9af845ce024538910d4ea869bad9e7",
+      "generated_at": "2026-10-11",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp, enlarged 2x on green at (128,160)",
+      "promptSummary": "Keep the reference pose, long left hanging tail, thick cocoa outline and visible hind paw. Change to caracal: sandy reddish tan, ivory muzzle, black ear tufts and dark cheek accents. Uniform chroma green background.",
+      "twitch": { "path": "caracal-twitch-flare.png", "sha256": "dba474139e3752f1b488c7f98de6c427bff45b70c510370481d7b1adf96c4f3d", "reference": "sleeping-caracal-left.webp", "promptSummary": "Fold only the foreground ear outwards left by 25 degrees; preserve the entire remaining reference on chroma green." },
+      "processing": "Same cutout, y164 body alignment and ear-only compositing process as birman-flare.png. Lossless 384x308 WebP."
+    },
+    {
+      "path": "lynx-flare.png",
+      "sha256": "411e043537e31ad358c58060e47471248c6015bf51d993c043185abadbae484b",
+      "generated_at": "2026-10-11",
+      "image_model": "gpt-image-2.5-flare",
+      "reference": "public/img/neconyan/sleeping-calico-left.webp, enlarged 2x on green at (128,160)",
+      "promptSummary": "Keep the reference pose, long left hanging tail, thick cocoa outline and visible hind paw. Change to lynx: grey-brown spotted fur, cream muzzle and cheek ruff, black ear tufts and dark tail tip. Uniform chroma green background.",
+      "twitch": { "path": "lynx-twitch-flare.png", "sha256": "9e0557dc8f551ae5ec5cf37b2b660469a44bd618f2670c28047746a125a56526", "reference": "sleeping-lynx-left.webp", "promptSummary": "Fold only the foreground ear outwards left by 25 degrees; preserve the entire remaining reference on chroma green." },
+      "processing": "Same cutout, y164 body alignment and ear-only compositing process as birman-flare.png. Lossless 384x308 WebP."
+    },
+    {
       "path": "tiger-paw-sunburst.png",
       "sha256": "c594b01c74c2a5afffbd5cfa0a49909b623b6c19e45fc4c1d7faffa2574b49ef",
       "generated_at": "2026-10-11",
@@ -626,6 +686,18 @@
     }
   ],
   "outputs": [
+    { "path": "public/img/neconyan/sleeping-birman-left.webp", "sha256": "13ad42378c5780016f161fa87beab86e81a8d1ceec42857511072b6afd723213", "size": [384, 308] },
+    { "path": "public/img/neconyan/sleeping-birman-left-twitch.webp", "sha256": "05294dac65813dcbeb449a6edfa1b90f5d95678da3e7847e1ef52a0ecce26ea4", "size": [384, 308] },
+    { "path": "public/img/neconyan/sleeping-snowshoe-left.webp", "sha256": "12c3d6224c35709d79e98e1bfb6e8eb96c0580bf621d6950e1a083a26d909aff", "size": [384, 308] },
+    { "path": "public/img/neconyan/sleeping-snowshoe-left-twitch.webp", "sha256": "3d1c4fc79788348b109cbe218a4c0a75a768f11e213148779365bea97a3a6c6a", "size": [384, 308] },
+    { "path": "public/img/neconyan/sleeping-cinnamon-left.webp", "sha256": "71d30dc5fc0cd70d1b444900f2fe41bb57689911b88d56b4bdfbee8aea0eecbc", "size": [384, 308] },
+    { "path": "public/img/neconyan/sleeping-cinnamon-left-twitch.webp", "sha256": "92c5298c04e5656e12a39bc0a964df319c3009394c4e039f04fed7676e339678", "size": [384, 308] },
+    { "path": "public/img/neconyan/sleeping-fawn-left.webp", "sha256": "223f28ffeb9cf26c75f5db1b4fa3b5c7cfe73bfaa9bfff54a3dc3b2ed1e67582", "size": [384, 308] },
+    { "path": "public/img/neconyan/sleeping-fawn-left-twitch.webp", "sha256": "7bf62a23a808b37a8fd9e83ff492153ee0be7b6c6afee9c4e6148ddaac2e5e2c", "size": [384, 308] },
+    { "path": "public/img/neconyan/sleeping-caracal-left.webp", "sha256": "d48786f15d80674c75607abc5d595efb86b36e09b2ab9f6c667f0ab3868a6571", "size": [384, 308] },
+    { "path": "public/img/neconyan/sleeping-caracal-left-twitch.webp", "sha256": "d0365a64650f9e70ccbac24c416dd2480c9d7047b8e983ad82c015bcd73fcedc", "size": [384, 308] },
+    { "path": "public/img/neconyan/sleeping-lynx-left.webp", "sha256": "209e59d096d1c679e588acf8e171f2afb7af8d3a86a0936394f9d97353783027", "size": [384, 308] },
+    { "path": "public/img/neconyan/sleeping-lynx-left-twitch.webp", "sha256": "0bb5f6517c4434a2acbf40c05642e5e35b8bfb5a8168916cc2bbfd66ae49b392", "size": [384, 308] },
     {
       "path": "public/img/neconyan/sleeping-calico-left-twitch.webp",
       "size": [384, 308],

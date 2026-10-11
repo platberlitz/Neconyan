@@ -18,9 +18,13 @@ export const SLEEPER_COATS = Object.freeze([
     { id: 'cow', label: 'Cow cat', side: 'left', group: 'house' },
     { id: 'siamese', label: 'Siamese', side: 'left', group: 'house' },
     { id: 'ragdoll', label: 'Ragdoll', side: 'left', group: 'house' },
+    { id: 'birman', label: 'Birman', side: 'left', group: 'house' },
+    { id: 'snowshoe', label: 'Snowshoe', side: 'left', group: 'house' },
     { id: 'russian-blue', label: 'Russian Blue', side: 'left', group: 'house' },
     { id: 'lilac', label: 'Lilac', side: 'left', group: 'house' },
     { id: 'chocolate', label: 'Chocolate', side: 'left', group: 'house' },
+    { id: 'cinnamon', label: 'Cinnamon', side: 'left', group: 'house' },
+    { id: 'fawn', label: 'Fawn', side: 'left', group: 'house' },
     { id: 'smoke', label: 'Black smoke', side: 'left', group: 'house' },
     { id: 'black', label: 'Black', side: 'left', group: 'house' },
     { id: 'white', label: 'White', side: 'left', group: 'house' },
@@ -31,6 +35,8 @@ export const SLEEPER_COATS = Object.freeze([
     { id: 'egyptian-mau', label: 'Egyptian Mau', side: 'left', group: 'wild' },
     { id: 'cheetah', label: 'Cheetah', side: 'left', group: 'wild' },
     { id: 'serval', label: 'Serval', side: 'left', group: 'wild' },
+    { id: 'caracal', label: 'Caracal', side: 'left', group: 'wild' },
+    { id: 'lynx', label: 'Lynx', side: 'left', group: 'wild' },
     { id: 'snow-leopard', label: 'Snow leopard', side: 'left', group: 'wild' },
     { id: 'white-tiger', label: 'White tiger', side: 'left', group: 'wild' },
 ]);
@@ -54,6 +60,12 @@ export const SLEEPER_COAT_PAIRS = Object.freeze([
     { id: 'savannah', label: 'Savannah: serval and Abyssinian', user: 'serval', character: 'abyssinian' },
     { id: 'spots-and-marbles', label: 'Spots and marbles: Egyptian Mau and Bengal', user: 'egyptian-mau', character: 'bengal' },
     { id: 'snow-cats', label: 'Snow cats: snow leopard and white tiger', user: 'snow-leopard', character: 'white-tiger' },
+    { id: 'snow-mittens', label: 'Snow mittens: Birman and Snowshoe', user: 'birman', character: 'snowshoe' },
+    { id: 'warm-biscuits', label: 'Warm biscuits: cinnamon and fawn', user: 'cinnamon', character: 'fawn' },
+    { id: 'tufted-twins', label: 'Tufted twins: caracal and lynx', user: 'caracal', character: 'lynx' },
+    { id: 'cream-socks', label: 'Cream socks: fawn and Birman', user: 'fawn', character: 'birman' },
+    { id: 'spice-cupboard', label: 'Spice cupboard: cinnamon and chocolate', user: 'cinnamon', character: 'chocolate' },
+    { id: 'forest-and-frost', label: 'Forest and frost: lynx and snow leopard', user: 'lynx', character: 'snow-leopard' },
 ]);
 export const SLEEPER_COAT_STORAGE_KEYS = Object.freeze({ character: 'sb-sleeper-coat-character', user: 'sb-sleeper-coat-user' });
 export const SLEEPER_COAT_CHANGE_EVENT = 'neconyan:sleeper-coat-change';
