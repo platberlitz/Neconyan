@@ -47,8 +47,10 @@ export function mountRoleplayRecovery(container) {
             status.textContent = [`${counts.chats} chats, ${counts.characters} character cards and ${counts.groups} groups checked.`,
                 ...(report.pending ? ['An unfinished operation will be archived. Repair keeps the files currently on disk.'] : []),
                 ...report.issues.map(item => `${item.file}: ${item.reason}`),
-                ...report.warnings.map(item => `${item.file}: ${item.reason}`),
                 ...(report.issues.length ? ['Resolve the files listed above, then check again. Nothing has been changed.'] : []),
+                ...(report.skipped?.length ? [`Repair will leave out ${report.skipped.length === 1 ? 'this file and keep it' : `these ${report.skipped.length} files and keep them`} unchanged on disk:`,
+                    ...report.skipped.map(item => `${item.file}: ${item.reason}`)] : []),
+                ...report.warnings.map(item => `${item.file}: ${item.reason}`),
                 ...(report.lastRepair ? [`Last repair: ${report.lastRepair.repairedAt}\nBackup: ${report.lastRepair.backup}`] : [])].join('\n');
             visible(repair, report.canRepair);
             visible(reload, !!report.lastRepair);
@@ -60,7 +62,9 @@ export function mountRoleplayRecovery(container) {
         try {
             const result = await request('repair', { token: report.token });
             visible(repair, false); visible(reload, true);
-            status.textContent = `Repair complete. Reload before opening or saving chats.\nBackup: ${result.backup}`;
+            status.textContent = ['Repair complete. Reload before opening or saving chats.',
+                ...(result.skipped ? [`${result.skipped === 1 ? '1 file was' : `${result.skipped} files were`} left out. Fix ${result.skipped === 1 ? 'it' : 'them'}, then check and repair again to include ${result.skipped === 1 ? 'it' : 'them'}.`] : []),
+                `Backup: ${result.backup}`].join('\n');
         } catch (error) {
             visible(repair, false);
             status.textContent = `${error.message}\nCheck transferred data again to see whether the repair completed.`;

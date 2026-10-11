@@ -44,6 +44,8 @@ for (const phone of [false, true]) test(`${phone ? 'phone orphaned' : 'desktop c
         const filename = path.join(root, relative);
         fs.copyFileSync(filename, filename + '.copy'); fs.renameSync(filename + '.copy', filename);
     }
+    const broken = path.join(root, 'chats', account.avatar.replace('.png', ''), 'Broken copy.jsonl');
+    fs.writeFileSync(broken, '{"unfinished":');
     await app.start();
     for (const chat of chats) {
         const refused = await account.context.request.post(chat.route + 'get', { headers: account.headers, data: chat.fields });
@@ -60,6 +62,8 @@ for (const phone of [false, true]) test(`${phone ? 'phone orphaned' : 'desktop c
     await expect(card.getByRole('button', { name: 'Reload repaired account', exact: true })).toBeHidden();
     await card.getByRole('button', { name: 'Check transferred data', exact: true }).click();
     await expect(card.getByRole('status')).toContainText('2 chats');
+    await expect(card.getByRole('status')).toContainText('Repair will leave out this file and keep it unchanged on disk:');
+    await expect(card.getByRole('status')).toContainText('Broken copy.jsonl');
     const repair = card.getByRole('button', { name: 'Back up and repair', exact: true });
     await expect(repair).toBeVisible();
     await repair.scrollIntoViewIfNeeded();
@@ -81,6 +85,9 @@ for (const phone of [false, true]) test(`${phone ? 'phone orphaned' : 'desktop c
     expect(response.ok(), await response.text()).toBe(true);
     const receipt = await response.json();
     await expect(card.getByRole('status')).toContainText('Repair complete.');
+    await expect(card.getByRole('status')).toContainText('1 file was left out.');
+    expect(receipt.skipped).toBe(1);
+    expect(fs.readFileSync(broken, 'utf8')).toBe('{"unfinished":');
     await info.attach('repair-settings', { body: await card.screenshot(), contentType: 'image/png' });
     for (const chat of chats) {
         expect(fs.readFileSync(path.join(root, chat.relative))).toEqual(chat.bytes);

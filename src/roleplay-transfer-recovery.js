@@ -54,7 +54,10 @@ function inspect(lease) {
     const { state, stateFile } = roleplayLease(lease);
     const files = inventory(lease);
     const entries = [];
+    // Issues block repair (a broken group breaks the whole group list); skipped files stay
+    // untracked and unchanged on disk while everything healthy is adopted.
     const issues = [];
+    const skipped = [];
     const warnings = [];
     const groups = [];
     const avatars = new Map();
@@ -67,19 +70,33 @@ function inspect(lease) {
     for (const file of files) {
         const parts = file.relative.split('/');
         let kind, locator, id;
+        if (file.library === 'characters' && parts.length === 2 && parts[1].endsWith('.png')) kind = 'character';
+        else if (file.library === 'groups' && parts.length === 2 && parts[1].endsWith('.json')) kind = 'group';
+        else if (file.library === 'groupChats' && parts.length === 2 && parts[1].endsWith('.jsonl')) kind = 'chat';
+        else if (file.library === 'chats' && parts.length === 3 && parts[2].endsWith('.jsonl')) kind = 'chat';
+        else continue;
+        const report = kind === 'group' ? issues : skipped;
         try {
-            if (file.library === 'characters' && parts.length === 2 && parts[1].endsWith('.png')) {
-                kind = 'character'; id = parts[1];
+            if (kind === 'character') {
+                id = parts[1];
                 normaliseRoleplayLocator({ group: false, chat: 'check', avatar: id });
                 locator = { avatar: id };
-            } else if (file.library === 'groups' && parts.length === 2 && parts[1].endsWith('.json')) {
-                kind = 'group'; id = normaliseRoleplayGroupId(parts[1].slice(0, -5)); locator = { groupId: id };
-            } else if (file.library === 'groupChats' && parts.length === 2 && parts[1].endsWith('.jsonl')) {
-                kind = 'chat'; locator = normaliseRoleplayLocator({ group: true, chat: parts[1].slice(0, -6) });
-            } else if (file.library === 'chats' && parts.length === 3 && parts[2].endsWith('.jsonl')) {
-                kind = 'chat'; locator = normaliseRoleplayLocator({ group: false, avatar: avatars.get(parts[1]) ?? parts[1] + '.png', chat: parts[2].slice(0, -6) });
-                if (!avatars.has(parts[1])) warnings.push({ file: file.relative, reason: 'The character card is missing. Import it to show this chat in the character list.' });
-            } else continue;
+            } else if (kind === 'group') {
+                id = normaliseRoleplayGroupId(parts[1].slice(0, -5)); locator = { groupId: id };
+            } else if (file.library === 'groupChats') {
+                locator = normaliseRoleplayLocator({ group: true, chat: parts[1].slice(0, -6) });
+            } else {
+                locator = normaliseRoleplayLocator({ group: false, avatar: avatars.get(parts[1]) ?? parts[1] + '.png', chat: parts[2].slice(0, -6) });
+            }
+        } catch (error) {
+            if (error.code !== 'ROLEPLAY_INVALID') throw error;
+            report.push({ file: file.relative, reason: 'The file name ends with a space or a full stop, or uses characters Neconyan cannot save. Rename it, then check again.' });
+            continue;
+        }
+        try {
+            if (file.library === 'chats' && !avatars.has(parts[1])) {
+                warnings.push({ file: file.relative, reason: 'The character card is missing. Import it to show this chat in the character list.' });
+            }
             // Adopt only files the ordinary protected readers can open afterwards.
             const current = readRoleplayFile(file.filename, 64 * 1024 * 1024);
             if (!current || current.rawHash !== file.rawHash || !isDeepStrictEqual(current.physical, file.physical)) throw changed();
@@ -96,10 +113,12 @@ function inspect(lease) {
             entries.push({ kind, locator, head: { rawHash: file.rawHash, physical: file.physical, contentHash, writeId: null } });
         } catch (error) {
             if (error.code === 'ROLEPLAY_RECOVERY_CHANGED') throw error;
-            issues.push({ file: file.relative, reason: error.reason ?? (error.code?.startsWith('ROLEPLAY_') ? error.message : 'The file could not be decoded.') });
+            report.push({ file: file.relative, reason: error.reason ?? (error.code?.startsWith('ROLEPLAY_') ? error.message : 'The file could not be decoded.') });
         }
     }
-    const groupChats = new Set(entries.filter(entry => entry.kind === 'chat' && entry.locator.group).map(entry => entry.locator.chat));
+    // A chat left out of repair still exists; it is listed as skipped, not missing.
+    const groupChats = new Set(files.filter(file => file.library === 'groupChats' && /^groupChats\/[^/]+\.jsonl$/.test(file.relative))
+        .map(file => path.posix.basename(file.relative, '.jsonl')));
     for (const group of groups) {
         for (const avatar of group.data.members ?? []) {
             if (![...avatars.values()].includes(avatar)) warnings.push({ file: group.file, reason: `Missing character card: ${avatar}` });
@@ -111,7 +130,7 @@ function inspect(lease) {
     const counts = { chats: 0, characters: 0, groups: 0 };
     for (const entry of entries) counts[{ chat: 'chats', character: 'characters', group: 'groups' }[entry.kind]]++;
     const token = roleplayHash({ state: stateFile.rawHash, files, entries });
-    return { files, entries, report: { token, counts, issues, warnings, canRepair: entries.length > 0 && issues.length === 0,
+    return { files, entries, report: { token, counts, issues, skipped, warnings, canRepair: entries.length > 0 && issues.length === 0,
         pending: state.pending?.kind ?? null, lastRepair: state.transferRecovery?.dataEpoch === state.dataEpoch ? state.transferRecovery : null } };
 }
 
@@ -152,9 +171,10 @@ export function repairTransferredRoleplay(base, token) {
         }
         const journals = checked.files.filter(file => file.library && file.relative.endsWith(FILE_WRITE_RECOVERY_SUFFIX))
             .map(({ relative, library, rawHash, physical }) => ({ relative, library, rawHash, physical }));
-        const receipt = { token, backup, dataEpoch: state.dataEpoch + 1, counts: checked.report.counts, repairedAt: new Date().toISOString(), journals };
+        const receipt = { token, backup, dataEpoch: state.dataEpoch + 1, counts: checked.report.counts,
+            skipped: checked.report.skipped.length, repairedAt: new Date().toISOString(), journals };
         writeBackupFile(path.join(backup, 'manifest.json'), JSON.stringify({ ...receipt, owner: scope.owner, accountId: state.accountId,
-            previousEpoch: state.dataEpoch, files: checked.files, warnings: checked.report.warnings }), dataRoot);
+            previousEpoch: state.dataEpoch, files: checked.files, skipped: checked.report.skipped, warnings: checked.report.warnings }), dataRoot);
         // Cooperating writers hold this lock; check again for manual copying during the backup.
         if (inspect(lease).report.token !== token) throw changed();
         confirmRoleplayAccount(lease);
