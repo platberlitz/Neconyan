@@ -953,12 +953,16 @@ test.describe('compact desktop smoke at 820x1180', () => {
 test.describe('desktop MovingUI containment at 1264x800', () => {
     test.use({ viewport: { width: 1264, height: 800 } });
 
-    test('clamps an active panel drag at every viewport edge', async ({ page }) => {
-        await openQuietChatForSmoke(page, { selectCharacter: false });
+    // The drawer slides in for 380 ms; its translate would skew every geometry reading.
+    const openSettledPresetsDrawer = async (page) => {
         await page.evaluate(() => window.NeconyanShell.openTab('left', 'presets'));
         await waitForAnimationFrames(page, 2);
-        // The drawer slides in for 380 ms; its translate would skew every drag reading.
         await page.locator('#left-nav-panel').evaluate(element => Promise.all(element.getAnimations({ subtree: true }).filter(animation => animation.effect?.getComputedTiming().endTime !== Infinity).map(animation => animation.finished)));
+    };
+
+    test('clamps an active panel drag at every viewport edge', async ({ page }) => {
+        await openQuietChatForSmoke(page, { selectCharacter: false });
+        await openSettledPresetsDrawer(page);
 
         const original = await page.evaluate(async () => {
             const powerUserModule = await import('/scripts/power-user.js');
@@ -1042,8 +1046,7 @@ test.describe('desktop MovingUI containment at 1264x800', () => {
 
     test('ignores unowned persisted geometry without altering the saved layout', async ({ page }) => {
         await openQuietChatForSmoke(page, { selectCharacter: false });
-        await page.evaluate(() => window.NeconyanShell.openTab('left', 'presets'));
-        await waitForAnimationFrames(page, 2);
+        await openSettledPresetsDrawer(page);
 
         const snapshot = await page.evaluate(async () => {
             const module = await import('/scripts/power-user.js');
