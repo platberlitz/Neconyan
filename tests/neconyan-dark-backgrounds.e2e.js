@@ -20,6 +20,8 @@ for (const width of [393, 1280]) {
                 window.NeconyanShell.openTab('right', 'background');
             });
             await page.locator('#background_fitting').selectOption('cover');
+            // A fresh server builds metadata for every background on the first gallery load.
+            await expect(page.locator('#bg_menu_content .bg_example').first()).toBeAttached({ timeout: 30000 });
             for (const title of titles) {
                 const file = `Neconyan - ${title}.jpg`;
                 const choice = page.locator(`#bg_menu_content .bg_example[bgfile="${file}"]`);

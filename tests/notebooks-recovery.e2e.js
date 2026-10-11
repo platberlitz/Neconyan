@@ -68,6 +68,9 @@ async function establishConflict(page, context, notebookId, note, mine, server) 
 }
 
 async function measureControls(page, selector, viewport, info, name) {
+    // Popups grow in from 96% scale; measuring mid-animation shrinks every button.
+    await page.locator(selector).evaluate(element => Promise.all(element.getAnimations({ subtree: true })
+        .filter(animation => animation.effect?.getComputedTiming().endTime !== Infinity).map(animation => animation.finished)));
     const geometry = await page.locator(selector).evaluate(element => {
         const bounds = element.getBoundingClientRect();
         return { left: bounds.left, right: bounds.right, background: getComputedStyle(element).backgroundColor,

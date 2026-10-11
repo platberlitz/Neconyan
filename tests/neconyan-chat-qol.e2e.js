@@ -1,7 +1,7 @@
 /* global document, window */
 import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
-import { openQuietChatForSmoke, waitForAnimationFrames } from './chat-scroll-regression-helpers.js';
+import { isolateSettingsSaves, openQuietChatForSmoke, waitForAnimationFrames } from './chat-scroll-regression-helpers.js';
 
 test.setTimeout(60000);
 
@@ -48,6 +48,7 @@ for (const width of [320, 1280]) {
                 });
             });
 
+            await isolateSettingsSaves(page);
             await openQuietChatForSmoke(page, { selectCharacter: false });
 
             await page.evaluate(async () => {

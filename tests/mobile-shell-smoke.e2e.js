@@ -957,6 +957,8 @@ test.describe('desktop MovingUI containment at 1264x800', () => {
         await openQuietChatForSmoke(page, { selectCharacter: false });
         await page.evaluate(() => window.NeconyanShell.openTab('left', 'presets'));
         await waitForAnimationFrames(page, 2);
+        // The drawer slides in for 380 ms; its translate would skew every drag reading.
+        await page.locator('#left-nav-panel').evaluate(element => Promise.all(element.getAnimations({ subtree: true }).filter(animation => animation.effect?.getComputedTiming().endTime !== Infinity).map(animation => animation.finished)));
 
         const original = await page.evaluate(async () => {
             const powerUserModule = await import('/scripts/power-user.js');

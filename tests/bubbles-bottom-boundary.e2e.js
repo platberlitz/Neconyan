@@ -41,8 +41,8 @@ test('desktop Bubbles follows stationary paint, native edits and the real lower 
         chat.scrollTop += element.getBoundingClientRect().top - chat.getBoundingClientRect().top + 150;
     });
     await cross(); await expect(cap).toBeVisible();
-    const geometry = await cap.evaluate(element => ({ bottom: element.getBoundingClientRect().bottom, bar: document.querySelector('#sb-bottom-chat-bar').getBoundingClientRect().top }));
-    expect(geometry.bottom).toBe(geometry.bar + 4);
+    // A late scroll event hides the cap for one frame before it is placed again.
+    await expect.poll(() => cap.evaluate(element => element.getBoundingClientRect().bottom - document.querySelector('#sb-bottom-chat-bar').getBoundingClientRect().top)).toBe(4);
     const ordinaryPaint = await row.evaluate(element => getComputedStyle(element).backgroundColor);
     await row.evaluate(async element => {
         element.classList.add('selected');

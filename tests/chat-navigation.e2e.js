@@ -470,7 +470,7 @@ test('desktop clipboard success uses the real labelled control and expired sign-
     await expect(copy).toBeVisible();
     await expect(copy).toBeEnabled();
     await copy.click();
-    await expect(page.locator('.toast-success')).toContainText('Chat link copied.');
+    await expect(page.locator('.toast-success', { hasText: 'Chat link copied.' })).toBeVisible();
     expect(await page.evaluate(() => window.navigator.clipboard.readText())).toBe(`${app.url}/?chat=${a.id}&mode=roleplay`);
     expect((await account.context.request.post('/api/users/logout', { headers: account.headers, data: {} })).ok()).toBe(true);
     await navigateInPage(page, a);
