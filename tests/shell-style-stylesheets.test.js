@@ -79,6 +79,15 @@ const themeIds = readThemeIds();
 const runtimeIds = themeIds.filter(id => id !== 'calico');
 
 describe('shell style runtime stylesheets', () => {
+    test('every provider Connect action uses the shared accent-aware primary button', () => {
+        for (const id of ['api_button', 'api_button_novel', 'api_button_textgenerationwebui', 'api_button_openai']) {
+            const tag = indexHtml.match(new RegExp(`<[^>]+id="${id}"[^>]*>`))?.[0];
+            expect(tag).toMatch(/class="[^"]*\bmenu_button_primary\b/);
+        }
+        const core = readSource('public', 'css', 'neconyan.css');
+        expect(core).not.toMatch(/\.neconyan-connect-actions\s*>\s*\.api_button[^{}]*\{[^}]*background:/);
+    });
+
     test('tour accent actions use the primary-button contract in every shell style', () => {
         const tours = readSource('public', 'scripts', 'neconyan-tool-tour.js');
         expect(tours).toContain('\'menu_button menu_button_primary neconyan-tool-tour-next\', t`Show me around`');
