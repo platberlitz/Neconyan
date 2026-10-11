@@ -8,7 +8,7 @@
  * which restores the host's behaviour exactly. nothing about the registry was
  * changed to begin with.
  */
-import { getRemaps, safeRegister } from './registration.js';
+import { getRemaps, safeRegister as defaultRegister } from './registration.js';
 import { ExprError, evaluateCondition, hasExpressionOperator } from './expr-impl.js';
 import { boolString, isTruthyText } from './logic-impl.js';
 import { rewriteIfConditions } from './compat-impl.js';
@@ -46,7 +46,7 @@ export function conditionIsTrue(text, warn) {
     }
 }
 
-export function registerCompatMacros() {
+export function registerCompatMacros(safeRegister = defaultRegister) {
     exprMacroName = safeRegister('expr', {
         category: CATEGORY_COMPAT,
         unnamedArgs: [{ name: 'condition', description: 'The condition to work out, e.g. "{{.hp}} > 0".' }],

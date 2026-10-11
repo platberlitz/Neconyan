@@ -48,6 +48,7 @@ import {
     PromptManager,
     promptManagerDefaultPromptOrders,
 } from './PromptManager.js';
+import { withReadOnlyVariables } from './variable-read-only.js';
 
 import { forceCharacterEditorTokenize, getCustomStoppingStrings, persona_description_positions, power_user } from './power-user.js';
 import { deleteSecret, rotateSecret, SECRET_KEYS, secret_state, writeSecret } from './secrets.js';
@@ -999,7 +1000,7 @@ async function primeChatHistoryTokenCache(preparedChatPrompts) {
  * @param type
  * @param cyclePrompt
  */
-async function populateChatHistory(messages, prompts, chatCompletion, type = null, cyclePrompt = null) {
+async function populateChatHistory(messages, prompts, chatCompletion, type, cyclePrompt, evaluateMacros) {
     if (!prompts.has('chatHistory')) {
         if (chatCompletion.mewmoryProtectedHistory && messages.length) throw new Error('Mewmory needs the Chat History prompt marker enabled.');
         return;
@@ -1009,7 +1010,7 @@ async function populateChatHistory(messages, prompts, chatCompletion, type = nul
 
     // Reserve budget for new chat message
     const newChat = selected_group ? oai_settings.new_group_chat_prompt : oai_settings.new_chat_prompt;
-    const newChatMessage = await Message.createAsync('system', substituteParams(newChat), 'newMainChat');
+    const newChatMessage = await Message.createAsync('system', evaluateMacros(() => substituteParams(newChat)), 'newMainChat');
     chatCompletion.reserveBudget(newChatMessage);
 
     // Reserve budget for group nudge
@@ -1026,7 +1027,7 @@ async function populateChatHistory(messages, prompts, chatCompletion, type = nul
         const promptObject = {
             identifier: 'continueNudge',
             role: 'system',
-            content: substituteParamsExtended(oai_settings.continue_nudge_prompt, { lastChatMessage: String(cyclePrompt).trim() }),
+            content: evaluateMacros(() => substituteParamsExtended(oai_settings.continue_nudge_prompt, { lastChatMessage: String(cyclePrompt).trim() })),
             system_prompt: true,
         };
         continueMessageCollection = new MessageCollection('continueNudge');
@@ -1034,11 +1035,11 @@ async function populateChatHistory(messages, prompts, chatCompletion, type = nul
         if (continueMessageIndex >= 0) {
             const continueMessage = messages.splice(continueMessageIndex, 1)[0];
             const prompt = new Prompt(continueMessage);
-            const chatMessage = await Message.fromPromptAsync(promptManager.preparePrompt(prompt));
+            const chatMessage = await Message.fromPromptAsync(evaluateMacros(() => promptManager.preparePrompt(prompt)));
             continueMessageCollection.add(chatMessage);
         }
         const continueNudgePrompt = new Prompt(promptObject);
-        const preparedNudgePrompt = promptManager.preparePrompt(continueNudgePrompt);
+        const preparedNudgePrompt = evaluateMacros(() => promptManager.preparePrompt(continueNudgePrompt));
         const continueNudgeMessage = await Message.fromPromptAsync(preparedNudgePrompt);
         continueMessageCollection.add(continueNudgeMessage);
         chatCompletion.reserveBudget(continueMessageCollection);
@@ -1086,7 +1087,7 @@ async function populateChatHistory(messages, prompts, chatCompletion, type = nul
             // We do not want to mutate the prompt
             const prompt = new Prompt(chatPool[i]);
             prompt.identifier = `chatHistory-${messages.length - i}`;
-            preparedChatPrompts[i] = { prompt, prepared: promptManager.preparePrompt(prompt) };
+            preparedChatPrompts[i] = { prompt, prepared: evaluateMacros(() => promptManager.preparePrompt(prompt)) };
         }
 
         await primeChatHistoryTokenCache(preparedChatPrompts.slice(start, end));
@@ -1131,7 +1132,7 @@ async function populateChatHistory(messages, prompts, chatCompletion, type = nul
         const buildChatMessage = async () => {
             // The first build reuses the prompt prepared (and counted) before the loop; the
             // trimming path below mutates prompt.content, so those rebuilds prepare again.
-            const prepared = preparedPrompt ?? promptManager.preparePrompt(prompt);
+            const prepared = preparedPrompt ?? evaluateMacros(() => promptManager.preparePrompt(prompt));
             preparedPrompt = null;
             const message = await Message.fromPromptAsync(prepared);
             if (survivingContributions.length > 0) {
@@ -1233,14 +1234,14 @@ async function populateChatHistory(messages, prompts, chatCompletion, type = nul
  * @param {ChatCompletion} chatCompletion - An instance of ChatCompletion class that will be populated with the prompts.
  * @param {Object[]} messageExamples - Array containing all message examples.
  */
-async function populateDialogueExamples(prompts, chatCompletion, messageExamples) {
+async function populateDialogueExamples(prompts, chatCompletion, messageExamples, evaluateMacros) {
     if (!prompts.has('dialogueExamples')) {
         return;
     }
 
     chatCompletion.add(new MessageCollection('dialogueExamples'), prompts.index('dialogueExamples'));
     if (Array.isArray(messageExamples) && messageExamples.length) {
-        const newExampleChat = await Message.createAsync('system', substituteParams(oai_settings.new_example_chat_prompt), 'newChat');
+        const newExampleChat = await Message.createAsync('system', evaluateMacros(() => substituteParams(oai_settings.new_example_chat_prompt)), 'newChat');
         for (const dialogue of [...messageExamples]) {
             const dialogueIndex = messageExamples.indexOf(dialogue);
             const chatMessages = [];
@@ -1317,7 +1318,7 @@ export function getPromptRole(role) {
  * @param {object[]} options.messageExamples - Array containing all message examples.
  * @returns {Promise<void>}
  */
-async function populateChatCompletion(prompts, chatCompletion, { bias, quietPrompt, quietImage, type, cyclePrompt, messages, messageExamples, mewmoryContext, assistantKnowledge }) {
+async function populateChatCompletion(prompts, chatCompletion, { bias, quietPrompt, quietImage, type, cyclePrompt, messages, messageExamples, mewmoryContext, assistantKnowledge, evaluateMacros }) {
     // Helper function for preparing a prompt, that already exists within the prompt collection, for completion
     const addToChatCompletion = async (source, target = null) => {
         // We need the prompts array to determine a position for the source.
@@ -1475,7 +1476,7 @@ async function populateChatCompletion(prompts, chatCompletion, { bias, quietProm
         const isAssistantRole = chatMessage.role === 'assistant';
         const supportsAssistantPrefill = oai_settings.chat_completion_source === chat_completion_sources.CLAUDE;
         const namesInCompletion = oai_settings.names_behavior === character_names_behavior.COMPLETION;
-        const assistantPrefill = isAssistantRole && supportsAssistantPrefill ? substituteParams(oai_settings.assistant_prefill) : '';
+        const assistantPrefill = isAssistantRole && supportsAssistantPrefill ? evaluateMacros(() => substituteParams(oai_settings.assistant_prefill)) : '';
         const messageContent = [assistantPrefill, chatMessage.content].filter(x => x).join('\n\n');
         const continueMessage = await Message.createAsync(chatMessage.role, messageContent, 'continuePrefill');
         chatMessage.name && namesInCompletion && await continueMessage.setName(promptManager.sanitizeName(chatMessage.name));
@@ -1488,11 +1489,11 @@ async function populateChatCompletion(prompts, chatCompletion, { bias, quietProm
 
     // Decide whether dialogue examples should always be added
     if (power_user.pin_examples) {
-        await populateDialogueExamples(prompts, chatCompletion, messageExamples);
-        await populateChatHistory(messages, prompts, chatCompletion, type, cyclePrompt);
+        await populateDialogueExamples(prompts, chatCompletion, messageExamples, evaluateMacros);
+        await populateChatHistory(messages, prompts, chatCompletion, type, cyclePrompt, evaluateMacros);
     } else {
-        await populateChatHistory(messages, prompts, chatCompletion, type, cyclePrompt);
-        await populateDialogueExamples(prompts, chatCompletion, messageExamples);
+        await populateChatHistory(messages, prompts, chatCompletion, type, cyclePrompt, evaluateMacros);
+        await populateDialogueExamples(prompts, chatCompletion, messageExamples, evaluateMacros);
     }
 
     chatCompletion.freeBudget(controlPrompts);
@@ -1517,11 +1518,11 @@ async function populateChatCompletion(prompts, chatCompletion, { bias, quietProm
  * @param {string} options.type - The type of generation that triggered the prompt
  * @returns {Promise<Object>} prompts - The prepared and merged system and user-defined prompts.
  */
-async function preparePromptsForChatCompletion({ scenario, charPersonality, name2, worldInfoBefore, worldInfoAfter, charDescription, quietPrompt, bias, extensionPrompts, systemPromptOverride, jailbreakPromptOverride, type }) {
-    const scenarioText = scenario && oai_settings.scenario_format ? substituteParams(oai_settings.scenario_format) : (scenario || '');
-    const charPersonalityText = charPersonality && oai_settings.personality_format ? substituteParams(oai_settings.personality_format) : (charPersonality || '');
-    const groupNudge = substituteParams(oai_settings.group_nudge_prompt);
-    const impersonationPrompt = getEffectiveImpersonationPrompt();
+async function preparePromptsForChatCompletion({ scenario, charPersonality, name2, worldInfoBefore, worldInfoAfter, charDescription, quietPrompt, bias, extensionPrompts, systemPromptOverride, jailbreakPromptOverride, type, evaluateMacros }) {
+    const scenarioText = scenario && oai_settings.scenario_format ? evaluateMacros(() => substituteParams(oai_settings.scenario_format)) : (scenario || '');
+    const charPersonalityText = charPersonality && oai_settings.personality_format ? evaluateMacros(() => substituteParams(oai_settings.personality_format)) : (charPersonality || '');
+    const groupNudge = evaluateMacros(() => substituteParams(oai_settings.group_nudge_prompt));
+    const impersonationPrompt = evaluateMacros(() => getEffectiveImpersonationPrompt());
 
     // Create entries for system prompts
     const systemPrompts = [
@@ -1622,7 +1623,7 @@ async function preparePromptsForChatCompletion({ scenario, charPersonality, name
     }
 
     // This is the prompt order defined by the user
-    const prompts = promptManager.getPromptCollection(type);
+    const prompts = evaluateMacros(() => promptManager.getPromptCollection(type));
 
     // Merge system prompts with prompt manager prompts
     systemPrompts.forEach(prompt => {
@@ -1640,7 +1641,7 @@ async function preparePromptsForChatCompletion({ scenario, charPersonality, name
             prompt.role = collectionPrompt.role ?? prompt.role;
         }
 
-        const newPrompt = promptManager.preparePrompt(prompt);
+        const newPrompt = evaluateMacros(() => promptManager.preparePrompt(prompt));
         const markerIndex = prompts.index(prompt.identifier);
 
         if (-1 !== markerIndex) prompts.collection[markerIndex] = newPrompt;
@@ -1653,7 +1654,7 @@ async function preparePromptsForChatCompletion({ scenario, charPersonality, name
     if (systemPromptOverride && systemPrompt && systemPrompt.forbid_overrides !== true && !isSystemPromptDisabled) {
         const mainOriginalContent = systemPrompt.content;
         systemPrompt.content = systemPromptOverride;
-        const mainReplacement = promptManager.preparePrompt(systemPrompt, mainOriginalContent);
+        const mainReplacement = evaluateMacros(() => promptManager.preparePrompt(systemPrompt, mainOriginalContent));
         prompts.override(mainReplacement, prompts.index('main'));
     }
 
@@ -1663,7 +1664,7 @@ async function preparePromptsForChatCompletion({ scenario, charPersonality, name
     if (jailbreakPromptOverride && jailbreakPrompt && jailbreakPrompt.forbid_overrides !== true && !isJailbreakPromptDisabled) {
         const jbOriginalContent = jailbreakPrompt.content;
         jailbreakPrompt.content = jailbreakPromptOverride;
-        const jbReplacement = promptManager.preparePrompt(jailbreakPrompt, jbOriginalContent);
+        const jbReplacement = evaluateMacros(() => promptManager.preparePrompt(jailbreakPrompt, jbOriginalContent));
         prompts.override(jbReplacement, prompts.index('jailbreak'));
     }
 
@@ -1720,6 +1721,9 @@ export async function prepareOpenAIMessages({
     if (!promptManager.activeCharacter && dryRun) return [null, false];
 
     const chatCompletion = new ChatCompletion();
+    // Only synchronous substitutions are guarded; previews must not hold a global
+    // read-only scope across token-counting requests or extension callbacks.
+    const evaluateMacros = dryRun ? withReadOnlyVariables : callback => callback();
     if (power_user.console_log_prompts) chatCompletion.enableLogging();
 
     const userSettings = Number.isFinite(responseLength) && responseLength > 0
@@ -1742,10 +1746,11 @@ export async function prepareOpenAIMessages({
             systemPromptOverride,
             jailbreakPromptOverride,
             type,
+            evaluateMacros,
         });
 
         // Fill the chat completion with as much context as the budget allows
-        await populateChatCompletion(prompts, chatCompletion, { bias, quietPrompt, quietImage, type, cyclePrompt, messages, messageExamples, mewmoryContext, assistantKnowledge });
+        await populateChatCompletion(prompts, chatCompletion, { bias, quietPrompt, quietImage, type, cyclePrompt, messages, messageExamples, mewmoryContext, assistantKnowledge, evaluateMacros });
     } catch (error) {
         if (assistantKnowledge?.text) {
             toastr.error('The assistant help reference could not fit. Increase context or shorten the required prompt.');

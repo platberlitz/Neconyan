@@ -1,4 +1,4 @@
-import { safeRegister } from './registration.js';
+import { safeRegister as defaultRegister } from './registration.js';
 import {
     addToDate,
     diffDates,
@@ -11,7 +11,7 @@ export const CATEGORY_DATE = 'enhanced-date';
 
 const UNIT_HELP = 'years, months, weeks, days, hours, minutes or seconds (y/M/w/d/h/m/s)';
 
-export function registerDateMacros() {
+export function registerDateMacros(safeRegister = defaultRegister) {
     safeRegister('dateadd', {
         category: CATEGORY_DATE,
         unnamedArgs: [

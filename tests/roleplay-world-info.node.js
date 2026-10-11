@@ -38,6 +38,26 @@ const entry = (uid, key, content, more = {}) => ({ world: 'Town', uid, hash: uid
 const scan = (entries, overrides = {}) => scanWorldInfo({ entries, chat: ['A cat runs'], metadata: {}, settings,
     maxContext: 100, countTokens: async text => text.length, ...overrides });
 
+test('macro boundary settings respect disabled extensions and retain older accepted snapshots', t => {
+    const f = fixture(t);
+    fs.writeFileSync(path.join(f.scope.directories.root, 'settings.json'), JSON.stringify({
+        power_user: { experimental_macro_engine: true },
+        extension_settings: { disabledExtensions: ['third-party/MacroEnhanced'],
+            MacroEnhanced: { compatExpressions: true, fixImportedSyntax: true } },
+    }));
+    const account = { accountId: f.scope.accountId, dataEpoch: f.scope.dataEpoch };
+    const source = captureRoleplaySource(f.scope, { locator: f.locator });
+    const snapshot = captureRoleplayWorldInfo(f.scope, account, source, { avatar: 'Nova.png', maxContext: 200, serverPrompt: true });
+    assert.deepEqual(snapshot.browserMacroSyntax, { compatExpressions: false, fixImportedSyntax: false });
+    assert.doesNotThrow(() => assertRoleplayWorldInfoCurrent(f.scope, snapshot));
+    delete snapshot.macroPolicyVersion;
+    delete snapshot.browserMacros;
+    delete snapshot.browserMacroSyntax;
+    assert.doesNotThrow(() => assertRoleplayWorldInfoCurrent(f.scope, snapshot));
+    snapshot.global.characterDescription = 'Changed';
+    assert.throws(() => assertRoleplayWorldInfoCurrent(f.scope, snapshot), { code: 'ROLEPLAY_SOURCE_CHANGED' });
+});
+
 test('bound Chat Completion keeps its saved main prompt before protected history', () => {
     const history = [{ role: 'user', content: 'Question' }];
     const snapshot = { systemPrompt: '', global: { characterDescription: 'A harbour', characterPersonality: '',

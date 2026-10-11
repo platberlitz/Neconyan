@@ -79,7 +79,7 @@ async function novelTokenControls(settings, model, stops, signal) {
 /** Use the already-selected legacy controls and native handler; no browser-prepared provider request. */
 export async function runLegacyProfile({ context, binding, messages, maxTokens, macroEnvironment,
     ephemeralStops = [], userName = 'User', characterName = 'Character', groupNames = [],
-    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText, cfgValues, onProviderStep, stepNamespace = '',
+    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText, cfgValues, onProviderStep, stepNamespace = '', captureMacroState = false,
 } = {}) {
     signal ||= jobContext?.signal;
     signal?.throwIfAborted();
@@ -116,6 +116,8 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
     };
     const preparedName = 'legacy-request:' + key;
     const prepared = jobContext && readArtifact(context.directories, jobContext.job.id, preparedName);
+    let macroState = prepared?.macroState;
+    if (prepared && captureMacroState && !macroState) fail('The saved request has lost its macro state. Recover this Roleplay job before retrying.', 409);
     const stops = prepared?.stops ?? resolveCustomStoppingStrings(material.power, substitute, ephemeralStops).filter(Boolean);
     let prompt = prepared?.payload?.prompt ?? prepared?.payload?.input ?? preparedText ?? createRawPrompt(structuredClone(messages), material.backend, rawOptions.instructOverride, rawOptions.quietToLoud,
         rawOptions.systemPrompt, rawOptions.prefill, { instruct: material.power.instruct, context: material.power.context,
@@ -135,10 +137,11 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
     });
     if (material.backend !== 'novel') payload.api_server = settings.api_server;
     const savePrepared = () => {
+        if (captureMacroState && !prepared) macroState = macroEnvironment.captureState();
         if (!jobContext || prepared) return;
         const { api_server: _endpoint, ...saved } = payload;
         void _endpoint;
-        writeArtifact(context.directories, jobContext.job.id, preparedName, { payload: saved, stops });
+        writeArtifact(context.directories, jobContext.job.id, preparedName, { payload: saved, stops, ...(captureMacroState ? { macroState } : {}) });
     };
     if (material.backend === 'horde') {
         if (!jobContext) fail('Horde needs a durable server job before submitting work.', 409);
@@ -150,7 +153,7 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
         const request = { user: { profile: { handle: context.owner }, directories: context.directories }, headers: {} };
         savePrepared();
         await validatePrompt?.(payload, material);
-        await onProviderStep?.('provider:' + key);
+        await onProviderStep?.('provider:' + key, macroState);
         const submitted = await providerStep(jobContext, key, async () => {
             resolveGenerationProfile(context.directories, binding);
             try { await beforeDispatch?.(); } catch (error) { throw providerNotDispatched(error); }
@@ -208,6 +211,6 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
         return { response, text, generation: { backend: material.backend, source: material.source,
             ...((payload.model || material.profile?.model) ? { model: payload.model || material.profile?.model } : {}), showThoughts: false } };
     };
-    if (jobContext) await onProviderStep?.('provider:' + key);
+    if (jobContext) await onProviderStep?.('provider:' + key, macroState);
     return jobContext ? providerStep(jobContext, key, call) : call();
 }

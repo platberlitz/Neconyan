@@ -7,6 +7,7 @@ import { readRoleplayFile, roleplayError, roleplayHash, roleplaySettingsHash, sa
 import { assertRoleplaySourceLocked, readRoleplayEntityLocked } from './roleplay-source.js';
 import { prepareWorldInfoEntries } from '../../public/scripts/world-info-scan-core.js';
 import { createMacroEnvironment } from '../macros/index.js';
+import { capturedBrowserMacros } from '../macros/browser-only.js';
 import { applyRegexScriptList, AGENT_REGEX_PLACEMENT } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 import { scanWorldInfo, worldInfoScanWindow } from './world-info-scan.js';
 import { normalizeExtensionBootId } from '../../public/scripts/extension-boot-lifecycle/index.js';
@@ -383,7 +384,13 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         const translation = captureIncomingRoleplayTranslation(base.directories, savedSettings, { serverPrompt: serverPrompt && !agentContext });
         const inputTranslation = captureRoleplayInputTranslation(base.directories, savedSettings, promptRecords, { serverPrompt: serverPrompt && !agentContext });
         const speech = serverPrompt && !agentContext ? captureSpeechPolicy(base.directories, savedSettings) : null;
+        const enhancedMacros = Boolean(settings.power_user?.experimental_macro_engine)
+            && !extensions.disabledExtensions?.some(name => normalizeExtensionBootId(name) === 'macroenhanced');
         const snapshot = { account: { accountId: account.accountId, dataEpoch: account.dataEpoch }, source, serverPrompt,
+            macroPolicyVersion: serverPrompt ? 1 : 0,
+            browserMacros: capturedBrowserMacros(settings.extension_settings, character.data?.data?.extensions ?? character.data?.extensions, saved.records[0].chat_metadata),
+            browserMacroSyntax: { compatExpressions: enhancedMacros && Boolean(extensions.MacroEnhanced?.compatExpressions),
+                fixImportedSyntax: enhancedMacros && Boolean(extensions.MacroEnhanced?.fixImportedSyntax) },
             ...(serverPrompt && nativeBindingVersion ? { nativeBindingVersion } : {}),
             ...(agentContext ? { agentContext: true } : {}),
             character: { instanceId: character.instanceId, revision: character.revision, rawHash: character.rawHash },
@@ -423,8 +430,7 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
             depthPrompt: { prompt: depthPrompt,
                 depth: (character.data?.data?.extensions ?? character.data?.extensions)?.depth_prompt?.depth ?? 4,
                 role: (character.data?.data?.extensions ?? character.data?.extensions)?.depth_prompt?.role ?? 'system' },
-            enhancedLoreMacros: Boolean(settings.power_user?.experimental_macro_engine)
-                && !extensions.disabledExtensions?.some(name => normalizeExtensionBootId(name) === 'macroenhanced'),
+            enhancedLoreMacros: enhancedMacros,
             noteScanEnabled: Boolean(note.allowWIScan), cfg: extensions.cfg ?? null,
             reasoningInPrompt: Boolean(settings.power_user?.reasoning?.add_to_prompts),
             reasoning: {
@@ -485,6 +491,13 @@ export function assertRoleplayWorldInfoCurrent(base, snapshot) {
         agentIds: snapshot.agents?.forcedIds ?? [], agentContext: snapshot.agentContext ?? false,
         nativeBindingVersion: Object.hasOwn(snapshot, 'nativeBindingVersion') ? snapshot.nativeBindingVersion : 0,
     });
+    // Previously accepted jobs retain their original snapshot shape and write
+    // policy; adding the boundary must not invalidate paid work after an update.
+    if (!Object.hasOwn(snapshot, 'macroPolicyVersion')) {
+        delete captured.macroPolicyVersion;
+        delete captured.browserMacros;
+        delete captured.browserMacroSyntax;
+    }
     if (roleplayHash(captured) !== roleplayHash(snapshot)) {
         throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info selection differs from the account sources.');
     }

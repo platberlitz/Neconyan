@@ -1,4 +1,4 @@
-import { safeRegister } from './registration.js';
+import { safeRegister as defaultRegister } from './registration.js';
 import {
     CHARS_PER_TOKEN,
     CalcError,
@@ -46,7 +46,7 @@ function parseNumber(value, { warn, name, fallback = null }) {
     return n;
 }
 
-export function registerUtilityMacros() {
+export function registerUtilityMacros(safeRegister = defaultRegister) {
     // ---- text ----
 
     safeRegister('upper', {

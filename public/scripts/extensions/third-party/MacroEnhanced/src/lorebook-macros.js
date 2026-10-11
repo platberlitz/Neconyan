@@ -1,4 +1,4 @@
-import { safeRegister } from './registration.js';
+import { safeRegister as defaultRegister } from './registration.js';
 import {
     findEntry,
     getActiveEntries,
@@ -53,7 +53,7 @@ function lookup(entryName, bookName, warn) {
     return { entry, book };
 }
 
-export function registerLorebookMacros() {
+export function registerLorebookMacros(safeRegister = defaultRegister) {
     safeRegister('lore', {
         aliases: [{ alias: 'wi', visible: false }],
         category: CATEGORY_LOREBOOK,

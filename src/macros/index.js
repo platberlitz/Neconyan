@@ -17,6 +17,7 @@ import { readVariableValue } from '../../public/scripts/slash-commands/SlashComm
 import { parseTimestamp } from '../../public/scripts/message-timestamp.js';
 import { moment } from './vendor.js';
 import { evaluateLegacyMacros } from './legacy-macros.js';
+import { assertServerMacroVocabulary } from './browser-only.js';
 
 export { MacroEngine, MacroRegistry };
 export {
@@ -48,11 +49,22 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
         chatMetadata: structuredClone(snapshot.extra?.chatMetadata ?? {}),
         bannedWords: [...(snapshot.extra?.bannedWords ?? [])],
     } };
+    let mutationError;
+    const assertWritable = scope => {
+        if (snapshot.writableScopes && (!snapshot.writableScopes.includes(scope) || readOnly)) {
+            mutationError = Object.assign(new Error(readOnly
+                ? 'Variable writes are not supported during the read-only World Info scan. Move the write to a preset prompt or a history message.'
+                : 'Global variable writes cannot be saved with a Roleplay reply. Use a local chat variable instead.'),
+            { status: 409, code: 'MACRO_WRITE_UNSUPPORTED' });
+            throw mutationError;
+        }
+    };
     const makeScope = (scope) => {
         const values = Object.assign(Object.create(null), data.variables?.[scope]);
         data.variables[scope] = values;
         const get = name => readVariableValue(values[name]);
         const set = (name, value) => {
+            assertWritable(scope);
             if (readOnly) return '';
             if (typeof name !== 'string' || !name) throw new Error('Variable name cannot be empty.');
             values[name] = value;
@@ -60,6 +72,7 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
             return value;
         };
         const add = (name, value) => {
+            assertWritable(scope);
             if (readOnly) return '';
             const current = get(name) || 0;
             let array;
@@ -79,6 +92,7 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
             get, set, add, inc: name => add(name, 1), dec: name => add(name, -1),
             has: name => Object.hasOwn(values, name),
             del: name => {
+                assertWritable(scope);
                 if (readOnly) return;
                 delete values[name];
                 onVariableChange?.({ scope, name, deleted: true });
@@ -117,10 +131,12 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
     // Each string has its own deterministic pick seed and one-shot original,
     // while variables and mutation sinks remain shared within the operation.
     env.fork = () => createMacroEnvironment({ ...data, names: env.names, character: env.character, system: env.system,
-        extra: { ...data.extra, powerUser: env.extra.powerUser, mainApi: env.extra.mainApi } }, capabilities, { dynamicMacros, postProcess });
+        extra: { ...data.extra, powerUser: env.extra.powerUser, mainApi: env.extra.mainApi } }, capabilities, { readOnly, dynamicMacros, postProcess });
     env.captureState = () => structuredClone({ variables: data.variables,
         chatMetadata: env.extra.chatMetadata, bannedWords: env.extra.bannedWords });
-    env.evaluate = (content, { legacy = false, strictCapabilities = false, original: suppliedOriginal, postProcess: suppliedPostProcess } = {}) => {
+    const evaluateContent = (content, { legacy = false, strictCapabilities = false, original: suppliedOriginal, postProcess: suppliedPostProcess } = {}) => {
+        strictCapabilities ||= Boolean(snapshot.writableScopes);
+        if (strictCapabilities) assertServerMacroVocabulary(content, env.dynamicMacros, snapshot.browserMacros, snapshot.browserMacroSyntax);
         let unavailable;
         const extra = { ...env.extra };
         const missing = name => () => {
@@ -128,6 +144,15 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
             throw unavailable;
         };
         if (strictCapabilities) {
+            extra.assertMacroCondition = condition => {
+                if (!/^[\w-]+$/.test(condition)) return;
+                try {
+                    assertServerMacroVocabulary(`{{${condition}}}`, env.dynamicMacros, snapshot.browserMacros);
+                } catch (error) {
+                    mutationError = error;
+                    throw error;
+                }
+            };
             for (const [key, name] of Object.entries({ isMobile: 'isMobile', findExtension: 'hasExtension', getInput: 'input',
                 getFirstDisplayedMessageId: 'firstDisplayedMessageId', parseMesExamples: 'mesExamples', formatInstructModeExamples: 'mesExamples' })) {
                 if (!Object.hasOwn(capabilities, key) && !Object.hasOwn(snapshot.extra || {}, key)) extra[key] = missing(name);
@@ -155,11 +180,32 @@ export function createMacroEnvironment(snapshot = {}, capabilities = {}, { readO
             };
             const result = evaluateLegacyMacros(content, values, extra, suppliedPostProcess ?? postProcess);
             if (unavailable) throw unavailable;
+            if (mutationError) throw mutationError;
+            if (strictCapabilities) assertServerMacroVocabulary(result, env.dynamicMacros, snapshot.browserMacros, snapshot.browserMacroSyntax);
             return result;
         }
         const result = MacroEngine.evaluate(content, { ...env, extra, content, contentHash: getStringHash(content), functions });
         if (unavailable) throw unavailable;
+        if (mutationError) throw mutationError;
+        if (strictCapabilities) assertServerMacroVocabulary(result, env.dynamicMacros, snapshot.browserMacros, snapshot.browserMacroSyntax);
         return result;
+    };
+    let evaluationDepth = 0;
+    env.evaluate = (...args) => {
+        if (evaluationDepth === 0) mutationError = undefined;
+        evaluationDepth++;
+        try {
+            const result = evaluateContent(...args);
+            if (mutationError) throw mutationError;
+            return result;
+        } catch (error) {
+            // The shared evaluator catches handler errors. Keep a nested server
+            // policy failure visible to the outer operation even after that catch.
+            if (['MACRO_BROWSER_ONLY', 'MACRO_WRITE_UNSUPPORTED'].includes(error?.code)) mutationError = error;
+            throw error;
+        } finally {
+            evaluationDepth--;
+        }
     };
     return env;
 }

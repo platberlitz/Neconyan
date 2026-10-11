@@ -148,7 +148,7 @@ export async function fetchChatProfileModels({ context, material, signal, fetch:
 /** Execute a bound Chat Completion profile without browser globals or credential persistence. */
 export async function runChatProfile({ context, binding, messages, maxTokens, macroEnvironment,
     ephemeralStops = [], userName = 'User', characterName = 'Character', groupNames = [],
-    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText, cfgValues, preparedMessages = false, onProviderStep, onStream, functionTools = [], generationType = 'quiet', stepNamespace = '',
+    signal, fetch: fetchImpl, jobContext, modelOverride = '', overridePayload = {}, rawOptions = {}, beforeDispatch, validatePrompt, stream = false, preparedText, cfgValues, preparedMessages = false, onProviderStep, onStream, functionTools = [], generationType = 'quiet', stepNamespace = '', captureMacroState = false,
 } = {}) {
     if (!context?.directories) fail('A generation context is required.', 400);
     if (typeof stepNamespace !== 'string' || stepNamespace.length > 512) fail('The saved generation step identity is invalid.', 400);
@@ -171,7 +171,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
     const raw = binding?.kind === 'active';
     if (['kobold', 'novel', 'horde'].includes(binding?.backend)) return runLegacyProfile({ context, binding, messages, maxTokens, macroEnvironment,
         ephemeralStops, userName, characterName, groupNames, signal, fetch: fetchImpl, jobContext,
-        modelOverride, overridePayload, rawOptions, beforeDispatch, validatePrompt, stream, preparedText, cfgValues, onProviderStep, stepNamespace });
+        modelOverride, overridePayload, rawOptions, beforeDispatch, validatePrompt, stream, preparedText, cfgValues, onProviderStep, stepNamespace, captureMacroState });
     if (!raw && Object.keys(rawOptions).some(option => !['jsonSchema', 'cacheScope', 'includePreset', 'includeInstruct'].includes(option))) {
         fail('This request option requires the acknowledged active connection.', 409);
     }
@@ -213,7 +213,9 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
         }
         const preparedName = (raw ? 'active-request:' : 'text-request:') + key;
         const prepared = jobContext && readArtifact(context.directories, jobContext.job.id, preparedName);
-        let payload = raw ? prepared?.payload : prepared;
+        let payload = raw || captureMacroState ? prepared?.payload : prepared;
+        let macroState = prepared?.macroState;
+        if (prepared && captureMacroState && !macroState) fail('The saved request has lost its macro state. Recover this Roleplay job before retrying.', 409);
         let cleanupStops = prepared?.cleanupStops;
         let regexScripts = prepared?.regexScripts;
         if (!payload) {
@@ -233,13 +235,15 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
                 const prompt = preparedMessages ? structuredClone(messages) : createRawPrompt(structuredClone(messages), 'openai', rawOptions.instructOverride, rawOptions.quietToLoud,
                     rawOptions.systemPrompt, rawOptions.prefill, { instruct: material.power.instruct, context: material.power.context,
                         name1: userName, name2: characterName, selectedGroup: groupNames.length > 0, substitute });
-                payload = await prepareChatRequest({ ...options, messages: prompt }, material);
-                cleanupStops = resolveCustomStoppingStrings(material.power, substitute, ephemeralStops).filter(Boolean);
+                payload = await prepareChatRequest({ ...options, messages: prompt,
+                    captureCleanupStops: stops => { cleanupStops = stops.filter(Boolean); } }, material);
             }
             payload.stream = stream === true;
+            if (captureMacroState) macroState = macroEnvironment.captureState();
             if (jobContext) {
                 const savedPayload = withoutTransport(payload);
-                writeArtifact(context.directories, jobContext.job.id, preparedName, raw ? { payload: savedPayload, cleanupStops, regexScripts } : savedPayload);
+                writeArtifact(context.directories, jobContext.job.id, preparedName, raw || captureMacroState
+                    ? { payload: savedPayload, ...(raw ? { cleanupStops, regexScripts } : {}), ...(captureMacroState ? { macroState } : {}) } : savedPayload);
             }
         }
         payload.stream = stream === true;
@@ -267,7 +271,7 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
             if (raw && !text && !functionTools.length) fail('No message generated.', 502);
             return { ...result, text, generation: { ...generation, ...result.timing } };
         };
-        if (jobContext) await onProviderStep?.('provider:' + key);
+        if (jobContext) await onProviderStep?.('provider:' + key, macroState);
         return jobContext ? providerStep(jobContext, key, call) : call();
     }
     const key = hash({ binding, messages, maxTokens, ephemeralStops, userName, characterName, groupNames,
@@ -278,11 +282,16 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
     }
     const material = resolveGenerationProfile(context.directories, binding);
     const preparedName = 'chat-request:' + key;
-    let payload = jobContext && readArtifact(context.directories, jobContext.job.id, preparedName);
+    const prepared = jobContext && readArtifact(context.directories, jobContext.job.id, preparedName);
+    let payload = captureMacroState ? prepared?.payload : prepared;
+    let macroState = prepared?.macroState;
+    if (prepared && captureMacroState && !macroState) fail('The saved request has lost its macro state. Recover this Roleplay job before retrying.', 409);
     if (!payload) {
         payload = await prepareChatRequest({ context, binding, messages, maxTokens, macroEnvironment, ephemeralStops,
             userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload, rawOptions, functionTools, generationType }, material);
-        if (jobContext) writeArtifact(context.directories, jobContext.job.id, preparedName, withoutTransport(payload));
+        if (captureMacroState) macroState = macroEnvironment.captureState();
+        if (jobContext) writeArtifact(context.directories, jobContext.job.id, preparedName, captureMacroState
+            ? { payload: withoutTransport(payload), macroState } : withoutTransport(payload));
     }
     payload = { ...restoreTransport(payload, material), stream: stream === true };
     await validatePrompt?.(payload, material);
@@ -299,15 +308,22 @@ export async function runChatProfile({ context, binding, messages, maxTokens, ma
                 mainApi: 'openai', name1: userName, name2: characterName, groupNames, displayIncompleteSentences: true }),
             generation: { ...generation, ...result.timing } }));
     };
-    if (jobContext) await onProviderStep?.('provider:' + key);
+    if (jobContext) await onProviderStep?.('provider:' + key, macroState);
     return jobContext ? providerStep(jobContext, key, call) : call();
 }
 
 async function prepareChatRequest({ context, binding, messages, maxTokens, macroEnvironment, ephemeralStops,
-    userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload, rawOptions = {}, functionTools = [], generationType = 'quiet' }, material) {
+    userName, characterName, groupNames, signal, fetch: fetchImpl, modelOverride, overridePayload, rawOptions = {}, functionTools = [], generationType = 'quiet', captureCleanupStops }, material) {
     const saved = readJson(path.join(context.directories.root, 'settings.json'), {});
     const power = { ...saved.power_user, ...material?.power };
     if (power.custom_stopping_strings_macro && !macroEnvironment?.evaluate) fail('This profile requires the captured chat macro context.', 400);
+    let stoppingStrings;
+    const getStoppingStrings = limit => {
+        stoppingStrings ??= resolveCustomStoppingStrings(power, text => macroEnvironment.evaluate(text, {
+            legacy: material?.kind === 'active' && !power.experimental_macro_engine, strictCapabilities: material?.kind === 'active',
+        }), ephemeralStops);
+        return limit > 0 ? stoppingStrings.slice(0, limit) : stoppingStrings;
+    };
     const request = { user: { profile: { handle: context.owner }, directories: context.directories }, headers: {} };
     const catalogs = new Map();
     const getCatalog = async source => {
@@ -336,7 +352,7 @@ async function prepareChatRequest({ context, binding, messages, maxTokens, macro
             userName, characterName, getGroupNames: () => groupNames,
             getLogitBias: () => runBackendRequest({ ...request, query: { model } }, handleChatCompletionsBias,
                 settings.bias_presets[settings.bias_preset_selected], { signal }),
-            getStoppingStrings: limit => resolveCustomStoppingStrings(power, text => macroEnvironment.evaluate(text, { legacy: material?.kind === 'active' && !power.experimental_macro_engine, strictCapabilities: material?.kind === 'active' }), ephemeralStops, limit),
+            getStoppingStrings,
             getIncludeReasoning: () => Boolean(settings.show_thoughts || settings.auto_append_reasoning_tags),
             getReasoningEffort: () => resolveChatReasoningEffort(settings, model, catalog),
             getVerbosity: () => settings.verbosity === 'auto' ? undefined : settings.verbosity,
@@ -357,6 +373,7 @@ async function prepareChatRequest({ context, binding, messages, maxTokens, macro
         }, { jsonSchema: rawOptions.jsonSchema, cacheScope: rawOptions.cacheScope });
     };
     const payload = await buildChatProfileRequest(context.directories, binding, structuredClone(messages), maxTokens, generate, { modelOverride, overridePayload, rawOptions, generationType });
+    if (captureCleanupStops) captureCleanupStops(getStoppingStrings());
     // Quiet requests on profiles without a preset skip the request builder that registers tools.
     if (functionTools.length && !payload.tools) Object.assign(payload, { tools: structuredClone(functionTools), tool_choice: 'auto' });
     if (payload.chat_completion_source === 'nanogpt' && ['flex', 'priority'].includes(payload.service_tier)) {

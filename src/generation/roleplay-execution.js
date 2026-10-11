@@ -32,6 +32,7 @@ import { worldInfoActivationActions } from './world-info-hook-policy.js';
 import { runBoundPathfinderRetrieval } from './pathfinder-retrieval.js';
 import { prepareRoleplayInputTranslation, translateIncomingRoleplayOutput } from './roleplay-translation.js';
 import { prepareRoleplayQuickReplies } from './roleplay-quick-replies.js';
+import { prepareRoleplayMacroCommit, roleplayMacroCommitHash } from './roleplay-macro-commit.js';
 import { roleplayPromptContentHash } from './roleplay-prompt-proof.js';
 import { generateSavedSpeech } from './speech-jobs.js';
 import { prepareRoleplayCaptions } from './roleplay-captions.js';
@@ -148,6 +149,8 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             throw roleplayError('ROLEPLAY_TOOLS_PENDING', 'The saved provider result needs the native tool workflow before a reply can be written.', 409);
         }
         const output = replyOutput(result, effect, request.characterName, result.generation);
+        const macroCommit = roleplayMacroCommitHash(directories, job);
+        if (macroCommit) output.macroCommit = macroCommit;
         const reply = output.message ?? output.messages?.[0] ?? output;
         const { count } = await getCounter(request.worldInfo?.tokenizer);
         const publishTextPreview = (text, update) => publishRoleplayPreview(context, { ...update, text,
@@ -536,9 +539,10 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         if (worldInfo.hookEvents.actions.length) {
             if (!request.serverPrompt) throw roleplayError('ROLEPLAY_INVALID', 'This World Info entry needs a native Quick Reply action.', 409);
             quickReply = prepareRoleplayQuickReplies(context, { base, snapshot: request.worldInfo, source, worldInfo });
-            acceptedMacros = { ...acceptedMacros, variables: { ...acceptedMacros.variables, local: structuredClone(quickReply.local) },
+            const local = { ...acceptedMacros.variables.local, ...Object.fromEntries(quickReply.changes.map(change => [change.key, change.after])) };
+            acceptedMacros = { ...acceptedMacros, variables: { ...acceptedMacros.variables, local },
                 extra: { ...acceptedMacros.extra, chatMetadata: { ...acceptedMacros.extra?.chatMetadata,
-                    variables: structuredClone(quickReply.local) } } };
+                    variables: structuredClone(local) } } };
         }
         if (request.worldInfo.pathfinder && contributions.extensions.some(prompt =>
             ['pathfinder_sidecar_retrieval', 'pathfinder_pipeline_retrieval'].includes(prompt.key))) {
@@ -904,9 +908,12 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         maxTokens: request.maxTokens, userName, characterName: request.characterName,
         generationType: request.serverPrompt ? request.worldInfo.global.trigger : 'quiet',
         groupNames, macroEnvironment, preparedText, cfgValues, preparedMessages: Boolean(request.serverPrompt && countChat), functionTools,
+        captureMacroState: request.worldInfo?.macroPolicyVersion === 1,
         rawOptions: request.rawOptions || {}, ephemeralStops: request.ephemeralStops || [],
-        onProviderStep: step => {
+        onProviderStep: (step, state) => {
+            const macroCommit = prepareRoleplayMacroCommit(context, state ?? macroEnvironment.captureState());
             const reference = { intentHash: roleplayHash(job.intent), step,
+                ...(macroCommit ? { macroCommit } : {}),
                 promptHash: request.serverPrompt ? readArtifact(directories, job.id, 'roleplay-prompt').hash : null,
                 worldInfoHash: worldInfo ? roleplayHash(worldInfo) : null };
             if (providerReference && roleplayHash(providerReference) !== roleplayHash(reference)) {
@@ -931,6 +938,9 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         } : undefined,
         beforeDispatch,
         modelOverride: request.modelOverride || '', overridePayload, stream: request.stream === true && !functionTools.length })).finally(preview.stop);
+    // Injected transports can omit the provider callback; real transports stage
+    // the state before dispatch and recover it from their saved request.
+    if (readArtifact(directories, job.id, 'roleplay-macro-commit') === undefined) prepareRoleplayMacroCommit(context, macroEnvironment.captureState());
     return finish(result, worldInfo);
 }
 

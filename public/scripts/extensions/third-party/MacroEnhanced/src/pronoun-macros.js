@@ -11,7 +11,7 @@
  * {{setpronouns}} override in this chat, then the persona setting or the card,
  * then they/them.
  */
-import { safeRegister } from './registration.js';
+import { safeRegister as defaultRegister } from './registration.js';
 import { MODULE_NAME, getSettings, saveSettings } from './settings.js';
 import { getChatState, touchChatState } from './chat-state.js';
 import { capitalizeText } from './utility-impl.js';
@@ -199,7 +199,7 @@ function cased(ctx, value) {
 
 // ---------- registration ----------
 
-export function registerPronounMacros() {
+export function registerPronounMacros(safeRegister = defaultRegister) {
     for (const subject of Object.values(SUBJECTS)) {
         const { prefix, who } = subject;
 
