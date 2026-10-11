@@ -150,8 +150,14 @@ async function flushActiveGuides() {
     return activeGuides;
 }
 
+// Guide text is pasted into STscript; a bare `|` or `{:` would split or swallow the command.
+function escapeSlashCommandText(value) {
+    return String(value ?? '').replace(/(\\*)(\||\{:)/g, (_, slashes, sequence) => `${slashes}${slashes}\\${sequence}`);
+}
+
 export {
     applyPromptTemplate,
+    escapeSlashCommandText,
     debugLog,
     debugWarn,
     extensionName,

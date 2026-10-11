@@ -1,6 +1,7 @@
 import {
     applyPromptTemplate,
     debugLog,
+    escapeSlashCommandText,
     extensionName,
     extension_settings,
     getContext,
@@ -49,7 +50,8 @@ async function guidedResponse() {
             triggerArgument = ` ${selectedMember}`;
         }
 
-        const stscriptCommand = `/inject id=${guidedResponseInjectId} position=chat ephemeral=true scan=true depth=${depth} role=${injectionRole} ${filledPrompt}|
+        const escapedPrompt = escapeSlashCommandText(filledPrompt);
+        const stscriptCommand = `/inject id=${guidedResponseInjectId} position=chat ephemeral=true scan=true depth=${depth} role=${injectionRole} ${escapedPrompt} |
 /trigger await=true${triggerArgument}|`;
         injectionAttempted = true;
         await getContext().executeSlashCommandsWithOptions(stscriptCommand);

@@ -1,6 +1,7 @@
 import {
     applyPromptTemplate,
     debugLog,
+    escapeSlashCommandText,
     extensionName,
     extension_settings,
     getContext,
@@ -18,10 +19,6 @@ import {
 } from '../../helper-prefill.js';
 
 let isImpersonating = false;
-
-function escapeSlashCommandDelimiters(value) {
-    return String(value ?? '').replace(/\|/g, '\\|');
-}
 
 function getImpersonateSystemFrame() {
     return [
@@ -80,8 +77,8 @@ async function guidedImpersonate() {
     const helperPrefillPrompt = serializeHelperPrefillForPrompt(parseHelperPrefillMessages(settings.helperPrefillMessages));
     const impersonatePrompt = buildGuidedImpersonatePrompt(filledPrompt, helperPrefillPrompt);
     const fullScript = `// Impersonate guide|
-/inject id=${guidedImpersonateInjectId} position=chat ephemeral=true scan=true depth=0 role=system ${escapeSlashCommandDelimiters(getImpersonateSystemFrame())} |
-/impersonate await=true ${escapeSlashCommandDelimiters(impersonatePrompt)} |`;
+/inject id=${guidedImpersonateInjectId} position=chat ephemeral=true scan=true depth=0 role=system ${escapeSlashCommandText(getImpersonateSystemFrame())} |
+/impersonate await=true ${escapeSlashCommandText(impersonatePrompt)} |`;
     let switching;
     let injectionAttempted = false;
     isImpersonating = true;

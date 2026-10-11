@@ -2,6 +2,7 @@ import { eventSource, event_types } from '../../../../script.js';
 import {
     applyPromptTemplate,
     debugLog,
+    escapeSlashCommandText,
     extensionName,
     extension_settings,
     getContext,
@@ -122,7 +123,8 @@ async function guidedSwipe() {
 
         try {
             setPreviousImpersonateInput(originalInput);
-            const stscriptCommand = `/inject id=${guidedSwipeInjectId} position=chat ephemeral=true scan=true depth=${depth} role=${injectionRole} ${filledPrompt} |`;
+            const escapedPrompt = escapeSlashCommandText(filledPrompt);
+            const stscriptCommand = `/inject id=${guidedSwipeInjectId} position=chat ephemeral=true scan=true depth=${depth} role=${injectionRole} ${escapedPrompt} |`;
             await executeSTScriptCommand(stscriptCommand);
             debugLog('[Swipe] Executed command:', stscriptCommand);
 
