@@ -20090,5 +20090,14 @@
   "This lorebook changed while the dialog was open. Nothing was changed; try again.": "This lorebook changed while the dialog was open. Nothing was changed; try again.",
   " Lorebook retrieval is now on.": " Lorebook retrieval is now on.",
   " Lorebook retrieval is off, so they are not searched yet.": " Lorebook retrieval is off, so they are not searched yet.",
-  "Entries marked for Vectorization: ${0}": "Entries marked for Vectorization: ${0}"
+  "Entries marked for Vectorization: ${0}": "Entries marked for Vectorization: ${0}",
+  "Pin": "Pin",
+  "Pin ${0} to chat": "Pin ${0} to chat",
+  "Unpin ${0} from chat": "Unpin ${0} from chat",
+  "Pinned prompts": "Pinned prompts",
+  "Pin prompts to control them beside desktop chat.": "Pin prompts to control them beside desktop chat.",
+  "Collapse pinned prompts": "Collapse pinned prompts",
+  "Expand pinned prompts": "Expand pinned prompts",
+  "${0}/${1} on": "${0}/${1} on",
+  "Could not save pinned prompts. Check the connection and try again.": "Could not save pinned prompts. Check the connection and try again."
 }

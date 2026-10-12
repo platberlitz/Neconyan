@@ -393,6 +393,13 @@
     color: var(--SmartThemeQuoteColor);
 }
 
+/* Reset the native switch immediately, without replacing its icon font or state colours. */
+:where(button.prompt-manager-toggle-action) { font: inherit; }
+#completion_prompt_manager button.prompt-manager-toggle-action {
+    appearance: none; background: transparent; border: 0; padding: 0;
+    color: inherit; display: inline-flex; box-shadow: none;
+}
+
 #completion_prompt_manager #completion_prompt_manager_list .completion_prompt_manager_prompt.completion_prompt_manager_prompt_disabled {
     border: 1px solid color-mix(in srgb, var(--SmartThemeBorderColor) 52%, transparent);
 }
