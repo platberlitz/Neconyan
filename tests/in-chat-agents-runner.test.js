@@ -8630,6 +8630,87 @@ describe('in-chat agent post-processing runner', () => {
         }
     });
 
+    test('Fix trackers stops after every connection times out and ignores late transport replies', async () => {
+        jest.useFakeTimers();
+        globalSettings.trackerRepairConnectionProfile = 'repair';
+        globalSettings.trackerRepairConnectionFallbacks = ['backup'];
+        globalSettings.trackerRepairTimeoutSeconds = 1;
+        const finish = [];
+        connectionManagerRequestService = {
+            sendRequest: jest.fn(() => new Promise(resolve => finish.push(resolve))),
+        };
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        try {
+            const { requestPromptTransform, isAgentGenerationActive } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+            const { markTrackerRepairRunAgent } = await import('../public/scripts/extensions/in-chat-agents/tracker-repair-run.js');
+            const result = requestPromptTransform(markTrackerRepairRunAgent({ id: 'tracker' }), [], 100)
+                .then(() => { throw new Error('A stalled repair must not succeed'); }, error => error);
+            await jest.advanceTimersByTimeAsync(1000);
+            expect(connectionManagerRequestService.sendRequest.mock.calls.map(call => call[0])).toEqual(['repair', 'backup']);
+            expect(isAgentGenerationActive()).toBe(true);
+            await jest.advanceTimersByTimeAsync(1000);
+            expect((await result).message).toMatch(/time|second/i);
+            expect(isAgentGenerationActive()).toBe(false);
+            expect(connectionManagerRequestService.sendRequest.mock.calls.every(call => call[3].signal.aborted)).toBe(true);
+            finish.forEach(resolve => resolve({ content: 'Too late' }));
+            await jest.advanceTimersByTimeAsync(0);
+            expect(isAgentGenerationActive()).toBe(false);
+            expect(connectionManagerRequestService.sendRequest).toHaveBeenCalledTimes(2);
+        } finally {
+            warn.mockRestore();
+            jest.useRealTimers();
+        }
+    });
+
+    test('cancelling Fix trackers releases a stalled request without starting its fallback', async () => {
+        jest.useFakeTimers();
+        globalSettings.trackerRepairConnectionProfile = 'repair';
+        globalSettings.trackerRepairConnectionFallbacks = ['backup'];
+        globalSettings.trackerRepairTimeoutSeconds = 1;
+        let finish;
+        connectionManagerRequestService = { sendRequest: jest.fn(() => new Promise(resolve => { finish = resolve; })) };
+        try {
+            const { requestPromptTransform, isAgentGenerationActive } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+            const { markTrackerRepairRunAgent } = await import('../public/scripts/extensions/in-chat-agents/tracker-repair-run.js');
+            const controller = new AbortController();
+            const result = requestPromptTransform(markTrackerRepairRunAgent({ id: 'tracker' }), [], 100, { signal: controller.signal })
+                .then(() => { throw new Error('A cancelled repair must not succeed'); }, error => error);
+            await jest.advanceTimersByTimeAsync(0);
+            expect(isAgentGenerationActive()).toBe(true);
+            controller.abort();
+            expect((await result).name).toBe('AbortError');
+            expect(isAgentGenerationActive()).toBe(false);
+            finish({ content: 'Too late' });
+            await jest.advanceTimersByTimeAsync(5000);
+            expect(connectionManagerRequestService.sendRequest).toHaveBeenCalledTimes(1);
+            expect(isAgentGenerationActive()).toBe(false);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    test.each([['an unlimited repair', true, 0], ['an ordinary Agent', false, 1]])('%s does not inherit a repair deadline', async (_label, repair, timeout) => {
+        jest.useFakeTimers();
+        globalSettings.trackerRepairTimeoutSeconds = timeout;
+        let finish;
+        connectionManagerRequestService = { sendRequest: jest.fn(() => new Promise(resolve => { finish = resolve; })) };
+        try {
+            const { requestPromptTransform, isAgentGenerationActive } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+            const { markTrackerRepairRunAgent } = await import('../public/scripts/extensions/in-chat-agents/tracker-repair-run.js');
+            const agent = { id: 'tracker', connectionProfile: 'usual' };
+            const pending = requestPromptTransform(repair ? markTrackerRepairRunAgent(agent) : agent, [], 100);
+            await jest.advanceTimersByTimeAsync(60000);
+            expect(isAgentGenerationActive()).toBe(true);
+            expect(connectionManagerRequestService.sendRequest).toHaveBeenCalledTimes(1);
+            expect(connectionManagerRequestService.sendRequest.mock.calls[0][3].signal.aborted).toBe(false);
+            finish({ content: 'Completed normally' });
+            expect((await pending).output).toBe('Completed normally');
+            expect(isAgentGenerationActive()).toBe(false);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
     test('shows the resolved profile model in prompt-transform running toasts', async () => {
         usePromptTransformPostAgent();
         enabledAgents[0].connectionProfile = 'profile-cc';
