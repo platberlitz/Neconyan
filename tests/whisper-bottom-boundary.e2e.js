@@ -7,6 +7,42 @@ import { test } from './neconyan-conversation-durable-fixture.js';
 
 test.use({ launchOptions: { ignoreDefaultArgs: ['--hide-scrollbars'] } });
 
+test('Opaque Whisper and Hush join remains continuous at fractional device scale', async ({ app }, info) => {
+    const account = await app.account({ contextOptions: { deviceScaleFactor: 2.5 } });
+    const page = await account.open({ workspace: false });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.evaluate(async avatar => {
+        const c = window.SillyTavern.getContext(); await c.getCharacters();
+        await c.selectCharacterById(c.characters.findIndex(character => character.avatar === avatar));
+        c.chat[0].mes = 'Fractional-scale reading fixture.\n\n' + 'The native card continues beneath the bottom toolbar.\n\n'.repeat(20);
+        await c.saveChat(); await c.reloadCurrentChat(); await window.NeconyanShell.activateMode('roleplay');
+    }, account.avatar);
+    await page.locator('#themes').selectOption('Windows Aero Light', { force: true });
+    for (const style of ['4', '5']) {
+        await page.locator('#chat_display').selectOption(style, { force: true });
+        const chatBox = await page.locator('#chat').boundingBox();
+        await page.mouse.move(chatBox.x + chatBox.width / 2, chatBox.y + chatBox.height / 2); await page.mouse.wheel(0, -99999);
+        await page.locator('#chat').evaluate(el => { el.scrollTop = 0; });
+        const cap = page.locator('#neconyan-bubbles-bottom-boundary'); await expect(cap).toBeVisible(); await expect(cap).toHaveCSS('z-index', '30');
+        const geometry = await cap.evaluate(el => {
+            const box = el.getBoundingClientRect(), chat = document.querySelector('#chat'), bar = document.querySelector('#sb-bottom-chat-bar');
+            return { left: box.left, width: box.width, top: box.top, bottom: box.bottom, barTop: bar.getBoundingClientRect().top,
+                radius: parseFloat(getComputedStyle(el).borderBottomLeftRadius), dpr: window.devicePixelRatio, clip: chat.style.clipPath };
+        });
+        expect(geometry.bottom).toBe(geometry.barTop + 4); expect(geometry.top).toBe(geometry.bottom - geometry.radius - 1);
+        const shot = await page.screenshot({ scale: 'device' }); await info.attach(`opaque-${style}-dpr2.5`, { body: shot, contentType: 'image/png' });
+        const png = PNG.sync.read(shot), x = Math.floor((geometry.left + geometry.width / 2) * geometry.dpr), join = Math.floor((geometry.top + 1) * geometry.dpr);
+        const pixel = y => [...png.data.subarray((y * png.width + x) * 4, (y * png.width + x) * 4 + 4)];
+        expect(pixel(join)).toEqual(pixel(join + 2));
+        await page.locator('#chat > .mes[mesid="0"]').evaluate(el => { el.style.opacity = '0.6'; });
+        await expect(cap).toHaveCSS('z-index', '29');
+        expect(await cap.evaluate(el => el.getBoundingClientRect().top)).toBe(geometry.top + 1);
+        expect(await page.locator('#chat').evaluate(el => el.style.clipPath)).toBe(geometry.clip);
+        await page.locator('#chat > .mes[mesid="0"]').evaluate(el => el.style.removeProperty('opacity'));
+    }
+    await account.context.close();
+});
+
 test('Whisper copies only card paint and preserves corrected geometry, native editing and export', async ({ app }, info) => {
     test.setTimeout(180000);
     const account = await app.account(), page = await account.open({ workspace: false });

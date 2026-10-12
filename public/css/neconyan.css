@@ -3322,13 +3322,18 @@ body.neconyan #sb-restore-tour-invitations {
 /* Paint only: the controller keeps chat geometry and its scrollbar intact. */
 #neconyan-bubbles-bottom-boundary { position: fixed; pointer-events: none; box-sizing: border-box; z-index: 29; isolation: isolate; }
 #neconyan-bubbles-bottom-boundary > div { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
-/* Native and extension arrows centre the same glyph within their existing hit boxes. */
-body.neconyan.whisperstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes:not(.smallSysMes, [is_system='true']) :is(.swipe_left, .swipe_right, .deep-swipe-left-outer, .deep-swipe-right) {
+/* Centre native and extension arrow glyphs. */
+body.neconyan.hushstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes:not(.smallSysMes, [is_system='true']) {
+    --deep-swipe-arrow-opacity: 1;
+    .swipes-counter:not([hidden]) { opacity: 1 !important; }
+    :is(.deep-swipe-left-outer, .deep-swipe-right) { color: var(--neco-ink); }
+}
+body.neconyan:is(.whisperstyle, .hushstyle)[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes:not(.smallSysMes, [is_system='true']) :is(.swipe_left, .swipe_right, .deep-swipe-left-outer, .deep-swipe-right) {
     align-items: center; justify-content: center; line-height: 1 !important; font-size: 20px;
 }
-/* Whisper reading sections share the card width below the header on phones and tablets. */
+/* Shared narrow reading grid. */
 @media (max-width: 1000px) {
-    body.neconyan.whisperstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes:not(.smallSysMes, [is_system='true']) {
+    body.neconyan:is(.whisperstyle, .hushstyle)[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes:not(.smallSysMes, [is_system='true']) {
         --moonlit-sb-swipe-edge-offset: 12px;
         > .mes_block {
             display: grid; grid-column: 1 / -1; grid-row: 1 / span 7;
@@ -3349,6 +3354,14 @@ body.neconyan.whisperstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbs
             min-inline-size: var(--moonlit-sb-swipe-counter-width);
             max-inline-size: var(--moonlit-sb-swipe-counter-width);
             padding: 0; margin: 0 !important;
+        }
+        &:is(body.hushstyle *) {
+            .mes_text { padding-right: 0; }
+            .swipeRightBlock { gap: 4px !important; }
+            :is(.swipe_right, .deep-swipe-right) { flex: 0 0 var(--moonlit-sb-swipe-control-size); }
+        }
+        &:is(body.hushstyle:not(.hideChatAvatars) *) > .mes_block > :not(.ch_name) {
+            max-width: calc(100% - var(--avatar-base-width)) !important; justify-self: center;
         }
         /* Earlier assistant messages reuse the native counter beside separate Deep Swipe arrows. */
         &:not(.last_mes):has(> .deep-swipe-right) > .swipeRightBlock:not(.deep-swipe-right-block) {
