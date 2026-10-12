@@ -20,6 +20,7 @@ import {
     resolveRemoteBranchName,
 } from '../server-admin-git.js';
 import { getServerLogSnapshot } from '../server-log-buffer.js';
+import { getCrashReports } from '../crash-diagnostics.js';
 import { getLatestZipReleaseStatus, stageZipReleaseUpdate } from '../server-admin-zip-update.js';
 import { getLatestAndroidReleaseStatus } from '../server-admin-android-update.js';
 import {
@@ -903,6 +904,11 @@ router.post('/thumbnails/clear-cache', requireAdminMiddleware, async (request, r
         console.error('Failed to clear thumbnail cache.', error);
         response.status(error.status || 500).json({ error: error.message || 'Could not clear the thumbnail cache.' });
     }
+});
+
+router.post('/crash-reports', requireAdminMiddleware, (request, response) => {
+    response.set('Cache-Control', 'no-store');
+    return response.json({ reports: getCrashReports() });
 });
 
 router.post('/logs', requireAdminMiddleware, async (request, response) => {

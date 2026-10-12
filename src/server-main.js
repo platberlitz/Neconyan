@@ -82,7 +82,8 @@ import {
     setWindowTitle,
     getConfigValue,
 } from './util.js';
-import { isBenignStreamAbort } from './stream-disconnect-guard.js';
+import { setCrashContext } from './crash-diagnostics.js';
+import { getRecentRequests } from './request-trace.js';
 import { UPLOADS_DIRECTORY } from './constants.js';
 
 // Routers
@@ -124,9 +125,8 @@ app.use(helmet({
 }));
 app.use(getResponseCompressionMiddleware());
 app.use(responseTime());
-if (process.env.NECONYAN_REQUEST_TRACE) {
-    app.use(createRequestTrace(process.env.NECONYAN_REQUEST_TRACE));
-}
+app.use(createRequestTrace(process.env.NECONYAN_REQUEST_TRACE));
+setCrashContext({ requests: getRecentRequests });
 
 app.use('/api/auth', express.json({ limit: '32kb' }), express.urlencoded({ extended: false, limit: '32kb' }));
 app.use('/api/in-chat-agents', express.json({ limit: AGENT_STORAGE_LIMITS.presetBytes }), express.urlencoded({ extended: false, limit: AGENT_STORAGE_LIMITS.presetBytes }));
@@ -557,6 +557,7 @@ setupPrivateEndpoints(app);
  */
 async function preSetupTasks() {
     const version = await getVersion();
+    setCrashContext({ appVersion: { version: version.pkgVersion, branch: version.gitBranch, revision: version.gitRevision, commitDate: version.commitDate } });
 
     // Print formatted header
     console.log();
@@ -604,7 +605,7 @@ async function preSetupTasks() {
         }
         diskCache.dispose();
         setWindowTitle(consoleTitle);
-        process.exit(exitCode);
+        process.exit(process.exitCode === 1 ? 1 : exitCode);
     };
 
     registerGracefulShutdown(exitProcess);
@@ -635,26 +636,7 @@ async function preSetupTasks() {
             process.on('disconnect', exitAfterSupervisorDisconnect);
         }
     }
-    process.on('uncaughtException', (err) => {
-        // Neconyan: ignore expected stream disconnects from cancelled generations.
-        if (isBenignStreamAbort(err)) {
-            console.warn('Ignored streaming disconnect error:', err?.message ?? err);
-            return;
-        }
-
-        console.error('Uncaught exception:', err);
-        exitProcess();
-    });
-    process.on('unhandledRejection', (reason) => {
-        // Neconyan: ignore expected stream disconnects from cancelled generations.
-        if (isBenignStreamAbort(reason)) {
-            console.warn('Ignored streaming disconnect rejection:', reason?.message ?? reason);
-            return;
-        }
-
-        console.error('Unhandled rejection:', reason);
-        exitProcess();
-    });
+    setCrashContext({ shutdown: exitProcess });
 
     // Add private request filter.
     const requestFilterOptions = {

@@ -11,6 +11,8 @@ if (shouldSupervise()) {
 
 // The log buffer must evaluate before anything else writes to the console.
 await import('./src/server-log-buffer.js');
+const { installCrashHandlers, initialiseCrashDiagnostics, recordFatalError } = await import('./src/crash-diagnostics.js');
+installCrashHandlers();
 const { CommandLineParser } = await import('./src/command-line.js');
 const { APP_NAME, formatRuntimeLabel } = await import('./src/runtime.js');
 const { serverDirectory } = await import('./src/server-directory.js');
@@ -23,12 +25,14 @@ process.chdir(serverDirectory);
 const cliArgs = new CommandLineParser().parse(process.argv);
 globalThis.DATA_ROOT = path.resolve(cliArgs.dataRoot);
 globalThis.COMMAND_LINE_ARGS = cliArgs;
+initialiseCrashDiagnostics(globalThis.DATA_ROOT);
 
 try {
     const { configureTermuxStartup } = await import('./src/termux-startup.js');
     await configureTermuxStartup(cliArgs);
     await import('./src/server-main.js');
 } catch (error) {
+    recordFatalError('startup-failure', error);
     console.error('A critical error has occurred while starting the server:', error);
     process.exit(1);
 }

@@ -35,6 +35,7 @@ public final class MainActivity extends Activity {
     private long exportBytes;
     private String exportName;
     private final java.util.concurrent.atomic.AtomicBoolean connecting = new java.util.concurrent.atomic.AtomicBoolean();
+    private final java.util.concurrent.atomic.AtomicBoolean readingCrashes = new java.util.concurrent.atomic.AtomicBoolean();
     // A server that stays up this long has started properly; a later stop is not a startup failure.
     private static final long HEALTHY_MS = 120000;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -75,6 +76,7 @@ public final class MainActivity extends Activity {
         actions.setPadding(24, 0, 24, 24);
         actions.setVisibility(View.GONE);
         addAction("Try again", view -> {
+            if (web == null) { recreate(); return; }
             failed = false;
             autoRestarted = false;
             healthySince = 0;
@@ -85,6 +87,7 @@ public final class MainActivity extends Activity {
         });
         addAction("Save a backup of my data", view -> offerBackup());
         addAction("Copy details for a bug report", view -> copyDetails());
+        addAction("Saved crash reports", view -> showCrashReports());
         addAction("Close Neconyan", view -> { stopService(new Intent(this, ServerService.class)); finish(); });
         root.addView(actions);
         web = new WebView(this);
@@ -107,6 +110,10 @@ public final class MainActivity extends Activity {
         apkUpdater = new ApkUpdater(this, () -> web != null && web.getUrl() != null && local(Uri.parse(web.getUrl())));
         web.addJavascriptInterface(apkUpdater, "NeconyanAndroid");
         web.setWebViewClient(new WebViewClient() {
+            @Override public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                rendererGone(view, detail);
+                return true;
+            }
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
                 if (local(uri)) return false;
@@ -168,8 +175,12 @@ public final class MainActivity extends Activity {
                 if (!gesture) return false;
                 WebView popup = new WebView(MainActivity.this);
                 popup.setWebViewClient(new WebViewClient() {
+                    @Override public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                        rendererGone(view, detail);
+                        return true;
+                    }
                     @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                        if (local(request.getUrl())) web.loadUrl(request.getUrl().toString()); else external(request.getUrl());
+                        if (local(request.getUrl())) { if (web != null) web.loadUrl(request.getUrl().toString()); } else external(request.getUrl());
                         popup.destroy(); return true;
                     }
                 });
@@ -191,7 +202,64 @@ public final class MainActivity extends Activity {
             connect();
             if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
                 requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, 11);
-        } catch (Exception error) { status.setText("Could not start Neconyan: " + error.getMessage()); }
+        } catch (Exception error) {
+            CrashDiagnostics.record(this, "activity-startup-failure", error, "The Android activity could not initialise.");
+            showFailure("Could not start Neconyan: " + error.getMessage());
+        }
+        new Thread(() -> {
+            CrashDiagnostics.collectExits(this);
+            String latest = CrashDiagnostics.latest(this);
+            String seen = getSharedPreferences("crash-diagnostics", MODE_PRIVATE).getString("seen", "");
+            if (!latest.isEmpty() && !latest.equals(seen)) runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                getSharedPreferences("crash-diagnostics", MODE_PRIVATE).edit().putString("seen", latest).apply();
+                new AlertDialog.Builder(this).setTitle("Crash diagnostics saved")
+                    .setMessage("Neconyan has saved details of an unexpected stop. You can read and copy them now, or open Saved crash reports in the debugger later.")
+                    .setPositiveButton("Read reports", (dialog, which) -> showCrashReports()).setNegativeButton("Later", null).show();
+            });
+        }, "neconyan-crash-recovery").start();
+    }
+
+    private void rendererGone(WebView view, RenderProcessGoneDetail detail) {
+        String explanation = detail.didCrash() ? "Android reports that the WebView renderer crashed."
+            : "Android terminated the WebView renderer. It did not report an exact cause; this alone does not prove low memory.";
+        int priority = detail.rendererPriorityAtExit();
+        boolean mainView = view == web;
+        if (view.getParent() instanceof ViewGroup) ((ViewGroup) view.getParent()).removeView(view);
+        view.destroy();
+        if (mainView) {
+            web = null;
+            failed = true;
+            status.setText("Neconyan's page stopped\n\n" + explanation + "\n\nCrash diagnostics are being saved. Tap Try again to reopen your workspace.");
+            status.setVisibility(View.VISIBLE); actions.setVisibility(View.VISIBLE);
+        }
+        new Thread(() -> CrashDiagnostics.record(this, "webview-renderer-gone", null,
+            explanation + " Renderer priority at exit: " + priority + ". Main view: " + mainView), "neconyan-renderer-report").start();
+    }
+
+    @JavascriptInterface public void showCrashReports() {
+        if (!readingCrashes.compareAndSet(false, true)) return;
+        new Thread(() -> {
+            CrashDiagnostics.collectExits(this);
+            String reports = CrashDiagnostics.reports(this);
+            String latestReport = CrashDiagnostics.latestReport(this);
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) { readingCrashes.set(false); return; }
+                TextView text = new TextView(this);
+                text.setText(reports); text.setTextIsSelectable(true); text.setPadding(24, 24, 24, 24);
+                ScrollView scroll = new ScrollView(this); scroll.addView(text);
+                new AlertDialog.Builder(this).setTitle("Saved Android crash reports").setView(scroll)
+                    .setPositiveButton("Close", null).setNeutralButton("Copy latest report", (dialog, which) -> {
+                        // One bounded report stays below Android's cross-process clipboard size limit.
+                        try {
+                            getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("Neconyan crash report", latestReport));
+                            Toast.makeText(this, "Latest crash report copied. Review it before sharing.", Toast.LENGTH_LONG).show();
+                        } catch (RuntimeException error) {
+                            Toast.makeText(this, "Could not copy the report. Select its text in the reader instead.", Toast.LENGTH_LONG).show();
+                        }
+                    }).setOnDismissListener(dialog -> readingCrashes.set(false)).show();
+            });
+        }, "neconyan-read-crashes").start();
     }
 
     private boolean checkWebView(LinearLayout root) {
@@ -275,7 +343,7 @@ public final class MainActivity extends Activity {
                 JSONObject login = new JSONObject().put("username", "neconyan").put("password", credentials.getString("password")).put("remember", true);
                 request("/api/auth/browser/login", login.toString(), token.getString("token"));
                 CookieManager.getInstance().flush();
-                runOnUiThread(() -> { loadFailed = false; web.loadUrl(origin); });
+                runOnUiThread(() -> { if (web == null || failed || isDestroyed()) return; loadFailed = false; web.loadUrl(origin); });
                 return null;
             } catch (Exception error) {
                 last = error;
@@ -293,6 +361,8 @@ public final class MainActivity extends Activity {
         return "Neconyan took more than five minutes to start" + (last == null ? "." : " (" + last.getMessage() + ").");
     }
     private boolean restartAfterStop(String reason) throws InterruptedException {
+        CrashDiagnostics.record(this, "server-recovery", null, "The local server stopped or failed to become ready. " + reason);
+        CrashDiagnostics.collectExits(this);
         long up = healthySince == 0 ? 0 : System.currentTimeMillis() - healthySince;
         healthySince = 0;
         boolean safe;
@@ -313,9 +383,13 @@ public final class MainActivity extends Activity {
         clearStaleMarker();
         startServer(safe);
         // Android attaches the crash record a little after the process dies; look twice.
-        main.postDelayed(() -> worker.execute(this::recordServerCrash), 5000);
-        main.postDelayed(() -> worker.execute(this::recordServerCrash), 20000);
+        main.postDelayed(() -> worker.execute(this::collectCrashDetails), 5000);
+        main.postDelayed(() -> worker.execute(this::collectCrashDetails), 20000);
         return true;
+    }
+    private void collectCrashDetails() {
+        CrashDiagnostics.collectExits(this);
+        recordServerCrash();
     }
     // Keeps the newest crash record for the server process as readable text, so the details copied
     // for a bug report show which native code failed instead of a bare 'signal 11'.
@@ -362,6 +436,7 @@ public final class MainActivity extends Activity {
         runOnUiThread(() -> { if (!failed) status.setText(text); });
     }
     private void showFailure(String reason) {
+        new Thread(() -> CrashDiagnostics.record(this, "workspace-unavailable", null, reason), "neconyan-failure-report").start();
         failed = true;
         String summary = failureSummary(reason);
         runOnUiThread(() -> {

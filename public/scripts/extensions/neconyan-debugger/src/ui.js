@@ -453,6 +453,38 @@ async function copyLayoutSnapshot() {
     textPopup(content);
 }
 
+export async function showCrashReports() {
+    const generation = activationGeneration;
+    const browser = globalThis.NeconyanCrashDiagnostics?.getReports?.() ?? { reports: [], storageError: 'Early browser capture is unavailable. Reload after updating.' };
+    let server;
+    try {
+        const response = await fetchWithTimeout('/api/server-admin/crash-reports', { method: 'POST', headers: ctx().getRequestHeaders() });
+        server = response.ok ? await response.json() : { unavailable: response.status === 403 ? 'Server reports require an administrator account.' : `Server reports could not be loaded (HTTP ${response.status}).` };
+    } catch { server = { unavailable: 'The server could not be reached. Saved browser reports are still available.' }; }
+    if (!active || generation !== activationGeneration) return;
+    const report = '# Saved crash reports\n\n'
+        + 'Reports stay on this device or your server. Error messages and system traces can contain private text; review before sharing.\n\n'
+        + '## Browser\n\n' + JSON.stringify(browser, null, 2)
+        + '\n\n## Server\n\n' + JSON.stringify(server, null, 2);
+    const content = el('div', 'sbdbg-report');
+    content.appendChild(el('h3', undefined, 'Saved crash reports'));
+    content.appendChild(el('p', undefined, 'Detailed errors, causes and device information, kept after a restart. The newest five browser reports and ten server reports are retained.'));
+    const actions = el('div', 'sbdbg-actions');
+    const copy = button('menu_button', 'Copy reports', async () => flashButtonText(copy, await copyToClipboard(report) ? 'Copied!' : 'Copy failed. Select the text below'));
+    actions.appendChild(copy);
+    actions.appendChild(button('menu_button', 'Download reports', () => downloadReport(report)));
+    if (typeof globalThis.NeconyanExport?.showCrashReports === 'function') {
+        actions.appendChild(button('menu_button', 'Android crash reports', () => globalThis.NeconyanExport.showCrashReports()));
+    }
+    content.appendChild(actions);
+    const textarea = el('textarea', 'sbdbg-report-text');
+    textarea.readOnly = true;
+    textarea.setAttribute('aria-label', 'Saved crash reports');
+    textarea.value = report;
+    content.appendChild(textarea);
+    textPopup(content);
+}
+
 // --- mounting ------------------------------------------------------------------
 
 function ensureDrawer() {
@@ -478,6 +510,7 @@ function ensureDrawer() {
     const actions = el('div', 'sbdbg-actions');
     actions.appendChild(button('menu_button', 'Open debugger', () => openDebugger()));
     actions.appendChild(button('menu_button', 'Diagnostic report', () => void showReportPopup()));
+    actions.appendChild(button('menu_button', 'Saved crash reports', () => void showCrashReports()));
     actions.appendChild(button('menu_button', 'Copy layout snapshot', () => void copyLayoutSnapshot()));
     content.appendChild(actions);
 

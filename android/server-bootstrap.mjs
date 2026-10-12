@@ -5,12 +5,15 @@ import YAML from 'yaml';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import { serverEvents, EVENT_NAMES } from './src/server-events.js';
 import { verifyAndroidStorage } from './file-stats.mjs';
+import { initialiseCrashDiagnostics, installCrashHandlers } from './src/crash-diagnostics.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const [privatePath, port, password, mode = 'normal'] = process.argv.slice(2);
 if (!privatePath || !/^\d+$/.test(port) || !/^[a-f0-9]{64}$/.test(password) || !['normal', 'safe'].includes(mode)) throw new Error('Invalid private Android launch configuration.');
 // Android's /data/user/0 alias must be resolved before strict storage checks.
 const statePath = fs.realpathSync(privatePath);
+initialiseCrashDiagnostics(path.join(statePath, 'data'));
+installCrashHandlers();
 let started = false;
 // After startup the launcher watches the process itself; the server ignores some harmless
 // stream errors, and a note written for those would make the launcher restart a healthy server.
