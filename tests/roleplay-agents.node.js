@@ -9,7 +9,7 @@ const { nativeAgentDefinition } = await import('../src/generation/agent-definiti
 const { captureRoleplayAgents, readRoleplayAgentsLocked } = await import('../src/generation/roleplay-agents-source.js');
 const { runAgentModelStep } = await import('../src/generation/agent-model-step.js');
 const { runChatProfile } = await import('../src/generation/service.js');
-const { prepareRoleplayAgentContributions, runRoleplayAgentInterceptors, runRoleplayAgentPostprocessing } = await import('../src/generation/roleplay-agent-processing.js');
+const { prepareRoleplayAgentContributions, runRoleplayAgentInterceptors, runRoleplayAgentPostprocessing, roleplayAgentDisplaySnapshot } = await import('../src/generation/roleplay-agent-processing.js');
 const { decideJobApproval } = await import('../src/generation/job-approvals.js');
 const { cacheAgentRegexScripts, resolveRegexScriptsForSnapshot } = await import('../public/scripts/extensions/in-chat-agents/regex-snapshot-store.js');
 const { writeAgentRecordLocked } = await import('../src/in-chat-agent-storage.js');
@@ -101,6 +101,26 @@ test('saved Agent execution order retains large and fractional values rather tha
     const pre = prepareRoleplayAgentContributions(f.context, options);
     assert.deepEqual(pre.extensions.map(extension => extension.key),
         ['inchat_agent_later-name-first', 'inchat_agent_earlier-name-second']);
+});
+
+test('live display scripts use frozen activation before postprocessing and match the saved reply', async t => {
+    const regexScripts = [{ id: 'display', findRegex: String.raw`/\[MOOD\|([^\]]+)\]/g`, replaceString: '<em>$1</em>', placement: [2], markdownOnly: true }];
+    const f = prepared(t, [
+        { id: 'active', enabled: true, phase: 'post', regexScripts, conditions: { triggerProbability: 50 } },
+        { id: 'inactive', enabled: true, phase: 'post', regexScripts, conditions: { triggerKeywords: ['absent'] } },
+        { id: 'companion', enabled: true, category: 'companion', regexScripts },
+    ]);
+    const options = phases(f);
+    assert.throws(() => roleplayAgentDisplaySnapshot(f.context, options), { code: 'ROLEPLAY_AGENT_RECOVERY' });
+    prepareRoleplayAgentContributions(f.context, { ...options, random: () => 0.25 });
+    const live = roleplayAgentDisplaySnapshot(f.context, options);
+    assert.deepEqual(live.nativeRegexScripts.map(item => item.agentId), ['active']);
+    assert.equal(resolveRegexScriptsForSnapshot(live).length, 1);
+    const result = await runRoleplayAgentPostprocessing(f.context, { ...options, value: '[MOOD|Curious]', generate: () => assert.fail('No model call needed') });
+    assert.deepEqual(result.extra.inChatAgents, live);
+    assert.equal(result.text, '[MOOD|Curious]', 'display-only rules do not change the saved text');
+    f.locked(lease => writeAgentRecordLocked(lease, 'agent', { id: 'active', enabled: true, regexScripts: [] }));
+    assert.throws(() => roleplayAgentDisplaySnapshot(f.context, options), { code: 'ROLEPLAY_AGENT_SOURCE_CHANGED' });
 });
 
 test('identical parallel Agent requests retain distinct provider receipts and never expose their step identity to the provider', async t => {

@@ -40,6 +40,6 @@ export function subscribeScratchpadPreview(owner, id, listener) {
     listeners.set(key, set);
     return () => {
         set.delete(listener);
-        if (!set.size) listeners.delete(key);
+        if (!set.size && listeners.get(key) === set) listeners.delete(key);
     };
 }

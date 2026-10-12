@@ -33,5 +33,5 @@ export function subscribeConversationPreview(owner, id, listener) {
     const set = listeners.get(key) ?? new Set();
     set.add(listener);
     listeners.set(key, set);
-    return () => { set.delete(listener); if (!set.size) listeners.delete(key); };
+    return () => { set.delete(listener); if (!set.size && listeners.get(key) === set) listeners.delete(key); };
 }

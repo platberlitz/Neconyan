@@ -977,6 +977,15 @@ router.get('/events', (request, response) => {
         send(`data: ${JSON.stringify(safe)}\n\n`);
     });
     const keepalive = setInterval(() => send(': keepalive\n\n'), 15000);
-    response.once('close', () => { clearInterval(keepalive); unsubscribe(); });
+    let cleaned = false;
+    const cleanup = () => {
+        if (cleaned) return;
+        cleaned = true;
+        clearInterval(keepalive);
+        unsubscribe();
+    };
+    request.once('aborted', cleanup);
+    response.once('finish', cleanup);
+    response.once('close', cleanup);
     send(': ready\n\n');
 });

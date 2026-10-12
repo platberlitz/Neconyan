@@ -1,4 +1,4 @@
-import { chat as messages, getRequestHeaders, getThumbnailUrl, updateMessageElement } from '../../script.js';
+import { chat as messages, getRequestHeaders, getThumbnailUrl, scrollChatToBottom, updateMessageElement } from '../../script.js';
 import { beginRoleplayReplacement } from './roleplay-replacement.js';
 
 const labels = {
@@ -63,7 +63,9 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         }
         node.querySelector('[role="status"]').textContent = labels[latest.stage] || labels.preparing;
         rendered = latest;
-        if (nearBottom) chat.scrollTop = chat.scrollHeight;
+        // A live bottom landing must supersede resize anchors for older positions,
+        // and honour the same automatic/manual scrolling policy as saved replies.
+        if (nearBottom) scrollChatToBottom({ isNearBottom: nearBottom });
     };
     const timer = setInterval(render, 500);
     let attempt = null;

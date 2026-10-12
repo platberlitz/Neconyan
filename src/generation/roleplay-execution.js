@@ -37,7 +37,7 @@ import { roleplayPromptContentHash } from './roleplay-prompt-proof.js';
 import { generateSavedSpeech } from './speech-jobs.js';
 import { prepareRoleplayCaptions } from './roleplay-captions.js';
 import { applyCaptionRecords } from './caption-records.js';
-import { prepareRoleplayAgentContributions, runRoleplayAgentInterceptors, runRoleplayAgentPostprocessing, roleplayAgentOutputBaseline } from './roleplay-agent-processing.js';
+import { prepareRoleplayAgentContributions, runRoleplayAgentInterceptors, runRoleplayAgentPostprocessing, roleplayAgentOutputBaseline, roleplayAgentDisplaySnapshot } from './roleplay-agent-processing.js';
 import { runRoleplayCompanions } from './roleplay-companions.js';
 import { createProviderScope } from '../jobs/artifacts.js';
 import { stageBoundModelToolCalls } from './roleplay-tool-dispatch.js';
@@ -900,7 +900,8 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         if (previous !== undefined && roleplayHash(previous) !== roleplayHash(prepared)) throw roleplayError('ROLEPLAY_AGENT_RECOVERY', 'The saved Agent-modified prompt changed.', 409);
         if (previous === undefined) writeArtifact(directories, job.id, 'roleplay-prompt', prepared);
     }
-    publishRoleplayPreview(context, { stage: 'generating' });
+    const inChatAgents = roleplayAgentDisplaySnapshot(context, { base, snapshot: request.worldInfo, generationType: request.worldInfo?.global.trigger });
+    publishRoleplayPreview(context, { stage: 'generating', inChatAgents });
     const { count: countPreview } = await getCounter(request.worldInfo?.tokenizer);
     const preview = createRoleplayStreamPreview(context, countPreview);
     const result = await Promise.resolve().then(() => generate({ context: base, jobContext: context, binding: request.binding, messages,

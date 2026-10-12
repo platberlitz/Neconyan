@@ -92,10 +92,10 @@ export const test = base.extend({
                 return imageProvider;
             },
             async start({ useConfigDataRoot = false, env = {}, checkoutRoot = root } = {}) {
-                child = spawn(process.execPath, ['server.js', '--configPath', configPath,
+                child = spawn(process.env.NECONYAN_TEST_RUNTIME || process.execPath, ['server.js', '--configPath', configPath,
                     ...(useConfigDataRoot ? [] : ['--dataRoot', config.dataRoot]),
                     '--port', String(port), '--browserLaunchEnabled', 'false'], {
-                    cwd: checkoutRoot, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...env, NECONYAN_SUPERVISED: '1' },
+                    cwd: checkoutRoot, stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: { ...process.env, ...env, NECONYAN_SUPERVISED: '1' },
                 });
                 const record = { pid: child.pid, startedAt: Date.now() };
                 processes.push(record);
@@ -103,7 +103,7 @@ export const test = base.extend({
                 child.stderr.on('data', data => { output += data; });
                 child.once('exit', (code, signal) => Object.assign(record, { code, signal, stoppedAt: Date.now() }));
                 await expect.poll(async () => {
-                    if (child.exitCode !== null || child.signalCode !== null) throw new Error(`Disposable server exited: ${output}`);
+                    if (child.exitCode !== null || child.signalCode !== null) throw new Error(`Disposable server exited (${child.exitCode ?? child.signalCode}): ${output}`);
                     return fetch(app.url + '/csrf-token').then(response => response.ok).catch(() => false);
                 }, { timeout: 60000, message: 'Owned server becomes ready' }).toBe(true);
                 record.readyAt = Date.now();

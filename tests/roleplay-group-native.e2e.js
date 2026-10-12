@@ -93,8 +93,8 @@ for (const [viewport, phone, standalone] of [['desktop', false, false], ['iPhone
             && document.querySelector('link[data-sb-shell-style="windows-98"]')?.sheet);
         await syncPhoneCss(page);
         await acknowledgeActiveSettings(page);
-        const first = '[SCENE|Town square]\n\n**The reply has started.**\n\n';
-        const rest = '[MOOD|Curious]\n\n' + Array(50).fill('The traveller pauses by the fountain, then follows the music through the town square.').join(' ') + '\n\nThe reply ends here.';
+        const first = '[SCENE|Town square]\n\n[MOOD|Curious]\n\n**The reply has started.**\n\n';
+        const rest = Array(50).fill('The traveller pauses by the fountain, then follows the music through the town square.').join(' ') + '\n\nThe reply ends here.';
         app.provider.mode.streamReply = { first, rest, reasoning: 'Consider the **town square** before replying.' };
         const submitted = page.waitForResponse(response => response.url().endsWith('/api/roleplay/group/submit') && response.status() === 202);
         await page.locator('#send_textarea').fill('I enter the town and look around. What happens next?');
@@ -108,6 +108,10 @@ for (const [viewport, phone, standalone] of [['desktop', false, false], ['iPhone
         await app.release();
         await expect(preview.locator('.mes_text strong')).toHaveText('The reply has started.');
         await expect(preview.locator('.custom-scene-heading')).toHaveText('Town square');
+        await page.screenshot({ path: info.outputPath('reply-first-chunk.png') });
+        await expect(preview.locator('.custom-mood-display')).toHaveText('Curious');
+        await expect(preview.locator('.mes_text')).not.toContainText('[MOOD|');
+        await expect(preview.getByRole('status')).toHaveText('Writing reply…');
         await expect(preview.locator('.mes_reasoning strong')).toHaveText('town square');
         await preview.locator('.mes_reasoning_summary').click();
         const reasoningOpen = await preview.locator('.mes_reasoning_details').evaluate(details => details.open);

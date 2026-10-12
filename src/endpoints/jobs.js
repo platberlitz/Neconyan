@@ -71,7 +71,11 @@ router.get('/events', (request, response) => {
             pending = setTimeout(() => { pending = null; send('data: {}\n\n'); }, 25);
         });
         const keepalive = setInterval(() => send(': keepalive\n\n'), 15000);
-        response.once('close', () => { clearInterval(keepalive); clearTimeout(pending); unsubscribe(); });
+        const cleanup = () => { clearInterval(keepalive); clearTimeout(pending); unsubscribe(); };
+        // Bun reports an abandoned stream on the request without closing the response.
+        request.once('aborted', cleanup);
+        response.once('finish', cleanup);
+        response.once('close', cleanup);
         send('data: {}\n\n');
     } catch (error) { return fail(response, error); }
 });
@@ -131,7 +135,14 @@ router.get('/:id/preview', (request, response) => {
         });
         send({ preview: initial ?? { stage: 'preparing', text: '', name: job.intent.request.worldInfo?.speakerNames?.character } });
         const terminal = new Set(['completed', 'cancelled', 'failed', 'interrupted', 'conflict']);
+        // Reading the job and the protected account blocks the server while it runs, so
+        // re-read only after a job change, with a slow fallback, and send a cheap
+        // keepalive every second so the reader can tell the stream is still open.
+        let changed = false, lastCheck = 0;
+        const unsubscribeJobs = subscribeJobsChanged(change => { if (change.owner === owner) changed = true; });
         const check = () => {
+            changed = false;
+            lastCheck = Date.now();
             try {
                 const current = conversation ? getJob(directories, job.id) : withRoleplayAccount(base, account, () => getJob(directories, job.id));
                 if (!current || terminal.has(current.state)) {
@@ -140,8 +151,21 @@ router.get('/:id/preview', (request, response) => {
                 } else response.write(': keepalive\n\n');
             } catch { response.end(); }
         };
-        const timer = setInterval(check, 1000);
-        response.once('close', () => { clearInterval(timer); clearTimeout(previewTimer); unsubscribe(); });
+        const tick = () => {
+            if (changed || Date.now() - lastCheck >= 15000) return check();
+            if (response.destroyed || response.writableEnded) return;
+            try { response.write(': keepalive\n\n'); } catch { response.end(); }
+        };
+        const timer = setInterval(tick, 1000);
+        let cleaned = false;
+        const cleanup = () => {
+            if (cleaned) return;
+            cleaned = true;
+            clearInterval(timer); clearTimeout(previewTimer); unsubscribe(); unsubscribeJobs();
+        };
+        request.once('aborted', cleanup);
+        response.once('finish', cleanup);
+        response.once('close', cleanup);
         check();
     } catch (error) { return fail(response, error); }
 });
