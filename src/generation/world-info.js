@@ -80,16 +80,16 @@ export function captureSavedRoleplayImages(directories, records, display, captio
         const selected = mode === 'gallery' ? [media[message.extra?.media_index ?? 0]] : media;
         if (selected.some(item => !item || (item.type !== undefined && !['image', 'video'].includes(item.type))
             || typeof item.url !== 'string' || !item.url.startsWith('/user/images/'))) {
-            throw roleplayError('ROLEPLAY_INVALID', 'Only saved account images can enter a bound Roleplay prompt.', 409);
+            throw roleplayError('ROLEPLAY_INVALID', 'Only saved images from your account can be used in this Roleplay prompt.', 409);
         }
         return selected.map(item => {
             let components;
             try { components = item.url.slice('/user/images/'.length).split('/').map(decodeURIComponent); } catch {
-                throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay image path is invalid.', 409);
+                throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay image location is invalid.', 409);
             }
             if (components.length < 1 || components.length > 2 || components.some(part => !part || part === '.'
                 || part === '..' || part.includes('\\') || part.includes('/') || part.includes('\0'))) {
-                throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay image path is invalid.', 409);
+                throw roleplayError('ROLEPLAY_INVALID', 'The saved Roleplay image location is invalid.', 409);
             }
             const filename = path.join(directories.userImages ?? path.join(directories.root, 'user/images'), ...components);
             const video = item.type === 'video';
@@ -151,11 +151,11 @@ function boundBooks(directories, snapshot) {
         if (current[name]?.hash !== hash
             || roleplayHash({ rawHash: current[name].rawHash, physical: current[name].physical })
                 !== roleplayHash(snapshot.bookEvidence?.[name])) {
-            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'A World Info book changed after admission.');
+            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'A World Info book changed after the request was accepted.');
         }
     }
     if (Object.keys(current).length !== Object.keys(snapshot.bookHashes).length) {
-        throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The World Info selection changed after admission.');
+        throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The World Info selection changed after the request was accepted.');
     }
     return current;
 }
@@ -167,7 +167,7 @@ export function readBoundPathfinderBooks(base, snapshot) {
     return withRoleplayAccount(base, snapshot.account, lease => {
         assertRoleplaySourceLocked(lease, snapshot.source);
         if (roleplaySettingsHash(readJson(path.join(base.directories.root, 'settings.json'), {})) !== snapshot.settingsHash) {
-            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved Pathfinder settings changed after admission.');
+            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved Pathfinder settings changed after the request was accepted.');
         }
         const current = boundBooks(base.directories, snapshot);
         return Object.fromEntries(snapshot.pathfinder.books.map(name => [name, current[name].data]));
@@ -305,11 +305,11 @@ export function captureRoleplayWorldInfo(base, account, source, { avatar, maxCon
         if (!Array.isArray(characterTags)) throw roleplayError('ROLEPLAY_INVALID', 'The saved character tags are invalid.', 400);
         const extensions = savedSettings.extension_settings ?? {};
         if (!Array.isArray(extensions.regex ?? []) || !Array.isArray(extensions.character_allowed_regex ?? [])) {
-            throw roleplayError('ROLEPLAY_INVALID', 'Saved World Info transformations are invalid.', 409);
+            throw roleplayError('ROLEPLAY_INVALID', 'Saved World Info text changes are invalid.', 409);
         }
         const scopedRegex = extensions.character_allowed_regex?.includes(avatar)
             ? character.data?.data?.extensions?.regex_scripts ?? character.data?.extensions?.regex_scripts ?? [] : [];
-        if (!Array.isArray(scopedRegex)) throw roleplayError('ROLEPLAY_INVALID', 'Saved World Info transformations are invalid.', 409);
+        if (!Array.isArray(scopedRegex)) throw roleplayError('ROLEPLAY_INVALID', 'Saved World Info text changes are invalid.', 409);
         const regex = extensions.disabledExtensions?.includes('regex') ? [] : [
             ...(extensions.regex ?? []), ...scopedRegex,
         ];
@@ -499,7 +499,7 @@ export function assertRoleplayWorldInfoCurrent(base, snapshot) {
         delete captured.browserMacroSyntax;
     }
     if (roleplayHash(captured) !== roleplayHash(snapshot)) {
-        throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info selection differs from the account sources.');
+        throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info selection no longer matches your account data.');
     }
 }
 
@@ -511,11 +511,11 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
         const character = readRoleplayEntityLocked(lease, 'character', snapshot.avatar);
         if (character.instanceId !== snapshot.character.instanceId || character.revision !== snapshot.character.revision
             || character.rawHash !== snapshot.character.rawHash) {
-            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The World Info character changed after admission.');
+            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The World Info character changed after the request was accepted.');
         }
         if (character.changed) saveRoleplayAccount(lease);
         if (roleplaySettingsHash(readJson(path.join(base.directories.root, 'settings.json'), {})) !== snapshot.settingsHash) {
-            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info settings changed after admission.');
+            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info settings changed after the request was accepted.');
         }
         return boundBooks(base.directories, snapshot);
     });
@@ -530,25 +530,25 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
     const loadedHash = roleplayHash(lore);
     await onEntriesLoaded?.(lore);
     if (roleplayHash(lore) !== loadedHash) {
-        throw roleplayError('ROLEPLAY_INVALID', 'A World Info loading hook changed the saved book selection.', 409);
+        throw roleplayError('ROLEPLAY_INVALID', 'A World Info script changed the saved book selection while it loaded.', 409);
     }
     const entries = prepareWorldInfoEntries(lore, Number(snapshot.settings.world_info_character_strategy ?? 1));
     const { count } = await getCounter(snapshot.tokenizer);
     const environment = createMacroEnvironment(macros ?? savedRoleplayMacroSnapshot(snapshot, records), {}, { readOnly: true });
     const substitute = value => environment.evaluate(value, { strictCapabilities: true });
-    if (!Array.isArray(snapshot.regex)) throw roleplayError('ROLEPLAY_INVALID', 'Saved World Info transformations are invalid.', 409);
+    if (!Array.isArray(snapshot.regex)) throw roleplayError('ROLEPLAY_INVALID', 'Saved World Info text changes are invalid.', 409);
     for (const script of snapshot.regex) {
         if (!script || !Array.isArray(script.placement)) {
-            throw roleplayError('ROLEPLAY_INVALID', 'Saved World Info transformations are invalid.', 409);
+            throw roleplayError('ROLEPLAY_INVALID', 'Saved World Info text changes are invalid.', 409);
         }
         if (!script.placement.includes(AGENT_REGEX_PLACEMENT.WORLD_INFO) || script.disabled
             || script.markdownOnly || !script.promptOnly) continue;
         if (script.trimStrings !== undefined && !Array.isArray(script.trimStrings)) {
-            throw roleplayError('ROLEPLAY_INVALID', 'Saved World Info transformations are invalid.', 409);
+            throw roleplayError('ROLEPLAY_INVALID', 'Saved World Info text changes are invalid.', 409);
         }
         if (Number(script.substituteRegex) || [script.findRegex, script.replaceString, ...(script.trimStrings ?? [])]
             .some(value => typeof value !== 'string' || value.includes('{{') || /<(?:USER|BOT|CHAR|GROUP)>/i.test(value))) {
-            throw roleplayError('ROLEPLAY_INVALID', 'This World Info transformation needs browser-only macros.', 409);
+            throw roleplayError('ROLEPLAY_INVALID', 'This World Info text change needs macros that only work in the browser.', 409);
         }
     }
     const transform = (content, entry) => applyRegexScriptList(content, snapshot.regex, AGENT_REGEX_PLACEMENT.WORLD_INFO,
@@ -571,11 +571,11 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
         || Buffer.byteLength(JSON.stringify(global)) > 2 * 1024 * 1024) {
         throw roleplayError('ROLEPLAY_INVALID', 'The prepared World Info character context is invalid.', 409);
     }
-    if (!Array.isArray(vectorEntries) || vectorEntries.length && !snapshot.vectors) throw roleplayError('ROLEPLAY_INVALID', 'Vector activation needs its bound saved context.', 409);
+    if (!Array.isArray(vectorEntries) || vectorEntries.length && !snapshot.vectors) throw roleplayError('ROLEPLAY_INVALID', 'Similarity search needs its saved context.', 409);
     const external = vectorEntries.map(item => {
         const book = selected[item.world];
         const entry = book && Object.entries(book.data.entries).find(([key, entry]) => String(entry.uid ?? key) === String(item.uid))?.[1];
-        if (!entry || entry.disable || getStringHash(String(entry.content ?? '')) !== item.hash) throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'A vector-selected lore entry changed.', 409);
+        if (!entry || entry.disable || getStringHash(String(entry.content ?? '')) !== item.hash) throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'A lore entry picked by similarity search changed.', 409);
         return `${item.world}.${item.uid}`;
     });
     const result = await scanWorldInfo({ entries, chat: scanChat,
@@ -587,7 +587,7 @@ export async function prepareRoleplayWorldInfo(base, snapshot, { random = Math.r
         ...result.EMEntries.map(entry => entry.content), ...result.WIDepthEntries.flatMap(entry => entry.entries),
         ...result.ANBeforeEntries, ...result.ANAfterEntries, ...Object.values(result.outletEntries).flat()].join('\n');
     if (await count(outputText) > snapshot.maxContext) {
-        throw roleplayError('ROLEPLAY_INVALID', 'The transformed World Info exceeds the saved context limit.', 409);
+        throw roleplayError('ROLEPLAY_INVALID', 'The World Info text is longer than the saved context limit.', 409);
     }
     assertRoleplayWorldInfoCurrent(base, snapshot);
     const hookEvents = { ...result.hookEvents, entriesLoaded,

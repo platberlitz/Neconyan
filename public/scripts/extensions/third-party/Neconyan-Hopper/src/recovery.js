@@ -2,13 +2,13 @@
 export function browserRecovery() {
     let opening;
     async function database() {
-        if (!globalThis.indexedDB) throw new Error('Browser recovery storage is unavailable. Keep this tab open.');
+        if (!globalThis.indexedDB) throw new Error('Your browser cannot keep a backup copy of your Meower changes right now. Keep this tab open.');
         opening ??= new Promise((resolve, reject) => {
             const request = indexedDB.open('hopper-recovery', 1);
             request.onupgradeneeded = () => request.result.createObjectStore('pending', { keyPath: 'id' });
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
-            request.onblocked = () => reject(new Error('Browser recovery storage is blocked.'));
+            request.onblocked = () => reject(new Error('Your browser is blocking the backup copy of your Meower changes. Close other Meower tabs, then reload this one.'));
         });
         return opening;
     }

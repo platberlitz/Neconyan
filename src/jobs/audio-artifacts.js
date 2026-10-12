@@ -10,21 +10,21 @@ const fail = message => Object.assign(new Error(message), { status: 409, code: '
 const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 
 function validateWave(data) {
-    if (data.length < 44) throw fail('The speech WAV header is incomplete.');
+    if (data.length < 44) throw fail('The speech audio header is incomplete.');
     const declared = data.readUInt32LE(4);
-    if (declared !== 0xffffffff && declared + 8 !== data.length) throw fail('The speech WAV container is incomplete.');
+    if (declared !== 0xffffffff && declared + 8 !== data.length) throw fail('The speech audio container is incomplete.');
     let format;
     const lengths = [];
     for (let offset = 12; offset < data.length;) {
-        if (offset + 8 > data.length) throw fail('The speech WAV chunk header is incomplete.');
+        if (offset + 8 > data.length) throw fail('The speech audio chunk header is incomplete.');
         const id = data.toString('ascii', offset, offset + 4);
         let length = data.readUInt32LE(offset + 4);
         const start = offset + 8;
         // Some complete HTTP speech responses retain an explicitly streaming data length.
         if (length === 0xffffffff && id === 'data') length = data.length - start;
-        if (start + length > data.length) throw fail('The speech WAV chunk is incomplete.');
+        if (start + length > data.length) throw fail('The speech audio chunk is incomplete.');
         if (id === 'fmt ') {
-            if (format || length < 16) throw fail('The speech WAV sample format is invalid.');
+            if (format || length < 16) throw fail('The speech audio sample format is invalid.');
             let encoding = data.readUInt16LE(start);
             const channels = data.readUInt16LE(start + 2);
             const rate = data.readUInt32LE(start + 4);
@@ -33,25 +33,25 @@ function validateWave(data) {
             const bits = data.readUInt16LE(start + 14);
             if (encoding === 0xfffe) {
                 if (length < 40 || data.readUInt16LE(start + 16) < 22 || data.readUInt16LE(start + 18) > bits
-                    || data.subarray(start + 28, start + 40).toString('hex') !== '00001000800000aa00389b71') throw fail('The speech WAV extended format is invalid.');
+                    || data.subarray(start + 28, start + 40).toString('hex') !== '00001000800000aa00389b71') throw fail('The speech audio extended format is invalid.');
                 encoding = data.readUInt32LE(start + 24);
             }
             if (!([1, 3].includes(encoding)) || channels < 1 || channels > 8 || rate < 8000 || rate > 384000
                 || !(encoding === 1 ? [8, 16, 24, 32] : [32, 64]).includes(bits)
-                || alignment !== channels * bits / 8 || byteRate !== rate * alignment) throw fail('The speech WAV sample format is invalid.');
+                || alignment !== channels * bits / 8 || byteRate !== rate * alignment) throw fail('The speech audio sample format is invalid.');
             format = { alignment };
         }
         if (id === 'data') lengths.push(length);
         offset = start + length + (length % 2);
-        if (offset > data.length) throw fail('The speech WAV chunk padding is incomplete.');
+        if (offset > data.length) throw fail('The speech audio chunk padding is incomplete.');
     }
-    if (!format || !lengths.some(length => length > 0) || lengths.some(length => length % format.alignment)) throw fail('The speech WAV samples are missing or incomplete.');
+    if (!format || !lengths.some(length => length > 0) || lengths.some(length => length % format.alignment)) throw fail('The speech audio samples are missing or incomplete.');
 }
 
 /** Validate the actual container rather than a provider's Content-Type header. */
 export function audioFormat(bytes) {
     const data = Buffer.from(bytes);
-    if (data.length < 4 || data.length > MAX_AUDIO_BYTES) throw fail('The speech result is empty or too large.');
+    if (data.length < 4 || data.length > MAX_AUDIO_BYTES) throw fail('The speech result is empty or too large to save.');
     if (data.toString('ascii', 0, 4) === 'RIFF' && data.toString('ascii', 8, 12) === 'WAVE') {
         validateWave(data);
         return { mimeType: 'audio/wav', format: 'wav' };
@@ -64,7 +64,7 @@ export function audioFormat(bytes) {
         return { mimeType: 'audio/mpeg', format: 'mp3' };
     }
     if (data[0] === 0xff && (data[1] & 0xf6) === 0xf0) return { mimeType: 'audio/aac', format: 'aac' };
-    throw fail('The speech provider did not return a supported audio container.');
+    throw fail('The speech service returned audio in a format Neconyan cannot save.');
 }
 
 export function pcmWave(samples, { sampleRate = 24000, channels = 1, float = false } = {}) {
@@ -96,7 +96,7 @@ export function audioResult(bytes) {
 }
 
 function filePath(directories, id, name, create = false) {
-    if (!getJob(directories, id)) throw fail('The speech job no longer exists.');
+    if (!getJob(directories, id)) throw fail('This speech job no longer exists.');
     const root = path.resolve(directories.root);
     const parent = path.join(root, 'jobs', 'artifacts', jobKey(id));
     if (create) createRoleplayDirectory(parent, root);
@@ -110,13 +110,13 @@ export function writeAudioArtifact(directories, id, name, value) {
     if (value.mimeType !== format.mimeType) throw fail('The speech format differs from its bytes.');
     const filename = filePath(directories, id, name, true);
     const existing = readRoleplayFile(filename, MAX_AUDIO_BYTES);
-    if (existing && !existing.bytes.equals(bytes)) throw fail('The saved speech bytes differ from this result.');
+    if (existing && !existing.bytes.equals(bytes)) throw fail('The saved speech file does not match this result.');
     if (!existing) tryWriteFileSync(filename, bytes, { mode: 0o600 }, { expectedFileAbsent: true, durable: true, preserveOnCreateError: true });
     const confirmed = readRoleplayFile(filename, MAX_AUDIO_BYTES, { flush: true });
-    if (!confirmed || !confirmed.bytes.equals(bytes)) throw fail('The speech file could not be confirmed.');
+    if (!confirmed || !confirmed.bytes.equals(bytes)) throw fail('The speech file could not be saved and checked.');
     const receipt = { audioArtifact: 1, byteLength: bytes.length, digest: digest(bytes), ...format };
     const previous = readArtifact(directories, id, name);
-    if (previous !== undefined && JSON.stringify(previous) !== JSON.stringify(receipt)) throw fail('The saved speech receipt differs.');
+    if (previous !== undefined && JSON.stringify(previous) !== JSON.stringify(receipt)) throw fail('The saved speech record does not match.');
     if (previous === undefined) writeArtifact(directories, id, name, receipt);
     return { ...value, ...format };
 }
@@ -129,15 +129,15 @@ export function readAudioArtifact(directories, id, name) {
         if (receipt?.ok === false) return receipt;
         const bytes = typeof receipt?.base64 === 'string' ? Buffer.from(receipt.base64, 'base64') : Buffer.alloc(0);
         const format = audioFormat(bytes);
-        if (format.mimeType !== receipt.mimeType) throw fail('The legacy speech receipt is invalid.');
+        if (format.mimeType !== receipt.mimeType) throw fail('The older speech record is damaged.');
         return { ...receipt, ...format };
     }
     if (!Number.isSafeInteger(receipt.byteLength) || receipt.byteLength < 1 || receipt.byteLength > MAX_AUDIO_BYTES
-        || !/^[a-f0-9]{64}$/.test(receipt.digest)) throw fail('The saved speech receipt is invalid.');
+        || !/^[a-f0-9]{64}$/.test(receipt.digest)) throw fail('The saved speech record is damaged.');
     const file = readRoleplayFile(filePath(directories, id, name), MAX_AUDIO_BYTES, { allowMissingParent: true });
-    if (!file || file.bytes.length !== receipt.byteLength || digest(file.bytes) !== receipt.digest) throw fail('The saved speech file changed or is missing.');
+    if (!file || file.bytes.length !== receipt.byteLength || digest(file.bytes) !== receipt.digest) throw fail('The saved speech file is missing or no longer matches its record.');
     const result = audioResult(file.bytes);
-    if (result.mimeType !== receipt.mimeType || result.format !== receipt.format) throw fail('The saved speech format changed.');
+    if (result.mimeType !== receipt.mimeType || result.format !== receipt.format) throw fail('The saved speech format no longer matches its record.');
     return result;
 }
 

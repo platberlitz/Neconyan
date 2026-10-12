@@ -146,7 +146,7 @@ export async function prepareQuickImageReference(context, { name, source, finger
             if (context.signal.aborted) throw error;
             throw invalid('The reference image could not be downloaded.');
         }
-        if (!response.ok) throw invalid(`The reference request failed with HTTP ${response.status}.`);
+        if (!response.ok) throw invalid(`The reference image could not be downloaded (error ${response.status}). Check the URL and try again.`);
         bytes = Buffer.from(await readResponseArrayBuffer(response, maxBytes));
     }
     const format = detectImageFormat(bytes);

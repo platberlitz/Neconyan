@@ -3822,7 +3822,7 @@ async function runImportAnalysis(task, label, onError = null) {
     try {
         return await task();
     } catch (error) {
-        const message = `${label} could not be analyzed; nothing was changed.`;
+        const message = `${label} could not be analysed; nothing was changed.`;
         if (typeof onError === 'function') onError(message);
         toast.error(message);
         console.warn(`[Dialogue Colors] ${label} analysis failed:`, error);

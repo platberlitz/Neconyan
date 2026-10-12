@@ -207,25 +207,25 @@ class MiniMaxTtsProvider {
         const modelName = $('#minimax_custom_model_name').val().toString().trim();
 
         if (!modelId || !modelName) {
-            toastr.error('Please enter model ID and name');
+            toastr.error('Please enter a model ID and a model name.');
             return;
         }
 
         // Check if already exists in custom models
         if (this.settings.customModels.find(m => m.id === modelId)) {
-            toastr.error('Model ID already exists in custom models');
+            toastr.error('That model ID is already in your custom models.');
             return;
         }
 
         // Check if conflicts with default models
         if (MiniMaxTtsProvider.defaultModels.find(m => m.id === modelId)) {
-            toastr.error('Model ID conflicts with default model. Please use a different model ID.');
+            toastr.error('That model ID is already used by a built-in model. Use a different model ID.');
             return;
         }
 
         // Check if conflicts with default model names
         if (MiniMaxTtsProvider.defaultModels.find(m => m.name === modelName)) {
-            toastr.error('Model name conflicts with default model. Please use a different model name.');
+            toastr.error('That model name is already used by a built-in model. Use a different model name.');
             return;
         }
 
@@ -254,25 +254,25 @@ class MiniMaxTtsProvider {
         const voiceLang = $('#minimax_custom_voice_lang').val().toString().trim();
 
         if (!voiceName || !voiceId) {
-            toastr.error('Please enter voice name and ID');
+            toastr.error('Please enter a voice name and a voice ID.');
             return;
         }
 
         // Check if already exists in custom voices
         if (this.settings.customVoices.find(v => v.voice_id === voiceId)) {
-            toastr.error('Voice ID already exists in custom voices');
+            toastr.error('That voice ID is already in your custom voices.');
             return;
         }
 
         // Check if conflicts with default voices
         if (MiniMaxTtsProvider.defaultVoices.find(v => v.voice_id === voiceId)) {
-            toastr.error('Voice ID conflicts with default voice. Please use a different voice ID.');
+            toastr.error('That voice ID is already used by a built-in voice. Use a different voice ID.');
             return;
         }
 
         // Check if conflicts with default voice names
         if (MiniMaxTtsProvider.defaultVoices.find(v => v.name === voiceName)) {
-            toastr.error('Voice name conflicts with default voice. Please use a different voice name.');
+            toastr.error('That voice name is already used by a built-in voice. Use a different voice name.');
             return;
         }
 
@@ -338,7 +338,7 @@ class MiniMaxTtsProvider {
                         this.removeCustomModel(model.id);
                     } catch (error) {
                         console.error('MiniMax TTS: Error removing custom model:', error);
-                        toastr.error(`Failed to remove custom model: ${error.message}`);
+                        toastr.error(`Could not remove the custom model: ${error.message}`);
                     }
                 });
 
@@ -373,7 +373,7 @@ class MiniMaxTtsProvider {
                         this.removeCustomVoice(voice.voice_id);
                     } catch (error) {
                         console.error('MiniMax TTS: Error removing custom voice:', error);
-                        toastr.error(`Failed to remove custom voice: ${error.message}`);
+                        toastr.error(`Could not remove the custom voice: ${error.message}`);
                     }
                 });
 
@@ -508,7 +508,7 @@ class MiniMaxTtsProvider {
                 this.onConnectClick();
             } catch (error) {
                 console.error('MiniMax TTS: Error in connect click handler:', error);
-                toastr.error(`Connection failed: ${error.message}`);
+                toastr.error(`Could not connect: ${error.message}`);
             }
         });
         $('#minimax_refresh').on('click', () => {
@@ -516,7 +516,7 @@ class MiniMaxTtsProvider {
                 this.onRefreshClick();
             } catch (error) {
                 console.error('MiniMax TTS: Error in refresh click handler:', error);
-                toastr.error(`Refresh failed: ${error.message}`);
+                toastr.error(`Could not refresh the list: ${error.message}`);
             }
         });
         $('#minimax_tts_api_host').on('change', this.onSettingsChange.bind(this));
@@ -533,7 +533,7 @@ class MiniMaxTtsProvider {
                 this.addCustomModel();
             } catch (error) {
                 console.error('MiniMax TTS: Error adding custom model:', error);
-                toastr.error(`Failed to add custom model: ${error.message}`);
+                toastr.error(`Could not add the custom model: ${error.message}`);
             }
         });
         $('#minimax_add_custom_voice').on('click', () => {
@@ -541,7 +541,7 @@ class MiniMaxTtsProvider {
                 this.addCustomVoice();
             } catch (error) {
                 console.error('MiniMax TTS: Error adding custom voice:', error);
-                toastr.error(`Failed to add custom voice: ${error.message}`);
+                toastr.error(`Could not add the custom voice: ${error.message}`);
             }
         });
 
@@ -553,7 +553,7 @@ class MiniMaxTtsProvider {
                     this.addCustomModel();
                 } catch (error) {
                     console.error('MiniMax TTS: Error adding custom model via keyboard:', error);
-                    toastr.error(`Failed to add custom model: ${error.message}`);
+                    toastr.error(`Could not add the custom model: ${error.message}`);
                 }
             }
         });
@@ -564,7 +564,7 @@ class MiniMaxTtsProvider {
                     this.addCustomVoice();
                 } catch (error) {
                     console.error('MiniMax TTS: Error adding custom voice via keyboard:', error);
-                    toastr.error(`Failed to add custom voice: ${error.message}`);
+                    toastr.error(`Could not add the custom voice: ${error.message}`);
                 }
             }
         });
@@ -635,7 +635,7 @@ class MiniMaxTtsProvider {
             await initVoiceMap(); // Update voice map after refresh
             toastr.success('MiniMax TTS: Models and voices refreshed successfully');
         } catch (error) {
-            toastr.error(`MiniMax TTS: Failed to refresh - ${error.message}`);
+            toastr.error(`MiniMax TTS: could not refresh the list: ${error.message}`);
         }
     }
 

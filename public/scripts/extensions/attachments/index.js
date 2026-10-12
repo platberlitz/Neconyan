@@ -78,7 +78,7 @@ function listDataBankAttachments(args) {
  */
 async function getDataBankText(args, value) {
     if (!value) {
-        toastr.warning('No attachment name or URL provided.');
+        toastr.warning('Give the attachment a name or link.');
         return;
     }
 

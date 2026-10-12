@@ -96,7 +96,7 @@ describe('Neconyan ZIP update boundary', () => {
         globalThis.fetch = fetchMock;
 
         await expect(stageZipReleaseUpdate({ latestVersion: '2.0.0', assetUrl: 'https://example.test/release.zip' }))
-            .rejects.toThrow('Neconyan ZIP updates are unavailable');
+            .rejects.toThrow('ZIP updates are not available');
         expect(fetchMock).not.toHaveBeenCalled();
     });
 });

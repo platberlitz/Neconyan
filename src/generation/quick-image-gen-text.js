@@ -25,7 +25,7 @@ export function captureQuickImageTextSettings(directories, settings, mainBinding
         binding = { kind: 'profile', ...captureChatProfile(directories, settings.llmOverrideProfileId) };
         binding = captureProfilePresetBinding(directories, binding, settings.llmOverridePreset || '');
     }
-    if (!binding?.fingerprint) throw fail('The image Text AI needs an accepted connection.', 'QIG_CLASSIFIER_BINDING');
+    if (!binding?.fingerprint) throw fail('The image text AI needs a saved connection.', 'QIG_CLASSIFIER_BINDING');
     const role = settings.llmRequestRole ?? 'default';
     if (!['default', 'user', 'system'].includes(role)) throw fail('The image Text AI request role is invalid.');
     const depth = override ? bounded(settings.llmOverrideChatDepth, 1000, 0) : 0;
@@ -42,7 +42,7 @@ export function captureQuickImageTextSettings(directories, settings, mainBinding
 export async function runQuickImageTextStep(context, { base, account, effectId, stage, instruction, snapshot,
     textAI = snapshot.quickImageGenTextAI, prefill = '', beforeDispatch, generate = runChatProfile } = {}) {
     if (!textAI?.binding?.fingerprint || !/^[a-z-]{1,40}$/.test(stage) || !effectId || effectId.length > 128
-        || typeof instruction !== 'string' || !instruction.trim()) throw fail('The accepted image Text AI step is incomplete.');
+        || typeof instruction !== 'string' || !instruction.trim()) throw fail('The saved image text AI step is incomplete.');
     const withAccount = operation => withRoleplayAccount(base, account, operation);
     const name = `quick-image-text:${effectId}:${stage}`;
     const identity = roleplayHash({ effectId, stage, instruction, textAI, prefill, macros: snapshot.macros, account });

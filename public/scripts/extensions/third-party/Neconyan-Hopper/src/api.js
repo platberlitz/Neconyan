@@ -36,7 +36,7 @@ function requestSignal(signal) {
     }
     const controller = new AbortController();
     const abort = () => controller.abort(signal.reason);
-    const timer = setTimeout(() => controller.abort(new DOMException('The request timed out.', 'TimeoutError')), REQUEST_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(new DOMException('Meower took too long to answer. Try again.', 'TimeoutError')), REQUEST_TIMEOUT_MS);
     timer.unref?.();
     controller.signal.addEventListener('abort', () => {
         clearTimeout(timer);
@@ -527,7 +527,7 @@ async function runNativeJob(kind, input, options) {
         const response = await fetch(url, { ...options, headers: { ...ctx().getRequestHeaders(), 'X-Neconyan-Account': account } });
         const data = await response.json();
         if (account !== user.getCurrentUserHandle()) throw new Error('account_changed');
-        if (!response.ok) throw Object.assign(new Error(data.error || 'Meower request failed.'), { status: response.status });
+        if (!response.ok) throw Object.assign(new Error(data.error || 'Meower could not finish the request. Try again.'), { status: response.status });
         return data;
     };
     const run = createMeowerJobClient({ request, ...jobs, account, uuid: () => ctx().uuidv4(), pendingStorage: localStorage,

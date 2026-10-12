@@ -42,7 +42,7 @@ function directoryIdentity(directory) {
 function approvedFolder(lease, notebookId, wanted) {
     readManifestLocked(lease, notebookId);
     const config = settings();
-    if (!config.enabled) throw notebookError('OBSIDIAN_DISABLED', 'The server administrator has not enabled the optional Obsidian adapter.', 403);
+    if (!config.enabled) throw notebookError('OBSIDIAN_DISABLED', 'The server administrator has not turned on Obsidian sync.', 403);
     const expected = notebookContentRoot(accountRootOf(lease), notebookId);
     if (typeof wanted !== 'string' || !path.isAbsolute(wanted) || path.resolve(wanted) !== expected) {
         throw notebookError('OBSIDIAN_FOLDER_NOT_ALLOWED', 'Choose this notebook’s existing content folder. Another folder or a second copied notebook is not allowed.', 403);
@@ -57,7 +57,7 @@ function approvedFolder(lease, notebookId, wanted) {
             if (expected === root || expected.startsWith(root + path.sep)) { allowed = true; break; }
         } catch { /* An unavailable administrator root grants no access. */ }
     }
-    if (!allowed) throw notebookError('OBSIDIAN_FOLDER_NOT_ALLOWED', 'The notebook folder is outside the administrator’s approved sync roots.', 403);
+    if (!allowed) throw notebookError('OBSIDIAN_FOLDER_NOT_ALLOWED', 'This folder is outside the sync folders the server administrator has approved.', 403);
     return directoryIdentity(expected);
 }
 
@@ -90,7 +90,7 @@ export function obsidianStatusLocked(lease, notebookId) {
         configured: binding?.enabled === true, revision: binding?.revision ?? null, folder: binding?.folder ?? null,
         mechanism: 'obsidian-headless', running: runtime?.running === true, busy: !!runtime?.starting,
         lastCheckedAt: runtime?.lastCheckedAt ?? stopped?.lastCheckedAt ?? null,
-        message: runtime?.message ?? stopped?.message ?? (binding?.enabled ? 'Configured. The client is stopped.' : 'No client has been started.') } };
+        message: runtime?.message ?? stopped?.message ?? (binding?.enabled ? 'Set up. Obsidian sync is stopped.' : 'Obsidian sync has not been started.') } };
 }
 
 export function configureObsidianLocked(lease, { notebookId, operationId, expectedRevision, folder, singleMechanism, actor }) {
@@ -98,12 +98,12 @@ export function configureObsidianLocked(lease, { notebookId, operationId, expect
         const previous = readBinding(lease, notebookId);
         if ((previous?.revision ?? null) !== expectedRevision) throw notebookError('OBSIDIAN_CONFLICT', 'Sync settings changed. Refresh them before choosing a folder again.', 409);
         if (runtimes.has(`${accountRootOf(lease)}\0${notebookId}`)) throw notebookError('OBSIDIAN_FOLDER_BUSY', 'Stop the current client before changing its folder.', 409);
-        if (singleMechanism !== true) throw notebookError('OBSIDIAN_SINGLE_MECHANISM', 'Confirm that only Obsidian Headless will sync this content folder.', 400);
+        if (singleMechanism !== true) throw notebookError('OBSIDIAN_SINGLE_MECHANISM', 'Confirm that only Obsidian Headless (the official Obsidian sync program) will sync this folder.', 400);
         const chosen = approvedFolder(lease, notebookId, folder);
         for (const otherId of listNotebookIdsLocked(lease)) {
             if (otherId === notebookId) continue;
             const other = readBinding(lease, otherId);
-            if (other?.enabled && physicalKey(other) === physicalKey(chosen)) throw notebookError('OBSIDIAN_FOLDER_BUSY', 'This folder already has a sync mechanism assigned.', 409);
+            if (other?.enabled && physicalKey(other) === physicalKey(chosen)) throw notebookError('OBSIDIAN_FOLDER_BUSY', 'This folder is already set up for another sync.', 409);
         }
         const manifest = readManifestLocked(lease, notebookId);
         const policies = readPoliciesLocked(lease, notebookId);
@@ -220,14 +220,14 @@ async function stopEntry(entry) {
     entry.running = false;
     const key = runtimeKey(entry.base, entry.notebookId);
     stoppedRuntimes.delete(key);
-    stoppedRuntimes.set(key, { lastCheckedAt: entry.lastCheckedAt ?? null, message: entry.message ?? 'Client stopped. Files and private history were kept.' });
+    stoppedRuntimes.set(key, { lastCheckedAt: entry.lastCheckedAt ?? null, message: entry.message ?? 'Obsidian sync stopped. Your notes and private history were kept.' });
     while (stoppedRuntimes.size > 1000) stoppedRuntimes.delete(stoppedRuntimes.keys().next().value);
 }
 
 export async function startObsidian(base, { notebookId, operationId, expectedRevision }, { stamp = roleplayAccountStamp(base) } = {}) {
     const configured = withRoleplayAccount(base, stamp, lease => {
         const checked = checkedBinding(lease, notebookId);
-        if (checked.binding.revision !== expectedRevision) throw notebookError('OBSIDIAN_CONFLICT', 'Sync settings changed. Refresh before starting the client.', 409);
+        if (checked.binding.revision !== expectedRevision) throw notebookError('OBSIDIAN_CONFLICT', 'Sync settings changed. Refresh before starting sync.', 409);
         return runOperationLocked(lease, { operationId, kind: 'obsidian-start', args: { notebookId, expectedRevision } }, () => ({ status: 'success', folder: checked.folder }));
     });
     if (runtimes.has(runtimeKey(base, notebookId)) || folderClaims.has(physicalKey(configured.folder))) {
@@ -237,7 +237,7 @@ export async function startObsidian(base, { notebookId, operationId, expectedRev
     if (Number(process.versions.node.split('.')[0]) < 22 || typeof config.executable !== 'string' || !path.isAbsolute(config.executable)) {
         throw notebookError('OBSIDIAN_CLIENT_UNAVAILABLE', 'The administrator must provide an already-installed Headless executable and Node 22 or newer. Nothing was installed or signed in.', 400);
     }
-    try { fs.accessSync(config.executable, fs.constants.X_OK); } catch { throw notebookError('OBSIDIAN_CLIENT_UNAVAILABLE', 'The prepared Headless executable is unavailable. Nothing was installed or signed in.', 400); }
+    try { fs.accessSync(config.executable, fs.constants.X_OK); } catch { throw notebookError('OBSIDIAN_CLIENT_UNAVAILABLE', 'The Obsidian sync program is not available on the server. Nothing was installed or signed in.', 400); }
     const entry = { base, stamp, notebookId, folder: configured.folder, starting: true, running: false, message: 'Checking the prepared folder...' };
     stoppedRuntimes.delete(runtimeKey(base, notebookId));
     runtimes.set(runtimeKey(base, notebookId), entry);
@@ -296,7 +296,7 @@ export async function stopObsidian(base, notebookId, { stamp = roleplayAccountSt
     withRoleplayAccount(base, stamp, lease => readManifestLocked(lease, notebookId));
     const entry = runtimes.get(runtimeKey(base, notebookId));
     if (entry) {
-        entry.message = 'Client stopped. Files and private history were kept.';
+        entry.message = 'Obsidian sync stopped. Your notes and private history were kept.';
         await stopEntry(entry);
     }
     if (settings().enabled) await reconcileObsidian(base, notebookId, { stamp });

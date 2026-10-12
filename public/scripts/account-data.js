@@ -91,7 +91,7 @@ export async function mountAccountDataWork(container, { signal } = {}) {
         resets.disabled = true;
         try {
             const record = await client.observe(await client.read(resets.value), { signal });
-            resetStatus.textContent = record.result.reset ? 'The account reset is complete.' : 'The saved reset needs recovery.';
+            resetStatus.textContent = record.result.reset ? 'The account reset is complete.' : 'The account reset is not complete. Contact the server owner for help.';
             reload.style.display = record.result.reset ? '' : 'none';
         } catch (error) { resetStatus.textContent = error.message; } finally { resets.disabled = false; }
     });

@@ -86,7 +86,7 @@ export class SlashCommandHandler {
         }));
         SlashCommandParser.addCommandObject(SlashCommand.fromProps({ name: 'qrset',
             callback: () => {
-                toastr.warning('The command /qrset has been deprecated. Use /qr-set, /qr-set-on, and /qr-set-off instead.');
+                toastr.warning('The /qrset command is old and will stop working. Use /qr-set, /qr-set-on, or /qr-set-off instead.');
                 return '';
             },
             helpString: '<strong>DEPRECATED</strong> – The command /qrset has been deprecated. Use /qr-set, /qr-set-on, and /qr-set-off instead.',
@@ -782,7 +782,7 @@ export class SlashCommandHandler {
     getSetByName(name) {
         const set = this.api.getSetByName(name);
         if (!set) {
-            toastr.error(`No Quick Reply Set with the name "${name}" could be found.`);
+            toastr.error(`No quick reply set named "${name}" was found.`);
         }
         return set;
     }
@@ -790,7 +790,7 @@ export class SlashCommandHandler {
     getQrByLabel(setName, label) {
         const qr = this.api.getQrByLabel(setName, label);
         if (!qr) {
-            toastr.error(`No Quick Reply with the label "${label}" could be found in the set "${setName}"`);
+            toastr.error(`No quick reply labelled "${label}" was found in the set "${setName}".`);
         }
         return qr;
     }

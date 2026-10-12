@@ -32,7 +32,7 @@ export function computeLab(kind, plan, signal, { timeout = 30000, tokenCount, pr
             }
             if (message.tokenRequest !== undefined) {
                 try {
-                    if (!tokenCount) throw labError('The Labs tokenizer is unavailable.');
+                    if (!tokenCount) throw labError('Labs cannot count tokens (the chunks a model reads text in) right now. Try again later.');
                     const count = await tokenCount(message.text);
                     if (!settled) worker.postMessage({ tokenResponse: message.tokenRequest, count });
                 } catch (error) { finish(error); }

@@ -131,7 +131,7 @@ async function runJob(job) {
         }
         const handler = handlerEntry(saved.type)?.handler;
         if (!handler) {
-            await settleQuietly(() => setJobState(directories, job.id, 'failed', { error: { message: `No handler is registered for ${saved.type}.`, code: 'JOB_NO_HANDLER' } }));
+            await settleQuietly(() => setJobState(directories, job.id, 'failed', { error: { message: `Neconyan does not know how to run ${saved.type} jobs.`, code: 'JOB_NO_HANDLER' } }));
             return;
         }
         const controller = new AbortController();

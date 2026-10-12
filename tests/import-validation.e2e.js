@@ -15,7 +15,7 @@ test('invalid preset files report errors, clear the picker and allow a corrected
     });
     for (const bytes of ['{"broken":', 'null', '[]', '{"name":42}']) {
         await input.setInputFiles({ name: 'Retry.json', mimeType: 'application/json', buffer: Buffer.from(bytes) });
-        await expect(page.getByText('Could not import this preset. Check the JSON file and the server connection, then try again.', { exact: true }).first()).toBeVisible();
+        await expect(page.getByText('Could not import this preset. Check the file and your connection to Neconyan, then try again.', { exact: true }).first()).toBeVisible();
         await expect(input).toHaveValue('');
     }
     expect(writes).toBe(0);
@@ -29,6 +29,6 @@ test('invalid preset files report errors, clear the picker and allow a corrected
 
     const master = page.locator('#af_master_import_file');
     await master.setInputFiles({ name: 'broken.json', mimeType: 'application/json', buffer: Buffer.from('{') });
-    await expect(page.getByText('Could not import these templates. Check the JSON file and the server connection, then try again.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Could not import these templates. Check the file and your connection to Neconyan, then try again.', { exact: true })).toBeVisible();
     await expect(master).toHaveValue('');
 });

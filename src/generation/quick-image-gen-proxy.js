@@ -176,7 +176,7 @@ function sourceFromJson(value) {
 }
 
 async function proxyResponse(response, request, signal) {
-    if (!response.ok) throw fail(`The proxy image request failed with HTTP ${response.status}.`);
+    if (!response.ok) throw fail(`The image service returned an error (${response.status}). Check the service settings and try again.`);
     if (request.mode === 'responses') {
         let data;
         try { data = JSON.parse(await readResponseText(response, MAX_PROVIDER_RESPONSE_BYTES)); } catch {

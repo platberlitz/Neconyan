@@ -84,8 +84,8 @@ router.get('/:id', (request, response) => {
     try {
         const { owner, directories } = directoriesFor(request);
         const job = getJob(directories, request.params.id);
-        if (job && job.owner !== owner) return response.status(404).json({ error: 'No such job.' });
-        if (!job) return response.status(404).json({ error: 'No such job.' });
+        if (job && job.owner !== owner) return response.status(404).json({ error: 'That job could not be found.' });
+        if (!job) return response.status(404).json({ error: 'That job could not be found.' });
         response.set('X-Neconyan-Job', job.id);
         return response.json({ job });
     } catch (error) {
@@ -97,9 +97,9 @@ router.get('/:id/result', (request, response) => {
     try {
         const { owner, directories } = directoriesFor(request);
         const job = getJob(directories, request.params.id);
-        if (!job || job.owner !== owner) return response.status(404).json({ error: 'No such job.' });
+        if (!job || job.owner !== owner) return response.status(404).json({ error: 'That job could not be found.' });
         const result = readArtifact(directories, job.id, 'result');
-        if (result === undefined) return response.status(409).json({ error: 'This job has no completed result.' });
+        if (result === undefined) return response.status(409).json({ error: 'This job has not finished, so there is no result yet.' });
         return response.json(result);
     } catch (error) {
         return fail(response, error);
@@ -174,14 +174,14 @@ router.get('/:id/audio/:name', (request, response) => {
     try {
         const { owner, directories } = directoriesFor(request);
         const job = getJob(directories, request.params.id);
-        if (!job || job.owner !== owner) return response.status(404).json({ error: 'No such job.' });
+        if (!job || job.owner !== owner) return response.status(404).json({ error: 'That job could not be found.' });
         const base = roleplayAccountBase(directories);
         const read = () => readAudioArtifact(directories, job.id, request.params.name);
         const account = job.intent?.request?.account ?? job.intent?.media ?? job.intent?.roleplay
             ?? (job.type === 'conversation.participant' ? readArtifact(directories, job.id, 'request')?.speechAccount : null);
         const artifact = base ? withRoleplayAccount(base, account, read) : read();
         if (typeof artifact?.base64 !== 'string' || !/^audio\/[a-z0-9.+-]+$/i.test(artifact?.mimeType || '')) {
-            return response.status(404).json({ error: 'No such audio.' });
+            return response.status(404).json({ error: 'That audio could not be found.' });
         }
         response.set('X-Content-Type-Options', 'nosniff');
         response.type(artifact.mimeType);
@@ -195,7 +195,7 @@ router.get('/:id/approval/:approval', (request, response) => {
     try {
         const { owner, directories } = directoriesFor(request);
         const job = getJob(directories, request.params.id);
-        if (!job || job.owner !== owner) return response.status(404).json({ error: 'No such job.' });
+        if (!job || job.owner !== owner) return response.status(404).json({ error: 'That job could not be found.' });
         return response.json(readJobApproval({ owner, directories, job }, request.params.approval));
     } catch (error) { return fail(response, error); }
 });
@@ -204,7 +204,7 @@ router.post('/:id/approval/:approval', (request, response) => {
     try {
         const { owner, directories } = directoriesFor(request);
         const job = getJob(directories, request.params.id);
-        if (!job || job.owner !== owner) return response.status(404).json({ error: 'No such job.' });
+        if (!job || job.owner !== owner) return response.status(404).json({ error: 'That job could not be found.' });
         return response.json(decideJobApproval({ owner, directories, job }, { id: request.params.approval,
             proposalHash: request.body?.proposalHash, decision: request.body?.decision }));
     } catch (error) { return fail(response, error); }
@@ -220,7 +220,7 @@ router.post('/submit', (request, response) => {
         const { owner, directories } = directoriesFor(request);
         const body = request.body ?? {};
         if (RESERVED_JOB_TYPES.has(body.type) || /^(media|roleplay|meower|labs|operations)\./.test(String(body.type))) {
-            return response.status(400).json({ error: 'This job type requires its native acceptance endpoint.' });
+            return response.status(400).json({ error: 'This job cannot be accepted this way.' });
         }
         const accepted = acceptJob(directories, {
             owner,
@@ -257,7 +257,7 @@ router.post('/:id/cancel', async (request, response) => {
     try {
         const { owner, directories } = directoriesFor(request);
         const job = getJob(directories, request.params.id);
-        if (!job || job.owner !== owner) return response.status(404).json({ error: 'No such job.' });
+        if (!job || job.owner !== owner) return response.status(404).json({ error: 'That job could not be found.' });
         await retainConversationAutomaticAcceptance(request, job);
         const requested = requestCancellation(directories, job.id, { reason: request.body?.reason ?? null });
         // A reply may own retrieval work below a workflow child. Stop every
@@ -283,7 +283,7 @@ router.post('/:id/dismiss', (request, response) => {
     try {
         const { owner, directories } = directoriesFor(request);
         const job = getJob(directories, request.params.id);
-        if (!job || job.owner !== owner) return response.status(404).json({ error: 'No such job.' });
+        if (!job || job.owner !== owner) return response.status(404).json({ error: 'That job could not be found.' });
         return response.json({ job: dismissJob(directories, job.id).job });
     } catch (error) {
         return fail(response, error);
@@ -294,8 +294,8 @@ router.post('/:id/retry', async (request, response) => {
     try {
         const { owner, directories } = directoriesFor(request);
         const job = getJob(directories, request.params.id);
-        if (!job || job.owner !== owner) return response.status(404).json({ error: 'No such job.' });
-        if (!['failed', 'interrupted'].includes(job.state)) return response.status(409).json({ error: 'Only failed or interrupted work can be retried.' });
+        if (!job || job.owner !== owner) return response.status(404).json({ error: 'That job could not be found.' });
+        if (!['failed', 'interrupted'].includes(job.state)) return response.status(409).json({ error: 'Only jobs that failed or were interrupted can be tried again.' });
         if (job.type === 'conversation.reply' && (job.children ?? []).length) {
             return response.json({ job: retryConversationFamily(directories, job.id).job });
         }

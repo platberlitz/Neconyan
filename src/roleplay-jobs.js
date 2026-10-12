@@ -38,7 +38,7 @@ const jobKey = (state, operationKey) => roleplayHash([state.accountId, 'roleplay
 const writeKey = (state, operationKey) => roleplayHash([state.accountId, 'chat-write', `job:${operationKey}`]);
 
 function assertOperationKey(operationKey) {
-    if (typeof operationKey !== 'string' || !operationKey || operationKey.length > 200) throw invalid('Invalid Roleplay job identity.');
+    if (typeof operationKey !== 'string' || !operationKey || operationKey.length > 200) throw invalid('This Roleplay job has an invalid ID.');
 }
 
 function assertEffectSource(effect, source) {
@@ -67,10 +67,10 @@ export function admitRoleplayJob(base, account, { operationKey, effect, source, 
         const intentHash = roleplayHash({ accountId: state.accountId, dataEpoch: state.dataEpoch, intent });
         const jobIntent = { roleplay: { accountId: state.accountId, dataEpoch: state.dataEpoch, operationKey }, ...intent };
         const prior = state.submissions[keyHash];
-        if (prior && prior.intentHash !== intentHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'This Roleplay job key already names different work.');
+        if (prior && prior.intentHash !== intentHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'This Roleplay request was already sent with different details.');
         if (prior && prior.state !== 'preparing') return { jobId: prior.jobId, state: prior.state, created: false };
         if (!prior) {
-            if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay operation must settle first.');
+            if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay action must finish first.');
             assertRoleplaySourceLocked(lease, source);
             state.submissions[keyHash] = { accountId: state.accountId, dataEpoch: state.dataEpoch, intentHash, jobId: null,
                 targetInstanceId: source.instanceId, state: 'preparing', reservedReceiptBytes: ADMISSION_RESERVE_BYTES, effects: {} };
@@ -118,7 +118,7 @@ function effectRecords(records, source, effect, output, request, job, directorie
         if (!accepted || change.index !== accepted.index || change.recordHash !== accepted.recordHash || !record?.is_user
             || roleplayHash(records[change.index + 1]) !== accepted.recordHash || typeof change.text !== 'string' || typeof change.displayText !== 'string'
             || Buffer.byteLength(change.text) > 256 * 1024 || Buffer.byteLength(change.displayText) > 256 * 1024) {
-            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The translated user input no longer matches its accepted source.');
+            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The translated message no longer matches the message it came from.');
         }
         record.mes = change.text;
         record.extra = { ...record.extra, display_text: change.displayText };
@@ -134,7 +134,7 @@ function effectRecords(records, source, effect, output, request, job, directorie
     if (output?.timedWorldInfo) {
         if (next.length - 1 !== output.timedChatLength
             || roleplayHash(next[0].chat_metadata?.timedWorldInfo ?? {}) !== output.timedBaseline) {
-            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info timed effects changed before the reply was delivered.');
+            throw roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved World Info timed effects changed before the reply was sent.');
         }
         next[0].chat_metadata.timedWorldInfo = structuredClone(output.timedWorldInfo);
     }
@@ -159,7 +159,7 @@ function effectRecords(records, source, effect, output, request, job, directorie
         return next;
     }
     const selected = Number(message.swipe_id ?? 0);
-    if (!Number.isInteger(selected) || selected < 0 || selected >= swipes.length) throw invalid('The anchored message has an unreadable swipe selection.');
+    if (!Number.isInteger(selected) || selected < 0 || selected >= swipes.length) throw invalid('The message has an unreadable version choice.');
     if (effect === 'continue') {
         message.mes = output.continuedText ?? message.mes + output.text;
         Object.assign(message, timing);
@@ -226,8 +226,8 @@ function candidateOwnershipLocked(lease, operationKey, jobId) {
     confirmRoleplayAccount(lease);
     const { state, scope } = roleplayLease(lease);
     const receipt = state.submissions[jobKey(state, operationKey)];
-    if (!receipt || receipt.jobId !== jobId) throw roleplayError('ROLEPLAY_JOB_REJECTED', 'This workflow candidate has no accepted receipt.', 409);
-    if (receipt.state !== 'accepted' || state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The workflow candidate cannot run during another operation.', 503);
+    if (!receipt || receipt.jobId !== jobId) throw roleplayError('ROLEPLAY_JOB_REJECTED', 'This workflow candidate has no accepted record.', 409);
+    if (receipt.state !== 'accepted' || state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The workflow candidate cannot run while another action is in progress.', 503);
     const job = getJob(scope.directories, jobId);
     const { roleplay, source, request, effect } = job?.intent ?? {};
     const marker = request?.workflowCandidate;
@@ -266,7 +266,7 @@ export function completeRoleplayCandidateJob(base, account, { operationKey, jobI
     return withRoleplayAccount(base, account, lease => {
         const { state } = roleplayLease(lease);
         const receipt = state.submissions[jobKey(state, operationKey)];
-        if (!receipt || receipt.jobId !== jobId) throw roleplayError('ROLEPLAY_JOB_REJECTED', 'This workflow candidate has no accepted receipt.', 409);
+        if (!receipt || receipt.jobId !== jobId) throw roleplayError('ROLEPLAY_JOB_REJECTED', 'This workflow candidate has no accepted record.', 409);
         if (receipt.state === 'closed') return structuredClone(receipt.outcome);
         const { job, scope } = candidateOwnershipLocked(lease, operationKey, jobId);
         const saved = readArtifact(scope.directories, jobId, 'roleplay-candidate');
@@ -274,7 +274,7 @@ export function completeRoleplayCandidateJob(base, account, { operationKey, jobI
             || !['text', 'tool-turn'].includes(saved.kind) || saved.hash !== roleplayHash({
             intentHash: saved.intentHash, kind: saved.kind, providerHash: saved.providerHash,
             ...(saved.kind === 'text' ? { output: saved.output } : { callsHash: saved.callsHash }) })) {
-            throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The saved candidate result needs recovery.', 503);
+            throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The saved candidate result is damaged and needs repair.', 503);
         }
         if (saved.kind === 'text' && (!saved.output || typeof saved.output !== 'object')
             || saved.kind === 'tool-turn' && !/^[a-f0-9]{64}$/u.test(saved.callsHash)) {
@@ -294,7 +294,7 @@ export function completeRoleplayCandidateJob(base, account, { operationKey, jobI
 
 /** The effect's anchor must still hold; unrelated later edits elsewhere are allowed only where the anchor permits. */
 function assertAnchor(saved, source, effect) {
-    const changed = () => roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved chat moved past this job\'s anchor; the reply was not written.');
+    const changed = () => roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The chat has moved on since this reply was requested, so the reply was not saved.');
     if (saved.instanceId !== source.instanceId) throw changed();
     if (effect === 'append' || effect === 'notebook') {
         if (saved.rawHash !== source.rawHash) throw changed();
@@ -334,7 +334,7 @@ export function applyRoleplayJobEffect(base, account, { operationKey, jobId, out
         const keyHash = jobKey(state, operationKey);
         const receipt = state.submissions[keyHash];
         const rejected = message => roleplayError('ROLEPLAY_JOB_REJECTED', message, 409);
-        if (!receipt || receipt.jobId !== jobId) throw rejected('This job does not own that Roleplay receipt.');
+        if (!receipt || receipt.jobId !== jobId) throw rejected('This job does not match that Roleplay record.');
         if (receipt.state === 'closed') return structuredClone(receipt.outcome);
         if (receipt.state !== 'accepted') throw rejected('This Roleplay job was withdrawn.');
         const job = getJob(scope.directories, jobId);
@@ -348,11 +348,11 @@ export function applyRoleplayJobEffect(base, account, { operationKey, jobId, out
         // write's own receipt holds the outcome, so nothing is written twice.
         const written = state.submissions[writeKey(state, operationKey)];
         if (written?.state === 'closed') return closeReceipt(lease, keyHash, written.outcome);
-        if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay operation must settle first.');
+        if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay action must finish first.');
         // Follow the chat's identity, so a rename after admission does not strand the job.
         const resource = state.resources[source.instanceId];
         if (resource?.status !== 'live' || resource.accountId !== state.accountId || resource.dataEpoch !== state.dataEpoch) {
-            throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'The chat this job answers no longer exists.', 404);
+            throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'The chat this reply belongs to no longer exists.', 404);
         }
         const captured = captureRoleplayStorageSourceLocked(lease, resource.locator);
         assertAnchor(captured.saved, source, effect);
@@ -371,7 +371,7 @@ export function voidRoleplayJob(base, account, { operationKey, jobId }) {
     return withRoleplayAccount(base, account, lease => {
         const { state } = roleplayLease(lease);
         const receipt = state.submissions[jobKey(state, operationKey)];
-        if (!receipt || receipt.jobId !== jobId) throw roleplayError('ROLEPLAY_JOB_REJECTED', 'This job does not own that Roleplay receipt.', 409);
+        if (!receipt || receipt.jobId !== jobId) throw roleplayError('ROLEPLAY_JOB_REJECTED', 'This job does not match that Roleplay record.', 409);
         if (receipt.state !== 'accepted') return receipt.state;
         receipt.state = 'void';
         receipt.reservedReceiptBytes = 0;

@@ -602,7 +602,7 @@ router.post('/write', (request, response) => {
         const { key, value, label } = request.body;
 
         if (!key || typeof value !== 'string') {
-            return response.status(400).send('Invalid key or value');
+            return response.status(400).send('That secret needs a name and a value.');
         }
 
         const manager = new SecretManager(request.user.directories);
@@ -651,7 +651,7 @@ router.post('/find', (request, response) => {
         const { key, id } = request.body;
 
         if (!key) {
-            return response.status(400).send('Key is required');
+            return response.status(400).send('The secret name is required.');
         }
 
         if (!allowKeysExposure && !EXPORTABLE_KEYS.includes(key)) {
@@ -679,7 +679,7 @@ router.post('/delete', (request, response) => {
         const { key, id } = request.body;
 
         if (!key) {
-            return response.status(400).send('Key and ID are required');
+            return response.status(400).send('The secret name and ID are required.');
         }
 
         const manager = new SecretManager(request.user.directories);
@@ -697,7 +697,7 @@ router.post('/rotate', (request, response) => {
         const { key, id } = request.body;
 
         if (!key || !id) {
-            return response.status(400).send('Key and ID are required');
+            return response.status(400).send('The secret name and ID are required.');
         }
 
         const manager = new SecretManager(request.user.directories);
@@ -715,7 +715,7 @@ router.post('/rename', (request, response) => {
         const { key, id, label } = request.body;
 
         if (!key || !id || !label) {
-            return response.status(400).send('Key, ID, and label are required');
+            return response.status(400).send('The secret name, ID and label are required.');
         }
 
         const manager = new SecretManager(request.user.directories);

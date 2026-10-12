@@ -98,7 +98,7 @@ async function finalizeSelfieSubmission(request, job, preparedSnapshot) {
     try {
         const snapshot = preparedSnapshot || readArtifact(request.user.directories, job.id, 'request');
         if (!snapshot) throw fail('The selfie request was not saved before the server stopped. Try again.', 409);
-        if (job.config?.requestHash && hash(snapshot) !== job.config.requestHash) throw fail('The accepted selfie request changed during preparation.', 409);
+        if (job.config?.requestHash && hash(snapshot) !== job.config.requestHash) throw fail('The selfie request changed while it was being prepared.', 409);
         writeArtifact(request.user.directories, job.id, 'request', snapshot);
     } catch (error) {
         updateJob(request.user.directories, job.id, {

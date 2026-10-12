@@ -116,7 +116,7 @@ router.post('/upload', async (request, response) => {
         return response.send({ path: filename });
     } catch (err) {
         console.error('Error uploading user avatar:', err);
-        return response.status(400).send('Is not a valid image');
+        return response.status(400).send('That file is not a valid image.');
     } finally {
         fs.rmSync(pathToUpload, { force: true });
     }

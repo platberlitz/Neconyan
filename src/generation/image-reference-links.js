@@ -20,8 +20,8 @@ const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 export function imageReferenceBaseUrl(value = getConfigValue('media.referenceBaseUrl', '')) {
     const safe = normalizeImageSource(value, { allowHttp: false, allowRelative: false, blockPrivateHosts: true });
     let url;
-    try { url = new URL(safe); } catch { throw fail('URL-only image references require a saved public HTTPS reference address.'); }
-    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) throw fail('The public image reference address is invalid.');
+    try { url = new URL(safe); } catch { throw fail('Image links need a saved public secure (HTTPS) web address.'); }
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) throw fail('The public image address is invalid.');
     return url.href.replace(/\/+$/, '');
 }
 

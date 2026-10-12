@@ -174,7 +174,7 @@ router.post('/image/generate', async (req, res) => {
 
         if (!key) {
             console.warn('OpenRouter API key not found');
-            return res.status(400).json({ error: 'OpenRouter API key not found' });
+            return res.status(400).json({ error: 'No OpenRouter API key is saved. Add one in the settings first.' });
         }
 
         console.debug('OpenRouter image generation request', req.body);
@@ -182,7 +182,7 @@ router.post('/image/generate', async (req, res) => {
         const { model, prompt } = req.body;
 
         if (!model || !prompt) {
-            return res.status(400).json({ error: 'Model and prompt are required' });
+            return res.status(400).json({ error: 'Choose a model and enter a prompt first.' });
         }
 
         const response = await fetch(`${API_OPENROUTER}/chat/completions`, {

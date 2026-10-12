@@ -29,7 +29,7 @@ export function resolveTextTokenizer(choice, source, model) {
         if (matched) return matched[1];
         if (/^(?:openai\/)?(?:gpt-|o[134](?:-|$))/.test(lower)) return 'openai';
     }
-    fail('Choose an available saved tokenizer before using text token bans or bias.', 409);
+    fail('Choose a working saved tokenizer (the tool that splits text into pieces for the AI) before using banned words or bias settings.', 409);
 }
 
 /** Token bans and complete prompt budgets use the same bound tokenizer endpoint. */
@@ -42,7 +42,7 @@ export async function encodeTextProfilePrompt(context, material, text, { signal,
     const result = await runBackendRequest({ user: { profile: { handle: context.owner }, directories: context.directories }, headers: {} }, handleTextGenerationEncode,
         { text, url: material.active.api_server, model, api_type: material.source, secret_id: material.secretId },
         { signal, fetch: fetchImpl, anonymousCustom: !material.secretId, boundProfile: true });
-    if (!Array.isArray(result.ids) || !result.ids.every(Number.isInteger) || (text && !result.ids.length)) fail('The saved connection could not tokenise this text.', 409);
+    if (!Array.isArray(result.ids) || !result.ids.every(Number.isInteger) || (text && !result.ids.length)) fail('The saved connection could not split this text for banned words or bias settings.', 409);
     return result.ids;
 }
 
@@ -79,7 +79,7 @@ export async function buildTextProfileRequest(context, material, messages, maxTo
     }
     const format = { name1: userName, name2: characterName, selectedGroup: groupNames.length > 0, substitute };
     const raw = material.kind === 'active';
-    if (raw && rawOptions.jsonSchema) fail('Structured JSON requests require a saved Chat Completion connection.', 409);
+    if (raw && rawOptions.jsonSchema) fail('Structured JSON requests (a strict answer format) need a saved Chat Completion connection.', 409);
     if (raw && rawOptions.preserveReasoningBudget) fail('Preserving the active text reasoning budget is not available on the server.', 409);
     const prompt = preparedText ?? (raw ? createRawPrompt(structuredClone(messages), 'textgenerationwebui', rawOptions.instructOverride, rawOptions.quietToLoud,
         rawOptions.systemPrompt, rawOptions.prefill, { ...format, instruct, context: material.context }) : typeof messages === 'string' ? messages : instruct.enabled && rawOptions.includeInstruct !== false
@@ -102,12 +102,12 @@ export async function buildTextProfileRequest(context, material, messages, maxTo
     for (const entry of settings.logit_bias || []) {
         const text = String(entry.text || '').trim();
         if (!text) continue;
-        if (!Number.isFinite(entry.value)) fail('The saved token bias is invalid.', 409);
+        if (!Number.isFinite(entry.value)) fail('The saved bias setting for a word is invalid.', 409);
         let tokens;
         if (text.startsWith('[') && text.endsWith(']')) {
             tokens = parseTextTokenIds(text);
         } else tokens = await tokenize(text.startsWith('{') && text.endsWith('}') ? text.slice(1, -1) : ` ${text}`);
-        if (!Array.isArray(tokens) || !tokens.every(Number.isInteger)) fail('The saved token-bias list is invalid.', 409);
+        if (!Array.isArray(tokens) || !tokens.every(Number.isInteger)) fail('The saved bias list for words is invalid.', 409);
         for (const token of tokens) logitBias[String(token)] = entry.value;
     }
     const stops = () => {

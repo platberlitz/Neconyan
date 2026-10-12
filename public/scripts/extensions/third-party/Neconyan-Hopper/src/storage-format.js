@@ -20,7 +20,7 @@ function checkJson(value, status = 400, depth = 0, parents = new Set()) {
     if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
     if (typeof value === 'number' && Number.isFinite(value)) return;
     if (depth > 64 || (!Array.isArray(value) && !isRecord(value)) || parents.has(value)) {
-        fail(status, 'Meower data must contain only finite, non-cyclic JSON values.');
+        fail(status, 'Meower data contains a value that cannot be saved safely.');
     }
     parents.add(value);
     const keys = Reflect.ownKeys(value);
@@ -29,7 +29,7 @@ function checkJson(value, status = 400, depth = 0, parents = new Set()) {
         if (Array.isArray(value) && key === 'length') continue;
         const descriptor = Object.getOwnPropertyDescriptor(value, key);
         if (typeof key !== 'string' || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) {
-            fail(status, 'Meower data must contain plain JSON properties.');
+            fail(status, 'Meower data contains properties that cannot be saved safely.');
         }
         if (Array.isArray(value) && (!/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length)) {
             fail(status, 'Meower arrays must contain only indexed entries.');
@@ -62,12 +62,12 @@ function preserves(source, normal, exact = false) {
 export function settingsFrom(raw, status = 500) {
     if (raw === undefined) return normalizeSettings();
     checkJson(raw, status);
-    if (!isRecord(raw)) fail(status, 'The saved Meower settings are invalid.');
+    if (!isRecord(raw)) fail(status, 'Your saved Meower settings are damaged.');
     if (raw.version !== undefined && raw.version !== 1 && raw.version !== 2) {
-        fail(status, 'The saved Meower settings format is invalid or newer than this version.');
+        fail(status, 'Your saved Meower settings are damaged or from a newer version of Meower.');
     }
     if (raw.sessions !== undefined) {
-        if (!isRecord(raw.sessions)) fail(status, 'The saved Meower timeline list is invalid.');
+        if (!isRecord(raw.sessions)) fail(status, 'Your saved Meower timeline list is damaged.');
         for (const [id, session] of Object.entries(raw.sessions)) {
             if (!id || id.length > 120 || !isRecord(session) || (session.id !== undefined && session.id !== id)) {
                 fail(status, 'A saved Meower timeline has an invalid identity.');
@@ -83,7 +83,7 @@ export function settingsFrom(raw, status = 500) {
     if ((raw.activeSessionId !== undefined && typeof raw.activeSessionId !== 'string')
         || (raw.activeSessionByPersona !== undefined && (!isRecord(raw.activeSessionByPersona)
             || Object.values(raw.activeSessionByPersona).some(value => typeof value !== 'string')))) {
-        fail(status, 'The Meower timeline selection is invalid.');
+        fail(status, 'The selected Meower timeline is not valid.');
     }
     return normalizeSettings(raw);
 }
@@ -93,7 +93,7 @@ export function storeFrom(raw, { strict = false, status = 500 } = {}) {
     sizeOf(raw, MAX_STORE_BYTES, 'The Meower store (128 MiB limit)');
     if (!isRecord(raw) || raw.format !== 1 || !Number.isSafeInteger(raw.revision) || raw.revision < 0
         || !isRecord(raw.settings) || !isRecord(raw.settings.sessions) || !isRecord(raw.feeds)) {
-        fail(status, 'The Meower store format or revision is invalid or newer than this version.');
+        fail(status, 'Your Meower data is damaged or from a newer version of Meower.');
     }
     const settings = settingsFrom(raw.settings, status);
     const ids = Object.keys(settings.sessions);
@@ -102,7 +102,7 @@ export function storeFrom(raw, { strict = false, status = 500 } = {}) {
     }
     // Selection is device-local and may still point at a timeline another device deleted.
     const checkedSettings = { ...raw.settings, activeSessionId: settings.activeSessionId, activeSessionByPersona: settings.activeSessionByPersona };
-    if (strict && !preserves(checkedSettings, settings)) fail(status, 'The Meower settings contain invalid or unsupported values.');
+    if (strict && !preserves(checkedSettings, settings)) fail(status, 'Some Meower settings contain values that are not allowed.');
     const warnings = [];
     const feeds = Object.fromEntries(ids.map(id => {
         const source = raw.feeds[id];

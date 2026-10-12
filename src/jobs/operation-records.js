@@ -20,7 +20,7 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
         || survivesReset(value.kind) && value.account.accountId === account.accountId;
 
     function filenameFor(base, account, key) {
-        if (typeof key !== 'string' || !key || key.length > 200) throw labError('A Labs operation key is required.', 400);
+        if (typeof key !== 'string' || !key || key.length > 200) throw labError('This Labs request needs a key.', 400);
         return path.join(directoryFor(base), `${roleplayHash([account.accountId, key])}.json`);
     }
 
@@ -39,19 +39,19 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
         const file = readRoleplayFile(filename, maximumRecordBytes, { allowMissingParent: true });
         if (!file) return { file: null, value: null };
         let value;
-        try { value = JSON.parse(file.bytes.toString('utf8')); } catch { throw labError('The saved Labs record is unreadable.'); }
+        try { value = JSON.parse(file.bytes.toString('utf8')); } catch { throw labError('A saved Labs record could not be read.'); }
         if (file.bytes.length > recordLimit(value?.kind) || value?.version !== 1 || !states.has(value.state) || typeof value.key !== 'string'
         || !value.account || typeof value.requestHash !== 'string' || !value.plan
         || !planChecked(value) || !value.effects || Array.isArray(value.effects)
         || value.state !== 'preparing' && typeof value.jobId !== 'string'
-        || value.state === 'completed' && value.resultHash !== roleplayHash(value.result)) throw labError('The saved Labs record needs recovery.');
+        || value.state === 'completed' && value.resultHash !== roleplayHash(value.result)) throw labError('A saved Labs record is damaged and needs repair.');
         return { file, value };
     }
 
     const open = state => ['preparing', 'accepted'].includes(state);
     function save(filename, value, before, { wasOpen = false } = {}) {
         const bytes = JSON.stringify(value);
-        if (Buffer.byteLength(bytes) > recordLimit(value.kind)) throw labError('The saved Labs result exceeds its reserved space.', 413);
+        if (Buffer.byteLength(bytes) > recordLimit(value.kind)) throw labError('The saved Labs result is too large to store.', 413);
         // An open record already holds its full reservation, so rewriting it cannot change the store total.
         if (!(before && wasOpen && open(value.state))) {
             let reserved = open(value.state) ? recordLimit(value.kind) : Buffer.byteLength(bytes);
@@ -59,10 +59,10 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
                 const other = path.join(path.dirname(filename), name);
                 if (other === filename || !/^[a-f0-9]{64}\.json$/.test(name)) continue;
                 const item = read(other);
-                if (!item.file) throw labError('A saved Labs record disappeared.');
+                if (!item.file) throw labError('A saved Labs record is missing.');
                 reserved += open(item.value.state) ? recordLimit(item.value.kind) : item.file.bytes.length;
             }
-            if (reserved > storeLimit) throw labError('Labs storage is full. Existing evidence was retained.', 413);
+            if (reserved > storeLimit) throw labError('Labs storage is full. Existing records were kept.', 413);
         }
         const validate = () => {
             if (roleplayHash(evidence(readRoleplayFile(filename, maximumRecordBytes, { allowMissingParent: true })))
@@ -75,7 +75,7 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
             validateBeforeReplace: validate,
         } : { expectedFileAbsent: true, durable: true, preserveOnCreateError: true });
         const written = readRoleplayFile(filename, recordLimit(value.kind), { flush: true });
-        if (!written || written.bytes.toString('utf8') !== bytes) throw labError('The Labs record write needs recovery.');
+        if (!written || written.bytes.toString('utf8') !== bytes) throw labError('The Labs record could not be saved and needs repair.');
         return written;
     }
 
@@ -89,12 +89,12 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
     function reserve(base, target, account, kind = '') {
         let used = recordLimit(kind);
         for (const { file, value } of records(base)) {
-            if (!file || !value) throw labError('A saved Labs record disappeared.');
+            if (!file || !value) throw labError('A saved Labs record is missing.');
             const open = ['preparing', 'accepted'].includes(value.state);
             used += open ? recordLimit(value.kind) : file.bytes.length;
-            if (used > storeLimit) throw labError('Labs storage has no room for another result. Existing records were retained.', 413);
+            if (used > storeLimit) throw labError('Labs storage has no room for another result. Existing records were kept.', 413);
             if (open && value.applyTarget && Object.keys(value.effects).length && roleplayHash(value.account) === roleplayHash(stamp(account))
-            && roleplayHash(value.applyTarget) === roleplayHash(target)) throw labError('That target has an unfinished reviewed Labs change.');
+            && roleplayHash(value.applyTarget) === roleplayHash(target)) throw labError('That item has an unfinished reviewed Labs change.');
         }
     }
 
@@ -102,10 +102,10 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
     function assertLabsTargetIdle(lease, target) {
         const { scope } = roleplayLease(lease);
         for (const { value } of records(scope)) {
-            if (!value) throw labError('A saved Labs record disappeared.');
+            if (!value) throw labError('A saved Labs record is missing.');
             if (['preparing', 'accepted'].includes(value.state) && value.applyTarget && Object.keys(value.effects).length
             && roleplayHash(value.account) === roleplayHash(stamp(scope))
-            && roleplayHash(value.applyTarget) === roleplayHash(target)) throw labError('This target has an unfinished reviewed Labs change.');
+            && roleplayHash(value.applyTarget) === roleplayHash(target)) throw labError('This item has an unfinished reviewed Labs change.');
         }
     }
 
@@ -114,7 +114,7 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
         return withRoleplayAccount(base, null, (lease, account) => {
             const filename = filenameFor(base, account, key);
             const { value, file } = read(filename);
-            if (value && !belongs(value, account)) throw labError('This Labs operation belongs to an earlier account state.');
+            if (value && !belongs(value, account)) throw labError('This Labs request belongs to an earlier state of your account.');
             if (value && reconcile(value, lease)) save(filename, value, file);
             return value;
         });
@@ -149,14 +149,14 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
     function withLabRecord(context, operation) {
         const base = { owner: context.owner, directories: context.directories };
         const identity = context.job.intent?.[namespace];
-        if (!identity || !context.job.type.startsWith(`${namespace}.`)) throw labError('The accepted Labs identity is missing.');
+        if (!identity || !context.job.type.startsWith(`${namespace}.`)) throw labError('The Labs request is missing its identity.');
         const canTransition = survivesReset(context.job.type.slice(namespace.length + 1));
         return withRoleplayAccount(base, canTransition ? null : identity.account, (lease, currentAccount) => {
             const filename = filenameFor(base, identity.account, identity.key);
             let { file, value } = read(filename);
             if (!value || !belongs(value, currentAccount) || value.jobId !== context.job.id || value.planHash !== identity.planHash
             || roleplayHash(value.account) !== roleplayHash(identity.account)
-            || value.kind !== context.job.type.slice(namespace.length + 1)) throw labError('The job does not own this Labs record.');
+            || value.kind !== context.job.type.slice(namespace.length + 1)) throw labError('This job does not belong to that Labs record.');
             let wasOpen = open(value.state);
             return operation({ lease, value, save: () => { file = save(filename, value, file, { wasOpen }); wasOpen = open(value.state); }, base, account: identity.account });
         });
@@ -182,7 +182,7 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
         return withRoleplayAccount(base, account, lease => {
             const filename = filenameFor(base, account, key);
             let { file, value } = read(filename);
-            if (value && (value.requestHash !== requestHash || roleplayHash(value.account) !== roleplayHash(account))) throw labError('This operation key already names different Labs work.');
+            if (value && (value.requestHash !== requestHash || roleplayHash(value.account) !== roleplayHash(account))) throw labError('This Labs key was already used for different work.');
             if (value && value.state !== 'preparing') return { created: false, job: value.jobId ? getJob(base.directories, value.jobId) : null, record: value };
             if (!value) {
                 validateLocked(lease);
@@ -210,7 +210,7 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
             const filename = filenameFor(context, identity.account, identity.key);
             const { file, value } = read(filename);
             if (!value || value.planHash !== identity.planHash || value.kind !== context.job.type.slice(namespace.length + 1)
-            || value.jobId && value.jobId !== context.job.id) throw labError('The paused Labs record needs recovery.');
+            || value.jobId && value.jobId !== context.job.id) throw labError('A paused Labs record is damaged and needs repair.');
             if (value.state === 'preparing') { value.jobId = context.job.id; value.state = 'accepted'; save(filename, value, file); }
             return canRelease(context, value);
         });
@@ -220,7 +220,7 @@ export function createOperationRecords({ namespace, label, errorCode, recordLimi
     function finishLabJob(context, result) {
         return withLabRecord(context, ({ value, save }) => {
             if (value.state === 'completed') return value.result;
-            if (value.state !== 'accepted' || Object.values(value.effects).some(effect => effect.state !== 'done')) throw labError('A Labs change still needs recovery.');
+            if (value.state !== 'accepted' || Object.values(value.effects).some(effect => effect.state !== 'done')) throw labError('A Labs change still needs repair before it can continue.');
             value.result = result;
             value.resultHash = roleplayHash(result);
             value.state = 'completed';

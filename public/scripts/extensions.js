@@ -1620,7 +1620,7 @@ async function showExtensionsDetails() {
                         await toggleHandler(name, false);
                     } catch (error) {
                         console.error(`Could not toggle extension ${name}:`, error);
-                        toastr.error(t`Could not toggle extension ${name}. See console for details.`);
+                        toastr.error(t`Could not turn ${name} on or off. Try again in a moment.`);
                     }
                 }
 
@@ -1649,7 +1649,7 @@ async function showExtensionsDetails() {
         popup.content.scrollTop = initialScrollTop;
         checkForUpdatesManual(sortFn, abortController.signal).finally(() => htmlLoading.remove());
     } catch (error) {
-        toastr.error(t`Error loading extensions. See browser console for details.`);
+        toastr.error(t`Could not load extensions. Reload the page to try again.`);
         console.error(error);
     }
     if (popupPromise) {
@@ -1697,7 +1697,7 @@ async function onSyncClick() {
 
         if (!response.ok) {
             const text = await response.text();
-            toastr.error(text || response.statusText, t`Extension sync failed`, { timeOut: 5000 });
+            toastr.error(text || t`Try again in a moment.`, t`Extension sync failed`, { timeOut: 5000 });
             return;
         }
 
@@ -1709,7 +1709,7 @@ async function onSyncClick() {
         await showExtensionsDetails();
     } catch (error) {
         console.error('Extension sync error:', error);
-        toastr.error(t`Extension sync failed. See browser console for details.`);
+        toastr.error(t`Could not sync the extension. Try again in a moment.`);
     } finally {
         icon.removeClass('fa-spin');
     }
@@ -1736,7 +1736,7 @@ async function updateExtension(extensionName, quiet, timeout = null) {
 
         if (!response.ok) {
             const text = await response.text();
-            toastr.error(text || response.statusText, t`Extension update failed`, { timeOut: 5000 });
+            toastr.error(text || t`Try again in a moment.`, t`Extension update failed`, { timeOut: 5000 });
             console.error('Extension update failed', response.status, response.statusText, text);
             return;
         }
@@ -1831,13 +1831,13 @@ async function onReinstallClick() {
     // Get the extension manifest to retrieve the repo URL
     const manifest = manifests[extensionName];
     if (!manifest) {
-        toastr.error(t`Cannot find extension manifest for ${extensionName}`);
+        toastr.error(t`Could not find the details file (manifest) for ${extensionName}.`);
         return;
     }
 
     const repoUrl = manifest.homepage || manifest.homePage;
     if (!repoUrl) {
-        toastr.error(t`Cannot find repository URL for ${extensionName}`);
+        toastr.error(t`Could not find where ${extensionName} was downloaded from.`);
         return;
     }
 
@@ -1880,7 +1880,7 @@ async function onReinstallClick() {
         delay(1000).then(() => location.reload());
     } catch (error) {
         console.error('Reinstall failed:', error);
-        toastr.error(t`Failed to reinstall ${extensionName}: ${error.message}`, t`Reinstall failed`);
+        toastr.error(t`Could not reinstall ${extensionName}: ${error.message}`, t`Could not reinstall`);
     }
 }
 
@@ -1970,7 +1970,7 @@ async function moveExtension(extensionName, source, destination) {
 
         if (!result.ok) {
             const text = await result.text();
-            toastr.error(text || result.statusText, t`Extension move failed`, { timeOut: 5000 });
+            toastr.error(text || t`Try again in a moment.`, t`Extension move failed`, { timeOut: 5000 });
             console.error('Extension move failed', result.status, result.statusText, text);
             return;
         }
@@ -2013,7 +2013,7 @@ export async function deleteExtension(extensionName, shouldClean = false) {
         }
     } catch (error) {
         console.error('Extension deletion failed:', error);
-        toastr.error(t`Failed to delete extension ${extensionName}.`);
+        toastr.error(t`Could not delete ${extensionName}. Try again in a moment.`);
         return false;
     }
 
@@ -2075,7 +2075,7 @@ async function getExtensionBranches(extensionName, isGlobal) {
 
         if (!response.ok) {
             const text = await response.text();
-            toastr.error(text || response.statusText, t`Extension branches fetch failed`);
+            toastr.error(text || t`Try again in a moment.`, t`Could not load branches`);
             console.error('Extension branches fetch failed', response.status, response.statusText, text);
             return [];
         }
@@ -2108,7 +2108,7 @@ async function switchExtensionBranch(extensionName, isGlobal, branch) {
 
         if (!response.ok) {
             const text = await response.text();
-            toastr.error(text || response.statusText, t`Extension branch switch failed`);
+            toastr.error(text || t`Try again in a moment.`, t`Could not switch branch`);
             console.error('Extension branch switch failed', response.status, response.statusText, text);
             return;
         }
@@ -2186,7 +2186,7 @@ export async function installExtension(url, global, branch = '') {
 
     if (!request.ok) {
         const text = await request.text();
-        toastr.warning(text || request.statusText, t`Extension installation failed`, { timeOut: 5000 });
+        toastr.warning(text || t`Try again in a moment.`, t`Extension installation failed`, { timeOut: 5000 });
         console.error('Extension installation failed', request.status, request.statusText, text);
         return;
     }

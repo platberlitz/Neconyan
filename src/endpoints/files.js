@@ -15,7 +15,7 @@ router.post('/sanitize-filename', async (request, response) => {
     try {
         const fileName = String(request.body.fileName);
         if (!fileName) {
-            return response.status(400).send('No fileName specified');
+            return response.status(400).send('No file name was given.');
         }
 
         const sanitizedFilename = sanitize(fileName);
@@ -31,11 +31,11 @@ router.post('/upload', async (request, response) => {
         const account = request.get('X-Neconyan-Account');
         if (account && account !== request.user.profile.handle) return response.status(409).send({ error: 'account_changed' });
         if (!request.body.name) {
-            return response.status(400).send('No upload name specified');
+            return response.status(400).send('No file name was given.');
         }
 
         if (!request.body.data) {
-            return response.status(400).send('No upload data specified');
+            return response.status(400).send('No file contents were sent.');
         }
 
         // Validate filename
@@ -58,16 +58,16 @@ router.post('/upload', async (request, response) => {
 router.post('/delete', async (request, response) => {
     try {
         if (!request.body.path) {
-            return response.status(400).send('No path specified');
+            return response.status(400).send('No file was chosen.');
         }
 
         const pathToDelete = path.join(request.user.directories.root, request.body.path);
         if (!pathToDelete.startsWith(request.user.directories.files)) {
-            return response.status(400).send('Invalid path');
+            return response.status(400).send('That file path is not allowed.');
         }
 
         if (!fs.existsSync(pathToDelete)) {
-            return response.status(404).send('File not found');
+            return response.status(404).send('That file could not be found.');
         }
 
         fs.unlinkSync(pathToDelete);
@@ -82,7 +82,7 @@ router.post('/delete', async (request, response) => {
 router.post('/verify', async (request, response) => {
     try {
         if (!Array.isArray(request.body.urls)) {
-            return response.status(400).send('No URLs specified');
+            return response.status(400).send('No links were given.');
         }
 
         const verified = {};

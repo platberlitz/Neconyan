@@ -49,7 +49,7 @@ for (const phone of [false, true]) {
             });
             await chooser.setFiles({ name: 'Not a chat.zip', mimeType: 'application/zip', buffer });
             await expect(input).toHaveValue('');
-            await expect(page.locator('#toast-container')).toContainText('Only JSON and JSONL files are supported');
+            await expect(page.locator('#toast-container')).toContainText('Only chat files ending in .json or .jsonl can be imported');
             expect(requests).toHaveLength(0);
 
             const refused = page.waitForResponse(response => response.url().endsWith('/api/chats/import'));

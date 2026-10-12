@@ -55,7 +55,8 @@ export async function loadHost() {
                 state = { ok: true, store, scripts };
                 return state;
             } catch (error) {
-                return { ok: false, reason: `Could not load In-Chat Agents (${error?.message ?? error})` };
+                console.error('Regex Agent Themes could not load the bundled In-Chat Agents scripts it needs.', error);
+                return { ok: false, reason: 'Could not load In-Chat Agents. Reload Neconyan and try again.' };
             }
         })();
     }

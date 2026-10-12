@@ -3571,7 +3571,7 @@ export function initDefaultSlashCommands() {
 
                 flashHighlight($(messageElement), 2000);
             } else {
-                toastr.warning(t`Could not find element for message ${messageIndex}. It might not be rendered yet or the index is invalid.`);
+                toastr.warning(t`Could not find message ${messageIndex} on screen. Wait a moment and try again, or check the number.`);
                 console.warn(`WARN: Element not found for message index ${messageIndex} in /chat-jump.`);
             }
 
@@ -3600,7 +3600,7 @@ export function initDefaultSlashCommands() {
         returns: t`clipboard text`,
         callback: async () => {
             if (!navigator.clipboard) {
-                toastr.warning(t`Clipboard API not available in this context.`);
+                toastr.warning(t`Clipboard access is not available here.`);
                 return '';
             }
 
@@ -3609,7 +3609,7 @@ export function initDefaultSlashCommands() {
                 return text;
             } catch (error) {
                 console.error('Error reading clipboard:', error);
-                toastr.warning(t`Failed to read clipboard text. Have you granted the permission?`);
+                toastr.warning(t`Could not read the clipboard. Allow clipboard access in your browser, then try again.`);
                 return '';
             }
         },
@@ -5271,7 +5271,7 @@ async function uploadCharacterAvatar(avatarKey, base64Data, { resizePrompt = fal
         return true;
     } catch (error) {
         console.error('Error uploading character avatar:', error);
-        toastr.warning(t`Failed to upload avatar: ${error.message}`);
+        toastr.warning(t`Could not upload avatar: ${error.message}`);
         return false;
     }
 }
@@ -5359,7 +5359,7 @@ async function createCharacterCallback(args) {
         return avatarKey;
     } catch (error) {
         console.error('Error creating character:', error);
-        toastr.error(t`Failed to create character: ${error.message}`);
+        toastr.error(t`Could not create character: ${error.message}`);
         return '';
     }
 }
@@ -5531,7 +5531,7 @@ async function updateCharacterCallback(args) {
         return character.avatar;
     } catch (error) {
         console.error('Error updating character:', error);
-        toastr.error(t`Failed to update character: ${error.message}`);
+        toastr.error(t`Could not update character: ${error.message}`);
         return '';
     }
 }
@@ -5556,7 +5556,7 @@ async function duplicateCharacterCallback(args) {
     // Call the duplicateCharacter utility with silent mode (no popup)
     const newAvatarKey = await duplicateCharacter({ avatar: targetAvatar, silent: true });
     if (!newAvatarKey) {
-        toastr.error(t`Failed to duplicate character`);
+        toastr.error(t`Could not duplicate character`);
         return '';
     }
 
@@ -5688,7 +5688,7 @@ async function deleteCharacterCallback(args) {
         return success ? 'true' : 'false';
     } catch (error) {
         console.error('Error deleting character:', error);
-        toastr.error(t`Failed to delete character: ${error.message}`);
+        toastr.error(t`Could not delete character: ${error.message}`);
         return 'false';
     }
 }
@@ -6439,7 +6439,7 @@ function getModelOptions(quiet) {
     const modelSelectControl = document.getElementById(modelSelectItem);
 
     if (!(modelSelectControl instanceof HTMLSelectElement) && !(modelSelectControl instanceof HTMLInputElement)) {
-        !quiet && toastr.error(t`Model select control not found: ${main_api}[${apiSubType}]`);
+        !quiet && toastr.error(t`Could not find the model list for this API.`);
         return nullResult;
     }
 

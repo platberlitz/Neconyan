@@ -373,7 +373,7 @@ export async function narrateTtsMessage(message, { messageId = null, manual = fa
             }
         } catch (error) {
             console.warn('TTS voice map initialization failed', error);
-            if (isManual) toastr.warning('Could not load TTS voices. Check the TTS extension settings.');
+            if (isManual) toastr.warning('Could not load the voice list. Check the text to speech settings, then try again.');
             if (propagateErrors) throw error;
             return false;
         }
@@ -918,7 +918,7 @@ async function processTtsQueue() {
             const voice = await ttsProvider.getVoice(voiceMapEntry);
             const voiceId = voice.voice_id;
             if (voiceId == null) {
-                toastr.error(`Specified voice for ${char} was not found. Check the TTS extension settings.`);
+                toastr.error(`The voice chosen for ${char} could not be found. Check the text to speech settings.`);
                 throw `Unable to attain voiceId for ${char}`;
             }
 
@@ -1723,7 +1723,7 @@ async function initVoiceMapInternal(unrestricted, speakers, provider, providerNa
     try {
         voiceIdsFromProvider = await provider.fetchTtsVoiceObjects();
     } catch (error) {
-        toastr.error('TTS Provider failed to return voice ids.');
+        toastr.error('The speech service did not send back its voice list. Try again in a moment.');
         throw error;
     }
     if (!Array.isArray(voiceIdsFromProvider)) {

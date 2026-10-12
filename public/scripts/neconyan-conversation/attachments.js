@@ -523,7 +523,7 @@ async function acceptConversationSubmission(payload, meta = {}) {
         flushed = false;
     }
     if (!flushed) {
-        toastr.error('Conversation changes could not be saved. Check the server connection and try again.', 'Reply not sent');
+        toastr.error('Conversation changes could not be saved. Check your connection to Neconyan and try again.', 'Reply not sent');
         return null;
     }
     try {

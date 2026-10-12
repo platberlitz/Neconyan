@@ -121,8 +121,8 @@ function maybeWarnOldExtensionDeprecated() {
     }
 
     toastr.warning(
-        'The old Guided Generations fork is deprecated and can conflict with the native Guided Generations port. Uninstall or disable the third-party fork.',
-        'Guided Generations fork deprecated',
+        'An old copy of Guided Generations is installed and can clash with the built-in version. Uninstall it or turn it off.',
+        'Old Guided Generations copy found',
         {
             timeOut: 0,
             extendedTimeOut: 0,

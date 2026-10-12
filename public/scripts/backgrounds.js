@@ -443,7 +443,7 @@ async function onCopyToSystemBackgroundClick(e) {
     const bgFile = await fetch(bgNames.oldBg);
 
     if (!bgFile.ok) {
-        toastr.warning('Failed to copy background');
+        toastr.warning('Could not copy the background. Try again.');
         return;
     }
 
@@ -561,7 +561,7 @@ async function onRenameBackgroundClick(e) {
         await getBackgrounds();
         highlightNewBackground(bgNames.newBg);
     } else {
-        toastr.warning('Failed to rename background');
+        toastr.warning('Could not rename the background. Try again.');
     }
 }
 
@@ -668,7 +668,7 @@ async function autoBackgroundCommand() {
     const bgTitles = Array.from(document.querySelectorAll('#bg_menu_content .BGSampleTitle'));
     const options = bgTitles.map(x => ({ element: x, text: x.innerText.trim() })).filter(x => x.text.length > 0);
     if (options.length == 0) {
-        toastr.warning('No backgrounds to choose from. Please upload some images to the "backgrounds" folder.');
+        toastr.warning('There are no backgrounds to choose from yet. Upload some images first.');
         return '';
     }
 
@@ -1179,7 +1179,7 @@ async function onAddSelectedToFolder() {
         }
     } catch (error) {
         console.error('Error adding selected backgrounds to folder:', error);
-        toastr.error(t`Failed to update folder assignment`);
+        toastr.error(t`Could not update the folder. Try again.`);
     }
 }
 
@@ -1212,7 +1212,7 @@ async function onRemoveSelectedFromCurrentFolder() {
         toastr.success(t`Removed ${bgFiles.length} background(s) from folder`);
     } catch (error) {
         console.error('Error removing selected backgrounds from current folder:', error);
-        toastr.error(t`Failed to update folder assignment`);
+        toastr.error(t`Could not update the folder. Try again.`);
     }
 }
 
@@ -1243,7 +1243,7 @@ async function onCreateFolder() {
         }
     } catch (error) {
         console.error('Error creating folder:', error);
-        toastr.error(t`Failed to create folder`);
+        toastr.error(t`Could not create the folder. Try again.`);
     }
 }
 
@@ -1271,7 +1271,7 @@ async function onRenameFolder(folderId) {
         }
     } catch (error) {
         console.error('Error renaming folder:', error);
-        toastr.error(t`Failed to rename folder`);
+        toastr.error(t`Could not rename the folder. Try again.`);
     }
 }
 
@@ -1308,7 +1308,7 @@ async function onDeleteFolder(folderId) {
         }
     } catch (error) {
         console.error('Error deleting folder:', error);
-        toastr.error(t`Failed to delete folder`);
+        toastr.error(t`Could not delete the folder. Try again.`);
     }
 }
 
@@ -1383,7 +1383,7 @@ async function onAssignToFolder(bgFile) {
         toastr.success(t`Folder assignment updated`);
     } catch (error) {
         console.error('Error assigning to folder:', error);
-        toastr.error(t`Failed to update folder assignment`);
+        toastr.error(t`Could not update the folder. Try again.`);
     }
 }
 
@@ -1415,7 +1415,7 @@ async function onSetFolderCover(bgFile) {
         }
     } catch (error) {
         console.error('Error setting folder cover:', error);
-        toastr.error(t`Failed to set folder cover`);
+        toastr.error(t`Could not set the folder cover. Try again.`);
     }
 }
 
@@ -1624,7 +1624,7 @@ async function convertFileIfVideo(formData) {
         formData.delete('avatar');
         toastMessage.remove();
         console.error('Error converting video to animated webp:', error);
-        toastr.error(t`Error converting video to animated webp`);
+        toastr.error(t`Could not convert this video. Try a different file.`);
     }
 }
 

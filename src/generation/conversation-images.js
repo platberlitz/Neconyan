@@ -74,7 +74,7 @@ export async function renderConversationImage(context, snapshot, { effectName, p
         fetch: fetchImpl,
     });
     const accepted = readArtifact(directories, context.job.id, `input:quick-image:${effectName}`);
-    if (!accepted?.account) throw Object.assign(new Error('The saved image account identity needs recovery.'), { status: 409 });
+    if (!accepted?.account) throw Object.assign(new Error('The saved image account details need repair.'), { status: 409 });
     const imageUrl = await saveQuickImageToUserImages(directories, {
         base64: image.base64,
         format: image.format,
@@ -123,7 +123,7 @@ export function createConversationImageGenerator({ fetchImpl } = {}) {
             if (!savedInput && !savedResult && cooldownRemainingMs(branch, settings, Date.now()) > 0) return false;
             const character = snapshot.macros?.extra?.character;
             if (!character || snapshot.speaker?.avatar !== speaker.avatar) {
-                throw Object.assign(new Error('The accepted image character is unavailable.'), { status: 409 });
+                throw Object.assign(new Error('The character for this image is no longer available.'), { status: 409 });
             }
             const scene = String(requestText || '').trim() || SELFIE_SCENE;
             const template = buildSelfieImagePromptTemplate(

@@ -349,7 +349,7 @@ class PresetManager {
      */
     static async performMasterImport(data, fileName) {
         if (!data || typeof data !== 'object' || Array.isArray(data)) {
-            toastr.error(t`Invalid data provided for master import`);
+            toastr.error(t`Could not import this file. It does not contain valid preset data.`);
             return;
         }
 
@@ -392,7 +392,7 @@ class PresetManager {
         }
 
         if (validSections.length === 0) {
-            toastr.error(t`No valid sections found in imported data`);
+            toastr.error(t`Could not import this file. It does not contain any preset data Neconyan can use.`);
             return;
         }
 
@@ -892,7 +892,7 @@ class PresetManager {
         });
 
         if (!response.ok) {
-            toastr.error(t`Check the server connection and reload the page to prevent data loss.`, t`Preset could not be saved`);
+            toastr.error(t`Your changes were not saved. Check your connection to Neconyan, then reload before editing more.`, t`Preset could not be saved`);
             console.error('Preset could not be saved', response);
             throw new Error('Preset could not be saved');
         }
@@ -921,7 +921,7 @@ class PresetManager {
             await this.savePreset(newName);
             await this.deletePreset(oldName);
         } catch (error) {
-            toastr.error(t`Check the server connection and reload the page to prevent data loss.`, t`Preset could not be renamed`);
+            toastr.error(t`The preset could not be renamed. Check your connection to Neconyan, then reload before editing more.`, t`Preset could not be renamed`);
             console.error('Preset could not be renamed', error);
             throw new Error('Preset could not be renamed');
         }
@@ -1667,7 +1667,7 @@ export async function initPresetManager() {
             toastr.success(successToast);
         } catch (error) {
             console.error('Could not import preset', error);
-            toastr.error(t`Could not import this preset. Check the JSON file and the server connection, then try again.`);
+            toastr.error(t`Could not import this preset. Check the file and your connection to Neconyan, then try again.`);
         } finally {
             e.target.value = '';
         }
@@ -1696,7 +1696,7 @@ export async function initPresetManager() {
             toastr.success(successToast);
             await eventSource.emit(event_types.PRESET_DELETED, { apiId, name });
         } else {
-            const warningToast = !presetManager.isAdvancedFormatting() ? t`Preset was not deleted from server` : t`Template was not deleted from server`;
+            const warningToast = !presetManager.isAdvancedFormatting() ? t`The preset could not be deleted. Try again.` : t`Template was not deleted from server`;
             toastr.warning(warningToast);
         }
 
@@ -1738,7 +1738,7 @@ export async function initPresetManager() {
         }
 
         if (failed.length) {
-            toastr.warning(t`Failed to delete ${failed.length} ${failed.length === 1 ? noun : pluralNoun} from the server.`);
+            toastr.warning(t`Could not delete ${failed.length} ${failed.length === 1 ? noun : pluralNoun}. Try again.`);
         }
 
         saveSettingsDebounced();
@@ -1851,7 +1851,7 @@ export async function initPresetManager() {
             await PresetManager.performMasterImport(data, fileName);
         } catch (error) {
             console.error('Could not import formatting templates', error);
-            toastr.error(t`Could not import these templates. Check the JSON file and the server connection, then try again.`);
+            toastr.error(t`Could not import these templates. Check the file and your connection to Neconyan, then try again.`);
         } finally {
             e.target.value = '';
         }

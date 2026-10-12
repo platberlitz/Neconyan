@@ -68,7 +68,7 @@ export class CharXParser {
         const cardBuffer = await extractFileFromZipBuffer(this.#data, 'card.json');
 
         if (!cardBuffer) {
-            throw new Error('Failed to extract card.json from CharX file');
+            throw new Error('This CharX file is damaged: its character card (card.json) could not be read.');
         }
 
         const card = JSON.parse(cardBuffer.toString());

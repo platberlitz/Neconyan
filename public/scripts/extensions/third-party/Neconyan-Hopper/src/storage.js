@@ -54,11 +54,11 @@ export function normalizeFeed(raw) {
     const version = own(raw, 'version');
     if (version !== undefined && version !== 1) {
         throw new Error(typeof version === 'number' && version > 1
-            ? 'The saved timeline uses a newer format.' : 'The saved timeline format is invalid.');
+            ? 'The saved timeline is from a newer version of Meower.' : 'The saved timeline is damaged.');
     }
     const epoch = own(raw, 'epoch');
     if (epoch !== undefined && (typeof epoch !== 'string' || epoch.length > 120)) {
-        throw new Error('The saved timeline reset marker is invalid.');
+        throw new Error('The saved timeline has a damaged reset marker.');
     }
 
     const posts = [];
@@ -206,7 +206,7 @@ export function mergeStore(base, local, remote, { discardableInteractions = {} }
     for (const store of [base, local, remote]) {
         if (!isRecord(store) || store.format !== 1 || !Number.isSafeInteger(store.revision) || store.revision < 0
             || !isRecord(store.settings) || !isRecord(store.settings.sessions) || !isRecord(store.feeds)) {
-            throw new Error('The Meower store format is invalid or newer than this version.');
+            throw new Error('Your Meower data is damaged or from a newer version of Meower.');
         }
         const sessionIds = Object.keys(store.settings.sessions);
         if (sessionIds.length !== Object.keys(store.feeds).length || sessionIds.some(id => !Object.hasOwn(store.feeds, id))) {
@@ -215,7 +215,7 @@ export function mergeStore(base, local, remote, { discardableInteractions = {} }
         for (const feed of Object.values(store.feeds)) {
             if (!isRecord(feed) || feed.version !== 1 || !Array.isArray(feed.posts) || !Array.isArray(feed.interactions)
                 || (own(feed, 'epoch') !== undefined && (typeof feed.epoch !== 'string' || feed.epoch.length > 120))) {
-                throw new Error('The saved timeline format is invalid or newer than this version.');
+                throw new Error('The saved timeline is damaged or from a newer version of Meower.');
             }
         }
         if (own(store, 'account') !== undefined && own(remote, 'account') !== undefined && store.account !== remote.account) {

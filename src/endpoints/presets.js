@@ -93,7 +93,7 @@ router.post('/save', authoringRoute(function (request, response, lease) {
         if (current && expected !== null) {
             try { matches = isDeepStrictEqual(JSON.parse(current.bytes.toString('utf8')), expected); } catch { /* unreadable is not a match */ }
         }
-        if (!matches) return response.status(409).send({ error: 'The preset changed after comparison. Compare it again before restoring.' });
+        if (!matches) return response.status(409).send({ error: 'The preset changed since it was compared. Compare it again before restoring.' });
     }
     const defaultPreset = findDefaultPreset(request.user.directories, { folder: settings.folder, name });
 

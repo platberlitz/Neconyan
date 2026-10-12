@@ -138,7 +138,7 @@ test('Meower restart preserves an unknown paid outcome without submitting again'
     expect(browser.contexts().flatMap(context => context.pages())).toHaveLength(0);
     await app.restart();
     const interrupted = await account.settled(job.id, 'interrupted');
-    expect(interrupted.error.message).toContain('provider result is unknown');
+    expect(interrupted.error.message).toContain('unknown after a restart');
     expect(interrupted.recoverySteps.length).toBeGreaterThan(0);
     await app.release();
     const reopened = await openMeower(account);

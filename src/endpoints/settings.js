@@ -485,7 +485,7 @@ router.post('/load-snapshot', getFileNameValidationFunction('name'), async (requ
         const userFilesPattern = getSettingsBackupFilePrefix(request.user.profile.handle);
 
         if (!request.body.name || !request.body.name.startsWith(userFilesPattern)) {
-            return response.status(400).send({ error: 'Invalid snapshot name' });
+            return response.status(400).send({ error: 'That snapshot name is not valid.' });
         }
 
         const snapshotName = request.body.name;
@@ -519,7 +519,7 @@ router.post('/restore-snapshot', getFileNameValidationFunction('name'), async (r
         const userFilesPattern = getSettingsBackupFilePrefix(request.user.profile.handle);
 
         if (!request.body.name || !request.body.name.startsWith(userFilesPattern)) {
-            return response.status(400).send({ error: 'Invalid snapshot name' });
+            return response.status(400).send({ error: 'That snapshot name is not valid.' });
         }
 
         const snapshotName = request.body.name;

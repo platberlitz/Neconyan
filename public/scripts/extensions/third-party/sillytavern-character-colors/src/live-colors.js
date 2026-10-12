@@ -268,7 +268,7 @@ function markChatDirty(binding = captureChatBinding()) {
 
 function classifyHostSaveResult(value, asynchronous) {
     if (value === false || value?.ok === false || value?.saved === false) {
-        return { accepted: false, confirmed: false, uncertain: false, error: new Error('Host reported that the chat was not saved.') };
+        return { accepted: false, confirmed: false, uncertain: false, error: new Error('The chat was not saved.') };
     }
     if (value === true || value?.ok === true || value?.saved === true) {
         return { accepted: true, confirmed: true, uncertain: false };
@@ -278,7 +278,7 @@ function classifyHostSaveResult(value, asynchronous) {
         // expose durable success. Settlement confirms dispatch completion only.
         return { accepted: true, confirmed: false, uncertain: false };
     }
-    return { accepted: false, confirmed: false, uncertain: true, error: new Error('Host saveChat returned without a completion confirmation.') };
+    return { accepted: false, confirmed: false, uncertain: true, error: new Error('Neconyan did not confirm that the chat was saved.') };
 }
 
 function finishChatSaveRecordIfClean(record) {
@@ -368,7 +368,7 @@ async function saveChatRecord(record, forceRetry) {
         const saveContext = getContext();
         if (!isChatBindingCurrent(saveBinding, saveContext) || typeof saveContext?.saveChat !== 'function'
             || JSON.stringify(saveContext.chat) !== record.revision) {
-            resolve({ accepted: false, confirmed: false, uncertain: false, error: new Error('Captured chat is no longer current.') });
+            resolve({ accepted: false, confirmed: false, uncertain: false, error: new Error('The chat changed before it could be saved.') });
             return;
         }
         try {
@@ -404,7 +404,7 @@ async function saveChatRecord(record, forceRetry) {
             confirmed: false,
             uncertain: true,
             timeout: true,
-            error: new Error(`Host saveChat did not settle within ${CHAT_SAVE_OPERATION_TIMEOUT_MS}ms.`),
+            error: new Error('Saving the chat took too long. Try again.'),
         }), CHAT_SAVE_OPERATION_TIMEOUT_MS);
     });
     let outcome;

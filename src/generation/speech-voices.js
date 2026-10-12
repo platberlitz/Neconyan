@@ -29,7 +29,7 @@ export async function speechJson(url, { headers = {}, signal, fetchImpl = fetch,
     if (!response.ok) throw speechError('The speech service rejected the request.', 'TTS_PROVIDER', 502);
     try { return JSON.parse(await readResponseText(response, 2 * 1024 * 1024, { signal })); } catch {
         if (signal?.aborted) throw signal.reason;
-        throw speechError('The speech service returned an invalid response.', 'TTS_PROVIDER', 502);
+        throw speechError('The speech service sent a reply that could not be read.', 'TTS_PROVIDER', 502);
     }
 }
 
@@ -38,7 +38,7 @@ function selected(voices, entry) {
     const matches = voices.filter(voice => voice?.id === entry || voice?.name === entry);
     if (!matches.length || new Set(matches.map(voice => voice.id)).size !== 1) throw speechError('The saved speech voice is missing or ambiguous.', 'TTS_VOICE_MISSING');
     const voice = matches[0];
-    if (typeof voice.id !== 'string' || !voice.id || voice.id.length > 512 || /[\r\n\0]/.test(voice.id)) throw speechError('The speech voice identity is invalid.');
+    if (typeof voice.id !== 'string' || !voice.id || voice.id.length > 512 || /[\r\n\0]/.test(voice.id)) throw speechError('The speech voice is invalid.');
     return { id: voice.id, name: String(voice.name ?? voice.id), ...(voice.lang ? { lang: String(voice.lang) } : {}),
         ...(voice.data ? { data: voice.data } : {}), ...(voice.model ? { model: voice.model } : {}) };
 }

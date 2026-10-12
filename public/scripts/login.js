@@ -249,7 +249,7 @@ async function performPasskeyLogin(remember) {
         });
         const verifyData = await verifyResponse.json().catch(() => ({}));
         if (!verifyResponse.ok) {
-            return displayError(verifyData.error || 'The passkey did not verify.');
+            return displayError(verifyData.error || 'We could not check that passkey. Try again.');
         }
         redirectToHome();
     } catch (error) {
@@ -257,7 +257,7 @@ async function performPasskeyLogin(remember) {
             return displayError('Sign-in was cancelled or timed out.');
         }
         console.error('Passkey sign-in failed:', error);
-        displayError(error.message || 'The passkey did not verify.');
+        displayError(error.message || 'The passkey could not be checked. Try again.');
     } finally {
         button.prop('disabled', false);
     }
@@ -446,7 +446,7 @@ function configureDiscreetLogin() {
             $('#userSelectBlock').hide();
         }
     } catch (error) {
-        displayError(error.message || 'Could not connect. Refresh to try again.');
+        displayError(error.message || 'Could not reach the server. Reload the page to try again.');
     }
     document.getElementById('shadow_popup').style.opacity = '';
     $('#cancelRecovery').on('click', onCancelRecoveryClick);

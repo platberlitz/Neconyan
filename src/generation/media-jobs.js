@@ -28,12 +28,12 @@ function receiptPath(base, account, operationKey) {
 
 function saveReceipt(filename, value, baseline) {
     const content = JSON.stringify(value);
-    if (Buffer.byteLength(content) > RECEIPT_LIMIT) throw fail('The saved media receipt is full.', 'MEDIA_STORE_FULL');
+    if (Buffer.byteLength(content) > RECEIPT_LIMIT) throw fail('The saved media record storage is full.', 'MEDIA_STORE_FULL');
     const validate = () => {
         const current = readRoleplayFile(filename, RECEIPT_LIMIT, { allowMissingParent: true });
         if (roleplayHash(current ? { rawHash: current.rawHash, physical: current.physical } : null)
             !== roleplayHash(baseline ? { rawHash: baseline.rawHash, physical: baseline.physical } : null)) {
-            throw fail('The saved media receipt changed before it could be written.');
+            throw fail('The saved media record changed before it could be saved.');
         }
     };
     validate();
@@ -43,10 +43,10 @@ function saveReceipt(filename, value, baseline) {
             validateBeforeReplace: validate,
         } : { expectedFileAbsent: true, durable: true, preserveOnCreateError: true });
         const written = readRoleplayFile(filename, RECEIPT_LIMIT, { flush: true });
-        if (!written || written.bytes.toString('utf8') !== content) throw fail('The media receipt was not confirmed.');
+        if (!written || written.bytes.toString('utf8') !== content) throw fail('The media record could not be saved and checked.');
         return written;
     } catch (cause) {
-        throw Object.assign(fail('Reconcile the saved media receipt before continuing.', 'MEDIA_RECEIPT_UNCERTAIN'), { cause });
+        throw Object.assign(fail('Check the saved media record before continuing.', 'MEDIA_RECEIPT_UNCERTAIN'), { cause });
     }
 }
 
@@ -57,16 +57,16 @@ function reserveReceipt(base, filename, targetHash, releaseStoppedTarget) {
     for (const name of fs.readdirSync(directory)) {
         if (!/^[a-f0-9]{64}\.json$/.test(name)) continue;
         let { file, value } = readReceipt(path.join(directory, name));
-        if (!file) throw fail('A saved media receipt disappeared during admission.');
+        if (!file) throw fail('A saved media record went missing while the request was being accepted.');
         if (value.targetHash === targetHash && value.state !== 'closed') {
             // Work that can no longer run or write is closed so it stops claiming the target.
             const result = releaseStoppedTarget?.(value) ?? null;
-            if (!result) throw fail('The media target already has accepted work.', 'MEDIA_TARGET_BUSY');
+            if (!result) throw fail('This media item already has work in progress.', 'MEDIA_TARGET_BUSY');
             value = { ...value, state: 'closed', result };
             file = saveReceipt(path.join(directory, name), value, file);
         }
         used += value.state === 'closed' ? file.bytes.length : RECEIPT_LIMIT;
-        if (used > STORE_LIMIT) throw fail('Media receipt storage is full; earlier ownership was retained.', 'MEDIA_STORE_FULL');
+        if (used > STORE_LIMIT) throw fail('Media record storage is full. Earlier records were kept.', 'MEDIA_STORE_FULL');
     }
 }
 
@@ -99,7 +99,7 @@ export function admitNativeMediaJob(base, account, { operationKey, source, kind,
                 ...(approvalReservation ? { approvalReservation } : {}) };
             file = saveReceipt(filename, value, null);
         } else if (roleplayHash(value.approvalReservation ?? null) !== roleplayHash(approvalReservation)) {
-            throw fail('The saved approval reservation differs from the accepted media request.', 'MEDIA_INTENT_CONFLICT');
+            throw fail('The saved approval differs from the media request.', 'MEDIA_INTENT_CONFLICT');
         }
         const { job, created } = acceptJob(base.directories, { owner: base.owner, type: `media.${kind}`,
             submissionKey: `media:${account.accountId}:${operationKey}`, intent, target, paused: true });
@@ -114,14 +114,14 @@ export function admitNativeMediaJob(base, account, { operationKey, source, kind,
 export function withNativeMediaReceipt(context, operation, { checkSource = true } = {}) {
     const base = { owner: context.owner, directories: context.directories };
     const intent = context.job.intent;
-    if (!intent?.media || !intent.source) throw fail('The accepted media request is missing.');
+    if (!intent?.media || !intent.source) throw fail('The media request is missing.');
     return withRoleplayAccount(base, stamp(intent.media), lease => {
         const filename = receiptPath(base, intent.media, intent.media.operationKey);
         let { file, value } = readReceipt(filename);
         if (!value || value.intentHash !== roleplayHash(intent) || value.jobId !== context.job.id
-            || roleplayHash(value.account) !== roleplayHash(stamp(intent.media))) throw fail('The media job does not own this receipt.');
+            || roleplayHash(value.account) !== roleplayHash(stamp(intent.media))) throw fail('This job does not belong to that media record.');
         const savedJob = getJob(context.directories, context.job.id);
-        if (!savedJob || roleplayHash(savedJob.intent) !== value.intentHash) throw fail('The accepted media job changed.');
+        if (!savedJob || roleplayHash(savedJob.intent) !== value.intentHash) throw fail('The media job changed after it was accepted.');
         if (checkSource && value.state !== 'closed') assertMediaSourceLocked(lease, intent.source, intent.kind);
         const save = () => { file = saveReceipt(filename, value, file); };
         return operation({ lease, value, save, base, account: stamp(intent.media) });
@@ -176,7 +176,7 @@ export function readNativeMediaJobResultForOwner(base, { operationKey } = {}) {
 }
 
 export function finishNativeMediaJob(context, result, { checkSource = true, checkLocked } = {}) {
-    if (Buffer.byteLength(JSON.stringify(result)) > 128 * 1024) throw fail('The media completion receipt is too large.', 'MEDIA_INVALID');
+    if (Buffer.byteLength(JSON.stringify(result)) > 128 * 1024) throw fail('The media result record is too large.', 'MEDIA_INVALID');
     roleplayHash(result);
     return withNativeMediaReceipt(context, ({ lease, value, save }) => {
         checkLocked?.(lease, value);
@@ -226,7 +226,7 @@ export function ensureNativeMediaDirectory(context, { relative, before }) {
             save();
             return current;
         }
-        if (effect?.before && !current) throw fail('The accepted media directory disappeared.', 'MEDIA_SOURCE_CHANGED');
+        if (effect?.before && !current) throw fail('The media folder is missing.', 'MEDIA_SOURCE_CHANGED');
         if (!effect) {
             if (roleplayHash(current) !== roleplayHash(before)) throw fail('The media directory changed before work began.', 'MEDIA_SOURCE_CHANGED');
             effect = { relative, before, state: 'creating' };
@@ -279,7 +279,7 @@ export function publishNativeMediaFile(context, { relative, before, bytes, check
             } : { expectedFileAbsent: true, durable: true, preserveOnCreateError: true });
             current = readRoleplayFile(filename, 25 * 1024 * 1024, { flush: true });
         }
-        if (!current || roleplayHash(current.bytes.toString('base64')) !== outputHash) throw fail('The saved media output could not be confirmed.');
+        if (!current || roleplayHash(current.bytes.toString('base64')) !== outputHash) throw fail('The saved media file could not be checked.');
         effect.after = mediaFileEvidence(current);
         effect.state = 'done';
         save();
@@ -304,7 +304,7 @@ export function removeReplacedMediaFile(context, { relative, before, replacement
             value.effects[key] = effect = { relative, before, replacement, state: 'removing' };
             save();
         }
-        if (effect.relative !== relative || effect.replacement !== replacement || roleplayHash(effect.before) !== roleplayHash(before)) throw fail('The saved removal differs from its accepted file.');
+        if (effect.relative !== relative || effect.replacement !== replacement || roleplayHash(effect.before) !== roleplayHash(before)) throw fail('The saved removal does not match its file.');
         if (current) {
             if (effect.state === 'done' || roleplayHash(mediaFileEvidence(current)) !== roleplayHash(before)) throw fail('The old sprite was replaced by unrelated work.', 'MEDIA_SOURCE_CHANGED');
             fs.unlinkSync(filename);

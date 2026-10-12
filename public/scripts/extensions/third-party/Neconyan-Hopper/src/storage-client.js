@@ -23,7 +23,7 @@ function preparedFeed(feed) {
 }
 
 function envelope(raw) {
-    if (typeof raw?.account !== 'string' || !raw.account.trim()) throw new Error('The storage response has no signed-in account.');
+    if (typeof raw?.account !== 'string' || !raw.account.trim()) throw new Error('Meower storage did not say which account is signed in. Reload Meower.');
     return { ...storeFrom(raw).store, account: raw.account };
 }
 
@@ -32,7 +32,7 @@ function validateCandidate(candidate) {
         if (new TextEncoder().encode(JSON.stringify(feed)).length > 20 * 1024 * 1024) {
             throw new Error('The feed is too large to save safely (20 MiB limit).');
         }
-        if (!equal(feed, normalizeFeed(feed))) throw new Error('The timeline contains invalid or unsupported rows. Export recovery before replacing it.');
+        if (!equal(feed, normalizeFeed(feed))) throw new Error('Some posts in this timeline are damaged or from an unsupported version. Export recovery before replacing it.');
     }
     if (new TextEncoder().encode(JSON.stringify(candidate)).length > 128 * 1024 * 1024) {
         throw new Error('The Meower store is too large to save safely (128 MiB limit).');
@@ -93,7 +93,7 @@ export function createStorageClient({ request, recovery = browserRecovery(), dra
     }
     function fail(error) { report('error', error.message); return error; }
     function ready() {
-        if (disposed) throw new Error('This Meower storage client has been disposed. Open a new client before editing.');
+        if (disposed) throw new Error('This Meower storage session has ended. Reload Meower before editing.');
         if (stopped) throw new Error('The signed-in account changed. Reload Meower before continuing.');
         if (!local) throw new Error('Open Meower storage before editing.');
     }
@@ -107,7 +107,7 @@ export function createStorageClient({ request, recovery = browserRecovery(), dra
         const raw = await request('GET', undefined, revision);
         checkAccount(raw);
         if (raw.unchanged && (!base || revision !== base.revision || raw.revision !== revision)) {
-            throw new Error('The storage response returned an invalid unchanged revision.');
+            throw new Error('Meower storage sent back an unexpected version of your data. Reload Meower.');
         }
         return raw.unchanged ? clone(base) : envelope(raw);
     }
@@ -507,7 +507,7 @@ export function createStorageClient({ request, recovery = browserRecovery(), dra
                 validateDraft(value);
                 unsavedDrafts.set(scope, clone(value));
                 const storage = drafts();
-                if (!storage) throw new Error('Browser draft storage is unavailable.');
+                if (!storage) throw new Error('Your browser cannot save Meower drafts right now.');
                 const prior = storage.getItem(key);
                 const supersedes = [...new Set([...(prior ? JSON.parse(prior).supersedes ?? [] : []), ...(draftReads.get(scope) ?? [])])];
                 storage.setItem(key, JSON.stringify({ scope, owner, value, key, token: id(), supersedes }));
@@ -555,7 +555,7 @@ export function createStorageClient({ request, recovery = browserRecovery(), dra
     events.addEventListener?.('storage', onStorage);
     function draftEntries(scope) {
         const storage = drafts();
-        if (!storage) throw new Error('Browser draft storage is unavailable.');
+        if (!storage) throw new Error('Your browser cannot save Meower drafts right now.');
         const entries = [];
         for (let index = 0; index < storage.length; index += 1) {
             const key = storage.key(index);
@@ -578,7 +578,7 @@ function validateDraft(value) {
         || !(draft.poll === null || (Array.isArray(draft.poll) && draft.poll.every(item => typeof item === 'string')))
         || !Array.isArray(value.replies) || !value.replies.every(item => Array.isArray(item) && item.length === 2
             && typeof item[0] === 'string' && typeof item[1] === 'string')) {
-        throw new Error('The saved draft format is invalid. Export recovery before replacing it.');
+        throw new Error('The saved draft is damaged or from a newer version of Meower. Export recovery before replacing it.');
     }
     for (const [key] of value.replies) JSON.parse(key);
 }

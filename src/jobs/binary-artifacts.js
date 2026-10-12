@@ -7,7 +7,7 @@ import { tryWriteFileSync } from '../util.js';
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
-const fail = () => roleplayError('MEDIA_ARTIFACT_RECOVERY', 'The saved media bytes need recovery.', 503);
+const fail = () => roleplayError('MEDIA_ARTIFACT_RECOVERY', 'The saved media file is damaged and needs repair.', 503);
 
 function filename(directories, id, name) {
     if (!getJob(directories, id)) throw fail();

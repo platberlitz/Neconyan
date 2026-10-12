@@ -729,7 +729,7 @@ async function setSpriteFolderCommand({ name }, folder) {
     if (folder.startsWith('/') || folder.startsWith('\\')) {
         const currentLastMessage = getLastCharacterMessage();
         if (currentLastMessage.name === null && !name) {
-            toastr.error('At least one character message is required to set a sprites subfolder.', 'Provide the name with "name=" argument.');
+            toastr.error('Send a character message first, then set the sprites subfolder again.', 'Add a name to the command, for example name="folder".');
             return '';
         }
         folder = folder.slice(1);
@@ -745,11 +745,11 @@ async function setSpriteFolderCommand({ name }, folder) {
 
 async function classifyCallback(/** @type {{api: string?, filter: string?, prompt: string?}} */ { api = null, filter = null, prompt = null }, text) {
     if (!text) {
-        toastr.error('No text provided');
+        toastr.error('Type some text first, then try again.');
         return '';
     }
     if (api && !Object.keys(EXPRESSION_API).includes(api)) {
-        toastr.error('Invalid API provided');
+        toastr.error('The selected classifier is not valid. Pick another one in the expression settings.');
         return '';
     }
 
@@ -757,7 +757,7 @@ async function classifyCallback(/** @type {{api: string?, filter: string?, promp
     const filterAvailable = !isFalseBoolean(filter);
 
     if (expressionApi === EXPRESSION_API.none) {
-        toastr.warning('No classifier API selected');
+        toastr.warning('Choose a classifier in the expression settings first.');
         return '';
     }
 
@@ -771,7 +771,7 @@ async function setSpriteSlashCommand({ type }, searchTerm) {
     type ??= 'expression';
     searchTerm = searchTerm.trim().toLowerCase();
     if (!searchTerm) {
-        toastr.error(t`No expression or sprite name provided`, t`Set Sprite`);
+        toastr.error(t`Type an expression or sprite name.`, t`Set Sprite`);
         return '';
     }
 
@@ -1031,7 +1031,7 @@ async function generateAndUploadExpressionSprite(expression, spriteFolderName, {
     throwIfExpressionGenerationStopped();
 
     if (!imageUrl) {
-        if (showToast) toastr.warning(t`Quick Image Gen did not return an image.`, t`Sprite Generation`);
+        if (showToast) toastr.warning(t`Quick Image Gen did not create an image. Check its settings, then try again.`, t`Sprite Generation`);
         return false;
     }
 
@@ -1427,7 +1427,7 @@ async function onClickRemoveAllSprites(event) {
         }
 
         if (failedCount > 0) {
-            toastr.warning(t`${failedCount} expression sprite(s) could not be removed. Check the console.`, t`Sprite Generation`);
+            toastr.warning(t`${failedCount} expression sprite(s) could not be removed. Try again in a moment.`, t`Sprite Generation`);
         }
     });
 }
@@ -1486,7 +1486,7 @@ async function onClickRedoSpriteCleanup(event) {
         }
 
         if (failedCount > 0) {
-            toastr.warning(t`${failedCount} expression sprite(s) could not be cleaned. Check the console.`, t`Sprite Generation`);
+            toastr.warning(t`${failedCount} expression sprite(s) could not be cleaned up. Try again in a moment.`, t`Sprite Generation`);
         }
     });
 }
@@ -1549,7 +1549,7 @@ async function onClickUploadSpriteSheet(event) {
                 }
 
                 if (failedCount > 0) {
-                    toastr.warning(t`${failedCount} expression sprite(s) could not be uploaded from the sheet. Check the image layout and the console.`, t`Sprite Generation`);
+                    toastr.warning(t`${failedCount} expression sprite(s) could not be uploaded from the sheet. Check that the image grid is laid out as expected, then try again.`, t`Sprite Generation`);
                 }
             });
         } finally {
@@ -1616,7 +1616,7 @@ async function onClickGenerateMissingSprites(event) {
         }
 
         if (failedCount > 0) {
-            toastr.warning(t`${failedCount} expression sprite(s) could not be generated. Check Quick Image Gen settings and the console.`, t`Sprite Generation`);
+            toastr.warning(t`${failedCount} expression sprite(s) could not be generated. Check your Quick Image Gen settings, then try again.`, t`Sprite Generation`);
         }
     });
 }
@@ -1853,12 +1853,12 @@ export async function getExpressionLabel(text, expressionsApi = extension_settin
                 return '';
             }
             default: {
-                toastr.error('Invalid API selected');
+                toastr.error('The selected classifier is not valid. Pick another one in the expression settings.');
                 return '';
             }
         }
     } catch (error) {
-        toastr.error('Could not classify expression. Check the console or your backend for more information.');
+        toastr.error('Could not work out the expression for this message. Check your classifier settings, then try again.');
         console.error(error);
         return extension_settings.expressions.fallback_expression;
     }
@@ -2439,7 +2439,7 @@ async function handleFileUpload(url, formData) {
         return data ?? {};
     } catch (error) {
         console.error('Error uploading image:', error);
-        toastr.error('Failed to upload image');
+        toastr.error('Could not upload the image. Try again.');
         // null tells callers the upload did not happen; {} used to look like success.
         return null;
     }
@@ -2698,7 +2698,7 @@ async function onClickExpressionDelete(event) {
     try {
         await deleteExpressionSpriteFile(name, expression, fileName);
     } catch (error) {
-        toastr.error('Failed to delete image. Try again later.');
+        toastr.error('Could not delete the image. Try again in a moment.');
     }
 
     // Refresh sprites list

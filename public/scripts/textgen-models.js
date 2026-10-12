@@ -1008,7 +1008,7 @@ async function downloadOllamaModel() {
         $('#api_button_textgenerationwebui').trigger('click');
     } catch (err) {
         console.error(err);
-        toastr.error('Failed to download Ollama model. Please try again.');
+        toastr.error('Could not download Ollama model. Please try again.');
     }
 }
 
@@ -1031,12 +1031,12 @@ async function downloadTabbyModel() {
 
         const repoId = downloadHtml.find('input[name="hf_repo_id"]').val().toString();
         if (!repoId) {
-            toastr.error('A HuggingFace repo ID must be provided. Skipping Download.');
+            toastr.error('Enter a Hugging Face model name to download.');
             return;
         }
 
         if (repoId.split('/').length !== 2) {
-            toastr.error('A HuggingFace repo ID must be formatted as Author/Name. Please try again.');
+            toastr.error('The Hugging Face model name must look like Author/Name. Try again.');
             return;
         }
 
@@ -1067,7 +1067,7 @@ async function downloadTabbyModel() {
         });
 
         if (response.status === 403) {
-            toastr.error('The provided key has invalid permissions. Please use an admin key for downloading.');
+            toastr.error('This key does not have permission to download models. Use a key with admin access.');
             return;
         } else if (!response.ok) {
             throw new Error(response.statusText);
@@ -1076,7 +1076,7 @@ async function downloadTabbyModel() {
         toastr.success('Download complete.');
     } catch (err) {
         console.error(err);
-        toastr.error('Failed to download HuggingFace model in TabbyAPI. Please try again.');
+        toastr.error('Could not download HuggingFace model in TabbyAPI. Please try again.');
     }
 }
 

@@ -306,7 +306,7 @@ async function downloadAssetsList(url) {
 
         // Error logged after, to appear on top
         console.error(error);
-        toastr.error('Problem with assets URL', 'Cannot get assets list');
+        toastr.error('Check the web address of the assets list.', 'Could not load the assets list');
         $('#assets-connect-button').addClass('fa-plug-circle-exclamation');
         $('#assets-connect-button').addClass('redOverlayGlow');
     }
@@ -455,17 +455,17 @@ async function deleteAsset(assetType, filename) {
 async function openCharacterBrowser(forceDefault) {
     const url = forceDefault ? ASSETS_JSON_URL : String($('#assets-json-url-field').val());
     if (!isValidUrl(url)) {
-        toastr.error('Please enter a valid URL');
+        toastr.error('Please enter a valid web address.');
         return;
     }
     const fetchResult = await fetch(url, { cache: 'no-cache' });
     if (!fetchResult.ok) {
-        toastr.error('Cannot download the assets list.');
+        toastr.error('Could not download the assets list. Check the address, then try again.');
         return;
     }
     const json = await fetchResult.json();
     if (!Array.isArray(json)) {
-        toastr.error('Assets list is not an array');
+        toastr.error('The assets list is in the wrong format.');
         return;
     }
     const characters = json.filter(x => x && x.type === 'character');
@@ -553,7 +553,7 @@ export async function init() {
     connectButton.on('click', async function () {
         const urlString = String(assetsJsonUrl.val()).trim();
         if (!isValidUrl(urlString)) {
-            toastr.error('Please enter a valid URL');
+            toastr.error('Please enter a valid web address.');
             return;
         }
         const url = new URL(urlString);
@@ -579,7 +579,7 @@ export async function init() {
                 connectButton.addClass('fa-plug-circle-check');
             } catch (error) {
                 console.error('Error:', error);
-                toastr.error(`Cannot get assets list from ${url.href}`);
+                toastr.error(`Could not load the assets list from ${url.href}`);
                 connectButton.removeClass('fa-plug-circle-check');
                 connectButton.addClass('fa-plug-circle-exclamation');
                 connectButton.removeClass('redOverlayGlow');

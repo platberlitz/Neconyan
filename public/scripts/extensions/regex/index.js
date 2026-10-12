@@ -521,18 +521,18 @@ async function saveRegexScript(regexScript, existingScriptIndex, scriptType, sav
 
     // Is the script name undefined or empty?
     if (!regexScript.scriptName) {
-        toastr.error(t`Could not save regex script: The script name was undefined or empty!`);
+        toastr.error(t`Could not save the regex script: it needs a name.`);
         return;
     }
 
     // Is a find regex present?
     if (regexScript.findRegex.length === 0) {
-        toastr.warning(t`This regex script will not work, but was saved anyway: A find regex isn't present.`);
+        toastr.warning(t`This regex script will not work yet because it has no Find pattern. It was saved anyway.`);
     }
 
     // Is there someplace to place results?
     if (regexScript.placement.length === 0) {
-        toastr.warning(t`This regex script will not work, but was saved anyway: One "Affects" checkbox must be selected!`);
+        toastr.warning(t`This regex script will not work yet because nothing is ticked under Affects. It was saved anyway.`);
     }
 
     if (existingScriptIndex !== -1) {
@@ -1538,7 +1538,7 @@ async function onRegexImportObjectChange(regexScript, scriptType) {
         toastr.success(t`Regex script "${regexScript.scriptName}" imported.`);
     } catch (error) {
         console.log(error);
-        toastr.error(t`Invalid regex object.`);
+        toastr.error(t`This regex script is not valid.`);
         return;
     }
 }
@@ -1565,7 +1565,7 @@ async function onRegexImportFileChange(file, scriptType) {
         }
     } catch (error) {
         console.log(error);
-        toastr.error('Invalid JSON file.');
+        toastr.error('That file could not be read as regex scripts.');
         return;
     }
 }

@@ -54,7 +54,7 @@ for (const phone of [false, true]) {
             }, created.avatar);
             expect(state).toMatchObject({ active: assistant.avatar, copies: 1 });
             await expect(page.locator(`#rm_print_characters_block .character_select[data-chid="${state.index}"] .ch_name`)).toHaveText(input.character.name);
-            await expect(page.locator('#toast-container .toast-error').filter({ hasText: 'not found in the list' })).toHaveCount(0);
+            await expect(page.locator('#toast-container .toast-error').filter({ hasText: 'in the character list' })).toHaveCount(0);
         }
         await page.screenshot({ path: info.outputPath('new-characters-without-reload.png') });
     });

@@ -199,7 +199,7 @@ class AzureTtsProvider {
         });
 
         if (!response.ok) {
-            toastr.error(response.statusText, 'TTS Generation Failed');
+            toastr.error('The speech service could not make audio. Check the TTS settings, then try again.', 'TTS Generation Failed');
             throw new Error(`HTTP ${response.status}: ${await response.text()}`);
         }
 

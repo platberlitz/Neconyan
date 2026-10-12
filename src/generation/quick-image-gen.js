@@ -98,7 +98,10 @@ async function readJson(response) {
 }
 
 async function describeError(response, label) {
-    return `${label} request failed with HTTP ${response.status}.`;
+    if (label === 'image download') {
+        return `The generated image could not be downloaded (error ${response.status}). Check your connection and try again.`;
+    }
+    return `${label} could not create the image. Try again in a moment, or check the service settings.`;
 }
 
 function finishImage(bytes, source) {
@@ -454,7 +457,7 @@ const PROVIDER_GENERATORS = {
         const response = await fetchImpl(url, { method: 'POST',
             headers: { 'Content-Type': 'application/json', ...getNanobananaAuthHeaders(url, key) },
             body: JSON.stringify(payload), signal, redirect: 'error' });
-        if (!response.ok) throw fail(`Nanobanana request failed with HTTP ${response.status}.`);
+        if (!response.ok) throw fail(await describeError(response, 'Nanobanana'));
         const mime = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase() || '';
         if (mime.startsWith('image/') || mime === 'application/octet-stream') {
             return finishImage(Buffer.from(await readResponseArrayBuffer(response)));

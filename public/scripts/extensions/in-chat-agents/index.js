@@ -1022,7 +1022,7 @@ async function pickManualAgentRunTargets(agent) {
     }
 
     if (options.length === 0) {
-        toastr.warning('No targets available: no assistant reply yet and the composer is empty.');
+        toastr.warning('No targets yet: there is no assistant reply and the message box is empty.');
         return null;
     }
 
@@ -5225,7 +5225,7 @@ async function createCustomGroup() {
     group.builtin = false;
 
     if (group.agentTemplateIds.length === 0 && group.customAgents.length === 0) {
-        toastr.warning('Unable to build a starter kit from the selected agents.');
+        toastr.warning('Could not make a starter kit from the selected agents.');
         return;
     }
 
@@ -5253,7 +5253,7 @@ async function handleImport(event) {
         const unresolved = getUnresolvedAgentReferences(imported);
         if (unresolved.length) toastr.warning(`Some imported links refer to unavailable agents: ${unresolved.join(', ')}`);
     } catch (e) {
-        toastr.error('Failed to import: ' + e.message);
+        toastr.error('Could not import the kit: ' + e.message);
     }
 
     // Reset file input so the same file can be imported again
@@ -5969,7 +5969,7 @@ async function openPromptTransformHistoryPopup(messageIndex) {
         if (await undoPromptTransform(idx)) {
             toastr.success('Transform undone.');
         } else {
-            toastr.warning('Could not undo transform.');
+            toastr.warning('Could not undo the change.');
         }
     });
 
@@ -5982,7 +5982,7 @@ async function openPromptTransformHistoryPopup(messageIndex) {
         if (await redoPromptTransform(idx)) {
             toastr.success('Transform redone.');
         } else {
-            toastr.warning('Could not redo transform.');
+            toastr.warning('Could not redo the change.');
         }
     });
 
@@ -6491,7 +6491,7 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         toastr.clear(generationToast);
 
         if (!refined || !refined.trim()) {
-            toastr.error('AI returned an empty response.');
+            toastr.error('The AI sent back an empty reply. Try again.');
             return null;
         }
 

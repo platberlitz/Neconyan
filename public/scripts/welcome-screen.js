@@ -2109,7 +2109,7 @@ async function openRecentCharacterChat(avatarId, fileName) {
     try {
         const selected = await selectCharacterById(characterId);
         if (!selected) {
-            toastr.warning(t`Failed to open recent chat. See console for details.`);
+            toastr.warning(t`Could not open that recent chat. Try again.`);
             return false;
         }
         setActiveCharacter(avatarId);
@@ -2125,7 +2125,7 @@ async function openRecentCharacterChat(avatarId, fileName) {
         return getCurrentChatId() === fileName;
     } catch (error) {
         console.error('Error opening recent chat:', error);
-        toastr.error(t`Failed to open recent chat. See console for details.`);
+        toastr.error(t`Could not open that recent chat. Try again.`);
         return false;
     }
 }
@@ -2153,7 +2153,7 @@ async function openRecentConversationChat(avatarId, groupId = '', branchId = '')
         });
         if (!opened) {
             setConversationWelcomeOpeningSuppressed(false);
-            toastr.warning(t`Failed to open Conversation Mode for this chat.`);
+            toastr.warning(t`Could not open Conversation Mode for this chat.`);
             return false;
         }
         hideWelcomeHome();
@@ -2162,7 +2162,7 @@ async function openRecentConversationChat(avatarId, groupId = '', branchId = '')
     } catch (error) {
         setConversationWelcomeOpeningSuppressed(false);
         console.error('Error opening conversation chat:', error);
-        toastr.error(t`Failed to open conversation chat. See console for details.`);
+        toastr.error(t`Could not open that Conversation chat. Try again.`);
         return false;
     }
 }
@@ -2186,7 +2186,7 @@ async function renameRecentConversationChat(avatarId, groupId, branchId, branchN
         const conversationModule = await import('./neconyan-conversation.js');
         const renamed = conversationModule.renameConversationBranch?.(avatarId, branchId, newName, { groupId });
         if (!renamed) {
-            toastr.warning(t`Failed to rename Conversation chat.`);
+            toastr.warning(t`Could not rename Conversation chat.`);
             return;
         }
 
@@ -2197,7 +2197,7 @@ async function renameRecentConversationChat(avatarId, groupId, branchId, branchN
         toastr.success(t`Chat renamed.`);
     } catch (error) {
         console.error('Error renaming recent Conversation chat:', error);
-        toastr.error(t`Failed to rename Conversation chat. See console for details.`);
+        toastr.error(t`Could not rename that Conversation chat. Try again.`);
     }
 }
 
@@ -2219,7 +2219,7 @@ async function deleteRecentConversationChat(avatarId, groupId, branchId, recentC
         const result = conversationModule.deleteConversationWelcomeBranch?.(avatarId, branchId, { groupId });
         const deleted = Boolean(result?.deleted);
         if (!deleted) {
-            toastr.warning(t`Failed to delete Conversation chat.`);
+            toastr.warning(t`Could not delete Conversation chat.`);
             return;
         }
 
@@ -2232,7 +2232,7 @@ async function deleteRecentConversationChat(avatarId, groupId, branchId, recentC
         }
     } catch (error) {
         console.error('Error deleting recent Conversation chat:', error);
-        toastr.error(t`Failed to delete Conversation chat. See console for details.`);
+        toastr.error(t`Could not delete that Conversation chat. Try again.`);
     }
 }
 
@@ -2251,7 +2251,7 @@ async function openRecentGroupChat(groupId, fileName) {
     try {
         const selected = await openGroupById(groupId);
         if (!selected) {
-            toastr.warning(t`Failed to open recent group chat. See console for details.`);
+            toastr.warning(t`Could not open that recent group chat. Try again.`);
             return false;
         }
         setActiveGroup(groupId);
@@ -2267,7 +2267,7 @@ async function openRecentGroupChat(groupId, fileName) {
         return getCurrentChatId() === fileName;
     } catch (error) {
         console.error('Error opening recent group chat:', error);
-        toastr.error(t`Failed to open recent group chat. See console for details.`);
+        toastr.error(t`Could not open that recent group chat. Try again.`);
         return false;
     }
 }
@@ -2300,7 +2300,7 @@ async function renameRecentCharacterChat(avatarId, fileName) {
         toastr.success(t`Chat renamed.`);
     } catch (error) {
         console.error('Error renaming recent character chat:', error);
-        toastr.error(t`Failed to rename recent chat. See console for details.`);
+        toastr.error(t`Could not rename that recent chat. Try again.`);
     }
 }
 
@@ -2332,7 +2332,7 @@ async function renameRecentGroupChat(groupId, fileName) {
         toastr.success(t`Group chat renamed.`);
     } catch (error) {
         console.error('Error renaming recent group chat:', error);
-        toastr.error(t`Failed to rename recent group chat. See console for details.`);
+        toastr.error(t`Could not rename that recent group chat. Try again.`);
     }
 }
 
@@ -2362,7 +2362,7 @@ async function deleteRecentCharacterChat(avatarId, fileName) {
         toastr.success(t`Chat deleted.`);
     } catch (error) {
         console.error('Error deleting recent character chat:', error);
-        toastr.error(t`Failed to delete recent chat. See console for details.`);
+        toastr.error(t`Could not delete that recent chat. Try again.`);
     }
 }
 
@@ -2392,7 +2392,7 @@ async function deleteRecentGroupChat(groupId, fileName) {
         toastr.success(t`Group chat deleted.`);
     } catch (error) {
         console.error('Error deleting recent group chat:', error);
-        toastr.error(t`Failed to delete recent group chat. See console for details.`);
+        toastr.error(t`Could not delete that recent group chat. Try again.`);
     }
 }
 

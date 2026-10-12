@@ -643,7 +643,7 @@ test('account ownership and changed submission keys are enforced', async () => {
     const b = await ready(bob);
     assert.notEqual(a.jobId, b.jobId);
     await assert.rejects(acceptLabJob({ ...alice.request, get: () => 'bob' }, alice.body), /account changed/);
-    await assert.rejects(acceptLabJob(alice.request, { ...alice.body, book: 'Other' }), /different Labs work/);
+    await assert.rejects(acceptLabJob(alice.request, { ...alice.body, book: 'Other' }), /already used for different work/);
 });
 
 test('capacity refuses the next operation and retains every existing receipt', () => {

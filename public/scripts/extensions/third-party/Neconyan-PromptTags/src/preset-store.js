@@ -171,7 +171,7 @@ function setWriteState(presetName, status, error = '') {
 }
 
 function reportWriteFailure(job, error) {
-    const message = error?.message || 'The preset manager is unavailable.';
+    const message = error?.message || 'The preset manager could not be opened. Reload the page and try again.';
     if (job.reportedError === message) {
         return;
     }

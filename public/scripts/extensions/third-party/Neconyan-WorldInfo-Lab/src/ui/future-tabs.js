@@ -609,7 +609,7 @@ export function createTestsTab({
             const name = caseName(selected, index);
             const book = selected.bookName ?? 'its lorebook';
             if (typeof globalThis.confirm === 'function'
-                && !globalThis.confirm(`Prepare a reviewed deletion of '${name}' from '${book}'?`)) {
+                && !globalThis.confirm(`Prepare the deletion of '${name}' from '${book}' for review?`)) {
                 return;
             }
             operationBusy = true;

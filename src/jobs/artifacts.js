@@ -50,11 +50,11 @@ function artifactPath(directories, id, name) {
 export function readArtifact(directories, id, name) {
     const filename = artifactPath(directories, id, name);
     try {
-        if (fs.statSync(filename).size > MAX_BYTES) throw new Error('Artifact exceeds its size limit.');
+        if (fs.statSync(filename).size > MAX_BYTES) throw new Error('The saved result is too large.');
         return JSON.parse(fs.readFileSync(filename, 'utf8'));
     } catch (error) {
         if (error.code === 'ENOENT') return undefined;
-        throw Object.assign(new Error('The saved job result needs recovery and was left untouched.'), { status: 409 });
+        throw Object.assign(new Error('The saved result for this job is damaged and was left untouched.'), { status: 409 });
     }
 }
 
@@ -70,7 +70,7 @@ export function writeArtifact(directories, id, name, value) {
     const filename = artifactPath(directories, id, name);
     const data = JSON.stringify(value);
     if (typeof data !== 'string' || Buffer.byteLength(data) > MAX_BYTES) {
-        throw Object.assign(new Error('The job result exceeds its saved artifact limit.'), { status: 413 });
+        throw Object.assign(new Error('The result for this job is too large to save.'), { status: 413 });
     }
     fs.mkdirSync(path.dirname(filename), { recursive: true, mode: 0o700 });
     writeFileAtomicSync(filename, data, { mode: 0o600 });
@@ -85,7 +85,7 @@ export async function providerStep({ directories, job, signal, providerScope }, 
     const saved = readResult(directories, job.id, key);
     if (saved !== undefined) return saved;
     if (unresolvedProviderStep(directories, job.id, { scope: providerScope, currentStep: key })) {
-        throw Object.assign(new Error('The previous provider outcome is unknown and cannot be repeated automatically.'),
+        throw Object.assign(new Error('The earlier request to the AI service has an unknown result, so Neconyan will not send it again automatically.'),
             { code: 'PROVIDER_OUTCOME_UNKNOWN', status: 503 });
     }
     const previousResume = getJob(directories, job.id)?.resume;

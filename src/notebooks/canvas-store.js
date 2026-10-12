@@ -164,7 +164,7 @@ export function recoverCanvasOperationsLocked(lease, notebookId) {
         } catch (error) {
             if (error.status !== 409) throw error;
             warnings.push({ operationId: pending.operationId, canvasId: journal.canvasId, path: journal.record.path, code: 'CANVAS_RECOVERY_CONFLICT',
-                message: 'A canvas changed outside Neconyan while it was being saved. Its recovery copy is kept.' });
+                message: 'This canvas was changed outside Neconyan while it was being saved. A backup copy of it was kept.' });
         }
     }
     return warnings;
@@ -289,7 +289,7 @@ function rawCanvas(lease, notebookId, canvasId) {
 export function readCanvasLocked(lease, { notebookId, canvasId }) {
     const { record, file } = rawCanvas(lease, requireNotebookId(notebookId), canvasId);
     const text = file.bytes.toString('utf8');
-    if (!Buffer.from(text, 'utf8').equals(file.bytes)) throw new NotebookError('CANVAS_INVALID', 'This canvas is not a UTF-8 JSON file. Its original file is kept.', 400);
+    if (!Buffer.from(text, 'utf8').equals(file.bytes)) throw new NotebookError('CANVAS_INVALID', 'This canvas file could not be read as plain text. Its original file is kept.', 400);
     return { status: 'success', canvas: { ...summary(canvasId, record), revision: file.rawHash, text, document: parseCanvasDocument(text) } };
 }
 

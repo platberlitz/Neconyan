@@ -73,7 +73,7 @@ function decodeName(bytes) {
  */
 export function readZipDirectory(buffer) {
     if (!Buffer.isBuffer(buffer)) buffer = Buffer.from(buffer);
-    if (buffer.length > MAX_IMPORT_ARCHIVE_BYTES) throw archiveError('The archive is larger than 128 MiB.', 'IMPORT_TOO_LARGE', 413);
+    if (buffer.length > MAX_IMPORT_ARCHIVE_BYTES) throw archiveError('The archive is larger than 128 MB.', 'IMPORT_TOO_LARGE', 413);
     if (buffer.length < 22) throw archiveError('That file is not a ZIP archive.');
     let eocd = -1;
     const floor = Math.max(0, buffer.length - 65557);
@@ -91,12 +91,12 @@ export function readZipDirectory(buffer) {
     if (disk !== 0) throw archiveError('Multi-part archives are not supported.');
     if (total === 0xffff || size === 0xffffffff || offset === 0xffffffff) throw archiveError('ZIP64 archives are not supported.');
     if (total > MAX_IMPORT_ENTRIES) throw archiveError(`The archive has more than ${MAX_IMPORT_ENTRIES} entries.`, 'IMPORT_TOO_MANY_ENTRIES', 413);
-    if (offset + size > eocd) throw archiveError('The archive directory is damaged.');
+    if (offset + size > eocd) throw archiveError('The archive is damaged: its list of files cannot be read.');
     const entries = [];
     let cursor = offset;
     const seen = new Set();
     for (let index = 0; index < total; index++) {
-        if (cursor + 46 > buffer.length || buffer.readUInt32LE(cursor) !== 0x02014b50) throw archiveError('The archive directory is damaged.');
+        if (cursor + 46 > buffer.length || buffer.readUInt32LE(cursor) !== 0x02014b50) throw archiveError('The archive is damaged: its list of files cannot be read.');
         const madeBy = buffer.readUInt16LE(cursor + 4);
         const flags = buffer.readUInt16LE(cursor + 8);
         const method = buffer.readUInt16LE(cursor + 10);
@@ -145,7 +145,7 @@ export function inflateZipEntry(buffer, entry) {
         }
     }
     if (bytes.length !== entry.uncompressedSize || crc32(bytes) !== entry.crc) {
-        throw archiveError(`The archive entry ${entry.name} failed its integrity check.`);
+        throw archiveError(`The archive entry ${entry.name} is damaged and cannot be used.`);
     }
     return bytes;
 }
@@ -211,7 +211,7 @@ export function prepareImport({ filename, bytes }) {
     const renamed = [];
     const candidates = [];
     if (/\.md$/i.test(String(filename ?? ''))) {
-        if (buffer.length > MAX_NOTE_BYTES) throw archiveError('Notes can be up to 4 MiB.', 'IMPORT_TOO_LARGE', 413);
+        if (buffer.length > MAX_NOTE_BYTES) throw archiveError('Notes can be up to 4 MB.', 'IMPORT_TOO_LARGE', 413);
         candidates.push({ parts: [String(filename).split(/[\\/]/).pop()], bytes: buffer });
     } else {
         const entries = readZipDirectory(buffer);

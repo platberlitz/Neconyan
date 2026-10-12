@@ -204,7 +204,7 @@ describe('World Info endpoints', () => {
         jest.spyOn(console, 'warn').mockImplementation(() => {});
         const response = await postImport({ filename: 'Broken.json', contents: '{ not json' });
         expect(response.status).toBe(400);
-        expect(await response.text()).toBe('Is not a valid world info file');
+        expect(await response.text()).toBe('That file is not a valid world info file.');
         expect(fs.readdirSync(directories.worlds)).toEqual([]);
         expect(fs.readdirSync(uploadsPath)).toEqual([]);
     });
@@ -221,7 +221,7 @@ describe('World Info endpoints', () => {
     test('rejects import names that sanitize to an empty stem', async () => {
         const response = await postImport({ filename: 'Valid.json', contents: JSON.stringify({ entries: {} }), name: '/' });
         expect(response.status).toBe(400);
-        expect(await response.text()).toBe('World file must have a name');
+        expect(await response.text()).toBe('The world info file needs a name.');
         expect(fs.readdirSync(directories.worlds)).toEqual([]);
     });
 

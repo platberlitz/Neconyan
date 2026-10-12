@@ -38,7 +38,7 @@ export function prepareActiveRegex(material, macroEnvironment) {
             if (Number(script.substituteRegex)) macroFields.push(script.findRegex);
             if (macroFields.some(value => value.includes('{{') || /<(?:USER|BOT|CHAR|GROUP|CHARIFNOTGROUP)>/i.test(value))
                 || /{{match}}|\$\d+|\$<[^>]+>/i.test(script.replaceString)) {
-                fail('Server AI-output regex rules require plain replacements. Macros and capture substitutions are browser-only; remove them or use a prompt-only rule with supported core macros.', 409);
+                fail('Server-side text rules for AI replies must use plain find-and-replace. Macros (placeholders such as {{user}}) and capture groups only work in the browser, so remove them or use a rule that only changes the prompt.', 409);
             }
             scripts.push({ ...script, markdownOnly: false, promptOnly: false });
         }

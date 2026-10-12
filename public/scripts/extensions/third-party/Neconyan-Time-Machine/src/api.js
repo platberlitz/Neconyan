@@ -142,7 +142,7 @@ export async function captureCharacter(avatar, { force = false } = {}) {
     }
     const tags = context.tagMap?.[avatar] ?? [];
     if (!Array.isArray(tags) || tags.some(tag => typeof tag !== 'string')) {
-        throw new Error(`Neconyan returned malformed tags for ${avatar}`);
+        throw new Error(`Neconyan sent tags for ${avatar} in an unexpected format.`);
     }
 
     return save({
@@ -169,7 +169,7 @@ export async function captureLorebook(name, data, { force = false } = {}) {
         return null;
     }
     if (!isPlainObject(book)) {
-        throw new Error(`Neconyan returned a malformed lorebook for ${name}`);
+        throw new Error(`Neconyan sent the lorebook ${name} in an unexpected format.`);
     }
     return save({ kind: 'lorebook', target: name, label: name, data: structuredClone(book) });
 }
@@ -326,13 +326,13 @@ export async function liveCharacterState(avatar) {
     }
     const character = await response.json();
     const data = cardFromCharacter(character);
-    if (!data) throw new Error(`Neconyan returned a malformed character for ${avatar}`);
+    if (!data) throw new Error(`Neconyan sent the character ${avatar} in an unexpected format.`);
     const revision = response.headers?.get?.('X-Character-Revision');
-    if (!revision) throw new Error('The character revision is unavailable. Reload Neconyan before restoring it.');
+    if (!revision) throw new Error('Neconyan did not report the character\'s current version. Reload Neconyan before restoring it.');
     liveCharacterRevisions.set(data, revision);
     const tags = context.tagMap?.[avatar] ?? [];
     if (!Array.isArray(tags) || tags.some(tag => typeof tag !== 'string')) {
-        throw new Error(`Neconyan returned malformed tags for ${avatar}`);
+        throw new Error(`Neconyan sent tags for ${avatar} in an unexpected format.`);
     }
     return { data, tags: structuredClone(tags) };
 }
@@ -347,7 +347,7 @@ export async function liveLorebook(name) {
     const cached = await context.loadWorldInfo?.(name);
     if (cached !== null && cached !== undefined) {
         if (!isPlainObject(cached)) {
-            throw new Error(`Neconyan returned a malformed lorebook for ${name}`);
+            throw new Error(`Neconyan sent the lorebook ${name} in an unexpected format.`);
         }
         const revision = context.getWorldInfoLoadedRevision?.(cached);
         if (revision !== undefined) {
@@ -360,10 +360,10 @@ export async function liveLorebook(name) {
         const response = await post('/api/worldinfo/get', { name });
         const book = await response.json();
         if (!isPlainObject(book)) {
-            throw new Error(`Neconyan returned a malformed lorebook for ${name}`);
+            throw new Error(`Neconyan sent the lorebook ${name} in an unexpected format.`);
         }
         const revision = response.headers?.get?.('X-World-Info-Revision');
-        if (!revision) throw new Error('The lorebook revision is unavailable. Reload Neconyan before restoring it.');
+        if (!revision) throw new Error('Neconyan did not report the lorebook\'s current version. Reload Neconyan before restoring it.');
         liveLorebookRevisions.set(book, revision);
         return book;
     } catch (error) {
@@ -508,7 +508,7 @@ export async function restorePreset(apiId, name, preset, live) {
  */
 export async function restoreExtensionBlock(key, value) {
     if (!isRestorableExtensionBlock(key, value)) {
-        throw new Error('Refusing to restore a reserved or malformed settings block');
+        throw new Error('Refusing to restore a settings block that is reserved or damaged.');
     }
     const settings = ctx().extensionSettings;
     const hadPrevious = Object.prototype.hasOwnProperty.call(settings, key);
@@ -549,7 +549,7 @@ export async function loadHostSnapshot(name) {
     const response = await post('/api/settings/load-snapshot', { name });
     const settings = await response.json();
     if (!isPlainObject(settings)) {
-        throw new Error('Neconyan returned a malformed settings backup');
+        throw new Error('Neconyan sent back a settings backup in an unexpected format.');
     }
     return settings;
 }

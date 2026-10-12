@@ -355,7 +355,7 @@ export function applyServerPluginRelease(payload) {
             appendLog(logPath, 'Restored the previous server plugin directory.');
         } catch (rollbackError) {
             appendLog(logPath, `Server plugin rollback failed: ${rollbackError?.message || rollbackError}`);
-            const aggregate = new AggregateError([error, rollbackError], 'Server plugin replacement and rollback both failed.');
+            const aggregate = new AggregateError([error, rollbackError], 'Neconyan could not replace the server plugin and could not restore the previous version. Restart Neconyan, then try the update again.');
             aggregate.preserveServerPluginTransaction = true;
             throw aggregate;
         }
@@ -607,7 +607,7 @@ export function recoverInterruptedServerPluginUpdates(pluginsRoot) {
             ) {
                 // Another supervisor owns this shared plugin root. Never recover
                 // or delete its in-flight transaction.
-                throw new Error('Another Neconyan supervisor owns the server plugin update transaction.');
+                throw new Error('Another copy of Neconyan is already updating the server plugin. Wait for it to finish.');
             }
         }
 

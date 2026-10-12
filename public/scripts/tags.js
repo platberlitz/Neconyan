@@ -1819,13 +1819,13 @@ async function onTagRestoreFileSelect(e) {
     const data = await parseJsonFile(file);
 
     if (!data) {
-        toastr.warning('Empty file data', 'Tag Restore');
+        toastr.warning('The file is empty', 'Tag Restore');
         console.log('Tag restore: File data empty.');
         return;
     }
 
     if (!data.tags || !data.tag_map || !Array.isArray(data.tags) || typeof data.tag_map !== 'object') {
-        toastr.warning('Invalid file format', 'Tag Restore');
+        toastr.warning('That file is not a tag backup. Choose a tag backup file.', 'Tag Restore');
         console.log('Tag restore: Invalid file format.');
         return;
     }
@@ -1906,7 +1906,7 @@ async function onTagRestoreFileSelect(e) {
     }
 
     if (warnings.length) {
-        toastr.warning('Tags restored with warnings. Check console or click on this message for details.', 'Tag Restore', {
+        toastr.warning('Tags were restored with some warnings. Click this message for details.', 'Tag Restore', {
             timeOut: toastr.options.timeOut * 2, // Display double the time
             onclick: () => Popup.show.text('Tag Restore Warnings', `<samp class="justifyLeft">${DOMPurify.sanitize(warnings.join('\n'))}<samp>`, { allowVerticalScrolling: true }),
         });

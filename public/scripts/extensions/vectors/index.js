@@ -184,7 +184,7 @@ async function synchronizeChat() {
         const result = await runVectorWork('sync-chat', {}, { automatic: true });
         return result.remaining;
     } catch (error) {
-        toastr.error(error.message, 'Vector work retained', { preventDuplicates: true });
+        toastr.error(error.message, 'Search index kept', { preventDuplicates: true });
         return null;
     } finally {
         syncBlocked = false;
@@ -425,7 +425,7 @@ async function purgeAllVectorIndexes() {
         toastr.success('All vector indexes purged', 'Purge successful');
     } catch (error) {
         console.error('Vectors: Failed to purge all', error);
-        toastr.error('Failed to purge all vector indexes', 'Purge failed');
+        toastr.error('Could not clear the search index. Try again.', 'Could not clear');
     }
 }
 
@@ -572,10 +572,10 @@ async function executeWithWebLlmErrorHandling(func) {
         }
         switch (error.cause) {
             case 'webllm-not-available':
-                toastr.warning('WebLLM is not available. Please install the extension.', 'WebLLM not installed');
+                toastr.warning('WebLLM is not installed. Install the WebLLM add-on, then try again.', 'WebLLM not installed');
                 break;
             case 'webllm-not-updated':
-                toastr.warning('The installed extension version does not support embeddings.', 'WebLLM update required');
+                toastr.warning('The installed WebLLM add-on is too old to make search data. Update it, then try again.', 'WebLLM update required');
                 break;
         }
     }

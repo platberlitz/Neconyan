@@ -864,7 +864,7 @@ test('a failed Responses image request is never retried with another endpoint', 
     await assert.rejects(generateQuickImageGenJobImage(context, { ...input, fetch: async () => {
         calls++;
         return jsonResponse({ error: { message: 'unsupported' } }, 400);
-    } }), /HTTP 400/);
+    } }), /could not create the image/);
     assert.equal(calls, 1);
     await assert.rejects(generateQuickImageGenJobImage(context, { ...input,
         fetch: () => assert.fail('Uncertain image request repeated') }), { code: 'QIG_RESULT_RECOVERY' });
@@ -1276,7 +1276,7 @@ test('NovelAI invalid proxy and provider response cannot leak keys into an image
     const failed = jobContext(directories);
     await assert.rejects(generateQuickImageGenJobImage(failed, { effectId: 'novelai:error', prompt: 'stars',
         fetch: async () => new Response('novelai-private-key in provider error', { status: 500 }) }),
-    error => error.message.includes('NovelAI request failed') && !error.message.includes('novelai-private-key'));
+    error => error.message.includes('NovelAI could not create the image') && !error.message.includes('novelai-private-key'));
     assert.ok(!JSON.stringify(getJob(directories, failed.job.id)).includes('novelai-private-key'));
 });
 
@@ -1389,7 +1389,7 @@ test('an upstream failure is recoverable', async () => {
             fetch: async () => new Response('boom', { status: 500 }),
             settings: { provider: 'stability', stabilityKey: 'k' },
         }),
-        error => error.recoverable === true && /Stability request failed/.test(error.message),
+        error => error.recoverable === true && /Stability could not create the image/.test(error.message),
     );
 });
 

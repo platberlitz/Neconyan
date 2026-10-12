@@ -113,7 +113,7 @@ export function resolveCaptionConfiguration(directories, settings) {
         url = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(chat.workers_ai_account_id)}/ai/v1/chat/completions`;
     } else if (Object.hasOwn(OPENAI_URLS, api)) url = proxy ? `${proxy}/chat/completions` : OPENAI_URLS[api];
     else throw captionError('The saved multimodal caption API is unsupported.');
-    if (!key && !proxy && !LOCAL_APIS.has(api) && api !== 'custom') throw captionError('The configured caption key is unavailable.');
+    if (!key && !proxy && !LOCAL_APIS.has(api) && api !== 'custom') throw captionError('The caption key is missing.');
     if (typeof model !== 'string' || model.length > 256 || !model && api !== 'custom') throw captionError('The saved caption model is invalid.');
     const headers = { ...(api === 'openrouter' ? OPENROUTER_HEADERS : api === 'aimlapi' ? AIMLAPI_HEADERS : {}),
         ...(api === 'custom' ? yamlControl(chat.custom_include_headers) : {}), ...getOverrideHeaders(new URL(url).host) };
@@ -127,10 +127,10 @@ export function resolveCaptionConfiguration(directories, settings) {
 }
 
 export async function readCaptionResponse(response, signal) {
-    if (!response.ok) throw captionError('The caption provider rejected the request.', 'ROLEPLAY_CAPTION_PROVIDER', 502);
+    if (!response.ok) throw captionError('The caption service rejected the request.', 'ROLEPLAY_CAPTION_PROVIDER', 502);
     try { return JSON.parse(await readResponseText(response, 1024 * 1024, { signal })); } catch (error) {
         if (signal?.aborted) throw signal.reason;
-        throw captionError('The caption provider returned an invalid response.', 'ROLEPLAY_CAPTION_PROVIDER', 502);
+        throw captionError('The caption service sent a reply that could not be read.', 'ROLEPLAY_CAPTION_PROVIDER', 502);
     }
 }
 
@@ -147,7 +147,7 @@ async function vertexToken(config, signal, fetchImpl) {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({
             grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: jwt }) });
     const result = await readCaptionResponse(response, signal);
-    if (typeof result.access_token !== 'string' || !result.access_token) throw captionError('Caption authentication failed.');
+    if (typeof result.access_token !== 'string' || !result.access_token) throw captionError('Caption sign-in failed.');
     return result.access_token;
 }
 
@@ -167,7 +167,7 @@ export async function prepareCaptionRequest(config, { image, prompt, seed, signa
         dataUrl = `data:image/jpeg;base64,${(await encodeServerImage(converted, 'jpeg', { quality: 90 })).toString('base64')}`;
     }
     const match = /^data:((?:image\/(?:png|jpeg|webp)|video\/(?:mp4|webm|quicktime|mpeg|ogg)));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
-    if (!match) throw captionError('The bound caption image is invalid.');
+    if (!match) throw captionError('The image for this caption is invalid.');
     const [, mime, bytes] = match;
     const video = mime.startsWith('video/');
     if (video && !['google', 'vertexai', 'zai'].includes(config.api)) throw captionError('The selected caption connection does not support video.');
@@ -195,11 +195,11 @@ export async function prepareCaptionRequest(config, { image, prompt, seed, signa
             body.messages.pop();
             body.messages.push({ role: 'user', content: prompt }, { role: 'user', content: [], image_url: dataUrl });
         }
-        if (body.stream === true) throw captionError('A bound caption needs a complete response, not a partial stream.');
+        if (body.stream === true) throw captionError('A caption needs a complete reply, not a partial stream.');
     }
     Object.assign(headers, config.headers);
     const json = JSON.stringify(body);
-    if (Buffer.byteLength(json) > (video ? 35 : 4) * 1024 * 1024) throw captionError('The saved caption request is too large.');
+    if (Buffer.byteLength(json) > (video ? 35 : 4) * 1024 * 1024) throw captionError('The caption request is too large to send.');
     return { url: config.url, headers, body: json };
 }
 
@@ -223,7 +223,7 @@ export async function sendCaptionRequest(config, request, { signal, fetchImpl = 
 export async function captionLocalImage({ model }, image, signal) {
     const { getRawImage, runPipeline } = await import('../transformers.js');
     const raw = await getRawImage(image.split(',')[1]);
-    if (!raw) throw captionError('The bound image could not be decoded.');
+    if (!raw) throw captionError('The image for this caption could not be read.');
     const result = await runPipeline('image-to-text', model, caption => caption(raw), { signal });
     return validateCaption(result?.[0]?.generated_text);
 }

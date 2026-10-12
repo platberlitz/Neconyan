@@ -204,7 +204,7 @@ export function rejectBundledThirdPartyExtension(extensionName, response, action
         return false;
     }
 
-    response.status(400).send(`Bad Request: ${extensionName} is included with Neconyan; it cannot be ${action} through the extension updater.`);
+    response.status(400).send(`${extensionName} comes with Neconyan, so it cannot be ${action} from the extension updater.`);
     return true;
 }
 
@@ -306,16 +306,16 @@ router.post('/install', async (request, response) => {
 
         if (global && !request.user.profile.admin) {
             console.error(`User ${request.user.profile.handle} does not have permission to install global extensions.`);
-            return response.status(403).send('Forbidden: No permission to install global extensions.');
+            return response.status(403).send('You do not have permission to install extensions for all users.');
         }
 
         if (!isValidUrl(url)) {
-            return response.status(400).send('Bad Request: A valid URL is required in the request body.');
+            return response.status(400).send('Enter the web address of the extension first.');
         }
 
         const parsedUrl = new URL(url);
         if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-            return response.status(400).send('Bad Request: Only HTTP and HTTPS protocols are supported for the Extension URL.');
+            return response.status(400).send('Extension addresses must start with http:// or https://.');
         }
 
         const git = createGitClient({ backend: gitBackend });
@@ -332,7 +332,7 @@ router.post('/install', async (request, response) => {
         const basePath = global ? PUBLIC_DIRECTORIES.globalExtensions : request.user.directories.extensions;
         const extensionNameSanitized = sanitize(path.basename(parsedUrl.pathname, '.git'));
         if (!extensionNameSanitized) {
-            return response.status(400).send('Could not determine the extension name from the URL. Please provide a valid git repository URL.');
+            return response.status(400).send('Could not work out the extension name from that address. Check that it points to a Git repository.');
         }
 
         if (rejectBundledThirdPartyExtension(extensionNameSanitized, response, 'installed')) {
@@ -343,7 +343,7 @@ router.post('/install', async (request, response) => {
         const folderName = path.basename(extensionPath);
 
         if (fs.existsSync(extensionPath)) {
-            return response.status(409).send(`Directory already exists at ${extensionPath}`);
+            return response.status(409).send('An extension with that name already exists.');
         }
 
         const cloneOptions = { depth: 1 };
@@ -366,7 +366,7 @@ router.post('/install', async (request, response) => {
         }
     } catch (error) {
         console.error('Importing extension failed', error);
-        return response.status(500).send('Internal Server Error. Check the server logs for more details.');
+        return response.status(500).send('Could not install the extension. Try again in a moment.');
     }
 });
 
@@ -384,13 +384,13 @@ router.post('/install', async (request, response) => {
 router.post('/update', async (request, response) => {
     try {
         if (typeof request.body.extensionName !== 'string') {
-            return response.status(400).send('Bad Request: A valid extensionName is required in the request body.');
+            return response.status(400).send('Choose an extension first.');
         }
 
         const { extensionName, global } = request.body;
         const extensionNameSanitized = sanitize(extensionName);
         if (!extensionNameSanitized) {
-            return response.status(400).send('Bad Request: A valid extensionName is required in the request body.');
+            return response.status(400).send('Choose an extension first.');
         }
         if (rejectBundledThirdPartyExtension(extensionNameSanitized, response, 'updated')) {
             return;
@@ -398,14 +398,14 @@ router.post('/update', async (request, response) => {
 
         if (global && !request.user.profile.admin) {
             console.error(`User ${request.user.profile.handle} does not have permission to update global extensions.`);
-            return response.status(403).send('Forbidden: No permission to update global extensions.');
+            return response.status(403).send('You do not have permission to update extensions for all users.');
         }
 
         const basePath = global ? PUBLIC_DIRECTORIES.globalExtensions : request.user.directories.extensions;
         const extensionPath = path.join(basePath, extensionNameSanitized);
 
         if (!fs.existsSync(extensionPath)) {
-            return response.status(404).send(`Directory does not exist at ${extensionPath}`);
+            return response.status(404).send('That extension folder is missing.');
         }
 
         await ensureExtensionRepo(extensionPath, global);
@@ -457,20 +457,20 @@ router.post('/update', async (request, response) => {
         return response.send({ shortCommitHash, extensionPath, isUpToDate, remoteUrl, stashed, stashPopWarning });
     } catch (error) {
         console.error('Updating extension failed', error);
-        return response.status(500).send('Internal Server Error. Check the server logs for more details.');
+        return response.status(500).send('Could not update the extension. Try again in a moment.');
     }
 });
 
 router.post('/branches', async (request, response) => {
     try {
         if (typeof request.body.extensionName !== 'string') {
-            return response.status(400).send('Bad Request: A valid extensionName is required in the request body.');
+            return response.status(400).send('Choose an extension first.');
         }
 
         const { extensionName, global } = request.body;
         const extensionNameSanitized = sanitize(extensionName);
         if (!extensionNameSanitized) {
-            return response.status(400).send('Bad Request: A valid extensionName is required in the request body.');
+            return response.status(400).send('Choose an extension first.');
         }
         if (rejectBundledThirdPartyExtension(extensionNameSanitized, response, 'managed')) {
             return;
@@ -478,14 +478,14 @@ router.post('/branches', async (request, response) => {
 
         if (global && !request.user.profile.admin) {
             console.error(`User ${request.user.profile.handle} does not have permission to list branches of global extensions.`);
-            return response.status(403).send('Forbidden: No permission to list branches of global extensions.');
+            return response.status(403).send('You do not have permission to see the versions of extensions for all users.');
         }
 
         const basePath = global ? PUBLIC_DIRECTORIES.globalExtensions : request.user.directories.extensions;
         const extensionPath = path.join(basePath, extensionNameSanitized);
 
         if (!fs.existsSync(extensionPath)) {
-            return response.status(404).send(`Directory does not exist at ${extensionPath}`);
+            return response.status(404).send('That extension folder is missing.');
         }
 
         await ensureExtensionRepo(extensionPath, global);
@@ -511,20 +511,20 @@ router.post('/branches', async (request, response) => {
         return response.send(result);
     } catch (error) {
         console.error('Getting branches failed', error);
-        return response.status(500).send('Internal Server Error. Check the server logs for more details.');
+        return response.status(500).send('Could not load the extension versions. Try again in a moment.');
     }
 });
 
 router.post('/switch', async (request, response) => {
     try {
         if (typeof request.body.extensionName !== 'string') {
-            return response.status(400).send('Bad Request: A valid extensionName is required in the request body.');
+            return response.status(400).send('Choose an extension first.');
         }
 
         const { extensionName, branch, global } = request.body;
         const extensionNameSanitized = sanitize(extensionName);
         if (!extensionNameSanitized || !branch) {
-            return response.status(400).send('Bad Request: A valid extensionName and branch are required in the request body.');
+            return response.status(400).send('Choose an extension and a version first.');
         }
         if (rejectBundledThirdPartyExtension(extensionNameSanitized, response, 'switched')) {
             return;
@@ -532,14 +532,14 @@ router.post('/switch', async (request, response) => {
 
         if (global && !request.user.profile.admin) {
             console.error(`User ${request.user.profile.handle} does not have permission to switch branches of global extensions.`);
-            return response.status(403).send('Forbidden: No permission to switch branches of global extensions.');
+            return response.status(403).send('You do not have permission to change the version of extensions for all users.');
         }
 
         const basePath = global ? PUBLIC_DIRECTORIES.globalExtensions : request.user.directories.extensions;
         const extensionPath = path.join(basePath, extensionNameSanitized);
 
         if (!fs.existsSync(extensionPath)) {
-            return response.status(404).send(`Directory does not exist at ${extensionPath}`);
+            return response.status(404).send('That extension folder is missing.');
         }
 
         await ensureExtensionRepo(extensionPath, global);
@@ -562,7 +562,7 @@ router.post('/switch', async (request, response) => {
 
         if (!branches.all.includes(branch)) {
             console.error(`Branch ${branch} does not exist locally`);
-            return response.status(404).send(`Branch ${branch} does not exist locally`);
+            return response.status(404).send(`That version (${branch}) is not on this server.`);
         }
 
         // Check if the branch is already checked out
@@ -579,20 +579,20 @@ router.post('/switch', async (request, response) => {
         return response.sendStatus(204);
     } catch (error) {
         console.error('Switching branches failed', error);
-        return response.status(500).send('Internal Server Error. Check the server logs for more details.');
+        return response.status(500).send('Could not change the extension version. Try again in a moment.');
     }
 });
 
 router.post('/move', async (request, response) => {
     try {
         if (typeof request.body.extensionName !== 'string') {
-            return response.status(400).send('Bad Request: A valid extensionName is required in the request body.');
+            return response.status(400).send('Choose an extension first.');
         }
 
         const { extensionName, source, destination } = request.body;
         const extensionNameSanitized = sanitize(extensionName);
         if (!extensionNameSanitized || !source || !destination) {
-            return response.status(400).send('Bad Request: A valid extensionName, source, and destination are required in the request body.');
+            return response.status(400).send('Choose the extension and both folder locations first.');
         }
         if (rejectBundledThirdPartyExtension(extensionNameSanitized, response, 'moved')) {
             return;
@@ -600,7 +600,7 @@ router.post('/move', async (request, response) => {
 
         if (!request.user.profile.admin) {
             console.error(`User ${request.user.profile.handle} does not have permission to move extensions.`);
-            return response.status(403).send('Forbidden: No permission to move extensions.');
+            return response.status(403).send('You do not have permission to move extensions.');
         }
 
         const sourceDirectory = source === 'global' ? PUBLIC_DIRECTORIES.globalExtensions : request.user.directories.extensions;
@@ -610,17 +610,17 @@ router.post('/move', async (request, response) => {
 
         if (!fs.existsSync(sourcePath) || !fs.statSync(sourcePath).isDirectory()) {
             console.error(`Source directory does not exist at ${sourcePath}`);
-            return response.status(404).send('Source directory does not exist.');
+            return response.status(404).send('The extension to move could not be found.');
         }
 
         if (fs.existsSync(destinationPath)) {
             console.error(`Destination directory already exists at ${destinationPath}`);
-            return response.status(409).send('Destination directory already exists.');
+            return response.status(409).send('Something already exists at the new location. Choose a different place.');
         }
 
         if (source === destination) {
             console.error('Source and destination directories are the same');
-            return response.status(409).send('Source and destination directories are the same.');
+            return response.status(409).send('The new location is the same as the current one.');
         }
 
         fs.cpSync(sourcePath, destinationPath, { recursive: true, force: true });
@@ -630,7 +630,7 @@ router.post('/move', async (request, response) => {
         return response.sendStatus(204);
     } catch (error) {
         console.error('Moving extension failed', error);
-        return response.status(500).send('Internal Server Error. Check the server logs for more details.');
+        return response.status(500).send('Could not move the extension. Try again in a moment.');
     }
 });
 
@@ -647,13 +647,13 @@ router.post('/move', async (request, response) => {
 router.post('/version', async (request, response) => {
     try {
         if (typeof request.body.extensionName !== 'string') {
-            return response.status(400).send('Bad Request: A valid extensionName is required in the request body.');
+            return response.status(400).send('Choose an extension first.');
         }
 
         const { extensionName, global } = request.body;
         const extensionNameSanitized = sanitize(extensionName);
         if (!extensionNameSanitized) {
-            return response.status(400).send('Bad Request: A valid extensionName is required in the request body.');
+            return response.status(400).send('Choose an extension first.');
         }
         if (isBundledThirdPartyExtension(extensionNameSanitized)) {
             return response.send({ currentBranchName: '', currentCommitHash: '', isUpToDate: true, remoteUrl: '' });
@@ -663,7 +663,7 @@ router.post('/version', async (request, response) => {
         const extensionPath = path.join(basePath, extensionNameSanitized);
 
         if (!fs.existsSync(extensionPath)) {
-            return response.status(404).send(`Directory does not exist at ${extensionPath}`);
+            return response.status(404).send('That extension folder is missing.');
         }
 
         await ensureExtensionRepo(extensionPath, global);
@@ -692,40 +692,40 @@ router.post('/version', async (request, response) => {
         return response.send({ currentBranchName, currentCommitHash, isUpToDate, remoteUrl });
     } catch (error) {
         console.error('Getting extension version failed', error);
-        return response.status(500).send('Internal Server Error. Check the server logs for more details.');
+        return response.status(500).send('Could not check the extension. Try again in a moment.');
     }
 });
 
 router.post('/sync', async (request, response) => {
     try {
         if (typeof request.body.extensionName !== 'string') {
-            return response.status(400).send('Bad Request: A valid extensionName is required in the request body.');
+            return response.status(400).send('Choose an extension first.');
         }
 
         const extensionNameSanitized = sanitize(request.body.extensionName);
         if (!extensionNameSanitized) {
-            return response.status(400).send('Bad Request: A valid extensionName is required in the request body.');
+            return response.status(400).send('Choose an extension first.');
         }
 
         if (!request.user.profile.admin) {
             console.error(`User ${request.user.profile.handle} does not have permission to sync bundled extensions.`);
-            return response.status(403).send('Forbidden: No permission to sync bundled extensions.');
+            return response.status(403).send('You do not have permission to sync extensions that come with Neconyan.');
         }
 
         const syncConfig = MANUAL_SYNC_EXTENSIONS.get(extensionNameSanitized);
         if (!syncConfig) {
-            return response.status(400).send(`Bad Request: ${extensionNameSanitized} does not support manual sync.`);
+            return response.status(400).send(`${extensionNameSanitized} cannot be synced by hand.`);
         }
 
         const extensionPath = path.join(PUBLIC_DIRECTORIES.extensions, extensionNameSanitized);
         const manifest = await getManifest(extensionPath);
         if (manifest.auto_update !== true) {
-            return response.status(400).send(`Bad Request: ${extensionNameSanitized} is not configured for manual sync.`);
+            return response.status(400).send(`${extensionNameSanitized} is not set up to be synced by hand.`);
         }
 
         const repoUrl = getManifestRepoUrl(manifest).replace(/\/$/, '');
         if (repoUrl !== syncConfig.repo) {
-            return response.status(400).send(`Bad Request: ${extensionNameSanitized} sync source must be ${syncConfig.repo}.`);
+            return response.status(400).send(`${extensionNameSanitized} can only be synced from ${syncConfig.repo}.`);
         }
 
         const metadataPath = path.join(os.tmpdir(), `neconyan-${extensionNameSanitized}-${Date.now()}.env`);
@@ -745,7 +745,7 @@ router.post('/sync', async (request, response) => {
         }
     } catch (error) {
         console.error('Syncing extension failed', error);
-        return response.status(500).send(error.stderr || error.message || 'Internal Server Error. Check the server logs for more details.');
+        return response.status(500).send(error.stderr || error.message || 'Could not sync the extension. Try again in a moment.');
     }
 });
 
@@ -760,13 +760,13 @@ router.post('/sync', async (request, response) => {
 router.post('/delete', async (request, response) => {
     try {
         if (typeof request.body.extensionName !== 'string') {
-            return response.status(400).send('Bad Request: A valid extensionName is required in the request body.');
+            return response.status(400).send('Choose an extension first.');
         }
 
         const { extensionName, global } = request.body;
         const extensionNameSanitized = sanitize(extensionName);
         if (!extensionNameSanitized) {
-            return response.status(400).send('Bad Request: A valid extensionName is required in the request body.');
+            return response.status(400).send('Choose an extension first.');
         }
         if (rejectBundledThirdPartyExtension(extensionNameSanitized, response, 'deleted')) {
             return;
@@ -774,23 +774,23 @@ router.post('/delete', async (request, response) => {
 
         if (global && !request.user.profile.admin) {
             console.error(`User ${request.user.profile.handle} does not have permission to delete global extensions.`);
-            return response.status(403).send('Forbidden: No permission to delete global extensions.');
+            return response.status(403).send('You do not have permission to delete extensions for all users.');
         }
 
         const basePath = global ? PUBLIC_DIRECTORIES.globalExtensions : request.user.directories.extensions;
         const extensionPath = path.join(basePath, extensionNameSanitized);
 
         if (!fs.existsSync(extensionPath)) {
-            return response.status(404).send(`Directory does not exist at ${extensionPath}`);
+            return response.status(404).send('That extension folder is missing.');
         }
 
         await fs.promises.rm(extensionPath, { recursive: true });
         console.info(`Extension has been deleted at ${extensionPath}`);
 
-        return response.send(`Extension has been deleted at ${extensionPath}`);
+        return response.send('The extension has been deleted.');
     } catch (error) {
         console.error('Deleting extension failed', error);
-        return response.status(500).send('Internal Server Error. Check the server logs for more details.');
+        return response.status(500).send('Could not delete the extension. Try again in a moment.');
     }
 });
 

@@ -170,7 +170,7 @@ async function addPasskey() {
         const optionsData = await optionsResponse.json().catch(() => ({}));
 
         if (!optionsResponse.ok) {
-            toastr.error(optionsData.error || 'Could not start passkey enrolment.');
+            toastr.error(optionsData.error || 'Could not start setting up a passkey (a login key stored on this device). Try again.');
             return;
         }
 
@@ -366,7 +366,7 @@ async function enableUser(handle, callback) {
 
         if (!response.ok) {
             const data = await response.json();
-            toastr.error(data.error || 'Unknown error', 'Failed to enable user');
+            toastr.error(data.error || 'Please try again.', 'Could not enable user');
             throw new Error('Failed to enable user');
         }
 
@@ -386,7 +386,7 @@ async function disableUser(handle, callback) {
 
         if (!response.ok) {
             const data = await response.json();
-            toastr.error(data?.error || 'Unknown error', 'Failed to disable user');
+            toastr.error(data?.error || 'Please try again.', 'Could not disable user');
             throw new Error('Failed to disable user');
         }
 
@@ -412,7 +412,7 @@ async function promoteUser(handle, callback) {
 
         if (!response.ok) {
             const data = await response.json();
-            toastr.error(data.error || 'Unknown error', 'Failed to promote user');
+            toastr.error(data.error || 'Please try again.', 'Could not promote user');
             throw new Error('Failed to promote user');
         }
 
@@ -437,7 +437,7 @@ async function demoteUser(handle, callback) {
 
         if (!response.ok) {
             const data = await response.json();
-            toastr.error(data.error || 'Unknown error', 'Failed to demote user');
+            toastr.error(data.error || 'Please try again.', 'Could not demote user');
             throw new Error('Failed to demote user');
         }
 
@@ -464,7 +464,7 @@ async function createUser(form, callback) {
     }
 
     if (errors.length) {
-        toastr.error(errors.join(', '), 'Failed to create user');
+        toastr.error(errors.join(', '), 'Could not create user');
         return;
     }
 
@@ -488,7 +488,7 @@ async function createUser(form, callback) {
 
         if (!response.ok) {
             const data = await response.json();
-            toastr.error(data.error || 'Unknown error', 'Failed to create user');
+            toastr.error(data.error || 'Please try again.', 'Could not create user');
             throw new Error('Failed to create user');
         }
 
@@ -559,7 +559,7 @@ async function changePassword(handle, callback) {
         }
 
         if (newPassword !== confirmPassword) {
-            toastr.error('Passwords do not match', 'Failed to change password');
+            toastr.error('Passwords do not match', 'Could not change password');
             throw new Error('Passwords do not match');
         }
 
@@ -571,7 +571,7 @@ async function changePassword(handle, callback) {
 
         if (!response.ok) {
             const data = await response.json();
-            toastr.error(data.error || 'Unknown error', 'Failed to change password');
+            toastr.error(data.error || 'Please try again.', 'Could not change password');
             throw new Error('Failed to change password');
         }
 
@@ -590,7 +590,7 @@ async function changePassword(handle, callback) {
 async function deleteUser(handle, callback) {
     try {
         if (handle === currentUser.handle) {
-            toastr.error('Cannot delete yourself', 'Failed to delete user');
+            toastr.error('Cannot delete yourself', 'Could not delete user');
             throw new Error('Cannot delete yourself');
         }
 
@@ -613,7 +613,7 @@ async function deleteUser(handle, callback) {
         }
 
         if (handle !== confirmHandle) {
-            toastr.error('Handles do not match', 'Failed to delete user');
+            toastr.error('The login name you typed does not match', 'Could not delete user');
             throw new Error('Handles do not match');
         }
 
@@ -625,7 +625,7 @@ async function deleteUser(handle, callback) {
 
         if (!response.ok) {
             const data = await response.json();
-            toastr.error(data.error || 'Unknown error', 'Failed to delete user');
+            toastr.error(data.error || 'Please try again.', 'Could not delete user');
             throw new Error('Failed to delete user');
         }
 
@@ -662,7 +662,7 @@ async function resetSettings(handle, callback) {
 
         if (!response.ok) {
             const data = await response.json();
-            toastr.error(data.error || 'Unknown error', 'Failed to reset settings');
+            toastr.error(data.error || 'Please try again.', 'Could not reset settings');
             throw new Error('Failed to reset settings');
         }
 
@@ -698,7 +698,7 @@ async function changeName(handle, name, callback) {
 
         if (!response.ok) {
             const data = await response.json();
-            toastr.error(data.error || 'Unknown error', 'Failed to change name');
+            toastr.error(data.error || 'Please try again.', 'Could not change name');
             throw new Error('Failed to change name');
         }
 
@@ -735,7 +735,7 @@ async function restoreSnapshot(name, callback) {
 
         if (!response.ok) {
             const data = await response.json();
-            toastr.error(data.error || 'Unknown error', 'Failed to restore snapshot');
+            toastr.error(data.error || 'Please try again.', 'Could not restore snapshot');
             throw new Error('Failed to restore snapshot');
         }
 
@@ -760,7 +760,7 @@ async function loadSnapshotContent(name) {
 
         if (!response.ok) {
             const data = await response.json();
-            toastr.error(data.error || 'Unknown error', 'Failed to load snapshot content');
+            toastr.error(data.error || 'Please try again.', 'Could not load snapshot content');
             throw new Error('Failed to load snapshot content');
         }
 
@@ -787,7 +787,7 @@ async function getSnapshots() {
 
         if (!response.ok) {
             const data = await response.json();
-            toastr.error(data.error || 'Unknown error', 'Failed to get settings snapshots');
+            toastr.error(data.error || 'Please try again.', 'Could not get settings snapshots');
             throw new Error('Failed to get settings snapshots');
         }
 
@@ -813,7 +813,7 @@ async function makeSnapshot(callback) {
 
         if (!response.ok) {
             const data = await response.json();
-            toastr.error(data.error || 'Unknown error', 'Failed to make snapshot');
+            toastr.error(data.error || 'Please try again.', 'Could not make snapshot');
             throw new Error('Failed to make snapshot');
         }
 
@@ -871,7 +871,7 @@ async function resetEverything(callback) {
 
         if (!step1Response.ok) {
             const data = await step1Response.json();
-            toastr.error(data.error || 'Unknown error', 'Failed to reset');
+            toastr.error(data.error || 'Please try again.', 'Could not reset');
             throw new Error('Failed to reset everything');
         }
 
@@ -903,7 +903,7 @@ async function resetEverything(callback) {
         callback();
     } catch (error) {
         console.error('Error resetting everything:', error);
-        toastr.error(error.message || 'The saved reset needs recovery.', 'Account reset');
+        toastr.error(error.message || 'The saved reset did not finish. Try the reset again.', 'Account reset');
     }
 }
 
@@ -1005,7 +1005,7 @@ async function changeAvatar(handle, avatar) {
 
         if (!response.ok) {
             const data = await response.json();
-            toastr.error(data.error || 'Unknown error', 'Failed to change avatar');
+            toastr.error(data.error || 'Please try again.', 'Could not change avatar');
             return;
         }
     } catch (error) {
@@ -1108,7 +1108,7 @@ async function logout() {
     }
 
     if (!signedOut) {
-        toastr.error('Logging out failed. Try again.');
+        toastr.error('Could not log out. Try again.');
         return;
     }
 

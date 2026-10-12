@@ -39,7 +39,7 @@ router.post('/all', async function (request, response) {
         response.json({ images: filesWithMetadata, config });
     } catch (error) {
         console.error('[Backgrounds] Error fetching backgrounds:', error);
-        response.status(500).json({ error: 'Failed to fetch backgrounds' });
+        response.status(500).json({ error: 'Could not load the backgrounds. Try again.' });
     }
 });
 
@@ -67,7 +67,7 @@ router.post('/folders', async function (request, response) {
         response.json({ folders, imageFolderMap });
     } catch (error) {
         console.error('[Backgrounds] Folders endpoint error:', error);
-        response.status(500).json({ error: 'Internal server error.' });
+        response.status(500).json({ error: 'Could not finish that. Try again in a moment.' });
     }
 });
 

@@ -119,6 +119,6 @@ test('an old maintenance report cannot delete files recreated after an account r
     const report = await p.scan();
     resetRoleplayAccount(p.base, null, 'reset');
     fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, 'New account data');
-    await assert.rejects(p.deletion(report, [report.result.report.files[0].hash]), /earlier account|changed|epoch/i);
+    await assert.rejects(p.deletion(report, [report.result.report.files[0].hash]), /earlier state of your account/);
     assert.equal(fs.readFileSync(file, 'utf8'), 'New account data');
 });

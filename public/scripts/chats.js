@@ -1726,7 +1726,7 @@ async function runScraper(scraperId, target, callback) {
         callback();
     } catch (error) {
         console.error('Scraping failed', error);
-        toastr.error(t`Check browser console for details.`, t`Scraping failed`);
+        toastr.error(t`The files could not be fetched. Try again in a moment.`, t`Could not fetch files`);
     }
 }
 
@@ -2219,7 +2219,7 @@ export function initChatUtilities() {
                 await printMessages();
             } catch (error) {
                 console.error('Error importing assistant chat:', error);
-                toastr.error(t`It's either corrupted or not a valid JSONL file.`, t`Failed to import chat`);
+                toastr.error(t`This file is either damaged or not a valid chat file (JSONL, the format chats are saved in).`, t`Could not import chat`);
             }
         };
         const fileInput = document.createElement('input');

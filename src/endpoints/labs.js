@@ -55,6 +55,6 @@ router.post('/prompting/read', route(async (request, response) => {
 router.get('/records/:key', route((request, response) => {
     const { base } = labAccount(request);
     const record = readLabRecord(base, request.params.key);
-    if (!record) return response.status(404).json({ error: 'The saved Labs result was not found.' });
+    if (!record) return response.status(404).json({ error: 'That Labs result could not be found.' });
     response.json(publicRecord(record));
 }));

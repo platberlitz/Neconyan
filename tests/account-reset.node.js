@@ -122,7 +122,7 @@ test('replacement defaults are frozen before reset and damaged payloads prevent 
     fs.writeFileSync(f.filename, 'keep newer data');
     const payload = path.join(roleplayStoreDirectory(f.base), 'reset-content', `${contentHash}.json`);
     fs.writeFileSync(payload, 'damaged');
-    assert.throws(() => resetRoleplayAccount(f.base, next, 'reset', { operationKey: 'new', contentHash }), /reset content is unavailable/);
+    assert.throws(() => resetRoleplayAccount(f.base, next, 'reset', { operationKey: 'new', contentHash }), /reset data is missing/);
     assert.equal(fs.readFileSync(f.filename, 'utf8'), 'keep newer data');
     assert.deepEqual(resetRoleplayAccount(f.base, f.account, 'reset', { operationKey: 'defaults', contentHash }), next);
 });
@@ -133,7 +133,7 @@ test('replacement content rejects paths outside the account and file-directory c
         { version: 1, directories: [], files: [{ relative: '../other/settings.json', data: '' }] },
         { version: 1, directories: ['jobs'], files: [] },
         { version: 1, directories: ['a/b'], files: [{ relative: 'a', data: '' }] },
-    ]) assert.throws(() => prepareRoleplayResetContent(f.base, f.account, content), /manifest|contains another path/);
+    ]) assert.throws(() => prepareRoleplayResetContent(f.base, f.account, content), /reset data is damaged or incomplete|contains another path/);
     assert.deepEqual(fs.readdirSync(f.base.directories.root), []);
 });
 

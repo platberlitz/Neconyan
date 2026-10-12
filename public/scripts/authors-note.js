@@ -395,7 +395,7 @@ function editNote(slotName, mutate) {
         console.warn(`Author's Note: no ${slotName} is selected to save this note for.`);
         toastr.error(slotName === 'persona'
             ? t`Select a persona before editing the persona author's note.`
-            : t`Something went wrong. Could not save character's author's note.`);
+            : t`Select a character before editing the character's author's note.`);
         return false;
     }
 
@@ -609,7 +609,7 @@ function setNoteDepthCommand(_, text) {
         const value = Number(text);
 
         if (Number.isNaN(value)) {
-            toastr.error(t`Not a valid number`);
+            toastr.error(t`Please enter a number.`);
             return;
         }
 
@@ -624,7 +624,7 @@ function setNoteIntervalCommand(_, text) {
         const value = Number(text);
 
         if (Number.isNaN(value)) {
-            toastr.error(t`Not a valid number`);
+            toastr.error(t`Please enter a number.`);
             return;
         }
 
@@ -647,7 +647,7 @@ function setNotePositionCommand(_, text) {
         const position = validPositions[text?.trim()?.toLowerCase()];
 
         if (typeof position === 'undefined') {
-            toastr.error(t`Not a valid position`);
+            toastr.error(t`Please pick a position from the list.`);
             return;
         }
 
@@ -668,7 +668,7 @@ function setNoteRoleCommand(_, text) {
         const role = validRoles[text?.trim()?.toLowerCase()];
 
         if (typeof role === 'undefined') {
-            toastr.error(t`Not a valid role`);
+            toastr.error(t`Please pick a role from the list.`);
             return;
         }
 

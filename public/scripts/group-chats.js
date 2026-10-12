@@ -800,7 +800,7 @@ async function validateGroup(group, { trustActiveChat = false } = {}) {
     group.members = group.members.filter(member => {
         const character = characters.find(x => x.avatar === member || x.name === member);
         if (!character) {
-            const msg = t`Warning: Listed member ${member} does not exist as a character. It will be removed from the group.`;
+            const msg = t`${member} is listed in this group but no longer exists as a character, so they will be removed from the group.`;
             toastr.warning(msg, t`Group Validation`);
             console.warn(msg);
             dirty = true;
@@ -942,7 +942,7 @@ export async function getGroupChat(groupId, reload = false, { switchMenu = true,
     if (readOnlyRoute && !await verifyTarget()) return false;
     if (!stillCurrent(chat_id)) return false;
     if (!rememberRoleplayRead({ group: true, chat: String(chat_id) }, loaded.evidence)) {
-        toastr.error(t`A chat save is still unsettled. Keep the current edits.`);
+        toastr.error(t`The last save has not finished yet. Your current edits are kept, so try again in a moment.`);
         return;
     }
 
@@ -1309,7 +1309,7 @@ function saveGroupChat(groupId, shouldSaveGroup, force = false, throwOnError = f
         roleplaySave = beginRoleplaySave({ group: true, chat: String(chatIdSnapshot) }, { operationKey: uuidv4(), owner: account });
     } catch (error) {
         console.error(error);
-        toastr.error(t`Check the server connection and reload the page to prevent data loss.`, t`Group Chat could not be saved`);
+        toastr.error(t`Could not reach the server, so your changes may not be saved. Check your connection, then reload the page to avoid losing them.`, t`Group Chat could not be saved`);
         return throwOnError ? Promise.reject(error) : Promise.resolve(false);
     }
     const saveTask = groupChatSaveQueue
@@ -1398,7 +1398,7 @@ async function saveGroupChatImmediately({ groupId, shouldSaveGroup, force = fals
         const isIntegrityError = errorData?.error === 'integrity' && !force
             && (errorData.roleplay?.source || Number.isSafeInteger(errorData.roleplay?.vacancy));
         if (!isIntegrityError) {
-            toastr.error(t`Check the server connection and reload the page to prevent data loss.`, t`Group Chat could not be saved`);
+            toastr.error(t`Could not reach the server, so your changes may not be saved. Check your connection, then reload the page to avoid losing them.`, t`Group Chat could not be saved`);
             console.error('Group chat could not be saved', response);
             if (throwOnError) {
                 throw new Error('Group chat could not be saved');
@@ -3233,7 +3233,7 @@ async function createGroup() {
         return true;
     }
 
-    toastr.error(t`Failed to create group`);
+    toastr.error(t`Could not create the group. Try again.`);
     return false;
 }
 
@@ -3378,7 +3378,7 @@ export async function deleteGroupChatByName(groupId, chatName) {
         body => fetch('/api/chats/group/delete', { method: 'POST', headers: getRequestHeaders(), body }));
 
     if (!response.ok) {
-        toastr.error(t`Check the server connection and reload the page to prevent data loss.`, t`Group chat could not be deleted`);
+        toastr.error(t`Could not reach the server, so your changes may not be saved. Check your connection, then reload the page to avoid losing them.`, t`Group chat could not be deleted`);
         console.error('Group chat could not be deleted');
         return false;
     }
@@ -3515,7 +3515,7 @@ export async function saveGroupBookmarkChat(groupId, name, metadata, mesId, chat
         await editGroup(groupId, true, false, token.owner);
         return true;
     } catch (error) {
-        toastr.error(t`Check the server connection and reload the page to prevent data loss.`, t`Group chat could not be saved`);
+        toastr.error(t`Could not reach the server, so your changes may not be saved. Check your connection, then reload the page to avoid losing them.`, t`Group chat could not be saved`);
         console.error('Group chat could not be saved', error);
         if (throwOnError) {
             throw error;

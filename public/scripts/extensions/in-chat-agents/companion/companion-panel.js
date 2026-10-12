@@ -1171,7 +1171,7 @@ async function handlePanelAction(event) {
             if (!results.length) {
                 toastr.info('The chat changed before the retry finished.');
             } else if (failedAgain > 0) {
-                toastr.warning(`${failedAgain} companion${failedAgain === 1 ? '' : 's'} failed again. Check the connection, then retry.`);
+                toastr.warning(`${failedAgain} companion${failedAgain === 1 ? '' : 's'} failed again. Check your connection, then try again.`);
             } else {
                 toastr.success(`Retried ${results.length} companion${results.length === 1 ? '' : 's'}.`);
             }

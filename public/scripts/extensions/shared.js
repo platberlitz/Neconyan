@@ -335,7 +335,7 @@ export function isWebLlmSupported() {
     if (!('gpu' in navigator)) {
         const warningKey = 'webllm_browser_warning_shown';
         if (!sessionStorage.getItem(warningKey)) {
-            toastr.error('Your browser does not support the WebGPU API. Please use a different browser.', 'WebLLM', {
+            toastr.error('Your browser cannot run WebLLM, the on-device AI feature, because it does not support WebGPU (a graphics feature it needs). Try a different browser.', 'WebLLM', {
                 preventDuplicates: true,
                 timeOut: 0,
                 extendedTimeOut: 0,
@@ -348,7 +348,7 @@ export function isWebLlmSupported() {
     if (!('llm' in SillyTavern)) {
         const warningKey = 'webllm_extension_warning_shown';
         if (!sessionStorage.getItem(warningKey)) {
-            toastr.error('WebLLM extension is not installed. Click here to install it.', 'WebLLM', {
+            toastr.error('The WebLLM add-on is not installed. Click here to install it.', 'WebLLM', {
                 timeOut: 0,
                 extendedTimeOut: 0,
                 preventDuplicates: true,

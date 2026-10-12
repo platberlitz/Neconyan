@@ -25,7 +25,7 @@ export function captureExtensionReport(base, captured) {
             const file = readRoleplayFile(source.filename, 1024 * 1024);
             if (!file || roleplayHash({ rawHash: file.rawHash, physical: file.physical }) !== roleplayHash(source.evidence)) throw operationError('An extension manifest changed during import preparation.');
             let manifest;
-            try { manifest = JSON.parse(file.bytes); } catch (error) { result.warnings.push(`manifest.json could not be parsed: ${error.message}`); }
+            try { manifest = JSON.parse(file.bytes); } catch (error) { result.warnings.push('The details file (manifest.json) is damaged or not valid, so its details could not be read.'); }
             if (manifest && typeof manifest === 'object' && !Array.isArray(manifest)) {
                 checks.manifestValid = true;
                 result.displayName = typeof manifest.display_name === 'string' && manifest.display_name.trim() ? manifest.display_name.trim() : name;

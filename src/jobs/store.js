@@ -54,10 +54,10 @@ function readLedgerText(filename) {
             ledgerTextCache.delete(filename);
             return null;
         }
-        throw fail(500, 'JOB_STORE_UNREADABLE', 'The saved job ledger could not be read.');
+        throw fail(500, 'JOB_STORE_UNREADABLE', 'Neconyan could not read the saved job list. Try again in a moment.');
     }
-    if (!stat.isFile()) throw fail(500, 'JOB_STORE_UNREADABLE', 'The saved job ledger could not be read.');
-    if (stat.size > JOB_LEDGER_MAX_BYTES) throw fail(409, 'JOB_STORE_RECOVERABLE', 'The saved job ledger needs recovery and was left untouched. Recent job history cannot be trusted until an operator repairs or removes it.');
+    if (!stat.isFile()) throw fail(500, 'JOB_STORE_UNREADABLE', 'The saved job list is not a file. Ask the server owner to fix it.');
+    if (stat.size > JOB_LEDGER_MAX_BYTES) throw fail(409, 'JOB_STORE_RECOVERABLE', 'The saved job list is damaged and was left untouched, so recent job history cannot be trusted. The server owner needs to repair or remove the saved job list file.');
     const cached = ledgerTextCache.get(filename);
     if (cached && cached.ino === stat.ino && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
         return cached.text;
@@ -66,7 +66,7 @@ function readLedgerText(filename) {
     try {
         text = fs.readFileSync(filename, 'utf8');
     } catch {
-        throw fail(409, 'JOB_STORE_RECOVERABLE', 'The saved job ledger needs recovery and was left untouched. Recent job history cannot be trusted until an operator repairs or removes it.');
+        throw fail(409, 'JOB_STORE_RECOVERABLE', 'The saved job list is damaged and was left untouched, so recent job history cannot be trusted. The server owner needs to repair or remove the saved job list file.');
     }
     ledgerTextCache.set(filename, { ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, text });
     while (ledgerTextCache.size > LEDGER_TEXT_CACHE_MAX_ENTRIES) {
@@ -184,17 +184,17 @@ function readStore(directories) {
         raw = readLedgerText(filename);
     } catch (error) {
         if (error.status) throw error;
-        throw fail(500, 'JOB_STORE_UNREADABLE', 'The saved job ledger could not be read.');
+        throw fail(500, 'JOB_STORE_UNREADABLE', 'Neconyan could not read the saved job list. Try again in a moment.');
     }
     if (raw === null) return emptyStore();
     let store;
     try {
         store = JSON.parse(raw);
     } catch {
-        throw fail(409, 'JOB_STORE_RECOVERABLE', 'The saved job ledger is damaged and was left untouched. Recent job history cannot be trusted until an operator repairs or removes it.');
+        throw fail(409, 'JOB_STORE_RECOVERABLE', 'The saved job list is damaged and was left untouched, so recent job history cannot be trusted. The server owner needs to repair or remove the saved job list file.');
     }
     if (!store || store.schema !== JOB_SCHEMA || typeof store.jobs !== 'object' || store.jobs === null || Array.isArray(store.jobs)) {
-        throw fail(409, 'JOB_STORE_INCOMPATIBLE', 'The saved job ledger uses an unsupported format.');
+        throw fail(409, 'JOB_STORE_INCOMPATIBLE', 'The saved job list uses a format this version of Neconyan cannot read.');
     }
     return store;
 }
@@ -278,7 +278,7 @@ function writeStore(directories, store, protectedId, previousKeys = Object.keys(
         }
     }
     if (Buffer.byteLength(text) > JOB_LEDGER_MAX_BYTES) {
-        throw fail(413, 'JOB_STORE_FULL', 'The job ledger for this account is full of unfinished work. Wait for it to finish, or use User Settings > Clear job history.');
+        throw fail(413, 'JOB_STORE_FULL', 'Too many jobs for this account are still unfinished. Wait for some to finish, or use User Settings > Clear job history.');
     }
     fs.mkdirSync(stateDir(directories), { recursive: true, mode: 0o700 });
     writeFileAtomicSync(storePath(directories), text, { mode: 0o600 });
@@ -399,7 +399,7 @@ export function acceptJob(directories, input) {
         for (const job of Object.values(store.jobs)) {
             if (job.owner !== owner || job.submissionKey !== key) continue;
             if (job.intentHash !== intentHash) {
-                throw fail(409, 'JOB_SUBMISSION_CONFLICT', 'This submission key was already used for different work.');
+                throw fail(409, 'JOB_SUBMISSION_CONFLICT', 'This request was already sent with different details. Start it again as a new request.');
             }
             return { job, created: false, changed: false, revision: store.revision };
         }
@@ -408,7 +408,7 @@ export function acceptJob(directories, input) {
         if (Object.keys(store.jobs).length >= JOB_LIMIT) {
             const hasRemovable = Object.values(store.jobs).some(job => removable(job, store.jobs) || evictableFailure(job, store.jobs));
             if (!hasRemovable) {
-                throw fail(503, 'JOB_STORE_FULL', 'Too many unfinished or unresolved jobs for this account. Wait for work to finish, or use User Settings > Clear job history.');
+                throw fail(503, 'JOB_STORE_FULL', 'Too many jobs for this account are still unfinished or unresolved. Wait for some to finish, or use User Settings > Clear job history.');
             }
         }
         const id = newJobId();
@@ -463,7 +463,7 @@ export function acceptChildJobs(directories, parentId, inputs) {
     if (!Array.isArray(inputs) || inputs.length === 0) return [];
     return mutateJobs(directories, store => {
         const parent = store.jobs[jobKey(parentId)];
-        if (!parent) throw fail(404, 'JOB_NOT_FOUND', 'The parent job no longer exists.');
+        if (!parent) throw fail(404, 'JOB_NOT_FOUND', 'The job this belongs to no longer exists.');
         const children = [];
         for (const input of inputs) {
             const participantKey = input?.participantKey;
@@ -473,7 +473,7 @@ export function acceptChildJobs(directories, parentId, inputs) {
             const key = `child:${parentId}:${participantKey}`;
             const existing = Object.values(store.jobs).find(job => job.owner === parent.owner && job.submissionKey === key);
             if (existing) {
-                if (existing.parentId !== parentId) throw fail(409, 'JOB_SUBMISSION_CONFLICT', 'A participant key was already used for different work.');
+                if (existing.parentId !== parentId) throw fail(409, 'JOB_SUBMISSION_CONFLICT', 'This participant was already sent with different details.');
                 children.push(existing);
                 continue;
             }
@@ -511,7 +511,7 @@ export function attachOwnedChild(directories, parentId, childId, { parentIntentH
         if (!parent || !child || parent.id !== parentId || child.id !== childId
             || parent.owner !== child.owner || crypto.createHash('sha256').update(canonical(parent.intent)).digest('hex') !== parentIntentHash
             || crypto.createHash('sha256').update(canonical(child.intent)).digest('hex') !== childIntentHash) {
-            throw fail(409, 'JOB_FAMILY_CONFLICT', 'The saved workflow child does not belong to its accepted parent.');
+            throw fail(409, 'JOB_FAMILY_CONFLICT', 'One of the saved workflow steps does not belong to the job it was started from.');
         }
         const vectorChild = ['roleplay.reply', 'roleplay.candidate'].includes(parent.type) && child.type === 'operations.vectors';
         const conversationTool = ['conversation.participant', 'conversation.reply'].includes(parent.type)
@@ -519,11 +519,11 @@ export function attachOwnedChild(directories, parentId, childId, { parentIntentH
             && child.intent.source.instanceId === parentId;
         if (parent.type !== 'media.roleplay-workflow' && !vectorChild && !conversationTool || child.parentId && child.parentId !== parentId
             || isTerminal(parent) || parent.cancellation?.requested || child.cancellation?.requested) {
-            throw fail(409, 'JOB_FAMILY_CONFLICT', 'The saved workflow family changed before a child could run.');
+            throw fail(409, 'JOB_FAMILY_CONFLICT', 'The saved workflow changed before one of its steps could run.');
         }
         if (!['waiting', 'queued', 'running', ...TERMINAL_STATES].includes(child.state)
             || (parent.children ?? []).length >= 128 && !parent.children.includes(childId)) {
-            throw fail(409, 'JOB_FAMILY_CONFLICT', 'The accepted workflow cannot retain another child result.');
+            throw fail(409, 'JOB_FAMILY_CONFLICT', 'The workflow cannot keep another step result.');
         }
         if (child.parentId === parentId && parent.children.includes(childId)) return { job: parent, child, changed: false };
         child.parentId = parentId;
@@ -542,7 +542,7 @@ export function attachOwnedChild(directories, parentId, childId, { parentIntentH
 export function releaseChildJobs(directories, parentId) {
     return mutateJobs(directories, store => {
         const parent = store.jobs[jobKey(parentId)];
-        if (!parent) throw fail(404, 'JOB_NOT_FOUND', 'The parent job no longer exists.');
+        if (!parent) throw fail(404, 'JOB_NOT_FOUND', 'The job this belongs to no longer exists.');
         // A cancellation that landed during preparation still stops the children:
         // queueing them here would dispatch work the user already cancelled.
         const cancelled = parent.cancellation?.requested === true;
@@ -578,7 +578,7 @@ export function updateJob(directories, id, patch) {
     return mutateJobs(directories, store => {
         const key = jobKey(id);
         const job = store.jobs[key];
-        if (!job) throw fail(404, 'JOB_NOT_FOUND', 'No such job.');
+        if (!job) throw fail(404, 'JOB_NOT_FOUND', 'This job no longer exists.');
         Object.assign(job, typeof patch === 'function' ? patch(job) : patch, { updatedAt: now() });
         return { job };
     });
@@ -612,7 +612,7 @@ export function releaseJob(directories, id) {
     return mutateJobs(directories, store => {
         const key = jobKey(id);
         const job = store.jobs[key];
-        if (!job) throw fail(404, 'JOB_NOT_FOUND', 'No such job.');
+        if (!job) throw fail(404, 'JOB_NOT_FOUND', 'This job no longer exists.');
         if (job.state !== 'waiting' || job.stage !== 'preparing' || job.cancellation?.requested) return { job, changed: false };
         job.state = 'queued';
         job.stage = null;
@@ -624,7 +624,7 @@ export function releaseJob(directories, id) {
 export function requestCancellation(directories, id, { reason = null } = {}) {
     return mutateJobs(directories, store => {
         const job = store.jobs[jobKey(id)];
-        if (!job) throw fail(404, 'JOB_NOT_FOUND', 'No such job.');
+        if (!job) throw fail(404, 'JOB_NOT_FOUND', 'This job no longer exists.');
         if (TERMINAL_STATES.includes(job.state)) return { job, changed: false };
         job.cancellation = { requested: true, requestedAt: now(), reason };
         job.updatedAt = now();
@@ -661,7 +661,7 @@ export function requestCancellation(directories, id, { reason = null } = {}) {
 export function dismissJob(directories, id) {
     return mutateJobs(directories, store => {
         const job = store.jobs[jobKey(id)];
-        if (!job) throw fail(404, 'JOB_NOT_FOUND', 'No such job.');
+        if (!job) throw fail(404, 'JOB_NOT_FOUND', 'This job no longer exists.');
         job.dismissed = true;
         job.updatedAt = now();
         // The client only ever sees the root, so dismissing it must also dismiss
@@ -720,7 +720,7 @@ export function explicitRetryRecovery(job) {
 export function retryConversationFamily(directories, id) {
     return mutateJobs(directories, store => {
         const root = store.jobs[jobKey(id)];
-        if (!root) throw fail(404, 'JOB_NOT_FOUND', 'No such job.');
+        if (!root) throw fail(404, 'JOB_NOT_FOUND', 'This job no longer exists.');
         let changed = false;
         const retryChild = child => {
             if (!child || !['failed', 'interrupted'].includes(child.state)) return;
@@ -741,7 +741,7 @@ export function retryConversationFamily(directories, id) {
         for (const childId of root.children ?? []) {
             retryChild(store.jobs[jobKey(childId)]);
         }
-        if (!changed) throw fail(409, 'JOB_NOT_RETRYABLE', 'No participant in this Conversation reply can be retried.');
+        if (!changed) throw fail(409, 'JOB_NOT_RETRYABLE', 'None of the replies in this Conversation can be retried.');
         root.state = 'waiting';
         root.stage = 'children';
         root.error = null;
@@ -794,7 +794,7 @@ export function setJobResume(directories, id, step) {
 
 export function providerRecoverySteps(job) {
     if (job?.recoverySteps !== undefined && !Array.isArray(job.recoverySteps)) {
-        throw Object.assign(new Error('The saved provider recovery records need repair.'), { status: 409 });
+        throw Object.assign(new Error('Saved records of earlier AI requests need repair.'), { status: 409 });
     }
     return [...new Set([...(job?.recoverySteps ?? []), job?.recoveryStep])]
         .filter(step => typeof step === 'string' && step.startsWith('provider:'));
@@ -874,7 +874,7 @@ export function recoverJobs(directories, { startedAt = PROCESS_STARTED_AT, hold 
                 }
                 job.state = 'interrupted';
                 job.finishedAt = now();
-                job.error = { message: unknown ? 'The provider result is unknown after a restart. Retry deliberately if the request was not completed.' : 'The server stopped before this job finished.', code: 'INTERRUPTED' };
+                job.error = { message: unknown ? 'The result from the AI service is unknown after a restart. Retry only if the earlier request did not go through.' : 'The server stopped before this job finished.', code: 'INTERRUPTED' };
                 job.recoverability = 'needs-retry';
             }
         }
