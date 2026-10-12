@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 
 for (const phone of [false, true]) {
     test.describe(`${phone ? 'phone' : 'desktop'} update notice`, () => {
+        test.setTimeout(90000);
         test.use({ serviceWorkers: 'block', viewport: phone ? { width: 393, height: 852 } : { width: 1280, height: 900 },
             hasTouch: phone, isMobile: phone });
 
@@ -50,5 +51,59 @@ for (const phone of [false, true]) {
             await page.reload({ waitUntil: 'networkidle' });
             await expect(page.locator('#nn-update-toast')).toHaveCount(0);
         });
+
+        for (const phase of ['metadata', 'stylesheet']) {
+            test(`keeps an APK notice unread when backgrounded during ${phase}`, async ({ page }) => {
+                let release;
+                let requested;
+                const held = new Promise(resolve => { release = resolve; });
+                const started = new Promise(resolve => { requested = resolve; });
+                await page.addInitScript(heldPhase => {
+                    if (heldPhase !== 'metadata') return;
+                    const readText = Response.prototype.text;
+                    Response.prototype.text = async function (...args) {
+                        const text = await readText.apply(this, args);
+                        if (this.url.endsWith('/api/server-admin/status')) {
+                            window.setTimeout(() => { window.updateNoticeSettled = true; }, 0);
+                        }
+                        return text;
+                    };
+                }, phase);
+                await page.route('**/api/server-admin/status', async route => {
+                    if (phase === 'metadata') { requested(); await held; }
+                    await route.fulfill({ json: {
+                        repository: { isRepo: false },
+                        androidRelease: { supported: true, checked: true, assetAvailable: true, canUpdate: true,
+                            latestVersion: '1.3.0', architecture: 'arm64' },
+                    } });
+                });
+                if (phase === 'stylesheet') await page.route('**/neconyan-update-toast.css*', async route => {
+                    requested();
+                    await held;
+                    await route.continue();
+                });
+                await page.goto('/', { waitUntil: 'domcontentloaded' });
+                await started;
+                // Simulate leaving the app while the real response or stylesheet is in flight.
+                await page.evaluate(heldPhase => {
+                    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+                    if (heldPhase === 'stylesheet') {
+                        document.querySelector('link[href*="neconyan-update-toast.css"]').addEventListener('load', () => {
+                            window.setTimeout(() => { window.updateNoticeSettled = true; }, 0);
+                        }, { once: true });
+                    }
+                }, phase);
+                release();
+                await page.waitForFunction(() => window.updateNoticeSettled);
+                await expect(page.locator('#nn-update-toast')).toHaveCount(0);
+                expect(await page.evaluate(() => window.localStorage.getItem('neconyan:update-toast-commit'))).toBeNull();
+                await page.evaluate(() => {
+                    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+                    document.dispatchEvent(new Event('visibilitychange'));
+                });
+                await expect(page.locator('#nn-update-toast')).toContainText('APK v1.3.0 is ready. Open Server to update.');
+                expect(await page.evaluate(() => window.localStorage.getItem('neconyan:update-toast-commit'))).toBe('apk:arm64:1.3.0');
+            });
+        }
     });
 }

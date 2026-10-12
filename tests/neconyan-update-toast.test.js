@@ -20,7 +20,7 @@ function createContext(status) {
     const context = vm.createContext({
         nnUpdateToastChecking: false,
         nnUpdateToastTimer: 1,
-        document: { hidden: false },
+        document: { hidden: false, addEventListener() {}, removeEventListener() {} },
         NN_UPDATE_TOAST_STORAGE_KEY: 'neconyan:update-toast-commit',
         localStorage: { getItem: key => store.get(key) ?? null, setItem: (key, value) => store.set(key, value) },
         requestServerAdmin: async () => {
@@ -100,6 +100,66 @@ describe('update toast', () => {
         expect(requests).toBe(0);
         expect(shown).toEqual([]);
         expect(context.nnUpdateToastChecking).toBe(false);
+    });
+
+    test('does not consume an APK notice if the app is hidden while GitHub is checked', async () => {
+        const status = { androidRelease: {
+            supported: true, checked: true, assetAvailable: true, canUpdate: true, latestVersion: '1.3.0', architecture: 'arm64',
+        } };
+        const { context, shown } = createContext(status);
+        let finishRequest;
+        context.requestServerAdmin = () => new Promise(resolve => { finishRequest = resolve; });
+        const check = context.checkForNeconyanUpdate();
+        context.document.hidden = true;
+        finishRequest(status);
+        await check;
+        expect(shown).toEqual([]);
+        expect(context.readNotifiedUpdateCommit()).toBe('');
+        context.document.hidden = false;
+        context.requestServerAdmin = async () => status;
+        await context.checkForNeconyanUpdate();
+        expect(shown).toEqual(['apk:arm64:1.3.0']);
+    });
+
+    test('keeps a notice unread if the app is hidden while its stylesheet loads', async () => {
+        let finishStyles;
+        const store = new Map();
+        const toasts = [];
+        const context = vm.createContext({
+            document: {
+                hidden: false,
+                body: { append: toast => toasts.push(toast) },
+                createElement: () => ({ setAttribute() {}, querySelector: () => ({ addEventListener() {} }) }),
+            },
+            NN_UPDATE_TOAST_STORAGE_KEY: 'neconyan:update-toast-commit',
+            localStorage: { setItem: (key, value) => store.set(key, value) },
+            dismissUpdateToast() {},
+            scheduleUpdateToastDismissal() {},
+            loadUpdateToastStyles: () => new Promise(resolve => { finishStyles = resolve; }),
+        });
+        vm.runInContext([extract('rememberNotifiedUpdateCommit'), extract('showUpdateToast')].join('\n'), context);
+        const show = context.showUpdateToast({ kind: 'apk', remoteCommit: 'apk:arm64:1.3.0', latestVersion: '1.3.0' });
+        context.document.hidden = true;
+        finishStyles();
+        await show;
+        expect(toasts).toEqual([]);
+        expect(store.size).toBe(0);
+    });
+
+    test('checks again on returning to the app and removes that listener without admin access', async () => {
+        const { context } = createContext(Object.assign(new Error('no'), { status: 403 }));
+        const listeners = new Set();
+        context.document.addEventListener = (name, callback) => { expect(name).toBe('visibilitychange'); listeners.add(callback); };
+        context.document.removeEventListener = (name, callback) => { expect(name).toBe('visibilitychange'); listeners.delete(callback); };
+        context.setInterval = () => 1;
+        context.NN_UPDATE_TOAST_INTERVAL_MS = 1800000;
+        context.nnUpdateToastTimer = null;
+        vm.runInContext(extract('startNeconyanUpdateToast'), context);
+        context.startNeconyanUpdateToast();
+        expect(listeners.has(context.checkForNeconyanUpdate)).toBe(true);
+        await new Promise(resolve => setImmediate(resolve));
+        expect(listeners.size).toBe(0);
+        expect(context.nnUpdateToastTimer).toBeNull();
     });
 
     test('dismisses after eight seconds, protecting hover and keyboard focus and cancelling on close', () => {

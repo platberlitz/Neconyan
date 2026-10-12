@@ -12858,9 +12858,9 @@ function loadUpdateToastStyles() {
 
 async function showUpdateToast(repository) {
     const commit = String(repository.remoteCommit || '');
-    rememberNotifiedUpdateCommit(commit);
     dismissUpdateToast();
     await loadUpdateToastStyles();
+    if (document.hidden) return;
 
     const behind = Number(repository.behind) || 0;
     const toast = document.createElement('div');
@@ -12888,6 +12888,7 @@ async function showUpdateToast(repository) {
     });
     toast.querySelector('.nn-update-toast-close').addEventListener('click', dismissUpdateToast);
     document.body.append(toast);
+    rememberNotifiedUpdateCommit(commit);
     scheduleUpdateToastDismissal(toast);
 }
 
@@ -12896,6 +12897,7 @@ async function checkForNeconyanUpdate() {
     nnUpdateToastChecking = true;
     try {
         const status = await requestServerAdmin('/api/server-admin/status');
+        if (document.hidden) return;
         const androidRelease = status?.androidRelease;
         if (androidRelease?.supported) {
             if (!androidRelease.checked || !androidRelease.assetAvailable || !androidRelease.canUpdate || !androidRelease.latestVersion) return;
@@ -12912,6 +12914,7 @@ async function checkForNeconyanUpdate() {
         if (error?.status === 401 || error?.status === 403) {
             clearInterval(nnUpdateToastTimer);
             nnUpdateToastTimer = null;
+            document.removeEventListener('visibilitychange', checkForNeconyanUpdate);
         }
     } finally {
         nnUpdateToastChecking = false;
@@ -12920,6 +12923,7 @@ async function checkForNeconyanUpdate() {
 
 function startNeconyanUpdateToast() {
     if (nnUpdateToastTimer) return;
+    document.addEventListener('visibilitychange', checkForNeconyanUpdate);
     nnUpdateToastTimer = setInterval(() => void checkForNeconyanUpdate(), NN_UPDATE_TOAST_INTERVAL_MS);
     void checkForNeconyanUpdate();
 }
