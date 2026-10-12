@@ -273,6 +273,8 @@ export function setUiVisibility(element, open, applyVisibility, { distance = 6, 
         const pointerEvents = element.style.getPropertyValue('pointer-events');
         const pointerPriority = element.style.getPropertyPriority('pointer-events');
         element.inert = true;
+        // Let the content behind the surface become visible during its exit.
+        if (element.dataset) element.dataset.uiClosing = 'true';
         // Inert content still wins the hit test, so a fading surface would swallow taps meant for what lies beneath.
         element.style.setProperty('pointer-events', 'none', 'important');
         const lowerOriginBar = surfaceSlide ? raiseOriginBar(element, edge) : () => {};
@@ -283,6 +285,7 @@ export function setUiVisibility(element, open, applyVisibility, { distance = 6, 
             closing: true,
             restore: () => {
                 element.inert = wasInert;
+                if (element.dataset) delete element.dataset.uiClosing;
                 element.style.setProperty('pointer-events', pointerEvents, pointerPriority);
                 lowerOriginBar();
             },
