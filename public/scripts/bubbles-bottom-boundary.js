@@ -141,7 +141,7 @@ export function createBubblesBottomBoundary({ chat, toolbar, getMode, documentRe
         const underlay = descriptor?.underlay ? windowRef.getComputedStyle(descriptor.underlay) : style;
         const paint = echo ? descriptor.underlay ? { background: style.background, opacity: style.opacity, display: 'block' }
             : { background: 'none', opacity: '1', display: 'none' } : cardStyle ? { background: 'none', opacity: '1', display: 'none' } : windowRef.getComputedStyle(row, '::before');
-        if (box.right - box.left <= bar.width + 1) return;
+        if ((echo || cardStyle) && box.right - box.left <= bar.width + 1) return;
         const bottom = bar.top + 4;
         const height = Math.max(4, parseFloat(corners.borderBottomLeftRadius) || 0, parseFloat(corners.borderBottomRightRadius) || 0);
         const top = bottom - height;
@@ -183,7 +183,7 @@ export function createBubblesBottomBoundary({ chat, toolbar, getMode, documentRe
         if (transitions.size && windowRef.performance.now() < transitionDeadline) queue();
         else transitions.clear();
     }
-    const onScroll = () => { clear(); queue(); };
+    const onScroll = () => { clear(false); queue(); };
     const onTransition = event => {
         if (!activeTargets.includes(event.target) || !/^(background|border|opacity)/.test(event.propertyName)) return;
         const key = transitionKey(event.target, event.pseudoElement, event.propertyName);

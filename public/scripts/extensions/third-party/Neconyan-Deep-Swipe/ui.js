@@ -120,7 +120,7 @@ export function updateMessageSwipeUI(messageId, forceCurrentId) {
         } else {
             // Enable left arrow if there's more than 1 swipe
             leftArrow.style.cursor = 'pointer';
-            leftArrow.style.opacity = '1';
+            leftArrow.style.setProperty('opacity', 'var(--deep-swipe-arrow-opacity, 0.5)', 'important');
             leftArrow.style.pointerEvents = 'auto';
             // Ensure visibility is maintained
             leftArrow.style.setProperty('display', 'flex', 'important');

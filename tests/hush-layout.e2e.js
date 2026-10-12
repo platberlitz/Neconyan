@@ -44,7 +44,7 @@ async function measure(row) {
             notes: el.querySelector('.ica--companion-ledger') ? box(el.querySelector('.ica--companion-ledger')) : null,
             regex: el.querySelector('.mes_text details') ? box(el.querySelector('.mes_text details')) : null,
             ink: rgb(rs.getPropertyValue('--neco-ink')),
-            controls: [...el.querySelectorAll('.fa-chevron-left, .fa-chevron-right, .swipes-counter')].filter(visible).map(n => ({ classes: n.className, colour: rgb(getComputedStyle(n).color), ...box(n) })),
+            controls: [...el.querySelectorAll('.fa-chevron-left, .fa-chevron-right, .swipes-counter')].filter(visible).map(n => ({ classes: n.className, colour: rgb(getComputedStyle(n).color), opacity: getComputedStyle(n).opacity, ...box(n) })),
             footer: footer ? box(footer) : null, translate: footer ? getComputedStyle(footer).translate : null,
             padding: parseFloat(rs.paddingBottom), margin: parseFloat(bs.marginBottom), displacement: new DOMMatrixReadOnly(bs.transform).m42,
             unused: el.getBoundingClientRect().bottom - block.getBoundingClientRect().bottom - parseFloat(rs.borderBottomWidth),
@@ -73,7 +73,7 @@ test('Hush native, Deep Swipe and single-alternative tracks keep equal dimension
                         const y = c => c.y + c.height / 2, x = c => c.x + c.width / 2;
                         expect(Math.max(...m.controls.map(y)) - Math.min(...m.controls.map(y))).toBeLessThan(0.6);
                         expect(arrows.every(a => a.width === (width > 1000 ? 36 : 24) && a.height === (width > 1000 ? 36 : 24))).toBe(true);
-                        for (const arrow of arrows.filter(a => a.classes.includes('deep-swipe'))) expect(arrow.colour).toEqual(m.ink);
+                        for (const arrow of arrows.filter(a => a.classes.includes('deep-swipe'))) { expect(arrow.colour).toEqual(m.ink); expect(arrow.opacity).toBe('1'); }
                         if (arrows.length === 2) expect(x(counter)).toBeCloseTo((x(arrows[0]) + x(arrows[1])) / 2, 0);
                         if (width > 1000) {
                             expect(m.translate).toBe('0px -4px'); expect(m.padding).toBe(m.notes ? 12 : 0); expect(Math.abs(m.unused - (m.notes ? 12 : 0))).toBeLessThan(1);

@@ -52,6 +52,15 @@ describe.each(['whisperstyle', 'hushstyle'])('%s enclosing-card lower edge', cha
             expect(f.children).toEqual([f.chat, f.form, f.cap]); f.controller.dispose();
         }
     });
+    test('keeps the raised cap in place while the chat scrolls', () => {
+        const f = fixture(chatStyle); f.makeOpaque(); f.flush();
+        expect(f.chat.after).toHaveBeenCalledTimes(1);
+        for (let i = 0; i < 3; i++) {
+            f.handlers.get('scroll')(); expect(f.cap.hidden).toBe(true); expect(f.children).toEqual([f.chat, f.cap, f.form]);
+            f.flush(); expect(f.cap.hidden).toBe(false);
+        }
+        expect(f.chat.after).toHaveBeenCalledTimes(1); f.controller.dispose();
+    });
     test('resets raised stacking on hidden/end/width/mode/external-clip paths', () => {
         for (const change of [f => f.setEnd(605), f => f.setWidth(400), f => f.setMode('conversation'), f => { f.windowRef.innerWidth = 768; }, f => f.chat.style.setProperty('clip-path', 'inset(2px)')]) {
             const f = fixture(chatStyle); f.makeOpaque(); f.flush(); change(f);

@@ -34,14 +34,13 @@ function fixture() {
 }
 
 describe('Bubbles bottom boundary lifecycle', () => {
-    test('clears the lower edge when the complete painted row is no wider than the toolbar', () => {
+    test('keeps the Bubbles lower edge on rows no wider than the toolbar', () => {
         const f = fixture(); f.flush(); expect(f.cap.hidden).toBe(false);
         for (const width of [410, 500]) {
             f.toolbarBox.width = width; f.handlers.get('scroll')(); f.flush();
-            expect(f.cap.hidden).toBe(true); expect(f.clip()).toBe('');
+            expect(f.cap.hidden).toBe(false); expect(f.clip()).not.toBe('');
         }
-        f.toolbarBox.width = 408; f.handlers.get('scroll')(); f.flush();
-        expect(f.cap.hidden).toBe(false); f.controller.dispose();
+        f.controller.dispose();
     });
     test('notches only the bubble inside the content box and clears stale paint synchronously', () => {
         const f = fixture(); f.flush();
