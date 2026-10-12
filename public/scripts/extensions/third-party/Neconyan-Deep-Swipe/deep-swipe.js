@@ -71,7 +71,8 @@ function suppressTruncationSaveToast() {
 
     const original = toastr.error;
     toastr.error = function (message, title, ...rest) {
-        if (typeof message === 'string' && message.includes('would have wiped messages')) {
+        if (typeof message === 'string'
+            && (message.includes('would have deleted messages') || message.includes('would have wiped messages'))) {
             console.debug('[Deep Swipe] Suppressed the destructive-save warning for our own truncated window. The chat file was left unchanged and is saved in full once the swipe completes.');
             return;
         }

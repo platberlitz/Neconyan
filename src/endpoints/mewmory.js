@@ -103,7 +103,7 @@ route('/inspect', async (directories, body) => {
             .filter(job => job.type.startsWith('mewmory.') && job.intent?.locator && hash(job.intent.locator) === hash(locator))
             .slice(0, 5).map(job => ({ id: job.id, label: job.label, state: job.state, error: job.error, warning: job.result?.warning, progress: job.progress }));
     } catch {
-        inspection.operationsError = 'Saved job history is unavailable. Memory remains readable; the job ledger needs recovery before more jobs can run.';
+        inspection.operationsError = 'Saved job history is unavailable. You can still read memory, but a server owner needs to repair the saved job list before more memory tasks can run.';
     }
     return inspection;
 });

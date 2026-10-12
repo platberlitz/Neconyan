@@ -180,7 +180,7 @@ router.post('/reset-step2', async (request, response) => {
     try {
         const base = { owner: request.user.profile.handle, directories: request.user.directories };
         const key = request.body.key;
-        if (typeof key !== 'string' || !key || key.length > 200) return response.status(400).json({ error: 'The password reset request is missing. Start again.' });
+        if (typeof key !== 'string' || !key || key.length > 200) return response.status(400).json({ error: 'The account reset request is missing. Start again.' });
         const previous = readOperation(base, key);
         if (previous) {
             if (previous.kind !== 'account-reset') return response.status(409).json({ error: 'This request belongs to a different task. Start again.' });

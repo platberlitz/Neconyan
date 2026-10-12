@@ -892,7 +892,7 @@ class PresetManager {
         });
 
         if (!response.ok) {
-            toastr.error(t`Check your connection to Neconyan, then reload the page so your changes are not lost.`, t`Preset could not be saved`);
+            toastr.error(t`Your changes were not saved. Check your connection to Neconyan, then reload before editing more.`, t`Preset could not be saved`);
             console.error('Preset could not be saved', response);
             throw new Error('Preset could not be saved');
         }
@@ -921,7 +921,7 @@ class PresetManager {
             await this.savePreset(newName);
             await this.deletePreset(oldName);
         } catch (error) {
-            toastr.error(t`Check your connection to Neconyan, then reload the page so your changes are not lost.`, t`Preset could not be renamed`);
+            toastr.error(t`The preset could not be renamed. Check your connection to Neconyan, then reload before editing more.`, t`Preset could not be renamed`);
             console.error('Preset could not be renamed', error);
             throw new Error('Preset could not be renamed');
         }

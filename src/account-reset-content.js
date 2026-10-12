@@ -43,7 +43,7 @@ export function saveResetContent(root, value, { readFile, createDirectory, error
         else total += file.bytes.length;
     }
     if (existing) return id;
-    if (total > TOTAL) throw error('Account reset storage is full. Existing backups were kept.');
+    if (total > TOTAL) throw error('Account reset storage is full. Existing reset files were kept.');
     createDirectory(directory, root);
     const filename = path.join(directory, `${id}.json`);
     tryWriteFileSync(filename, bytes, { mode: 0o600 }, { expectedFileAbsent: true, durable: true, preserveOnCreateError: true });

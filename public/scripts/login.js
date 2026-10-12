@@ -249,7 +249,7 @@ async function performPasskeyLogin(remember) {
         });
         const verifyData = await verifyResponse.json().catch(() => ({}));
         if (!verifyResponse.ok) {
-            return displayError(verifyData.error || 'The passkey did not verify.');
+            return displayError(verifyData.error || 'We could not check that passkey. Try again.');
         }
         redirectToHome();
     } catch (error) {

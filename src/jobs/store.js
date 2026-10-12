@@ -56,7 +56,7 @@ function readLedgerText(filename) {
         }
         throw fail(500, 'JOB_STORE_UNREADABLE', 'Neconyan could not read the saved job list. Try again in a moment.');
     }
-    if (!stat.isFile()) throw fail(500, 'JOB_STORE_UNREADABLE', 'Neconyan could not read the saved job list. Try again in a moment.');
+    if (!stat.isFile()) throw fail(500, 'JOB_STORE_UNREADABLE', 'The saved job list is not a file. Ask the server owner to fix it.');
     if (stat.size > JOB_LEDGER_MAX_BYTES) throw fail(409, 'JOB_STORE_RECOVERABLE', 'The saved job list is damaged and was left untouched, so recent job history cannot be trusted. The server owner needs to repair or remove the saved job list file.');
     const cached = ledgerTextCache.get(filename);
     if (cached && cached.ino === stat.ino && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {

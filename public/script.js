@@ -12715,7 +12715,7 @@ export async function getChat({ allowMissingPersisted = false, switchMenu = true
         if (!navigationGuard()) return false;
         if (this_chid !== characterId || chatGeneration !== generation || selected_group) return false;
         if (exactChat) characters[characterId].chat = exactChat;
-        if (!rememberRoleplayRead(locator, evidence)) throw new Error('A chat save is still unsettled. Keep the current edits.');
+        if (!rememberRoleplayRead(locator, evidence)) throw new Error('A chat save is still in progress. Keep your current edits.');
         if (Array.isArray(data) && data.length > 0) {
             /** @type {ChatHeader} */
             const chatHeader = data.shift();

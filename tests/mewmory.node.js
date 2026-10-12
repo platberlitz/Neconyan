@@ -1380,7 +1380,7 @@ test('inspection retains readable memory when its job ledger needs recovery', as
     const inspection = await response.json();
     assert.ok(inspection.health.totalMessages > 0);
     assert.deepEqual(inspection.operations, []);
-    assert.match(inspection.operationsError, /recovery/);
+    assert.match(inspection.operationsError, /server owner needs to repair the saved job list/);
     assert.equal(fs.readFileSync(ledger, 'utf8'), '{broken');
 });
 

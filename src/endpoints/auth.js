@@ -380,7 +380,7 @@ router.post('/passkeys/login', async (request, response) => {
         });
         if (!verification.verified) {
             await authLimiter.consume(ip);
-            return response.status(401).json({ error: 'The passkey did not verify.' });
+            return response.status(401).json({ error: 'We could not check that passkey. Try again.' });
         }
         if (passkeys.get(credentialId) !== record) throw new Error('Passkey changed during verification');
         const updated = { ...record, counter: verification.authenticationInfo.newCounter, lastUsedAt: Date.now() };

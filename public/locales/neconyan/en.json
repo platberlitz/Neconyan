@@ -2032,6 +2032,8 @@
   "saveChat called for a group chat": "saveChat called for a group chat",
   "ERROR: Chat integrity check failed while saving the file.": "ERROR: Chat integrity check failed while saving the file.",
   "<p>After you click OK, the page will be reloaded to prevent data corruption.</p>\n              <p>To confirm an overwrite (and potentially <b>LOSE YOUR DATA</b>), enter <code>OVERWRITE</code> (in all caps) in the box below before clicking OK.</p>": "<p>After you click OK, the page will be reloaded to prevent data corruption.</p>\n              <p>To confirm an overwrite (and potentially <b>LOSE YOUR DATA</b>), enter <code>OVERWRITE</code> (in all caps) in the box below before clicking OK.</p>",
+  "Your changes were not saved. Check your connection to Neconyan, then reload before editing more.": "Your changes were not saved. Check your connection to Neconyan, then reload before editing more.",
+  "The preset could not be renamed. Check your connection to Neconyan, then reload before editing more.": "The preset could not be renamed. Check your connection to Neconyan, then reload before editing more.",
   "Check the server connection and reload the page to prevent data loss.": "Check the server connection and reload the page to prevent data loss.",
   "Chat could not be saved": "Chat could not be saved",
   "Your messages will now be sent as ${0}": "Your messages will now be sent as ${0}",

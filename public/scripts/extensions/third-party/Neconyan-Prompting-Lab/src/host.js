@@ -77,6 +77,7 @@ export async function loadHost() {
                 };
                 return loaded;
             } catch (error) {
+                console.error(`${EXTENSION_LABEL} could not load the Neconyan prompt tools it needs.`, error);
                 return {
                     ok: false,
                     reason: `${EXTENSION_LABEL} could not load the Neconyan prompt tools it needs. Reload Neconyan and try again.`,

@@ -85,8 +85,8 @@ test('unknown paid outcomes remain attached to the retained operation', async ()
     const f = fixture();
     const done = f.client.run('distill', {}).catch(error => error);
     await observe(f);
-    f.observer.onDone({ state: 'interrupted', error: { message: 'The provider result is unknown.' } });
-    expect(await done).toMatchObject({ message: 'The provider result is unknown.' });
+    f.observer.onDone({ state: 'interrupted', error: { message: 'The result from the AI service is unknown after a restart.' } });
+    expect(await done).toMatchObject({ message: 'The result from the AI service is unknown after a restart.' });
     expect(f.entries.size).toBe(1);
     expect(f.request).toHaveBeenCalledTimes(1);
 });

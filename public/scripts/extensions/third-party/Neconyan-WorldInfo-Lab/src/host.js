@@ -72,6 +72,7 @@ export async function loadHost() {
                 };
                 return loaded;
             } catch (error) {
+                console.error('World Info Lab could not load the Neconyan lorebook tools it needs.', error);
                 return {
                     ok: false,
                     reason: 'World Info Lab could not load the Neconyan lorebook tools it needs. Reload Neconyan and try again.',

@@ -178,7 +178,7 @@ describe('browser jobs observer snapshot callbacks', () => {
     });
 
     test('a pruned job (404) stops polling instead of retrying forever', async () => {
-        globalThis.fetch = jest.fn(async () => jsonResponse({ error: 'No such job.' }, 404));
+        globalThis.fetch = jest.fn(async () => jsonResponse({ error: 'This job no longer exists.' }, 404));
         const { observeJob } = await import('../public/scripts/jobs.js');
         const onStop = jest.fn();
         observeJob('gone', { intervalMs: 1, onSnapshot: () => {}, onStop });
