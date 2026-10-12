@@ -8599,6 +8599,74 @@ describe('in-chat agent post-processing runner', () => {
         );
     });
 
+    test('follows Short Model Name in running toasts and saves the full model on agent changes', async () => {
+        usePromptTransformPostAgent();
+        enabledAgents[0].connectionProfile = 'profile-cc';
+        enabledAgents[0].postProcess.promptTransformShowNotifications = true;
+        globalSettings.promptTransformShowNotifications = true;
+        powerUser.timestamp_model_name_short = true;
+        connectionManagerRequestService = {
+            getProfile: jest.fn(profileId => profileId === 'profile-cc'
+                ? { name: 'Example profile', model: 'anthropic/claude-3.5-sonnet' }
+                : null),
+            sendRequest: jest.fn(async () => ({ content: 'Profile rewrite' })),
+        };
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        chat.push({
+            name: 'Assistant',
+            mes: 'Needs rewrite',
+            is_user: false,
+            is_system: false,
+            extra: {},
+        });
+
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+
+        const [messageHtml] = globalThis.toastr.info.mock.calls[0];
+        expect(messageHtml).toContain('Model: claude-3.5-sonnet (Example profile)');
+        expect(messageHtml).not.toContain('anthropic/');
+        const history = chat[0].extra.inChatAgentTransformHistory ?? [];
+        expect(history.length).toBeGreaterThan(0);
+        expect(history.at(-1)).toEqual(expect.objectContaining({
+            model: 'anthropic/claude-3.5-sonnet',
+            profileLabel: 'Example profile',
+        }));
+    });
+
+    test('reports the model that actually answered a prompt-transform request', async () => {
+        globalSettings.connectionFallbacks = ['backup'];
+        connectionManagerRequestService = {
+            constructPrompt: jest.fn(messages => messages),
+            getProfile: jest.fn(profileId => ({
+                primary: { name: 'Primary', model: 'primary-model' },
+                backup: { name: 'Backup', model: 'backup-model' },
+            })[profileId] ?? null),
+            sendRequest: jest.fn(async profileId => {
+                if (profileId === 'primary') throw Object.assign(new Error('Provider overloaded'), { status: 503 });
+                return { content: `Reply from ${profileId}` };
+            }),
+        };
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        const { requestPromptTransform, getPromptTransformRequestModel } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const messages = [{ role: 'user', content: 'Rewrite this.' }];
+
+        const fallback = await requestPromptTransform({ id: 'post', connectionProfile: 'primary', modelOverride: 'own-model' }, messages, 100);
+        expect(fallback).toEqual(expect.objectContaining({ profileId: 'backup', model: 'backup-model' }));
+
+        globalSettings.connectionFallbacks = [];
+        connectionManagerRequestService.sendRequest.mockImplementation(async profileId => ({ content: `Reply from ${profileId}` }));
+        const own = await requestPromptTransform({ id: 'post', connectionProfile: 'primary', modelOverride: 'own-model' }, messages, 100);
+        expect(own.model).toBe('own-model');
+
+        generatingModel = 'deepseek/deepseek-chat';
+        expect(getPromptTransformRequestModel('', '')).toBe('deepseek/deepseek-chat');
+        expect(getPromptTransformRequestModel('primary', '')).toBe('primary-model');
+        warn.mockRestore();
+    });
+
     test('a rewrite the provider cut short at its output limit keeps the original text', async () => {
         usePromptTransformPostAgent();
         enabledAgents[0].connectionProfile = 'profile-cc';
