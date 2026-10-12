@@ -10,11 +10,15 @@ import { escapeCharacterBookRegex, getFreeCharacterBookEntryId, normalizeCharact
 import { NECONYAN_LOREBOOK_FOLDERS_KEY, normalizeNeconyanLorebookFolders, renameNeconyanLorebookAssignment, unfileNeconyanLorebook } from '../public/scripts/neconyan-lorebook-folders.js';
 import { sendCompanionResultToLorebook } from '../public/scripts/extensions/in-chat-agents/companion/lorebook-sender.js';
 import { planLorebookRepair, repairChangeText, repairDefectText } from '../public/scripts/neconyan-lorebook-repair.js';
+import { planWorldInfoVectorization } from '../public/scripts/world-info-vectorize.js';
+import { bindVectorEnabledSettingsStore, getPersistableVectorSettings, getVectorEnabledState, normalizeVectorEnabledOptions } from '../public/scripts/extensions/vectors/settings-utils.js';
 
 const source = readFileSync(new URL('../public/scripts/world-info.js', import.meta.url), 'utf8');
+const utilsSource = readFileSync(new URL('../public/scripts/utils.js', import.meta.url), 'utf8');
+const vectorsSource = readFileSync(new URL('../public/scripts/extensions/vectors/index.js', import.meta.url), 'utf8');
 
-function functionSource(name) {
-    const match = source.match(new RegExp(`^(?:export )?((?:async )?function ${name}\\([\\s\\S]*?^})`, 'm'));
+function functionSource(name, text = source) {
+    const match = text.match(new RegExp(`^(?:export )?((?:async )?function ${name}\\([\\s\\S]*?^})`, 'm'));
     if (!match) throw new Error(`Missing function ${name}`);
     return match[1];
 }
@@ -37,26 +41,53 @@ function book() {
     };
 }
 
+function createDomElement(tag) {
+    let text = '';
+    return {
+        tagName: tag.toUpperCase(), children: [], className: '',
+        append(...children) {
+            children.forEach(child => { child.parentElement = this; this.children.push(child); });
+        },
+        get textContent() { return text + this.children.map(child => child.textContent).join(''); },
+        set textContent(value) { text = String(value); this.children = []; },
+    };
+}
+
+function domElements(root, tag) {
+    return [root, ...root.children.flatMap(child => domElements(child, tag))].filter(element => element.tagName === tag.toUpperCase());
+}
+
 function createHost(initialBook = book()) {
     const books = new Map([['Lore', structuredClone(initialBook)]]);
     const holds = new Map();
     const renders = [];
     const elements = new Map();
     let editorData;
+    class HostPopup {
+        static instances = [];
+        static show = { input: jest.fn(async () => 'Renamed') };
+        static onShow = jest.fn(async () => 1);
+        constructor(content, type, input, options) {
+            Object.assign(this, { content, type, input, options });
+            HostPopup.instances.push(this);
+        }
+        show() { return HostPopup.onShow(this); }
+    }
     const context = vm.createContext({
         lodash, structuredClone, Map, WeakMap, Set, TextEncoder, FormData, console,
         escapeHtml: value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
-        callGenericPopup: jest.fn(async () => {}), POPUP_TYPE: { TEXT: 1 },
+        callGenericPopup: jest.fn(async () => {}), POPUP_TYPE: { TEXT: 1, CONFIRM: 2 },
         escapeCharacterBookRegex, getFreeCharacterBookEntryId, normalizeCharacterBookPosition, serializeWorldInfoEntry,
         NECONYAN_LOREBOOK_FOLDERS_KEY, normalizeNeconyanLorebookFolders, renameNeconyanLorebookAssignment, unfileNeconyanLorebook,
-        planLorebookRepair, repairChangeText, repairDefectText,
+        planLorebookRepair, repairChangeText, repairDefectText, planWorldInfoVectorization,
         setTimeout, clearTimeout, event_types,
         worldInfoCache: new StructuredCloneMap({ cloneOnGet: true, cloneOnSet: false }),
         worldInfoEditorLoadId: 0,
         world_names: ['Lore'], selected_world_info: [], world_info: {},
         power_user: {}, chat_metadata: {}, characters: [],
         debounce_timeout: { relaxed: 1000 }, MAX_WORLD_INFO_NAME_BYTES: 234,
-        navigation_option: { none: -2000 }, desktopSelectedWorldInfoUid: null,
+        navigation_option: { none: -2000, previous: -1000 }, desktopSelectedWorldInfoUid: null,
+        extension_settings: {}, updateEditor: jest.fn(async () => {}), POPUP_RESULT: { AFFIRMATIVE: 1 },
         newWorldInfoEntryTemplate: { content: '', depth: 4 },
         world_info_position: { before: 0, after: 1 }, world_info_logic: { AND_ANY: 0 },
         extension_prompt_roles: { SYSTEM: 0 }, DEFAULT_DEPTH: 4, DEFAULT_WEIGHT: 100,
@@ -65,14 +96,13 @@ function createHost(initialBook = book()) {
         findMatchingLorebookName: (names, name) => names.find(item => item === name),
         checkOverwriteExistingData: async () => true,
         parseJsonFile: async file => JSON.parse(await file.text()),
-        setValueByPath: lodash.set,
         t: (strings, ...values) => String.raw({ raw: strings }, ...values),
-        toastr: { error: jest.fn(), success: jest.fn(), warning: jest.fn() },
-        Popup: { show: { input: jest.fn(async () => 'Renamed') } },
+        toastr: { error: jest.fn(), success: jest.fn(), warning: jest.fn(), info: jest.fn() },
+        Popup: HostPopup,
         saveSettingsDebounced: jest.fn(), updateWorldInfoLinks: jest.fn(async () => {}),
         saveSettings: jest.fn(async () => true),
         clearWorldInfoDesktopEditor: jest.fn(),
-        document: { activeElement: null },
+        document: { activeElement: null, createElement: createDomElement },
         eventSource: { emit: jest.fn(async () => {}) },
         displayWorldEntries: jest.fn(async (_name, data) => { editorData = data; }),
     });
@@ -142,9 +172,9 @@ function createHost(initialBook = book()) {
         'getNeconyanLorebookFolders', 'updateNeconyanLorebookFolders', 'warnNeconyanFolderSaveFailure',
         'getWIOriginalDataIndex', 'setWIOriginalDataValue', 'deleteWIOriginalDataValue', 'syncWIOriginalDataEntry', 'duplicateWorldInfoEntry',
         'getFreeWorldEntryUid', 'createWorldInfoEntry', 'appendWIOriginalDataEntry', 'handleNumberInputHelper',
-        'convertCharacterBook', 'parseRegexFromString',
+        'convertCharacterBook', 'parseRegexFromString', 'vectorizeWorldInfoEntries',
     ];
-    vm.runInContext(functions.map(functionSource).join('\n'), context);
+    vm.runInContext(functions.map(name => functionSource(name)).join('\n') + '\n' + functionSource('setValueByPath', utilsSource), context);
     return {
         context, books,
         get editorData() { return editorData; },
@@ -869,6 +899,335 @@ describe('shared World Info saves', () => {
         const host = createHost();
         const merged = host.context.mergeWorldInfoData({ entries: {} }, { entries: {}, extensions: { native: true } }, { entries: {}, extensions: { external: true } });
         expect(merged.extensions).toEqual({ native: true, external: true });
+    });
+});
+
+describe('whole-lorebook Vectorization saves', () => {
+    function vectorBook() {
+        return { entries: {
+            0: { uid: 0, constant: false, vectorized: false, key: ['saved'], content: 'Normal', extensions: { foreign: true } },
+            1: { uid: 1, constant: true, vectorized: false, content: 'Constant' },
+            2: { uid: 2, constant: false, vectorized: true, content: 'Vectorized' },
+            3: { uid: 3, disable: true, content: '' },
+        }, originalData: { entries: [
+            { id: 71, constant: true, content: 'Constant', extensions: { vectorized: false, foreign: 'kept' } },
+            { id: 70, constant: false, content: 'Normal', keys: ['saved'], extensions: { vectorized: false, foreign: true } },
+            { id: 73, enabled: false, content: '' },
+            { id: 72, constant: false, content: 'Vectorized', extensions: { vectorized: true } },
+        ] }, originalDataUidMap: { 0: 1, 1: 0, 2: 3, 3: 2 } };
+    }
+
+    function choose(context, inputs = {}, result = 1) {
+        context.Popup.onShow.mockImplementation(async popup => {
+            for (const input of domElements(popup.content, 'input')) {
+                if (Object.hasOwn(inputs, input.id)) input.checked = inputs[input.id];
+            }
+            return result;
+        });
+    }
+
+    test.each([null, 0, 1001])('cancel or non-affirmative result %s writes nothing', async result => {
+        const host = createHost(vectorBook());
+        await host.context.showWorldEditor('Lore');
+        const before = structuredClone(host.editorData);
+        choose(host.context, {}, result);
+        const save = jest.spyOn(host.context, 'saveWorldInfo');
+        await host.context.vectorizeWorldInfoEntries('Lore', host.editorData);
+        expect(save).not.toHaveBeenCalled();
+        expect(host.editorData).toEqual(before);
+        expect(host.context.saveSettingsDebounced).not.toHaveBeenCalled();
+        expect(host.context.toastr.success).not.toHaveBeenCalled();
+    });
+
+    test.each([{ entries: {} }, { entries: { 0: { uid: 0, vectorized: true } } }])('no-op book %j never prompts or writes', async data => {
+        const host = createHost(data);
+        await host.context.showWorldEditor('Lore');
+        const save = jest.spyOn(host.context, 'saveWorldInfo');
+        await host.context.vectorizeWorldInfoEntries('Lore', host.editorData);
+        expect(host.context.Popup.onShow).not.toHaveBeenCalled();
+        expect(save).not.toHaveBeenCalled();
+        expect(host.context.toastr.info).toHaveBeenCalledWith(Object.keys(data.entries).length
+            ? 'All entries in this lorebook are already vectorized.' : 'This lorebook has no entries.');
+    });
+
+    test('constants-only dialog keeps constants but honours the default retrieval choice', async () => {
+        const host = createHost({ entries: { 0: { uid: 0, constant: true } } });
+        await host.context.showWorldEditor('Lore');
+        const save = jest.spyOn(host.context, 'saveWorldInfo');
+        await host.context.vectorizeWorldInfoEntries('Lore', host.editorData);
+        const popup = host.context.Popup.instances[0];
+        expect(popup.options).toEqual({ leftAlign: true, okButton: 'Vectorize all', cancelButton: 'Cancel' });
+        expect(popup.type).toBe(2);
+        expect(domElements(popup.content, 'input').map(({ id, checked }) => ({ id, checked }))).toEqual([
+            { id: 'world_vectorize_include_constants', checked: false },
+            { id: 'world_vectorize_enable_retrieval', checked: true },
+        ]);
+        expect(save).not.toHaveBeenCalled();
+        expect(host.editorData.entries[0].constant).toBe(true);
+        expect(host.context.extension_settings.vectors.enabled_world_info).toBe(true);
+        expect(host.context.saveSettingsDebounced).toHaveBeenCalledTimes(1);
+        expect(host.context.toastr.info).toHaveBeenCalledWith('No entries changed. Constant entries were skipped. Lorebook retrieval is now on.');
+    });
+
+    test('constants-only dialog with retrieval unticked writes neither the book nor settings', async () => {
+        const host = createHost({ entries: { 0: { uid: 0, constant: true } } });
+        await host.context.showWorldEditor('Lore');
+        choose(host.context, { world_vectorize_enable_retrieval: false });
+        const save = jest.spyOn(host.context, 'saveWorldInfo');
+        await host.context.vectorizeWorldInfoEntries('Lore', host.editorData);
+        expect(save).not.toHaveBeenCalled();
+        expect(host.context.saveSettingsDebounced).not.toHaveBeenCalled();
+        expect(host.context.toastr.info).toHaveBeenCalledWith('No entries changed. Constant entries were skipped.');
+    });
+
+    test('checkbox descriptions live inside left-aligned tappable labels, with disabled-extension guidance', async () => {
+        const host = createHost(vectorBook());
+        host.context.extension_settings.disabledExtensions = ['vectors'];
+        await host.context.showWorldEditor('Lore');
+        choose(host.context, {}, null);
+        await host.context.vectorizeWorldInfoEntries('Lore', host.editorData);
+        const content = host.context.Popup.instances[0].content;
+        const labels = domElements(content, 'label');
+        expect(labels).toHaveLength(2);
+        expect(labels.map(label => domElements(label, 'small')[0].textContent)).toEqual([
+            'They stop being inserted every time and are added only when their keywords or meaning match.',
+            'Changes the Vectorization setting for every active lorebook, not just this one.',
+        ]);
+        expect(labels[0].textContent).toContain('Include constant entries (1)');
+        expect(labels.every(label => label.className === 'checkbox_label alignItemsStart alignitemsflexstart padding10')).toBe(true);
+        expect(labels.every(label => domElements(label, 'small')[0].className === 'fontsize80p')).toBe(true);
+        expect(labels.every(label => label.children[0].className === 'alignSelfStart' && domElements(label, 'input')[0].className === 'margin0')).toBe(true);
+        expect(domElements(content, 'li').map(item => item.textContent)).toEqual([
+            'Keyword entries to change: 2', 'Already vectorized: 1', 'Disabled entries: 1. They stay disabled.',
+        ]);
+        expect(content.textContent).toContain('Vectorization is switched off in Extensions. Entries are marked, but they are not searched until you switch it on.');
+    });
+
+    test('one immediate save updates mapped original flags, keeps disabled entries and refreshes', async () => {
+        const host = createHost(vectorBook());
+        await host.context.showWorldEditor('Lore');
+        const vectors = { enabled_chats: false, enabled_files: true, enabled_world_info: false, source: 'transformers', enabled_for_all: true };
+        const runtime = {};
+        const syncUI = jest.fn();
+        bindVectorEnabledSettingsStore(runtime, vectors, syncUI);
+        host.context.extension_settings.vectors = vectors;
+        const save = jest.spyOn(host.context, 'saveWorldInfo');
+        const data = host.editorData;
+        await host.context.vectorizeWorldInfoEntries('Lore', data);
+        expect(save).toHaveBeenCalledTimes(1);
+        expect(save).toHaveBeenCalledWith('Lore', data, true);
+        expect(host.books.get('Lore').entries).toEqual({
+            0: { ...vectorBook().entries[0], vectorized: true },
+            1: vectorBook().entries[1], 2: vectorBook().entries[2],
+            3: { ...vectorBook().entries[3], constant: false, vectorized: true },
+        });
+        expect(host.books.get('Lore').originalData.entries[1]).toMatchObject({ id: 70, constant: false, keys: ['saved'], extensions: { vectorized: true, foreign: true } });
+        expect(host.books.get('Lore').originalData.entries[2]).toEqual({ id: 73, enabled: false, content: '', constant: false, extensions: { vectorized: true } });
+        expect(host.books.get('Lore').originalData.entries[0]).toEqual(vectorBook().originalData.entries[0]);
+        expect(host.context.updateEditor).toHaveBeenCalledWith(-1000);
+        expect(host.context.extension_settings.vectors).toBe(vectors);
+        expect(vectors).toMatchObject({ enabled_chats: false, enabled_files: true, enabled_world_info: true, source: 'transformers', enabled_for_all: true });
+        expect(runtime.enabled_world_info).toBe(true);
+        expect(syncUI).toHaveBeenCalledTimes(1);
+        expect(host.context.saveSettingsDebounced).toHaveBeenCalledTimes(1);
+        expect(host.context.toastr.success).toHaveBeenCalledWith('Entries marked for Vectorization: 2');
+        expect(host.context.Popup.instances[0].content.textContent).toContain('\'Search all enabled entries\' is on, so retrieval already searches every enabled entry, marked or not.');
+    });
+
+    test('opting into constants and out of retrieval changes only the entry states', async () => {
+        const host = createHost(vectorBook());
+        await host.context.showWorldEditor('Lore');
+        choose(host.context, { world_vectorize_include_constants: true, world_vectorize_enable_retrieval: false });
+        await host.context.vectorizeWorldInfoEntries('Lore', host.editorData);
+        expect(host.books.get('Lore').entries[1]).toMatchObject({ constant: false, vectorized: true });
+        expect(host.books.get('Lore').originalData.entries[0]).toMatchObject({ constant: false, extensions: { vectorized: true, foreign: 'kept' } });
+        expect(host.context.saveSettingsDebounced).not.toHaveBeenCalled();
+        expect(host.context.extension_settings.vectors).toBeUndefined();
+        expect(host.context.toastr.success).toHaveBeenCalledWith('Entries marked for Vectorization: 3 Lorebook retrieval is off, so they are not searched yet.');
+    });
+
+    test('retrieval already on omits that checkbox and does not save settings again', async () => {
+        const host = createHost(vectorBook());
+        host.context.extension_settings.vectors = { enabled_world_info: true };
+        await host.context.showWorldEditor('Lore');
+        await host.context.vectorizeWorldInfoEntries('Lore', host.editorData);
+        expect(domElements(host.context.Popup.instances[0].content, 'input')).toHaveLength(1);
+        expect(host.context.saveSettingsDebounced).not.toHaveBeenCalled();
+    });
+
+    test('uses the exposed Vectorization API to save only lorebook retrieval', async () => {
+        const host = createHost(vectorBook());
+        const { context } = host;
+        const settings = { enabled_chats: false, enabled_files: true, enabled_world_info: false, source: 'transformers' };
+        const store = context.extension_settings.vectors = { ...settings };
+        Object.assign(context, {
+            settings, normalizeVectorEnabledOptions, getPersistableVectorSettings,
+            ensureVectorSettingsStore: () => store,
+            bindVectorSettingsStore: () => bindVectorEnabledSettingsStore(settings, store),
+            syncVectorEnabledControls: jest.fn(), getVectorStorageState: () => getVectorEnabledState(settings),
+        });
+        vm.runInContext(['persistVectorSettings', 'setVectorStorageEnabled'].map(name => functionSource(name, vectorsSource)).join('\n'), context);
+        const setEnabled = jest.fn(context.setVectorStorageEnabled);
+        context.SillyTavern = { vectors: { setEnabled } };
+        await context.showWorldEditor('Lore');
+        await context.vectorizeWorldInfoEntries('Lore', host.editorData);
+        expect(setEnabled).toHaveBeenCalledTimes(1);
+        expect(setEnabled).toHaveBeenCalledWith({ worldInfo: true });
+        expect(store).toMatchObject({ enabled_world_info: true, enabled_chats: false, enabled_files: true, source: 'transformers' });
+        expect(context.extension_settings.vectors).toBe(store);
+        expect(context.saveSettingsDebounced).toHaveBeenCalledTimes(1);
+        expect(context.syncVectorEnabledControls).toHaveBeenCalled();
+    });
+
+    test('updates native storage keys and original-data UIDs independently', async () => {
+        const initial = vectorBook();
+        initial.entries[7] = initial.entries[0];
+        delete initial.entries[0];
+        initial.entries[12] = initial.entries[1];
+        delete initial.entries[1];
+        const host = createHost(initial);
+        await host.context.showWorldEditor('Lore');
+        choose(host.context, { world_vectorize_include_constants: true });
+        await host.context.vectorizeWorldInfoEntries('Lore', host.editorData);
+        expect(host.books.get('Lore').entries[7]).toMatchObject({ uid: 0, constant: false, vectorized: true });
+        expect(host.books.get('Lore').entries[12]).toMatchObject({ uid: 1, constant: false, vectorized: true });
+        expect(host.books.get('Lore').originalData.entries[1]).toMatchObject({ id: 70, constant: false, extensions: { vectorized: true } });
+        expect(host.books.get('Lore').originalData.entries[0]).toMatchObject({ id: 71, constant: false, extensions: { vectorized: true } });
+        expect(host.context.toastr.error).not.toHaveBeenCalled();
+    });
+
+    test.each(['null', 'reject'])('save failure %s restores exact native and original flag presence', async failure => {
+        const host = createHost(vectorBook());
+        await host.context.showWorldEditor('Lore');
+        const data = host.editorData;
+        const before = structuredClone(data);
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+        if (failure === 'null') host.context.saveWorldInfo = jest.fn(async () => null);
+        else {
+            const fetch = host.context.fetch;
+            host.context.fetch = jest.fn((url, options) => url === '/api/worldinfo/edit'
+                ? Promise.resolve({ ok: false, status: 500 }) : fetch(url, options));
+        }
+        await host.context.vectorizeWorldInfoEntries('Lore', data);
+        expect(data).toEqual(before);
+        expect(host.books.get('Lore')).toEqual(vectorBook());
+        expect(host.context.toastr.success).not.toHaveBeenCalled();
+        expect(host.context.toastr.error).toHaveBeenCalledWith('Could not save the lorebook, so no entries were changed. Reload it and try again.');
+        expect(host.context.extension_settings.vectors).toBeUndefined();
+        expect(host.context.saveSettingsDebounced).not.toHaveBeenCalled();
+        expect(host.context.updateEditor).not.toHaveBeenCalled();
+    });
+
+    test('a changed editor during confirmation cannot write to its old book', async () => {
+        const host = createHost(vectorBook());
+        await host.context.showWorldEditor('Lore');
+        const data = host.editorData;
+        host.context.Popup.onShow.mockImplementation(async () => {
+            await host.context.hideWorldEditor();
+            return 1;
+        });
+        const save = jest.spyOn(host.context, 'saveWorldInfo');
+        await host.context.vectorizeWorldInfoEntries('Lore', data);
+        expect(save).not.toHaveBeenCalled();
+        expect(data).toEqual(vectorBook());
+        expect(host.context.toastr.warning).toHaveBeenCalledWith('This lorebook changed while the dialog was open. Nothing was changed; try again.');
+    });
+
+    test('replacing the same book data during confirmation warns and writes nothing', async () => {
+        const host = createHost(vectorBook());
+        const { context } = host;
+        await context.showWorldEditor('Lore');
+        const data = host.editorData;
+        context.replacement = structuredClone(data);
+        context.Popup.onShow.mockImplementation(async () => {
+            vm.runInContext('worldInfoEditor.data = replacement', context);
+            return 1;
+        });
+        const save = jest.spyOn(context, 'saveWorldInfo');
+        await context.vectorizeWorldInfoEntries('Lore', data);
+        expect(save).not.toHaveBeenCalled();
+        expect(data).toEqual(vectorBook());
+        expect(context.toastr.warning).toHaveBeenCalledWith('This lorebook changed while the dialog was open. Nothing was changed; try again.');
+        expect(context.saveSettingsDebounced).not.toHaveBeenCalled();
+    });
+
+    test('preserves the actionable conflict message after rollback', async () => {
+        const host = createHost(vectorBook());
+        await host.context.showWorldEditor('Lore');
+        const data = host.editorData;
+        const before = structuredClone(data);
+        host.books.get('Lore').entries[2].content = 'Newer remote edit';
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+        await host.context.vectorizeWorldInfoEntries('Lore', data);
+        expect(data).toEqual(before);
+        expect(host.context.toastr.error).toHaveBeenCalledWith('This lorebook has changed since you opened it. Nothing was overwritten; copy your draft, then reload before saving again.');
+        expect(host.context.toastr.success).not.toHaveBeenCalled();
+        expect(host.context.saveSettingsDebounced).not.toHaveBeenCalled();
+    });
+
+    test('the real path setter throws on null extensions and the whole operation rolls back', async () => {
+        const initial = vectorBook();
+        initial.originalData.entries[2].extensions = null;
+        const host = createHost(initial);
+        await host.context.showWorldEditor('Lore');
+        const data = host.editorData;
+        const before = structuredClone(data);
+        const save = jest.spyOn(host.context, 'saveWorldInfo');
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+        await host.context.vectorizeWorldInfoEntries('Lore', data);
+        expect(save).not.toHaveBeenCalled();
+        expect(data).toEqual(before);
+        expect(host.context.toastr.error).toHaveBeenCalledWith('Could not save the lorebook, so no entries were changed. Reload it and try again.');
+        expect(host.context.toastr.success).not.toHaveBeenCalled();
+        expect(host.context.saveSettingsDebounced).not.toHaveBeenCalled();
+    });
+
+    test('an imported-record update failure cannot leave partially changed entry states', async () => {
+        const host = createHost(vectorBook());
+        await host.context.showWorldEditor('Lore');
+        const data = host.editorData;
+        const before = structuredClone(data);
+        const sync = host.context.setWIOriginalDataValue;
+        host.context.setWIOriginalDataValue = (target, uid, key, value) => {
+            if (uid === 3 && key === 'extensions.vectorized') throw new Error('Malformed imported extension record');
+            sync(target, uid, key, value);
+        };
+        const save = jest.spyOn(host.context, 'saveWorldInfo');
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+        await host.context.vectorizeWorldInfoEntries('Lore', data);
+        expect(save).not.toHaveBeenCalled();
+        expect(data).toEqual(before);
+        expect(host.context.toastr.error).toHaveBeenCalled();
+        expect(host.context.toastr.success).not.toHaveBeenCalled();
+        expect(host.context.saveSettingsDebounced).not.toHaveBeenCalled();
+    });
+
+    test('re-entrant clicks share one dialog and one save, and a switched editor is not refreshed', async () => {
+        const host = createHost(vectorBook());
+        await host.context.showWorldEditor('Lore');
+        const data = host.editorData;
+        const held = host.hold();
+        const saving = host.context.vectorizeWorldInfoEntries('Lore', data);
+        await held.started.promise;
+        await host.context.vectorizeWorldInfoEntries('Lore', data);
+        await host.context.hideWorldEditor();
+        held.result.resolve(200);
+        await saving;
+        expect(host.context.Popup.onShow).toHaveBeenCalledTimes(1);
+        expect(host.context.fetch.mock.calls.filter(([url]) => url === '/api/worldinfo/edit')).toHaveLength(1);
+        expect(host.context.updateEditor).not.toHaveBeenCalled();
+    });
+
+    test('puts the lorebook name in text nodes, not interpreted HTML', async () => {
+        const host = createHost(vectorBook());
+        const name = '<img src=x onerror=alert(1)>';
+        host.books.set(name, vectorBook());
+        await host.context.showWorldEditor(name);
+        choose(host.context, {}, null);
+        await host.context.vectorizeWorldInfoEntries(name, host.editorData);
+        const content = host.context.Popup.instances[0].content;
+        expect(content.textContent).toContain(`Entries in '${name}' will also match by meaning with Vectorization. Their keywords are kept and still work.`);
+        expect(domElements(content, 'img')).toHaveLength(0);
     });
 });
 

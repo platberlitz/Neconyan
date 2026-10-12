@@ -34,6 +34,19 @@ async function openBook(page, name) {
     await page.locator('.neconyan-lorebook-book-open').filter({ hasText: name }).click();
 }
 
+async function checkVectorizationDialog(page) {
+    await page.locator('#world_vectorize_all').click();
+    const dialog = page.locator('dialog[open]');
+    const constantsLabel = dialog.locator('label:has(#world_vectorize_include_constants)');
+    const retrievalLabel = dialog.locator('label:has(#world_vectorize_enable_retrieval)');
+    await expect(constantsLabel.locator('small')).toHaveText('They stop being inserted every time and are added only when their keywords or meaning match.');
+    await expect(constantsLabel.locator('input')).not.toBeChecked();
+    await expect(retrievalLabel.locator('small')).toHaveText('Changes the Vectorization setting for every active lorebook, not just this one.');
+    await expect(retrievalLabel.locator('input')).toBeChecked();
+    await dialog.locator('.popup-button-cancel').click();
+    await expect(dialog).toBeHidden();
+}
+
 async function enableLock(button) {
     if (await button.getAttribute('aria-pressed') === 'true') await button.click();
     await expect(button).toHaveAttribute('aria-pressed', 'false');
@@ -61,6 +74,8 @@ test('Lorebooks and Personas preserve edits, controls, and narrow layouts', asyn
     const account = await app.account();
     const saved = JSON.parse((await account.post('/api/settings/get')).settings);
     saved.power_user.personas[account.personaId] = 'Workshop visitor';
+    saved.extension_settings.vectors ??= {};
+    saved.extension_settings.vectors.enabled_world_info = false;
     saved.power_user.persona_descriptions[account.personaId] = {
         description: 'Repairs radios.', position: 0, depth: 4, role: 0,
         connections: [{ type: 'character', id: account.avatar }],
@@ -100,6 +115,7 @@ test('Lorebooks and Personas preserve edits, controls, and narrow layouts', asyn
     auditBook.entries[extraUid] = {
         ...structuredClone(Object.values(auditBook.entries)[0]),
         uid: extraUid,
+        constant: true,
         comment: 'Second entry selection check',
         content: 'Second entry selection check',
     };
@@ -270,6 +286,9 @@ test('Lorebooks and Personas preserve edits, controls, and narrow layouts', asyn
                 await libraryTools.locator('summary').click();
                 const entryTools = page.locator('.world_popup_action_group_details');
                 await entryTools.locator('summary').click();
+                await expect(page.locator('#world_vectorize_all')).toBeVisible();
+                await expect(page.locator('#world_vectorize_all')).toBeEnabled();
+                await checkVectorizationDialog(page);
                 if (width === 1280) {
                     await expect(page.locator('#OpenAllWIEntries')).toBeHidden();
                     await expect(page.locator('#CloseAllWIEntries')).toBeHidden();

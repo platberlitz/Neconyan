@@ -33,6 +33,7 @@ import { planLorebookRepair, repairChangeText, repairDefectText } from './necony
 import { classifyKey } from './neconyan-lorebook-keytest.js';
 import { createKeyTestSection } from './neconyan-lorebook-keytest-panel.js';
 import { createEntryFolderUI } from './world-info-entry-folders-ui.js';
+import { planWorldInfoVectorization } from './world-info-vectorize.js';
 import {
     NECONYAN_LOREBOOK_FOLDERS_KEY,
     normalizeNeconyanLorebookFolders,
@@ -116,6 +117,7 @@ const worldInfoCacheVersions = new Map();
 // The newest observed revision is informational, not proof that an older draft is current.
 const worldInfoKnownRevisions = new Map();
 let worldInfoEditor = null;
+let isWorldInfoVectorizing = false;
 const saveSettingsDebounced = debounce(() => {
     Object.assign(world_info, { globalSelect: selected_world_info });
     saveSettings();
@@ -2775,7 +2777,7 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
     clearEntryList(desktopEditorHost);
     clearWorldInfoDesktopEditor();
     updateWorldInfoWorkspaceState({ name, data });
-    const selectionTools = $('#world_popup_new, #world_popup_name_button, #world_popup_export, #world_popup_delete, #world_duplicate, #world_backfill_memos, #world_apply_current_sorting, #OpenAllWIEntries, #CloseAllWIEntries');
+    const selectionTools = $('#world_popup_new, #world_popup_name_button, #world_popup_export, #world_popup_delete, #world_duplicate, #world_backfill_memos, #world_vectorize_all, #world_apply_current_sorting, #OpenAllWIEntries, #CloseAllWIEntries');
     selectionTools.prop('disabled', !data || !('entries' in data));
     entryFolderUI = createEntryFolderUI({
         name, data, requestedUid,
@@ -3011,6 +3013,10 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
         }
     });
 
+    $('#world_vectorize_all').off('click').on('click', async () => {
+        await vectorizeWorldInfoEntries(name, data);
+    });
+
     $('#world_apply_current_sorting').off('click').on('click', async () => {
         const entryCount = Object.keys(data.entries).length;
         const moreThan100 = entryCount > 100;
@@ -3155,6 +3161,136 @@ async function displayWorldEntries(name, data, navigation = navigation_option.no
     });
 
     //$("#world_popup_entries_list").disableSelection();
+}
+
+/** Mark entries in the current book for Vectorization, saving once before enabling retrieval. */
+async function vectorizeWorldInfoEntries(name, data) {
+    const isCurrent = () => worldInfoEditor?.name === name && worldInfoEditor?.data === data;
+    if (isWorldInfoVectorizing || !isCurrent()) return;
+    isWorldInfoVectorizing = true;
+    try {
+        const { keywordCount, constantCount, vectorizedCount, disabledCount } = planWorldInfoVectorization(data);
+        if (!keywordCount && !constantCount) {
+            toastr.info(vectorizedCount ? t`All entries in this lorebook are already vectorized.` : t`This lorebook has no entries.`);
+            return;
+        }
+
+        const content = document.createElement('div');
+        content.className = 'flex-container flexFlowColumn gap10px';
+        const addText = (parent, tag, text, className = '') => {
+            const element = document.createElement(tag);
+            element.className = className;
+            element.textContent = text;
+            parent.append(element);
+            return element;
+        };
+        addText(content, 'h3', t`Vectorize this lorebook?`, 'margin0');
+        addText(content, 'p', t`Entries in '${name}' will also match by meaning with Vectorization. Their keywords are kept and still work.`, 'margin0');
+        const counts = document.createElement('ul');
+        counts.className = 'margin0';
+        content.append(counts);
+        addText(counts, 'li', t`Keyword entries to change: ${keywordCount}`);
+        if (vectorizedCount) addText(counts, 'li', t`Already vectorized: ${vectorizedCount}`);
+        if (disabledCount) addText(counts, 'li', t`Disabled entries: ${disabledCount}. They stay disabled.`);
+        const addChoice = (id, text, note, checked) => {
+            const label = document.createElement('label');
+            label.className = 'checkbox_label alignItemsStart alignitemsflexstart padding10';
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.id = id;
+            input.className = 'margin0';
+            input.checked = checked;
+            // Checkboxes align themselves centrally; a wrapper keeps the control beside the heading.
+            const control = document.createElement('span');
+            control.className = 'alignSelfStart';
+            control.append(input);
+            const copy = document.createElement('span');
+            copy.className = 'flex-container flexFlowColumn flex1 gap3px';
+            addText(copy, 'span', text);
+            addText(copy, 'small', note, 'fontsize80p');
+            label.append(control, copy);
+            content.append(label);
+            return input;
+        };
+        const constants = constantCount ? addChoice('world_vectorize_include_constants', t`Include constant entries (${constantCount})`,
+            t`They stop being inserted every time and are added only when their keywords or meaning match.`, false) : null;
+        const retrieval = !extension_settings.vectors?.enabled_world_info ? addChoice('world_vectorize_enable_retrieval', t`Turn on lorebook retrieval in replies`,
+            t`Changes the Vectorization setting for every active lorebook, not just this one.`, true) : null;
+        if (extension_settings.disabledExtensions?.includes('vectors')) {
+            addText(content, 'small', t`Vectorization is switched off in Extensions. Entries are marked, but they are not searched until you switch it on.`);
+        }
+        if (extension_settings.vectors?.enabled_for_all) {
+            addText(content, 'small', t`'Search all enabled entries' is on, so retrieval already searches every enabled entry, marked or not.`);
+        }
+        const result = await new Popup(content, POPUP_TYPE.CONFIRM, '', {
+            leftAlign: true,
+            okButton: t`Vectorize all`,
+            cancelButton: t`Cancel`,
+        }).show();
+        if (result !== POPUP_RESULT.AFFIRMATIVE) return;
+        if (!isCurrent()) {
+            toastr.warning(t`This lorebook changed while the dialog was open. Nothing was changed; try again.`);
+            return;
+        }
+
+        const enableRetrieval = retrieval?.checked === true;
+        const turnOnRetrieval = () => {
+            const api = globalThis.SillyTavern?.vectors;
+            if (typeof api?.setEnabled === 'function') {
+                api.setEnabled({ worldInfo: true });
+            } else {
+                extension_settings.vectors ??= {};
+                extension_settings.vectors.enabled_world_info = true;
+                saveSettingsDebounced();
+            }
+        };
+
+        const { changes } = planWorldInfoVectorization(data, { includeConstants: constants?.checked === true });
+        if (!changes.length) {
+            if (enableRetrieval) turnOnRetrieval();
+            toastr.info(t`No entries changed. Constant entries were skipped.` + (enableRetrieval ? t` Lorebook retrieval is now on.` : ''));
+            return;
+        }
+
+        // Preserve property absence too, including imported books with no extensions object.
+        const before = [];
+        const remember = (target, key) => before.push({ target, key, descriptor: Object.getOwnPropertyDescriptor(target, key) });
+        try {
+            for (const { key, uid } of changes) {
+                const entry = data.entries[key];
+                remember(entry, 'constant');
+                remember(entry, 'vectorized');
+                const originalIndex = getWIOriginalDataIndex(data, uid);
+                const originalEntry = originalIndex >= 0 ? data.originalData?.entries?.[originalIndex] : null;
+                if (originalEntry) {
+                    remember(originalEntry, 'constant');
+                    if (lodash.isPlainObject(originalEntry.extensions)) remember(originalEntry.extensions, 'vectorized');
+                    else remember(originalEntry, 'extensions');
+                }
+                entry.constant = false;
+                entry.vectorized = true;
+                setWIOriginalDataValue(data, uid, 'constant', false);
+                setWIOriginalDataValue(data, uid, 'extensions.vectorized', true);
+            }
+            const savedName = await saveWorldInfo(name, data, true);
+            if (!savedName) throw new Error('Lorebook save was not accepted');
+        } catch (error) {
+            for (const { target, key, descriptor } of before.reverse()) {
+                if (descriptor) Object.defineProperty(target, key, descriptor);
+                else delete target[key];
+            }
+            console.error('Failed to mark lorebook entries for Vectorization:', error);
+            toastr.error(error?.code === 'WORLD_INFO_CONFLICT' ? String(error.message) : t`Could not save the lorebook, so no entries were changed. Reload it and try again.`);
+            return;
+        }
+
+        if (enableRetrieval) turnOnRetrieval();
+        if (isCurrent()) await updateEditor(navigation_option.previous);
+        const retrievalNote = extension_settings.vectors?.enabled_world_info ? '' : t` Lorebook retrieval is off, so they are not searched yet.`;
+        toastr.success(t`Entries marked for Vectorization: ${changes.length}` + retrievalNote);
+    } finally {
+        isWorldInfoVectorizing = false;
+    }
 }
 
 export const originalWIDataKeyMap = {

@@ -28,6 +28,11 @@ test('the interface catalogue collects captions from helpers, fallbacks, templat
     for (const caption of ['Test keys', 'Unfiled', 'All books', 'Miso, Taro and Nori', 'Close ${0}', 'Pawspective', 'No automatic agents enabled', 'depth ${0}', 'Order ${0}', 'rewrites reply', 'Characters, lorebooks and presets are snapshotted here, because nothing in Neconyan backs them up. Extension settings from Neconyan\'s own settings backups are available further down.', 'Scan World Info', 'Don\'t change', 'Has all of these tags']) {
         assert.ok(keys.has(caption), `missing ${caption}`);
     }
+    const english = JSON.parse(readFileSync(new URL('../public/locales/neconyan/en.json', import.meta.url), 'utf8'));
+    for (const caption of ['Vectorize all', 'Mark entries in this lorebook for Vectorization', 'Entries in \'${0}\' will also match by meaning with Vectorization. Their keywords are kept and still work.', 'Keyword entries to change: ${0}', 'Include constant entries (${0})', 'Turn on lorebook retrieval in replies', 'Changes the Vectorization setting for every active lorebook, not just this one.', 'Entries marked for Vectorization: ${0}', 'Could not save the lorebook, so no entries were changed. Reload it and try again.']) {
+        assert.ok(keys.has(caption), `missing ${caption}`);
+        assert.equal(english[caption], caption, `missing English caption: ${caption}`);
+    }
     // Developer-facing errors and identifiers never reach the page.
     for (const text of ['Server is not ready yet.', 'Could not close Meower.', 'BatchConflictError']) {
         assert.ok(!keys.has(text), `unexpected ${text}`);
