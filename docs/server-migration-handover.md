@@ -97,13 +97,14 @@ production build. Both focused assistant browser checks passed: the refreshed
 help loaded for all nine assistant variants on phone and desktop. Signed Android
 run `38251084525` passed the Android 11, 13 and 15 emulator checks.
 
-Full browser run `38248886869` was still running at publication, with ten passing
-groups, six running and no completed failures. It covers application commit
+Full browser run `38248886869` finished successfully after publication: all 16
+groups passed, with 1,599 tests passed and 23 skipped. Its summaries reported no
+failed or flaky tests, and no job rerun was needed. It covers application commit
 `9ef5d4c1834e1065920435ace4ab49355aa5190f`; only assistant-reference text, its
 tests and release highlights were added afterwards. The focused browser checks
 cover those reference changes. The duplicate full run queued by the main push
-was cancelled, preserving the original run's results. Release notes explicitly
-record the pending check and will be updated when it finishes.
+was cancelled, preserving the original run's results. Release notes were updated
+with the completed browser result.
 The six project-boundary tests and changed-test lint passed for the 1.3.2
 staging version bump.
 
