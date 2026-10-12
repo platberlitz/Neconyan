@@ -5,6 +5,7 @@ import { eventSource, event_types } from '../../../events.js';
 import { Popup, POPUP_RESULT, POPUP_TYPE } from '../../../popup.js';
 import { escapeHtml } from '../../../utils.js';
 import { attachTextareaFullscreen } from '../textarea-fullscreen.js';
+import { getAgentResultModelName } from '../model-label.js';
 import { withReadOnlyVariables } from '../../../variable-read-only.js';
 import { stripTrackerMandatoryMarkers } from '../../../tracker-mandatory-marker.js';
 import { captureMessageTargetState, isMessageTargetCurrent } from '../agent-runner.js';
@@ -554,9 +555,13 @@ function buildCompanionCard(agentId, result, message) {
     const agentName = cleanCompanionAgentName(result.agentName);
     const icon = String(result.icon ?? '').trim() || 'fa-user-astronaut';
     const profileLabel = String(result.profileLabel ?? '').trim();
-    const modelLabel = String(result.modelLabel ?? '').trim();
+    const modelName = getAgentResultModelName(result);
     // Results saved before profile labels were resolved to names may carry raw profile ids.
-    const meta = [profileLabel, modelLabel].filter(isReadableLabel).join(' / ');
+    // The model leads so it survives truncation; 'Main model' adds nothing once the model is named.
+    const shownProfileLabel = modelName && profileLabel === 'Main model' ? '' : profileLabel;
+    const meta = [modelName, shownProfileLabel].filter(isReadableLabel).join(' / ');
+    const fullModelName = modelName ? String(result.model || result.modelLabel || '').trim() : '';
+    const metaTitle = [fullModelName, shownProfileLabel].filter(isReadableLabel).join(' / ');
     const openAttribute = result.collapsed ? '' : ' open';
     const lorebookButton = isLorebookAgent(getAgentById(agentId)) && status === 'done'
         ? '<button type="button" class="ica--companion-action" data-action="send-to-lorebook" title="Send companion note to lorebook" aria-label="Send companion note to lorebook"><i class="fa-solid fa-book-medical"></i></button>'
@@ -570,7 +575,7 @@ function buildCompanionCard(agentId, result, message) {
                     <span>${escapeHtml(agentName)}</span>
                 </span>
                 <span class="ica--companion-summary-spacer"></span>
-                ${meta ? `<span class="ica--companion-meta">${escapeHtml(meta)}</span>` : ''}
+                ${meta ? `<span class="ica--companion-meta" title="${escapeHtml(metaTitle || meta)}">${escapeHtml(meta)}</span>` : ''}
                 <span class="ica--companion-status">${escapeHtml(getStatusLabel(status))}</span>
                 <span class="ica--companion-actions">
                     ${runnable ? `<button type="button" class="ica--companion-action" data-action="regenerate" title="Regenerate companion note" aria-label="Regenerate companion note"${runDisabled}><i class="fa-solid fa-rotate-right"></i></button>` : ''}

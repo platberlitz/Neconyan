@@ -107,6 +107,8 @@ beforeEach(async () => {
         extension_prompt_roles: { SYSTEM: 0, USER: 1, ASSISTANT: 2 },
         extension_prompt_types: { IN_PROMPT: 0, IN_CHAT: 1 },
         ensureSwipes: jest.fn(),
+        getGeneratingModel: () => '',
+        getShortModelName: model => String(model ?? ''),
         setExtensionPrompt: (key, value) => { extensionPrompts[key] = { value }; },
         substituteParams: value => String(value ?? ''),
         substituteParamsExtended: value => String(value ?? ''),

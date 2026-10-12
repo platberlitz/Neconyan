@@ -1810,7 +1810,7 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
         if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
             throw new DOMException('Companion target changed.', 'AbortError');
         }
-        return { rawContent, tokenUsage, profileId: response.profileId, contextCoverage: contextCapture?.coverage };
+        return { rawContent, tokenUsage, profileId: response.profileId, model: response.model, contextCoverage: contextCapture?.coverage };
     };
 
     try {
@@ -1848,6 +1848,7 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
             profileId: attempt.profileId,
             profileLabel: getProfileLabel(agent, attempt.profileId),
             modelLabel: getModelLabel(agent),
+            model: String(attempt.model ?? '').trim(),
             contextCoverage: attempt.contextCoverage,
         });
     } catch (error) {
@@ -2034,6 +2035,7 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
                         rawContent,
                         tokenUsage: { inputTokens: inputTokensByAgentId.get(agent.id) ?? 0, outputTokens },
                         profileId: response.profileId,
+                        model: response.model,
                         contextCoverage: getCompanionReferenceIds(agent).includes(MEMORY_SHARD_TEMPLATE_ID) ? contextCapture?.coverage : undefined,
                     },
                 });
@@ -2057,6 +2059,7 @@ async function runBatchCompanionAgents(agents, messageIndex, generationType, can
                 profileId: response.profileId,
                 profileLabel: getProfileLabel(agent, response.profileId),
                 modelLabel: getModelLabel(agent),
+                model: String(response.model ?? '').trim(),
                 contextCoverage: getCompanionReferenceIds(agent).includes(MEMORY_SHARD_TEMPLATE_ID) ? contextCapture?.coverage : undefined,
             });
             await emitCompanionResultsUpdated(messageIndex, agent.id);

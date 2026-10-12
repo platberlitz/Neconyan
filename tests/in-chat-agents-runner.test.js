@@ -54,6 +54,8 @@ describe('in-chat agent post-processing runner', () => {
     let extensionSettings;
     let executeSlashCommandsWithOptions;
     let currentChatId;
+    let generatingModel;
+    let powerUser;
     let mainApi;
     let contextChatCompletionSettings;
     let contextPowerUserSettings;
@@ -162,6 +164,8 @@ describe('in-chat agent post-processing runner', () => {
         };
         executeSlashCommandsWithOptions = jest.fn();
         currentChatId = 'chat-a';
+        generatingModel = '';
+        powerUser = { sysprompt: { enabled: true, content: 'Global system prompt text.' }, timestamp_model_name_short: false };
         mainApi = 'kobold';
         contextChatCompletionSettings = {};
         contextPowerUserSettings = {};
@@ -259,6 +263,8 @@ describe('in-chat agent post-processing runner', () => {
             substituteParamsExtended: jest.fn(value => String(value ?? '')),
             generateQuietPrompt,
             generateRaw,
+            getGeneratingModel: jest.fn(() => generatingModel),
+            getShortModelName: jest.fn(model => String(model ?? '').split('/').pop()),
             getCurrentChatId: jest.fn(() => currentChatId),
             getChatGeneration: jest.fn(() => 0),
             setAgentGenerationContextProvider: jest.fn(),
@@ -345,7 +351,7 @@ describe('in-chat agent post-processing runner', () => {
         }));
 
         await jest.unstable_mockModule('../public/scripts/power-user.js', () => ({
-            power_user: { sysprompt: { enabled: true, content: 'Global system prompt text.' } },
+            power_user: powerUser,
         }));
 
         await jest.unstable_mockModule('../public/scripts/popup.js', () => ({
@@ -5144,6 +5150,29 @@ describe('in-chat agent post-processing runner', () => {
 
         const resolved = companionRunner.setCompanionResult(resolvedMessage, profiledCompanion, { status: 'done', content: 'note' });
         expect(resolved.profileLabel).toBe('Cheap Notes Model');
+    });
+
+    test('saves the model that wrote each Companion note', async () => {
+        const profiledCompanion = createCompanionAgent({ id: 'profiled-companion' });
+        profiledCompanion.connectionProfile = 'notes-profile';
+        const mainCompanion = createCompanionAgent({ id: 'main-companion' });
+        connectionManagerRequestService = {
+            constructPrompt: jest.fn(messages => messages),
+            getProfile: jest.fn(profileId => profileId === 'notes-profile' ? { name: 'Notes', model: 'moonshot/kimi-k3' } : null),
+            sendRequest: jest.fn(async () => ({ content: 'Profile note' })),
+        };
+        generatingModel = 'deepseek/deepseek-chat';
+        generateQuietPrompt.mockResolvedValue('Main note');
+        const companionRunner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        chat.push({ mes: 'Assistant reply', name: 'Assistant', is_user: false, is_system: false, extra: {} });
+
+        enabledAgents = [profiledCompanion];
+        const profiled = await companionRunner.runCompanionAgentOnMessage(profiledCompanion.id, 0);
+        expect(profiled).toEqual(expect.objectContaining({ status: 'done', model: 'moonshot/kimi-k3', profileLabel: 'Notes' }));
+
+        enabledAgents = [mainCompanion];
+        const main = await companionRunner.runCompanionAgentOnMessage(mainCompanion.id, 0);
+        expect(main).toEqual(expect.objectContaining({ status: 'done', model: 'deepseek/deepseek-chat' }));
     });
 
     test('waits for Pathfinder retrieval before injecting pre-generation prompts', async () => {

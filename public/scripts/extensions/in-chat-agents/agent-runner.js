@@ -10,6 +10,7 @@ import {
     substituteParams,
     substituteParamsExtended,
     getCurrentChatId,
+    getGeneratingModel,
     itemizedPrompts,
     normalizeContentText,
     saveChatDebounced,
@@ -2623,30 +2624,46 @@ function getPromptTransformProfileLabel(profileId = '') {
     return profileId ? getConnectionProfileDisplayName(profileId) : 'Main model';
 }
 
-function getPromptTransformModelLabel(agent, profileId = '') {
-    const modelOverride = String(agent?.modelOverride ?? '').trim();
-    if (modelOverride) {
-        return modelOverride;
+/**
+ * Resolves the model a request on this connection uses: the override or the profile's model for a saved
+ * profile, otherwise the model selected for the main connection.
+ *
+ * @param {string} [profileId] - Saved connection profile id, empty for the main connection.
+ * @param {string} [modelOverride] - Agent model override, only applied to saved profiles.
+ * @returns {string} Model id, empty when unknown
+ */
+export function getPromptTransformRequestModel(profileId = '', modelOverride = '') {
+    if (profileId) {
+        return String(modelOverride ?? '').trim() || getConnectionProfileModelName(profileId);
     }
 
-    if (!profileId) {
-        return getPromptTransformProfileLabel(profileId);
+    try {
+        return String(getGeneratingModel() ?? '').trim();
+    } catch {
+        return '';
     }
-
-    const modelName = getConnectionProfileModelName(profileId);
-    const profileLabel = getConnectionProfileDisplayName(profileId);
-    if (modelName && profileLabel) {
-        return `${modelName} (${profileLabel})`;
-    }
-
-    return modelName || profileLabel || getPromptTransformProfileLabel(profileId);
 }
 
-function getPromptTransformRunMetadata(agent, profileId = '') {
+function getPromptTransformModelLabel(profileId = '', model = '') {
+    if (!profileId) {
+        return model || getPromptTransformProfileLabel(profileId);
+    }
+
+    const profileLabel = getConnectionProfileDisplayName(profileId);
+    if (model && profileLabel) {
+        return `${model} (${profileLabel})`;
+    }
+
+    return model || profileLabel || getPromptTransformProfileLabel(profileId);
+}
+
+function getPromptTransformRunMetadata(agent, profileId = '', model = getPromptTransformRequestModel(profileId, agent?.modelOverride)) {
+    const resolvedModel = String(model ?? '').trim();
     return {
         order: Number(agent?.injection?.order ?? 0),
         profileLabel: getPromptTransformProfileLabel(profileId),
-        modelLabel: getPromptTransformModelLabel(agent, profileId),
+        modelLabel: getPromptTransformModelLabel(profileId, resolvedModel),
+        model: resolvedModel,
     };
 }
 
@@ -3724,6 +3741,10 @@ export async function requestPromptTransform(agent, promptMessages, maxTokens, o
             let response;
             try {
                 response = await requestConnection(attempt.profileId, attempt.modelOverride);
+                response = {
+                    ...response,
+                    model: String(response?.model ?? '').trim() || getPromptTransformRequestModel(attempt.profileId, attempt.modelOverride),
+                };
             } catch (error) {
                 if (isAbortSignalTriggered(error, requestAbortController.signal) || !isRequestCurrent()) throw error;
                 lastError = error;
@@ -3907,7 +3928,7 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
                 status: 'empty-response',
                 mode: promptTransformMode,
                 profileId: response.profileId,
-                ...getPromptTransformRunMetadata(agent, response.profileId),
+                ...getPromptTransformRunMetadata(agent, response.profileId, response.model),
                 runner: response.runner,
                 timestamp: new Date().toISOString(),
                 outputText: '',
@@ -3951,7 +3972,7 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
                 status: staleTarget ? 'stale-target' : truncatedRewrite ? 'truncated' : refusedRewrite ? 'refused' : agentGenerationCancelRevision !== cancelRevision ? 'cancelled' : 'skipped-runtime-filter',
                 mode: promptTransformMode,
                 profileId: response.profileId,
-                ...getPromptTransformRunMetadata(agent, response.profileId),
+                ...getPromptTransformRunMetadata(agent, response.profileId, response.model),
                 runner: response.runner,
                 timestamp: new Date().toISOString(),
                 outputText: '',
@@ -3975,7 +3996,7 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
             status: changed ? 'changed' : 'unchanged',
             mode: promptTransformMode,
             profileId: response.profileId,
-            ...getPromptTransformRunMetadata(agent, response.profileId),
+            ...getPromptTransformRunMetadata(agent, response.profileId, response.model),
             runner: response.runner,
             timestamp: new Date().toISOString(),
             outputText: promptOutputText,

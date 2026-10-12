@@ -36,6 +36,7 @@ describe('companion card ui', () => {
     let encodeStyleTags;
     let decodeStyleTags;
     let jqueryObject;
+    let powerUser;
 
     async function importCompanionUi() {
         jest.resetModules();
@@ -72,6 +73,11 @@ describe('companion card ui', () => {
                 .replaceAll('{{char}}', options.name2Override || 'Assistant')
                 .replaceAll('{{original}}', options.original ?? '')),
             substituteParamsExtended: jest.fn(value => String(value ?? '')),
+            getShortModelName: jest.fn(model => String(model ?? '').split('/').pop()),
+        }));
+
+        await jest.unstable_mockModule('../public/scripts/power-user.js', () => ({
+            power_user: powerUser,
         }));
 
         await jest.unstable_mockModule('../public/scripts/events.js', () => ({
@@ -133,6 +139,7 @@ describe('companion card ui', () => {
 
     beforeEach(() => {
         chat = [];
+        powerUser = { timestamp_model_name_short: false };
         eventSource = createEventSource();
         eventTypes = {
             CHAT_CHANGED: 'chat_changed',
@@ -238,6 +245,35 @@ describe('companion card ui', () => {
         agents[0].tags = ['notes'];
         ui.renderCompanionResultsForMessage(0);
         expect(jqueryObject.html).toHaveBeenLastCalledWith(expect.not.stringContaining('data-action="send-to-lorebook"'));
+    });
+
+    test('shows the note model in the card header and follows Short Model Name', async () => {
+        const result = {
+            status: 'done',
+            content: 'Saved tracker',
+            agentName: 'Status Companion',
+            displayMode: 'card',
+            model: 'moonshot/kimi-k3',
+            profileLabel: 'Notes profile',
+        };
+        const legacy = { status: 'done', content: 'Old note', agentName: 'Old Companion', displayMode: 'card', modelLabel: 'deepseek/deepseek-chat', profileLabel: 'Main model' };
+        chat.push({ is_user: false, is_system: false, name: 'Aria', extra: { inChatAgentCompanionResults: { 'companion-tracker': result, 'old-companion': legacy } } });
+        agents.push({ id: 'old-companion', name: 'Old Companion', execution: 'companion' });
+        const ui = await importCompanionUi();
+        jqueryObject.length = 1;
+
+        ui.renderCompanionResultsForMessage(0);
+        let html = jqueryObject.html.mock.calls.at(-1)[0];
+        expect(html).toContain('>moonshot/kimi-k3 / Notes profile</span>');
+        expect(html).toContain('>deepseek/deepseek-chat</span>');
+        expect(html).not.toContain('Main model');
+
+        powerUser.timestamp_model_name_short = true;
+        ui.renderCompanionResultsForMessage(0);
+        html = jqueryObject.html.mock.calls.at(-1)[0];
+        expect(html).toContain('>kimi-k3 / Notes profile</span>');
+        expect(html).toContain('title="moonshot/kimi-k3 / Notes profile"');
+        expect(html).toContain('>deepseek-chat</span>');
     });
 
     test('adds a repair wrench beside the four existing note actions', async () => {
