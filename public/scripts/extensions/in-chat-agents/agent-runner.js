@@ -54,6 +54,7 @@ import { isGenerationLengthFinish } from '../../generation-request-controls.js';
 import { resolveExpressionsAgentProfile } from '../expressions/expressions-agent-utils.js';
 import { buildFallbackPromptText, extractProfileResponseText } from './llm-utils.js';
 import { buildPromptTransformRecentChat } from './prompt-transform-context.js';
+import { getTrackerRepairTimeoutMs, isTrackerRepairRunAgent, markTrackerRepairRunAgent } from './tracker-repair-run.js';
 import { buildAgentContextMacros, captureGroupCards, getPreparedMewmoryContext, usesGroupCardsMacro } from './agent-context-macros.js';
 import { getConnectionProfileDisplayName, getConnectionProfileModelName } from './profile-utils.js';
 import { describeAgentRunModel } from './model-label.js';
@@ -3696,32 +3697,71 @@ export async function requestPromptTransform(agent, promptMessages, maxTokens, o
     }
     const profileId = resolveAgentConnectionProfile(agent);
     const modelOverride = typeof agent.modelOverride === 'string' ? agent.modelOverride.trim() : '';
+    const attemptTimeoutMs = isTrackerRepairRunAgent(agent) ? getTrackerRepairTimeoutMs(getGlobalSettings()) : 0;
     const context = getContext();
     const CMRS = context?.ConnectionManagerRequestService;
     const requestAbortController = new AbortController();
     const abortFromCaller = () => requestAbortController.abort();
-    const runAllowedRequest = requestFn => runAsInternalPromptTransform(() => {
+    const runAllowedRequest = (requestFn, signal) => runAsInternalPromptTransform(() => {
         if (!isRuntimeAllowed()) throw new DOMException('', 'AbortError');
         return requestFn();
-    }, requestAbortController.signal, {
+    }, signal, {
         companion: isCompanionAgent(agent) || (options.runtimeAgents ?? []).some(isCompanionAgent),
     });
     activeAgentRequestAbortControllers.add(requestAbortController);
     options.signal?.addEventListener('abort', abortFromCaller, { once: true });
 
-    const requestConnection = (attemptProfileId, attemptModelOverride) => {
+    const requestConnection = (attemptProfileId, attemptModelOverride, signal) => {
         if (attemptProfileId) {
             if (!CMRS || typeof CMRS.sendRequest !== 'function') {
                 throw new Error(`${describePromptTransformTarget(attemptProfileId, 'profile')} is set, but Connection Manager is unavailable.`);
             }
 
             return runAllowedRequest(
-                () => requestProfilePromptTransform(isRuntimeAllowed, CMRS, attemptProfileId, promptMessages, maxTokens, attemptModelOverride, requestAbortController.signal),
+                () => requestProfilePromptTransform(isRuntimeAllowed, CMRS, attemptProfileId, promptMessages, maxTokens, attemptModelOverride, signal),
+                signal,
             );
         }
         return runAllowedRequest(
-            () => requestMainModelPromptTransform(context, promptMessages, maxTokens, options, requestAbortController.signal),
+            () => requestMainModelPromptTransform(context, promptMessages, maxTokens, options, signal),
+            signal,
         );
+    };
+    // Each attempt stops waiting as soon as it is cancelled or runs out of time, even when the
+    // connection ignores the abort, so a stalled request cannot keep Agents marked as running.
+    const runAttempt = async (attemptProfileId, attemptModelOverride) => {
+        const attemptAbortController = new AbortController();
+        const abortAttempt = () => attemptAbortController.abort();
+        let timedOut = false;
+        const timer = attemptTimeoutMs > 0
+            ? setTimeout(() => { timedOut = true; abortAttempt(); }, attemptTimeoutMs)
+            : null;
+        requestAbortController.signal.addEventListener('abort', abortAttempt, { once: true });
+        if (requestAbortController.signal.aborted) abortAttempt();
+        try {
+            return await new Promise((resolve, reject) => {
+                const rejectOnAbort = () => reject(new DOMException('', 'AbortError'));
+                if (attemptAbortController.signal.aborted) return rejectOnAbort();
+                attemptAbortController.signal.addEventListener('abort', rejectOnAbort, { once: true });
+                let pending;
+                try {
+                    pending = Promise.resolve(requestConnection(attemptProfileId, attemptModelOverride, attemptAbortController.signal));
+                } catch (error) {
+                    pending = Promise.reject(error);
+                }
+                pending
+                    .then(resolve, reject)
+                    .finally(() => attemptAbortController.signal.removeEventListener('abort', rejectOnAbort));
+            });
+        } catch (error) {
+            if (timedOut && !requestAbortController.signal.aborted) {
+                throw new Error(`${describePromptTransformTarget(attemptProfileId, attemptProfileId ? 'profile' : 'main')} did not answer within ${Math.round(attemptTimeoutMs / 1000)} seconds.`);
+            }
+            throw error;
+        } finally {
+            if (timer) clearTimeout(timer);
+            requestAbortController.signal.removeEventListener('abort', abortAttempt);
+        }
     };
     // Saved fallback connections are tried in order when the Agent's own connection fails or
     // returns nothing. They use their own model, never the Agent's model override.
@@ -3744,7 +3784,7 @@ export async function requestPromptTransform(agent, promptMessages, maxTokens, o
             const target = describePromptTransformTarget(attempt.profileId, attempt.profileId ? 'profile' : 'main');
             let response;
             try {
-                response = await requestConnection(attempt.profileId, attempt.modelOverride);
+                response = await runAttempt(attempt.profileId, attempt.modelOverride);
                 response = {
                     ...response,
                     model: String(response?.model ?? '').trim() || getPromptTransformRequestModel(attempt.profileId, attempt.modelOverride),
@@ -6364,7 +6404,7 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     let unsafeTrackerRepairs = 0;
     let currentPromptTransformText = unwrapAssistantResponseWrapper(message.mes);
 
-    const promptTransformResult = await runPromptTransformPasses(trackerTransformAgents, message, generationType, currentPromptTransformText, messageIndex, {
+    const promptTransformResult = await runPromptTransformPasses(trackerTransformAgents.map(markTrackerRepairRunAgent), message, generationType, currentPromptTransformText, messageIndex, {
         cancelRevision: fixCancelRevision,
         isCurrent: isFixTargetCurrent,
     });
@@ -6409,7 +6449,7 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
 
         try {
             const repairAgent = {
-                ...agent,
+                ...markTrackerRepairRunAgent(agent),
                 prompt: `${String(agent.prompt).trim()}\n\n${TRACKER_REPAIR_INSTRUCTION}\nRepair the existing tracker records in the selected reply. Preserve their facts and return every record for this tracker in the exact required format, with all header separators, fields and closing tags. Return the repaired records even when nothing changed in the scene.`,
                 postProcess: {
                     ...agent.postProcess,

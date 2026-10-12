@@ -72,6 +72,7 @@ import {
     TRACKER_EMPTY_OUTPUT_INSTRUCTION,
 } from './companion-shared.js';
 import { resolveCompanionContentMacros } from './companion-macros.js';
+import { markTrackerRepairRunAgent } from '../tracker-repair-run.js';
 import { findTrackerBlocks, getCompanionTrackerAutoRepairPayload, inspectCompanionTrackerOutput, inspectTrackerState, normalizeCompanionTrackerRepairPayload, TRACKER_REPAIR_INSTRUCTION } from '../tracker-state.js';
 
 export { COMPANION_RESULTS_EXTRA_KEY };
@@ -1797,7 +1798,7 @@ async function runSingleCompanionAgent(agent, messageIndex, generationType, canc
         if (!areAgentsGloballyEnabled() || !isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
             throw new DOMException('Companion run cancelled.', 'AbortError');
         }
-        const response = await requestPromptTransform(agent, promptMessages, companion.maxTokens).catch(markCompanionConnectionFailure);
+        const response = await requestPromptTransform(repair ? markTrackerRepairRunAgent(agent) : agent, promptMessages, companion.maxTokens).catch(markCompanionConnectionFailure);
 
         if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
             throw new DOMException('Companion run cancelled.', 'AbortError');
@@ -2486,7 +2487,7 @@ export async function runCompanionAgentOnMessage(agentId, messageIndex, { cancel
     }
 }
 
-export async function runTrackerCompanionsOnMessage(messageIndex, { cancelRevision = getAgentGenerationCancelRevision() } = {}) {
+export async function runTrackerCompanionsOnMessage(messageIndex, { cancelRevision = getAgentGenerationCancelRevision(), onProgress = null } = {}) {
     const message = chat[messageIndex];
     const isTargetCurrent = captureCompanionTarget(messageIndex);
     if (!isValidCompanionTargetMessage(message, { allowUserMessage: true })) {
@@ -2496,8 +2497,9 @@ export async function runTrackerCompanionsOnMessage(messageIndex, { cancelRevisi
     const agents = getRunnableCompanionAgents(getEnabledAgents(), { manual: true, messageIndex })
         .filter(agent => isTrackerFixAgent(agent));
     const results = [];
-    for (const agent of agents) {
+    for (const [done, agent] of agents.entries()) {
         if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision) break;
+        onProgress?.({ done, total: agents.length, agent });
         const result = await runCompanionAgentOnMessage(agent.id, messageIndex, {
             cancelRevision,
             repair: true,

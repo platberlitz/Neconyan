@@ -344,7 +344,7 @@ describe('in-chat agents generation UI wiring', () => {
         expect(runSource).toContain('const fixChatId = getCurrentChatId();');
         expect(runSource).toContain('isFixContextCurrent()');
         expect(runSource).toContain('runTrackerFixOnMessage(inlineMessageIndex, { cancelRevision })');
-        expect(runSource).toContain('runTrackerCompanionsOnMessage(companionMessageIndex, { cancelRevision })');
+        expect(runSource).toContain('runTrackerCompanionsOnMessage(companionMessageIndex, {\n                cancelRevision,');
         expect(runSource).toContain('No assistant reply selected to fix trackers on.');
         expect(globalButtonSource).toContain('const inlineMessageIndex = getLastAssistantMessageIndex();');
         expect(globalButtonSource).toContain('const companionMessageIndex = getLatestValidCompanionMessageIndex();');
