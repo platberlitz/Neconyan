@@ -21,6 +21,9 @@
 #completion_prompt_manager #completion_prompt_manager_list li.bpt-section-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: none;
+    gap: 0;
+    flex-shrink: 0;
     align-items: stretch;
     min-height: 48px;
     padding: 0;
@@ -96,6 +99,7 @@
 }
 
 .bpt-section-lock {
+    --neconyan-control-radius: 0 14px 14px 0;
     appearance: none;
     -webkit-appearance: none;
     display: flex;
