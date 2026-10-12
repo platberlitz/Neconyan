@@ -209,6 +209,7 @@
                     <div id="ica--connectionFallbacks" class="ica--fallback-list" data-ica-fallback-key="connectionFallbacks" data-ica-fallback-noun="post-generation"></div>
                     <label class="ica--profile-label"><span>Companion connection profile</span><select id="ica--companionConnectionProfile" class="text_pole" title="Which connection profile Companion agents use when they do not have their own editor profile override. Leave empty to share the default above."><option value="">Default connection</option></select><small class="ica--profile-help">Use a quick, inexpensive model for notes that run after replies.</small></label>
                     <div id="ica--companionConnectionFallbacks" class="ica--fallback-list" data-ica-fallback-key="companionConnectionFallbacks" data-ica-fallback-noun="companion"></div>
+                    <label class="ica--profile-label"><span>Fix trackers time limit (seconds)</span><input id="ica--trackerRepairTimeoutSeconds" class="text_pole" type="number" min="0" max="3600" step="1" inputmode="numeric" title="How long Fix trackers waits for one connection before trying the next fallback. 0 waits forever."><small class="ica--profile-help">If a connection has not answered in this time, Fix trackers stops waiting and tries the next fallback. 0 waits forever.</small></label>
                 </section>
 
                 <section class="ica--settings-group" aria-labelledby="ica--execution-group-title">

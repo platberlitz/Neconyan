@@ -2,6 +2,7 @@ import { getRequestHeaders, saveSettings, saveSettingsDebounced } from '../../..
 import { extension_settings, getContext } from '../../extensions.js';
 import { uuidv4 } from '../../utils.js';
 import { normalizePromptTransformContextMessages } from './prompt-transform-context.js';
+import { DEFAULT_TRACKER_REPAIR_TIMEOUT_SECONDS, normalizeTrackerRepairTimeoutSeconds } from './tracker-repair-run.js';
 import { AGENT_STORAGE_LIMITS, getAgentRecordError, isAgentRecordId, isAgentSetupId, mergeAgentSetupRecord, normalizeAgentSetupPreset, normalizeAgentGroup, serializeAgentRecord } from './setup-presets.js';
 import {
     AGENT_REGEX_PLACEMENT,
@@ -183,6 +184,7 @@ const defaultGlobalSettings = {
     companionConnectionProfile: '',
     connectionFallbacks: [],
     companionConnectionFallbacks: [],
+    trackerRepairTimeoutSeconds: DEFAULT_TRACKER_REPAIR_TIMEOUT_SECONDS,
     promptTransformShowNotifications: true,
     postMainInterceptShowMessageFirst: true,
     promptTransformRefusalGuard: true,
@@ -433,6 +435,7 @@ function normalizeGlobalSettingsRecord(settings, update) {
     settings.hiddenCompanionAgentIds = normalizeAgentIdCollection(settings.hiddenCompanionAgentIds);
     settings.connectionFallbacks = normalizeConnectionFallbacks(settings.connectionFallbacks);
     settings.companionConnectionFallbacks = normalizeConnectionFallbacks(settings.companionConnectionFallbacks);
+    settings.trackerRepairTimeoutSeconds = normalizeTrackerRepairTimeoutSeconds(settings.trackerRepairTimeoutSeconds);
     settings.companionAutoCleanupEnabled = settings.companionAutoCleanupEnabled === true;
     const olderNotes = settings.companionAutoCleanupOlderNotes;
     settings.companionAutoCleanupOlderNotes = olderNotes !== '' && olderNotes !== null && Number.isFinite(Number(olderNotes))

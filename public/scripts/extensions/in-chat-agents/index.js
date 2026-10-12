@@ -120,6 +120,7 @@ import {
     populateConnectionProfileSelect,
 } from './profile-utils.js';
 import { describeAgentRunModel } from './model-label.js';
+import { DEFAULT_TRACKER_REPAIR_TIMEOUT_SECONDS, normalizeTrackerRepairTimeoutSeconds } from './tracker-repair-run.js';
 import { captureCompanionResultTarget, collectRecentCompanionResults, getCompanionResults, initCompanionRunner, getLatestValidCompanionMessageIndex, runTrackerCompanionsOnMessage, syncCompanionChatHistoryConfig } from './companion/companion-runner.js';
 import { getCompanionReferenceIds } from './companion/companion-shared.js';
 import { stripStateChangingMacros } from './companion/companion-macros.js';
@@ -2938,15 +2939,26 @@ async function runTrackerFixFromButton(messageIndex, button, { inlineMessageInde
             toastr.warning('No assistant reply selected to fix trackers on.');
         }
         if (hasCompanionTrackers && canRunCompanionTrackers && isFixContextCurrent()) {
-            await runTrackerCompanionsOnMessage(companionMessageIndex, { cancelRevision });
+            await runTrackerCompanionsOnMessage(companionMessageIndex, {
+                cancelRevision,
+                onProgress: ({ done, total }) => setFixTrackersProgressLabel(total > 1 ? `Fixing ${Math.min(done + 1, total)} of ${total}` : ''),
+            });
         } else if (hasCompanionTrackers && isFixContextCurrent()) {
             toastr.warning('No message selected to run connected companions on.');
         }
     } finally {
         fixTrackersRunning = false;
+        setFixTrackersProgressLabel('');
         $button.prop('disabled', false).removeClass('mes_fix_trackers--running');
         updateFixTrackersButtonVisibility();
+        // The repair's last request may finish without another state change reaching the composer, so re-read it here.
+        refreshGenerationUi();
     }
+}
+
+function setFixTrackersProgressLabel(text) {
+    const label = document.querySelector('#ica--fixTrackers > span');
+    if (label) label.textContent = text || 'Fix trackers';
 }
 
 const AGENT_LIST_TAB_STORAGE_KEY = 'ica--agent-list-tab';
@@ -6099,6 +6111,11 @@ function populateProfileDropdown() {
         });
     }
 
+    const trackerRepairTimeout = /** @type {HTMLInputElement|null} */ (document.getElementById('ica--trackerRepairTimeoutSeconds'));
+    if (trackerRepairTimeout && document.activeElement !== trackerRepairTimeout) {
+        trackerRepairTimeout.value = String(getGlobalSettings().trackerRepairTimeoutSeconds ?? DEFAULT_TRACKER_REPAIR_TIMEOUT_SECONDS);
+    }
+
     document.querySelectorAll('#ica--settings .ica--fallback-list[data-ica-fallback-key]').forEach(renderConnectionFallbackList);
 }
 
@@ -6931,6 +6948,12 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         setGlobalSettings({ companionConnectionProfile: this.value });
         persistExtensionState();
         renderAgentList();
+    });
+    $('#ica--trackerRepairTimeoutSeconds').on('change', function () {
+        const seconds = normalizeTrackerRepairTimeoutSeconds(this.value);
+        setGlobalSettings({ trackerRepairTimeoutSeconds: seconds });
+        this.value = String(seconds);
+        persistExtensionState();
     });
     $('#ica--separateRecentChats').on('change', function () {
         const separated = $(this).prop('checked');
