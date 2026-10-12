@@ -7595,71 +7595,74 @@ function onSettingsPresetChange() {
             return;
         }
 
-        if (oai_settings.bind_preset_to_connection) {
-            $('.model_custom_select').empty();
-        }
-
-        for (const [key, [selector, setting, isCheckbox, isConnection, isSampling]] of Object.entries(settingsToUpdate)) {
-            if (isConnection && !oai_settings.bind_preset_to_connection) {
-                continue;
+        try {
+            if (oai_settings.bind_preset_to_connection) {
+                $('.model_custom_select').empty();
             }
 
-            if (isSampling && !shouldIncludeSamplingFieldsInPreset(oai_settings)) {
-                continue;
-            }
-
-            // Extensions don't need UI updates and shouldn't fallback to current settings
-            if (key === 'extensions') {
-                oai_settings.extensions = preset.extensions || {};
-                continue;
-            }
-
-            if (key === 'bias_preset_selected') {
-                continue;
-            }
-
-            if (key === 'bias_presets') {
-                applyLogitBiasPresetSettings(preset);
-                continue;
-            }
-
-            if (preset[key] !== undefined) {
-                if (isCheckbox) {
-                    updateCheckbox(selector, preset[key]);
-                } else {
-                    updateInput(selector, preset[key]);
+            for (const [key, [selector, setting, isCheckbox, isConnection, isSampling]] of Object.entries(settingsToUpdate)) {
+                if (isConnection && !oai_settings.bind_preset_to_connection) {
+                    continue;
                 }
-                oai_settings[setting] = coerceNumericPresetSetting(key, preset[key]);
+
+                if (isSampling && !shouldIncludeSamplingFieldsInPreset(oai_settings)) {
+                    continue;
+                }
+
+                // Extensions don't need UI updates and shouldn't fallback to current settings
+                if (key === 'extensions') {
+                    oai_settings.extensions = preset.extensions || {};
+                    continue;
+                }
+
+                if (key === 'bias_preset_selected') {
+                    continue;
+                }
+
+                if (key === 'bias_presets') {
+                    applyLogitBiasPresetSettings(preset);
+                    continue;
+                }
+
+                if (preset[key] !== undefined) {
+                    if (isCheckbox) {
+                        updateCheckbox(selector, preset[key]);
+                    } else {
+                        updateInput(selector, preset[key]);
+                    }
+                    oai_settings[setting] = coerceNumericPresetSetting(key, preset[key]);
+                }
+            }
+
+            syncMaxContextUnlockedControl(oai_settings);
+
+            // These cannot be changed via preset if unbound to connection
+            if (oai_settings.bind_preset_to_connection) {
+                $('#chat_completion_source').trigger('change');
+                setOpenRouterProviders('#openrouter_providers_chat', oai_settings.openrouter_providers);
+                $('#openrouter_quantizations_chat').trigger('change');
+                updateNanoGptProviderControls();
+            }
+
+            rebuildOpenAIModelSelect();
+            updateOpenAIModelFavoriteButton();
+            updateAdvancedFormattingVisibility();
+            updateOpenAISettingsGroupVisibility();
+            scheduleOpenAIUiRefresh();
+            $('#openai_logit_bias_preset').trigger('change');
+
+            // Re-assert the per-model sampling profile after preset values, as before.
+            maybeApplyModelSamplingProfile();
+
+            await saveSettings();
+        } finally {
+            // Release prompt controls even when applying or saving the preset throws.
+            // An older overlapping change must not release the newest change's guard.
+            if (changeGeneration === settingsPresetChangeGeneration) {
+                await eventSource.emit(event_types.OAI_PRESET_CHANGED_AFTER);
+                await eventSource.emit(event_types.PRESET_CHANGED, { apiId: 'openai', name: presetName });
             }
         }
-
-        syncMaxContextUnlockedControl(oai_settings);
-
-        // These cannot be changed via preset if unbound to connection
-        if (oai_settings.bind_preset_to_connection) {
-            $('#chat_completion_source').trigger('change');
-            setOpenRouterProviders('#openrouter_providers_chat', oai_settings.openrouter_providers);
-            $('#openrouter_quantizations_chat').trigger('change');
-            updateNanoGptProviderControls();
-        }
-
-        rebuildOpenAIModelSelect();
-        updateOpenAIModelFavoriteButton();
-        updateAdvancedFormattingVisibility();
-        updateOpenAISettingsGroupVisibility();
-        scheduleOpenAIUiRefresh();
-        $('#openai_logit_bias_preset').trigger('change');
-
-        // Neconyan: re-assert the per-model sampling profile after a preset has
-        // written its sampling values, so a bound model profile always wins over
-        // the (Default/char) preset — the core promise of "decouple sampling from
-        // preset". Without this, starting a new chat or switching to a backend
-        // with a saved sampling profile silently reverts to the preset's sampling.
-        maybeApplyModelSamplingProfile();
-
-        await saveSettings();
-        await eventSource.emit(event_types.OAI_PRESET_CHANGED_AFTER);
-        await eventSource.emit(event_types.PRESET_CHANGED, { apiId: 'openai', name: presetName });
     });
 }
 

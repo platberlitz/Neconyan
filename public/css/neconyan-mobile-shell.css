@@ -1,6 +1,22 @@
 /* Neconyan mobile shell foundation: final sheet contract for modal drawers.
  * Keep this at the end of the shell sheet so it beats older mobile drawer rules. */
 @media screen and (max-width: 768px) {
+    body.neconyan #completion_prompt_manager #completion_prompt_manager_list li.completion_prompt_manager_prompt > span:nth-child(3) { touch-action: pan-x; }
+    body.neconyan #completion_prompt_manager #completion_prompt_manager_list li.completion_prompt_manager_prompt .prompt_manager_prompt_controls > .prompt-manager-pin-action {
+        display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+        height: 44px; min-height: 44px; width: 44px; min-width: 44px; flex: 0 0 auto;
+        padding: 0 10px; margin: 0; border: 1px solid color-mix(in srgb, var(--neco-ginger) 50%, var(--neco-ink)); border-radius: 8px;
+        background: var(--neco-surface); color: var(--neco-ink); filter: none; opacity: 1;
+        box-shadow: none; text-shadow: none;
+    }
+    body.neconyan #completion_prompt_manager #completion_prompt_manager_list li.completion_prompt_manager_prompt .prompt_manager_prompt_controls > .prompt-manager-pin-action { width: auto; min-width: max-content; }
+    body.neconyan #completion_prompt_manager #completion_prompt_manager_list .prompt-manager-pin-label { font: 600 13px var(--mainFontFamily); white-space: nowrap; color: inherit; }
+    body.neconyan #completion_prompt_manager #completion_prompt_manager_list .prompt-manager-pin-action::after { display: none; }
+    body.neconyan #completion_prompt_manager #completion_prompt_manager_list li.completion_prompt_manager_prompt .prompt_manager_prompt_controls > .prompt-manager-pin-action[aria-pressed='true'] { border-color: color-mix(in srgb, var(--neco-ginger) 50%, var(--neco-ink)); }
+    body.neconyan #completion_prompt_manager #completion_prompt_manager_list .prompt-manager-pin-action[aria-pressed='true'] > i { color: color-mix(in srgb, var(--neco-ginger) 50%, var(--neco-ink)); }
+    body.neconyan #completion_prompt_manager #completion_prompt_manager_list li.completion_prompt_manager_prompt .prompt_manager_prompt_controls > .prompt-manager-toggle-action { height: 44px; width: 44px; min-height: 44px; flex: 0 0 44px; }
+    body.neconyan #completion_prompt_manager .prompt-manager-pin-note { display: none; }
+    body.neconyan #completion_prompt_manager #completion_prompt_manager_list li.completion_prompt_manager_prompt .prompt_manager_prompt_controls > button:focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: -3px; }
     /* Wrapped agent changes scroll vertically, without Safari's sideways bounce. */
     body.neconyan .ica-transform-history .ica-transform-diff {
         overflow-x: hidden;

@@ -20,6 +20,7 @@ import { getPromptPreview } from './prompt-preview.js';
 import { clearPromptSetVariables } from './prompt-variable-cleanup.js';
 import { withReadOnlyVariables } from './variable-read-only.js';
 import { RUNTIME_AGENTS_IDENTIFIER, resolveInChatAgentTokenUsage } from './in-chat-agent-inspection.js';
+import { PINNED_PROMPTS_FIELD, normalizePinnedPromptIds, setPinnedPromptId } from './pinned-prompt-toggles.js';
 import {
     resolvePromptManagerRenderState,
     resolvePromptManagerScrollRestore,
@@ -635,6 +636,141 @@ class PromptManager {
     }
 
 
+    notifyUpdated(reason) {
+        void eventSource.emit(event_types.PROMPT_MANAGER_UPDATED, { manager: this, reason });
+    }
+
+    isPromptScopeCurrent({ name, character, prompt, entry }) {
+        return !this.isPresetChanging && Boolean(character && this.activeCharacter) && name === this.serviceSettings.preset_settings_openai && String(character.id) === String(this.activeCharacter.id) &&
+            this.getPromptById(prompt.identifier) === prompt && this.getPromptOrderEntry(this.activeCharacter, prompt.identifier) === entry;
+    }
+
+    /** Mutate the existing order, never the named preset's saved enabled state. */
+    setPromptEnabled(identifier, enabled, { deferRender = false, allowRestricted = false } = {}) {
+        if (this.isPresetChanging || typeof identifier !== 'string' || !identifier || typeof enabled !== 'boolean' || !this.activeCharacter) return false;
+        const prompt = this.getPromptById(identifier);
+        const entry = this.getPromptOrderEntry(this.activeCharacter, identifier);
+        if (!prompt || !entry || identifier === RUNTIME_AGENTS_IDENTIFIER || (!allowRestricted && !this.isPromptToggleAllowed(prompt)) || Boolean(entry.enabled) === enabled) return false;
+        const expanded = this.getDrawerExpandedState();
+        this.tokenHandler.getCounts()[identifier] = null;
+        entry.enabled = enabled;
+        if (!enabled && prompt.content) clearPromptSetVariables(prompt.content);
+        this.setStoredDrawerExpanded(expanded);
+        for (const row of this.listElement?.querySelectorAll('[data-pm-identifier]') ?? []) {
+            if (row.dataset.pmIdentifier !== identifier) continue;
+            row.classList.toggle(`${this.configuration.prefix}prompt_manager_prompt_disabled`, !enabled);
+            const button = row.querySelector('.prompt-manager-toggle-action');
+            button?.setAttribute('aria-checked', String(enabled));
+            button?.classList.toggle('fa-toggle-on', enabled);
+            button?.classList.toggle('fa-toggle-off', !enabled);
+        }
+        this.notifyUpdated('enabled');
+        if (!deferRender) {
+            this.render();
+            this.saveServiceSettings();
+        }
+        return true;
+    }
+
+    syncPinnedPromptControls() {
+        const pins = new Set(normalizePinnedPromptIds(this.serviceSettings?.extensions?.[PINNED_PROMPTS_FIELD]));
+        for (const button of this.listElement?.querySelectorAll('.prompt-manager-pin-action') ?? []) {
+            const identifier = button.closest('[data-pm-identifier]')?.dataset.pmIdentifier;
+            const prompt = this.getPromptById(identifier);
+            const pinned = pins.has(identifier);
+            button.setAttribute('aria-pressed', String(pinned));
+            button.disabled = Boolean(this.pendingPinWrite || this.isPresetChanging);
+            button.setAttribute('aria-busy', String(Boolean(this.pendingPinWrite)));
+            const label = pinned ? t`Unpin ${prompt?.name ?? identifier} from chat` : t`Pin ${prompt?.name ?? identifier} to chat`;
+            button.title = label;
+            button.setAttribute('aria-label', label);
+            button.querySelector('.prompt-manager-pin-label').textContent = pinned ? t`Pinned` : t`Pin`;
+        }
+    }
+
+    /** One metadata write at a time, scoped before loading the preset dependency. */
+    async setPromptPinned(identifier, pinned) {
+        if (this.isPresetChanging || this.pendingPinWrite || typeof identifier !== 'string' || !identifier.trim() || typeof pinned !== 'boolean' || !this.activeCharacter) return false;
+        const name = this.serviceSettings.preset_settings_openai;
+        const character = this.activeCharacter;
+        const prompt = this.getPromptById(identifier);
+        const entry = this.getPromptOrderEntry(character, identifier);
+        if (!name || !prompt || !entry || identifier === RUNTIME_AGENTS_IDENTIFIER || !this.isPromptToggleAllowed(prompt)) return false;
+        const previous = structuredClone(this.serviceSettings.extensions?.[PINNED_PROMPTS_FIELD]);
+        const next = setPinnedPromptId(previous, identifier, pinned);
+        if (JSON.stringify(previous) === JSON.stringify(next)) return false;
+        const operation = { name };
+        const focusedPin = this.listElement?.ownerDocument?.activeElement;
+        const restorePinFocus = this.listElement?.contains(focusedPin) && focusedPin.matches('.prompt-manager-pin-action') &&
+            focusedPin.closest('[data-pm-identifier]')?.dataset.pmIdentifier === identifier;
+        this.pendingPinWrite = operation;
+        this.syncPinnedPromptControls();
+        let presetManager;
+        let savedPreset;
+        let savedPrevious;
+        let started = false;
+        const matches = (value, other) => JSON.stringify(value) === JSON.stringify(other);
+        const restoreField = (target, value) => {
+            if (value === undefined) delete target.extensions?.[PINNED_PROMPTS_FIELD];
+            else (target.extensions ??= {})[PINNED_PROMPTS_FIELD] = structuredClone(value);
+        };
+        try {
+            ({ getPresetManager: presetManager } = await import('./preset-manager.js'));
+            presetManager = presetManager('openai');
+            if (!this.isPromptScopeCurrent({ name, character, prompt, entry })) return false;
+            savedPreset = presetManager?.getCompletionPresetByName(name);
+            if (!savedPreset || presetManager.getSelectedPresetName() !== name) return false;
+            savedPrevious = structuredClone(savedPreset.extensions?.[PINNED_PROMPTS_FIELD]);
+            started = true;
+            const saving = presetManager.writePresetExtensionField({ name, path: PINNED_PROMPTS_FIELD, value: next, requireSettingsSave: true, quiet: true,
+                isCurrent: preset => preset === savedPreset });
+            this.syncPinnedPromptControls();
+            this.notifyUpdated('pin-pending');
+            await saving;
+            const currentSaved = presetManager.getCompletionPresetByName(name);
+            if (!currentSaved || (currentSaved !== savedPreset && !matches(currentSaved.extensions?.[PINNED_PROMPTS_FIELD], next))) throw new Error('The preset was removed or replaced while saving pins.');
+            // A -> B -> A may have cloned the pre-write saved metadata while settings were saving.
+            if (this.serviceSettings.preset_settings_openai === name && this.pendingPinWrite === operation &&
+                (matches(this.serviceSettings.extensions?.[PINNED_PROMPTS_FIELD], previous) || matches(this.serviceSettings.extensions?.[PINNED_PROMPTS_FIELD], savedPrevious))) {
+                restoreField(this.serviceSettings, next);
+                this.saveServiceSettings();
+            }
+            this.notifyUpdated('pin-saved');
+            return true;
+        } catch (error) {
+            // A deliberate full save may already have saved these pins while the
+            // settings request was pending. Do not overwrite that newer preset.
+            const currentSaved = presetManager?.getCompletionPresetByName?.(name);
+            if (error.name === 'AbortError' && currentSaved && currentSaved !== savedPreset && matches(currentSaved.extensions?.[PINNED_PROMPTS_FIELD], next)) {
+                this.notifyUpdated('pin-saved');
+                return true;
+            }
+            if (started) {
+                if (matches(savedPreset?.extensions?.[PINNED_PROMPTS_FIELD], next)) restoreField(savedPreset, savedPrevious);
+                if (this.serviceSettings.preset_settings_openai === name && matches(this.serviceSettings.extensions?.[PINNED_PROMPTS_FIELD], next) &&
+                    !(currentSaved && currentSaved !== savedPreset && matches(currentSaved.extensions?.[PINNED_PROMPTS_FIELD], next))) {
+                    restoreField(this.serviceSettings, previous);
+                    this.saveServiceSettings();
+                }
+                this.notifyUpdated('pin-failed');
+            }
+            toastr.error(t`Could not save pinned prompts. Check the connection and try again.`);
+            console.error('Pinned prompts could not be saved', error);
+            return false;
+        } finally {
+            if (this.pendingPinWrite === operation) this.pendingPinWrite = null;
+            this.syncPinnedPromptControls();
+            // Disabling a focused native button blurs it in Chromium. Restore only the
+            // originating action, only in the same scope, and never over another focus.
+            if (restorePinFocus && this.isPromptScopeCurrent({ name, character, prompt, entry }) &&
+                this.listElement?.ownerDocument.activeElement === this.listElement.ownerDocument.body) {
+                const row = [...this.listElement.querySelectorAll('[data-pm-identifier]')].find(row => row.dataset.pmIdentifier === identifier);
+                row?.querySelector('.prompt-manager-pin-action')?.focus({ preventScroll: true });
+            }
+            this.notifyUpdated('pin-settled');
+        }
+    }
+
     /**
      * Initializes the PromptManager with provided configuration and service settings.
      *
@@ -666,26 +802,9 @@ class PromptManager {
             event.preventDefault();
             event.stopPropagation();
 
-            const promptID = event.target.closest('.' + this.configuration.prefix + 'prompt_manager_prompt').dataset.pmIdentifier;
-            const promptOrderEntry = this.getPromptOrderEntry(this.activeCharacter, promptID);
-            const counts = this.tokenHandler.getCounts();
-            const drawerExpanded = this.getDrawerExpandedState();
-
-            counts[promptID] = null;
-            promptOrderEntry.enabled = !promptOrderEntry.enabled;
-
-            // Neconyan: clear persisted variables owned by a prompt when it is disabled.
-            if (!promptOrderEntry.enabled) {
-                const prompt = this.getPromptById(promptID);
-
-                if (prompt?.content) {
-                    clearPromptSetVariables(prompt.content);
-                }
-            }
-
-            this.setStoredDrawerExpanded(drawerExpanded);
-            this.render();
-            this.saveServiceSettings();
+            const promptID = event.target.closest('.' + this.configuration.prefix + 'prompt_manager_prompt')?.dataset.pmIdentifier;
+            const entry = this.getPromptOrderEntry(this.activeCharacter, promptID);
+            if (entry) this.setPromptEnabled(promptID, !entry.enabled);
         };
 
         const editPromptById = (promptID) => {
@@ -1160,7 +1279,14 @@ class PromptManager {
         closeAndClearPopup();
 
         // Re-render prompt manager on openai preset change
+        eventSource.on(event_types.OAI_PRESET_CHANGED_BEFORE, () => {
+            this.isPresetChanging = true;
+            this.syncPinnedPromptControls();
+            this.notifyUpdated('preset-before');
+        });
         eventSource.on(event_types.OAI_PRESET_CHANGED_AFTER, () => {
+            this.isPresetChanging = false;
+            this.syncPinnedPromptControls();
             this.sanitizeServiceSettings();
             const mainPrompt = this.getPromptById('main');
             this.updateQuickEdit('main', mainPrompt);
@@ -1248,6 +1374,7 @@ class PromptManager {
      * @param afterTryGenerate - Whether a dry run should be attempted before rendering
      */
     render(afterTryGenerate = true) {
+        this.notifyUpdated('render');
         const renderRequestId = ++this.renderRequestId;
         const renderState = resolvePromptManagerRenderState({
             mainApi: main_api,
@@ -1568,6 +1695,7 @@ class PromptManager {
         } else {
             throw new Error('Unsupported prompt order mode.');
         }
+        this.notifyUpdated('character');
     }
 
     /**
@@ -1583,6 +1711,7 @@ class PromptManager {
         } else {
             throw new Error('Prompt order strategy not supported.');
         }
+        this.notifyUpdated('character-updated');
     }
 
     /**
@@ -1602,6 +1731,7 @@ class PromptManager {
         } else {
             throw new Error('Prompt order strategy not supported.');
         }
+        this.notifyUpdated('group');
     }
 
     /**
@@ -2221,6 +2351,17 @@ class PromptManager {
         }
 
         this.restorePopupToOrigin();
+        const focused = document.activeElement;
+        const focusedRow = focused?.closest?.('[data-pm-identifier]');
+        if (this.listElement?.contains(focused) && focused.matches('.prompt-manager-pin-action, .prompt-manager-toggle-action') && focused.promptScope && this.isPromptScopeCurrent(focused.promptScope)) {
+            this.pendingListFocus = {
+                ...focused.promptScope,
+                identifier: focusedRow.dataset.pmIdentifier,
+                action: focused.classList.contains('prompt-manager-pin-action') ? '.prompt-manager-pin-action' : '.prompt-manager-toggle-action',
+            };
+        } else if (focused !== document.body) {
+            this.pendingListFocus = null;
+        }
         promptManagerDiv.innerHTML = '';
         promptManagerDiv.insertAdjacentHTML('beforeend', headerHtml);
 
@@ -2345,10 +2486,12 @@ class PromptManager {
             }
 
             let toggleSpanHtml = '';
+            let pinButtonHtml = '';
             if (this.isPromptToggleAllowed(prompt)) {
                 toggleSpanHtml = `
-                    <span class="prompt-manager-toggle-action ${listEntry.enabled ? 'fa-solid fa-toggle-on' : 'fa-solid fa-toggle-off'}"></span>
+                    <button type="button" role="switch" aria-checked="${Boolean(listEntry.enabled)}" aria-label="${escapeHtml(prompt.name ?? prompt.identifier)}" title="${escapeHtml(prompt.name ?? prompt.identifier)}" data-i18n-ignore class="prompt-manager-toggle-action ${listEntry.enabled ? 'fa-solid fa-toggle-on' : 'fa-solid fa-toggle-off'}"></button>
                 `;
+                pinButtonHtml = '<button type="button" class="menu_button menu_button_icon prompt-manager-pin-action" aria-pressed="false" data-i18n-ignore><i class="fa-solid fa-bookmark" aria-hidden="true"></i><small class="prompt-manager-pin-label"></small></button>';
             } else {
                 toggleSpanHtml = '<span class="prompt-manager-control-placeholder" aria-hidden="true"></span>';
             }
@@ -2395,6 +2538,7 @@ class PromptManager {
                                 ${sendToAgentsSpanHtml}
                                 ${detachSpanHtml}
                                 ${editSpanHtml}
+                                ${pinButtonHtml}
                                 ${toggleSpanHtml}
                             </span>
                     </span>
@@ -2440,8 +2584,19 @@ class PromptManager {
             el.addEventListener('click', this.handleEdit);
         });
 
-        Array.from(promptManagerList.querySelectorAll('.prompt-manager-toggle-action')).forEach(el => {
-            el.addEventListener('click', this.handleToggle);
+        Array.from(promptManagerList.querySelectorAll('.prompt-manager-toggle-action, .prompt-manager-pin-action')).forEach(el => {
+            const identifier = el.closest('[data-pm-identifier]').dataset.pmIdentifier;
+            const scope = { name: this.serviceSettings.preset_settings_openai, character: this.activeCharacter,
+                prompt: this.getPromptById(identifier), entry: this.getPromptOrderEntry(this.activeCharacter, identifier) };
+            el.promptScope = scope;
+            el.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (!this.isPromptScopeCurrent(scope)) return;
+                if (el.classList.contains('prompt-manager-pin-action')) {
+                    void this.setPromptPinned(identifier, !normalizePinnedPromptIds(this.serviceSettings.extensions?.[PINNED_PROMPTS_FIELD]).includes(identifier));
+                } else this.handleToggle(event);
+            });
         });
 
         Array.from(promptManagerList.getElementsByClassName('prompt-manager-send-to-agents-action')).forEach(el => {
@@ -2453,6 +2608,13 @@ class PromptManager {
         });
 
         this.syncListSelection();
+        this.syncPinnedPromptControls();
+        const focus = this.pendingListFocus;
+        this.pendingListFocus = null;
+        if (focus && document.activeElement === document.body && this.isPromptScopeCurrent(focus)) {
+            const row = [...promptManagerList.querySelectorAll('[data-pm-identifier]')].find(row => row.dataset.pmIdentifier === focus.identifier);
+            row?.querySelector(focus.action)?.focus({ preventScroll: true });
+        }
         return true;
     }
 
@@ -2601,6 +2763,15 @@ class PromptManager {
 
                 this.removePromptOrderForCharacter(this.activeCharacter);
                 this.addPromptOrderForCharacter(this.activeCharacter, updatedPromptOrder);
+                // Reordering clones the order entries. Keep the existing controls
+                // scoped to their new entries without rebinding or rendering them.
+                for (const button of this.listElement?.querySelectorAll('.prompt-manager-toggle-action, .prompt-manager-pin-action') ?? []) {
+                    const scope = button.promptScope;
+                    if (scope?.name === this.serviceSettings.preset_settings_openai && scope.character === this.activeCharacter && this.getPromptById(scope.prompt.identifier) === scope.prompt) {
+                        scope.entry = this.getPromptOrderEntry(this.activeCharacter, scope.prompt.identifier);
+                    }
+                }
+                this.notifyUpdated('reorder');
 
                 this.log(`Prompt order updated for ${this.activeCharacter.name}.`);
 
