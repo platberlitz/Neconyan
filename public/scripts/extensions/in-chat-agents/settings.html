@@ -38,6 +38,9 @@
                 <button type="button" id="ica--globalEnabled" class="ica--master-toggle menu_button menu_button_icon" title="Pause future runs without changing individual agent switches" aria-pressed="true">
                     <i class="fa-solid fa-power-off" aria-hidden="true"></i><span>Agents On</span>
                 </button>
+                <button type="button" id="ica--fixTrackers" class="menu_button menu_button_icon" title="Re-run enabled tracker agents on the last assistant reply">
+                    <i class="fa-solid fa-wrench" aria-hidden="true"></i><span>Fix trackers</span>
+                </button>
                 <button type="button" id="ica--cancelGeneration" class="menu_button menu_button_icon caution" title="Stop the active agent generation" style="display:none">
                     <i class="fa-solid fa-stop" aria-hidden="true"></i><span>Stop agent</span>
                 </button>
@@ -86,10 +89,6 @@
                             <button type="button" id="ica--updateAllAgents" class="menu_button menu_button_icon" title="Update every agent whose bundled template has a newer version" style="display:none">
                                 <i class="fa-solid fa-arrow-up-right-dots" aria-hidden="true"></i>
                                 <span>Update templates</span>
-                            </button>
-                            <button type="button" id="ica--fixTrackers" class="menu_button menu_button_icon" title="Re-run enabled tracker agents on the last assistant reply">
-                                <i class="fa-solid fa-wrench" aria-hidden="true"></i>
-                                <span>Fix trackers</span>
                             </button>
                             <button type="button" id="ica--companionsDashboard" class="menu_button menu_button_icon" title="Open Companion activity: see, run and manage companion agents">
                                 <i class="fa-solid fa-user-astronaut" aria-hidden="true"></i>

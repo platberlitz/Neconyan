@@ -763,7 +763,7 @@ const TOOL_PAGES = Object.freeze({
                 id: 'overview', tab: '.ica--workspace-tab[data-workspace-view="manage"]',
                 targets: ['.ica--overview'],
                 title: 'The status line',
-                body: 'This line shows whether agents are running, how many you have, how many are switched on, and how many **prompt tokens** the switched-on agents add to each request. Tokens are the pieces of text models count.\n**Agents On** pauses every agent at once and keeps each agent’s own switch as it was. **Stop agent** appears only while an agent is running.',
+                body: 'This line shows whether agents are running, how many you have, how many are switched on, and how many **prompt tokens** the switched-on agents add to each request. Tokens are the pieces of text models count.\n**Agents On** pauses every agent at once and keeps each agent’s own switch as it was. **Fix trackers** runs your tracker agents again on the last reply; trackers are agents that keep a running record, such as clothes, location or health. **Stop agent** appears only while an agent is running.',
                 hint: 'One switch to silence the lot. Use it before you start blaming the model.',
             },
             {
@@ -784,7 +784,7 @@ const TOOL_PAGES = Object.freeze({
                 id: 'more-tools', tab: '.ica--workspace-tab[data-workspace-view="manage"]', open: '#ica--moreTools > summary',
                 targets: ['#ica--moreTools'],
                 title: 'More tools',
-                body: 'Below your saved setups, **Fix trackers** runs your tracker agents again on the last reply. Trackers are agents that keep a running record, such as clothes, location or health. **Companion activity** opens a list of your companions, where you can run companions and read their history.\n**Move trackers to companions** turns trackers that change the reply into companions, so they write notes instead. **Import agents** and **Export agents** use files. **Reset bundled agents** restores the agents that came with Neconyan and leaves your own agents alone.',
+                body: 'Below your saved setups, **Companion activity** opens a list of your companions, where you can run companions and read their history.\n**Move trackers to companions** turns trackers that change the reply into companions, so they write notes instead. **Import agents** and **Export agents** use files. **Reset bundled agents** restores the agents that came with Neconyan and leaves your own agents alone.',
                 hint: 'Reset only touches the bundled ones. Your own work is safe. Mostly from you.',
             },
             {
