@@ -35,7 +35,7 @@ function surface(visible = true) {
     const animations = [];
     const declarations = new Map();
     const element = {
-        isConnected: true, visible, inert: false,
+        isConnected: true, visible, inert: false, dataset: {},
         style: {
             getPropertyValue: name => declarations.get(name)?.[0] ?? '',
             getPropertyPriority: name => declarations.get(name)?.[1] ?? '',
@@ -75,14 +75,19 @@ describe('interruptible UI motion', () => {
     });
 
     test('closing disables interaction immediately and hides only after its short exit', () => {
+        pendingFrames = [];
         const { element, apply, animations } = surface();
         motion.setUiVisibility(element, false, apply);
         expect(element.inert).toBe(true);
+        expect(element.dataset.uiClosing).toBe('true');
         expect(element.visible).toBe(true);
         expect(motion.isUiClosing(element)).toBe(true);
         expect(apply).not.toHaveBeenCalled();
+        expect(pendingFrames).toHaveLength(1);
+        pendingFrames.shift()();
         animations[0].onfinish();
         expect(element.inert).toBe(false);
+        expect(element.dataset).not.toHaveProperty('uiClosing');
         expect(element.visible).toBe(false);
         expect(motion.isUiClosing(element)).toBe(false);
         expect(animations[0].cancel).toHaveBeenCalledTimes(1);
@@ -110,22 +115,84 @@ describe('interruptible UI motion', () => {
         const oldFinish = animations[0].onfinish;
         element.opacity = '0.4';
         motion.setUiVisibility(element, true, apply);
+        expect(element.dataset).not.toHaveProperty('uiClosing');
         oldFinish();
+        expect(element.dataset).not.toHaveProperty('uiClosing');
         expect(element.visible).toBe(true);
         expect(element.inert).toBe(false);
         expect(apply.mock.calls).toEqual([[true]]);
         expect(animations[1].frames[0].opacity).toBe('0.4');
         animations[1].onfinish();
+        expect(element.dataset).not.toHaveProperty('uiClosing');
         expect(element.visible).toBe(true);
+    });
+
+    test('native animation cancellation removes the closing marker and completes the hide', () => {
+        pendingFrames = [];
+        const { element, apply, animations } = surface();
+        motion.setUiVisibility(element, false, apply);
+        expect(element.dataset.uiClosing).toBe('true');
+        animations[0].oncancel();
+        expect(element.dataset).not.toHaveProperty('uiClosing');
+        expect(element.visible).toBe(false);
+        expect(element.inert).toBe(false);
+        expect(motion.isUiClosing(element)).toBe(false);
+        expect(apply.mock.calls).toEqual([[false]]);
+    });
+
+    test('explicitly finishing a close removes its marker before applying the hide', () => {
+        const { element, apply } = surface();
+        apply.mockImplementation(open => {
+            expect(element.dataset).not.toHaveProperty('uiClosing');
+            element.visible = open;
+        });
+        motion.setUiVisibility(element, false, apply);
+        motion.finishUiMotion(element);
+        expect(element.dataset).not.toHaveProperty('uiClosing');
+        expect(element.visible).toBe(false);
+    });
+
+    test('non-animated visibility changes never mark the surface as closing', () => {
+        const { element, apply } = surface();
+        motion.setUiVisibility(element, false, apply, { animate: false });
+        expect(element.dataset).not.toHaveProperty('uiClosing');
+        motion.setUiVisibility(element, true, apply, { animate: false });
+        expect(element.dataset).not.toHaveProperty('uiClosing');
+        expect(element.animate).not.toHaveBeenCalled();
     });
 
     test('repeated closes cannot extend the exit or run competing callbacks', () => {
         const { element, apply, animations } = surface();
         motion.setUiVisibility(element, false, apply);
+        expect(element.dataset.uiClosing).toBe('true');
         motion.setUiVisibility(element, false, apply);
+        expect(element.dataset.uiClosing).toBe('true');
         expect(animations).toHaveLength(1);
         motion.finishUiMotion(element);
+        expect(element.dataset).not.toHaveProperty('uiClosing');
         expect(apply).toHaveBeenCalledTimes(1);
+    });
+
+    test('elements without a dataset can close and restore without throwing', () => {
+        const { element, apply, animations } = surface();
+        delete element.dataset;
+        expect(() => motion.setUiVisibility(element, false, apply)).not.toThrow();
+        expect(motion.isUiClosing(element)).toBe(true);
+        expect(animations).toHaveLength(1);
+        expect(() => motion.finishUiMotion(element)).not.toThrow();
+        expect(element.visible).toBe(false);
+        expect(element.inert).toBe(false);
+        expect(apply.mock.calls).toEqual([[false]]);
+    });
+
+    test('closing an already hidden surface applies visibility without setting a marker', () => {
+        const { element, apply } = surface(false);
+        motion.setUiVisibility(element, false, apply);
+        expect(element.dataset).not.toHaveProperty('uiClosing');
+        expect(element.animate).not.toHaveBeenCalled();
+        expect(motion.isUiClosing(element)).toBe(false);
+        expect(element.inert).toBe(false);
+        expect(apply.mock.calls).toEqual([[false]]);
     });
 
     test('repeated opens keep the in-flight arrival instead of snapping to its end', () => {
@@ -143,8 +210,10 @@ describe('interruptible UI motion', () => {
         else media.matches = true;
         const { element, apply } = surface(false);
         motion.setUiVisibility(element, true, apply);
+        expect(element.dataset).not.toHaveProperty('uiClosing');
         motion.revealUi(element);
         motion.setUiVisibility(element, false, apply);
+        expect(element.dataset).not.toHaveProperty('uiClosing');
         expect(apply.mock.calls).toEqual([[true], [false]]);
         expect(element.animate).not.toHaveBeenCalled();
     });
@@ -161,6 +230,7 @@ describe('interruptible UI motion', () => {
         }
         expect(element.visible).toBe(false);
         expect(element.inert).toBe(false);
+        expect(element.dataset).not.toHaveProperty('uiClosing');
     });
 
     test('hidden content and browsers without the animation API remain functional', () => {
@@ -172,6 +242,7 @@ describe('interruptible UI motion', () => {
         expect(element.visible).toBe(true);
         motion.setUiVisibility(element, false, apply);
         expect(element.visible).toBe(false);
+        expect(element.dataset).not.toHaveProperty('uiClosing');
     });
 
     test('reveals leave no persistent effect or change to scroll position', () => {

@@ -312,10 +312,10 @@ body.neconyan :is(.sb-shell-root, #right-nav-panel).openDrawer {
 /* Anchored on the drawer holder, not body: a body-level :has() here made Chromium restyle the
    whole page on every small DOM change (about 350ms each with a long chat open). The shell pages
    sit two levels down, so '> * >' keeps the check to those levels instead of all 18k elements. */
-body.neconyan :where(#top-settings-holder):has(> * > :is(.sb-shell-root, #right-nav-panel).openDrawer) ~ #sheld {
+body.neconyan :where(#top-settings-holder):has(> * > :is(.sb-shell-root, #right-nav-panel).openDrawer:where(:not([data-ui-closing]))) ~ #sheld {
     visibility: hidden !important; pointer-events: none !important;
 }
-body.neconyan :where(#top-settings-holder):has(> * > :is(.sb-shell-root, #right-nav-panel).openDrawer) ~ :where(#sheld) #neconyan-home-host {
+body.neconyan :where(#top-settings-holder):has(> * > :is(.sb-shell-root, #right-nav-panel).openDrawer:where(:not([data-ui-closing]))) ~ :where(#sheld) #neconyan-home-host {
     visibility: hidden !important; pointer-events: none !important;
 }
 body.neconyan #left-nav-panel[data-sb-active-tab='agents'] .sb-shell-nav-wrapper { display: none; }
