@@ -113,16 +113,27 @@ export async function selectSampleCharacter(page) {
     const didSelectCharacter = await page.evaluate(async () => {
         const context = window.SillyTavern.getContext();
 
+        const isMiso = character => /^miso-/.test(character?.data?.extensions?.neconyan_assistant?.id ?? '');
+
         if (!context.characters.length) {
             await context.getCharacters();
         }
 
-        // The named sample characters only exist in the bundled test data. Fall back to any
-        // available character so local and preview profiles can still open a chat.
-        const preferredId = context.characters.findIndex(character => /Bunny Guide|Seraphina/.test(character?.name ?? character?.data?.name ?? ''));
-        const characterId = preferredId >= 0 ? preferredId : 0;
+        // Miso ships with Neconyan, so install her card when this profile does not have one yet.
+        if (!context.characters.some(isMiso)) {
+            const response = await fetch('/api/characters/assistants/install', {
+                method: 'POST',
+                headers: { ...context.getRequestHeaders(), 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: 'miso-female' }),
+            });
+            if (!response.ok) {
+                return false;
+            }
+            await context.getCharacters();
+        }
 
-        if (!context.characters.length) {
+        const characterId = context.characters.findIndex(isMiso);
+        if (characterId < 0) {
             return false;
         }
 
@@ -130,7 +141,7 @@ export async function selectSampleCharacter(page) {
     });
 
     if (!didSelectCharacter) {
-        throw new Error('Could not select a sample character for scroll regression setup.');
+        throw new Error('Could not open Miso for scroll regression setup.');
     }
 
     const optionalLorebookDecline = page.locator('.popup-button-cancel:visible').first();
@@ -313,7 +324,7 @@ async function renderSyntheticLongChat(page, { messageCount, visibleCount }) {
             const isUser = index % 2 === 0;
             const baseText = `issue 167 synthetic message ${index}`;
             context.chat.push({
-                name: isUser ? 'Scroll Tester' : 'Bunny Guide',
+                name: isUser ? 'Scroll Tester' : 'Miso',
                 is_user: isUser,
                 is_system: false,
                 send_date: new Date(Date.UTC(2024, 0, 1, 0, index)).toISOString(),
@@ -386,7 +397,7 @@ export async function installSwipeCandidate(page, messageId) {
         const message = context.chat[targetMessageId];
 
         message.is_user = false;
-        message.name = 'Bunny Guide';
+        message.name = 'Miso';
         message.swipe_id = 0;
         message.swipes = [
             `issue 167 original swipe ${targetMessageId} ${'anchor filler '.repeat(20)}`,
