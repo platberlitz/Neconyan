@@ -151,6 +151,46 @@ test('an explicitly selected disabled Agent edits only its saved message and pre
     assert.equal(requests, 1);
 });
 
+test('a manual continuity rewrite scans current lore and retains saved tracker and Author\'s Note context on recovery', async t => {
+    const f = prepared(t, [
+        { id: 'continuity', enabled: false, phase: 'post', prompt: 'REWRITE<t>{{tracker-state}}</t><l>{{active-lore}}</l><n>{{active-authors-note}}</n>',
+            postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64 } },
+        { id: 'scene', name: 'Scene Tracker', enabled: true, phase: 'post',
+            postProcess: { enabled: true, type: 'extract', extractVariable: 'scene', extractPattern: '\\[SCENE\\][\\s\\S]*?\\[/SCENE\\]' } },
+        { id: 'disabled', name: 'Disabled Tracker', enabled: false, phase: 'post',
+            postProcess: { enabled: true, type: 'extract', extractVariable: 'disabled', extractPattern: '\\[HIDDEN\\][\\s\\S]*?\\[/HIDDEN\\]' } },
+    ], records => {
+        records[0].chat_metadata = { note_prompt: '{{char}} limps on her left leg.', note_interval: 1, note_position: 1, note_depth: 4,
+            variables: { agent_scene: '[SCENE]Hangar[/SCENE]', agent_disabled: '[HIDDEN]Do not send[/HIDDEN]' } };
+        records[1].mes = 'Original secret-signal';
+    });
+    const settingsPath = path.join(f.directories.root, 'settings.json');
+    const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    settings.world_info_settings = { world_info: { globalSelect: ['Town'] }, world_info_budget: 200 };
+    fs.writeFileSync(settingsPath, JSON.stringify(settings));
+    fs.writeFileSync(path.join(f.directories.worlds, 'Town.json'), JSON.stringify({ entries: {
+        1: { uid: 1, key: ['secret-signal'], keysecondary: [], content: '{{char}} knows the hangar code.', position: 0 },
+        2: { uid: 2, key: ['absent-keyword'], keysecondary: [], content: 'INACTIVE_LORE_MUST_STAY_OUT', position: 0 },
+    } }));
+    const operation = f.action('run', ['continuity']);
+    let calls = 0;
+    await assert.rejects(operation.run({ generate: paid(({ messages }) => {
+        calls++;
+        const instruction = messages[0].content;
+        assert.match(instruction, /<t><tracker name="Scene Tracker">\n\[SCENE\]Hangar\[\/SCENE\]\n<\/tracker><\/t>/);
+        assert.match(instruction, /<l>[^<]*Nova knows the hangar code\.[^<]*<\/l>/);
+        assert.match(instruction, /<n>Nova limps on her left leg\.<\/n>/);
+        assert.doesNotMatch(instruction, /INACTIVE_LORE_MUST_STAY_OUT|Disabled Tracker|Do not send|\{\{(?:active-lore|tracker-state|active-authors-note)\}\}/);
+        return { text: 'Corrected answer' };
+    }), beforeCompletion: () => { throw new Error('pause before publication'); } }), /pause before publication/);
+    assert.deepEqual(f.saved(), f.records);
+    assert.match(readArtifact(f.directories, operation.jobId, 'roleplay-agent-lore:manual').text, /Nova knows the hangar code\./);
+    await operation.run({ generate: () => assert.fail('recovery must reuse the paid correction') });
+    assert.equal(f.saved()[2].mes, 'Corrected answer');
+    assert.equal(f.saved()[1].mes, 'Original secret-signal');
+    assert.equal(calls, 1);
+});
+
 test('manual Agent undo and redo keep the history chain and reconcile tracker state against the actual edited chat', async t => {
     const afterText = 'Changed [SCENE]Garden[/SCENE]';
     const f = prepared(t, [{ id: 'scene', enabled: true, category: 'tracker', phase: 'post', postProcess: { enabled: true, type: 'extract', extractVariable: 'scene', extractPattern: '\\[SCENE\\]([\\s\\S]*?)\\[/SCENE\\]' } }], records => {

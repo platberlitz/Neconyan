@@ -17,6 +17,34 @@ function labelBoundsWithinButton(element) {
     return { x: label.x - button.x, y: label.y - button.y, width: label.width, height: label.height };
 }
 
+async function openTrackerChat(account, chatName, broken, agentOverrides = {}) {
+    const request = { avatar_url: account.avatar, file_name: chatName };
+    const vacant = await account.context.request.post('/api/chats/get', {
+        headers: account.headers, data: { ...request, allow_create: true },
+    });
+    expect(vacant.ok()).toBe(true);
+    const vacancy = JSON.parse(vacant.headers()['x-neconyan-roleplay']);
+    await account.post('/api/chats/save', { ...request,
+        chat: [{ chat_metadata: {} }, { name: 'Durable Nova', is_user: false, mes: `Before the tracker.\n\n${broken}\n\nAfter the tracker.`, extra: {} }],
+        roleplay: { account: vacancy.account, vacancy: vacancy.vacancy, operationKey: randomUUID() },
+    });
+    const page = await account.open({ workspace: false });
+    // eslint-disable-next-line playwright/no-networkidle -- Inspect only after the disposable preview finishes startup.
+    await page.waitForLoadState('networkidle');
+    await page.evaluate(async ({ avatar, chatName, agentOverrides }) => {
+        const context = window.SillyTavern.getContext();
+        await context.getCharacters();
+        await context.selectCharacterById(context.characters.findIndex(character => character.avatar === avatar), { switchMenu: false });
+        const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+        const template = await (await fetch('/scripts/extensions/in-chat-agents/templates/relationship-tracker.json')).json();
+        const bundles = await (await fetch('/scripts/extensions/in-chat-agents/templates/regex-bundles.json')).json();
+        await store.saveAgent({ ...template, id: 'repair-relationship', enabled: true, regexScripts: bundles[template.id], ...agentOverrides });
+        await (await import('/script.js')).openCharacterChat(chatName);
+    }, { avatar: account.avatar, chatName, agentOverrides });
+    await acknowledgeActiveSettings(page);
+    return { page, request };
+}
+
 for (const { phone, kind } of [false, true].flatMap(phone => ['header', 'field order'].map(kind => ({ phone, kind })))) {
     test(`Fix Trackers repairs inline ${kind} and persists it on ${phone ? 'phone' : 'desktop'}`, async ({ app }, info) => {
         const broken = kind === 'header' ? repaired.replace('STABLE|', 'STABLE]')
@@ -28,30 +56,7 @@ for (const { phone, kind } of [false, true].flatMap(phone => ['header', 'field o
         if (kind === 'header') app.provider.mode.hold = MODEL;
         app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: repaired } }] };
         const chatName = 'Tracker repair regression';
-        const request = { avatar_url: account.avatar, file_name: chatName };
-        const vacant = await account.context.request.post('/api/chats/get', {
-            headers: account.headers, data: { ...request, allow_create: true },
-        });
-        expect(vacant.ok()).toBe(true);
-        const vacancy = JSON.parse(vacant.headers()['x-neconyan-roleplay']);
-        await account.post('/api/chats/save', { ...request,
-            chat: [{ chat_metadata: {} }, { name: 'Durable Nova', is_user: false, mes: `Before the tracker.\n\n${broken}\n\nAfter the tracker.`, extra: {} }],
-            roleplay: { account: vacancy.account, vacancy: vacancy.vacancy, operationKey: randomUUID() },
-        });
-        const page = await account.open({ workspace: false });
-        // eslint-disable-next-line playwright/no-networkidle -- Inspect only after the disposable preview finishes startup.
-        await page.waitForLoadState('networkidle');
-        await page.evaluate(async ({ avatar, chatName }) => {
-            const context = window.SillyTavern.getContext();
-            await context.getCharacters();
-            await context.selectCharacterById(context.characters.findIndex(character => character.avatar === avatar), { switchMenu: false });
-            const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
-            const template = await (await fetch('/scripts/extensions/in-chat-agents/templates/relationship-tracker.json')).json();
-            const bundles = await (await fetch('/scripts/extensions/in-chat-agents/templates/regex-bundles.json')).json();
-            await store.saveAgent({ ...template, id: 'repair-relationship', enabled: true, regexScripts: bundles[template.id] });
-            await (await import('/script.js')).openCharacterChat(chatName);
-        }, { avatar: account.avatar, chatName });
-        await acknowledgeActiveSettings(page);
+        const { page, request } = await openTrackerChat(account, chatName, broken);
         if (phone) await applyIOSOnlyCss(page);
         const message = page.locator('#chat .mes[mesid="0"]');
         const text = message.locator('.mes_text');
@@ -137,5 +142,69 @@ for (const { phone, kind } of [false, true].flatMap(phone => ['header', 'field o
         await page.evaluate(async chatName => (await import('/script.js')).openCharacterChat(chatName), chatName);
         await expect(text.locator('details').first()).toBeVisible();
         await expect(text).not.toContainText('[METER|');
+    });
+}
+
+for (const phone of [false, true]) {
+    test(`Fix trackers saves its connections and escapes a stalled primary on ${phone ? 'phone' : 'desktop'}`, async ({ app }, info) => {
+        const account = await app.account({ phone, activeConnection: true, configureSettings: saved => {
+            const manager = saved.extension_settings.connectionManager;
+            manager.profiles[0].model = MODEL;
+            for (const name of ['stalled', 'backup']) manager.profiles.push({ ...manager.profiles[0],
+                id: `repair-${name}`, name: `Repair ${name}`, model: `repair-${name}-model` });
+        } });
+        const chatName = 'Tracker repair connection fallback';
+        const broken = repaired.replace('STABLE|', 'STABLE]');
+        const { page, request } = await openTrackerChat(account, chatName, broken, {
+            connectionProfile: 'durable', modelOverride: 'ordinary-agent-override',
+        });
+        const openConnections = async () => {
+            await page.evaluate(() => window.NeconyanShell.openTab('left', 'agents'));
+            await page.locator('.ica--workspace-tab[data-workspace-view="connections"]').click();
+        };
+        await openConnections();
+        const primary = page.locator('#ica--trackerRepairConnectionProfile');
+        const fallback = page.locator('#ica--trackerRepairConnectionFallbacks');
+        const timeout = page.locator('#ica--trackerRepairTimeoutSeconds');
+        await primary.selectOption('repair-stalled');
+        await fallback.locator('.ica--fallback-add').selectOption('repair-backup');
+        await timeout.fill('1');
+        await timeout.dispatchEvent('change');
+        await acknowledgeActiveSettings(page);
+        await page.reload();
+        await expect(page.locator('body')).toHaveClass(/neconyan-rail-ready/, { timeout: 60000 });
+        await page.evaluate(async ({ avatar, chatName }) => {
+            const context = window.SillyTavern.getContext();
+            await context.getCharacters();
+            await context.selectCharacterById(context.characters.findIndex(character => character.avatar === avatar), { switchMenu: false });
+            await (await import('/script.js')).openCharacterChat(chatName);
+        }, { avatar: account.avatar, chatName });
+        await openConnections();
+        await expect(primary).toHaveValue('repair-stalled');
+        await expect(fallback.locator('.ica--fallback-row')).toHaveAttribute('data-profile-id', 'repair-backup');
+        await expect(timeout).toHaveValue('1');
+        await expect(page.locator('#ica--moreTools')).not.toHaveAttribute('open');
+        const fix = page.locator('#ica--fixTrackers');
+        await expect(fix).toBeVisible();
+        await page.screenshot({ path: info.outputPath('repair-connections.png') });
+        app.provider.mode.hold = 'repair-stalled-model';
+        app.provider.mode.reply = { choices: [{ message: { role: 'assistant', content: repaired } }] };
+        try {
+            await fix.click();
+            await expect.poll(() => app.provider.calls.map(call => call.model), { timeout: 30000 })
+                .toEqual(['repair-stalled-model', 'repair-backup-model']);
+            await expect(fix).toBeEnabled();
+            await expect(fix).toHaveText('Fix trackers');
+            await expect.poll(async () => (await account.post('/api/chats/get', request))[1].mes)
+                .toBe(`Before the tracker.\n\n${repaired}\n\nAfter the tracker.`);
+            expect(await page.evaluate(async () => {
+                const store = await import('/scripts/extensions/in-chat-agents/agent-store.js');
+                const agent = store.getAgentById('repair-relationship');
+                return { profile: agent.connectionProfile, model: agent.modelOverride,
+                    connection: window.SillyTavern.getContext().extensionSettings.connectionManager.selectedProfile };
+            })).toEqual({ profile: 'durable', model: 'ordinary-agent-override', connection: 'durable' });
+        } finally {
+            await app.release();
+        }
     });
 }
