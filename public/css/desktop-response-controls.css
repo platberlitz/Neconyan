@@ -1,7 +1,7 @@
-/* Desktop alone: the existing phone/tablet cascade and control locations are restored by JS.
+/* Desktop controls are restored to native locations by JS on phone/tablet.
    Important positioning overrides are needed for the built-in Echo-family layouts. */
-.sb-message-screenshot-surface .nn-response-controls {
-    display: none;
+.sb-message-screenshot-surface :is(.nn-response-controls, .nn-response-controls-spacer) {
+    display: none !important;
 }
 
 @media screen and (min-width: 1001px) {
@@ -21,7 +21,7 @@
         > .mes_block > .ica--companion-ledger { margin-inline: auto; }
     }
     /* Equal slots remove native/extension width drift; translate preserves reserved space. */
-    body.neconyan:is(.whisperstyle, .hushstyle)[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes:not(.smallSysMes, [is_system='true']) .nn-response-controls {
+    body.neconyan:is(.whisperstyle, .hushstyle, .ripplestyle)[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes:not(.smallSysMes, [is_system='true']) .nn-response-controls {
         translate: 0 -4px;
         .swipeRightBlock {
             gap: 4px !important;
@@ -33,10 +33,18 @@
             padding: 0; margin: 0 !important; justify-content: center;
         }
     }
-    /* The absent or hidden left arrow still has one slot in Hush's detached track. */
-    body.neconyan.hushstyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes.nn-response-controls-below > .nn-response-controls {
+    /* The absent or hidden left arrow still has one slot in each detached track. */
+    body.neconyan:is(.hushstyle, .ripplestyle)[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes.nn-response-controls-below > .nn-response-controls {
         box-sizing: border-box; width: 138px; height: 44px;
     }
+    /* Ripple retains its existing inside flow while placing the same controls at the card edge. */
+    body.neconyan.ripplestyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes.nn-ripple-response-controls-inside > .mes_block > .nn-response-controls-spacer {
+        display: flex; clear: both; height: 36px; min-height: 36px; margin-top: 8px; pointer-events: none;
+    }
+    body.neconyan.ripplestyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes.nn-ripple-response-controls-inside > .nn-response-controls {
+        position: absolute; bottom: 16px; right: 18px; width: max-content; margin: 0; translate: 0;
+    }
+    body.neconyan.ripplestyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes.nn-response-controls-below > .nn-response-controls { translate: 0; }
     /* Echo paints the manager-owned inside footer; it remains after media, files and bias. */
     body.neconyan.echostyle #chat .mes.nn-echo-layout > .mes_block > .nn-echo-reading-footer {
         box-sizing: border-box; width: 100%; padding: 6px 14px;
@@ -143,5 +151,55 @@
 
     body.neconyan #chat .mes .nn-response-controls .swipes-counter::after {
         content: none;
+    }
+}
+
+/* Ripple changes only control paint and alignment; its reading grid stays native. */
+body.neconyan.ripplestyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes:not(.smallSysMes, [is_system='true']) {
+    --deep-swipe-arrow-opacity: 1;
+    /* Restored extension styles and native idle states need the same available paint.
+       Inline important opacity still owns genuinely disabled controls. */
+    &:not(body.hideAllSwipeButtons *):not(.is_editing):not(:has(.edit_textarea, .reasoning_edit_textarea)) {
+        :is(.deep-swipe-left-outer, .deep-swipe-right):not(.disabled, [hidden], [aria-disabled='true'], [style*='pointer-events: none']),
+        &.swipes_visible .swipe_left:not(.disabled, [hidden], [aria-disabled='true']),
+        &:is(.swipes_visible, .last_swipe) .swipe_right:not(.disabled, [hidden], [aria-disabled='true']) { opacity: 1 !important; }
+        /* The extension updater keeps an existing single-alternative left arrow visible. */
+        .deep-swipe-left-outer[style*='pointer-events: none']:not(.disabled, [hidden]) { opacity: 0.3 !important; pointer-events: none !important; }
+    }
+    .swipes-counter:not([hidden]) { opacity: 1 !important; }
+    &:not(.deep-swipe-loading) .swipes-counter { color: var(--neco-ink) !important; }
+    :is(.swipe_left, .swipe_right, .deep-swipe-left-outer, .deep-swipe-right) {
+        align-items: center; justify-content: center; line-height: 1 !important;
+        font-size: 20px; color: var(--neco-ink);
+    }
+}
+@media (max-width: 1000px) {
+    body.neconyan.ripplestyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes:not(.smallSysMes, [is_system='true']) {
+        .swipes-counter {
+            box-sizing: border-box; flex: 0 0 var(--moonlit-sb-swipe-counter-width);
+            width: var(--moonlit-sb-swipe-counter-width) !important;
+            min-width: var(--moonlit-sb-swipe-counter-width) !important;
+            max-width: var(--moonlit-sb-swipe-counter-width) !important;
+            inline-size: var(--moonlit-sb-swipe-counter-width) !important;
+            min-inline-size: var(--moonlit-sb-swipe-counter-width) !important;
+            max-inline-size: var(--moonlit-sb-swipe-counter-width) !important;
+            height: var(--moonlit-sb-swipe-control-size);
+            block-size: var(--moonlit-sb-swipe-control-size);
+            padding: 0; margin: 0 !important;
+        }
+        .swipeRightBlock { gap: 4px !important; align-items: center; flex-direction: row-reverse !important; }
+        :is(.swipe_right, .deep-swipe-right) { flex: 0 0 var(--moonlit-sb-swipe-control-size); }
+        > :is(.swipeRightBlock, .swipe_left, .deep-swipe-left-outer, .assistant-swipe-arrow) { translate: 0; }
+        &:not(.last_mes):has(> .deep-swipe-right) > .swipeRightBlock:not(.deep-swipe-right-block) {
+            block-size: var(--moonlit-sb-swipe-control-size); justify-content: center;
+            > .swipe_right { display: none; }
+        }
+    }
+}
+
+/* Tablet name rows retain their 10px inset; phone names use the native 8px edge. */
+@media (min-width: 769px) and (max-width: 1000px) {
+    body.neconyan.ripplestyle[data-neconyan-chat-mode='roleplay']:not(.sbterm, .sbstory) #chat .mes:not(.smallSysMes, [is_system='true']) > :is(.swipeRightBlock, .swipe_left, .deep-swipe-left-outer, .assistant-swipe-arrow) {
+        bottom: calc(var(--moonlit-sb-swipe-edge-offset) + 2px) !important;
     }
 }

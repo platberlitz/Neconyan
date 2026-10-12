@@ -40,7 +40,7 @@ function fixture(chatStyle = 'whisperstyle') {
         exclude: () => { excluded = true; }, setSystem: () => { system = true; } };
 }
 
-describe.each(['whisperstyle', 'hushstyle'])('%s enclosing-card lower edge', chatStyle => {
+describe.each(['whisperstyle', 'hushstyle', 'ripplestyle'])('%s enclosing-card lower edge', chatStyle => {
     test('covers only opaque card paint above the unchanged notch and beneath the form', () => {
         for (const colour of ['rgb(20, 30, 40)', 'rgb(20 30 40 / 100%)', 'rgba(20, 30, 40, 1)', 'color(srgb 0.1 0.2 0.3)']) {
             const f = fixture(chatStyle); f.makeOpaque(colour); f.flush();
@@ -120,7 +120,7 @@ describe.each(['whisperstyle', 'hushstyle'])('%s enclosing-card lower edge', cha
     });
 });
 
-test('unsupported colour, paint, effects or stacking retains the original cap', () => {
+test.each(['whisperstyle', 'hushstyle', 'ripplestyle'])('%s unsupported colour, paint, effects or stacking retains the original cap', chatStyle => {
     const changes = [
         f => { f.rowStyle.backgroundColor = 'rgba(20, 30, 40, 0.999)'; }, f => { f.rowStyle.backgroundColor = 'color(srgb 0.1 0.2 0.3 / 99%)'; },
         f => { f.rowStyle.backgroundColor = 'lab(50% 0 0)'; }, f => { f.rowStyle.backgroundImage = 'linear-gradient(red, blue)'; },
@@ -133,7 +133,7 @@ test('unsupported colour, paint, effects or stacking retains the original cap', 
         f => f.setStyle('bubblechat'),
     ];
     for (const change of changes) {
-        const f = fixture(); f.makeOpaque(); change(f); f.flush();
+        const f = fixture(chatStyle); f.makeOpaque(); change(f); f.flush();
         expect(f.cap.style.top).toBe('590px'); expect(f.cap.style.height).toBe('15px'); expect(f.cap.style.zIndex).not.toBe('30');
         expect(f.children).toEqual([f.chat, f.form, f.cap]); f.controller.dispose();
     }
