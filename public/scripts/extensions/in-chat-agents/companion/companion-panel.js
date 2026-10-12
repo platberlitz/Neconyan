@@ -7,6 +7,7 @@ import { setUiVisibility } from '../../../ui-motion.js';
 import { accountStorage } from '../../../util/AccountStorage.js';
 import { escapeHtml } from '../../../utils.js';
 import { captureMessageTargetState, isMessageTargetCurrent } from '../agent-runner.js';
+import { getAgentResultModelName } from '../model-label.js';
 import { replaceCompanionView, runCompanionViewAction } from './view-state.js';
 import {
     areAgentsGloballyEnabled,
@@ -710,6 +711,16 @@ function buildPanelEntryControls(state) {
     ].filter(Boolean).join('');
 }
 
+/** Names the model that wrote a note, shortened when Short Model Name is on. */
+function buildModelPillHtml(result = {}) {
+    const modelName = getAgentResultModelName(result);
+    if (!modelName) {
+        return '';
+    }
+    const fullModel = String(result?.model || result?.modelLabel || '').trim() || modelName;
+    return `<span class="ica--card-pill ica--card-pill--model" title="Model: ${escapeHtml(fullModel)}" aria-label="Model ${escapeHtml(modelName)}"><i class="fa-solid fa-microchip" aria-hidden="true"></i><span>${escapeHtml(modelName)}</span></span>`;
+}
+
 /** Marks a note whose host message is hidden from prompts - the note itself still counts. */
 function buildAbsorbedPillHtml(entry) {
     return entry?.hostHidden
@@ -766,6 +777,7 @@ function buildPanelAgentSection(state) {
                         <div class="ica--tpanel-history-head">
                             <span>Message #${entry.messageIndex}</span>
                             ${buildAbsorbedPillHtml(entry)}
+                            ${buildModelPillHtml(entry.result)}
                             ${buildCompanionTokenUsagePillsHtml(entry.result)}
                             ${canSendToLorebook && String(entry.result?.status ?? 'done') === 'done' ? '<button type="button" class="ica--cdash-action" data-action="panel-send-to-lorebook" title="Send this state to the attached lorebook" aria-label="Send history entry to lorebook"><i class="fa-solid fa-book-medical"></i></button>' : ''}
                             <button type="button" class="ica--cdash-action" data-action="panel-edit-note" title="Edit this state's text" aria-label="Edit history entry"><i class="fa-solid fa-pen-to-square"></i></button>
@@ -796,6 +808,7 @@ function buildPanelAgentSection(state) {
                 <span class="ica--tpanel-agent-name"><i class="fa-solid ${escapeHtml(icon)}"></i><span>${escapeHtml(name)}</span></span>
                 <span class="ica--tpanel-agent-when">#${latest.messageIndex}</span>
                 ${buildAbsorbedPillHtml(latest)}
+                ${buildModelPillHtml(latest.result)}
                 ${buildCompanionTokenUsagePillsHtml(latest.result)}
                 <span class="ica--tpanel-agent-actions">
                     ${dragHandleButton}

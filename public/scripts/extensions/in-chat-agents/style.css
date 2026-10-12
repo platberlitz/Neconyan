@@ -242,6 +242,17 @@ button.ica--card-pill--version-update {
     font-weight: 700;
 }
 
+.ica--card-pill--model {
+    min-width: 0;
+    max-width: min(24ch, 100%);
+}
+
+.ica--card-pill--model span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* The note's host message is hidden from prompts; the note itself is still live. */
 .ica--card-pill--absorbed {
     background: color-mix(in srgb, var(--SmartThemeBorderColor, #555) 28%, transparent);
@@ -358,7 +369,7 @@ button.ica--card-pill--version-update {
         display: none;
     }
 
-    .ica--companion-meta {
+    .ica--companion-summary .ica--companion-meta {
         order: 3;
         flex-basis: 100%;
         max-width: 100%;

@@ -13,6 +13,7 @@ describe('companion tracker panel', () => {
     let accountStorageValues;
     let accountStorage;
     let hiddenAgentIds;
+    let powerUser;
 
     function createEventSource() {
         const handlers = new Map();
@@ -42,6 +43,11 @@ describe('companion tracker panel', () => {
 
         await jest.unstable_mockModule('../public/script.js', () => ({
             chat,
+            getShortModelName: jest.fn(model => String(model ?? '').split('/').pop()),
+        }));
+
+        await jest.unstable_mockModule('../public/scripts/power-user.js', () => ({
+            power_user: powerUser,
         }));
 
         await jest.unstable_mockModule('../public/scripts/util/AccountStorage.js', () => ({
@@ -161,6 +167,7 @@ describe('companion tracker panel', () => {
             setItem: jest.fn((key, value) => accountStorageValues.set(key, String(value))),
         };
         hiddenAgentIds = new Set();
+        powerUser = { timestamp_model_name_short: false };
         globalThis.toastr = {
             info: jest.fn(),
             success: jest.fn(),
@@ -195,6 +202,32 @@ describe('companion tracker panel', () => {
         expect(states[0].history).toHaveLength(7);
         expect(states[0].history[0].messageIndex).toBe(6);
         expect(states[0].history.at(-1).messageIndex).toBe(0);
+    });
+
+    test('shows a model pill on the latest note that follows Short Model Name', async () => {
+        agents = [{ id: 'tracker-1', name: 'Scene Tracker', execution: 'companion', enabled: true, companion: { displayMode: 'panel' } }];
+        const panel = await importPanel();
+        const message = { is_user: false, is_system: false, mes: 'latest reply' };
+        chat.push(message);
+        const setResult = result => companionResultsByMessage.set(message, {
+            'tracker-1': { status: 'done', content: 'state', agentName: 'Scene Tracker', ...result },
+        });
+
+        setResult({ model: 'moonshot/kimi-k3' });
+        let html = panel.buildPanelHtml();
+        expect(html.match(/ica--card-pill--model/g)).toHaveLength(1);
+        expect(html).toContain('<span>moonshot/kimi-k3</span>');
+
+        powerUser.timestamp_model_name_short = true;
+        html = panel.buildPanelHtml();
+        expect(html).toContain('title="Model: moonshot/kimi-k3"');
+        expect(html).toContain('<span>kimi-k3</span>');
+
+        setResult({ modelLabel: 'deepseek/deepseek-chat' });
+        expect(panel.buildPanelHtml()).toContain('<span>deepseek-chat</span>');
+
+        setResult({ modelLabel: 'Main model' });
+        expect(panel.buildPanelHtml()).not.toContain('ica--card-pill--model');
     });
 
     test('orders panel sections by agents-page order with orphans last', async () => {
