@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import express from 'express';
-import { createRequestTrace } from '../src/request-trace.js';
+import { createRequestTrace, getRecentRequests, diagnosticRequestPath } from '../src/request-trace.js';
 
 function listen(app) {
     return new Promise(resolve => {
@@ -38,7 +38,7 @@ test('the request trace records in-flight and finished requests without query st
     });
     app.get('/api/other', (request, response) => response.status(404).end());
     const server = await listen(app);
-    t.after(() => server.close());
+    t.after(() => { release(); server.closeAllConnections(); server.close(); });
     const { port } = server.address();
 
     const generate = send(port, 'POST', '/api/backends/chat-completions/generate?secret=1', '{"messages":[{"content":"private text"}]}');
@@ -55,7 +55,21 @@ test('the request trace records in-flight and finished requests without query st
     for (let index = 0; index < 4; index++) assert.equal(await send(port, 'GET', `/api/other?n=${index}`), 404);
     const lines = fs.readFileSync(file, 'utf8').trim().split('\n');
     assert.equal(lines.length, 3, 'only the newest requests are kept');
-    assert.ok(lines.every(line => / GET \/api\/other 0B -> 404 \d+ms$/.test(line)), lines.join('\n'));
+    assert.ok(lines.every(line => / GET \/api\/\[path omitted\] 0B -> 404 \d+ms$/.test(line)), lines.join('\n'));
+});
+
+test('memory-only diagnostics retain requests without user filenames, ids, queries or bodies', async t => {
+    const app = express();
+    app.use(createRequestTrace());
+    app.post('/api/chats/save', (request, response) => response.status(204).end());
+    const server = await listen(app);
+    t.after(() => server.close());
+    assert.equal(await send(server.address().port, 'POST', '/api/chats/save?key=secret', 'private dialogue'), 204);
+    assert.match(getRecentRequests().at(-1), /POST \/api\/chats\/save 16B -> 204/);
+    assert.doesNotMatch(getRecentRequests().join('\n'), /secret|dialogue/);
+    assert.equal(diagnosticRequestPath('/characters/private-name.png?token=secret'), '/[non-api path omitted]');
+    assert.equal(diagnosticRequestPath('/api/jobs/private-job-id'), '/api/jobs/[operation omitted]');
+    assert.equal(diagnosticRequestPath('/api/private-chat-title/save'), '/api/[path omitted]');
 });
 
 test('a trace file that cannot be written does not break the request', async t => {

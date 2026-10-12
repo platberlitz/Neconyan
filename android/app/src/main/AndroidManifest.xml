@@ -9,7 +9,7 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
-    <application android:label="Neconyan" android:icon="@drawable/neconyan"
+    <application android:name=".NeconyanApplication" android:label="Neconyan" android:icon="@drawable/neconyan"
         android:theme="@style/AppTheme" android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules"
         android:usesCleartextTraffic="true" android:extractNativeLibs="true">
         <activity android:name=".MainActivity" android:exported="true"

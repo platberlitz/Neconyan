@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -228,6 +229,8 @@ export async function runSupervisor({
         try {
             child = spawnFn(argv[0], [...execArgv, ...argv.slice(1)], { stdio: ['inherit', 'inherit', 'inherit', 'ipc'], env });
             const activeChild = child;
+            let crashDirectory;
+            let rollbackRequested = false;
             let resolveStartup;
             const startupPromise = new Promise(resolve => {
                 resolveStartup = resolve;
@@ -244,6 +247,10 @@ export async function runSupervisor({
             };
             const onMessage = message => {
                 if (child !== activeChild) return;
+                if (message?.type === 'neconyan:crash-directory' && typeof message.directory === 'string') {
+                    crashDirectory = message.directory;
+                    return;
+                }
                 if (message?.type === SERVER_STARTUP_READY_MESSAGE) {
                     resolveStartup({ plugins: Array.isArray(message.plugins) ? message.plugins : [] });
                     return;
@@ -289,7 +296,22 @@ export async function runSupervisor({
                 }
             };
             child.on('message', onMessage);
-            const exitPromise = once(child, 'exit').then(([code, signal]) => ({ code, signal }));
+            const exitPromise = once(child, 'exit').then(async ([code, signal]) => {
+                if (crashDirectory) {
+                    const { writeCrashReport, clearCrashMarker } = await import('./crash-diagnostics.js');
+                    const expected = shuttingDown || rollbackRequested || (!signal && [0, RESTART_EXIT_CODE, SERVER_PLUGIN_UPDATE_EXIT_CODE, SUPERVISOR_RELOAD_EXIT_CODE].includes(code));
+                    const needsReport = !expected && (signal || fs.existsSync(path.join(crashDirectory, `running-${activeChild.pid}.json`)));
+                    const explanation = signal
+                        ? `The operating system terminated the server with ${signal}. A signal alone does not establish why it was sent.`
+                        : `The server exited with code ${code} without completing its exit handler. No further cause was supplied.`;
+                    const saved = needsReport && writeCrashReport(signal ? 'child-process-signal' : 'child-process-exit', explanation, {
+                        child: { pid: activeChild.pid, signal, exitCode: code },
+                        limitation: 'The environment describes the surviving supervisor. The child could not report its final stack or memory.',
+                    }, crashDirectory);
+                    if (expected || saved) clearCrashMarker(crashDirectory, activeChild.pid);
+                }
+                return { code, signal };
+            });
 
             if (activatingPluginUpdate) {
                 const activationTimeout = createTimeout(activationTimeoutMs, { timedOut: true });
@@ -311,6 +333,7 @@ export async function runSupervisor({
                             ? 'updated server exited before startup completed'
                             : `plugin ${activatingPluginUpdate.expectedPluginId} did not load`;
                     if (!activation.exit) {
+                        rollbackRequested = true;
                         await stopChildForRollback(child, exitPromise, SUPERVISOR_SHUTDOWN_MESSAGE);
                     }
                     pluginUpdate.rollback(activatingPluginUpdate, reason);
@@ -333,6 +356,7 @@ export async function runSupervisor({
                         console.error('[Neconyan] The healthy plugin is active, but its update lock requires manual cleanup.');
                     } else if (error?.serverPluginActivationRecorded !== true) {
                         console.error('[Neconyan] Activation could not be recorded; restoring the previous plugin now.');
+                        rollbackRequested = true;
                         await stopChildForRollback(child, exitPromise, SUPERVISOR_SHUTDOWN_MESSAGE);
                         pluginUpdate.rollback(activatingPluginUpdate, 'activation could not be recorded durably');
                         activatingPluginUpdate = null;
