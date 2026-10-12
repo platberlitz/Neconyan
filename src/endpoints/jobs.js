@@ -157,7 +157,12 @@ router.get('/:id/preview', (request, response) => {
             try { response.write(': keepalive\n\n'); } catch { response.end(); }
         };
         const timer = setInterval(tick, 1000);
-        const cleanup = () => { clearInterval(timer); clearTimeout(previewTimer); unsubscribe(); unsubscribeJobs(); };
+        let cleaned = false;
+        const cleanup = () => {
+            if (cleaned) return;
+            cleaned = true;
+            clearInterval(timer); clearTimeout(previewTimer); unsubscribe(); unsubscribeJobs();
+        };
         request.once('aborted', cleanup);
         response.once('finish', cleanup);
         response.once('close', cleanup);
