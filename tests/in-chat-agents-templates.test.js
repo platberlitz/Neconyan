@@ -760,6 +760,24 @@ describe('in-chat agent bundled templates', () => {
         expect(proofreader.prompt).toContain('Output ONLY the revised message.');
     });
 
+    test('Proofreader replaces kiss similes and repairs formatting after every removal', () => {
+        const proofreader = readTemplate('proofreader.json');
+
+        expect(proofreader.prompt).toContain('Character kisses like they X: Y, and Z');
+        expect(proofreader.prompt).toContain('# Formatting Pass');
+        expect(proofreader.prompt).toContain('rejoin it as ONE quotation');
+        expect(proofreader.prompt).toContain('Did the Formatting Pass leave no gaps');
+        expect(proofreader.prompt).not.toContain('29 rules');
+        expect(proofreader.prompt).toContain('30. Handover endings');
+    });
+
+    test('Friction Keeper leaves tracker blocks and tags untouched', () => {
+        const keeper = readTemplate('friction-keeper.json');
+
+        expect(keeper.prompt).toContain('Copy every tracker block, status panel, HTML or <font> tag');
+        expect(keeper.prompt).toContain('Every tracker block, status panel and tag is still present');
+    });
+
     test('installs the Dialogue Humaniser by default as a post-phase rewrite that runs before the Proofreader', () => {
         const humaniser = readTemplate('dialogue-humaniser.json');
         const proofreader = readTemplate('proofreader.json');
