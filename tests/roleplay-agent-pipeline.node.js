@@ -121,9 +121,36 @@ test('native Agent prompts, lore, complete-context interception and postprocessi
     assert.equal(f.saved().length, 4);
 });
 
+test('server reply rewrites see the saved trackers, the lore activated for the reply and the Author\'s Note', async t => {
+    const f = prepared(t, [
+        { id: 'continuity', phase: 'post', prompt: 'REWRITE<t>{{tracker-state}}</t><l>{{active-lore}}</l><n>{{active-authors-note}}</n>', injection: { order: 3 },
+            postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64 } },
+        { id: 'tracker', name: 'Scene Tracker', phase: 'post', prompt: 'TRACKER', injection: { order: 4 },
+            postProcess: { enabled: true, type: 'extract', extractVariable: 'scene', extractPattern: '\\[SCENE\\][\\s\\S]*?\\[/SCENE\\]',
+                promptTransformEnabled: true, promptTransformMode: 'append', promptTransformMaxTokens: 64 } },
+    ], { configure: records => {
+        records[0].chat_metadata = { note_prompt: '{{char}} limps on her left leg.', note_interval: 1, note_position: 1, note_depth: 4,
+            variables: { agent_scene: '[SCENE]Hangar[/SCENE]' } };
+        records[1].mes = 'Original secret-signal';
+    } });
+    const prompts = [];
+    await f.run({ generate: paid('main', () => 'Raw answer'), generateAgent: paid('agents', ({ messages }) => {
+        const instruction = messages[0].content;
+        prompts.push(instruction);
+        if (instruction.includes('REWRITE')) return 'Polished answer';
+        if (instruction.includes('TRACKER')) return '[SCENE]Courtyard[/SCENE]';
+        assert.fail('unexpected Agent request');
+    }) });
+    const rewrite = prompts.find(prompt => prompt.includes('REWRITE'));
+    assert.match(rewrite, /<t><tracker name="Scene Tracker">\n\[SCENE\]Hangar\[\/SCENE\]\n<\/tracker><\/t>/);
+    assert.match(rewrite, /<l>[^<]*BOUND_LORE_FROM_AGENT[^<]*<\/l>/);
+    assert.match(rewrite, /<n>Nova limps on her left leg\.<\/n>/);
+    assert.equal(f.saved().at(-1).mes, 'Polished answer\n\n[SCENE]Courtyard[/SCENE]');
+});
+
 for (const effect of ['append', 'continue', 'swipe', 'replace']) {
     test(`bundled reply rewrites run in order with saved context and length settings for ${effect}`, async t => {
-        const names = ['character-authenticity', 'format-fixer', 'user-agency-guard', 'knowledge-guard', 'friction-keeper', 'nsfw-enhancer', 'dialogue-humaniser', 'repetition-breaker', 'length-trimmer', 'proofreader'];
+        const names = ['continuity-corrector', 'character-authenticity', 'format-fixer', 'user-agency-guard', 'knowledge-guard', 'friction-keeper', 'nsfw-enhancer', 'dialogue-humaniser', 'repetition-breaker', 'length-trimmer', 'proofreader'];
         const agents = names.map(name => {
             const template = JSON.parse(fs.readFileSync(new URL(`../public/scripts/extensions/in-chat-agents/templates/${name}.json`, import.meta.url)));
             return { ...template, enabled: true, sourceTemplateId: template.id,
@@ -142,6 +169,9 @@ for (const effect of ['append', 'continue', 'swipe', 'replace']) {
                 assert.match(messages[0].content, /Two short paragraphs/);
                 assert.doesNotMatch(messages[0].content, /\{\{lengthTarget\}\}/i);
             }
+            if (agent.id === 'tpl-continuity-corrector') {
+                assert.doesNotMatch(messages[0].content, /\{\{(tracker-state|active-lore|active-authors-note|persona|mewmory-facts|group-cards)\}\}/i);
+            }
             if (agent.id === 'tpl-character-authenticity') {
                 assert.doesNotMatch(messages[0].content, /\{\{(group-cards|mewmory-facts|mewmory-interview|mesExamplesRaw|description)\}\}/i);
             }
@@ -149,7 +179,7 @@ for (const effect of ['append', 'continue', 'swipe', 'replace']) {
             return `Pass ${calls.length}`;
         }) });
         assert.deepEqual(calls, agents.map(agent => agent.id));
-        assert.equal(f.saved().at(-1).mes, 'Pass 10');
+        assert.equal(f.saved().at(-1).mes, 'Pass 11');
         await f.run({ generate: () => assert.fail('Main reply repeated'), generateAgent: () => assert.fail('Rewrite repeated') });
     });
 }
