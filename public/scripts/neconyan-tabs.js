@@ -12863,7 +12863,10 @@ async function showUpdateToast(repository) {
     const commit = String(repository.remoteCommit || '');
     dismissUpdateToast();
     await loadUpdateToastStyles();
-    if (document.hidden) return;
+    if (document.hidden) {
+        nnUpdateToastSkippedWhileHidden = true;
+        return;
+    }
 
     const behind = Number(repository.behind) || 0;
     const toast = document.createElement('div');

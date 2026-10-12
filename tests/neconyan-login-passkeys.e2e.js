@@ -12,6 +12,11 @@ for (const title of ['phone sign-in', 'desktop sign-in']) {
         test('password, passkey, rejected verification, remembered expiry and logout', async ({ page, context }, testInfo) => {
             test.skip(!username || !password, 'Set NECONYAN_AUTH_TEST_USERNAME and NECONYAN_AUTH_TEST_PASSWORD for an isolated authenticated preview at localhost or HTTPS.');
             test.setTimeout(180000);
+            const skipTour = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
+            await page.addLocatorHandler(skipTour, async () => {
+                await skipTour.click();
+                await skipTour.waitFor({ state: 'hidden' });
+            });
             const cdp = await context.newCDPSession(page);
             await cdp.send('WebAuthn.enable');
             const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', {
@@ -93,8 +98,10 @@ for (const title of ['phone sign-in', 'desktop sign-in']) {
                 payload.response.response.signature = 'AA';
                 await route.continue({ postData: JSON.stringify(payload) });
             }, { times: 1 });
+            const rejectedSignature = page.waitForResponse(response => response.url().endsWith('/api/auth/passkeys/login'));
             await page.locator('#passkeyLoginButton').click();
-            await expect(page.locator('#errorMessage')).toContainText(/did not verify|could not be verified/);
+            expect([400, 401]).toContain((await rejectedSignature).status());
+            await expect(page.locator('#errorMessage')).toContainText(/could not check that passkey|could not be verified/);
             expect((await (await context.request.get('/api/auth/status')).json()).browserSession).toBe(false);
 
             // Even if a client weakens the browser options, the server requires device verification.

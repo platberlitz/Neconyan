@@ -87,12 +87,37 @@ for (const phone of [false, true]) {
         await page.evaluate(async avatar => (await import('/scripts/neconyan-conversation/chrome.js')).openConversationWorkspaceForAvatar(avatar), account.avatar);
         const conversation = await openScratchpad(page, 'sessions');
         expect(conversation.kind).toBe('conversation');
-        expect((await account.post('/api/scratchpad/bucket', { source: conversation })).bucket.activeSessionId).toBe(sessionId);
+        // Conversation keeps its own persona-scoped sessions, shared across its branches, not with Roleplay.
+        const emptyConversation = (await account.post('/api/scratchpad/bucket', { source: conversation })).bucket;
+        expect(emptyConversation.activeSessionId).toBeNull();
+        expect(emptyConversation.sessions).toEqual([]);
+        await expect(page.locator('.scratchpad-sessions .scratchpad-session')).toHaveCount(0);
+        const conversationCreated = await account.post('/api/scratchpad/session/create', { source: conversation, name: 'Conversation planning' });
+        const conversationSessionId = conversationCreated.bucket.activeSessionId;
+        await account.post('/api/scratchpad/session/import', { source: conversation,
+            session: { name: 'Branch ideas', messages: [{ role: 'user', text: 'Keep this idea across Conversation branches.' }] } });
+        const conversationSaved = (await account.post('/api/scratchpad/session/activate', { source: conversation, sessionId: conversationSessionId })).bucket;
+        await openScratchpad(page, 'sessions');
         await expect(page.locator('.scratchpad-sessions .scratchpad-session')).toHaveCount(2);
+        await expect(page.locator('.scratchpad-sessions')).toContainText('Conversation planning');
+        await expect(page.locator('.scratchpad-sessions')).toContainText('Branch ideas');
         await page.evaluate(async avatar => (await import('/scripts/neconyan-conversation/context.js')).createConversationBranchForAvatar(avatar, 'Another branch'), account.avatar);
         const branch = await openScratchpad(page, 'sessions');
         expect(branch.key).not.toBe(conversation.key);
-        expect((await account.post('/api/scratchpad/bucket', { source: branch })).bucket.sessions.map(session => session.id)).toEqual(saved.sessions.map(session => session.id));
+        expect(branch.scope).toEqual(conversation.scope);
+        const branchSaved = (await account.post('/api/scratchpad/bucket', { source: branch })).bucket;
+        expect(branchSaved.sessions.map(session => session.id)).toEqual(conversationSaved.sessions.map(session => session.id));
+        expect(branchSaved.activeSessionId).toBe(conversationSessionId);
         await expect(page.locator('.scratchpad-sessions .scratchpad-session')).toHaveCount(2);
+        await page.evaluate(async () => (await import('/scripts/neconyan-conversation/chrome.js')).disableConversationModeForCurrentCharacter());
+        const returned = await openScratchpad(page, 'sessions');
+        expect(returned.kind).toBe('roleplay');
+        expect(returned.key).toBe(second.key);
+        const roleplaySaved = (await account.post('/api/scratchpad/bucket', { source: returned })).bucket;
+        expect(roleplaySaved.sessions.map(session => session.id)).toEqual(saved.sessions.map(session => session.id));
+        expect(roleplaySaved.activeSessionId).toBe(sessionId);
+        await expect(page.locator('.scratchpad-sessions .scratchpad-session')).toHaveCount(2);
+        await expect(page.locator('.scratchpad-sessions')).toContainText('Scene planning');
+        await expect(page.locator('.scratchpad-sessions')).toContainText('Earlier ideas');
     });
 }

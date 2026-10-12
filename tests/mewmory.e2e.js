@@ -275,7 +275,17 @@ test('native Mewmory setup, backfill, source inspection, correction, recall and 
     await page.setViewportSize({ width: 393, height: 852 });
     await sendWhileMemoryBusy('And you still have the receipt?', 'phone', 'text-embedding-3-small');
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(394);
-    expect((await page.locator('#send_but').boundingBox()).height).toBeGreaterThanOrEqual(44);
+    // The slim default still scales up through the real Bottom bar size preference.
+    await expect(page.locator('#send_but')).toHaveCSS('height', '38px');
+    for (const [size, height] of [[150, '44px'], [100, '38px']]) {
+        await page.locator('#sb-bottom-bar-scale-input').evaluate((input, size) => {
+            input.value = String(size);
+            for (const event of ['input', 'change', 'mouseup']) input.dispatchEvent(new Event(event, { bubbles: true }));
+        }, size);
+        await expect(page.locator('#send_but')).toHaveCSS('height', height);
+        await expect(page.locator('#send_but')).toHaveCSS('width', height);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(394);
+    }
     await overlapTouch.send('Emulation.setTouchEmulationEnabled', { enabled: false });
     await overlapTouch.detach();
     await page.setViewportSize({ width: 1280, height: 900 });

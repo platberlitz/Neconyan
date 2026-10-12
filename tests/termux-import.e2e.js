@@ -92,7 +92,9 @@ for (const phone of [false, true]) {
         expect(await retained.json()).toEqual(receipt);
         expect(await fs.readFile(contents, 'utf8')).toBe('Imported under stable Termux file identity.');
         if (process.env.TERMUX_VERSION === 'timestamp-fixture') {
-            expect(app.serverOutput).toContain('Termux file creation times are unavailable');
+            expect(app.serverOutput).toContain('Termux file identity compatibility is active for this data folder.');
+            const identityMode = JSON.parse(await fs.readFile(path.join(app.directory, 'data/_termux-file-identity.json'), 'utf8'));
+            expect(identityMode).toEqual({ version: 1, birthtime: 'zero' });
         }
     });
 }

@@ -679,7 +679,8 @@ class PromptManager {
             const prompt = this.getPromptById(identifier);
             const pinned = pins.has(identifier);
             button.setAttribute('aria-pressed', String(pinned));
-            button.disabled = Boolean(this.pendingPinWrite || this.isPresetChanging);
+            // Preset selection finishes before the debounced render replaces old row actions.
+            button.disabled = Boolean(this.pendingPinWrite || !button.promptScope || !this.isPromptScopeCurrent(button.promptScope));
             button.setAttribute('aria-busy', String(Boolean(this.pendingPinWrite)));
             const label = pinned ? t`Unpin ${prompt?.name ?? identifier} from chat` : t`Pin ${prompt?.name ?? identifier} to chat`;
             button.title = label;

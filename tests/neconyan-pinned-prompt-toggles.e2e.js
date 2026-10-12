@@ -139,6 +139,48 @@ for (const phone of [false, true]) {
     });
 }
 
+for (const phone of [false, true]) {
+    test(`${phone ? 'phone' : 'desktop'} pin actions wait for the selected preset to finish rendering`, async ({ app }) => {
+        test.skip(baseline, 'Feature checkout only');
+        const account = await seededAccount(app, phone);
+        const page = await openRoleplay(account);
+        await openPrompts(page);
+        await pin(page, 'pin-a');
+        const action = promptRow(page, 'pin-a').locator('.prompt-manager-pin-action');
+        await expect(action).toHaveAttribute('aria-pressed', 'true');
+        await page.evaluate(async () => {
+            const { promptManager: manager } = await import('/scripts/openai.js');
+            const render = manager.renderDebounced;
+            manager.renderDebounced = () => {};
+            window.fixtureReleasePromptRender = () => {
+                manager.renderDebounced = render;
+                delete window.fixtureReleasePromptRender;
+                manager.renderDebounced();
+            };
+        });
+        try {
+            await page.locator('#settings_preset_openai').selectOption({ label: 'Pinned fixture B' });
+            await expect(action).toHaveAccessibleName('Pin Other preset toggle to chat');
+            await expect(action).toBeDisabled();
+            await expect(action).toHaveAttribute('aria-pressed', 'false');
+            await capture(page, `${phone ? 'phone' : 'desktop'}-preset-pins-wait-after.png`);
+        } finally {
+            await page.evaluate(() => window.fixtureReleasePromptRender?.());
+        }
+        await expect(action).toBeEnabled();
+        await pin(page, 'pin-a');
+        await expect(action).toHaveAttribute('aria-pressed', 'true');
+        await page.locator('#settings_preset_openai').selectOption({ label: 'Pinned fixture A' });
+        await expect(action).toHaveAccessibleName('Unpin NSFW from chat');
+        await pin(page, 'pin-a');
+        await expect(action).toHaveAttribute('aria-pressed', 'false');
+        await page.locator('#settings_preset_openai').selectOption({ label: 'Pinned fixture B' });
+        await expect(action).toHaveAccessibleName('Unpin Other preset toggle from chat');
+        await expect(action).toBeEnabled();
+        await expect(action).toHaveAttribute('aria-pressed', 'true');
+    });
+}
+
 test('desktop pins, live switches, reload, collapse, preset isolation, requests and empty-space removal', async ({ app }) => {
     test.skip(baseline, 'Feature checkout only');
     const account = await seededAccount(app);

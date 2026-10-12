@@ -13,7 +13,10 @@ async function navigation(account) {
 }
 
 async function ready(page) {
-    await expect.poll(() => page.evaluate(async () => !(await import('/scripts/chat-navigation-flight.js')).isChatNavigationBlocked()), { timeout: 45000 }).toBe(true);
+    // The initial blocked flag is false until startup begins. The route dialog
+    // is created during initial navigation, so login/reload cannot pass early.
+    await expect.poll(() => page.evaluate(async () => Boolean(document.getElementById('neconyan-chat-route'))
+        && !(await import('/scripts/chat-navigation-flight.js')).isChatNavigationBlocked()), { timeout: 45000 }).toBe(true);
 }
 
 async function roleplayFixtures(app, account) {
