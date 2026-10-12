@@ -17,7 +17,7 @@ export function normalizeTrackerRepairTimeoutSeconds(value) {
 
 /**
  * Returns a run-only copy of an Agent marked as a Fix Trackers repair, so its request uses
- * the tracker repair time limit. The mark is never saved.
+ * the tracker repair connection, fallbacks and time limit. The mark is never saved.
  * @template T
  * @param {T} agent
  * @returns {T}
@@ -28,6 +28,16 @@ export function markTrackerRepairRunAgent(agent) {
 
 export function isTrackerRepairRunAgent(agent) {
     return agent?.trackerRepairRun === true;
+}
+
+/**
+ * The connection saved for Fix Trackers repairs, or '' when repairs use each Agent's usual one.
+ * @param {object} globalSettings
+ * @returns {string}
+ */
+export function getTrackerRepairConnectionProfile(globalSettings) {
+    const profileId = globalSettings?.trackerRepairConnectionProfile;
+    return typeof profileId === 'string' ? profileId.trim() : '';
 }
 
 /**

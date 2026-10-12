@@ -497,7 +497,8 @@ async function loadSelectedAgentSetup() {
             ...preset.agents.map(agent => agent.connectionProfile),
             preset.globalSettings.connectionProfile,
             preset.globalSettings.companionConnectionProfile,
-            ...[preset.globalSettings.connectionFallbacks, preset.globalSettings.companionConnectionFallbacks].flatMap(list => Array.isArray(list) ? list : []),
+            preset.globalSettings.trackerRepairConnectionProfile,
+            ...[preset.globalSettings.connectionFallbacks, preset.globalSettings.companionConnectionFallbacks, preset.globalSettings.trackerRepairConnectionFallbacks].flatMap(list => Array.isArray(list) ? list : []),
         ];
         const missing = new Set(references.filter(id => id && !profiles.has(id)));
         selectedAgentSetupId = preset.id;
@@ -6111,6 +6112,14 @@ function populateProfileDropdown() {
         });
     }
 
+    const trackerRepairSelect = document.getElementById('ica--trackerRepairConnectionProfile');
+    if (trackerRepairSelect) {
+        populateConnectionProfileSelect(trackerRepairSelect, {
+            emptyLabel: 'Each tracker\'s usual connection',
+            selectedValue: getGlobalSettings().trackerRepairConnectionProfile || '',
+        });
+    }
+
     const trackerRepairTimeout = /** @type {HTMLInputElement|null} */ (document.getElementById('ica--trackerRepairTimeoutSeconds'));
     if (trackerRepairTimeout && document.activeElement !== trackerRepairTimeout) {
         trackerRepairTimeout.value = String(getGlobalSettings().trackerRepairTimeoutSeconds ?? DEFAULT_TRACKER_REPAIR_TIMEOUT_SECONDS);
@@ -6125,7 +6134,7 @@ function populateProfileDropdown() {
  */
 function renderConnectionFallbackList(list) {
     const key = list.dataset.icaFallbackKey;
-    if (key !== 'connectionFallbacks' && key !== 'companionConnectionFallbacks') return;
+    if (key !== 'connectionFallbacks' && key !== 'companionConnectionFallbacks' && key !== 'trackerRepairConnectionFallbacks') return;
     const noun = list.dataset.icaFallbackNoun || 'agent';
     const fallbacks = getGlobalSettings()[key] || [];
     const profiles = buildConnectionProfileNameMap();
@@ -6223,7 +6232,9 @@ function renderConnectionFallbackList(list) {
 
     const help = document.createElement('small');
     help.className = 'ica--profile-help';
-    help.textContent = `Optional. If a ${noun} agent's connection fails or replies with nothing, these are tried in order. Fallbacks use each connection's own model.`;
+    help.textContent = key === 'trackerRepairConnectionFallbacks'
+        ? 'Optional. If Fix trackers\' connection fails, replies with nothing or runs out of time, these are tried in order. Leave empty to use each tracker\'s usual fallbacks. Fallbacks use each connection\'s own model.'
+        : `Optional. If a ${noun} agent's connection fails or replies with nothing, these are tried in order. Fallbacks use each connection's own model.`;
 
     list.replaceChildren(heading, ...(fallbacks.length ? [rows] : []), add, help);
 }
@@ -6948,6 +6959,10 @@ async function refinePromptWithAI(currentPrompt, category, phase, connectionProf
         setGlobalSettings({ companionConnectionProfile: this.value });
         persistExtensionState();
         renderAgentList();
+    });
+    $('#ica--trackerRepairConnectionProfile').on('change', function () {
+        setGlobalSettings({ trackerRepairConnectionProfile: this.value });
+        persistExtensionState();
     });
     $('#ica--trackerRepairTimeoutSeconds').on('change', function () {
         const seconds = normalizeTrackerRepairTimeoutSeconds(this.value);

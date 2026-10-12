@@ -453,7 +453,9 @@ describe('in-chat agent post-processing runner', () => {
             getEnabledToolAgents: jest.fn(() => [...enabledToolAgents, ...enabledAgents.filter(agent => agent.category === 'tool' && !enabledToolAgents.some(tool => tool.id === agent.id))]),
             getAgentConnectionFallbacks: jest.fn((agent, primary = '') => {
                 const companion = agent?.execution === 'companion' || agent?.category === 'companion';
-                const saved = companion ? globalSettings.companionConnectionFallbacks : globalSettings.connectionFallbacks;
+                const repair = agent?.trackerRepairRun === true && globalSettings.trackerRepairConnectionFallbacks?.length;
+                const saved = repair ? globalSettings.trackerRepairConnectionFallbacks
+                    : companion ? globalSettings.companionConnectionFallbacks : globalSettings.connectionFallbacks;
                 return (Array.isArray(saved) ? saved : []).filter(id => id && id !== primary);
             }),
             getGlobalSettings: jest.fn(() => globalSettings),
@@ -8559,6 +8561,46 @@ describe('in-chat agent post-processing runner', () => {
         globalSettings.connectionFallbacks = [];
         await expect(requestPromptTransform({ id: 'post', connectionProfile: 'primary' }, messages, 100)).rejects.toThrow('Provider overloaded');
         warn.mockRestore();
+    });
+
+    test('Fix trackers uses its own connection, fallbacks and time limit, then stops counting as running', async () => {
+        jest.useFakeTimers();
+        globalSettings.connectionFallbacks = ['usual-backup'];
+        globalSettings.trackerRepairConnectionProfile = 'repair';
+        globalSettings.trackerRepairConnectionFallbacks = ['repair-backup'];
+        globalSettings.trackerRepairTimeoutSeconds = 5;
+        connectionManagerRequestService = {
+            constructPrompt: jest.fn(messages => messages),
+            // The repair connection never answers and ignores the abort signal.
+            sendRequest: jest.fn(profileId => profileId === 'repair'
+                ? new Promise(() => {})
+                : Promise.resolve({ content: `Reply from ${profileId}` })),
+        };
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        try {
+            const { requestPromptTransform, isAgentGenerationActive } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+            const { markTrackerRepairRunAgent } = await import('../public/scripts/extensions/in-chat-agents/tracker-repair-run.js');
+            const messages = [{ role: 'user', content: 'Repair this tracker.' }];
+            const calls = () => connectionManagerRequestService.sendRequest.mock.calls;
+
+            const running = requestPromptTransform(markTrackerRepairRunAgent({ id: 'tracker', connectionProfile: 'usual', modelOverride: 'own-model' }), messages, 100);
+            await jest.advanceTimersByTimeAsync(0);
+            expect(isAgentGenerationActive()).toBe(true);
+            expect(calls().map(call => call[0])).toEqual(['repair']);
+            expect(calls()[0][3].modelOverride).toBeUndefined();
+            await jest.advanceTimersByTimeAsync(5000);
+            const response = await running;
+            expect(response).toEqual(expect.objectContaining({ output: 'Reply from repair-backup', profileId: 'repair-backup' }));
+            expect(calls().map(call => call[0])).toEqual(['repair', 'repair-backup']);
+            expect(isAgentGenerationActive()).toBe(false);
+
+            connectionManagerRequestService.sendRequest.mockClear();
+            const usual = await requestPromptTransform({ id: 'tracker', connectionProfile: 'usual' }, messages, 100);
+            expect(usual.profileId).toBe('usual');
+        } finally {
+            warn.mockRestore();
+            jest.useRealTimers();
+        }
     });
 
     test('shows the resolved profile model in prompt-transform running toasts', async () => {

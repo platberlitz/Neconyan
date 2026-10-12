@@ -54,7 +54,7 @@ import { isGenerationLengthFinish } from '../../generation-request-controls.js';
 import { resolveExpressionsAgentProfile } from '../expressions/expressions-agent-utils.js';
 import { buildFallbackPromptText, extractProfileResponseText } from './llm-utils.js';
 import { buildPromptTransformRecentChat } from './prompt-transform-context.js';
-import { getTrackerRepairTimeoutMs, isTrackerRepairRunAgent, markTrackerRepairRunAgent } from './tracker-repair-run.js';
+import { getTrackerRepairConnectionProfile, getTrackerRepairTimeoutMs, isTrackerRepairRunAgent, markTrackerRepairRunAgent } from './tracker-repair-run.js';
 import { buildAgentContextMacros, captureGroupCards, getPreparedMewmoryContext, usesGroupCardsMacro } from './agent-context-macros.js';
 import { getConnectionProfileDisplayName, getConnectionProfileModelName } from './profile-utils.js';
 import { describeAgentRunModel } from './model-label.js';
@@ -2441,6 +2441,8 @@ export function refreshRegexSnapshotsForAgent(agentId, { generationType = 'norma
 }
 
 export function resolveAgentConnectionProfile(agent) {
+    const trackerRepairProfile = isTrackerRepairRunAgent(agent) ? getTrackerRepairConnectionProfile(getGlobalSettings()) : '';
+    if (trackerRepairProfile) return trackerRepairProfile;
     const profile = getCompanionReferenceIds(agent).includes('tpl-expressions-agent')
         ? resolveExpressionsAgentProfile(agent, extension_settings)
         : agent?.connectionProfile;
@@ -3696,8 +3698,12 @@ export async function requestPromptTransform(agent, promptMessages, maxTokens, o
         throw new DOMException('', 'AbortError');
     }
     const profileId = resolveAgentConnectionProfile(agent);
-    const modelOverride = typeof agent.modelOverride === 'string' ? agent.modelOverride.trim() : '';
-    const attemptTimeoutMs = isTrackerRepairRunAgent(agent) ? getTrackerRepairTimeoutMs(getGlobalSettings()) : 0;
+    const isTrackerRepair = isTrackerRepairRunAgent(agent);
+    // A saved tracker repair connection uses its own model, like a fallback does.
+    const modelOverride = typeof agent.modelOverride === 'string' && !(isTrackerRepair && getTrackerRepairConnectionProfile(getGlobalSettings()))
+        ? agent.modelOverride.trim()
+        : '';
+    const attemptTimeoutMs = isTrackerRepair ? getTrackerRepairTimeoutMs(getGlobalSettings()) : 0;
     const context = getContext();
     const CMRS = context?.ConnectionManagerRequestService;
     const requestAbortController = new AbortController();
