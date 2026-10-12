@@ -15,7 +15,7 @@ All assistants can do the same things in Scratchpad. The included three keep the
 
 On desktop Scratchpad opens beside the chat. Drag its left edge (or focus the edge and use the arrow keys) to change its width, and use **Full width** or **Beside chat** to switch layouts. On a phone it fills the screen; **Back to chat** returns to the conversation. Opening Notebooks closes Scratchpad, and opening Scratchpad closes Notebooks.
 
-Scratchpad follows the chat you have open. Switch chats and it shows that chat's sessions instead. Renaming a saved Roleplay chat keeps its sessions, context settings and replies already in progress. A different chat that reuses the old name gets its own Scratchpad.
+Roleplay sessions are shared across all chats for the same character. Conversation sessions are shared across branches for the same character or group within the active persona, separately from Roleplay sessions and other personas. Groups keep their own Roleplay list, separate from their members' solo sessions. Switching chats changes the context Scratchpad reads, not the saved sessions. Existing chat-specific sessions appear together automatically, including replies already in progress. Sessions stay private in your account's Scratchpad storage; exporting a character card does not include them.
 
 **Ask Scratchpad** opens sessions belonging to the note, not the open chat. It saves unfinished note edits before sharing, offers a 30-minute read-only grant and lets you explicitly allow proposed edits. Selected text shares only that exact passage. The open story, character cards, persona, linked notes and attachments are not included. **Back to Notes** returns to the source note. Permanent AI access settings stay unchanged.
 
@@ -35,13 +35,13 @@ You can save up to 24 of your own assistants; delete one to make room. They have
 
 Under **Context → Global user instructions → Edit user instructions**, save preferences that apply across every Scratchpad in your account. Choose **All assistants**, or **Selected assistants** and tick the ones you want. Your text accompanies each chosen assistant's prompt in existing and new sessions, including round tables and note discussions. It is saved on the server, so it follows your account across devices. Leave the text blank and press **Save instructions** to turn it off. Replies already in progress keep their original instructions. Session exports do not include these account-wide preferences.
 
-Under **Context → Assistant prompts**, choose an assistant's **View or edit** button to read and edit the complete instructions, including personality and change-card formats. **Save prompt** applies your text to that assistant in the current session. New sessions in the same chat inherit your choices. **Reset to default**, followed by **Save prompt**, restores the instructions for their saved personality. App-reference knowledge and the Notebook permissions contract are appended automatically. Defaults reflect the current chat and round-table selection; saved custom text is otherwise used as written.
+Under **Context → Assistant prompts**, choose an assistant's **View or edit** button to read and edit the complete instructions, including personality and change-card formats. **Save prompt** applies your text to that assistant in the current session. New sessions for the same character, group or note inherit your choices. **Reset to default**, followed by **Save prompt**, restores the instructions for their saved personality. App-reference knowledge and the Notebook permissions contract are appended automatically. Defaults reflect the current chat and round-table selection; saved custom text is otherwise used as written.
 
 Pick who you are talking to under **Talking with**, type in the box at the bottom and press **Send** (or Enter on desktop; Shift+Enter adds a new line). **Quick prompts** fill the box with a ready-made request you can edit before sending: **Read the scene**, **Plot ideas**, **Catch me up**, **Continuity check** and **Lore gaps**.
 
 The input starts one line high and grows as you add lines, up to a few lines, so the whole message stays readable. Longer drafts scroll inside it, and pasted text keeps its line breaks.
 
-Press **New session** at the top of Scratchpad to start a fresh conversation for the open chat.
+Press **New session** at the top of Scratchpad to start a fresh conversation for the current character, group or note.
 
 Turn on **Round table** to ask up to three assistants together. Press their portraits to include or exclude them; keep at least one selected. **Ask 2** or **Ask 3** sends one question to everyone selected, using each assistant's own connection profile and personality. Each answer is labelled and saved separately in the same session. The reply limit applies to each assistant.
 
@@ -53,7 +53,7 @@ To give the conversation more room, press **Talking with** (just the arrow on ph
 
 Replies are written on the server with streaming on or off. Once your message has been accepted, they keep going when you switch tabs on your phone, close Scratchpad, reload the page or close the browser. The finished reply and any thinking the model sends are saved for when you come back. **Stop** ends a reply early. While a reply is being written you cannot send another message in the same session.
 
-Streaming has a separate 64 MiB transfer allowance because the provider repeats data around each small piece of text. Scratchpad saves up to 2 MiB each for the answer and thinking. These byte limits are separate from the model's token limit; long replies are no longer cut off at the old 64 KiB saving limit. Messages you type stay limited to 64 KiB. When a long reply is sent back to the model as earlier conversation, only its first 128 KiB is included, so one long answer does not push older turns out. Each open chat's Scratchpad file holds up to 32 MiB; if it fills up, Scratchpad asks you to delete old sessions or long replies before it saves more, unless automatic cleanup in **Sessions** is on, in which case it deletes the oldest sessions to make room.
+Streaming has a separate 64 MiB transfer allowance because the provider repeats data around each small piece of text. Scratchpad saves up to 2 MiB each for the answer and thinking. These byte limits are separate from the model's token limit; long replies are no longer cut off at the old 64 KiB saving limit. Messages you type stay limited to 64 KiB. When a long reply is sent back to the model as earlier conversation, only its first 128 KiB is included, so one long answer does not push older turns out. Each saved Scratchpad file holds up to 32 MiB. Older chat-specific files stay in place and appear in the shared list without being combined into one oversized file. If a file fills up, delete old sessions or long replies, or enable automatic cleanup in **Sessions**.
 
 Each message has a few buttons:
 
@@ -84,7 +84,7 @@ Scratchpad rebuilds the story context from the open chat every time you send, so
 
 Saved-note text and permissions are read again on the server for every send. If they change while a reply is being prepared, send again with the new version. Unavailable, private or expired notes show **Not shared** without their text. Links do not expand access. Notebook text is reference material, not instructions. Removing a reference or revoking access cannot withdraw text already sent to a model.
 
-Context settings belong to the session, and a new session starts with the settings of the one you were using (without picked messages or temporary note grants).
+Context settings belong to the session, and a new session starts with the settings of the one you were using (without picked messages or temporary note grants). Picked messages stay tied to their original chat. In another chat, Scratchpad shares none of those messages and does not substitute recent messages; clear the picks or choose messages there.
 
 ## Macros in drafts
 
@@ -107,6 +107,8 @@ Scratchpad can suggest:
 
 Press **Review** on a card to see what is there **Now** next to the **Proposed text**. You can edit the proposed text before pressing **Save change**. **Not now** closes the review without saving, and the card stays so you can come back to it. **Dismiss** marks a card you do not want; **Undo** brings it back.
 
+Message-change cards and **Try again** need the chat where the reply was written. Opening another chat for the same character cannot redirect a suggested message edit there.
+
 Notebook cards show the exact, read-only change and also appear in **Notebooks → Assistant changes** when the reply finishes. Save or decline from either place; Scratchpad reflects that decision when reopened. They always need review, even when Notebook's requested-edit saving is enabled. **Dismiss** permanently declines an already registered Notebook proposal. Stale note revisions, changed permissions and expired grants prevent saving. To adjust a Notebook proposal, ask for a new suggestion rather than editing the review.
 
 For new alternate greetings, the assistant only supplies the additions. **Review** shows **Existing greetings (kept)** separately from **New greetings to append**. Edit the new greetings and save; they go after the last existing alternate greeting, in order. The existing greetings and first message stay as they are.
@@ -117,22 +119,22 @@ Conversation mode does not offer message changes. Lorebook and character changes
 
 ## Sessions
 
-The **Sessions** tab lists the sessions for the open chat. Each chat keeps its own sessions, up to 40, and each session holds up to 400 messages.
+The **Sessions** tab lists the sessions for the current character, group or note. Each list allows up to 40 new and existing sessions, and each session holds up to 400 messages. If combining your older chat-specific lists brings the total above 40, every session stays available and editable; delete enough sessions before creating another.
 
 - **New session** starts a fresh conversation. **Temporary session** starts one that disappears when you open or start another session.
 - **Open** switches to a session, **Rename** changes its name, **Clear messages** empties it but keeps its context settings, and **Delete session** removes it.
 - **Search sessions** filters by session name and message text.
-- **Export current** downloads the open session as a file. **Import** adds a session from one of those files to the open chat.
+- **Export current** downloads the open session as a file. **Import** adds a session from one of those files to the current character, group or note.
 - **Save session to note** saves the completed conversation as a quotation in a new or existing note. It leaves out reasoning, unfinished replies and change-card instructions.
-- **Delete old sessions automatically** is one setting shared across all chats and notes in your account, off by default. Set **Sessions to keep per chat** (1 to 40, 10 by default) to keep the most recently used sessions in each chat. Changing it here changes it everywhere. Cleanup runs in the current chat when you save the setting, and in other chats when their Scratchpad is next saved, including when a reply finishes. Older sessions are deleted for good, and if a Scratchpad file fills up, the oldest go first. The open session, the one that just got a reply and any session with a reply in progress are never deleted. Enabling cleanup or lowering the limit while it is on asks you to confirm the account-wide change.
+- **Delete old sessions automatically** is one setting shared across your account, off by default. Set **Sessions to keep per character, group or note** (1 to 40, 10 by default) to keep the most recently used sessions in each list. Changing it here changes it everywhere. Cleanup runs in the current list when you save the setting, and in other lists when their Scratchpad is next saved, including when a reply finishes. Older sessions are deleted for good. The open session, the one that just got a reply and any session with a reply in progress are never deleted. Enabling cleanup or lowering the limit while it is on asks you to confirm the account-wide change.
 
-Earlier per-chat cleanup choices are not copied to the shared setting. Enable it once in Sessions to use automatic cleanup across your account.
+Earlier cleanup choices are switched off when moving to character-shared sessions. Enable cleanup again in Sessions to confirm the new scope before any combined sessions are deleted.
 
 Sessions are saved on the server under your account, separately from the chat itself. Deleting a session never touches the story.
 
-Saved Roleplay sessions follow the chat's permanent identity rather than its filename. Existing Scratchpad files are kept in place when linked to that identity, including before a rename. Group chats stay separate by group even when groups share the same chat file. This prevents new renames from opening an empty Scratchpad; it doesn't guess which chat owns sessions orphaned by an earlier rename.
+Older Roleplay Scratchpad files keep their link to the chat's permanent identity rather than its filename, including before a rename. They appear in the shared character or group list without being moved. Groups stay separate even when they share the same chat file. This doesn't guess which character owns sessions orphaned by an earlier rename.
 
-Exports and imports leave out saved-note sharing references, temporary grants and saved/declined proposal markers. Imported conversation text remains a copy of what was written; it can still contain material shared in the original session. Saving a quotation does not publish lore or give assistants new access.
+Exports and imports leave out picked-message references, saved-note sharing references, temporary grants and saved/declined proposal markers. Imported conversation text remains a copy of what was written; it can still contain material shared in the original session. Imported message-change cards belong to the chat chosen for import. Saving a quotation does not publish lore or give assistants new access.
 
 ## Limits and known gaps
 

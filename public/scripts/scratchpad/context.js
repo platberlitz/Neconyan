@@ -59,8 +59,7 @@ function characterByAvatar(avatar) {
 
 /**
  * Describes the chat that is open right now, or null when no chat is open.
- * Scratchpad sessions are stored against this key, so switching chats never
- * mixes two stories together.
+ * The key guards live context; the scope shares sessions across a character's chats.
  */
 export function currentSource() {
     if (notebookSource) return notebookSource;
@@ -80,6 +79,7 @@ export function currentSource() {
             groupId,
             branchId: branch.id,
             personaId: getConversationPersonaId(),
+            scope: { kind: groupId ? 'group' : 'character', id: groupId || avatar },
         };
     }
 
@@ -96,6 +96,7 @@ export function currentSource() {
             label: clipLabel(`${group?.name || 'Group chat'} - ${chatId}`),
             groupId: selected_group,
             chatId,
+            scope: { kind: 'group', id: String(selected_group) },
         };
     }
     const character = characters[this_chid];
@@ -109,11 +110,21 @@ export function currentSource() {
         label: clipLabel(`${character.name} - ${chatId}`),
         avatar: character.avatar,
         chatId,
+        scope: { kind: 'character', id: character.avatar },
     };
 }
 
 export function wireSource(source) {
-    return source ? { kind: source.kind, key: source.key, label: source.label, ...(source.legacyKey ? { legacyKey: source.legacyKey } : {}) } : null;
+    return source ? { kind: source.kind, key: source.key, label: source.label, ...(source.legacyKey ? { legacyKey: source.legacyKey } : {}), ...(source.scope ? { scope: source.scope } : {}) } : null;
+}
+
+export function sameChat(source, other) {
+    return Boolean(source && other && source.kind === other.kind
+        && (source.key === other.key || source.legacyKey === other.key || source.key === other.legacyKey));
+}
+
+export function picksMatchSource(settings, source) {
+    return !settings.pickedSource || sameChat(settings.pickedSource, source);
 }
 
 export function isCurrentSource(source) {
@@ -185,9 +196,10 @@ export function sourceMessages(source) {
     });
 }
 
-function selectMessages(messages, settings) {
+function selectMessages(messages, settings, source) {
     const picked = Array.isArray(settings?.picked) ? settings.picked : [];
     if (picked.length) {
+        if (!picksMatchSource(settings, source)) return { messages: [], picked: true };
         const wanted = new Set(picked);
         return { messages: messages.flatMap(item => {
             const swipes = (item.swipes ?? []).filter(swipe => wanted.has(swipe.ref));
@@ -235,7 +247,7 @@ function sourceLorebooks(source) {
 
 export function loreScanText({ source, settings, pendingText = '', sessionText = '' }) {
     return [
-        ...selectMessages(sourceMessages(source), settings).messages.slice(-LORE_SCAN_MESSAGES).map(item => item.text),
+        ...selectMessages(sourceMessages(source), settings, source).messages.slice(-LORE_SCAN_MESSAGES).map(item => item.text),
         sessionText,
         pendingText,
     ].join('\n');
@@ -435,7 +447,7 @@ export async function buildContext({ source, settings, pendingText = '', session
     };
     const include = settings?.include || {};
     const all = sourceMessages(source);
-    const selection = selectMessages(all, settings);
+    const selection = selectMessages(all, settings, source);
     const people = include.card ? await loadSourceCharacters(source) : sourceCharacters(source);
     const names = { user: sourceUserName(source), character: people.map(item => item.name).filter(Boolean).join(', ') };
     const macros = { name1Override: names.user, name2Override: names.character, replaceCharacterCard: false };

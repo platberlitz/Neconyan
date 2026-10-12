@@ -33,6 +33,7 @@ import { readRoleplayChatLocked, readRoleplayEntityLocked, roleplayEntityContent
 import { CharXParser, persistCharXAssets } from '../charx.js';
 import { getSuspiciousEmptyCharacterDefinitionFields } from '../character-save-guard.js';
 import { serverDirectory } from '../server-directory.js';
+import { forgetSharedScratchpadsLocked, moveSharedScratchpadsLocked } from '../scratchpad/shared-sessions.js';
 import { createEntityDateAdded, ensureEntityDateAdded, prepareEntityDateAddedMove, reconcileEntityDateAdded, removeEntityDateAdded, ENTITY_DATE_ADDED_FILE } from '../entity-date-added.js';
 import { getEntityLastChat, prepareEntityLastChatMove, readEntityLastChats, removeEntityLastChat, setEntityLastChat, ENTITY_LAST_CHAT_FILE } from '../entity-last-chat.js';
 import {
@@ -1983,6 +1984,9 @@ function renameCharacterCard(request, oldAvatar, newAvatar, bytes) {
                 { task: 'date-added-remove', entity: 'characters', id: oldAvatar },
             ],
         }, characterLifecycleHost(request));
+        try { moveSharedScratchpadsLocked(lease, { kind: 'character', from: oldAvatar, to: newAvatar }); } catch (error) {
+            console.warn('Could not move shared Scratchpad files after character rename.', error);
+        }
         return result;
     });
 }
@@ -2342,6 +2346,9 @@ function deleteCharacterCard(request, avatar, avatarPath, chatsDirectory, delete
                 }
             }
             fs.unlinkSync(avatarPath);
+            try { forgetSharedScratchpadsLocked(lease, { kind: 'character', id: avatar }); } catch (error) {
+                console.warn('Could not remove shared Scratchpad files after character deletion.', error);
+            }
             removeSourceMemory(request.user.directories, { avatar, deleteChats });
             return null;
         }
@@ -2360,6 +2367,9 @@ function deleteCharacterCard(request, avatar, avatarPath, chatsDirectory, delete
                 ...looseCard ? [looseCard] : [],
             ],
         }, characterLifecycleHost(request));
+        try { forgetSharedScratchpadsLocked(lease, { kind: 'character', id: avatar }); } catch (error) {
+            console.warn('Could not remove shared Scratchpad files after character deletion.', error);
+        }
         return result;
     });
 }
