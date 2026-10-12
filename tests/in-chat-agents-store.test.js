@@ -850,6 +850,29 @@ describe('in-chat agent scoped enabled state', () => {
         expect(store.resolveCompanionConnectionProfile('')).toBe('default-profile');
     });
 
+    test('keeps a separate Fix trackers connection, fallback list and time limit', async () => {
+        const store = await importStore();
+        expect(store.getGlobalSettings()).toEqual(expect.objectContaining({
+            trackerRepairConnectionProfile: '',
+            trackerRepairConnectionFallbacks: [],
+            trackerRepairTimeoutSeconds: 180,
+        }));
+
+        store.setGlobalSettings({ trackerRepairTimeoutSeconds: '-4' });
+        expect(store.getGlobalSettings().trackerRepairTimeoutSeconds).toBe(0);
+        store.setGlobalSettings({ trackerRepairTimeoutSeconds: 99999 });
+        expect(store.getGlobalSettings().trackerRepairTimeoutSeconds).toBe(3600);
+        store.setGlobalSettings({ trackerRepairTimeoutSeconds: 'soon' });
+        expect(store.getGlobalSettings().trackerRepairTimeoutSeconds).toBe(180);
+
+        store.setGlobalSettings({ connectionFallbacks: ['usual'], companionConnectionFallbacks: ['cheap'], trackerRepairConnectionFallbacks: [] });
+        expect(store.getAgentConnectionFallbacks({ execution: 'companion', trackerRepairRun: true }, '')).toEqual(['cheap']);
+        store.setGlobalSettings({ trackerRepairConnectionFallbacks: [' repair ', 'repair', 'spare'] });
+        expect(store.getGlobalSettings().trackerRepairConnectionFallbacks).toEqual(['repair', 'spare']);
+        expect(store.getAgentConnectionFallbacks({ execution: 'companion', trackerRepairRun: true }, 'spare')).toEqual(['repair']);
+        expect(store.getAgentConnectionFallbacks({ execution: 'companion' }, '')).toEqual(['cheap']);
+    });
+
     test('keeps up to ten ordered fallback connections for each Agent kind', async () => {
         const store = await importStore();
         expect(store.getGlobalSettings()).toEqual(expect.objectContaining({ connectionFallbacks: [], companionConnectionFallbacks: [] }));

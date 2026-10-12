@@ -2,7 +2,7 @@ import { getRequestHeaders, saveSettings, saveSettingsDebounced } from '../../..
 import { extension_settings, getContext } from '../../extensions.js';
 import { uuidv4 } from '../../utils.js';
 import { normalizePromptTransformContextMessages } from './prompt-transform-context.js';
-import { DEFAULT_TRACKER_REPAIR_TIMEOUT_SECONDS, normalizeTrackerRepairTimeoutSeconds } from './tracker-repair-run.js';
+import { DEFAULT_TRACKER_REPAIR_TIMEOUT_SECONDS, isTrackerRepairRunAgent, normalizeTrackerRepairTimeoutSeconds } from './tracker-repair-run.js';
 import { AGENT_STORAGE_LIMITS, getAgentRecordError, isAgentRecordId, isAgentSetupId, mergeAgentSetupRecord, normalizeAgentSetupPreset, normalizeAgentGroup, serializeAgentRecord } from './setup-presets.js';
 import {
     AGENT_REGEX_PLACEMENT,
@@ -184,6 +184,8 @@ const defaultGlobalSettings = {
     companionConnectionProfile: '',
     connectionFallbacks: [],
     companionConnectionFallbacks: [],
+    trackerRepairConnectionProfile: '',
+    trackerRepairConnectionFallbacks: [],
     trackerRepairTimeoutSeconds: DEFAULT_TRACKER_REPAIR_TIMEOUT_SECONDS,
     promptTransformShowNotifications: true,
     postMainInterceptShowMessageFirst: true,
@@ -435,6 +437,8 @@ function normalizeGlobalSettingsRecord(settings, update) {
     settings.hiddenCompanionAgentIds = normalizeAgentIdCollection(settings.hiddenCompanionAgentIds);
     settings.connectionFallbacks = normalizeConnectionFallbacks(settings.connectionFallbacks);
     settings.companionConnectionFallbacks = normalizeConnectionFallbacks(settings.companionConnectionFallbacks);
+    settings.trackerRepairConnectionProfile = normalizeConnectionProfileId(settings.trackerRepairConnectionProfile);
+    settings.trackerRepairConnectionFallbacks = normalizeConnectionFallbacks(settings.trackerRepairConnectionFallbacks);
     settings.trackerRepairTimeoutSeconds = normalizeTrackerRepairTimeoutSeconds(settings.trackerRepairTimeoutSeconds);
     settings.companionAutoCleanupEnabled = settings.companionAutoCleanupEnabled === true;
     const olderNotes = settings.companionAutoCleanupOlderNotes;
@@ -729,7 +733,9 @@ export function normalizeConnectionFallbacks(value) {
  */
 export function getAgentConnectionFallbacks(agent, primaryProfileId = '') {
     const primary = normalizeConnectionProfileId(primaryProfileId);
-    const saved = isCompanionAgent(agent) ? globalSettings.companionConnectionFallbacks : globalSettings.connectionFallbacks;
+    const repairFallbacks = isTrackerRepairRunAgent(agent) ? normalizeConnectionFallbacks(globalSettings.trackerRepairConnectionFallbacks) : [];
+    const saved = repairFallbacks.length ? repairFallbacks
+        : isCompanionAgent(agent) ? globalSettings.companionConnectionFallbacks : globalSettings.connectionFallbacks;
     return normalizeConnectionFallbacks(saved).filter(profileId => profileId !== primary);
 }
 
