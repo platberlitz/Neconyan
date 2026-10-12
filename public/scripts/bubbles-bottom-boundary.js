@@ -107,7 +107,7 @@ export function createBubblesBottomBoundary({ chat, toolbar, getMode, documentRe
         const body = documentRef.body;
         const sheld = documentRef.getElementById('sheld');
         const echo = body.classList?.contains('echostyle') === true;
-        const cardStyle = !echo && ['whisperstyle', 'hushstyle'].find(name => body.classList?.contains(name));
+        const cardStyle = !echo && ['whisperstyle', 'hushstyle', 'ripplestyle'].find(name => body.classList?.contains(name));
         if (windowRef.innerWidth <= 768 || !body.matches(echo ? '.neconyan.echostyle:not(.sbterm):not(.sbstory)' : cardStyle ? `.neconyan.${cardStyle}:not(.sbterm):not(.sbstory)` : '.neconyan.bubblechat:not(.sbterm):not(.sbstory)')
             || getMode() !== 'roleplay' || sheld?.dataset.sbtwMode === 'on' || sheld?.dataset.sbConversationMode === 'on'
             || windowRef.getComputedStyle(chat).clipPath !== 'none') {

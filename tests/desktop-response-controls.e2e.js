@@ -41,10 +41,10 @@ test('desktop response placement persists, preserves swipe actions, and restores
         await page.locator('#chat_display').selectOption(style, { force: true });
         for (const position of ['inside', 'below']) {
             await preference.selectOption(position, { force: true });
-            await expect.poll(() => footer.evaluate(element => element.parentElement.classList.contains('mes_block'))).toBe(position === 'inside');
+            await expect.poll(() => footer.evaluate(element => element.parentElement.classList.contains('mes_block'))).toBe(position === 'inside' && style !== '6');
             const geometry = await footer.evaluate(element => {
                 const message = element.closest('.mes');
-                const bubble = message.querySelector('.mes_block').getBoundingClientRect();
+                const bubble = (message.classList.contains('nn-ripple-response-controls-inside') ? message : message.querySelector('.mes_block')).getBoundingClientRect();
                 const box = element.getBoundingClientRect();
                 const textElement = message.querySelector('.mes_text');
                 const text = textElement.getBoundingClientRect();
@@ -102,6 +102,8 @@ test('desktop response placement persists, preserves swipe actions, and restores
         window.extensionResponseControl = arrow;
     });
     await expect(footer.locator('.assistant-swipe-arrow')).toHaveCount(1);
+    // Let the manager register the injected extension arrow before testing its restoration.
+    await page.evaluate(() => new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))));
     await page.setViewportSize({ width: 393, height: 852 });
     await expect(footer).toHaveCount(0);
     expect(await message.evaluate(element => element.querySelector(':scope > .assistant-swipe-arrow') === window.extensionResponseControl)).toBe(true);
@@ -155,7 +157,7 @@ test('last response controls stay above the toolbar at the bottom of a long chat
         await page.locator('#chat_display').selectOption(style, { force: true });
         for (const position of ['below', 'inside']) {
             await page.locator('#desktop_response_controls').selectOption(position, { force: true });
-            await expect.poll(() => footer.evaluate(element => element.parentElement.classList.contains('mes_block'))).toBe(position === 'inside');
+            await expect.poll(() => footer.evaluate(element => element.parentElement.classList.contains('mes_block'))).toBe(position === 'inside' && style !== '6');
             // Style changes can reflow the message after the first scroll attempt.
             await expect.poll(() => footer.evaluate(element => {
                 const scroller = document.getElementById('chat');

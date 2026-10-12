@@ -18,7 +18,8 @@ function restore(message, state) {
         else marker.remove();
     }
     state.footer.remove();
-    message.classList.remove('nn-response-controls-below');
+    state.spacer?.remove();
+    message.classList.remove('nn-response-controls-below', 'nn-ripple-response-controls-inside');
     managed.delete(message);
 }
 
@@ -64,7 +65,23 @@ function refresh() {
             }
         }
         const below = document.body.dataset.desktopResponseControls === 'below';
-        const parent = below ? message : block;
+        const rippleInside = !below && document.body.matches('.neconyan.ripplestyle[data-neconyan-chat-mode="roleplay"]:not(.sbterm, .sbstory)');
+        if (rippleInside) {
+            if (!state.spacer) {
+                state.spacer = document.createElement('div');
+                state.spacer.className = 'nn-response-controls-spacer';
+                state.spacer.setAttribute('aria-hidden', 'true');
+                state.spacer.inert = true;
+            }
+            for (const spacer of block.querySelectorAll(':scope > .nn-response-controls-spacer')) {
+                if (spacer !== state.spacer) spacer.remove();
+            }
+            if (state.spacer.parentNode !== block || state.spacer !== block.lastElementChild) block.append(state.spacer);
+        } else state.spacer?.remove();
+        if (message.classList.contains('nn-ripple-response-controls-inside') !== rippleInside) {
+            message.classList.toggle('nn-ripple-response-controls-inside', rippleInside);
+        }
+        const parent = below || rippleInside ? message : block;
         if (state.footer.parentNode !== parent || state.footer !== parent.lastElementChild) parent.append(state.footer);
         message.classList.toggle('nn-response-controls-below', below);
     }
@@ -90,7 +107,7 @@ export function applyDesktopResponseControls(value) {
                 : record.target.matches?.('#chat, #chat .mes, #chat .mes_block, #chat .nn-response-controls'));
             if (hasChangedAttributeValue(relevant)) queueRefresh();
         });
-        observer.observe(document.body, { attributes: true, attributeFilter: ['class'], attributeOldValue: true, childList: true, subtree: true });
+        observer.observe(document.body, { attributes: true, attributeFilter: ['class', 'data-neconyan-chat-mode'], attributeOldValue: true, childList: true, subtree: true });
     }
     queueRefresh();
 }
