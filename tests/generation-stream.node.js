@@ -210,7 +210,7 @@ test('the capture refuses an oversized streamed response before saving it', asyn
     }
     assert.throws(() => parser.push(':\n\n'), /64 MB size limit/);
     assert.equal(capture.write(':\n\n'), false);
-    assert.match(capture.streamError.message, /64 MiB transport limit/);
+    assert.match(capture.streamError.message, /64 MB size limit/);
     assert.equal(capture.writableEnded, true);
 });
 

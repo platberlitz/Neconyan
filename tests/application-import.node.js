@@ -111,7 +111,7 @@ test('cached plan verification still refuses a changed saved import plan', async
     const filename = path.join(directory, fs.readdirSync(directory).find(name => name.endsWith('.json')));
     record.plan.files[0].relative = 'secrets.json';
     fs.writeFileSync(filename, JSON.stringify(record));
-    assert.throws(() => readOperation(p.base, 'cached-plan'), /record needs recovery/);
+    assert.throws(() => readOperation(p.base, 'cached-plan'), /record is damaged and needs repair/);
 });
 
 test('the completed report retains every skipped file beyond the old 200-file limit', async t => {

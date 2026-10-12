@@ -110,7 +110,7 @@ test('binary downloads are account-bound and reset invalidates old download auth
     const filename = readDownload(alice.base, 'owned').filename;
     resetRoleplayAccount(alice.base, alice.f.scope, 'reset');
     assert.equal(fs.existsSync(filename), true);
-    assert.throws(() => openSavedBinary(alice.base, 'owned'), /earlier account state/);
+    assert.throws(() => openSavedBinary(alice.base, 'owned'), /earlier state of your account/);
 });
 
 test('allocation corruption refuses another backup and preserves all previous binary evidence', async t => {

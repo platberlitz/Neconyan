@@ -49,7 +49,7 @@ test('acknowledged Kobold uses the saved endpoint and samplers exactly once', as
     await assert.rejects(runChatProfile(options), /changed/);
     assert.equal(calls, 1);
     fixture.settings.kai_settings.api_server = 'http://127.0.0.1:6000/api'; fixture.save();
-    await assert.rejects(runChatProfile({ ...options, stream: true }), /completion marker/);
+    await assert.rejects(runChatProfile({ ...options, stream: true }), /cannot save safely for a Roleplay reply/);
     assert.equal(calls, 1);
 });
 
@@ -88,7 +88,7 @@ test('acknowledged NovelAI uses its saved model, server-side token and clean rep
     await assert.rejects(runChatProfile(options), /changed/);
     assert.equal(calls, 1);
     fixture.settings.nai_settings.temperature = 1; fixture.save();
-    await assert.rejects(runChatProfile({ ...options, stream: true }), /completion marker/);
+    await assert.rejects(runChatProfile({ ...options, stream: true }), /cannot save safely for a Roleplay reply/);
     assert.equal(calls, 1);
     fixture.settings.nai_settings.model_novel = 'kayra'; fixture.save();
     const kayra = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 42 });
@@ -454,7 +454,7 @@ test('active output transformations preserve scope, order and refusal before dis
     fixture.settings.extension_settings.regex.push(script('Final', '{{setvar::unsafe::1}}'));
     fixture.save();
     options.binding = captureGenerationBinding(fixture.directories, { kind: 'active' }, { settingsRevision: 3 });
-    await assert.rejects(runChatProfile(options), { status: 409, message: /plain replacements.*browser-only/ });
+    await assert.rejects(runChatProfile(options), { status: 409, message: /plain find-and-replace.*only work in the browser/ });
     assert.equal(calls, 1);
     fixture.settings.extension_settings.disabledExtensions = ['regex']; fixture.save();
     assert.throws(() => resolveGenerationProfile(fixture.directories, options.binding), /changed/);
@@ -584,12 +584,12 @@ test('active capability checks cover indirect macros and refuse dynamic regex on
     for (const findRegex of ['<GROUP>', '<CHARIFNOTGROUP>']) {
         fixture.settings.extension_settings.regex = [{ findRegex, replaceString: 'replacement', substituteRegex: 1, placement: [2] }];
         options.binding = capture();
-        await assert.rejects(runChatProfile({ ...options, messages: [{ role: 'user', content: 'hello' }] }), { status: 409, message: /plain replacements.*browser-only/ });
+        await assert.rejects(runChatProfile({ ...options, messages: [{ role: 'user', content: 'hello' }] }), { status: 409, message: /plain find-and-replace.*only work in the browser/ });
     }
     for (const replaceString of ['<USER>', '<GROUP>', '<CHARIFNOTGROUP>', '$1', '{{match}}', '$<name>']) {
         fixture.settings.extension_settings.regex = [{ findRegex: '(hello)', replaceString, placement: [2] }];
         options.binding = capture();
-        await assert.rejects(runChatProfile({ ...options, messages: [{ role: 'user', content: 'hello' }] }), { status: 409, message: /plain replacements.*browser-only/ });
+        await assert.rejects(runChatProfile({ ...options, messages: [{ role: 'user', content: 'hello' }] }), { status: 409, message: /plain find-and-replace.*only work in the browser/ });
     }
     assert.equal(calls, 0);
     const result = await runChatProfile({ ...options, messages: [{ role: 'user', content: 'hello' }],

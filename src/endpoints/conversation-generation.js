@@ -480,7 +480,7 @@ export function createCapturingResponse({ stream = false, onChunk } = {}) {
             const bytes = stream ? (Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk ?? ''))) : null;
             if (stream) streamBytes += bytes.length;
             if (stream && streamBytes > MAX_GENERATION_STREAM_BYTES) {
-                streamError = new Error('The streamed response exceeded the 64 MiB transport limit.');
+                streamError = new Error('The streamed reply is over the 64 MB size limit.');
                 events.emit('close');
                 this.end();
                 return false;

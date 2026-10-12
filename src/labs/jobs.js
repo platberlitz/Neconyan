@@ -34,13 +34,13 @@ export function labAccount(request) {
 
 export async function acceptLabJob(request, body = {}) {
     const { key, kind, ...input } = body;
-    if (typeof key !== 'string' || !key || key.length > 200) throw labError('A Labs operation key is required.', 400);
+    if (typeof key !== 'string' || !key || key.length > 200) throw labError('This Labs request needs a key.', 400);
     const definition = definitions.get(kind);
     if (!definition) throw labError('That native Lab is not available.', 400);
     const { base, account } = labAccount(request);
     const existing = readLabRecord(base, key);
     if (existing) {
-        if (existing.requestHash !== roleplayHash({ kind, input })) throw labError('This operation key already names different Labs work.');
+        if (existing.requestHash !== roleplayHash({ kind, input })) throw labError('This Labs key was already used for different work.');
         if (existing.state !== 'preparing') {
             const job = existing.jobId ? getJob(base.directories, existing.jobId) : null;
             if (job) finalizeLabSubmission({ ...base, job });
