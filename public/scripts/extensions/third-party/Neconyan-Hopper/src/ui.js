@@ -2400,8 +2400,9 @@ function settingsView() {
         if (state.session?.id === session.id) {
             state.session = updated;
         }
+        const invited = new Set(updated.invited);
         for (const row of inviteRows) {
-            row.querySelector('input').checked = updated.invited.includes(row.dataset.avatar);
+            row.querySelector('input').checked = invited.has(row.dataset.avatar);
         }
         filterInvites();
         void refreshAccounts(session.id).catch((error) => {
@@ -2431,6 +2432,14 @@ function settingsView() {
         return row;
     });
     const inviteCount = el('span', { className: 'sbtw-invite-count' });
+    const addAllInvites = button('Add all', 'sbtw-btn sbtw-btn-quiet', () => {
+        const previous = [...api.getSession(session.id).invited];
+        setInvited([...previous, ...inviteRows.map(row => row.dataset.avatar)]);
+        const added = api.getSession(session.id).invited.length - previous.length;
+        if (added > 0) {
+            undoToast(`Invited ${added} more ${added === 1 ? 'character' : 'characters'}.`, () => setInvited(previous));
+        }
+    }, { title: 'Invite every available character, including those hidden by search' });
     const clearInvites = button('Clear invites', 'sbtw-btn sbtw-btn-quiet', () => setInvited([]), { title: 'Uninvite everyone' });
     const inviteEmpty = el('p', { className: 'sbtw-invite-empty' });
     const invites = el('div', { className: 'sbtw-invites' }, [...inviteRows, inviteEmpty]);
@@ -2457,8 +2466,10 @@ function settingsView() {
         }
         inviteEmpty.hidden = visible > 0;
         inviteEmpty.textContent = query ? 'No characters match this search.' : 'No characters are available.';
-        const invitedCount = (api.getSession(session.id) ?? session).invited.length;
+        const invited = new Set((api.getSession(session.id) ?? session).invited);
+        const invitedCount = invited.size;
         inviteCount.textContent = query ? `${visible} of ${inviteRows.length}` : `${invitedCount} invited`;
+        addAllInvites.disabled = inviteRows.every(row => invited.has(row.dataset.avatar));
         clearInvites.disabled = !invitedCount;
     };
     let searchTimer = null;
@@ -2513,9 +2524,9 @@ function settingsView() {
         groups.length ? field('Use a host group as this timeline\'s cast', groupSelect, 'This copies the group members; you can then adjust the character list below.') : null,
         // A group of checkboxes cannot live inside a single <label>; each has its own.
         el('div', { className: 'sbtw-field' }, [
-            el('div', { className: 'sbtw-field-heading' }, [
+            el('div', { className: 'sbtw-field-heading sbtw-row' }, [
                 el('span', { className: 'sbtw-field-label', text: 'Characters' }),
-                el('span', { className: 'sbtw-field-tools' }, [inviteCount, clearInvites]),
+                el('span', { className: 'sbtw-field-tools' }, [inviteCount, addAllInvites, clearInvites]),
             ]),
             inviteSearch,
             invites,
