@@ -254,10 +254,7 @@ for (const [phone, standalone] of [[false, false], [true, false], [true, true]])
             await page.evaluate(() => window.NeconyanShell.openTab('left', 'presets'));
             await page.getByRole('tab', { name: /Prompts/ }).click();
             await expect(page.locator('#completion_prompt_manager')).toBeVisible();
-            await page.getByRole('button', { name: /^Expand Prompts/ }).click();
-            await page.evaluate(() => new Promise(resolve => {
-                window.$('#completion_prompt_manager_drawer > .inline-drawer-content').promise().done(() => resolve());
-            }));
+            await expect(page.locator('#completion_prompt_manager_list')).toBeVisible();
             const geometry = await page.evaluate(async () => {
                 const { promptManager } = await import('/scripts/openai.js');
                 promptManager.showPopup();

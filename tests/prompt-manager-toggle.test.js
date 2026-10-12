@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { managerFixture, renderedManagerFixture } from './pinned-prompt-test-support.js';
 
 describe('shared Prompt Manager enabled mutation', () => {
-    test('turns off immediately, clears tokens and variables, preserves drawer, renders and saves once', async () => {
+    test('turns off immediately, clears tokens and variables, renders and saves once', async () => {
         const { manager, counts, emit, cleanup } = await managerFixture();
         const sequence = [];
         emit.mockImplementation(() => sequence.push('notify'));
@@ -15,7 +15,6 @@ describe('shared Prompt Manager enabled mutation', () => {
         expect(sequence).toEqual(['notify', 'render']);
         expect(manager.render).toHaveBeenCalledTimes(1);
         expect(manager.saveServiceSettings).toHaveBeenCalledTimes(1);
-        expect(manager.setStoredDrawerExpanded).toHaveBeenCalledWith(true);
         expect(manager.setPromptEnabled('a', false)).toBe(false);
         expect(cleanup).toHaveBeenCalledTimes(1);
         expect(manager.setPromptEnabled('a', true)).toBe(true);
