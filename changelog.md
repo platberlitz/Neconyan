@@ -5,6 +5,7 @@
 ### Merged Staging PRs
 - PR #132 (2026-10-12) `feat(meower): add an add-all character selection button`
 - PR #136 (2026-10-12) `fix(ui): keep buttons accent-aware across shell styles`
+- PR #137 (2026-10-12) `fix(chats): correct the Hush reading layout and controls`
 
 ## v1.3.0
 
