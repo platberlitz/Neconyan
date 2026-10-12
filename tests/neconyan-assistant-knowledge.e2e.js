@@ -273,7 +273,7 @@ for (const phone of [false, true]) {
             }
             return { revision: KNOWLEDGE_REVISION, results };
         }, refreshedKnowledgeCases);
-        expect(references.revision).toBe(23);
+        expect(references.revision).toBe(24);
         expect(references.results).toHaveLength((13 + refreshedKnowledgeCases.length) * 9);
         expect(references.results.filter(result => !result.found)).toEqual([]);
     });
