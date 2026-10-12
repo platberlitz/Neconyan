@@ -274,11 +274,13 @@
 }
 
 /* Accent-filled primary buttons keep their fill and label colour; only this style's finish is added. */
-:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]),
-:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]):hover {
-    background-image: var(--hypr-edge);
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]) {
     border-radius: 8px;
     box-shadow: var(--hypr-glow);
+}
+
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]):hover {
+    box-shadow: var(--hypr-glow), inset 0 0 0 2px color-mix(in srgb, var(--sb-on-accent) 35%, transparent);
 }
 
 /* Phones: the whole bottom bar is one box (see neconyan-calico.css), so this style dresses that

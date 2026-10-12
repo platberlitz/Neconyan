@@ -3114,15 +3114,6 @@ body.neconyan #rm_api_block .neconyan-connection-tools {
 }
 body.neconyan #rm_api_block .neconyan-connection-tools > summary { color: var(--neco-muted); font-size: 13px; }
 body.neconyan #rm_api_block .neconyan-connection-tools > .menu_button { min-height: 44px; margin: 0 6px 6px 0; }
-body.neconyan:not([data-sb-theme='windows-98']):not([data-sb-theme='windows-xp']) #rm_api_block .neconyan-connect-actions > .api_button {
-    background: var(--neco-ginger);
-    color: var(--neco-on-accent);
-    border-color: var(--neco-ginger);
-    text-shadow: none;
-}
-body.neconyan:not([data-sb-theme='windows-98']):not([data-sb-theme='windows-xp']) #rm_api_block .neconyan-connect-actions > .api_button:hover {
-    background: var(--neco-ginger-hover);
-}
 body.neconyan #left-nav-panel #rm_api_block .neconyan-model-provider-stack { background: var(--neco-surface); }
 body.neconyan #left-nav-panel #rm_api_block .neconyan-provider-fields h4,
 body.neconyan #left-nav-panel #rm_api_block #openai_api > h4 {

@@ -98,7 +98,7 @@
 }
 
 :root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) :is(.menu_button, .sb-proxy-button):not(#sb-topbar-inner *):not(.neconyan-cat-control, .menu_button_primary, .popup-button-ok, .menu_button_danger, .red_button, .sb-accent-preset):hover {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--cozy-amber) 30%, var(--cozy-raised)), var(--cozy-raised));
+    background: linear-gradient(180deg, color-mix(in srgb, var(--cozy-amber) 16%, var(--cozy-raised)), var(--cozy-raised));
     box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25), 0 3px 10px var(--cozy-glow);
 }
 
@@ -185,10 +185,13 @@
 }
 
 /* Accent-filled primary buttons keep their fill and label colour; only this style's finish is added. */
-:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]),
-:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]):hover {
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]) {
     border-radius: 999px;
     box-shadow: var(--cozy-shadow);
+}
+
+:root[data-sb-theme='cozy-warm'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]):hover {
+    box-shadow: var(--cozy-shadow), inset 0 0 0 2px color-mix(in srgb, var(--sb-on-accent) 35%, transparent);
 }
 
 /* Phones: the whole bottom bar is one box (see neconyan-calico.css), so this style dresses that
