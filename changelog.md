@@ -4,6 +4,7 @@
 
 ### Merged Staging PRs
 - PR #132 (2026-10-12) `feat(meower): add an add-all character selection button`
+- PR #136 (2026-10-12) `fix(ui): keep buttons accent-aware across shell styles`
 
 ## v1.3.0
 
