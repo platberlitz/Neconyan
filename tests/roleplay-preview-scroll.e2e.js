@@ -23,7 +23,7 @@ async function installPreview(page) {
 
 async function updatePreview(page, { stage = 'generating', lines = 1 } = {}) {
     await page.evaluate(({ stage, lines }) => window.sendScrollPreview({
-        childId: 'reply', name: 'Bunny Guide', stage, updatedAt: Date.now(),
+        childId: 'reply', name: 'Miso', stage, updatedAt: Date.now(),
         text: `A live reply.\n\n${'More words in the reply.\n\n'.repeat(lines)}`,
     }), { stage, lines });
     await expect(page.locator('#neconyan-roleplay-preview [role="status"]')).toHaveText(stage === 'agents' ? 'Running Agents…' : 'Writing reply…');

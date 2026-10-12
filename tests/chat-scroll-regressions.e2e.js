@@ -190,7 +190,7 @@ test.describe('issue 167 chat scroll regressions', () => {
             const context = window.SillyTavern.getContext();
             const messageId = context.chat.length;
             context.chat.push({
-                name: 'Bunny Guide',
+                name: 'Miso',
                 is_user: false,
                 is_system: false,
                 send_date: new Date().toISOString(),
