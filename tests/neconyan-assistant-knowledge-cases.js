@@ -81,6 +81,7 @@ export const refreshedKnowledgeCases = [
     ['How do I hide all tour buttons?', 'navigation.page-tours', 'Settings → Appearance → Page tours'],
     ['Do greetings show a token count?', 'characters.greetings', 'without waiting for a generated reply'],
     ['How do I drag lorebook entries into folders?', 'lorebooks.entry-folders', 'onto a folder heading'],
+    ['How do I vectorize all entries in a lorebook?', 'lorebooks.vectorization', 'Entry tools → Vectorize all'],
     ['Does Remove folder delete my lorebook entries?', 'lorebooks.entry-folders', 'moves its entries to Unfiled'],
     ['Do lorebook entry folders change activation?', 'lorebooks.entry-folders', 'Folders are organisation only'],
     ['Why does Story Mode show bubble borders around passages?', 'story.manuscript', 'no chat-bubble border'],
