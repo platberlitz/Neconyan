@@ -1,3 +1,4 @@
+/* global document, NodeFilter */
 import { expect } from '@playwright/test';
 import { test } from './neconyan-conversation-durable-fixture.js';
 import { normalizeSettings, normalizeSession } from '../public/scripts/extensions/third-party/Neconyan-Hopper/src/core.js';
@@ -32,6 +33,14 @@ async function openSettings(account) {
 
 test('phone Meower keeps character selection controls inside the screen at the largest text size', async ({ app }, info) => {
     const account = await app.account({ phone: true, configureSettings: saved => { saved.power_user.font_scale = 1.5; } });
+    const library = [account.avatar];
+    for (let index = 1; index <= 11; index++) {
+        const created = await account.context.request.post('/api/characters/create', {
+            headers: account.headers, data: { ch_name: `Guest ${index}`, description: 'A quiet guest.' },
+        });
+        expect(created.ok()).toBe(true);
+        library.push(await created.text());
+    }
     const page = await openSettings(account);
     await expect(page.locator('html')).toHaveCSS('--fontScale', '1.5');
     const heading = page.locator('.sbtw-field-heading');
@@ -51,7 +60,25 @@ test('phone Meower keeps character selection controls inside the screen at the l
     const addAll = page.getByRole('button', { name: 'Add all', exact: true });
     await addAll.click();
     await expect(addAll).toBeDisabled();
-    await expect.poll(async () => (await readStore(account)).settings.sessions.legacy.invited).toEqual([account.avatar]);
+    await expect(page.locator('.sbtw-invite-count')).toHaveText('12 invited');
+    await expect.poll(async () => [...(await readStore(account)).settings.sessions.legacy.invited].sort()).toEqual([...library].sort());
+    const lines = await heading.evaluate(element => [...element.querySelectorAll('button')].map(control => {
+        const walker = document.createTreeWalker(control, NodeFilter.SHOW_TEXT);
+        const rects = [];
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            if (!node.textContent.trim()) continue;
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            rects.push(...[...range.getClientRects()].filter(rect => rect.width > 0));
+        }
+        const tops = rects.map(rect => rect.top).sort((a, b) => a - b);
+        const lines = tops.filter((top, index) => index === 0 || top - tops[index - 1] > 4).length;
+        return { label: control.textContent, lines };
+    }));
+    for (const control of lines) expect(control.lines, control.label).toBe(1);
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect(addAll).toBeEnabled();
+    await expect.poll(async () => (await readStore(account)).settings.sessions.legacy.invited).toEqual([]);
 });
 
 for (const phone of [false, true]) {

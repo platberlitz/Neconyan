@@ -2433,7 +2433,12 @@ function settingsView() {
     });
     const inviteCount = el('span', { className: 'sbtw-invite-count' });
     const addAllInvites = button('Add all', 'sbtw-btn sbtw-btn-quiet', () => {
-        setInvited([...api.getSession(session.id).invited, ...inviteRows.map(row => row.dataset.avatar)]);
+        const previous = [...api.getSession(session.id).invited];
+        setInvited([...previous, ...inviteRows.map(row => row.dataset.avatar)]);
+        const added = api.getSession(session.id).invited.length - previous.length;
+        if (added > 0) {
+            undoToast(`Invited ${added} more ${added === 1 ? 'character' : 'characters'}.`, () => setInvited(previous));
+        }
     }, { title: 'Invite every available character, including those hidden by search' });
     const clearInvites = button('Clear invites', 'sbtw-btn sbtw-btn-quiet', () => setInvited([]), { title: 'Uninvite everyone' });
     const inviteEmpty = el('p', { className: 'sbtw-invite-empty' });
