@@ -11,6 +11,7 @@
 - PR #137 (2026-10-12) `fix(chats): correct the Hush reading layout and controls`
 - PR #138 (2026-10-12) `fix(errors): rewrite error messages and toasts in plain language`
 - PR #143 (2026-10-12) `fix(chats): correct the Ripple reading layout and controls`
+- PR #144 (2026-10-12) `fix(motion): show the chat behind a page while it closes`
 
 ## v1.3.0
 
