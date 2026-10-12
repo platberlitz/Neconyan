@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.3.1
+
+### Merged Staging PRs
+- PR #132 (2026-10-12) `feat(meower): add an add-all character selection button`
+
 ## v1.3.0
 
 ### Highlights
