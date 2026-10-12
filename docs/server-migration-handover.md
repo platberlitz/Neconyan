@@ -69,6 +69,44 @@ the PR against staging and validate the resulting APK on the reporting device.
 
 ## Release preparation: 1.0.0
 
+### 12 October: 1.3.1 release, staging starts 1.3.2
+
+The handbook now covers Continuity Corrector, tracker repair connections and time
+limits, saved model labels, shared Scratchpad sessions, Android updates, pinned
+prompts, bulk lorebook vectorisation and Meower's Add all control. Its 1.3.1
+refresh is published from `neconyan-docs` commit
+`dfbfcf711dbc9450a273de53eb0b5eddd0b4fb3a`. Strict build, all 53 page link and
+asset checks, and phone and desktop browser checks passed. Pages run
+`38249527616` published it; the changed pages were checked on the live site.
+The shared assistant reference was refreshed to revision 24, with nine new
+retrieval cases, and the changelog highlights were added before promotion.
+
+`main` was fast-forwarded to `3208b991596e483122685664af1bb133b07eda9f`.
+Neconyan 1.3.1 is published at
+https://github.com/platberlitz/Neconyan/releases/tag/v1.3.1 with annotated tag
+`v1.3.1` and nine assets. Both APK signatures match the existing signing identity.
+Their embedded release commit, version, bundled frontend assets and native
+16 KiB alignment were independently verified, as were all eight listed
+checksums. All 3,911 source files match `git archive`, including its line-ending
+conversion rules. All nine published assets were downloaded again and matched
+the verified build files byte for byte; GitHub's SHA-256 checksums also matched.
+
+All 470 unit suites passed (6,149 tests, two skipped), along with all 2,162 server
+tests, 91 dedicated Mewmory tests, root and test lint, frontend budgets and the
+production build. Both focused assistant browser checks passed: the refreshed
+help loaded for all nine assistant variants on phone and desktop. Signed Android
+run `38251084525` passed the Android 11, 13 and 15 emulator checks.
+
+Full browser run `38248886869` was still running at publication, with ten passing
+groups, six running and no completed failures. It covers application commit
+`9ef5d4c1834e1065920435ace4ab49355aa5190f`; only assistant-reference text, its
+tests and release highlights were added afterwards. The focused browser checks
+cover those reference changes. The duplicate full run queued by the main push
+was cancelled, preserving the original run's results. Release notes explicitly
+record the pending check and will be updated when it finishes.
+The six project-boundary tests and changed-test lint passed for the 1.3.2
+staging version bump.
+
 ### 11 October: 1.3.0 release, staging starts 1.3.1
 
 The handbook now covers Scratchpad assistants, round tables, global instructions,
