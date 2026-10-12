@@ -14,7 +14,7 @@ router.post('/', async (request, response) => {
     }
     const { query, offset = 0 } = request.body || {};
     if (typeof query !== 'string' || !query.trim() || query.length > 200 || !Number.isSafeInteger(offset) || offset < 0 || offset > Number.MAX_SAFE_INTEGER - 30) {
-        return response.status(400).json({ error: 'Choose search text up to 200 characters and a valid result page.' });
+        return response.status(400).json({ error: 'Search text must be 200 characters or fewer, and the results page must be valid.' });
     }
     if ((active.get(owner) || 0) >= 2) return response.status(429).json({ error: 'Search is busy. Try again shortly.' });
     active.set(owner, (active.get(owner) || 0) + 1);

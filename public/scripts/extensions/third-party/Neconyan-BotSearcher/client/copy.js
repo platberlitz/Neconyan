@@ -235,7 +235,7 @@ export function unreachableReason(sourceLabel, reason) {
         case 'dns':
             return `${sourceLabel} could not be found from your Neconyan server.`;
         case 'not_found':
-            return `${sourceLabel} no longer offers the endpoint BotSearcher uses.`;
+            return `${sourceLabel} no longer offers the address BotSearcher uses to fetch cards.`;
         default:
             return `${sourceLabel} is not responding.`;
     }
@@ -264,11 +264,11 @@ export function urlImportReadyMessage(sourceLabel, direct = false) {
 }
 
 /** Summary of the JannyAI hint shown while JannyAI can supply cards. */
-export const JANNY_CLOUDFLARE_HINT_TITLE = 'JannyAI imports need a Cloudflare check first';
+export const JANNY_CLOUDFLARE_HINT_TITLE = 'JannyAI imports need a security check first';
 
 /** Body of the JannyAI hint: what to do before the first import. */
 export function jannyCloudflareHint() {
-    return 'JannyAI sits behind a Cloudflare check that blocks the Neconyan server until someone passes it. Searching works without it. Before importing, press "Open JannyAI login window" below and finish the check in that window on the Neconyan server, then import the card. You can also download the card from JannyAI and open it with "Inspect a card file".';
+    return 'JannyAI uses a Cloudflare check (a security check that stops automated visitors) which blocks the Neconyan server until someone passes it. Searching works without it. Before importing, press "Open JannyAI login window" below and finish the check in that window on the Neconyan server, then import the card. You can also download the card from JannyAI and open it with "Inspect a card file".';
 }
 
 /** The pasted URL belongs to a source the user has switched off. */
@@ -332,14 +332,14 @@ export function searchErrorMessage(error, sourceLabel) {
         case 'direct_unsupported':
             return `${sourceLabel} cannot be requested from this browser.`;
         case 'http_error':
-            return `${sourceLabel} returned an error.`;
+            return `${sourceLabel} returned an error. Try again later.`;
         case 'too_large':
             return `${sourceLabel} sent more data than BotSearcher accepts.`;
         case 'bad_cursor':
             return `The ${sourceLabel} result page expired. Start a new search to continue.`;
         case 'bad_json':
         case 'unsafe_json':
-            return `${sourceLabel} sent a response this version cannot read. The source API may have changed.`;
+            return `${sourceLabel} sent data BotSearcher could not read. Try again later.`;
         default:
             return `Could not connect to ${sourceLabel}.`;
     }
@@ -402,23 +402,23 @@ export function accountErrorMessage(error, sourceLabel = '') {
         case 'saucepan_login_required':
             return 'Log in to Saucepan.ai first.';
         case 'saucepan_session_expired':
-            return 'Your Saucepan.ai token expired. Log in again.';
+            return 'Your Saucepan.ai login expired. Log in again.';
         case 'saucepan_account_changed':
             return 'The Saucepan.ai login changed during this request. Try again.';
         case 'saucepan_auth_unavailable':
             return 'Saucepan.ai account access is unavailable. Try again shortly.';
         case 'bad_saucepan_request':
-            return 'Enter a valid Saucepan.ai handle/password or bearer token.';
+            return 'Enter a valid Saucepan.ai username and password, or paste the login token from the site.';
         case 'janny_browser_unavailable':
-            return 'The optional JannyAI browser bridge is unavailable on this host. Install Playwright and Chromium to enable it.';
+            return 'JannyAI login support is not set up on this server. The server owner needs to install Playwright and Chromium (tools that let the server run a web browser).';
         case 'janny_login_required':
-            return 'Finish the JannyAI login and Cloudflare check in the browser window first.';
+            return 'Finish the JannyAI login and security check in the browser window first.';
         case 'janny_admin_required':
             return 'Only a Neconyan administrator can use the JannyAI browser session. Sign in as an administrator or ask the server owner to import the card.';
         case 'janny_browser_request_failed':
-            return 'The JannyAI browser request failed. Check the browser window on the Neconyan server for a login or Cloudflare check, then refresh status before trying again.';
+            return 'The JannyAI request failed. A login or security check may be waiting in the browser window on the Neconyan server. Finish it there, then refresh status and try again.';
         case 'janny_restore_failed':
-            return 'JannyAI account settings could not be restored after the import attempt. Check the API and generation settings in the browser window on the Neconyan server before importing again.';
+            return 'Your JannyAI account settings could not be put back after the import attempt. Check the connection and generation settings in the browser window on the Neconyan server before importing again.';
         case 'timeout':
             return sourceLabel === 'JannyAI'
                 ? 'The JannyAI browser request timed out. Check the browser window on the Neconyan server, then refresh status before trying again.'
@@ -465,7 +465,7 @@ export function importErrorMessage(error) {
         case 'too_large':
             return 'The card is larger than BotSearcher allows.';
         case 'use_native_import':
-            return 'This card must use Neconyan\'s built-in importer. Report this BotSearcher error.';
+            return 'This card must be imported with Neconyan\'s built-in importer. Import the downloaded file from the character list instead.';
         case 'rate_limited':
             return 'Too many downloads. Wait a moment and try again.';
         default:
@@ -591,9 +591,9 @@ export function compareReleaseVersions(left, right) {
 export function availabilityCopy(status, health, frontendProtocol, frontendVersion, _capabilityStatus = '') {
     if (status === 'missing') {
         return {
-            title: 'Native service unavailable',
-            lead: 'Neconyan includes BotSearcher’s server service, but it is not available right now.',
-            guidance: 'Restart Neconyan and choose Recheck. If the service remains unavailable, inspect the Neconyan server log.',
+            title: 'BotSearcher helper unavailable',
+            lead: 'Neconyan includes a helper service that BotSearcher needs, but it is not available right now.',
+            guidance: 'Restart Neconyan and choose Recheck. If it still is not available, ask whoever runs the server to check its logs.',
             showInstall: false,
             showManualUpdate: false,
             showUpdate: false,
@@ -601,7 +601,7 @@ export function availabilityCopy(status, health, frontendProtocol, frontendVersi
     }
 
     if (status === 'protocol-mismatch') {
-        const protocols = `Frontend protocol: ${frontendProtocol}. Server protocol: ${health?.protocol ?? 'not reported'}.`;
+        const protocols = `Page connection version: ${frontendProtocol}. Helper connection version: ${health?.protocol ?? 'not reported'}.`;
         const versions = health?.version
             ? ` Frontend version: ${frontendVersion}. Server version: ${health.version}.`
             : ` Frontend version: ${frontendVersion}.`;
@@ -615,8 +615,8 @@ export function availabilityCopy(status, health, frontendProtocol, frontendVersi
             recovery = ' The server version cannot be ordered safely. Verify both deployments manually; no server replacement is offered.';
         }
         return {
-            title: 'Frontend and server are incompatible',
-            lead: 'The BotSearcher frontend and Neconyan native service use different protocol versions.',
+            title: 'BotSearcher page and helper do not match',
+            lead: 'The BotSearcher page and its helper service are different versions, so they cannot work together.',
             guidance: `${protocols}${versions} ${recovery} Update Neconyan and restart it to apply the matching native service.`,
             showInstall: false,
             showManualUpdate: false,
@@ -625,9 +625,9 @@ export function availabilityCopy(status, health, frontendProtocol, frontendVersi
     }
 
     return {
-        title: 'Native service unavailable',
-        lead: 'BotSearcher could not connect to Neconyan’s native service.',
-        guidance: 'Restart Neconyan. If the problem continues, check the Neconyan server log for BotSearcher errors.',
+        title: 'BotSearcher helper unavailable',
+        lead: 'BotSearcher could not reach the helper service that ships with Neconyan.',
+        guidance: 'Restart Neconyan. If the problem continues, ask whoever runs the server to check its logs for BotSearcher problems.',
         showInstall: false,
         showManualUpdate: false,
         showUpdate: false,
@@ -981,16 +981,16 @@ export function intakeErrorMessage(error, sourceId) {
         case 'botbooru_nsfw_disabled':
             return 'Enable NSFW for the BotBooru account below, then retry this card.';
         case 'janny_admin_required':
-            return 'JannyAI browser import requires a Neconyan administrator. Ask an administrator or inspect a downloaded card file.';
+            return 'Importing from JannyAI needs a Neconyan administrator. Ask an administrator, or import a downloaded card file instead.';
         case 'janny_browser_request_failed':
-            return 'The JannyAI browser request failed. Check the browser session, then retry this card.';
+            return 'The JannyAI request failed. Check the login in the browser window on the Neconyan server, then try this card again.';
         case 'janny_restore_failed':
-            return 'JannyAI could not restore its account settings after capture. Check those settings before retrying.';
+            return 'JannyAI account settings could not be put back after the card was captured. Check those settings before trying again.';
         case 'clean_incomplete':
             return 'The card was not fully inspected, so clean import is unavailable.';
         case 'native_download_failed':
             if (sourceId === 'jannyai') {
-                return 'Neconyan could not download this JannyAI card. JannyAI\'s Cloudflare check is probably blocking the server.';
+                return 'Neconyan could not download this JannyAI card. JannyAI\'s Cloudflare security check is probably blocking the server.';
             }
             return 'Neconyan could not download this card from the source.';
         case 'bad_import_url':
@@ -1000,9 +1000,9 @@ export function intakeErrorMessage(error, sourceId) {
         case 'saucepan_session_expired':
             return 'Your Saucepan.ai login expired. Log in again.';
         case 'janny_login_required':
-            return 'JannyAI\'s Cloudflare check has not been passed yet. Press "Open JannyAI login window" below, finish the check (and log in if asked), then press Try again.';
+            return 'JannyAI\'s Cloudflare security check has not been passed yet. Press "Open JannyAI login window" below, finish the check (and log in if asked), then press Try again.';
         case 'janny_browser_unavailable':
-            return 'The optional JannyAI browser bridge is unavailable on this host. Install Playwright and Chromium to enable it.';
+            return 'JannyAI login support is not set up on this server. The server owner needs to install Playwright and Chromium (tools that let the server run a web browser).';
         case 'janny_private_card_unsupported':
             return 'This JannyAI card hides its definition, so it cannot be imported from the link. Download the card PNG from JannyAI and import the file instead.';
         case 'janny_private_capture_failed':
@@ -1027,7 +1027,7 @@ export function intakeErrorMessage(error, sourceId) {
             return 'Too many inspections. Wait a moment and try again.';
         case 'unsupported_media_type':
         case 'payload_too_large':
-            return 'BotSearcher refused those bytes before reading them.';
+            return 'BotSearcher refused the file before reading it.';
         default:
             return 'The card could not be inspected.';
     }
@@ -1069,12 +1069,12 @@ export function intakeScanWarning(inside) {
     }
     return inside?.scan?.complete === false
         ? 'Not fully inspected. Some contents were not checked. Review the reported findings before importing exactly; clean import is unavailable.'
-        : 'Inspection coverage was not reported. Unreported contents are unknown, not absent. Review is required and clean import is unavailable.';
+        : 'BotSearcher did not report how much of the card it checked. Anything not reported is unknown, not missing. Review is required and clean import is unavailable.';
 }
 
 export function intakeCompletionMessage(receipt) {
     if (receipt?.committed !== true) {
-        return 'The host did not confirm this import. Check your collection before trying again. Undo is unavailable.';
+        return 'Neconyan did not confirm this import. Check your collection before trying again. Undo is unavailable.';
     }
     const parts = [receipt.replaced ? 'Replaced. There is no Undo for this replacement.' : 'Imported.'];
     if (!receipt.refreshed) {

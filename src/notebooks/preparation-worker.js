@@ -35,12 +35,12 @@ function syncSnapshot({ contentRoot, known = {} }) {
         normaliseRelativePath(record.path);
         const stat = fs.lstatSync(record.full);
         if (!stat.isFile() || stat.nlink !== 1) {
-            const error = new Error('A sync file is linked or no longer a normal file. Sync has paused.');
+            const error = new Error('A file in the sync folder is a link or shortcut instead of a normal file. Sync has paused.');
             Object.assign(error, { code: 'OBSIDIAN_UNSAFE_FILES', status: 409 });
             throw error;
         }
         if (files.length >= 5000 || record.size > MAX_ATTACHMENT_BYTES || (bytes += record.size) > 256 * 1024 * 1024) {
-            const error = new Error('This sync folder exceeds the bounded file-history limits. Sync was not started or has been paused.');
+            const error = new Error('This sync folder is too large to track safely. Sync was not started or has been paused.');
             Object.assign(error, { code: 'OBSIDIAN_HISTORY_LIMIT', status: 413 });
             throw error;
         }

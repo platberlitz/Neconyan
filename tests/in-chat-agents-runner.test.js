@@ -7942,7 +7942,7 @@ describe('in-chat agent post-processing runner', () => {
         expect(generateQuietPrompt).not.toHaveBeenCalled();
         expect(chat[0].mes).toBe(original);
         expect(globalThis.toastr.success).not.toHaveBeenCalled();
-        expect(globalThis.toastr.warning).toHaveBeenCalledWith(expect.stringContaining('opening and closing tags'), 'Tracker repair incomplete');
+        expect(globalThis.toastr.warning).toHaveBeenCalledWith(expect.stringContaining('start marker and an end marker'), 'Tracker repair incomplete');
     });
 
     test('manual tracker fix keeps metadata from the newest valid tracker state', async () => {

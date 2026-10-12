@@ -3936,7 +3936,7 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
             } else if (truncatedRewrite) {
                 console.warn(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" hit its output limit; the original text was kept.`);
                 if (showNotifications) {
-                    toastr.warning(`${escapeToastHtml(agent.name)} ran out of output room, so the original text was kept. Raise its max tokens and try again.`);
+                    toastr.warning(`${escapeToastHtml(agent.name)} ran out of room for its answer, so the original text was kept. Raise its reply length limit in the agent settings and try again.`);
                 }
             } else if (refusedRewrite) {
                 console.warn(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" refused; the original text was kept.`);
@@ -6144,7 +6144,7 @@ async function executeManualAgentRun(agentId, target, cancelRevision = agentGene
         }
 
         if (!companionRuntime?.applyAgentPostPassesToCompanionResult) {
-            toastr.error('Companion runtime is unavailable.');
+            toastr.error('Companions are not available right now. Reload the page and try again.');
             return null;
         }
 
@@ -6166,7 +6166,7 @@ async function executeManualAgentRun(agentId, target, cancelRevision = agentGene
 
     if (isCompanionAgent(agent)) {
         if (!companionRuntime?.runCompanionAgentOnMessage) {
-            toastr.error('Companion runtime is unavailable.');
+            toastr.error('Companions are not available right now. Reload the page and try again.');
             return null;
         }
 
@@ -6501,8 +6501,8 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
 
     if (errorRuns > 0) {
         const detail = unsafeTrackerRepairs > 0
-            ? ' A broken tracker has no clear start or end. Check its opening and closing tags in the message, then try again.'
-            : ' Some trackers could not be repaired. Check the agent connection and output format, then try again.';
+            ? ' A broken tracker has no clear start or end. Check that it has both a start marker and an end marker in the message, then try again.'
+            : ' Some trackers could not be repaired. Check the connection the agent uses, then try again.';
         toastr.warning(parts.join(', ') + '.' + detail, 'Tracker repair incomplete');
     } else if (parts.length > 0) {
         toastr.success(parts.join(', '), 'Trackers fixed');

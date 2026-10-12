@@ -68,7 +68,7 @@ async function stopChildForRollback(child, exitPromise, shutdownMessage) {
     const forcedExit = await Promise.race([exitPromise, forceTimeout.promise]);
     forceTimeout.cancel();
     if (!forcedExit) {
-        throw new Error('Updated server process did not exit for plugin rollback.');
+        throw new Error('The updated server did not shut down, so the previous plugin version could not be restored.');
     }
 }
 
@@ -257,7 +257,7 @@ export async function runSupervisor({
                             return;
                         }
                         if (pendingPluginUpdate || activatingPluginUpdate) {
-                            throw new Error('Another server plugin update is already queued.');
+                            throw new Error('Another server plugin update is already waiting to run. Wait for it to finish, then try again.');
                         }
                         pluginUpdate.validate(message.payload);
                         pendingPluginUpdate = message.payload;
@@ -272,7 +272,7 @@ export async function runSupervisor({
                 if (message?.type === SERVER_PLUGIN_UPDATE_CANCEL_MESSAGE) {
                     try {
                         if (activatingPluginUpdate?.transactionId === message.payload?.transactionId) {
-                            throw new Error('Server plugin activation has already started.');
+                            throw new Error('The server plugin is already being switched on. Wait for it to finish.');
                         }
                         if (pendingPluginUpdate?.transactionId === message.payload?.transactionId) {
                             discardPreparedUpdate(pendingPluginUpdate);

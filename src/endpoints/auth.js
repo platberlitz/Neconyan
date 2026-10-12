@@ -313,7 +313,7 @@ router.post('/passkeys/login-options', async (request, response) => {
     const origin = getRequestOrigin(request);
     const rpId = getRpId(origin || '');
     if (!origin || !rpId) {
-        return response.status(400).json({ error: 'Cannot determine the server address.' });
+        return response.status(400).json({ error: 'Could not work out this server address. Reload the page and try again.' });
     }
     loadPasskeys();
     if (passkeys.size === 0) {
@@ -329,7 +329,7 @@ router.post('/passkeys/login-options', async (request, response) => {
         });
         const challengeId = createChallenge(request, 'login', { challenge: options.challenge, remember });
         if (!challengeId) {
-            return response.status(503).json({ error: 'Too many pending sign-in requests.' });
+            return response.status(503).json({ error: 'Too many sign-in requests are waiting. Try again in a minute.' });
         }
         response.set(NO_STORE_HEADERS);
         return response.json({ challengeId, remember, options });
@@ -350,7 +350,7 @@ router.post('/passkeys/login', async (request, response) => {
         const origin = getRequestOrigin(request);
         const rpId = getRpId(origin || '');
         if (!origin || !rpId) {
-            return response.status(400).json({ error: 'Cannot determine the server address.' });
+            return response.status(400).json({ error: 'Could not work out this server address. Reload the page and try again.' });
         }
         loadPasskeys();
         const credentialId = credentialResponse?.id;
@@ -426,7 +426,7 @@ router.post('/passkeys/register-options', async (request, response) => {
         const origin = getRequestOrigin(request);
         const rpId = getRpId(origin || '');
         if (!origin || !rpId) {
-            return response.status(400).json({ error: 'Cannot determine the server address.' });
+            return response.status(400).json({ error: 'Could not work out this server address. Reload the page and try again.' });
         }
         loadPasskeys();
         if (passkeys.size >= 64) return response.status(400).json({ error: 'Remove an unused passkey before adding another.' });
@@ -452,7 +452,7 @@ router.post('/passkeys/register-options', async (request, response) => {
         });
         const challengeId = createChallenge(request, 'register', { challenge: options.challenge, label: cleanLabel, username: session.username });
         if (!challengeId) {
-            return response.status(503).json({ error: 'Too many pending passkey requests.' });
+            return response.status(503).json({ error: 'Too many passkey requests are waiting. Try again in a minute.' });
         }
         response.set(NO_STORE_HEADERS);
         return response.json({ challengeId, options });
@@ -481,7 +481,7 @@ router.post('/passkeys/register-verify', async (request, response) => {
     const origin = getRequestOrigin(request);
     const rpId = getRpId(origin || '');
     if (!origin || !rpId) {
-        return response.status(400).json({ error: 'Cannot determine the server address.' });
+        return response.status(400).json({ error: 'Could not work out this server address. Reload the page and try again.' });
     }
     try {
         const { verifyRegistrationResponse } = await getWebAuthn();

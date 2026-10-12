@@ -434,7 +434,7 @@ export async function mountLorebookTools(root) {
                 console.error('Lorebook tools:', error);
                 status.textContent = String(error.message ?? error);
                 status.classList.add('error');
-                globalThis.toastr?.error(String(error.message ?? error), 'World Info Save Failed');
+                globalThis.toastr?.error(String(error.message ?? error), 'Could not save the lorebook');
             } finally {
                 busy = false;
                 panel.inert = false;

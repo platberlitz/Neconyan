@@ -12737,7 +12737,7 @@ async function refreshConsoleLogs({ forceFull = false } = {}) {
         state.lastUpdatedAt = Date.now();
     } catch (error) {
         console.error('Failed to refresh console logs panel.', error);
-        state.lastError = error.message || 'Failed to read console logs.';
+        state.lastError = error.message || 'Could not read the logs. Try reloading the page.';
     } finally {
         state.busy = false;
         updateConsoleLogsInteractivity();
@@ -13571,13 +13571,13 @@ async function handleServerAdminSaveConfig({ restart = false } = {}) {
             if (!restarted) {
                 state.restarting = false;
                 setServerAdminMessage(refs.configNote, 'Restart is taking longer than expected. Refresh the page once the server is back.', 'warn');
-                toastr.warning('Restart is taking longer than expected. Refresh manually once the server is back.', 'Restart pending');
+                toastr.warning('Restart is taking longer than expected. Reload this page once Neconyan is back online.', 'Restart pending');
             }
         }
     } catch (error) {
         console.error('Failed to save config.yaml.', error);
         setServerAdminMessage(refs.configNote, error.message || 'Failed to save config.yaml.', 'danger');
-        toastr.error(error.message || 'Failed to save config.yaml.', 'Server config');
+        toastr.error(error.message || 'Could not save config.yaml.', 'Server config');
     } finally {
         if (!state.restarting) {
             state.busy = false;
@@ -13621,7 +13621,7 @@ async function handleServerThumbnailSave({ clearCache = false } = {}) {
     } catch (error) {
         console.error('Failed to save thumbnail settings.', error);
         setServerAdminMessage(refs.thumbnailNote, error.message || 'Failed to save thumbnail settings.', 'danger');
-        toastr.error(error.message || 'Failed to save thumbnail settings.', 'Thumbnails');
+        toastr.error(error.message || 'Could not save thumbnail settings.', 'Thumbnails');
     } finally {
         state.busy = false;
         updateServerAdminInteractivity();
@@ -13651,7 +13651,7 @@ async function handleServerThumbnailClearCache() {
     } catch (error) {
         console.error('Failed to clear thumbnail cache.', error);
         setServerAdminMessage(refs.thumbnailNote, error.message || 'Failed to clear thumbnail cache.', 'danger');
-        toastr.error(error.message || 'Failed to clear thumbnail cache.', 'Thumbnails');
+        toastr.error(error.message || 'Could not clear thumbnail cache.', 'Thumbnails');
     } finally {
         state.busy = false;
         updateServerAdminInteractivity();
@@ -13750,14 +13750,14 @@ async function handleServerAdminRestart() {
         if (!restarted) {
             state.restarting = false;
             setServerAdminMessage(refs.updateNote, 'Restart is taking longer than expected. Refresh the page once the server is back.', 'warn');
-            toastr.warning('Restart is taking longer than expected. Refresh manually once the server is back.', 'Restart pending');
+            toastr.warning('Restart is taking longer than expected. Reload this page once Neconyan is back online.', 'Restart pending');
         }
     } catch (error) {
         console.error('Failed to restart Neconyan.', error);
         state.busy = false;
         updateServerAdminInteractivity();
         setServerAdminMessage(refs.updateNote, error.message || 'Failed to restart Neconyan.', 'danger');
-        toastr.error(error.message || 'Failed to restart Neconyan.', 'Server');
+        toastr.error(error.message || 'Could not restart Neconyan.', 'Server');
     }
 }
 
@@ -13843,8 +13843,8 @@ async function handleServerAdminUpdate() {
 
         if (!restarted) {
             state.restarting = false;
-            setServerAdminMessage(refs.updateNote, 'Update completed, but restart is taking longer than expected. Refresh manually once the server is back.', 'warn');
-            toastr.warning('Update finished, but restart is taking longer than expected. Refresh manually once the server is back.', 'Restart pending');
+            setServerAdminMessage(refs.updateNote, 'Update completed, but restart is taking longer than expected. Reload this page once Neconyan is back online.', 'warn');
+            toastr.warning('Update finished, but restart is taking longer than expected. Reload this page once Neconyan is back online.', 'Restart pending');
         }
     } catch (error) {
         console.error('Failed to update Neconyan.', error);
@@ -13854,7 +13854,7 @@ async function handleServerAdminUpdate() {
             toastr.warning(stashMessage, 'Auto-stash warning', { timeOut: 10000 });
         }
         setServerAdminMessage(refs.updateNote, [error.message || 'Failed to update Neconyan.', stashMessage].filter(Boolean).join('\n'), 'danger');
-        toastr.error(error.message || 'Failed to update Neconyan.', 'Server update');
+        toastr.error(error.message || 'Could not update Neconyan.', 'Server update');
     } finally {
         setServerAdminButtonLabel(refs.updateButton, false, 'Updating…');
 
@@ -13910,14 +13910,14 @@ async function handleServerAdminZipUpdate() {
 
         if (!restarted) {
             state.restarting = false;
-            setServerAdminMessage(refs.updateNote, 'ZIP update started, but restart is taking longer than expected. Refresh manually once the server is back.', 'warn');
-            toastr.warning('ZIP update started, but restart is taking longer than expected. Refresh manually once the server is back.', 'Restart pending');
+            setServerAdminMessage(refs.updateNote, 'ZIP update started, but restart is taking longer than expected. Reload this page once Neconyan is back online.', 'warn');
+            toastr.warning('ZIP update started, but restart is taking longer than expected. Reload this page once Neconyan is back online.', 'Restart pending');
         }
     } catch (error) {
         console.error('Failed to update Neconyan from release ZIP.', error);
         state.busy = false;
         setServerAdminMessage(refs.updateNote, error.message || 'Failed to update Neconyan from release ZIP.', 'danger');
-        toastr.error(error.message || 'Failed to update Neconyan from release ZIP.', 'Server update');
+        toastr.error(error.message || 'Could not update Neconyan from release ZIP.', 'Server update');
     } finally {
         setServerAdminButtonLabel(refs.updateButton, false, 'Updating…');
 
@@ -14009,14 +14009,14 @@ async function handleServerAdminBranchSwitch(selectElement) {
         toastr.info(message, 'Branch Switch');
 
         if (result?.stashed && !result?.stashRestored) {
-            toastr.warning('Your changes were stashed but could not be automatically restored. Use "git stash pop" after restart.', 'Stash Warning', { timeOut: 10000 });
+            toastr.warning('Your changes were set aside in a git stash (a saved backup inside the project) but could not be put back automatically. After the restart, run "git stash pop" to restore them.', 'Stash Warning', { timeOut: 10000 });
         }
 
         const restarted = await waitForServerReturn();
         if (!restarted) {
             state.restarting = false;
-            setServerAdminMessage(refs.updateNote, 'Branch switched, but restart is taking longer than expected. Refresh manually once the server is back.', 'warn');
-            toastr.warning('Branch switched, but restart is taking longer than expected. Refresh manually once the server is back.', 'Restart pending');
+            setServerAdminMessage(refs.updateNote, 'Branch switched, but restart is taking longer than expected. Reload this page once Neconyan is back online.', 'warn');
+            toastr.warning('Branch switched, but restart is taking longer than expected. Reload this page once Neconyan is back online.', 'Restart pending');
         }
     } catch (error) {
         clearTimeout(abortTimeout);
@@ -14836,7 +14836,7 @@ async function handleSillyTavernFolderImport() {
     } catch (error) {
         console.error('Failed to import SillyTavern folder.', error);
         setServerAdminMessage(refs.note, error.message || 'Failed to import from that folder path.', 'danger');
-        toastr.error(error.message || 'Failed to import from that folder path.', 'Import SillyTavern');
+        toastr.error(error.message || 'Could not import from that folder path.', 'Import SillyTavern');
     } finally {
         setSillyTavernImportBusy(false);
     }
@@ -14893,7 +14893,7 @@ async function handleSillyTavernExtensionSync() {
     } catch (error) {
         console.error('Failed to sync SillyTavern third-party extensions.', error);
         setServerAdminMessage(refs.note, error.message || 'Failed to sync third-party extensions from that folder.', 'danger');
-        toastr.error(error.message || 'Failed to sync third-party extensions from that folder.', 'Sync Extensions');
+        toastr.error(error.message || 'Could not sync third-party extensions from that folder.', 'Sync Extensions');
     } finally {
         setSillyTavernImportBusy(false);
     }
@@ -14936,7 +14936,7 @@ async function handleSillyTavernZipImport(file) {
     } catch (error) {
         console.error('Failed to import SillyTavern backup ZIP.', error);
         setServerAdminMessage(refs.note, error.message || 'Failed to import that backup ZIP.', 'danger');
-        toastr.error(error.message || 'Failed to import that backup ZIP.', 'Import SillyTavern');
+        toastr.error(error.message || 'Could not import that backup ZIP.', 'Import SillyTavern');
     } finally {
         if (refs.zipFileInput instanceof HTMLInputElement) {
             refs.zipFileInput.value = '';

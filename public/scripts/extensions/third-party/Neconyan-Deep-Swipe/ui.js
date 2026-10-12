@@ -135,7 +135,7 @@ export function updateMessageSwipeUI(messageId, forceCurrentId) {
  */
 function canSwipeNow() {
     if (isAnyMessageBeingEdited()) {
-        toastr.warning('Cannot swipe while a message is being edited. Please finish editing first.', 'Deep Swipe');
+        toastr.warning('Finish editing this message before swiping.', 'Deep Swipe');
         return false;
     }
 
@@ -307,8 +307,8 @@ export function addSwipeNavigationToMessage(messageId) {
             const promptInspectorEnabled = localStorage.getItem('promptInspectorEnabled') === 'true';
             if (promptInspectorEnabled) {
                 toastr.error(
-                    'Deep Swipe generation is disabled while Prompt Inspector is enabled.\n\n' +
-                    'Please disable Prompt Inspector (click "Stop Inspecting" in the wand menu) to use Deep Swipe generation.',
+                    'Deep Swipe cannot run while Prompt Inspector is on.\n\n' +
+                    'Turn it off by clicking "Stop Inspecting" in the wand menu, then try again.',
                     'Deep Swipe Blocked',
                     { timeOut: 0, extendedTimeOut: 0, closeButton: true }
                 );

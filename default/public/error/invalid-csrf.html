@@ -78,12 +78,12 @@
             <img class="flip" src="/img/neconyan-pixel-cat.webp" alt="A pixel cat doing a backflip" width="208" height="192">
         </div>
         <h1>Session expired</h1>
-        <p class="lead">Neconyan sent back an invalid CSRF token, so the page's saved token went stale. Reloading usually fixes it; the steps below cover the rest.</p>
+        <p class="lead">This page is holding an old security code (a token that proves a request came from you), so Neconyan turned the request away. Reloading usually fixes it; the steps below cover the rest.</p>
         <ol>
-            <li><b>1</b><span>Reload the page first. Neconyan repairs a stale token by itself, so a plain refresh often lands you right back in.</span></li>
-            <li><b>2</b><span>Still refused after reloading? Close this tab and open the site again: a long-lived tab can keep an old token, reported to the server as <code>Invalid CSRF token</code>.</span></li>
+            <li><b>1</b><span>Reload the page first. Neconyan replaces the old code by itself, so a plain refresh often gets you straight back in.</span></li>
+            <li><b>2</b><span>Still refused after reloading? Close this tab and open the site again. A tab that has been open for a long time can keep the old code, and the server reports that as <code>Invalid CSRF token</code>.</span></li>
             <li><b>3</b><span>Every page failing? Clear this site's cookies and cached data, or try a private window, then log in again.</span></li>
-            <li><b>4</b><span>Still failing in every browser? On the server, run <code>sudo systemctl restart neconyan</code> to mint fresh server state.</span></li>
+            <li><b>4</b><span>Still failing in every browser? On the server, run <code>sudo systemctl restart neconyan</code> to restart Neconyan.</span></li>
             <li><b>5</b><span>Old bookmark? Open the exact URL you normally use, for example <code>https://neconyan.purabunny.cc</code>.</span></li>
             <li><b>6</b><span>An extension or script blocking requests? Disable it for this site and reload once more.</span></li>
         </ol>

@@ -26,10 +26,10 @@ const CHAT_LIMIT = 64 * 1024 * 1024;
 const EFFECT_KEY = roleplayHash('chat-write');
 const GROUP_EFFECT_KEY = roleplayHash('group-update');
 const IMPORT_EFFECT_KEY = roleplayHash('chat-import');
-const conflict = () => roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved chat differs from the recorded transaction; its current contents were retained.');
+const conflict = () => roleplayError('ROLEPLAY_SOURCE_CHANGED', 'The saved chat no longer matches its recorded save. Its current contents were kept.');
 
 function key(state, operationKey) {
-    if (typeof operationKey !== 'string' || !operationKey || operationKey.length > 256) throw roleplayError('ROLEPLAY_INVALID', 'Invalid chat write identity.', 400);
+    if (typeof operationKey !== 'string' || !operationKey || operationKey.length > 256) throw roleplayError('ROLEPLAY_INVALID', 'This chat save has an invalid ID.', 400);
     return roleplayHash([state.accountId, 'chat-write', operationKey]);
 }
 
@@ -40,7 +40,7 @@ function target(scope, locator) {
 }
 
 function rejectUndoJournal(filename) {
-    const refused = () => roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'A prior undo journal must be reconciled explicitly before this native transaction.');
+    const refused = () => roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier undo record must be checked and settled before this save can run.');
     try {
         if (!readRoleplayWriteJournal(filename, { allowMissingParent: true })) return;
     } catch (cause) { throw Object.assign(refused(), { cause }); }
@@ -56,7 +56,7 @@ function inspectPendingJournal(filename, pending, file, knownAfter, needsFinalis
         && file.rawHash !== pending.after.rawHash && file.rawHash !== pending.before?.rawHash;
     if (pending.journal && thirdState(pending.journal.nextHash)) throw conflict();
     const finalised = knownAfter && !needsFinalisation;
-    const refused = cause => Object.assign(roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The prior write journal does not match this transaction; its evidence was retained.'), { cause });
+    const refused = cause => Object.assign(roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The earlier save record does not match this save. Its records were kept.'), { cause });
     let journal;
     try {
         journal = readRoleplayWriteJournal(filename, { allowMissingParent: true });
@@ -139,7 +139,7 @@ function resultFor(pending) {
 }
 
 function completedResult(receipt) {
-    if (receipt.state !== 'closed') throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'This chat write has no completed storage result.');
+    if (receipt.state !== 'closed') throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'This chat save has no finished result.');
     return structuredClone(receipt.outcome);
 }
 
@@ -232,7 +232,7 @@ function publishPending(lease, host, filename, before, payload, expectedJournal)
 function applyPending(lease, host) {
     const { state, scope } = roleplayLease(lease);
     const pending = state.pending;
-    if (!pending || pending.kind !== 'chat-write') throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'There is no matching chat write to reconcile.');
+    if (!pending || pending.kind !== 'chat-write') throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'There is no matching chat save to check.');
     const filename = roleplayChatPath(scope, pending.locator);
     let file = readRoleplayFile(filename, CHAT_LIMIT, { allowMissingParent: pending.mode === 'create' });
     if (pending.phase !== 'prepared' && file?.rawHash !== pending.after.rawHash) throw conflict();
@@ -310,7 +310,7 @@ function applyPending(lease, host) {
 
 function groupUpdateKey(state, operationKey) {
     if (typeof operationKey !== 'string' || !operationKey || operationKey.length > 256) {
-        throw roleplayError('ROLEPLAY_INVALID', 'Invalid group update identity.', 400);
+        throw roleplayError('ROLEPLAY_INVALID', 'This group update has an invalid ID.', 400);
     }
     return roleplayHash([state.accountId, 'group-update', operationKey]);
 }
@@ -354,7 +354,7 @@ function groupUpdatePayload(lease, pending) {
 function applyPendingGroupUpdate(lease) {
     const { state, scope } = roleplayLease(lease);
     const pending = state.pending;
-    if (pending?.kind !== 'group-update') throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'There is no matching group update.');
+    if (pending?.kind !== 'group-update') throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'There is no matching group update to check.');
     const filename = groupUpdatePath(scope, pending.locator);
     let file = readRoleplayFile(filename, CHAT_LIMIT);
     if (pending.rawChanged) {
@@ -398,16 +398,16 @@ export function commitSingleGroupUpdateLocked(lease, input) {
     const prior = state.submissions[operationKeyHash];
     if (prior) {
         if (prior.intentHash !== intentHash || prior.dataEpoch !== state.dataEpoch) {
-            throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'This group update identity was already used for different work.');
+            throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'This group update was already sent with different details.');
         }
         cleanupRoleplayReceiptsLocked(lease, operationKeyHash);
         return completedResult(prior);
     }
     if (state.pending) {
         if (state.pending.kind !== 'group-update' || state.pending.operationKeyHash !== operationKeyHash) {
-            throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay operation must settle first.');
+            throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay action must finish first.');
         }
-        if (state.pending.intentHash !== intentHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'The pending group update has different contents.');
+        if (state.pending.intentHash !== intentHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'A group update waiting to finish has different contents.');
         return applyPendingGroupUpdate(lease);
     }
     const saved = readRoleplayEntityLocked(lease, 'group', groupId, { storage: true });
@@ -423,7 +423,7 @@ export function commitSingleGroupUpdateLocked(lease, input) {
     if (!beforeFile || beforeFile.rawHash !== saved.rawHash || !isDeepStrictEqual(beforeFile.physical, saved.physical)) throw conflict();
     rejectUndoJournal(filename);
     const bytes = isDeepStrictEqual(group, saved.data) ? beforeFile.bytes : Buffer.from(JSON.stringify(group, null, 4), 'utf8');
-    if (bytes.length > CHAT_LIMIT) throw roleplayError('ROLEPLAY_STORE_FULL', 'The group metadata is too large.', 413);
+    if (bytes.length > CHAT_LIMIT) throw roleplayError('ROLEPLAY_STORE_FULL', 'The group details are too large to save.', 413);
     const rawHash = crypto.createHash('sha256').update(bytes).digest('hex');
     const contentHash = roleplayGroupContentHash(group);
     const id = crypto.randomUUID();
@@ -431,7 +431,7 @@ export function commitSingleGroupUpdateLocked(lease, input) {
     const changed = contentHash !== before.contentHash;
     const rawChanged = rawHash !== before.rawHash;
     if (!Number.isSafeInteger(before.revision + Number(changed))) {
-        throw roleplayError('ROLEPLAY_STORE_FULL', 'The group revision cannot advance safely.', 413);
+        throw roleplayError('ROLEPLAY_STORE_FULL', 'The group cannot be saved safely. Try again, or reload the page.', 413);
     }
     const pending = { schema: 1, kind: 'group-update', id, operationKeyHash, intentHash,
         accountId: state.accountId, dataEpoch: state.dataEpoch, locator, instanceId: saved.instanceId,
@@ -459,7 +459,7 @@ export function reconcileSingleGroupUpdate(scope, operationKey) {
             return completedResult(prior);
         }
         if (state.pending?.kind !== 'group-update' || state.pending.operationKeyHash !== operationKeyHash) {
-            throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'There is no matching group update.');
+            throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'There is no matching group update to check.');
         }
         return applyPendingGroupUpdate(lease);
     });
@@ -472,12 +472,12 @@ function importRequestHash(scope, input) {
         || (input.format === 'instance-batch' && input.importAsNewInstance !== true)
         || typeof input.originalName !== 'string' || !input.originalName || input.originalName.length > 2048
         || typeof input.userName !== 'string' || typeof input.characterName !== 'string') {
-        throw roleplayError('ROLEPLAY_INVALID', 'Invalid uploaded chat file or parser options.', 400);
+        throw roleplayError('ROLEPLAY_INVALID', 'The uploaded chat file or import options are invalid.', 400);
     }
     const target = input.target;
     if (!target || typeof target.group !== 'boolean' || (target.group && input.importAsNewInstance)
         || (target.group ? typeof target.groupId !== 'string' || !target.groupId || !target.source
-            : !validRoleplayAvatar(target.avatar))) throw roleplayError('ROLEPLAY_INVALID', 'Invalid chat import target.', 400);
+            : !validRoleplayAvatar(target.avatar))) throw roleplayError('ROLEPLAY_INVALID', 'The chat import destination is invalid.', 400);
     return roleplayHash({ accountId: scope.accountId, dataEpoch: scope.dataEpoch, target,
         ...(input.importAsNewInstance ? { importAsNewInstance: true } : {}),
         originalName: input.originalName, format: input.format, userName: input.userName, characterName: input.characterName,
@@ -492,7 +492,7 @@ function assertImportedOrigin(lease, records) {
     const resource = marker && state.resources[marker.instanceId];
     if (!resource || resource.kind !== 'chat'
         || resource.accountId !== state.accountId || resource.dataEpoch !== state.dataEpoch) {
-        throw roleplayError('ROLEPLAY_FOREIGN_SOURCE', 'This chat belongs to another instance. Select Import as new instance to adopt a separate copy.');
+        throw roleplayError('ROLEPLAY_FOREIGN_SOURCE', 'This chat came from another Neconyan install. Choose Import as new instance to save a separate copy.');
     }
     const originChanged = () => roleplayError('ROLEPLAY_IMPORT_ORIGIN_CHANGED',
         'This chat no longer matches its recorded local origin. Select Import as new instance to adopt a separate copy.');
@@ -538,7 +538,7 @@ function importedChatName(scope, targetValue, characterName, timestamp, reserved
             return { locator, filename, expectedVacancy: 0 };
         }
     }
-    throw roleplayError('ROLEPLAY_STORE_FULL', 'No safe imported chat name is available.', 413);
+    throw roleplayError('ROLEPLAY_STORE_FULL', 'No safe name is available for the imported chat.', 413);
 }
 
 function legacyGroupMembers(scope, members) {
@@ -565,7 +565,7 @@ function prepareImportGroupLink(lease, saved, names, transactionId) {
     }
     group.chats = [...new Set([...(Array.isArray(group.chats) ? group.chats.map(String) : []), ...names])];
     const bytes = Buffer.from(JSON.stringify(group, null, 4));
-    if (bytes.length > CHAT_LIMIT) throw roleplayError('ROLEPLAY_STORE_FULL', 'Linked group metadata exceeds its storage limit.', 413);
+    if (bytes.length > CHAT_LIMIT) throw roleplayError('ROLEPLAY_STORE_FULL', 'The linked group details are too large to save.', 413);
     const before = { ...state.resources[saved.instanceId].head, revision: saved.revision };
     return { locator: { groupId: String(group.id) }, instanceId: saved.instanceId, before,
         after: { revision: before.revision + 1, rawHash: crypto.createHash('sha256').update(bytes).digest('hex'),
@@ -635,7 +635,7 @@ function prepareChatImport(lease, input, host, convert, requestHash, operationKe
     } else {
         const filename = path.join(scope.directories.characters, targetValue.avatar);
         character = readRoleplayFile(filename, CHAT_LIMIT);
-        if (!character) throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'The character owning this imported chat is missing.', 404);
+        if (!character) throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'The character this imported chat belongs to is missing.', 404);
     }
     const timestamp = Date.now();
     const newCharacter = input.importAsNewInstance ? newImportCharacter(lease, character, timestamp) : null;
@@ -643,15 +643,15 @@ function prepareChatImport(lease, input, host, convert, requestHash, operationKe
     const converted = convert(input.bytes, { format: input.format, userName: input.userName,
         characterName: input.characterName, timestamp });
     if (!Array.isArray(converted) || converted.length < 1 || converted.length > ROLEPLAY_IMPORT_MAX_OUTPUTS) {
-        throw roleplayError('ROLEPLAY_INVALID', 'The uploaded file has an unsupported number of histories.', 400);
+        throw roleplayError('ROLEPLAY_INVALID', 'The uploaded file contains an unsupported number of chats.', 400);
     }
     const reserved = new Set(group?.data.chats?.map(String) ?? []);
     const id = crypto.randomUUID();
     const staged = [];
     const outputs = converted.map((chat, index) => {
-        if (typeof chat !== 'string') throw roleplayError('ROLEPLAY_INVALID', 'A converted history is invalid.', 400);
+        if (typeof chat !== 'string') throw roleplayError('ROLEPLAY_INVALID', 'A converted chat is invalid.', 400);
         const parsed = parseChatJsonl(chat);
-        if (parsed.status !== 'ok') throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'The uploaded history is malformed.', 422);
+        if (parsed.status !== 'ok') throw roleplayError('ROLEPLAY_SOURCE_DAMAGED', 'The uploaded chat file is damaged or in an unknown format.', 422);
         if (newCharacter) {
             // Imported messages survive; links to source histories and inherited memory do not.
             delete parsed.records[0].chat_metadata.main_chat;
@@ -668,7 +668,7 @@ function prepareChatImport(lease, input, host, convert, requestHash, operationKe
         const writeId = crypto.randomUUID();
         const prepared = host.prepare(parsed.records, { marker: { schema: 1, instanceId, revision: 1, writeId } });
         const bytes = Buffer.from(prepared.serialized, 'utf8');
-        if (bytes.length > CHAT_LIMIT) throw roleplayError('ROLEPLAY_STORE_FULL', 'An imported history is too large.', 413);
+        if (bytes.length > CHAT_LIMIT) throw roleplayError('ROLEPLAY_STORE_FULL', 'An imported chat is too large to save.', 413);
         const memory = prepareBranchMemoryCapture(scope.directories, destination.locator,
             { metadata: prepared.records[0].chat_metadata, messages: prepared.records.slice(1) }, { mode: 'create' });
         const memoryPayloads = memory.payloads.map(payload => ({ kind: payload.name === 'memory.archive.json' ? 'archive' : 'guard',
@@ -821,15 +821,15 @@ export function commitSingleChatImport(scope, input, host, convert) {
         const operationKeyHash = roleplayHash([state.accountId, 'chat-import', input.operationKey]);
         const prior = state.submissions[operationKeyHash];
         if (prior) {
-            if (prior.requestHash !== requestHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'This import key was used for another file or target.');
+            if (prior.requestHash !== requestHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'This import was already sent with a different file or destination.');
             cleanupRoleplayReceiptsLocked(lease, operationKeyHash);
             return completedResult(prior);
         }
         if (state.pending) {
             if (state.pending.kind !== 'chat-import' || state.pending.operationKeyHash !== operationKeyHash) {
-                throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'Another Roleplay operation must settle first.');
+                throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'Another Roleplay action must finish first.');
             }
-            if (state.pending.requestHash !== requestHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'The pending import has another request.');
+            if (state.pending.requestHash !== requestHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'An import waiting to finish is a different request.');
             return applyPendingChatImport(lease, host);
         }
         try {
@@ -869,7 +869,7 @@ function prepareAndApplyChatWrite(lease, input, host, intent, { source, before, 
     const { state, scope } = roleplayLease(lease);
     const { operationKeyHash, intentHash, mode, locator, backup } = intent;
     let revision = before ? before.revision + 1 : 1;
-    if (!Number.isSafeInteger(revision)) throw roleplayError('ROLEPLAY_STORE_FULL', 'The chat revision cannot advance safely.');
+    if (!Number.isSafeInteger(revision)) throw roleplayError('ROLEPLAY_STORE_FULL', 'The chat cannot be saved safely. Try again, or reload the page.');
     rejectUndoJournal(roleplayChatPath(scope, locator));
     const id = crypto.randomUUID();
     const prepared = host.prepare(input.records, { beforeBytes, marker: { schema: 1, instanceId, revision, writeId: id },
@@ -904,15 +904,15 @@ export function commitSingleChatWriteLocked(lease, input, host) {
     const { operationKeyHash, intentHash, mode, locator } = intent;
     const prior = state.submissions[operationKeyHash];
     if (prior) {
-        if (prior.intentHash !== intentHash || prior.dataEpoch !== state.dataEpoch) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'This chat write identity was already used for different work.');
+        if (prior.intentHash !== intentHash || prior.dataEpoch !== state.dataEpoch) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'This chat save was already sent with different details.');
         cleanupRoleplayReceiptsLocked(lease, operationKeyHash);
         return completedResult(prior);
     }
     if (state.pending) {
         if (state.pending.kind !== 'chat-write' || state.pending.operationKeyHash !== operationKeyHash) {
-            throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay operation must settle first.');
+            throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay action must finish first.');
         }
-        if (state.pending.intentHash !== intentHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'The pending chat write has a different intent.');
+        if (state.pending.intentHash !== intentHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'A chat save waiting to finish is different from this one.');
         return applyPending(lease, host);
     }
     let source, before = null, instanceId, expectedVacancy = null;
@@ -949,7 +949,7 @@ export function repairSingleChatWriteLocked(lease, { locator: inputLocator, snap
     if (typeof host?.prepare !== 'function' || typeof host?.publish !== 'function') throw new TypeError('The native chat writer host is required.');
     confirmRoleplayAccount(lease);
     const { state, scope } = roleplayLease(lease);
-    if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier chat write must settle first.');
+    if (state.pending) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier chat save must finish first.');
     const locator = normaliseRoleplayLocator(inputLocator);
     const instanceId = state.paths[roleplayPathKey(state, 'chat', locator)]?.instanceId;
     const resource = state.resources[instanceId];
@@ -966,7 +966,7 @@ export function repairSingleChatWriteLocked(lease, { locator: inputLocator, snap
     const operationKey = 'chat-repair:' + roleplayHash([source, damaged.rawHash, damaged.physical]);
     const input = { operationKey, mode: 'update', sourceKind: 'storage', source, records: snapshot.records, backup: { deferBackup: true } };
     const intent = writeIntent(state, input);
-    if (state.submissions[intent.operationKeyHash]) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'This corruption already has recorded repair evidence.');
+    if (state.submissions[intent.operationKeyHash]) throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'This damage already has a recorded repair.');
     const before = { ...resource.head, revision: resource.revision, integrity: snapshot.records[0].chat_metadata.integrity ?? '' };
     return prepareAndApplyChatWrite(lease, input, host, intent, { source, before, beforeBytes: snapshotBytes, instanceId });
 }
@@ -983,7 +983,7 @@ function lifecycleLocator(kind, locator) {
     if (kind === 'chat') return normaliseRoleplayLocator(locator);
     if (kind === 'group') return { groupId: normaliseRoleplayGroupId(locator?.groupId) };
     if (kind === 'character' && validRoleplayAvatar(locator?.avatar)) return { avatar: locator.avatar };
-    throw roleplayError('ROLEPLAY_INVALID', 'Invalid Roleplay lifecycle target.', 400);
+    throw roleplayError('ROLEPLAY_INVALID', 'That Roleplay action has an invalid target.', 400);
 }
 
 /** The live instance at a protected path, or null when the path has never been recorded as live. */
@@ -1003,7 +1003,7 @@ function lifecycleEntityId(kind, locator) {
 function planLifecycleStep(lease, input, index) {
     const { state, scope } = roleplayLease(lease);
     if (!input || !['delete', 'move', 'discard', 'create', 'update'].includes(input.op)) {
-        throw roleplayError('ROLEPLAY_INVALID', 'Invalid Roleplay lifecycle step.', 400);
+        throw roleplayError('ROLEPLAY_INVALID', 'That Roleplay action has an invalid step.', 400);
     }
     const locator = lifecycleLocator(input.kind, input.locator);
     const filename = roleplayEntityPath(scope, input.kind, locator);
@@ -1021,7 +1021,7 @@ function planLifecycleStep(lease, input, index) {
     }
     const after = bytes => {
         if (input.kind === 'chat' || !Buffer.isBuffer(bytes) || bytes.length > CHAT_LIMIT) {
-            throw roleplayError('ROLEPLAY_INVALID', 'Invalid Roleplay lifecycle contents.', 400);
+            throw roleplayError('ROLEPLAY_INVALID', 'That Roleplay action has invalid contents.', 400);
         }
         const { contentHash } = roleplayEntityContent(input.kind, lifecycleEntityId(input.kind, locator), bytes, { storage: true });
         return { rawHash: crypto.createHash('sha256').update(bytes).digest('hex'), contentHash, byteLength: bytes.length,
@@ -1038,7 +1038,7 @@ function planLifecycleStep(lease, input, index) {
         throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'The protected file is not live.', 404);
     }
     if (resource.accountId !== state.accountId || resource.dataEpoch !== state.dataEpoch || resource.busySubmission) {
-        throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The protected file has unsettled work.');
+        throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'The file still has an unfinished change.');
     }
     const before = { revision: resource.revision, ...resource.head };
     // A tracked file removed outside the lock may still be retired; any other difference is retained.
@@ -1114,7 +1114,7 @@ function publishThroughTemporary(lease, filename, bytes, tag, before, getPhysica
         let staged = readRoleplayFile(temporary, CHAT_LIMIT, { allowMissingParent: true });
         if (!staged) {
             if (tryWriteFileSync(temporary, bytes, { mode: 0o600 }, { expectedFileAbsent: true, durable: true }) === false) {
-                throw roleplayError('ROLEPLAY_WRITE_UNCERTAIN', 'The protected file could not be written.', 503);
+                throw roleplayError('ROLEPLAY_WRITE_UNCERTAIN', 'The protected file could not be saved.', 503);
             }
             staged = readRoleplayFile(temporary, CHAT_LIMIT, { flush: true });
         }
@@ -1286,23 +1286,23 @@ export function commitRoleplayLifecycleLocked(lease, { operationKey, action, int
     confirmRoleplayAccount(lease);
     const { state } = roleplayLease(lease);
     if (typeof operationKey !== 'string' || !operationKey || operationKey.length > 256 || !/^[a-z][a-z-]{0,63}$/.test(action)
-        || !Array.isArray(steps) || steps.length < 1 || steps.length > ROLEPLAY_LIFECYCLE_MAX_STEPS) throw roleplayError('ROLEPLAY_INVALID', 'Invalid Roleplay lifecycle operation.', 400);
+        || !Array.isArray(steps) || steps.length < 1 || steps.length > ROLEPLAY_LIFECYCLE_MAX_STEPS) throw roleplayError('ROLEPLAY_INVALID', 'That Roleplay action is invalid.', 400);
     const operationKeyHash = roleplayHash([state.accountId, 'lifecycle', operationKey]);
     const intentHash = roleplayHash({ accountId: state.accountId, dataEpoch: state.dataEpoch, action, intent: intent ?? null });
     const prior = state.submissions[operationKeyHash];
     if (prior) {
-        if (prior.intentHash !== intentHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'This lifecycle identity was already used for different work.');
+        if (prior.intentHash !== intentHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'This action was already sent with different details.');
         return completedResult(prior);
     }
     if (state.pending) {
         if (state.pending.kind !== 'lifecycle' || state.pending.operationKeyHash !== operationKeyHash) {
-            throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay operation must settle first.');
+            throw roleplayError('ROLEPLAY_RECOVERY_REQUIRED', 'An earlier Roleplay action must finish first.');
         }
-        if (state.pending.intentHash !== intentHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'The pending lifecycle operation has different contents.');
+        if (state.pending.intentHash !== intentHash) throw roleplayError('ROLEPLAY_INTENT_CONFLICT', 'An action waiting to finish has different contents.');
         return applyPendingLifecycle(lease, host);
     }
     steps = addChatNavigationCharacterRenameSteps(lease, action, steps);
-    if (steps.length > ROLEPLAY_LIFECYCLE_MAX_STEPS) throw roleplayError('ROLEPLAY_INVALID', 'Too many linked group updates for one rename.', 400);
+    if (steps.length > ROLEPLAY_LIFECYCLE_MAX_STEPS) throw roleplayError('ROLEPLAY_INVALID', 'Too many linked groups for one rename.', 400);
     const planned = steps.map((step, index) => planLifecycleStep(lease, step, index)).filter(Boolean);
     assertChatNavigationCharacterRename(lease, { action, steps: planned });
     if (!planned.some(step => step.op !== 'discard')) throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'There is no protected file to change.', 404);

@@ -360,7 +360,7 @@ async function uploadFile(file, url) {
         console.error('There was an issue uploading the file:', error);
 
         // Replacing alert with toastr error notification
-        toastr.error(t`Failed to upload the file.`);
+        toastr.error(t`Could not upload the file. Try again.`);
     }
 }
 
@@ -471,7 +471,7 @@ async function makeMovable(url) {
             galleryFolderInput.value = newUrl;
         } catch (error) {
             console.error('Failed to change gallery folder:', error);
-            toastr.error(error?.message || t`Unknown error`, t`Failed to change gallery folder`);
+            toastr.error(error?.message || t`Please try again.`, t`Could not change the gallery folder`);
         }
     };
 
@@ -482,7 +482,7 @@ async function makeMovable(url) {
             await showCharGallery();
         } catch (error) {
             console.error('Failed to restore gallery folder:', error);
-            toastr.error(error?.message || t`Unknown error`, t`Failed to restore gallery folder`);
+            toastr.error(error?.message || t`Please try again.`, t`Could not restore the gallery folder`);
         }
     };
 

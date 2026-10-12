@@ -149,10 +149,10 @@ export function cardFromCharacter(character) {
  */
 export function restorePayload(live, snapshot, unsetValue) {
     if (unsetValue === undefined) {
-        throw new Error('This Neconyan version does not expose the character unset value');
+        throw new Error('This version of Neconyan cannot restore that part of the character.');
     }
     if (isPlainObject(snapshot) && Object.prototype.hasOwnProperty.call(snapshot, 'avatars')) {
-        throw new Error('This card has a reserved top-level "avatars" field and cannot be restored safely');
+        throw new Error('This card has a reserved "avatars" field and cannot be restored safely.');
     }
     rejectUnsetValue(snapshot, unsetValue);
     const payload = structuredClone(snapshot ?? {});
@@ -162,7 +162,7 @@ export function restorePayload(live, snapshot, unsetValue) {
 
 function rejectUnsetValue(value, unsetValue) {
     if (value === unsetValue) {
-        throw new Error('This card contains Neconyan\'s reserved unset value and cannot be restored safely');
+        throw new Error('This card contains a value Neconyan reserves for internal use, so it cannot be restored safely.');
     }
     if (!value || typeof value !== 'object') {
         return;
@@ -180,7 +180,7 @@ function markRemoved(payload, live, snapshot, unsetValue, path = [], unsafeAnces
         const unsafeKey = /[.[\]]/.test(key);
         if (!isPlainObject(snapshot) || !Object.prototype.hasOwnProperty.call(snapshot, key)) {
             if (unsafeAncestor || unsafeKey) {
-                throw new Error(`The literal field "${unsafeAncestor ?? key}" cannot be removed safely by this Neconyan version`);
+                throw new Error(`The field "${unsafeAncestor ?? key}" cannot be removed safely by this version of Neconyan.`);
             }
             payload[key] = unsetValue;
             continue;
@@ -409,12 +409,12 @@ export async function validateSnapshotPayload(row, payload) {
         || typeof payload.label !== 'string'
         || !isPlainObject(payload.data)
         || (payload.tags !== undefined && (!Array.isArray(payload.tags) || payload.tags.some(tag => typeof tag !== 'string')))) {
-        throw new Error(`Snapshot ${row.name} does not match its index`);
+        throw new Error(`Snapshot ${row.name} does not match its entry in the snapshot list.`);
     }
     const content = { ...payload };
     for (const key of ['format', 'kind', 'target', 'label', 'ts', 'hash']) delete content[key];
     const expected = await (Object.prototype.hasOwnProperty.call(payload, 'hash') ? hashOf(content) : legacyHashOf(payload.data));
     if (expected && ((row.hash && row.hash !== expected) || (payload.hash && payload.hash !== expected))) {
-        throw new Error(`Snapshot ${row.name} failed its integrity check`);
+        throw new Error(`Snapshot ${row.name} failed its check and may be damaged.`);
     }
 }

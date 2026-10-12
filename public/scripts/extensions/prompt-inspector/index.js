@@ -7,7 +7,7 @@ import { t } from '../../i18n.js';
 const path = 'prompt-inspector';
 
 if (!('GENERATE_AFTER_COMBINE_PROMPTS' in event_types) || !('CHAT_COMPLETION_PROMPT_READY' in event_types)) {
-    toastr.error('Required event types not found. Update Neconyan to the latest version.');
+    toastr.error('Prompt Inspector cannot find a part of Neconyan it needs. Update Neconyan to the latest version.');
     throw new Error('Events not found.');
 }
 
@@ -113,7 +113,7 @@ eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, async (data) => {
         console.debug('Prompt Inspector: Prompt updated');
     } catch (e) {
         console.error('Prompt Inspector: Invalid JSON');
-        toastr.error('Invalid JSON');
+        toastr.error('This is not valid JSON, a standard text layout for data. Check for missing commas, brackets or quotes.');
     }
 });
 
@@ -149,7 +149,7 @@ function jsonToYaml(json) {
         return yaml.stringify(obj, { lineWidth: 0 });
     } catch (e) {
         console.error('Prompt Inspector: Failed to convert JSON to YAML', e);
-        toastr.error('Failed to convert JSON to YAML');
+        toastr.error('Could not convert the JSON to YAML, another data text layout. Check the text, then try again.');
         throw e;
     }
 }
@@ -160,7 +160,7 @@ function yamlToJson(yamlText) {
         return JSON.stringify(obj, null, 4);
     } catch (e) {
         console.error('Prompt Inspector: Failed to convert YAML to JSON', e);
-        toastr.error('Failed to convert YAML to JSON');
+        toastr.error('Could not convert the YAML to JSON, another data text layout. Check the text, then try again.');
         throw e;
     }
 }

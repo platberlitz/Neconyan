@@ -18,7 +18,7 @@ function readPreset(base, ref) {
     const directory = base.directories[TEMPLATE_DIRECTORIES[ref.apiId]];
     if (!directory || !ref.name || path.basename(ref.name) !== ref.name) throw labError('The pinned prompt template is invalid.');
     const file = readRoleplayFile(path.join(directory, ref.name + '.json'), 8 * 1024 * 1024);
-    if (!file) throw labError(`The pinned ${ref.apiId} template is missing.`);
+    if (!file) throw labError(`The ${ref.apiId} prompt template this preset uses is missing.`);
     try { return withoutFields(JSON.parse(file.bytes.toString('utf8')), SENSITIVE_FIELDS); } catch { throw labError('The pinned template is unreadable.'); }
 }
 

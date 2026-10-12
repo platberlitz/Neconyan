@@ -21,7 +21,7 @@ export function planAssistantCharacter(context, request) {
     return withNativeMediaReceipt(context, ({ lease }) => {
         const stored = captureAssistantToolSourceLocked(lease, context.job.intent.source,
             { avatar: request.avatar, name: request.name, args: request.args, callId: request.callId });
-        if (roleplayHash(stored) !== roleplayHash(request)) throw invalid('The accepted character edit changed before review.');
+        if (roleplayHash(stored) !== roleplayHash(request)) throw invalid('The character edit changed before it was reviewed.');
         const visible = request.tool === 'create-character'
             ? { status: 'success', avatar: request.resource.id, name: request.change.character.name }
             : { status: 'success', avatar: request.resource.id, field: request.change.field,
@@ -35,7 +35,7 @@ export function planAssistantCharacter(context, request) {
 export function assertApprovedCharacterEffectLocked(lease, context, request, plan, receipt) {
     const effect = receipt.effects[roleplayHash(['character', request.resource.id])];
     if (!effect || effect.state !== 'done' || effect.planHash !== plan.hash || effect.id !== request.resource.id) {
-        throw invalid('The approved character change does not have a completed physical receipt.');
+        throw invalid('The approved character change has no finished save record.');
     }
     assertCharacterSource(lease, context, request, effect);
     const { scope } = roleplayLease(lease);

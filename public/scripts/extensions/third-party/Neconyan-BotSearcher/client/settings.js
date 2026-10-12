@@ -927,7 +927,7 @@ export function jannyBrowserControl(idPrefix = 'sbbs_janny', capability = null) 
     const capabilityUnavailable = capability?.available === false;
     const render = () => {
         if (capabilityUnavailable) {
-            setText(status, 'Optional JannyAI browser bridge is unavailable on this host. Install Playwright and Chromium to enable it.');
+            setText(status, 'JannyAI login support is not set up on this server. The server owner needs to install Playwright and Chromium (tools that let the server run a web browser).');
         } else if (message) {
             setText(status, message);
         } else if (value.restorePending) {
@@ -1010,19 +1010,19 @@ function serverPluginControl(availability) {
     wrapper.append(status);
 
     if (availability.status === AVAILABILITY.MISSING) {
-        setText(status, 'The Neconyan BotSearcher service is unavailable. Restart Neconyan and check its server log if this continues.');
+        setText(status, 'The BotSearcher helper service is unavailable. Restart Neconyan. If this continues, ask whoever runs the server to check its logs.');
         return wrapper;
     }
     if (availability.status === AVAILABILITY.ERROR) {
-        setText(status, 'The native BotSearcher service could not be reached. Restart Neconyan and try again.');
+        setText(status, 'The BotSearcher helper service could not be reached. Restart Neconyan and try again.');
         return wrapper;
     }
     if (availability.status !== AVAILABILITY.OK) {
-        setText(status, 'The native BotSearcher service needs a matching Neconyan update. Restart Neconyan after updating.');
+        setText(status, 'The BotSearcher helper service does not match this version of BotSearcher. Update Neconyan, then restart it.');
         return wrapper;
     }
     const version = typeof availability.health?.version === 'string' ? availability.health.version : VERSION;
-    setText(status, `Included with Neconyan · native service v${version}. Updates arrive with Neconyan.`);
+    setText(status, `Included with Neconyan · helper service v${version}. Updates arrive with Neconyan.`);
     return wrapper;
 }
 

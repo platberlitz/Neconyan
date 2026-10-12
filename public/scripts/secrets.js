@@ -593,7 +593,7 @@ export async function checkOpenRouterAuth() {
                 throw new Error('OpenRouter token not saved');
             }
         } catch (err) {
-            toastr.error('Could not verify OpenRouter token. Please try again.');
+            toastr.error('Could not verify the OpenRouter key. Try again.');
             console.error('OpenRouter OAuth error:', err);
         } finally {
             // Remove the code from the URL
@@ -717,7 +717,7 @@ async function openKeyManagerDialog(key) {
             itemTemplate.find('button[data-action="copy-secret"]').on('click', async function () {
                 const secretValue = await findSecret(key, secret.id);
                 if (secretValue === null) {
-                    toastr.error(t`The key exposure might be disabled by the server config.`, t`Failed to copy secret value`);
+                    toastr.error(t`Copying keys may be turned off in the server settings.`, t`Could not copy the saved key`);
                     return;
                 }
                 await copyText(secretValue);
@@ -804,7 +804,7 @@ function registerSecretSlashCommands() {
 
             if (!key) {
                 if (!quiet) {
-                    toastr.error(t`No secret key provided, and the key can't be resolved for the currently selected API type.`);
+                    toastr.error(t`No key was given, and no key is saved for the API you have selected.`);
                 }
                 return '';
             }
@@ -812,7 +812,7 @@ function registerSecretSlashCommands() {
             const secrets = secret_state[key];
             if (!Array.isArray(secrets) || secrets.length === 0) {
                 if (!quiet) {
-                    toastr.error(t`No saved secrets found for the key: ${key}`);
+                    toastr.error(t`No saved key found for ${key}`);
                 }
                 return '';
             }
@@ -821,7 +821,7 @@ function registerSecretSlashCommands() {
                 const activeSecret = secrets.find(s => s.active);
                 if (!activeSecret) {
                     if (!quiet) {
-                        toastr.error(t`No active secret found for the key: ${key}`);
+                        toastr.error(t`No active key found for ${key}`);
                     }
                     return '';
                 }
@@ -831,7 +831,7 @@ function registerSecretSlashCommands() {
             const savedSecret = secrets.find(s => s.id === id) ?? secrets.find(s => s.label === id);
             if (!savedSecret) {
                 if (!quiet) {
-                    toastr.error(t`No secret found with ID: ${id} for the key: ${key}`);
+                    toastr.error(t`No saved key found with ID ${id} for ${key}`);
                 }
                 return '';
             }
@@ -880,7 +880,7 @@ function registerSecretSlashCommands() {
 
             if (!key) {
                 if (!quiet) {
-                    toastr.error(t`No secret key provided, and the key can't be resolved for the currently selected API type.`);
+                    toastr.error(t`No key was given, and no key is saved for the API you have selected.`);
                 }
                 return '';
             }
@@ -888,7 +888,7 @@ function registerSecretSlashCommands() {
             const secrets = secret_state[key];
             if (!Array.isArray(secrets) || secrets.length === 0) {
                 if (!quiet) {
-                    toastr.error(t`No saved secrets found for the key: ${key}`);
+                    toastr.error(t`No saved key found for ${key}`);
                 }
                 return '';
             }
@@ -896,7 +896,7 @@ function registerSecretSlashCommands() {
             const savedSecret = secrets.find(s => s.id === id) ?? secrets.find(s => s.label === id) ?? secrets.find(s => s.active);
             if (!savedSecret) {
                 if (!quiet) {
-                    toastr.error(t`No secret found with ID: ${id} for the key: ${key}`);
+                    toastr.error(t`No saved key found with ID ${id} for ${key}`);
                 }
                 return '';
             }
@@ -958,7 +958,7 @@ function registerSecretSlashCommands() {
 
             if (!key) {
                 if (!quiet) {
-                    toastr.error(t`No secret key provided, and the key can't be resolved for the currently selected API type.`);
+                    toastr.error(t`No key was given, and no key is saved for the API you have selected.`);
                 }
                 return '';
             }
@@ -966,7 +966,7 @@ function registerSecretSlashCommands() {
             const secrets = secret_state[key];
             if (!Array.isArray(secrets) || secrets.length === 0) {
                 if (!quiet) {
-                    toastr.error(t`No saved secrets found for the key: ${key}`);
+                    toastr.error(t`No saved key found for ${key}`);
                 }
                 return '';
             }
@@ -974,7 +974,7 @@ function registerSecretSlashCommands() {
             const valueStr = value?.toString()?.trim();
             if (!valueStr && !allowEmpty) {
                 if (!quiet) {
-                    toastr.error(t`No value provided for the secret key: ${key}`);
+                    toastr.error(t`No value was given for ${key}`);
                 }
                 return '';
             }
@@ -1029,7 +1029,7 @@ function registerSecretSlashCommands() {
 
             if (!key) {
                 if (!quiet) {
-                    toastr.error(t`No secret key provided, and the key can't be resolved for the currently selected API type.`);
+                    toastr.error(t`No key was given, and no key is saved for the API you have selected.`);
                 }
                 return '';
             }
@@ -1037,7 +1037,7 @@ function registerSecretSlashCommands() {
             const secrets = secret_state[key];
             if (!Array.isArray(secrets) || secrets.length === 0) {
                 if (!quiet) {
-                    toastr.error(t`No saved secrets found for the key: ${key}`);
+                    toastr.error(t`No saved key found for ${key}`);
                 }
                 return '';
             }
@@ -1045,7 +1045,7 @@ function registerSecretSlashCommands() {
             const newLabel = value?.toString()?.trim();
             if (!newLabel) {
                 if (!quiet) {
-                    toastr.error(t`No new label provided for the secret key: ${key}`);
+                    toastr.error(t`No new name was given for ${key}`);
                 }
                 return '';
             }
@@ -1053,7 +1053,7 @@ function registerSecretSlashCommands() {
             const savedSecret = secrets.find(s => s.id === id) ?? secrets.find(s => s.label === id) ?? secrets.find(s => s.active);
             if (!savedSecret) {
                 if (!quiet) {
-                    toastr.error(t`No secret found with ID: ${id} for the key: ${key}`);
+                    toastr.error(t`No saved key found with ID ${id} for ${key}`);
                 }
                 return '';
             }
@@ -1104,7 +1104,7 @@ function registerSecretSlashCommands() {
 
             if (!key) {
                 if (!quiet) {
-                    toastr.error(t`No secret key provided, and the key can't be resolved for the currently selected API type.`);
+                    toastr.error(t`No key was given, and no key is saved for the API you have selected.`);
                 }
                 return '';
             }
@@ -1112,7 +1112,7 @@ function registerSecretSlashCommands() {
             const secrets = secret_state[key];
             if (!Array.isArray(secrets) || secrets.length === 0) {
                 if (!quiet) {
-                    toastr.error(t`No saved secrets found for the key: ${key}`);
+                    toastr.error(t`No saved key found for ${key}`);
                 }
                 return '';
             }
@@ -1120,7 +1120,7 @@ function registerSecretSlashCommands() {
             const savedSecret = secrets.find(s => s.id === id) ?? secrets.find(s => s.label === id) ?? secrets.find(s => s.active);
             if (!savedSecret) {
                 if (!quiet) {
-                    toastr.error(t`No secret found with ID: ${id} for the key: ${key}`);
+                    toastr.error(t`No saved key found with ID ${id} for ${key}`);
                 }
                 return '';
             }
@@ -1128,7 +1128,7 @@ function registerSecretSlashCommands() {
             const secretValue = await findSecret(key, savedSecret.id);
             if (secretValue === null) {
                 if (!quiet) {
-                    toastr.error(t`Could not retrieve the secret value for key: ${key}. Key exposure might be disabled.`);
+                    toastr.error(t`Could not read the saved value for ${key}. Copying keys may be turned off in the server settings.`);
                 }
                 return '';
             }

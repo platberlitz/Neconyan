@@ -356,7 +356,7 @@ async function getCaptionForFile(file, prompt, quiet) {
         return caption;
     } catch (error) {
         const errorMessage = error.message || 'Unknown error';
-        toastr.error(errorMessage, 'Failed to caption');
+        toastr.error(errorMessage, 'Could not caption the image');
         console.error(error);
         return '';
     } finally {
@@ -386,15 +386,15 @@ async function captionCommandCallback(args, prompt) {
             try {
                 const mediaAttachment = message.extra.media[index] || message.extra.media[0];
                 if (!mediaAttachment || !mediaAttachment.url) {
-                    toastr.error('The specified message does not contain an image.');
+                    toastr.error('This message does not contain an image.');
                     return '';
                 }
                 if (mediaAttachment.type === MEDIA_TYPE.AUDIO) {
-                    toastr.error('The specified media is an audio file. Captioning audio files is not supported.');
+                    toastr.error('This is an audio file. Captioning audio files is not supported yet.');
                     return '';
                 }
                 if (mediaAttachment.type === MEDIA_TYPE.VIDEO && !isVideoCaptioningAvailable()) {
-                    toastr.error('The specified media is a video. Captioning videos is not supported for the current source.');
+                    toastr.error('This is a video. Captioning videos is not supported with the current captioning source.');
                     return '';
                 }
                 const fetchResult = await fetch(mediaAttachment.url);
@@ -403,7 +403,7 @@ async function captionCommandCallback(args, prompt) {
                 const file = new File([blob], fileName, { type: blob.type });
                 return await getCaptionForFile(file, prompt, quiet);
             } catch (error) {
-                toastr.error('Failed to get image from the message. Make sure the image is accessible.');
+                toastr.error('Could not get the image from this message. Check that the image is still available, then try again.');
                 return '';
             }
         }
@@ -515,7 +515,7 @@ export async function init() {
             })();
 
             if (!hasCaptionModule) {
-                toastr.error('Choose other captioning source in the extension settings.', 'Captioning is not available');
+                toastr.error('Choose a different captioning source in the caption settings.', 'Captioning is not available');
                 return;
             }
 
@@ -736,7 +736,7 @@ export async function init() {
             await saveChatConditional();
         } catch (e) {
             console.error('Message image recaption failed', e);
-            toastr.error(e.message || 'Unknown error', 'Failed to caption');
+            toastr.error(e.message || 'Please try again.', 'Could not caption the image');
         } finally {
             messageMedia.removeClass(animationClass);
         }

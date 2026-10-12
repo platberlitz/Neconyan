@@ -224,7 +224,7 @@ router.post('/caption-image', async (request, response) => {
         if (request.body.api === 'workers_ai') {
             const accountId = String(request.body.workers_ai_account_id || '').trim();
             if (!accountId) {
-                return response.status(400).send({ error: 'Cloudflare Workers AI Account ID is required' });
+                return response.status(400).send({ error: 'Enter your Cloudflare account ID first.' });
             }
             apiUrl = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/v1/chat/completions`;
         }
@@ -271,13 +271,13 @@ router.post('/caption-image', async (request, response) => {
         const caption = data?.choices?.[0]?.message?.content ?? data?.message?.content?.[0]?.text;
 
         if (!caption) {
-            return response.status(500).send('No caption found');
+            return response.status(500).send('No description was returned. Try again.');
         }
 
         return response.json({ caption });
     } catch (error) {
         console.error(error);
-        response.status(500).send('Internal server error');
+        response.status(500).send('The server could not finish this request. Try again in a moment.');
     }
 });
 
@@ -308,7 +308,7 @@ router.post('/generate-voice', async (request, response) => {
             return response.status(500).send(error.providerBody);
         }
         console.error('OpenAI TTS generation failed', error);
-        response.status(500).send('Internal server error');
+        response.status(500).send('The server could not finish this request. Try again in a moment.');
     }
 });
 
@@ -374,7 +374,7 @@ router.post('/electronhub/generate-voice', async (request, response) => {
         return response.send(Buffer.from(buffer));
     } catch (error) {
         console.error('ElectronHub TTS generation failed', error);
-        response.status(500).send('Internal server error');
+        response.status(500).send('The server could not finish this request. Try again in a moment.');
     }
 });
 
@@ -406,7 +406,7 @@ router.post('/electronhub/models', async (request, response) => {
         return response.json(models);
     } catch (error) {
         console.error('ElectronHub models fetch failed', error);
-        response.status(500).send('Internal server error');
+        response.status(500).send('The server could not finish this request. Try again in a moment.');
     }
 });
 
@@ -449,7 +449,7 @@ router.post('/chutes/generate-voice', async (request, response) => {
         return response.send(Buffer.from(buffer));
     } catch (error) {
         console.error('Chutes TTS generation failed', error);
-        response.status(500).send('Internal server error');
+        response.status(500).send('The server could not finish this request. Try again in a moment.');
     }
 });
 
@@ -641,7 +641,7 @@ router.post('/generate-image', async (request, response) => {
         return response.json(data);
     } catch (error) {
         console.error(error);
-        response.status(500).send('Internal server error');
+        response.status(500).send('The server could not finish this request. Try again in a moment.');
     }
 });
 
@@ -684,7 +684,7 @@ router.post('/generate-video', async (request, response) => {
 
         if (!videoJob || !videoJob.id) {
             console.warn('OpenAI video generation returned no job ID', videoJob);
-            return response.status(500).send('No video job ID returned');
+            return response.status(500).send('The service did not return a job to track. Try again.');
         }
 
         // Poll for video generation completion
@@ -716,7 +716,7 @@ router.post('/generate-video', async (request, response) => {
 
             if (pollResult.status === 'failed') {
                 console.warn('OpenAI video generation failed', pollResult);
-                return response.status(500).send('Video generation failed');
+                return response.status(500).send('The video could not be generated. Try again.');
             }
 
             if (pollResult.status === 'completed') {
@@ -739,7 +739,7 @@ router.post('/generate-video', async (request, response) => {
         }
     } catch (error) {
         console.error('OpenAI video generation failed', error);
-        response.status(500).send('Internal server error');
+        response.status(500).send('The server could not finish this request. Try again in a moment.');
     }
 });
 
@@ -773,7 +773,7 @@ custom.post('/generate-voice', async (request, response) => {
             return response.status(500).send(error.providerBody);
         }
         console.error('OpenAI TTS generation failed', error);
-        response.status(500).send('Internal server error');
+        response.status(500).send('The server could not finish this request. Try again in a moment.');
     }
 });
 
@@ -832,7 +832,7 @@ function createTranscribeHandler({ secretKey, apiUrl, providerName }) {
             return response.json(data);
         } catch (error) {
             console.error(`${providerName} transcription failed`, error);
-            response.status(500).send('Internal server error');
+            response.status(500).send('The server could not finish this request. Try again in a moment.');
         }
     };
 }
@@ -908,6 +908,6 @@ router.post('/chutes/transcribe-audio', async (request, response) => {
         return response.json({ text: fullText });
     } catch (error) {
         console.error('Chutes transcription failed', error);
-        response.status(500).send('Internal server error');
+        response.status(500).send('The server could not finish this request. Try again in a moment.');
     }
 });

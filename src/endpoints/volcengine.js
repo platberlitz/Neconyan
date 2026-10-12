@@ -65,7 +65,7 @@ router.post('/generate-voice', async (req, res) => {
         if (!response.ok) {
             const logid = response.headers.get('X-Tt-Logid') || '';
             console.warn('Volcengine Request failed', response.status, response.statusText, logid);
-            return res.header('X-Tt-Logid', logid).status(500).send(`TTS Generation Failed: ${response.statusText}`);
+            return res.header('X-Tt-Logid', logid).status(500).send('Could not generate the speech. Try again in a moment.');
         }
         const decoder = new TextDecoder();
 
@@ -131,6 +131,6 @@ router.post('/generate-voice', async (req, res) => {
         res.status(200).send(finalAudioData);
     } catch (error) {
         console.error('Volcengine generate-voice fetch failed', error);
-        res.status(500).send(`TTS Generation Failed: ${error}`);
+        res.status(500).send('Could not generate the speech. Try again in a moment.');
     }
 });

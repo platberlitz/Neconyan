@@ -28,13 +28,13 @@ export async function chunkLines(lines, tokenOf, budget, wrap = text => text) {
             continue;
         }
         if (!current.length) {
-            throw new Error('One chat message is too large for the selected connection context.');
+            throw new Error('One chat message is too long for the connection you selected. Choose a connection with a larger limit.');
         }
         chunks.push(current.join('\n'));
         current = [line];
         const singleTokens = Math.max(1, Number(await tokenOf(wrap(line))) || 0);
         if (singleTokens > budget) {
-            throw new Error('One chat message is too large for the selected connection context.');
+            throw new Error('One chat message is too long for the connection you selected. Choose a connection with a larger limit.');
         }
     }
     if (current.length) {
@@ -67,7 +67,7 @@ export function parseProposals(text) {
     const start = unfenced.indexOf('[');
     const end = unfenced.lastIndexOf(']');
     if (start === -1 || end <= start) {
-        throw new Error('The reply contained no JSON list.');
+        throw new Error('The AI reply did not contain a usable list. Try again.');
     }
     let parsed;
     try {
@@ -76,7 +76,7 @@ export function parseProposals(text) {
         throw new Error('The reply\'s JSON list could not be read.');
     }
     if (!Array.isArray(parsed)) {
-        throw new Error('The reply was not a JSON list.');
+        throw new Error('The AI reply was not a usable list. Try again.');
     }
     return parsed;
 }

@@ -96,7 +96,7 @@ async function finalizeRewriteSubmission(request, job, preparedSnapshot) {
     try {
         const snapshot = preparedSnapshot || readArtifact(request.user.directories, job.id, 'request');
         if (!snapshot) throw fail('The rewrite request was not saved before the server stopped. Try again.', 409);
-        if (job.config?.requestHash && hash(snapshot) !== job.config.requestHash) throw fail('The accepted rewrite request changed during preparation.', 409);
+        if (job.config?.requestHash && hash(snapshot) !== job.config.requestHash) throw fail('The rewrite request changed while it was being prepared.', 409);
         writeArtifact(request.user.directories, job.id, 'request', snapshot);
     } catch (error) {
         updateJob(request.user.directories, job.id, {

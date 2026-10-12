@@ -41,7 +41,7 @@ export function unregisterTool(name) {
  */
 export async function invokeTool(name, args = {}, { permissions = [], receipt = null, signal = null, target = null, owner = null } = {}) {
     const tool = tools.get(name);
-    if (!tool) throw Object.assign(new Error(`No such tool: ${name}.`), { status: 404, code: 'TOOL_NOT_FOUND' });
+    if (!tool) throw Object.assign(new Error(`The assistant does not have a tool called ${name}.`), { status: 404, code: 'TOOL_NOT_FOUND' });
     if (tool.permission !== 'standard' && !permissions.includes(tool.permission)) {
         throw Object.assign(new Error(`The ${name} tool needs the ${tool.permission} permission.`), { status: 403, code: 'TOOL_PERMISSION' });
     }

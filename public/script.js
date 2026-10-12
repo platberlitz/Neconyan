@@ -1916,7 +1916,7 @@ export async function getOneCharacter(avatarUrl, { isCurrent = () => true, allow
             characters.push(getData);
             return true;
         } else {
-            toastr.error(t`Character ${avatarUrl} not found in the list`, t`Error`, { timeOut: 5000, preventDuplicates: true });
+            toastr.error(t`Could not find ${avatarUrl} in the character list`, t`Error`, { timeOut: 5000, preventDuplicates: true });
         }
     }
     return false;
@@ -4498,7 +4498,7 @@ export async function sendTextareaMessage() {
     }
     // don't proceed during swipeGenerate()
     if (swipeState == SWIPE_STATE.EDITING) {
-        toastr.warning(t`Confirm the edit to start a generation.`, t`You cannot send a message during a swipe-edit.`);
+        toastr.warning(t`Confirm the edit to start a generation.`, t`You cannot send a message while editing a reply.`);
         return;
     }
     if (swipeState !== SWIPE_STATE.NONE) return; // don't proceed if mid-swipe.
@@ -8464,7 +8464,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         }
 
         if (main_api == 'kobold' && kai_settings.streaming_kobold && !kai_flags.can_use_streaming) {
-            toastr.error(t`Streaming is enabled, but the version of Kobold used does not support token streaming.`, undefined, { timeOut: 10000, preventDuplicates: true });
+            toastr.error(t`Streaming is turned on, but your version of Kobold cannot stream replies word by word. Turn streaming off, or update Kobold.`, undefined, { timeOut: 10000, preventDuplicates: true });
             unblockGeneration(type);
             return Promise.resolve();
         }
@@ -8554,7 +8554,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
 
             if (!pingResult) {
                 unblockGeneration(type);
-                toastr.error(t`Verify that the server is running and accessible.`, t`Neconyan server cannot be reached`);
+                toastr.error(t`Check that Neconyan is still running on the server, then try again.`, t`Cannot connect to Neconyan`);
                 throw new Error('Server unreachable');
             }
         }
@@ -10580,7 +10580,7 @@ export async function duplicateCharacter({ avatar = null, silent = false } = {})
     if (avatar) {
         const character = characters.find(c => c.avatar === avatar);
         if (!character) {
-            toastr.warning(t`Character not found: ${avatar}`);
+            toastr.warning(t`Could not find the character ${avatar}.`);
             return '';
         }
         targetAvatar = avatar;
@@ -10611,7 +10611,7 @@ export async function duplicateCharacter({ avatar = null, silent = false } = {})
     });
 
     if (!response.ok) {
-        toastr.error(t`Failed to duplicate character`);
+        toastr.error(t`Could not duplicate the character. Try again.`);
         return '';
     }
 
@@ -12102,7 +12102,7 @@ export function saveChat(...saveChatArguments) {
                 });
             } catch (error) {
                 console.error(error);
-                toastr.error(t`Check the server connection and reload the page to prevent data loss.`, t`Chat could not be saved`);
+                toastr.error(t`Check your connection to Neconyan, then reload the page to avoid losing changes.`, t`Chat could not be saved`);
                 return options.throwOnError ? Promise.reject(error) : Promise.resolve(false);
             }
         }
@@ -12172,7 +12172,7 @@ async function saveChatImmediately(...args) {
     if (account !== undefined && account !== getCurrentUserHandle()) return false;
 
     if (wasGroupChat || (selected_group && !activeChatName)) {
-        toastr.error(t`Operation was aborted to prevent data corruption.`, t`saveChat called for a group chat`);
+        toastr.error(t`This save was stopped to protect the chat from damage. Reopen the chat and try again.`, t`Chat not saved`);
         throw new Error('saveChat called for a group chat');
     }
 
@@ -12257,7 +12257,7 @@ async function saveChatImmediately(...args) {
 
         if (errorData?.error === 'destructive') {
             console.error(`Chat save refused as destructive (${errorData?.reason}). The file on disk was left unchanged.`);
-            toastr.error(t`This save would have wiped messages, so the chat file was left unchanged. Reload the page to resync.`, t`Chat not saved`);
+            toastr.error(t`This save would have deleted messages, so the saved chat was left unchanged. Reload the page to bring it up to date.`, t`Chat not saved`);
             if (throwOnError) {
                 throw new Error('destructive');
             }
@@ -12291,7 +12291,7 @@ async function saveChatImmediately(...args) {
         return await saveChatImmediately({ chatName, withMetadata, metadataSnapshot: metadata, mesId, force: true, chatData, throwOnError, deferBackup, deferSequenceId, allowShrink, activeChatName, characterName, avatarUrl, wasGroupChat, scheduledGeneration, scheduledCharacterId, scheduledGroupId, scheduledChatId, account, roleplaySave });
     } catch (error) {
         console.error(error);
-        toastr.error(t`Check the server connection and reload the page to prevent data loss.`, t`Chat could not be saved`);
+        toastr.error(t`Check your connection to Neconyan, then reload the page to avoid losing changes.`, t`Chat could not be saved`);
         if (throwOnError) {
             throw error;
         }
@@ -13430,7 +13430,7 @@ async function saveSettingsInner(loopCounter = 0, account = getCurrentUserHandle
     } catch (error) {
         if (account !== getCurrentUserHandle()) return false;
         console.error('Error saving settings:', error);
-        toastr.error(t`Check the server connection and reload the page to prevent data loss.`, t`Settings could not be saved`);
+        toastr.error(t`Check your connection to Neconyan, then reload the page to avoid losing changes.`, t`Settings could not be saved`);
         return false;
     }
 }
@@ -13558,7 +13558,7 @@ export async function clearFrontendCache({ skipConfirmation = false, saveBeforeC
     }
 
     if (cacheErrors.length > 0) {
-        toastr.error(t`Some cache data could not be cleared. Check the browser console for details.`, t`Cache clear incomplete`);
+        toastr.error(t`Some saved data could not be cleared. Try again in a moment.`, t`Cache clear incomplete`);
         return false;
     }
 
@@ -13627,7 +13627,7 @@ async function handleClearAllCacheButtonClick(event) {
         }
     } catch (error) {
         console.error('Failed to clear cache', error);
-        toastr.error(t`Cache could not be cleared. Check the browser console for details.`, t`Cache clear failed`);
+        toastr.error(t`Saved data could not be cleared. Try again in a moment.`, t`Cache clear failed`);
         button.disabled = false;
         button.classList.remove('disabled');
         button.removeAttribute('aria-busy');
@@ -14261,7 +14261,7 @@ async function openMessageScreenshotDialog(messageId) {
         toastr.success(successText, t`Screenshot ready`);
     } catch (error) {
         console.error('Failed to create message screenshot', error);
-        toastr.error(t`Couldn't create the screenshot. Check the browser console for details.`, t`Screenshot failed`);
+        toastr.error(t`Could not create the screenshot. Try again in a moment.`, t`Screenshot failed`);
     } finally {
         releaseDownload();
     }
@@ -15702,7 +15702,7 @@ function syncAlternateGreetingsEditor() {
 
 export function select_rm_info(type, charId, previousCharId = null) {
     if (!type) {
-        toastr.error(t`Invalid process (no 'type')`);
+        toastr.error(t`Could not update the character list. Reload the page and try again.`);
         return;
     }
     const rightNavPanel = document.getElementById('right-nav-panel');
@@ -16458,7 +16458,7 @@ export async function deleteSwipe(swipeId = null, messageId = chat.length - 1, {
     if (swipeId != null) {
         swipeId = Number(swipeId);
         if (!Number.isInteger(swipeId) || swipeId < 0) {
-            toastr.warning(t`Invalid swipe ID.`);
+            toastr.warning(t`That reply number is not valid.`);
             return;
         }
     }
@@ -16466,12 +16466,12 @@ export async function deleteSwipe(swipeId = null, messageId = chat.length - 1, {
     messageId = Number(messageId);
     const message = chat[messageId];
     if (!message || !Array.isArray(message.swipes) || !message.swipes.length) {
-        toastr.warning(t`No messages to delete swipes from.`);
+        toastr.warning(t`There are no messages to delete replies from.`);
         return;
     }
 
     if (message.swipes.length <= 1) {
-        toastr.warning(t`Can't delete the last swipe.`);
+        toastr.warning(t`You cannot delete the only reply.`);
         return;
     }
 
@@ -16481,7 +16481,7 @@ export async function deleteSwipe(swipeId = null, messageId = chat.length - 1, {
     const currentSwipeId = clamp(Number(message.swipe_id ?? 0), 0, message.swipes.length - 1);
 
     if (swipeId < 0 || swipeId >= message.swipes.length) {
-        toastr.warning(t`Invalid swipe ID: ${swipeId + 1}`);
+        toastr.warning(t`Reply ${swipeId + 1} is not valid.`);
         return;
     }
 
@@ -16728,7 +16728,7 @@ export async function sendChatImport(formData, { target, group, refresh = true, 
         }
         if (failure?.code === 'ROLEPLAY_IMPORT_ORIGIN_CHANGED') throw new Error(t`This chat no longer matches its recorded origin or seal. To adopt a separate copy, explicitly choose 'Import as new instance'.`);
         if (failure?.code === 'ROLEPLAY_SOURCE_CHANGED') throw new Error(t`The character changed while the chats were importing. Reload the character list, then try again.`);
-        throw new Error(`Chat import failed (${response.status}).`);
+        throw new Error('The chat could not be imported. Check that the file is a valid chat export, then try again.');
     }
     const result = await response.json();
     if (!result.res || !Array.isArray(result.fileNames)) throw new Error('The chat import response was incomplete.');
@@ -16844,7 +16844,7 @@ function updateAlternateGreetingsHintVisibility(root) {
 async function openCharacterWorldPopup() {
     const chid = $('#set_character_world').data('chid');
     if (menu_type != 'create' && chid === undefined) {
-        toastr.error('Does not have an Id for this character in world select menu.');
+        toastr.error('Could not open the world settings for this character. Reload the page and try again.');
         return;
     }
 
@@ -16919,7 +16919,7 @@ function openAlternateGreetings() {
     const greetings = getEditableAlternateGreetings();
 
     if (!greetings) {
-        toastr.error('Does not have an Id for this character in editor menu.');
+        toastr.error('Could not open the alternate greetings for this character. Reload the page and try again.');
         return;
     }
 
@@ -16969,7 +16969,7 @@ export async function createOrEditCharacter(e, { revision = characterSaveRevisio
         }
         if (is_group_generating || is_send_press) {
             setCharacterSaveStatus('draft', revision);
-            toastr.error(t`Cannot create characters while generating. Stop the request and try again.`, t`Creation aborted`);
+            toastr.error(t`Cannot create characters while a reply is being written. Stop the reply and try again.`, t`Creation stopped`);
             return false;
         }
     }
@@ -17077,7 +17077,7 @@ export async function createOrEditCharacter(e, { revision = characterSaveRevisio
         } catch (error) {
             console.error('Error creating character', error);
             setCharacterSaveStatus('error', revision);
-            toastr.error(t`Failed to create character`);
+            toastr.error(t`Could not create the character. Try again.`);
             return false;
         }
     } else {
@@ -17216,7 +17216,7 @@ export async function swipe(event, direction, { source, repeated, message = chat
     } else {
         //Only show an error if swipes are not hidden and a message is generating.
         if (isGenerating() && (swipes && !swipesHidden && (swipeState === SWIPE_STATE.NONE))) {
-            toastr.warning(t`Cannot swipe while generating. Stop the request and try again.`, t`Swipe aborted`);
+            toastr.warning(t`Cannot switch replies while a reply is being written. Stop the reply and try again.`, t`Reply switch stopped`);
             return;
         }
         //Only allow one concurrent swipe.
@@ -17395,7 +17395,7 @@ export async function swipe(event, direction, { source, repeated, message = chat
 
         //Load from swipes.
         if (syncSwipeToMes(mesId, newSwipeId) == false) {
-            let errorMessage = t`When swiping ${direction} on message ${mesId}, syncSwipeToMes has returned false. Attempting to swipe back!`;
+            let errorMessage = t`Could not switch to that reply on message ${mesId}. Going back to the previous reply.`;
             toastr.error(errorMessage);
 
             chat[mesId].swipe_id = originalSwipeId;
@@ -17636,7 +17636,7 @@ export async function swipe(event, direction, { source, repeated, message = chat
         }
         //Limit swipe_id to swipes.
         if (newSwipeId > chat[mesId].swipes.length - 1) {
-            toastr.warning(`The swipe_id for message #${mesId} was ${newSwipeId}. It has been reset to ${chat[mesId].swipes.length - 1}.`);
+            toastr.warning(`The reply number for message #${mesId} was ${newSwipeId}, which is not valid. It has been reset to ${chat[mesId].swipes.length - 1}.`);
             chat[mesId].swipe_id = chat[mesId].swipes.length - 1;
             await endSwipe();
             return;
@@ -17650,7 +17650,7 @@ export async function swipe(event, direction, { source, repeated, message = chat
 
         //Minimum of zero.
         if (newSwipeId < 0) {
-            toastr.warning(`The swipe_id for message #${mesId} was ${newSwipeId}. It has been reset to zero.`);
+            toastr.warning(`The reply number for message #${mesId} was ${newSwipeId}, which is not valid. It has been reset to the first reply.`);
             chat[mesId].swipe_id = 0;
             await endSwipe();
             return;
@@ -17822,7 +17822,7 @@ async function selectImportedChar(charId) {
  */
 async function importCharacter(file, { preserveFileName = '', importTags = false } = {}) {
     if (is_group_generating || is_send_press) {
-        toastr.error(t`Cannot import characters while generating. Stop the request and try again.`, t`Import aborted`);
+        toastr.error(t`Cannot import characters while a reply is being written. Stop the reply and try again.`, t`Import stopped`);
         throw new Error('Cannot import character while generating');
     }
 
@@ -18221,7 +18221,7 @@ export async function deleteCharacter(characterKey, { deleteChats = true } = {})
         });
 
         if (!response.ok) {
-            toastr.error(`${response.status} ${response.statusText}`, t`Failed to delete character`);
+            toastr.error(t`Could not delete the character ${key}. Try again in a moment.`, t`Character not deleted`);
             continue;
         }
 
@@ -18386,7 +18386,7 @@ function addDebugFunctions() {
             localStorage.setItem('eventTracing', nextEventTracing);
             toastr.info('Event tracing is now ' + (nextEventTracing === 'true' ? 'enabled' : 'disabled'));
         } catch {
-            toastr.warning('Event tracing could not be persisted in this browser session.');
+            toastr.warning('Event tracing could not be saved in this browser.');
         }
     });
 
@@ -18418,7 +18418,7 @@ API Settings: ${JSON.stringify(getSettingsContents[getSettingsContents.main_api 
             await copyText(logMessage);
             toastr.info('Your ST API setup data has been copied to the clipboard.');
         } catch (error) {
-            toastr.error('Failed to copy ST Setup to clipboard:', error);
+            toastr.error('Could not copy the setup details to the clipboard. Try again.');
         }
     });
 }
@@ -19209,7 +19209,7 @@ jQuery(async function () {
             }
         } else if (id == 'option_continue') {
             if (swipeState == SWIPE_STATE.EDITING) {
-                toastr.warning(t`Confirm the edit to start a generation.`, t`You cannot send a message during a swipe-edit.`);
+                toastr.warning(t`Confirm the edit to start a generation.`, t`You cannot send a message while editing a reply.`);
                 return;
             }
             if (chat.length && chat.length - 1 === this_edit_mes_id) {
@@ -19714,7 +19714,7 @@ jQuery(async function () {
                 const batch = [];
                 for (const file of files) {
                     const format = file.name.split('.').pop().toLowerCase();
-                    if (!['json', 'jsonl'].includes(format)) throw new Error(t`Only JSON and JSONL files are supported for chat imports.`);
+                    if (!['json', 'jsonl'].includes(format)) throw new Error(t`Only chat files ending in .json or .jsonl can be imported.`);
                     const content = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer());
                     batch.push({ name: file.name, format, content });
                 }
@@ -19739,7 +19739,7 @@ jQuery(async function () {
             const format = ext?.[1]?.toLowerCase();
 
             if (!['json', 'jsonl'].includes(format)) {
-                toastr.warning(t`Only JSON and JSONL files are supported for chat imports.`);
+                toastr.warning(t`Only chat files ending in .json or .jsonl can be imported.`);
                 continue;
             }
 
@@ -20074,14 +20074,14 @@ jQuery(async function () {
                         cache: 'no-cache',
                     });
                     if (!regenResponse.ok) {
-                        toastr.error(t`Failed to regenerate thumbnail (${regenResponse.status})`);
+                        toastr.error(t`Could not refresh the thumbnail. Try again in a moment.`);
                         break;
                     }
                     await refreshCharacterAvatar(avatarKey);
                     toastr.success(t`Thumbnail regenerated successfully.`, t`Thumbnail Refreshed`);
                 } catch (error) {
                     console.error('Failed to regenerate thumbnail:', error);
-                    toastr.error(t`An error occurred while regenerating the thumbnail.`);
+                    toastr.error(t`Could not refresh the thumbnail. Try again in a moment.`);
                 }
             } break;
             case 'character_source': {
@@ -20138,7 +20138,7 @@ jQuery(async function () {
                                 await processDroppedFiles([file], data);
                                 await postReplace();
                             } catch {
-                                toastr.error('Failed to replace the character card.', 'Something went wrong');
+                                toastr.error('Could not replace the character card. Try again.', 'Character not replaced');
                             }
                         };
                         $('#character_replace_file').off('change').on('change', uploadReplacementCard).trigger('click');
@@ -20217,7 +20217,7 @@ jQuery(async function () {
                     $(masterElement).val($(this).val()).trigger('input', { forced: true });
                 } else {
                     //if value not ok, warn and reset to last known valid value
-                    toastr.warning(`Invalid value. Must be between ${$(this).attr('min')} and ${$(this).attr('max')}`);
+                    toastr.warning(`Value must be between ${$(this).attr('min')} and ${$(this).attr('max')}.`);
                     //newSlider.val(valueBeforeManualInput)
                     $(this).val(valueBeforeManualInput);
                 }
@@ -20243,7 +20243,7 @@ jQuery(async function () {
                 $(masterElement).val($(this).val()).trigger('input', { forced: true });
             } else {
                 //if value not ok, warn and reset to last known valid value
-                toastr.warning(`Invalid value. Must be between ${$(this).attr('min')} and ${$(this).attr('max')}`);
+                toastr.warning(`Value must be between ${$(this).attr('min')} and ${$(this).attr('max')}.`);
                 $(this).val(valueBeforeManualInput);
             }
         }

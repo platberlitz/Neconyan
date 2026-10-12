@@ -3505,7 +3505,7 @@ export function renderStoryString(params, { customStoryString = null, customInst
             substitute: value => substituteParams(value, params.user, params.char),
         });
     } catch (e) {
-        toastr.error('Check the story string template for validity', 'Error rendering story string');
+        toastr.error('The story string template has a mistake. Check it and try again.', 'Could not show the story template');
         console.error('Error rendering story string', e);
         throw e; // rethrow the error
     }
@@ -3651,7 +3651,7 @@ async function deleteTheme() {
     });
 
     if (!response.ok) {
-        toastr.error('Failed to delete theme. Check the console for more information.');
+        toastr.error('Could not delete the theme. Try again.');
         return;
     }
 
@@ -3746,7 +3746,7 @@ async function saveTheme(name = undefined, theme = undefined) {
     });
 
     if (!response.ok) {
-        toastr.error('Check the server connection and reload the page to prevent data loss.', 'Theme could not be saved');
+        toastr.error('Check your connection to Neconyan, then reload the page so your changes are not lost.', 'Theme could not be saved');
         console.error('Theme could not be saved', response);
         throw new Error('Theme could not be saved');
     }
@@ -3850,7 +3850,7 @@ async function saveMovingUI() {
         power_user.movingUIPreset = name;
         saveSettingsDebounced();
     } else {
-        toastr.error('Failed to save MovingUI state.');
+        toastr.error('Could not save the panel layout. Try again.');
         console.error('MovingUI could not be saved', response);
     }
 }
@@ -4031,7 +4031,7 @@ async function loadUntilMesId(mesId) {
     }
 
     if (!target.length) {
-        toastr.error(`Could not find message with ID: ${mesId}`);
+        toastr.error(`Could not find a message with the number ${mesId}`);
         return target;
     }
 
@@ -5338,7 +5338,7 @@ jQuery(async () => {
             await importTheme(file);
         } catch (error) {
             console.error('Error importing UI theme', error);
-            toastr.error(String(error), 'Failed to import UI theme');
+            toastr.error(String(error), 'Could not import UI theme');
         } finally {
             if (inputElement) {
                 inputElement.value = null;

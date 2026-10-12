@@ -261,7 +261,7 @@ export async function updateConversationMemorySummary(avatar = getCurrentCharAva
     } catch (error) {
         console.warn('Conversation Mode: memory summary update failed', error);
         if (notify) {
-            toastr.warning('Conversation memory refresh failed. Check console for details.');
+            toastr.warning('Conversation memory could not be refreshed. Try again.');
         }
     } finally {
         memorySummaryBusyAvatars.delete(memoryKey);

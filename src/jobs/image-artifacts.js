@@ -14,12 +14,12 @@ function imageResult(value) {
     const bytes = typeof value?.base64 === 'string' ? Buffer.from(value.base64, 'base64') : null;
     const format = bytes && detectImageFormat(bytes);
     if (!format || !bytes.length || bytes.length > MAX_IMAGE_BYTES
-        || value.format !== (format.ext === 'jpeg' ? 'jpg' : format.ext)) throw fail('The saved image bytes need recovery.');
+        || value.format !== (format.ext === 'jpeg' ? 'jpg' : format.ext)) throw fail('The saved image is damaged and needs repair.');
     return bytes;
 }
 
 function imagePath(directories, id, name, create = false) {
-    if (!getJob(directories, id)) throw fail('The image job no longer exists.');
+    if (!getJob(directories, id)) throw fail('This image job no longer exists.');
     const root = path.resolve(directories.root);
     const parent = path.join(root, 'jobs', 'artifacts', jobKey(id));
     if (create) createRoleplayDirectory(parent, root);
@@ -34,20 +34,20 @@ export function writeImageArtifact(directories, id, name, value) {
     const previous = readArtifact(directories, id, name);
     if (previous !== undefined) {
         const recorded = readImageArtifact(directories, id, name);
-        if (!imageResult(recorded).equals(bytes) || recorded.format !== value.format) throw fail('The saved image receipt differs from this result.');
+        if (!imageResult(recorded).equals(bytes) || recorded.format !== value.format) throw fail('The saved image record does not match this result.');
         return value;
     }
     try {
         const filename = imagePath(directories, id, name, true);
         const existing = readRoleplayFile(filename, MAX_IMAGE_BYTES);
-        if (existing && !existing.bytes.equals(bytes)) throw fail('The saved image bytes differ from this result.');
+        if (existing && !existing.bytes.equals(bytes)) throw fail('The saved image does not match this result.');
         if (!existing) tryWriteFileSync(filename, bytes, { mode: 0o600 }, { expectedFileAbsent: true, durable: true, preserveOnCreateError: true });
         const confirmed = readRoleplayFile(filename, MAX_IMAGE_BYTES, { flush: true });
-        if (!confirmed || !confirmed.bytes.equals(bytes)) throw fail('The image file could not be confirmed.');
+        if (!confirmed || !confirmed.bytes.equals(bytes)) throw fail('The image file could not be saved and checked.');
         writeArtifact(directories, id, name, receipt);
     } catch (error) {
         if (error.code === 'QIG_RESULT_RECOVERY') throw error;
-        throw fail('The saved image file needs recovery.');
+        throw fail('The saved image file is damaged or missing.');
     }
     return value;
 }
@@ -61,19 +61,19 @@ export function readImageArtifact(directories, id, name) {
     }
     if (!Number.isSafeInteger(saved.byteLength) || saved.byteLength < 1 || saved.byteLength > MAX_IMAGE_BYTES
         || !/^[a-f0-9]{64}$/.test(saved.digest) || !['png', 'jpg', 'webp', 'gif', 'bmp', 'tiff', 'avif'].includes(saved.format)) {
-        throw fail('The saved image receipt needs recovery.');
+        throw fail('The saved image record is damaged and needs repair.');
     }
     try {
         const file = readRoleplayFile(imagePath(directories, id, name), MAX_IMAGE_BYTES, { allowMissingParent: true });
-        if (!file || file.bytes.length !== saved.byteLength) throw fail('The saved image file needs recovery.');
+        if (!file || file.bytes.length !== saved.byteLength) throw fail('The saved image file is damaged or missing.');
         const bytes = file.bytes;
-        if (crypto.createHash('sha256').update(bytes).digest('hex') !== saved.digest) throw fail('The saved image file changed.');
+        if (crypto.createHash('sha256').update(bytes).digest('hex') !== saved.digest) throw fail('The saved image file no longer matches its record.');
         const result = { base64: bytes.toString('base64'), format: saved.format };
         imageResult(result);
         return result;
     } catch (error) {
         if (error.code === 'QIG_RESULT_RECOVERY') throw error;
-        throw fail('The saved image file needs recovery.');
+        throw fail('The saved image file is damaged or missing.');
     }
 }
 

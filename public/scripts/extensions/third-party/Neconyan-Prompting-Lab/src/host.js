@@ -61,7 +61,7 @@ export async function loadHost() {
                 if (required.length) {
                     return {
                         ok: false,
-                        reason: `${EXTENSION_LABEL} is not compatible with this Neconyan build. Missing tools: ${required.join(', ')}.`,
+                        reason: `${EXTENSION_LABEL} does not work with this version of Neconyan. Missing parts: ${required.join(', ')}. Update Neconyan to use it.`,
                     };
                 }
                 const warnings = [];
@@ -79,7 +79,7 @@ export async function loadHost() {
             } catch (error) {
                 return {
                     ok: false,
-                    reason: `${EXTENSION_LABEL} could not load Neconyan's prompt tools. Technical details: ${error?.message ?? error}`,
+                    reason: `${EXTENSION_LABEL} could not load the Neconyan prompt tools it needs. Reload Neconyan and try again.`,
                 };
             }
         })();

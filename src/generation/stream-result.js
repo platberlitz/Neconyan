@@ -22,7 +22,7 @@ export function createGenerationStream(onUpdate, { allowTools = false } = {}) {
     let textBytes = 0;
     let reasoningBytes = 0;
     const accept = event => {
-        if (event.split('\n').some(line => /^event:\s*error\s*$/.test(line))) throw new Error('The provider rejected the generated stream.');
+        if (event.split('\n').some(line => /^event:\s*error\s*$/.test(line))) throw new Error('The AI service rejected the reply while it was streaming.');
         const data = event.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
         if (!data) return;
         if (data === '[DONE]') {
@@ -31,9 +31,9 @@ export function createGenerationStream(onUpdate, { allowTools = false } = {}) {
             return;
         }
         let chunk;
-        try { chunk = JSON.parse(data); } catch { throw new Error('The generated stream contains an invalid event.'); }
-        if (chunk.error || chunk.type === 'error') throw new Error('The provider rejected the generated stream.');
-        if (terminated) throw new Error('The provider stream contained output after completion.');
+        try { chunk = JSON.parse(data); } catch { throw new Error('The AI service sent a reply that could not be read.'); }
+        if (chunk.error || chunk.type === 'error') throw new Error('The AI service rejected the reply while it was streaming.');
+        if (terminated) throw new Error('The AI service sent extra text after the reply had finished.');
         const choice = chunk.choices?.[0];
         const delta = choice?.delta ?? choice?.message;
         const candidate = chunk.candidates?.[0];
@@ -41,7 +41,7 @@ export function createGenerationStream(onUpdate, { allowTools = false } = {}) {
         if (choice?.index > 0 || candidate?.index > 0) return;
         if (parts?.some(part => part?.inlineData) || !tools && (delta?.tool_calls?.length || parts?.some(part => part?.functionCall)
             || chunk.content_block?.type === 'tool_use' || chunk.item?.type === 'function_call')) {
-            throw new Error('The provider stream contains an output this Roleplay reply cannot save.');
+            throw new Error('The AI service sent a kind of output that a Roleplay reply cannot save.');
         }
         tools?.push(chunk);
         let nextText = normalizeContentText(delta?.content ?? delta?.text ?? choice?.text ?? chunk.delta?.text
@@ -63,7 +63,7 @@ export function createGenerationStream(onUpdate, { allowTools = false } = {}) {
         textBytes += Buffer.byteLength(nextText);
         reasoningBytes += Buffer.byteLength(nextReasoning);
         if (textBytes > MAX_GENERATION_TEXT_BYTES || reasoningBytes > MAX_GENERATION_TEXT_BYTES) {
-            throw new Error('The generated answer or thinking exceeded the 2 MiB text limit.');
+            throw new Error('The reply or its thinking text is over the 2 MB limit.');
         }
         text += nextText;
         reasoning += nextReasoning;
@@ -74,7 +74,7 @@ export function createGenerationStream(onUpdate, { allowTools = false } = {}) {
     return {
         push(chunk) {
             bytes += Buffer.byteLength(chunk);
-            if (bytes > MAX_GENERATION_STREAM_BYTES) throw new Error('The streamed response exceeded the 64 MiB transport limit.');
+            if (bytes > MAX_GENERATION_STREAM_BYTES) throw new Error('The streamed reply is over the 64 MB size limit.');
             pending += chunk;
             let boundary;
             while ((boundary = /\r?\n\r?\n/.exec(pending))) {
@@ -85,7 +85,7 @@ export function createGenerationStream(onUpdate, { allowTools = false } = {}) {
         finish() {
             if (pending) { accept(pending.replace(/\r\n/g, '\n')); pending = ''; }
             const toolCalls = tools?.finish() ?? [];
-            if (!complete || !text.trim() && !toolCalls.length) throw new Error('The provider stream ended without a complete reply.');
+            if (!complete || !text.trim() && !toolCalls.length) throw new Error('The AI service ended the reply before it was finished.');
             return { choices: [{ text, reasoning, message: { content: text, reasoning_content: reasoning, reasoning,
                 ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
                 ...(signature ? { reasoning_details: [{ id: 'thought', type: 'reasoning.encrypted', data: signature }] } : {}) } }],

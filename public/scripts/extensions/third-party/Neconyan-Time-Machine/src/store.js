@@ -117,7 +117,7 @@ export function getSettings() {
 
 export function saveSettings() {
     if (typeof ctx().saveSettingsDebounced !== 'function') {
-        throw new Error('This Neconyan version cannot save extension settings');
+        throw new Error('This version of Neconyan cannot save Time Machine settings.');
     }
     ctx().saveSettingsDebounced();
 }
@@ -170,7 +170,7 @@ async function readPersistedSettings() {
     }
     const source = typeof body?.settings === 'string' ? JSON.parse(body.settings) : body?.settings ?? body;
     if (!isPlainObject(source)) {
-        throw new Error('Neconyan returned malformed settings');
+        throw new Error('Neconyan sent back Time Machine settings in an unexpected format.');
     }
     return source;
 }
@@ -276,7 +276,7 @@ async function commitNow() {
 function requireRow(row) {
     const valid = normalizeRow(row);
     if (!valid) {
-        throw new Error('Refusing an invalid Time Machine file path');
+        throw new Error('That Time Machine file name is not allowed.');
     }
     return valid;
 }
@@ -285,7 +285,7 @@ async function upload(name, text) {
     const response = await post('/api/files/upload', { name, data: base64(text) });
     const body = await response.json();
     if (normalUrl(body?.path) !== canonicalUrl(name)) {
-        throw new Error('Neconyan returned an unexpected snapshot path');
+        throw new Error('Neconyan saved a snapshot under an unexpected file name.');
     }
 }
 
@@ -396,13 +396,13 @@ export async function load(row, { forgetMissing = true } = {}) {
         throw error;
     }
     if (!response.ok) {
-        throw new Error(`Could not read snapshot ${valid.name} (${response.status})`);
+        throw new Error(`Could not read snapshot ${valid.name}. Try again.`);
     }
     let payload;
     try {
         payload = await response.json();
     } catch (error) {
-        throw new Error(`Snapshot ${valid.name} is not valid JSON`, { cause: error });
+        throw new Error(`Snapshot ${valid.name} is damaged and cannot be read.`, { cause: error });
     }
     await validateSnapshotPayload(valid, payload);
     return payload;
@@ -441,7 +441,7 @@ export function remove(row) {
     return enqueueMutation(() => {
         const valid = requireRow(row);
         if (protectedSnapshotIds.has(valid.id)) {
-            throw new Error('That snapshot is in use by a restore and cannot be deleted');
+            throw new Error('That snapshot is being used by a restore, so it cannot be deleted yet.');
         }
         return removeRows([valid]);
     });

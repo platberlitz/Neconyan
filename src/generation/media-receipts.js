@@ -13,12 +13,12 @@ export function readMediaReceipt(filename) {
     const file = readRoleplayFile(filename, MEDIA_RECEIPT_LIMIT, { allowMissingParent: true });
     if (!file) return { file: null, value: null };
     let value;
-    try { value = JSON.parse(file.bytes.toString('utf8')); } catch { throw fail('The saved media receipt is unreadable.'); }
+    try { value = JSON.parse(file.bytes.toString('utf8')); } catch { throw fail('A saved media record could not be read.'); }
     if (value?.version !== 1 || !HASH.test(value.intentHash) || !HASH.test(value.targetHash)
         || !['preparing', 'accepted', 'closed'].includes(value.state)
         || !value.account || typeof value.effects !== 'object' || !value.effects || Array.isArray(value.effects)
         || value.state !== 'preparing' && typeof value.jobId !== 'string') {
-        throw fail('The saved media receipt is invalid.');
+        throw fail('The saved media record is damaged.');
     }
     return { file, value };
 }
@@ -35,7 +35,7 @@ export function assertNativeMediaTargetIdle(lease, target) {
     for (const name of fs.readdirSync(directory)) {
         if (!/^[a-f0-9]{64}\.json$/.test(name)) continue;
         const { value } = readMediaReceipt(path.join(directory, name));
-        if (!value) throw fail('A saved media receipt disappeared.');
-        if (value.targetHash === hash && value.state !== 'closed') throw fail('This media target has unfinished accepted work.', 'MEDIA_TARGET_BUSY');
+        if (!value) throw fail('A saved media record is missing.');
+        if (value.targetHash === hash && value.state !== 'closed') throw fail('This media item has unfinished work.', 'MEDIA_TARGET_BUSY');
     }
 }

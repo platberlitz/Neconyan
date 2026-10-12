@@ -402,7 +402,7 @@ function recoveryControls() {
 
     const modeNotice = api.getStorageMode() === 'extension' ? el('p', {
         className: 'sbtw-storage-mode sbtw-hint',
-        text: 'Local storage is available in one tab/device at a time. Neconyan’s native storage service enables safe concurrent editing.',
+        text: 'Browser storage can only be used in one tab or device at a time. The Neconyan server storage lets several tabs edit safely at the same time.',
     }) : null;
 
     const section = el('div', { className: 'sbtw-recovery-section' }, [
@@ -2600,7 +2600,7 @@ function settingsView() {
         el('h4', { text: 'Connection' }),
         field('Write posts with', profileSelect, 'A cheap model is fine here. One refresh writes the whole batch, or one activity per request with the option below.'),
         field('Reply budget (tokens)', numberInput(settings.maxTokens, 256, 1000000, value => save({ maxTokens: value })),
-            'The most one reply may run to. Thinking models (Kimi, GLM, DeepSeek, Qwen...) spend part of it on their reasoning, and a budget that runs out mid-JSON is a malformed reply - so it is generous. Lower it only if your provider refuses the request.'),
+            'The most one reply may run to. Thinking models (Kimi, GLM, DeepSeek, Qwen...) spend part of it on their reasoning, and a budget that runs out mid-reply leaves a broken reply - so it is generous. Lower it only if your provider refuses the request.'),
 
         el('h4', { text: 'How much each refresh makes' }),
         field('Accounts per refresh', activeMode),
@@ -2625,7 +2625,7 @@ function settingsView() {
             ? field('Requests at once', numberInput(settings.concurrency, 1, 6, value => save({ concurrency: value })),
                 'Several tiny requests in flight together. Posts land first, then individual replies, reposts, likes and votes. More at once is faster but pricier because every request carries the timeline context.')
             : null,
-        el('p', { className: 'sbtw-hint', text: 'Each request returns one post or one reaction in a small JSON object, and the timeline fills in as they land. Posts above is how many.' }),
+        el('p', { className: 'sbtw-hint', text: 'Each request returns one post or one reaction as a small block of structured data, and the timeline fills in as they land. Posts above is how many.' }),
 
         el('h4', { text: 'Pictures' }),
         checkbox('Generate images for some posts', settings.images.enabled, value => savePart('images', { enabled: value })),
@@ -3551,7 +3551,7 @@ async function refresh({ topic = '' } = {}) {
             return;
         }
         console.error('[Meower] refresh failed', error);
-        report(error.message || 'The refresh failed. Try again.', 'error');
+        report(error.message || 'The refresh did not finish. Try again.', 'error');
     } finally {
         if (runs === refreshRuns && isLive(epoch)) {
             state.busy = false;

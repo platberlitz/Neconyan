@@ -12,7 +12,7 @@ export default async function corsProxyMiddleware(req, res) {
     // Disallow circular requests
     const serverUrl = req.protocol + '://' + req.get('host');
     if (url.startsWith(serverUrl)) {
-        return res.status(400).send('Circular requests are not allowed');
+        return res.status(400).send('This request would loop back to Neconyan itself, so it was blocked.');
     }
 
     try {

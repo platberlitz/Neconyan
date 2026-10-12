@@ -704,7 +704,7 @@ router.post('/status', requireAdminMiddleware, async (request, response) => {
         });
     } catch (error) {
         console.error('Failed to get server admin status.', error);
-        response.status(500).json({ error: error.message || 'Failed to get server status.' });
+        response.status(500).json({ error: error.message || 'Could not load the server status.' });
     }
 });
 
@@ -719,7 +719,7 @@ router.post('/config/get', requireAdminMiddleware, async (_request, response) =>
         });
     } catch (error) {
         console.error('Failed to read config.yaml.', error);
-        response.status(error.status || 500).json({ error: error.message || 'Failed to read config.yaml.' });
+        response.status(error.status || 500).json({ error: error.message || 'Could not read config.yaml.' });
     }
 });
 
@@ -730,7 +730,7 @@ router.post('/config/save', requireAdminMiddleware, async (request, response) =>
         const expectedLastModifiedMs = Number(request.body?.expectedLastModifiedMs);
 
         if (!content.trim()) {
-            return response.status(400).json({ error: 'Config content cannot be empty.' });
+            return response.status(400).json({ error: 'The config file cannot be saved empty.' });
         }
 
         const { configPath, stat } = readConfigDocument();
@@ -767,7 +767,7 @@ router.post('/config/save', requireAdminMiddleware, async (request, response) =>
         });
     } catch (error) {
         console.error('Failed to save config.yaml.', error);
-        response.status(error.status || 500).json({ error: error.message || 'Failed to save config.yaml.' });
+        response.status(error.status || 500).json({ error: error.message || 'Could not save config.yaml.' });
     }
 });
 
@@ -782,7 +782,7 @@ router.post('/config/chat-completions/get', requireAdminMiddleware, async (_requ
         });
     } catch (error) {
         console.error('Failed to read chat completions config settings.', error);
-        response.status(error.status || 500).json({ error: error.message || 'Failed to read chat completions config settings.' });
+        response.status(error.status || 500).json({ error: error.message || 'Could not read the chat completion settings.' });
     }
 });
 
@@ -821,7 +821,7 @@ router.post('/config/chat-completions/save', requireAdminMiddleware, async (requ
         });
     } catch (error) {
         console.error('Failed to save chat completions config settings.', error);
-        response.status(error.status || 500).json({ error: error.message || 'Failed to save chat completions config settings.' });
+        response.status(error.status || 500).json({ error: error.message || 'Could not save the chat completion settings.' });
     }
 });
 
@@ -851,7 +851,7 @@ router.post('/config/thumbnail-settings/get', requireAdminMiddleware, async (_re
         });
     } catch (error) {
         console.error('Failed to read thumbnail config settings.', error);
-        response.status(error.status || 500).json({ error: error.message || 'Failed to read thumbnail config settings.' });
+        response.status(error.status || 500).json({ error: error.message || 'Could not read the thumbnail settings.' });
     }
 });
 
@@ -887,7 +887,7 @@ router.post('/config/thumbnail-settings/save', requireAdminMiddleware, async (re
         });
     } catch (error) {
         console.error('Failed to save thumbnail config settings.', error);
-        response.status(error.status || 500).json({ error: error.message || 'Failed to save thumbnail config settings.' });
+        response.status(error.status || 500).json({ error: error.message || 'Could not save the thumbnail settings.' });
     }
 });
 
@@ -901,7 +901,7 @@ router.post('/thumbnails/clear-cache', requireAdminMiddleware, async (request, r
         });
     } catch (error) {
         console.error('Failed to clear thumbnail cache.', error);
-        response.status(error.status || 500).json({ error: error.message || 'Failed to clear thumbnail cache.' });
+        response.status(error.status || 500).json({ error: error.message || 'Could not clear the thumbnail cache.' });
     }
 });
 
@@ -913,7 +913,7 @@ router.post('/logs', requireAdminMiddleware, async (request, response) => {
         response.json(getServerLogSnapshot({ limit, afterId }));
     } catch (error) {
         console.error('Failed to read server console logs.', error);
-        response.status(500).json({ error: error.message || 'Failed to read server console logs.' });
+        response.status(500).json({ error: error.message || 'Could not read the server log.' });
     }
 });
 
@@ -991,7 +991,7 @@ router.post('/server-plugins/apply-release', requireAdminMiddleware, async (requ
         }
         console.error('Failed to apply server plugin release.', error);
         return response.status(error.status || 500).json({
-            error: error.message || 'Failed to apply server plugin release.',
+            error: error.message || 'Could not install the server plugin update.',
             code: error.code || 'server_plugin_update_failed',
         });
     }
@@ -1008,7 +1008,7 @@ router.post('/restart', requireAdminMiddleware, async (_request, response) => {
         });
     } catch (error) {
         console.error('Failed to restart server.', error);
-        response.status(500).json({ error: error.message || 'Failed to restart server.' });
+        response.status(500).json({ error: error.message || 'Could not restart the server. Try again in a moment.' });
     }
 });
 
@@ -1020,7 +1020,7 @@ router.post('/zip-update', requireAdminMiddleware, async (_request, response) =>
         const repository = await getRepositoryStatus();
 
         if (repository.isRepo) {
-            return response.status(400).json({ error: 'This install is a Git checkout. Use the Git update path instead.', repository });
+            return response.status(400).json({ error: 'This copy of Neconyan was set up with Git (a tool that tracks code changes), so update it through Git.', repository });
         }
 
         const release = await getLatestZipReleaseStatus(version.pkgVersion);
@@ -1035,7 +1035,7 @@ router.post('/zip-update', requireAdminMiddleware, async (_request, response) =>
         }
 
         if (!release.checked) {
-            return response.status(502).json({ error: release.message || 'Failed to check GitHub releases.', release });
+            return response.status(502).json({ error: release.message || 'Could not check GitHub for new releases. Try again later.', release });
         }
 
         if (!release.canUpdate) {
@@ -1070,7 +1070,7 @@ router.post('/zip-update', requireAdminMiddleware, async (_request, response) =>
             fs.rmSync(stagedUpdate.stagingRoot, { recursive: true, force: true });
         }
         console.error('Failed to start ZIP update.', error);
-        response.status(500).json({ error: error.message || 'Failed to start ZIP update.' });
+        response.status(500).json({ error: error.message || 'Could not start the ZIP update.' });
     }
 });
 
@@ -1081,7 +1081,7 @@ router.post('/update', requireAdminMiddleware, async (_request, response) => {
         const repository = await getRepositoryStatus({ refresh: true });
 
         if (!repository.supported) {
-            return response.status(400).json({ error: repository.message || 'Git updates are unavailable in this environment.' });
+            return response.status(400).json({ error: repository.message || 'Git updates are not available on this server.' });
         }
 
         if (!repository.isRepo) {
@@ -1089,7 +1089,7 @@ router.post('/update', requireAdminMiddleware, async (_request, response) => {
         }
 
         if (!repository.trackingBranch) {
-            return response.status(409).json({ error: repository.message || 'This branch is not tracking an upstream remote.', repository });
+            return response.status(409).json({ error: repository.message || 'This branch is not linked to a remote copy of the code, so it cannot be updated automatically.', repository });
         }
 
         const autoStash = getConfigValue('autoStashBeforePull', false, 'boolean');
@@ -1098,7 +1098,7 @@ router.post('/update', requireAdminMiddleware, async (_request, response) => {
 
         if (repository.hasLocalChanges) {
             if (!autoStash) {
-                return response.status(409).json({ error: repository.message || 'Local changes are present, so auto-update is blocked.', repository });
+                return response.status(409).json({ error: repository.message || 'This copy has local changes, so the automatic update was stopped.', repository });
             }
             try {
                 await git.stash(['push', '-u', '-m', 'Neconyan auto-stash before update']);
@@ -1106,7 +1106,7 @@ router.post('/update', requireAdminMiddleware, async (_request, response) => {
                 console.info('Local changes, including untracked files, stashed before update.');
             } catch (stashError) {
                 console.error('Failed to stash local changes.', stashError);
-                return response.status(500).json({ error: 'Failed to stash local changes: ' + stashError.message });
+                return response.status(500).json({ error: 'Could not set aside your local changes. The update was not started.' });
             }
         }
 
@@ -1114,7 +1114,7 @@ router.post('/update', requireAdminMiddleware, async (_request, response) => {
             if (stashed) {
                 stashPopWarning = await restoreAutoStash(git, { reason: 'after diverged-branch update stop' });
             }
-            return response.status(409).json({ error: repository.message || 'This branch has diverged from upstream.', repository, stashed, stashPopWarning });
+            return response.status(409).json({ error: repository.message || 'This copy and the remote copy have different changes, so it cannot be updated automatically.', repository, stashed, stashPopWarning });
         }
 
         if (repository.behind === 0) {
@@ -1180,7 +1180,7 @@ router.post('/update', requireAdminMiddleware, async (_request, response) => {
             stashPopWarning = await restoreAutoStash(git, { reason: 'after update failure' });
         }
         response.status(500).json({
-            error: error.message || 'Failed to update Neconyan.',
+            error: error.message || 'Could not update Neconyan.',
             stashed,
             stashPopWarning,
         });
@@ -1190,7 +1190,7 @@ router.post('/update', requireAdminMiddleware, async (_request, response) => {
 router.post('/branches', requireAdminMiddleware, async (_request, response) => {
     try {
         if (!commandExistsSync('git')) {
-            return response.status(400).json({ error: 'Git is not available in this environment.' });
+            return response.status(400).json({ error: 'Git (a tool that tracks code changes) is not installed on this server.' });
         }
 
         const git = simpleGit({ baseDir: serverDirectory, ...GIT_OPTIONS });
@@ -1217,7 +1217,7 @@ router.post('/branches', requireAdminMiddleware, async (_request, response) => {
         });
     } catch (error) {
         console.error('Failed to list branches.', error);
-        response.status(500).json({ error: error.message || 'Failed to list branches.' });
+        response.status(500).json({ error: error.message || 'Could not load the branch list.' });
     }
 });
 
@@ -1227,11 +1227,11 @@ router.post('/switch-branch', requireAdminMiddleware, async (request, response) 
         const autoStash = Boolean(request.body?.autoStash);
 
         if (!branch) {
-            return response.status(400).json({ error: 'Branch name is required.' });
+            return response.status(400).json({ error: 'Choose a branch first.' });
         }
 
         if (!commandExistsSync('git')) {
-            return response.status(400).json({ error: 'Git is not available in this environment.' });
+            return response.status(400).json({ error: 'Git (a tool that tracks code changes) is not installed on this server.' });
         }
 
         const git = simpleGit({ baseDir: serverDirectory, ...GIT_OPTIONS });
@@ -1247,7 +1247,7 @@ router.post('/switch-branch', requireAdminMiddleware, async (request, response) 
 
         if (hasLocalChanges && !autoStash) {
             return response.status(400).json({
-                error: 'You have local changes. Enable auto-stash or commit/discard your changes first.',
+                error: 'You have local changes. Turn on auto-stash (sets them aside during the switch), or save or discard them first.',
                 hasLocalChanges: true,
                 changedFiles: gitStatus.files.slice(0, 10).map(f => f.path),
             });
@@ -1302,6 +1302,6 @@ router.post('/switch-branch', requireAdminMiddleware, async (request, response) 
         });
     } catch (error) {
         console.error('Failed to switch branch.', error);
-        response.status(500).json({ error: error.message || 'Failed to switch branch.' });
+        response.status(500).json({ error: error.message || 'Could not switch branch.' });
     }
 });

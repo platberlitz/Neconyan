@@ -37,7 +37,7 @@ describe('bundled third-party extensions', () => {
 
         expect(rejectBundledThirdPartyExtension('ChatCompletionTabs', response, 'deleted')).toBe(true);
         expect(response.status).toHaveBeenCalledWith(400);
-        expect(response.send).toHaveBeenCalledWith(expect.stringContaining('ChatCompletionTabs is included with Neconyan'));
+        expect(response.send).toHaveBeenCalledWith(expect.stringContaining('ChatCompletionTabs comes with Neconyan'));
     });
 
     test('rejects case-variant updater mutations for bundled third-party extensions', () => {
@@ -48,7 +48,7 @@ describe('bundled third-party extensions', () => {
 
         expect(rejectBundledThirdPartyExtension('chatcompletiontabs', response, 'deleted')).toBe(true);
         expect(response.status).toHaveBeenCalledWith(400);
-        expect(response.send).toHaveBeenCalledWith(expect.stringContaining('chatcompletiontabs is included with Neconyan'));
+        expect(response.send).toHaveBeenCalledWith(expect.stringContaining('chatcompletiontabs comes with Neconyan'));
     });
 });
 

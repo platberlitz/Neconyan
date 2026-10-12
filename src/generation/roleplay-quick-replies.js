@@ -52,12 +52,12 @@ function boundCommands(directories, policy, actions) {
         const selected = found.get(getQuickReplySetNameKey(action.set));
         if (!set || !selected || set.rawHash !== selected.file.rawHash
             || roleplayHash(set.physical) !== roleplayHash(selected.file.physical)) {
-            throw fail('A linked Quick Reply set changed after admission.', 'ROLEPLAY_QUICK_REPLY_SOURCE_CHANGED');
+            throw fail('A linked Quick Reply set changed after the request was accepted.', 'ROLEPLAY_QUICK_REPLY_SOURCE_CHANGED');
         }
         const items = selected.value.version === 2 ? selected.value.qrList : selected.value.quickReplySlots;
         const item = selected.value.version === 2 ? items?.find(entry => entry.id === action.id) : items?.[action.id - 1];
         if (!item || roleplayHash(item) !== action.scriptHash || item.automationId !== action.automationId) {
-            throw fail('A linked Quick Reply script changed after admission.', 'ROLEPLAY_QUICK_REPLY_SOURCE_CHANGED');
+            throw fail('A linked Quick Reply script changed after the request was accepted.', 'ROLEPLAY_QUICK_REPLY_SOURCE_CHANGED');
         }
         return { action, command: parseCommand(item, selected.value.disableSend === true) };
     });
@@ -140,7 +140,7 @@ export function assertRoleplayQuickReplyProof(directories, job, records, output)
         expected[change.key] = change.after;
     }
     if (roleplayHash(expected) !== roleplayHash(stored.local)) {
-        throw fail('The saved Quick Reply variables differ from the accepted actions.', 'ROLEPLAY_QUICK_REPLY_RECOVERY');
+        throw fail('The saved Quick Reply variables differ from the actions that were accepted.', 'ROLEPLAY_QUICK_REPLY_RECOVERY');
     }
     for (const change of stored.changes) {
         records[0].chat_metadata ??= {};

@@ -764,7 +764,7 @@ async function copyReasoning(text) {
         }
         const outcome = await result;
         if (outcome === false || (!clipboard && !copied && outcome !== true)) {
-            throw new Error('The browser did not confirm the copy.');
+            throw new Error('Your browser did not confirm the copy. Try again.');
         }
         api.toast('success', 'Reasoning copied.');
     } catch (error) {

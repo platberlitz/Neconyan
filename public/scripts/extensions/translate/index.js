@@ -273,7 +273,7 @@ async function onTranslateChatClick() {
         await translateSaved({ mode: 'chat' });
     } catch (error) {
         console.log(error);
-        toastr.error('Failed to translate chat');
+        toastr.error('Could not translate the chat. Try again.');
     } finally {
         translateChatExecuting = false;
     }

@@ -1271,7 +1271,7 @@ async function generateStreamCallback(args, value) {
         }
 
         if (!effectiveProfileId) {
-            toastr.error(t`No connection profile specified or selected. Use profile= argument or select a profile in Connection Manager.`);
+            toastr.error(t`No connection profile chosen. Pick one in Connection Manager, or add profile= to the command.`);
             return '';
         }
 
@@ -1388,14 +1388,14 @@ async function generateStreamCallback(args, value) {
         }
 
         if (!finalText) {
-            toastr.warning(t`Generation returned empty result`);
+            toastr.warning(t`The connection sent back an empty reply.`);
             return '';
         }
 
         return buildResultText();
     } catch (err) {
         console.error('Error on /genstream generation', err);
-        toastr.error(err.message, t`API Error`, { preventDuplicates: true });
+        toastr.error(err.message, t`Could not get a reply`, { preventDuplicates: true });
         return '';
     } finally {
         if (lock) {

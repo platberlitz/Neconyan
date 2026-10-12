@@ -629,7 +629,7 @@ describe('companion dashboard', () => {
 
         runner.retryFailedCompanionsOnMessage.mockResolvedValueOnce([{ status: 'error', error: 'Request failed' }]);
         await view.click('retry-failed');
-        expect(globalThis.toastr.warning).toHaveBeenLastCalledWith('1 companion failed again. Check the connection, then retry.');
+        expect(globalThis.toastr.warning).toHaveBeenLastCalledWith('1 companion failed again. Check your connection, then try again.');
 
         retryableCompanionAgents = [];
         await view.click('retry-failed');

@@ -38,7 +38,7 @@ async function submitDeepSwipeWorkflow(name, { instruction, messageId }) {
     try {
         await workflows.submitRoleplayWorkflow({ name, intent: { instruction: text }, page, messageIndex: messageId });
     } catch (submitError) {
-        toastr.error(String(submitError?.message || submitError), 'Deep Swipe');
+        toastr.error(String(submitError?.message || 'Deep Swipe could not send this request. Try again.'), 'Deep Swipe');
     }
     return true;
 }
@@ -152,8 +152,8 @@ export async function generateMessageSwipe(message, messageId, context, isUserMe
     const promptInspectorEnabled = localStorage.getItem('promptInspectorEnabled') === 'true';
     if (promptInspectorEnabled) {
         toastr.error(
-            'Deep Swipe generation is disabled while Prompt Inspector is enabled.\n\n' +
-            'Please disable Prompt Inspector (click "Stop Inspecting" in the wand menu) to use Deep Swipe generation.',
+            'Deep Swipe cannot run while Prompt Inspector is on.\n\n' +
+            'Turn it off by clicking "Stop Inspecting" in the wand menu, then try again.',
             'Deep Swipe Blocked',
             { timeOut: 0, extendedTimeOut: 0, closeButton: true }
         );
@@ -165,7 +165,7 @@ export async function generateMessageSwipe(message, messageId, context, isUserMe
     const chat = context.chat;
 
     if (isUserMessage && !impersonationPrompt) {
-        toastr.warning('Please configure an impersonation prompt first to generate user message swipes.', 'Deep Swipe');
+        toastr.warning('Set an impersonation prompt in the Deep Swipe settings first, so it can write swipes for your messages.', 'Deep Swipe');
         return;
     }
 
@@ -949,7 +949,7 @@ export async function generateMessageSwipe(message, messageId, context, isUserMe
             }
 
             // Warn user about potential corruption
-            toastr.error('Generation was cancelled by another extension. Chat may be in an inconsistent state. Please refresh if you notice issues.', 'Deep Swipe Warning');
+            toastr.error('Another extension stopped this swipe. The chat may be out of order, so reload the page if anything looks wrong.', 'Deep Swipe Warning');
             throw err;
         }
 
@@ -1045,7 +1045,7 @@ export async function dswipeBack(args, messageId) {
     const chat = context.chat;
 
     if (!isValidMessageId(messageId, chat)) {
-        toastr.error(`Invalid message ID: ${messageId}`, 'Deep Swipe');
+        toastr.error(`Message ${messageId} could not be found in this chat.`, 'Deep Swipe');
         return 'Invalid message ID';
     }
 
@@ -1125,7 +1125,7 @@ export async function dswipeForward(args, messageId) {
     const chat = context.chat;
 
     if (!isValidMessageId(messageId, chat)) {
-        toastr.error(`Invalid message ID: ${messageId}`, 'Deep Swipe');
+        toastr.error(`Message ${messageId} could not be found in this chat.`, 'Deep Swipe');
         return 'Invalid message ID';
     }
 

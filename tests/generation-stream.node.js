@@ -111,7 +111,7 @@ test('native streaming publishes the first text before the provider completes', 
     await assert.rejects(runBackendRequest({}, (_request, response) => {
         response.write(event({ choices: [{ delta: { content: 'Unfinished' } }] }));
         response.end();
-    }, { stream: true }, { onStream: value => updates.push(value) }), /without a complete reply/);
+    }, { stream: true }, { onStream: value => updates.push(value) }), /ended the reply before it was finished/);
     assert.equal(updates[0].text, 'Unfinished');
 });
 
@@ -154,16 +154,16 @@ test('native streaming preserves a UTF-8 character split across network chunks',
 
 test('incomplete and malformed provider streams are never completed', async () => {
     const handler = (_, response) => { response.write(event({ choices: [{ delta: { content: 'partial' } }] })); response.end(); };
-    await assert.rejects(runBackendRequest({}, handler, { stream: true }), /without a complete reply/);
-    assert.throws(() => assembleGenerationStream('data: {invalid}\n\ndata: [DONE]\n\n'), /invalid event/);
+    await assert.rejects(runBackendRequest({}, handler, { stream: true }), /ended the reply before it was finished/);
+    assert.throws(() => assembleGenerationStream('data: {invalid}\n\ndata: [DONE]\n\n'), /could not be read/);
     assert.throws(() => assembleGenerationStream('data: {"error":"provider refused"}\n\ndata: [DONE]\n\n'), /rejected/);
-    assert.throws(() => assembleGenerationStream(event({ choices: [{ delta: { content: 'A'.repeat(MAX_GENERATION_TEXT_BYTES + 1) } }] }) + 'data: [DONE]\n\n'), /text limit/);
+    assert.throws(() => assembleGenerationStream(event({ choices: [{ delta: { content: 'A'.repeat(MAX_GENERATION_TEXT_BYTES + 1) } }] }) + 'data: [DONE]\n\n'), /2 MB limit/);
     assert.throws(() => assembleGenerationStream(event({ choices: [{ delta: { content: 'Partial' }, finish_reason: 'stop' }] })
         + 'event: error\ndata: {"message":"provider failed"}\n\n'), /rejected/);
     assert.throws(() => assembleGenerationStream(event({ choices: [{ delta: { content: 'Partial' }, finish_reason: 'stop' }] })
         + 'data: [DONE]\n\nevent: error\ndata: {"message":"provider failed"}\n\n'), /rejected/);
     assert.throws(() => assembleGenerationStream(event({ choices: [{ delta: { content: 'Final' }, finish_reason: 'stop' }] })
-        + 'data: [DONE]\n\n' + event({ choices: [{ delta: { content: ' late output' } }] })), /after completion/);
+        + 'data: [DONE]\n\n' + event({ choices: [{ delta: { content: ' late output' } }] })), /extra text after the reply had finished/);
 });
 
 test('a provider that ignores stream: true can still answer with one complete JSON reply', async () => {
@@ -173,7 +173,7 @@ test('a provider that ignores stream: true can still answer with one complete JS
     await assert.rejects(runBackendRequest({}, (_, response) => response.end(JSON.stringify({ error: { message: 'Quota spent.' } })), { stream: true }),
         /Quota spent/);
     await assert.rejects(runBackendRequest({}, (_, response) => response.end(JSON.stringify(reply).slice(0, 40)), { stream: true }),
-        /without a complete reply/);
+        /ended the reply before it was finished/);
 });
 
 test('an upstream error after a completion marker does not commit a partial result', async () => {
@@ -200,7 +200,7 @@ test('a Responses API stream without its completion event is refused', async () 
 test('the capture refuses an oversized streamed response before saving it', async () => {
     const handler = async (request, response) => forwardFetchResponse({ ok: true, status: 200, statusText: 'OK',
         body: Readable.from([event({ choices: [{ delta: { content: 'A'.repeat(MAX_GENERATION_TEXT_BYTES + 1) } }] })]) }, response, request);
-    await assert.rejects(runBackendRequest({}, handler, { stream: true }), /text limit/);
+    await assert.rejects(runBackendRequest({}, handler, { stream: true }), /2 MB limit/);
     const parser = createGenerationStream();
     const capture = createCapturingResponse({ stream: true });
     const keepalive = ':' + ' '.repeat(1024 * 1024 - 3) + '\n\n';
@@ -208,7 +208,7 @@ test('the capture refuses an oversized streamed response before saving it', asyn
         parser.push(keepalive);
         assert.equal(capture.write(keepalive), true);
     }
-    assert.throws(() => parser.push(':\n\n'), /64 MiB transport limit/);
+    assert.throws(() => parser.push(':\n\n'), /64 MB size limit/);
     assert.equal(capture.write(':\n\n'), false);
     assert.match(capture.streamError.message, /64 MiB transport limit/);
     assert.equal(capture.writableEnded, true);

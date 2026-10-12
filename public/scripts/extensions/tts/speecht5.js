@@ -95,7 +95,7 @@ class SpeechT5TtsProvider {
         $('#speecht5_tts_speaker_upload').on('change', async (event) => {
             const file = event.target.files[0];
             if (file.size != 2048) {
-                toastr.error('Invalid speaker file size, expected 2048 bytes');
+                toastr.error('The speaker file is the wrong size. It must be exactly 2048 bytes.');
                 return;
             }
 
@@ -186,7 +186,7 @@ class SpeechT5TtsProvider {
         );
 
         if (!response.ok) {
-            toastr.error(response.statusText, 'TTS Generation Failed');
+            toastr.error('The speech service could not make audio. Check the TTS settings, then try again.', 'TTS Generation Failed');
             throw new Error(`HTTP ${response.status}: ${await response.text()}`);
         }
 

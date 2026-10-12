@@ -1216,7 +1216,7 @@ function registerWorldInfoSlashCommands() {
 
     async function getEntriesFromFile(file, { args = {}, unnamed = null, callbackName = 'getEntriesFromFile' } = {}) {
         if (!file || !world_names.includes(file)) {
-            toastr.warning(t`Valid World Info file name is required`);
+            toastr.warning(t`Enter a name for the lorebook`);
             logSlashCommandWarn(`${callbackName}: Valid World Info file name is required`, args, unnamed);
             return '';
         }
@@ -1224,7 +1224,7 @@ function registerWorldInfoSlashCommands() {
         const data = await loadWorldInfo(file);
 
         if (!data || !('entries' in data)) {
-            toastr.warning(t`World Info file has an invalid format`);
+            toastr.warning(t`That file is not a lorebook file. Choose a lorebook file and try again.`);
             logSlashCommandWarn(`${callbackName}: World Info file has an invalid format`, args, unnamed);
             return '';
         }
@@ -1232,7 +1232,7 @@ function registerWorldInfoSlashCommands() {
         const entries = Object.values(data.entries);
 
         if (!entries || entries.length === 0) {
-            toastr.warning(t`World Info file has no entries`);
+            toastr.warning(t`That lorebook file has no entries`);
             logSlashCommandWarn(`${callbackName}: World Info file has no entries`, args, unnamed);
             return '';
         }
@@ -1418,7 +1418,7 @@ function registerWorldInfoSlashCommands() {
         const entry = entries.find(x => String(x.uid) === String(uid));
 
         if (!entry) {
-            toastr.warning('Valid UID is required');
+            toastr.warning('An entry number (UID) is required');
             logSlashCommandWarn('getEntryFieldCallback: Valid UID is required', args, { uid });
             console.warn();
             return '';
@@ -1474,7 +1474,7 @@ function registerWorldInfoSlashCommands() {
         const data = await loadWorldInfo(file);
 
         if (!data || !('entries' in data)) {
-            toastr.warning('Valid World Info file name is required');
+            toastr.warning('Enter a name for the lorebook');
             logSlashCommandWarn('createEntryCallback: Valid World Info file name is required', args);
             return '';
         }
@@ -1534,7 +1534,7 @@ function registerWorldInfoSlashCommands() {
         const data = await loadWorldInfo(file);
 
         if (!data || !('entries' in data)) {
-            toastr.warning('Valid World Info file name is required');
+            toastr.warning('Enter a name for the lorebook');
             logSlashCommandWarn('setEntryFieldCallback: Valid World Info file name is required', args, { value });
             return '';
         }
@@ -1542,7 +1542,7 @@ function registerWorldInfoSlashCommands() {
         const entry = data.entries[uid];
 
         if (!entry) {
-            toastr.warning('Valid UID is required');
+            toastr.warning('An entry number (UID) is required');
             logSlashCommandWarn('setEntryFieldCallback: Valid UID is required', args, { value });
             return '';
         }
@@ -1633,7 +1633,7 @@ function registerWorldInfoSlashCommands() {
         const entry = structuredClone(entries.find(x => String(x.uid) === String(uid)));
 
         if (!entry) {
-            toastr.warning('Valid UID is required');
+            toastr.warning('An entry number (UID) is required');
             logSlashCommandWarn('getTimedEffectCallback: Valid UID is required', args, { uid });
             return '';
         }
@@ -1682,7 +1682,7 @@ function registerWorldInfoSlashCommands() {
         const entry = structuredClone(entries.find(x => String(x.uid) === String(uid)));
 
         if (!entry) {
-            toastr.warning('Valid UID is required');
+            toastr.warning('An entry number (UID) is required');
             logSlashCommandWarn('setTimedEffectCallback: Valid UID is required', args, { value });
             return '';
         }
@@ -5110,7 +5110,7 @@ export async function saveWorldInfo(name, data, immediately = false, { revision 
         // Another writer's draft must reach disk even if this replacement snapshot fails.
         _save(name, pending.data, { snapshot: pending.snapshot, revision: pending.revision }).catch(error => {
             console.error(`Failed to save World Info ${name}:`, error);
-            toastr.error(String(error), t`World Info Save Failed`);
+            toastr.error(String(error), t`Could not save the lorebook`);
         });
     } else if (pending) {
         pending.snapshot.cancelled = true;
@@ -5133,7 +5133,7 @@ export async function saveWorldInfo(name, data, immediately = false, { revision 
         pendingWorldInfoSaves.delete(name);
         _save(name, data, { snapshot, revision }).catch(error => {
             console.error(`Failed to save World Info ${name}:`, error);
-            toastr.error(String(error), t`World Info Save Failed`);
+            toastr.error(String(error), t`Could not save the lorebook`);
         });
     }, debounce_timeout.relaxed);
     pendingWorldInfoSaves.set(name, { timer, data, snapshot, revision });
@@ -5211,7 +5211,7 @@ async function renameWorldInfo(name, data) {
         return;
     }
     if (world_names.some(worldName => equalsIgnoreCaseAndAccents(worldName, newName))) {
-        toastr.warning(t`Name not accepted, as a World Info with that name already exists.`, t`Rename World Info`);
+        toastr.warning(t`Name not accepted, as a lorebook with that name already exists.`, t`Rename World Info`);
         return;
     }
 
@@ -5232,7 +5232,7 @@ async function renameWorldInfo(name, data) {
             body: JSON.stringify({ oldName, newName, data, revision }),
         });
         if (!response.ok) {
-            toastr.error(t`World Info could not be renamed.`, t`Rename World Info`);
+            toastr.error(t`The lorebook could not be renamed. Try again.`, t`Rename World Info`);
             return;
         }
         saveTarget = newName;
@@ -5370,7 +5370,7 @@ async function updateWorldInfoLinks(oldName, newName) {
 
                 toastr.success(`Successfully updated link for ${character.name}.`);
             } catch (e) {
-                toastr.error(`Failed to update link for ${character.name}.`);
+                toastr.error(`Could not update link for ${character.name}.`);
                 console.error(`Backend update for character ${character.name} failed:`, e);
             }
         }
@@ -5991,7 +5991,7 @@ export async function checkWorldInfo(chat, maxContext, isDryRun, globalScanData 
                     console.debug('[WI] --- BUDGET OVERFLOW CHECK ---');
                     if (world_info_overflow_alert) {
                         console.warn(`[WI] budget of ${budget} reached, stopping after ${allActivatedEntries.size} entries`);
-                        toastr.warning(`World info budget reached after ${allActivatedEntries.size} entries.`, 'World Info');
+                        toastr.warning(`Lorebook size limit reached after ${allActivatedEntries.size} entries.`, 'World Info');
                     } else {
                         console.debug(`[WI] budget of ${budget} reached, stopping after ${allActivatedEntries.size} entries`);
                     }
@@ -6763,7 +6763,7 @@ export function onWorldInfoChange(args, text) {
                                 wiElement.prop('selected', false);
                                 if (!silent) toastr.success(t`Deactivated world: ${name}`);
                             } else {
-                                if (!silent) toastr.error(t`World was not active: ${name}`);
+                                if (!silent) toastr.error(t`The lorebook ${name} is not active`);
                             }
                             break;
                         }
@@ -6787,7 +6787,7 @@ export function onWorldInfoChange(args, text) {
                         }
                     }
                 } else {
-                    if (!silent) toastr.error(t`No world found named: ${worldName}`);
+                    if (!silent) toastr.error(t`No lorebook is named ${worldName}`);
                 }
             });
             $('#world_info').trigger('change');
@@ -6808,7 +6808,7 @@ export function onWorldInfoChange(args, text) {
                 } else {
                     const wiElement = getWIElement(existingWorldName);
                     wiElement.prop('selected', false);
-                    toastr.error(t`The world with ${existingWorldName} is invalid or corrupted.`);
+                    toastr.error(t`The lorebook ${existingWorldName} is damaged and cannot be read.`);
                 }
             });
         }
@@ -6918,7 +6918,7 @@ export async function importWorldInfo(file, { notify = true } = {}) {
         }
 
         if (jsonData === undefined || jsonData === null) {
-            if (notify) toastr.error(t`File is not valid: ${file.name}`);
+            if (notify) toastr.error(t`This is not a valid lorebook file: ${file.name}`);
             return { status: 'failed', reason: t`The file is not valid.` };
         }
 
@@ -6954,7 +6954,7 @@ export async function importWorldInfo(file, { notify = true } = {}) {
             throw new Error('Unsupported World Info format');
         }
     } catch (error) {
-        if (notify) toastr.error(`Error parsing file: ${error}`);
+        if (notify) toastr.error(`Could not read the file: ${error}`);
         return { status: 'failed', reason: `${t`Error parsing file`}: ${String(error.message || error)}` };
     }
 
@@ -7019,7 +7019,7 @@ export async function importWorldInfo(file, { notify = true } = {}) {
         }
     } catch (error) {
         console.error('Error importing world info:', error);
-        if (notify) toastr.error(t`Failed to import World Info`);
+        if (notify) toastr.error(t`Could not import the lorebook. Check the file and try again.`);
         return { status: 'failed', reason: `${t`Failed to import lorebook`}: ${String(error.message || error)}` };
     } finally {
         releaseSaveBlock(saveTarget);
@@ -7119,12 +7119,12 @@ export async function moveWorldInfoEntry(sourceName, targetName, uid, { deleteOr
         const targetData = await loadWorldInfo(targetName);
 
         if (!sourceData || !sourceData.entries) {
-            toastr.error(t`Failed to load data for source lorebook '${sourceName}'.`);
+            toastr.error(t`Could not load data for source lorebook '${sourceName}'.`);
             console.error(`[WI Move] Could not load source data for '${sourceName}'.`);
             return false;
         }
         if (!targetData || !targetData.entries) {
-            toastr.error(t`Failed to load data for target lorebook '${targetName}'.`);
+            toastr.error(t`Could not load data for target lorebook '${targetName}'.`);
             console.error(`[WI Move] Could not load target data for '${targetName}'.`);
             return false;
         }
@@ -7184,7 +7184,7 @@ export async function moveWorldInfoEntry(sourceName, targetName, uid, { deleteOr
 
         return true;
     } catch (error) {
-        toastr.error(t`An unexpected error occurred while moving the entry: ${error.message}`);
+        toastr.error(t`Could not move the entry: ${error.message}`);
         console.error('[WI Move] Unexpected error:', error);
         return false;
     }

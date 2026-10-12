@@ -61,7 +61,7 @@ export class QuickReplyConfig {
             if (newSet) {
                 this.addSet(newSet);
             } else {
-                toastr.warning('All existing QR Sets have already been added.');
+                toastr.warning('All existing quick reply sets have already been added.');
             }
         });
         this.updateSetListDom();

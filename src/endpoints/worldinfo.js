@@ -296,7 +296,7 @@ router.post('/import', authoringRoute((request, response, lease) => {
         const filename = getExistingWorldInfoFilename(request.user.directories, requestedName)
             ?? getWorldInfoFilename(requestedName);
         if (!filename) {
-            return response.status(400).send('World file must have a name');
+            return response.status(400).send('The world info file needs a name.');
         }
 
         assertNativeMediaTargetIdle(lease, { kind: 'lorebook', id: filename });
@@ -307,12 +307,12 @@ router.post('/import', authoringRoute((request, response, lease) => {
                 ? fileContents.replace(/^\uFEFF/, '')
                 : new TextDecoder('utf-8', { fatal: true }).decode(fileContents);
         } catch {
-            return response.status(400).send('Is not a valid world info file');
+            return response.status(400).send('That file is not a valid world info file.');
         }
         const worldContent = tryParse(fileContents);
         if (!isValidWorldInfoData(worldContent)) {
             console.warn(`World Info import rejected: '${requestedName}' is not a valid world info file`);
-            return response.status(400).send('Is not a valid world info file');
+            return response.status(400).send('That file is not a valid world info file.');
         }
         // Books shared before the rename keep Pathfinder and World Info Lab data under the old keys.
         if (migrateLegacyWorldNames(worldContent)) fileContents = JSON.stringify(worldContent, null, 4);
@@ -349,7 +349,7 @@ router.post('/edit', authoringRoute((request, response, lease) => {
     }
 
     if (!request.body.name) {
-        return response.status(400).send('World file must have a name');
+        return response.status(400).send('The world info file needs a name.');
     }
 
     try {
@@ -357,7 +357,7 @@ router.post('/edit', authoringRoute((request, response, lease) => {
             throw new Error('World info must contain an entries list');
         }
     } catch (err) {
-        return response.status(400).send('Is not a valid world info file');
+        return response.status(400).send('That file is not a valid world info file.');
     }
 
     const filename = getExistingWorldInfoFilename(request.user.directories, request.body.name)
@@ -366,7 +366,7 @@ router.post('/edit', authoringRoute((request, response, lease) => {
     const worldName = path.parse(filename).name;
 
     if (!worldName) {
-        return response.status(400).send('World file must have a name');
+        return response.status(400).send('The world info file needs a name.');
     }
 
     assertNativeMediaTargetIdle(lease, { kind: 'lorebook', id: filename });
@@ -392,7 +392,7 @@ router.post('/rename', authoringRoute((request, response, lease) => {
     const newFilename = getWorldInfoFilename(newName);
     const canonicalName = getWorldInfoName(newName);
     if (!oldFilename || !newFilename || getWorldInfoName(oldName) === canonicalName) {
-        return response.status(400).send('World file must have a different name');
+        return response.status(400).send('The new name must be different from the current one.');
     }
 
     const oldPath = path.join(request.user.directories.worlds, oldFilename);

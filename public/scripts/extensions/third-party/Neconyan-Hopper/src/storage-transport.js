@@ -45,7 +45,7 @@ export function createStorageTransport({ request, readJson, localStorage = () =>
 
     async function extensionStore() {
         if (await readFile(`/user/files/${HOST_PLUGIN_MARKER}`, 4096) !== null) {
-            throw new Error('This account has moved to native storage. Restart Neconyan to open its latest history; the older local copy will not be overwritten.');
+            throw new Error('This account now keeps its history on the Neconyan server. Restart Neconyan to open the latest history; the older copy saved in this browser will not be overwritten.');
         }
         const bytes = await readFile(storePath, encodedLimit());
         if (bytes !== null) {
@@ -76,7 +76,7 @@ export function createStorageTransport({ request, readJson, localStorage = () =>
             method, ...(body ? { body: JSON.stringify(body) } : {}),
         });
         if (response.status === 404) {
-            if (mode === 'server') throw new Error('The native Meower storage service is unavailable. Restart Neconyan before saving; local storage was not used.');
+            if (mode === 'server') throw new Error('The Meower storage service on the Neconyan server is unavailable. Restart Neconyan before saving; your changes were not saved in this browser instead.');
             return null;
         }
         const data = await readJson(response, 'Meower storage');
@@ -97,7 +97,7 @@ export function createStorageTransport({ request, readJson, localStorage = () =>
         const binary = [];
         for (let offset = 0; offset < bytes.length; offset += 32768) binary.push(String.fromCharCode(...bytes.subarray(offset, offset + 32768)));
         // Check again after reading/migrating, which can outlast the initial availability check.
-        if (await plugin('GET') !== null) throw new Error('The native Meower storage service is now available. Reload Meower to use shared storage; your pending changes are kept for recovery.');
+        if (await plugin('GET') !== null) throw new Error('The Meower storage service on the Neconyan server is now available. Reload Meower to use it; your unsaved changes are kept in a recovery copy.');
         await signedIn();
         const response = await request('/api/files/upload', {
             method: 'POST', body: JSON.stringify({ name: HOST_STORE_NAME, data: btoa(binary.join('')) }),
@@ -120,7 +120,7 @@ export function createStorageTransport({ request, readJson, localStorage = () =>
         async request(method, body, revision) {
             const shared = await plugin(mode === 'extension' ? 'GET' : method, mode === 'extension' ? undefined : body, revision);
             if (shared !== null) {
-                if (mode === 'extension') throw new Error('The native Meower storage service is now available. Reload Meower to use shared storage; your pending changes are kept for recovery.');
+                if (mode === 'extension') throw new Error('The Meower storage service on the Neconyan server is now available. Reload Meower to use it; your unsaved changes are kept in a recovery copy.');
                 mode = 'server';
                 return shared;
             }

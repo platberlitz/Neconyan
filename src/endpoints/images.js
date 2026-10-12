@@ -26,18 +26,18 @@ router.post('/upload', async (request, response) => {
         const account = request.get('X-Neconyan-Account');
         if (account && account !== request.user.profile.handle) return response.status(409).send({ error: 'account_changed' });
         if (!request.body) {
-            return response.status(400).send({ error: 'No data provided' });
+            return response.status(400).send({ error: 'No data was sent. Try again.' });
         }
 
         const { image, format } = request.body;
 
         if (!image) {
-            return response.status(400).send({ error: 'No image data provided' });
+            return response.status(400).send({ error: 'No image was sent. Try again.' });
         }
 
         const validFormat = MEDIA_EXTENSIONS.includes(format);
         if (!validFormat) {
-            return response.status(400).send({ error: 'Invalid image format' });
+            return response.status(400).send({ error: 'That image is in a format Neconyan cannot save.' });
         }
 
         // Constructing filename and path
@@ -60,7 +60,7 @@ router.post('/upload', async (request, response) => {
         response.send({ path: clientRelativePath(request.user.directories.root, pathToNewFile) });
     } catch (error) {
         console.error(error);
-        response.status(500).send({ error: 'Failed to save the image' });
+        response.status(500).send({ error: 'Could not save the image. Try again.' });
     }
 });
 
@@ -68,7 +68,7 @@ router.post('/list/:folder?', (request, response) => {
     try {
         if (request.params.folder) {
             if (request.body.folder) {
-                return response.status(400).send({ error: 'Folder specified in both URL and body' });
+                return response.status(400).send({ error: 'The folder name was sent twice. Send it once.' });
             }
 
             console.warn('Deprecated: Use POST /api/images/list with folder in request body');
@@ -76,7 +76,7 @@ router.post('/list/:folder?', (request, response) => {
         }
 
         if (!request.body.folder) {
-            return response.status(400).send({ error: 'No folder specified' });
+            return response.status(400).send({ error: 'No folder was chosen.' });
         }
 
         const directoryPath = path.join(request.user.directories.userImages, sanitize(request.body.folder));
@@ -95,7 +95,7 @@ router.post('/list/:folder?', (request, response) => {
         return response.send(images);
     } catch (error) {
         console.error(error);
-        return response.status(500).send({ error: 'Unable to retrieve files' });
+        return response.status(500).send({ error: 'Could not load the files. Try again.' });
     }
 });
 
@@ -113,23 +113,23 @@ router.post('/folders', (request, response) => {
         return response.send(folders);
     } catch (error) {
         console.error(error);
-        return response.status(500).send({ error: 'Unable to retrieve folders' });
+        return response.status(500).send({ error: 'Could not load the folders. Try again.' });
     }
 });
 
 router.post('/delete', async (request, response) => {
     try {
         if (!request.body.path) {
-            return response.status(400).send('No path specified');
+            return response.status(400).send('No file was chosen.');
         }
 
         const pathToDelete = path.join(request.user.directories.root, request.body.path);
         if (!isPathUnderParent(request.user.directories.userImages, pathToDelete)) {
-            return response.status(400).send('Invalid path');
+            return response.status(400).send('That file path is not allowed.');
         }
 
         if (!fs.existsSync(pathToDelete)) {
-            return response.status(404).send('File not found');
+            return response.status(404).send('That file could not be found.');
         }
 
         fs.unlinkSync(pathToDelete);

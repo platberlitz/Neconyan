@@ -555,7 +555,7 @@ export async function openTimeMachine() {
                     : 'The item may have changed. See the console before trying again.';
                 globalThis.toastr?.warning('The restore may have partially completed.');
             } else if (error.code === 'RESTORE_CHANGED' || error.status === 409) {
-                status.textContent = 'The item changed again, so the restore was stopped. Compare and retry.';
+                status.textContent = 'The item changed again, so the restore was stopped. Compare the versions and try again.';
                 globalThis.toastr?.warning('Restore stopped because a newer change was detected.');
                 unpinSnapshots(pinned);
             } else {

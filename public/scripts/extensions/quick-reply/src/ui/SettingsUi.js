@@ -481,7 +481,7 @@ export class SettingsUi {
             }
         } catch (ex) {
             warn(ex);
-            toastr.error(`Failed to import "${file.name}":\n\n${ex.message}`);
+            toastr.error(`Could not import "${file.name}":\n\n${ex.message}`);
         }
     }
 

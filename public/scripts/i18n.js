@@ -287,7 +287,7 @@ async function getMissingTranslations() {
         console.log(trackMissingDynamicTranslateMap);
     }
 
-    toastr.success(`Found ${uniqueMissingData.length} missing translations. See browser console for details.`);
+    toastr.success(`Found ${uniqueMissingData.length} missing translations. Their full list is in the developer console (press F12 to open it).`);
 }
 
 /**

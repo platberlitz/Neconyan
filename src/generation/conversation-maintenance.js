@@ -158,7 +158,7 @@ async function finalizeSummarySubmission(request, job, preparedSnapshot) {
     await retainConversationAutomaticAcceptance(request, job);
     try {
         const snapshot = preparedSnapshot || readArtifact(request.user.directories, job.id, 'request') || await buildSummarySnapshot(request, job);
-        if (job.config?.requestHash && hash(snapshot) !== job.config.requestHash) throw fail('The accepted summary request changed during preparation.', 409);
+        if (job.config?.requestHash && hash(snapshot) !== job.config.requestHash) throw fail('The summary request changed while it was being prepared.', 409);
         await validateMaintenanceSnapshot(request, snapshot, 'summary');
         writeArtifact(request.user.directories, job.id, 'request', snapshot);
     } catch (error) {
@@ -312,7 +312,7 @@ async function buildScheduleSnapshot(request, job) {
 async function finalizeScheduleSubmission(request, job, preparedSnapshot) {
     try {
         const snapshot = preparedSnapshot || readArtifact(request.user.directories, job.id, 'request') || await buildScheduleSnapshot(request, job);
-        if (job.config?.requestHash && hash(snapshot) !== job.config.requestHash) throw fail('The accepted schedule request changed during preparation.', 409);
+        if (job.config?.requestHash && hash(snapshot) !== job.config.requestHash) throw fail('The schedule request changed while it was being prepared.', 409);
         await validateMaintenanceSnapshot(request, snapshot, 'schedule');
         writeArtifact(request.user.directories, job.id, 'request', snapshot);
     } catch (error) {

@@ -225,7 +225,7 @@ describe('server plugin update helper', () => {
             pid: process.ppid,
         }));
 
-        expect(() => recoverInterruptedServerPluginUpdates(fixture.pluginsRoot)).toThrow('Another Neconyan supervisor owns');
+        expect(() => recoverInterruptedServerPluginUpdates(fixture.pluginsRoot)).toThrow('Another copy of Neconyan is already updating');
         expect(fs.existsSync(fixture.lockPath)).toBe(true);
         expect(fs.existsSync(fixture.journalPath)).toBe(true);
     });

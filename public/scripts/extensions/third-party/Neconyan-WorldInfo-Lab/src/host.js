@@ -56,7 +56,7 @@ export async function loadHost() {
                 if (required.length) {
                     return {
                         ok: false,
-                        reason: `World Info Lab is incompatible with this Neconyan build. Missing tools: ${required.join(', ')}.`,
+                        reason: `World Info Lab does not work with this version of Neconyan. Missing parts: ${required.join(', ')}. Update Neconyan to use it.`,
                     };
                 }
                 loaded = {
@@ -74,7 +74,7 @@ export async function loadHost() {
             } catch (error) {
                 return {
                     ok: false,
-                    reason: `World Info Lab could not load Neconyan's lorebook tools. Technical details: ${error?.message ?? error}`,
+                    reason: 'World Info Lab could not load the Neconyan lorebook tools it needs. Reload Neconyan and try again.',
                 };
             }
         })();

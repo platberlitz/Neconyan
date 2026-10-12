@@ -220,7 +220,7 @@ describe('sprite upload failures are not reported as success', () => {
             ? { blob: async () => new Uint8Array() }
             : { ok: false, status: 500 });
         await expect(runtime.uploadSpriteCommand({ name: 'Cat', label: 'joy', folder: 'Cat' }, 'blob:image')).rejects.toThrow('Sprite upload failed');
-        expect(toastr.error).toHaveBeenCalledWith('Failed to upload image');
+        expect(toastr.error).toHaveBeenCalledWith('Could not upload the image. Try again.');
     });
 
     test('an accepted upload still returns the sprite name', async () => {

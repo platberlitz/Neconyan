@@ -220,7 +220,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 393, height: 852 
         await testInfo.attach('sync-geometry', { body: JSON.stringify(geometry), contentType: 'application/json' });
         await popup.screenshot({ path: testInfo.outputPath('obsidian-sync.png') });
         await popup.getByRole('button', { name: 'Stop client', exact: true }).click();
-        await expect(popup).toContainText('Client stopped.', { timeout: 30000 });
+        await expect(popup).toContainText('Obsidian sync stopped.', { timeout: 30000 });
         await popup.getByRole('button', { name: 'Done', exact: true }).click();
         const original = await notesApi(page, '/notes/read', { notebookId: f.notebookId, noteId: f.noteId });
         expect(original.note.text).toBe(f.text);

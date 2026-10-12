@@ -320,18 +320,18 @@ router.post('/caption-image', async (request, response) => {
 
         const candidates = data?.candidates;
         if (!candidates) {
-            return response.status(500).send('No candidates found, image was most likely filtered.');
+            return response.status(500).send('Google sent back no image, most likely because its safety filter blocked the request. Try a different prompt.');
         }
 
         const caption = candidates[0].content.parts[0].text;
         if (!caption) {
-            return response.status(500).send('No caption found');
+            return response.status(500).send('No description was returned. Try again.');
         }
 
         return response.json({ caption });
     } catch (error) {
         console.error(error);
-        response.status(500).send('Internal server error');
+        response.status(500).send('The server could not finish this request. Try again in a moment.');
     }
 });
 
@@ -353,7 +353,7 @@ router.post('/generate-voice', async (request, response) => {
         return response.send(buffer);
     } catch (error) {
         console.error('Google Translate TTS generation failed', error);
-        response.status(500).send('Internal server error');
+        response.status(500).send('The server could not finish this request. Try again in a moment.');
     }
 });
 
@@ -445,7 +445,7 @@ router.post('/generate-native-tts', async (request, response) => {
         const mimeType = audioPart?.inlineData?.mimeType;
 
         if (!audioData) {
-            return response.status(500).json({ error: 'No audio data found in response' });
+            return response.status(500).json({ error: 'The service returned no audio. Try again.' });
         }
 
         const audioBuffer = Buffer.from(audioData, 'base64');
@@ -470,7 +470,7 @@ router.post('/generate-native-tts', async (request, response) => {
     } catch (error) {
         console.error('Google TTS generation failed:', error);
         if (!response.headersSent) {
-            return response.status(500).json({ error: 'Internal server error during TTS generation' });
+            return response.status(500).json({ error: 'Could not generate the speech. Try again in a moment.' });
         }
         return response.end();
     }
@@ -520,7 +520,7 @@ router.post('/generate-image', async (request, response) => {
         if (!result.ok) {
             const errorText = await result.text();
             console.warn(`${apiName} image generation error: ${result.status} ${result.statusText}`, errorText);
-            return response.status(500).send('Image generation request failed');
+            return response.status(500).send('Could not start the image generation. Try again.');
         }
 
         /** @type {any} */
@@ -529,7 +529,7 @@ router.post('/generate-image', async (request, response) => {
 
         if (!imagePart) {
             console.warn(`${apiName} image generation error: No image data found in response`);
-            return response.status(500).send('No image data found in response');
+            return response.status(500).send('The service returned no image. Try again.');
         }
 
         return response.send({ image: imagePart });
@@ -578,7 +578,7 @@ router.post('/generate-video', async (request, response) => {
         if (!videoJobResponse.ok) {
             const errorText = await videoJobResponse.text();
             console.warn(`${apiName} video generation error: ${videoJobResponse.status} ${videoJobResponse.statusText}`, errorText);
-            return response.status(500).send('Video generation request failed');
+            return response.status(500).send('Could not start the video generation. Try again.');
         }
 
         /** @type {any} */
@@ -587,7 +587,7 @@ router.post('/generate-video', async (request, response) => {
 
         if (!videoJobName) {
             console.warn(`${apiName} video generation error: No job name found in response`);
-            return response.status(500).send('No video job name found in response');
+            return response.status(500).send('The service did not return a job to track. Try again.');
         }
 
         console.debug(`${apiName} video job name:`, videoJobName);
@@ -612,7 +612,7 @@ router.post('/generate-video', async (request, response) => {
                 if (!pollResponse.ok) {
                     const errorText = await pollResponse.text();
                     console.warn(`${apiName} video job status error: ${pollResponse.status} ${pollResponse.statusText}`, errorText);
-                    return response.status(500).send('Video job status request failed');
+                    return response.status(500).send('Could not check the video progress. Try again.');
                 }
 
                 /** @type {any} */
@@ -625,7 +625,7 @@ router.post('/generate-video', async (request, response) => {
                     if (!videoData) {
                         const pollDataLog = util.inspect(pollData, { depth: 5, colors: true, maxStringLength: 500 });
                         console.warn(`${apiName} video generation error: No video data found in response`, pollDataLog);
-                        return response.status(500).send('No video data found in response');
+                        return response.status(500).send('The service returned no video. Try again.');
                     }
 
                     return response.send({ video: videoData });
@@ -640,7 +640,7 @@ router.post('/generate-video', async (request, response) => {
                 if (!pollResponse.ok) {
                     const errorText = await pollResponse.text();
                     console.warn(`${apiName} video job status error: ${pollResponse.status} ${pollResponse.statusText}`, errorText);
-                    return response.status(500).send('Video job status request failed');
+                    return response.status(500).send('Could not check the video progress. Try again.');
                 }
 
                 /** @type {any} */
@@ -655,7 +655,7 @@ router.post('/generate-video', async (request, response) => {
                     if (!videoUri) {
                         const pollDataLog = util.inspect(pollData, { depth: 5, colors: true, maxStringLength: 500 });
                         console.warn(`${apiName} video generation error: No video URI found in response`, pollDataLog);
-                        return response.status(500).send('No video URI found in response');
+                        return response.status(500).send('The service returned no video. Try again.');
                     }
 
                     const videoResponse = await fetch(videoUri, {
@@ -665,7 +665,7 @@ router.post('/generate-video', async (request, response) => {
 
                     if (!videoResponse.ok) {
                         console.warn(`${apiName} video fetch error: ${videoResponse.status} ${videoResponse.statusText}`);
-                        return response.status(500).send('Video fetch request failed');
+                        return response.status(500).send('Could not download the finished video. Try again.');
                     }
 
                     const videoData = await videoResponse.arrayBuffer();
@@ -677,7 +677,7 @@ router.post('/generate-video', async (request, response) => {
         }
 
         console.warn(`${apiName} video generation error: Job timed out after multiple attempts`);
-        return response.status(500).send('Video generation timed out');
+        return response.status(500).send('The video took too long and was stopped. Try again.');
     } catch (error) {
         console.error('Google Video generation failed:', error);
         return response.sendStatus(500);

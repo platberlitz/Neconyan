@@ -142,12 +142,12 @@ export class ByafParser {
 
         const characterPath = charactersArray[0];
         if (!characterPath) {
-            throw new Error('Invalid BYAF file: missing character path');
+            throw new Error('This BYAF file does not say which character it contains.');
         }
 
         const characterBuffer = await extractFileFromZipBuffer(this.#data, characterPath);
         if (!characterBuffer) {
-            throw new Error('Invalid BYAF file: failed to extract character JSON');
+            throw new Error('This BYAF file is damaged: its character data could not be read.');
         }
 
         try {
@@ -155,7 +155,7 @@ export class ByafParser {
             return { character, characterPath };
         } catch (error) {
             console.error('Failed to parse character JSON from BYAF:', error);
-            throw new Error('Invalid BYAF file: character is not a valid JSON');
+            throw new Error('This BYAF file is damaged: its character data is not valid.');
         }
     }
 
@@ -310,12 +310,12 @@ export class ByafParser {
     async getManifest() {
         const manifestBuffer = await extractFileFromZipBuffer(this.#data, 'manifest.json');
         if (!manifestBuffer) {
-            throw new Error('Failed to extract manifest.json from BYAF file');
+            throw new Error('This BYAF file is damaged: its details file (manifest.json) could not be read.');
         }
 
         const manifest = JSON.parse(manifestBuffer.toString());
         if (!manifest || typeof manifest !== 'object') {
-            throw new Error('Invalid BYAF manifest');
+            throw new Error('The details file (manifest.json) in this BYAF file is not valid.');
         }
 
         return manifest;

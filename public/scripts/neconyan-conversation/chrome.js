@@ -885,14 +885,14 @@ export function bindConversationChromeControls(sheld) {
                         }
                         toastr.success(`Schedule generated for ${character.name}.`);
                     } else {
-                        toastr.warning('Schedule generation returned no data. Try again.');
+                        toastr.warning('The schedule came back empty. Try again.');
                     }
                 } catch (err) {
                     if (err?.pending) {
                         toastr.info('The schedule is still being written on the server. It appears here when it is saved.');
                     } else {
                         console.error('Schedule generation error:', err);
-                        toastr.error(`Schedule generation failed. ${err?.message || ''}`.trim());
+                        toastr.error(`Could not make the schedule. ${err?.message || ''}`.trim());
                     }
                 } finally {
                     conversationState.scheduleGenerationBusy = false;

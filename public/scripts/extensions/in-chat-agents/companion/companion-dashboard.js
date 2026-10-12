@@ -517,7 +517,7 @@ function reportRetryOutcome(results = []) {
 
     const failedAgain = results.filter(result => result?.status !== 'done' || result?.lastRunError).length;
     if (failedAgain > 0) {
-        toastr.warning(`${countLabel(failedAgain, 'companion')} failed again. Check the connection, then retry.`);
+        toastr.warning(`${countLabel(failedAgain, 'companion')} failed again. Check your connection, then try again.`);
     } else {
         toastr.success(`Retried ${countLabel(results.length, 'companion')}.`);
     }
@@ -597,7 +597,7 @@ async function handleBulkAction(action) {
         if (groups.some(ids => saved.every(agent => ids.includes(agent.id)))) {
             toastr.success(`${countLabel(saved.length, 'companion')} now run in one request.`);
         } else {
-            toastr.warning('Linked, but some of these use a different connection, model or context setting, so they still run in separate requests. Match those settings to share one request.');
+            toastr.warning('Linked, but some use a different connection, model or history length, so they still run in separate requests. Match those settings to run them together.');
         }
         return;
     }

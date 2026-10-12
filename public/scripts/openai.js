@@ -629,7 +629,7 @@ async function validateReverseProxy(signal) {
     try {
         new URL(oai_settings.reverse_proxy);
     } catch (err) {
-        toastr.error(t`Entered reverse proxy address is not a valid URL`);
+        toastr.error(t`The reverse proxy address is not a valid web address`);
         setOnlineStatus('no_connection');
         resultCheckStatus();
         throw err;
@@ -1753,23 +1753,23 @@ export async function prepareOpenAIMessages({
         await populateChatCompletion(prompts, chatCompletion, { bias, quietPrompt, quietImage, type, cyclePrompt, messages, messageExamples, mewmoryContext, assistantKnowledge, evaluateMacros });
     } catch (error) {
         if (assistantKnowledge?.text) {
-            toastr.error('The assistant help reference could not fit. Increase context or shorten the required prompt.');
+            toastr.error('The assistant help text is too long for one reply. Increase the context size (how much text the model can read at once) or shorten the required prompt.');
             throw error;
         }
         if (mewmoryContext?.enabled) {
-            toastr.error('Mewmory could not fit the protected prompt. Increase context, reduce memory, or complete backfill.');
+            toastr.error('Mewmory\'s required text is too long for one reply. Increase the context size (how much text the model can read at once), reduce saved memories, or finish filling in memories for older messages.');
             throw error;
         }
         if (error instanceof TokenBudgetExceededError) {
-            toastr.error(t`Mandatory prompts exceed the context size.`);
+            toastr.error(t`The required prompts are longer than the context size (how much text the model can read at once). Increase the context size or shorten them.`);
             chatCompletion.log('Mandatory prompts exceed the context size.');
             promptManager.error = t`Not enough free tokens for mandatory prompts. Raise your token limit or disable custom prompts.`;
         } else if (error instanceof InvalidCharacterNameError) {
-            toastr.warning(t`An error occurred while counting tokens: Invalid character name`);
+            toastr.warning(t`Could not count the tokens (the units of text the model reads) because the character name is not valid.`);
             chatCompletion.log('Invalid character name');
             promptManager.error = t`The name of at least one character contained whitespaces or special characters. Please check your user and character name.`;
         } else {
-            toastr.error(t`An unknown error occurred while counting tokens. Further information may be available in console.`);
+            toastr.error(t`Could not count the tokens (the units of text the model reads). Try again, or reload the page if it keeps happening.`);
             chatCompletion.log('----- Unexpected error while preparing prompts -----');
             chatCompletion.log(String(error?.message ?? error));
             chatCompletion.log(error.stack);
@@ -1804,7 +1804,7 @@ export async function prepareOpenAIMessages({
     if (!dryRun && shouldCheckPostInterceptChatBudget(eventData)) {
         const { promptTokens, promptTokenBudget, exceeded } = await checkPostInterceptChatBudget(chat, userSettings, countChatCompletionPayloadTokensOpenAIAsync);
         if (exceeded) {
-            toastr.error(t`Pre-generation intercepts exceed the context size.`);
+            toastr.error(t`The extra steps that run before each reply are longer than the context size. Increase the context size or turn some off.`);
             chatCompletion.log(`Pre-generation intercepts exceed the context size. Tokens: ${promptTokens}. Budget: ${promptTokenBudget}.`);
             promptManager.error = t`Pre-generation intercepts made the prompt too large. Reduce intercept output, raise your token limit, or disable the intercept agent.`;
             promptManager.render(false);
@@ -4068,13 +4068,13 @@ async function saveServerChatCompletionConfig({ restart = false } = {}) {
             if (!restarted) {
                 serverChatCompletionConfigState.restarting = false;
                 setServerChatCompletionConfigMessage('Restart is taking longer than expected. Refresh the page once the server is back.');
-                toastr.warning('Restart is taking longer than expected. Refresh manually once the server is back.', 'Restart pending');
+                toastr.warning('Restart is taking longer than expected. Reload this page once Neconyan is back online.', 'Restart pending');
             }
         }
     } catch (error) {
         console.error('Failed to save chat completion server config.', error);
-        setServerChatCompletionConfigMessage(error.message || 'Failed to save chat completion server config.');
-        toastr.error(error.message || 'Failed to save chat completion server config.', 'Server config');
+        setServerChatCompletionConfigMessage(error.message || 'Could not save the server settings for this connection. Try again.');
+        toastr.error(error.message || 'Could not save the server settings for this connection. Try again.', 'Server config');
     } finally {
         if (!serverChatCompletionConfigState.restarting) {
             serverChatCompletionConfigState.busy = false;
@@ -7188,7 +7188,7 @@ async function saveOpenAIPreset(name, settings, triggerUi = true) {
             await eventSource.emit(event_types.PRESET_CHANGED, { apiId: 'openai', name: data.name });
         }
     } else {
-        toastr.error(t`Failed to save preset`);
+        toastr.error(t`Could not save preset`);
         throw new Error('Failed to save preset');
     }
 }
@@ -7291,7 +7291,7 @@ async function createNewLogitBiasPreset() {
     }
 
     if (name in oai_settings.bias_presets) {
-        toastr.error(t`Preset name should be unique.`);
+        toastr.error(t`That preset name is already used. Choose a different name.`);
         return;
     }
 
@@ -7331,7 +7331,7 @@ async function onPresetImportFileChange(e) {
     try {
         presetBody = JSON.parse(importedFile);
     } catch (err) {
-        toastr.error(t`Invalid file`);
+        toastr.error(t`That file cannot be used. Choose a preset file and try again.`);
         return;
     }
 
@@ -7379,7 +7379,7 @@ async function onPresetImportFileChange(e) {
     });
 
     if (!savePresetSettings.ok) {
-        toastr.error(t`Failed to save preset`);
+        toastr.error(t`Could not save preset`);
         return;
     }
 
@@ -7458,12 +7458,12 @@ async function onLogitBiasPresetImportFileChange(e) {
     e.target.value = '';
 
     if (name in oai_settings.bias_presets) {
-        toastr.error(t`Preset name should be unique.`);
+        toastr.error(t`That preset name is already used. Choose a different name.`);
         return;
     }
 
     if (!Array.isArray(importedFile)) {
-        toastr.error(t`Invalid logit bias preset file.`);
+        toastr.error(t`That file is not a valid logit bias preset (a list of word weights). Choose another file.`);
         return;
     }
 
@@ -7525,7 +7525,7 @@ async function onDeletePresetClick() {
     });
 
     if (!response.ok) {
-        toastr.warning(t`Preset was not deleted from server`);
+        toastr.warning(t`The preset could not be deleted. Try again.`);
     } else {
         toastr.success(t`Preset deleted`);
         await eventSource.emit(event_types.PRESET_DELETED, { apiId: 'openai', name: nameToDelete });
@@ -8729,7 +8729,7 @@ async function onConnectButtonClick(e) {
     // Vertex AI Full version - use service account
     if (oai_settings.chat_completion_source === chat_completion_sources.VERTEXAI && oai_settings.vertexai_auth_mode === 'full') {
         if (!secret_state[SECRET_KEYS.VERTEXAI_SERVICE_ACCOUNT]) {
-            toastr.error(t`Service Account JSON is required for Vertex AI full version. Please validate and save your Service Account JSON.`);
+            toastr.error(t`The full Vertex AI setup needs a service account key (a Google login file). Paste the key, check it, and save it.`);
             return;
         }
     }
@@ -8869,7 +8869,7 @@ async function testApiConnection() {
         console.log(reply);
         toastr.success(t`API connection successful!`);
     } catch (err) {
-        toastr.error(t`Could not get a reply from API. Check your connection settings / API key and try again.`);
+        toastr.error(t`Could not get a reply from the AI service. Check your connection settings and API key, then try again.`);
     }
 }
 
@@ -9184,7 +9184,7 @@ $('#delete_proxy').on('click', async function () {
         $('#openai_proxy_preset').val(selected_proxy.name);
         toastr.success(t`Proxy Deleted`);
     } else {
-        toastr.error(t`Could not find proxy with name '${presetName}'`);
+        toastr.error(t`Could not find the reverse proxy called '${presetName}'`);
     }
 });
 
@@ -9346,7 +9346,7 @@ export function pruneStaleCustomEndpointSecretBindings() {
 
     if (changed) {
         updateCustomEndpointKeyInput(selected_custom_endpoint_preset, '');
-        toastr.warning(t`An endpoint profile pointed at an API key that no longer exists. Type the key again and press Connect to rebind it.`, t`Custom endpoint`, { timeOut: 10000 });
+        toastr.warning(t`A saved endpoint profile (a saved server address and model) points to an API key that no longer exists. Type the key again and press Connect to link it.`, t`Custom endpoint`, { timeOut: 10000 });
         saveSettingsDebounced();
     }
     return changed;
@@ -9567,7 +9567,7 @@ async function runCustomEndpointPresetCallback(_, value) {
         ?? (name.toLowerCase() === 'none' ? custom_endpoint_presets.find(p => p.name === 'None') : undefined);
 
     if (!preset) {
-        toastr.warning(t`Custom endpoint profile '${name}' not found`);
+        toastr.warning(t`Could not find the endpoint profile '${name}'`);
         return '';
     }
 
@@ -9600,7 +9600,7 @@ function runProxyCallback(_, value) {
     const result = fuse.search(value);
 
     if (result.length === 0) {
-        toastr.warning(t`Proxy preset '${value}' not found`);
+        toastr.warning(t`Could not find the reverse proxy '${value}'`);
         return '';
     }
 
@@ -9881,7 +9881,7 @@ async function onVertexAIValidateServiceAccount() {
     const jsonContent = String($('#vertexai_service_account_json').val()).trim();
 
     if (!jsonContent) {
-        toastr.error(t`Please enter Service Account JSON content`);
+        toastr.error(t`Paste the service account key first`);
         return;
     }
 
@@ -9891,13 +9891,13 @@ async function onVertexAIValidateServiceAccount() {
         const missingFields = requiredFields.filter(field => !serviceAccount[field]);
 
         if (missingFields.length > 0) {
-            toastr.error(t`Missing required fields: ${missingFields.join(', ')}`);
+            toastr.error(t`The key is missing: ${missingFields.join(', ')}`);
             updateVertexAIServiceAccountStatus(false, t`Missing fields: ${missingFields.join(', ')}`);
             return;
         }
 
         if (serviceAccount.type !== 'service_account') {
-            toastr.error(t`Invalid service account type. Expected "service_account"`);
+            toastr.error(t`This is not a service account key. Choose the key file Google gave you for a service account.`);
             updateVertexAIServiceAccountStatus(false, t`Invalid service account type`);
             return;
         }
@@ -9909,12 +9909,12 @@ async function onVertexAIValidateServiceAccount() {
         // Show success status
         updateVertexAIServiceAccountStatus(true, `Project: ${serviceAccount.project_id}, Email: ${serviceAccount.client_email}`);
 
-        toastr.success(t`Service Account JSON is valid and saved securely`);
+        toastr.success(t`The service account key is valid and saved securely`);
         saveSettingsDebounced();
     } catch (error) {
         console.error('JSON validation error:', error);
-        toastr.error(t`Invalid JSON format`);
-        updateVertexAIServiceAccountStatus(false, t`Invalid JSON format`);
+        toastr.error(t`This does not look like a complete key file. Check that you copied all of it.`);
+        updateVertexAIServiceAccountStatus(false, t`This does not look like a complete key file. Check that you copied all of it.`);
     }
 }
 
@@ -9928,7 +9928,7 @@ async function onVertexAIClearServiceAccount() {
     await writeSecret(SECRET_KEYS.VERTEXAI_SERVICE_ACCOUNT, '');
 
     updateVertexAIServiceAccountStatus(false);
-    toastr.info(t`Service Account JSON cleared`);
+    toastr.info(t`Service account key cleared`);
     saveSettingsDebounced();
 }
 
@@ -9956,7 +9956,7 @@ function onVertexAIServiceAccountJsonChange() {
                 updateVertexAIServiceAccountStatus(false, t`Incomplete or invalid JSON`);
             }
         } catch (error) {
-            updateVertexAIServiceAccountStatus(false, t`Invalid JSON format`);
+            updateVertexAIServiceAccountStatus(false, t`This does not look like a complete key file. Check that you copied all of it.`);
         }
     } else {
         updateVertexAIServiceAccountStatus(false);

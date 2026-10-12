@@ -1,4 +1,4 @@
-const UNSUPPORTED_ZIP_UPDATE_MESSAGE = 'Neconyan ZIP updates are unavailable because this standalone project has no release repository configured.';
+const UNSUPPORTED_ZIP_UPDATE_MESSAGE = 'ZIP updates are not available because this copy of Neconyan has no place set up to download releases from.';
 
 function normalizeVersion(value) {
     return String(value ?? '').trim().replace(/^v/i, '');

@@ -998,7 +998,7 @@ export async function convertPersonaToCharacter(avatarId = user_avatar) {
 
     const characterAvatarId = (await response.text()).trim();
     if (!characterAvatarId) {
-        toastr.error(t`Character card was created, but Neconyan could not find its avatar id.`, t`Persona Management`);
+        toastr.error(t`Character card was created, but Neconyan could not find its picture.`, t`Persona Management`);
         return false;
     }
 
@@ -2804,7 +2804,7 @@ async function duplicatePersona(avatarId, { silent = false, select = false } = {
     const personaName = power_user.personas[avatarId];
 
     if (!personaName) {
-        toastr.warning(t`Chosen avatar is not a persona`, t`Persona Management`);
+        toastr.warning(t`That picture is not one of your personas`, t`Persona Management`);
         return '';
     }
 
@@ -2961,7 +2961,7 @@ async function uploadPersonaAvatar(avatarId, base64Data, { resizePrompt = false 
         return true;
     } catch (error) {
         console.error('Error uploading persona avatar:', error);
-        toastr.warning(t`Failed to upload avatar: ${error.message}`);
+        toastr.warning(t`Could not upload avatar: ${error.message}`);
         return false;
     }
 }
@@ -3017,7 +3017,7 @@ async function createPersonaCallback(args) {
 
     let depth = args.descriptionDepth !== undefined ? Number(args.descriptionDepth) : DEFAULT_DEPTH;
     if (isNaN(depth)) {
-        toastr.warning(t`Invalid description depth "${args.descriptionDepth}", defaulting to ${DEFAULT_DEPTH}`);
+        toastr.warning(t`The description depth "${args.descriptionDepth}" is not valid, so ${DEFAULT_DEPTH} will be used instead`);
         depth = DEFAULT_DEPTH;
     }
 
@@ -3064,7 +3064,7 @@ async function updatePersonaCallback(args) {
     const descriptor = power_user.persona_descriptions[avatarId];
 
     if (!descriptor) {
-        toastr.warning(t`Persona data not found for "${persona.name}"`);
+        toastr.warning(t`Could not find the saved details for persona "${persona.name}"`);
         return '';
     }
 
@@ -3202,7 +3202,7 @@ async function getPersonaDataCallback(args) {
 
         const value = fieldMap[args.field];
         if (value === undefined) {
-            toastr.warning(t`Unknown persona field "${args.field}"`);
+            toastr.warning(t`There is no persona setting called "${args.field}"`);
             return '';
         }
 
@@ -3259,7 +3259,7 @@ async function duplicatePersonaCallback(args) {
     const newAvatarId = await duplicatePersona(persona.avatar, { silent: true, select: shouldSelect });
 
     if (!newAvatarId) {
-        toastr.error(t`Failed to duplicate persona`);
+        toastr.error(t`Could not duplicate persona`);
         return '';
     }
 
@@ -3279,7 +3279,7 @@ async function lockPersonaCallback(_args, value) {
     const type = /** @type {PersonaLockType} */ (_args.type ?? 'chat');
 
     if (!['chat', 'character', 'default'].includes(type)) {
-        toastr.warning(t`Unknown lock type "${type}"`, t`Persona Management`);
+        toastr.warning(t`The lock type "${type}" is not recognised`, t`Persona Management`);
         return '';
     }
 

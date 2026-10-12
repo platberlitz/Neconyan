@@ -125,7 +125,7 @@ test('changed caption instructions refuse before dispatch', async t => {
     const f = prepared(t);
     f.settings.extension_settings.caption.prompt = 'Use different instructions.';
     fs.writeFileSync(f.settingsFile, JSON.stringify(f.settings));
-    await assert.rejects(f.run({ localCaption: () => assert.fail('Changed instructions reached the provider.') }), /changed|differs/);
+    await assert.rejects(f.run({ localCaption: () => assert.fail('Changed instructions reached the provider.') }), /changed|differs|no longer matches/);
 });
 
 test('empty uploaded messages and selected gallery items receive only their own caption', async t => {
@@ -214,7 +214,7 @@ test('Horde resumes a saved interrogation by polling its ID without repeating it
 test('a changed caption key refuses before a paid request and a damaged completed result cannot be regenerated', async t => {
     const f = prepared(t, { caption: { source: 'multimodal', multimodal_api: 'openai' }, secret: 'OPENAI' });
     writeSecret(f.directories, SECRET_KEYS.OPENAI, 'replacement-key');
-    await assert.rejects(f.run({ captionFetch: () => { throw new Error('Changed key reached a provider.'); } }), /changed|differs/);
+    await assert.rejects(f.run({ captionFetch: () => { throw new Error('Changed key reached a provider.'); } }), /changed|differs|no longer matches/);
     assert.notEqual(getJob(f.directories, f.jobId).recoverability, 'unknown-outcome');
     writeSecret(f.directories, SECRET_KEYS.OPENAI, 'caption-private-key');
     await assert.rejects(f.run({ captionFetch: async () => json({ choices: [{ message: { content: 'a ruby' } }] }),

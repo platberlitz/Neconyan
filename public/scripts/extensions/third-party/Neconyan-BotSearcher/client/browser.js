@@ -132,7 +132,7 @@ async function openBrowserOnce(options) {
         html = await ctx.renderExtensionTemplateAsync(EXTENSION_PATH, templateName);
     } catch (error) {
         console.error(`[${LOG_TAG}] failed to render ${templateName}:`, error);
-        toastr.error('Could not open the browser.', 'BotSearcher');
+        toastr.error('Could not open BotSearcher. Reload the page and try again.', 'BotSearcher');
         return;
     }
 
@@ -643,7 +643,7 @@ function wireBrowser(popup, health, options) {
         const source = saved.source === ALL_SOURCES && enabled.length > 1
             ? mergedSourceEntry(enabled) : enabled.find((entry) => entry.id === saved.source);
         if (!source) {
-            setText(dom.namedStatus, 'Enable this search source under Extensions > BotSearcher, then reopen the browser.');
+            setText(dom.namedStatus, 'Enable this search source under Extensions > BotSearcher, then reopen BotSearcher search.');
             return;
         }
         state.source = source;

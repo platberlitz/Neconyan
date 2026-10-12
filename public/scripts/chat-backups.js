@@ -125,13 +125,13 @@ class BackupsBrowser {
             if (error?.name === 'AbortError') {
                 return;
             }
-            toastr.error(t`Failed to download backup, try again later.`);
+            toastr.error(t`Could not download the backup. Try again in a moment.`);
             console.error('Failed to download chat backup:', error);
             return;
         }
 
         if (!response.ok) {
-            toastr.error(t`Failed to download backup, try again later.`);
+            toastr.error(t`Could not download the backup. Try again in a moment.`);
             console.error('Failed to download chat backup:', response.statusText);
             return;
         }
@@ -152,7 +152,7 @@ class BackupsBrowser {
                 return;
             }
             console.error('Failed to parse chat backup content:', error);
-            toastr.error(t`Failed to parse backup content.`);
+            toastr.error(t`This backup file could not be read. It may be damaged.`);
             return;
         }
     }
@@ -181,13 +181,13 @@ class BackupsBrowser {
             if (error?.name === 'AbortError') {
                 return;
             }
-            toastr.error(t`Failed to download backup, try again later.`);
+            toastr.error(t`Could not download the backup. Try again in a moment.`);
             console.error('Failed to download chat backup:', error);
             return;
         }
 
         if (!response.ok) {
-            toastr.error(t`Failed to download backup, try again later.`);
+            toastr.error(t`Could not download the backup. Try again in a moment.`);
             console.error('Failed to download chat backup:', response.statusText);
             return;
         }
@@ -218,7 +218,7 @@ class BackupsBrowser {
         if (!isCurrentChatImportTarget(target)) return;
 
         if (result.length === 0) {
-            toastr.error(t`Failed to import chat backup, try again later.`);
+            toastr.error(t`Could not import the chat backup. Try again in a moment.`);
             return;
         }
 
@@ -248,7 +248,7 @@ class BackupsBrowser {
             if (error?.name === 'AbortError') {
                 return false;
             }
-            toastr.error(String(error?.message || t`Failed to delete backup, try again later.`));
+            toastr.error(String(error?.message || t`Could not delete the backup. Try again in a moment.`));
             console.error('Failed to delete chat backup:', error);
             return false;
         }

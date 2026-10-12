@@ -39,7 +39,7 @@ async function pollHorde({ context, jobContext, key, taskId, cleanup, signal, fe
 async function novelTokenControls(settings, model, stops, signal) {
     const tokenizer = novelTokenizer(model);
     if (!tokenizer) {
-        if (stops.length || settings.banned_tokens || settings.logit_bias?.length) fail('This NovelAI model has no saved tokenizer for stopping strings or token controls.', 409);
+        if (stops.length || settings.banned_tokens || settings.logit_bias?.length) fail('This NovelAI model has no saved tokenizer, so stopping strings and word controls cannot be used.', 409);
         return {};
     }
     const encode = value => encodeGenerationText(tokenizer, value, model, signal);
@@ -50,8 +50,8 @@ async function novelTokenControls(settings, model, stops, signal) {
         if (!value) continue;
         if (value.startsWith('[') && value.endsWith(']')) {
             let ids;
-            try { ids = JSON.parse(value); } catch { fail('The saved NovelAI banned token list is invalid.', 409); }
-            if (!Array.isArray(ids) || !ids.every(Number.isInteger)) fail('The saved NovelAI banned token list is invalid.', 409);
+            try { ids = JSON.parse(value); } catch { fail('The saved NovelAI banned words list is invalid.', 409); }
+            if (!Array.isArray(ids) || !ids.every(Number.isInteger)) fail('The saved NovelAI banned words list is invalid.', 409);
             badWords.push(ids);
         } else if (value.startsWith('{') && value.endsWith('}')) badWords.push(await encode(value.slice(1, -1)));
         else {
@@ -63,13 +63,13 @@ async function novelTokenControls(settings, model, stops, signal) {
     }
     const logitBias = [];
     for (const entry of settings.logit_bias || []) {
-        if (typeof entry.text !== 'string' || !Number.isFinite(entry.value)) fail('The saved NovelAI token bias is invalid.', 409);
+        if (typeof entry.text !== 'string' || !Number.isFinite(entry.value)) fail('The saved NovelAI word bias setting is invalid.', 409);
         const value = entry.text.trim();
         if (!value) continue;
         let sequence;
         if (value.startsWith('[') && value.endsWith(']')) {
-            try { sequence = JSON.parse(value); } catch { fail('The saved NovelAI token bias is invalid.', 409); }
-            if (!Array.isArray(sequence) || !sequence.every(Number.isInteger)) fail('The saved NovelAI token bias is invalid.', 409);
+            try { sequence = JSON.parse(value); } catch { fail('The saved NovelAI word bias setting is invalid.', 409); }
+            if (!Array.isArray(sequence) || !sequence.every(Number.isInteger)) fail('The saved NovelAI word bias setting is invalid.', 409);
         } else sequence = await encode(value.startsWith('{') && value.endsWith('}') ? value.slice(1, -1) : ` ${value}`);
         logitBias.push({ bias: entry.value, sequence, ensure_sequence_finish: false, generate_once: false });
     }
@@ -88,7 +88,7 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
         || Object.keys(overridePayload || {}).length || Object.keys(rawOptions || {}).some(key => !['instructOverride', 'quietToLoud', 'systemPrompt', 'prefill', 'trimNames'].includes(key))) {
         fail('This bound legacy request has unsupported controls.', 409);
     }
-    if (stream) fail('This provider stream has no verified completion marker for a durable Roleplay reply.', 409);
+    if (stream) fail('This AI service streams replies in a way Neconyan cannot save safely for a Roleplay reply.', 409);
     const key = hash({ binding, messages, maxTokens, ephemeralStops, userName, characterName, groupNames, rawOptions,
         ...(preparedText !== undefined ? { preparedText } : {}), ...(cfgValues ? { cfgValues } : {}), ...(stepNamespace ? { stepNamespace } : {}) });
     const resultName = 'horde-result:' + key;
@@ -108,7 +108,7 @@ export async function runLegacyProfile({ context, binding, messages, maxTokens, 
         if (saved !== undefined) return saved;
     }
     const material = resolveGenerationProfile(context.directories, binding);
-    if (!['kobold', 'novel', 'horde'].includes(material.backend) || material.backend !== binding.backend) fail('This provider cannot use the legacy request builder.', 409);
+    if (!['kobold', 'novel', 'horde'].includes(material.backend) || material.backend !== binding.backend) fail('This AI service cannot be used with this older request format.', 409);
     const substitute = value => {
         if (macroEnvironment?.evaluate) return macroEnvironment.evaluate(value, { legacy: !material.power.experimental_macro_engine, strictCapabilities: true });
         if (String(value).includes('{{')) fail('This connection requires the captured chat macro context.', 400);

@@ -156,7 +156,7 @@ export function showBookmarksButtons() {
 
 async function saveBookmarkMenu() {
     if (!chat.length) {
-        toastr.warning('The chat is empty.', 'Checkpoint creation failed');
+        toastr.warning('The chat is empty.', 'Could not create checkpoint');
         return;
     }
 
@@ -191,12 +191,12 @@ function getBranchChatSnapshot(mesId, { swipeId = null } = {}) {
 // Export is used by Timelines extension. Do not remove.
 export async function createBranch(mesId, { swipeId = null } = {}) {
     if (!chat.length) {
-        toastr.warning('The chat is empty.', 'Branch creation failed');
+        toastr.warning('The chat is empty.', 'Could not create branch');
         return;
     }
 
     if (mesId < 0 || mesId >= chat.length) {
-        toastr.warning('Invalid message ID.', 'Branch creation failed');
+        toastr.warning('The selected message could not be found.', 'Could not create branch');
         return;
     }
 
@@ -206,7 +206,7 @@ export async function createBranch(mesId, { swipeId = null } = {}) {
     const selectedSwipeId = swipeId === null ? null : Number(swipeId);
 
     if (selectedSwipeId !== null && (!Number.isInteger(selectedSwipeId) || selectedSwipeId < 0 || selectedSwipeId >= (lastMes?.swipes?.length ?? 0))) {
-        toastr.warning('Invalid swipe ID.', 'Branch creation failed');
+        toastr.warning('The selected alternative reply could not be found.', 'Could not create branch');
         return;
     }
 
@@ -221,13 +221,13 @@ export async function createBranch(mesId, { swipeId = null } = {}) {
     const name = getUniqueName(mainChatName, (x) => existingChats.includes(x), { nameBuilder: buildBranchName });
     if (!name) {
         console.error('Could not generate a unique branch name.');
-        toastr.error('Could not generate a unique branch name.', 'Branch creation failed');
+        toastr.error('Could not generate a unique branch name.', 'Could not create branch');
         return;
     }
 
     const branchChatSnapshot = getBranchChatSnapshot(mesId, { swipeId: selectedSwipeId });
     if (!branchChatSnapshot) {
-        toastr.warning('Could not prepare the selected swipe for branching.', 'Branch creation failed');
+        toastr.warning('Could not prepare the selected alternative reply for a new branch.', 'Could not create branch');
         return;
     }
 
@@ -273,7 +273,7 @@ export async function createNewBookmark(mesId, { forceName = null } = {}) {
         return null;
     }
     if (!chat[mesId]) {
-        toastr.warning('Invalid message ID.', 'Create Checkpoint');
+        toastr.warning('The selected message could not be found.', 'Create Checkpoint');
         return null;
     }
 
@@ -437,7 +437,7 @@ export async function convertSoloToGroupChat() {
         if (!saved.ok) throw new Error('Group chat creation unsuccessful');
     } catch (error) {
         console.error(error);
-        toastr.error(t`Group chat creation unsuccessful`);
+        toastr.error(t`Could not convert the chat to a group. Try again.`);
         return;
     } finally {
         await finishRoleplaySave(token);
@@ -488,11 +488,11 @@ function registerBookmarksSlashCommands() {
      */
     function validateMessageId(mesId, context) {
         if (isNaN(mesId)) {
-            toastr.warning('Invalid message ID was provided', context);
+            toastr.warning('The selected message could not be found.', context);
             return false;
         }
         if (!chat[mesId]) {
-            toastr.warning(`Message for id ${mesId} not found`, context);
+            toastr.warning(`Could not find message ${mesId}.`, context);
             return false;
         }
         return true;
@@ -535,7 +535,7 @@ function registerBookmarksSlashCommands() {
             if (!validateMessageId(mesId, 'Create Checkpoint')) return '';
 
             if (typeof text !== 'string') {
-                toastr.warning('Checkpoint name must be a string or empty', 'Create Checkpoint');
+                toastr.warning('The checkpoint name must be text or left empty.', 'Create Checkpoint');
                 return '';
             }
 

@@ -68,7 +68,7 @@ export async function registerSlashCommands(dswipeBack, dswipeForward) {
                 } else {
                     id = parseInt(actualMessageId, 10);
                     if (isNaN(id)) {
-                        toastr.error('Message ID must be a valid number', 'Deep Swipe');
+                        toastr.error('Message number must be a whole number.', 'Deep Swipe');
                         return 'Invalid message ID';
                     }
                 }
@@ -116,7 +116,7 @@ export async function registerSlashCommands(dswipeBack, dswipeForward) {
                 }
 
                 if (isNaN(id) || id < 0 || id >= chat.length) {
-                    toastr.error('Message ID must be a valid number', 'Deep Swipe');
+                    toastr.error('Message number must be a whole number.', 'Deep Swipe');
                     return 'Invalid message ID';
                 }
 
@@ -125,7 +125,7 @@ export async function registerSlashCommands(dswipeBack, dswipeForward) {
                 const delChat = delCtx.chat;
 
                 if (!isValidMessageId(id, delChat)) {
-                    toastr.error('Invalid message ID', 'Deep Swipe');
+                    toastr.error('That message number is not in this chat.', 'Deep Swipe');
                     return 'Invalid message ID';
                 }
 

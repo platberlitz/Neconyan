@@ -861,7 +861,7 @@ export class ToolManager {
      * @returns {void}
      */
     static showToolCallError(errors) {
-        toastr.error('An error occurred while invoking function tools. Click here for more details.', 'Tool Calling', {
+        toastr.error('A tool the assistant tried to use failed. Click here for details.', 'Tool Calling', {
             onclick: () => Popup.show.text('Tool Calling Errors', DOMPurify.sanitize(errors.map(e => `${e.cause}: ${e.message}`).join('<br>'))),
             timeOut: 5000,
         });

@@ -55,7 +55,7 @@ export async function loadHost() {
                 state = { ok: true, store, scripts };
                 return state;
             } catch (error) {
-                return { ok: false, reason: `Could not load In-Chat Agents (${error?.message ?? error})` };
+                return { ok: false, reason: 'Could not load In-Chat Agents. Reload Neconyan and try again.' };
             }
         })();
     }

@@ -50,20 +50,20 @@ router.post('/change-avatar', async (request, response) => {
     try {
         if (!request.body.handle) {
             console.warn('Change avatar failed: Missing required fields');
-            return response.status(400).json({ error: 'Missing required fields' });
+            return response.status(400).json({ error: 'Some details are missing. Fill in every field and try again.' });
         }
         if (request.body.handle !== request.user.profile.handle && !request.user.profile.admin) {
             console.error('Change avatar failed: Unauthorized');
-            return response.status(403).json({ error: 'Unauthorized' });
+            return response.status(403).json({ error: 'You do not have permission to do that.' });
         }
         if (!request.body.avatar.startsWith('data:image/') && request.body.avatar !== '') {
             console.warn('Change avatar failed: Invalid data URL');
-            return response.status(400).json({ error: 'Invalid data URL' });
+            return response.status(400).json({ error: 'That picture could not be read.' });
         }
         const user = await storage.getItem(toKey(request.body.handle));
         if (!user) {
             console.error('Change avatar failed: User not found');
-            return response.status(404).json({ error: 'User not found' });
+            return response.status(404).json({ error: 'That user could not be found.' });
         }
         await storage.setItem(toAvatarKey(request.body.handle), request.body.avatar);
         return response.sendStatus(204);
@@ -77,24 +77,24 @@ router.post('/change-password', async (request, response) => {
     try {
         if (!request.body.handle) {
             console.warn('Change password failed: Missing required fields');
-            return response.status(400).json({ error: 'Missing required fields' });
+            return response.status(400).json({ error: 'Some details are missing. Fill in every field and try again.' });
         }
         if (request.body.handle !== request.user.profile.handle && !request.user.profile.admin) {
             console.error('Change password failed: Unauthorized');
-            return response.status(403).json({ error: 'Unauthorized' });
+            return response.status(403).json({ error: 'You do not have permission to do that.' });
         }
         const user = await storage.getItem(toKey(request.body.handle));
         if (!user) {
             console.error('Change password failed: User not found');
-            return response.status(404).json({ error: 'User not found' });
+            return response.status(404).json({ error: 'That user could not be found.' });
         }
         if (!user.enabled) {
             console.error('Change password failed: User is disabled');
-            return response.status(403).json({ error: 'User is disabled' });
+            return response.status(403).json({ error: 'This account is turned off. Ask an admin to turn it back on.' });
         }
         if (!request.user.profile.admin && user.password && user.password !== getPasswordHash(request.body.oldPassword, user.salt)) {
             console.error('Change password failed: Incorrect password');
-            return response.status(403).json({ error: 'Incorrect password' });
+            return response.status(403).json({ error: 'That password is not correct.' });
         }
         if (request.body.newPassword) {
             const salt = getPasswordSalt();
@@ -127,7 +127,7 @@ router.post('/reset-settings', async (request, response) => {
         const password = request.body.password;
         if (request.user.profile.password && request.user.profile.password !== getPasswordHash(password, request.user.profile.salt)) {
             console.warn('Reset settings failed: Incorrect password');
-            return response.status(403).json({ error: 'Incorrect password' });
+            return response.status(403).json({ error: 'That password is not correct.' });
         }
         const pathToFile = path.join(request.user.directories.root, SETTINGS_FILE);
         restoreSettingsSnapshot(pathToFile, getContentOfType(CONTENT_TYPES.SETTINGS, 'json')[0]);
@@ -142,16 +142,16 @@ router.post('/change-name', async (request, response) => {
     try {
         if (!request.body.name || !request.body.handle) {
             console.warn('Change name failed: Missing required fields');
-            return response.status(400).json({ error: 'Missing required fields' });
+            return response.status(400).json({ error: 'Some details are missing. Fill in every field and try again.' });
         }
         if (request.body.handle !== request.user.profile.handle && !request.user.profile.admin) {
             console.error('Change name failed: Unauthorized');
-            return response.status(403).json({ error: 'Unauthorized' });
+            return response.status(403).json({ error: 'You do not have permission to do that.' });
         }
         const user = await storage.getItem(toKey(request.body.handle));
         if (!user) {
             console.warn('Change name failed: User not found');
-            return response.status(404).json({ error: 'User not found' });
+            return response.status(404).json({ error: 'That user could not be found.' });
         }
         user.name = request.body.name;
         await storage.setItem(toKey(request.body.handle), user);
@@ -180,26 +180,26 @@ router.post('/reset-step2', async (request, response) => {
     try {
         const base = { owner: request.user.profile.handle, directories: request.user.directories };
         const key = request.body.key;
-        if (typeof key !== 'string' || !key || key.length > 200) return response.status(400).json({ error: 'A reset operation key is required.' });
+        if (typeof key !== 'string' || !key || key.length > 200) return response.status(400).json({ error: 'The password reset request is missing. Start again.' });
         const previous = readOperation(base, key);
         if (previous) {
-            if (previous.kind !== 'account-reset') return response.status(409).json({ error: 'This key belongs to different work.' });
+            if (previous.kind !== 'account-reset') return response.status(409).json({ error: 'This request belongs to a different task. Start again.' });
             const accepted = await acceptAccountReset(request, key);
             response.set('Cache-Control', 'no-store');
             return response.status(200).json({ ...accepted, record: publicRecord(accepted.record) });
         }
         if (!request.body.code) {
             console.warn('Recover step 2 failed: Missing required fields');
-            return response.status(400).json({ error: 'Missing required fields' });
+            return response.status(400).json({ error: 'Some details are missing. Fill in every field and try again.' });
         }
         if (request.user.profile.password && request.user.profile.password !== getPasswordHash(request.body.password, request.user.profile.salt)) {
             console.warn('Recover step 2 failed: Incorrect password');
-            return response.status(400).json({ error: 'Incorrect password' });
+            return response.status(400).json({ error: 'That password is not correct.' });
         }
         const code = RESET_CACHE.get(request.user.profile.handle);
         if (!code || code !== request.body.code) {
             console.warn('Recover step 2 failed: Incorrect code');
-            return response.status(400).json({ error: 'Incorrect code' });
+            return response.status(400).json({ error: 'That code is not correct.' });
         }
         console.info('Resetting account data:', request.user.profile.handle);
         const accepted = await acceptAccountReset(request, key);

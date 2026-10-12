@@ -238,7 +238,7 @@ class ElevenLabsTtsProvider {
                 voiceCloningDescriptionInput.value = '';
                 voiceCloningLabelsInput.value = '';
             } catch (error) {
-                toastr.error(`Failed to clone voice: ${error.message}`);
+                toastr.error(`Could not clone the voice: ${error.message}`);
             }
         });
 
@@ -354,7 +354,7 @@ class ElevenLabsTtsProvider {
             }),
         });
         if (!response.ok) {
-            toastr.error(response.statusText, 'TTS Generation Failed');
+            toastr.error('The speech service could not make audio. Check the TTS settings, then try again.', 'TTS Generation Failed');
             throw new Error(`HTTP ${response.status}. See server console for details.`);
         }
         return response;

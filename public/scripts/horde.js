@@ -227,7 +227,7 @@ export async function generateHorde(prompt, params, signal, reportProgress) {
     });
 
     if (!response.ok) {
-        toastr.error(response.statusText, 'Horde generation failed');
+        toastr.error('Horde could not write a reply. Try again, or choose another model.', 'Could not generate reply');
         throw new Error(`Horde generation failed: ${response.statusText}`);
     }
 
@@ -235,7 +235,7 @@ export async function generateHorde(prompt, params, signal, reportProgress) {
 
     if (responseJson.error) {
         const reason = responseJson.error?.message || 'Unknown error';
-        toastr.error(reason, 'Horde generation failed');
+        toastr.error(reason, 'Could not generate reply');
         throw new Error(`Horde generation failed: ${reason}`);
     }
 
@@ -253,12 +253,12 @@ export async function generateHorde(prompt, params, signal, reportProgress) {
         console.log(statusCheckJson);
 
         if (statusCheckJson.faulted === true) {
-            toastr.error('Horde request faulted. Please try again.');
+            toastr.error('Horde could not finish the request. Try again.');
             throw new Error('Horde generation failed: Faulted');
         }
 
         if (statusCheckJson.is_possible === false) {
-            toastr.error('There are no Horde workers that are able to generate text with your request. Please change the parameters or try again later.');
+            toastr.error('No Horde volunteer computers (workers) can handle this request right now. Change the settings or try again later.');
             throw new Error('Horde generation failed: Unsatisfiable request');
         }
 
@@ -340,7 +340,7 @@ async function showKudos() {
     const data = await response.json();
 
     if (data.anonymous) {
-        toastr.info('You are in anonymous mode. Set your personal Horde API key to see kudos.');
+        toastr.info('You are using Horde without an account. Add your personal Horde API key (a code from your Horde account) to see your kudos (Horde points).');
         return;
     }
 

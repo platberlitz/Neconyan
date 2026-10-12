@@ -284,7 +284,7 @@ function unsupportedSchemaVersionResult(source, options) {
         error: 'unsupported_schema_version',
         version,
         supportedVersion: COLOR_SCHEMA_VERSION,
-        message: `Schema version ${version} is newer than the supported version ${COLOR_SCHEMA_VERSION}.`,
+        message: `This colour data (version ${version}) was saved by a newer version of this extension and cannot be opened here.`,
     };
 }
 
@@ -1151,7 +1151,7 @@ export function queueImmediateSettingsSave(expectedSource = getAutoSyncRecord(tr
                 });
             } else {
                 lastServerVerifiedModuleRecord = null;
-                setAutoSyncError('Save could not be verified');
+                setAutoSyncError('The save could not be checked. Try again.');
                 saveSettingsDebounced?.();
             }
             return matches;
@@ -1166,7 +1166,7 @@ export function queueImmediateSettingsSave(expectedSource = getAutoSyncRecord(tr
                     delay: 250 * (2 ** (ordinaryModuleSaveRetryCount - 1)),
                 });
             } else {
-                setAutoSyncError('Save could not be verified');
+                setAutoSyncError('The save could not be checked. Try again.');
                 saveSettingsDebounced?.();
             }
             return false;
@@ -1389,7 +1389,7 @@ export function confirmAutoSyncRecord(record, { serverVerified = false } = {}) {
     commitLegacyMigrationMarkerIfPending(normalized);
     if (autoSyncPendingRecord && (!autoSyncPendingExpectedRecord
         || !recordsEqual(normalized, autoSyncPendingExpectedRecord))) {
-        setAutoSyncStatusError('Remote state changed while saving');
+        setAutoSyncStatusError('The saved colours changed elsewhere while this was saving. Try again.');
         updateAutoSyncUI();
         return normalized;
     }
@@ -1432,7 +1432,7 @@ export function applyAutoSyncRecord(record, {
     activityEpoch = undefined,
 } = {}) {
     if (unsupportedSchemaVersionResult(record, { moduleRecord: true })) {
-        setAutoSyncError('Remote schema is newer than this extension');
+        setAutoSyncError('The saved colour data is from a newer version of this extension.');
         return 'unsupported_schema_version';
     }
     flushPendingColorStateActivity();
@@ -1451,7 +1451,7 @@ export function applyAutoSyncRecord(record, {
     if (serverVerified && autoSyncPendingRecord) {
         const serverRecord = buildAutoSyncRecord(cloneJsonValue(record));
         if (!autoSyncPendingExpectedRecord || !recordsEqual(serverRecord, autoSyncPendingExpectedRecord)) {
-            setAutoSyncError('Remote state changed while saving');
+            setAutoSyncError('The saved colours changed elsewhere while this was saving. Try again.');
             cleanupLegacyAutoSyncPreference();
             return 'conflict';
         }
@@ -1473,7 +1473,7 @@ export function applyAutoSyncRecord(record, {
         isNewer: !serverVerified && isIncomingAutoSyncRecordNewer(incoming),
     });
     if (disposition === 'conflict') {
-        setAutoSyncError('Remote state changed while saving');
+        setAutoSyncError('The saved colours changed elsewhere while this was saving. Try again.');
         cleanupLegacyAutoSyncPreference();
         return disposition;
     }
@@ -1569,7 +1569,7 @@ async function fetchExtensionSettingsFromServer(names = [MODULE_NAME]) {
     });
 
     if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        throw new Error('The server could not return the colour settings. Try again.');
     }
 
     const data = await response.json();
@@ -1580,7 +1580,7 @@ async function fetchExtensionSettingsFromServer(names = [MODULE_NAME]) {
     try {
         parsedSettings = JSON.parse(data.settings);
     } catch {
-        throw new Error('Invalid settings payload');
+        throw new Error('The saved settings are damaged.');
     }
 
     return parsedSettings?.extension_settings || null;
@@ -2430,7 +2430,7 @@ async function archiveStoredColorDataInternal(keys, binding, reviewedFingerprint
     const selectedKeys = [...new Set(Array.isArray(keys) ? keys : [])];
     if (reviewedFingerprints && selectedKeys.some(key => !hasOwn(reviewedFingerprints, key)
         || reviewedFingerprints[key] !== getStoredColorDataFingerprint(key))) {
-        return { ...contextChangedError('The selected stored color data changed after review.'), count: 0 };
+        return { ...contextChangedError('The selected colour data changed after you reviewed it.'), count: 0 };
     }
     const baseRecord = getModuleRecordSnapshot();
     let appliedRecord = baseRecord;
@@ -3581,7 +3581,7 @@ async function switchColorStorageScopeInternal(
             return {
                 ok: false,
                 error: 'chat_metadata_persist_failed',
-                message: 'The per-chat identifier could not be saved and no stable host chat identifier is available.',
+                message: 'The chat colour settings could not be saved, and Neconyan gave no stable chat ID to use instead.',
                 previousScope,
                 previousKey,
             };
@@ -3990,10 +3990,10 @@ export async function applyStylePackImport(reviewed, options = {}) {
         return importError('invalid_reviewed_pack', 'The reviewed style pack is no longer valid.');
     }
     if (digest !== reviewedDigest) {
-        return importError('digest_mismatch', 'The style pack changed after review. Analyze it again before installing.');
+        return importError('digest_mismatch', 'The style pack changed after review. Analyse it again before installing.');
     }
     if (typeof reviewedCatalogFingerprint !== 'string' || !reviewedCatalogFingerprint) {
-        return importError('invalid_reviewed_pack', 'The style-pack catalog review is incomplete. Analyze it again before installing.');
+        return importError('invalid_reviewed_pack', 'The style-pack catalogue review is incomplete. Analyse it again before installing.');
     }
 
     if (optionSnapshot.applyAssignments) {
@@ -4004,10 +4004,10 @@ export async function applyStylePackImport(reviewed, options = {}) {
                 optionSnapshot.selected.assignmentPresets,
             ).presetNames;
         } catch {
-            return importError('selection_changed', 'The assignment preset selection changed after review. Analyze the pack again.');
+            return importError('selection_changed', 'The assignment preset selection changed after review. Analyse the pack again.');
         }
         if (!Array.isArray(reviewedAssignmentOrder) || !jsonValuesEqual(selectedOrder, reviewedAssignmentOrder)) {
-            return importError('selection_changed', 'The assignment preset order changed after review. Analyze the pack again.');
+            return importError('selection_changed', 'The assignment preset order changed after review. Analyse the pack again.');
         }
     }
 
@@ -4044,13 +4044,13 @@ async function applyStylePackImportInternal(normalized, digest, options, mode) {
                 return contextChangedError('The active style-pack target changed after review.');
             }
             if (!metadataSafety.safe) {
-                return importError('chat_metadata_persist_failed', 'The per-chat identifier could not be saved safely.');
+                return importError('chat_metadata_persist_failed', 'The chat colour settings could not be saved safely.');
             }
         }
 
         const record = getAutoSyncRecord(true);
         if (getStylePackCatalogFingerprint(record) !== reviewedCatalogFingerprint) {
-            return importError('stale_review', 'The installed style library changed after review. Analyze the style pack again.');
+            return importError('stale_review', 'The installed style library changed after review. Analyse the style pack again.');
         }
         const plan = buildStylePackInstallationPlan(
             normalized.pack,
@@ -4217,7 +4217,7 @@ function analyzeImportPayloadSafely(analyze) {
     try {
         return analyze();
     } catch (error) {
-        return importError(error?.code || 'invalid_payload', error?.message || 'The import payload is malformed.');
+        return importError(error?.code || 'invalid_payload', error?.message || 'The import file is damaged.');
     }
 }
 
@@ -4348,10 +4348,10 @@ function analyzeImportedPalettes(source) {
     const palettesPresent = hasOwn(source, 'customPalettes');
     const metadataPresent = hasOwn(source, 'customPaletteMeta');
     if (palettesPresent && !isPlainObject(source.customPalettes)) {
-        return importError('invalid_custom_palettes', 'The payload has invalid custom palette data.');
+        return importError('invalid_custom_palettes', 'The file has invalid custom colour palette data.');
     }
     if (metadataPresent && !isPlainObject(source.customPaletteMeta)) {
-        return importError('invalid_custom_palette_metadata', 'The payload has invalid custom palette metadata.');
+        return importError('invalid_custom_palette_metadata', 'The file has invalid custom colour palette details.');
     }
     if (!palettesPresent) return { ok: true, palettesPresent: false, customPalettes: null, customPaletteMeta: null };
     if (Object.keys(source.customPalettes).length > ORDINARY_IMPORT_OUTPUT_LIMITS.maxCustomPalettes) {
@@ -4366,7 +4366,7 @@ function analyzeImportedPalettes(source) {
     }
     const customPalettes = normalizeCustomPaletteRegistry(source.customPalettes);
     if (Object.keys(customPalettes).length !== Object.keys(source.customPalettes).length) {
-        return importError('invalid_custom_palette', 'One or more custom palettes contain no valid colors.');
+        return importError('invalid_custom_palette', 'One or more custom palettes have no valid colours.');
     }
     const metadata = normalizeNameDictionary(source.customPaletteMeta);
     const paletteIdentities = new Set(Object.keys(customPalettes).map(name => normalizeRegistryIdentity(name, 120)));
@@ -4397,7 +4397,7 @@ function validateImportedCollectionLimits(colors, profiles) {
     }
     let aliasCount = 0;
     for (const [rawKey, entry] of colorEntries) {
-        if (!isPlainObject(entry)) return importError('invalid_character', `Character entry "${rawKey}" is not a JSON object.`);
+        if (!isPlainObject(entry)) return importError('invalid_character', `Character entry "${rawKey}" is not in the expected format.`);
         if (hasOwn(entry, 'aliases') && !Array.isArray(entry.aliases)) {
             return importError('invalid_aliases', `Aliases for "${rawKey}" must be an array.`);
         }
@@ -4424,7 +4424,7 @@ function validateImportedIdentities(colors, profiles) {
     let aliasCount = 0;
     const characterIdentities = new Map();
     for (const [rawKey, entry] of colorEntries) {
-        if (!isPlainObject(entry)) return importError('invalid_character', `Character entry "${rawKey}" is not a JSON object.`);
+        if (!isPlainObject(entry)) return importError('invalid_character', `Character entry "${rawKey}" is not in the expected format.`);
         const name = hasOwn(entry, 'name') ? entry.name : rawKey;
         if (isDangerousRegistryIdentity(name) || isReservedCharacterIdentity(name)) {
             return importError('reserved_identity', `Reserved registry identity "${name}" is not allowed.`);
@@ -4475,7 +4475,7 @@ function validateImportedIdentities(colors, profiles) {
     }
     const groupIdentities = new Map();
     for (const [rawKey, profile] of profileEntries) {
-        if (!isPlainObject(profile)) return importError('invalid_group_profile', `Group profile "${rawKey}" is not a JSON object.`);
+        if (!isPlainObject(profile)) return importError('invalid_group_profile', `Group profile "${rawKey}" is not in the expected format.`);
         const name = hasOwn(profile, 'name') ? profile.name : rawKey;
         if (isDangerousRegistryIdentity(name)) {
             return importError('reserved_identity', `Reserved registry identity "${name}" is not allowed.`);
@@ -4497,16 +4497,16 @@ function analyzeColorPayload(source, kind = 'colors') {
     const unsupported = unsupportedSchemaVersionResult(source);
     if (unsupported) return unsupported;
     if (!isPlainObject(source) || !hasOwn(source, 'colors') || !isPlainObject(source.colors)) {
-        return importError('unrecognized_payload', 'The source does not contain a recognized color payload.');
+        return importError('unrecognized_payload', 'The file does not contain recognised colour data.');
     }
     if (hasOwn(source, 'settings') && !isPlainObject(source.settings)) {
-        return importError('invalid_settings', 'The color payload has invalid settings data.');
+        return importError('invalid_settings', 'The colour data has invalid settings.');
     }
     if (hasOwn(source, 'customGradientPresets') && !isPlainObject(source.customGradientPresets)) {
-        return importError('invalid_gradient_presets', 'The color payload has invalid custom gradient presets.');
+        return importError('invalid_gradient_presets', 'The colour data has invalid custom gradient presets.');
     }
     if (hasOwn(source, 'groupProfiles') && !isPlainObject(source.groupProfiles)) {
-        return importError('invalid_group_profiles', 'The color payload has invalid group profile data.');
+        return importError('invalid_group_profiles', 'The colour data has invalid group profile data.');
     }
     const paletteAnalysis = analyzeImportedPalettes(source);
     if (!paletteAnalysis.ok) return paletteAnalysis;
@@ -4570,10 +4570,10 @@ function analyzeSettingsPayload(source) {
     const unsupported = unsupportedSchemaVersionResult(source);
     if (unsupported) return unsupported;
     if (!isPlainObject(source) || !hasOwn(source, 'settings') || !isPlainObject(source.settings)) {
-        return importError('unrecognized_payload', 'The source does not contain a recognized settings payload.');
+        return importError('unrecognized_payload', 'The file does not contain recognised settings data.');
     }
     if (hasOwn(source, 'customGradientPresets') && !isPlainObject(source.customGradientPresets)) {
-        return importError('invalid_gradient_presets', 'The settings payload has invalid custom gradient presets.');
+        return importError('invalid_gradient_presets', 'The settings data has invalid custom gradient presets.');
     }
     const paletteAnalysis = analyzeImportedPalettes(source);
     if (!paletteAnalysis.ok) return paletteAnalysis;
@@ -4597,7 +4597,7 @@ function analyzeSettingsPayload(source) {
     const customGradientPresets = presetsPresent ? normalizeGradientPresetRegistry(source.customGradientPresets) : null;
     if (!Object.keys(importedSettings).length && !Object.keys(customGradientPresets || {}).length
         && !Object.keys(paletteAnalysis.customPalettes || {}).length) {
-        return importError('unrecognized_payload', 'The source contains no recognized settings, palettes, or gradient presets.');
+        return importError('unrecognized_payload', 'The file contains no recognised settings, palettes or gradient presets.');
     }
 
     const declaredVersion = Number(source.settings?.colorSchemaVersion ?? source.version);
@@ -4724,7 +4724,7 @@ function analyzeCardValue(source, binding, { allowUnboundRuntime = false } = {})
     try {
         value = inspectJsonValue(source, ORDINARY_IMPORT_LIMITS).value;
     } catch (error) {
-        return importError(error?.code || 'invalid_payload', error?.message || 'The card data is malformed.');
+        return importError(error?.code || 'invalid_payload', error?.message || 'The card data is damaged.');
     }
     if (!(allowUnboundRuntime ? isRuntimeContextCurrent(binding.context) : isActiveStorageBindingCurrent(binding))) {
         return contextChangedError('The active import target changed while the card data was read.');
@@ -4873,7 +4873,7 @@ async function applyReviewedImport(payload, kind, options = {}) {
     const destinationKey = requestedTargetKey || operationBinding.key;
     const reviewedDestination = getReviewedImportDestination(reviewedContext, destinationScope, destinationKey);
     if (!reviewedDestination) {
-        return importError('invalid_reviewed_payload', 'The import destination review is incomplete. Analyze the source again.');
+        return importError('invalid_reviewed_payload', 'The import destination review is incomplete. Analyse the source again.');
     }
     return runStorageOperation(() => applyReviewedImportInternal(
         reviewed,
@@ -4957,7 +4957,7 @@ async function applyReviewedImportInternal(
                     ? await rollbackStorageTransaction(transaction, appliedRecord, appliedRuntime, failedSnapshot, true)
                     : true;
                 return {
-                    ...importError('chat_metadata_persist_failed', 'The per-chat identifier could not be saved safely.'),
+                    ...importError('chat_metadata_persist_failed', 'The chat colour settings could not be saved safely.'),
                     rollbackPersisted,
                 };
             }
@@ -5379,7 +5379,7 @@ export function updateAutoSyncUI() {
 export function initAutoSync() {
     const unsupported = unsupportedSchemaVersionResult(extension_settings?.[MODULE_NAME], { moduleRecord: true });
     if (unsupported) {
-        setAutoSyncError('Stored schema is newer than this extension');
+        setAutoSyncError('The saved colour data is from a newer version of this extension.');
         return unsupported;
     }
     const hadLegacyPreference = getLegacyLocalStorageValue(LEGACY_AUTO_SYNC_ENABLED_KEY) !== null;
@@ -5559,7 +5559,7 @@ export async function saveToCard() {
         : pendingAnalysis;
     if (!analysis?.ok) {
         toast.error(analysis?.message || 'The card data is too large or invalid.');
-        return analysis || importError('card_analysis_failed', 'The card data could not be analyzed.');
+        return analysis || importError('card_analysis_failed', 'The card data could not be analysed.');
     }
 
     const currentContext = getContext();
@@ -5575,7 +5575,7 @@ export async function saveToCard() {
         return contextChangedError('The active card or prospective card data changed before it could be saved.');
     }
     if (typeof currentContext.writeExtensionField !== 'function') {
-        const result = importError('card_save_unavailable', 'This Neconyan version has no immediate, awaitable character-card writer.');
+        const result = importError('card_save_unavailable', 'This version of Neconyan cannot save character cards straight away, so the colours were not saved.');
         toast.error(result.message);
         return result;
     }
@@ -5584,13 +5584,13 @@ export async function saveToCard() {
     try {
         const writeResult = await currentContext.writeExtensionField(characterId, 'dialogueColors', output);
         if (writeResult === false || typeof getCharacters !== 'function') {
-            throw new Error('Character-card write was not confirmed.');
+            throw new Error('Neconyan did not confirm that the character card was saved.');
         }
         await getCharacters();
         const refreshed = getCardByCapturedIdentity(getContext(), cardIdentity, avatar);
         if (!refreshed || JSON.stringify(sortJsonForComparison(refreshed.data?.extensions?.dialogueColors ?? null))
             !== JSON.stringify(sortJsonForComparison(output))) {
-            const result = importError('card_save_unverified', 'The character card did not retain the saved color data.');
+            const result = importError('card_save_unverified', 'The character card did not keep the colour data after saving.');
             toast.error(result.message);
             return result;
         }
@@ -5598,7 +5598,7 @@ export async function saveToCard() {
         return { ok: true, cardIdentity, characterCount: Object.keys(output.colors).length };
     } catch (error) {
         console.warn('[Dialogue Colors] Failed to save character-card color data:', error);
-        const result = importError('card_save_failed', 'The character card could not be saved and verified.');
+        const result = importError('card_save_failed', 'The character card could not be saved and checked.');
         toast.error(result.message);
         return result;
     }
@@ -5662,7 +5662,7 @@ function applyAutomaticCardSeed(analysis, captured, { colorsOnly = true } = {}) 
     } catch (error) {
         console.warn('[Dialogue Colors] Card colors could not be applied; keeping the current registry.', error);
         toast.error('Saved colors on this character card could not be applied.');
-        return importError(error?.code || 'card_apply_failed', error?.message || 'Saved card colors could not be applied.');
+        return importError(error?.code || 'card_apply_failed', error?.message || 'The saved card colours could not be applied.');
     }
 }
 

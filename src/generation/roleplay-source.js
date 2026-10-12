@@ -387,7 +387,7 @@ export function assertRoleplaySourceLocked(lease, source, { effect } = {}) {
         const resource = state.resources[source.instanceId];
         if (source.kind === 'storage' || resource?.kind !== 'chat' || resource.status !== 'live'
             || resource.accountId !== state.accountId || resource.dataEpoch !== state.dataEpoch) {
-            throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'The chat this job answers no longer exists.', 404);
+            throw roleplayError('ROLEPLAY_SOURCE_MISSING', 'The chat this reply belongs to no longer exists.', 404);
         }
         locator = resource.locator;
     }

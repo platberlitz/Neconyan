@@ -72,7 +72,7 @@ function readCurrent(context, base, account, request) {
         const saved = assertRoleplaySourceLocked(lease, context.job.intent.source);
         ownerLocked(lease, context.job.intent.source, request);
         const prepared = preparePathfinderNotebookAction(saved.records, request.notebook);
-        if (prepared.afterHash !== request.expectedAfterHash || prepared.changed !== request.mutating) throw fail('The notebook changed after admission.');
+        if (prepared.afterHash !== request.expectedAfterHash || prepared.changed !== request.mutating) throw fail('The notebook changed after the request was accepted.');
         return { prepared, recordsHash: roleplayHash(saved.records) };
     });
 }

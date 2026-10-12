@@ -30,7 +30,7 @@ export function normalizePersonaCard(card) {
     const data = card.data;
     const name = text(data.name).trim();
     if (!name) throw new Error('The persona needs a name.');
-    if (data.appendices !== undefined && !Array.isArray(data.appendices)) throw new Error('Invalid scenario notes.');
+    if (data.appendices !== undefined && !Array.isArray(data.appendices)) throw new Error('The scenario notes in this persona card are not in the expected format.');
     const ids = new Set();
     const appendices = (data.appendices ?? []).map((note, index) => {
         if (!isObject(note)) throw new Error('Invalid scenario note.');
@@ -80,12 +80,12 @@ export function encodePersonaCard(card, image, format) {
 }
 
 export function decodePersonaCard(buffer, format) {
-    if (buffer.length > MAX_PERSONA_CARD_BYTES) throw new Error('Persona card is too large.');
+    if (buffer.length > MAX_PERSONA_CARD_BYTES) throw new Error('This persona card is too large to import.');
     if (format === 'png') {
         const metadata = JSON.parse(readCharacterCard(buffer));
         return { card: normalizePersonaCard(metadata?.data?.extensions?.neconyan_persona), image: buffer };
     }
-    if (format !== 'json') throw new Error('Unsupported persona card format.');
+    if (format !== 'json') throw new Error('This file is not a persona card Neconyan can import. Persona cards must be JSON files.');
     const data = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(buffer));
     const card = normalizePersonaCard(data);
     if (typeof data.avatar !== 'string' || !/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(data.avatar)) {
@@ -96,7 +96,7 @@ export function decodePersonaCard(buffer, format) {
 
 /** SillyTavern and SillyBunny persona backups contain a library, without image bytes. */
 export function decodePersonaImport(buffer, format) {
-    if (buffer.length > MAX_PERSONA_CARD_BYTES) throw new Error('Persona card is too large.');
+    if (buffer.length > MAX_PERSONA_CARD_BYTES) throw new Error('This persona card is too large to import.');
     if (format === 'json') {
         const data = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(buffer));
         if (isObject(data) && data.spec === undefined && Object.hasOwn(data, 'personas')) {

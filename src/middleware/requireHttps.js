@@ -26,7 +26,7 @@ const requireHttpsMiddleware = function (request, response, callback) {
 
     if (!isHttps) {
         return response.status(403).json({
-            error: 'HTTPS is required for non-localhost connections. Configure SSL in config.yaml or use a reverse proxy with HTTPS.',
+            error: 'This connection is not secure, so Neconyan cannot be opened from another computer yet. Ask the person running Neconyan to turn on HTTPS (the secure, padlock address) in config.yaml, then reload.',
         });
     }
 

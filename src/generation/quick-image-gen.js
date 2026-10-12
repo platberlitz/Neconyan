@@ -98,7 +98,7 @@ async function readJson(response) {
 }
 
 async function describeError(response, label) {
-    return `${label} request failed with HTTP ${response.status}.`;
+    return `${label} could not create the image. Try again in a moment, or check the service settings.`;
 }
 
 function finishImage(bytes, source) {

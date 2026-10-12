@@ -68,7 +68,7 @@ const startButtonPlacementObserver = () => {
 SlashCommandParser.addCommandObject(SlashCommand.fromProps({ name: 'inputhistory-config',
     callback: ({ key, get }, value) => {
         if (!key) {
-            toastr.error('Required argument "key" missing for /inputhistory-conf');
+            toastr.error('The /inputhistory-conf command needs a "key" value.');
             return;
         }
         const keys = Object.keys(settings);
@@ -79,7 +79,7 @@ SlashCommandParser.addCommandObject(SlashCommand.fromProps({ name: 'inputhistory
             showHistoryButton: isTrueBoolean,
         };
         if (!keys.includes(key)) {
-            toastr.error(`Invalid "key" argument "${key}" supplied for /inputhistory-conf`);
+            toastr.error(`"${key}" is not a valid key for /inputhistory-conf.`);
             return;
         }
         if (isTrueBoolean(get)) {
@@ -118,7 +118,7 @@ SlashCommandParser.addCommandObject(SlashCommand.fromProps({ name: 'inputhistory
 SlashCommandParser.addCommandObject(SlashCommand.fromProps({ name: 'inputhistory-add',
     callback: (args, value) => {
         if (value.trim() == '') {
-            toastr.error('Required string missing for /inputhistory-add');
+            toastr.error('The /inputhistory-add command needs some text.');
             return;
         }
         addToInputHistory(value);

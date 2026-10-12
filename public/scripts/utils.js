@@ -1484,7 +1484,7 @@ export async function getSanitizedFilename(fileName) {
         const responseData = await result.json();
         return responseData.fileName;
     } catch (error) {
-        toastr.error(String(error), 'Could not sanitize fileName');
+        toastr.error(String(error), 'Could not prepare the file name');
         console.error('Could not sanitize fileName', error);
         throw error;
     }
@@ -1620,7 +1620,7 @@ export async function promptForAvatarFile() {
                 resolve(base64);
             } catch (error) {
                 console.error('Error processing selected image:', error);
-                toastr.error(t`Failed to process selected image: ${error.message}`);
+                toastr.error(t`Could not process selected image: ${error.message}`);
                 resolve(null);
             }
         };
@@ -1650,7 +1650,7 @@ export async function resolveAvatarData(input) {
     }
 
     if (isExternalUrl(trimmed)) {
-        toastr.warning(t`External URLs are not supported for avatars. Use a local file path or "prompt" to select a file.`);
+        toastr.warning(t`Web links are not supported for pictures. Use a file from this computer, or type "prompt" to choose one.`);
         return null;
     }
 
@@ -1678,13 +1678,13 @@ export async function resolveAvatarData(input) {
             return await getBase64Async(converted);
         } catch (error) {
             console.error('Error fetching local avatar:', error);
-            toastr.warning(t`Failed to load avatar from path: ${error.message}`);
+            toastr.warning(t`Could not load avatar from path: ${error.message}`);
             return null;
         }
     }
 
     console.warn('Unknown avatar format:', trimmed.substring(0, 50));
-    toastr.warning(t`Unknown avatar format. Use "prompt" to select a file, or provide a local file path.`);
+    toastr.warning(t`That picture source is not recognised. Type "prompt" to choose a file, or give the file's location on this computer.`);
     return null;
 }
 

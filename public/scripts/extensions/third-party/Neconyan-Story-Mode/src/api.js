@@ -92,7 +92,7 @@ export async function setChatFlag(enabled) {
     meta[CHAT_KEY] = next;
     try {
         if (await context.saveMetadata({ throwOnError: true }) !== true) {
-            throw new Error('Chat preference was not saved');
+            throw new Error('Your chat preference could not be saved.');
         }
     } catch (error) {
         if (meta[CHAT_KEY] === next) {
@@ -165,7 +165,7 @@ export async function setCardConfig(patch, character = currentCharacter()) {
             instruction: typeof merged.instruction === 'string' ? merged.instruction.trim() : '',
         };
         if (await context.writeExtensionField(characterId, CARD_KEY, next, { throwOnError: true }) !== true) {
-            throw new Error('Character preference was not saved');
+            throw new Error('Your character preference could not be saved.');
         }
         return true;
     });
@@ -412,19 +412,19 @@ function restoreMetadata(message, state) {
     message.extra ??= {};
     const story = state.story ? storyExtra(message) : null;
     for (const [target, changes] of [[message, state.fields], [message.extra, state.extra], [story, state.story?.fields ?? []]]) {
-        if (!Array.isArray(changes)) throw new Error('The continuation metadata is invalid');
+        if (!Array.isArray(changes)) throw new Error('The saved continuation details are damaged.');
         for (const change of changes) {
             if (!Array.isArray(change) || change.length < 1 || change.length > 3 || typeof change[0] !== 'string'
                 || ['__proto__', 'prototype', 'constructor'].includes(change[0])
                 || (target === message && ['mes', 'swipes', 'swipe_info', 'extra'].includes(change[0]))
                 || (target === message.extra && change[0] === EXTRA_KEY)
                 || (target === story && ['cuts', 'reasonings', 'continuations'].includes(change[0]))) {
-                throw new Error('The continuation metadata is invalid');
+                throw new Error('The saved continuation details are damaged.');
             }
             if (change.length === 1) delete target[change[0]];
             else if (change.length === 3) {
                 const prefix = String(target[change[0]] ?? '').slice(0, change[1]);
-                if (textRevision(prefix) !== change[2]) throw new Error('The continuation metadata changed');
+                if (textRevision(prefix) !== change[2]) throw new Error('The saved continuation details no longer match the text.');
                 target[change[0]] = prefix;
             } else target[change[0]] = structuredClone(change[1]);
         }
@@ -434,7 +434,7 @@ function restoreMetadata(message, state) {
             if (Object.hasOwn(state.story.lengths, key)) {
                 const length = state.story.lengths[key];
                 if (!Number.isInteger(length) || length < 0 || length > (story[key]?.length ?? 0)) {
-                    throw new Error('The continuation history is invalid');
+                    throw new Error('The saved continuation history is damaged.');
                 }
                 story[key] = (story[key] ?? []).slice(0, length);
             } else delete story[key];
@@ -969,13 +969,13 @@ async function truncateLastContinuation(action) {
     }
     const after = structuredClone(message);
     const history = message.extra?.[EXTRA_KEY]?.continuations ?? [];
-    if (!Array.isArray(history)) throw new Error('The continuation history is invalid');
+    if (!Array.isArray(history)) throw new Error('The saved continuation history is damaged.');
     const recorded = history.at(-1);
     let before;
     if (history.length) {
         if (recorded?.cut !== cut || recorded.revision !== textRevision(text.slice(0, cut))
             || !Array.isArray(recorded.message?.fields) || !Array.isArray(recorded.swipe?.fields)) {
-            throw new Error('The continuation snapshot does not match the original text');
+            throw new Error('The saved continuation no longer matches the original text.');
         }
         before = structuredClone(message);
         before.mes = text.slice(0, cut);

@@ -145,7 +145,7 @@ class DataMaidDialog {
             this.token = report.token;
         } catch (error) {
             this.hideSpinner();
-            toastr.error(t`An error has occurred. Check the console for details.`);
+            toastr.error(t`The scan could not finish. Try again in a moment.`);
             console.error('Error generating Data Maid report:', error);
         } finally {
             this.isScanning = false;

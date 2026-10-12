@@ -18,7 +18,7 @@ import { generateCustomImageJob, prepareCustomImageReferences } from './quick-im
 import { freezeQuickImageReferenceSources } from './quick-image-gen-reference.js';
 
 const recovery = message => Object.assign(new Error(message), { status: 409, code: 'QIG_RESULT_RECOVERY' });
-const sourceChanged = () => Object.assign(new Error('The accepted Quick Image Gen provider settings changed before the image request.'), { status: 409, code: 'QIG_SETTINGS_CHANGED' });
+const sourceChanged = () => Object.assign(new Error('The Quick Image Gen settings changed before the image request was sent.'), { status: 409, code: 'QIG_SETTINGS_CHANGED' });
 
 function accountBase(context) {
     const base = roleplayAccountBase(context.directories);
@@ -28,7 +28,7 @@ function accountBase(context) {
 
 /** Only an identity, never a provider key or connection URL, belongs in a saved job. */
 export function quickImageGenSettingsFingerprint(settings) {
-    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw recovery('The accepted image provider settings are unavailable.');
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw recovery('The saved image service settings are unavailable.');
     return roleplayHash(settings);
 }
 
@@ -47,7 +47,7 @@ export async function generateQuickImageGenJobImage(context, { effectId, prompt,
     if (referenceSources !== undefined && (!Array.isArray(referenceSources) || referenceSources.length > 30
         || referenceSources.some(value => !value || !/^[a-f0-9]{64}$/.test(value.sourceHash)
             || !/^[a-f0-9]{64}$/.test(value.rawHash) || !value.physical)
-        || new Set(referenceSources.map(value => value.sourceHash)).size !== referenceSources.length)) throw recovery('The accepted reference identities are invalid.');
+        || new Set(referenceSources.map(value => value.sourceHash)).size !== referenceSources.length)) throw recovery('The saved reference images are invalid.');
     const extraInput = { ...(batch ? { batch: { index: batch.index, count: batch.count } } : {}),
         ...(characterScope !== undefined ? { characterScope: structuredClone(characterScope) } : {}),
         ...(referenceSources !== undefined ? { referenceSourcesHash: roleplayHash(referenceSources) } : {}),
@@ -87,7 +87,7 @@ export async function generateQuickImageGenJobImage(context, { effectId, prompt,
         || settingsFingerprint !== undefined && settingsFingerprint !== input.settingsFingerprint
         || expectedAccount && (expectedAccount.accountId !== input.account.accountId
             || expectedAccount.dataEpoch !== input.account.dataEpoch)) {
-        throw recovery('The saved image inputs no longer match the accepted request.');
+        throw recovery('The saved image details no longer match the request.');
     }
     let activeLease;
     const withAccount = operation => withRoleplayAccount(base, input.account, lease => {
