@@ -443,6 +443,9 @@ function applySectionRowStyles(row, isOpen) {
     row.style.setProperty('display', 'grid', 'important');
     row.style.setProperty('width', '100%', 'important');
     row.style.gridTemplateColumns = 'minmax(0, 1fr) auto';
+    row.style.gridTemplateAreas = 'none';
+    row.style.gap = '0';
+    row.style.flexShrink = '0';
     row.style.alignItems = 'stretch';
     row.style.setProperty('min-height', '48px', 'important');
     row.style.boxSizing = 'border-box';
