@@ -59,6 +59,60 @@ test('APK updates require confirmation, a newer matching package and matching si
     assert.doesNotMatch(source, /ACTION_DELETE|\.getFilesDir\(\)|CookieManager|Authorization|password/);
 });
 
+test('a verified pending APK survives recreation, but cancellation and completed installs remove it', t => {
+    if (spawnSync('javac', ['-version']).error) return t.skip('Java compiler is not installed');
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-pending-apk-'));
+    try {
+        const harness = path.join(directory, 'PendingApkTest.java');
+        fs.writeFileSync(harness, `package io.github.platberlitz.neconyan;
+import java.io.File;
+import java.nio.file.Files;
+public class PendingApkTest {
+    static void check(boolean value) { if (!value) throw new AssertionError(); }
+    public static void main(String[] args) throws Exception {
+        File directory = new File(args[0]);
+        File apk = new File(directory, "update.apk");
+        File record = new File(directory, "pending-version");
+        File data = new File(directory, "saved-data");
+        Files.writeString(data.toPath(), "unchanged");
+        PendingApkUpdate pending = new PendingApkUpdate(apk);
+        check(pending.restore(1020900) == null);
+        Files.writeString(apk.toPath(), "verified fixture");
+        pending.save("1.3.0.1");
+        // Recreate the updater, as Android does when returning from installation settings.
+        PendingApkUpdate recreated = new PendingApkUpdate(apk);
+        check("1.3.0.1".equals(recreated.restore(1020900)));
+        recreated.clear();
+        check(!apk.exists() && !record.exists());
+        Files.writeString(apk.toPath(), "verified fixture");
+        pending.save("1.3.0.1");
+        check(new PendingApkUpdate(apk).restore(1030001) == null);
+        check(!apk.exists() && !record.exists());
+        for (String invalid : new String[] { "../evil", "x".repeat(65) }) {
+            Files.writeString(apk.toPath(), "fixture");
+            Files.writeString(record.toPath(), invalid);
+            check(new PendingApkUpdate(apk).restore(1020900) == null);
+            check(!apk.exists() && !record.exists());
+        }
+        Files.writeString(record.toPath(), "1.3.0.1");
+        check(pending.restore(1020900) == null);
+        check(!record.exists());
+        check(Files.readString(data.toPath()).equals("unchanged"));
+    }
+}`);
+        const compile = spawnSync('javac', ['-d', directory, path.join(java, 'ApkUpdatePolicy.java'), path.join(java, 'PendingApkUpdate.java'), harness], { encoding: 'utf8' });
+        assert.equal(compile.status, 0, compile.stderr);
+        const run = spawnSync('java', ['-cp', directory, 'io.github.platberlitz.neconyan.PendingApkTest', directory], { encoding: 'utf8' });
+        assert.equal(run.status, 0, run.stderr);
+    } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+
+    const source = read('ApkUpdater.java');
+    assert.match(source, /pendingUpdate\.save\(version\)/);
+    assert.match(source, /pendingUpdate\.restore\(installed\(\)\.getLongVersionCode\(\)\)/);
+    assert.match(source, /void onResume\(\)/);
+    assert.match(read('MainActivity.java'), /apkUpdater\.onResume\(\)/);
+});
+
 test('only the private verified APK can be shared with the Android installer, read-only', () => {
     const provider = read('UpdateApkProvider.java');
     assert.match(provider, /if \(!apkUri\(getContext\(\)\)\.equals\(uri\)\)/);

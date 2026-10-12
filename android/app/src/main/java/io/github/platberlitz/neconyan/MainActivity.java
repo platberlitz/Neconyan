@@ -507,6 +507,7 @@ public final class MainActivity extends Activity {
     @Override public void onResume() {
         super.onResume();
         resumed = true;
+        if (apkUpdater != null) apkUpdater.onResume();
         if (credentials == null || web == null || failed) return;
         if (status.getVisibility() == View.VISIBLE) connect();
         main.removeCallbacks(watchdog);

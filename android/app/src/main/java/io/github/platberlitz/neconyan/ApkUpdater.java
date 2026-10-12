@@ -20,17 +20,20 @@ public final class ApkUpdater {
     private static final long MAX_BYTES = 1024L * 1024 * 1024;
     private final Activity activity;
     private final BooleanSupplier workspaceVisible;
+    private final PendingApkUpdate pendingUpdate;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private volatile boolean cancelled;
     private volatile boolean closed;
     private volatile HttpURLConnection connection;
     private boolean busy;
+    private boolean restored;
     private String pendingVersion;
     private ProgressDialog progress;
 
     ApkUpdater(Activity activity, BooleanSupplier workspaceVisible) {
         this.activity = activity;
         this.workspaceVisible = workspaceVisible;
+        this.pendingUpdate = new PendingApkUpdate(UpdateApkProvider.apkFile(activity));
     }
 
     @JavascriptInterface public void installUpdate(String version) {
@@ -75,24 +78,31 @@ public final class ApkUpdater {
         progress.show();
         worker.execute(() -> {
             File apk = UpdateApkProvider.apkFile(activity);
-            File partial = new File(apk.getParentFile(), "download.part.apk");
+            File partial = null;
             try {
                 if (!apk.getParentFile().isDirectory() && !apk.getParentFile().mkdirs()) throw new IOException("Could not create the private update folder.");
+                String prefix = "download-" + android.os.Process.myPid() + "-";
+                File[] stale = apk.getParentFile().listFiles((folder, name) -> name.startsWith("download-") && name.endsWith(".part.apk") && !name.startsWith(prefix));
+                if (stale != null) for (File file : stale) file.delete();
+                // A destroyed activity's worker must not remove a new activity's download.
+                partial = File.createTempFile(prefix, ".part.apk", apk.getParentFile());
                 apk.delete();
                 transfer(url, partial);
                 verify(partial, version);
                 if (cancelled || closed) throw new IOException("APK download cancelled.");
                 if (!partial.renameTo(apk)) throw new IOException("Could not save the update APK.");
+                pendingUpdate.save(version);
                 activity.runOnUiThread(() -> {
                     dismissProgress();
-                    if (closed || cancelled) { busy = false; return; }
+                    if (closed) { busy = false; return; }
+                    if (cancelled) { finishPendingUpdate(); return; }
                     pendingVersion = version;
                     offerInstall();
                 });
             } catch (Exception error) {
                 activity.runOnUiThread(() -> { dismissProgress(); if (!closed && !cancelled) fail(error); else busy = false; });
             } finally {
-                partial.delete();
+                if (partial != null) partial.delete();
                 HttpURLConnection active = connection;
                 if (active != null) active.disconnect();
                 connection = null;
@@ -163,8 +173,8 @@ public final class ApkUpdater {
             if (!activity.getPackageManager().canRequestPackageInstalls()) {
                 new AlertDialog.Builder(activity).setTitle("Allow this APK update")
                     .setMessage("In Android settings, allow Neconyan to install apps, then return here to approve the update.")
-                    .setNegativeButton("Cancel", (dialog, which) -> { pendingVersion = null; busy = false; })
-                    .setOnCancelListener(dialog -> { pendingVersion = null; busy = false; })
+                    .setNegativeButton("Cancel", (dialog, which) -> finishPendingUpdate())
+                    .setOnCancelListener(dialog -> finishPendingUpdate())
                     .setPositiveButton("Open settings", (dialog, which) -> {
                         try { activity.startActivityForResult(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + activity.getPackageName())), INSTALL_PERMISSION); }
                         catch (Exception error) { fail(error); }
@@ -194,8 +204,9 @@ public final class ApkUpdater {
     }
 
     boolean onActivityResult(int requestCode) {
-        if (requestCode == INSTALL_APK) { busy = false; return true; }
+        if (requestCode == INSTALL_APK) { restored = true; finishPendingUpdate(); return true; }
         if (requestCode != INSTALL_PERMISSION) return false;
+        restorePendingUpdate();
         if (pendingVersion != null) {
             if (activity.getPackageManager().canRequestPackageInstalls()) offerInstall();
             else fail(new IOException("APK installation was not allowed. You can try again from Server when ready."));
@@ -203,10 +214,28 @@ public final class ApkUpdater {
         return true;
     }
 
-    private void fail(Exception error) {
-        busy = false;
+    private boolean restorePendingUpdate() {
+        if (restored || closed) return false;
+        restored = true;
+        try {
+            pendingVersion = pendingUpdate.restore(installed().getLongVersionCode());
+            if (pendingVersion != null) { busy = true; return true; }
+        } catch (Exception error) { fail(error); }
+        return false;
+    }
+
+    void onResume() { if (restorePendingUpdate()) offerInstall(); }
+
+    private void finishPendingUpdate() {
         pendingVersion = null;
-        if (!closed) new AlertDialog.Builder(activity).setTitle("APK update not installed")
+        busy = false;
+        pendingUpdate.clear();
+    }
+
+    private void fail(Exception error) {
+        if (closed) return;
+        finishPendingUpdate();
+        new AlertDialog.Builder(activity).setTitle("APK update not installed")
             .setMessage(error.getMessage() == null ? "Could not update the APK. Your saved data has not been changed." : error.getMessage())
             .setPositiveButton("OK", null).show();
     }
