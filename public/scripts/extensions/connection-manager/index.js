@@ -810,7 +810,9 @@ async function createConnectionProfile(forceName = null) {
     });
     const isNameTaken = (n) => extension_settings.connectionManager.profiles.some(p => p.name === n);
     const suggestedName = getUniqueName(collapseSpaces(`${profile.api ?? ''} ${profile.model ?? ''} - ${profile.preset ?? ''}`), isNameTaken);
-    let name = forceName ?? await callGenericPopup(template, POPUP_TYPE.INPUT, suggestedName);
+    let name = forceName ?? await callGenericPopup(template, POPUP_TYPE.INPUT, suggestedName, {
+        allowVerticalScrolling: true,
+    });
     // If it's cancelled, it will be false
     if (!name) {
         return null;
