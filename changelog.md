@@ -2,6 +2,17 @@
 
 ## v1.3.1
 
+### Highlights
+
+- Added Continuity Corrector, an optional after-reply Agent that checks scene facts against recent messages, trackers, lore and prepared memory. Proofreader and Friction Keeper have clearer instructions for preserving tracker blocks.
+- Moved **Fix trackers** beside **Agents On/Off**, with a separate repair connection, ordered fallbacks and a configurable time limit. Companion notes and Agent changes now show the model used for their results.
+- Added **Pinned prompts** beside the desktop Roleplay chat. Pin frequently used prompt switches from the preset's prompt list; each preset keeps its own pins.
+- Added in-app Android updates through **Server → Updates & Restart → Update APK**, with update notices and checks before Android opens the installer.
+- Shared Scratchpad sessions across a character's chats and a group's chats. Conversation keeps separate lists for each persona, and selected messages and proposed edits stay tied to their original chat.
+- Added **Entry tools → Vectorize all** for lorebooks and **Add all** for Meower's cast, with controls for constant lore entries and an undo option for invitations.
+- Fixed Roleplay preview scrolling and streaming, Hush and Ripple layouts, accent colours on controls and character tags, scrolling in the new-connection dialog, and returning to chat after closing workspace pages.
+- Reworded errors and notices to explain what happened and what to do next. Updated the official handbook and the assistants' product reference for this release.
+
 ### Merged Staging PRs
 - PR #132 (2026-10-12) `feat(meower): add an add-all character selection button`
 - PR #133 (2026-10-12) `feat(android): add GitHub APK updates and update notices`
