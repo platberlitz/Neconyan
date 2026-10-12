@@ -1,0 +1,20 @@
+/* Character tags on character cards and in the character editor.
+   Accent-tinted pills built from the same tokens as the library filter chips, so the
+   tags follow the chosen accent in Calico Dark and Light. Loaded as a deferred sheet
+   after the core ones, so the ids plus body.neconyan beat the upstream tags.css rules. */
+
+body.neconyan #rm_print_characters_block .tags_inline {
+    opacity: 1;
+}
+
+body.neconyan #rm_print_characters_block .tags_inline .tag,
+body.neconyan #right-nav-panel #avatar-and-name-block #tagList .tag {
+    opacity: 1;
+    border: 1px solid color-mix(in srgb, var(--neco-ginger) 55%, var(--neco-border));
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--neco-ginger) 16%, var(--neco-surface));
+    color: var(--neco-ink);
+    font-size: 12px;
+    font-weight: 500;
+    padding-inline: 8px;
+}
