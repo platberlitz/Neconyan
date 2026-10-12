@@ -4,6 +4,7 @@
 
 ### Merged Staging PRs
 - PR #132 (2026-10-12) `feat(meower): add an add-all character selection button`
+- PR #133 (2026-10-12) `feat(android): add GitHub APK updates and update notices`
 - PR #134 (2026-10-12) `fix(roleplay): stabilise preview scrolling and streaming`
 - PR #135 (2026-10-12) `fix(scratchpad): share sessions across character chats`
 - PR #136 (2026-10-12) `fix(ui): keep buttons accent-aware across shell styles`
