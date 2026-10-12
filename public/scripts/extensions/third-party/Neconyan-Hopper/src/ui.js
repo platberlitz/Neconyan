@@ -2400,8 +2400,9 @@ function settingsView() {
         if (state.session?.id === session.id) {
             state.session = updated;
         }
+        const invited = new Set(updated.invited);
         for (const row of inviteRows) {
-            row.querySelector('input').checked = updated.invited.includes(row.dataset.avatar);
+            row.querySelector('input').checked = invited.has(row.dataset.avatar);
         }
         filterInvites();
         void refreshAccounts(session.id).catch((error) => {
@@ -2460,10 +2461,10 @@ function settingsView() {
         }
         inviteEmpty.hidden = visible > 0;
         inviteEmpty.textContent = query ? 'No characters match this search.' : 'No characters are available.';
-        const invited = (api.getSession(session.id) ?? session).invited;
-        const invitedCount = invited.length;
+        const invited = new Set((api.getSession(session.id) ?? session).invited);
+        const invitedCount = invited.size;
         inviteCount.textContent = query ? `${visible} of ${inviteRows.length}` : `${invitedCount} invited`;
-        addAllInvites.disabled = inviteRows.every(row => invited.includes(row.dataset.avatar));
+        addAllInvites.disabled = inviteRows.every(row => invited.has(row.dataset.avatar));
         clearInvites.disabled = !invitedCount;
     };
     let searchTimer = null;

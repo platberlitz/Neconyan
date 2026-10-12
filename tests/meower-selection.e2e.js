@@ -30,6 +30,30 @@ async function openSettings(account) {
     return page;
 }
 
+test('phone Meower keeps character selection controls inside the screen at the largest text size', async ({ app }, info) => {
+    const account = await app.account({ phone: true, configureSettings: saved => { saved.power_user.font_scale = 1.5; } });
+    const page = await openSettings(account);
+    await expect(page.locator('html')).toHaveCSS('--fontScale', '1.5');
+    const heading = page.locator('.sbtw-field-heading');
+    await heading.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: info.outputPath('character-selection.png') });
+    const layout = await heading.evaluate(element => ({
+        width: element.clientWidth,
+        contentWidth: element.scrollWidth,
+        controls: [...element.querySelectorAll('button, .sbtw-invite-count')].map(control => {
+            const bounds = control.getBoundingClientRect();
+            const parent = element.getBoundingClientRect();
+            return { label: control.textContent, inside: bounds.left >= parent.left && bounds.right <= parent.right + 1 };
+        }),
+    }));
+    expect(layout.contentWidth, JSON.stringify(layout)).toBeLessThanOrEqual(layout.width);
+    for (const control of layout.controls) expect(control.inside, control.label).toBe(true);
+    const addAll = page.getByRole('button', { name: 'Add all', exact: true });
+    await addAll.click();
+    await expect(addAll).toBeDisabled();
+    await expect.poll(async () => (await readStore(account)).settings.sessions.legacy.invited).toEqual([account.avatar]);
+});
+
 for (const phone of [false, true]) {
     const minimumTarget = phone ? 44 : 32;
     test(`${phone ? 'phone' : 'desktop'} Meower adds the whole character library without replacing invites`, async ({ app }) => {
@@ -61,10 +85,14 @@ for (const phone of [false, true]) {
         expect(bounds.height).toBeGreaterThanOrEqual(minimumTarget);
         await search.fill('Durable Nova');
         await expect(lunaCheck).toBeHidden();
+        await search.fill('No such character');
+        await expect(page.getByText('No characters match this search.', { exact: true })).toBeVisible();
+        await expect(page.locator('.sbtw-invite:visible')).toHaveCount(0);
+        await expect(addAll).toBeEnabled();
         await search.evaluate(element => { element.dataset.selectionAnchor = 'retained'; });
         await addAll.click();
         await expect(addAll).toBeDisabled();
-        await expect(search).toHaveValue('Durable Nova');
+        await expect(search).toHaveValue('No such character');
         await expect(search).toHaveAttribute('data-selection-anchor', 'retained');
         await expect.poll(async () => (await readStore(account)).settings.sessions.one.invited).toEqual([account.avatar, 'Unavailable.png', luna]);
         expect((await readStore(account)).settings.sessions.two.invited).toEqual([luna]);
