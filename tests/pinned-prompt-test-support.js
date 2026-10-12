@@ -61,8 +61,6 @@ export async function managerFixture(overrides = {}, globals = {}) {
     manager.tokenHandler = { getCounts: () => counts };
     manager.render = jest.fn();
     manager.saveServiceSettings = jest.fn(async () => true);
-    manager.getDrawerExpandedState = jest.fn(() => true);
-    manager.setStoredDrawerExpanded = jest.fn();
     return { manager, counts, emit, cleanup, PromptManager };
 }
 

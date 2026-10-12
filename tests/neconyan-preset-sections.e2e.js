@@ -19,6 +19,7 @@ async function openPrompts(page) {
 
 async function seededPage(app, phone) {
     const account = await app.account({ phone, activeConnection: true, configureSettings: settings => {
+        settings.accountStorage = { ...settings.accountStorage, PromptManager_DrawerExpanded_completion_prompt_manager: 'false' };
         const prompts = ['Main', 'Primary Toggles', 'Narration Voice', 'Reply Style'].flatMap((name, index) => [
             { identifier: `section-${index}`, name: `--- ${name}`, role: 'system', system_prompt: false, content: '', injection_position: 0 },
             { identifier: `prompt-${index}`, name: `${name} instructions`, role: 'system', system_prompt: false, content: `Follow the ${name.toLowerCase()} instructions.`, injection_position: 0 },
@@ -104,10 +105,15 @@ async function assertAccentContrast(page) {
 
 for (const phone of [false, true]) {
     const viewport = phone ? 'phone' : 'desktop';
-    test(`${viewport} section locks fill the row and preserve nested collapse controls`, async ({ app }) => {
+    test(`${viewport} prompts stay open while full-height section locks preserve nested collapse controls`, async ({ app }) => {
         const page = await seededPage(app, phone);
         const list = page.locator('#completion_prompt_manager_list');
-        if (!await list.isVisible()) await page.locator('#completion_prompt_manager_drawer > .inline-drawer-toggle').click();
+        await expect(list).toBeVisible();
+        const header = page.locator('#completion_prompt_manager_drawer > .inline-drawer-header');
+        await expect(header.locator('.inline-drawer-icon')).toHaveCount(0);
+        await expect(header).toHaveCSS('cursor', 'default');
+        await header.locator('b').click();
+        await expect(list).toBeVisible();
         await expect(page.locator('.bpt-section-row')).toHaveCount(4);
         await list.scrollIntoViewIfNeeded();
         await capture(page, `${viewport}-preset-sections`);
@@ -132,8 +138,25 @@ for (const phone of [false, true]) {
         await trigger.click();
         await expect(prompt).toBeVisible();
         await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+        await assertAccentContrast(page);
+        await list.evaluate(node => { node.dataset.fixtureRender = 'old'; });
+        await prompt.locator('.prompt-manager-toggle-action').click();
+        await expect(list).not.toHaveAttribute('data-fixture-render', 'old');
+        await expect(list).toBeVisible();
+        await expect(prompt.locator('.prompt-manager-toggle-action')).toHaveAttribute('aria-checked', 'false');
         await trigger.click();
         await expect(prompt).toBeHidden();
         await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+        await page.evaluate(async () => {
+            if (!await (await import('/script.js')).saveSettings(0, { returnResult: true })) throw new Error('Settings save failed');
+        });
+        await page.reload();
+        await page.waitForFunction(() => document.body.classList.contains('neconyan-rail-ready'));
+        await openPrompts(page);
+        await expect(list).toBeVisible();
+        await expect(header.locator('.inline-drawer-icon')).toHaveCount(0);
+        await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+        await expect(lock).toHaveAttribute('aria-pressed', 'false');
+        await expect(prompt).toBeHidden();
     });
 }
