@@ -56,6 +56,7 @@ import { buildFallbackPromptText, extractProfileResponseText } from './llm-utils
 import { buildPromptTransformRecentChat } from './prompt-transform-context.js';
 import { buildAgentContextMacros, captureGroupCards, getPreparedMewmoryContext, usesGroupCardsMacro } from './agent-context-macros.js';
 import { getConnectionProfileDisplayName, getConnectionProfileModelName } from './profile-utils.js';
+import { describeAgentRunModel } from './model-label.js';
 import {
     appendHelperPrefillMessages,
     parseHelperPrefillMessages,
@@ -2693,7 +2694,7 @@ function showPromptTransformRunningToast(agent, mode, profileId = '', options = 
     const cancelLabel = skipChanges ? 'Skip changes' : 'Cancel Agent';
     const messageHtml = `
         <div>${escapeToastHtml(runningLabel)}</div>
-        <div>${escapeToastHtml(`Order ${metadata.order} | Model: ${metadata.modelLabel}`)}</div>
+        <div>${escapeToastHtml(`Order ${metadata.order} | Model: ${describeAgentRunModel(metadata) || 'Current model'}`)}</div>
         <button type="button" class="menu_button menu_button_icon caution ${cancelButtonClass}">
             <i class="fa-solid fa-stop"></i>
             <span>${escapeToastHtml(cancelLabel)}</span>
@@ -2897,6 +2898,7 @@ function updatePromptTransformHistory(message, run) {
         order: run.order,
         profileLabel: run.profileLabel,
         modelLabel: run.modelLabel,
+        model: run.model,
         beforeText: normalizeContentText(run.beforeText),
         afterText: normalizeContentText(run.nextMessageText),
         timestamp: run.timestamp,
@@ -2921,9 +2923,11 @@ function updatePromptTransformHistory(message, run) {
 
 function recordAppliedTransformation(message, beforeText, runs, label = 'Agent post-processing') {
     const changedRuns = runs.filter(run => run.changed);
+    const models = [...new Set(changedRuns.map(run => String(run.model ?? '').trim()).filter(Boolean))];
     return updatePromptTransformHistory(message, {
         ...changedRuns.at(-1),
         agentName: changedRuns.map(run => run.agentName).join(', ') || label,
+        model: models.join(', '),
         beforeText,
         nextMessageText: message.mes,
         changed: beforeText !== message.mes,

@@ -119,6 +119,7 @@ import {
     buildConnectionProfileNameMap,
     populateConnectionProfileSelect,
 } from './profile-utils.js';
+import { describeAgentRunModel } from './model-label.js';
 import { captureCompanionResultTarget, collectRecentCompanionResults, getCompanionResults, initCompanionRunner, getLatestValidCompanionMessageIndex, runTrackerCompanionsOnMessage, syncCompanionChatHistoryConfig } from './companion/companion-runner.js';
 import { getCompanionReferenceIds } from './companion/companion-shared.js';
 import { stripStateChangingMacros } from './companion/companion-macros.js';
@@ -5939,7 +5940,7 @@ async function openPromptTransformHistoryPopup(messageIndex) {
         return `
             <div class="ica-transform-history-entry" data-index="${i}">
                 <h5>${escapeHtml(entry.agentName || 'Agent')} <small>(${escapeHtml(entry.mode || 'replace')})</small></h5>
-                <small>${escapeHtml(`Order ${entry.order ?? 'n/a'} | Model: ${entry.modelLabel || entry.profileLabel || 'Current model'}`)}</small>
+                <small>${escapeHtml(`Order ${entry.order ?? 'n/a'} | Model: ${describeAgentRunModel(entry) || 'Current model'}`)}</small>
                 <small>${timestamp}</small>
                 <div class="ica-transform-diff">${buildPromptTransformDiffMarkup(entry.beforeText ?? '', entry.afterText ?? '')}</div>
                 <div class="ica-transform-actions">

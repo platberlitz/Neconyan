@@ -289,6 +289,10 @@ beforeAll(async () => {
         populateConnectionProfileSelect: jest.fn(),
     }));
 
+    await jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/model-label.js', () => ({
+        describeAgentRunModel: jest.fn(entry => String(entry?.model ?? entry?.profileLabel ?? '')),
+    }));
+
     ({ summarizeChatInterceptChange } = await import('../public/scripts/extensions/in-chat-agents/index.js'));
 });
 
