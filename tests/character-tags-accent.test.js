@@ -11,7 +11,7 @@ const swJs = read('public/sw.js');
 const tabsJs = read('public/scripts/neconyan-tabs.js');
 const tagsCss = read('public/css/neconyan-character-tags.css');
 
-const CACHE_VERSION = '20261012h-character-tags';
+const CACHE_VERSION = swJs.match(/NN_SW_CACHE_VERSION = 'neconyan-cache-v([^']+)'/)[1];
 
 describe('character tags accent styling', () => {
     test('loads as a deferred sheet so the blocking CSS budget is untouched', () => {

@@ -225,6 +225,14 @@ describe('agent workbench state', () => {
         expect(persistentHeader).toContain('id="ica--run-status"');
     });
 
+    test('wraps Stop agent onto a new line instead of past the panel edge on phones', () => {
+        const rule = styleSource.match(/\n\.ica--overview-actions \{[^}]*\}/)[0];
+        expect(rule).toMatch(/flex:\s*0 1 auto;/);
+        expect(rule).toMatch(/flex-wrap:\s*wrap;/);
+        expect(rule).toMatch(/min-width:\s*0;/);
+        expect(rule).toMatch(/max-width:\s*100%;/);
+    });
+
     test('keeps companion feedback placement and tracker controls reachable without empty reply pages', () => {
         const runtime = vm.createContext({});
         vm.runInContext(getFunction('getEditorSectionAvailability'), runtime);
