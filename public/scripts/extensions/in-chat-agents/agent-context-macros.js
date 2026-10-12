@@ -6,6 +6,7 @@ export const GROUP_CARDS_MACRO = 'group-cards';
 export const ACTIVE_LORE_MACRO = 'active-lore';
 export const ACTIVE_AUTHORS_NOTE_MACRO = 'active-authors-note';
 export const TRACKER_STATE_MACRO = 'tracker-state';
+export const SECRETS_TRACKER_MACRO = 'secrets-tracker';
 const GROUP_CARD_FIELDS = [['description', 'Description'], ['personality', 'Personality'], ['scenario', 'Scenario']];
 
 let preparedMewmory = null;
@@ -102,6 +103,13 @@ export function captureTrackerState(agents, metadata) {
         .filter(tracker => tracker.value);
 }
 
+/** A secrets-only view, including renamed template copies and older secret_data trackers. */
+export function captureSecretsTrackerState(agents, metadata) {
+    return captureTrackerState((Array.isArray(agents) ? agents : []).filter(agent =>
+        agent?.sourceTemplateId === 'tpl-secrets-tracker' || agent?.id === 'tpl-secrets-tracker'
+        || getTrackerMetadataKey(agent) === 'agent_secret_data'), metadata);
+}
+
 export function buildTrackerStateText(trackers) {
     return (Array.isArray(trackers) ? trackers : [])
         .filter(tracker => text(tracker?.value))
@@ -114,7 +122,7 @@ export function buildTrackerStateText(trackers) {
  * the lorebook entries and Author's Note in effect for the reply, and the saved tracker state.
  * Lore and the note keep their own {{char}} and {{user}} names filled in.
  */
-export function buildAgentContextMacros({ mewmory = null, groupCards = null, userName = '', charName = '', lore = '', authorsNote = '', trackers = null } = {}) {
+export function buildAgentContextMacros({ mewmory = null, groupCards = null, userName = '', charName = '', lore = '', authorsNote = '', trackers = null, secretsTrackers = null } = {}) {
     const names = value => {
         const filled = text(value);
         return filled && charName ? fillNames(filled, charName, userName) : filled;
@@ -125,5 +133,6 @@ export function buildAgentContextMacros({ mewmory = null, groupCards = null, use
         [ACTIVE_LORE_MACRO]: names(lore),
         [ACTIVE_AUTHORS_NOTE_MACRO]: names(authorsNote),
         [TRACKER_STATE_MACRO]: buildTrackerStateText(trackers),
+        [SECRETS_TRACKER_MACRO]: buildTrackerStateText(secretsTrackers),
     };
 }

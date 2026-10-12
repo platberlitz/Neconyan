@@ -191,6 +191,29 @@ test('a manual continuity rewrite scans current lore and retains saved tracker a
     assert.equal(calls, 1);
 });
 
+test('a secrets-only manual rewrite reads enabled Secrets Tracker copies without unrelated or disabled state', async t => {
+    const tracker = { enabled: true, phase: 'post', sourceTemplateId: 'tpl-secrets-tracker',
+        postProcess: { enabled: true, type: 'extract', extractVariable: 'private', extractPattern: '\\[SECRET\\|[^\\]]*\\]' } };
+    const f = prepared(t, [
+        { id: 'guard', enabled: false, prompt: 'REWRITE {{secrets-tracker}}',
+            postProcess: { enabled: true, promptTransformEnabled: true, promptTransformMaxTokens: 64 } },
+        { ...tracker, id: 'renamed', name: 'Private ledger' },
+        { ...tracker, id: 'disabled', enabled: false, postProcess: { ...tracker.postProcess, extractVariable: 'off' } },
+        { ...tracker, id: 'scene', sourceTemplateId: 'tpl-scene-tracker', postProcess: { ...tracker.postProcess, extractVariable: 'scene' } },
+    ], records => {
+        records[0].chat_metadata = { variables: { agent_private: '[SECRET|Nova|Hidden name|Nobody]', agent_off: 'DISABLED_SECRET', agent_scene: 'UNRELATED_SCENE' } };
+    });
+    let calls = 0;
+    await f.action('run', ['guard']).run({ generate: paid(({ messages }) => {
+        calls++;
+        assert.match(messages[0].content, /<tracker name="Private ledger">\n\[SECRET\|Nova\|Hidden name\|Nobody\]\n<\/tracker>/);
+        assert.doesNotMatch(messages[0].content, /DISABLED_SECRET|UNRELATED_SCENE|\{\{secrets-tracker\}\}/);
+        return { text: 'Corrected answer' };
+    }) });
+    assert.equal(calls, 1);
+    assert.equal(f.saved()[2].mes, 'Corrected answer');
+});
+
 test('manual Agent undo and redo keep the history chain and reconcile tracker state against the actual edited chat', async t => {
     const afterText = 'Changed [SCENE]Garden[/SCENE]';
     const f = prepared(t, [{ id: 'scene', enabled: true, category: 'tracker', phase: 'post', postProcess: { enabled: true, type: 'extract', extractVariable: 'scene', extractPattern: '\\[SCENE\\]([\\s\\S]*?)\\[/SCENE\\]' } }], records => {

@@ -55,7 +55,7 @@ import { resolveExpressionsAgentProfile } from '../expressions/expressions-agent
 import { buildFallbackPromptText, extractProfileResponseText } from './llm-utils.js';
 import { buildPromptTransformRecentChat } from './prompt-transform-context.js';
 import { getTrackerRepairConnectionProfile, getTrackerRepairTimeoutMs, isTrackerRepairRunAgent, markTrackerRepairRunAgent } from './tracker-repair-run.js';
-import { buildAgentContextMacros, captureGroupCards, captureTrackerState, getPreparedActiveLore, getPreparedMewmoryContext, setPreparedActiveLore, TRACKER_STATE_MACRO, usesAgentMacro, usesGroupCardsMacro } from './agent-context-macros.js';
+import { buildAgentContextMacros, captureGroupCards, captureSecretsTrackerState, captureTrackerState, getPreparedActiveLore, getPreparedMewmoryContext, SECRETS_TRACKER_MACRO, setPreparedActiveLore, TRACKER_STATE_MACRO, usesAgentMacro, usesGroupCardsMacro } from './agent-context-macros.js';
 import { getConnectionProfileDisplayName, getConnectionProfileModelName } from './profile-utils.js';
 import { describeAgentRunModel } from './model-label.js';
 import {
@@ -2246,8 +2246,9 @@ function buildBrowserAgentContextMacros(agent) {
         : null;
     const chatId = getCurrentChatId();
     const trackers = usesAgentMacro(agent?.prompt, TRACKER_STATE_MACRO) ? captureTrackerState(getEnabledAgents(), chat_metadata) : null;
+    const secretsTrackers = usesAgentMacro(agent?.prompt, SECRETS_TRACKER_MACRO) ? captureSecretsTrackerState(getEnabledAgents(), chat_metadata) : null;
     return buildAgentContextMacros({ mewmory: getPreparedMewmoryContext(chatId), groupCards, userName: context.name1, charName: context.name2,
-        lore: getPreparedActiveLore(chatId), authorsNote: context.extensionPrompts?.[AUTHORS_NOTE_PROMPT_KEY]?.value, trackers });
+        lore: getPreparedActiveLore(chatId), authorsNote: context.extensionPrompts?.[AUTHORS_NOTE_PROMPT_KEY]?.value, trackers, secretsTrackers });
 }
 
 function updateMessageRegexSnapshot(message, activeAgents, generationType) {

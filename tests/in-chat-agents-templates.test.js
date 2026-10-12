@@ -858,7 +858,9 @@ describe('in-chat agent bundled templates', () => {
         expect(new Set(orders).size).toBe(orders.length);
         expect(readTemplate('length-trimmer.json').settings).toEqual({ lengthTarget: 'About 300 to 450 words' });
         expect(readTemplate('length-trimmer.json').prompt).toContain('{{lengthTarget}}');
-        expect(readTemplate('knowledge-guard.json').prompt).toContain('{{persona}}');
+        for (const macro of ['{{persona}}', '{{active-lore}}', '{{active-authors-note}}', '{{secrets-tracker}}']) {
+            expect(readTemplate('knowledge-guard.json').prompt).toContain(macro);
+        }
         for (const macro of ['{{group-cards}}', '{{mewmory-facts}}', '{{mewmory-interview}}', '{{mesExamplesRaw}}']) {
             expect(readTemplate('character-authenticity.json').prompt).toContain(macro);
         }

@@ -167,7 +167,7 @@ export async function runRoleplayCompanions(context, options) {
     if (roleplayHash(capacity) !== roleplayHash(snapshot.companionCapacity ?? null)) {
         throw fail('The admitted Companion result capacity differs from its saved source.');
     }
-    const input = { ...options, records: preparedRecords, messages };
+    const input = { ...options, records: preparedRecords, messages, agents: all };
     const settings = withRoleplayAccount(base, snapshot.account, () => JSON.parse(readRoleplayFile(path.join(base.directories.root, 'settings.json'), 64 * 1024 * 1024).bytes.toString('utf8')));
     input.systemPrompt = String(settings.power_user?.sysprompt?.content ?? '');
     input.authorsNote = clean(records[0]?.chat_metadata?.note_prompt) || String(settings.extension_settings?.note?.default ?? '');
