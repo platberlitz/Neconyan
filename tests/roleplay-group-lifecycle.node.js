@@ -6,7 +6,8 @@ import express from 'express';
 import { fixture } from './roleplay-transactions-fixture.js';
 import { readRoleplayChat, readRoleplayEntity } from '../src/generation/roleplay-source.js';
 import { router as groupRouter } from '../src/endpoints/groups.js';
-import { readRoleplayAccount, roleplayPathKey } from '../src/roleplay-store.js';
+import { readRoleplayAccount, roleplayPathKey, withRoleplayAccountLock } from '../src/roleplay-store.js';
+import * as scratchpad from '../src/scratchpad/store.js';
 
 async function groupServer(t, f) {
     const app = express();
@@ -57,6 +58,13 @@ test('a protected group delete retires the group and its tracked chats and repla
     // An untracked chat listed by the group is discarded with it.
     const untracked = path.join(f.scope.directories.groupChats, 'New.jsonl');
     fs.writeFileSync(untracked, fs.readFileSync(f.filename));
+    withRoleplayAccountLock(f.scope, lease => {
+        const bucket = scratchpad.readBucketLocked(lease, { kind: 'roleplay', key: 'group:group:Source', scope: { kind: 'group', id: 'group' } });
+        scratchpad.createSession(bucket, { name: 'Group planning' });
+        scratchpad.writeBucketLocked(lease, bucket);
+    });
+    const shared = scratchpad.scratchpadFile(f.scope.directories.root, { kind: 'roleplay', key: 'shared:group:group' });
+    const selection = scratchpad.scratchpadFile(f.scope.directories.root, { kind: 'roleplay', key: 'selection:group:group' });
     const body = { id: 'group', roleplay: { operationKey: 'drop-1' } };
     const first = await post('/delete', body);
     assert.equal(first.status, 200, JSON.stringify(first.body));
@@ -66,6 +74,8 @@ test('a protected group delete retires the group and its tracked chats and repla
     assert.equal(state.pending, null);
     assert.equal(state.resources[group.instanceId].status, 'deleted');
     assert.equal(state.resources[chat.instanceId].status, 'deleted');
+    assert.equal(fs.existsSync(shared), false);
+    assert.equal(fs.existsSync(selection), false);
     assert.deepEqual(slot(f, 'group', { groupId: 'group' }), { generation: 1, instanceId: null });
     const replay = await post('/delete', body);
     assert.equal(replay.status, 200);

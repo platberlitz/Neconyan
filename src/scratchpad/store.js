@@ -71,11 +71,14 @@ export function requireId(value, label = 'item') {
 }
 
 /** The chat a Scratchpad belongs to. The key comes from the page; it is hashed before it reaches a path. */
-export function normaliseSource(input) {
+export function normaliseSource(input, { allowInternalKeys = false } = {}) {
     if (!isPlainObject(input)) throw fail('SCRATCHPAD_SOURCE_INVALID', 'Open a chat before using Scratchpad.');
     const kind = SOURCE_KINDS.includes(input.kind) ? input.kind : null;
     const key = typeof input.key === 'string' ? input.key : '';
     if (!kind || !key || key.length > 1024) throw fail('SCRATCHPAD_SOURCE_INVALID', 'Open a chat before using Scratchpad.');
+    if (!allowInternalKeys && kind === 'roleplay' && (key.startsWith('shared:') || key.startsWith('selection:'))) {
+        throw fail('SCRATCHPAD_SOURCE_INVALID', 'This Scratchpad chat identity is invalid. Reload the chat.');
+    }
     const source = { kind, key, label: boundedString(input.label, 200, { trim: true }) };
     if (input.legacyKey !== undefined) {
         const identity = kind === 'roleplay' && STABLE_KEY_PATTERN.exec(key);
@@ -145,7 +148,7 @@ export function defaultSettings() {
     };
 }
 
-export function normaliseSettings(input, previous = defaultSettings()) {
+export function normaliseSettings(input, previous = defaultSettings(), { allowInternalKeys = false } = {}) {
     const source = isPlainObject(input) ? input : {};
     const settings = structuredClone(previous);
     settings.notes ??= [];
@@ -183,7 +186,7 @@ export function normaliseSettings(input, previous = defaultSettings()) {
             ? [...new Set(source.picked.filter(item => typeof item === 'string' && item && item.length <= 128))].slice(0, MAX_PICKED)
             : [];
     }
-    if (source.pickedSource !== undefined) settings.pickedSource = source.pickedSource ? normaliseSource(source.pickedSource) : null;
+    if (source.pickedSource !== undefined) settings.pickedSource = source.pickedSource ? normaliseSource(source.pickedSource, { allowInternalKeys }) : null;
     if (isPlainObject(source.include)) {
         for (const key of Object.keys(settings.include)) {
             if (typeof source.include[key] === 'boolean') settings.include[key] = source.include[key];
@@ -240,7 +243,7 @@ function normaliseProposals(value) {
     return proposals;
 }
 
-function normaliseMessage(input) {
+function normaliseMessage(input, { allowInternalKeys = false } = {}) {
     if (!isPlainObject(input)) return null;
     const role = input.role === 'assistant' ? 'assistant' : input.role === 'user' ? 'user' : null;
     if (!role) return null;
@@ -272,14 +275,14 @@ function normaliseMessage(input) {
         }
     }
     if (input.edited === true) message.edited = true;
-    if (input.contextSource) message.contextSource = normaliseSource(input.contextSource);
+    if (input.contextSource) message.contextSource = normaliseSource(input.contextSource, { allowInternalKeys });
     return message;
 }
 
-function normaliseSession(input) {
+function normaliseSession(input, { allowInternalKeys = false } = {}) {
     if (!isPlainObject(input)) return null;
     const id = typeof input.id === 'string' && ID_PATTERN.test(input.id) ? input.id : newScratchpadId();
-    const messages = Array.isArray(input.messages) ? input.messages.map(normaliseMessage).filter(Boolean).slice(-MAX_MESSAGES) : [];
+    const messages = Array.isArray(input.messages) ? input.messages.map(message => normaliseMessage(message, { allowInternalKeys })).filter(Boolean).slice(-MAX_MESSAGES) : [];
     return {
         id,
         name: boundedString(input.name, MAX_NAME_LENGTH, { trim: true }) || 'Scratchpad',
@@ -291,7 +294,7 @@ function normaliseSession(input) {
         temporary: input.temporary === true,
         created: typeof input.created === 'string' ? input.created.slice(0, 40) : now(),
         updated: typeof input.updated === 'string' ? input.updated.slice(0, 40) : now(),
-        settings: normaliseSettings(input.settings),
+        settings: normaliseSettings(input.settings, defaultSettings(), { allowInternalKeys }),
         messages,
     };
 }
@@ -321,11 +324,11 @@ export function readCleanupLocked(lease) {
     if (!file) return defaultCleanup();
     try {
         const input = JSON.parse(file.bytes.toString('utf8'));
-        if (![1, 2].includes(input?.version) || typeof input.enabled !== 'boolean'
+        if (input?.version !== 1 || typeof input.enabled !== 'boolean'
             || !Number.isInteger(input.keep) || input.keep < 1 || input.keep > MAX_SESSIONS) {
             throw new Error('Invalid cleanup settings.');
         }
-        return { enabled: input.version === 2 && input.enabled, keep: input.keep };
+        return { enabled: input.shared === true && input.enabled, keep: input.keep };
     } catch {
         throw fail('SCRATCHPAD_CLEANUP_DAMAGED', 'The saved Scratchpad cleanup setting could not be read.', 500);
     }
@@ -333,7 +336,7 @@ export function readCleanupLocked(lease) {
 
 export function updateCleanupLocked(lease, input) {
     const cleanup = normaliseCleanup(input, readCleanupLocked(lease));
-    writeAuthoringFileLocked(lease, cleanupFile(lease), JSON.stringify({ version: 2, ...cleanup }), { limit: 4096 });
+    writeAuthoringFileLocked(lease, cleanupFile(lease), JSON.stringify({ version: 1, shared: true, ...cleanup }), { limit: 4096 });
     return cleanup;
 }
 
@@ -341,9 +344,9 @@ export function emptyBucket(source) {
     return { version: SCRATCHPAD_SCHEMA, source, activeSessionId: null, cleanup: defaultCleanup(), sessions: [] };
 }
 
-export function normaliseBucket(input, source) {
+export function normaliseBucket(input, source, { allowInternalKeys = false } = {}) {
     if (!isPlainObject(input) || input.version !== SCRATCHPAD_SCHEMA) return emptyBucket(source);
-    const sessions = Array.isArray(input.sessions) ? input.sessions.map(normaliseSession).filter(Boolean).slice(0, MAX_SESSIONS) : [];
+    const sessions = Array.isArray(input.sessions) ? input.sessions.map(session => normaliseSession(session, { allowInternalKeys })).filter(Boolean).slice(0, MAX_SESSIONS) : [];
     const activeSessionId = sessions.some(session => session.id === input.activeSessionId) ? input.activeSessionId : (sessions[0]?.id ?? null);
     return { version: SCRATCHPAD_SCHEMA, source: { ...source, label: source.label || input.source?.label || '' }, activeSessionId,
         cleanup: defaultCleanup(), sessions };
@@ -483,7 +486,7 @@ export function readBucketLocked(lease, source) {
 export function readChatBucketLocked(lease, source) {
     const storage = storageSourceLocked(lease, source);
     const parsed = readStoredBucketLocked(lease, storage);
-    const bucket = parsed ? normaliseBucket(parsed, source) : emptyBucket(source);
+    const bucket = parsed ? normaliseBucket(parsed, source, { allowInternalKeys: true }) : emptyBucket(source);
     bucket.cleanup = readCleanupLocked(lease);
     Object.defineProperty(bucket, STORAGE_SOURCE, { value: storage });
     return bucket;

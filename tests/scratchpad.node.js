@@ -465,6 +465,8 @@ test('cleanup is shared by existing and future chats and notes, but not other ac
     datedSessions(a, 4);
     const stale = a.read(SOURCE);
     a.mutate(OTHER, (bucket, lease) => store.updateCleanupLocked(lease, { enabled: true, keep: 2 }));
+    const cleanup = JSON.parse(fs.readFileSync(path.join(a.directories.root, 'scratchpad', 'cleanup.json'), 'utf8'));
+    assert.deepEqual(cleanup, { version: 1, shared: true, enabled: true, keep: 2 });
     assert.equal(fs.existsSync(store.scratchpadFile(a.directories.root, OTHER)), false);
     for (const source of [SOURCE, OTHER, { kind: 'notebook', key: 'note-1' }, { ...SOURCE, key: 'future-chat' }]) {
         assert.deepEqual(a.read(source).cleanup, { enabled: true, keep: 2 });
@@ -514,7 +516,7 @@ test('damaged shared cleanup settings are kept rather than replaced or applied',
     const a = account(t);
     datedSessions(a, 3);
     const filename = path.join(a.directories.root, 'scratchpad', 'cleanup.json');
-    for (const damaged of ['{', '{"version":3,"enabled":true,"keep":1}', '{"version":1,"enabled":true,"keep":0}']) {
+    for (const damaged of ['{', '{"version":2,"enabled":true,"keep":1}', '{"version":3,"enabled":true,"keep":1}', '{"version":1,"enabled":true,"keep":0}']) {
         fs.writeFileSync(filename, damaged);
         assert.throws(() => a.read(SOURCE), error => error.code === 'SCRATCHPAD_CLEANUP_DAMAGED');
         assert.throws(() => store.withScratchpad(a.base, lease => store.updateCleanupLocked(lease, { enabled: false })),

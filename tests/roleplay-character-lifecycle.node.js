@@ -8,9 +8,10 @@ import { fixture, png } from './roleplay-transactions-fixture.js';
 import { readRoleplayChat, readRoleplayEntity } from '../src/generation/roleplay-source.js';
 import { router as characterRouter } from '../src/endpoints/characters.js';
 import { write as writeCard } from '../src/character-card-parser.js';
-import { readRoleplayAccount, roleplayPathKey } from '../src/roleplay-store.js';
+import { readRoleplayAccount, roleplayPathKey, withRoleplayAccountLock } from '../src/roleplay-store.js';
 import { bootstrapRoleplayAccount } from '../src/roleplay-lifecycle.js';
 import { roleplayNativeHost } from '../src/endpoints/chats.js';
+import * as scratchpad from '../src/scratchpad/store.js';
 
 const v2 = { name: 'Nova', description: 'Original', personality: '', scenario: '', first_mes: '', mes_example: '' };
 v2.spec = 'chara_card_v2';
@@ -65,6 +66,15 @@ test('a character rename moves the card and its protected chats with their ident
     const f = fixture(t, false, 'character-rename');
     const post = await characterServer(t, f);
     const chat = readRoleplayChat(f.scope, f.locator);
+    withRoleplayAccountLock(f.scope, lease => {
+        const bucket = scratchpad.readBucketLocked(lease, { kind: 'roleplay', key: 'character:Nova.png:Source', scope: { kind: 'character', id: 'Nova.png' } });
+        scratchpad.createSession(bucket, { name: 'Character planning' });
+        scratchpad.writeBucketLocked(lease, bucket);
+    });
+    const oldShared = scratchpad.scratchpadFile(f.scope.directories.root, { kind: 'roleplay', key: 'shared:character:Nova.png' });
+    const newShared = scratchpad.scratchpadFile(f.scope.directories.root, { kind: 'roleplay', key: 'shared:character:Star.png' });
+    const oldSelection = scratchpad.scratchpadFile(f.scope.directories.root, { kind: 'roleplay', key: 'selection:character:Nova.png' });
+    const newSelection = scratchpad.scratchpadFile(f.scope.directories.root, { kind: 'roleplay', key: 'selection:character:Star.png' });
     const inode = fs.statSync(f.filename).ino;
     const renamed = await post('/rename', { avatar_url: 'Nova.png', new_name: 'Star' });
     assert.equal(renamed.status, 200, JSON.stringify(renamed.body));
@@ -78,6 +88,10 @@ test('a character rename moves the card and its protected chats with their ident
     assert.equal(readRoleplayEntity(f.scope, 'character', 'Star.png').data.data.name, 'Star');
     assert.equal(slot(f, 'character', { avatar: 'Nova.png' }).instanceId, null);
     assert.equal(slot(f, 'chat', f.locator).instanceId, null);
+    assert.equal(fs.existsSync(oldShared), false);
+    assert.equal(JSON.parse(fs.readFileSync(newShared, 'utf8')).source.key, 'shared:character:Star.png');
+    assert.equal(fs.existsSync(oldSelection), false);
+    assert.equal(fs.existsSync(newSelection), true);
 });
 
 test('a character delete retires the card and chats, and refuses out-of-band chat edits', async t => {
@@ -96,12 +110,43 @@ test('a character delete retires the card and chats, and refuses out-of-band cha
     // A replaced inode is still an out-of-band change.
     assert.equal((await post('/delete', { avatar_url: 'Nova.png', delete_chats: true })).body.code, 'ROLEPLAY_SOURCE_CHANGED');
     fs.rmSync(f.filename);
+    withRoleplayAccountLock(f.scope, lease => {
+        const bucket = scratchpad.readBucketLocked(lease, { kind: 'roleplay', key: 'character:Nova.png:Source', scope: { kind: 'character', id: 'Nova.png' } });
+        scratchpad.createSession(bucket, { name: 'Delete this planning' });
+        scratchpad.writeBucketLocked(lease, bucket);
+    });
+    const shared = scratchpad.scratchpadFile(f.scope.directories.root, { kind: 'roleplay', key: 'shared:character:Nova.png' });
+    const selection = scratchpad.scratchpadFile(f.scope.directories.root, { kind: 'roleplay', key: 'selection:character:Nova.png' });
     const deleted = await post('/delete', { avatar_url: 'Nova.png', delete_chats: true });
     assert.equal(deleted.status, 200);
     const state = readRoleplayAccount(f.scope);
     assert.equal(state.resources[chat.instanceId].status, 'deleted');
     assert.equal(fs.existsSync(path.join(f.scope.directories.characters, 'Nova.png')), false);
     assert.equal(fs.existsSync(path.join(f.scope.directories.chats, 'Nova')), false);
+    assert.equal(fs.existsSync(shared), false);
+    assert.equal(fs.existsSync(selection), false);
+});
+
+test('the legacy character-delete path also removes shared Scratchpad files', async t => {
+    const f = fixture(t, false, 'character-delete-legacy');
+    const post = await characterServer(t, f);
+    const avatar = path.join(f.scope.directories.characters, 'Nova.png');
+    const alias = path.join(f.root, 'alias.png');
+    fs.linkSync(avatar, alias);
+    fs.linkSync(f.filename, path.join(f.root, 'alias-chat.jsonl'));
+    withRoleplayAccountLock(f.scope, lease => {
+        const bucket = scratchpad.readBucketLocked(lease, { kind: 'roleplay', key: 'character:Nova.png:Source', scope: { kind: 'character', id: 'Nova.png' } });
+        scratchpad.createSession(bucket, { name: 'Legacy delete planning' });
+        scratchpad.writeBucketLocked(lease, bucket);
+    });
+    const shared = scratchpad.scratchpadFile(f.scope.directories.root, { kind: 'roleplay', key: 'shared:character:Nova.png' });
+    const selection = scratchpad.scratchpadFile(f.scope.directories.root, { kind: 'roleplay', key: 'selection:character:Nova.png' });
+    const deleted = await post('/delete', { avatar_url: 'Nova.png', delete_chats: false });
+    assert.equal(deleted.status, 200, JSON.stringify(deleted.body));
+    assert.equal(fs.existsSync(avatar), false);
+    assert.equal(fs.existsSync(shared), false);
+    assert.equal(fs.existsSync(selection), false);
+    assert.equal(fs.existsSync(alias), true);
 });
 
 test('a conditional character delete refuses a card that changed after it was checked', async t => {

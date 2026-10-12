@@ -14,6 +14,7 @@ import { removeChatMemory } from '../mewmory/store.js';
 import { readRoleplayEntityLocked } from '../generation/roleplay-source.js';
 import { commitRoleplayLifecycleLocked, commitSingleGroupUpdateLocked, roleplayTrackedInstance } from '../roleplay-lifecycle.js';
 import { roleplayError, roleplayHash, roleplayLease, saveRoleplayAccount, withRoleplayAccount, withUntrackedRoleplayFiles } from '../roleplay-store.js';
+import { forgetSharedScratchpadsLocked } from '../scratchpad/shared-sessions.js';
 
 export const router = express.Router();
 const isChatBackupEnabled = !!getConfigValue('backups.chat.enabled', true, 'boolean');
@@ -350,7 +351,7 @@ router.post('/delete', getFileNameValidationFunction('id'), async (request, resp
             const chats = [...new Set((Array.isArray(listed) ? listed : []).map(chat => path.parse(sanitize(`${chat}.jsonl`)).name).filter(Boolean))];
             const locators = chats.map(chat => ({ group: true, chat }));
             if (!receipt && !groupTracked && !locators.some(locator => roleplayTrackedInstance(lease, 'chat', locator))) return null;
-            return commitRoleplayLifecycleLocked(lease, { operationKey, action: 'group-delete', intent: { groupId: id },
+            const result = commitRoleplayLifecycleLocked(lease, { operationKey, action: 'group-delete', intent: { groupId: id },
                 steps: [{ op: groupTracked ? 'delete' : 'discard', kind: 'group', locator: { groupId: id } }, ...locators.map(locator => ({
                     op: roleplayTrackedInstance(lease, 'chat', locator) ? 'delete' : 'discard', kind: 'chat', locator }))],
                 auxiliary: [...locators.flatMap(locator => [{ task: 'chat-memory-remove', locator }, { task: 'chat-recovery-clear', locator }]),
@@ -358,6 +359,10 @@ router.post('/delete', getFileNameValidationFunction('id'), async (request, resp
             { backups: isChatBackupEnabled, recoveryTarget: locator => createGroupChatTarget({
                 groupChatsDirectory: request.user.directories.groupChats, backupDirectory: request.user.directories.backups,
                 filename: `${locator.chat}.jsonl`, maxRecoveryStates: maxTotalChatBackups }) });
+            try { forgetSharedScratchpadsLocked(lease, { kind: 'group', id }); } catch (error) {
+                console.warn('Could not remove shared Scratchpad files after group deletion.', error);
+            }
+            return result;
         });
         if (handled) return response.send({ ok: true, roleplay: { operationKey, result: handled } });
     } catch (error) {
@@ -413,6 +418,11 @@ router.post('/delete', getFileNameValidationFunction('id'), async (request, resp
                 'Failed to clear chat recovery state after group deletion.',
             );
         }
+        withRoleplayAccount(groupBase(request), null, lease => {
+            try { forgetSharedScratchpadsLocked(lease, { kind: 'group', id }); } catch (error) {
+                console.warn('Could not remove shared Scratchpad files after group deletion.', error);
+            }
+        });
     } catch (error) {
         if (error?.roleplayWritePending || String(error?.code ?? '').startsWith('ROLEPLAY_')) return sendLifecycleError(response, error);
         console.error('Could not delete group chats. Clean them up manually.', error);
