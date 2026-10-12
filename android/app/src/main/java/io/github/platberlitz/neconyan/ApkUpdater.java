@@ -38,7 +38,7 @@ public final class ApkUpdater {
 
     @JavascriptInterface public void installUpdate(String version) {
         activity.runOnUiThread(() -> {
-            if (closed || busy || !workspaceVisible.getAsBoolean()) return;
+            if (!isActivityAlive() || busy || !workspaceVisible.getAsBoolean()) return;
             try {
                 if (ApkUpdatePolicy.versionCode(version) <= installed().getLongVersionCode()) throw new IOException("This APK is not newer than the installed app.");
                 if (!activity.getPackageName().equals("io.github.platberlitz.neconyan")) throw new IOException("A debug app cannot be replaced by a release APK. Install the release app separately.");
@@ -62,10 +62,30 @@ public final class ApkUpdater {
     }
 
     private PackageInfo installed() throws PackageManager.NameNotFoundException {
-        return activity.getPackageManager().getPackageInfo(activity.getPackageName(), PackageManager.GET_SIGNING_CERTIFICATES);
+        return activity.getPackageManager().getPackageInfo(activity.getPackageName(), signingFlags());
+    }
+
+    @SuppressWarnings("deprecation")
+    private int signingFlags() {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+            ? PackageManager.GET_SIGNING_CERTIFICATES | PackageManager.GET_SIGNATURES
+            : PackageManager.GET_SIGNATURES;
+    }
+
+    @SuppressWarnings("deprecation")
+    private Signature[] signingCertificates(PackageInfo info) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && info.signingInfo != null)
+            return info.signingInfo.getApkContentsSigners();
+        return info.signatures;
+    }
+
+    private boolean isActivityAlive() {
+        return !closed && !activity.isFinishing()
+            && (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR1 || !activity.isDestroyed());
     }
 
     private void download(String version, String url) {
+        if (!isActivityAlive()) { busy = false; return; }
         cancelled = false;
         progress = new ProgressDialog(activity);
         progress.setTitle("Downloading APK");
@@ -135,13 +155,12 @@ public final class ApkUpdater {
             if (size > MAX_BYTES || (size > 0 && size + 64L * 1024 * 1024 > target.getParentFile().getUsableSpace()))
                 throw new IOException("There is not enough space for this APK, or it is too large.");
             long bytes = 0;
-            long deadline = System.nanoTime() + TimeUnit.MINUTES.toNanos(30);
             int previous = -1;
             try (InputStream input = request.getInputStream(); OutputStream output = new FileOutputStream(target)) {
                 byte[] buffer = new byte[65536];
                 for (int length; (length = input.read(buffer)) != -1;) {
                     bytes += length;
-                    if (closed || cancelled || bytes > MAX_BYTES || System.nanoTime() > deadline) throw new IOException("APK download stopped. Try again.");
+                    if (closed || cancelled || bytes > MAX_BYTES) throw new IOException("APK download stopped. Try again.");
                     output.write(buffer, 0, length);
                     int percent = size > 0 ? (int) Math.min(100, bytes * 100 / size) : -1;
                     if (percent != previous) {
@@ -158,17 +177,20 @@ public final class ApkUpdater {
 
     private void verify(File file, String version) throws Exception {
         PackageInfo current = installed();
-        PackageInfo update = activity.getPackageManager().getPackageArchiveInfo(file.getPath(), PackageManager.GET_SIGNING_CERTIFICATES);
+        PackageInfo update = activity.getPackageManager().getPackageArchiveInfo(file.getPath(), signingFlags());
         if (update == null || !current.packageName.equals(update.packageName)
             || update.getLongVersionCode() != ApkUpdatePolicy.versionCode(version)
             || update.getLongVersionCode() <= current.getLongVersionCode()) throw new IOException("This file is not the requested Neconyan update.");
-        if (current.signingInfo == null || update.signingInfo == null
-            || current.signingInfo.getApkContentsSigners().length == 0 || update.signingInfo.getApkContentsSigners().length == 0
-            || !new HashSet<>(Arrays.asList(current.signingInfo.getApkContentsSigners())).equals(new HashSet<>(Arrays.asList(update.signingInfo.getApkContentsSigners()))))
+        Signature[] currentSigners = signingCertificates(current);
+        Signature[] updateSigners = signingCertificates(update);
+        if (currentSigners == null || currentSigners.length == 0 || updateSigners == null || updateSigners.length == 0)
+            throw new IOException("Could not read the update's signature. Try downloading it again.");
+        if (!new HashSet<>(Arrays.asList(currentSigners)).equals(new HashSet<>(Arrays.asList(updateSigners))))
             throw new IOException("The APK signing certificate does not match this app. It cannot update in place. Do not uninstall Neconyan; uninstalling would remove your saved data.");
     }
 
     private void offerInstall() {
+        if (!isActivityAlive()) { busy = false; return; }
         try {
             if (!activity.getPackageManager().canRequestPackageInstalls()) {
                 new AlertDialog.Builder(activity).setTitle("Allow this APK update")
@@ -235,6 +257,7 @@ public final class ApkUpdater {
     private void fail(Exception error) {
         if (closed) return;
         finishPendingUpdate();
+        if (!isActivityAlive()) return;
         new AlertDialog.Builder(activity).setTitle("APK update not installed")
             .setMessage(error.getMessage() == null ? "Could not update the APK. Your saved data has not been changed." : error.getMessage())
             .setPositiveButton("OK", null).show();

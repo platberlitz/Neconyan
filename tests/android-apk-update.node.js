@@ -51,8 +51,13 @@ test('APK updates require confirmation, a newer matching package and matching si
     assert.match(source, /setPositiveButton\("Download APK"/);
     assert.match(source, /current\.packageName\.equals\(update\.packageName\)/);
     assert.match(source, /update\.getLongVersionCode\(\) <= current\.getLongVersionCode\(\)/);
-    assert.match(source, /current\.signingInfo\.getApkContentsSigners\(\)/);
-    assert.match(source, /update\.signingInfo\.getApkContentsSigners\(\)/);
+    assert.match(source, /info\.signingInfo\.getApkContentsSigners\(\)/);
+    assert.match(source, /GET_SIGNING_CERTIFICATES \| PackageManager\.GET_SIGNATURES/);
+    assert.match(source, /getPackageArchiveInfo\(file\.getPath\(\), signingFlags\(\)\)/);
+    assert.match(source, /Build\.VERSION\.SDK_INT >= Build\.VERSION_CODES\.P/);
+    assert.match(source, /Could not read the update's signature/);
+    assert.match(source, /isFinishing\(\)[\s\S]*isDestroyed\(\)/);
+    assert.doesNotMatch(source, /TimeUnit\.MINUTES\.toNanos\(30\)|deadline/);
     assert.match(source, /ACTION_MANAGE_UNKNOWN_APP_SOURCES/);
     assert.match(source, /Intent\.ACTION_VIEW/);
     assert.match(source, /putExtra\(Intent\.EXTRA_RETURN_RESULT, true\)/);
@@ -79,6 +84,7 @@ public class PendingApkTest {
         check(pending.restore(1020900) == null);
         Files.writeString(apk.toPath(), "verified fixture");
         pending.save("1.3.0.1");
+        check(Files.readString(record.toPath()).matches("1[.]3[.]0[.]1\\n[0-9]+"));
         // Recreate the updater, as Android does when returning from installation settings.
         PendingApkUpdate recreated = new PendingApkUpdate(apk);
         check("1.3.0.1".equals(recreated.restore(1020900)));
@@ -97,6 +103,10 @@ public class PendingApkTest {
         Files.writeString(record.toPath(), "1.3.0.1");
         check(pending.restore(1020900) == null);
         check(!record.exists());
+        Files.writeString(apk.toPath(), "verified fixture");
+        Files.writeString(record.toPath(), "1.3.0.1\\n" + (System.currentTimeMillis() - 60L * 60 * 1000 - 1));
+        check(pending.restore(1020900) == null);
+        check(!apk.exists() && !record.exists());
         check(Files.readString(data.toPath()).equals("unchanged"));
     }
 }`);
@@ -109,6 +119,7 @@ public class PendingApkTest {
     const source = read('ApkUpdater.java');
     assert.match(source, /pendingUpdate\.save\(version\)/);
     assert.match(source, /pendingUpdate\.restore\(installed\(\)\.getLongVersionCode\(\)\)/);
+    assert.match(read('PendingApkUpdate.java'), /MAX_AGE_MS = 60L \* 60 \* 1000/);
     assert.match(source, /void onResume\(\)/);
     assert.match(read('MainActivity.java'), /apkUpdater\.onResume\(\)/);
 });

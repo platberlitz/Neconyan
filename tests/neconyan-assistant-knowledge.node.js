@@ -90,6 +90,7 @@ test('real help questions retrieve the appropriate topic', () => {
         ['Why are the story swipe arrows hidden on older passages?', 'story.manuscript'],
         ['How do I change Shell Style to Windows Aero?', 'appearance.shell-style'],
         ['How do I get the black Windows XP colours?', 'appearance.windows-xp'],
+        ['Android updater says it could not read the update signature', 'start.android'],
         ['Where do I save an accent profile?', 'appearance.accent'],
         ['How do I start the Nori lorebook tour?', 'lorebooks.tour'],
         ['Where is the ICA glossary with Taro?', 'agents.glossary'],

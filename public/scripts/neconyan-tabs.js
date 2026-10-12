@@ -12808,6 +12808,8 @@ const NN_UPDATE_TOAST_DURATION_MS = 8000;
 let nnUpdateToastTimer = null;
 let nnUpdateToastDismissTimer = null;
 let nnUpdateToastChecking = false;
+let nnUpdateToastLastCheckAt = 0;
+let nnUpdateToastSkippedWhileHidden = false;
 
 function readNotifiedUpdateCommit() {
     try {
@@ -12893,11 +12895,20 @@ async function showUpdateToast(repository) {
 }
 
 async function checkForNeconyanUpdate() {
-    if (nnUpdateToastChecking || document.hidden) return;
+    if (document.hidden) {
+        nnUpdateToastSkippedWhileHidden = true;
+        return;
+    }
+    if (nnUpdateToastChecking) return;
     nnUpdateToastChecking = true;
+    nnUpdateToastLastCheckAt = Date.now();
+    nnUpdateToastSkippedWhileHidden = false;
     try {
         const status = await requestServerAdmin('/api/server-admin/status');
-        if (document.hidden) return;
+        if (document.hidden) {
+            nnUpdateToastSkippedWhileHidden = true;
+            return;
+        }
         const androidRelease = status?.androidRelease;
         if (androidRelease?.supported) {
             if (!androidRelease.checked || !androidRelease.assetAvailable || !androidRelease.canUpdate || !androidRelease.latestVersion) return;
@@ -12914,16 +12925,25 @@ async function checkForNeconyanUpdate() {
         if (error?.status === 401 || error?.status === 403) {
             clearInterval(nnUpdateToastTimer);
             nnUpdateToastTimer = null;
-            document.removeEventListener('visibilitychange', checkForNeconyanUpdate);
+            document.removeEventListener('visibilitychange', handleNeconyanUpdateVisibilityChange);
         }
     } finally {
         nnUpdateToastChecking = false;
     }
 }
 
+function handleNeconyanUpdateVisibilityChange() {
+    if (document.hidden) return;
+    const wasSkippedWhileHidden = nnUpdateToastSkippedWhileHidden;
+    const checkIsDue = Date.now() - nnUpdateToastLastCheckAt >= NN_UPDATE_TOAST_INTERVAL_MS;
+    if (!wasSkippedWhileHidden && !checkIsDue) return;
+    nnUpdateToastSkippedWhileHidden = false;
+    void checkForNeconyanUpdate();
+}
+
 function startNeconyanUpdateToast() {
     if (nnUpdateToastTimer) return;
-    document.addEventListener('visibilitychange', checkForNeconyanUpdate);
+    document.addEventListener('visibilitychange', handleNeconyanUpdateVisibilityChange);
     nnUpdateToastTimer = setInterval(() => void checkForNeconyanUpdate(), NN_UPDATE_TOAST_INTERVAL_MS);
     void checkForNeconyanUpdate();
 }
@@ -12957,6 +12977,13 @@ function setServerAdminButtonLabel(button, isBusy, busyLabel) {
     }
 
     button.textContent = isBusy ? busyLabel : button.dataset.idleLabel;
+}
+
+function setServerAdminIdleButtonLabel(button, label, state = getServerAdminState()) {
+    if (!(button instanceof HTMLButtonElement)) return;
+    const updateInProgress = (state.busy || state.restarting) && button.textContent === 'Updating…';
+    if (!updateInProgress) button.textContent = label;
+    button.dataset.idleLabel = label;
 }
 
 function describeAutoStashState(result) {
@@ -13300,8 +13327,7 @@ function renderServerAdminStatus(data) {
         : repository?.canUpdate ? 'git' : release?.canUpdate ? 'zip' : '';
     refs.updateButton.dataset.sbCanUpdate = String(Boolean(updateMode));
     refs.updateButton.dataset.sbUpdateMode = updateMode;
-    refs.updateButton.textContent = isAndroidInstall ? 'Update APK' : 'Update & Restart';
-    refs.updateButton.dataset.idleLabel = refs.updateButton.textContent;
+    setServerAdminIdleButtonLabel(refs.updateButton, isAndroidInstall ? 'Update APK' : 'Update & Restart', state);
     if (refs.updateDescription) refs.updateDescription.textContent = isAndroidInstall
         ? 'Download the official GitHub APK, then approve installation in Android. Your saved data stays on this device.'
         : 'Check upstream status, update the app, and relaunch automatically when it is safe to do so.';
@@ -13408,7 +13434,7 @@ async function waitForServerReturn(expectedRevision = '', { clearCacheBeforeRelo
     return false;
 }
 
-async function refreshServerAdminPanel({ includeConfig = false, forceConfig = false } = {}) {
+async function refreshServerAdminPanel({ includeConfig = false, forceConfig = false, forceUpdateCheck = false } = {}) {
     const state = getServerAdminState();
     const refs = getServerAdminRefs();
     const shouldLoadConfig = includeConfig || forceConfig || !state.configLoaded;
@@ -13426,7 +13452,7 @@ async function refreshServerAdminPanel({ includeConfig = false, forceConfig = fa
         refs.configState.dataset.state = 'loading';
     }
 
-    const statusPromise = requestServerAdmin('/api/server-admin/status');
+    const statusPromise = requestServerAdmin('/api/server-admin/status', forceUpdateCheck ? { forceRefresh: true } : {});
     const configPromise = shouldLoadConfig ? requestServerAdmin('/api/server-admin/config/get') : null;
     const thumbnailPromise = shouldLoadThumbnails
         ? requestServerAdmin('/api/server-admin/config/thumbnail-settings/get')
@@ -14233,7 +14259,7 @@ function buildServerAdminPanel() {
     configState.textContent = 'Not loaded';
     configState.dataset.state = 'neutral';
 
-    refreshButton.addEventListener('click', () => refreshServerAdminPanel({ includeConfig: false }));
+    refreshButton.addEventListener('click', () => refreshServerAdminPanel({ includeConfig: false, forceUpdateCheck: true }));
     updateButton.addEventListener('click', handleServerAdminUpdate);
     restartButton.addEventListener('click', handleServerAdminRestart);
     thumbnailUseRecommendedButton.addEventListener('click', handleUseRecommendedThumbnailSettings);

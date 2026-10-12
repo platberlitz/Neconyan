@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { test } from 'node:test';
 import { createAndroidReleaseChecker } from '../src/server-admin-android-update.js';
 
@@ -84,6 +85,22 @@ test('coalesces concurrent checks, caches for thirty minutes and recomputes the 
     fixture.advance(30 * 60 * 1000);
     await fixture.check('1.2.9', android);
     assert.equal(fixture.calls(), 2);
+});
+
+test('an explicit refresh bypasses the cached GitHub release metadata', async () => {
+    const fixture = checker();
+    await fixture.check('1.2.9', android);
+    await fixture.check('1.2.9', android);
+    assert.equal(fixture.calls(), 1);
+    await fixture.check('1.2.9', { ...android, force: true });
+    assert.equal(fixture.calls(), 2);
+    await fixture.check('1.2.9', android);
+    assert.equal(fixture.calls(), 2);
+});
+
+test('the explicit server status refresh reaches both repository and APK release checks', () => {
+    const endpoint = fs.readFileSync(new URL('../src/endpoints/server-admin.js', import.meta.url), 'utf8');
+    assert.match(endpoint, /const forceRefresh = request\.body\?\.forceRefresh === true;[\s\S]*getRepositoryStatus\(\{ refresh: forceRefresh \}\)[\s\S]*getLatestAndroidReleaseStatus\(version\.pkgVersion, \{ force: forceRefresh \}\)/);
 });
 
 test('network errors retry after a minute without claiming the app is up to date', async () => {

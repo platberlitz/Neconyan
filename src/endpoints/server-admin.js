@@ -686,9 +686,10 @@ async function getRepositoryStatus({ refresh = false } = {}) {
 
 router.post('/status', requireAdminMiddleware, async (request, response) => {
     try {
+        const forceRefresh = request.body?.forceRefresh === true;
         const version = await getVersion();
-        const repository = await getRepositoryStatus();
-        const androidRelease = await getLatestAndroidReleaseStatus(version.pkgVersion);
+        const repository = await getRepositoryStatus({ refresh: forceRefresh });
+        const androidRelease = await getLatestAndroidReleaseStatus(version.pkgVersion, { force: forceRefresh });
         const release = repository.isRepo || androidRelease ? null : await getLatestZipReleaseStatus(version.pkgVersion);
         const userRoot = request.user?.directories?.root;
         response.json({

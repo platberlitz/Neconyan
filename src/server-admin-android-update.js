@@ -26,8 +26,8 @@ export function createAndroidReleaseChecker({ fetchImpl = globalThis.fetch, now 
     let expires = 0;
     let pending;
 
-    async function readRelease() {
-        if (cached && now() < expires) return cached;
+    async function readRelease({ force = false } = {}) {
+        if (!force && cached && now() < expires) return cached;
         if (pending) return pending;
         pending = (async () => {
             try {
@@ -61,7 +61,7 @@ export function createAndroidReleaseChecker({ fetchImpl = globalThis.fetch, now 
         try { return await pending; } finally { pending = null; }
     }
 
-    return async function getStatus(currentVersion, { platform = process.platform, arch = process.arch, env = process.env } = {}) {
+    return async function getStatus(currentVersion, { platform = process.platform, arch = process.arch, env = process.env, force = false } = {}) {
         // Termux is also Android, but is updated through Git rather than the APK installer.
         if (platform !== 'android' || env.NECONYAN_ANDROID_APP !== '1') return null;
         const architecture = { arm64: 'arm64', x64: 'x86_64' }[arch] || '';
@@ -74,7 +74,7 @@ export function createAndroidReleaseChecker({ fetchImpl = globalThis.fetch, now 
         if (!architecture || !current) {
             return { ...status, message: 'This Android build cannot check for compatible APK updates.' };
         }
-        const result = await readRelease();
+        const result = await readRelease({ force });
         if (result.error) return { ...status, message: result.error };
         const { release, latest } = result;
         const assetName = `Neconyan-${latest.version}-android-${architecture}.apk`;

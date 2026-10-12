@@ -20,10 +20,15 @@ function createContext(status) {
     const context = vm.createContext({
         nnUpdateToastChecking: false,
         nnUpdateToastTimer: 1,
+        nnUpdateToastLastCheckAt: 1000,
+        nnUpdateToastSkippedWhileHidden: false,
+        NN_UPDATE_TOAST_INTERVAL_MS: 1800000,
+        Date: { now: () => time },
         document: { hidden: false, addEventListener() {}, removeEventListener() {} },
         NN_UPDATE_TOAST_STORAGE_KEY: 'neconyan:update-toast-commit',
         localStorage: { getItem: key => store.get(key) ?? null, setItem: (key, value) => store.set(key, value) },
         requestServerAdmin: async () => {
+            requests++;
             if (status instanceof Error) throw status;
             return status;
         },
@@ -33,8 +38,10 @@ function createContext(status) {
         },
         clearInterval: () => {},
     });
-    vm.runInContext([extract('readNotifiedUpdateCommit'), extract('checkForNeconyanUpdate')].join('\n'), context);
-    return { context, shown };
+    let time = 1000;
+    let requests = 0;
+    vm.runInContext([extract('readNotifiedUpdateCommit'), extract('checkForNeconyanUpdate'), extract('handleNeconyanUpdateVisibilityChange')].join('\n'), context);
+    return { context, shown, requests: () => requests, advance: milliseconds => { time += milliseconds; } };
 }
 
 describe('update toast', () => {
@@ -100,6 +107,27 @@ describe('update toast', () => {
         expect(requests).toBe(0);
         expect(shown).toEqual([]);
         expect(context.nnUpdateToastChecking).toBe(false);
+        expect(context.nnUpdateToastSkippedWhileHidden).toBe(true);
+    });
+
+    test('returning to a visible tab checks only after a hidden skip or thirty minutes', async () => {
+        const fixture = createContext({ repository: { isRepo: false } });
+        fixture.context.handleNeconyanUpdateVisibilityChange();
+        await new Promise(resolve => setImmediate(resolve));
+        expect(fixture.requests()).toBe(0);
+
+        fixture.advance(1800000);
+        fixture.context.handleNeconyanUpdateVisibilityChange();
+        await new Promise(resolve => setImmediate(resolve));
+        expect(fixture.requests()).toBe(1);
+
+        fixture.context.document.hidden = true;
+        await fixture.context.checkForNeconyanUpdate();
+        expect(fixture.context.nnUpdateToastSkippedWhileHidden).toBe(true);
+        fixture.context.document.hidden = false;
+        fixture.context.handleNeconyanUpdateVisibilityChange();
+        await new Promise(resolve => setImmediate(resolve));
+        expect(fixture.requests()).toBe(2);
     });
 
     test('does not consume an APK notice if the app is hidden while GitHub is checked', async () => {
@@ -156,10 +184,30 @@ describe('update toast', () => {
         context.nnUpdateToastTimer = null;
         vm.runInContext(extract('startNeconyanUpdateToast'), context);
         context.startNeconyanUpdateToast();
-        expect(listeners.has(context.checkForNeconyanUpdate)).toBe(true);
+        expect(listeners.has(context.handleNeconyanUpdateVisibilityChange)).toBe(true);
         await new Promise(resolve => setImmediate(resolve));
         expect(listeners.size).toBe(0);
         expect(context.nnUpdateToastTimer).toBeNull();
+    });
+
+    test('explicit server checks bypass the cached status and status redraws preserve an active update label', () => {
+        const refresh = extract('refreshServerAdminPanel');
+        expect(refresh).toContain('requestServerAdmin(\'/api/server-admin/status\', forceUpdateCheck ? { forceRefresh: true } : {})');
+        expect(tabsSource).toContain('refreshButton.addEventListener(\'click\', () => refreshServerAdminPanel({ includeConfig: false, forceUpdateCheck: true }))');
+        expect(extract('checkForNeconyanUpdate')).toContain('requestServerAdmin(\'/api/server-admin/status\')');
+
+        class TestButton {}
+        const context = vm.createContext({ HTMLButtonElement: TestButton });
+        vm.runInContext(extract('setServerAdminIdleButtonLabel'), context);
+        const button = Object.assign(new TestButton(), { textContent: 'Updating…', dataset: { idleLabel: 'Update & Restart' } });
+        context.setServerAdminIdleButtonLabel(button, 'Update & Restart', { busy: true, restarting: false });
+        expect(button.textContent).toBe('Updating…');
+        context.setServerAdminIdleButtonLabel(button, 'Update & Restart', { busy: false, restarting: true });
+        expect(button.textContent).toBe('Updating…');
+        context.setServerAdminIdleButtonLabel(button, 'Update & Restart', { busy: false, restarting: false });
+        expect(button.textContent).toBe('Update & Restart');
+        context.setServerAdminIdleButtonLabel(button, 'Update APK', { busy: true, restarting: false });
+        expect(button.textContent).toBe('Update APK');
     });
 
     test('dismisses after eight seconds, protecting hover and keyboard focus and cancelling on close', () => {
