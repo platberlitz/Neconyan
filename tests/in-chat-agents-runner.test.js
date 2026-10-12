@@ -8334,6 +8334,26 @@ describe('in-chat agent post-processing runner', () => {
         await eventSource.emit(eventTypes.GENERATION_STOPPED);
     });
 
+    test('fills the separate secrets macro from renamed and legacy trackers without other tracker state', async () => {
+        const { buildPromptDynamicMacros } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        enabledAgents.push(
+            { id: 'renamed', sourceTemplateId: 'tpl-secrets-tracker', name: 'Private ledger', postProcess: { type: 'extract', extractVariable: 'private' } },
+            { id: 'legacy', name: 'Old secrets', postProcess: { type: 'extract', extractVariable: 'secret_data' } },
+            { id: 'scene', name: 'Scene Tracker', postProcess: { type: 'extract', extractVariable: 'scene_data' } },
+            { id: 'off', sourceTemplateId: 'tpl-secrets-tracker', postProcess: { enabled: false, type: 'extract', extractVariable: 'off' } },
+        );
+        chatMetadata.variables = { agent_private: '[SECRET|Mira|A false name|Nobody]', agent_scene_data: 'Unrelated scene', agent_off: 'Disabled extraction' };
+        chatMetadata.agent_secret_data = '[SECRET|Oren|A hidden key|Mira]';
+        const agent = { prompt: '{{ SECRETS-TRACKER }}' };
+        const macros = buildPromptDynamicMacros('Reply', null, agent);
+        expect(macros['secrets-tracker']).toBe('<tracker name="Private ledger">\n[SECRET|Mira|A false name|Nobody]\n</tracker>\n\n<tracker name="Old secrets">\n[SECRET|Oren|A hidden key|Mira]\n</tracker>');
+        expect(macros['tracker-state']).toBe('');
+        expect(buildPromptDynamicMacros('Reply', null, { prompt: 'No secrets requested' })['secrets-tracker']).toBe('');
+        delete chatMetadata.variables.agent_private;
+        delete chatMetadata.agent_secret_data;
+        expect(buildPromptDynamicMacros('Reply', null, agent)['secrets-tracker']).toBe('');
+    });
+
     test('gives prompt-transform rewrites the recent chat they ask for, and nothing by default', async () => {
         usePromptTransformPostAgent();
         enabledAgents[0].prompt = 'Trim to {{lengthTarget}}.';

@@ -121,6 +121,28 @@ test('native Agent prompts, lore, complete-context interception and postprocessi
     assert.equal(f.saved().length, 4);
 });
 
+test('prompt contributions and interceptors can use the separate secrets macro before generation', async t => {
+    const f = prepared(t, [
+        { id: 'prompt', phase: 'pre', prompt: 'SAVED_SECRETS {{secrets-tracker}}', injection: { position: 1, depth: 1, role: 0 } },
+        { id: 'before', phase: 'pre', prompt: 'CHECK_SECRETS {{secrets-tracker}}',
+            preProcess: { mode: 'intercept', applyMode: 'wrap', wrapPosition: 'before', maxTokens: 64 } },
+        { id: 'secrets', phase: 'post', sourceTemplateId: 'tpl-secrets-tracker',
+            postProcess: { enabled: true, type: 'extract', extractVariable: 'secret_data', extractPattern: '\\[SECRET\\|[^\\]]*\\]' } },
+    ], { configure: records => { records[0].chat_metadata = { variables: { agent_secret_data: '[SECRET|Nova|Hidden name|Nobody]' } }; } });
+    let calls = 0;
+    await f.run({ generate: paid('main', ({ messages }) => {
+        const prompt = messages.map(message => message.content).join('\n');
+        assert.match(prompt, /SAVED_SECRETS <tracker name="secrets">\n\[SECRET\|Nova\|Hidden name\|Nobody\]/);
+        assert.doesNotMatch(prompt, /\{\{secrets-tracker\}\}/);
+        return 'Main output';
+    }), generateAgent: paid('before', ({ messages }) => {
+        calls++;
+        assert.match(messages[0].content, /CHECK_SECRETS <tracker name="secrets">\n\[SECRET\|Nova\|Hidden name\|Nobody\]/);
+        return 'Keep knowledge private';
+    }) });
+    assert.equal(calls, 1);
+});
+
 test('server reply rewrites see the saved trackers, the lore activated for the reply and the Author\'s Note', async t => {
     const f = prepared(t, [
         { id: 'continuity', phase: 'post', prompt: 'REWRITE<t>{{tracker-state}}</t><l>{{active-lore}}</l><n>{{active-authors-note}}</n>', injection: { order: 3 },
@@ -174,6 +196,9 @@ for (const effect of ['append', 'continue', 'swipe', 'replace']) {
             }
             if (agent.id === 'tpl-character-authenticity') {
                 assert.doesNotMatch(messages[0].content, /\{\{(group-cards|mewmory-facts|mewmory-interview|mesExamplesRaw|description)\}\}/i);
+            }
+            if (agent.id === 'tpl-knowledge-guard') {
+                assert.doesNotMatch(messages[0].content, /\{\{(secrets-tracker|active-lore|active-authors-note|persona)\}\}/i);
             }
             if (calls.length > 1) assert.match(messages[1].content, new RegExp(`<assistant_response>\\nPass ${calls.length - 1}\\n`));
             return `Pass ${calls.length}`;
