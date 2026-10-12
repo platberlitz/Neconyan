@@ -38,6 +38,7 @@ async function colours(locator) {
             stops: stops.length ? stops.map(stop => filtered(composite(rgb(stop), base))) : [filtered(base)],
             children: [...element.querySelectorAll('i, span')].map(child => filtered(rgb(getComputedStyle(child).color))),
             filter: style.filter,
+            shadow: style.boxShadow,
             outline: `${style.outlineStyle} ${style.outlineWidth} ${style.outlineColor}`,
         };
     });
@@ -112,7 +113,8 @@ for (const phone of [false, true]) {
                         if (actual.background !== normal.background || actual.image !== normal.image || actual.ink !== normal.ink) findings.push({ label: `${label}/Connect pair differs from primary`, actual, normal });
                         if (!phone) {
                             await primary.hover();
-                            await check(primary, `${label}/hover`);
+                            const hovered = await check(primary, `${label}/hover`);
+                            if (hovered.shadow === normal.shadow && hovered.filter === normal.filter && hovered.background === normal.background) findings.push({ label: `${label}/primary hover looks the same as rest`, minimum: null });
                             await primary.focus();
                             await page.keyboard.press('Shift');
                             await check(primary, `${label}/focus`);

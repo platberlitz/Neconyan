@@ -344,6 +344,10 @@
     transform: none;
 }
 
+:root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]):hover {
+    box-shadow: var(--w98-raised), inset 0 0 0 2px color-mix(in srgb, var(--sb-on-accent) 35%, transparent);
+}
+
 :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .menu_button:is(.menu_button_primary, .popup-button-ok):not(.disabled):not([disabled]):active,
 :root[data-sb-theme='windows-98'] body.neconyan:not(.sbterm) .neconyan-home-actions > .neconyan-home-primary:active {
     box-shadow: var(--w98-sunken);
