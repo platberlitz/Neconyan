@@ -114,13 +114,18 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
             await page.addStyleTag({ content: `body { margin: 0; font: 15px sans-serif; --mainFontSize: 15px; } #chat { padding: 12px; }
                 /* Matches the phone chat column, so the action row meets the same space budget as the app. */
                 .mes { max-width: ${viewport.width === 393 ? 243 : 1200}px; }` });
-            await page.addScriptTag({ content: declarations(`${companionPath}companion-ui.js`, [
-                'getResultStatus', 'getStatusLabel', 'RAW_ID_LABEL_RE', 'TRAILING_ID_IN_NAME_RE', 'cleanCompanionAgentName', 'isReadableLabel',
-                'buildCompanionCard', 'getMessageIndexFromElement', 'getCompanionActionContext', 'handleCompanionAction',
-            ]) });
+            await page.addScriptTag({ content: [
+                declarations('../public/script.js', ['getShortModelName']),
+                declarations(`${companionPath}../model-label.js`, ['MAIN_MODEL_LABEL', 'PLAIN_MODEL_ID_RE', 'formatAgentModelName', 'getAgentResultModelName']),
+                declarations(`${companionPath}companion-ui.js`, [
+                    'getResultStatus', 'getStatusLabel', 'RAW_ID_LABEL_RE', 'TRAILING_ID_IN_NAME_RE', 'cleanCompanionAgentName', 'isReadableLabel',
+                    'buildCompanionCard', 'getMessageIndexFromElement', 'getCompanionActionContext', 'handleCompanionAction',
+                ]),
+            ].join('\n') });
             await page.evaluate(() => {
+                window.power_user = { timestamp_model_name_short: true };
                 window.chat = [{ mes: 'Main reply stays intact', extra: { inChatAgentCompanionResults: {
-                    tracker: { agentName: 'Scene Tracker', status: 'done', content: 'Saved tracker' },
+                    tracker: { agentName: 'Scene Tracker', model: 'fixture/companion-model', status: 'done', content: 'Saved tracker' },
                 } } }];
                 window.areAgentsGloballyEnabled = () => true;
                 window.getAgentById = id => id === 'tracker' ? { id } : null;
@@ -148,6 +153,8 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
             });
 
             const repair = page.getByRole('button', { name: 'Fix companion note', exact: true });
+            await expect(page.locator('.ica--companion-meta')).toHaveText('companion-model');
+            await expect(page.locator('.ica--companion-meta')).toHaveAttribute('title', 'fixture/companion-model');
             await expect(page.locator('.ica--companion-actions button')).toHaveCount(5);
             await expect(repair).toBeVisible();
             await expect(repair.locator('.fa-wrench')).toHaveCount(1);

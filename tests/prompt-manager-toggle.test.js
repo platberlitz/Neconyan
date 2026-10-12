@@ -69,6 +69,33 @@ describe('shared Prompt Manager enabled mutation', () => {
         manager.serviceSettings.prompts = structuredClone(manager.serviceSettings.prompts);
         expect(manager.isPromptScopeCurrent(scope)).toBe(false);
     });
+    test.each(['A', 'B'])('pin buttons stay disabled until preset %s has current rendered actions', async name => {
+        const { manager } = await renderedManagerFixture();
+        await manager.renderPromptManagerListItems();
+        const pin = () => manager.listElement.rows.find(row => row.dataset.pmIdentifier === 'a').querySelector('.prompt-manager-pin-action');
+        const oldButton = pin();
+        const mutate = jest.spyOn(manager, 'setPromptPinned').mockResolvedValue(true);
+        expect(oldButton.disabled).toBe(false);
+
+        manager.isPresetChanging = true;
+        manager.syncPinnedPromptControls();
+        expect(oldButton.disabled).toBe(true);
+        manager.serviceSettings.preset_settings_openai = name;
+        manager.serviceSettings.prompts = structuredClone(manager.serviceSettings.prompts);
+        manager.serviceSettings.prompt_order = structuredClone(manager.serviceSettings.prompt_order);
+        manager.isPresetChanging = false;
+        manager.syncPinnedPromptControls();
+        expect(oldButton.disabled).toBe(true);
+        oldButton.click();
+        expect(mutate).not.toHaveBeenCalled();
+
+        await manager.renderPromptManagerListItems();
+        expect(pin()).not.toBe(oldButton);
+        expect(pin().disabled).toBe(false);
+        pin().click();
+        expect(mutate).toHaveBeenCalledTimes(1);
+        expect(mutate).toHaveBeenCalledWith('a', true);
+    });
     test('a real list click immediately after a global character update still toggles, without waiting for rendering', async () => {
         const { manager } = await renderedManagerFixture();
         manager.configuration.promptOrder.dummyId = 42;

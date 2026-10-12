@@ -149,29 +149,48 @@ describe('update toast', () => {
         expect(shown).toEqual(['apk:arm64:1.3.0']);
     });
 
-    test('keeps a notice unread if the app is hidden while its stylesheet loads', async () => {
+    test.each([
+        ['Git', { repository: { isRepo: true, remoteCommit: 'abc1234', behind: 1 } }, 'abc1234'],
+        ['APK', { androidRelease: {
+            supported: true, checked: true, assetAvailable: true, canUpdate: true, latestVersion: '1.3.0', architecture: 'arm64',
+        } }, 'apk:arm64:1.3.0'],
+    ])('shows an unread %s notice on return after backgrounding during stylesheet loading', async (_, status, notificationKey) => {
+        const { context, requests } = createContext(status);
         let finishStyles;
-        const store = new Map();
+        let stylesRequested;
+        const styles = new Promise(resolve => { finishStyles = resolve; });
+        const stylesStarted = new Promise(resolve => { stylesRequested = resolve; });
         const toasts = [];
-        const context = vm.createContext({
-            document: {
-                hidden: false,
-                body: { append: toast => toasts.push(toast) },
-                createElement: () => ({ setAttribute() {}, querySelector: () => ({ addEventListener() {} }) }),
-            },
-            NN_UPDATE_TOAST_STORAGE_KEY: 'neconyan:update-toast-commit',
-            localStorage: { setItem: (key, value) => store.set(key, value) },
+        Object.assign(context.document, {
+            body: { append: toast => toasts.push(toast) },
+            createElement: () => ({ setAttribute() {}, querySelector: () => ({ addEventListener() {} }) }),
+        });
+        Object.assign(context, {
             dismissUpdateToast() {},
             scheduleUpdateToastDismissal() {},
-            loadUpdateToastStyles: () => new Promise(resolve => { finishStyles = resolve; }),
+            loadUpdateToastStyles: () => { stylesRequested(); return styles; },
         });
         vm.runInContext([extract('rememberNotifiedUpdateCommit'), extract('showUpdateToast')].join('\n'), context);
-        const show = context.showUpdateToast({ kind: 'apk', remoteCommit: 'apk:arm64:1.3.0', latestVersion: '1.3.0' });
+        const check = context.checkForNeconyanUpdate();
+        await stylesStarted;
         context.document.hidden = true;
         finishStyles();
-        await show;
+        await check;
         expect(toasts).toEqual([]);
-        expect(store.size).toBe(0);
+        expect(context.readNotifiedUpdateCommit()).toBe('');
+        expect(requests()).toBe(1);
+
+        context.document.hidden = false;
+        context.handleNeconyanUpdateVisibilityChange();
+        await new Promise(resolve => setImmediate(resolve));
+        expect(toasts).toHaveLength(1);
+        expect(context.readNotifiedUpdateCommit()).toBe(notificationKey);
+        expect(requests()).toBe(2);
+
+        context.handleNeconyanUpdateVisibilityChange();
+        await new Promise(resolve => setImmediate(resolve));
+        expect(toasts).toHaveLength(1);
+        expect(requests()).toBe(2);
     });
 
     test('checks again on returning to the app and removes that listener without admin access', async () => {
