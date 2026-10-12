@@ -509,7 +509,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261012d-agent-model-labels';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261012-ripple-controls10';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
