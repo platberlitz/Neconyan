@@ -51,6 +51,38 @@ test('missing ready ledger and changed checksum fail closed, including bootstrap
     assert.throws(f.initialise, { code: 'ROLEPLAY_STORE_DAMAGED' });
 });
 
+test('reused ledger verification still returns fresh state and refuses changed bytes', t => {
+    const f = fixture(t);
+    const scope = f.initialise();
+    const state = path.join(f.directory, 'state.json');
+    const original = fs.readFileSync(state, 'utf8');
+    const first = readRoleplayAccount(scope);
+    first.revision = 99;
+    const second = readRoleplayAccount(scope);
+    assert.notEqual(second, first);
+    assert.equal(second.revision, 0);
+
+    const forged = JSON.parse(original);
+    forged.state.revision = 5;
+    fs.writeFileSync(state, JSON.stringify(forged));
+    assert.throws(() => readRoleplayAccount(scope), { code: 'ROLEPLAY_STORE_DAMAGED' });
+
+    const invalid = JSON.parse(original);
+    invalid.state.status = 'unknown';
+    invalid.hash = roleplayHash(invalid.state);
+    fs.writeFileSync(state, JSON.stringify(invalid));
+    assert.throws(() => readRoleplayAccount(scope), { code: 'ROLEPLAY_STORE_DAMAGED' });
+    assert.throws(() => readRoleplayAccount(scope), { code: 'ROLEPLAY_STORE_DAMAGED' });
+
+    fs.writeFileSync(state, original);
+    assert.equal(readRoleplayAccount(scope).revision, 0);
+    withRoleplayAccountLock(scope, lease => {
+        roleplayLease(lease).state.status = 'maintenance';
+        saveRoleplayAccount(lease);
+    });
+    assert.throws(() => readRoleplayAccount(scope), { code: 'ROLEPLAY_ACCOUNT_UNAVAILABLE' });
+});
+
 test('account and epoch are required for every normal read and mutation', t => {
     const f = fixture(t);
     const scope = f.initialise();

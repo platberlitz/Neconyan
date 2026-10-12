@@ -425,6 +425,27 @@ function validateState(state, identity) {
     return state;
 }
 
+/**
+ * Hashing and validating a large ledger costs hundreds of milliseconds and every
+ * protected read repeats it, including once a second per open reply preview. The
+ * result depends only on the ledger bytes and the identity it is checked against,
+ * so identical bytes already verified skip that work. Files are still read, their
+ * physical checks still run and callers still get a freshly decoded state.
+ */
+const VERIFIED_STATE_LIMIT = 16;
+const verifiedStates = new Map();
+
+function verifiedStateKey(identity, stateFile) {
+    return `${identity.owner}\0${identity.storageId}\0${stateFile.rawHash}`;
+}
+
+function rememberVerifiedState(identity, stateFile) {
+    const key = verifiedStateKey(identity, stateFile);
+    verifiedStates.delete(key);
+    verifiedStates.set(key, true);
+    if (verifiedStates.size > VERIFIED_STATE_LIMIT) verifiedStates.delete(verifiedStates.keys().next().value);
+}
+
 function load(scope, allowUninitialised = false) {
     const root = roleplayStoreDirectory(scope);
     const identityFile = readRoleplayFile(path.join(root, 'identity.json'), 4096);
@@ -436,8 +457,13 @@ function load(scope, allowUninitialised = false) {
         || identity.phase !== 'ready') throw damaged();
     const stateFile = readRoleplayFile(path.join(root, 'state.json'));
     const saved = decodeJson(stateFile);
-    if (!object(saved) || !HASH.test(saved.hash) || roleplayHash(saved.state) !== saved.hash) throw damaged();
-    return { root, identity, identityFile, stateFile, state: validateState(saved.state, identity) };
+    if (!object(saved) || !HASH.test(saved.hash)) throw damaged();
+    if (!verifiedStates.has(verifiedStateKey(identity, stateFile))) {
+        if (roleplayHash(saved.state) !== saved.hash) throw damaged();
+        validateState(saved.state, identity);
+    }
+    rememberVerifiedState(identity, stateFile);
+    return { root, identity, identityFile, stateFile, state: saved.state };
 }
 
 function stamp(scope, state) {
@@ -455,7 +481,9 @@ function encodeState(identity, state) {
 }
 
 function save(root, identity, state, expected = null) {
-    return writeJson(path.join(root, 'state.json'), encodeState(identity, state), expected);
+    const written = writeJson(path.join(root, 'state.json'), encodeState(identity, state), expected);
+    rememberVerifiedState(identity, written);
+    return written;
 }
 
 function isCurrentResource(state, instanceId) {
