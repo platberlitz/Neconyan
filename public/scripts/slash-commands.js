@@ -6651,7 +6651,6 @@ function setPromptEntryCallback(args, targetState) {
     identifiersList = [...new Set(identifiersList)];
     if (identifiersList.length === 0) return '';
 
-    // logic adapted from PromptManager.js, handleToggle
     const getPromptOrderEntryState = (promptOrderEntry) => {
         if (['toggle', 't', ''].includes(targetState.trim().toLowerCase())) {
             return !promptOrderEntry.enabled;
@@ -6668,17 +6667,18 @@ function setPromptEntryCallback(args, targetState) {
         return promptOrderEntry.enabled;
     };
 
+    let changed = false;
     identifiersList.forEach(promptID => {
         const promptOrderEntry = promptManager.getPromptOrderEntry(promptManager.activeCharacter, promptID);
-        const counts = promptManager.tokenHandler.getCounts();
-
-        counts[promptID] = null;
-        promptOrderEntry.enabled = getPromptOrderEntryState(promptOrderEntry);
+        if (!promptOrderEntry) return;
+        changed = promptManager.setPromptEnabled(promptID, getPromptOrderEntryState(promptOrderEntry), { deferRender: true, allowRestricted: true }) || changed;
     });
 
     // no need to render for each identifier
-    promptManager.render();
-    promptManager.saveServiceSettings();
+    if (changed) {
+        promptManager.render();
+        promptManager.saveServiceSettings();
+    }
     return '';
 }
 

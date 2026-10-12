@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const stylesheets = [
+    { name: 'chat widgets', url: new URL('../public/css/neconyan-chat-widgets.css', import.meta.url) },
     {
         name: 'in-chat agents',
         url: new URL('../public/scripts/extensions/in-chat-agents/style.css', import.meta.url),

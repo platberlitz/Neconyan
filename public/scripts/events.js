@@ -37,6 +37,7 @@ export const event_types = {
     CHATCOMPLETION_MODEL_CHANGED: 'chatcompletion_model_changed',
     OAI_PRESET_CHANGED_BEFORE: 'oai_preset_changed_before',
     OAI_PRESET_CHANGED_AFTER: 'oai_preset_changed_after',
+    PROMPT_MANAGER_UPDATED: 'prompt_manager_updated',
     OAI_PRESET_EXPORT_READY: 'oai_preset_export_ready',
     OAI_PRESET_IMPORT_READY: 'oai_preset_import_ready',
     WORLDINFO_SETTINGS_UPDATED: 'worldinfo_settings_updated',

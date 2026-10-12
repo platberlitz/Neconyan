@@ -873,7 +873,7 @@ class PresetManager {
      * @param {object} [options] Options for saving the preset
      * @param {boolean} [options.skipUpdate=false] If true, skips updating the preset list after saving.
      */
-    async savePreset(name, settings, { skipUpdate = false, select = true, isCurrent = () => true } = {}) {
+    async savePreset(name, settings, { skipUpdate = false, select = true, isCurrent = () => true, quiet = false } = {}) {
         if (this.apiId === 'instruct' && settings) {
             await checkForSystemPromptInInstructTemplate(name, settings);
         }
@@ -892,7 +892,7 @@ class PresetManager {
         });
 
         if (!response.ok) {
-            toastr.error(t`Your changes were not saved. Check your connection to Neconyan, then reload before editing more.`, t`Preset could not be saved`);
+            if (!quiet) toastr.error(t`Your changes were not saved. Check your connection to Neconyan, then reload before editing more.`, t`Preset could not be saved`);
             console.error('Preset could not be saved', response);
             throw new Error('Preset could not be saved');
         }
@@ -1412,9 +1412,12 @@ class PresetManager {
      * @param {string} [options.name] Name of the preset. If not provided, uses the currently selected preset name.
      * @param {string} options.path Path to the preset extension field, e.g. 'myextension.data'. If empty, writes to the root of the extensions object.
      * @param {any} options.value Value to write to the preset extension field.
+     * @param {boolean} [options.requireSettingsSave=false] Reject a failed live-settings save instead of continuing with the preset.
+     * @param {boolean} [options.quiet=false] Let the caller provide its own save-failure message.
+     * @param {(preset: object) => boolean} [options.isCurrent] Check the named preset again after the live-settings save.
      * @return {Promise<void>} Resolves when the preset is saved.
      */
-    async writePresetExtensionField({ name, path, value }) {
+    async writePresetExtensionField({ name, path, value, requireSettingsSave = false, quiet = false, isCurrent = () => true }) {
         const { settings } = this.getPresetList();
         const selectedName = this.getSelectedPresetName();
         const presetName = name || selectedName;
@@ -1424,7 +1427,8 @@ class PresetManager {
             // Set the value at the specified path
             settings.extensions = ensurePlainObject(settings.extensions || {});
             path ? lodash.set(settings.extensions, path, value) : (settings.extensions = value);
-            await saveSettings();
+            const saved = await saveSettings(0, { returnResult: requireSettingsSave });
+            if (requireSettingsSave && !saved) throw new Error('Preset extension settings could not be saved');
         }
 
         // Also update the preset by name
@@ -1433,12 +1437,14 @@ class PresetManager {
             return;
         }
 
+        if (!isCurrent(preset)) throw new DOMException('The preset extension edit is no longer current.', 'AbortError');
+
         // Set the value at the specified path
         preset.extensions = ensurePlainObject(preset.extensions || {});
         path ? lodash.set(preset.extensions, path, value) : (preset.extensions = value);
 
         // Save the updated preset
-        await this.savePreset(presetName, preset, { skipUpdate: true });
+        await this.savePreset(presetName, preset, { skipUpdate: true, quiet });
     }
 }
 

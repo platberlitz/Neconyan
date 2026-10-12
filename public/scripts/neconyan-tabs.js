@@ -1,4 +1,5 @@
 import { createBubblesBottomBoundary } from './bubbles-bottom-boundary.js';
+import { initChatWidgets } from './neconyan-chat-widgets.js';
 import { finishUiMotion, getUiDrawerEdge, getUiSlideOptions, isUiClosing, revealChat, revealUi, setUiVisibility } from './ui-motion.js';
 import { DEFAULT_SCROLL_EDGE_SETTLE_DELAYS, jumpScrollElementToEdge } from './chat-scroll-edges.js';
 import {
@@ -20728,6 +20729,7 @@ function initAll() {
     applyTopbarIconsOnlyPreference();
     bindLandingPageObserver();
     buildBottomChatBar();
+    initChatWidgets({ getMode: getActualNeconyanMode });
     createBubblesBottomBoundary({ chat: getChatScrollElement(), toolbar: bottomChatBarRoot, getMode: getActualNeconyanMode });
     // Neconyan: user input ends the ⬇ scroll-to-bottom ladder so a mid-ladder flick is not snapped back.
     getChatScrollElement()?.addEventListener('wheel', cancelPendingBottomChatScroll, { passive: true });
