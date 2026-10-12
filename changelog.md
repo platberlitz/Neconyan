@@ -4,6 +4,7 @@
 
 ### Merged Staging PRs
 - PR #132 (2026-10-12) `feat(meower): add an add-all character selection button`
+- PR #134 (2026-10-12) `fix(roleplay): stabilise preview scrolling and streaming`
 - PR #135 (2026-10-12) `fix(scratchpad): share sessions across character chats`
 - PR #136 (2026-10-12) `fix(ui): keep buttons accent-aware across shell styles`
 - PR #137 (2026-10-12) `fix(chats): correct the Hush reading layout and controls`
