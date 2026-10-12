@@ -55,7 +55,7 @@ import { resolveExpressionsAgentProfile } from '../expressions/expressions-agent
 import { buildFallbackPromptText, extractProfileResponseText } from './llm-utils.js';
 import { buildPromptTransformRecentChat } from './prompt-transform-context.js';
 import { getTrackerRepairConnectionProfile, getTrackerRepairTimeoutMs, isTrackerRepairRunAgent, markTrackerRepairRunAgent } from './tracker-repair-run.js';
-import { buildAgentContextMacros, captureGroupCards, getPreparedMewmoryContext, usesGroupCardsMacro } from './agent-context-macros.js';
+import { buildAgentContextMacros, captureGroupCards, captureTrackerState, getPreparedActiveLore, getPreparedMewmoryContext, setPreparedActiveLore, TRACKER_STATE_MACRO, usesAgentMacro, usesGroupCardsMacro } from './agent-context-macros.js';
 import { getConnectionProfileDisplayName, getConnectionProfileModelName } from './profile-utils.js';
 import { describeAgentRunModel } from './model-label.js';
 import {
@@ -96,6 +96,7 @@ import { buildPromptTransformSynthesisMessages, composePromptTransformDraft, run
 import { isLikelyPromptTransformRefusal } from './prompt-transform-refusal.js';
 
 const PROMPT_KEY_PREFIX = 'inchat_agent_';
+const AUTHORS_NOTE_PROMPT_KEY = '2_floating_prompt';
 const PATHFINDER_AUTO_SUMMARY_PROMPT_KEY = 'pathfinder_zz_auto_summary';
 const MESSAGE_EXTRA_KEY = 'inChatAgents';
 const POST_PROCESSING_RUNS_EXTRA_KEY = 'inChatAgentPostRuns';
@@ -2243,7 +2244,10 @@ function buildBrowserAgentContextMacros(agent) {
             muted: Boolean(group.disabled_members?.includes(avatar)),
         })))
         : null;
-    return buildAgentContextMacros({ mewmory: getPreparedMewmoryContext(getCurrentChatId()), groupCards, userName: context.name1 });
+    const chatId = getCurrentChatId();
+    const trackers = usesAgentMacro(agent?.prompt, TRACKER_STATE_MACRO) ? captureTrackerState(getEnabledAgents(), chat_metadata) : null;
+    return buildAgentContextMacros({ mewmory: getPreparedMewmoryContext(chatId), groupCards, userName: context.name1, charName: context.name2,
+        lore: getPreparedActiveLore(chatId), authorsNote: context.extensionPrompts?.[AUTHORS_NOTE_PROMPT_KEY]?.value, trackers });
 }
 
 function updateMessageRegexSnapshot(message, activeAgents, generationType) {
@@ -4449,6 +4453,7 @@ function onGenerationStarted(generationType, options, dryRun) {
     resetChatBackupSequence();
     isGenerationInProgress = true;
     generationStartChatId = getCurrentSnapshotChatId();
+    setPreparedActiveLore(null);
     postProcessingInvalidatedByChatChange = false;
     toolSyncDuringGeneration = true;
     generationStopRequested = false;
@@ -5851,6 +5856,11 @@ function onWorldInfoEntriesLoaded(data) {
     void data;
 }
 
+function recordActiveLore(entries) {
+    if (!isGenerationInProgress || !Array.isArray(entries)) return;
+    setPreparedActiveLore(getCurrentChatId(), entries.map(entry => String(entry?.content ?? '').trim()).filter(Boolean).join('\n\n'));
+}
+
 async function onWorldInfoActivated(entries, generationContext) {
     const run = pathfinderRetrievalRun;
     // Native activation is emitted after retrieval, before either prompt builder
@@ -6089,6 +6099,7 @@ export function initAgentRunner() {
     }
 
     if (event_types.WORLD_INFO_ACTIVATED) {
+        eventSource.on(event_types.WORLD_INFO_ACTIVATED, recordActiveLore);
         eventSource.on(event_types.WORLD_INFO_ACTIVATED, onWorldInfoActivated);
     }
 

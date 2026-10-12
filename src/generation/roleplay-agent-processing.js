@@ -1,6 +1,6 @@
 import { appendHelperPrefillMessages } from '../../public/scripts/extensions/helper-prefill.js';
 import { buildPromptTransformRecentChat, getAgentLengthTarget } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-context.js';
-import { buildAgentContextMacros } from '../../public/scripts/extensions/in-chat-agents/agent-context-macros.js';
+import { ACTIVE_LORE_MACRO, buildAgentContextMacros, captureTrackerState, TRACKER_STATE_MACRO, usesAgentMacro } from '../../public/scripts/extensions/in-chat-agents/agent-context-macros.js';
 import { applyRegexScriptList } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 import { buildRegexScriptRefsForAgent } from '../../public/scripts/extensions/in-chat-agents/regex-snapshot-store.js';
 import { inspectTrackerState, mergeTrackerRepairPayload, TRACKER_REPAIR_INSTRUCTION } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
@@ -17,6 +17,8 @@ import { runAgentModelStep } from './agent-model-step.js';
 import { stripSavedAuxiliaryTrackerEchoes } from '../../public/scripts/extensions/in-chat-agents/companion/companion-tracker-context.js';
 import { validateRoleplayToolHistory } from './roleplay-contributions.js';
 import { requireJobApproval } from './job-approvals.js';
+import { captureRoleplayWorldInfo, prepareRoleplayWorldInfo } from './world-info.js';
+import { activeRoleplayAuthorNote } from './roleplay-prompt.js';
 import { agentMessageExtra, agentTransformHistory, reconcileAgentTrackerMetadata } from './agent-message-state.js';
 
 const fail = message => roleplayError('ROLEPLAY_AGENT_RECOVERY', message, 409);
@@ -75,8 +77,46 @@ function aliases(environment, agent, text, generationType, assistantName, contex
     return environment;
 }
 
-function agentContextMacros(snapshot, mewmory = null) {
-    return buildAgentContextMacros({ mewmory, groupCards: snapshot.groupCards, userName: snapshot.speakerNames?.user });
+function savedAuthorsNote(snapshot) {
+    try {
+        return snapshot.authorNote ? activeRoleplayAuthorNote(snapshot.authorNote) : '';
+    } catch {
+        return '';
+    }
+}
+
+function agentContextMacros(snapshot, mewmory = null, reference = null) {
+    return buildAgentContextMacros({ mewmory, groupCards: snapshot.groupCards, userName: snapshot.speakerNames?.user,
+        charName: snapshot.speakerNames?.character, lore: reference?.lore, authorsNote: savedAuthorsNote(snapshot),
+        trackers: reference ? captureTrackerState(reference.agents, reference.records?.[0]?.chat_metadata) : null });
+}
+
+/** The lore the main reply was built with, so Agents check the reply against the same entries. */
+export function roleplayAgentLoreText(selection) {
+    if (!selection) return '';
+    return [selection.worldInfoBefore, selection.worldInfoAfter, ...(selection.EMEntries ?? []).map(entry => entry.content),
+        ...(selection.WIDepthEntries ?? []).flatMap(entry => entry.entries), ...(selection.ANBeforeEntries ?? []), ...(selection.ANAfterEntries ?? []),
+        ...Object.values(selection.outletEntries ?? {}).flat()].map(item => String(item ?? '').trim()).filter(Boolean).join('\n\n');
+}
+
+/** Manual Agent runs have no main reply selection, so scan the lore for the saved chat once and keep it with the job. */
+async function scannedAgentLoreText(context, options, agents, identity) {
+    const { snapshot } = options;
+    if (!snapshot.source || !agents.some(agent => usesAgentMacro(agent.prompt, ACTIVE_LORE_MACRO))) return '';
+    const name = options.namespace ? `roleplay-agent-lore:${options.namespace}` : 'roleplay-agent-lore';
+    const previous = readPhase(context, snapshot.account, name, identity);
+    if (previous) return previous.text;
+    await options.assertCurrent?.();
+    const captured = captureRoleplayWorldInfo(options.base, snapshot.account, snapshot.source, {
+        avatar: snapshot.avatar, tokenizer: snapshot.tokenizer, maxContext: 4096, serverPrompt: true, trigger: snapshot.global?.trigger,
+        agentIds: snapshot.agents?.forcedIds ?? [], agentContext: snapshot.agentContext ?? false,
+    });
+    const pre = readArtifact(context.directories, context.job.id, 'roleplay-agents-pre');
+    const selection = await prepareRoleplayWorldInfo(options.base, captured, { macros: options.macros,
+        promptChat: (options.records ?? []).filter(message => !message.is_system).map(message => String(message.mes ?? '')).reverse(),
+        promptInjections: (pre?.extensions ?? []).filter(extension => extension.scan).map(extension => extension.content) });
+    await options.assertCurrent?.();
+    return savePhase(context, snapshot.account, name, { identity, text: roleplayAgentLoreText(selection) }).text;
 }
 
 function evaluate(environment, text, snapshot) {
@@ -176,7 +216,7 @@ async function modelRun(context, options, agent, text, name, intercept = false, 
         macros, tokenizer: snapshot.tokenizer, fallbackContext: snapshot.maxContext, assertCurrent, generate,
         buildMessages: environment => {
             if (options.synthesisMessages) return appendHelperPrefillMessages(options.synthesisMessages, snapshot.agents.helperPrefill);
-            aliases(environment, agent, text, generationType, options.assistantName, agentContextMacros(snapshot, options.mewmory));
+            aliases(environment, agent, text, generationType, options.assistantName, agentContextMacros(snapshot, options.mewmory, options.agentReference));
             const prompt = evaluate(environment, agent.prompt, snapshot);
             return appendHelperPrefillMessages(messagesFor(agent, text, prompt, generationType, options.assistantName, format, intercept, recentChat), snapshot.agents.helperPrefill);
         } });
@@ -310,6 +350,9 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     const baseline = companionOutput || manual ? value : roleplayAgentOutputBaseline(value, pre);
     const modelName = id => `${options.namespace ? options.namespace + ':' : ''}post:${id}`;
     const version = postprocessingPlan(context, snapshot.account, phaseName, identity, selected, modelName);
+    const usesTrackers = selected.some(agent => usesAgentMacro(agent.prompt, TRACKER_STATE_MACRO));
+    options = { ...options, agentReference: { lore: options.activeLore ?? await scannedAgentLoreText(context, options, selected, identity),
+        agents: usesTrackers ? readRoleplayAgents(base, snapshot) : [], records: options.metadataRecords ?? records } };
     let postFailed = false;
     const runs = [];
     const parallel = snapshot.agents.appendMode === 'parallel';
@@ -377,11 +420,11 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     if (!companionOutput && generationType !== 'impersonate' && (!manual || options.repairTrackers)) {
         for (const agent of utilities) {
             if (agent.postProcess.type === 'append') text += options.repairTrackers
-                ? evaluate(aliases(environment, agent, text, generationType, options.assistantName, agentContextMacros(snapshot, options.mewmory)), agent.postProcess.appendText, snapshot) : agent.postProcess.appendText;
+                ? evaluate(aliases(environment, agent, text, generationType, options.assistantName, agentContextMacros(snapshot, options.mewmory, options.agentReference)), agent.postProcess.appendText, snapshot) : agent.postProcess.appendText;
         }
     }
     for (const agent of agents.filter(agent => manual || inline(agent))) {
-        aliases(environment, agent, text, generationType, options.assistantName, agentContextMacros(snapshot, options.mewmory));
+        aliases(environment, agent, text, generationType, options.assistantName, agentContextMacros(snapshot, options.mewmory, options.agentReference));
         const regexOptions = { isMarkdown: false, isPrompt: false,
             substituteParamsFn: (input, extra = {}) => environment.evaluate(input, { legacy: !snapshot.experimentalMacroEngine,
                 strictCapabilities: true, postProcess: extra.postProcessFn }),

@@ -29,6 +29,7 @@ const sourceFilenames = [
     'chatroom-companion.json',
     'clock-is-lying.json',
     'continuity-companion.json',
+    'continuity-corrector.json',
     'continuity-pins.json',
     'cyoa-choices-skill-checks.json',
     'dialogue-humaniser.json',
@@ -825,6 +826,7 @@ describe('in-chat agent bundled templates', () => {
     test('installs the reply rewrite chain by default in a fixed running order with the recent chat each pass needs', () => {
         const defaults = readIndexSetBody('DEFAULT_BUNDLED_TEMPLATE_IDS');
         const chain = [
+            ['continuity-corrector.json', 'tpl-continuity-corrector', 'Continuity Corrector', 12],
             ['character-authenticity.json', 'tpl-character-authenticity', 'Character Authenticity Checker', 8],
             ['format-fixer.json', 'tpl-format-fixer', 'Format Fixer', 0],
             ['user-agency-guard.json', 'tpl-user-agency-guard', 'User Agency Guard', 2],
@@ -859,6 +861,9 @@ describe('in-chat agent bundled templates', () => {
         expect(readTemplate('knowledge-guard.json').prompt).toContain('{{persona}}');
         for (const macro of ['{{group-cards}}', '{{mewmory-facts}}', '{{mewmory-interview}}', '{{mesExamplesRaw}}']) {
             expect(readTemplate('character-authenticity.json').prompt).toContain(macro);
+        }
+        for (const macro of ['{{tracker-state}}', '{{active-lore}}', '{{active-authors-note}}', '{{persona}}', '{{mewmory-facts}}', '{{group-cards}}', '{{description}}', '{{scenario}}']) {
+            expect(readTemplate('continuity-corrector.json').prompt).toContain(macro);
         }
     });
 

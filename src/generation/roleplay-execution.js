@@ -37,7 +37,7 @@ import { roleplayPromptContentHash } from './roleplay-prompt-proof.js';
 import { generateSavedSpeech } from './speech-jobs.js';
 import { prepareRoleplayCaptions } from './roleplay-captions.js';
 import { applyCaptionRecords } from './caption-records.js';
-import { prepareRoleplayAgentContributions, runRoleplayAgentInterceptors, runRoleplayAgentPostprocessing, roleplayAgentOutputBaseline, roleplayAgentDisplaySnapshot } from './roleplay-agent-processing.js';
+import { prepareRoleplayAgentContributions, runRoleplayAgentInterceptors, runRoleplayAgentPostprocessing, roleplayAgentLoreText, roleplayAgentOutputBaseline, roleplayAgentDisplaySnapshot } from './roleplay-agent-processing.js';
 import { runRoleplayCompanions } from './roleplay-companions.js';
 import { createProviderScope } from '../jobs/artifacts.js';
 import { stageBoundModelToolCalls } from './roleplay-tool-dispatch.js';
@@ -203,6 +203,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             });
             const mewmory = request.serverPrompt ? withRoleplayAccount(base, account, () => readArtifact(directories, job.id, 'roleplay-mewmory')) ?? null : null;
             const options = { base, snapshot: request.worldInfo, records, metadataRecords: current.records, binding: request.binding, mewmory,
+                activeLore: roleplayAgentLoreText(selection),
                 macros: savedRoleplayMacroSnapshot(request.worldInfo, records), generationType: request.worldInfo.global.trigger,
                 assistantName: request.characterName, assertCurrent: () => { assertSource(); assertRoleplayWorldInfoCurrent(base, request.worldInfo); }, generate: generateAgent };
             const intercepted = await runRoleplayAgentInterceptors(context, { ...options, value, timing: 'post-main-generation', format: 'text' });

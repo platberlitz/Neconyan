@@ -5122,5 +5122,101 @@
                 "continue"
             ]
         }
+    },
+    {
+        "id": "tpl-continuity-corrector",
+        "name": "Continuity Corrector",
+        "description": "Catch and fix continuity slips in each reply: wrong places, times, injuries, items, clothing, relationships and facts that clash with trackers, lore, memories, the cards or earlier replies",
+        "icon": "",
+        "category": "content",
+        "subcategory": "pov",
+        "tags": [
+            "continuity",
+            "trackers",
+            "editing"
+        ],
+        "version": 1,
+        "author": "Purachina",
+        "prompt": "# Role\nYou are a continuity editor for prose fiction. Make every reply agree with what the story has already established. Find every fact the reply gets wrong and correct it. Everything else stays exactly as written.\n\n# Reference\nThese are the established facts. Use them to judge the reply. Never copy text from them into the message. An empty section means that source is off or missing; work from the rest.\n\n<character name=\"{{char}}\">\n{{description}}\n\n{{personality}}\n</character>\n\n<group_cast>\n{{group-cards}}\n</group_cast>\n\n<persona name=\"{{user}}\">\n{{persona}}\n</persona>\n\n<scenario>\n{{scenario}}\n</scenario>\n\n<lore>\n{{active-lore}}\n</lore>\n\n<authors_note>\n{{active-authors-note}}\n</authors_note>\n\n<trackers>\n{{tracker-state}}\n</trackers>\n\n<story_memory>\n{{mewmory-facts}}\n</story_memory>\n\nThe recent chat holds the previous replies. Treat them as canon.\n\n# Which source wins\nWhen sources disagree, trust them in this order:\n1. The recent chat. What happened on-screen is final.\n2. Tracker blocks attached to this reply, then the saved trackers. Saved trackers show the state before this reply.\n3. The story memory.\n4. The lore, the scenario and the character cards.\nThe Author's Note steers the story. Follow its facts and setting rules, and never treat its instructions as text to insert.\n\n# Output\n- Output ONLY the revised message. No notes, headings, labels or explanations.\n- Keep tense, point of view, paragraph order, voice, names, macros, placeholders, code, URLs and formatting. Keep tags balanced.\n- Keep the same events, intentions and outcome. End where the original ends.\n- When the reply already agrees with everything, return the message unchanged.\n\n# Method\n1. Read the Reference and the recent chat. List the current facts: where everyone is, the time, what each person wears, holds and carries, their injuries and condition, who knows what, and how everyone stands with each other.\n2. Check every sentence of the reply against that list and the Tests.\n3. Fix only the sentences that fail. Change the smallest span that makes the fact right.\n4. Read the edited reply through. Every line still follows from the one before it.\n5. Run the Final Check and output.\n\n# Tests\n## Place and time\n1. Location: characters in the wrong room, building or town, or moving between places with no travel shown.\n2. Time: wrong time of day, day, season or weather, or time jumping with no transition.\n3. Layout: doors, furniture, landmarks or distances that contradict earlier descriptions.\n\n## Bodies and things\n4. Condition: injuries, illness, tiredness, hunger or intoxication forgotten, healed too fast or moved to another body part.\n5. Clothing: outfits, armour or accessories that changed with no one changing them.\n6. Items: objects appearing, vanishing, duplicating, or held by the wrong person; spent money, ammunition or supplies coming back.\n7. Appearance: hair, eyes, height, build, scars or species that contradict the cards or earlier replies.\n\n## People\n8. Presence: characters acting in a scene they left or never entered, or forgetting someone who is there.\n9. Relationships: wrong names, titles, family ties, ranks or standing; affection or hostility reset with no cause shown.\n10. Knowledge: characters forgetting what they learnt on-screen, or repeating a discovery as if new.\n11. Past events: promises, debts, secrets, deals and outcomes misremembered or contradicted.\n\n## World\n12. Rules: magic, technology, laws, history or customs that break the lore or the scenario.\n\n# Not errors\nLeave these alone:\n- Changes the reply itself shows happening, such as someone changing clothes, travelling, healing or picking something up.\n- Lies, mistakes, bluffs and false memories a character has on purpose or in character.\n- Details no source settles. Never invent a fact to fix.\n- Anything {{user}} says or does. Their character belongs to them.\n- Style, voice and pacing. Another pass handles those.\n\n# Fixes\nCorrect the fact in place and keep the sentence's job in the scene:\n- Swap the wrong detail for the right one.\n- When a fix needs a moment of motion, such as a character walking in, add one short clause.\n- When a whole sentence rests on an impossible fact, rewrite it around the true one with the same purpose.\n\n# Final Check\n- Every place, time, body, item, outfit, relationship and past event agrees with the sources.\n- The events, outcome and purpose of every line are unchanged.\n- Nothing from the Reference was pasted in.\n- {{user}}'s lines are untouched.",
+        "phase": "post",
+        "execution": "inline",
+        "injection": {
+            "position": 1,
+            "depth": 1,
+            "role": 0,
+            "order": 35,
+            "scan": false
+        },
+        "companion": {
+            "trigger": "auto",
+            "displayMode": "panel",
+            "format": "markdown",
+            "rawPrompt": false,
+            "inlinePhase": "",
+            "minContextTokens": 0,
+            "contextMessages": 10,
+            "includeCharacterCard": true,
+            "includePersona": true,
+            "includeWorldInfo": true,
+            "includeAuthorsNote": true,
+            "includeSystemPrompt": true,
+            "includeHistory": true,
+            "includeInChatHistory": false,
+            "chatHistoryDepth": 1,
+            "includeAllChatHistory": true,
+            "keepInChatHistoryWhenHostHidden": false,
+            "historyDepth": 3,
+            "feedback": {
+                "enabled": false,
+                "depth": 1
+            },
+            "batch": false,
+            "batchAgentIds": [],
+            "sendContextToCompanions": false,
+            "contextRecipientAgentIds": [],
+            "dependencies": [],
+            "waitForDependencies": false,
+            "maxTokens": 64000,
+            "chatHistoryPlacement": "source"
+        },
+        "preProcess": {
+            "mode": "inject",
+            "interceptTiming": "pre-generation",
+            "applyMode": "replace",
+            "wrapPosition": "after",
+            "wrapPrefix": "",
+            "wrapSuffix": "",
+            "patchStartTag": "<context_patch>",
+            "patchEndTag": "</context_patch>",
+            "maxTokens": 8192
+        },
+        "postProcess": {
+            "enabled": false,
+            "type": "extract",
+            "regexFind": "",
+            "regexReplace": "",
+            "regexFlags": "g",
+            "appendText": "",
+            "extractPattern": "",
+            "extractVariable": "",
+            "promptTransformEnabled": true,
+            "promptTransformShowNotifications": true,
+            "promptTransformMode": "rewrite",
+            "promptTransformMaxTokens": 32000,
+            "promptTransformContextMessages": 12
+        },
+        "enabled": false,
+        "conditions": {
+            "triggerKeywords": [],
+            "triggerProbability": 100,
+            "generationTypes": [
+                "normal",
+                "continue",
+                "impersonate"
+            ],
+            "runOnImpersonate": false,
+            "runOnCompanionOutputs": false,
+            "companionOutputTargetAgentIds": []
+        }
     }
 ]

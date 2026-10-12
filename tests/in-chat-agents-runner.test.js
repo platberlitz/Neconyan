@@ -309,6 +309,8 @@ describe('in-chat agent post-processing runner', () => {
                 characterId: contextCharacterId,
                 groups: contextGroups,
                 groupId: contextGroupId,
+                name2: 'Mira',
+                extensionPrompts,
                 getCharacterCardFields: jest.fn(({ chid = contextCharacterId } = {}) => {
                     const character = contextCharacters[Number(chid)] ?? {};
                     return {
@@ -8305,6 +8307,31 @@ describe('in-chat agent post-processing runner', () => {
         expect(macros['group-cards']).toContain('<character name="Oren" muted="true">');
         expect(buildPromptDynamicMacros('Reply', null, { prompt: 'No cards here' })['group-cards']).toBe('');
         setPreparedMewmoryContext(null, null);
+    });
+
+    test('fills the active lore, Author\'s Note and tracker macros for agent prompts', async () => {
+        const { buildPromptDynamicMacros, initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+        enabledAgents.push({ id: 'scene', name: 'Scene Tracker', enabled: true, postProcess: { enabled: true, type: 'extract', extractVariable: 'scene_data' } },
+            { id: 'off', name: 'Off Tracker', enabled: true, postProcess: { enabled: false, type: 'extract', extractVariable: 'off_data' } });
+        chatMetadata.variables = { agent_scene_data: '[SCENE|Hangar|Night]' };
+        chatMetadata.agent_off_data = 'Hidden';
+        extensionPrompts['2_floating_prompt'] = { value: '{{char}} has a broken wrist.' };
+
+        await eventSource.emit(eventTypes.WORLD_INFO_ACTIVATED, [{ content: 'Lore before generation' }]);
+        expect(buildPromptDynamicMacros('Reply', null, {})['active-lore']).toBe('');
+
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+        await eventSource.emit(eventTypes.WORLD_INFO_ACTIVATED, [{ content: 'The hangar floods at high tide.' }, { content: ' ' }, { content: 'Mira owes Oren a favour.' }]);
+        const macros = buildPromptDynamicMacros('Reply', null, { prompt: '{{tracker-state}}' });
+        expect(macros['active-lore']).toBe('The hangar floods at high tide.\n\nMira owes Oren a favour.');
+        expect(macros['active-authors-note']).toBe('Mira has a broken wrist.');
+        expect(macros['tracker-state']).toBe('<tracker name="Scene Tracker">\n[SCENE|Hangar|Night]\n</tracker>');
+        expect(buildPromptDynamicMacros('Reply', null, { prompt: 'No trackers here' })['tracker-state']).toBe('');
+
+        currentChatId = 'chat-b';
+        expect(buildPromptDynamicMacros('Reply', null, {})['active-lore']).toBe('');
+        await eventSource.emit(eventTypes.GENERATION_STOPPED);
     });
 
     test('gives prompt-transform rewrites the recent chat they ask for, and nothing by default', async () => {
