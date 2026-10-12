@@ -99,6 +99,58 @@ const WIDTHS = [1280, 1024, 997, 768, 390, 393, 320];
 for (const width of [1280, 393]) {
     test.describe(`Reply rewrite settings at ${width}px`, () => {
         test.use({ viewport: { width, height: width === 393 ? 852 : 900 }, isMobile: width === 393, hasTouch: width === 393 });
+        test('agent names show installed versions and the template update changes that version', async ({ page }, info) => {
+            await openAgents(page);
+            const skipTour = page.getByRole('region', { name: 'Neconyan interactive tutorial' }).getByRole('button', { name: 'Skip', exact: true });
+            if (await skipTour.isVisible()) await skipTour.click();
+            const template = JSON.parse(readFileSync(new URL('../public/scripts/extensions/in-chat-agents/templates/knowledge-guard.json', import.meta.url)));
+            const agents = [
+                { ...template, version: 1, phaseLocked: true, sourceTemplateId: template.id, name: 'Version check: Knowledge Guard' },
+                { ...template, sourceTemplateId: template.id, name: 'Version check: current Knowledge Guard' },
+                { ...template, sourceTemplateId: '', version: 7, name: 'Version check: a custom agent with a long name for private knowledge' },
+                { ...template, sourceTemplateId: '', version: undefined, name: 'Version check: unversioned custom agent' },
+            ].map((agent, index) => ({ ...agent, id: `version-check-${width}-${Date.now()}-${index}` }));
+            const requestHeaders = await headers(page);
+            try {
+                for (const agent of agents) expect((await page.request.post('/api/in-chat-agents/save', { headers: requestHeaders, data: agent })).ok()).toBe(true);
+                await openAgents(page);
+                await page.locator('#ica--settings').getByRole('tab', { name: 'All', exact: true }).click();
+                await page.locator('#ica--search').fill('Version check:');
+                for (const agent of agents) {
+                    const card = page.locator(`[data-agent-id="${agent.id}"]`);
+                    const badge = card.locator('.ica--card-name .ica--card-pill--version');
+                    await expect(badge).toHaveText(`v${agent.version ?? 1}`);
+                    await badge.scrollIntoViewIfNeeded();
+                    const geometry = await badge.evaluate(element => ({
+                        badge: element.getBoundingClientRect().toJSON(), parent: element.closest('.ica--card-name').getBoundingClientRect().toJSON(),
+                        visibility: window.getComputedStyle(element).visibility,
+                    }));
+                    expect(geometry.visibility).toBe('visible');
+                    expect(geometry.badge.x).toBeGreaterThanOrEqual(geometry.parent.x);
+                    expect(geometry.badge.right).toBeLessThanOrEqual(geometry.parent.right + 1);
+                    expect(geometry.badge.bottom).toBeLessThanOrEqual(geometry.parent.bottom + 1);
+                    await expect(card.locator('.ica--card-pill--version-update')).toHaveCount(agent === agents[0] ? 1 : 0);
+                }
+                const outdated = page.locator(`[data-agent-id="${agents[0].id}"]`);
+                await outdated.scrollIntoViewIfNeeded();
+                await capture(page, info, 'agent-name-versions');
+                await outdated.locator('.ica--card-pill--version-update').click();
+                await page.locator('dialog.popup:visible .popup-button-ok').click();
+                await expect(page.locator('.toast-success')).toContainText(`Updated "${template.name}" to v${template.version}.`);
+                await page.locator('#ica--search').fill('Knowledge Guard');
+                await expect(outdated.locator('.ica--card-name .ica--card-pill--version')).toHaveText(`v${template.version}`);
+                await expect(outdated.locator('.ica--card-pill--version-update')).toHaveCount(0);
+                await page.locator('#ica--templates').click();
+                await page.locator('.ica--template-search').fill('Knowledge Guard');
+                const templateCard = page.locator(`[data-id="${template.id}"]`);
+                await expect(templateCard.locator('.ica--template-card-name .ica--card-pill--version')).toHaveText(`v${template.version}`);
+                await expect(templateCard.locator('.ica--card-pill--version')).toHaveCount(1);
+                await capture(page, info, 'template-name-version');
+            } finally {
+                for (const agent of agents) await page.request.post('/api/in-chat-agents/delete', { headers: requestHeaders, data: { id: agent.id } });
+            }
+        });
+
         test('length and recent context survive quick settings, editor changes and reloads', async ({ page }, info) => {
             await openAgents(page);
             const skipTour = page.getByRole('region', { name: 'Neconyan interactive tutorial' }).getByRole('button', { name: 'Skip', exact: true });
