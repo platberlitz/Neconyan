@@ -12808,6 +12808,8 @@ const NN_UPDATE_TOAST_DURATION_MS = 8000;
 let nnUpdateToastTimer = null;
 let nnUpdateToastDismissTimer = null;
 let nnUpdateToastChecking = false;
+let nnUpdateToastLastCheckAt = 0;
+let nnUpdateToastSkippedWhileHidden = false;
 
 function readNotifiedUpdateCommit() {
     try {
@@ -12858,9 +12860,9 @@ function loadUpdateToastStyles() {
 
 async function showUpdateToast(repository) {
     const commit = String(repository.remoteCommit || '');
-    rememberNotifiedUpdateCommit(commit);
     dismissUpdateToast();
     await loadUpdateToastStyles();
+    if (document.hidden) return;
 
     const behind = Number(repository.behind) || 0;
     const toast = document.createElement('div');
@@ -12878,23 +12880,43 @@ async function showUpdateToast(repository) {
         <button type="button" class="nn-update-toast-close" aria-label="Dismiss" title="Dismiss">
             <i class="fa-solid fa-xmark" aria-hidden="true"></i>
         </button>`;
-    toast.querySelector('.nn-update-toast-text > span').textContent = behind === 1
-        ? '1 new change. Open Server to update.'
-        : `${behind} new changes. Open Server to update.`;
+    toast.querySelector('.nn-update-toast-text > span').textContent = repository.kind === 'apk'
+        ? `APK v${repository.latestVersion} is ready. Open Server to update.`
+        : behind === 1 ? '1 new change. Open Server to update.'
+            : `${behind} new changes. Open Server to update.`;
     toast.querySelector('.nn-update-toast-open').addEventListener('click', () => {
         dismissUpdateToast();
         openShell('right', 'server');
     });
     toast.querySelector('.nn-update-toast-close').addEventListener('click', dismissUpdateToast);
     document.body.append(toast);
+    rememberNotifiedUpdateCommit(commit);
     scheduleUpdateToastDismissal(toast);
 }
 
 async function checkForNeconyanUpdate() {
-    if (nnUpdateToastChecking || document.hidden) return;
+    if (document.hidden) {
+        nnUpdateToastSkippedWhileHidden = true;
+        return;
+    }
+    if (nnUpdateToastChecking) return;
     nnUpdateToastChecking = true;
+    nnUpdateToastLastCheckAt = Date.now();
+    nnUpdateToastSkippedWhileHidden = false;
     try {
         const status = await requestServerAdmin('/api/server-admin/status');
+        if (document.hidden) {
+            nnUpdateToastSkippedWhileHidden = true;
+            return;
+        }
+        const androidRelease = status?.androidRelease;
+        if (androidRelease?.supported) {
+            if (!androidRelease.checked || !androidRelease.assetAvailable || !androidRelease.canUpdate || !androidRelease.latestVersion) return;
+            const notificationKey = `apk:${androidRelease.architecture}:${androidRelease.latestVersion}`;
+            if (notificationKey === readNotifiedUpdateCommit()) return;
+            await showUpdateToast({ ...androidRelease, kind: 'apk', remoteCommit: notificationKey });
+            return;
+        }
         const repository = status?.repository;
         if (!repository?.isRepo || !repository.remoteCommit || !(Number(repository.behind) > 0)) return;
         if (repository.remoteCommit === readNotifiedUpdateCommit()) return;
@@ -12903,14 +12925,25 @@ async function checkForNeconyanUpdate() {
         if (error?.status === 401 || error?.status === 403) {
             clearInterval(nnUpdateToastTimer);
             nnUpdateToastTimer = null;
+            document.removeEventListener('visibilitychange', handleNeconyanUpdateVisibilityChange);
         }
     } finally {
         nnUpdateToastChecking = false;
     }
 }
 
+function handleNeconyanUpdateVisibilityChange() {
+    if (document.hidden) return;
+    const wasSkippedWhileHidden = nnUpdateToastSkippedWhileHidden;
+    const checkIsDue = Date.now() - nnUpdateToastLastCheckAt >= NN_UPDATE_TOAST_INTERVAL_MS;
+    if (!wasSkippedWhileHidden && !checkIsDue) return;
+    nnUpdateToastSkippedWhileHidden = false;
+    void checkForNeconyanUpdate();
+}
+
 function startNeconyanUpdateToast() {
     if (nnUpdateToastTimer) return;
+    document.addEventListener('visibilitychange', handleNeconyanUpdateVisibilityChange);
     nnUpdateToastTimer = setInterval(() => void checkForNeconyanUpdate(), NN_UPDATE_TOAST_INTERVAL_MS);
     void checkForNeconyanUpdate();
 }
@@ -12944,6 +12977,13 @@ function setServerAdminButtonLabel(button, isBusy, busyLabel) {
     }
 
     button.textContent = isBusy ? busyLabel : button.dataset.idleLabel;
+}
+
+function setServerAdminIdleButtonLabel(button, label, state = getServerAdminState()) {
+    if (!(button instanceof HTMLButtonElement)) return;
+    const updateInProgress = (state.busy || state.restarting) && button.textContent === 'Updating…';
+    if (!updateInProgress) button.textContent = label;
+    button.dataset.idleLabel = label;
 }
 
 function describeAutoStashState(result) {
@@ -13169,8 +13209,10 @@ function renderServerAdminStatus(data) {
 
     const repository = data?.repository ?? {};
     const release = data?.release ?? null;
+    const androidRelease = data?.androidRelease ?? null;
     const version = data?.version ?? {};
-    const isGitInstall = Boolean(repository?.supported && repository?.isRepo);
+    const isAndroidInstall = Boolean(androidRelease?.supported);
+    const isGitInstall = !isAndroidInstall && Boolean(repository?.supported && repository?.isRepo);
     const statusGrid = refs.statusGrid;
     const sourceDetailsGrid = refs.sourceDetailsGrid ?? statusGrid;
     statusGrid.replaceChildren();
@@ -13193,7 +13235,7 @@ function renderServerAdminStatus(data) {
         attrs: { style: 'width: 100%; max-width: 200px;', 'aria-label': isGitInstall ? 'Git branch' : 'Release source' },
     });
     branchSelect.disabled = !isGitInstall;
-    const currentBranch = isGitInstall ? (repository?.displayBranch || repository?.branch || version?.gitBranch || '') : 'Release ZIP';
+    const currentBranch = isGitInstall ? (repository?.displayBranch || repository?.branch || version?.gitBranch || '') : isAndroidInstall ? 'GitHub APK' : 'Release ZIP';
     const currentOptionAttributes = { value: currentBranch, selected: 'selected' };
     if (!currentBranch || !isGitInstall) {
         currentOptionAttributes.disabled = 'disabled';
@@ -13209,10 +13251,15 @@ function renderServerAdminStatus(data) {
         loadServerAdminBranches(branchSelect, currentBranch);
     }
 
-    appendServerAdminStat(statusGrid, 'Commit', repository?.currentCommit || version?.gitRevision || 'Unknown');
-    appendServerAdminStat(sourceDetailsGrid, 'Tracking', repository?.trackingBranch || 'Not set');
-    appendServerAdminStat(sourceDetailsGrid, 'Ahead', String(repository?.ahead ?? 0));
-    appendServerAdminStat(sourceDetailsGrid, 'Behind', String(repository?.behind ?? 0));
+    if (isAndroidInstall) {
+        appendServerAdminStat(statusGrid, 'Latest APK', androidRelease?.latestVersion ? `v${androidRelease.latestVersion}` : 'Unknown');
+        appendServerAdminStat(sourceDetailsGrid, 'APK architecture', androidRelease?.architecture || 'Unknown');
+    } else {
+        appendServerAdminStat(statusGrid, 'Commit', repository?.currentCommit || version?.gitRevision || 'Unknown');
+        appendServerAdminStat(sourceDetailsGrid, 'Tracking', repository?.trackingBranch || 'Not set');
+        appendServerAdminStat(sourceDetailsGrid, 'Ahead', String(repository?.ahead ?? 0));
+        appendServerAdminStat(sourceDetailsGrid, 'Behind', String(repository?.behind ?? 0));
+    }
     if (release) {
         appendServerAdminStat(sourceDetailsGrid, 'Latest ZIP', release?.latestVersion ? `v${release.latestVersion}` : 'Unknown');
     }
@@ -13227,12 +13274,17 @@ function renderServerAdminStatus(data) {
         version,
         repository,
         release,
+        androidRelease,
     };
 
     let pillLabel = 'Unavailable';
     let pillTone = 'neutral';
 
-    if (isGitInstall) {
+    if (isAndroidInstall) {
+        pillLabel = androidRelease.canUpdate ? 'APK update available' : !androidRelease.checked ? 'Check failed'
+            : !androidRelease.assetAvailable ? 'APK unavailable' : 'Up to date';
+        pillTone = androidRelease.checked && androidRelease.assetAvailable && !androidRelease.canUpdate ? 'good' : 'warn';
+    } else if (isGitInstall) {
         if (!repository?.trackingBranch) {
             pillLabel = 'Local project';
             pillTone = 'neutral';
@@ -13270,11 +13322,27 @@ function renderServerAdminStatus(data) {
     }
 
     setServerAdminPill(refs.statusPill, pillLabel, pillTone);
-    const updateMode = repository?.canUpdate ? 'git' : release?.canUpdate ? 'zip' : '';
+    const hasAndroidInstaller = typeof window.NeconyanAndroid?.installUpdate === 'function';
+    const updateMode = isAndroidInstall ? (androidRelease.canUpdate && hasAndroidInstaller ? 'apk' : '')
+        : repository?.canUpdate ? 'git' : release?.canUpdate ? 'zip' : '';
     refs.updateButton.dataset.sbCanUpdate = String(Boolean(updateMode));
     refs.updateButton.dataset.sbUpdateMode = updateMode;
+    setServerAdminIdleButtonLabel(refs.updateButton, isAndroidInstall ? 'Update APK' : 'Update & Restart', state);
+    if (refs.updateDescription) refs.updateDescription.textContent = isAndroidInstall
+        ? 'Download the official GitHub APK, then approve installation in Android. Your saved data stays on this device.'
+        : 'Check upstream status, update the app, and relaunch automatically when it is safe to do so.';
+    if (refs.autoStashLabel) {
+        refs.autoStashLabel.hidden = isAndroidInstall;
+        refs.autoStashLabel.style.display = isAndroidInstall ? 'none' : '';
+    }
+    if (isAndroidInstall) {
+        setServerAdminMessage(refs.updateNote, 'Android checks the APK before installing it. You may need to allow app installation in Android settings.');
+    }
 
-    const noteParts = [String((isGitInstall ? repository?.message : release?.message || repository?.message) ?? '').trim()].filter(Boolean);
+    const noteParts = [String((isAndroidInstall ? androidRelease.message : isGitInstall ? repository?.message : release?.message || repository?.message) ?? '').trim()].filter(Boolean);
+    if (isAndroidInstall && androidRelease.canUpdate && !hasAndroidInstaller) {
+        noteParts.push('Open the Neconyan Android app to install this APK update.');
+    }
 
     if (repository?.hasLocalChanges && !repository?.canUpdate) {
         noteParts.push('Update blocked while this checkout has local changes.');
@@ -13366,7 +13434,7 @@ async function waitForServerReturn(expectedRevision = '', { clearCacheBeforeRelo
     return false;
 }
 
-async function refreshServerAdminPanel({ includeConfig = false, forceConfig = false } = {}) {
+async function refreshServerAdminPanel({ includeConfig = false, forceConfig = false, forceUpdateCheck = false } = {}) {
     const state = getServerAdminState();
     const refs = getServerAdminRefs();
     const shouldLoadConfig = includeConfig || forceConfig || !state.configLoaded;
@@ -13384,7 +13452,7 @@ async function refreshServerAdminPanel({ includeConfig = false, forceConfig = fa
         refs.configState.dataset.state = 'loading';
     }
 
-    const statusPromise = requestServerAdmin('/api/server-admin/status');
+    const statusPromise = requestServerAdmin('/api/server-admin/status', forceUpdateCheck ? { forceRefresh: true } : {});
     const configPromise = shouldLoadConfig ? requestServerAdmin('/api/server-admin/config/get') : null;
     const thumbnailPromise = shouldLoadThumbnails
         ? requestServerAdmin('/api/server-admin/config/thumbnail-settings/get')
@@ -13698,6 +13766,20 @@ async function handleServerAdminUpdate() {
     const refs = getServerAdminRefs();
 
     if (!refs || state.busy || state.restarting || refs.updateButton?.dataset.sbCanUpdate !== 'true') {
+        return;
+    }
+
+    if (refs.updateButton?.dataset.sbUpdateMode === 'apk') {
+        const version = state.lastStatusData?.androidRelease?.latestVersion;
+        try {
+            if (typeof window.NeconyanAndroid?.installUpdate !== 'function' || !version) {
+                throw new Error('Open the Neconyan Android app to install this APK update.');
+            }
+            window.NeconyanAndroid.installUpdate(version);
+            setServerAdminMessage(refs.updateNote, 'Follow the Android prompts to download and install the APK. Cancelling leaves your current app and saved data unchanged.');
+        } catch (error) {
+            setServerAdminMessage(refs.updateNote, error.message || 'Could not open the Android APK updater.', 'danger');
+        }
         return;
     }
 
@@ -14134,10 +14216,12 @@ function buildServerAdminPanel() {
         statusNote,
         refreshButton,
         updateButton,
+        updateDescription,
         restartButton,
         updateNote,
         updateOutput,
         autoStashCheckbox,
+        autoStashLabel,
         thumbnailEnabled,
         thumbnailFormat,
         thumbnailQuality,
@@ -14175,7 +14259,7 @@ function buildServerAdminPanel() {
     configState.textContent = 'Not loaded';
     configState.dataset.state = 'neutral';
 
-    refreshButton.addEventListener('click', () => refreshServerAdminPanel({ includeConfig: false }));
+    refreshButton.addEventListener('click', () => refreshServerAdminPanel({ includeConfig: false, forceUpdateCheck: true }));
     updateButton.addEventListener('click', handleServerAdminUpdate);
     restartButton.addEventListener('click', handleServerAdminRestart);
     thumbnailUseRecommendedButton.addEventListener('click', handleUseRecommendedThumbnailSettings);

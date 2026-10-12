@@ -21,6 +21,7 @@ import {
 } from '../server-admin-git.js';
 import { getServerLogSnapshot } from '../server-log-buffer.js';
 import { getLatestZipReleaseStatus, stageZipReleaseUpdate } from '../server-admin-zip-update.js';
+import { getLatestAndroidReleaseStatus } from '../server-admin-android-update.js';
 import {
     discardStagedServerPluginRelease,
     getServerPluginUpdateCapabilities,
@@ -685,9 +686,11 @@ async function getRepositoryStatus({ refresh = false } = {}) {
 
 router.post('/status', requireAdminMiddleware, async (request, response) => {
     try {
+        const forceRefresh = request.body?.forceRefresh === true;
         const version = await getVersion();
-        const repository = await getRepositoryStatus();
-        const release = repository.isRepo ? null : await getLatestZipReleaseStatus(version.pkgVersion);
+        const repository = await getRepositoryStatus({ refresh: forceRefresh });
+        const androidRelease = await getLatestAndroidReleaseStatus(version.pkgVersion, { force: forceRefresh });
+        const release = repository.isRepo || androidRelease ? null : await getLatestZipReleaseStatus(version.pkgVersion);
         const userRoot = request.user?.directories?.root;
         response.json({
             runtime: formatRuntimeLabel(),
@@ -697,6 +700,7 @@ router.post('/status', requireAdminMiddleware, async (request, response) => {
             version,
             repository,
             release,
+            androidRelease,
         });
     } catch (error) {
         console.error('Failed to get server admin status.', error);

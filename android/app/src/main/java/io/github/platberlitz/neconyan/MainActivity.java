@@ -23,6 +23,7 @@ import java.util.concurrent.*;
 public final class MainActivity extends Activity {
     private static final int MIN_WEBVIEW_MAJOR = 124;
     private WebView web;
+    private ApkUpdater apkUpdater;
     private TextView status;
     private String origin;
     private JSONObject credentials;
@@ -103,6 +104,8 @@ public final class MainActivity extends Activity {
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
         web.addJavascriptInterface(this, "NeconyanExport");
+        apkUpdater = new ApkUpdater(this, () -> web != null && web.getUrl() != null && local(Uri.parse(web.getUrl())));
+        web.addJavascriptInterface(apkUpdater, "NeconyanAndroid");
         web.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
@@ -504,6 +507,7 @@ public final class MainActivity extends Activity {
     @Override public void onResume() {
         super.onResume();
         resumed = true;
+        if (apkUpdater != null) apkUpdater.onResume();
         if (credentials == null || web == null || failed) return;
         if (status.getVisibility() == View.VISIBLE) connect();
         main.removeCallbacks(watchdog);
@@ -620,6 +624,7 @@ public final class MainActivity extends Activity {
     }
     @Override public void onActivityResult(int code, int result, Intent data) {
         super.onActivityResult(code, result, data);
+        if (apkUpdater != null && apkUpdater.onActivityResult(code)) return;
         if (code == 10 && chooser != null) { chooser.onReceiveValue(chosenFiles(result, data)); chooser = null; }
         if (code == 14 && result == RESULT_OK && data != null && data.getData() != null) saveBackup(data.getData(), backupKeys);
         if (code == 13 && export != null) {
@@ -665,6 +670,7 @@ public final class MainActivity extends Activity {
         if (media != null) media.deny();
         cancelExport();
         if (web != null) web.destroy();
+        if (apkUpdater != null) apkUpdater.close();
         super.onDestroy();
     }
 }
