@@ -5,6 +5,7 @@ import test from 'node:test';
 import { fixture } from './roleplay-transactions-fixture.js';
 import { withRoleplayAccountLock } from '../src/roleplay-store.js';
 import { readRoleplayChat } from '../src/generation/roleplay-source.js';
+import { AUTHORING_FILE_LIMIT } from '../src/authoring-store.js';
 import * as store from '../src/scratchpad/store.js';
 
 const legacy = chat => ({ kind: 'roleplay', key: `character:Nova.png:${chat}`, label: chat });
@@ -88,6 +89,29 @@ test('more than forty existing sessions remain available and writable without si
     assert.equal(read(f, shared('Other')).sessions.length, 50);
     assert.equal(read(f, shared('Other')).sessions.some(session => session.name === 'Still editable'), true);
 });
+
+for (const enabled of [false, true]) {
+    test(`a shared file just below its byte limit keeps every session with cleanup ${enabled ? 'on' : 'off'}`, t => {
+        const f = fixture(t);
+        const old = seed(f, shared('First'), 'Older ideas');
+        const active = seed(f, shared('First'), 'Current ideas');
+        const storage = { kind: 'roleplay', key: 'shared:character:Nova.png', label: '' };
+        withRoleplayAccountLock(f.scope, lease => store.updateCleanupLocked(lease, { enabled, keep: 40 }));
+        mutate(f, shared('Other'), bucket => {
+            const session = bucket.sessions.find(item => item.id === active);
+            session.messages = Array.from({ length: 16 }, (_, index) => ({
+                id: `long-${index}`, role: 'assistant', state: 'done', created: session.created,
+                text: index < 15 ? 'x'.repeat(store.MAX_MESSAGE_BYTES) : '',
+            }));
+            const bytes = Buffer.byteLength(JSON.stringify({ ...bucket, cleanup: undefined, source: storage }, null, 2) + '\n');
+            session.messages.at(-1).text = 'x'.repeat(AUTHORING_FILE_LIMIT - 16 - bytes);
+        });
+        const saved = read(f, shared('Other'));
+        assert.deepEqual(new Set(saved.sessions.map(session => session.id)), new Set([old, active]));
+        assert.equal(saved.sessions.find(session => session.id === active).messages.length, 16);
+        assert.equal(fs.statSync(store.scratchpadFile(f.scope.directories.root, storage)).size, AUTHORING_FILE_LIMIT - 16);
+    });
+}
 
 test('cleanup applies to the combined list while protecting active and pending sessions', t => {
     const f = fixture(t);

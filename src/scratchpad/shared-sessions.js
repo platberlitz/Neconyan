@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { AUTHORING_FILE_LIMIT, readAuthoringFileLocked, writeAuthoringFileLocked } from '../authoring-store.js';
 import { roleplayLease } from '../roleplay-store.js';
-import { applyCleanup, cleanupCandidates, emptyBucket, readChatBucketLocked, readCleanupLocked, readIdentitiesLocked, scratchpadFile, ScratchpadError, writeChatBucketLocked } from './store.js';
+import { applyCleanup, cleanupCandidates, emptyBucket, readChatBucketLocked, readCleanupLocked, readIdentitiesLocked, scratchpadFile, ScratchpadError, serialiseChatBucketLocked, writeChatBucketLocked } from './store.js';
 
 const SHARDS = Symbol('scratchpadSessionFiles');
 
@@ -141,7 +141,7 @@ export function writeSharedBucketLocked(lease, bucket) {
     }
     // Check every changed file before publishing any of them. Cleanup was already applied globally.
     for (const next of writes) {
-        while (Buffer.byteLength(JSON.stringify(next, null, 2) + '\n') > AUTHORING_FILE_LIMIT) {
+        while (Buffer.byteLength(serialiseChatBucketLocked(lease, next)) > AUTHORING_FILE_LIMIT) {
             const oldest = bucket.cleanup.enabled && cleanupCandidates(bucket).find(session => next.sessions.some(item => item.id === session.id));
             if (!oldest) throw new ScratchpadError('SCRATCHPAD_STORAGE_FULL', 'Scratchpad is full. Delete old sessions or long replies, then try again.', 413);
             bucket.sessions = bucket.sessions.filter(session => session.id !== oldest.id);

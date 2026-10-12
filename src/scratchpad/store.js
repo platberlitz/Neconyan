@@ -494,6 +494,12 @@ export function writeBucketLocked(lease, bucket) {
     return writeChatBucketLocked(lease, bucket);
 }
 
+/** Use exactly the persisted representation for both capacity checks and writes. */
+export function serialiseChatBucketLocked(lease, bucket) {
+    const storage = bucket[STORAGE_SOURCE] ?? storageSourceLocked(lease, bucket.source);
+    return `${JSON.stringify({ ...bucket, cleanup: undefined, source: { kind: storage.kind, key: storage.key, label: bucket.source.label || '' } }, null, 2)}\n`;
+}
+
 export function writeChatBucketLocked(lease, bucket, { cleanupApplied = false } = {}) {
     const storage = bucket[STORAGE_SOURCE] ?? storageSourceLocked(lease, bucket.source);
     const filename = scratchpadFile(rootOf(lease), storage);
@@ -505,7 +511,7 @@ export function writeChatBucketLocked(lease, bucket, { cleanupApplied = false } 
         deleteAuthoringFileLocked(lease, filename);
         return;
     }
-    const serialise = () => `${JSON.stringify({ ...bucket, cleanup: undefined, source: { kind: storage.kind, key: storage.key, label: bucket.source.label || '' } }, null, 2)}\n`;
+    const serialise = () => serialiseChatBucketLocked(lease, bucket);
     let text = serialise();
     // A full file loses its oldest sessions first when automatic cleanup is on.
     while (!cleanupApplied && cleanup.enabled && Buffer.byteLength(text) > FILE_LIMIT && removeOldestSessions(bucket, 1)) text = serialise();
