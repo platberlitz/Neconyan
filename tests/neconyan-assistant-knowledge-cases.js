@@ -1,5 +1,14 @@
 // Questions and distinguishing facts shared by Node and real-browser retrieval checks.
 export const refreshedKnowledgeCases = [
+    ['How do I use Continuity Corrector?', 'agents.continuity-corrector', '12 recent messages'],
+    ['Does Continuity Corrector start a fresh memory search?', 'agents.continuity-corrector', 'does not start a fresh memory search'],
+    ['What does the Companion model label mean?', 'agents.model-labels', 'that completed run'],
+    ['How do I put Pinned prompts beside my desktop chat?', 'connections.pinned-prompts', 'pinning alone does not enable a prompt'],
+    ['Can phones show Pinned prompts beside the chat?', 'connections.pinned-prompts', 'do not show the chat-side panel'],
+    ['How do I use Update APK inside the Android app?', 'start.android-updater', 'Approve installation in Android'],
+    ['What happens if I cancel Android update?', 'start.android-updater', 'Cancelling leaves the current app'],
+    ['Can Fix trackers use a different connection and time limit?', 'agents.tracker-repair', 'default 180 seconds'],
+    ['Does Meower Add all invite my whole library?', 'meower.cast', 'Add all invites the whole library'],
     ['Which Neconyan CSS variables keep button contrast correct?', 'appearance.custom-css-design', '--neco-on-accent'],
     ['Why is my custom message HTML class not working?', 'appearance.message-css', 'becomes custom-example'],
     ['Is there a Windows XP Olive Green Dark theme?', 'appearance.windows-xp', 'Windows XP Olive Green Dark'],
