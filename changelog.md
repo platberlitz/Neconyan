@@ -9,6 +9,7 @@
 - PR #135 (2026-10-12) `fix(scratchpad): share sessions across character chats`
 - PR #136 (2026-10-12) `fix(ui): keep buttons accent-aware across shell styles`
 - PR #137 (2026-10-12) `fix(chats): correct the Hush reading layout and controls`
+- PR #138 (2026-10-12) `fix(errors): rewrite error messages and toasts in plain language`
 
 ## v1.3.0
 
