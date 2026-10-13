@@ -18,8 +18,8 @@ function subscribeJobChanges(base, account, listener) {
         const controller = new AbortController();
         stream = { controller, listeners: new Set(), connected: false };
         changeStreams.set(key, stream);
-        const notify = () => {
-            for (const callback of stream.listeners) callback();
+        const notify = value => {
+            for (const callback of stream.listeners) callback(value);
         };
         void (async () => {
             let reader;
@@ -47,7 +47,7 @@ function subscribeJobChanges(base, account, listener) {
                     while ((boundary = buffer.indexOf('\n\n')) >= 0) {
                         const frame = buffer.slice(0, boundary);
                         buffer = buffer.slice(boundary + 2);
-                        if (frame.startsWith('data:')) notify();
+                        if (frame.startsWith('data:')) notify(JSON.parse(frame.slice(5)));
                     }
                     if (buffer.length > 4096) throw new Error('Invalid job change stream.');
                 }
@@ -181,7 +181,14 @@ export function observeJob(id, { onUpdate, onSnapshot, onDone, onStop, base = ''
     const schedule = () => {
         if (!stopped && !signal?.aborted) timer = setTimeout(tickOnce, dirty ? 0 : delay);
     };
-    const changed = () => {
+    const changed = value => {
+        if (value?.diagnostics) {
+            const root = previous?.intent?.request?.workflowCandidate?.parentJobId || previous?.parentId || id;
+            if (value.diagnostics.id === root) {
+                try { checkAccount(account); diagnostic(value.diagnostics.activity); } catch { stop('account_changed'); }
+            }
+            return;
+        }
         dirty = true;
         if (stopped || reading) return;
         if (timer) clearTimeout(timer);
