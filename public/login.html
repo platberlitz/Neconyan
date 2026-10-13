@@ -7,7 +7,7 @@
     <meta name="robots" content="noindex, nofollow">
     <meta name="theme-color" content="#161716">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <title>Sign in · Neconyan</title>
+    <title data-i18n="Sign in · Neconyan">Sign in · Neconyan</title>
     <link rel="icon" href="img/neconyan.png" type="image/png">
     <link rel="apple-touch-icon" href="img/neconyan-icon-180.png">
     <link rel="manifest" crossorigin="use-credentials" href="manifest.json">
@@ -19,53 +19,53 @@
     <main id="shadow_popup">
         <div id="dialogue_popup">
             <header id="logoBlock">
-                <img src="img/neconyan-pixel-cat-rest.webp" alt="A resting calico cat" class="logo" width="144" height="128">
-                <h1>Meowlcome back</h1>
-                <p>Get back to roleplaying, nya!</p>
+                <img src="img/neconyan-pixel-cat-rest.webp" alt="A resting calico cat" data-i18n="[alt]A resting calico cat" class="logo" width="144" height="128">
+                <h1 data-i18n="Meowlcome back">Meowlcome back</h1>
+                <p data-i18n="Get back to roleplaying, nya!">Get back to roleplaying, nya!</p>
             </header>
-            <section id="workspaceLoginBlock" aria-label="Workspace sign-in" style="display:none">
+            <section id="workspaceLoginBlock" aria-label="Workspace sign-in" data-i18n="[aria-label]Workspace sign-in" style="display:none">
                 <form id="workspaceLoginForm" novalidate>
-                    <label for="workspaceUsername">Username</label>
+                    <label for="workspaceUsername" data-i18n="Username">Username</label>
                     <input id="workspaceUsername" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="320" required>
-                    <label for="workspacePassword">Password</label>
+                    <label for="workspacePassword" data-i18n="Password">Password</label>
                     <input id="workspacePassword" name="password" type="password" autocomplete="current-password" maxlength="4096" required>
                     <div id="rememberBlock" style="display:none">
                         <label class="remember-option" for="rememberDevice">
                             <input id="rememberDevice" type="checkbox">
-                            <span>Remember this device for 30 days</span>
+                            <span data-i18n="Remember this device for 30 days">Remember this device for 30 days</span>
                         </label>
                     </div>
-                    <button id="workspaceLoginButton" type="submit">Sign in</button>
+                    <button id="workspaceLoginButton" type="submit" data-i18n="Sign in">Sign in</button>
                 </form>
             </section>
-            <div id="loginDivider" style="display:none" aria-hidden="true"><span>or</span></div>
-            <section id="passkeyLoginBlock" aria-label="Passkey sign-in" style="display:none">
-                <button id="passkeyLoginButton" type="button" class="secondary-button">Sign in with a passkey</button>
+            <div id="loginDivider" style="display:none" aria-hidden="true"><span data-i18n="or">or</span></div>
+            <section id="passkeyLoginBlock" aria-label="Passkey sign-in" data-i18n="[aria-label]Passkey sign-in" style="display:none">
+                <button id="passkeyLoginButton" type="button" class="secondary-button" data-i18n="Sign in with a passkey">Sign in with a passkey</button>
             </section>
-            <section id="userSelectBlock" aria-label="Account sign-in" style="display:none">
-                <h2 id="normalLoginPrompt">Choose your account</h2>
-                <h2 id="discreetLoginPrompt" style="display:none">Sign in</h2>
+            <section id="userSelectBlock" aria-label="Account sign-in" data-i18n="[aria-label]Account sign-in" style="display:none">
+                <h2 id="normalLoginPrompt" data-i18n="Choose your account">Choose your account</h2>
+                <h2 id="discreetLoginPrompt" style="display:none" data-i18n="Sign in">Sign in</h2>
                 <div id="userListBlock">
                     <ul id="userList"></ul>
                     <div id="handleEntryBlock" style="display:none">
-                        <label for="userHandle">Account</label>
+                        <label for="userHandle" data-i18n="Account">Account</label>
                         <input id="userHandle" type="text" autocomplete="username">
                     </div>
                     <div id="passwordEntryBlock" style="display:none">
-                        <label for="userPassword">Password</label>
+                        <label for="userPassword" data-i18n="Password">Password</label>
                         <input id="userPassword" type="password" autocomplete="current-password">
-                        <button id="loginButton" type="button">Sign in</button>
-                        <button id="recoverPassword" type="button" class="text-button">Forgot password?</button>
+                        <button id="loginButton" type="button" data-i18n="Sign in">Sign in</button>
+                        <button id="recoverPassword" type="button" class="text-button" data-i18n="Forgot password?">Forgot password?</button>
                     </div>
                     <div id="passwordRecoveryBlock" style="display:none">
-                        <p id="recoverMessage">The recovery code is printed where Neconyan is running. Ask the person who runs the server for it.</p>
-                        <label for="recoveryCode">Recovery code</label>
+                        <p id="recoverMessage" data-i18n="The recovery code is printed where Neconyan is running. Ask the person who runs the server for it.">The recovery code is printed where Neconyan is running. Ask the person who runs the server for it.</p>
+                        <label for="recoveryCode" data-i18n="Recovery code">Recovery code</label>
                         <input id="recoveryCode" type="text" autocomplete="one-time-code">
-                        <label for="newPassword">New password</label>
+                        <label for="newPassword" data-i18n="New password">New password</label>
                         <input id="newPassword" type="password" autocomplete="new-password">
                         <div class="recovery-actions">
-                            <button id="sendRecovery" type="button">Reset password</button>
-                            <button id="cancelRecovery" type="button" class="text-button">Cancel</button>
+                            <button id="sendRecovery" type="button" data-i18n="Reset password">Reset password</button>
+                            <button id="cancelRecovery" type="button" class="text-button" data-i18n="Cancel">Cancel</button>
                         </div>
                     </div>
                 </div>
@@ -75,6 +75,6 @@
         </div>
     </main>
     <script src="lib/jquery-3.5.1.min.js"></script>
-    <script src="scripts/login.js?v=20260916j" type="module"></script>
+    <script src="scripts/login.js?v=20261012c5" type="module"></script>
 </body>
 </html>

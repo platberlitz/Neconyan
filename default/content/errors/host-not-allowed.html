@@ -1,19 +1,21 @@
 <!DOCTYPE html>
-<html>
+<html lang="{{lang}}">
 
 <head>
-    <title>Forbidden</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:,">
+    <title>{{t "Forbidden"}}</title>
 </head>
 
 <body>
-    <h1>Forbidden</h1>
+    <h1>{{t "Forbidden"}}</h1>
     <p>
-        If you run this Neconyan, add the address you typed to open it (the hostname, such as a site name) to the allowed host list in
-        <code>config.yaml</code>, or turn host checking off there. The file is in the main Neconyan folder.
+        {{t "If you run this Neconyan, add the address you typed to open it (the hostname, such as a site name) to the allowed host list in ${0}, or turn host checking off there. The file is in the main Neconyan folder." (code "config.yaml")}}
     </p>
     <hr />
     <p>
-        <em>This address is not allowed to open Neconyan. The attempt was logged.</em>
+        <em>{{t "This address is not allowed to open Neconyan. The attempt was logged."}}</em>
     </p>
 </body>
 

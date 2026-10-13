@@ -29,9 +29,10 @@ function resolveServerPath(relativePath) {
  * destination directory structure already exists.
  * @param {string} sourceDirectory
  * @param {string} destinationDirectory
+ * @param {Set<string>} [skipNames] Names to leave out at the top level only
  */
 // Neconyan divergence: initialization syncs ignored default assets without overwriting user files.
-function syncMissingDirectoryContents(sourceDirectory, destinationDirectory) {
+function syncMissingDirectoryContents(sourceDirectory, destinationDirectory, skipNames = new Set()) {
     if (!fs.existsSync(sourceDirectory)) {
         throw new Error(`Default directory does not exist: ${sourceDirectory}`);
     }
@@ -41,11 +42,15 @@ function syncMissingDirectoryContents(sourceDirectory, destinationDirectory) {
     const dirents = fs.readdirSync(sourceDirectory, { withFileTypes: true });
 
     for (const dirent of dirents) {
+        if (skipNames.has(dirent.name)) {
+            continue;
+        }
+
         const sourcePath = path.join(sourceDirectory, dirent.name);
         const destinationPath = path.join(destinationDirectory, dirent.name);
 
         if (dirent.isDirectory()) {
-            syncMissingDirectoryContents(sourcePath, destinationPath);
+            syncMissingDirectoryContents(sourcePath, destinationPath, new Set());
             continue;
         }
 
@@ -99,6 +104,7 @@ function createDefaultFiles() {
      * @property {'file' | 'directory'} type - Whether the item should be copied as a single file or merged into a directory structure.
      * @property {string} defaultPath - The path to the default item.
      * @property {string} productionPath - The path to the copied item for production use.
+     * @property {string[]} [skip] - Top-level names of a directory item that are never copied.
      */
 
     /** @type {DefaultItem[]} */
@@ -112,6 +118,8 @@ function createDefaultFiles() {
             type: 'directory',
             defaultPath: resolveServerPath('default/public/'),
             productionPath: resolveServerPath('public/'),
+            // Error pages ship in default/content/errors and are managed by src/error-pages.js. A default/public/error folder left by an older version must never be copied again.
+            skip: ['error'],
         },
     ];
 
@@ -128,7 +136,7 @@ function createDefaultFiles() {
                     );
                 }
             } else if (defaultItem.type === 'directory') {
-                syncMissingDirectoryContents(defaultItem.defaultPath, defaultItem.productionPath);
+                syncMissingDirectoryContents(defaultItem.defaultPath, defaultItem.productionPath, new Set(defaultItem.skip ?? []));
                 console.log(
                     color.green(`Synchronized missing files: ${defaultItem.productionPath}`),
                 );

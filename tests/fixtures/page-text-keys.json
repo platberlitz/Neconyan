@@ -1,0 +1,55 @@
+{
+  "public/login.html": [
+    "Sign in · Neconyan",
+    "A resting calico cat",
+    "Meowlcome back",
+    "Get back to roleplaying, nya!",
+    "Workspace sign-in",
+    "Username",
+    "Password",
+    "Remember this device for 30 days",
+    "Sign in",
+    "or",
+    "Passkey sign-in",
+    "Sign in with a passkey",
+    "Account sign-in",
+    "Choose your account",
+    "Account",
+    "Forgot password?",
+    "The recovery code is printed where Neconyan is running. Ask the person who runs the server for it.",
+    "Recovery code",
+    "New password",
+    "Reset password",
+    "Cancel"
+  ],
+  "default/content/errors/invalid-csrf.html": [
+    "Session expired",
+    "A pixel cat doing a backflip",
+    "This page is holding an old security code (a token that proves a request came from you), so Neconyan turned the request away. Reloading usually fixes it; the steps below cover the rest.",
+    "Reload the page first. Neconyan replaces the old code by itself, so a plain refresh often gets you straight back in.",
+    "Still refused after reloading? Close this tab and open the site again. A tab that has been open for a long time can keep the old code, and the server reports that as ${0}.",
+    "Every page failing? Clear this site's cookies and cached data, or try a private window, then log in again.",
+    "Still failing in every browser? On the server, run ${0} to restart Neconyan.",
+    "Old bookmark? Open the exact URL you normally use, for example ${0}.",
+    "An extension or script blocking requests? Disable it for this site and reload once more."
+  ],
+  "default/content/errors/url-not-found.html": [
+    "Not found",
+    "This page does not exist. Check the address for typos, or go back to the main Neconyan page."
+  ],
+  "default/content/errors/forbidden-by-whitelist.html": [
+    "Forbidden",
+    "If you run this Neconyan, add your IP address (the number that identifies your internet connection) to the allowed list, or turn the allowed list off, by editing ${0} in the main Neconyan folder. The allowed list is called the whitelist in that file.",
+    "This connection from ${0} (forwarded from ${1}) was blocked. The attempt was logged.",
+    "This connection from ${0} was blocked. The attempt was logged."
+  ],
+  "default/content/errors/host-not-allowed.html": [
+    "Forbidden",
+    "If you run this Neconyan, add the address you typed to open it (the hostname, such as a site name) to the allowed host list in ${0}, or turn host checking off there. The file is in the main Neconyan folder.",
+    "This address is not allowed to open Neconyan. The attempt was logged."
+  ],
+  "default/content/errors/https-required.html": [
+    "Connection not secure",
+    "This connection is not secure, so Neconyan cannot be opened from another computer yet. Ask the person running Neconyan to turn on HTTPS (the secure, padlock address) in config.yaml, then reload."
+  ]
+}

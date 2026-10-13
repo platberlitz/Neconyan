@@ -1,6 +1,6 @@
-import path from 'node:path';
-import { color, getConfigValue, safeReadFileSync } from '../util.js';
-import { isHostAllowed, hostValidationMiddleware } from 'host-validation-middleware';
+import { color, getConfigValue } from '../util.js';
+import { sendBlockedPage } from '../error-pages.js';
+import { isHostAllowed } from 'host-validation-middleware';
 
 const knownHosts = new Set();
 const maxKnownHosts = 1000;
@@ -8,12 +8,6 @@ const maxKnownHosts = 1000;
 const hostWhitelistEnabled = !!getConfigValue('hostWhitelist.enabled', false);
 const hostWhitelist = Object.freeze(getConfigValue('hostWhitelist.hosts', []));
 const hostWhitelistScan = !!getConfigValue('hostWhitelist.scan', false, 'boolean');
-
-const validationMiddleware = hostValidationMiddleware({
-    allowedHosts: hostWhitelist,
-    generateErrorMessage: () => safeReadFileSync(path.join(globalThis.DATA_ROOT, '_errors', 'host-not-allowed.html'))?.toString() ?? '',
-    errorResponseContentType: 'text/html',
-});
 
 /**
  * Middleware to validate remote hosts.
@@ -41,5 +35,9 @@ export default function hostWhitelistMiddleware(req, res, next) {
         return next();
     }
 
-    return validationMiddleware(req, res, next);
+    if (isHostAllowed(hostValue, hostWhitelist)) {
+        return next();
+    }
+
+    return sendBlockedPage(req, res, 'host-not-allowed.html', {});
 }
