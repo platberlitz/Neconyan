@@ -99,6 +99,26 @@ export async function sendReply(body) {
     }
 }
 
+export const readImageAvailability = () => post('/images/availability', {});
+export const readAvatarReview = (source, sessionId, messageId, index) => post('/images/avatar-review', { source, sessionId, messageId, index });
+
+const unconfirmedImages = new Map();
+export async function generateImage(body) {
+    const key = JSON.stringify([getCurrentUserHandle(), body.source?.kind, body.source?.key, body.sessionId, body.messageId, body.index]);
+    const request = unconfirmedImages.get(key) ?? structuredClone(body);
+    if (!unconfirmedImages.has(key) && unconfirmedImages.size >= MAX_UNCONFIRMED_SENDS) throw new ScratchpadRequestError('Check the earlier image jobs before submitting more images.');
+    unconfirmedImages.set(key, request);
+    try {
+        const result = await post('/images/generate', request);
+        if (!result?.job?.id || !result?.bucket) throw new ScratchpadRequestError('The image acceptance could not be confirmed. Retry to check the original request.', { network: true });
+        unconfirmedImages.delete(key);
+        return result;
+    } catch (error) {
+        if (error.status >= 400 && error.status < 500) unconfirmedImages.delete(key);
+        throw error;
+    }
+}
+
 export async function cancelReply(jobId) {
     const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, {
         method: 'POST',

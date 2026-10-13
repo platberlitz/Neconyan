@@ -472,6 +472,7 @@ export async function buildContext({ source, settings, pendingText = '', session
         text: `Notebook discussion: ${source.label}\nOnly the explicitly shared notes are included. No story messages, persona, character cards or lorebooks are shared.`,
         names: { user: name1, character: '' }, lore: { books: [], entries: [] }, messageCount: 0, swipeCount: 0, totalMessages: 0, picked: false, preset: null,
         capabilities: { lore: false, character: false, chat: false, members: [] },
+        targets: [],
     };
     const include = settings?.include || {};
     const general = source.kind === 'general';
@@ -549,6 +550,7 @@ export async function buildContext({ source, settings, pendingText = '', session
         totalMessages: all.length,
         picked: selection.picked,
         preset,
+        targets: include.card ? people.map(item => ({ avatar: item.avatar, name: item.name })) : [],
         capabilities: {
             lore: loreBooks.length > 0,
             character: people.length > 0 && (!general || include.card === true),

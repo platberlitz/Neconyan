@@ -90,6 +90,31 @@ describe('Scratchpad Context refresh lifecycle', () => {
         for (const task of tasks) task();
         expect(checkSource).toHaveBeenCalledTimes(2);
     });
+    test('an unchanged image job poll does not redraw the thread', async () => {
+        const observers = [];
+        const reload = jest.fn(async () => {});
+        const app = {
+            open: true, foldedThinking: new Set(), watchers: new Map(), previews: new Map(), imageWatchers: new Map(),
+            imageJobs: new Map(), imageJobSignatures: new Map(),
+            bucket: { sessions: [{ messages: [{ role: 'assistant', state: 'done', images: { 0: { state: 'pending', jobId: 'image-job' } } }] }] },
+        };
+        const runtime = vm.createContext({ app, reload, updateStream: jest.fn(),
+            observeJob: (id, options) => { observers.push({ id, options }); return () => {}; }, api: { watchReply: () => () => {} } });
+        vm.runInContext(source.match(/^function syncWatchers\([\s\S]*?^}/m)[0], runtime);
+        runtime.syncWatchers();
+        expect(observers).toHaveLength(1);
+        // onSnapshot fires on every poll; only onUpdate and onDone may redraw.
+        expect(observers[0].options.onSnapshot).toBeUndefined();
+        const job = { id: 'image-job', state: 'running', stage: 'generating' };
+        await observers[0].options.onUpdate(job);
+        expect(reload).toHaveBeenCalledTimes(1);
+        await observers[0].options.onUpdate({ ...job });
+        expect(reload).toHaveBeenCalledTimes(1);
+        await observers[0].options.onUpdate({ ...job, stage: 'approval', result: { approval: { id: 'a1' } } });
+        expect(reload).toHaveBeenCalledTimes(2);
+        await observers[0].options.onDone({ ...job, state: 'completed' });
+        expect(reload).toHaveBeenCalledTimes(3);
+    });
     test('rapid General/chat/General switching restores drafts and ignores a delayed chat bucket', async () => {
         const general = { kind: 'general', key: 'general', personaId: 'User.png' };
         const chat = { kind: 'roleplay', key: 'chat' };

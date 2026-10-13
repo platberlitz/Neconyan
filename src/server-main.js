@@ -805,6 +805,7 @@ async function postSetupTasks(result) {
     const { finalizeOperation } = await import('./operations/store.js');
     const { finalizeBrowserWork } = await import('./operations/browser-work.js');
     const { finalizeScratchpadSubmission } = await import('./scratchpad/jobs.js');
+    const { finalizeScratchpadImageSubmission } = await import('./scratchpad/images.js');
     await import('./operations/translation.js');
     await import('./operations/vectors.js');
     await import('./operations/vector-purge.js');
@@ -838,6 +839,7 @@ async function postSetupTasks(result) {
             finalizeOperation(context);
             finalizeBrowserWork(context);
             finalizeScratchpadSubmission(context);
+            finalizeScratchpadImageSubmission(context);
         },
         holdRecovered: safeStart,
     });

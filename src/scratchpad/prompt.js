@@ -66,6 +66,19 @@ const LORE_RULES = [
     'Write entries as in-world facts, not as instructions to the writer.',
 ];
 
+function imageInstructions({ image, avatar }) {
+    if (!image) return '';
+    return [
+        'Images through the user\'s saved Quick Image Gen settings:',
+        '```scratchpad-change',
+        '{"type":"image","action":"generate","target":"image","prompt":"<explicit image prompt>","negative":"<optional exclusions>","reason":"<why>"}',
+        '```',
+        avatar ? 'For an avatar use target "avatar" and character "<exact shared character name>". For character-specific image settings, a plain image may also name an exact shared character. Never name an unshared or ambiguous character.' : 'No character avatar target is shared; suggest only unscoped images.',
+        'One JSON object per block, one image per suggestion. Do not supply image URLs, paths, credentials or settings. The owner presses Generate image; displaying a suggestion does not generate anything. Saved prompt-review preferences may require another approval before the provider runs.',
+        'A generated image is saved separately from the card. Only Review avatar followed by Save change replaces a portrait, after preserving the previous picture. Never claim that emitting a block generated an image or changed an avatar. You cannot inspect saved image bytes through text history.',
+    ].join('\n');
+}
+
 function changeInstructions({ lore, character, chat, members, notebook }) {
     const kinds = [];
     if (notebook) kinds.push([
@@ -151,7 +164,7 @@ export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedP
     const preferences = userInstructions.trim() ? `The user's global Scratchpad instructions for you:\n${userInstructions}` : '';
     const voice = typeof customPrompt === 'string' && customPrompt.trim() ? ''
         : `For this reply, be ${persona.name} throughout: ${substituteNames(persona.personality, names)}\nGive the requested help in that voice, including explanations around any change blocks. Keep factual claims accurate and distinguish playful teasing from real advice.`;
-    return { text: [instructions, preferences, SCRATCHPAD_MACRO_GUIDANCE, CHARACTER_CREATION_INSTRUCTIONS, reference, voice].filter(Boolean).join('\n\n'), persona };
+    return { text: [instructions, preferences, SCRATCHPAD_MACRO_GUIDANCE, CHARACTER_CREATION_INSTRUCTIONS, imageInstructions(capabilities), reference, voice].filter(Boolean).join('\n\n'), persona };
 }
 
 export const SCRATCHPAD_CONTEXT_ACK = 'I have read the shared context. What would you like to work on?';

@@ -98,10 +98,11 @@ export async function prepareConversationScopedImagePrompt(context, { effectId, 
             const environment = createMacroEnvironment(snapshot.macros, {}, { readOnly: true });
             if (qig.useSTStyle !== false) {
                 const card = snapshot.macros.extra?.character;
-                if (!card || snapshot.speaker?.avatar !== snapshot.macros.extra?.characterAvatar) {
+                const global = snapshot.quickImageGenCharacterScope?.kind === 'global';
+                if (!global && (!card || snapshot.speaker?.avatar !== snapshot.macros.extra?.characterAvatar)) {
                     invalid('The accepted image character is unavailable.');
                 }
-                const style = resolveSTStyleSettings(sd, { characters: [{ ...card, data: card.data || card,
+                const style = resolveSTStyleSettings(sd, global ? {} : { characters: [{ ...card, data: card.data || card,
                     avatar: snapshot.speaker.avatar }], characterId: 0, groupId: snapshot.target?.groupId ?? null });
                 const merged = mergeSTStylePrompts(styledPrompt, styledNegative, style,
                     text => environment.evaluate(text, { strictCapabilities: true }));

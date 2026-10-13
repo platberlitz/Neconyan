@@ -141,6 +141,24 @@ Older Roleplay Scratchpad files keep their link to the chat's permanent identity
 
 Exports and imports leave out picked-message references, saved-note sharing references, temporary grants and saved/declined proposal markers. Imported conversation text remains a copy of what was written; it can still contain material shared in the original session. Imported message-change cards belong to the chat chosen for import. Saving a quotation does not publish lore or give assistants new access.
 
+## Images and portraits
+
+Set up and enable **Quick Image Gen** first. Scratchpad checks the server's saved provider configuration before offering image instructions or **Image idea**. The chip fills an editable request to your assistant; it doesn't generate anything itself. If setup is missing, the image card explains that and offers **Open Quick Image Gen**. Ordinary text replies still work.
+
+Ask an assistant for an illustration or a new portrait. It proposes an image card with a prompt, rather than generating a picture immediately. Press **Generate image** when you're ready. Generation stays separate from changing a card: asking for a picture shouldn't quietly replace someone's portrait.
+
+- One proposal produces one image, using your saved Quick Image Gen provider, model, size, seed, style, quality tags, style prefixes, references and matching filters. The assistant's prompt is used directly; Scratchpad doesn't borrow the latest story message, run scene-to-prompt rewriting or start a palette batch.
+- An unnamed image uses global settings, with no implicit character or chat. A named image uses that shared card's saved image settings. Avatar suggestions must name exactly one shared character. In General, that must still be the selected, shared card; a different same-named card isn't a substitute.
+- If your saved **Review before generate** preference is on, **Review image prompt** shows the processed prompt and exclusions before the image provider runs. **Generate reviewed image** approves that exact input; **Stop image** declines it. Prompt review is approve or decline only; to change the wording, ask the assistant for a new suggestion.
+- The work runs on the server and continues after closing Scratchpad or the browser. **Stop image** requests cancellation. Finished pictures are saved in your account's user images, shown in the thread and available through **Open image** and **Download**.
+- Failed work has a readable status on its card. **Retry saved job** resumes the same retained work. A saved provider result is reused when only local saving failed. An unknown provider outcome is not purchased again: check the provider before asking for another suggestion.
+
+For a portrait, generating the image leaves the character card unchanged. Press **Review avatar** to compare **Current avatar** and **Proposed avatar**. **Not now** closes the review without replacing anything. Only **Save change** writes the card, after checking the exact filename, current revision and shared target again. The filename, card metadata and chats stay with the same character. The visible portraits refresh after a successful save; a refresh failure is reported separately from a refused write.
+
+Before replacement, the complete original PNG is preserved in user images. **Previous avatar** opens that saved picture/card copy, including its embedded card data. It isn't a one-click undo action. If the previous picture can't be preserved, the replacement isn't offered.
+
+Session exports remain text-only: conversation text and image prompts travel, but pictures, local image addresses, jobs, approvals and target permissions don't. Download pictures separately. Imported image proposals haven't been generated or approved. Ordinary prose edits keep saved image references; the generated blocks must keep their wording and order. Deleting a message/session or using cleanup removes references, not the separate user-image files. Dismissing a proposal also keeps its saved picture.
+
 ## Limits and known gaps
 
 - Message changes only work in Roleplay chats.
