@@ -23,6 +23,21 @@ final class DiagnosticStore {
             .replaceAll("(/[\\w/.-]+)\\?[^\\s)]*", "$1?[redacted]");
     }
 
+    /** False when the saved report already holds a trace, or retention would delete it straight away. */
+    boolean needsExit(String id, String missingTraceText) {
+        synchronized (WRITE_LOCK) {
+            if (!id.matches("[a-zA-Z0-9-]+")) return false;
+            File existing = new File(directory, id + ".txt");
+            if (!existing.isFile()) {
+                File[] files = files();
+                return files.length < 10 || (id + ".txt").compareTo(files[files.length - 10].getName()) > 0;
+            }
+            try {
+                return new String(Files.readAllBytes(existing.toPath()), StandardCharsets.UTF_8).contains(missingTraceText);
+            } catch (IOException error) { return true; }
+        }
+    }
+
     boolean saveExit(String id, String report, boolean hasTrace) {
         // Android can remove a trace after making it available. Never replace richer evidence with that absence.
         synchronized (WRITE_LOCK) {

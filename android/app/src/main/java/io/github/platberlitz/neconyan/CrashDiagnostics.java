@@ -63,14 +63,20 @@ final class CrashDiagnostics {
         } catch (Throwable ignored) { return false; }
     }
 
+    static final String NO_TRACE = "Android has not supplied a trace. The exit reason above is the available evidence.";
+
     static void collectExits(Context context) {
         try {
+            DiagnosticStore store = store(context);
             for (ApplicationExitInfo info : context.getSystemService(ActivityManager.class).getHistoricalProcessExitReasons(context.getPackageName(), 0, 20)) {
                 int reason = info.getReason();
                 if (expectedStop(context, info)) continue;
                 if (reason == ApplicationExitInfo.REASON_USER_REQUESTED || reason == ApplicationExitInfo.REASON_USER_STOPPED
                     || reason == ApplicationExitInfo.REASON_PACKAGE_UPDATED || reason == ApplicationExitInfo.REASON_PERMISSION_CHANGE
                     || (reason == ApplicationExitInfo.REASON_EXIT_SELF && info.getStatus() == 0)) continue;
+                String id = info.getTimestamp() + "-exit-" + info.getPid();
+                // Android keeps returning the same history; decode each trace once.
+                if (!store.needsExit(id, NO_TRACE)) continue;
                 StringBuilder text = new StringBuilder("Android process exit at ").append(new Date(info.getTimestamp()))
                     .append("\nProcess: ").append(info.getProcessName()).append(" PID ").append(info.getPid())
                     .append("\nReason: ").append(reasonName(reason)).append(" (").append(reason).append(")")
@@ -81,7 +87,7 @@ final class CrashDiagnostics {
                 boolean hasTrace = false;
                 try (InputStream trace = info.getTraceInputStream()) {
                     text.append("\nSystem trace:\n");
-                    if (trace == null) text.append("Android has not supplied a trace. The exit reason above is the available evidence.");
+                    if (trace == null) text.append(NO_TRACE);
                     else if (reason == ApplicationExitInfo.REASON_CRASH_NATIVE) {
                         text.append(Tombstone.describe(trace)); hasTrace = true;
                     }
@@ -96,9 +102,9 @@ final class CrashDiagnostics {
                         text.append(new String(bytes, 0, length, StandardCharsets.UTF_8));
                         hasTrace = length > 0;
                     }
-                } catch (Exception error) { text.append("\nTrace unavailable: ").append(error.getClass().getSimpleName()); }
+                } catch (Exception error) { text.append("\nTrace unreadable: ").append(error.getClass().getSimpleName()).append('\n').append(NO_TRACE); }
                 // Stable name lets delayed Android traces enrich the same report instead of duplicating it.
-                store(context).saveExit(info.getTimestamp() + "-exit-" + info.getPid(), text.toString(), hasTrace);
+                store.saveExit(id, text.toString(), hasTrace);
             }
         } catch (Exception error) { android.util.Log.w("Neconyan", "Could not collect Android exit records", error); }
     }

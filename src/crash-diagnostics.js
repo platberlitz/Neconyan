@@ -97,7 +97,8 @@ export function initialiseCrashDiagnostics(dataRoot) {
                 if (fs.statSync(file).size > 16000) continue;
                 const previous = JSON.parse(fs.readFileSync(file, 'utf8'));
                 if (!Number.isInteger(previous.pid) || previous.pid <= 0) continue;
-                try { process.kill(previous.pid, 0); continue; } catch (error) { if (error.code !== 'ESRCH') continue; }
+                // EPERM means the PID now belongs to another user's process, so ours is gone.
+                try { process.kill(previous.pid, 0); continue; } catch (error) { if (error.code !== 'ESRCH' && error.code !== 'EPERM') continue; }
                 const saved = writeCrashReport('unclean-previous-exit', 'The previous process ended without running its exit handler. The operating system did not supply a cause; power loss, forced termination and native failures cannot be distinguished.', { previous, limitation: 'The environment was measured on recovery, not at the time of the previous exit.' }, directory);
                 if (saved) fs.unlinkSync(file);
             } catch { /* One damaged marker must not block startup. */ }
@@ -122,7 +123,17 @@ export function installCrashHandlers() {
     if (installed) return;
     installed = true;
     const fatal = (kind, error) => {
-        try { if (isBenignStreamAbort(error)) return; } catch { /* A hostile rejection object is still fatal. */ }
+        try {
+            if (isBenignStreamAbort(error)) {
+                console.warn(`Ignored streaming disconnect ${kind === 'unhandled-rejection' ? 'rejection' : 'error'}:`, redact(String(error?.message ?? error)));
+                return;
+            }
+        } catch { /* A hostile rejection object is still fatal. */ }
+        if (fatalRecorded) {
+            // Later failures during shutdown must not evict the original report from retention.
+            try { console.error(`[Neconyan] Further ${kind} while shutting down:`, JSON.stringify(describeError(error), null, 2)); } catch { /* Terminal unavailable. */ }
+            return;
+        }
         recordFatalError(kind, error);
         process.exitCode = 1;
         const timer = setTimeout(() => process.exit(1), 5000);
@@ -133,7 +144,8 @@ export function installCrashHandlers() {
     process.on('uncaughtException', error => fatal('uncaught-exception', error));
     process.on('unhandledRejection', error => fatal('unhandled-rejection', error));
     process.on('exit', code => {
-        if (code !== 0 && ![75, 76, 77].includes(code) && !fatalRecorded) {
+        // Before the data root is known there is nowhere private to save a generic exit report.
+        if (directory && code !== 0 && ![75, 76, 77].includes(code) && !fatalRecorded) {
             writeCrashReport('process-exit', `Process exited with code ${code} without an exception. No further cause was supplied.`, { exitCode: code });
         }
         removeMarker();
