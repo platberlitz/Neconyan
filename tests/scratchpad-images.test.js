@@ -65,6 +65,34 @@ describe('Scratchpad images and avatar reviews', () => {
         expect(generateImage).not.toHaveBeenCalled();
     });
 
+    test('a pending image waiting for prompt review offers the review and no stop', () => {
+        const onPromptReview = jest.fn();
+        const job = { id: 'image-job', state: 'waiting', stage: 'approval', result: { approval: { id: 'approval-1' } } };
+        const pending = { id: 'reply', images: { 0: { state: 'pending', jobId: 'image-job' } } };
+        const card = renderImageCard({ session, message: pending, part, job, availability: { image: true }, onPromptReview, onError: jest.fn(),
+            button: (label, onclick, options) => h('button', { text: label, onclick, ...options }) });
+        const buttons = nodes(card).filter(node => node.tag === 'button');
+        expect(buttons.map(node => node.attributes.text)).toEqual(['Review image prompt']);
+        expect(buttons[0].attributes.onclick).toBe(onPromptReview);
+        expect(nodes(card).some(node => node.attributes.text === 'Review the processed image prompt before generation.')).toBe(true);
+        expect(generateImage).not.toHaveBeenCalled();
+    });
+
+    test('a pending image that is generating offers Stop image and no review', async () => {
+        const { cancelJob } = await import('../public/scripts/jobs.js');
+        cancelJob.mockResolvedValueOnce();
+        const job = { id: 'image-job', state: 'running', stage: null, result: null };
+        const pending = { id: 'reply', images: { 0: { state: 'pending', jobId: 'image-job' } } };
+        const card = renderImageCard({ session, message: pending, part, job, availability: { image: true }, onPromptReview: jest.fn(), onError: jest.fn(),
+            button: (label, onclick, options) => h('button', { text: label, onclick, ...options }) });
+        const buttons = nodes(card).filter(node => node.tag === 'button');
+        expect(buttons.map(node => node.attributes.text)).toEqual(['Stop image']);
+        expect(nodes(card).some(node => node.attributes.text === 'Generating image...')).toBe(true);
+        buttons[0].attributes.onclick();
+        await new Promise(resolve => setImmediate(resolve));
+        expect(cancelJob).toHaveBeenCalledWith('image-job');
+    });
+
     test('Not now leaves the card unchanged and a visual review shows labelled Current and Proposed pictures', async () => {
         const plan = await prepareAvatarChange({ source, session, message: message(), part, guard: () => {} });
         expect(nodes(plan.visual).filter(node => node.tag === 'figcaption').map(node => node.attributes.text)).toEqual(['Current avatar', 'Proposed avatar']);

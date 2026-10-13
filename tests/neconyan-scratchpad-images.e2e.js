@@ -166,6 +166,58 @@ for (const { phone, textProfile } of [{ phone: true, textProfile: false }, { pho
     });
 }
 
+for (const phone of [false, true]) {
+    const size = phone ? 'phone' : 'desktop';
+    test(`${size}: review before generate opens the processed prompt straight from Generate image`, async ({ app }) => {
+        test.setTimeout(240000);
+        const imageProvider = await app.images();
+        imageProvider.mode.reply = { data: [{ b64_json: mockPicture().toString('base64') }] };
+        const account = await app.account({ phone, contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings: saved => {
+            saved.extension_settings['quick-image-gen'] = { provider: 'gptimage', gptImageKey: 'fixture-image-key', gptImageModel: 'gpt-image-1',
+                gptImageProxyUrl: imageProvider.url, width: 1024, height: 1024, appendQuality: false, useSTStyle: false,
+                reviewBeforeGenerate: true, setupWizardSeen: true };
+        } });
+        if (phone) await installIPhoneSafari(account.context, { standalone: true });
+        const page = await account.open({ workspace: before });
+        if (before) await page.evaluate(async () => (await import('/scripts/scratchpad/index.js')).openScratchpad({ tab: 'chat' }));
+        else await openRail(page, phone);
+        if (phone) await applyIOSOnlyCss(page);
+        await page.getByRole('tab', { name: 'Context', exact: true }).click();
+        await page.locator('#scratchpad-connection-miso').selectOption('durable');
+        await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+        await sendProposal(page, app, account, fence({ type: 'image', action: 'generate', target: 'image', prompt: 'A little observatory below a moonlit sky.', reason: 'An illustration of the idea.' }));
+        const card = page.locator('.scratchpad-image-card').first();
+        const accepted = page.waitForResponse('**/api/scratchpad/images/generate');
+        await card.getByRole('button', { name: 'Generate image', exact: true }).click();
+        const response = await accepted;
+        expect(response.ok(), await response.text()).toBe(true);
+        const job = (await response.json()).job;
+        await expect.poll(async () => (await account.job(job.id)).state, { timeout: 30000 }).toBe('waiting');
+        if (before) {
+            await expect(card.getByRole('button', { name: 'Review image prompt', exact: true })).toBeVisible();
+            await expect(card.getByRole('button', { name: 'Stop image', exact: true })).toBeVisible();
+            await expect(page.locator('dialog.popup[open]')).toHaveCount(0);
+            await page.evaluate(() => window.toastr.clear());
+            await page.screenshot({ path: `../screenshots/scratchpad-review-${size}-before.png` });
+            return;
+        }
+        const popup = page.locator('dialog.popup[open]');
+        await expect(popup.getByText('Processed image prompt', { exact: true })).toBeVisible({ timeout: 30000 });
+        await expect(popup.locator('.scratchpad-image-prompt')).toContainText('observatory');
+        await expect(card.getByRole('button', { name: 'Stop image', exact: true })).toHaveCount(0);
+        expect(imageProvider.calls).toHaveLength(0);
+        await page.evaluate(() => window.toastr.clear());
+        await page.screenshot({ path: `../screenshots/scratchpad-review-${size}-after.png` });
+        const approved = page.waitForResponse(response => response.url().includes(`/api/jobs/${job.id}/approval/`));
+        await popup.getByRole('button', { name: 'Generate reviewed image', exact: true }).click();
+        expect((await approved).ok()).toBe(true);
+        await account.settled(job.id);
+        await expect(card.locator('.scratchpad-generated-image')).toBeVisible();
+        expect(imageProvider.calls).toHaveLength(1);
+        await page.locator('.scratchpad-close').click();
+    });
+}
+
 test('an accepted image finishes after closing the page and remains in its original General list', async ({ app }) => {
     test.skip(before, 'Before captures cover the original UI only.');
     test.setTimeout(180000);
