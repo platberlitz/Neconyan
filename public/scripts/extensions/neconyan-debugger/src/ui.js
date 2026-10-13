@@ -6,6 +6,7 @@
 import { button, copyToClipboard, el, flashButtonText } from './dom.js';
 import { getCounters, getEntries, getRequests } from './capture.js';
 import { buildReport, formatLayoutRows } from './report.js';
+import { openCrashReportReader } from '../../../crash-report-reader.js';
 
 const DRAWER_ID = 'sbdbg-settings';
 const DRAWER_CONTENT_ID = 'sbdbg-settings-content';
@@ -454,35 +455,10 @@ async function copyLayoutSnapshot() {
 }
 
 export async function showCrashReports() {
-    const generation = activationGeneration;
-    const browser = globalThis.NeconyanCrashDiagnostics?.getReports?.() ?? { reports: [], storageError: 'Early browser capture is unavailable. Reload after updating.' };
-    let server;
-    try {
+    return openCrashReportReader({ popup: textPopup, loadServerReports: async () => {
         const response = await fetchWithTimeout('/api/server-admin/crash-reports', { method: 'POST', headers: ctx().getRequestHeaders() });
-        server = response.ok ? await response.json() : { unavailable: response.status === 403 ? 'Server reports require an administrator account.' : `Server reports could not be loaded (HTTP ${response.status}).` };
-    } catch { server = { unavailable: 'The server could not be reached. Saved browser reports are still available.' }; }
-    if (!active || generation !== activationGeneration) return;
-    const report = '# Saved crash reports\n\n'
-        + 'Reports stay on this device or your server. Error messages and system traces can contain private text; review before sharing.\n\n'
-        + '## Browser\n\n' + JSON.stringify(browser, null, 2)
-        + '\n\n## Server\n\n' + JSON.stringify(server, null, 2);
-    const content = el('div', 'sbdbg-report');
-    content.appendChild(el('h3', undefined, 'Saved crash reports'));
-    content.appendChild(el('p', undefined, 'Detailed errors, causes and device information, kept after a restart. The newest five browser reports and ten server reports are retained.'));
-    const actions = el('div', 'sbdbg-actions');
-    const copy = button('menu_button', 'Copy reports', async () => flashButtonText(copy, await copyToClipboard(report) ? 'Copied!' : 'Copy failed. Select the text below'));
-    actions.appendChild(copy);
-    actions.appendChild(button('menu_button', 'Download reports', () => downloadReport(report)));
-    if (typeof globalThis.NeconyanExport?.showCrashReports === 'function') {
-        actions.appendChild(button('menu_button', 'Android crash reports', () => globalThis.NeconyanExport.showCrashReports()));
-    }
-    content.appendChild(actions);
-    const textarea = el('textarea', 'sbdbg-report-text');
-    textarea.readOnly = true;
-    textarea.setAttribute('aria-label', 'Saved crash reports');
-    textarea.value = report;
-    content.appendChild(textarea);
-    textPopup(content);
+        return response.ok ? response.json() : { unavailable: response.status === 403 ? 'Server reports require an administrator account.' : `Server reports could not be loaded (HTTP ${response.status}).` };
+    } });
 }
 
 // --- mounting ------------------------------------------------------------------

@@ -27,7 +27,7 @@ async function openReader(page) {
             callGenericPopup(content) { document.body.appendChild(content); },
         }) };
         const ui = await import('/scripts/extensions/neconyan-debugger/src/ui.js');
-        ui.setActive(true);
+        ui.setActive(false);
         await ui.showCrashReports();
     });
 }
@@ -43,11 +43,11 @@ test('a real exception before debugger startup survives reload and can be downlo
     const value = await report.inputValue();
     expect(value).toContain('Root failure');
     expect(value).toContain('uncaught-exception');
-    expect(value).toContain('administrator account');
+    await expect(page.getByText('Server reports require an administrator account.')).toBeVisible();
     expect(value).not.toContain('private-value');
     expect(await report.getAttribute('readonly')).not.toBeNull();
     const downloadReady = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'Download reports' }).click();
+    await page.getByRole('button', { name: 'Download report' }).click();
     const download = await downloadReady;
     expect(await fs.readFile(await download.path(), 'utf8')).toBe(value);
 });
@@ -63,7 +63,29 @@ test('browser reports remain available offline and the APK reader is accessible'
     await openReader(page);
     const value = await page.getByRole('textbox', { name: 'Saved crash reports' }).inputValue();
     expect(value).toContain('Rejected operation');
-    expect(value).toContain('server could not be reached');
+    await expect(page.getByText('The server could not be reached. Saved browser reports are still available.')).toBeVisible();
     await page.getByRole('button', { name: 'Android crash reports' }).click();
     expect(await page.evaluate(() => globalThis.androidReportsOpened)).toBe(1);
+});
+
+test('same-tab unexpected stop offers the old activity and dismisses once', async ({ page }) => {
+    await page.addInitScript(() => {
+        if (sessionStorage.getItem('fixture-seeded')) return;
+        sessionStorage.setItem('fixture-seeded', 'yes'); sessionStorage.setItem('neconyan.crash-tab.v1', 'fixture-tab');
+        localStorage.setItem('neconyan.crash-session.v1:fixture-tab', JSON.stringify({ schema: 1, documentId: 'old-document', state: 'running', heartbeatAt: Date.now(),
+            snapshot: { schema: 1, pageSessionId: 'old-document', at: Date.now() - 4000, mode: 'roleplay', chat: { messageCount: 58 },
+                agents: { running: [{ label: 'Format Fixer', phase: 'post', location: 'server' }, { label: 'Proofreader', phase: 'post', location: 'server' }] } }, events: [] }));
+    });
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Read report', exact: true })).toBeVisible();
+    await expect(page.getByText(/Last known activity: 58 messages/)).toBeVisible();
+    await page.getByRole('button', { name: 'Read report', exact: true }).click();
+    const report = page.getByRole('textbox', { name: 'Saved crash reports' });
+    await expect(report).toBeVisible();
+    expect(await report.inputValue()).toContain('Proofreader');
+    expect(await report.inputValue()).toContain('definite cause');
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    await page.getByRole('button', { name: 'Dismiss', exact: true }).click();
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Read report', exact: true })).toHaveCount(0);
 });

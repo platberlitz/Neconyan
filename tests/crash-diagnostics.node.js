@@ -122,17 +122,23 @@ test('retains ten private reports and ignores damaged files', t => {
     assert.equal(getCrashReports(directory).length, 9);
 });
 
-function browser(storage, broken = false) {
+function browser(storage, broken = false, session = new Map()) {
     const listeners = new Map();
+    const add = (type, listener) => {
+        const old = listeners.get(type);
+        listeners.set(type, (...args) => { old?.(...args); listener(...args); });
+    };
     const context = {
-        window: null, document: { addEventListener() {}, getElementById() { return null; }, visibilityState: 'visible' },
+        window: null, document: { addEventListener: add, getElementById() { return null; }, visibilityState: 'visible' },
         navigator: { userAgent: 'test', onLine: true }, performance: {},
         TextEncoder,
         localStorage: {
             getItem: key => storage.get(key), setItem: (key, value) => { if (broken) throw new Error('Quota'); storage.set(key, value); },
             removeItem: key => storage.delete(key),
+            get length() { return storage.size; }, key: index => Array.from(storage.keys())[index],
         },
-        addEventListener: (type, listener) => listeners.set(type, listener),
+        sessionStorage: { getItem: key => session.get(key), setItem: (key, value) => session.set(key, value) },
+        addEventListener: add,
     };
     context.window = context;
     vm.runInNewContext(browserSource, context);
@@ -230,4 +236,35 @@ test('parallel browser Agent handles preserve peers and expose only trusted labe
     api.endAgent(second, 'cancel');
     assert.equal(api.getActivity().snapshot.agents.running.length, 0);
     assert.doesNotMatch(JSON.stringify(api.getActivity()), /secret/);
+});
+
+test('same-tab recovery retains the old sample, while clean reload and other tabs stay silent', () => {
+    const storage = new Map(), session = new Map();
+    const first = browser(storage, false, session);
+    first.api.updateActivity({ mode: 'roleplay', chat: { messageCount: 58, estimatedTextBytes: 24000 } });
+    first.api.beginAgent({ id: 'a', sourceTemplateId: 'tpl-proofreader', phase: 'post' });
+    first.api.flushActivity('test');
+    const second = browser(storage, false, session);
+    const report = second.api.getReports().reports.at(-1);
+    assert.equal(report.kind, 'unclean-previous-page');
+    assert.equal(report.lastKnownActivity.snapshot.chat.messageCount, 58);
+    assert.equal(report.lastKnownActivity.snapshot.agents.running[0].label, 'Proofreader');
+    assert.match(report.error.message, /did not provide a definite cause/);
+    const count = second.api.getReports().reports.length;
+    second.listeners.get('pagehide')({ persisted: false });
+    const third = browser(storage, false, session);
+    assert.equal(third.api.getReports().reports.length, count);
+    assert.equal(browser(storage).api.getReports().reports.length, count);
+});
+
+test('BFCache suspends the marker and reactivates the same document without a recovery report', () => {
+    const storage = new Map(), session = new Map();
+    const first = browser(storage, false, session);
+    first.api.flushActivity('test');
+    first.listeners.get('pagehide')({ persisted: true });
+    const key = 'neconyan.crash-session.v1:' + session.get('neconyan.crash-tab.v1');
+    assert.equal(JSON.parse(storage.get(key)).state, 'suspended');
+    first.listeners.get('pageshow')({ persisted: true });
+    first.api.flushActivity('test');
+    assert.equal(JSON.parse(storage.get(key)).state, 'running');
 });
