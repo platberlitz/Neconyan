@@ -225,7 +225,7 @@
             }
             refreshAgents(); scheduleFlush();
         }),
-        markAppReady: guarded(() => { snapshot.ready = true; api.fatalReportId = null; noteActivity('app-ready'); }),
+        markAppReady: guarded(() => { snapshot.ready = true; api.fatalReportId = null; noteActivity('app-ready'); if (currentStartupNotice) dismissNotice(currentStartupNotice); }),
         setNativeBridgeToken: guarded(token => { if (typeof token !== 'string' || token.length > 100) return; nativeToken = token; scheduleFlush(); }),
         getPreviousSession: guarded(() => previousSession),
     });
@@ -300,13 +300,114 @@
         unsaved = false;
         try { localStorage.removeItem(KEY); storageError = ''; return true; } catch { return false; }
     };
+    const SEEN_KEY = 'neconyan.crash-notice-seen.v1';
+    let seen = [], pendingRecovery = null, currentStartupNotice = null;
+    try {
+        const text = localStorage.getItem(SEEN_KEY);
+        if (text && text.length <= 4096) seen = JSON.parse(text).filter(item => safeId(item?.id) && Number.isSafeInteger(item?.at)).slice(-32);
+    } catch { /* In-memory acknowledgement still works for this document. */ }
+    function markSeen(id) {
+        if (!safeId(id)) return;
+        seen = [...seen.filter(item => item.id !== id), { id, at: Date.now() }].slice(-32);
+        try { localStorage.setItem(SEEN_KEY, JSON.stringify(seen)); } catch { /* No persistence is available. */ }
+    }
+    function dismissNotice(notice) {
+        if (!notice) return;
+        notice.remove?.();
+        try { if (notice.jquery) globalThis.toastr?.remove?.(notice); } catch { /* It may have already closed. */ }
+    }
+    function fallbackReader(id) {
+        const template = document.getElementById('popup_template');
+        const dialog = template?.content?.querySelector('dialog.popup')?.cloneNode(true);
+        if (!dialog) return;
+        const previousFocus = document.activeElement;
+        for (const node of dialog.querySelectorAll('.popup-crop-wrap, .popup-input, .popup-inputs, .popup-button-close')) node.remove();
+        const content = dialog.querySelector('.popup-content'); content.replaceChildren();
+        const textarea = document.createElement('textarea'); textarea.className = 'text_pole'; textarea.rows = 14; textarea.readOnly = true;
+        textarea.value = redact(JSON.stringify(reports.find(report => report.id === id) || reports.at(-1) || 'No saved report', null, 2), 60000);
+        textarea.setAttribute('aria-label', 'Saved crash reports'); content.append(textarea);
+        const controls = dialog.querySelector('.popup-controls'); controls.replaceChildren();
+        for (const label of ['Copy report', 'Close']) {
+            const button = document.createElement('button'); button.type = 'button'; button.className = 'menu_button'; button.textContent = label;
+            button.addEventListener('click', () => { if (label === 'Close') dialog.close(); else { textarea.select(); try { document.execCommand('copy'); } catch { /* Selectable text remains available. */ } } }); controls.append(button);
+        }
+        dialog.addEventListener('close', () => { dialog.remove(); if (previousFocus?.isConnected) previousFocus.focus(); });
+        document.body.append(dialog); dialog.showModal();
+    }
+    api.openReports = guarded(id => {
+        return import('./crash-report-reader.js').then(module => module.openCrashReportReader({ selectedReportId: id })).catch(() => fallbackReader(id));
+    });
+    api.showNotice = guarded(({ id, title, message, onRead, onDismiss }) => {
+        const content = document.createElement('div'); content.className = 'neconyan-crash-notice';
+        const text = document.createElement('p'); text.textContent = redact(message, 1000); content.append(text);
+        const actions = document.createElement('div'); actions.className = 'sbdbg-actions'; content.append(actions);
+        for (const label of ['Read report', 'Dismiss']) {
+            const button = document.createElement('button'); button.type = 'button'; button.className = 'menu_button' + (label === 'Read report' ? ' menu_button_primary' : ''); button.textContent = label; button.dataset.i18n = label;
+            button.dataset.crashAction = label === 'Read report' ? 'read' : 'dismiss'; actions.append(button);
+        }
+        let notice;
+        const dismiss = () => { markSeen(id); onDismiss?.(); dismissNotice(notice); };
+        if (globalThis.toastr?.warning) {
+            notice = globalThis.toastr.warning(content.outerHTML, title, { timeOut: 0, extendedTimeOut: 0, closeButton: true, escapeHtml: false, positionClass: 'toast-top-center', onHidden: () => { markSeen(id); onDismiss?.(); } });
+            const node = notice?.[0];
+            node?.querySelector('[data-crash-action="read"]')?.addEventListener('click', event => { event.stopPropagation(); markSeen(id); if (onRead) onRead(); else api.openReports(id); });
+            node?.querySelector('[data-crash-action="dismiss"]')?.addEventListener('click', event => { event.stopPropagation(); dismiss(); });
+        } else {
+            notice = document.createElement('aside'); notice.id = 'neconyan-crash-notice'; notice.setAttribute('aria-label', title);
+            const heading = document.createElement('strong'); heading.textContent = title; notice.append(heading, content); document.body.append(notice);
+            actions.querySelector('[data-crash-action="read"]').addEventListener('click', () => { markSeen(id); if (onRead) onRead(); else api.openReports(id); });
+            actions.querySelector('[data-crash-action="dismiss"]').addEventListener('click', dismiss);
+        }
+        markSeen(id);
+        return notice;
+    });
+    function recoverPrevious() {
+        if (previousSession?.state !== 'running' || !safeId(previousSession.documentId)) return;
+        const id = 'unclean:' + previousSession.documentId;
+        if (seen.some(item => item.id === id) || reports.some(report => report.id === id)) return;
+        const previous = validateActivity(previousSession.snapshot);
+        const discarded = document.wasDiscarded === true;
+        const report = capture(discarded ? 'discarded-previous-page' : 'unclean-previous-page', 'Your browser did not provide a definite cause. A missing normal-close event does not prove a crash.');
+        if (!report) return;
+        report.id = id;
+        report.summary = discarded ? 'Your browser discarded the previous page' : 'The previous page did not close cleanly';
+        report.environment = { measuredOnRecovery: report.environment };
+        report.lastKnownActivity = { snapshot: previous, events: validateEvents(previousSession.events), relationship: 'same-tab-previous-page',
+            ageMs: previous.at && previousSession.heartbeatAt >= previous.at ? previousSession.heartbeatAt - previous.at : null };
+        report.limitation = 'The time and cause of the stop are unknown. Backgrounding does not imply a crash; a normal pagehide prevents this observation. Other tabs are never automatically diagnosed.';
+        pendingRecovery = report; previousSession.state = 'recovered'; save();
+    }
+    recoverPrevious();
+    function showPendingNotice() {
+        const native = typeof globalThis.NeconyanDiagnostics?.recordActivity === 'function';
+        let report = api.fatalReportId ? reports.find(item => item.id === api.fatalReportId) : !native ? pendingRecovery : null;
+        if (!report && previousSession?.fatalReportId && !previousSession.ready) report = reports.find(item => item.id === previousSession.fatalReportId);
+        if (!report || seen.some(item => item.id === report.id)) return;
+        const sample = report.lastKnownActivity?.snapshot;
+        const labels = sample?.agents?.running?.map(item => item.label).join(' and ');
+        const message = (report.error?.message || 'Your browser did not provide a definite cause.')
+            + (sample?.chat?.messageCount != null ? ` Last known activity: ${sample.chat.messageCount} messages.` : '')
+            + (labels ? ` Running ${labels} after a reply.` : '')
+            + (sample?.at ? ` Last activity recorded at ${new Date(sample.at).toLocaleTimeString()}.` : '')
+            + (storageError ? ` ${storageError}` : '');
+        const notice = api.showNotice({ id: report.id, title: report.summary || 'Neconyan could not finish loading', message });
+        if (api.fatalReportId === report.id) currentStartupNotice = notice;
+    }
+    document.addEventListener('DOMContentLoaded', showPendingNotice, { once: true });
     window.addEventListener('error', event => {
         if (event.target && event.target !== window) {
             const tag = event.target.tagName;
             if (tag !== 'SCRIPT' && tag !== 'LINK') return;
-            capture('resource-load-failure', 'A script or stylesheet could not load', {
+            const report = capture('resource-load-failure', 'A script or stylesheet could not load', {
                 source: redact(event.target.src || event.target.href || ''), tag,
             });
+            let pathname = '';
+            try { pathname = new URL(event.target.src, document.baseURI).pathname; } catch { /* Not a static core script. */ }
+            if (!snapshot.ready && tag === 'SCRIPT' && ['/script.js', '/scripts/neconyan-tabs.js', '/scripts/i18n.js', '/lib/jquery-3.5.1.min.js', '/lib/polyfill.js'].includes(pathname) && report) {
+                report.kind = 'critical-startup-load-failure'; report.summary = 'Neconyan could not finish loading';
+                api.fatalReportId = report.id; save(); scheduleFlush();
+                if (document.readyState !== 'loading') showPendingNotice();
+            }
             return;
         }
         capture('uncaught-exception', event.error || event.message, {

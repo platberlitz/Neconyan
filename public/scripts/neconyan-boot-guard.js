@@ -384,6 +384,12 @@
         }
 
         failureShown = true;
+        try {
+            if (window.NeconyanCrashDiagnostics?.openReports) {
+                window.NeconyanCrashDiagnostics.capture('startup-failure', 'Startup did not finish. Read the retained errors for the available evidence.');
+                window.NeconyanCrashDiagnostics.openReports(window.NeconyanCrashDiagnostics.fatalReportId);
+            }
+        } catch (_error) { /* The existing failure screen remains available. */ }
         removeStartupLoaderArtifacts();
         preloader.hidden = false;
         preloader.innerHTML = '';
@@ -449,6 +455,7 @@
     const neconyanBootGuard = {
         bootCompleted: function () {
             bootCompleted = true;
+            try { window.NeconyanCrashDiagnostics?.markAppReady?.(); } catch (_error) { /* Diagnostics cannot block startup. */ }
             if (timeoutId) {
                 window.clearTimeout(timeoutId);
             }
