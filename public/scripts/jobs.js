@@ -161,6 +161,7 @@ export function observeJob(id, { onUpdate, onSnapshot, onDone, onStop, base = ''
     let reading = false;
     let dirty = false;
     const diagnosticHandle = {};
+    let readFailed = false;
     const diagnostic = value => { try { globalThis.NeconyanCrashDiagnostics?.observeJobActivity?.(id, diagnosticHandle, value); } catch { /* Optional observation. */ } };
 
     // stop(reason) tells the caller why polling ended; 'missing' means the job
@@ -195,6 +196,7 @@ export function observeJob(id, { onUpdate, onSnapshot, onDone, onStop, base = ''
         try {
             const body = await getJob(id, { base, account });
             if (stopped || signal?.aborted) return;
+            if (readFailed) { readFailed = false; try { globalThis.NeconyanCrashDiagnostics?.serverRecovered?.(); } catch { /* Optional diagnostics. */ } }
             const job = body?.job ?? null;
             if (job) {
                 diagnostic(body?.diagnostics || null);
@@ -214,6 +216,7 @@ export function observeJob(id, { onUpdate, onSnapshot, onDone, onStop, base = ''
             }
             delay = changes?.connected() ? MAX_INTERVAL_MS : intervalMs;
         } catch (error) {
+            readFailed = true;
             if (error.message === 'account_changed') { stop('account_changed'); return; }
             // A job record that no longer exists can never complete, so retrying
             // it forever only leaks an observer and blocks callers that wait on it.

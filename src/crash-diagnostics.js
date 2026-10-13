@@ -16,6 +16,18 @@ let shuttingDown;
 let requestSnapshot = () => [];
 let activitySnapshot = () => null;
 let version = {};
+const runId = randomUUID();
+let latestStatus = null;
+
+function reportStatus(report) {
+    const preview = redact(report.error?.message || 'No error message was supplied.', 400);
+    return { id: report.id, at: report.at, kind: redact(report.kind, 80), summary: report.kind === 'unclean-previous-exit'
+        ? 'The previous server process did not close normally. No definite cause was supplied.' : 'A saved server crash report is available.',
+    errorPreview: preview.slice(0, 200) };
+}
+export function getCrashReportStatus() {
+    return { schema: 1, runId, latest: latestStatus ? { ...latestStatus } : null };
+}
 
 export function setCrashContext({ requests, activity, appVersion, shutdown } = {}) {
     if (requests) requestSnapshot = requests;
@@ -42,8 +54,9 @@ export function writeCrashReport(kind, error, extra = {}, dir = directory) {
     try {
         dir ||= path.resolve('data', 'crash-reports');
         fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+        const name = `crash-${Date.now()}-${randomUUID()}.json`;
         const report = {
-            schema: 1, runtime: 'server', kind, at: new Date().toISOString(),
+            schema: 1, id: name.slice(0, -5), runtime: 'server', kind, at: new Date().toISOString(),
             error: describeError(error), environment: runtimeContext(),
             requests: requestSnapshot(), ...extra,
             privacy: 'No environment variables, command-line arguments, request bodies, headers or console values are collected. Review error text before sharing.',
@@ -57,9 +70,9 @@ export function writeCrashReport(kind, error, extra = {}, dir = directory) {
             report.error = { message: report.error.message, stack: report.error.stack, omitted: 'Nested causes exceeded report size limit' };
             text = JSON.stringify(report, null, 2);
         }
-        if (Buffer.byteLength(text) > MAX_BYTES) text = JSON.stringify({ schema: 1, runtime: 'server', kind, at: report.at, error: report.error, omitted: 'Context exceeded report size limit' });
-        const name = `crash-${Date.now()}-${randomUUID()}.json`;
+        if (Buffer.byteLength(text) > MAX_BYTES) text = JSON.stringify({ schema: 1, id: report.id, runtime: 'server', kind, at: report.at, error: report.error, omitted: 'Context exceeded report size limit' });
         fs.writeFileSync(path.join(dir, name), text, { mode: 0o600, flush: true });
+        if (dir === directory) latestStatus = reportStatus(report);
         const files = reportFiles(dir);
         for (const old of files.slice(0, -MAX_REPORTS)) fs.unlinkSync(path.join(dir, old));
         console.error(`[Neconyan] Crash diagnostics saved: ${path.join(dir, name)}`);
@@ -78,7 +91,9 @@ export function getCrashReports(dir = directory) {
         try {
             const file = path.join(dir, name);
             if (fs.statSync(file).size > MAX_BYTES) return [];
-            return [JSON.parse(fs.readFileSync(file, 'utf8'))];
+            const report = JSON.parse(fs.readFileSync(file, 'utf8'));
+            report.id ||= name.slice(0, -5);
+            return [report];
         } catch { return []; }
     });
 }
@@ -111,6 +126,8 @@ export function initialiseCrashDiagnostics(dataRoot) {
         }
         marker = path.join(directory, `running-${process.pid}.json`);
         fs.writeFileSync(marker, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), versions: process.versions }), { mode: 0o600 });
+        const latest = getCrashReports(directory)[0];
+        latestStatus = latest ? reportStatus(latest) : null;
         if (process.send) process.send({ type: 'neconyan:crash-directory', directory }, () => {});
     } catch (error) {
         console.error('[Neconyan] Crash report storage unavailable:', redact(error?.message));

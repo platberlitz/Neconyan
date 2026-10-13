@@ -1,9 +1,73 @@
 /** Application adapter. Only scalar counts and fixed states leave the application. */
-export function initialiseCrashActivity({ eventSource, event_types, getChat, getExtensionCount }) {
+import { fetchWithCsrfRetry } from './csrf-token-refresh.js';
+
+export function createServerCrashObserver({ isAdmin, getAccount, getRequestHeaders, refreshCsrfToken, fetchFn = fetch, showNotice = options => globalThis.NeconyanCrashDiagnostics?.showNotice?.(options) }) {
+    let active = false, timer = null, inFlight = null, lastRequest = -Infinity, runId = null, disconnected = false, currentNotice = null;
+    const memorySeen = new Map();
+    const scope = account => {
+        let hash = 2166136261;
+        for (const char of account) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+        return `neconyan.server-crash-seen.v1:${(hash >>> 0).toString(16)}`;
+    };
+    const valid = account => active && isAdmin() && getAccount() === account;
+    const stop = () => { active = false; clearTimeout(timer); timer = null; inFlight?.abort(); inFlight = null; runId = null; currentNotice?.remove?.(); currentNotice = null; };
+    const schedule = delay => { clearTimeout(timer); timer = null; if (active && document.visibilityState === 'visible') timer = setTimeout(() => void poll(), delay); };
+    const poll = async () => {
+        if (!active || document.visibilityState !== 'visible' || inFlight) return;
+        if (!isAdmin()) { stop(); return; }
+        if (Date.now() - lastRequest < 5000) { schedule(5000 - (Date.now() - lastRequest)); return; }
+        const account = getAccount();
+        if (typeof account !== 'string') return;
+        lastRequest = Date.now();
+        const controller = new AbortController(); inFlight = controller;
+        const timeout = setTimeout(() => controller.abort(), 3000);
+        let delay = 30000;
+        try {
+            const response = await fetchWithCsrfRetry('/api/server-admin/crash-reports/status', () => ({ method: 'POST', credentials: 'same-origin',
+                headers: getRequestHeaders(), signal: controller.signal }), { refreshCsrfToken, fetchFn });
+            if (!valid(account)) { stop(); return; }
+            if ([401, 403].includes(response.status)) { stop(); return; }
+            if (!response.ok) throw new Error('Diagnostic status unavailable');
+            const text = await response.text();
+            if (!valid(account)) { stop(); return; }
+            if (text.length > 2048) throw new Error('Invalid diagnostic status');
+            const result = JSON.parse(text), latest = result.latest;
+            let seen = memorySeen.get(account) || [];
+            const key = scope(account);
+            try { const stored = localStorage.getItem(key); if (stored && stored.length <= 2048) seen = JSON.parse(stored).filter(item => typeof item === 'string' && item.length <= 128).slice(-20); } catch { /* A page-local acknowledgement still works below. */ }
+            if (latest && typeof latest.id === 'string' && latest.id.length <= 128 && !seen.includes(latest.id)) {
+                const restarted = runId && runId !== result.runId && disconnected;
+                currentNotice = showNotice({ id: latest.id, title: restarted ? 'The server restarted after an unexpected stop' : 'A saved server crash report is available',
+                    message: `${typeof latest.at === 'string' ? latest.at : 'Time unavailable'}. ${typeof latest.errorPreview === 'string' ? latest.errorPreview.slice(0, 400) : 'No error message was supplied.'}`,
+                    onRead: async () => {
+                        if (!valid(account)) return;
+                        const module = await import('./crash-report-reader.js');
+                        if (!valid(account)) return;
+                        module.openCrashReportReader({ selectedReportId: latest.id, loadServerReports: async () => {
+                            const response = await fetchWithCsrfRetry('/api/server-admin/crash-reports', () => ({ method: 'POST', credentials: 'same-origin', headers: getRequestHeaders() }), { refreshCsrfToken, fetchFn });
+                            if (!valid(account) || !response.ok) return { unavailable: 'Server reports are unavailable for this account.' };
+                            const result = await response.json();
+                            return valid(account) ? result : { unavailable: 'The account changed. Server details were not displayed.' };
+                        } });
+                    } });
+                if (currentNotice && valid(account)) { seen.push(latest.id); memorySeen.set(account, seen.slice(-20)); try { localStorage.setItem(key, JSON.stringify(seen.slice(-20))); } catch { /* Persistence is unavailable. */ } }
+            }
+            runId = result.runId; disconnected = false;
+        } catch { disconnected = true; delay = 60000; } finally { clearTimeout(timeout); if (inFlight === controller) inFlight = null; schedule(delay); }
+    };
+    const resume = () => { if (active) void poll(); };
+    const visibility = () => { if (document.visibilityState === 'visible') resume(); else { clearTimeout(timer); timer = null; } };
+    globalThis.addEventListener?.('online', resume); document.addEventListener('visibilitychange', visibility);
+    return { start: () => { if (isAdmin()) { active = true; void poll(); } }, stop, recovered: resume };
+}
+
+export function initialiseCrashActivity({ eventSource, event_types, getChat, getExtensionCount, isAdmin, getAccount, getRequestHeaders, refreshCsrfToken }) {
     const api = globalThis.NeconyanCrashDiagnostics;
     if (!api) return;
     const safe = callback => (...args) => { try { callback(...args); } catch { /* Optional diagnostics. */ } };
     const update = patch => api.updateActivity?.(patch);
+    const server = isAdmin && getAccount ? createServerCrashObserver({ isAdmin, getAccount, getRequestHeaders, refreshCsrfToken }) : null;
+    api.serverRecovered = safe(() => server?.recovered());
     let revision = 0, lengths = [], total = 0;
     const textLength = message => {
         const mes = typeof message?.mes === 'string' ? message.mes : '';
@@ -58,7 +122,7 @@ export function initialiseCrashActivity({ eventSource, event_types, getChat, get
     on('MAIN_GENERATION_OUTPUT_READY', () => update({ generation: { phase: 'rendering', location: 'browser' } }));
     on('GENERATION_ENDED', () => { update({ generation: { phase: 'idle', location: 'unknown' } }); api.noteActivity?.('generation-end'); });
     on('GENERATION_STOPPED', () => { update({ generation: { phase: 'idle', location: 'unknown' } }); api.noteActivity?.('generation-stop'); });
-    on('APP_READY', () => { api.markAppReady?.(); counts(); rebuild(); });
+    on('APP_READY', () => { api.markAppReady?.(); counts(); rebuild(); server?.start(); });
     for (const type of ['EXTENSIONS_FIRST_LOAD', 'EXTENSION_DISABLED', 'SETTINGS_UPDATED']) on(type, counts);
     document.addEventListener('sb:shell-tab-activated', safe(event => {
         const tab = event.detail?.tab;
