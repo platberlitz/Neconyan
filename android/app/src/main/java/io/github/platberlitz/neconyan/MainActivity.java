@@ -24,6 +24,8 @@ public final class MainActivity extends Activity {
     private static final int MIN_WEBVIEW_MAJOR = 124;
     private WebView web;
     private ApkUpdater apkUpdater;
+    private final BridgeCallerGate bridgeGate = new BridgeCallerGate();
+    private String bridgeToken;
     private TextView status;
     private String origin;
     private JSONObject credentials;
@@ -116,10 +118,16 @@ public final class MainActivity extends Activity {
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
         web.addJavascriptInterface(this, "NeconyanExport");
         web.addJavascriptInterface(diagnosticsBridge, "NeconyanDiagnostics");
-        apkUpdater = new ApkUpdater(this, () -> web != null && web.getUrl() != null && local(Uri.parse(web.getUrl())));
+        apkUpdater = new ApkUpdater(this, () -> web != null && web.getUrl() != null && local(Uri.parse(web.getUrl())), bridgeGate);
         web.addJavascriptInterface(apkUpdater, "NeconyanAndroid");
         web.setWebViewClient(new WebViewClient() {
-            @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap icon) { navigationGeneration++; diagnosticsBridge.invalidate(); }
+            @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap icon) {
+                navigationGeneration++;
+                diagnosticsBridge.invalidate();
+                bridgeGate.clear();
+                bridgeToken = null;
+                cancelExport();
+            }
             @Override public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
                 rendererGone(view, detail);
                 return true;
@@ -159,12 +167,13 @@ public final class MainActivity extends Activity {
                 status.setVisibility(View.GONE);
                 web.setVisibility(View.VISIBLE);
                 if (serverSafe && !safeNoticeShown) showSafeNotice();
-                // The host creates blob links for cards and backups. Stream chunks across the
-                // bridge so a large export never needs a second whole-file base64 copy in memory.
-                // Most exports click a link that was never added to the page and revoke its blob
-                // straight after, so those clicks never reach the document listener and the
-                // download listener would read a revoked blob. Start the read inside click().
-                view.evaluateJavascript("if (!window.neconyanDownloadHook) { window.neconyanDownloadHook = true; document.addEventListener('click', e => { const a = e.target.closest('a[download]'); if (a && a.href.startsWith('blob:')) { e.preventDefault(); window.neconyanSaveBlob(a.href, a.download); } }, true); const click = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { if (!this.isConnected && this.hasAttribute('download') && this.href.startsWith('blob:')) { window.neconyanSaveBlob(this.href, this.download); return; } return click.call(this); }; window.neconyanSaveBlob = async (url, name) => { try { const blob = await (await fetch(url)).blob(); if (!NeconyanExport.beginExport(name || 'Neconyan-export', blob.size)) throw new Error('Another export is open, or the file exceeds 1 GiB.'); for (let at = 0; at < blob.size; at += 49152) { const bytes = new Uint8Array(await blob.slice(at, at + 49152).arrayBuffer()); if (!NeconyanExport.appendExport(btoa(String.fromCharCode(...bytes)))) throw new Error('Could not save the export. Check free storage.'); } NeconyanExport.finishExport(); } catch (e) { NeconyanExport.cancelExport(); alert(e.message); } }; }", null);
+                // Hand the per-load caller secret (and the blob export hook) to the main page only;
+                // evaluateJavascript targets the displayed main frame, so it must be the local workspace.
+                String current = view.getUrl();
+                if (current == null || !local(Uri.parse(current))) return;
+                if (bridgeToken == null) bridgeToken = bridgeGate.issue();
+                view.evaluateJavascript("import('/scripts/android-native-bridge.js').then(module => module.installAndroidNativeBridge("
+                    + JSONObject.quote(bridgeToken) + "," + JSONObject.quote(origin) + "))", null);
             }
         });
         web.setWebChromeClient(new WebChromeClient() {
@@ -313,6 +322,8 @@ public final class MainActivity extends Activity {
         if (view.getParent() instanceof ViewGroup) ((ViewGroup) view.getParent()).removeView(view);
         view.destroy();
         if (mainView) {
+            bridgeGate.clear();
+            bridgeToken = null;
             web = null;
             failed = true;
             status.setText("Neconyan's page stopped\n\n" + explanation + "\n\nCrash diagnostics are being saved. Tap Try again to reopen your workspace.");
@@ -335,7 +346,17 @@ public final class MainActivity extends Activity {
         });
     }
 
-    @JavascriptInterface public void showCrashReports() {
+    @JavascriptInterface public boolean bridgeRequiresToken() { return true; }
+
+    @JavascriptInterface public boolean showCrashReports(String token) {
+        if (!bridgeGate.accepts(token)) return false;
+        showCrashReportsInternal(token);
+        return true;
+    }
+
+    private void showCrashReports() { showCrashReportsInternal(null); }
+
+    private void showCrashReportsInternal(String token) {
         if (!readingCrashes.compareAndSet(false, true)) return;
         ActivityBreadcrumbs.execute(() -> {
             DiagnosticStore store = CrashDiagnostics.store(this);
@@ -343,6 +364,7 @@ public final class MainActivity extends Activity {
             String readError = store.readError();
             runOnUiThread(() -> {
                 readingCrashes.set(false);
+                if (token != null && !bridgeGate.accepts(token)) return;
                 if (!resumed || isFinishing() || isDestroyed()) return;
                 if (entries.isEmpty()) { new AlertDialog.Builder(this).setMessage(readError.isEmpty() ? "No saved Android crash reports." : readError).setPositiveButton("Close", null).show(); return; }
                 String[] labels = entries.stream().map(entry -> (entry.at > 0 ? java.text.DateFormat.getDateTimeInstance().format(new Date(entry.at)) + "\n" : "") + entry.summary).toArray(String[]::new);
@@ -743,7 +765,11 @@ public final class MainActivity extends Activity {
         } finally { connection.disconnect(); }
     }
 
-    @JavascriptInterface public synchronized boolean beginExport(String name, long size) {
+    @JavascriptInterface public synchronized boolean beginExport(String token, String name, long size) {
+        if (!bridgeGate.accepts(token)) return false;
+        return beginExport(name, size);
+    }
+    private synchronized boolean beginExport(String name, long size) {
         if (export != null || size < 0 || size > 1024L * 1024 * 1024) return false;
         try {
             export = File.createTempFile("neconyan-export-", ".tmp", getCacheDir());
@@ -753,7 +779,11 @@ public final class MainActivity extends Activity {
             return true;
         } catch (IOException error) { cancelExport(); return false; }
     }
-    @JavascriptInterface public synchronized boolean appendExport(String base64) {
+    @JavascriptInterface public synchronized boolean appendExport(String token, String base64) {
+        if (!bridgeGate.accepts(token)) return false;
+        return appendExport(base64);
+    }
+    private synchronized boolean appendExport(String base64) {
         try {
             if (exportStream == null || base64.length() > 100000) return false;
             byte[] bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT);
@@ -762,15 +792,27 @@ public final class MainActivity extends Activity {
             exportStream.write(bytes); return true;
         } catch (Exception error) { cancelExport(); return false; }
     }
-    @JavascriptInterface public synchronized void finishExport() {
+    @JavascriptInterface public synchronized boolean finishExport(String token) {
+        if (!bridgeGate.accepts(token)) return false;
+        finishExportInternal(token);
+        return true;
+    }
+    private void finishExport() { finishExportInternal(null); }
+    private synchronized void finishExportInternal(String token) {
         if (exportStream == null) return;
         try { exportStream.close(); exportStream = null; } catch (IOException error) { cancelExport(); return; }
         runOnUiThread(() -> {
+            if (token != null && !bridgeGate.accepts(token)) return;
             Intent save = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/octet-stream").putExtra(Intent.EXTRA_TITLE, exportName);
             try { startActivityForResult(save, 13); } catch (ActivityNotFoundException error) { cancelExport(); Toast.makeText(this, "Install a file manager to save exports.", Toast.LENGTH_LONG).show(); }
         });
     }
-    @JavascriptInterface public synchronized void cancelExport() {
+    @JavascriptInterface public synchronized boolean cancelExport(String token) {
+        if (!bridgeGate.accepts(token)) return false;
+        cancelExport();
+        return true;
+    }
+    private synchronized void cancelExport() {
         try { if (exportStream != null) exportStream.close(); } catch (IOException ignored) { }
         exportStream = null;
         if (export != null) export.delete();
@@ -855,6 +897,8 @@ public final class MainActivity extends Activity {
     }
     @Override public void onDestroy() {
         navigationGeneration++; diagnosticsBridge.invalidate();
+        bridgeGate.clear();
+        bridgeToken = null;
         main.removeCallbacksAndMessages(null);
         worker.shutdownNow();
         if (chooser != null) chooser.onReceiveValue(null);

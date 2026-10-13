@@ -82,7 +82,7 @@ describe('Chat & Writing settings layout', () => {
         expect(rows.length).toBeGreaterThan(40);
         for (const [, id, body] of rows) {
             expect(body).toMatch(/<small class="nn-vt-name"[^>]*>[^<]+<\/small>/);
-            expect(body).toMatch(/<span class="nn-vt-desc">[^<]+/);
+            expect(body).toMatch(/<span class="nn-vt-desc"[^>]*>[^<]+/);
             expect(body.trim().endsWith(`<input id="${id}" type="checkbox" />`)).toBe(true);
         }
     });

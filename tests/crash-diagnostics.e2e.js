@@ -13,6 +13,8 @@ test.beforeEach(async ({ page }) => {
     await page.route('http://crash.test/**', route => {
         const url = new URL(route.request().url());
         if (url.pathname === '/api/server-admin/crash-reports') return route.fulfill({ status: 403, body: 'Forbidden' });
+        // The isolated fixture loads the real debugger UI; stub the translation helper it imports.
+        if (url.pathname === '/scripts/i18n.js') return route.fulfill({ contentType: 'text/javascript', body: 'export const t = strings => strings.join("");' });
         if (url.pathname.startsWith('/scripts/')) {
             const file = path.resolve(publicRoot, '.' + url.pathname);
             if (!file.startsWith(publicRoot + path.sep)) return route.abort();
@@ -56,10 +58,12 @@ test('a real exception before debugger startup survives reload and can be downlo
 });
 
 test('browser reports remain available offline and the APK reader is accessible', async ({ page }) => {
-    await page.evaluate(() => {
+    await page.evaluate(async () => {
         Promise.reject(new Error('Rejected operation'));
         globalThis.androidReportsOpened = 0;
-        globalThis.NeconyanExport = { showCrashReports() { globalThis.androidReportsOpened++; } };
+        globalThis.NeconyanExport = { showCrashReports() { globalThis.androidReportsOpened++; return true; } };
+        const bridge = await import('/scripts/android-native-bridge.js');
+        bridge.installAndroidNativeBridge('a'.repeat(64), globalThis.location.origin);
     });
     await expect.poll(() => page.evaluate(() => globalThis.NeconyanCrashDiagnostics.getReports().reports.length)).toBe(1);
     await page.route('**/api/server-admin/crash-reports', route => route.abort());
@@ -68,7 +72,7 @@ test('browser reports remain available offline and the APK reader is accessible'
     expect(value).toContain('Rejected operation');
     await expect(page.getByText('The server could not be reached. Saved browser reports are still available.')).toBeVisible();
     await page.getByRole('button', { name: 'Android crash reports' }).click();
-    expect(await page.evaluate(() => globalThis.androidReportsOpened)).toBe(1);
+    await expect.poll(() => page.evaluate(() => globalThis.androidReportsOpened)).toBe(1);
 });
 
 test('same-tab unexpected stop offers the old activity and dismisses once', async ({ page }) => {

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, jest, test } from '@jest/globals';
 
 import {
     createRing,
@@ -11,7 +11,8 @@ import {
     serializeArg,
 } from '../public/scripts/extensions/neconyan-debugger/src/capture.js';
 import { buildReport } from '../public/scripts/extensions/neconyan-debugger/src/report.js';
-import { getEnabledThirdPartyExtensions } from '../public/scripts/extensions/neconyan-debugger/src/ui.js';
+jest.unstable_mockModule('../public/scripts/i18n.js', () => ({ t: strings => strings.join('') }));
+const { getEnabledThirdPartyExtensions } = await import('../public/scripts/extensions/neconyan-debugger/src/ui.js');
 
 const extensionRoot = new URL('../public/scripts/extensions/neconyan-debugger/', import.meta.url);
 

@@ -50,6 +50,8 @@ async function stream(type = 'normal') {
         isChatRenderLifecycleRolloutEnabled: () => true,
         getStreamingVisibleWriteBuffer: () => ({ queue: (...args) => writes.push(args) }),
         updateMessageMetaBadges: jest.fn(),
+        setCardScriptMessageStreaming: jest.fn(),
+        scheduleCardScriptReconcile: jest.fn(),
     });
     context.getCurrentChatId = () => context.chatId;
     context.saveReply = async () => { context.chat.push({ ...replacement(), mes: 'original', swipes: ['original'] }); };

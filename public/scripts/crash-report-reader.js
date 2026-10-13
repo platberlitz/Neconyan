@@ -39,8 +39,13 @@ function download(text) {
     const link = element('a'); link.href = url; link.download = 'Neconyan-crash-report.txt';
     document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+// The bridge module holds the Android caller secret; load it on demand so the reader still opens before startup.
+async function openAndroidCrashReports() {
+    const { showAndroidCrashReports } = await import('./android-native-bridge.js');
+    if (showAndroidCrashReports() !== true) globalThis.toastr?.warning?.('Android controls are not ready. Reload this page and try again.');
+}
 export function openCrashReportReader({ browserReports = globalThis.NeconyanCrashDiagnostics?.getReports?.() ?? { reports: [] }, selectedReportId,
-    popup = showRetainedReportPopup, loadServerReports, nativeReader = globalThis.NeconyanExport?.showCrashReports?.bind(globalThis.NeconyanExport) } = {}) {
+    popup = showRetainedReportPopup, loadServerReports, nativeReader = typeof globalThis.NeconyanExport?.showCrashReports === 'function' ? openAndroidCrashReports : undefined } = {}) {
     const stylesheet = document.querySelector('link[href^="css/neconyan-crash-reports.css"]');
     if (stylesheet) stylesheet.rel = 'stylesheet';
     const content = element('div', '', 'neconyan-crash-report sbdbg-report');
@@ -82,7 +87,7 @@ export function openCrashReportReader({ browserReports = globalThis.NeconyanCras
     select.addEventListener('change', () => { selectionTouched = true; render(); });
     const copyButton = action('Copy report', async () => { copyButton.textContent = await copy(textarea.value) ? 'Copied' : 'Copy failed. Select the text below'; }, true);
     actions.append(copyButton, action('Download report', () => download(textarea.value)));
-    if (nativeReader) actions.append(action('Android crash reports', () => { try { nativeReader(); } catch { /* Keep the browser reader available. */ } }));
+    if (nativeReader) actions.append(action('Android crash reports', () => { try { Promise.resolve(nativeReader()).catch(() => {}); } catch { /* Keep the browser reader available. */ } }));
     content.append(select, summary, activity, actions, textarea);
     const serverStatus = element('p', 'Server reports have not been loaded'); serverStatus.setAttribute('role', 'status'); content.append(serverStatus);
     let loading = false;

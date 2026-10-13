@@ -3,6 +3,10 @@ import {
     MESSAGE_TYPE,
     MESSAGE_VERSION,
     validateSlashRequestMessage,
+    RESIZE_MESSAGE_TYPE,
+    READY_MESSAGE_TYPE,
+    validateResizeMessage,
+    validateReadyMessage,
 } from '../public/scripts/card-script-sandbox/messages.js';
 
 const canonicalMessage = Object.freeze({
@@ -27,6 +31,7 @@ const badMessageIds = [
     '5',
     1.5,
     -1,
+    Number.MAX_SAFE_INTEGER + 1,
 ];
 
 const badNonces = [
@@ -34,6 +39,7 @@ const badNonces = [
     123,
     '',
     '   ',
+    'a'.repeat(129),
 ];
 
 const badCommands = [
@@ -43,6 +49,12 @@ const badCommands = [
 ];
 
 describe('card script sandbox message validation', () => {
+    test('ready and resize accept only their known authenticated envelopes', () => {
+        expect(validateReadyMessage({ ...canonicalMessage, type: READY_MESSAGE_TYPE }).ok).toBe(true);
+        expect(validateResizeMessage({ ...canonicalMessage, type: RESIZE_MESSAGE_TYPE, height: 0 }).ok).toBe(true);
+        for (const height of [NaN, Infinity, -1, '12', undefined]) expect(validateResizeMessage({ ...canonicalMessage, type: RESIZE_MESSAGE_TYPE, height }).ok).toBe(false);
+        expect(validateResizeMessage({ ...canonicalMessage, height: 12 }).ok).toBe(false);
+    });
     test('accepts the canonical slash request shape', () => {
         expect(validateSlashRequestMessage(canonicalMessage)).toEqual({
             ok: true,

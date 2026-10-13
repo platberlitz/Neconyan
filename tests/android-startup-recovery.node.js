@@ -18,7 +18,7 @@ test('Java crashes are captured in both Android processes before Android termina
 
 test('renderer loss is handled for both main and popup WebViews and offers an explicit restart', () => {
     assert.equal((activity.match(/onRenderProcessGone\(WebView view/g) || []).length, 2);
-    const renderer = block(activity, 'private void rendererGone', '@JavascriptInterface public void showCrashReports');
+    const renderer = block(activity, 'private void rendererGone', '@JavascriptInterface public boolean bridgeRequiresToken');
     assert.match(renderer, /view\.destroy\(\)/);
     assert.match(renderer, /web = null/);
     assert.match(renderer, /CrashDiagnostics\.record/);

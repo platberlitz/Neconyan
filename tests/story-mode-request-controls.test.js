@@ -54,6 +54,8 @@ function makeRuntime({ api = 'openai', model = 'gpt-4o', stream = false, buffer 
         trigger: jest.fn(),
     };
     const context = vm.createContext({
+        setCardScriptMessageStreaming: jest.fn(),
+        scheduleCardScriptReconcile: jest.fn(),
         isChatNavigationBlocked,
         combineRoleplayTextPrompt, formatPromptReasoning,
         // This harness runs the host generation flow without the Neconyan server

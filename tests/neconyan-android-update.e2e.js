@@ -17,11 +17,18 @@ for (const phone of [false, true]) {
             await page.emulateMedia({ reducedMotion: 'reduce' });
             await page.route('**/api/settings/save', route => route.fulfill({ json: { result: 'ok' } }));
             if (bridge) await page.addInitScript(() => {
-                window.NeconyanAndroid = { installUpdate: version => { window.apkRequestedVersion = version; } };
+                window.NeconyanAndroid = { bridgeRequiresToken: () => true, installUpdate: (token, version) => {
+                    if (token !== 'a'.repeat(64)) return false;
+                    window.apkRequestedVersion = version; return true;
+                } };
             });
             await page.route('**/api/server-admin/status', route => route.fulfill({ json: response }));
             await page.goto('/', { waitUntil: 'domcontentloaded' });
             await page.waitForFunction(() => window.NeconyanShell?.openTab, { timeout: 60000 });
+            if (bridge) await page.evaluate(async () => {
+                const module = await import('/scripts/android-native-bridge.js');
+                module.installAndroidNativeBridge('a'.repeat(64), window.location.origin);
+            });
             await expect(page.locator('#loader')).toBeHidden({ timeout: 60000 });
             const skipTour = page.locator('[data-tour-coach-skip]');
             if (await skipTour.isVisible()) await skipTour.click();

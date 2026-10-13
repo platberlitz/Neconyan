@@ -47,6 +47,8 @@ export function parseSlashCommandRequest(raw, policy = createDefaultPolicy()) {
         return { ok: false, reason: 'malformed' };
     }
 
+    if (/[{}\x00-\x1f\x7f]/.test(raw)) return { ok: false, reason: 'unsafe_syntax' };
+
     const trimmed = raw.trim();
     if (!trimmed) {
         return { ok: false, reason: 'empty_input' };
@@ -120,10 +122,57 @@ function parseCommandSegment(segment, allowlist) {
     }
 
     const args = trimmed.slice(match[0].length).trim();
+    const quoting = validateArgumentPipes(args);
+    if (!quoting.ok) return quoting;
+    if (commandName === '/echo') {
+        const checked = validateEchoArguments(args);
+        if (!checked.ok) return checked;
+    }
     return {
         ok: true,
         command: args ? `${commandName} ${args}` : commandName,
     };
+}
+
+/**
+ * The real slash parser only honours quotes around named argument values; unnamed
+ * text (and /echo, which keeps raw quotes) ends at any unescaped pipe. A pipe the
+ * splitter kept inside quotes anywhere else would start a hidden, unchecked command.
+ */
+function validateArgumentPipes(args) {
+    let rest = args;
+    while (/^\w+=/.test(rest)) {
+        const match = rest.match(/^\w+=(?:"(?:\\.|[^"\\])*"|[^\s"\\|[\]]+)(?:\s+|$)/);
+        if (!match) return { ok: false, reason: 'unsafe_syntax' };
+        rest = rest.slice(match[0].length);
+    }
+    let escaped = false;
+    for (const char of rest) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '|') return { ok: false, reason: 'unsafe_syntax' };
+    }
+    return { ok: true };
+}
+
+function validateEchoArguments(args) {
+    let rest = args;
+    const seen = new Set();
+    while (/^\w+=/.test(rest)) {
+        const match = rest.match(/^(\w+)=("(?:\\.|[^"\\])*"|[^\s"\\[\]]+)(?:\s+|$)/);
+        if (!match) return { ok: false, reason: 'unsafe_echo_option' };
+        const [, name, rawValue] = match;
+        const value = rawValue.startsWith('"') ? rawValue.slice(1, -1) : rawValue;
+        if (seen.has(name)) return { ok: false, reason: 'unsafe_echo_option' };
+        seen.add(name);
+        const valid = name === 'title' ? value.length <= 200 && !/[\\<>]/.test(value)
+            : name === 'severity' ? /^(info|success|warning|error)$/.test(value)
+                : ['timeout', 'extendedTimeout'].includes(name) ? /^\d+$/.test(value) && Number(value) >= 100 && Number(value) <= 10000
+                    : name === 'preventDuplicates' && /^(true|false)$/.test(value);
+        if (!valid) return { ok: false, reason: 'unsafe_echo_option' };
+        rest = rest.slice(match[0].length);
+    }
+    return { ok: true };
 }
 
 function splitSlashPipeline(input) {
@@ -168,7 +217,7 @@ function splitSlashPipeline(input) {
         current += char;
     }
 
-    if (quote) {
+    if (quote || escaped) {
         return { ok: false, reason: 'malformed' };
     }
 
