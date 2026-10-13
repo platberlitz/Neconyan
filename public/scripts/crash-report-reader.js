@@ -59,7 +59,9 @@ export function openCrashReportReader({ browserReports = globalThis.NeconyanCras
     const render = () => {
         selected = reports[Number(select.value)] ?? null;
         textarea.value = selected ? redact(JSON.stringify(selected, null, 2)) : 'No saved browser crash reports.';
-        summary.textContent = selected ? redact([selected.summary, selected.error?.message].filter(Boolean).join('\n') || 'Saved crash report').slice(0, 400) : 'No saved browser crash reports.';
+        const parts = selected ? [selected.summary, selected.error?.message].filter(Boolean) : [];
+        const combined = parts.reduce((text, part) => !text ? part : text + (/[.!?]$/.test(text) ? ' ' : '. ') + part, '');
+        summary.textContent = selected ? redact(combined || 'Saved crash report').slice(0, 400) : 'No saved browser crash reports.';
         const sample = selected?.lastKnownActivity?.snapshot;
         const safe = sample && globalThis.NeconyanCrashDiagnostics?.validateActivity?.(sample);
         activity.textContent = safe ? `Last known activity: ${safe.mode}${safe.chat.messageCount !== null ? `, ${safe.chat.messageCount} messages` : ''}.`

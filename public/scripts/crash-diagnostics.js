@@ -403,6 +403,16 @@
         markSeen(id);
         return notice;
     });
+    function recoveryEnvironment() {
+        const memory = globalThis.performance?.memory;
+        return {
+            measuredAt: new Date().toISOString(), measured: 'on-recovery',
+            userAgent: typeof navigator?.userAgent === 'string' ? navigator.userAgent.slice(0, 200) : '',
+            viewport: typeof window !== 'undefined' && Number.isFinite(window.innerWidth) ? `${window.innerWidth}x${window.innerHeight}` : null,
+            deviceMemory: Number.isFinite(navigator?.deviceMemory) ? navigator.deviceMemory : null,
+            memory: memory ? { usedBytes: counter(memory.usedJSHeapSize, 1099511627776), totalBytes: counter(memory.totalJSHeapSize, 1099511627776), limitBytes: counter(memory.jsHeapSizeLimit, 1099511627776) } : null,
+        };
+    }
     function recoverPrevious() {
         const discarded = document.wasDiscarded === true;
         if (!discarded && (previousSession?.state !== 'running' || !safeId(previousSession.documentId))) return;
@@ -412,6 +422,8 @@
         const report = { schema: 1, id, runtime: 'browser', kind: discarded ? 'discarded-previous-page' : 'unclean-previous-page', at: new Date().toISOString(),
             error: { message: 'Your browser did not provide a definite cause. A missing normal-close event does not prove a crash.' } };
         report.summary = discarded ? 'Your browser discarded the previous page' : 'The previous page did not close cleanly';
+        // Device details measured when the page reopened, not at the failure; labelled as such.
+        report.environment = recoveryEnvironment();
         const heartbeatAt = counter(previousSession?.heartbeatAt, Number.MAX_SAFE_INTEGER);
         report.lastKnownActivity = { snapshot: previous, events: validateEvents(previousSession?.events), relationship: previous.at ? 'same-tab-previous-page' : 'unavailable',
             ageMs: previous.at && heartbeatAt >= previous.at ? heartbeatAt - previous.at : null };
@@ -430,7 +442,7 @@
         if (!report || seen.some(item => item.id === (report.noticeId || report.id))) return;
         const sample = report.lastKnownActivity?.snapshot;
         const labels = sample?.agents?.running?.map(item => item.label).join(' and ');
-        const timing = sample?.generation?.phase === 'pre-agents' ? 'before a reply' : sample?.generation?.phase === 'post-agents' ? 'after a reply' : sample?.generation?.phase === 'companions' ? 'as Companions' : 'during the last observed activity';
+        const timing = sample?.generation?.phase === 'pre-agents' ? 'before a reply' : sample?.generation?.phase === 'post-agents' ? 'after a reply' : sample?.generation?.phase === 'companions' ? 'during Companions' : 'during the last observed activity';
         const message = (report.error?.message || 'Your browser did not provide a definite cause.')
             + (sample?.chat?.messageCount != null ? ` Last known activity: ${sample.chat.messageCount} messages.` : '')
             + (labels ? ` Running ${labels} ${timing}.` : '')

@@ -251,6 +251,11 @@ test('same-tab recovery retains the old sample, while clean reload and other tab
     assert.equal(report.lastKnownActivity.snapshot.chat.messageCount, 58);
     assert.equal(report.lastKnownActivity.snapshot.agents.running[0].label, 'Proofreader');
     assert.match(report.error.message, /did not provide a definite cause/);
+    // Device details measured when the page reopened, bounded and labelled.
+    assert.equal(report.environment.measured, 'on-recovery');
+    assert.equal(report.environment.userAgent, 'test');
+    assert.equal(report.environment.deviceMemory, null);
+    assert.ok(JSON.stringify(report).length < 8192);
     const count = second.api.getReports().recoveries.length;
     second.listeners.get('pagehide')({ persisted: false });
     const third = browser(storage, false, session);
