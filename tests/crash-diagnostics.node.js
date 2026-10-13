@@ -122,14 +122,14 @@ test('retains ten private reports and ignores damaged files', t => {
     assert.equal(getCrashReports(directory).length, 9);
 });
 
-function browser(storage, broken = false, session = new Map()) {
+function browser(storage, broken = false, session = new Map(), options = {}) {
     const listeners = new Map();
     const add = (type, listener) => {
         const old = listeners.get(type);
         listeners.set(type, (...args) => { old?.(...args); listener(...args); });
     };
     const context = {
-        window: null, document: { addEventListener: add, getElementById() { return null; }, visibilityState: 'visible' },
+        window: null, document: { addEventListener: add, getElementById() { return null; }, visibilityState: 'visible', wasDiscarded: options.discarded === true },
         navigator: { userAgent: 'test', onLine: true }, performance: {},
         TextEncoder,
         localStorage: {
@@ -140,6 +140,7 @@ function browser(storage, broken = false, session = new Map()) {
         sessionStorage: { getItem: key => session.get(key), setItem: (key, value) => session.set(key, value) },
         addEventListener: add,
     };
+    if (options.clock) Object.assign(context, options.clock.globals);
     context.window = context;
     vm.runInNewContext(browserSource, context);
     return { api: context.NeconyanCrashDiagnostics, listeners, context };
@@ -266,5 +267,60 @@ test('BFCache suspends the marker and reactivates the same document without a re
     assert.equal(JSON.parse(storage.get(key)).state, 'suspended');
     first.listeners.get('pageshow')({ persisted: true });
     first.api.flushActivity('test');
+    assert.equal(JSON.parse(storage.get(key)).state, 'running');
+});
+
+test('legacy reports receive stable IDs and discard evidence works without a previous marker', () => {
+    const storage = new Map([['neconyan.crash-reports.v1', JSON.stringify([{ schema: 1, runtime: 'browser', kind: 'old', at: '2026-10-13', startedAt: 1, error: { message: 'Legacy error' } }])]]);
+    assert.equal(browser(storage).api.getReports().reports[0].id, browser(storage).api.getReports().reports[0].id);
+    const discarded = browser(new Map(), false, new Map(), { discarded: true }).api.getReports().reports[0];
+    assert.equal(discarded.kind, 'discarded-previous-page');
+    assert.equal(discarded.lastKnownActivity.snapshot.at, null);
+    assert.equal(discarded.lastKnownActivity.relationship, 'unavailable');
+});
+
+test('job observers deduplicate peers and main generation end cannot clear a running post Agent', () => {
+    const { api } = browser(new Map());
+    const a = {}, b = {}, state = { schema: 1, agents: { running: [{ label: 'Proofreader', phase: 'post', location: 'server' }] } };
+    api.observeJobActivity('job', a, state); api.observeJobActivity('job', b, state);
+    api.updateActivity({ generation: { phase: 'idle' } });
+    assert.equal(api.getActivity().snapshot.generation.phase, 'post-agents');
+    assert.equal(api.getActivity().snapshot.agents.running.length, 1);
+    api.observeJobActivity('job', a, null);
+    assert.equal(api.getActivity().snapshot.agents.running.length, 1);
+    api.observeJobActivity('job', b, null);
+    assert.equal(api.getActivity().snapshot.agents.running.length, 0);
+});
+
+test('normal writes coalesce at five seconds; visible heartbeat and hidden/BFCache suspension are bounded', () => {
+    let now = 10000, id = 0;
+    const timers = new Map(), storage = new Map(), session = new Map();
+    const clock = { globals: {
+        Date: class extends Date { constructor(...args) { super(...(args.length ? args : [now])); } static now() { return now; } },
+        setTimeout: (callback, delay) => { const handle = ++id; timers.set(handle, { at: now + delay, callback }); return handle; },
+        clearTimeout: handle => timers.delete(handle),
+    } };
+    const advance = duration => {
+        const end = now + duration;
+        for (;;) {
+            const next = Array.from(timers.entries()).filter(([, timer]) => timer.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+            if (!next) break;
+            now = next[1].at; timers.delete(next[0]); next[1].callback();
+        }
+        now = end;
+    };
+    const fixture = browser(storage, false, session, { clock });
+    const key = 'neconyan.crash-session.v1:' + session.get('neconyan.crash-tab.v1');
+    advance(0); assert.equal(JSON.parse(storage.get(key)).heartbeatAt, 10000);
+    for (let index = 0; index < 100; index++) fixture.api.noteActivity('generation-start');
+    advance(4999); assert.equal(JSON.parse(storage.get(key)).heartbeatAt, 10000);
+    advance(1); assert.equal(JSON.parse(storage.get(key)).heartbeatAt, 15000);
+    fixture.context.document.visibilityState = 'hidden'; fixture.listeners.get('visibilitychange')();
+    advance(60000); assert.equal(JSON.parse(storage.get(key)).heartbeatAt, 15000);
+    fixture.context.document.visibilityState = 'visible'; fixture.listeners.get('visibilitychange')(); advance(0);
+    advance(30000); assert.equal(JSON.parse(storage.get(key)).heartbeatAt, 105000);
+    fixture.listeners.get('pagehide')({ persisted: true }); advance(60000);
+    assert.equal(JSON.parse(storage.get(key)).state, 'suspended');
+    fixture.listeners.get('pageshow')({ persisted: true }); advance(0);
     assert.equal(JSON.parse(storage.get(key)).state, 'running');
 });
