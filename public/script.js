@@ -12767,8 +12767,8 @@ export async function getChat({ allowMissingPersisted = false, switchMenu = true
         eventSource.emit(event_types.CHAT_LOADED, { detail: { id: this_chid, character: characters[this_chid] } });
 
         // Focus on the textarea if not already focused on a visible text input
-        if (!exactChat) delay(debounce_timeout.short).then(() => {
-            if ($(document.activeElement).is('input:visible, textarea:visible')) {
+        if (!exactChat && power_user.auto_focus_chat_input !== false) delay(debounce_timeout.short).then(() => {
+            if (power_user.auto_focus_chat_input === false || $(document.activeElement).is('input:visible, textarea:visible')) {
                 return;
             }
             $('#send_textarea').trigger('click').trigger('focus');

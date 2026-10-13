@@ -21,7 +21,7 @@ const DRAWERS = [
 
 const CONTROL_IDS = [
     'send_on_enter', 'continue_on_send', 'quick_continue', 'quick_impersonate', 'restore_user_input',
-    'enable_auto_select_input', 'enable_md_hotkeys', 'smooth_streaming', 'smooth_streaming_no_think',
+    'auto_focus_chat_input', 'enable_auto_select_input', 'enable_md_hotkeys', 'smooth_streaming', 'smooth_streaming_no_think',
     'smooth_streaming_speed', 'stream_fade_in', 'streaming_fps', 'streaming_fps_counter', 'play_message_sound',
     'audio_message_sound', 'play_sound_unfocused', 'swipes-checkbox', 'gestures-checkbox', 'image_overswipe',
     'auto_scroll_chat_to_bottom', 'chat_truncation', 'chat_truncation_counter', 'show_group_chat_queue',
@@ -110,5 +110,25 @@ describe('Chat & Writing settings layout', () => {
             expect(path.basename(file, '.json')).toBe(preset.name);
             expect(Object.keys(preset.movingUIState).sort()).toEqual(['cfgConfig', 'floatingPrompt', 'logprobsViewer']);
         }
+    });
+
+    test('wires the auto_focus_chat_input toggle across power-user settings and chat-open entry points', () => {
+        const powerUserJs = read('public/scripts/power-user.js');
+        const scriptJs = read('public/script.js');
+        const welcomeJs = read('public/scripts/welcome-screen.js');
+        const tabsJs = read('public/scripts/neconyan-tabs.js');
+        const conversationChromeJs = read('public/scripts/neconyan-conversation/chrome.js');
+        const conversationPickersJs = read('public/scripts/neconyan-conversation/pickers.js');
+        const chatArchiveUiJs = read('public/scripts/extensions/neconyan-chats-archive/src/ui.js');
+
+        expect(powerUserJs).toContain('auto_focus_chat_input: true,');
+        expect(powerUserJs).toContain('$(\'#auto_focus_chat_input\').prop(\'checked\', power_user.auto_focus_chat_input !== false);');
+        expect(powerUserJs).toContain('power_user.auto_focus_chat_input = !!$(this).prop(\'checked\');');
+        expect(scriptJs).toContain('if (!exactChat && power_user.auto_focus_chat_input !== false)');
+        expect(welcomeJs).toContain('power_user?.auto_focus_chat_input === false');
+        expect(tabsJs).toContain('power_user?.auto_focus_chat_input !== false');
+        expect(conversationChromeJs).toContain('power_user?.auto_focus_chat_input !== false');
+        expect(conversationPickersJs).toContain('power_user?.auto_focus_chat_input !== false');
+        expect(chatArchiveUiJs).toContain('ctx.powerUserSettings?.auto_focus_chat_input !== false');
     });
 });

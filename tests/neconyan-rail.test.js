@@ -541,6 +541,13 @@ describe('Neconyan workspace rail behavior', () => {
             ['hide-home'],
             ['focus', runtime.textarea],
         ]);
+
+        const unfocusedRuntime = createWelcomeRuntime({ power_user: { auto_focus_chat_input: false } });
+        await unfocusedRuntime.context.activateNeconyanRailRoute('new-chat');
+        expect(unfocusedRuntime.actions).toEqual([
+            ['new-chat', { temporary: true }],
+            ['hide-home'],
+        ]);
     });
 
     test('Home delegates to the real shell Home route and waits for it', async () => {

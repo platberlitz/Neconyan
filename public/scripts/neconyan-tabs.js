@@ -914,7 +914,9 @@ async function activateNeconyanMode(mode) {
             }
             globalThis.NeconyanWelcome?.concealHome?.();
             globalThis.document?.body?.classList.remove('neconyan-home-visible');
-            document.getElementById('send_textarea')?.focus?.({ preventScroll: false });
+            if (typeof power_user === 'undefined' || power_user?.auto_focus_chat_input !== false) {
+                document.getElementById('send_textarea')?.focus?.({ preventScroll: false });
+            }
             queueNeconyanModeSync();
             return true;
         }
@@ -930,7 +932,9 @@ async function activateNeconyanMode(mode) {
 
         let activated = false;
         if (targetMode === 'roleplay') {
-            document.getElementById('send_textarea')?.focus?.({ preventScroll: false });
+            if (typeof power_user === 'undefined' || power_user?.auto_focus_chat_input !== false) {
+                document.getElementById('send_textarea')?.focus?.({ preventScroll: false });
+            }
             activated = true;
         } else if (targetMode === 'conversation') {
             const conversationModule = await import('./neconyan-conversation.js');

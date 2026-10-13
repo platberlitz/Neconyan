@@ -107,4 +107,16 @@ describe('Conversation workspace entry', () => {
         expect(context.conversationState.conversationWorkspaceOpen).toBe(false);
         expect(context.openConversationWorkspaceForAvatar('deleted.png')).toBe(false);
     });
+
+    test('skips auto-focusing the Conversation input when auto_focus_chat_input is disabled', () => {
+        const context = createWorkspaceContext([{ avatar: 'cat.png' }]);
+        context.power_user = { auto_focus_chat_input: false };
+
+        expect(context.openConversationWorkspaceForAvatar('cat.png', { showToast: false })).toBe(true);
+        expect(context.setTimeout).not.toHaveBeenCalled();
+
+        context.power_user.auto_focus_chat_input = true;
+        expect(context.openConversationWorkspaceForAvatar('cat.png', { showToast: false })).toBe(true);
+        expect(context.setTimeout).toHaveBeenCalledTimes(1);
+    });
 });
