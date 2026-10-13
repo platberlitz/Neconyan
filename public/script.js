@@ -313,7 +313,7 @@ import { initTextGenModels } from './scripts/textgen-models.js';
 import { appendFileContent, hasPendingFileAttachment, populateFileAttachment, decodeStyleTags, encodeStyleTags, isExternalMediaAllowed, preserveNeutralChat, restoreNeutralChat, formatCreatorNotes, initChatUtilities, addDOMPurifyHooks } from './scripts/chats.js';
 import { getPresetManager, initPresetManager } from './scripts/preset-manager.js';
 import { evaluateMacros, getLastMessageId, initMacros } from './scripts/macros.js';
-import { getCurrentUserHandle, setUserControls } from './scripts/user.js';
+import { getCurrentUserHandle, isAdmin, setUserControls } from './scripts/user.js';
 import { POPUP_RESULT, POPUP_TYPE, Popup, callGenericPopup, fixToastrForDialogs } from './scripts/popup.js';
 import { renderTemplate, renderTemplateAsync } from './scripts/templates.js';
 import { initScrapers } from './scripts/scrapers.js';
@@ -1239,7 +1239,7 @@ function scheduleDeferredStartupStylesheets() {
 async function firstLoadInit() {
     initialiseCrashActivity({ eventSource, event_types, getChat: () => chat,
         getExtensionCount: () => extensionNames.filter(name => !extension_settings.disabledExtensions.some(disabled => areExtensionIdsEqual(name, disabled))).length,
-        getRequestHeaders, refreshCsrfToken });
+        getRequestHeaders, refreshCsrfToken, isAdmin, getAccount: getCurrentUserHandle });
     setChatNavigationBlocked(true);
     const scheduleStartupLoaderCleanup = (reason) => {
         cleanupActionLoaderArtifacts({ removePreloader: true, reason });

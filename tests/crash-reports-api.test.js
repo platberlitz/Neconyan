@@ -38,3 +38,19 @@ test('returns retained reports without allowing HTTP caching', async () => {
     expect(response.headers.get('cache-control')).toBe('no-store');
     expect((await response.json()).reports[0].error.message).toBe('Retained server failure');
 });
+
+test('status is admin-only, bounded, stable and never cached', async () => {
+    const denied = await fetch(url + '/status', { method: 'POST' });
+    expect(denied.status).toBe(403);
+    expect(await denied.text()).not.toContain('Retained server failure');
+    const read = () => fetch(url + '/status', { method: 'POST', headers: { 'X-Test-Admin': 'true' } });
+    const first = await read();
+    expect(first.headers.get('cache-control')).toBe('no-store');
+    const text = await first.text();
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(2048);
+    const status = JSON.parse(text);
+    expect(status.latest.errorPreview).toBe('Retained server failure');
+    expect((await (await read()).json()).latest.id).toBe(status.latest.id);
+    expect(text).not.toContain('environment');
+    expect(text).not.toContain(directory);
+});
