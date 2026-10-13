@@ -58,6 +58,7 @@ public final class MainActivity extends Activity {
     private AlertDialog crashDialog;
     private TextView crashSummary, crashDetails;
     private boolean pendingSaved = true;
+    private CrashReport.Entry serverIncident;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -82,7 +83,7 @@ public final class MainActivity extends Activity {
         actions.setPadding(24, 0, 24, 24);
         actions.setVisibility(View.GONE);
         addAction("Try again", view -> {
-            if (web == null) { recreate(); return; }
+            if (web == null) { ActivityBreadcrumbs.state("recreating"); recreate(); return; }
             failed = false;
             autoRestarted = false;
             healthySince = 0;
@@ -94,7 +95,7 @@ public final class MainActivity extends Activity {
         addAction("Save a backup of my data", view -> offerBackup());
         addAction("Copy details for a bug report", view -> copyDetails());
         addAction("Saved crash reports", view -> showCrashReports());
-        addAction("Close Neconyan", view -> { stopService(new Intent(this, ServerService.class)); finish(); });
+        addAction("Close Neconyan", view -> { ActivityBreadcrumbs.state("closed"); stopService(new Intent(this, ServerService.class)); finish(); });
         root.addView(actions);
         web = new WebView(this);
         web.setBackgroundColor(Color.rgb(22, 23, 22));
@@ -299,10 +300,12 @@ public final class MainActivity extends Activity {
     }
 
     private void rendererGone(WebView view, RenderProcessGoneDetail detail) {
-        String explanation = detail.didCrash() ? "Android reports that the WebView renderer crashed."
-            : "Android terminated the WebView renderer. It did not report an exact cause; this alone does not prove low memory.";
+        String kind = detail.didCrash() ? "renderer-crash" : "renderer-closed";
+        String explanation = CrashReport.summary("page", kind, -1, "unknown");
         int priority = detail.rendererPriorityAtExit();
         boolean mainView = view == web;
+        String frozenActivity = ActivityBreadcrumbs.current();
+        if (mainView) diagnosticsBridge.invalidate();
         if (view.getParent() instanceof ViewGroup) ((ViewGroup) view.getParent()).removeView(view);
         view.destroy();
         if (mainView) {
@@ -311,8 +314,20 @@ public final class MainActivity extends Activity {
             status.setText("Neconyan's page stopped\n\n" + explanation + "\n\nCrash diagnostics are being saved. Tap Try again to reopen your workspace.");
             status.setVisibility(View.VISIBLE); actions.setVisibility(View.VISIBLE);
         }
-        new Thread(() -> CrashDiagnostics.record(this, "webview-renderer-gone", null,
-            explanation + " Renderer priority at exit: " + priority + ". Main view: " + mainView), "neconyan-renderer-report").start();
+        ActivityBreadcrumbs.WRITER.execute(() -> {
+            CrashDiagnostics.Result result = CrashDiagnostics.recordReport(this, "page", kind, null,
+                explanation + " Renderer priority at exit: " + priority + ". Main view: " + mainView + ". Renderer PID unavailable; page sample is not matched renderer memory.", "unknown", frozenActivity);
+            runOnUiThread(() -> {
+                if (!resumed || isFinishing() || isDestroyed()) { pendingReport = result.entry; pendingSaved = result.saved; return; }
+                if (mainView) {
+                    status.setText(reportSummary(result.entry, result.saved) + "\n\nTap Try again to reopen your workspace.");
+                    addAction("Copy report", button -> copyReport(result.entry));
+                    addAction("Share report", button -> shareReport(result.entry));
+                    addAction("Full details", button -> showCrashReport(result.entry, false, result.saved));
+                    acknowledgeReport(result.entry);
+                } else offerCrashReport(result.entry, result.saved);
+            });
+        });
     }
 
     @JavascriptInterface public void showCrashReports() {
@@ -432,15 +447,20 @@ public final class MainActivity extends Activity {
         return "Neconyan took more than five minutes to start" + (last == null ? "." : " (" + last.getMessage() + ").");
     }
     private boolean restartAfterStop(String reason) throws InterruptedException {
-        CrashDiagnostics.record(this, "server-recovery", null, "The local server stopped or failed to become ready. " + reason);
         CrashDiagnostics.collectExits(this);
+        int pid = readyMarker().optInt("pid", 0);
+        ApplicationExitInfo exit = lastServerExit(serverStartedAt);
+        if (exit != null) pid = exit.getPid();
+        CrashDiagnostics.Result report = CrashDiagnostics.serverRecovery(this, pid, serverStartedAt, exit == null ? System.currentTimeMillis() : exit.getTimestamp(), reason);
+        serverIncident = report.entry;
+        offerCrashReport(report.entry, report.saved);
         long up = healthySince == 0 ? 0 : System.currentTimeMillis() - healthySince;
         healthySince = 0;
         boolean safe;
         if (up >= HEALTHY_MS) {
             autoRestarted = false;
             safe = false;
-            show("Neconyan stopped. Starting it again…");
+            show("The local server stopped. Starting it again.\n\n" + reportSummary(report.entry, report.saved));
         } else if (!serverSafe && !autoRestarted) {
             autoRestarted = true;
             safe = true;
@@ -459,7 +479,7 @@ public final class MainActivity extends Activity {
         return true;
     }
     private void collectCrashDetails() {
-        CrashDiagnostics.collectExits(this);
+        CrashDiagnostics.collectExits(this, entry -> { if (serverIncident != null && entry.id.equals(serverIncident.id)) offerCrashReport(entry, true); });
         recordServerCrash();
     }
     // Keeps the newest crash record for the server process as readable text, so the details copied
@@ -504,10 +524,9 @@ public final class MainActivity extends Activity {
         if (!serverProcessRunning()) new File(getFilesDir(), "android-ready.json").delete();
     }
     private void show(String text) {
-        runOnUiThread(() -> { if (!failed) status.setText(text); });
+        runOnUiThread(() -> { if (!failed) status.setText(DiagnosticStore.redact(text)); });
     }
     private void showFailure(String reason) {
-        new Thread(() -> CrashDiagnostics.record(this, "workspace-unavailable", null, reason), "neconyan-failure-report").start();
         failed = true;
         String summary = failureSummary(reason);
         runOnUiThread(() -> {
@@ -520,9 +539,10 @@ public final class MainActivity extends Activity {
     private String failureSummary(String reason) {
         String cause;
         ApplicationExitInfo exit = lastServerExit(firstStartAt);
-        if ((exit != null && exit.getReason() == ApplicationExitInfo.REASON_LOW_MEMORY) || logMentionsMemory())
-            cause = "Your phone ran out of memory while Neconyan was loading your data.";
-        else if (reason != null && !reason.isEmpty()) cause = reason;
+        if (serverIncident != null) cause = serverIncident.summary + "\n" + serverIncident.error;
+        else if (exit != null && exit.getReason() == ApplicationExitInfo.REASON_LOW_MEMORY)
+            cause = "Android closed Neconyan's local server to free memory.";
+        else if (reason != null && !reason.isEmpty()) cause = DiagnosticStore.redact(reason);
         else if (exit != null) cause = "The local server stopped unexpectedly (" + exitReason(exit) + ").";
         else cause = "The local server stopped unexpectedly.";
         return "Neconyan could not start\n\n" + cause
@@ -551,13 +571,6 @@ public final class MainActivity extends Activity {
             default: return "reason " + info.getReason();
         }
     }
-    private boolean logMentionsMemory() {
-        for (String name : new String[] { "server.log", "server.previous.log" }) {
-            String log = tail(new File(getCacheDir(), name), 200);
-            if (log.contains("heap out of memory") || log.contains("Allocation failed") || log.contains("OutOfMemory")) return true;
-        }
-        return false;
-    }
     private static String tail(File file, int lines) {
         if (!file.isFile()) return "";
         try (RandomAccessFile input = new RandomAccessFile(file, "r")) {
@@ -570,33 +583,8 @@ public final class MainActivity extends Activity {
         } catch (IOException error) { return "Could not read " + file.getName() + ": " + error.getMessage(); }
     }
     private void copyDetails() {
-        StringBuilder text = new StringBuilder("Neconyan ");
-        try { text.append(getPackageManager().getPackageInfo(getPackageName(), 0).versionName); } catch (Exception ignored) { text.append("(unknown version)"); }
-        text.append(" on ").append(Build.MANUFACTURER).append(' ').append(Build.MODEL)
-            .append(", Android ").append(Build.VERSION.RELEASE).append(" (API ").append(Build.VERSION.SDK_INT).append(")\n");
-        android.content.pm.PackageInfo provider = WebView.getCurrentWebViewPackage();
-        text.append("WebView: ").append(provider == null ? "unavailable" : provider.packageName + " " + provider.versionName).append('\n');
-        ActivityManager.MemoryInfo memory = new ActivityManager.MemoryInfo();
-        getSystemService(ActivityManager.class).getMemoryInfo(memory);
-        text.append("Phone memory: ").append(memory.totalMem / (1024 * 1024)).append(" MB, server heap limit: ").append(ServerService.heapMegabytes(this))
-            .append(" MB, last start: ").append(serverSafe ? "safe mode" : "normal").append("\n\n").append(status.getText()).append("\n\nRecent server exits:\n");
-        try {
-            for (ApplicationExitInfo info : getSystemService(ActivityManager.class).getHistoricalProcessExitReasons(getPackageName(), 0, 10)) {
-                if (info.getProcessName() == null || !info.getProcessName().endsWith(":server")) continue;
-                text.append(new Date(info.getTimestamp())).append(": ").append(exitReason(info))
-                    .append(info.getDescription() == null ? "" : ", " + info.getDescription())
-                    .append(", memory ").append(info.getPss() / 1024).append(" MB\n");
-            }
-        } catch (Exception error) { text.append("Unavailable: ").append(error.getMessage()).append('\n'); }
-        text.append("\nNative runtime:\n").append(tail(new File(getCacheDir(), "native-startup.txt"), 4));
-        recordServerCrash();
-        text.append("\nCrash record:\n").append(tail(new File(getCacheDir(), "native-crash.txt"), 80));
-        text.append("\n\nRecent requests (this start):\n").append(tail(new File(getCacheDir(), "requests.txt"), 40))
-            .append("\n\nRecent requests (previous start):\n").append(tail(new File(getCacheDir(), "requests.previous.txt"), 40));
-        text.append("\n\nServer log (this start):\n").append(tail(new File(getCacheDir(), "server.log"), 40))
-            .append("\n\nServer log (previous start):\n").append(tail(new File(getCacheDir(), "server.previous.log"), 40));
-        getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("Neconyan details", text.toString()));
-        Toast.makeText(this, "Details copied. Paste them into your bug report.", Toast.LENGTH_LONG).show();
+        if (serverIncident != null) { copyReport(serverIncident); return; }
+        showCrashReports();
     }
     private void showSafeNotice() {
         if (!resumed || pendingReport != null || crashDialog != null && crashDialog.isShowing()) return;
@@ -811,7 +799,7 @@ public final class MainActivity extends Activity {
         if (web.canGoBack()) { web.goBack(); return; }
         new AlertDialog.Builder(this).setMessage("Keep Neconyan running in the background?")
             .setPositiveButton("Keep running", (dialog, which) -> moveTaskToBack(true))
-            .setNegativeButton("Stop and close", (dialog, which) -> { stopService(new Intent(this, ServerService.class)); finish(); }).show();
+            .setNegativeButton("Stop and close", (dialog, which) -> { ActivityBreadcrumbs.state("closed"); stopService(new Intent(this, ServerService.class)); finish(); }).show();
     }
     @Override public void onDestroy() {
         main.removeCallbacksAndMessages(null);
