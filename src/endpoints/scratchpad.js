@@ -20,7 +20,7 @@ import {
     updateSession,
     withScratchpad,
 } from '../scratchpad/store.js';
-import { SCRATCHPAD_JOB_TYPE, acceptScratchpadReply } from '../scratchpad/jobs.js';
+import { SCRATCHPAD_JOB_TYPE, acceptScratchpadReply, normaliseCapabilities } from '../scratchpad/jobs.js';
 import { readScratchpadPreview, subscribeScratchpadPreview } from '../scratchpad/preview.js';
 import { buildScratchpadSystemPrompt } from '../scratchpad/prompt.js';
 import { readInstructionsLocked, updateInstructionsLocked } from '../scratchpad/instructions.js';
@@ -145,15 +145,17 @@ router.post('/prompt', (request, response) => {
     try {
         const base = scratchpadAccountBase(request);
         const body = request.body ?? {};
+        const source = body.source || body.sessionId ? normaliseSource(body.source) : null;
         const profiles = withScratchpad(base, lease => {
             const library = readAssistantsLocked(lease);
-            const session = body.sessionId ? findSession(readBucketLocked(lease, normaliseSource(body.source)), requireId(body.sessionId, 'session')) : null;
+            const session = body.sessionId ? findSession(readBucketLocked(lease, source), requireId(body.sessionId, 'session')) : null;
             const ids = [body.assistant, ...(Array.isArray(body.participants) ? body.participants.slice(0, 3) : [])];
             return Object.fromEntries(ids.map(id => [id, resolveAssistant(library, id, session?.settings.assistants)]));
         });
         response.json(buildScratchpadSystemPrompt({ assistant: body.assistant, gender: body.gender,
             persona: profiles[body.assistant], assistantNames: Object.fromEntries(Object.entries(profiles).map(([id, profile]) => [id, profile?.name])),
-            userName: body.names?.user, characterName: body.names?.character, capabilities: body.capabilities ?? {},
+            sourceKind: source?.kind, userName: body.names?.user, characterName: body.names?.character,
+            capabilities: { ...normaliseCapabilities(body.capabilities, source?.kind, source ?? {}), notebook: body.capabilities?.notebook === true },
             participants: Array.isArray(body.participants) ? body.participants.slice(0, 3) : [], randomReply: body.randomReply === true }));
     } catch (error) {
         sendError(response, error);

@@ -1308,7 +1308,7 @@ const NN_UNIVERSAL_SEARCH_PAGE_LIMIT = 3;
 const NN_SEARCH_PAGES = Object.freeze([
     { route: 'home', label: 'Home', description: 'Recent chats, characters and quick starts.', keywords: ['start', 'dashboard', 'welcome'] },
     { route: 'notes', label: 'Notebooks', description: 'Your notes, folders, properties and linked pages.', keywords: ['notes', 'notebook', 'markdown', 'writing', 'knowledge base'] },
-    { route: 'scratchpad', label: 'Scratchpad', description: 'Temporary writing sessions with model help.', keywords: ['scratch pad', 'drafts', 'sessions', 'writing'] },
+    { route: 'scratchpad', label: 'Scratchpad', description: 'Discuss ideas with an assistant, with or without a chat.', keywords: ['scratch pad', 'drafts', 'sessions', 'writing'] },
     { route: 'new-chat', label: 'New chat', description: 'Start a fresh chat.', keywords: ['temporary chat', 'start chat'] },
     { route: 'characters', label: 'Characters', description: 'Browse, create and import characters.', keywords: ['bots', 'character cards', 'groups'], covers: ['characters::characters::characters'] },
     { route: 'model', label: 'Connections', description: 'Choose the service, API key and model that write the replies.', keywords: ['api', 'api key', 'provider', 'model', 'backend', 'connect', 'proxy', 'endpoint', 'connection profiles'] },

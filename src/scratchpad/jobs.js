@@ -36,6 +36,7 @@ import { characterToolReply, scratchpadCharacterTools, scratchpadToolsFor } from
 import { clearScratchpadPreview, publishScratchpadPreview } from './preview.js';
 import { scratchpadMacroEnvironment } from './macros.js';
 import { notebookContextLocked, withNotebookPreparation, captureReplyNotebookProposalsLocked, notifyScratchpadNotebookResult } from './notebooks.js';
+import { sameSourceContext } from '../../public/scripts/scratchpad/source.js';
 
 export const SCRATCHPAD_JOB_TYPE = 'scratchpad.reply';
 const MAX_CONTEXT_BYTES = 1536 * 1024;
@@ -58,12 +59,14 @@ function boundedText(value, max, label, { required = false } = {}) {
     return value;
 }
 
-function normaliseCapabilities(input) {
+export function normaliseCapabilities(input, sourceKind = 'roleplay', source = {}) {
     const value = input && typeof input === 'object' ? input : {};
     const members = Array.isArray(value.members)
         ? value.members.filter(name => typeof name === 'string' && name.trim()).map(name => name.trim().slice(0, 200)).slice(0, 2000)
         : [];
-    return { lore: value.lore === true, character: value.character === true, chat: value.chat === true, members };
+    const general = sourceKind === 'general';
+    return { lore: !general && value.lore === true, character: value.character === true && (!general || Boolean(source.avatar)),
+        chat: !general && value.chat === true, members: general ? [] : members };
 }
 
 function normaliseNames(input) {
@@ -90,7 +93,7 @@ export function normaliseReplyRequest(body = {}) {
         text,
         context: boundedText(body.context, MAX_CONTEXT_BYTES, 'The shared context'),
         help: boundedText(body.help, MAX_HELP_BYTES, 'The help reference'),
-        capabilities: normaliseCapabilities(body.capabilities),
+        capabilities: normaliseCapabilities(body.capabilities, source.kind, source),
         names: normaliseNames(body.names),
         chatProfileId: source.kind === 'conversation' ? boundedText(body.chatProfileId, 256, 'The chat connection profile').trim() : '',
         genders: Object.fromEntries(ASSISTANT_IDS.filter(id => Object.hasOwn(body.genders ?? {}, id)).map(id => [id, normaliseGender(body.genders[id])])),
@@ -133,10 +136,9 @@ export function planReply(session, request, chooseIndex = randomInt) {
         throw fail('SCRATCHPAD_REGENERATE_INVALID', 'Only replies to the latest message can be regenerated.', 409);
     }
     const reply = messages[replyIndex];
-    if (request.source?.scope && (!reply.contextSource || reply.contextSource.kind !== request.source.kind
-        || !(request.source.key === reply.contextSource.key || request.source.legacyKey === reply.contextSource.key
-            || request.source.key === reply.contextSource.legacyKey))) {
-        throw fail('SCRATCHPAD_REGENERATE_INVALID', 'Open the original chat before trying this reply again.', 409);
+    if ((request.source?.scope || request.source?.kind === 'general') && !sameSourceContext(request.source, reply.contextSource)) {
+        throw fail('SCRATCHPAD_REGENERATE_INVALID', request.source.kind === 'general'
+            ? 'Return to the original Scratchpad context before trying this reply again.' : 'Open the original chat before trying this reply again.', 409);
     }
     return { prompt: messages[userIndex].text, history: historyFrom(messages.slice(0, userIndex)), replace: reply.id, assistants: [reply.assistant || session.assistant] };
 }
@@ -193,7 +195,7 @@ export async function acceptScratchpadReply(request, body = {}) {
         const selection = profileId ? { kind: 'profile', profileId } : { kind: 'active' };
         const binding = captureGenerationBinding(directories, selection, body.acknowledgement);
         const system = buildScratchpadSystemPrompt({ ...speaker, assistantNames: planned.assistantNames, userName: input.names.user, participants: planned.participants, randomReply: planned.randomReply,
-            characterName: input.names.character, capabilities: { ...input.capabilities, notebook: Boolean(planned.notebook.text) }, help: input.help });
+            characterName: input.names.character, sourceKind: input.source.kind, capabilities: { ...input.capabilities, notebook: Boolean(planned.notebook.text) }, help: input.help });
         const messages = buildScratchpadMessages({ system: system.text, context: input.context, notebookContext: planned.notebook.text, history: planned.history, text: planned.prompt, assistant: speaker.assistant, assistantNames: planned.assistantNames });
         const rawOptions = binding.kind === 'active' ? { trimNames: false } : {};
         const preparedMessages = !binding.backend || binding.backend === 'chat';
@@ -238,9 +240,10 @@ export async function acceptScratchpadReply(request, body = {}) {
                 throw fail('SCRATCHPAD_NOTES_CHANGED', 'The shared notes or their permissions changed while sending. Check the preview and try again.', 409);
             }
             const created = new Date().toISOString();
-            const contextSource = { kind: input.source.kind, key: input.source.key, label: input.source.label, ...(input.source.legacyKey ? { legacyKey: input.source.legacyKey } : {}) };
+            const contextSource = Object.fromEntries(Object.entries(input.source).filter(([key]) => key !== 'scope'));
+            const shared = input.source.kind === 'general' && input.capabilities.character ? { sharedAvatar: input.source.avatar } : {};
             if (!input.regenerate) session.messages.push({ id: newScratchpadId(), role: 'user', text: input.text, created, contextSource });
-            const pending = replies.map(reply => ({ id: reply.replyId, role: 'assistant', text: '', created, contextSource, state: 'pending', jobId: job.id, assistant: reply.assistant, assistantName: reply.characterName, gender: reply.gender }));
+            const pending = replies.map(reply => ({ id: reply.replyId, role: 'assistant', text: '', created, contextSource, ...shared, state: 'pending', jobId: job.id, assistant: reply.assistant, assistantName: reply.characterName, gender: reply.gender }));
             if (planned.replace) session.messages.splice(session.messages.findIndex(message => message.id === planned.replace), 1, ...pending);
             else session.messages.push(...pending);
             session.updated = created;

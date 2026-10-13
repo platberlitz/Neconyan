@@ -28,6 +28,9 @@ for (const phone of [false, true]) {
                 const body = await response.json();
                 if (typeof body.settings !== 'string') return route.fulfill({ response, json: body });
                 const data = JSON.parse(body.settings);
+                // This UI-only test must not open the unrelated legacy image-settings import dialog on reload.
+                data.extension_settings ||= {};
+                data.extension_settings.disabledExtensions = [...new Set([...(data.extension_settings.disabledExtensions || []), 'quick-image-gen'])];
                 data.accountStorage = { ...data.accountStorage, [key]: stored };
                 await route.fulfill({ response, json: { ...body, settings: JSON.stringify(data) } });
             });
@@ -69,7 +72,8 @@ for (const phone of [false, true]) {
             await expect(bar).toHaveAttribute('aria-expanded', 'false');
             await expect(page.locator('#scratchpad-overview')).toBeHidden();
             await expect(bar).toBeFocused();
-            await expect(bar).toContainText('No chat open');
+            await expect(bar).toContainText('New session with Miso');
+            await expect(bar).toContainText('No chat messages shared');
             const barBox = await bar.boundingBox();
             expect(barBox.height).toBeGreaterThanOrEqual(phone ? 44 : 32);
             expect(barBox.height).toBeLessThanOrEqual(phone ? 52 : 48);
