@@ -125,6 +125,7 @@ test('a queued cancellation is projected and does not leave its proposal permane
 test('saved prompt review sees fully processed settings and no provider runs before approval', async t => {
     const a = account(t, { qig: { reviewBeforeGenerate: true }, change: { negative: 'EXTRA-NEGATIVE' } });
     const accepted = await a.accept();
+    assert.equal(accepted.bucket.sessions[0].messages[0].images[0].review, true);
     await a.run(accepted);
     let job = getJob(a.directories, accepted.job.id);
     assert.equal(job.stage, 'approval');
@@ -133,6 +134,7 @@ test('saved prompt review sees fully processed settings and no provider runs bef
     assert.match(approval.proposal.prompt, /GLOBAL-STYLE.*QUALITY.*An observatory/);
     assert.match(approval.proposal.negative, /BASE-NEGATIVE.*EXTRA-NEGATIVE/);
     decideJobApproval({ ...a.base, job }, { ...approval, decision: 'allow' });
+    assert.equal(store.projectPending(a.read(), id => getJob(a.directories, id)).sessions[0].messages[0].images[0].review, false);
     await a.run(accepted);
     assert.equal(a.calls.length, 1);
     assert.equal(a.image().state, 'done');

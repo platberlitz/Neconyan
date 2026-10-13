@@ -761,7 +761,11 @@ export function projectPendingImages(bucket, readJob) {
     for (const session of bucket.sessions) for (const message of session.messages) for (const image of Object.values(message.images ?? {})) {
         if (image.url) continue;
         const job = image.jobId && readJob(image.jobId);
-        if (job && ['queued', 'running', 'waiting'].includes(job.state)) { image.state = 'pending'; continue; }
+        if (job && ['queued', 'running', 'waiting'].includes(job.state)) {
+            image.state = 'pending';
+            if (image.review && job.stage === 'approved') image.review = false;
+            continue;
+        }
         if (image.state !== 'pending') continue;
         if (!job || ['completed', 'cancelled', 'failed', 'interrupted', 'conflict'].includes(job.state)) {
             image.state = job?.state === 'cancelled' ? 'cancelled' : 'failed';
