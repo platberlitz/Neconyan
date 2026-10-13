@@ -251,6 +251,18 @@ request, token, port, origin = connect()
 try:
     assert json.loads(private('cat', 'files/android-ready.json')).get('safe') is True, 'The restart after an early stop was not in safe mode'
     deadline = time.monotonic() + 60
+    labels = set()
+    while time.monotonic() < deadline:
+        labels = window_labels()
+        if 'Crash report' in labels:
+            break
+        time.sleep(1)
+    assert 'Crash report' in labels, 'The crashed server did not show its saved report'
+    assert {'copy report', 'share report'}.issubset({label.casefold() for label in labels}), labels
+    assert any('Component: server\n' in label for label in labels), 'The report did not identify the crashed server'
+    print('The crashed server shows an individual report with Copy and Share actions.', flush=True)
+    adb('shell', 'input', 'keyevent', '4')
+    deadline = time.monotonic() + 60
     while time.monotonic() < deadline and 'Neconyan is in safe mode' not in window_labels():
         time.sleep(1)
     assert 'Neconyan is in safe mode' in window_labels(), 'The safe-mode notice did not appear'

@@ -68,6 +68,12 @@ final class CrashReport {
             + "\nActivity timestamp ms: " + activityAt + "\nLast activity: " + line(activity, 450) + "\nMemory sample: " + line(memory, 450);
         return parse(id + ".txt", header + "\n\nDetails:\n" + DiagnosticStore.redact(details));
     }
+    static boolean isRoutineIsolatedExit(int reason, int status, String description) {
+        // Android records unused WebView processes as REASON_OTHER (13), not USER_REQUESTED.
+        if (reason != 13 || status != 0 || description == null) return false;
+        String detail = description.trim();
+        return detail.equalsIgnoreCase("isolated not needed") || detail.equalsIgnoreCase("[ISOLATED NOT NEEDED] isolated not needed");
+    }
     static boolean shouldOffer(Entry entry, String seenBoundary, Set<String> incidents) {
         return entry != null && entry.id.compareTo(seenBoundary == null ? "" : seenBoundary) > 0 && !incidents.contains(entry.incident);
     }

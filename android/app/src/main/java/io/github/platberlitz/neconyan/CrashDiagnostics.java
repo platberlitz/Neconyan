@@ -203,6 +203,7 @@ final class CrashDiagnostics {
             DiagnosticStore store = store(context);
             for (ApplicationExitInfo info : context.getSystemService(ActivityManager.class).getHistoricalProcessExitReasons(context.getPackageName(), 0, 20)) {
                 int reason = info.getReason();
+                if (CrashReport.isRoutineIsolatedExit(reason, info.getStatus(), info.getDescription())) continue;
                 if (expectedStop(context, info)) continue;
                 if (reason == ApplicationExitInfo.REASON_USER_REQUESTED || reason == ApplicationExitInfo.REASON_USER_STOPPED
                     || reason == 16 /* REASON_PACKAGE_UPDATED is absent from the API 30 constants; the value is inlined */ || reason == ApplicationExitInfo.REASON_PERMISSION_CHANGE
