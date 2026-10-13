@@ -22,6 +22,8 @@ const { publishRoleplayPreview, subscribeRoleplayPreview } = await import('../sr
 const { registerHandler, setDirectoriesResolver, abortJob, testExports: runner } = await import('../src/jobs/runner.js');
 const { writeArtifact } = await import('../src/jobs/artifacts.js');
 const { pcmWave } = await import('../src/jobs/audio-artifacts.js');
+const { notifyJobsChanged } = await import('../src/jobs/notifications.js');
+const { beginDiagnosticAgent, endDiagnosticAgent } = await import('../src/diagnostic-activity.js');
 
 process.on('exit', () => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -335,4 +337,76 @@ test('an account with a damaged ledger gets an actionable error while healthy ac
     assert.match(body.error, /recovery|repair|trust/i);
     const healthy = await request('GET', '/api/jobs/list', { account: 'alice' });
     assert.equal(healthy.status, 200, 'the healthy account is unaffected by the damaged one');
+});
+
+test('a diagnostic-only change writes one diagnostics frame and never job content', async () => {
+    const controller = new AbortController();
+    const response = await fetch(url + '/api/jobs/events', {
+        headers: { 'X-Account': 'alice', 'X-Neconyan-Account': 'alice' }, signal: controller.signal,
+    });
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    try {
+        assert.equal(decoder.decode((await reader.read()).value), 'data: {}\n\n');
+        // Regex steps skip the throttled hint, so this frame is exactly the one we trigger.
+        const handle = beginDiagnosticAgent({ owner: 'alice', job: { id: 'hint-root', intent: {} } },
+            { id: 'builtin', sourceTemplateId: 'tpl-proofreader', phase: 'regex' });
+        try {
+            notifyJobsChanged({ owner: 'alice', id: 'hint-root', diagnosticOnly: true });
+            let frame = '';
+            while (!frame.includes('diagnostics')) frame += decoder.decode((await reader.read()).value);
+            assert.match(frame, /^data: /);
+            const parsed = JSON.parse(frame.slice(6));
+            assert.equal(parsed.diagnostics.id, 'hint-root');
+            assert.equal(parsed.diagnostics.activity.agents.running[0].label, 'Proofreader');
+            assert.equal(JSON.stringify(parsed).includes('private'), false);
+            // A normal change still coalesces into an empty job-content frame.
+            notifyJobsChanged({ owner: 'alice', id: 'hint-root' });
+            let normal = '';
+            while (!normal.includes('data: {}')) normal += decoder.decode((await reader.read()).value);
+        } finally { endDiagnosticAgent(handle); }
+    } finally { controller.abort(); reader.releaseLock(); }
+});
+
+test('a diagnostic-only change does not make the live preview re-read the job', async () => {
+    const base = { owner: 'alice', directories: aliceDirs };
+    const { job } = acceptJob(aliceDirs, { owner: 'alice', type: 'media.roleplay-workflow', submissionKey: 'preview-diagnostic-only',
+        intent: { media: roleplayAccountStamp(base), request: {} } });
+    const stateFile = path.join(roleplayStoreDirectory(base), 'state.json');
+    const original = fs.readFileSync(stateFile);
+    const request = Object.assign(new EventEmitter(), {
+        user: { profile: { handle: 'alice' }, directories: aliceDirs }, params: { id: job.id }, get: () => 'alice',
+    });
+    const writes = [];
+    const response = Object.assign(new EventEmitter(), {
+        set: () => response, flushHeaders() {}, write: value => writes.push(value), end() { this.writableEnded = true; },
+    });
+    const timers = new Set();
+    const setInterval = globalThis.setInterval;
+    const clearInterval = globalThis.clearInterval;
+    globalThis.setInterval = callback => { timers.add(callback); return callback; };
+    globalThis.clearInterval = timer => { if (!timers.delete(timer)) clearInterval(timer); };
+    try {
+        jobsRouter.stack.find(layer => layer.route?.path === '/:id/preview').route.stack[0].handle(request, response);
+        const [tick] = timers;
+        // Damaged account bytes would end this stream on any real re-read, so a kept
+        // keepalive proves the diagnostic-only change never set the preview's changed flag.
+        fs.writeFileSync(stateFile, '{}');
+        notifyJobsChanged({ owner: 'alice', id: job.id, diagnosticOnly: true });
+        const before = writes.length;
+        tick();
+        assert.equal(response.writableEnded, undefined);
+        assert.deepEqual(writes.slice(before), [': keepalive\n\n']);
+        fs.writeFileSync(stateFile, original);
+        setJobState(aliceDirs, job.id, 'completed');
+        notifyJobsChanged({ owner: 'alice', id: job.id });
+        tick();
+        assert.equal(response.writableEnded, true);
+        assert.match(writes.join(''), /"state":"completed"/);
+    } finally {
+        fs.writeFileSync(stateFile, original);
+        response.emit('close');
+        globalThis.setInterval = setInterval;
+        globalThis.clearInterval = clearInterval;
+    }
 });
