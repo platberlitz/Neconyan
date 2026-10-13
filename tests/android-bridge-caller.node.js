@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
@@ -8,7 +9,7 @@ const java = new URL('../android/app/src/main/java/io/github/platberlitz/neconya
 const read = name => readFileSync(new URL(name, java), 'utf8');
 
 test('actual Java capability refuses missing/wrong/stale tokens and rotates cryptographic secrets', () => {
-    const directory = mkdtempSync('/tmp/opencode/android-bridge-gate-');
+    const directory = mkdtempSync(path.join(os.tmpdir(), 'android-bridge-gate-'));
     try {
         const harness = path.join(directory, 'BridgeGateTest.java');
         writeFileSync(harness, `package io.github.platberlitz.neconyan;
