@@ -219,9 +219,9 @@
                         <span class="ica--settings-group-icon"><i class="fa-solid fa-shuffle" aria-hidden="true"></i></span>
                         <div><h4 id="ica--execution-group-title">Execution rhythm</h4><p>Running together is faster. Taking turns is easier on rate limits.</p></div>
                     </div>
-                    <label class="ica--profile-label"><span>After-reply agents</span><select id="ica--appendAgentsExecutionMode" class="text_pole" title="Run all after-reply agents together, then combine their rewrites, or run them one at a time in Order."><option value="parallel">Run together</option><option value="sequential">Run one at a time</option></select></label>
+                    <label class="ica--profile-label"><span>After-reply agents</span><select id="ica--appendAgentsExecutionMode" class="text_pole" title="Choose how automatic after-reply agents run. Manually applied after-reply agents always run one at a time."><option value="parallel">Run together</option><option value="sequential">Run one at a time</option></select></label>
                     <label class="ica--profile-label"><span>Companion agents</span><select id="ica--companionExecutionMode" class="text_pole" title="Run companion agents in parallel or sequentially."><option value="parallel">Run together</option><option value="sequential">Run one at a time</option></select></label>
-                    <small class="ica--profile-help">Together sends every after-reply agent the original reply. Different rewrites use one extra combining request on the last rewrite agent's connection. One at a time follows Order.</small>
+                    <small class="ica--profile-help">For automatic runs, Together sends every after-reply agent the original reply. Different rewrites use one extra combining request on the last rewrite agent's connection. One at a time follows Order. Manually applied after-reply agents always queue in the order you start them, each using the previous result.</small>
                     <label class="checkbox_label" title="Run companion agents at the same time as after-reply agents instead of after them."><input type="checkbox" id="ica--companionConcurrent" /><span>Run companions at the same time as after-reply agents</span></label>
                 </section>
 
