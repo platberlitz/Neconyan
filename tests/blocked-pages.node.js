@@ -236,7 +236,7 @@ test('B6(a) a browser page load gets the HTTPS page in the language of Accept-La
     assert.equal($('title').text(), pick('Connection not secure'));
     assert.equal($('h1').text(), pick('Connection not secure'));
     assert.equal(collapse($('p').text()), pick(HTTPS_SENTENCE));
-    for (const english of [await load403('fr-CH'), await load403(undefined)]) {
+    for (const english of [await load403('nb-NO'), await load403(undefined)]) {
         assert.equal(english.status, 403);
         const page = load(english.body.toString('utf8'));
         assert.equal(page('html').attr('lang'), 'en');
@@ -383,6 +383,41 @@ test('B8 when no copy of a page can be read the answer is a plain 403', async t 
     }
     const reports = error.mock.calls.map(call => String(call.arguments[0])).filter(line => line.startsWith('No copy of the error page'));
     assert.equal(reports.length, 2, 'one line for each page, however many requests');
+});
+
+test('C8-B9 the whitelist, host and HTTPS pages choose their language from Accept-Language as browsers send it', async t => {
+    resetErrors();
+    const { default: getWhitelistMiddleware } = await import('../src/middleware/whitelist.js');
+    const { default: hostWhitelistMiddleware } = await import('../src/middleware/hostWhitelist.js');
+    const { default: requireHttpsMiddleware } = await import('../src/middleware/requireHttps.js');
+    const { translationFor } = await import('../public/scripts/page-locale.js');
+    t.mock.method(console, 'warn', () => {});
+    const pages = [
+        ['whitelist page', await serve(t, await getWhitelistMiddleware()), {}, 'Forbidden'],
+        ['host page', await serve(t, hostWhitelistMiddleware), { host: 'blocked.test' }, 'Forbidden'],
+        ['HTTPS page', await serve(t, requireHttpsMiddleware), { host: 'neconyan.test' }, 'Connection not secure'],
+    ];
+    const rows = [
+        // The measured header of Chromium and Edge with plain German at the top of the Languages settings.
+        ['de,en-US;q=0.9,en;q=0.8', 'de-de'],
+        ['it', 'it-it'],
+        ['pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7', 'pt-pt'],
+        ['fr-CH', 'fr-fr'],
+        ['en-US,en;q=0.9,de;q=0.8', 'en'],
+        ['nb-NO,nb;q=0.9,en;q=0.8', 'en'],
+    ];
+    for (const [name, server, extraHeaders, key] of pages) {
+        for (const [acceptLanguage, locale] of rows) {
+            const response = await send(server, { headers: { 'accept': CHROMIUM_ACCEPT, 'accept-language': acceptLanguage, ...extraHeaders } });
+            const message = `${name} with Accept-Language ${acceptLanguage}`;
+            assert.equal(response.status, 403, message);
+            const $ = load(response.body.toString('utf8'));
+            assert.equal($('html').attr('lang'), locale, message);
+            assert.equal(response.headers['content-language'], locale, message);
+            const expectedTitle = locale === 'en' ? key : translationFor(realDictionary(locale), key) ?? key;
+            assert.equal($('title').text(), expectedTitle, message);
+        }
+    }
 });
 
 /* global globalThis */

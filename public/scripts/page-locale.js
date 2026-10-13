@@ -4,6 +4,9 @@
  * level, so Node can import the pure functions (src/page-translations.js does) and the browser loader can use
  * them without loading i18n.js, which pulls in the whole app.
  *
+ * The language rule here is also used by the app (public/scripts/i18n.js), so the app, these pages and the server
+ * pages choose a language the same way.
+ *
  * Text is translated by exact key lookup only, the way the app's translate() and data-i18n do. It never uses the
  * run-time pattern localiser.
  */
@@ -19,9 +22,56 @@ function isEnglish(locale) {
     return locale === 'en' || locale.startsWith('en-');
 }
 
+const PRIMARY_PATTERN = /^[a-z]{2,3}$/;
+const SCRIPT_PATTERN = /^[a-z]{4}$/;
+const REGION_PATTERN = /^(?:[a-z]{2}|\d{3})$/;
+
+function partsOf(locale) {
+    const [primary, ...rest] = locale.split('-');
+    return {
+        primary,
+        script: rest.find(part => SCRIPT_PATTERN.test(part)) ?? null,
+        region: rest.find(part => REGION_PATTERN.test(part)) ?? null,
+    };
+}
+
+/**
+ * How a tag picks among the dictionaries of a language that has more than one (lower-case parts in, a code out).
+ * Every language with one dictionary needs no entry. tests/language-choice.node.js fails when lang.json gains a
+ * second dictionary for a language not listed here, so that choice is made on purpose.
+ * Chinese: an explicit script wins over the region (Hant gives Traditional zh-tw, Hans gives Simplified zh-cn, so
+ * zh-Hans-TW is Simplified and zh-Hant-CN Traditional); the region decides only when there is no script (tw, hk and mo
+ * are Traditional); bare zh, with no script and no region, gives Simplified (zh-cn) by default.
+ */
+export const VARIANT_RULES = Object.freeze({
+    zh: ({ script, region }) => {
+        if (script === 'hant') return 'zh-tw';
+        if (script === 'hans') return 'zh-cn';
+        return ['tw', 'hk', 'mo'].includes(region) ? 'zh-tw' : 'zh-cn';
+    },
+});
+
+/**
+ * Finds the dictionary of a tag's language when the tag itself is not a supported code: 'de' and 'de-at' give
+ * 'de-de'. Never a different language. A language with several dictionaries is decided by VARIANT_RULES.
+ * @param {string} locale Lower-case language tag
+ * @param {string[]} supportedCodes Language codes of public/locales/lang.json
+ * @returns {string|null} A supported code, or null
+ */
+export function matchLanguage(locale, supportedCodes) {
+    const parts = partsOf(locale);
+    if (!PRIMARY_PATTERN.test(parts.primary)) return null;
+    const sameLanguage = supportedCodes.filter(code => code.split('-')[0] === parts.primary);
+    if (sameLanguage.length === 0) return null;
+    if (sameLanguage.length === 1) return sameLanguage[0];
+    const chosen = VARIANT_RULES[parts.primary]?.(parts);
+    return sameLanguage.includes(chosen) ? chosen : null;
+}
+
 /**
  * Picks the language to use from a list of wanted languages, in order.
- * Candidates are lower-cased and matched as whole tags against the supported codes, like the app does.
+ * For each tag, lower-cased: a supported code wins; an English tag stops the search with English; otherwise a tag
+ * of a supported language uses that language's dictionary (matchLanguage). Tags with no dictionary are skipped.
  * @param {string[]} candidates Wanted language tags, most wanted first
  * @param {string[]} supportedCodes Language codes of public/locales/lang.json
  * @returns {string} A supported code, or 'en'
@@ -32,8 +82,33 @@ export function pickLocale(candidates, supportedCodes) {
         if (!locale || locale === '*') continue;
         if (supportedCodes.includes(locale)) return locale;
         if (isEnglish(locale)) return 'en';
+        const match = matchLanguage(locale, supportedCodes);
+        if (match) return match;
     }
     return 'en';
+}
+
+/**
+ * The choice saved by the app's language picker, matched as a whole tag as the app always has: a supported code is
+ * used, anything else (English, an old or unknown value) means English. Never mapped to another code.
+ * @param {string} stored Stored value
+ * @param {string[]} supportedCodes Language codes of public/locales/lang.json
+ * @returns {string} A supported code, or 'en'
+ */
+export function pickStoredLocale(stored, supportedCodes) {
+    const locale = String(stored).toLowerCase();
+    return supportedCodes.includes(locale) ? locale : 'en';
+}
+
+/**
+ * Chooses a browser's language: the stored choice alone when there is one, else the browser's languages in order.
+ * @param {string|null} stored Stored value (null or '' when nothing is stored)
+ * @param {string[]} languages Browser languages, most wanted first
+ * @param {string[]} supportedCodes Language codes of public/locales/lang.json
+ * @returns {string} A supported code, or 'en'
+ */
+export function chooseBrowserLocale(stored, languages, supportedCodes) {
+    return stored ? pickStoredLocale(stored, supportedCodes) : pickLocale(languages, supportedCodes);
 }
 
 function plainObject(value) {
@@ -88,17 +163,33 @@ export function templateKeys(source) {
 }
 
 /**
- * Gets the language wanted by this browser: the choice saved by the app, else the browser language.
+ * Gets the choice saved by the app's language picker, or null when nothing is saved or storage cannot be read.
+ * @returns {string|null} Stored value
+ */
+export function storedLanguage() {
+    try {
+        return localStorage.getItem(STORAGE_KEY);
+    } catch {
+        // Storage can be blocked (private modes); the browser languages are used then.
+        return null;
+    }
+}
+
+/**
+ * Gets the browser's languages, most wanted first: navigator.languages, else navigator.language as one entry.
+ * @returns {string[]} Language tags as the browser reports them
+ */
+export function browserLanguages() {
+    const listed = Array.from(navigator.languages ?? []).filter(language => typeof language === 'string' && language);
+    return listed.length ? listed : [navigator.language || navigator.userLanguage || 'en'];
+}
+
+/**
+ * Gets the language this browser asks for first: the stored choice, else the first browser language (unchanged).
  * @returns {string} Lower-case language tag
  */
 export function requestedLocale() {
-    let stored = null;
-    try {
-        stored = localStorage.getItem(STORAGE_KEY);
-    } catch {
-        // Storage can be blocked (private modes); the browser language is used then.
-    }
-    return String(stored || navigator.language || navigator.userLanguage || 'en').toLowerCase();
+    return String(storedLanguage() || navigator.language || navigator.userLanguage || 'en').toLowerCase();
 }
 
 async function readJson(url, failures) {
@@ -113,7 +204,8 @@ async function readJson(url, failures) {
 }
 
 /**
- * Loads the dictionary for this browser's language: the same two files the app reads.
+ * Loads the dictionary for this browser's language: the same two files the app reads. The language is the stored
+ * choice, else the browser's languages in order, by the shared rule above.
  * English needs no file. Any failure leaves English and logs one warning.
  * @returns {Promise<{locale: string, dictionary: Record<string, string>}>} Language used and its dictionary
  */
@@ -127,7 +219,7 @@ export async function loadPageDictionary() {
         if (!response.ok) throw new Error(`lang.json answered ${response.status}`);
         const languages = await response.json();
         const codes = languages.map(language => language.lang);
-        const locale = pickLocale([requested], codes);
+        const locale = chooseBrowserLocale(storedLanguage(), browserLanguages(), codes);
         if (locale === 'en') return english;
         const [base, supplement] = await Promise.all([
             readJson(`/locales/${locale}.json`, failures),

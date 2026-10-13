@@ -77,7 +77,8 @@ export function getSupportedLocales({ localesRoot = defaultLocalesRoot() } = {})
 }
 
 /**
- * Chooses the language for a request: the first tag of Accept-Language that matches a supported language as a whole tag.
+ * Chooses the language for a request: Accept-Language in quality order, by the shared rule of
+ * public/scripts/page-locale.js (pickLocale).
  * @param {{ headers?: Record<string, string|string[]|undefined> }} request Request
  * @param {{ localesRoot?: string }} [options] Where the dictionaries are
  * @returns {string} A supported code, or 'en'

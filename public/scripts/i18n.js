@@ -1,10 +1,12 @@
+import { browserLanguages, chooseBrowserLocale } from './page-locale.js';
 import { registerDebugFunction } from './power-user.js';
 import { updateSecretDisplay } from './secrets.js';
 import { localizeControls } from './ui-localization.js';
 
 const storageKey = 'language';
 const overrideLanguage = getStoredLanguage();
-const localeFile = String(overrideLanguage || navigator.language || navigator.userLanguage || 'en').toLowerCase();
+// The requested language until initLocales has read lang.json; then the language chosen there (page-locale.js).
+let localeFile = String(overrideLanguage || navigator.language || navigator.userLanguage || 'en').toLowerCase();
 var langs;
 // Don't change to let/const! It will break module loading.
 var localeData;
@@ -330,6 +332,9 @@ function addLanguagesToDropdown() {
 
 export async function initLocales() {
     langs = await fetch('/locales/lang.json').then(response => response.json());
+    // A bare or regional browser language uses its language's dictionary; when English is shown the requested tag stays.
+    const chosenLocale = chooseBrowserLocale(overrideLanguage, browserLanguages(), langs.map(language => language.lang));
+    if (chosenLocale !== 'en') localeFile = chosenLocale;
     localeData = await getLocaleData(localeFile);
     hasLocaleData = Object.keys(localeData).length > 0;
     document.documentElement.lang = localeFile;

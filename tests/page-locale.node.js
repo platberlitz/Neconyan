@@ -52,13 +52,13 @@ const LOGIN_MESSAGES = [
 ];
 
 test('P1 pickLocale follows the browser and server rows of the language table', () => {
-    // Browser rows: one candidate (the stored choice, else the browser language), whole tag, lower-cased.
+    // Single tags and lists by the shared rule; the stored rule and the full table are in tests/language-choice.node.js.
     assert.equal(pickLocale(['de-DE'], codes), 'de-de');
     assert.equal(pickLocale(['it-it'], codes), 'it-it');
     assert.equal(pickLocale(['en'], codes), 'en');
     assert.equal(pickLocale(['xx-yy'], codes), 'en');
-    assert.equal(pickLocale(['de'], codes), 'en');
-    assert.equal(pickLocale(['pt-BR'], codes), 'en');
+    assert.equal(pickLocale(['de'], codes), 'de-de');
+    assert.equal(pickLocale(['pt-BR'], codes), 'pt-pt');
     assert.equal(pickLocale(['en-GB'], codes), 'en');
     assert.equal(pickLocale(['*'], codes), 'en');
     assert.equal(pickLocale([''], codes), 'en');
@@ -70,7 +70,7 @@ test('P1 pickLocale follows the browser and server rows of the language table', 
     assert.equal(pickLocale(['it-IT'], codes), 'it-it');
     assert.equal(pickLocale(['DE-de'], codes), 'de-de');
     assert.equal(pickLocale(['zh-TW'], codes), 'zh-tw');
-    assert.equal(pickLocale(['zh-Hant-TW'], codes), 'en');
+    assert.equal(pickLocale(['zh-Hant-TW'], codes), 'zh-tw');
     assert.equal(pickLocale(['*', 'it-IT'], codes), 'it-it');
     assert.equal(pickLocale(['xx', 'pt-PT'], codes), 'pt-pt');
 });

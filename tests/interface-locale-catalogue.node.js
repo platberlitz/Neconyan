@@ -121,9 +121,9 @@ test('the catalogue can be written and listed without a translator, and one lang
         const before = Object.fromEntries(readdirSync(supplements).map(name => [name, readFileSync(join(supplements, name), 'utf8')]));
         const translated = spawnSync(process.execPath, [script], { cwd: scratch, encoding: 'utf8', env: { ...env, NECONYAN_TRANSLATION_LANGS: 'pt-pt' } });
         assert.equal(translated.status, 0, translated.stderr);
-        assert.deepEqual(calls(), ['Português (Portuguese brazil)'], `expected exactly one translator call, for Portuguese\n${translated.stdout}${translated.stderr}`);
+        assert.deepEqual(calls(), ['Português (Brasil)'], `expected exactly one translator call, for Portuguese\n${translated.stdout}${translated.stderr}`);
         const after = readSupplement('pt-pt');
-        for (const key of missing) assert.equal(after[key], `${catalogue[key]} [Português (Portuguese brazil)]`, `untranslated: ${key}`);
+        for (const key of missing) assert.equal(after[key], `${catalogue[key]} [Português (Brasil)]`, `untranslated: ${key}`);
         assert.equal(Object.keys(after).length, Object.keys(catalogue).length);
         for (const name of Object.keys(before)) {
             if (name === 'pt-pt.json') continue;

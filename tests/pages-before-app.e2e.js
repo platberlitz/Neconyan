@@ -1,9 +1,9 @@
-/* global window, document */
-import { expect, test } from '@playwright/test';
+/* global window, document, navigator */
+import { chromium, expect, test } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { once } from 'node:events';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import { createServer } from 'node:net';
 import os from 'node:os';
@@ -14,7 +14,8 @@ import YAML from 'yaml';
 import { mergePageDictionary, translationFor } from '../public/scripts/page-locale.js';
 
 // The pages that load before the app, against real, owned, disposable servers (the pattern of notebooks-obsidian.e2e.js):
-// S1 accounts mode, S2 basic-auth mode, S3 the blocked pages, and a display pass in five languages at two sizes.
+// S1 accounts mode, S2 basic-auth mode, S3 the blocked pages, and a display pass in five languages at two sizes
+// (Arabic also as a bare ar tag).
 // Expectations are computed from the real dictionaries as translationFor(merged, key) ?? key, so they hold before and after
 // the translation stage adds values. Run with NECONYAN_CONVERSATION_TEST_DISPOSABLE=1 and --workers=1.
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -32,6 +33,7 @@ const LANGUAGES = [
     { name: 'pt', code: 'pt-pt', locale: 'pt-PT' },
     { name: 'it', code: 'it-it', locale: 'it-IT' },
     { name: 'ar', code: 'ar-sa', locale: 'ar-SA' },
+    { name: 'ar-bare', code: 'ar-sa', locale: 'ar' },
 ];
 const VIEWPORTS = [
     { name: 'phone', options: { viewport: { width: 393, height: 852 }, hasTouch: true } },
@@ -308,6 +310,60 @@ async function visit(browser, url, { locale = 'en-US', javaScriptEnabled = true,
     return { context, page, response, requests };
 }
 
+// ---- C8: ordinary browser language settings ---------------------------------------------------------------------------
+
+// openProfile(languages, { channel, contextOptions }): a fresh profile whose language list is what the browser's
+// Languages settings page writes, opened with no language flag. Returns { context, page, close }.
+async function openProfile(languages, { channel = 'chromium', contextOptions = {} } = {}) {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'neconyan-c8-profile-'));
+    mkdirSync(path.join(dir, 'Default'));
+    const list = languages.join(',');
+    writeFileSync(path.join(dir, 'Default', 'Preferences'), JSON.stringify({ intl: { accept_languages: list, selected_languages: list } }));
+    // Playwright's test runner gives every context the locale en-US unless the option is present and undefined, which
+    // would hide the profile's languages; no locale value and no language flag is set.
+    const context = await chromium.launchPersistentContext(dir, { channel, headless: true, serviceWorkers: 'block', locale: undefined, ...contextOptions });
+    const page = context.pages()[0] ?? await context.newPage();
+    const close = async () => {
+        await context.close();
+        // The profile stays locked for a moment after close (seen by the plan check and the amendment).
+        rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
+    };
+    return { context, page, close };
+}
+
+// The channels each profile case runs on: Chromium always; Edge when installed, otherwise a printed note.
+async function profileChannels() {
+    try {
+        const edge = await chromium.launch({ channel: 'msedge', headless: true });
+        await edge.close();
+        return ['chromium', 'msedge'];
+    } catch (error) {
+        if (!/Chromium distribution 'msedge' is (not found|not supported)/.test(String(error.message))) throw error;
+        console.log(`C8: Edge is not installed here; profile cases run on Chromium only (${String(error.message).split('\n')[0]})`);
+        return ['chromium'];
+    }
+}
+
+// What Chromium 148 and Edge 155 send for a profile list (measured, c8 plan section 4.1): list -> Accept-Language of the
+// document request. navigator.languages is the list itself.
+const MEASURED_HEADERS = new Map([
+    ['de,en-US,en', 'de,en-US;q=0.9,en;q=0.8'],
+    ['it,en-US,en', 'it,en-US;q=0.9,en;q=0.8'],
+    ['ar,en-US,en', 'ar,en-US;q=0.9,en;q=0.8'],
+    ['nb,de-DE,en-US', 'nb,de-DE;q=0.9,de;q=0.8,en-US;q=0.7,en;q=0.6'],
+    ['en-GB,de-DE', 'en-GB,en;q=0.9,de-DE;q=0.8,de;q=0.7'],
+]);
+const PLAIN_GERMAN = { languages: ['de', 'en-US', 'en'], header: MEASURED_HEADERS.get('de,en-US,en') };
+
+/** Asserts that a profile browser reports the measured language list and sends the measured header; prints the header. */
+async function expectMeasuredBrowser(page, response, languages, channel) {
+    const header = MEASURED_HEADERS.get(languages.join(','));
+    expect(header, `no measured header for ${languages.join(',')}`).toBeDefined();
+    expect(await page.evaluate(() => [...navigator.languages]), `${channel}: navigator.languages`).toEqual(languages);
+    expect((await response.request().allHeaders())['accept-language'], `${channel}: Accept-Language`).toBe(header);
+    console.log(`C8 ${channel}: navigator.languages ${JSON.stringify(languages)}, Accept-Language ${header}`);
+}
+
 // ---- S1: accounts mode ----------------------------------------------------------------------------------------------
 
 test.describe('S1 accounts mode', () => {
@@ -364,7 +420,7 @@ test.describe('S1 accounts mode', () => {
         await context.close();
     });
 
-    test('S1 a fresh browser: de-DE shows German, fr-CH shows English, an account named Cancel stays Cancel', async ({ browser }) => {
+    test('S1 a fresh browser: de-DE shows German, nb-NO shows English, an account named Cancel stays Cancel', async ({ browser }) => {
         expect(expected('de-de', 'Meowlcome back')).not.toBe('Meowlcome back');
         const german = await browser.newContext({ serviceWorkers: 'block', locale: 'de-DE' });
         const germanPage = await german.newPage();
@@ -376,15 +432,34 @@ test.describe('S1 accounts mode', () => {
         await expect(germanPage.locator('#cancelRecovery')).toHaveText(expected('de-de', 'Cancel'));
         await german.close();
 
-        const swiss = await browser.newContext({ serviceWorkers: 'block', locale: 'fr-CH' });
-        const swissPage = await swiss.newPage();
+        const norwegian = await browser.newContext({ serviceWorkers: 'block', locale: 'nb-NO' });
+        const norwegianPage = await norwegian.newPage();
         const dictionaryRequests = [];
-        swissPage.on('request', request => { if (new URL(request.url()).pathname.startsWith('/locales/')) dictionaryRequests.push(new URL(request.url()).pathname); });
-        await swissPage.goto(app.url + '/login');
-        await expect(swissPage.locator('#userList .userSelect')).toHaveCount(2, { timeout: 20000 });
-        await expect.poll(() => loginMismatches(swissPage, 'en'), { timeout: 20000 }).toEqual([]);
+        norwegianPage.on('request', request => { if (new URL(request.url()).pathname.startsWith('/locales/')) dictionaryRequests.push(new URL(request.url()).pathname); });
+        await norwegianPage.goto(app.url + '/login');
+        await expect(norwegianPage.locator('#userList .userSelect')).toHaveCount(2, { timeout: 20000 });
+        await expect.poll(() => loginMismatches(norwegianPage, 'en'), { timeout: 20000 }).toEqual([]);
         expect(dictionaryRequests.every(route => route === '/locales/lang.json')).toBe(true);
-        await swiss.close();
+        await norwegian.close();
+    });
+
+    test('C8-S1o the sign-in page follows ordinary browser settings: a bare de and a profile with plain German at the top', async ({ browser }) => {
+        const bare = await browser.newContext({ serviceWorkers: 'block', locale: 'de' });
+        const barePage = await bare.newPage();
+        await barePage.goto(app.url + '/login');
+        await expect(barePage.locator('#userList .userSelect')).toHaveCount(2, { timeout: 20000 });
+        await expect.poll(() => loginMismatches(barePage, 'de-de'), { timeout: 20000 }).toEqual([]);
+        await expect(barePage.locator('html')).toHaveAttribute('lang', 'de-de');
+        await bare.close();
+
+        for (const channel of await profileChannels()) {
+            const { page, close } = await openProfile(PLAIN_GERMAN.languages, { channel });
+            const response = await page.goto(app.url + '/login');
+            await expectMeasuredBrowser(page, response, PLAIN_GERMAN.languages, channel);
+            await expect(page.locator('#userList .userSelect')).toHaveCount(2, { timeout: 20000 });
+            await expect.poll(() => loginMismatches(page, 'de-de'), { timeout: 20000, message: `${channel}: the sign-in page is German` }).toEqual([]);
+            await close();
+        }
     });
 
     test('display: 404 and session-expired pages in five languages at two sizes', async ({ browser }) => {
@@ -533,7 +608,7 @@ test.describe('S2 basic-auth mode', () => {
 
 /** One blocked page loaded with JavaScript on and off, in the given languages: status, language, title, text, one request. */
 async function expectBlockedPage(browser, url, { status = 403, titleKey, texts, headers }) {
-    for (const [locale, code] of [['de-DE', 'de-de'], ['fr-CH', 'en']]) {
+    for (const [locale, code] of [['de-DE', 'de-de'], ['de', 'de-de'], ['nb-NO', 'en']]) {
         for (const javaScriptEnabled of [true, false]) {
             const { context, page, response, requests } = await visit(browser, url, { locale, javaScriptEnabled, headers });
             const label = `${url} ${locale} JavaScript ${javaScriptEnabled ? 'on' : 'off'}`;
@@ -666,5 +741,232 @@ test.describe('S3 HTTPS-required page', () => {
 
     test('display: the HTTPS page in five languages at two sizes', async ({ browser }) => {
         await displayBlockedPage(browser, 'https-required', app.pageUrl + '/', { titleKey: KEYS.httpsTitle });
+    });
+});
+
+// ---- S4: the app chooses its language from ordinary browser settings ---------------------------------------------------
+
+/** Opens the app in a fresh context (a locale) or profile (a language list), hides the update notice, waits for the app. */
+async function openApp(browser, app, { locale = 'en-US', stored, profileLanguages, channel, viewport = VIEWPORTS[1] } = {}) {
+    let context;
+    let page;
+    let close;
+    if (profileLanguages) {
+        ({ context, page, close } = await openProfile(profileLanguages, { channel, contextOptions: viewport.options }));
+    } else {
+        context = await browser.newContext({ serviceWorkers: 'block', locale, ...viewport.options });
+        close = () => context.close();
+    }
+    // A stored choice is seeded once per tab, so a reload after the picker removed it does not bring it back.
+    if (stored !== undefined) {
+        await context.addInitScript(value => {
+            try {
+                if (!window.sessionStorage.getItem('c8-seeded')) {
+                    window.localStorage.setItem('language', value);
+                    window.sessionStorage.setItem('c8-seeded', '1');
+                }
+            } catch { /* storage blocked */ }
+        }, stored);
+    }
+    await context.addInitScript(() => {
+        const add = () => {
+            const style = document.createElement('style');
+            style.textContent = '#nn-update-toast{display:none !important}';
+            document.documentElement.append(style);
+        };
+        if (document.documentElement) add(); else document.addEventListener('DOMContentLoaded', add, { once: true });
+    });
+    page ??= await context.newPage();
+    page.setDefaultTimeout(30000);
+    const requests = [];
+    const errors = [];
+    page.on('request', request => requests.push(new URL(request.url()).pathname));
+    page.on('pageerror', error => errors.push(String(error.message).slice(0, 200)));
+    const response = await page.goto(app.url + '/', { waitUntil: 'load' });
+    await waitForApp(page);
+    return { context, page, close, requests, errors, response };
+}
+
+/** Waits for the app the way the T1 harness does: the context exists, then APP_READY; the first-run tour is skipped. */
+async function waitForApp(page) {
+    await page.waitForFunction(() => Boolean(window.SillyTavern?.getContext), null, { timeout: 90000 });
+    await page.evaluate(() => new Promise(resolve => {
+        const context = window.SillyTavern.getContext();
+        if (!document.getElementById('preloader')) return resolve();
+        context.eventSource.once(context.eventTypes.APP_READY, resolve);
+        setTimeout(resolve, 60000);
+    }));
+    await page.evaluate(() => document.querySelector('[data-tour-coach-skip]')?.click());
+}
+
+const languageState = page => page.evaluate(() => ({ locale: window.SillyTavern.getContext().getCurrentLocale(), lang: document.documentElement.lang }));
+const storedChoice = page => page.evaluate(() => window.localStorage.getItem('language'));
+/** The dictionary files a page asked for: everything under /locales/ except the language list. */
+const dictionaryFiles = requests => requests.filter(route => route.startsWith('/locales/') && route !== '/locales/lang.json');
+
+/**
+ * Opens Settings (the rail button; at phone width it is collapsed, so the same click handler is used through the DOM,
+ * as the T1 harness does) and measures that the language label is displayed: visible and inside the viewport.
+ * Returns the label's text.
+ */
+async function languageLabel(page) {
+    try {
+        await page.locator('[data-neconyan-route="settings"]').first().click({ timeout: 3000 });
+    } catch {
+        await page.evaluate(() => document.querySelector('[data-neconyan-route="settings"]')?.click());
+    }
+    const label = page.locator('label[for="ui_language_select"]');
+    await expect(label).toBeVisible({ timeout: 20000 });
+    await label.scrollIntoViewIfNeeded();
+    const inside = await label.evaluate(element => {
+        const box = element.getBoundingClientRect();
+        return box.width > 0 && box.height > 0 && box.left >= 0 && box.top >= 0 && box.right <= window.innerWidth && box.bottom <= window.innerHeight;
+    });
+    expect(inside, 'the language label is displayed inside the viewport').toBe(true);
+    return squash(await label.innerText());
+}
+
+/** Picks a language in the Settings picker (the page reloads) and waits for the app again. */
+async function chooseInPicker(page, value) {
+    await Promise.all([page.waitForEvent('load', { timeout: 60000 }), page.locator('#ui_language_select').selectOption(value)]);
+    await waitForApp(page);
+}
+
+test.describe('S4 the app chooses its language from ordinary browser settings', () => {
+    test.describe.configure({ mode: 'serial' });
+    let app;
+    test.beforeAll(async () => {
+        test.setTimeout(300000);
+        app = await startApp();
+    });
+    test.afterAll(async () => { await app?.stop(); });
+
+    test('C8-S4-1 a bare de shows German, and the Portuguese entry of the picker is Português (Brasil)', async ({ browser }) => {
+        expect(expected('de-de', 'UI Language')).not.toBe('UI Language');
+        const { page, close, errors } = await openApp(browser, app, { locale: 'de' });
+        expect(await languageState(page)).toEqual({ locale: 'de-de', lang: 'de-de' });
+        expect(await languageLabel(page)).toBe(squash(expected('de-de', 'UI Language')));
+        // Found in the page: the options of a closed list are not displayed.
+        expect(squash(await page.locator('#ui_language_select option[value="pt-pt"]').textContent())).toBe('Português (Brasil)');
+        expect(errors).toEqual([]);
+        await close();
+    });
+
+    test('C8-S4-2 a browser with plain German at the top of its Languages settings shows German', async ({ browser }) => {
+        for (const channel of await profileChannels()) {
+            const { page, close, response } = await openApp(browser, app, { profileLanguages: PLAIN_GERMAN.languages, channel });
+            await expectMeasuredBrowser(page, response, PLAIN_GERMAN.languages, channel);
+            expect(await languageState(page), channel).toEqual({ locale: 'de-de', lang: 'de-de' });
+            expect(await languageLabel(page), channel).toBe(squash(expected('de-de', 'UI Language')));
+            await close();
+        }
+    });
+
+    test('C8-S4-3 a browser with plain Italian at the top of its Languages settings shows Italian', async ({ browser }) => {
+        const italian = ['it', 'en-US', 'en'];
+        for (const channel of await profileChannels()) {
+            const { page, close, response } = await openApp(browser, app, { profileLanguages: italian, channel });
+            await expectMeasuredBrowser(page, response, italian, channel);
+            expect(await languageState(page), channel).toEqual({ locale: 'it-it', lang: 'it-it' });
+            expect(await languageLabel(page), channel).toBe(squash(expected('it-it', 'UI Language')));
+            await close();
+        }
+    });
+
+    test('C8-S4-4 Brazilian Portuguese, Austrian German and Hong Kong Chinese use their language\'s dictionary', async ({ browser }) => {
+        for (const [locale, code] of [['pt-BR', 'pt-pt'], ['de-AT', 'de-de'], ['zh-HK', 'zh-tw']]) {
+            const { page, close } = await openApp(browser, app, { locale });
+            expect(await languageState(page), locale).toEqual({ locale: code, lang: code });
+            expect(await languageLabel(page), locale).toBe(squash(expected(code, 'UI Language')));
+            await close();
+        }
+    });
+
+    test('C8-S4-5 a stored choice still wins: it-it, en and an unknown value', async ({ browser }) => {
+        const italian = await openApp(browser, app, { locale: 'de', stored: 'it-it' });
+        expect(await languageState(italian.page)).toEqual({ locale: 'it-it', lang: 'it-it' });
+        expect(await languageLabel(italian.page)).toBe(squash(expected('it-it', 'UI Language')));
+        await italian.close();
+
+        const english = await openApp(browser, app, { locale: 'de', stored: 'en' });
+        expect(await languageState(english.page)).toEqual({ locale: 'en', lang: 'en' });
+        expect(await languageLabel(english.page)).toBe('Language:');
+        expect(english.requests.filter(route => route.includes('de-de')), 'no German dictionary file requested').toEqual([]);
+        await english.close();
+
+        const unknown = await openApp(browser, app, { locale: 'de', stored: 'xx-yy' });
+        expect(await languageState(unknown.page)).toEqual({ locale: 'xx-yy', lang: 'xx-yy' });
+        expect(await languageLabel(unknown.page)).toBe('Language:');
+        await unknown.close();
+    });
+
+    test('C8-S4-6 English and unsupported browser languages keep English and the requested tag', async ({ browser }) => {
+        for (const [locale, tag] of [['en-GB', 'en-gb'], ['nb-NO', 'nb-no']]) {
+            const { page, close, requests } = await openApp(browser, app, { locale });
+            expect(await languageState(page), locale).toEqual({ locale: tag, lang: tag });
+            expect(await languageLabel(page), locale).toBe('Language:');
+            expect(dictionaryFiles(requests), `${locale}: no dictionary file requested`).toEqual([]);
+            await close();
+        }
+        const list = ['en-GB', 'de-DE'];
+        for (const channel of await profileChannels()) {
+            const { page, close, requests, response } = await openApp(browser, app, { profileLanguages: list, channel });
+            await expectMeasuredBrowser(page, response, list, channel);
+            expect(await languageState(page), channel).toEqual({ locale: 'en-gb', lang: 'en-gb' });
+            expect(await languageLabel(page), channel).toBe('Language:');
+            expect(dictionaryFiles(requests), `${channel}: no dictionary file requested`).toEqual([]);
+            await close();
+        }
+    });
+
+    test('C8-S4-7 a supported language later in the list is used when no English comes before it', async ({ browser }) => {
+        const list = ['nb', 'de-DE', 'en-US'];
+        for (const channel of await profileChannels()) {
+            const { page, close, response } = await openApp(browser, app, { profileLanguages: list, channel });
+            await expectMeasuredBrowser(page, response, list, channel);
+            expect(await languageState(page), channel).toEqual({ locale: 'de-de', lang: 'de-de' });
+            expect(await languageLabel(page), channel).toBe(squash(expected('de-de', 'UI Language')));
+            await close();
+        }
+    });
+
+    test('C8-S4-8 choosing Default in Settings removes the stored choice, and the browser decides again', async ({ browser }) => {
+        const { page, close } = await openApp(browser, app, { locale: 'de', stored: 'it-it' });
+        expect(await languageState(page)).toEqual({ locale: 'it-it', lang: 'it-it' });
+        expect(await languageLabel(page)).toBe(squash(expected('it-it', 'UI Language')));
+        await chooseInPicker(page, '');
+        expect(await storedChoice(page)).toBeNull();
+        expect(await languageState(page)).toEqual({ locale: 'de-de', lang: 'de-de' });
+        expect(await languageLabel(page)).toBe(squash(expected('de-de', 'UI Language')));
+        await close();
+    });
+
+    test('C8-S4-9 choosing Italiano, then English, in Settings is written and wins over the browser', async ({ browser }) => {
+        // The starting language is not asserted here (C8-S4-1 does that): only what the picker writes and what follows it.
+        const { page, close, requests } = await openApp(browser, app, { locale: 'de' });
+        await languageLabel(page);
+        await chooseInPicker(page, 'it-it');
+        expect(await storedChoice(page)).toBe('it-it');
+        expect(await languageState(page)).toEqual({ locale: 'it-it', lang: 'it-it' });
+        expect(await languageLabel(page)).toBe(squash(expected('it-it', 'UI Language')));
+        const before = requests.length;
+        await chooseInPicker(page, 'en');
+        expect(await storedChoice(page)).toBe('en');
+        expect(await languageState(page)).toEqual({ locale: 'en', lang: 'en' });
+        expect(await languageLabel(page)).toBe('Language:');
+        expect(dictionaryFiles(requests.slice(before)), 'after the English choice no dictionary file is requested').toEqual([]);
+        await close();
+    });
+
+    test('C8-A6 a bare ar shows the Arabic dictionary in the app, at phone and desktop width, and the Settings panel is saved for review', async ({ browser }) => {
+        const arabic = LANGUAGES.find(language => language.name === 'ar-bare');
+        expect(expected('ar-sa', 'UI Language')).not.toBe('UI Language');
+        for (const viewport of VIEWPORTS) {
+            const { page, close } = await openApp(browser, app, { locale: arabic.locale, viewport });
+            expect(await languageState(page), viewport.name).toEqual({ locale: 'ar-sa', lang: 'ar-sa' });
+            expect(await languageLabel(page), viewport.name).toBe(squash(expected('ar-sa', 'UI Language')));
+            await shoot(page, 'settings', arabic, viewport);
+            await close();
+        }
     });
 });
