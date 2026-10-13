@@ -16,7 +16,7 @@ If the server cannot start, its terminal prints the report's location. Reports a
 - **Browser:** unhandled exceptions and rejected promises, script and stylesheet load failures, source locations, nested causes, browser and app versions, viewport, connection and visibility state, recent lifecycle events, and memory figures when the browser exposes them. Capture starts before the main application scripts and works with the debugger disabled.
 - **Android:** uncaught Java exceptions, server startup failures, WebView renderer loss, and Android's historical process exits for the app and local server. System records include the reason, signal or exit code, process importance, memory figures and any available native crash or not-responding trace. Recovery reports label device measurements taken after the exit.
 
-The newest five browser reports and ten reports in each server or Android store are retained. Each report is size-limited so repeated failures cannot fill storage. Reports survive normal restarts and updates; clearing site storage, deleting app data or uninstalling removes the corresponding local reports.
+The newest five browser reports and ten reports in each server or Android store are retained. Each report is size-limited so repeated failures cannot fill storage. A browser error that keeps repeating from the same place is counted on one report, with its repeat count and last time, instead of pushing older reports out. When the server fails, the first error is saved and any further errors during its shutdown are printed to the terminal only. Reports survive normal restarts and updates; clearing site storage, deleting app data or uninstalling removes the corresponding local reports.
 
 ## Limits and private information
 

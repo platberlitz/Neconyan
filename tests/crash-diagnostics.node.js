@@ -78,6 +78,40 @@ test('a fatal error still prints diagnostic details when its report cannot be sa
     assert.doesNotMatch(result.stderr, /private-value/);
 });
 
+function runModule(script) {
+    return spawnSync(process.execPath, ['--input-type=module', '-e', `import {initialiseCrashDiagnostics,installCrashHandlers,setCrashContext} from ${JSON.stringify(moduleUrl)}; ${script}`], { encoding: 'utf8' });
+}
+
+test('errors during a fatal shutdown are printed without replacing the original report', t => {
+    const root = temporary(t);
+    const result = runModule(`initialiseCrashDiagnostics(${JSON.stringify(root)}); installCrashHandlers();
+        setCrashContext({ shutdown: () => new Promise(() => setTimeout(() => process.exit(1), 200)) });
+        setImmediate(() => { for (let i = 0; i < 12; i++) setTimeout(() => { throw new Error('later ' + i); }, 10); throw new Error('original'); });`);
+    assert.equal(result.status, 1, result.stderr);
+    const reports = getCrashReports(path.join(root, 'crash-reports'));
+    assert.deepEqual(reports.map(report => report.error.message), ['original']);
+    assert.match(result.stderr, /Further uncaught-exception while shutting down/);
+    assert.match(result.stderr, /later 11/);
+});
+
+test('client disconnects are logged as ignored instead of crashing or saving reports', t => {
+    const root = temporary(t);
+    const result = runModule(`initialiseCrashDiagnostics(${JSON.stringify(root)}); installCrashHandlers();
+        setImmediate(() => { throw Object.assign(new Error('socket hang up token=private-value'), { code: 'ECONNRESET' }); });
+        setTimeout(() => process.exit(0), 50);`);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /Ignored streaming disconnect error: socket hang up/);
+    assert.doesNotMatch(result.stderr, /private-value/);
+    assert.equal(getCrashReports(path.join(root, 'crash-reports')).length, 0);
+});
+
+test('an exit before the data folder is known writes nothing into the install folder', t => {
+    const cwd = temporary(t);
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', `import {installCrashHandlers} from ${JSON.stringify(moduleUrl)}; installCrashHandlers(); process.exit(2);`], { cwd, encoding: 'utf8' });
+    assert.equal(result.status, 2, result.stderr);
+    assert.deepEqual(fs.readdirSync(cwd), []);
+});
+
 test('retains ten private reports and ignores damaged files', t => {
     const directory = temporary(t);
     for (let i = 0; i < 12; i++) assert.ok(writeCrashReport('test', new Error(`Failure ${i}`), {}, directory));
@@ -115,6 +149,23 @@ test('browser exceptions persist across reload, bounded and independent of the d
     assert.equal(browser(storage).api.getReports().reports.length, 0);
 });
 
+test('a repeating browser error is counted on one report instead of evicting earlier ones', () => {
+    const storage = new Map();
+    const first = browser(storage);
+    first.listeners.get('unhandledrejection')({ reason: new Error('first failure') });
+    const loop = new Error('render loop');
+    first.listeners.get('error')({ error: loop, filename: 'https://host/b.js', lineno: 1, colno: 1 });
+    for (let i = 0; i < 50; i++) first.listeners.get('error')({ error: loop, filename: 'https://host/a.js', lineno: 1, colno: 1 });
+    // 50 is not a power of two, so only the page-hide save stores the final count.
+    first.listeners.get('pagehide')();
+    const reports = browser(storage).api.getReports().reports;
+    assert.deepEqual(Array.from(reports, report => [report.error.message, report.context.source, report.repeats]), [
+        ['first failure', '', undefined],
+        ['render loop', 'https://host/b.js', undefined],
+        ['render loop', 'https://host/a.js', 50],
+    ]);
+});
+
 test('browser capture survives unavailable storage and reports the loss of persistence', () => {
     const fixture = browser(new Map(), true);
     fixture.listeners.get('error')({ error: new Error('failure'), filename: 'https://host/app.js?key=private', lineno: 10, colno: 20 });
@@ -142,6 +193,11 @@ public class StoreTest { public static void main(String[] args) {
     store.saveExit("9999999999999-exit-1", "native trace evidence", true);
     store.saveExit("9999999999999-exit-1", "trace no longer available", false);
     if (!store.readAll().contains("native trace evidence")) throw new AssertionError("lost trace");
+    if (store.needsExit("9999999999999-exit-1", "NO TRACE")) throw new AssertionError("decoded twice");
+    store.saveExit("9999999999998-exit-2", "NO TRACE", false);
+    if (!store.needsExit("9999999999998-exit-2", "NO TRACE")) throw new AssertionError("trace never retried");
+    if (store.needsExit("0000000000001-exit-3", "NO TRACE")) throw new AssertionError("evicted report recreated");
+    if (!store.needsExit("9999999999997-exit-4", "NO TRACE")) throw new AssertionError("new exit skipped");
     System.out.println("passed");
 } }`);
     execFileSync('javac', ['-d', root, source, harness]);
