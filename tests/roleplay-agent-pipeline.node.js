@@ -121,10 +121,12 @@ test('native Agent prompts, lore, complete-context interception and postprocessi
     assert.equal(f.saved().length, 4);
 });
 
-test('prompt contributions and interceptors can use the separate secrets macro before generation', async t => {
+test('prompt contributions and interceptors can use saved tracker macros before generation', async t => {
     const f = prepared(t, [
         { id: 'prompt', phase: 'pre', prompt: 'SAVED_SECRETS {{secrets-tracker}}', injection: { position: 1, depth: 1, role: 0 } },
         { id: 'before', phase: 'pre', prompt: 'CHECK_SECRETS {{secrets-tracker}}',
+            preProcess: { mode: 'intercept', applyMode: 'wrap', wrapPosition: 'before', maxTokens: 64 } },
+        { id: 'state', phase: 'pre', prompt: 'CHECK_STATE {{tracker-state}}',
             preProcess: { mode: 'intercept', applyMode: 'wrap', wrapPosition: 'before', maxTokens: 64 } },
         { id: 'secrets', phase: 'post', sourceTemplateId: 'tpl-secrets-tracker',
             postProcess: { enabled: true, type: 'extract', extractVariable: 'secret_data', extractPattern: '\\[SECRET\\|[^\\]]*\\]' } },
@@ -137,8 +139,25 @@ test('prompt contributions and interceptors can use the separate secrets macro b
         return 'Main output';
     }), generateAgent: paid('before', ({ messages }) => {
         calls++;
-        assert.match(messages[0].content, /CHECK_SECRETS <tracker name="secrets">\n\[SECRET\|Nova\|Hidden name\|Nobody\]/);
+        const label = messages[0].content.startsWith('CHECK_STATE') ? 'CHECK_STATE' : 'CHECK_SECRETS';
+        assert.match(messages[0].content, new RegExp(`^${label} <tracker name="secrets">\\n\\[SECRET\\|Nova\\|Hidden name\\|Nobody\\]`));
         return 'Keep knowledge private';
+    }) });
+    assert.equal(calls, 2);
+});
+
+test('before-reply interceptors fill tracker state without the secrets macro', async t => {
+    const f = prepared(t, [
+        { id: 'state', phase: 'pre', prompt: 'CHECK_STATE {{tracker-state}}',
+            preProcess: { mode: 'intercept', applyMode: 'wrap', wrapPosition: 'before', maxTokens: 64 } },
+        { id: 'scene', name: 'Scene Tracker', phase: 'post',
+            postProcess: { enabled: true, type: 'extract', extractVariable: 'scene', extractPattern: '\\[SCENE\\][\\s\\S]*?\\[/SCENE\\]' } },
+    ], { configure: records => { records[0].chat_metadata = { variables: { agent_scene: '[SCENE]Hangar[/SCENE]' } }; } });
+    let calls = 0;
+    await f.run({ generate: paid('main', () => 'Main output'), generateAgent: paid('before', ({ messages }) => {
+        calls++;
+        assert.match(messages[0].content, /^CHECK_STATE <tracker name="Scene Tracker">\n\[SCENE\]Hangar\[\/SCENE\]/);
+        return 'Keep the scene';
     }) });
     assert.equal(calls, 1);
 });
