@@ -76,6 +76,35 @@ final class DiagnosticStore {
         return files;
     }
 
+    CrashReport.Entry readEntry(String id) {
+        if (id == null || !id.matches("[a-zA-Z0-9-]+\\.txt")) return null;
+        File file = new File(directory, id);
+        try {
+            if (!file.isFile() || file.length() > MAX_CHARS * 4L) return null;
+            return CrashReport.parse(id, Files.readString(file.toPath(), StandardCharsets.UTF_8));
+        } catch (IOException ignored) { return null; }
+    }
+    List<CrashReport.Entry> listEntries() {
+        List<CrashReport.Entry> entries = new ArrayList<>();
+        File[] files = files();
+        for (int i = files.length - 1; i >= Math.max(0, files.length - 10); i--) {
+            try (InputStream input = new FileInputStream(files[i])) {
+                String header = new String(input.readNBytes(4096), StandardCharsets.UTF_8);
+                CrashReport.Entry entry = CrashReport.parse(files[i].getName(), header);
+                if (entry != null) entries.add(entry);
+            } catch (IOException ignored) { }
+        }
+        return entries;
+    }
+    CrashReport.Entry newestEntry() {
+        File[] files = files();
+        for (int i = files.length - 1; i >= Math.max(0, files.length - 10); i--) {
+            CrashReport.Entry entry = readEntry(files[i].getName());
+            if (entry != null) return entry;
+        }
+        return null;
+    }
+
     String readAll() {
         return readNewest(10);
     }
