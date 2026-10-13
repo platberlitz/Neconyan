@@ -38,3 +38,9 @@ test('every diagnostic call on an app thread is isolated from its caller', () =>
     // The last-resort Java handler must reach the previous handler whatever diagnostics do.
     assert.match(application, /try \{ CrashDiagnostics\.record\([\s\S]*?catch \(Throwable ignored\)[\s\S]*?previous\.uncaughtException/);
 });
+
+test('the inlined REASON_PACKAGE_UPDATED value is not mislabelled as API 31', () => {
+    const source = fs.readFileSync(new URL('io/github/platberlitz/neconyan/CrashDiagnostics.java', root), 'utf8');
+    assert.match(source, /reason == 16 \/\*/);
+    assert.doesNotMatch(source, /added in API 31/);
+});
