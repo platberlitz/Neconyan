@@ -4,6 +4,8 @@ import java.util.*;
 
 /** Report identity and presentation policy, independent of Android. */
 final class CrashReport {
+    static final int MAX_HEADER_BYTES = 8192;
+    static final int MAX_HEADER_LINES = 24;
     static final class Entry {
         final String id, incident, component, event, status, summary, error, activity, memory, text;
         final long at, processStart, activityAt;
@@ -35,9 +37,9 @@ final class CrashReport {
         Map<String, String> header = new LinkedHashMap<>();
         if (text.startsWith("Neconyan crash report v2\n")) {
             int boundary = text.indexOf("\n\nDetails:\n");
-            if (boundary > 0 && boundary <= 4096) {
+            if (boundary > 0 && boundary <= MAX_HEADER_BYTES && text.substring(0, boundary).getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= MAX_HEADER_BYTES) {
                 String[] lines = text.substring(0, boundary).split("\n");
-                if (lines.length <= 16) for (String line : lines) {
+                if (lines.length <= MAX_HEADER_LINES) for (String line : lines) {
                     int colon = line.indexOf(": ");
                     if (colon > 0) header.put(line.substring(0, colon), line.substring(colon + 2));
                 }
@@ -53,7 +55,7 @@ final class CrashReport {
         if (Arrays.asList("uncaught-java-exception", "activity-startup-failure", "server-startup-failure").contains(event) || reason == 4) return subject + " stopped because of an application error.";
         if (event.equals("node-failure")) return subject + " reported an error. Read the recorded error and causes.";
         if (event.equals("runtime-heap-limit")) return "The local server log reported that its JavaScript memory limit was reached.";
-        if (reason == 9) return subject + " stopped after signal " + line(status, 20) + ". Android did not say why the signal was sent.";
+        if (reason == 2) return subject + " stopped after signal " + line(status, 20) + ". Android did not say why the signal was sent.";
         if (reason == 6) return subject + " stopped responding. Read the system trace for the available evidence.";
         return subject + " stopped unexpectedly. No definite cause was available.";
     }

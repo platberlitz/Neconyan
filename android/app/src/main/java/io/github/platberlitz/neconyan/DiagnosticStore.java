@@ -37,7 +37,7 @@ final class DiagnosticStore {
                 if (existing.length() > MAX_CHARS * 4L) return false;
                 String text = new String(Files.readAllBytes(existing.toPath()), StandardCharsets.UTF_8);
                 int boundary = text.indexOf("\n\nDetails:\n");
-                if (boundary > 0 && boundary <= 4096 && text.substring(0, boundary).contains("\nTrace status: available")) return false;
+                if (boundary > 0 && boundary <= CrashReport.MAX_HEADER_BYTES && text.substring(0, boundary).contains("\nTrace status: available")) return false;
                 return text.contains(missingTraceText);
             } catch (IOException error) { return true; }
         }
@@ -89,18 +89,26 @@ final class DiagnosticStore {
         File file = new File(directory, id);
         try {
             if (!file.isFile() || file.length() > MAX_CHARS * 4L) return null;
-            return CrashReport.parse(id, Files.readString(file.toPath(), StandardCharsets.UTF_8));
-        } catch (IOException ignored) { return null; }
+            return CrashReport.parse(id, new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
+        } catch (Throwable ignored) { return null; }
     }
     List<CrashReport.Entry> listEntries() {
         List<CrashReport.Entry> entries = new ArrayList<>();
         File[] files = files();
         for (int i = files.length - 1; i >= Math.max(0, files.length - 10); i--) {
             try (InputStream input = new FileInputStream(files[i])) {
-                String header = new String(input.readNBytes(4096), StandardCharsets.UTF_8);
+                byte[] bytes = new byte[CrashReport.MAX_HEADER_BYTES];
+                int length = 0;
+                while (length < bytes.length) {
+                    int count = input.read(bytes, length, bytes.length - length);
+                    if (count < 0) break;
+                    if (count == 0) continue;
+                    length += count;
+                }
+                String header = new String(bytes, 0, length, StandardCharsets.UTF_8);
                 CrashReport.Entry entry = CrashReport.parse(files[i].getName(), header);
                 if (entry != null) entries.add(entry);
-            } catch (IOException ignored) { readError = "A saved crash report could not be read. Select another report or copy the current report before closing."; }
+            } catch (Throwable ignored) { readError = "A saved crash report could not be read. Select another report or copy the current report before closing."; }
         }
         return entries;
     }

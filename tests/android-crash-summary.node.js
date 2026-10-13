@@ -14,8 +14,9 @@ test('native summaries, bounded individual reads and seen policy run on the host
 import java.io.*; import java.util.*;
 public class SummaryTest { public static void main(String[] args) {
     DiagnosticStore store = new DiagnosticStore(new File(args[0], "reports"));
-    CrashReport.Entry entry = CrashReport.create("200-crash", 200, "server", "android-process-exit", 42, 100, "incident-one", 9, "11", "Error password=private", 150, "Earlier activity", "Earlier memory", "x".repeat(70000));
+    CrashReport.Entry entry = CrashReport.create("200-crash", 200, "server", "android-process-exit", 42, 100, "incident-one", 2, "11", "Error password=private", 150, "Earlier activity", "Earlier memory", "x".repeat(70000));
     if (!entry.summary.contains("signal 11") || entry.summary.contains("free memory")) throw new AssertionError("signal confidence");
+    if (CrashReport.summary("server", "exit", 9, "11").contains("signal 11")) throw new AssertionError("resource usage is not a signal");
     if (!CrashReport.summary("page", "renderer-closed", -1, "unknown").contains("definite cause")) throw new AssertionError("renderer confidence");
     if (!CrashReport.summary("server", "exit", 3, "9").contains("local server to free memory")) throw new AssertionError("Android memory");
     if (!CrashReport.summary("app", "uncaught-java-exception", -1, "unknown").contains("application error")) throw new AssertionError("Java error");
@@ -30,7 +31,11 @@ public class SummaryTest { public static void main(String[] args) {
     if (store.readEntry("../escape.txt") != null) throw new AssertionError("traversal");
     entry = store.readEntry("200-crash.txt");
     if (entry.text.length() > 60000 || entry.text.contains("private")) throw new AssertionError("bound/redaction");
-    if (store.listEntries().get(0).text.length() > 4096) throw new AssertionError("loaded body for list");
+    if (store.listEntries().get(0).text.length() > CrashReport.MAX_HEADER_BYTES) throw new AssertionError("loaded body for list");
+    String expanded = entry.text.replace("\\n\\nDetails:\\n", "\\nTrace status: available\\nExtra one: a\\nExtra two: b\\nExtra three: c\\n\\nDetails:\\n");
+    if (!CrashReport.parse(entry.id, expanded).summary.contains("signal 11")) throw new AssertionError("header headroom");
+    String oversize = entry.text.replace("\\n\\nDetails:\\n", "\\nPadding: " + "z".repeat(CrashReport.MAX_HEADER_BYTES) + "\\n\\nDetails:\\n");
+    if (!CrashReport.parse(entry.id, oversize).component.equals("unknown")) throw new AssertionError("header byte bound");
     store.saveExit("300-exit-42", entry.text.replace("\\n\\nDetails:\\n", "\\n\\nDetails:\\nNO TRACE in earlier evidence\\n"), true);
     if (store.needsExit("300-exit-42", "NO TRACE")) throw new AssertionError("same-incident earlier missing trace caused repeated decode");
     if (!store.readEntry("300-exit-42.txt").traceAvailable) throw new AssertionError("trace status not parsed");

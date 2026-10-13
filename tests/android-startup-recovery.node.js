@@ -86,10 +86,12 @@ test('a native crash leaves Android a crash record that the bug report details i
     assert.match(record, /info\.getTraceInputStream\(\)/);
     assert.match(record, /Tombstone\.describe\(trace\)/);
     assert.match(record, /"native-crash\.txt"/);
-    assert.match(block(activity, 'private boolean restartAfterStop', 'private void recordServerCrash'), /worker\.execute\(this::collectCrashDetails\), 20000\)/);
+    assert.match(block(activity, 'private boolean restartAfterStop', 'private void recordServerCrash'), /ActivityBreadcrumbs\.execute\(this::collectCrashDetails\), 20000\)/);
     const details = block(activity, 'private void copyDetails()', 'private void showSafeNotice');
-    assert.match(details, /copyReport\(serverIncident\)/);
-    assert.doesNotMatch(details, /server\.log|server\.previous\.log/);
+    assert.match(details, /visibleReport != null \? visibleReport : serverIncident/);
+    assert.match(details, /DiagnosticStore\.redact\(text\.toString\(\)\)/);
+    assert.match(details, /server\.log|server\.previous\.log/);
+    assert.match(details, /native-startup\.txt|native-crash\.txt|requests\.previous\.txt/);
     assert.match(bootstrap, /process\.env\.NECONYAN_REQUEST_TRACE = path\.join\(process\.env\.TMPDIR, 'requests\.txt'\);/);
     assert.match(main, /app\.use\(createRequestTrace\(process\.env\.NECONYAN_REQUEST_TRACE\)\);/);
     // Four-part hotfix versions such as 1.2.4.1 still produce a version code above every older release.

@@ -23,6 +23,12 @@ final class ActivityBreadcrumbs {
     private static String processKind;
     private static ScheduledFuture<?> heartbeatTask;
 
+    static void execute(Runnable task) { execute(task, () -> {}); }
+    static void execute(Runnable task, Runnable failed) {
+        Runnable guarded = () -> { try { task.run(); } catch (Throwable ignored) { try { failed.run(); } catch (Throwable unavailable) { } } };
+        try { WRITER.execute(guarded); } catch (Throwable ignored) { try { failed.run(); } catch (Throwable unavailable) { } }
+    }
+
     static void initialise(Context app) {
         context = app.getApplicationContext();
         processKind = Application.getProcessName().endsWith(":server") ? "server" : "app";
@@ -52,7 +58,7 @@ final class ActivityBreadcrumbs {
         }
         for (String section : new String[] { "chat", "dom", "heap" }) {
             JSONObject source = input.optJSONObject(section), target = new JSONObject();
-            String[] fields = section.equals("chat") ? new String[] { "messageCount", "estimatedTextBytes", "sampledMessages", "measuredAt" }
+            String[] fields = section.equals("chat") ? new String[] { "messageCount", "estimatedTextBytes", "sampledMessages", "agentHistoryEntries", "measuredAt" }
                 : section.equals("dom") ? new String[] { "renderedChildren", "measuredAt" } : new String[] { "usedBytes", "totalBytes", "limitBytes" };
             for (String key : fields) numeric(target, source, key, key.endsWith("Bytes") ? 1099511627776L : key.equals("measuredAt") ? 9007199254740991L : 1000000);
             if (section.equals("chat")) target.put("estimate", "utf16-text-only").put("complete", source != null && source.opt("complete") == Boolean.TRUE);
@@ -118,7 +124,8 @@ final class ActivityBreadcrumbs {
     private static synchronized void schedule() {
         if (pending || context == null) return;
         pending = true;
-        WRITER.schedule(ActivityBreadcrumbs::write, Math.max(0, 5000 - (System.currentTimeMillis() - writtenAt)), TimeUnit.MILLISECONDS);
+        try { WRITER.schedule(ActivityBreadcrumbs::write, Math.max(0, 5000 - (System.currentTimeMillis() - writtenAt)), TimeUnit.MILLISECONDS); }
+        catch (Throwable ignored) { pending = false; }
     }
     private static void sampleMemory() {
         try {
@@ -135,23 +142,30 @@ final class ActivityBreadcrumbs {
         } catch (JSONException ignored) { return "{}"; }
     }
     private static void write() {
-        sampleMemory();
-        String text = current();
-        File directory = new File(context.getNoBackupFilesDir(), "crash-activity"), temporary = null;
+        File temporary = null;
         try {
+            sampleMemory();
+            String text = current();
+            File directory = new File(context.getNoBackupFilesDir(), "crash-activity");
+            File[] abandoned = directory.listFiles((dir, name) -> name.startsWith("pending-") && name.endsWith(".tmp"));
+            if (abandoned != null) for (File file : abandoned) if (System.currentTimeMillis() - file.lastModified() > 60000) file.delete();
             if (text.getBytes(StandardCharsets.UTF_8).length <= 8192) {
                 Files.createDirectories(directory.toPath()); temporary = File.createTempFile("pending-", ".tmp", directory);
-                Files.writeString(temporary.toPath(), text, StandardCharsets.UTF_8);
+                Files.write(temporary.toPath(), text.getBytes(StandardCharsets.UTF_8));
                 Files.move(temporary.toPath(), new File(directory, "activity-" + android.os.Process.myPid() + "-" + START + ".json").toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
                 File[] files = directory.listFiles((dir, name) -> name.matches("activity-[0-9]+-[0-9]+\\.json"));
                 if (files != null) { Arrays.sort(files, Comparator.comparingLong(File::lastModified)); for (int i = 0; i < files.length - 6; i++) files[i].delete(); }
             }
-        } catch (Exception ignored) { }
-        finally { if (temporary != null) temporary.delete(); }
-        synchronized (ActivityBreadcrumbs.class) { writtenAt = System.currentTimeMillis(); pending = false; }
-        synchronized (ActivityBreadcrumbs.class) {
-            if (heartbeatTask != null) heartbeatTask.cancel(false);
-            if (foreground) heartbeatTask = WRITER.schedule(() -> { synchronized (ActivityBreadcrumbs.class) { if (foreground) schedule(); } }, 30000, TimeUnit.MILLISECONDS);
+        } catch (Throwable ignored) { }
+        finally {
+            try { if (temporary != null) temporary.delete(); } catch (Throwable ignored) { }
+            synchronized (ActivityBreadcrumbs.class) {
+                writtenAt = System.currentTimeMillis(); pending = false;
+                try {
+                    if (heartbeatTask != null) heartbeatTask.cancel(false);
+                    if (foreground) heartbeatTask = WRITER.schedule(() -> { synchronized (ActivityBreadcrumbs.class) { if (foreground) schedule(); } }, 30000, TimeUnit.MILLISECONDS);
+                } catch (Throwable ignored) { }
+            }
         }
     }
     static String historical(Context app, int pid, long stopAt) {
@@ -160,9 +174,9 @@ final class ActivityBreadcrumbs {
         Arrays.sort(files, Comparator.comparing(File::getName).reversed());
         for (File file : files) try {
             if (file.length() > 8192) continue;
-            String text = Files.readString(file.toPath()); JSONObject input = new JSONObject(text);
+            String text = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8); JSONObject input = new JSONObject(text);
             if (input.optLong("processStartMs", Long.MAX_VALUE) <= stopAt && input.optLong("processStartMs", 0) >= stopAt - 2592000000L) return text;
-        } catch (Exception ignored) { }
+        } catch (Throwable ignored) { }
         return "";
     }
     static String lastPage(Context app, long stopAt) {
@@ -172,11 +186,11 @@ final class ActivityBreadcrumbs {
         String selected = ""; long latest = 0;
         for (int i = 0; i < Math.min(6, files.length); i++) try {
             if (files[i].length() > 8192) continue;
-            String text = Files.readString(files[i].toPath()); JSONObject input = new JSONObject(text), page = input.optJSONObject("snapshot");
+            String text = new String(Files.readAllBytes(files[i].toPath()), StandardCharsets.UTF_8); JSONObject input = new JSONObject(text), page = input.optJSONObject("snapshot");
             if (page == null) continue;
             long at = page.optLong("at", Long.MAX_VALUE);
             if (at > latest && at <= stopAt) { latest = at; selected = text; }
-        } catch (Exception ignored) { }
+        } catch (Throwable ignored) { }
         return selected;
     }
 }

@@ -129,7 +129,7 @@ final class CrashDiagnostics {
             Arrays.sort(files, Comparator.comparing(File::getName).reversed());
             for (int i = 0; i < Math.min(10, files.length); i++) try {
                 if (files[i].length() > 128 * 1024) continue;
-                JSONObject report = new JSONObject(Files.readString(files[i].toPath()));
+                JSONObject report = new JSONObject(new String(Files.readAllBytes(files[i].toPath()), StandardCharsets.UTF_8));
                 JSONObject environment = report.optJSONObject("environment"), error = report.optJSONObject("error");
                 long at = java.time.Instant.parse(report.getString("at")).toEpochMilli();
                 long processStart = at - Math.round(environment == null ? 0 : environment.optDouble("uptimeSeconds", 0) * 1000);
@@ -204,7 +204,7 @@ final class CrashDiagnostics {
                 int reason = info.getReason();
                 if (expectedStop(context, info)) continue;
                 if (reason == ApplicationExitInfo.REASON_USER_REQUESTED || reason == ApplicationExitInfo.REASON_USER_STOPPED
-                    || reason == ApplicationExitInfo.REASON_PACKAGE_UPDATED || reason == ApplicationExitInfo.REASON_PERMISSION_CHANGE
+                    || reason == 16 /* REASON_PACKAGE_UPDATED, added in API 31 */ || reason == ApplicationExitInfo.REASON_PERMISSION_CHANGE
                     || (reason == ApplicationExitInfo.REASON_EXIT_SELF && info.getStatus() == 0)) continue;
                 String id = info.getTimestamp() + "-exit-" + info.getPid();
                 // Android keeps returning the same history; decode each trace once.
@@ -268,7 +268,7 @@ final class CrashDiagnostics {
                 retained = saved ? store.readEntry(id + ".txt") : null;
                 available.accept(new Result(retained == null ? entry : retained, saved));
             }
-        } catch (Exception error) { android.util.Log.w("Neconyan", "Could not collect Android exit records", error); }
+        } catch (Throwable error) { android.util.Log.w("Neconyan", "Could not collect Android exit records", error); }
     }
 
     static void markServerStopping(Context context) {
