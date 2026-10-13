@@ -114,6 +114,14 @@ test('native report presentation is early, resumed and acknowledged only after s
     assert.match(read(`${app}NeconyanApplication.java`), /onLowMemory/);
 });
 
+test('the activity bridge admits a hidden or pagehide sample quickly', () => {
+    const bridge = read(`${app}NeconyanDiagnostics.java`);
+    const gate = Number(bridge.match(/now - receivedAt < (\d+)/)?.[1]);
+    assert.ok(gate > 0 && gate <= 500, `the ${gate} ms gate must not drop the final pagehide sample`);
+    assert.match(bridge, /json\.length\(\) > 4096/);
+    assert.match(bridge, /!local \|\| nonce\.isEmpty\(\) \|\| !nonce\.equals\(token\)/);
+});
+
 test('the Android server loads full ICU data so word splitting cannot crash it', () => {
     const payload = read('scripts/build-android-payload.js');
     // The runtime's built-in English-only ICU data has no word-break rules (issue 80).
