@@ -5,6 +5,13 @@
 
 const NUMBER_FORMAT = new Intl.NumberFormat();
 
+/** The host's t`` when Neconyan provides one (version values stay as written); otherwise the English text, as before. */
+function hostT(strings, ...values) {
+    const translate = globalThis.SillyTavern?.getContext?.()?.t;
+    if (typeof translate === 'function') return translate(strings, ...values);
+    return strings.reduce((text, part, index) => text + part + (index < values.length ? values[index] : ''), '');
+}
+
 export const SORT_LABELS = Object.freeze({
     latest: 'Latest',
     curated: 'Curated',
@@ -601,23 +608,27 @@ export function availabilityCopy(status, health, frontendProtocol, frontendVersi
     }
 
     if (status === 'protocol-mismatch') {
-        const protocols = `Page connection version: ${frontendProtocol}. Helper connection version: ${health?.protocol ?? 'not reported'}.`;
-        const versions = health?.version
-            ? ` Frontend version: ${frontendVersion}. Server version: ${health.version}.`
-            : ` Frontend version: ${frontendVersion}.`;
+        // Every sentence of the guidance is built whole with the host's t, so each one is translated on its own: the
+        // paragraph is one text node, where no key could match the joined text.
+        const protocols = health?.protocol == null
+            ? hostT`Page connection version: ${frontendProtocol}. Helper connection version: not reported.`
+            : hostT`Page connection version: ${frontendProtocol}. Helper connection version: ${health.protocol}.`;
+        const versions = ' ' + (health?.version
+            ? hostT`Frontend version: ${frontendVersion}. Server version: ${health.version}.`
+            : hostT`Frontend version: ${frontendVersion}.`);
         const comparison = compareReleaseVersions(health?.version, frontendVersion);
-        let recovery = ' Update Neconyan and restart it, then check again.';
+        let recovery = ' ' + hostT`Update Neconyan and restart it, then check again.`;
         if (comparison === -1) {
-            recovery = ` Update Neconyan to include the native service, then restart it.`;
+            recovery = ' ' + hostT`Update Neconyan to include the native service, then restart it.`;
         } else if (comparison === 1) {
-            recovery = ` The server is newer; update the frontend extension to v${health.version}. A server downgrade is not offered.`;
+            recovery = ' ' + hostT`The server is newer; update the frontend extension to v${health.version}. A server downgrade is not offered.`;
         } else if (comparison === null) {
-            recovery = ' The server version cannot be ordered safely. Verify both deployments manually; no server replacement is offered.';
+            recovery = ' ' + hostT`The server version cannot be ordered safely. Verify both deployments manually; no server replacement is offered.`;
         }
         return {
             title: 'BotSearcher page and helper do not match',
             lead: 'The BotSearcher page and its helper service are different versions, so they cannot work together.',
-            guidance: `${protocols}${versions} ${recovery} Update Neconyan and restart it to apply the matching native service.`,
+            guidance: `${protocols}${versions} ${recovery} ${hostT`Update Neconyan and restart it to apply the matching native service.`}`,
             showInstall: false,
             showManualUpdate: false,
             showUpdate: false,

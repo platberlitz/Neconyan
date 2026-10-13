@@ -199,12 +199,33 @@ function getBuiltInExtensionType(extensionName) {
     return CORE_EXTENSIONS.has(sanitizedName) ? 'core' : 'system';
 }
 
+/**
+ * What the extension updater says when it refuses an action for an extension that comes with Neconyan: one whole
+ * sentence per action, so each can be translated as written (the action is never put into a shared sentence).
+ * @type {Readonly<Record<'installed'|'updated'|'managed'|'switched'|'moved'|'deleted', (extensionName: string) => string>>}
+ */
+const BUNDLED_EXTENSION_REFUSALS = Object.freeze({
+    installed: extensionName => `${extensionName} comes with Neconyan, so it cannot be installed from the extension updater.`,
+    updated: extensionName => `${extensionName} comes with Neconyan, so it cannot be updated from the extension updater.`,
+    managed: extensionName => `${extensionName} comes with Neconyan, so it cannot be managed from the extension updater.`,
+    switched: extensionName => `${extensionName} comes with Neconyan, so it cannot be switched from the extension updater.`,
+    moved: extensionName => `${extensionName} comes with Neconyan, so it cannot be moved from the extension updater.`,
+    deleted: extensionName => `${extensionName} comes with Neconyan, so it cannot be deleted from the extension updater.`,
+});
+
+/**
+ * Refuses an extension updater action for an extension that comes with Neconyan.
+ * @param {string} extensionName Sanitised extension folder name from the request
+ * @param {import('express').Response} response
+ * @param {'installed'|'updated'|'managed'|'switched'|'moved'|'deleted'} action The refused action
+ * @returns {boolean} True when the request was refused (a 400 was sent)
+ */
 export function rejectBundledThirdPartyExtension(extensionName, response, action) {
     if (!isBundledThirdPartyExtension(extensionName)) {
         return false;
     }
 
-    response.status(400).send(`${extensionName} comes with Neconyan, so it cannot be ${action} from the extension updater.`);
+    response.status(400).send(BUNDLED_EXTENSION_REFUSALS[action](extensionName));
     return true;
 }
 

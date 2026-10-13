@@ -3,7 +3,7 @@ import {
     LOGIC_LABEL,
     POSITION_LABEL,
 } from '../constants.js';
-import { getContext, loadHost, notify } from '../host.js';
+import { getContext, hostMessage, hostT, loadHost, notify } from '../host.js';
 import { appendHistory } from '../history.js';
 import { getSettings, updateSettings } from '../settings.js';
 import { runWorldInfoLab, restoredSnapshot, mountSavedWorldInfoResults } from '../native.js';
@@ -868,7 +868,7 @@ export function createWorkbench({
             } else if (availability?.ok === false) {
                 hostStatus.textContent = 'Cannot scan';
                 hostStatus.className = 'sbwil-host-status sbwil-host-error';
-                hostStatus.title = `Technical details: ${availability.reason ?? 'Neconyan compatibility check failed.'}`;
+                hostStatus.title = hostT`Technical details: ${availability.reason ?? 'Neconyan compatibility check failed.'}`;
             } else {
                 hostStatus.textContent = 'Checking compatibility';
                 hostStatus.className = 'sbwil-host-status';
@@ -883,7 +883,7 @@ export function createWorkbench({
             if (availability?.ok === false) {
                 runButton.title = 'Update Neconyan or World Info Lab, then reload.';
                 if (!runController) {
-                    runStatus.textContent = `Lorebook scanning is unavailable. Update Neconyan or World Info Lab, then reload. Technical details: ${availability.reason ?? 'Compatibility check failed.'}`;
+                    runStatus.textContent = hostT`Lorebook scanning is unavailable. Update Neconyan or World Info Lab, then reload. Technical details: ${availability.reason ?? 'Compatibility check failed.'}`;
                 }
             } else {
                 runButton.removeAttribute('title');
@@ -996,8 +996,11 @@ export function createWorkbench({
                 } else if (isAbort(error)) {
                     runStatus.textContent = 'Observation closed. The server keeps the scan.';
                 } else {
-                    const retained = latestResult ? ' The previous completed result is still shown.' : '';
-                    const message = `Scan failed.${retained} Technical details: ${errorMessage(error)}`;
+                    // One whole sentence for each case, so the frame is found by its own key; the error text is looked up whole and kept as written when unknown.
+                    const detail = hostMessage(errorMessage(error));
+                    const message = latestResult
+                        ? hostT`Scan failed. The previous completed result is still shown. Technical details: ${detail}`
+                        : hostT`Scan failed. Technical details: ${detail}`;
                     runStatus.textContent = message;
                     notify('error', message);
                 }

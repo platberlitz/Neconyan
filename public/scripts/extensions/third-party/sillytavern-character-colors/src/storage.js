@@ -4213,6 +4213,18 @@ function importError(error, message) {
     return { ok: false, error, message };
 }
 
+/** The host's t`` when Neconyan provides one (names stay as written); otherwise the English text, as before. */
+function hostT(strings, ...values) {
+    let translate = null;
+    try {
+        translate = getContext?.()?.t;
+    } catch {
+        // The host context is not ready yet: keep the English text.
+    }
+    if (typeof translate === 'function') return translate(strings, ...values);
+    return strings.reduce((text, part, index) => text + part + (index < values.length ? values[index] : ''), '');
+}
+
 function analyzeImportPayloadSafely(analyze) {
     try {
         return analyze();
@@ -4397,7 +4409,7 @@ function validateImportedCollectionLimits(colors, profiles) {
     }
     let aliasCount = 0;
     for (const [rawKey, entry] of colorEntries) {
-        if (!isPlainObject(entry)) return importError('invalid_character', `Character entry "${rawKey}" is not in the expected format.`);
+        if (!isPlainObject(entry)) return importError('invalid_character', hostT`Character entry "${rawKey}" is not in the expected format.`);
         if (hasOwn(entry, 'aliases') && !Array.isArray(entry.aliases)) {
             return importError('invalid_aliases', `Aliases for "${rawKey}" must be an array.`);
         }
@@ -4424,7 +4436,7 @@ function validateImportedIdentities(colors, profiles) {
     let aliasCount = 0;
     const characterIdentities = new Map();
     for (const [rawKey, entry] of colorEntries) {
-        if (!isPlainObject(entry)) return importError('invalid_character', `Character entry "${rawKey}" is not in the expected format.`);
+        if (!isPlainObject(entry)) return importError('invalid_character', hostT`Character entry "${rawKey}" is not in the expected format.`);
         const name = hasOwn(entry, 'name') ? entry.name : rawKey;
         if (isDangerousRegistryIdentity(name) || isReservedCharacterIdentity(name)) {
             return importError('reserved_identity', `Reserved registry identity "${name}" is not allowed.`);
@@ -4475,7 +4487,7 @@ function validateImportedIdentities(colors, profiles) {
     }
     const groupIdentities = new Map();
     for (const [rawKey, profile] of profileEntries) {
-        if (!isPlainObject(profile)) return importError('invalid_group_profile', `Group profile "${rawKey}" is not in the expected format.`);
+        if (!isPlainObject(profile)) return importError('invalid_group_profile', hostT`Group profile "${rawKey}" is not in the expected format.`);
         const name = hasOwn(profile, 'name') ? profile.name : rawKey;
         if (isDangerousRegistryIdentity(name)) {
             return importError('reserved_identity', `Reserved registry identity "${name}" is not allowed.`);

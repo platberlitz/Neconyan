@@ -71,10 +71,13 @@ describe('in-chat agent post-processing runner', () => {
     let getToolAction;
     let getForcedToolChoice;
     let itemizedPrompts;
+    let translatedKeys;
 
     beforeEach(async () => {
         jest.resetModules();
         jest.useRealTimers();
+
+        translatedKeys = [];
 
         chat = [];
         chatMetadata = {};
@@ -354,6 +357,14 @@ describe('in-chat agent post-processing runner', () => {
 
         await jest.unstable_mockModule('../public/scripts/power-user.js', () => ({
             power_user: powerUser,
+        }));
+
+        // The real i18n.js needs more of power-user.js than this suite provides. This one records each key and returns the English text.
+        await jest.unstable_mockModule('../public/scripts/i18n.js', () => ({
+            t: (strings, ...values) => {
+                translatedKeys.push(strings.reduce((key, part, index) => key + part + (index < values.length ? `\${${index}}` : ''), ''));
+                return strings.reduce((text, part, index) => text + part + (index < values.length ? values[index] : ''), '');
+            },
         }));
 
         await jest.unstable_mockModule('../public/scripts/popup.js', () => ({
@@ -8028,6 +8039,7 @@ describe('in-chat agent post-processing runner', () => {
         expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
         expect(saveChatDebounced).toHaveBeenCalledTimes(1);
         expect(globalThis.toastr.success).toHaveBeenCalledWith('1 tracker repaired, 1 post-process run', 'Trackers fixed');
+        expect(translatedKeys).toEqual(expect.arrayContaining(['1 tracker repaired', '1 post-process run']));
 
         await new Promise(resolve => setTimeout(resolve, 5));
     });
@@ -8144,6 +8156,15 @@ describe('in-chat agent post-processing runner', () => {
         expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
         expect(globalThis.toastr.success).not.toHaveBeenCalled();
         expect(globalThis.toastr.warning).toHaveBeenCalledWith(expect.stringContaining('1 error'), 'Tracker repair incomplete');
+        // The text is the same as before the keys were added; each part and the error sentence also went through the translator whole.
+        expect(globalThis.toastr.warning).toHaveBeenCalledWith(
+            '1 post-process run, 1 error. Some trackers could not be repaired. Check the connection the agent uses, then try again.',
+            'Tracker repair incomplete',
+        );
+        expect(translatedKeys).toEqual(expect.arrayContaining([
+            '1 post-process run',
+            '1 error. Some trackers could not be repaired. Check the connection the agent uses, then try again.',
+        ]));
     });
 
     test.each(['header', 'field order'])('manual tracker fix repairs relationship %s using the actual card rules', async kind => {
@@ -8219,6 +8240,12 @@ describe('in-chat agent post-processing runner', () => {
         expect(chat[0].mes).toBe(original);
         expect(globalThis.toastr.success).not.toHaveBeenCalled();
         expect(globalThis.toastr.warning).toHaveBeenCalledWith(expect.stringContaining('start marker and an end marker'), 'Tracker repair incomplete');
+        // Same English as before the keys were added; the whole sentence is one key.
+        expect(globalThis.toastr.warning).toHaveBeenCalledWith(
+            '1 error. A broken tracker has no clear start or end. Check that it has both a start marker and an end marker in the message, then try again.',
+            'Tracker repair incomplete',
+        );
+        expect(translatedKeys).toContain('1 error. A broken tracker has no clear start or end. Check that it has both a start marker and an end marker in the message, then try again.');
     });
 
     test('manual tracker fix keeps metadata from the newest valid tracker state', async () => {

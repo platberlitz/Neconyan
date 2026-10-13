@@ -41,7 +41,7 @@ function templateIndex(dictionary) {
     return index;
 }
 
-function lookup(key, dictionary) {
+function lookup(key, dictionary, { translateHoles = true } = {}) {
     if (Object.hasOwn(dictionary, key)) return dictionary[key] !== key ? dictionary[key] : null;
     if (!key.length) return null;
     const index = templateIndex(dictionary);
@@ -50,7 +50,7 @@ function lookup(key, dictionary) {
     for (const template of [...(index.byPrefix.get(key.slice(0, 2)) || []), ...index.leading]) {
         const match = template.expression.exec(key);
         if (!match) continue;
-        const values = Object.fromEntries(template.order.map((slot, i) => [slot, Object.hasOwn(dictionary, match[i + 1]) ? dictionary[match[i + 1]] : match[i + 1]]));
+        const values = Object.fromEntries(template.order.map((slot, i) => [slot, translateHoles && Object.hasOwn(dictionary, match[i + 1]) ? dictionary[match[i + 1]] : match[i + 1]]));
         return template.value.replace(placeholder, (whole, slot) => values[slot] ?? whole);
     }
     return null;
@@ -60,6 +60,22 @@ function localizeText(text, dictionary) {
     const key = text.data.trim();
     const value = key && lookup(key, dictionary);
     if (value) text.data = text.data.replace(key, value);
+}
+
+/**
+ * One whole message that did not come from a t`` literal (server, provider or browser text), in this dictionary's
+ * language: its exact key, else a ${n} key, found the way the run-time localiser finds them. The values in the holes
+ * are kept as written, so names, file names, codes and provider wording are never translated. Text with no key, or
+ * text that is already a translation, comes back unchanged.
+ * @param {string} text
+ * @param {Record<string, string>} dictionary
+ * @returns {string}
+ */
+export function localizeString(text, dictionary) {
+    const message = String(text ?? '');
+    const key = message.trim();
+    const value = key && lookup(key, dictionary, { translateHoles: false });
+    return value ? message.replace(key, () => value) : message;
 }
 
 function localizeAttributes(element, dictionary) {

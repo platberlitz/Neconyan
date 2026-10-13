@@ -1,4 +1,4 @@
-import { getContext } from '../host.js';
+import { getContext, hostMessage, hostT } from '../host.js';
 import { LOGIC_LABEL, POSITION_LABEL } from '../constants.js';
 import { getSettings, updateSettings } from '../settings.js';
 import { snapshotLorebooks } from '../sources.js';
@@ -354,7 +354,7 @@ export function createTestsTab({
                 reviewButton.hidden = true;
                 reviewText.textContent = saved.refreshWarning || 'Reviewed test change saved.';
                 await refreshCases('Reviewed test change saved.');
-            } catch (error) { status.textContent = `The apply did not finish: ${errorMessage(error)}. Its saved record is retained.`; }
+            } catch (error) { status.textContent = hostT`The apply did not finish: ${hostMessage(errorMessage(error))}. Its saved record is retained.`; }
             finally { operationBusy = false; reviewButton.disabled = false; updateDisabled(); }
         }, { signal: controller.signal });
 
@@ -542,7 +542,7 @@ export function createTestsTab({
                 showCasePreview(saved);
                 status.textContent = 'Test preview saved. Review it, then apply the change.';
             } catch (error) {
-                status.textContent = `The test preview could not finish: ${errorMessage(error)}`;
+                status.textContent = hostT`The test preview could not finish: ${hostMessage(errorMessage(error))}`;
             } finally {
                 operationBusy = false;
                 updateDisabled();
@@ -590,7 +590,7 @@ export function createTestsTab({
                     status.textContent = 'A newer scan or saved test was started; this result was not shown.';
                     return;
                 }
-                status.textContent = `The saved test could not run. Technical details: ${errorMessage(error)}`;
+                status.textContent = hostT`The saved test could not run. Technical details: ${hostMessage(errorMessage(error))}`;
             } finally {
                 if (sequence === caseRunSequence) {
                     activeCaseController = null;
@@ -607,9 +607,12 @@ export function createTestsTab({
                 return;
             }
             const name = caseName(selected, index);
-            const book = selected.bookName ?? 'its lorebook';
+            // A saved test without a lorebook name gets its own whole sentence, so no English words sit inside a translation.
+            const question = selected.bookName == null
+                ? hostT`Prepare the deletion of '${name}' from 'its lorebook' for review?`
+                : hostT`Prepare the deletion of '${name}' from '${selected.bookName}' for review?`;
             if (typeof globalThis.confirm === 'function'
-                && !globalThis.confirm(`Prepare the deletion of '${name}' from '${book}' for review?`)) {
+                && !globalThis.confirm(question)) {
                 return;
             }
             operationBusy = true;
@@ -626,7 +629,7 @@ export function createTestsTab({
                 showCasePreview(removed);
                 status.textContent = 'Deletion preview saved. Review it, then apply the change.';
             } catch (error) {
-                status.textContent = `The saved test could not be deleted. Technical details: ${errorMessage(error)}`;
+                status.textContent = hostT`The saved test could not be deleted. Technical details: ${hostMessage(errorMessage(error))}`;
             } finally {
                 operationBusy = false;
                 updateDisabled();
@@ -1218,9 +1221,9 @@ export function createBatchTab({ panel }) {
                     text: 'Could not load lorebooks',
                     attributes: { value: '' },
                 }));
-                const warning = `Lorebooks could not be reloaded. Technical details: ${errorMessage(error)}`;
-                status.textContent = `${warning} Try again.`;
-                return warning;
+                const detail = hostMessage(errorMessage(error));
+                status.textContent = hostT`Lorebooks could not be reloaded. Technical details: ${detail} Try again.`;
+                return hostT`Lorebooks could not be reloaded. Technical details: ${detail}`;
             } finally {
                 if (sequence === bookRefresh) {
                     busy = false;
@@ -1239,7 +1242,7 @@ export function createBatchTab({ panel }) {
             updateDisabled();
             void loadBookSnapshot(bookSelect.value, sequence).catch((error) => {
                 if (!disposed && sequence === bookRefresh) {
-                    status.textContent = `"${bookSelect.value}" could not be loaded. Try again. Technical details: ${errorMessage(error)}`;
+                    status.textContent = hostT`"${bookSelect.value}" could not be loaded. Try again. Technical details: ${hostMessage(errorMessage(error))}`;
                 }
             }).finally(() => {
                 if (sequence === bookRefresh) {
@@ -1297,7 +1300,7 @@ export function createBatchTab({ panel }) {
                     ? 'Preview ready. Review every proposed change before saving.'
                     : 'No entries would change. No entries matched, or matching entries already had the requested value.';
             } catch (error) {
-                status.textContent = `The preview could not be built. Your lorebook was not changed. Technical details: ${errorMessage(error)}`;
+                status.textContent = hostT`The preview could not be built. Your lorebook was not changed. Technical details: ${hostMessage(errorMessage(error))}`;
                 previewRegion.replaceChildren(element('p', {
                     className: 'sbwil-empty-line',
                     text: 'Preview failed. Your lorebook was not changed.',
@@ -1338,7 +1341,7 @@ export function createBatchTab({ panel }) {
                     status.textContent = message;
                     invalidatePreview(message);
                 } else {
-                    status.textContent = `The apply did not finish: ${errorMessage(error)}. Its saved record is retained for recovery.`;
+                    status.textContent = hostT`The apply did not finish: ${hostMessage(errorMessage(error))}. Its saved record is retained for recovery.`;
                 }
             } finally {
                 busy = false;
@@ -1597,7 +1600,7 @@ export function createHealthTab({ panel }) {
                 }
             } catch (error) {
                 if (!disposed) {
-                    status.textContent = `The health check could not finish. Technical details: ${errorMessage(error)}`;
+                    status.textContent = hostT`The health check could not finish. Technical details: ${hostMessage(errorMessage(error))}`;
                 }
             } finally {
                 busy = false;

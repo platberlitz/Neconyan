@@ -1,5 +1,6 @@
 import { EXTENSION_LABEL, EXTENSION_NAME, TAB, TAB_LABEL, TAB_META } from '../constants.js';
 import { button, element, replace } from '../dom.js';
+import { hostT } from '../host.js';
 import { createLedger } from '../ledger.js';
 import { createAbTab } from './ab-tab.js';
 import { createCasesTab } from './cases-tab.js';
@@ -119,7 +120,7 @@ export function mountRuntimeUi({ signal = null } = {}) {
             drawerStatus.textContent = 'Prompting Lab cannot run with this Neconyan version. Update Neconyan or Prompting Lab, then reload.';
             drawerStatus.className = 'sbpl-settings-status sbpl-settings-error';
             if (state.availability.reason) {
-                drawerStatus.title = `Technical details: ${state.availability.reason}`;
+                drawerStatus.title = hostT`Technical details: ${state.availability.reason}`;
             }
         } else {
             drawerStatus.hidden = false;
