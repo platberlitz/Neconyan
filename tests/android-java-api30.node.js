@@ -11,7 +11,7 @@ function sources(directory) {
     });
 }
 test('all Android Java avoids Java library methods absent from API 30', () => {
-    const forbidden = /\b(?:readString|writeString|readNBytes)\s*\(|\.\s*(?:readAllBytes\s*\(\s*\)|repeat\s*\(|toList\s*\(|strip(?:Leading|Trailing|Indent)?\s*\(|isBlank\s*\(|lines\s*\()/;
+    const forbidden = /\b(?:readString|writeString|readNBytes)\s*\(|\.\s*(?:readAllBytes\s*\(\s*\)|transferTo\s*\(|repeat\s*\(|toList\s*\(|strip(?:Leading|Trailing|Indent)?\s*\(|isBlank\s*\(|lines\s*\()/;
     for (const file of sources(fs.realpathSync(root))) assert.doesNotMatch(fs.readFileSync(file, 'utf8'), forbidden, file);
 });
 
@@ -24,4 +24,17 @@ test('diagnostic scheduling cannot leave pending or reader state stuck on a plat
     assert.doesNotMatch(main, /ActivityBreadcrumbs\.WRITER\.execute/);
     assert.match(main, /\}, \(\) -> readingCrashes\.set\(false\)\)/);
     assert.match(activity, /name\.startsWith\("pending-"\)[\s\S]*60000/);
+});
+
+test('every diagnostic call on an app thread is isolated from its caller', () => {
+    const app = new URL('io/github/platberlitz/neconyan/', root);
+    const service = fs.readFileSync(new URL('ServerService.java', app), 'utf8');
+    const application = fs.readFileSync(new URL('NeconyanApplication.java', app), 'utf8');
+    // The server thread must still stop the service even if a diagnostic write throws.
+    const calls = service.match(/CrashDiagnostics\.\w+\(/g) || [];
+    const guarded = service.match(/try \{ CrashDiagnostics\.\w+\([^\n]*\); \} catch \(Throwable/g) || [];
+    assert.ok(calls.length > 0, 'the server service still reports diagnostics');
+    assert.equal(guarded.length, calls.length, 'a throwing diagnostic would escape the server thread');
+    // The last-resort Java handler must reach the previous handler whatever diagnostics do.
+    assert.match(application, /try \{ CrashDiagnostics\.record\([\s\S]*?catch \(Throwable ignored\)[\s\S]*?previous\.uncaughtException/);
 });
