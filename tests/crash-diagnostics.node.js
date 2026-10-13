@@ -201,7 +201,7 @@ public class StoreTest { public static void main(String[] args) {
     if (!store.needsExit("9999999999997-exit-4", "NO TRACE")) throw new AssertionError("new exit skipped");
     System.out.println("passed");
 } }`);
-    execFileSync('javac', ['-d', root, source, harness]);
+    execFileSync('javac', ['-d', root, source, path.resolve('android/app/src/main/java/io/github/platberlitz/neconyan/CrashReport.java'), harness]);
     assert.match(execFileSync('java', ['-cp', root, 'io.github.platberlitz.neconyan.StoreTest', root], { encoding: 'utf8' }), /passed/);
 });
 

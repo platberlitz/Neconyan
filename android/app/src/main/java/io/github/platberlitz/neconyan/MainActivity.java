@@ -54,6 +54,10 @@ public final class MainActivity extends Activity {
     private boolean resumed;
     private boolean backupKeys;
     private final NeconyanDiagnostics diagnosticsBridge = new NeconyanDiagnostics();
+    private CrashReport.Entry pendingReport, visibleReport;
+    private AlertDialog crashDialog;
+    private TextView crashSummary, crashDetails;
+    private boolean pendingSaved = true;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -71,6 +75,7 @@ public final class MainActivity extends Activity {
         status.setPadding(24, 32, 24, 32);
         root.addView(status);
         setContentView(root);
+        recoverCrashReports();
         if (!checkWebView(root)) return;
         actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.VERTICAL);
@@ -218,18 +223,79 @@ public final class MainActivity extends Activity {
             CrashDiagnostics.record(this, "activity-startup-failure", error, "The Android activity could not initialise.");
             showFailure("Could not start Neconyan: " + error.getMessage());
         }
-        new Thread(() -> {
-            CrashDiagnostics.collectExits(this);
-            String latest = CrashDiagnostics.latest(this);
-            String seen = getSharedPreferences("crash-diagnostics", MODE_PRIVATE).getString("seen", "");
-            if (!latest.isEmpty() && !latest.equals(seen)) runOnUiThread(() -> {
-                if (isFinishing() || isDestroyed()) return;
-                getSharedPreferences("crash-diagnostics", MODE_PRIVATE).edit().putString("seen", latest).apply();
-                new AlertDialog.Builder(this).setTitle("Crash diagnostics saved")
-                    .setMessage("Neconyan has saved details of an unexpected stop. You can read and copy them now, or open Saved crash reports in the debugger later.")
-                    .setPositiveButton("Read reports", (dialog, which) -> showCrashReports()).setNegativeButton("Later", null).show();
+    }
+
+    private void recoverCrashReports() {
+        ActivityBreadcrumbs.WRITER.execute(() -> {
+            CrashReport.Entry latest = CrashDiagnostics.store(this).newestEntry();
+            if (latest != null) offerCrashReport(latest, true);
+            CrashDiagnostics.collectExits(this, entry -> {
+                CrashReport.Entry newest = CrashDiagnostics.store(this).newestEntry();
+                if (newest != null && newest.id.equals(entry.id)) offerCrashReport(entry, true);
             });
-        }, "neconyan-crash-recovery").start();
+        });
+    }
+    private void offerCrashReport(CrashReport.Entry entry, boolean saved) {
+        runOnUiThread(() -> {
+            if (isFinishing() || isDestroyed()) return;
+            if (crashDialog != null && crashDialog.isShowing() && visibleReport != null && visibleReport.id.equals(entry.id)) {
+                visibleReport = entry; crashSummary.setText(reportSummary(entry, saved)); crashDetails.setText(entry.text); return;
+            }
+            SharedPreferences preferences = getSharedPreferences("crash-diagnostics", MODE_PRIVATE);
+            if (!CrashReport.shouldOffer(entry, preferences.getString("seen", ""), preferences.getStringSet("seen-incidents-v1", Collections.emptySet()))) return;
+            if (pendingReport == null || entry.id.compareTo(pendingReport.id) >= 0) { pendingReport = entry; pendingSaved = saved; }
+            presentPendingReport();
+        });
+    }
+    private void presentPendingReport() {
+        if (!resumed || pendingReport == null || isFinishing() || isDestroyed() || crashDialog != null && crashDialog.isShowing()) return;
+        CrashReport.Entry entry = pendingReport;
+        if (showCrashReport(entry, true, pendingSaved)) pendingReport = null;
+    }
+    private String reportSummary(CrashReport.Entry entry, boolean saved) {
+        return entry.summary + "\n\nStopped: " + (entry.at > 0 ? java.text.DateFormat.getDateTimeInstance().format(new Date(entry.at)) : "Time unavailable")
+            + "\n\n" + entry.error + "\n\n" + entry.activity + "\n\n" + entry.memory
+            + (saved ? "" : "\n\nThe report could not be saved. Copy or share it before closing this screen.")
+            + "\n\nReports stay on this device. Error messages and system traces may contain private text. Review before sharing.";
+    }
+    private void acknowledgeReport(CrashReport.Entry entry) {
+        SharedPreferences preferences = getSharedPreferences("crash-diagnostics", MODE_PRIVATE);
+        List<String> incidents = new ArrayList<>(preferences.getStringSet("seen-incidents-v1", Collections.emptySet()));
+        incidents.remove(entry.incident); incidents.add(entry.incident);
+        while (incidents.size() > 20) incidents.remove(0);
+        String boundary = preferences.getString("seen", "");
+        preferences.edit().putString("seen", entry.id.compareTo(boundary) > 0 ? entry.id : boundary).putStringSet("seen-incidents-v1", new LinkedHashSet<>(incidents)).apply();
+    }
+    private boolean showCrashReport(CrashReport.Entry entry, boolean acknowledge, boolean saved) {
+        if (!resumed || isFinishing() || isDestroyed() || entry == null) return false;
+        try {
+            LinearLayout content = new LinearLayout(this); content.setOrientation(LinearLayout.VERTICAL); content.setPadding(24, 24, 24, 24);
+            crashSummary = new TextView(this); crashSummary.setText(reportSummary(entry, saved)); crashSummary.setTextIsSelectable(true); content.addView(crashSummary);
+            Button copy = new Button(this); copy.setText("Copy report"); copy.setMinHeight(Math.round(48 * getResources().getDisplayMetrics().density));
+            copy.setOnClickListener(view -> copyReport(visibleReport)); content.addView(copy);
+            Button share = new Button(this); share.setText("Share report"); share.setMinHeight(Math.round(48 * getResources().getDisplayMetrics().density));
+            share.setOnClickListener(view -> shareReport(visibleReport)); content.addView(share);
+            crashDetails = new TextView(this); crashDetails.setText(entry.text); crashDetails.setTextIsSelectable(true); content.addView(crashDetails);
+            ScrollView scroll = new ScrollView(this); scroll.addView(content);
+            crashDialog = new AlertDialog.Builder(this).setTitle("Crash report").setView(scroll).setPositiveButton("Close", null).create();
+            visibleReport = entry;
+            crashDialog.setOnDismissListener(dialog -> { crashDialog = null; visibleReport = null; if (pendingReport != null) presentPendingReport(); else if (serverSafe && !safeNoticeShown) showSafeNotice(); });
+            crashDialog.show();
+            if (acknowledge) acknowledgeReport(entry);
+            return true;
+        } catch (RuntimeException error) { crashDialog = null; return false; }
+    }
+    private void copyReport(CrashReport.Entry entry) {
+        if (entry == null) return;
+        try {
+            getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("Neconyan crash report", DiagnosticStore.redact(entry.text)));
+            Toast.makeText(this, "Report copied. Review it before sharing.", Toast.LENGTH_LONG).show();
+        } catch (RuntimeException error) { Toast.makeText(this, "Could not copy the report. Select its text instead.", Toast.LENGTH_LONG).show(); }
+    }
+    private void shareReport(CrashReport.Entry entry) {
+        if (entry == null) return;
+        try { startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, DiagnosticStore.redact(entry.text)), "Share crash report")); }
+        catch (RuntimeException error) { Toast.makeText(this, "Could not share the report. Select its text instead.", Toast.LENGTH_LONG).show(); }
     }
 
     private void rendererGone(WebView view, RenderProcessGoneDetail detail) {
@@ -251,27 +317,19 @@ public final class MainActivity extends Activity {
 
     @JavascriptInterface public void showCrashReports() {
         if (!readingCrashes.compareAndSet(false, true)) return;
-        new Thread(() -> {
-            CrashDiagnostics.collectExits(this);
-            String reports = CrashDiagnostics.reports(this);
-            String latestReport = CrashDiagnostics.latestReport(this);
+        ActivityBreadcrumbs.WRITER.execute(() -> {
+            List<CrashReport.Entry> entries = CrashDiagnostics.store(this).listEntries();
             runOnUiThread(() -> {
-                if (isFinishing() || isDestroyed()) { readingCrashes.set(false); return; }
-                TextView text = new TextView(this);
-                text.setText(reports); text.setTextIsSelectable(true); text.setPadding(24, 24, 24, 24);
-                ScrollView scroll = new ScrollView(this); scroll.addView(text);
-                new AlertDialog.Builder(this).setTitle("Saved Android crash reports").setView(scroll)
-                    .setPositiveButton("Close", null).setNeutralButton("Copy latest report", (dialog, which) -> {
-                        // One bounded report stays below Android's cross-process clipboard size limit.
-                        try {
-                            getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("Neconyan crash report", latestReport));
-                            Toast.makeText(this, "Latest crash report copied. Review it before sharing.", Toast.LENGTH_LONG).show();
-                        } catch (RuntimeException error) {
-                            Toast.makeText(this, "Could not copy the report. Select its text in the reader instead.", Toast.LENGTH_LONG).show();
-                        }
-                    }).setOnDismissListener(dialog -> readingCrashes.set(false)).show();
+                readingCrashes.set(false);
+                if (!resumed || isFinishing() || isDestroyed()) return;
+                if (entries.isEmpty()) { new AlertDialog.Builder(this).setMessage("No saved Android crash reports.").setPositiveButton("Close", null).show(); return; }
+                String[] labels = entries.stream().map(entry -> (entry.at > 0 ? java.text.DateFormat.getDateTimeInstance().format(new Date(entry.at)) + "\n" : "") + entry.summary).toArray(String[]::new);
+                new AlertDialog.Builder(this).setTitle("Saved crash reports").setItems(labels, (dialog, index) -> ActivityBreadcrumbs.WRITER.execute(() -> {
+                    CrashReport.Entry entry = CrashDiagnostics.store(this).readEntry(entries.get(index).id);
+                    runOnUiThread(() -> showCrashReport(entry, false, true));
+                })).setPositiveButton("Close", null).show();
             });
-        }, "neconyan-read-crashes").start();
+        });
     }
 
     private boolean checkWebView(LinearLayout root) {
@@ -294,6 +352,7 @@ public final class MainActivity extends Activity {
             }
         });
         root.addView(settings);
+        Button reports = new Button(this); reports.setText("Saved crash reports"); reports.setMinHeight(Math.round(48 * getResources().getDisplayMetrics().density)); reports.setOnClickListener(view -> showCrashReports()); root.addView(reports);
         Button close = new Button(this);
         close.setText("Close Neconyan");
         close.setMinHeight(Math.round(48 * getResources().getDisplayMetrics().density));
@@ -540,6 +599,7 @@ public final class MainActivity extends Activity {
         Toast.makeText(this, "Details copied. Paste them into your bug report.", Toast.LENGTH_LONG).show();
     }
     private void showSafeNotice() {
+        if (!resumed || pendingReport != null || crashDialog != null && crashDialog.isShowing()) return;
         safeNoticeShown = true;
         new AlertDialog.Builder(this).setTitle("Neconyan is in safe mode")
             .setMessage("Neconyan stopped while starting, so it started again with background tasks paused: automatic memory updates and automatic messages are off, and replies or jobs that were interrupted are paused so you can retry them.\n\nYour chats are safe. Safe mode ends when you stop Neconyan and open it again.")
@@ -595,6 +655,7 @@ public final class MainActivity extends Activity {
         super.onResume();
         ActivityBreadcrumbs.foreground(true);
         resumed = true;
+        presentPendingReport();
         if (apkUpdater != null) apkUpdater.onResume();
         if (credentials == null || web == null || failed) return;
         if (status.getVisibility() == View.VISIBLE) connect();
