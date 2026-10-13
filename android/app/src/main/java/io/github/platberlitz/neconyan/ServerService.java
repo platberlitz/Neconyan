@@ -53,6 +53,7 @@ public final class ServerService extends Service {
             .setContentIntent(open).addAction(new Notification.Action.Builder(null, "Stop", stop).build()).setOngoing(true).build());
         if (!started) {
             started = true;
+            ActivityBreadcrumbs.state("starting");
             boolean safe = intent != null && intent.getBooleanExtra(SAFE, false);
             new File(getFilesDir(), "android-ready.json").delete();
             wake = getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Neconyan:server");
@@ -66,6 +67,7 @@ public final class ServerService extends Service {
                     System.loadLibrary("neconyan-node");
                     if (!runtimeClaimed.compareAndSet(false, true)) throw new IOException("The previous local server is still stopping");
                     nodeStarted = true;
+                    ActivityBreadcrumbs.state("running");
                     // Keep the previous run's log and request trace so a crash can still be explained after the restart.
                     rotate("server.log", "server.previous.log");
                     rotate("requests.txt", "requests.previous.txt");
@@ -76,7 +78,7 @@ public final class ServerService extends Service {
                     int exit = startNode(new String[] { "node", "--max-old-space-size=" + heapMegabytes(this), "--disable-wasm-trap-handler", "--icu-data-dir=" + new File(runtime, "icu").getPath(), "--import", new File(runtime, "file-stats.mjs").getPath(), new File(runtime, "server-bootstrap.mjs").getPath(),
                         getFilesDir().getPath(), credentials.getString("port"), credentials.getString("password"), safe ? "safe" : "normal" }, getCacheDir().getPath());
                     status("Neconyan stopped (" + exit + "). Reopen the app to start it again.");
-                    if (exit != 0) CrashDiagnostics.record(this, "native-runtime-exit", null, "Local server returned exit code " + exit + ". No Java exception was supplied.");
+                    if (exit != 0) CrashDiagnostics.recordReport(this, "server", "native-runtime-exit", null, "Local server returned exit code " + exit + ". No Java exception was supplied.", String.valueOf(exit), ActivityBreadcrumbs.current());
                     stopSelf();
                 } catch (Throwable error) {
                     CrashDiagnostics.record(this, "server-startup-failure", error, "The Android server service could not start the workspace.");
@@ -103,7 +105,7 @@ public final class ServerService extends Service {
     }
 
     private void status(String text) throws IOException {
-        Files.write(new File(getCacheDir(), "startup-status.txt").toPath(), text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        Files.write(new File(getCacheDir(), "startup-status.txt").toPath(), DiagnosticStore.redact(text).getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     private File installPayload() throws Exception {
@@ -197,6 +199,7 @@ public final class ServerService extends Service {
     }
 
     @Override public void onDestroy() {
+        ActivityBreadcrumbs.state("stopping");
         new File(getFilesDir(), "android-ready.json").delete();
         if (wake != null && wake.isHeld()) wake.release();
         if (nodeStarted) {

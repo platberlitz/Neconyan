@@ -6,6 +6,7 @@ import android.os.*;
 import android.webkit.WebView;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.*;
 import java.util.function.Consumer;
 import org.json.*;
@@ -88,7 +89,8 @@ final class CrashDiagnostics {
     static Result recordReport(Context context, String component, String kind, Throwable error, String details, String status, String activity) {
         long at = System.currentTimeMillis();
         String id = at + "-" + android.os.Process.myPid() + "-" + UUID.randomUUID();
-        Evidence sample = evidence(activity, at, component.equals("page") ? "last-observed-page" : "same-process");
+        boolean sameProcess = !component.equals("page") && (!component.equals("server") || Application.getProcessName().endsWith(":server"));
+        Evidence sample = evidence(activity, at, sameProcess ? "same-process" : "last-observed-page");
         String errorLine = error == null ? "Android did not supply an error message." : error.getClass().getName() + ": " + error.getMessage();
         StringBuilder text = new StringBuilder();
         try {
@@ -110,10 +112,40 @@ final class CrashDiagnostics {
                 .append("\nAt capture, not necessarily at failure:\n").append(environment(context));
             appendRequests(context, text);
         } catch (Throwable ignored) { text.append("\nSome diagnostic details could not be collected."); }
-        CrashReport.Entry entry = CrashReport.create(id, at, component, kind, component.equals("page") ? 0 : android.os.Process.myPid(), ActivityBreadcrumbs.START,
+        CrashReport.Entry entry = CrashReport.create(id, at, component, kind, sameProcess ? android.os.Process.myPid() : 0, sameProcess ? ActivityBreadcrumbs.START : 0,
             id, -1, status, errorLine, sample.at, sample.activity, sample.memory, text.toString());
         boolean saved = store(context).save(id, entry.text);
         return new Result(entry, saved);
+    }
+
+    static Result serverRecovery(Context context, int pid, long startedAt, long stoppedAt, String reason) {
+        File directory = new File(context.getFilesDir(), "data/crash-reports");
+        File[] files = directory.listFiles((dir, name) -> name.matches("crash-[a-zA-Z0-9.-]+\\.json"));
+        if (files != null) {
+            Arrays.sort(files, Comparator.comparing(File::getName).reversed());
+            for (int i = 0; i < Math.min(10, files.length); i++) try {
+                if (files[i].length() > 128 * 1024) continue;
+                JSONObject report = new JSONObject(Files.readString(files[i].toPath()));
+                JSONObject environment = report.optJSONObject("environment"), error = report.optJSONObject("error");
+                long at = java.time.Instant.parse(report.getString("at")).toEpochMilli();
+                long processStart = at - Math.round(environment == null ? 0 : environment.optDouble("uptimeSeconds", 0) * 1000);
+                if (pid <= 0 || environment == null || environment.optInt("pid") != pid || at < startedAt || at > stoppedAt + 1000 || Math.abs(processStart - startedAt) > 30000) continue;
+                String message = error == null ? "The server did not supply an error message." : error.optString("name", "Error") + ": " + error.optString("message", "");
+                String id = at + "-node-" + pid;
+                Evidence sample = evidence(ActivityBreadcrumbs.current(), stoppedAt, "last-observed-page");
+                String details = "Recorded Node error and causes:\n" + (error == null ? "Unavailable" : error.toString(2))
+                    + "\nServer runtime and activity:\n" + report.toString(2) + sample.details;
+                CrashReport.Entry entry = CrashReport.create(id, at, "server", "node-failure", pid, processStart, id, -1, "unknown", message, sample.at, sample.activity, sample.memory, details);
+                return new Result(entry, store(context).save(id, entry.text));
+            } catch (Exception ignored) { }
+        }
+        for (CrashReport.Entry summary : store(context).listEntries()) {
+            if (summary.component.equals("server") && summary.at >= startedAt && summary.at <= stoppedAt + 1000 && (pid <= 0 || summary.pid == pid)) {
+                CrashReport.Entry entry = store(context).readEntry(summary.id);
+                if (entry != null) return new Result(entry, true);
+            }
+        }
+        return recordReport(context, "server", "server-stop", null, "The local server stopped. No matched Node exception or Android exit was available.\n" + DiagnosticStore.redact(reason), "unknown", ActivityBreadcrumbs.current());
     }
 
     static final String NO_TRACE = "Android has not supplied a trace. The exit reason above is the available evidence.";

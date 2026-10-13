@@ -22,9 +22,11 @@ test('renderer loss is handled for both main and popup WebViews and offers an ex
     assert.match(renderer, /view\.destroy\(\)/);
     assert.match(renderer, /web = null/);
     assert.match(renderer, /CrashDiagnostics\.record/);
-    assert.match(activity, /if \(web == null\) \{ recreate\(\); return; \}/);
+    assert.match(activity, /if \(web == null\) \{ ActivityBreadcrumbs.state\("recreating"\); recreate\(\); return; \}/);
     const restart = block(activity, 'private boolean restartAfterStop', 'private void recordServerCrash');
-    assert.ok(restart.indexOf('CrashDiagnostics.record') < restart.indexOf('stopService'));
+    assert.ok(restart.indexOf('CrashDiagnostics.serverRecovery') < restart.indexOf('stopService'));
+    assert.ok(renderer.indexOf('frozenActivity') < renderer.indexOf('view.destroy'));
+    assert.ok(renderer.indexOf('recordReport') < renderer.indexOf('Copy report'));
 });
 
 function block(source, start, end) {
@@ -86,13 +88,28 @@ test('a native crash leaves Android a crash record that the bug report details i
     assert.match(record, /"native-crash\.txt"/);
     assert.match(block(activity, 'private boolean restartAfterStop', 'private void recordServerCrash'), /worker\.execute\(this::collectCrashDetails\), 20000\)/);
     const details = block(activity, 'private void copyDetails()', 'private void showSafeNotice');
-    assert.match(details, /recordServerCrash\(\);\s*text\.append\("\\nCrash record:\\n"\)\.append\(tail\(new File\(getCacheDir\(\), "native-crash\.txt"\), 80\)\)/);
-    assert.match(details, /"requests\.txt"/);
-    assert.match(details, /"requests\.previous\.txt"/);
+    assert.match(details, /copyReport\(serverIncident\)/);
+    assert.doesNotMatch(details, /server\.log|server\.previous\.log/);
     assert.match(bootstrap, /process\.env\.NECONYAN_REQUEST_TRACE = path\.join\(process\.env\.TMPDIR, 'requests\.txt'\);/);
     assert.match(main, /app\.use\(createRequestTrace\(process\.env\.NECONYAN_REQUEST_TRACE\)\);/);
     // Four-part hotfix versions such as 1.2.4.1 still produce a version code above every older release.
     assert.match(gradle, /versionCode numbers\[0\] \* 1000000 \+ numbers\[1\] \* 10000 \+ numbers\[2\] \* 100 \+ \(numbers\.size\(\) > 3 \? numbers\[3\] : 0\)/);
+});
+
+test('native report presentation is early, resumed and acknowledged only after showing', () => {
+    assert.ok(activity.indexOf('recoverCrashReports();') < activity.indexOf('if (!checkWebView(root))'));
+    const reader = block(activity, 'private boolean showCrashReport', 'private void copyReport');
+    assert.ok(reader.indexOf('crashDialog.show();') < reader.indexOf('acknowledgeReport(entry)'));
+    assert.match(reader, /!resumed/);
+    assert.match(reader, /setOnClickListener/);
+    assert.match(activity, /Intent.ACTION_SEND/);
+    assert.doesNotMatch(activity, /logMentionsMemory|phone ran out of memory/);
+    const bridge = read(`${app}NeconyanDiagnostics.java`);
+    assert.match(bridge, /!local \|\| nonce.isEmpty\(\) \|\| !nonce.equals\(token\)/);
+    assert.match(bridge, /json.length\(\) > 4096/);
+    assert.doesNotMatch(bridge, /Files\.|FileOutputStream/);
+    assert.match(read(`${app}NeconyanApplication.java`), /onTrimMemory/);
+    assert.match(read(`${app}NeconyanApplication.java`), /onLowMemory/);
 });
 
 test('the Android server loads full ICU data so word splitting cannot crash it', () => {
