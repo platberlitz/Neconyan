@@ -87,6 +87,8 @@ test('same-tab unexpected stop offers the old activity and dismisses once', asyn
     await expect(report).toBeVisible();
     expect(await report.inputValue()).toContain('Proofreader');
     expect(await report.inputValue()).toContain('definite cause');
+    // Summary and error are separate sentences, not run together as 'cleanly Your browser'.
+    await expect(page.locator('.neconyan-crash-report [role="status"]').first()).toContainText('close cleanly. Your browser did not provide a definite cause.');
     await page.getByRole('button', { name: 'Close', exact: true }).click();
     await page.getByRole('button', { name: 'Dismiss', exact: true }).click();
     await page.reload();
@@ -183,4 +185,14 @@ test('recovery wording reflects a before-reply Agent phase', async ({ page }) =>
     await page.reload();
     await expect(page.locator('#neconyan-crash-notice')).toContainText('before a reply');
     await expect(page.locator('#neconyan-crash-notice')).not.toContainText('after a reply');
+});
+
+test('recovery wording reads naturally during Companions', async ({ page }) => {
+    await page.addInitScript(() => {
+        sessionStorage.setItem('neconyan.crash-tab.v1', 'companions-tab');
+        localStorage.setItem('neconyan.crash-session.v1:companions-tab', JSON.stringify({ schema: 1, documentId: 'companions-document', state: 'running', visibility: 'visible', heartbeatAt: Date.now(), snapshot: { pageSessionId: 'companions-document', at: Date.now(), generation: { phase: 'companions' }, agents: { running: [{ label: 'Proofreader', phase: 'companions', location: 'server' }] } } }));
+    });
+    await page.reload();
+    await expect(page.locator('#neconyan-crash-notice')).toContainText('Running Proofreader during Companions');
+    await expect(page.locator('#neconyan-crash-notice')).not.toContainText('as Companions');
 });
