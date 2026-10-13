@@ -2,6 +2,15 @@
 
 ## v1.3.2
 
+### Highlights
+- Added General Scratchpad from Home, with its own account-wide sessions and no hidden chat context.
+- Scratchpad can propose images through Quick Image Gen and review a new portrait before saving it to the exact shared card. Generated pictures survive closing the page; the previous portrait is preserved separately.
+- Added saved browser, server and Android crash reports, with readable recovery notices and individual copy/share actions. Nothing is uploaded automatically. Recent activity helps explain what was happening; it doesn't prove what caused a crash.
+- Isolated interactive card scripts and tightened their allowed slash commands. Browsers without direct-connection blocking require an explicit choice for each card; older Android wrappers need an update.
+- Manual after-reply Agents now run one at a time, separately from Companions. Knowledge Guard reads active lore, the Author's Note and saved Secrets Tracker values; saved tracker context also reaches before-reply and server-owned helpers.
+- Put version numbers beside Agent names, kept phone Stop controls readable and left the prompt list open. Preset section locks now fill their row's height.
+- Fixed Meower saves on Windows and refreshed the handbook and assistant help for this release.
+
 ### Merged Staging PRs
 - PR #156 (2026-10-13) `fix(meower): make Windows saves work`
 
