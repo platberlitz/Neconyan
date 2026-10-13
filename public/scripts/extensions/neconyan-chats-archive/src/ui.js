@@ -3287,7 +3287,9 @@ async function jumpToChat(ctx, state, row, control) {
         if (!state.closed && popup === state.popup) {
             state.restoreFocus = false;
             await state.popup.completeCancelled();
-            document.getElementById('send_textarea')?.focus();
+            if (ctx.powerUserSettings?.auto_focus_chat_input !== false) {
+                document.getElementById('send_textarea')?.focus();
+            }
         }
     } catch (error) {
         const cancelled = error?.name === 'AbortError' || error?.name === 'TimeoutError';

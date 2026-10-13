@@ -261,6 +261,9 @@ function openGroundedDialogueRulesEditor() {
 }
 
 function focusConversationInput({ skipIOS = false } = {}) {
+    if (typeof power_user !== 'undefined' && power_user?.auto_focus_chat_input === false) {
+        return;
+    }
     if (skipIOS && isIOSWebKitPlatform()) {
         return;
     }
@@ -611,7 +614,7 @@ export function bindConversationChromeControls(sheld) {
                     });
                     scheduleInterfaceRefresh({ syncControls: false });
                     renderConversationMemoryPanel();
-                    document.getElementById(CHROME_IDS.input)?.focus?.({ preventScroll: true });
+                    focusConversationInput();
                 }
                 break;
             }
@@ -631,7 +634,7 @@ export function bindConversationChromeControls(sheld) {
                 });
                 scheduleInterfaceRefresh({ syncControls: false });
                 renderConversationMemoryPanel();
-                document.getElementById(CHROME_IDS.input)?.focus?.({ preventScroll: true });
+                focusConversationInput();
                 break;
             }
             case 'rename-branch': {
@@ -1093,9 +1096,13 @@ export function openConversationWorkspaceForAvatar(avatar, { branchId = '', grou
     if (!targetAvatar) {
         emitConversationWorkspaceStateChange();
         scheduleInterfaceRefresh({ syncControls: false });
-        setTimeout(() => {
-            document.getElementById(CHROME_IDS.input)?.focus?.({ preventScroll: true });
-        }, 100);
+        if (typeof power_user === 'undefined' || power_user?.auto_focus_chat_input !== false) {
+            setTimeout(() => {
+                if (typeof power_user === 'undefined' || power_user?.auto_focus_chat_input !== false) {
+                    document.getElementById(CHROME_IDS.input)?.focus?.({ preventScroll: true });
+                }
+            }, 100);
+        }
         // Opening without a character is valid on a fresh install; a missing requested character is not.
         return !avatar;
     }
@@ -1117,8 +1124,10 @@ export function openConversationWorkspaceForAvatar(avatar, { branchId = '', grou
     if (showToast && enable && !wasEnabled) {
         toastr.info(`Conversation Mode activated for ${character.name || 'Character'}.`);
     }
-    if (!savedOnly) setTimeout(() => {
-        document.getElementById(CHROME_IDS.input)?.focus?.({ preventScroll: true });
+    if (!savedOnly && (typeof power_user === 'undefined' || power_user?.auto_focus_chat_input !== false)) setTimeout(() => {
+        if (typeof power_user === 'undefined' || power_user?.auto_focus_chat_input !== false) {
+            document.getElementById(CHROME_IDS.input)?.focus?.({ preventScroll: true });
+        }
     }, 100);
     return true;
 }
@@ -1152,7 +1161,7 @@ export function disableConversationModeForCurrentCharacter({ focusRoleplay = tru
     conversationState.conversationTimelineSearchQuery = '';
     emitConversationWorkspaceStateChange();
     scheduleInterfaceRefresh({ syncControls: false });
-    if (focusRoleplay) {
+    if (focusRoleplay && (typeof power_user === 'undefined' || power_user?.auto_focus_chat_input !== false)) {
         document.getElementById('send_textarea')?.focus?.({ preventScroll: false });
     }
 }

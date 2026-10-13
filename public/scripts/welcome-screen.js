@@ -6,6 +6,7 @@ import { t, translate } from './i18n.js';
 import { getCurrentUserHandle } from './user.js';
 
 import { isIOSWebKitPlatform } from './mobile-send-button.js';
+import { power_user } from './power-user.js';
 import { callGenericPopup, POPUP_RESULT, POPUP_TYPE } from './popup.js';
 import { renderTemplateAsync } from './templates.js';
 import { syncNeconyanAssistantTools } from './neconyan-assistant-tools.js';
@@ -570,6 +571,9 @@ function focusWelcomeControl(route) {
 }
 
 function focusSendTextarea(sendTextArea, { skipIOS = false } = {}) {
+    if (typeof power_user !== 'undefined' && power_user?.auto_focus_chat_input === false) {
+        return;
+    }
     if (skipIOS && isIOSWebKitPlatform()) {
         return;
     }
@@ -2085,6 +2089,9 @@ export function hideWelcomeHome() {
 }
 
 function focusActiveComposer() {
+    if (typeof power_user !== 'undefined' && power_user?.auto_focus_chat_input === false) {
+        return;
+    }
     const conversationInput = document.getElementById('sb_conversation_input');
     const roleplayInput = document.getElementById('send_textarea');
     const activeComposer = conversationInput instanceof HTMLElement
