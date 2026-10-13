@@ -21,7 +21,7 @@ jest.unstable_mockModule('../public/scripts/neconyan-conversation/extension-capa
 const h = (tag, attributes = {}, ...children) => ({ tag, attributes, children: children.flat(Infinity).filter(Boolean), append(...values) { this.children.push(...values.filter(Boolean)); } });
 jest.unstable_mockModule('../public/scripts/notebooks/dom.js', () => ({ h }));
 jest.unstable_mockModule('../public/scripts/scratchpad/api.js', () => ({ readImageAvailability, readAvatarReview, generateImage, newSubmissionKey: () => 'image-key' }));
-const { renderImageCard, prepareAvatarChange, generateProposal } = await import('../public/scripts/scratchpad/images.js');
+const { renderImageCard, prepareAvatarChange, generateProposal, reviewImagePrompt } = await import('../public/scripts/scratchpad/images.js');
 const source = { kind: 'general', key: 'general', avatar: 'Nova.png' };
 const session = { id: 'session' };
 const part = { index: 0, change: { type: 'image', action: 'generate', target: 'avatar', character: 'Nova', prompt: 'Portrait.' } };
@@ -91,6 +91,20 @@ describe('Scratchpad images and avatar reviews', () => {
         buttons[0].attributes.onclick();
         await new Promise(resolve => setImmediate(resolve));
         expect(cancelJob).toHaveBeenCalledWith('image-job');
+    });
+
+    test('the prompt review window declines with Cancel, not Stop image', async () => {
+        const { getJobApproval, decideJobApproval } = await import('../public/scripts/jobs.js');
+        getJobApproval.mockResolvedValueOnce({ id: 'approval-1', proposal: { prompt: 'Portrait.', negative: 'lowres' } });
+        const popup = jest.fn(async () => 0);
+        await reviewImagePrompt({ id: 'image-job', result: { approval: { id: 'approval-1' } } }, { guard: () => {}, popup, type: 'confirm', affirmative: 1 });
+        const [content, type, value, options] = popup.mock.calls[0];
+        expect(type).toBe('confirm');
+        expect(value).toBe('');
+        expect(options.okButton).toBe('Generate reviewed image');
+        expect(options.cancelButton).toBe('Cancel');
+        expect(content.children.map(child => child.attributes.text)).toEqual(['Processed image prompt', 'Portrait.', 'Exclude: lowres']);
+        expect(decideJobApproval).toHaveBeenCalledWith('image-job', { id: 'approval-1', proposal: { prompt: 'Portrait.', negative: 'lowres' }, decision: 'deny' });
     });
 
     test('Not now leaves the card unchanged and a visual review shows labelled Current and Proposed pictures', async () => {

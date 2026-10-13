@@ -205,6 +205,8 @@ for (const phone of [false, true]) {
         await expect(popup.getByText('Processed image prompt', { exact: true })).toBeVisible({ timeout: 30000 });
         await expect(popup.locator('.scratchpad-image-prompt')).toContainText('observatory');
         await expect(card.getByRole('button', { name: 'Stop image', exact: true })).toHaveCount(0);
+        await expect(popup.getByRole('button', { name: 'Cancel', exact: true })).toBeVisible();
+        await expect(popup.getByRole('button', { name: 'Stop image', exact: true })).toHaveCount(0);
         expect(imageProvider.calls).toHaveLength(0);
         await page.evaluate(() => window.toastr.clear());
         await page.screenshot({ path: `../screenshots/scratchpad-review-${size}-after.png` });
