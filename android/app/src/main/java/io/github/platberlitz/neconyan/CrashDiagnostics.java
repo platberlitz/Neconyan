@@ -205,7 +205,7 @@ final class CrashDiagnostics {
                 int reason = info.getReason();
                 if (expectedStop(context, info)) continue;
                 if (reason == ApplicationExitInfo.REASON_USER_REQUESTED || reason == ApplicationExitInfo.REASON_USER_STOPPED
-                    || reason == 16 /* REASON_PACKAGE_UPDATED, added in API 31 */ || reason == ApplicationExitInfo.REASON_PERMISSION_CHANGE
+                    || reason == 16 /* REASON_PACKAGE_UPDATED is absent from the API 30 constants; the value is inlined */ || reason == ApplicationExitInfo.REASON_PERMISSION_CHANGE
                     || (reason == ApplicationExitInfo.REASON_EXIT_SELF && info.getStatus() == 0)) continue;
                 String id = info.getTimestamp() + "-exit-" + info.getPid();
                 // Android keeps returning the same history; decode each trace once.
