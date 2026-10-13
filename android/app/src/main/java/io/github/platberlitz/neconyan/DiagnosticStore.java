@@ -10,6 +10,7 @@ final class DiagnosticStore {
     static final int MAX_CHARS = 60000;
     private static final Object WRITE_LOCK = new Object();
     private final File directory;
+    private String readError = "";
     DiagnosticStore(File directory) { this.directory = directory; }
 
     static String redact(String text) {
@@ -33,7 +34,11 @@ final class DiagnosticStore {
                 return files.length < 10 || (id + ".txt").compareTo(files[files.length - 10].getName()) > 0;
             }
             try {
-                return new String(Files.readAllBytes(existing.toPath()), StandardCharsets.UTF_8).contains(missingTraceText);
+                if (existing.length() > MAX_CHARS * 4L) return false;
+                String text = new String(Files.readAllBytes(existing.toPath()), StandardCharsets.UTF_8);
+                int boundary = text.indexOf("\n\nDetails:\n");
+                if (boundary > 0 && boundary <= 4096 && text.substring(0, boundary).contains("\nTrace status: available")) return false;
+                return text.contains(missingTraceText);
             } catch (IOException error) { return true; }
         }
     }
@@ -43,6 +48,7 @@ final class DiagnosticStore {
         synchronized (WRITE_LOCK) {
             if (!id.matches("[a-zA-Z0-9-]+")) return false;
             if (!hasTrace && new File(directory, id + ".txt").isFile()) return true;
+            if (report.startsWith("Neconyan crash report v2\n")) report = report.replaceFirst("\n\nDetails:\n", "\nTrace status: " + (hasTrace ? "available" : "pending") + "\n\nDetails:\n");
             return saveLocked(id, report);
         }
     }
@@ -70,11 +76,13 @@ final class DiagnosticStore {
     }
 
     File[] files() {
+        readError = "";
         File[] files = directory.listFiles((dir, name) -> name.matches("[a-zA-Z0-9-]+\\.txt"));
-        if (files == null) return new File[0];
+        if (files == null) { if (directory.exists()) readError = "Saved crash reports could not be read. Check storage and use the current report's Copy or Share action if available."; return new File[0]; }
         Arrays.sort(files, Comparator.comparing(File::getName));
         return files;
     }
+    String readError() { return readError; }
 
     CrashReport.Entry readEntry(String id) {
         if (id == null || !id.matches("[a-zA-Z0-9-]+\\.txt")) return null;
@@ -92,7 +100,7 @@ final class DiagnosticStore {
                 String header = new String(input.readNBytes(4096), StandardCharsets.UTF_8);
                 CrashReport.Entry entry = CrashReport.parse(files[i].getName(), header);
                 if (entry != null) entries.add(entry);
-            } catch (IOException ignored) { }
+            } catch (IOException ignored) { readError = "A saved crash report could not be read. Select another report or copy the current report before closing."; }
         }
         return entries;
     }

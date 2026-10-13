@@ -6,6 +6,7 @@
     margin: 12px 0;
 }
 .neconyan-crash-report .menu_button,
+.neconyan-crash-popup .menu_button,
 .neconyan-crash-notice .menu_button {
     min-height: 44px;
     max-width: 100%;
@@ -25,6 +26,10 @@
     min-width: 0;
     overflow-wrap: anywhere;
     text-align: left;
+}
+body.neconyan dialog.neconyan-crash-popup {
+    background: var(--neco-surface);
+    color: var(--neco-ink);
 }
 body #toast-container:has(.neconyan-crash-notice) {
     top: calc(env(safe-area-inset-top, 0px) + 50px);

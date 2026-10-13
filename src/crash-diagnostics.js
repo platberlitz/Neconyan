@@ -21,7 +21,7 @@ let latestStatus = null;
 
 function reportStatus(report) {
     const preview = redact(report.error?.message || 'No error message was supplied.', 400);
-    return { id: report.id, at: report.at, kind: redact(report.kind, 80), summary: report.kind === 'unclean-previous-exit'
+    return { id: report.id, at: typeof report.at === 'string' && report.at.length <= 40 ? report.at : null, kind: redact(report.kind, 80), summary: report.kind === 'unclean-previous-exit'
         ? 'The previous server process did not close normally. No definite cause was supplied.' : 'A saved server crash report is available.',
     errorPreview: preview.slice(0, 200) };
 }
@@ -92,7 +92,7 @@ export function getCrashReports(dir = directory) {
             const file = path.join(dir, name);
             if (fs.statSync(file).size > MAX_BYTES) return [];
             const report = JSON.parse(fs.readFileSync(file, 'utf8'));
-            report.id ||= name.slice(0, -5);
+            report.id = name.slice(0, -5);
             return [report];
         } catch { return []; }
     });

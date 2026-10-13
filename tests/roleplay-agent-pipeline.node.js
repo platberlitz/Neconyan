@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { getDiagnosticServerActivity } from '../src/diagnostic-activity.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import test, { after } from 'node:test';
@@ -201,6 +202,10 @@ for (const effect of ['append', 'continue', 'swipe', 'replace']) {
         const calls = [];
         await f.run({ generate: paid('main', () => 'Main output'), generateAgent: paid('rewrite', ({ messages }) => {
             const agent = agents[calls.length];
+            if (['tpl-format-fixer', 'tpl-proofreader'].includes(agent.id)) {
+                const label = agent.id === 'tpl-format-fixer' ? 'Format Fixer' : 'Proofreader';
+                assert.ok(getDiagnosticServerActivity().agents.running.some(item => item.label === label && item.phase === 'post' && item.location === 'server'));
+            }
             calls.push(agent.id);
             const context = messages[1].content.match(/<recent_chat>\n([\s\S]*?)\n<\/recent_chat>/)?.[1];
             if (agent.postProcess.promptTransformContextMessages) {

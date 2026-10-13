@@ -1237,9 +1237,11 @@ function scheduleDeferredStartupStylesheets() {
 
 //MARK: firstLoadInit
 async function firstLoadInit() {
-    initialiseCrashActivity({ eventSource, event_types, getChat: () => chat,
-        getExtensionCount: () => extensionNames.filter(name => !extension_settings.disabledExtensions.some(disabled => areExtensionIdsEqual(name, disabled))).length,
-        getRequestHeaders, refreshCsrfToken, isAdmin, getAccount: getCurrentUserHandle });
+    try {
+        initialiseCrashActivity({ eventSource, event_types, getChat: () => chat,
+            getExtensionCount: () => extensionNames.filter(name => !extension_settings.disabledExtensions.some(disabled => areExtensionIdsEqual(name, disabled))).length,
+            getRequestHeaders, refreshCsrfToken, isAdmin, getAccount: getCurrentUserHandle });
+    } catch { /* Diagnostics must never prevent application startup. */ }
     setChatNavigationBlocked(true);
     const scheduleStartupLoaderCleanup = (reason) => {
         cleanupActionLoaderArtifacts({ removePreloader: true, reason });
@@ -19855,6 +19857,7 @@ jQuery(async function () {
             '.ui-widget',
             '.text_pole',
             '#toast-container',
+            '#neconyan-crash-notice',
             '.select2-results',
         ];
 

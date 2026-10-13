@@ -1,8 +1,11 @@
-/* global globalThis, document */
+/* global globalThis, document, sessionStorage, localStorage */
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import os from 'node:os';
+import { createServer } from 'node:http';
+import net from 'node:net';
 import { fileURLToPath } from 'node:url';
-import { test, expect } from '@playwright/test';
+import { chromium, test, expect } from '@playwright/test';
 
 const publicRoot = path.resolve(fileURLToPath(new URL('../public/', import.meta.url)));
 
@@ -87,5 +90,61 @@ test('same-tab unexpected stop offers the old activity and dismisses once', asyn
     await page.getByRole('button', { name: 'Close', exact: true }).click();
     await page.getByRole('button', { name: 'Dismiss', exact: true }).click();
     await page.reload();
+    await expect(page.getByRole('button', { name: 'Read report', exact: true })).toHaveCount(0);
+});
+
+test('a disposable Chromium renderer crash retains the old sample on reload', async () => {
+    test.setTimeout(60000);
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'neconyan-crash-browser-'));
+    const server = createServer(async (request, response) => {
+        if (request.url.startsWith('/scripts/')) {
+            const file = path.resolve(publicRoot, '.' + new URL(request.url, 'http://localhost').pathname);
+            if (!file.startsWith(publicRoot + path.sep)) { response.writeHead(403); response.end(); return; }
+            response.setHeader('Content-Type', 'text/javascript');
+            response.end(await fs.readFile(file));
+        } else response.end('<script src="/scripts/crash-diagnostics.js"></script><main>Disposable renderer crash fixture</main>');
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const reservation = net.createServer();
+    await new Promise(resolve => reservation.listen(0, '127.0.0.1', resolve));
+    const debugPort = reservation.address().port;
+    await new Promise(resolve => reservation.close(resolve));
+    const context = await chromium.launchPersistentContext(directory, { headless: true, args: [`--remote-debugging-port=${debugPort}`] });
+    let restoredBrowser;
+    try {
+        const page = context.pages()[0];
+        const url = `http://127.0.0.1:${server.address().port}`;
+        await page.goto(url);
+        await page.evaluate(() => {
+            globalThis.NeconyanCrashDiagnostics.updateActivity({ mode: 'roleplay', chat: { messageCount: 58 } });
+            globalThis.NeconyanCrashDiagnostics.beginAgent({ id: 'test-agent', sourceTemplateId: 'tpl-proofreader', phase: 'post' });
+            globalThis.NeconyanCrashDiagnostics.flushActivity('fixture');
+        });
+        const session = await context.newCDPSession(page);
+        const crashed = page.waitForEvent('crash');
+        void session.send('Page.crash').catch(() => {});
+        await crashed;
+        await session.send('Page.navigate', { url: url + '/recovered' });
+        // Playwright marks a crashed Page permanently. A fresh CDP client observes
+        // the same physical tab after browser-level navigation, not a seeded new tab.
+        restoredBrowser = await chromium.connectOverCDP(`http://127.0.0.1:${debugPort}`);
+        const restored = restoredBrowser.contexts()[0].pages()[0];
+        await expect(restored.getByRole('button', { name: 'Read report', exact: true })).toBeVisible();
+        expect(await restored.evaluate(() => globalThis.NeconyanCrashDiagnostics.getReports().reports.at(-1).lastKnownActivity.snapshot.chat.messageCount)).toBe(58);
+    } finally {
+        await restoredBrowser?.close();
+        await context.close().catch(() => {});
+        await new Promise(resolve => server.close(resolve));
+        await fs.rm(directory, { recursive: true, force: true });
+    }
+});
+
+test('critical startup failure is readable, then suppressed if the document reaches ready', async ({ page }) => {
+    await page.route('http://crash.test/script.js', route => route.abort());
+    await page.route('http://crash.test/fatal', route => route.fulfill({ contentType: 'text/html', body: '<script src="/scripts/crash-diagnostics.js"></script><script type="module" src="/script.js"></script><main>Fatal fixture</main>' }));
+    await page.goto('http://crash.test/fatal');
+    await expect(page.getByRole('button', { name: 'Read report', exact: true })).toBeVisible();
+    expect(await page.evaluate(() => globalThis.NeconyanCrashDiagnostics.getReports().reports.at(-1).kind)).toBe('critical-startup-load-failure');
+    await page.evaluate(() => globalThis.NeconyanCrashDiagnostics.markAppReady());
     await expect(page.getByRole('button', { name: 'Read report', exact: true })).toHaveCount(0);
 });

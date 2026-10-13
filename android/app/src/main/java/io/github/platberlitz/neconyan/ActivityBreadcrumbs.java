@@ -21,6 +21,7 @@ final class ActivityBreadcrumbs {
     private static boolean pending, foreground;
     private static long writtenAt, pressureAt;
     private static String processKind;
+    private static ScheduledFuture<?> heartbeatTask;
 
     static void initialise(Context app) {
         context = app.getApplicationContext();
@@ -92,9 +93,9 @@ final class ActivityBreadcrumbs {
                 }
             }
             events = safe; schedule(); return true;
-        } catch (Exception ignored) { return false; }
+        } catch (Throwable ignored) { return false; }
     }
-    static synchronized void foreground(boolean value) { foreground = value; schedule(); }
+    static synchronized void foreground(boolean value) { foreground = value; if (!value && heartbeatTask != null) heartbeatTask.cancel(false); schedule(); }
     static synchronized void pressure(int level) {
         long now = System.currentTimeMillis();
         if (now - pressureAt < 2000) return;
@@ -148,7 +149,10 @@ final class ActivityBreadcrumbs {
         } catch (Exception ignored) { }
         finally { if (temporary != null) temporary.delete(); }
         synchronized (ActivityBreadcrumbs.class) { writtenAt = System.currentTimeMillis(); pending = false; }
-        WRITER.schedule(() -> { synchronized (ActivityBreadcrumbs.class) { if (foreground) schedule(); } }, 30000, TimeUnit.MILLISECONDS);
+        synchronized (ActivityBreadcrumbs.class) {
+            if (heartbeatTask != null) heartbeatTask.cancel(false);
+            if (foreground) heartbeatTask = WRITER.schedule(() -> { synchronized (ActivityBreadcrumbs.class) { if (foreground) schedule(); } }, 30000, TimeUnit.MILLISECONDS);
+        }
     }
     static String historical(Context app, int pid, long stopAt) {
         File[] files = new File(app.getNoBackupFilesDir(), "crash-activity").listFiles((dir, name) -> name.matches("activity-" + pid + "-[0-9]+\\.json"));
@@ -160,5 +164,19 @@ final class ActivityBreadcrumbs {
             if (input.optLong("processStartMs", Long.MAX_VALUE) <= stopAt && input.optLong("processStartMs", 0) >= stopAt - 2592000000L) return text;
         } catch (Exception ignored) { }
         return "";
+    }
+    static String lastPage(Context app, long stopAt) {
+        File[] files = new File(app.getNoBackupFilesDir(), "crash-activity").listFiles((dir, name) -> name.matches("activity-[0-9]+-[0-9]+\\.json"));
+        if (files == null) return "";
+        Arrays.sort(files, Comparator.comparingLong(File::lastModified).reversed());
+        String selected = ""; long latest = 0;
+        for (int i = 0; i < Math.min(6, files.length); i++) try {
+            if (files[i].length() > 8192) continue;
+            String text = Files.readString(files[i].toPath()); JSONObject input = new JSONObject(text), page = input.optJSONObject("snapshot");
+            if (page == null) continue;
+            long at = page.optLong("at", Long.MAX_VALUE);
+            if (at > latest && at <= stopAt) { latest = at; selected = text; }
+        } catch (Exception ignored) { }
+        return selected;
     }
 }

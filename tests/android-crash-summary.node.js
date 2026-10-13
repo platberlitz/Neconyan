@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import os from 'node:os';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 
-test('native summaries, bounded individual reads and seen policy run on the host', t => {
-    const root = fs.mkdtempSync('/tmp/opencode/crash-relaunch/summary-');
+const hasJava = spawnSync('javac', ['-version']).status === 0 && spawnSync('java', ['-version']).status === 0;
+test('native summaries, bounded individual reads and seen policy run on the host', { skip: !hasJava }, t => {
+    const root = fs.mkdtempSync(path.join(fs.existsSync('/tmp/opencode') ? '/tmp/opencode' : os.tmpdir(), 'neconyan-summary-'));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     const harness = path.join(root, 'SummaryTest.java');
     fs.writeFileSync(harness, `package io.github.platberlitz.neconyan;
@@ -17,18 +19,36 @@ public class SummaryTest { public static void main(String[] args) {
     if (!CrashReport.summary("page", "renderer-closed", -1, "unknown").contains("definite cause")) throw new AssertionError("renderer confidence");
     if (!CrashReport.summary("server", "exit", 3, "9").contains("local server to free memory")) throw new AssertionError("Android memory");
     if (!CrashReport.summary("app", "uncaught-java-exception", -1, "unknown").contains("application error")) throw new AssertionError("Java error");
+    if (!CrashReport.matchesNode(42, 100000, 300000, 1000000, 42, 900000, 500000)) throw new AssertionError("payload preparation delay");
+    if (!CrashReport.matchesNode(42, 100000, 800000, 1000000, 42, 900000, 100000)) throw new AssertionError("reopened activity with running server");
+    if (CrashReport.matchesNode(42, 600000, 800000, 1000000, 42, 900000, 100000)) throw new AssertionError("reused old PID");
+    if (CrashReport.matchesNode(42, 100000, 300000, 1000000, 43, 900000, 500000)) throw new AssertionError("wrong PID");
+    if (!CrashReport.firstTraceError("Signal 6\\nAbort message: actual cause password=private\\n").contains("actual cause")) throw new AssertionError("trace preview");
+    String fatal = CrashReport.fatalRuntimeLines("Private model output\\nFATAL ERROR: Reached heap limit password=private\\n 1: 0xabc runtime_frame\\nAnother private output\\n");
+    if (!fatal.contains("FATAL ERROR") || fatal.contains("Private model") || fatal.contains("Another private") || fatal.contains("password=private")) throw new AssertionError("fatal log isolation");
     if (!store.save("200-crash", entry.text)) throw new AssertionError("save");
     if (store.readEntry("../escape.txt") != null) throw new AssertionError("traversal");
     entry = store.readEntry("200-crash.txt");
     if (entry.text.length() > 60000 || entry.text.contains("private")) throw new AssertionError("bound/redaction");
     if (store.listEntries().get(0).text.length() > 4096) throw new AssertionError("loaded body for list");
+    store.saveExit("300-exit-42", entry.text.replace("\\n\\nDetails:\\n", "\\n\\nDetails:\\nNO TRACE in earlier evidence\\n"), true);
+    if (store.needsExit("300-exit-42", "NO TRACE")) throw new AssertionError("same-incident earlier missing trace caused repeated decode");
+    if (!store.readEntry("300-exit-42.txt").traceAvailable) throw new AssertionError("trace status not parsed");
+    File blocked = new File(args[0], "blocked");
+    try { new FileOutputStream(blocked).close(); } catch (Exception e) { throw new AssertionError(e); }
+    DiagnosticStore unreadable = new DiagnosticStore(blocked);
+    if (!unreadable.listEntries().isEmpty() || unreadable.readError().isEmpty()) throw new AssertionError("invented empty success");
     if (!CrashReport.shouldOffer(entry, "", Set.of())) throw new AssertionError("new incident");
     if (CrashReport.shouldOffer(entry, "200-crash.txt", Set.of())) throw new AssertionError("seen boundary");
     if (CrashReport.shouldOffer(entry, "", Set.of("incident-one"))) throw new AssertionError("enrichment duplicate");
+    if (!CrashReport.displayText(entry, false).contains("could not be saved")) throw new AssertionError("save failure presentation");
+    System.out.println(CrashReport.displayText(entry, false));
     if (!CrashReport.parse("100-legacy.txt", "Old report").component.equals("unknown")) throw new AssertionError("legacy");
     System.out.println("passed");
 } }`);
     const java = 'android/app/src/main/java/io/github/platberlitz/neconyan/';
     execFileSync('javac', ['-d', root, java + 'CrashReport.java', java + 'DiagnosticStore.java', harness]);
-    assert.match(execFileSync('java', ['-cp', root, 'io.github.platberlitz.neconyan.SummaryTest', root], { encoding: 'utf8' }), /passed/);
+    const output = execFileSync('java', ['-cp', root, 'io.github.platberlitz.neconyan.SummaryTest', root], { encoding: 'utf8' });
+    if (process.env.NECONYAN_NATIVE_COPY_OUTPUT) fs.writeFileSync(process.env.NECONYAN_NATIVE_COPY_OUTPUT, 'Host fixture, not an Android screen.\n\n' + output);
+    assert.match(output, /passed/);
 });

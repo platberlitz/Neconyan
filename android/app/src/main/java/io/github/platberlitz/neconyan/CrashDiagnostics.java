@@ -87,7 +87,9 @@ final class CrashDiagnostics {
         return result;
     }
     static Result recordReport(Context context, String component, String kind, Throwable error, String details, String status, String activity) {
-        long at = System.currentTimeMillis();
+        return recordReport(context, component, kind, error, details, status, activity, System.currentTimeMillis());
+    }
+    static Result recordReport(Context context, String component, String kind, Throwable error, String details, String status, String activity, long at) {
         String id = at + "-" + android.os.Process.myPid() + "-" + UUID.randomUUID();
         boolean sameProcess = !component.equals("page") && (!component.equals("server") || Application.getProcessName().endsWith(":server"));
         Evidence sample = evidence(activity, at, sameProcess ? "same-process" : "last-observed-page");
@@ -119,6 +121,8 @@ final class CrashDiagnostics {
     }
 
     static Result serverRecovery(Context context, int pid, long startedAt, long stoppedAt, String reason) {
+        long nativeStart = 0;
+        try { nativeStart = new JSONObject(ActivityBreadcrumbs.historical(context, pid, stoppedAt)).optLong("processStartMs", 0); } catch (Exception ignored) { }
         File directory = new File(context.getFilesDir(), "data/crash-reports");
         File[] files = directory.listFiles((dir, name) -> name.matches("crash-[a-zA-Z0-9.-]+\\.json"));
         if (files != null) {
@@ -129,23 +133,63 @@ final class CrashDiagnostics {
                 JSONObject environment = report.optJSONObject("environment"), error = report.optJSONObject("error");
                 long at = java.time.Instant.parse(report.getString("at")).toEpochMilli();
                 long processStart = at - Math.round(environment == null ? 0 : environment.optDouble("uptimeSeconds", 0) * 1000);
-                if (pid <= 0 || environment == null || environment.optInt("pid") != pid || at < startedAt || at > stoppedAt + 1000 || Math.abs(processStart - startedAt) > 30000) continue;
+                if (environment == null || !CrashReport.matchesNode(pid, nativeStart, startedAt, stoppedAt, environment.optInt("pid"), at, processStart)) continue;
                 String message = error == null ? "The server did not supply an error message." : error.optString("name", "Error") + ": " + error.optString("message", "");
                 String id = at + "-node-" + pid;
-                Evidence sample = evidence(ActivityBreadcrumbs.current(), stoppedAt, "last-observed-page");
+                Evidence sample = evidence(ActivityBreadcrumbs.current(), at, "last-observed-page");
                 String details = "Recorded Node error and causes:\n" + (error == null ? "Unavailable" : error.toString(2))
                     + "\nServer runtime and activity:\n" + report.toString(2) + sample.details;
-                CrashReport.Entry entry = CrashReport.create(id, at, "server", "node-failure", pid, processStart, id, -1, "unknown", message, sample.at, sample.activity, sample.memory, details);
+                CrashReport.Entry entry = CrashReport.create(id, at, "server", "node-failure", pid, nativeStart, id, -1, "unknown", message, sample.at, sample.activity, sample.memory, details);
                 return new Result(entry, store(context).save(id, entry.text));
             } catch (Exception ignored) { }
         }
         for (CrashReport.Entry summary : store(context).listEntries()) {
             if (summary.component.equals("server") && summary.at >= startedAt && summary.at <= stoppedAt + 1000 && (pid <= 0 || summary.pid == pid)) {
                 CrashReport.Entry entry = store(context).readEntry(summary.id);
-                if (entry != null) return new Result(entry, true);
+                if (entry != null) return withFatalRuntimeLog(context, new Result(entry, true), startedAt);
             }
         }
-        return recordReport(context, "server", "server-stop", null, "The local server stopped. No matched Node exception or Android exit was available.\n" + DiagnosticStore.redact(reason), "unknown", ActivityBreadcrumbs.current());
+        Result fallback = recordReport(context, "server", "server-stop", null, "The local server stopped. No matched Node exception or Android exit was available.\n" + DiagnosticStore.redact(reason), "unknown", ActivityBreadcrumbs.current());
+        CrashReport.Entry old = fallback.entry;
+        String id = old.id.substring(0, old.id.length() - 4);
+        CrashReport.Entry entry = CrashReport.create(id, old.at, "server", old.event, pid, nativeStart, old.incident, old.reason, old.status,
+            old.error, old.activityAt, old.activity, old.memory, old.text);
+        return withFatalRuntimeLog(context, new Result(entry, store(context).save(id, entry.text)), startedAt);
+    }
+    private static Result withFatalRuntimeLog(Context context, Result original, long since) {
+        if (!original.entry.error.equals("Android did not supply an error message.")) return original;
+        File file = new File(context.getCacheDir(), "server.log");
+        if (!file.isFile() || file.lastModified() < since) return original;
+        try (RandomAccessFile input = new RandomAccessFile(file, "r")) {
+            byte[] bytes = new byte[(int) Math.min(input.length(), 65536)];
+            input.seek(input.length() - bytes.length); input.readFully(bytes);
+            String excerpt = CrashReport.fatalRuntimeLines(new String(bytes, StandardCharsets.UTF_8));
+            if (excerpt.isEmpty()) return original;
+            CrashReport.Entry previous = original.entry;
+            String id = previous.id.substring(0, previous.id.length() - 4);
+            String event = excerpt.contains("JavaScript heap") || excerpt.contains("heap limit") ? "runtime-heap-limit" : previous.event;
+            CrashReport.Entry entry = CrashReport.create(id, previous.at, "server", event, previous.pid, previous.processStart, previous.incident, previous.reason,
+                previous.status, "Fatal runtime log excerpt: " + excerpt.split("\n")[0], previous.activityAt, previous.activity, previous.memory,
+                "Fatal runtime log excerpt (log evidence, not proof of Android-wide memory exhaustion):\n" + excerpt + "\n" + previous.text);
+            return new Result(entry, store(context).save(id, entry.text));
+        } catch (Exception ignored) { return original; }
+    }
+    static Result enrichServer(Context context, CrashReport.Entry original, CrashReport.Entry exit) {
+        if (original == null || exit == null || original.pid <= 0 || original.pid != exit.pid || !exit.component.equals("server")
+            || Math.abs(exit.at - original.at) > 30000) return null;
+        if (original.processStart > 0 && exit.processStart > 0 && original.processStart != exit.processStart) return null;
+        String id = original.id.substring(0, original.id.length() - 4);
+        long at = Math.min(original.at, exit.at);
+        long activityAt = original.activityAt <= at ? original.activityAt : exit.activityAt <= at ? exit.activityAt : 0;
+        String activity = activityAt == 0 ? "No earlier activity sample was available." : activityAt == original.activityAt ? original.activity : exit.activity;
+        if (activityAt > 0) activity = activity.replaceFirst("recorded [0-9]+ seconds", "recorded " + (at - activityAt) / 1000 + " seconds");
+        String details = (original.at > exit.at ? "Original recovery report, recorded after the exit; its activity is not necessarily earlier evidence:\n" : "Original recorded error:\n")
+            + original.text.substring(0, Math.min(24000, original.text.length())) + "\n\nAndroid exit evidence:\n" + exit.text;
+        CrashReport.Entry entry = CrashReport.create(id, at, "server", original.event, original.pid, original.processStart, original.incident,
+            exit.reason, exit.status, original.error, activityAt, activity, original.at <= exit.at ? original.memory : exit.memory, details);
+        String text = entry.text.replaceFirst("\n\nDetails:\n", "\nTrace status: " + (exit.traceAvailable || original.traceAvailable ? "available" : "pending") + "\n\nDetails:\n");
+        entry = CrashReport.parse(original.id, text);
+        return new Result(entry, store(context).save(id, entry.text));
     }
 
     static final String NO_TRACE = "Android has not supplied a trace. The exit reason above is the available evidence.";
@@ -153,7 +197,7 @@ final class CrashDiagnostics {
     static void collectExits(Context context) {
         collectExits(context, entry -> {});
     }
-    static void collectExits(Context context, Consumer<CrashReport.Entry> available) {
+    static void collectExits(Context context, Consumer<Result> available) {
         try {
             DiagnosticStore store = store(context);
             for (ApplicationExitInfo info : context.getSystemService(ActivityManager.class).getHistoricalProcessExitReasons(context.getPackageName(), 0, 20)) {
@@ -168,11 +212,17 @@ final class CrashDiagnostics {
                 String component = info.getProcessName() != null && info.getProcessName().endsWith(":server") ? "server" : "app";
                 String oldActivity = ActivityBreadcrumbs.historical(context, info.getPid(), info.getTimestamp());
                 Evidence sample = evidence(oldActivity, info.getTimestamp(), "same-process");
+                if (sample.at == 0 && component.equals("server")) {
+                    Evidence page = evidence(ActivityBreadcrumbs.lastPage(context, info.getTimestamp()), info.getTimestamp(), "last-observed-page");
+                    sample.at = page.at; sample.activity = page.activity; sample.details += page.details;
+                    if (sample.memory.equals("No earlier memory measurement was available.")) sample.memory = page.memory;
+                }
                 long start = 0;
                 try { start = new JSONObject(oldActivity).optLong("processStartMs", 0); } catch (Exception ignored) { }
                 String incident = id;
                 CrashReport.Entry matched = null;
                 for (CrashReport.Entry prior : store.listEntries()) {
+                    if (prior.id.equals(id + ".txt") || prior.event.equals("android-process-exit")) continue;
                     if (prior.pid == info.getPid() && start > 0 && prior.processStart == start && prior.at <= info.getTimestamp() && info.getTimestamp() - prior.at <= 10000) { incident = prior.incident; matched = store.readEntry(prior.id); break; }
                 }
                 String errorLine = matched == null ? "Android did not supply an error message." : matched.error;
@@ -186,14 +236,18 @@ final class CrashDiagnostics {
                 if (matched != null) text.insert(0, "Recorded application error from the same process instance:\n" + matched.text + "\n\n");
                 CrashReport.Entry metadata = CrashReport.create(id, info.getTimestamp(), component, "android-process-exit", info.getPid(), start, incident, reason,
                     String.valueOf(info.getStatus()), errorLine, sample.at, sample.activity, sample.memory, text + "\n" + NO_TRACE);
-                store.saveExit(id, metadata.text, false);
-                available.accept(metadata);
+                boolean metadataSaved = store.saveExit(id, metadata.text, false);
+                CrashReport.Entry retained = metadataSaved ? store.readEntry(id + ".txt") : null;
+                available.accept(new Result(retained == null ? metadata : retained, metadataSaved));
                 boolean hasTrace = false;
                 try (InputStream trace = info.getTraceInputStream()) {
                     text.append("\nSystem trace:\n");
                     if (trace == null) text.append(NO_TRACE);
                     else if (reason == ApplicationExitInfo.REASON_CRASH_NATIVE) {
-                        text.append(Tombstone.describe(trace)); hasTrace = true;
+                        String decoded = Tombstone.describe(trace);
+                        text.append(decoded); hasTrace = true;
+                        String traceError = CrashReport.firstTraceError(decoded);
+                        if (matched == null && !traceError.isEmpty()) errorLine = traceError;
                     }
                     else {
                         byte[] bytes = new byte[24000];
@@ -210,8 +264,9 @@ final class CrashDiagnostics {
                 // Stable name lets delayed Android traces enrich the same report instead of duplicating it.
                 CrashReport.Entry entry = CrashReport.create(id, info.getTimestamp(), component, "android-process-exit", info.getPid(), start, incident, reason,
                     String.valueOf(info.getStatus()), errorLine, sample.at, sample.activity, sample.memory, text.toString());
-                store.saveExit(id, entry.text, hasTrace);
-                available.accept(entry);
+                boolean saved = store.saveExit(id, entry.text, hasTrace);
+                retained = saved ? store.readEntry(id + ".txt") : null;
+                available.accept(new Result(retained == null ? entry : retained, saved));
             }
         } catch (Exception error) { android.util.Log.w("Neconyan", "Could not collect Android exit records", error); }
     }

@@ -124,11 +124,18 @@
     const SESSION_PREFIX = 'neconyan.crash-session.v1:';
     const TAB_KEY = 'neconyan.crash-tab.v1';
     const randomId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    function legacyId(report) {
+        const values = [report.runtime, report.kind, report.at, report.startedAt, report.context?.source, report.error?.message];
+        const text = values.map(value => typeof value === 'string' ? value.slice(0, 400) : typeof value === 'number' ? String(value) : '').join('|');
+        let hash = 2166136261;
+        for (const character of text) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
+        return `legacy:${(hash >>> 0).toString(16)}`;
+    }
     const documentId = randomId();
     let tabId = randomId(), previousSession = null;
     let snapshot = validateActivity({ pageSessionId: documentId, at: startedAt, uptimeMs: 0, view: 'startup', visibility: document.visibilityState });
     let events = [{ at: startedAt, type: 'page-start' }];
-    const handles = new Map(), observedJobs = new Map(), customLabels = new Map();
+    const handles = new Map(), observedJobs = new Map(), customLabels = new Map(), phases = new Map(), retainedActivities = [];
     let nextHandle = 0, nativeToken = '', lastWrite = 0, flushTimer = null, heartbeatTimer = null, state = 'running', dirty = true;
     try {
         tabId = safeId(sessionStorage.getItem(TAB_KEY)) || tabId;
@@ -147,6 +154,12 @@
             try { const entry = JSON.parse(value); retained.push({ key, entry }); } catch { localStorage.removeItem(key); }
         }
         for (const item of retained.filter(item => ['closed', 'recovered'].includes(item.entry?.state)).sort((a, b) => a.entry.heartbeatAt - b.entry.heartbeatAt).slice(0, Math.max(0, retained.length - 6))) localStorage.removeItem(item.key);
+        for (const item of retained.slice(0, 8)) {
+            if (item.entry?.schema === 1 && item.entry.snapshot) retainedActivities.push({ schema: 1, id: 'activity:' + safeId(item.entry.documentId), runtime: 'browser', kind: 'retained-page-activity',
+                at: Number.isSafeInteger(item.entry.heartbeatAt) ? new Date(item.entry.heartbeatAt).toISOString() : null,
+                lastKnownActivity: { snapshot: validateActivity(item.entry.snapshot), events: validateEvents(item.entry.events) },
+                limitation: 'Activity from another tab. This is not a crash report and never triggers an automatic notice.' });
+        }
     } catch { /* Storage may be blocked. The current in-memory sample remains available. */ }
 
     function refreshAgents() {
@@ -157,6 +170,7 @@
         const phase = running[0]?.phase;
         if (phase) snapshot.generation = { phase: phase === 'pre' ? 'pre-agents' : phase === 'companions' ? 'companions' : 'post-agents', location: running[0].location };
         else if (['pre-agents', 'post-agents', 'companions'].includes(snapshot.generation.phase)) snapshot.generation = { phase: 'idle', location: 'unknown' };
+        if (!running.length && phases.size) snapshot.generation = { phase: Array.from(phases.values()).at(-1), location: 'server' };
     }
     function scheduleFlush() {
         dirty = true;
@@ -170,11 +184,12 @@
         scheduleFlush();
     }
     function updateActivity(patch) {
+        const before = JSON.stringify(snapshot);
         const next = validateActivity(patch);
         for (const key of ['view', 'mode', 'chat', 'dom', 'generation', 'extensions']) if (own(patch, key) !== undefined) snapshot[key] = next[key];
         if (own(own(patch, 'agents'), 'enabledCount') !== undefined) snapshot.agents.enabledCount = next.agents.enabledCount;
         refreshAgents();
-        scheduleFlush();
+        if (JSON.stringify(snapshot) !== before) scheduleFlush();
     }
     function flushActivity(reason = 'scheduled') {
         const now = Date.now();
@@ -182,16 +197,21 @@
         snapshot.at = now;
         snapshot.uptimeMs = Math.min(2592000000, now - startedAt);
         snapshot.visibility = document.visibilityState === 'visible' ? 'visible' : 'hidden';
+        let snapshotText, eventsText;
         try {
             const memory = performance.memory;
             if (memory) snapshot.heap = { usedBytes: counter(memory.usedJSHeapSize, 1099511627776), totalBytes: counter(memory.totalJSHeapSize, 1099511627776), limitBytes: counter(memory.jsHeapSizeLimit, 1099511627776) };
-            const entry = { schema: 1, documentId, state, startedAt, heartbeatAt: now, visibility: snapshot.visibility, ready: snapshot.ready, snapshot, events, fatalReportId: api.fatalReportId || null };
-            const text = JSON.stringify(entry);
-            if (new TextEncoder().encode(text).length <= 8192) localStorage.setItem(SESSION_PREFIX + tabId, text);
+            snapshotText = JSON.stringify(snapshot); eventsText = JSON.stringify(events);
+            const entry = { schema: 1, documentId, state, startedAt, heartbeatAt: now, visibility: snapshot.visibility, ready: snapshot.ready, fatalReportId: safeId(api.fatalReportId) || null };
+            const text = JSON.stringify(entry).slice(0, -1) + ',"snapshot":' + snapshotText + ',"events":' + eventsText + '}';
+            // Canonical activity contains only ASCII enums, reviewed labels and safe IDs.
+            if (text.length <= 8192) localStorage.setItem(SESSION_PREFIX + tabId, text);
         } catch { storageError = 'Browser storage is unavailable; activity cannot be retained after this page closes.'; }
         try {
-            const text = JSON.stringify({ snapshot, events });
-            if (nativeToken && new TextEncoder().encode(text).length <= 4096) globalThis.NeconyanDiagnostics?.recordActivity(nativeToken, text);
+            if (nativeToken && snapshotText && eventsText) {
+                const text = '{"snapshot":' + snapshotText + ',"events":' + eventsText + '}';
+                if (text.length <= 4096) globalThis.NeconyanDiagnostics?.recordActivity(nativeToken, text);
+            }
         } catch { /* Native recording is optional and cannot block application work. */ }
         lastWrite = now; dirty = false;
     }
@@ -221,19 +241,27 @@
             } else if (observedJobs.has(id) || observedJobs.size < 32) {
                 const agents = validateActivity({ agents: own(input, 'agents') }).agents;
                 const old = observedJobs.get(id) || { observers: new Set() };
-                old.observers.add(handle); old.agents = agents; observedJobs.set(id, old);
+                old.observers.add(handle);
+                const signature = JSON.stringify(agents);
+                if (old.signature === signature) return;
+                old.signature = signature; old.agents = agents;
+                const incoming = validateEvents(own(input, 'events'));
+                for (const event of incoming) if (event.at > (old.eventAt || 0)) events.push(event);
+                old.eventAt = incoming.at(-1)?.at || old.eventAt || 0;
+                events = events.slice(-12);
+                observedJobs.set(id, old);
             }
             refreshAgents(); scheduleFlush();
         }),
+        observePhase: guarded((handle, phase) => { if (PHASES.includes(phase) && phases.size < 32) phases.set(handle, phase); else { phases.delete(handle); if (!phases.size) snapshot.generation = { phase: 'idle', location: 'unknown' }; } refreshAgents(); scheduleFlush(); }),
         markAppReady: guarded(() => { snapshot.ready = true; api.fatalReportId = null; noteActivity('app-ready'); if (currentStartupNotice) dismissNotice(currentStartupNotice); }),
         setNativeBridgeToken: guarded(token => { if (typeof token !== 'string' || token.length > 100) return; nativeToken = token; scheduleFlush(); }),
-        getPreviousSession: guarded(() => previousSession),
     });
     try {
         const saved = localStorage.getItem(KEY);
         if (saved && saved.length <= 400000) {
             const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed)) reports = parsed.filter(report => report?.schema === 1).slice(-5);
+            if (Array.isArray(parsed)) reports = parsed.filter(report => report?.schema === 1).slice(-5).map(report => ({ ...report, id: safeId(report.id) || legacyId(report) }));
         }
     } catch { storageError = 'Browser storage is unavailable; reports last only until this page closes.'; }
 
@@ -294,7 +322,7 @@
     }
 
     api.capture = capture;
-    api.getReports = () => JSON.parse(JSON.stringify({ reports, storageError }));
+    api.getReports = () => JSON.parse(JSON.stringify({ reports, storageError, retainedActivities }));
     api.clear = () => {
         reports = [];
         unsaved = false;
@@ -338,6 +366,8 @@
         return import('./crash-report-reader.js').then(module => module.openCrashReportReader({ selectedReportId: id })).catch(() => fallbackReader(id));
     });
     api.showNotice = guarded(({ id, title, message, onRead, onDismiss }) => {
+        const stylesheet = document.querySelector('link[href^="css/neconyan-crash-reports.css"]');
+        if (stylesheet) stylesheet.rel = 'stylesheet';
         const content = document.createElement('div'); content.className = 'neconyan-crash-notice';
         const text = document.createElement('p'); text.textContent = redact(message, 1000); content.append(text);
         const actions = document.createElement('div'); actions.className = 'sbdbg-actions'; content.append(actions);
@@ -348,7 +378,8 @@
         let notice;
         const dismiss = () => { markSeen(id); onDismiss?.(); dismissNotice(notice); };
         if (globalThis.toastr?.warning) {
-            notice = globalThis.toastr.warning(content.outerHTML, title, { timeOut: 0, extendedTimeOut: 0, closeButton: true, escapeHtml: false, positionClass: 'toast-top-center', onHidden: () => { markSeen(id); onDismiss?.(); } });
+            const heading = document.createElement('span'); heading.textContent = typeof title === 'string' ? redact(title, 200) : 'Crash report';
+            notice = globalThis.toastr.warning(content.outerHTML, heading.innerHTML, { timeOut: 0, extendedTimeOut: 0, closeButton: true, escapeHtml: false, positionClass: 'toast-top-center', onHidden: () => { markSeen(id); onDismiss?.(); } });
             const node = notice?.[0];
             node?.querySelector('[data-crash-action="read"]')?.addEventListener('click', event => { event.stopPropagation(); markSeen(id); if (onRead) onRead(); else api.openReports(id); });
             node?.querySelector('[data-crash-action="dismiss"]')?.addEventListener('click', event => { event.stopPropagation(); dismiss(); });
@@ -358,31 +389,34 @@
             actions.querySelector('[data-crash-action="read"]').addEventListener('click', () => { markSeen(id); if (onRead) onRead(); else api.openReports(id); });
             actions.querySelector('[data-crash-action="dismiss"]').addEventListener('click', dismiss);
         }
+        if (!notice || !(notice[0] || notice).isConnected) return null;
         markSeen(id);
         return notice;
     });
     function recoverPrevious() {
-        if (previousSession?.state !== 'running' || !safeId(previousSession.documentId)) return;
-        const id = 'unclean:' + previousSession.documentId;
-        if (seen.some(item => item.id === id) || reports.some(report => report.id === id)) return;
-        const previous = validateActivity(previousSession.snapshot);
         const discarded = document.wasDiscarded === true;
+        if (!discarded && (previousSession?.state !== 'running' || !safeId(previousSession.documentId))) return;
+        const id = discarded && !safeId(previousSession?.documentId) ? 'discarded:' + documentId : 'unclean:' + previousSession.documentId;
+        if (seen.some(item => item.id === id) || reports.some(report => report.id === id)) return;
+        const previous = validateActivity(previousSession?.snapshot);
         const report = capture(discarded ? 'discarded-previous-page' : 'unclean-previous-page', 'Your browser did not provide a definite cause. A missing normal-close event does not prove a crash.');
         if (!report) return;
         report.id = id;
         report.summary = discarded ? 'Your browser discarded the previous page' : 'The previous page did not close cleanly';
         report.environment = { measuredOnRecovery: report.environment };
-        report.lastKnownActivity = { snapshot: previous, events: validateEvents(previousSession.events), relationship: 'same-tab-previous-page',
-            ageMs: previous.at && previousSession.heartbeatAt >= previous.at ? previousSession.heartbeatAt - previous.at : null };
+        const heartbeatAt = counter(previousSession?.heartbeatAt, Number.MAX_SAFE_INTEGER);
+        report.lastKnownActivity = { snapshot: previous, events: validateEvents(previousSession?.events), relationship: previous.at ? 'same-tab-previous-page' : 'unavailable',
+            ageMs: previous.at && heartbeatAt >= previous.at ? heartbeatAt - previous.at : null };
         report.limitation = 'The time and cause of the stop are unknown. Backgrounding does not imply a crash; a normal pagehide prevents this observation. Other tabs are never automatically diagnosed.';
-        pendingRecovery = report; previousSession.state = 'recovered'; save();
+        pendingRecovery = report; if (previousSession) previousSession.state = 'recovered'; save();
     }
     recoverPrevious();
     function showPendingNotice() {
+        if (document.visibilityState !== 'visible') return;
         const native = typeof globalThis.NeconyanDiagnostics?.recordActivity === 'function';
         let report = api.fatalReportId ? reports.find(item => item.id === api.fatalReportId) : !native ? pendingRecovery : null;
         if (!report && previousSession?.fatalReportId && !previousSession.ready) report = reports.find(item => item.id === previousSession.fatalReportId);
-        if (!report || seen.some(item => item.id === report.id)) return;
+        if (!report || seen.some(item => item.id === (report.noticeId || report.id))) return;
         const sample = report.lastKnownActivity?.snapshot;
         const labels = sample?.agents?.running?.map(item => item.label).join(' and ');
         const message = (report.error?.message || 'Your browser did not provide a definite cause.')
@@ -390,10 +424,11 @@
             + (labels ? ` Running ${labels} after a reply.` : '')
             + (sample?.at ? ` Last activity recorded at ${new Date(sample.at).toLocaleTimeString()}.` : '')
             + (storageError ? ` ${storageError}` : '');
-        const notice = api.showNotice({ id: report.id, title: report.summary || 'Neconyan could not finish loading', message });
+        const notice = api.showNotice({ id: report.noticeId || report.id, title: report.summary || 'Neconyan could not finish loading', message, onRead: () => api.openReports(report.id) });
         if (api.fatalReportId === report.id) currentStartupNotice = notice;
     }
     document.addEventListener('DOMContentLoaded', showPendingNotice, { once: true });
+    document.addEventListener('visibilitychange', showPendingNotice);
     window.addEventListener('error', event => {
         if (event.target && event.target !== window) {
             const tag = event.target.tagName;
@@ -403,8 +438,9 @@
             });
             let pathname = '';
             try { pathname = new URL(event.target.src, document.baseURI).pathname; } catch { /* Not a static core script. */ }
-            if (!snapshot.ready && tag === 'SCRIPT' && ['/script.js', '/scripts/neconyan-tabs.js', '/scripts/i18n.js', '/lib/jquery-3.5.1.min.js', '/lib/polyfill.js'].includes(pathname) && report) {
+            if (!snapshot.ready && tag === 'SCRIPT' && (event.target.hasAttribute?.('data-neconyan-core-script') || ['/script.js', '/scripts/neconyan-tabs.js', '/scripts/i18n.js', '/lib/jquery-3.5.1.min.js', '/lib/polyfill.js'].includes(pathname)) && report) {
                 report.kind = 'critical-startup-load-failure'; report.summary = 'Neconyan could not finish loading';
+                report.noticeId = 'startup:' + documentId;
                 api.fatalReportId = report.id; save(); scheduleFlush();
                 if (document.readyState !== 'loading') showPendingNotice();
             }
