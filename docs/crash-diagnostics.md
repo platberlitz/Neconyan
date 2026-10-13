@@ -8,7 +8,7 @@ The Android app opens an unseen saved report after relaunch, before signing the 
 
 Each native report shows its explanation, recorded error, time, earlier activity and memory measurement before the full details. 'Copy report' and 'Share report' use only the selected report and don't close the reader. 'Saved crash reports' lists up to ten reports individually. Copy or share an unsaved report before closing its screen.
 
-In a browser, an uncleared running record from the same tab produces a persistent notice when you reopen the page. 'Read report' opens retained browser details immediately, even with Debugger disabled, the main application broken or the server offline. Once the notice has been presented, ordinary reloads don't offer it again. Other tabs' retained activity is available in the reader only; it never produces an automatic crash notice.
+In a browser, an uncleared running record from the same tab produces a persistent notice only if the previous page was visible. Background kills and discards stay available for manual reading without interrupting your return or replacing actual error reports. 'Read report' opens retained browser details immediately, even with Debugger disabled, the main application broken or the server offline. Once the notice has been presented, ordinary reloads don't offer it again. Other tabs' retained activity is available in the reader only; it never produces an automatic crash notice.
 
 For an administrator, a retained server crash report produces a notice when the server becomes reachable. A normal restart with no new report stays quiet. The notice includes the saved report's date, rather than claiming an old failure just happened. Both summaries and full server reports require an administrator account. Server report contents are never saved in browser storage.
 
@@ -24,6 +24,7 @@ Activity is context, not blame. Seeing Proofreader running doesn't establish tha
 - Browser heap measurements where the browser exposes them, enabled Agent/extension counts, and up to eight running Agents with their phase and browser/server location.
 - Reviewed built-in Agent labels, including Format Fixer and Proofreader. Custom Agents get document-local anonymous labels. Names, prompts and outputs aren't copied.
 - Twelve compact recent events. Android also retains up to eight memory-pressure callbacks and time-stamped device memory measurements for each process.
+- A separate count of stored Agent history entries, including bounded alternative-message metadata. This counts entries without serialising their private contents; text size alone can miss substantial Agent history.
 
 Normal activity writes are coalesced, at least five seconds apart. A visible idle page refreshes every thirty seconds. Hidden pages stop the periodic work. The browser snapshot and native bridge payload stay within 4 KiB; per-tab and native process records stay within 8 KiB. Counters cap at one million, sizes at 1 TiB and uptime at thirty days. Unavailable measurements stay null rather than becoming zero. Android writes activity on a separate diagnostic worker, with the newest six process records retained.
 
@@ -35,7 +36,7 @@ Browser capture starts before the main application scripts, but after the styles
 
 Android reports retain uncaught Java exceptions, local server failures, renderer loss and available Android historical exits, including reason/status codes and system traces. A recorded Node exception is preferred over a generic recovery message when it matches the local server process and time window. Android can attach a trace later; enrichment keeps the same report identity rather than creating another notice.
 
-The newest five browser error reports and ten reports in each server/native store are retained. Native reports are at most 60,000 characters; server reports are at most 128 KiB. Repeating browser errors update one report's count. The first fatal server exception remains the saved error; later shutdown errors are printed without replacing it. Existing reports remain readable after an upgrade.
+The newest five browser error reports and ten reports in each server/native store are retained. Recovery observations use their own eight-entry slot. Tab activity keeps the current tab and the newest seven others, dropping records older than seven days. Native reports are at most 60,000 characters; server reports are at most 128 KiB. Repeating browser errors update one report's count. The first fatal server exception remains the saved error; later shutdown errors are printed without replacing it. Existing reports remain readable after an upgrade.
 
 ## What a report cannot establish
 
@@ -48,6 +49,8 @@ Real phone testing is still needed to diagnose the Samsung A13 failure. Host Jav
 ## Privacy and storage failure
 
 Diagnostics don't collect chat, response or reasoning text, prompts, character/account/chat names, chat/file identifiers, Agent outputs, model/connection settings, API keys, headers, launch arguments, environment variables or arbitrary console values. Chat statistics read string lengths without retaining those strings. Full server-log tails aren't automatically added to native reports. Common credential patterns and URL queries are redacted before writing and displaying.
+
+The separate Android 'Copy details for a bug report' action is an explicit exception: it combines the selected report with device details, recent exits, decoded native evidence, requests and bounded log tails. Those tails can contain private application text despite credential redaction. Review the combined copy carefully. 'Copy report' and 'Share report' still use one selected report only.
 
 Error messages and system traces can still contain private text supplied by extensions or other software. Review a report before sharing it.
 

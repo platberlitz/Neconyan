@@ -1,4 +1,4 @@
-/* global document, globalThis, sessionStorage, localStorage, getComputedStyle, Storage */
+/* global document, globalThis, sessionStorage, localStorage, getComputedStyle, Storage, navigator */
 import path from 'node:path';
 import { test, expect } from '@playwright/test';
 
@@ -16,7 +16,7 @@ for (const viewport of [{ width: 393, height: 852, name: 'phone' }, { width: 128
                 if (sessionStorage.getItem('crash-ui-seeded')) return;
                 sessionStorage.setItem('crash-ui-seeded', 'yes'); sessionStorage.setItem('neconyan.crash-tab.v1', 'ui-test-tab');
                 const at = Date.now();
-                localStorage.setItem('neconyan.crash-session.v1:ui-test-tab', JSON.stringify({ schema: 1, documentId: 'ui-old-document', state: 'running', heartbeatAt: at, snapshot: {
+                localStorage.setItem('neconyan.crash-session.v1:ui-test-tab', JSON.stringify({ schema: 1, documentId: 'ui-old-document', state: 'running', visibility: 'visible', heartbeatAt: at, snapshot: {
                     schema: 1, pageSessionId: 'ui-old-document', at: at - 4000, view: 'chat', mode: 'roleplay', chat: { messageCount: 58, estimatedTextBytes: 340000 },
                     generation: { phase: 'post-agents', location: 'server' }, agents: { running: [{ label: 'Format Fixer', phase: 'post', location: 'server' }, { label: 'Proofreader', phase: 'post', location: 'server' }] },
                 }, events: [] }));
@@ -38,7 +38,7 @@ for (const viewport of [{ width: 393, height: 852, name: 'phone' }, { width: 128
             await expect(page.locator('#send_but')).toBeVisible();
             await expect(page.getByText(/Last known activity: 58 messages/)).toBeVisible();
             const overlap = await page.evaluate(() => {
-                const notice = document.querySelector('.neconyan-crash-notice')?.closest('.toast')?.getBoundingClientRect();
+                const notice = document.querySelector('#neconyan-crash-notice')?.getBoundingClientRect();
                 const send = document.querySelector('#send_but')?.getBoundingClientRect();
                 return Boolean(notice && send && notice.right > send.left && notice.left < send.right && notice.bottom > send.top && notice.top < send.bottom);
             });
@@ -102,5 +102,29 @@ for (const viewport of [{ width: 393, height: 852, name: 'phone' }, { width: 128
             expect(width).toBeLessThanOrEqual(viewport.width);
             await page.screenshot({ path: path.join(screenshots, `after-storage-failure-${viewport.name}.png`) });
         } finally { await context.close(); }
+    });
+
+    test(`${viewport.name}: boot failure retains the redacted error without an automatic modal`, async ({ browser }) => {
+        const context = await browser.newContext({ viewport });
+        const page = await context.newPage();
+        let release;
+        const blocked = new Promise(resolve => { release = resolve; });
+        try {
+            await page.addInitScript(() => {
+                Object.defineProperty(navigator, 'userAgent', { configurable: true, get: () => 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1' });
+                Object.defineProperty(navigator, 'platform', { configurable: true, get: () => 'iPhone' });
+            });
+            await page.route('**/script.js', async route => { await blocked; await route.abort(); });
+            await page.goto(base, { waitUntil: 'commit' });
+            await page.waitForFunction(() => globalThis.NeconyanBootGuard?.showFailure);
+            await page.evaluate(() => globalThis.NeconyanBootGuard.showFailure('Original startup error password=fixture-private'));
+            await expect(page.locator('dialog.neconyan-crash-popup')).toHaveCount(0);
+            const saved = await page.evaluate(() => globalThis.NeconyanCrashDiagnostics.getReports().reports.find(report => report.kind === 'startup-failure'));
+            expect(saved.error.message).toContain('Original startup error');
+            expect(saved.error.message).not.toContain('fixture-private');
+            await page.screenshot({ path: path.join(screenshots, `after-boot-guard-${viewport.name}.png`) });
+            await page.locator('#preloader').getByRole('button', { name: 'Read report', exact: true }).click();
+            await expect(page.getByRole('textbox', { name: 'Saved crash reports' })).toBeVisible();
+        } finally { release(); await context.close(); }
     });
 }

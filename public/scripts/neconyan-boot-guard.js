@@ -384,10 +384,12 @@
         }
 
         failureShown = true;
+        var savedReport = null;
+        var recordedDetails = details || lastFailure || 'Startup timed out before Neconyan removed the loading screen.';
         try {
             if (window.NeconyanCrashDiagnostics?.openReports) {
-                window.NeconyanCrashDiagnostics.capture('startup-failure', 'Startup did not finish. Read the retained errors for the available evidence.');
-                window.NeconyanCrashDiagnostics.openReports(window.NeconyanCrashDiagnostics.fatalReportId);
+                recordedDetails = window.NeconyanCrashDiagnostics.redact(recordedDetails);
+                savedReport = window.NeconyanCrashDiagnostics.capture('startup-failure', recordedDetails);
             }
         } catch (_error) { /* The existing failure screen remains available. */ }
         removeStartupLoaderArtifacts();
@@ -427,6 +429,16 @@
             removeElement(preloader);
         });
 
+        var reportButton = document.createElement('button');
+        reportButton.type = 'button';
+        reportButton.className = 'menu_button menu_button_primary';
+        reportButton.textContent = 'Read report';
+        reportButton.setAttribute('data-i18n', 'Read report');
+        reportButton.style.cssText = 'width:100%;min-height:44px;margin-top:10px;';
+        reportButton.addEventListener('click', function () {
+            window.NeconyanCrashDiagnostics?.openReports?.(savedReport?.id || window.NeconyanCrashDiagnostics.fatalReportId);
+        });
+
         var hint = document.createElement('p');
         hint.textContent = 'If this keeps happening, clear this site\'s Safari/Chrome website data and reload.';
         hint.style.cssText = 'margin:14px 0 0;color:#beb1a1;font-size:14px;';
@@ -438,7 +450,7 @@
         summaryTitle.textContent = 'Startup error details';
 
         var pre = document.createElement('pre');
-        pre.textContent = details || lastFailure || 'Startup timed out before Neconyan removed the loading screen.';
+        pre.textContent = recordedDetails;
         pre.style.cssText = 'white-space:pre-wrap;word-break:break-word;margin:10px 0 0;padding:12px;border-radius:10px;background:#141514;color:#f4ebdb;font-size:12px;';
 
         summary.appendChild(summaryTitle);
@@ -447,6 +459,7 @@
         panel.appendChild(message);
         panel.appendChild(button);
         panel.appendChild(dismissButton);
+        panel.appendChild(reportButton);
         panel.appendChild(hint);
         panel.appendChild(summary);
         preloader.appendChild(panel);

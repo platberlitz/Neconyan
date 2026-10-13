@@ -52,15 +52,24 @@ test('status failure backs off to 60 seconds without a diagnostic error notice',
 test('application counts text without serialising messages and ignores auxiliary generation', async () => {
     const listeners = new Map(), updateActivity = jest.fn(), noteActivity = jest.fn();
     globalThis.NeconyanCrashDiagnostics = { updateActivity, noteActivity, getActivity: () => ({ snapshot: { mode: 'roleplay' } }) };
-    const chat = [{ mes: 'hello', swipes: ['hello', 'other'], swipe_id: 0, extra: { reasoning: 'why' }, toJSON() { throw new Error('Must not serialise chat'); } }];
+    const chat = [{ mes: 'hello', swipes: ['hello', 'other'], swipe_id: 0, extra: { reasoning: 'why', inChatAgentPromptRuns: [1, 2], inChatAgentTransformHistory: [1] }, toJSON() { throw new Error('Must not serialise chat'); } }];
     const event_types = Object.fromEntries(['CHAT_LOADED', 'GENERATION_STARTED', 'GENERATION_ENDED'].map(name => [name, name]));
     initialiseCrashActivity({ eventSource: { on: (name, fn) => listeners.set(name, fn) }, event_types, getChat: () => chat, getExtensionCount: () => 2 });
     listeners.get('CHAT_LOADED')(); await jest.advanceTimersByTimeAsync(0);
-    expect(updateActivity).toHaveBeenCalledWith(expect.objectContaining({ chat: expect.objectContaining({ messageCount: 1, estimatedTextBytes: 26 }) }));
+    expect(updateActivity).toHaveBeenCalledWith(expect.objectContaining({ chat: expect.objectContaining({ messageCount: 1, estimatedTextBytes: 26, agentHistoryEntries: 3 }) }));
     updateActivity.mockClear(); listeners.get('GENERATION_STARTED')('normal', { isAuxiliaryGeneration: true }, false);
     expect(updateActivity).not.toHaveBeenCalled();
     listeners.get('GENERATION_STARTED')('normal', {}, false);
     expect(noteActivity).toHaveBeenCalledWith('generation-start');
+});
+
+test('foreground refresh does not fabricate a chat-open event', async () => {
+    const listeners = new Map(), noteActivity = jest.fn();
+    globalThis.NeconyanCrashDiagnostics = { updateActivity: jest.fn(), noteActivity, getActivity: () => ({ snapshot: { mode: 'roleplay' } }) };
+    globalThis.document.addEventListener = (name, callback) => listeners.set(name, callback);
+    initialiseCrashActivity({ eventSource: { on() {} }, event_types: {}, getChat: () => [{ mes: 'hello' }] });
+    listeners.get('visibilitychange')(); await jest.advanceTimersByTimeAsync(0);
+    expect(noteActivity).not.toHaveBeenCalledWith('chat-open');
 });
 
 test('a dormant Roleplay chat is not measured as the current Conversation', () => {
