@@ -70,6 +70,24 @@ function fixture() {
     return { app, panel, preset, requests, runtime, apply, rows, settle, reply };
 }
 
+function imageJobFixture({ markers = [], card } = {}) {
+    const observers = [];
+    const reload = jest.fn(async () => {});
+    const approveImagePrompt = jest.fn();
+    const app = {
+        open: true, foldedThinking: new Set(), watchers: new Map(), previews: new Map(), imageWatchers: new Map(),
+        imageJobs: new Map(), imageJobSignatures: new Map(), imageAutoReviews: new Set(markers),
+        bucket: { sessions: [{ messages: [{ role: 'assistant', state: 'done', images: { 0: { state: 'pending', jobId: 'image-job' } } }] }] },
+    };
+    const runtime = vm.createContext({ app, reload, updateStream: jest.fn(),
+        TERMINAL: new Set(['completed', 'cancelled', 'failed', 'interrupted', 'conflict']),
+        imageReviewCard: () => card, approveImagePrompt,
+        observeJob: (id, options) => { observers.push({ id, options }); return () => {}; }, api: { watchReply: () => () => {} } });
+    vm.runInContext(source.match(/^function syncWatchers\([\s\S]*?^}/m)[0], runtime);
+    runtime.syncWatchers();
+    return { app, observers, reload, approveImagePrompt };
+}
+
 describe('Scratchpad Context refresh lifecycle', () => {
     test('both Home visibility events check the live source after visibility changes, only while open', () => {
         const listeners = new Map();
@@ -91,17 +109,7 @@ describe('Scratchpad Context refresh lifecycle', () => {
         expect(checkSource).toHaveBeenCalledTimes(2);
     });
     test('an unchanged image job poll does not redraw the thread', async () => {
-        const observers = [];
-        const reload = jest.fn(async () => {});
-        const app = {
-            open: true, foldedThinking: new Set(), watchers: new Map(), previews: new Map(), imageWatchers: new Map(),
-            imageJobs: new Map(), imageJobSignatures: new Map(),
-            bucket: { sessions: [{ messages: [{ role: 'assistant', state: 'done', images: { 0: { state: 'pending', jobId: 'image-job' } } }] }] },
-        };
-        const runtime = vm.createContext({ app, reload, updateStream: jest.fn(),
-            observeJob: (id, options) => { observers.push({ id, options }); return () => {}; }, api: { watchReply: () => () => {} } });
-        vm.runInContext(source.match(/^function syncWatchers\([\s\S]*?^}/m)[0], runtime);
-        runtime.syncWatchers();
+        const { observers, reload } = imageJobFixture();
         expect(observers).toHaveLength(1);
         // onSnapshot fires on every poll; only onUpdate and onDone may redraw.
         expect(observers[0].options.onSnapshot).toBeUndefined();
@@ -114,6 +122,26 @@ describe('Scratchpad Context refresh lifecycle', () => {
         expect(reload).toHaveBeenCalledTimes(2);
         await observers[0].options.onDone({ ...job, state: 'completed' });
         expect(reload).toHaveBeenCalledTimes(3);
+    });
+    test('a requested prompt review opens when its approval appears, and only once', async () => {
+        const card = { session: { id: 'session' }, message: { id: 'reply' }, part: { index: 0 } };
+        const { app, observers, approveImagePrompt } = imageJobFixture({ markers: ['image-job'], card });
+        await observers[0].options.onUpdate({ id: 'image-job', state: 'running', stage: 'generating' });
+        expect(approveImagePrompt).not.toHaveBeenCalled();
+        expect(app.imageAutoReviews.has('image-job')).toBe(true);
+        const waiting = { id: 'image-job', state: 'waiting', stage: 'approval', result: { approval: { id: 'a1' } } };
+        await observers[0].options.onUpdate(waiting);
+        expect(approveImagePrompt).toHaveBeenCalledTimes(1);
+        expect(approveImagePrompt).toHaveBeenCalledWith(card.session, card.message, card.part);
+        expect(app.imageAutoReviews.has('image-job')).toBe(false);
+        await observers[0].options.onUpdate({ ...waiting });
+        expect(approveImagePrompt).toHaveBeenCalledTimes(1);
+    });
+    test('an approval this client never asked to review stays manual', async () => {
+        const card = { session: { id: 'session' }, message: { id: 'reply' }, part: { index: 0 } };
+        const { observers, approveImagePrompt } = imageJobFixture({ card });
+        await observers[0].options.onUpdate({ id: 'image-job', state: 'waiting', stage: 'approval', result: { approval: { id: 'a1' } } });
+        expect(approveImagePrompt).not.toHaveBeenCalled();
     });
     test('rapid General/chat/General switching restores drafts and ignores a delayed chat bucket', async () => {
         const general = { kind: 'general', key: 'general', personaId: 'User.png' };
