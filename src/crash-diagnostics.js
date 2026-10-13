@@ -14,10 +14,12 @@ let fatalRecorded = false;
 let installed = false;
 let shuttingDown;
 let requestSnapshot = () => [];
+let activitySnapshot = () => null;
 let version = {};
 
-export function setCrashContext({ requests, appVersion, shutdown } = {}) {
+export function setCrashContext({ requests, activity, appVersion, shutdown } = {}) {
     if (requests) requestSnapshot = requests;
+    if (activity) activitySnapshot = activity;
     if (appVersion) version = appVersion;
     if (shutdown) shuttingDown = shutdown;
 }
@@ -46,6 +48,10 @@ export function writeCrashReport(kind, error, extra = {}, dir = directory) {
             requests: requestSnapshot(), ...extra,
             privacy: 'No environment variables, command-line arguments, request bodies, headers or console values are collected. Review error text before sharing.',
         };
+        try {
+            const activity = activitySnapshot();
+            if (activity) report.activity = { ...globalThis.NeconyanCrashDiagnostics.validateActivity(activity), events: globalThis.NeconyanCrashDiagnostics.validateEvents(activity.events) };
+        } catch { /* Preserve the original error even if an activity provider fails. */ }
         let text = JSON.stringify(report, null, 2);
         if (Buffer.byteLength(text) > MAX_BYTES) {
             report.error = { message: report.error.message, stack: report.error.stack, omitted: 'Nested causes exceeded report size limit' };

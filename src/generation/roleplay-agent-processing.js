@@ -20,6 +20,7 @@ import { requireJobApproval } from './job-approvals.js';
 import { captureRoleplayWorldInfo, prepareRoleplayWorldInfo } from './world-info.js';
 import { activeRoleplayAuthorNote } from './roleplay-prompt.js';
 import { agentMessageExtra, agentTransformHistory, reconcileAgentTrackerMetadata } from './agent-message-state.js';
+import { beginDiagnosticAgent, endDiagnosticAgent } from '../diagnostic-activity.js';
 
 const fail = message => roleplayError('ROLEPLAY_AGENT_RECOVERY', message, 409);
 const join = (left, right) => !left ? right : !right ? left : left + (/\n\n$/.test(left) ? '' : /\n$/.test(left) ? '\n' : '\n\n') + right;
@@ -210,6 +211,8 @@ async function modelRun(context, options, agent, text, name, intercept = false, 
         ? source.message.index + 1 : records.length;
     const recentChat = intercept ? '' : buildPromptTransformRecentChat(records.slice(1, endIndex), agent.postProcess.promptTransformContextMessages, unwrap);
     const result = await runAgentModelStep(context, { base, account: snapshot.account, name,
+        diagnostic: { id: agent.id, sourceTemplateId: agent.sourceTemplateId, synthesis: Boolean(options.synthesisMessages),
+            phase: options.synthesisMessages ? 'synthesis' : name.includes(':repair:') ? 'repair' : intercept && agent.preProcess.interceptTiming !== 'post-main-generation' ? 'pre' : 'post' },
         identity: roleplayHash({ intent: context.job.intent, agent: snapshot.agents.agents.find(item => item.id === agent.id), text, intercept, format, generationType,
             ...(options.synthesisMessages ? { synthesisMessages: options.synthesisMessages } : {}) }),
         binding: agent.binding || options.binding, modelOverride: agent.binding ? agent.modelOverride : '', fallbacks: agent.fallbacks,
@@ -428,14 +431,18 @@ export async function runRoleplayAgentPostprocessing(context, options) {
         }
     }
     for (const agent of agents.filter(agent => manual || inline(agent))) {
-        aliases(environment, agent, text, generationType, options.assistantName, agentContextMacros(snapshot, options.mewmory, options.agentReference));
-        const regexOptions = { isMarkdown: false, isPrompt: false,
-            substituteParamsFn: (input, extra = {}) => environment.evaluate(input, { legacy: !snapshot.experimentalMacroEngine,
-                strictCapabilities: true, postProcess: extra.postProcessFn }),
-            substituteParamsExtendedFn: (input, _extra, postProcess) => environment.evaluate(input, { legacy: !snapshot.experimentalMacroEngine,
-                strictCapabilities: true, postProcess }) };
-        if (companionOutput || options.includeDisplayRegex) text = applyRegexScriptList(text, agent.regexScripts, 2, { ...regexOptions, isMarkdown: true });
-        text = applyRegexScriptList(text, agent.regexScripts, 2, regexOptions);
+        const activity = beginDiagnosticAgent(context, { id: agent.id, sourceTemplateId: agent.sourceTemplateId, phase: 'regex' });
+        let outcome = 'done';
+        try {
+            aliases(environment, agent, text, generationType, options.assistantName, agentContextMacros(snapshot, options.mewmory, options.agentReference));
+            const regexOptions = { isMarkdown: false, isPrompt: false,
+                substituteParamsFn: (input, extra = {}) => environment.evaluate(input, { legacy: !snapshot.experimentalMacroEngine,
+                    strictCapabilities: true, postProcess: extra.postProcessFn }),
+                substituteParamsExtendedFn: (input, _extra, postProcess) => environment.evaluate(input, { legacy: !snapshot.experimentalMacroEngine,
+                    strictCapabilities: true, postProcess }) };
+            if (companionOutput || options.includeDisplayRegex) text = applyRegexScriptList(text, agent.regexScripts, 2, { ...regexOptions, isMarkdown: true });
+            text = applyRegexScriptList(text, agent.regexScripts, 2, regexOptions);
+        } catch (error) { outcome = 'error'; throw error; } finally { endDiagnosticAgent(activity, outcome); }
     }
     if (companionOutput) return savePhase(context, snapshot.account, phaseName, { identity, text, extra: {}, metadata: {}, runs });
     const trackerRecords = structuredClone(options.metadataRecords ?? records);

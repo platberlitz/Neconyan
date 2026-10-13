@@ -53,6 +53,7 @@ public final class MainActivity extends Activity {
     private boolean safeNoticeShown;
     private boolean resumed;
     private boolean backupKeys;
+    private final NeconyanDiagnostics diagnosticsBridge = new NeconyanDiagnostics();
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -107,9 +108,11 @@ public final class MainActivity extends Activity {
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
         web.addJavascriptInterface(this, "NeconyanExport");
+        web.addJavascriptInterface(diagnosticsBridge, "NeconyanDiagnostics");
         apkUpdater = new ApkUpdater(this, () -> web != null && web.getUrl() != null && local(Uri.parse(web.getUrl())));
         web.addJavascriptInterface(apkUpdater, "NeconyanAndroid");
         web.setWebViewClient(new WebViewClient() {
+            @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap icon) { diagnosticsBridge.invalidate(); }
             @Override public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
                 rendererGone(view, detail);
                 return true;
@@ -133,6 +136,15 @@ public final class MainActivity extends Activity {
             }
             @Override public void onPageFinished(WebView view, String url) {
                 if (!local(Uri.parse(url)) || loadFailed || failed) return;
+                String nonce = UUID.randomUUID().toString();
+                view.evaluateJavascript("window.NeconyanCrashDiagnostics?.getActivity?.()?.snapshot?.pageSessionId || ''", value -> {
+                    try {
+                        String session = new org.json.JSONArray("[" + value + "]").getString(0);
+                        if (web != view || !local(Uri.parse(view.getUrl())) || !session.matches("[a-zA-Z0-9:-]{1,100}")) return;
+                        diagnosticsBridge.allow(nonce, session);
+                        view.evaluateJavascript("window.NeconyanCrashDiagnostics?.setNativeBridgeToken?.(" + JSONObject.quote(nonce) + ")", null);
+                    } catch (Exception ignored) { }
+                });
                 if (Uri.parse(url).getPath().equals("/login")) { connect(); return; }
                 loadFailures = 0;
                 if (healthySince == 0) healthySince = System.currentTimeMillis();
@@ -581,6 +593,7 @@ public final class MainActivity extends Activity {
     }
     @Override public void onResume() {
         super.onResume();
+        ActivityBreadcrumbs.foreground(true);
         resumed = true;
         if (apkUpdater != null) apkUpdater.onResume();
         if (credentials == null || web == null || failed) return;
@@ -589,6 +602,7 @@ public final class MainActivity extends Activity {
         main.post(watchdog);
     }
     @Override public void onPause() {
+        ActivityBreadcrumbs.foreground(false);
         resumed = false;
         main.removeCallbacks(watchdog);
         super.onPause();

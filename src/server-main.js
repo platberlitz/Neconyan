@@ -83,6 +83,7 @@ import {
     getConfigValue,
 } from './util.js';
 import { setCrashContext } from './crash-diagnostics.js';
+import { getDiagnosticServerActivity } from './diagnostic-activity.js';
 import { getRecentRequests } from './request-trace.js';
 import { UPLOADS_DIRECTORY } from './constants.js';
 
@@ -126,7 +127,7 @@ app.use(helmet({
 app.use(getResponseCompressionMiddleware());
 app.use(responseTime());
 app.use(createRequestTrace(process.env.NECONYAN_REQUEST_TRACE));
-setCrashContext({ requests: getRecentRequests });
+setCrashContext({ requests: getRecentRequests, activity: getDiagnosticServerActivity });
 
 app.use('/api/auth', express.json({ limit: '32kb' }), express.urlencoded({ extended: false, limit: '32kb' }));
 app.use('/api/in-chat-agents', express.json({ limit: AGENT_STORAGE_LIMITS.presetBytes }), express.urlencoded({ extended: false, limit: AGENT_STORAGE_LIMITS.presetBytes }));

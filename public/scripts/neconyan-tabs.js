@@ -711,6 +711,7 @@ function isNeconyanModeExtensionEnabled(definition) {
 
 function syncNeconyanModeControls() {
     const activeMode = getActualNeconyanMode();
+    try { globalThis.NeconyanCrashDiagnostics?.updateActivity?.({ mode: activeMode, ...(!['roleplay'].includes(activeMode) ? { chat: { messageCount: null } } : {}) }); } catch { /* Optional diagnostics. */ }
     const definition = getNeconyanModeDefinition(activeMode);
     document.documentElement.dataset.neconyanChatMode = activeMode;
     if (document.body?.dataset.neconyanChatMode !== activeMode) {

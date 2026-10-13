@@ -5,6 +5,7 @@ import android.app.Application;
 public final class NeconyanApplication extends Application {
     @Override public void onCreate() {
         super.onCreate();
+        ActivityBreadcrumbs.initialise(this);
         Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
         Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {
             try { CrashDiagnostics.record(this, "uncaught-java-exception", error, "Thread: " + thread.getName() + " (" + thread.getId() + ")"); }
@@ -14,4 +15,6 @@ public final class NeconyanApplication extends Application {
             }
         });
     }
+    @Override public void onTrimMemory(int level) { super.onTrimMemory(level); ActivityBreadcrumbs.pressure(level); }
+    @Override public void onLowMemory() { super.onLowMemory(); ActivityBreadcrumbs.pressure(-1); }
 }

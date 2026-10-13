@@ -929,6 +929,7 @@ export async function syncPathfinderAgentLorebooksForCurrentChat(agent = getPath
  * Unregisters tools from disabled agents, registers tools from enabled ones.
  */
 export function syncToolAgentRegistrations() {
+    try { globalThis.NeconyanCrashDiagnostics?.updateActivity?.({ agents: { enabledCount: areAgentsGloballyEnabled() ? new Set([...getEnabledAgents(), ...getEnabledToolAgents()].map(agent => agent.id)).size : 0 } }); } catch { /* Optional diagnostics. */ }
     invalidateToolApprovals();
     if (pathfinderRetrievalRun && !pathfinderRetrievalRun.isCurrent()) {
         abortActivePathfinderRetrieval();
@@ -2572,8 +2573,12 @@ function applyAgentRegexScriptsToText(agents, text, { characterOverride = '', in
             continue;
         }
 
-        if (includeDisplay) output = applyRegexScriptList(output, scripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, { ...baseOptions, isMarkdown: true });
-        output = applyRegexScriptList(output, scripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, baseOptions);
+        let diagnosticHandle = null;
+        try { diagnosticHandle = globalThis.NeconyanCrashDiagnostics?.beginAgent?.({ id: agent.id, sourceTemplateId: agent.sourceTemplateId, phase: 'regex' }); } catch { /* Optional diagnostics. */ }
+        try {
+            if (includeDisplay) output = applyRegexScriptList(output, scripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, { ...baseOptions, isMarkdown: true });
+            output = applyRegexScriptList(output, scripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, baseOptions);
+        } finally { try { globalThis.NeconyanCrashDiagnostics?.endAgent?.(diagnosticHandle); } catch { /* Optional diagnostics. */ } }
     }
 
     return output;
@@ -3733,137 +3738,148 @@ export async function runAsInternalPromptTransform(requestFn, signal = null, { c
 }
 
 export async function requestPromptTransform(agent, promptMessages, maxTokens, options = {}) {
-    const isRequestCurrent = () => !options.signal?.aborted
+    const diagnosticHandles = [];
+    let diagnosticOutcome = 'done';
+    try {
+        if (options.diagnosticHandle == null) {
+            for (const item of (options.runtimeAgents?.length ? options.runtimeAgents : [agent]).slice(0, 8)) {
+                diagnosticHandles.push(globalThis.NeconyanCrashDiagnostics?.beginAgent?.({ id: item.id, sourceTemplateId: item.sourceTemplateId, phase: isCompanionAgent(item) ? 'companions' : 'post' }));
+            }
+        }
+    } catch { /* Optional diagnostics. */ }
+    try {
+        const isRequestCurrent = () => !options.signal?.aborted
         && (!options.isCurrent || options.isCurrent())
         && (options.cancelRevision === undefined || options.cancelRevision === agentGenerationCancelRevision);
-    const isRuntimeAllowed = () => isRequestCurrent()
+        const isRuntimeAllowed = () => isRequestCurrent()
         && isAgentRuntimeAllowed(agent) && (options.runtimeAgents ?? []).every(isAgentRuntimeAllowed);
-    if (!isRuntimeAllowed()) {
-        throw new DOMException('', 'AbortError');
-    }
-    const profileId = resolveAgentConnectionProfile(agent);
-    const isTrackerRepair = isTrackerRepairRunAgent(agent);
-    // A saved tracker repair connection uses its own model, like a fallback does.
-    const modelOverride = typeof agent.modelOverride === 'string' && !(isTrackerRepair && getTrackerRepairConnectionProfile(getGlobalSettings()))
-        ? agent.modelOverride.trim()
-        : '';
-    const attemptTimeoutMs = isTrackerRepair ? getTrackerRepairTimeoutMs(getGlobalSettings()) : 0;
-    const context = getContext();
-    const CMRS = context?.ConnectionManagerRequestService;
-    const requestAbortController = new AbortController();
-    const abortFromCaller = () => requestAbortController.abort();
-    const runAllowedRequest = (requestFn, signal) => runAsInternalPromptTransform(() => {
-        if (!isRuntimeAllowed()) throw new DOMException('', 'AbortError');
-        return requestFn();
-    }, signal, {
-        companion: isCompanionAgent(agent) || (options.runtimeAgents ?? []).some(isCompanionAgent),
-    });
-    activeAgentRequestAbortControllers.add(requestAbortController);
-    options.signal?.addEventListener('abort', abortFromCaller, { once: true });
+        if (!isRuntimeAllowed()) {
+            throw new DOMException('', 'AbortError');
+        }
+        const profileId = resolveAgentConnectionProfile(agent);
+        const isTrackerRepair = isTrackerRepairRunAgent(agent);
+        // A saved tracker repair connection uses its own model, like a fallback does.
+        const modelOverride = typeof agent.modelOverride === 'string' && !(isTrackerRepair && getTrackerRepairConnectionProfile(getGlobalSettings()))
+            ? agent.modelOverride.trim()
+            : '';
+        const attemptTimeoutMs = isTrackerRepair ? getTrackerRepairTimeoutMs(getGlobalSettings()) : 0;
+        const context = getContext();
+        const CMRS = context?.ConnectionManagerRequestService;
+        const requestAbortController = new AbortController();
+        const abortFromCaller = () => requestAbortController.abort();
+        const runAllowedRequest = (requestFn, signal) => runAsInternalPromptTransform(() => {
+            if (!isRuntimeAllowed()) throw new DOMException('', 'AbortError');
+            return requestFn();
+        }, signal, {
+            companion: isCompanionAgent(agent) || (options.runtimeAgents ?? []).some(isCompanionAgent),
+        });
+        activeAgentRequestAbortControllers.add(requestAbortController);
+        options.signal?.addEventListener('abort', abortFromCaller, { once: true });
 
-    const requestConnection = (attemptProfileId, attemptModelOverride, signal) => {
-        if (attemptProfileId) {
-            if (!CMRS || typeof CMRS.sendRequest !== 'function') {
-                throw new Error(`${describePromptTransformTarget(attemptProfileId, 'profile')} is set, but Connection Manager is unavailable.`);
+        const requestConnection = (attemptProfileId, attemptModelOverride, signal) => {
+            if (attemptProfileId) {
+                if (!CMRS || typeof CMRS.sendRequest !== 'function') {
+                    throw new Error(`${describePromptTransformTarget(attemptProfileId, 'profile')} is set, but Connection Manager is unavailable.`);
+                }
+
+                return runAllowedRequest(
+                    () => requestProfilePromptTransform(isRuntimeAllowed, CMRS, attemptProfileId, promptMessages, maxTokens, attemptModelOverride, signal),
+                    signal,
+                );
             }
-
             return runAllowedRequest(
-                () => requestProfilePromptTransform(isRuntimeAllowed, CMRS, attemptProfileId, promptMessages, maxTokens, attemptModelOverride, signal),
+                () => requestMainModelPromptTransform(context, promptMessages, maxTokens, options, signal),
                 signal,
             );
-        }
-        return runAllowedRequest(
-            () => requestMainModelPromptTransform(context, promptMessages, maxTokens, options, signal),
-            signal,
-        );
-    };
-    // Each attempt stops waiting as soon as it is cancelled or runs out of time, even when the
-    // connection ignores the abort, so a stalled request cannot keep Agents marked as running.
-    const runAttempt = async (attemptProfileId, attemptModelOverride) => {
-        const attemptAbortController = new AbortController();
-        const abortAttempt = () => attemptAbortController.abort();
-        let timedOut = false;
-        const timer = attemptTimeoutMs > 0
-            ? setTimeout(() => { timedOut = true; abortAttempt(); }, attemptTimeoutMs)
-            : null;
-        requestAbortController.signal.addEventListener('abort', abortAttempt, { once: true });
-        if (requestAbortController.signal.aborted) abortAttempt();
-        try {
-            return await new Promise((resolve, reject) => {
-                const rejectOnAbort = () => reject(new DOMException('', 'AbortError'));
-                if (attemptAbortController.signal.aborted) return rejectOnAbort();
-                attemptAbortController.signal.addEventListener('abort', rejectOnAbort, { once: true });
-                let pending;
-                try {
-                    pending = Promise.resolve(requestConnection(attemptProfileId, attemptModelOverride, attemptAbortController.signal));
-                } catch (error) {
-                    pending = Promise.reject(error);
-                }
-                pending
-                    .then(resolve, reject)
-                    .finally(() => attemptAbortController.signal.removeEventListener('abort', rejectOnAbort));
-            });
-        } catch (error) {
-            if (timedOut && !requestAbortController.signal.aborted) {
-                throw new Error(`${describePromptTransformTarget(attemptProfileId, attemptProfileId ? 'profile' : 'main')} did not answer within ${Math.round(attemptTimeoutMs / 1000)} seconds.`);
-            }
-            throw error;
-        } finally {
-            if (timer) clearTimeout(timer);
-            requestAbortController.signal.removeEventListener('abort', abortAttempt);
-        }
-    };
-    // Saved fallback connections are tried in order when the Agent's own connection fails or
-    // returns nothing. They use their own model, never the Agent's model override.
-    const attempts = [
-        { profileId, modelOverride },
-        ...getAgentConnectionFallbacks(agent, profileId).map(fallbackId => ({ profileId: fallbackId, modelOverride: '' })),
-    ];
-
-    // A combined response can still serve its remaining allowed members. Each caller
-    // checks eligibility before applying its part; ownership cancellation rejects all.
-    const settle = response => {
-        if (!isRequestCurrent() || requestAbortController.signal.aborted) throw new DOMException('', 'AbortError');
-        return response;
-    };
-
-    try {
-        let emptyResponse = null;
-        let lastError = null;
-        for (const [index, attempt] of attempts.entries()) {
-            const target = describePromptTransformTarget(attempt.profileId, attempt.profileId ? 'profile' : 'main');
-            let response;
+        };
+        // Each attempt stops waiting as soon as it is cancelled or runs out of time, even when the
+        // connection ignores the abort, so a stalled request cannot keep Agents marked as running.
+        const runAttempt = async (attemptProfileId, attemptModelOverride) => {
+            const attemptAbortController = new AbortController();
+            const abortAttempt = () => attemptAbortController.abort();
+            let timedOut = false;
+            const timer = attemptTimeoutMs > 0
+                ? setTimeout(() => { timedOut = true; abortAttempt(); }, attemptTimeoutMs)
+                : null;
+            requestAbortController.signal.addEventListener('abort', abortAttempt, { once: true });
+            if (requestAbortController.signal.aborted) abortAttempt();
             try {
-                response = await runAttempt(attempt.profileId, attempt.modelOverride);
-                response = {
-                    ...response,
-                    model: String(response?.model ?? '').trim() || getPromptTransformRequestModel(attempt.profileId, attempt.modelOverride),
-                };
+                return await new Promise((resolve, reject) => {
+                    const rejectOnAbort = () => reject(new DOMException('', 'AbortError'));
+                    if (attemptAbortController.signal.aborted) return rejectOnAbort();
+                    attemptAbortController.signal.addEventListener('abort', rejectOnAbort, { once: true });
+                    let pending;
+                    try {
+                        pending = Promise.resolve(requestConnection(attemptProfileId, attemptModelOverride, attemptAbortController.signal));
+                    } catch (error) {
+                        pending = Promise.reject(error);
+                    }
+                    pending
+                        .then(resolve, reject)
+                        .finally(() => attemptAbortController.signal.removeEventListener('abort', rejectOnAbort));
+                });
             } catch (error) {
-                if (isAbortSignalTriggered(error, requestAbortController.signal) || !isRequestCurrent()) throw error;
-                lastError = error;
-                if (index < attempts.length - 1) {
-                    console.warn(`[InChatAgents] ${agent?.name || 'Agent'} failed on ${target}; trying the next fallback connection.`, error);
+                if (timedOut && !requestAbortController.signal.aborted) {
+                    throw new Error(`${describePromptTransformTarget(attemptProfileId, attemptProfileId ? 'profile' : 'main')} did not answer within ${Math.round(attemptTimeoutMs / 1000)} seconds.`);
                 }
-                continue;
+                throw error;
+            } finally {
+                if (timer) clearTimeout(timer);
+                requestAbortController.signal.removeEventListener('abort', abortAttempt);
             }
-            if (index > 0) {
-                response = { ...response, fallbackIndex: index, fallbackFrom: profileId };
+        };
+        // Saved fallback connections are tried in order when the Agent's own connection fails or
+        // returns nothing. They use their own model, never the Agent's model override.
+        const attempts = [
+            { profileId, modelOverride },
+            ...getAgentConnectionFallbacks(agent, profileId).map(fallbackId => ({ profileId: fallbackId, modelOverride: '' })),
+        ];
+
+        // A combined response can still serve its remaining allowed members. Each caller
+        // checks eligibility before applying its part; ownership cancellation rejects all.
+        const settle = response => {
+            if (!isRequestCurrent() || requestAbortController.signal.aborted) throw new DOMException('', 'AbortError');
+            return response;
+        };
+
+        try {
+            let emptyResponse = null;
+            let lastError = null;
+            for (const [index, attempt] of attempts.entries()) {
+                const target = describePromptTransformTarget(attempt.profileId, attempt.profileId ? 'profile' : 'main');
+                let response;
+                try {
+                    response = await runAttempt(attempt.profileId, attempt.modelOverride);
+                    response = {
+                        ...response,
+                        model: String(response?.model ?? '').trim() || getPromptTransformRequestModel(attempt.profileId, attempt.modelOverride),
+                    };
+                } catch (error) {
+                    if (isAbortSignalTriggered(error, requestAbortController.signal) || !isRequestCurrent()) throw error;
+                    lastError = error;
+                    if (index < attempts.length - 1) {
+                        console.warn(`[InChatAgents] ${agent?.name || 'Agent'} failed on ${target}; trying the next fallback connection.`, error);
+                    }
+                    continue;
+                }
+                if (index > 0) {
+                    response = { ...response, fallbackIndex: index, fallbackFrom: profileId };
+                }
+                if (String(response?.output ?? '').trim() || response?.lengthLimited) {
+                    return settle(response);
+                }
+                emptyResponse ??= response;
+                if (index < attempts.length - 1) {
+                    console.warn(`[InChatAgents] ${agent?.name || 'Agent'} returned nothing from ${target}; trying the next fallback connection.`);
+                }
             }
-            if (String(response?.output ?? '').trim() || response?.lengthLimited) {
-                return settle(response);
-            }
-            emptyResponse ??= response;
-            if (index < attempts.length - 1) {
-                console.warn(`[InChatAgents] ${agent?.name || 'Agent'} returned nothing from ${target}; trying the next fallback connection.`);
-            }
+            if (emptyResponse) return settle(emptyResponse);
+            throw lastError;
+        } finally {
+            options.signal?.removeEventListener('abort', abortFromCaller);
+            activeAgentRequestAbortControllers.delete(requestAbortController);
         }
-        if (emptyResponse) return settle(emptyResponse);
-        throw lastError;
-    } finally {
-        options.signal?.removeEventListener('abort', abortFromCaller);
-        activeAgentRequestAbortControllers.delete(requestAbortController);
-    }
+    } catch (error) { diagnosticOutcome = error?.name === 'AbortError' ? 'cancel' : 'error'; throw error; } finally { try { for (const handle of diagnosticHandles) globalThis.NeconyanCrashDiagnostics?.endAgent?.(handle, diagnosticOutcome); } catch { /* Optional diagnostics. */ } }
 }
 
 function substitutePrefillCandidate(value, message) {
@@ -3928,102 +3944,213 @@ function stripEchoedPartialPrefill(outputText, protectedPartialPrefill) {
 }
 
 async function runPromptTransformAgent(agent, message, generationType, messageTextOverride = null, messageIndex = null, options = {}) {
-    const applyToMessage = options.applyToMessage !== false;
-    const cancelRevision = Number.isInteger(options.cancelRevision) ? options.cancelRevision : agentGenerationCancelRevision;
-    const targetState = captureMessageTargetState(message);
-    const currentMessageText = unwrapAssistantResponseWrapper(
-        messageTextOverride !== null ? messageTextOverride : message?.mes,
-    );
-    const protectedPartialPrefill = getProtectedKimiPartialPrefill(message, messageIndex, currentMessageText);
-    const transformMessageText = currentMessageText.slice(protectedPartialPrefill.length);
-    const normalizedGenerationType = normalizeGenerationType(generationType);
-    const promptTransformMode = getPromptTransformMode(agent);
-    const profileId = resolveAgentConnectionProfile(agent);
-    const runMetadata = getPromptTransformRunMetadata(agent, profileId);
-    const showNotifications = shouldShowPromptTransformNotifications(agent);
-
-    const isRuntimeAllowed = () => isAgentRuntimeAllowed(agent) && (options.runtimeAgents ?? []).every(isAgentRuntimeAllowed);
-    const runtimeAllowed = isRuntimeAllowed();
-    if (cancelRevision !== agentGenerationCancelRevision || !runtimeAllowed || !transformMessageText.trim()) {
-        const result = {
-            agentId: agent.id,
-            agentName: agent.name,
-            changed: false,
-            status: cancelRevision !== agentGenerationCancelRevision ? 'cancelled' : runtimeAllowed ? 'skipped-empty-message' : 'skipped-runtime-filter',
-            mode: promptTransformMode,
-            profileId,
-            ...runMetadata,
-            runner: 'none',
-            timestamp: new Date().toISOString(),
-            outputText: '',
-            nextMessageText: currentMessageText,
-            beforeText: currentMessageText,
-        };
-
-        return result;
-    }
-
-    const expandedPrompt = substituteParams(agent.prompt, {
-        name2Override: String(message?.name ?? '').trim(),
-        original: transformMessageText,
-        dynamicMacros: buildPromptDynamicMacros(transformMessageText, message, agent, normalizedGenerationType),
-    }).trim();
-
-    if (!expandedPrompt) {
-        const result = {
-            agentId: agent.id,
-            agentName: agent.name,
-            changed: false,
-            status: 'skipped-empty-prompt',
-            mode: promptTransformMode,
-            profileId,
-            ...runMetadata,
-            runner: 'none',
-            timestamp: new Date().toISOString(),
-            outputText: '',
-            nextMessageText: currentMessageText,
-            beforeText: currentMessageText,
-        };
-
-        return result;
-    }
-
-    const helperRequest = appendConfiguredHelperPrefillMessages(options.promptMessages ?? buildPromptTransformMessages(
-        expandedPrompt,
-        transformMessageText,
-        String(message?.name ?? '').trim(),
-        normalizedGenerationType,
-        promptTransformMode,
-        getPromptTransformRecentChat(agent, message, options.recentChatEndIndex ?? messageIndex),
-    ));
-    const runningToast = showNotifications
-        ? showPromptTransformRunningToast(agent, promptTransformMode, profileId)
-        : null;
-
+    let diagnosticHandle = null, diagnosticOutcome = 'done';
+    try { diagnosticHandle = globalThis.NeconyanCrashDiagnostics?.beginAgent?.({ id: agent.id, sourceTemplateId: agent.sourceTemplateId, phase: 'post' }); } catch { /* Optional diagnostics. */ }
     try {
-        const maxTokens = normalizePromptTransformMaxTokens(agent.postProcess?.promptTransformMaxTokens);
-        const response = await requestPromptTransform(
-            agent,
-            helperRequest.promptMessages,
-            maxTokens,
-            { allowAssistantPrefillTail: helperRequest.allowAssistantPrefillTail, runtimeAgents: options.runtimeAgents },
+        const applyToMessage = options.applyToMessage !== false;
+        const cancelRevision = Number.isInteger(options.cancelRevision) ? options.cancelRevision : agentGenerationCancelRevision;
+        const targetState = captureMessageTargetState(message);
+        const currentMessageText = unwrapAssistantResponseWrapper(
+            messageTextOverride !== null ? messageTextOverride : message?.mes,
         );
-        const promptOutputText = stripEchoedPartialPrefill(
-            unwrapAssistantResponseWrapper(response.output).trim(),
-            promptTransformMode === 'append' ? '' : protectedPartialPrefill,
-        );
+        const protectedPartialPrefill = getProtectedKimiPartialPrefill(message, messageIndex, currentMessageText);
+        const transformMessageText = currentMessageText.slice(protectedPartialPrefill.length);
+        const normalizedGenerationType = normalizeGenerationType(generationType);
+        const promptTransformMode = getPromptTransformMode(agent);
+        const profileId = resolveAgentConnectionProfile(agent);
+        const runMetadata = getPromptTransformRunMetadata(agent, profileId);
+        const showNotifications = shouldShowPromptTransformNotifications(agent);
 
-        if (!promptOutputText) {
-            console.warn(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" returned an empty response.`);
+        const isRuntimeAllowed = () => isAgentRuntimeAllowed(agent) && (options.runtimeAgents ?? []).every(isAgentRuntimeAllowed);
+        const runtimeAllowed = isRuntimeAllowed();
+        if (cancelRevision !== agentGenerationCancelRevision || !runtimeAllowed || !transformMessageText.trim()) {
             const result = {
                 agentId: agent.id,
                 agentName: agent.name,
                 changed: false,
-                status: 'empty-response',
+                status: cancelRevision !== agentGenerationCancelRevision ? 'cancelled' : runtimeAllowed ? 'skipped-empty-message' : 'skipped-runtime-filter',
+                mode: promptTransformMode,
+                profileId,
+                ...runMetadata,
+                runner: 'none',
+                timestamp: new Date().toISOString(),
+                outputText: '',
+                nextMessageText: currentMessageText,
+                beforeText: currentMessageText,
+            };
+
+            return result;
+        }
+
+        const expandedPrompt = substituteParams(agent.prompt, {
+            name2Override: String(message?.name ?? '').trim(),
+            original: transformMessageText,
+            dynamicMacros: buildPromptDynamicMacros(transformMessageText, message, agent, normalizedGenerationType),
+        }).trim();
+
+        if (!expandedPrompt) {
+            const result = {
+                agentId: agent.id,
+                agentName: agent.name,
+                changed: false,
+                status: 'skipped-empty-prompt',
+                mode: promptTransformMode,
+                profileId,
+                ...runMetadata,
+                runner: 'none',
+                timestamp: new Date().toISOString(),
+                outputText: '',
+                nextMessageText: currentMessageText,
+                beforeText: currentMessageText,
+            };
+
+            return result;
+        }
+
+        const helperRequest = appendConfiguredHelperPrefillMessages(options.promptMessages ?? buildPromptTransformMessages(
+            expandedPrompt,
+            transformMessageText,
+            String(message?.name ?? '').trim(),
+            normalizedGenerationType,
+            promptTransformMode,
+            getPromptTransformRecentChat(agent, message, options.recentChatEndIndex ?? messageIndex),
+        ));
+        const runningToast = showNotifications
+            ? showPromptTransformRunningToast(agent, promptTransformMode, profileId)
+            : null;
+
+        try {
+            const maxTokens = normalizePromptTransformMaxTokens(agent.postProcess?.promptTransformMaxTokens);
+            const response = await requestPromptTransform(
+                agent,
+                helperRequest.promptMessages,
+                maxTokens,
+                { allowAssistantPrefillTail: helperRequest.allowAssistantPrefillTail, runtimeAgents: options.runtimeAgents, diagnosticHandle },
+            );
+            const promptOutputText = stripEchoedPartialPrefill(
+                unwrapAssistantResponseWrapper(response.output).trim(),
+                promptTransformMode === 'append' ? '' : protectedPartialPrefill,
+            );
+
+            if (!promptOutputText) {
+                console.warn(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" returned an empty response.`);
+                const result = {
+                    agentId: agent.id,
+                    agentName: agent.name,
+                    changed: false,
+                    status: 'empty-response',
+                    mode: promptTransformMode,
+                    profileId: response.profileId,
+                    ...getPromptTransformRunMetadata(agent, response.profileId, response.model),
+                    runner: response.runner,
+                    timestamp: new Date().toISOString(),
+                    outputText: '',
+                    nextMessageText: currentMessageText,
+                    beforeText: currentMessageText,
+                };
+
+                if (showNotifications) {
+                    showPromptTransformResultToast(agent, result);
+                }
+
+                return result;
+            }
+
+            const transformedMessageText = promptTransformMode === 'append'
+                ? appendPromptTransformOutput(transformMessageText, promptOutputText)
+                : promptOutputText;
+            const nextMessageText = protectedPartialPrefill + transformedMessageText;
+            const staleTarget = !isMessageTargetCurrent(message, targetState, messageIndex);
+            // A rewrite the provider cut short at its output limit must not replace the complete original.
+            const truncatedRewrite = response.lengthLimited === true;
+            const refusedRewrite = !truncatedRewrite && isGuardedRefusal(promptOutputText, transformMessageText);
+            if (staleTarget || truncatedRewrite || refusedRewrite || agentGenerationCancelRevision !== cancelRevision || !isRuntimeAllowed()) {
+                if (staleTarget) {
+                    console.info(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" finished after the message changed; result discarded.`);
+                } else if (truncatedRewrite) {
+                    console.warn(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" hit its output limit; the original text was kept.`);
+                    if (showNotifications) {
+                        toastr.warning(`${escapeToastHtml(agent.name)} ran out of room for its answer, so the original text was kept. Raise its reply length limit in the agent settings and try again.`);
+                    }
+                } else if (refusedRewrite) {
+                    console.warn(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" refused; the original text was kept.`);
+                    if (showNotifications) {
+                        toastr.warning(`${escapeToastHtml(agent.name)} refused, so the original text was kept.`);
+                    }
+                }
+                return {
+                    agentId: agent.id,
+                    agentName: agent.name,
+                    changed: false,
+                    status: staleTarget ? 'stale-target' : truncatedRewrite ? 'truncated' : refusedRewrite ? 'refused' : agentGenerationCancelRevision !== cancelRevision ? 'cancelled' : 'skipped-runtime-filter',
+                    mode: promptTransformMode,
+                    profileId: response.profileId,
+                    ...getPromptTransformRunMetadata(agent, response.profileId, response.model),
+                    runner: response.runner,
+                    timestamp: new Date().toISOString(),
+                    outputText: '',
+                    nextMessageText: currentMessageText,
+                    beforeText: currentMessageText,
+                };
+            }
+
+            const changed = nextMessageText !== currentMessageText;
+            if (changed && applyToMessage) {
+                setPostProcessingText(message, nextMessageText, options.postProcessingTarget);
+                await syncPromptTransformMessageStateAsync(message, messageIndex);
+            }
+
+            console.info(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" ran via ${describePromptTransformTarget(response.profileId, response.runner)}${changed ? ' and changed the message.' : ' with no text change.'}`);
+
+            const result = {
+                agentId: agent.id,
+                agentName: agent.name,
+                changed,
+                status: changed ? 'changed' : 'unchanged',
                 mode: promptTransformMode,
                 profileId: response.profileId,
                 ...getPromptTransformRunMetadata(agent, response.profileId, response.model),
                 runner: response.runner,
+                timestamp: new Date().toISOString(),
+                outputText: promptOutputText,
+                nextMessageText,
+                beforeText: currentMessageText,
+            };
+
+            if (showNotifications) {
+                showPromptTransformResultToast(agent, result);
+            }
+
+            return result;
+        } catch (error) {
+            if (agentGenerationCancelRevision !== cancelRevision || generationStopRequested || isAbortSignalTriggered(error)) {
+                return {
+                    agentId: agent.id,
+                    agentName: agent.name,
+                    changed: false,
+                    status: 'cancelled',
+                    mode: promptTransformMode,
+                    profileId,
+                    ...runMetadata,
+                    runner: 'cancelled',
+                    timestamp: new Date().toISOString(),
+                    outputText: '',
+                    nextMessageText: currentMessageText,
+                    beforeText: currentMessageText,
+                };
+            }
+
+            console.warn(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} failed in agent "${agent.name}":`, error);
+            const result = {
+                agentId: agent.id,
+                agentName: agent.name,
+                changed: false,
+                status: 'error',
+                mode: promptTransformMode,
+                error: describeAgentError(error),
+                profileId,
+                ...runMetadata,
+                runner: 'error',
                 timestamp: new Date().toISOString(),
                 outputText: '',
                 nextMessageText: currentMessageText,
@@ -4035,117 +4162,10 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
             }
 
             return result;
+        } finally {
+            clearPromptTransformRunningToast(runningToast);
         }
-
-        const transformedMessageText = promptTransformMode === 'append'
-            ? appendPromptTransformOutput(transformMessageText, promptOutputText)
-            : promptOutputText;
-        const nextMessageText = protectedPartialPrefill + transformedMessageText;
-        const staleTarget = !isMessageTargetCurrent(message, targetState, messageIndex);
-        // A rewrite the provider cut short at its output limit must not replace the complete original.
-        const truncatedRewrite = response.lengthLimited === true;
-        const refusedRewrite = !truncatedRewrite && isGuardedRefusal(promptOutputText, transformMessageText);
-        if (staleTarget || truncatedRewrite || refusedRewrite || agentGenerationCancelRevision !== cancelRevision || !isRuntimeAllowed()) {
-            if (staleTarget) {
-                console.info(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" finished after the message changed; result discarded.`);
-            } else if (truncatedRewrite) {
-                console.warn(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" hit its output limit; the original text was kept.`);
-                if (showNotifications) {
-                    toastr.warning(`${escapeToastHtml(agent.name)} ran out of room for its answer, so the original text was kept. Raise its reply length limit in the agent settings and try again.`);
-                }
-            } else if (refusedRewrite) {
-                console.warn(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" refused; the original text was kept.`);
-                if (showNotifications) {
-                    toastr.warning(`${escapeToastHtml(agent.name)} refused, so the original text was kept.`);
-                }
-            }
-            return {
-                agentId: agent.id,
-                agentName: agent.name,
-                changed: false,
-                status: staleTarget ? 'stale-target' : truncatedRewrite ? 'truncated' : refusedRewrite ? 'refused' : agentGenerationCancelRevision !== cancelRevision ? 'cancelled' : 'skipped-runtime-filter',
-                mode: promptTransformMode,
-                profileId: response.profileId,
-                ...getPromptTransformRunMetadata(agent, response.profileId, response.model),
-                runner: response.runner,
-                timestamp: new Date().toISOString(),
-                outputText: '',
-                nextMessageText: currentMessageText,
-                beforeText: currentMessageText,
-            };
-        }
-
-        const changed = nextMessageText !== currentMessageText;
-        if (changed && applyToMessage) {
-            setPostProcessingText(message, nextMessageText, options.postProcessingTarget);
-            await syncPromptTransformMessageStateAsync(message, messageIndex);
-        }
-
-        console.info(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" ran via ${describePromptTransformTarget(response.profileId, response.runner)}${changed ? ' and changed the message.' : ' with no text change.'}`);
-
-        const result = {
-            agentId: agent.id,
-            agentName: agent.name,
-            changed,
-            status: changed ? 'changed' : 'unchanged',
-            mode: promptTransformMode,
-            profileId: response.profileId,
-            ...getPromptTransformRunMetadata(agent, response.profileId, response.model),
-            runner: response.runner,
-            timestamp: new Date().toISOString(),
-            outputText: promptOutputText,
-            nextMessageText,
-            beforeText: currentMessageText,
-        };
-
-        if (showNotifications) {
-            showPromptTransformResultToast(agent, result);
-        }
-
-        return result;
-    } catch (error) {
-        if (agentGenerationCancelRevision !== cancelRevision || generationStopRequested || isAbortSignalTriggered(error)) {
-            return {
-                agentId: agent.id,
-                agentName: agent.name,
-                changed: false,
-                status: 'cancelled',
-                mode: promptTransformMode,
-                profileId,
-                ...runMetadata,
-                runner: 'cancelled',
-                timestamp: new Date().toISOString(),
-                outputText: '',
-                nextMessageText: currentMessageText,
-                beforeText: currentMessageText,
-            };
-        }
-
-        console.warn(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} failed in agent "${agent.name}":`, error);
-        const result = {
-            agentId: agent.id,
-            agentName: agent.name,
-            changed: false,
-            status: 'error',
-            mode: promptTransformMode,
-            error: describeAgentError(error),
-            profileId,
-            ...runMetadata,
-            runner: 'error',
-            timestamp: new Date().toISOString(),
-            outputText: '',
-            nextMessageText: currentMessageText,
-            beforeText: currentMessageText,
-        };
-
-        if (showNotifications) {
-            showPromptTransformResultToast(agent, result);
-        }
-
-        return result;
-    } finally {
-        clearPromptTransformRunningToast(runningToast);
-    }
+    } catch (error) { diagnosticOutcome = error?.name === 'AbortError' ? 'cancel' : 'error'; throw error; } finally { try { globalThis.NeconyanCrashDiagnostics?.endAgent?.(diagnosticHandle, diagnosticOutcome); } catch { /* Optional diagnostics. */ } }
 }
 
 async function runPromptTransformAppendBatch(agents, message, generationType, messageTextOverride = null, messageIndex = null, { cancelRevision = null, runtimeAgents = [], recentChatEndIndex = null, executionMode = getGlobalSettings().appendAgentsExecutionMode } = {}) {
@@ -5228,116 +5248,120 @@ export async function runCompanionOutputPostPasses(companionAgent, initialText, 
 }
 
 async function runContextInterceptAgent(agent, currentContextText, generationType, contextFormat, options = {}) {
-    const timing = options.timing === POST_MAIN_GENERATION_INTERCEPT_TIMING
-        ? POST_MAIN_GENERATION_INTERCEPT_TIMING
-        : PRE_GENERATION_INTERCEPT_TIMING;
-    const beforeText = normalizeContentText(currentContextText);
-    const applyMode = ['wrap', 'patch'].includes(String(agent?.preProcess?.applyMode))
-        ? String(agent.preProcess.applyMode)
-        : 'replace';
-    const profileId = resolveAgentConnectionProfile(agent);
-    const baseResult = {
-        agentId: agent.id,
-        agentName: agent.name,
-        applyMode,
-        timing,
-        contextFormat,
-        changed: false,
-        beforeText,
-        afterText: beforeText,
-        outputText: '',
-        profileId: '',
-        runner: 'none',
-        timestamp: new Date().toISOString(),
-    };
-    const expandedPrompt = substituteParams(agent.prompt, {
-        original: currentContextText,
-        dynamicMacros: buildPromptDynamicMacros(currentContextText, null, agent, generationType),
-    }).trim();
-
-    const runtimeAllowed = isAgentRuntimeAllowed(agent);
-    if (!runtimeAllowed || !expandedPrompt || !currentContextText.trim()) {
-        return {
-            ...baseResult,
-            status: runtimeAllowed ? 'skipped-empty-prompt' : 'skipped-runtime-filter',
-        };
-    }
-
-    const helperRequest = appendConfiguredHelperPrefillMessages(
-        buildContextInterceptMessages(expandedPrompt, currentContextText, generationType, contextFormat, timing, applyMode),
-    );
-    const cancelRevision = agentGenerationCancelRevision;
-    const skipChanges = timing === POST_MAIN_GENERATION_INTERCEPT_TIMING && Boolean(options?.skipChanges);
-    const showRunningToast = skipChanges || shouldShowPreInterceptNotifications(agent);
-    const runningToast = showRunningToast
-        ? showPromptTransformRunningToast(agent, applyMode, profileId, {
-            kind: timing === POST_MAIN_GENERATION_INTERCEPT_TIMING ? 'postMainIntercept' : 'preIntercept',
-            applyMode,
-            skipChanges,
-            onCancel: skipChanges ? options?.onCancel : null,
-        })
-        : null;
-
+    let diagnosticHandle = null, diagnosticOutcome = 'done';
+    try { diagnosticHandle = globalThis.NeconyanCrashDiagnostics?.beginAgent?.({ id: agent.id, sourceTemplateId: agent.sourceTemplateId, phase: options.timing === POST_MAIN_GENERATION_INTERCEPT_TIMING ? 'post' : 'pre' }); } catch { /* Optional diagnostics. */ }
     try {
-        const response = await requestPromptTransform(
-            agent,
-            helperRequest.promptMessages,
-            normalizePreProcessMaxTokens(agent.preProcess?.maxTokens),
-            { allowAssistantPrefillTail: helperRequest.allowAssistantPrefillTail },
-        );
-
-        if (agentGenerationCancelRevision !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
-            return {
-                ...baseResult,
-                status: agentGenerationCancelRevision !== cancelRevision ? 'cancelled' : 'skipped-runtime-filter',
-                profileId: response.profileId,
-                runner: response.runner,
-            };
-        }
-
-        if (response.lengthLimited) {
-            return { ...baseResult, status: 'truncated', profileId: response.profileId, runner: response.runner };
-        }
-
-        const outputText = unwrapContextInterceptOutput(response.output).trim();
-
-        if (isGuardedRefusal(outputText, currentContextText)) {
-            console.warn(`[InChatAgents] intercept agent "${agent.name}" refused; the original text was kept.`);
-            return { ...baseResult, status: 'refused', profileId: response.profileId, runner: response.runner };
-        }
-
-        if (!outputText) {
-            console.warn(`[InChatAgents] pre-generation intercept agent "${agent.name}" returned an empty response.`);
-            return {
-                ...baseResult,
-                status: 'empty-response',
-                profileId: response.profileId,
-                runner: response.runner,
-            };
-        }
-
-        return {
-            ...baseResult,
-            status: 'changed',
-            changed: true,
-            outputText,
-            profileId: response.profileId,
-            runner: response.runner,
+        const timing = options.timing === POST_MAIN_GENERATION_INTERCEPT_TIMING
+            ? POST_MAIN_GENERATION_INTERCEPT_TIMING
+            : PRE_GENERATION_INTERCEPT_TIMING;
+        const beforeText = normalizeContentText(currentContextText);
+        const applyMode = ['wrap', 'patch'].includes(String(agent?.preProcess?.applyMode))
+            ? String(agent.preProcess.applyMode)
+            : 'replace';
+        const profileId = resolveAgentConnectionProfile(agent);
+        const baseResult = {
+            agentId: agent.id,
+            agentName: agent.name,
+            applyMode,
+            timing,
+            contextFormat,
+            changed: false,
+            beforeText,
+            afterText: beforeText,
+            outputText: '',
+            profileId: '',
+            runner: 'none',
+            timestamp: new Date().toISOString(),
         };
-    } catch (error) {
-        if (agentGenerationCancelRevision !== cancelRevision || generationStopRequested || isAbortSignalTriggered(error)) {
+        const expandedPrompt = substituteParams(agent.prompt, {
+            original: currentContextText,
+            dynamicMacros: buildPromptDynamicMacros(currentContextText, null, agent, generationType),
+        }).trim();
+
+        const runtimeAllowed = isAgentRuntimeAllowed(agent);
+        if (!runtimeAllowed || !expandedPrompt || !currentContextText.trim()) {
             return {
                 ...baseResult,
-                status: 'cancelled',
-                profileId,
-                runner: 'cancelled',
+                status: runtimeAllowed ? 'skipped-empty-prompt' : 'skipped-runtime-filter',
             };
         }
 
-        throw error;
-    } finally {
-        clearPromptTransformRunningToast(runningToast);
-    }
+        const helperRequest = appendConfiguredHelperPrefillMessages(
+            buildContextInterceptMessages(expandedPrompt, currentContextText, generationType, contextFormat, timing, applyMode),
+        );
+        const cancelRevision = agentGenerationCancelRevision;
+        const skipChanges = timing === POST_MAIN_GENERATION_INTERCEPT_TIMING && Boolean(options?.skipChanges);
+        const showRunningToast = skipChanges || shouldShowPreInterceptNotifications(agent);
+        const runningToast = showRunningToast
+            ? showPromptTransformRunningToast(agent, applyMode, profileId, {
+                kind: timing === POST_MAIN_GENERATION_INTERCEPT_TIMING ? 'postMainIntercept' : 'preIntercept',
+                applyMode,
+                skipChanges,
+                onCancel: skipChanges ? options?.onCancel : null,
+            })
+            : null;
+
+        try {
+            const response = await requestPromptTransform(
+                agent,
+                helperRequest.promptMessages,
+                normalizePreProcessMaxTokens(agent.preProcess?.maxTokens),
+                { allowAssistantPrefillTail: helperRequest.allowAssistantPrefillTail, diagnosticHandle },
+            );
+
+            if (agentGenerationCancelRevision !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
+                return {
+                    ...baseResult,
+                    status: agentGenerationCancelRevision !== cancelRevision ? 'cancelled' : 'skipped-runtime-filter',
+                    profileId: response.profileId,
+                    runner: response.runner,
+                };
+            }
+
+            if (response.lengthLimited) {
+                return { ...baseResult, status: 'truncated', profileId: response.profileId, runner: response.runner };
+            }
+
+            const outputText = unwrapContextInterceptOutput(response.output).trim();
+
+            if (isGuardedRefusal(outputText, currentContextText)) {
+                console.warn(`[InChatAgents] intercept agent "${agent.name}" refused; the original text was kept.`);
+                return { ...baseResult, status: 'refused', profileId: response.profileId, runner: response.runner };
+            }
+
+            if (!outputText) {
+                console.warn(`[InChatAgents] pre-generation intercept agent "${agent.name}" returned an empty response.`);
+                return {
+                    ...baseResult,
+                    status: 'empty-response',
+                    profileId: response.profileId,
+                    runner: response.runner,
+                };
+            }
+
+            return {
+                ...baseResult,
+                status: 'changed',
+                changed: true,
+                outputText,
+                profileId: response.profileId,
+                runner: response.runner,
+            };
+        } catch (error) {
+            if (agentGenerationCancelRevision !== cancelRevision || generationStopRequested || isAbortSignalTriggered(error)) {
+                return {
+                    ...baseResult,
+                    status: 'cancelled',
+                    profileId,
+                    runner: 'cancelled',
+                };
+            }
+
+            throw error;
+        } finally {
+            clearPromptTransformRunningToast(runningToast);
+        }
+    } catch (error) { diagnosticOutcome = error?.name === 'AbortError' ? 'cancel' : 'error'; throw error; } finally { try { globalThis.NeconyanCrashDiagnostics?.endAgent?.(diagnosticHandle, diagnosticOutcome); } catch { /* Optional diagnostics. */ } }
 }
 
 function getGenerationContextSnapshot(generationType = null) {

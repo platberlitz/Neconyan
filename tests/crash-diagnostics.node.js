@@ -127,6 +127,7 @@ function browser(storage, broken = false) {
     const context = {
         window: null, document: { addEventListener() {}, getElementById() { return null; }, visibilityState: 'visible' },
         navigator: { userAgent: 'test', onLine: true }, performance: {},
+        TextEncoder,
         localStorage: {
             getItem: key => storage.get(key), setItem: (key, value) => { if (broken) throw new Error('Quota'); storage.set(key, value); },
             removeItem: key => storage.delete(key),
@@ -202,4 +203,31 @@ public class StoreTest { public static void main(String[] args) {
 } }`);
     execFileSync('javac', ['-d', root, source, harness]);
     assert.match(execFileSync('java', ['-cp', root, 'io.github.platberlitz.neconyan.StoreTest', root], { encoding: 'utf8' }), /passed/);
+});
+
+test('activity allowlist does not invoke getters or retain application secrets', () => {
+    let accessed = false;
+    const api = globalThis.NeconyanCrashDiagnostics;
+    const result = api.validateActivity({ mode: 'roleplay', character: 'private character', prompt: 'private prompt',
+        get view() { accessed = true; throw new Error('getter'); },
+        chat: { messageCount: -1, estimatedTextBytes: Infinity, title: 'private title' },
+        agents: { running: Array.from({ length: 100 }, () => ({ label: 'private agent name', phase: 'post', location: 'server' })) } });
+    assert.equal(accessed, false);
+    assert.equal(result.chat.messageCount, null);
+    assert.equal(result.chat.estimatedTextBytes, null);
+    assert.equal(result.agents.running.length, 8);
+    assert.equal(result.agents.omittedRunningCount, 92);
+    assert.ok(Buffer.byteLength(JSON.stringify(result)) < 4096);
+    assert.doesNotMatch(JSON.stringify(result), /private/);
+});
+
+test('parallel browser Agent handles preserve peers and expose only trusted labels', () => {
+    const { api } = browser(new Map());
+    const first = api.beginAgent({ id: 'secret-id', name: 'secret name', sourceTemplateId: 'tpl-format-fixer', phase: 'post' });
+    const second = api.beginAgent({ id: 'another-secret', sourceTemplateId: 'tpl-proofreader', phase: 'post' });
+    api.endAgent(first);
+    assert.equal(api.getActivity().snapshot.agents.running[0].label, 'Proofreader');
+    api.endAgent(second, 'cancel');
+    assert.equal(api.getActivity().snapshot.agents.running.length, 0);
+    assert.doesNotMatch(JSON.stringify(api.getActivity()), /secret/);
 });
