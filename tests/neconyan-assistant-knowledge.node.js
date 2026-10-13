@@ -106,6 +106,8 @@ test('real help questions retrieve the appropriate topic', () => {
         ['How do I open Quick Image Gen?', 'images.quick'],
         ['How do I add saved notes to Scratchpad?', 'scratchpad.notebooks'],
         ['How do I use Scratchpad on Home without an open chat?', 'scratchpad.start'],
+        ['How do I generate an image with Scratchpad Quick Image Gen?', 'scratchpad.images'],
+        ['Can Scratchpad change a portrait with Review avatar?', 'scratchpad.images'],
         ['Can Scratchpad see my preset?', 'scratchpad.preset'],
         ['How do I use Ask Scratchpad for a private note?', 'notes.scratchpad'],
         ['How do I add sprites in Character Expressions?', 'images.expressions'],

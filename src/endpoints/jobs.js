@@ -14,6 +14,7 @@ import { readRoleplayPreview, subscribeRoleplayPreview } from '../generation/rol
 import { readConversationPreview, subscribeConversationPreview } from '../generation/conversation-preview.js';
 import { subscribeJobsChanged } from '../jobs/notifications.js';
 import { getDiagnosticJobActivity } from '../diagnostic-activity.js';
+import { assertScratchpadImageRetry } from '../scratchpad/images.js';
 
 export const router = express.Router();
 
@@ -219,7 +220,7 @@ router.post('/:id/approval/:approval', (request, response) => {
 // Source-bound work needs native preparation and permanent acceptance receipts.
 // The generic route cannot create that authority from browser-supplied intent.
 const RESERVED_JOB_TYPES = new Set(['conversation.reply', 'conversation.participant', 'conversation.summary', 'conversation.schedule',
-    'conversation.rewrite', 'conversation.selfie', 'meower.refresh', 'meower.profile', 'scratchpad.reply']);
+    'conversation.rewrite', 'conversation.selfie', 'meower.refresh', 'meower.profile', 'scratchpad.reply', 'scratchpad.image']);
 
 router.post('/submit', (request, response) => {
     try {
@@ -302,6 +303,7 @@ router.post('/:id/retry', async (request, response) => {
         const job = getJob(directories, request.params.id);
         if (!job || job.owner !== owner) return response.status(404).json({ error: 'That job could not be found.' });
         if (!['failed', 'interrupted'].includes(job.state)) return response.status(409).json({ error: 'Only jobs that failed or were interrupted can be tried again.' });
+        assertScratchpadImageRetry(directories, job);
         if (job.type === 'conversation.reply' && (job.children ?? []).length) {
             return response.json({ job: retryConversationFamily(directories, job.id).job });
         }

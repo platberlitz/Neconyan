@@ -126,6 +126,19 @@ test('a custom prompt saved from General defaults does not duplicate its context
     assert.equal(saved.match(/No story chat is open/g)?.length, 1);
 });
 
+test('an ordinary text reply survives an invalid shared image target', async t => {
+    const a = account(t);
+    const session = startSession(a);
+    registerScratchpadJobs({ generate: async () => ({ text: 'A plain answer.' }) });
+    // A very long name is shortened and a malformed avatar is dropped, so neither fails the send.
+    const body = sendBody(session, { targets: [{ avatar: 'Nova.png', name: 'N'.repeat(500) }, { avatar: '../bad.png', name: 'Bad' }] });
+    const request = jobs.normaliseReplyRequest(body);
+    assert.deepEqual(request.targets, [{ avatar: 'Nova.png', name: 'N'.repeat(200) }]);
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    await runJob(getJob(a.directories, accepted.job.id));
+    assert.equal(getJob(a.directories, accepted.job.id).state, 'completed');
+});
+
 test('General sources strictly validate their one storage key and optional context', () => {
     assert.deepEqual(store.normaliseSource({ ...GENERAL, avatar: 'Nova.png', unexpected: 'ignored' }), { ...GENERAL, avatar: 'Nova.png' });
     for (const changed of [{ key: 'other' }, { key: 'shared:character:Nova.png' }, { scope: { kind: 'character', id: 'Nova.png' } },

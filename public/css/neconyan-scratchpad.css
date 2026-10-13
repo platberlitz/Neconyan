@@ -1,5 +1,68 @@
 /* Scratchpad panel. Loaded lazily the first time Scratchpad opens. */
 
+.scratchpad-image-card .scratchpad-generated-image {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 360px;
+    object-fit: contain;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-raised);
+}
+
+.scratchpad-image-prompt {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin: 0;
+}
+.scratchpad-app .scratchpad-image-link {
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    border: 1px solid var(--neco-border);
+    text-decoration: none;
+}
+.scratchpad-app .scratchpad-image-link:hover {
+    background: color-mix(in srgb, var(--neco-ginger) 10%, var(--neco-surface));
+    border-color: var(--neco-ginger);
+}
+.scratchpad-app .scratchpad-image-link:focus-visible {
+    outline: 2px solid var(--neco-ginger);
+    outline-offset: 2px;
+}
+
+.scratchpad-review.scratchpad-picture-review { container-type: inline-size; }
+body.neconyan dialog.popup.wide_dialogue_popup:has(.scratchpad-picture-review .scratchpad-avatar-review) {
+    background: var(--neco-surface);
+}
+/* Two stacked pictures must scroll on a short landscape phone, like the transform history popup. */
+.popup:has(.scratchpad-picture-review) .popup-content {
+    overflow-y: auto;
+    min-height: 0;
+}
+.scratchpad-picture-review .scratchpad-review-hint { margin-top: 12px; }
+.scratchpad-avatar-review {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    width: 100%;
+}
+.scratchpad-avatar-review figure { margin: 0; min-width: 0; }
+.scratchpad-avatar-review figcaption { margin-bottom: 6px; font-weight: 700; }
+.scratchpad-avatar-review img {
+    display: block;
+    width: 100%;
+    height: 260px;
+    object-fit: contain;
+    border: 1px solid var(--neco-border);
+    border-radius: 8px;
+    background: var(--neco-raised);
+}
+@container (max-width: 560px) {
+    .scratchpad-avatar-review { grid-template-columns: 1fr; }
+    .scratchpad-avatar-review img { height: 180px; }
+}
+
 .scratchpad-app[hidden],
 #neconyan-scratchpad [hidden] {
     display: none;

@@ -28,6 +28,8 @@ import { assistantPortrait, deleteAssistantLocked, readAssistantCardLocked, read
 import { normaliseAssistantProfile } from '../scratchpad/assistant-profiles.js';
 import { notebookContextLocked, withNotebookPreparation, prepareNotebookProposalLocked, decideNotebookProposalLocked,
     projectNotebookProposalsLocked, notifyScratchpadNotebookResult } from '../scratchpad/notebooks.js';
+import { acceptScratchpadImage, readScratchpadImageAvailability, prepareScratchpadAvatarReview } from '../scratchpad/images.js';
+import { captureImageTargetsLocked } from '../scratchpad/image-targets.js';
 
 export const router = express.Router();
 
@@ -146,6 +148,12 @@ router.post('/prompt', (request, response) => {
         const base = scratchpadAccountBase(request);
         const body = request.body ?? {};
         const source = body.source || body.sessionId ? normaliseSource(body.source) : null;
+        const imageAvailability = readScratchpadImageAvailability(base);
+        const targets = source && imageAvailability.image ? withScratchpad(base, lease => {
+            const bucket = readBucketLocked(lease, source);
+            const session = body.sessionId ? findSession(bucket, requireId(body.sessionId, 'session')) : null;
+            return captureImageTargetsLocked(lease, bucket.source, body.targets, { shared: session?.settings.include.card !== false });
+        }) : [];
         const profiles = withScratchpad(base, lease => {
             const library = readAssistantsLocked(lease);
             const session = body.sessionId ? findSession(readBucketLocked(lease, source), requireId(body.sessionId, 'session')) : null;
@@ -155,7 +163,8 @@ router.post('/prompt', (request, response) => {
         response.json(buildScratchpadSystemPrompt({ assistant: body.assistant, gender: body.gender,
             persona: profiles[body.assistant], assistantNames: Object.fromEntries(Object.entries(profiles).map(([id, profile]) => [id, profile?.name])),
             sourceKind: source?.kind, userName: body.names?.user, characterName: body.names?.character,
-            capabilities: { ...normaliseCapabilities(body.capabilities, source?.kind, source ?? {}), notebook: body.capabilities?.notebook === true },
+            capabilities: { ...normaliseCapabilities(body.capabilities, source?.kind, source ?? {}), notebook: body.capabilities?.notebook === true,
+                image: imageAvailability.image && body.capabilities?.image === true, avatar: imageAvailability.image && body.capabilities?.image === true && targets.length > 0 },
             participants: Array.isArray(body.participants) ? body.participants.slice(0, 3) : [], randomReply: body.randomReply === true }));
     } catch (error) {
         sendError(response, error);
@@ -244,6 +253,24 @@ router.post('/send', async (request, response) => {
     } catch (error) {
         sendError(response, error);
     }
+});
+
+router.post('/images/availability', (request, response) => {
+    try { response.json(readScratchpadImageAvailability(scratchpadAccountBase(request))); } catch (error) { sendError(response, error); }
+});
+
+router.post('/images/generate', async (request, response) => {
+    try {
+        const result = await acceptScratchpadImage(request, request.body ?? {});
+        response.status(result.created ? 202 : 200).json(result);
+    } catch (error) { sendError(response, error); }
+});
+
+router.post('/images/avatar-review', async (request, response) => {
+    try {
+        const base = scratchpadAccountBase(request);
+        response.json(await prepareScratchpadAvatarReview(base, normaliseSource(request.body?.source), request.body ?? {}));
+    } catch (error) { sendError(response, error); }
 });
 
 router.get('/preview/:id', (request, response) => {

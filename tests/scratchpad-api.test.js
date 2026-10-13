@@ -7,7 +7,7 @@ const fetchMock = jest.fn();
 globalThis.fetch = fetchMock;
 jest.unstable_mockModule('../public/script.js', () => ({ getRequestHeaders: () => ({}) }));
 jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentUserHandle: () => account }));
-const { sendReply } = await import('../public/scripts/scratchpad/api.js');
+const { sendReply, generateImage } = await import('../public/scripts/scratchpad/api.js');
 
 function request() {
     return { submissionKey: `first-${++sequence}`, source: { kind: 'roleplay', key: `source-${sequence}` }, sessionId: 'session', text: 'A question.', context: 'Original context.' };
@@ -54,4 +54,17 @@ test('an unresolved request is not reused for a different account', async () => 
     await sendReply(other);
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual(other);
     expect(fetchMock.mock.calls[1][1].headers['X-Neconyan-Account']).toBe('other');
+});
+
+test.each(['network', 'server', 'unreadable'])('a lost image %s acceptance retains its exact original submission and acknowledgement', async failure => {
+    const body = { submissionKey: `image-${++sequence}`, source: { kind: 'general', key: 'general', avatar: 'Nova.png' },
+        sessionId: `session-${sequence}`, messageId: 'reply', index: 0, acknowledgement: { settingsRevision: 7 } };
+    fetchMock.mockImplementationOnce(async () => {
+        if (failure === 'network') throw new Error('Image acceptance lost');
+        return new Response(failure === 'server' ? '{}' : 'bad-json', { status: failure === 'server' ? 502 : 200 });
+    });
+    await expect(generateImage(body)).rejects.toThrow();
+    fetchMock.mockResolvedValueOnce(Response.json(receipt(body)));
+    await expect(generateImage({ ...body, submissionKey: 'replacement', acknowledgement: { settingsRevision: 9 } })).resolves.toEqual(receipt(body));
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual(body);
 });
