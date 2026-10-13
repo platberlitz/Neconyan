@@ -67,8 +67,14 @@ describe('Scratchpad images and avatar reviews', () => {
 
     test('a pending image waiting for prompt review offers the review and no stop', () => {
         const onPromptReview = jest.fn();
+        const preparing = { id: 'reply', images: { 0: { state: 'pending', jobId: 'image-job', review: true } } };
+        const preparingCard = renderImageCard({ session, message: preparing, part, availability: { image: true }, onPromptReview, onError: jest.fn(),
+            button: (label, onclick, options) => h('button', { text: label, onclick, ...options }) });
+        expect(nodes(preparingCard).filter(node => node.tag === 'button')).toEqual([]);
+        expect(nodes(preparingCard).some(node => node.attributes.text === 'Review the processed image prompt before generation.')).toBe(true);
+
         const job = { id: 'image-job', state: 'waiting', stage: 'approval', result: { approval: { id: 'approval-1' } } };
-        const pending = { id: 'reply', images: { 0: { state: 'pending', jobId: 'image-job' } } };
+        const pending = { id: 'reply', images: { 0: { state: 'pending', jobId: 'image-job', review: true } } };
         const card = renderImageCard({ session, message: pending, part, job, availability: { image: true }, onPromptReview, onError: jest.fn(),
             button: (label, onclick, options) => h('button', { text: label, onclick, ...options }) });
         const buttons = nodes(card).filter(node => node.tag === 'button');
@@ -81,8 +87,8 @@ describe('Scratchpad images and avatar reviews', () => {
     test('a pending image that is generating offers Stop image and no review', async () => {
         const { cancelJob } = await import('../public/scripts/jobs.js');
         cancelJob.mockResolvedValueOnce();
-        const job = { id: 'image-job', state: 'running', stage: null, result: null };
-        const pending = { id: 'reply', images: { 0: { state: 'pending', jobId: 'image-job' } } };
+        const job = { id: 'image-job', state: 'running', stage: 'approved', result: null };
+        const pending = { id: 'reply', images: { 0: { state: 'pending', jobId: 'image-job', review: true } } };
         const card = renderImageCard({ session, message: pending, part, job, availability: { image: true }, onPromptReview: jest.fn(), onError: jest.fn(),
             button: (label, onclick, options) => h('button', { text: label, onclick, ...options }) });
         const buttons = nodes(card).filter(node => node.tag === 'button');

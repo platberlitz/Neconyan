@@ -142,6 +142,10 @@ describe('Scratchpad Context refresh lifecycle', () => {
         const { observers, approveImagePrompt } = imageJobFixture({ card });
         await observers[0].options.onUpdate({ id: 'image-job', state: 'waiting', stage: 'approval', result: { approval: { id: 'a1' } } });
         expect(approveImagePrompt).not.toHaveBeenCalled();
+        const inactive = imageJobFixture({ markers: ['image-job'], card: null });
+        await inactive.observers[0].options.onUpdate({ id: 'image-job', state: 'waiting', stage: 'approval', result: { approval: { id: 'a1' } } });
+        expect(inactive.approveImagePrompt).not.toHaveBeenCalled();
+        expect(inactive.app.imageAutoReviews.has('image-job')).toBe(true);
     });
     test('rapid General/chat/General switching restores drafts and ignores a delayed chat bucket', async () => {
         const general = { kind: 'general', key: 'general', personaId: 'User.png' };

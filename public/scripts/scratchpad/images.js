@@ -46,10 +46,11 @@ export function renderImageCard({ session, message, part, button, availability, 
         if (safeImage(image.previousAvatarUrl)) actions.append(h('a', { class: 'scratchpad-button scratchpad-image-link', href: image.previousAvatarUrl, target: '_blank', rel: 'noopener', text: t`Previous avatar` }));
         card.append(h('p', { class: 'scratchpad-change-state', text: applied ? t`Avatar saved` : image.target === 'avatar' ? t`Image saved. The character card is unchanged.` : t`Image saved to your user images.` }));
     } else if (image?.state === 'pending') {
-        const reviewing = Boolean(job?.result?.approval);
+        const approval = Boolean(job?.result?.approval);
+        const reviewing = approval || (Boolean(image.review) && job?.stage !== 'approved');
         card.append(h('p', { class: 'scratchpad-stage', role: 'status', text: reviewing ? t`Review the processed image prompt before generation.` : t`Generating image...` }));
-        if (reviewing) actions.append(button(t`Review image prompt`, onPromptReview, { primary: true }));
-        else actions.append(button(t`Stop image`, () => void cancelJob(image.jobId).catch(onError), { icon: 'fa-stop' }));
+        if (approval) actions.append(button(t`Review image prompt`, onPromptReview, { primary: true }));
+        else if (!reviewing) actions.append(button(t`Stop image`, () => void cancelJob(image.jobId).catch(onError), { icon: 'fa-stop' }));
     } else if (image?.jobId) {
         card.append(h('p', { class: 'scratchpad-error', role: 'status', text: image.error || t`This image did not finish.` }));
         if (image.state === 'failed') actions.append(button(t`Retry saved job`, () => void retryJob(image.jobId).then(() => onRetried?.()).catch(onError)));

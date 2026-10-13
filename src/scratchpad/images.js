@@ -201,6 +201,7 @@ export async function acceptScratchpadImage(request, body = {}) {
             automatic: false, paused: true, target: { kind: 'scratchpad', id: session.id }, label: change.target === 'avatar' ? `Scratchpad avatar for ${target.name}` : 'Scratchpad image' });
         if (!created) throw fail('The image request changed during acceptance.');
         const image = { id: newScratchpadId(), jobId: job.id, state: 'pending', target: change.target, changeHash, providerReached: false,
+            ...(captured.review ? { review: true } : {}),
             prompt: change.prompt, negative: change.negative, ...(target ? { avatar: target.avatar, characterName: target.name } : {}) };
         const input = { source, sessionId: session.id, messageId: message.id, index, changeHash, account, snapshot: captured.snapshot,
             prompt: change.prompt, negative: [captured.negative, change.negative].filter(Boolean).join(', '), review: captured.review, effectId: `scratchpad-${image.id}` };

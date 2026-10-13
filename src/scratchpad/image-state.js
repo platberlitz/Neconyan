@@ -16,6 +16,7 @@ export function normaliseStoredImages(value) {
             || !['image', 'avatar'].includes(input.target)) continue;
         const image = { state: input.state, target: input.target, changeHash: input.changeHash };
         if (typeof input.providerReached === 'boolean') image.providerReached = input.providerReached;
+        if (typeof input.review === 'boolean') image.review = input.review;
         for (const [key, max] of Object.entries({ id: 64, jobId: 128, avatar: 256, characterName: 200, prompt: 10000, negative: 10000, error: 1000, previousAvatarRevision: 64 })) {
             if (typeof input[key] === 'string') image[key] = input[key].slice(0, max);
         }

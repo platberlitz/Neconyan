@@ -666,10 +666,13 @@ function syncWatchers() {
             app.imageJobSignatures.set(id, signature);
             if (app.open) await reload();
             if (TERMINAL.has(job.state)) app.imageAutoReviews.delete(id);
-            if (app.open && job.result?.approval && app.imageAutoReviews.delete(id)) {
+            if (app.open && job.result?.approval && app.imageAutoReviews.has(id)) {
                 const card = imageReviewCard(id);
                 // The reviewer decides in the popup, so the watcher must not wait for it.
-                if (card) void approveImagePrompt(card.session, card.message, card.part);
+                if (card) {
+                    app.imageAutoReviews.delete(id);
+                    void approveImagePrompt(card.session, card.message, card.part);
+                }
             }
         };
         app.imageWatchers.set(id, observeJob(id, { onUpdate: track, onDone: track }));
@@ -1164,7 +1167,10 @@ async function generateImageProposal(session, message, part) {
             guard: () => imageGuard(source, session, message, part), acknowledge });
         app.imageErrors.delete(key);
         if (sameSourceBucket(source, app.source)) {
-            if (result.job?.id) app.imageAutoReviews.add(result.job.id);
+            if (result.job?.id) {
+                app.imageJobs.set(result.job.id, result.job);
+                app.imageAutoReviews.add(result.job.id);
+            }
             app.ticket++;
             applyBucket(result.bucket);
         }
@@ -1187,12 +1193,20 @@ function imageReviewCard(jobId) {
 
 async function approveImagePrompt(session, message, part) {
     const source = app.source;
+    const key = changeKey(session, message, part);
+    if (busyChanges.has(key)) return;
+    busyChanges.add(key);
     try {
         const job = app.imageJobs.get(message.images?.[part.index]?.jobId);
         if (!job?.result?.approval) return;
-        await images.reviewImagePrompt(job, { guard: () => imageGuard(source, session, message, part), popup: callGenericPopup,
+        const decided = await images.reviewImagePrompt(job, { guard: () => imageGuard(source, session, message, part), popup: callGenericPopup,
             type: POPUP_TYPE.CONFIRM, affirmative: POPUP_RESULT.AFFIRMATIVE });
-    } catch (error) { app.imageErrors.set(changeKey(session, message, part), error.message); renderMessages(); }
+        app.imageErrors.delete(key);
+        if (sameSourceBucket(source, app.source)) {
+            if (decided?.job) app.imageJobs.set(job.id, decided.job);
+            if (app.open) void reload();
+        }
+    } catch (error) { app.imageErrors.set(key, error.message); renderMessages(); } finally { busyChanges.delete(key); }
 }
 
 // A suggestion stays busy from Review until it is marked saved, so repeated clicks cannot save it twice.
