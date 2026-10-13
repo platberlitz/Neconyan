@@ -242,7 +242,8 @@ import {
 } from './scripts/tooling-ui-hydration/index.js';
 import { debounce_timeout, GENERATION_TYPE_TRIGGERS, IGNORE_SYMBOL, inject_ids, MEDIA_DISPLAY, MEDIA_SOURCE, MEDIA_TYPE, OVERSWIPE_BEHAVIOR, SCROLL_BEHAVIOR, SWIPE_DIRECTION, SWIPE_SOURCE, SWIPE_STATE } from './scripts/constants.js';
 
-import { cancelDebouncedMetadataSave, doDailyExtensionUpdatesCheck, extension_settings, initExtensions, loadExtensionSettings, runGenerationInterceptors } from './scripts/extensions.js';
+import { areExtensionIdsEqual, cancelDebouncedMetadataSave, doDailyExtensionUpdatesCheck, extension_settings, extensionNames, initExtensions, loadExtensionSettings, runGenerationInterceptors } from './scripts/extensions.js';
+import { initialiseCrashActivity } from './scripts/crash-diagnostics-context.js';
 import { CONVERSATION_STORE_KEY } from './scripts/neconyan-conversation/constants.js';
 import { COMMENT_NAME_DEFAULT, CONNECT_API_MAP, executeSlashCommandsOnChatInput, executeSlashCommandsWithOptions, initDefaultSlashCommands, initSlashCommandAutoComplete, isExecutingCommandsFromChatInput, pauseScriptExecution, stopScriptExecution, UNIQUE_APIS } from './scripts/slash-commands.js';
 import { isSlashCommandText } from './scripts/slash-commands/SlashCommandRuntimeUtils.js';
@@ -1236,6 +1237,9 @@ function scheduleDeferredStartupStylesheets() {
 
 //MARK: firstLoadInit
 async function firstLoadInit() {
+    initialiseCrashActivity({ eventSource, event_types, getChat: () => chat,
+        getExtensionCount: () => extensionNames.filter(name => !extension_settings.disabledExtensions.some(disabled => areExtensionIdsEqual(name, disabled))).length,
+        getRequestHeaders, refreshCsrfToken });
     setChatNavigationBlocked(true);
     const scheduleStartupLoaderCleanup = (reason) => {
         cleanupActionLoaderArtifacts({ removePreloader: true, reason });

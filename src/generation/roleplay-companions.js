@@ -254,7 +254,8 @@ export async function runRoleplayCompanions(context, options) {
         if (references(agent).includes(MEMORY_SHARD_TEMPLATE_ID) && coverage) record.contextCoverage = coverage;
         return storeResult(agent, runIdentity, record, true);
     };
-    const runModel = (agent, name, prompt, maxTokens) => runAgentModelStep(shared, { base, account: snapshot.account, name,
+    const runModel = (agent, name, prompt, maxTokens, diagnosticAgents = [agent]) => runAgentModelStep(shared, { base, account: snapshot.account, name,
+        diagnostic: diagnosticAgents.map(item => ({ id: item.id, sourceTemplateId: item.sourceTemplateId, phase: 'companions' })),
         identity: roleplayHash({ identity, agents: name, messages: prompt.messages }), binding: agent.binding ?? binding,
         modelOverride: agent.binding ? agent.modelOverride : '', fallbacks: agent.fallbacks, maxTokens, macros: options.macros, tokenizer: snapshot.tokenizer,
         fallbackContext: snapshot.maxContext, assertCurrent, generate, buildMessages: () => prompt.messages });
@@ -285,7 +286,7 @@ export async function runRoleplayCompanions(context, options) {
         }
         const linked = sections.get(group[0].id), prompt = batchCompanionPrompt(input, group, linked);
         const name = `companion-batch:${roleplayHash(group.map(agent => agent.id))}`;
-        const model = await runModel(group[0], name, prompt, Math.min(64000, group.reduce((total, agent) => total + agent.companion.maxTokens, 0)));
+        const model = await runModel(group[0], name, prompt, Math.min(64000, group.reduce((total, agent) => total + agent.companion.maxTokens, 0)), group);
         const parsed = parseBatch(model.text);
         const taskCounts = await Promise.all(prompt.tasks.map(task => count(task.content)));
         const total = await count(JSON.stringify(prompt.messages)), sharedTokens = Math.max(0, total - taskCounts.reduce((sum, value) => sum + value, 0)) / group.length;

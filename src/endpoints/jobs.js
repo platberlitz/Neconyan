@@ -13,6 +13,7 @@ import { closeUnstartedRoleplayWorkflow } from '../generation/roleplay-workflow-
 import { readRoleplayPreview, subscribeRoleplayPreview } from '../generation/roleplay-preview.js';
 import { readConversationPreview, subscribeConversationPreview } from '../generation/conversation-preview.js';
 import { subscribeJobsChanged } from '../jobs/notifications.js';
+import { getDiagnosticJobActivity } from '../diagnostic-activity.js';
 
 export const router = express.Router();
 
@@ -87,7 +88,7 @@ router.get('/:id', (request, response) => {
         if (job && job.owner !== owner) return response.status(404).json({ error: 'That job could not be found.' });
         if (!job) return response.status(404).json({ error: 'That job could not be found.' });
         response.set('X-Neconyan-Job', job.id);
-        return response.json({ job });
+        return response.json({ job, diagnostics: getDiagnosticJobActivity(owner, job.id) });
     } catch (error) {
         return fail(response, error);
     }

@@ -51,7 +51,67 @@
         return Object.keys(result).length ? result : { message: 'Non-Error object; arbitrary fields omitted' };
     }
 
-    const api = { redact, describeError };
+    const LABELS = Object.freeze({
+        'tpl-format-fixer': 'Format Fixer', 'tpl-proofreader': 'Proofreader', 'tpl-prose-polisher': 'Prose Polisher',
+        'tpl-scene-tracker': 'Scene Tracker', 'tpl-time-tracker': 'Time Tracker',
+    });
+    const PHASES = ['idle', 'preparing', 'pre-agents', 'generating', 'post-agents', 'companions', 'rendering', 'saving', 'waiting-review', 'unknown'];
+    const AGENT_PHASES = ['pre', 'post', 'companions', 'synthesis', 'repair', 'regex', 'unknown'];
+    const EVENTS = ['page-start', 'app-ready', 'chat-open', 'generation-start', 'generation-end', 'generation-stop', 'agent-start', 'agent-end', 'agent-error', 'agent-cancel', 'swipe', 'visibility', 'pagehide', 'pageshow', 'memory-pressure'];
+    // Read data properties only. Application objects and accessor side effects are not diagnostics.
+    function own(object, key) {
+        try { return Object.getOwnPropertyDescriptor(object, key)?.value; } catch { return undefined; }
+    }
+    const counter = (value, maximum = 1000000) => Number.isSafeInteger(value) && value >= 0 ? Math.min(value, maximum) : null;
+    const choice = (value, values, fallback = 'unknown') => values.includes(value) ? value : fallback;
+    const safeId = value => typeof value === 'string' && /^[a-zA-Z0-9:-]{1,100}$/.test(value) ? value : '';
+    function safeAgentLabel(value) {
+        return typeof value === 'string' && (Object.values(LABELS).includes(value) || value === 'Combined reply' || /^Custom agent [1-9][0-9]{0,3}$/.test(value)) ? value : 'Custom agent 1';
+    }
+    function validateActivity(input) {
+        const result = { schema: 1, pageSessionId: safeId(own(input, 'pageSessionId')), at: counter(own(input, 'at'), Number.MAX_SAFE_INTEGER),
+            uptimeMs: counter(own(input, 'uptimeMs'), 2592000000), ready: own(input, 'ready') === true,
+            view: choice(own(input, 'view'), ['startup', 'home', 'chat', 'settings', 'tool', 'unknown']),
+            mode: choice(own(input, 'mode'), ['roleplay', 'conversation', 'meower', 'story', 'unknown']),
+            visibility: choice(own(input, 'visibility'), ['visible', 'hidden'], 'hidden') };
+        for (const [section, fields] of Object.entries({
+            chat: ['messageCount', 'estimatedTextBytes', 'sampledMessages', 'measuredAt'],
+            dom: ['renderedChildren', 'measuredAt'], heap: ['usedBytes', 'totalBytes', 'limitBytes'],
+        })) {
+            const source = own(input, section);
+            result[section] = {};
+            for (const key of fields) result[section][key] = counter(own(source, key), key.endsWith('Bytes') ? 1099511627776 : key === 'measuredAt' ? Number.MAX_SAFE_INTEGER : 1000000);
+            if (section === 'chat') { result.chat.estimate = 'utf16-text-only'; result.chat.complete = own(source, 'complete') === true; }
+        }
+        const generation = own(input, 'generation');
+        result.generation = { phase: choice(own(generation, 'phase'), PHASES), location: choice(own(generation, 'location'), ['browser', 'server', 'unknown']) };
+        const agents = own(input, 'agents'), running = own(agents, 'running');
+        result.agents = { enabledCount: counter(own(agents, 'enabledCount')), running: [], omittedRunningCount: counter(own(agents, 'omittedRunningCount')) || 0 };
+        if (Array.isArray(running)) {
+            const length = counter(own(running, 'length')) || 0;
+            for (let index = 0; index < Math.min(length, 8); index++) {
+                const item = own(running, index);
+                result.agents.running.push({ label: safeAgentLabel(own(item, 'label')), phase: choice(own(item, 'phase'), AGENT_PHASES), location: choice(own(item, 'location'), ['browser', 'server', 'unknown']) });
+            }
+            result.agents.omittedRunningCount = Math.min(1000000, result.agents.omittedRunningCount + Math.max(0, length - 8));
+        }
+        result.extensions = { enabledCount: counter(own(own(input, 'extensions'), 'enabledCount')) };
+        return result;
+    }
+    function validateEvents(input) {
+        const result = [];
+        if (!Array.isArray(input)) return result;
+        for (let index = Math.max(0, Math.min(own(input, 'length') || 0, 12) - 12); index < Math.min(own(input, 'length') || 0, 12); index++) {
+            const item = own(input, index), type = own(item, 'type');
+            if (!EVENTS.includes(type)) continue;
+            const event = { at: counter(own(item, 'at'), Number.MAX_SAFE_INTEGER), type };
+            if (PHASES.includes(own(item, 'phase'))) event.phase = own(item, 'phase');
+            if (own(item, 'agentLabel')) event.agentLabel = safeAgentLabel(own(item, 'agentLabel'));
+            result.push(event);
+        }
+        return result;
+    }
+    const api = { redact, describeError, validateActivity, validateEvents, safeAgentLabel, templateLabel: id => typeof id === 'string' ? own(LABELS, id) || null : null };
     globalThis.NeconyanCrashDiagnostics = api;
     if (typeof window === 'undefined' || !window.document) return;
 
@@ -61,6 +121,114 @@
     let unsaved = false;
     const activity = [];
     const startedAt = Date.now();
+    const SESSION_PREFIX = 'neconyan.crash-session.v1:';
+    const TAB_KEY = 'neconyan.crash-tab.v1';
+    const randomId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const documentId = randomId();
+    let tabId = randomId(), previousSession = null;
+    let snapshot = validateActivity({ pageSessionId: documentId, at: startedAt, uptimeMs: 0, view: 'startup', visibility: document.visibilityState });
+    let events = [{ at: startedAt, type: 'page-start' }];
+    const handles = new Map(), observedJobs = new Map(), customLabels = new Map();
+    let nextHandle = 0, nativeToken = '', lastWrite = 0, flushTimer = null, heartbeatTimer = null, state = 'running', dirty = true;
+    try {
+        tabId = safeId(sessionStorage.getItem(TAB_KEY)) || tabId;
+        sessionStorage.setItem(TAB_KEY, tabId);
+        const text = localStorage.getItem(SESSION_PREFIX + tabId);
+        if (text && text.length <= 8192) {
+            const entry = JSON.parse(text);
+            if (entry?.schema === 1 && safeId(entry.documentId)) previousSession = entry;
+        }
+        const retained = [];
+        for (let index = 0; index < localStorage.length && retained.length < 8; index++) {
+            const key = localStorage.key(index);
+            if (!key?.startsWith(SESSION_PREFIX) || key === SESSION_PREFIX + tabId) continue;
+            const value = localStorage.getItem(key);
+            if (value?.length > 8192) { localStorage.removeItem(key); continue; }
+            try { const entry = JSON.parse(value); retained.push({ key, entry }); } catch { localStorage.removeItem(key); }
+        }
+        for (const item of retained.filter(item => ['closed', 'recovered'].includes(item.entry?.state)).sort((a, b) => a.entry.heartbeatAt - b.entry.heartbeatAt).slice(0, Math.max(0, retained.length - 6))) localStorage.removeItem(item.key);
+    } catch { /* Storage may be blocked. The current in-memory sample remains available. */ }
+
+    function refreshAgents() {
+        const running = Array.from(handles.values());
+        for (const observation of observedJobs.values()) running.push(...observation.agents.running);
+        snapshot.agents.running = running.slice(0, 8);
+        snapshot.agents.omittedRunningCount = Math.max(0, running.length - 8);
+        const phase = running[0]?.phase;
+        if (phase) snapshot.generation = { phase: phase === 'pre' ? 'pre-agents' : phase === 'companions' ? 'companions' : 'post-agents', location: running[0].location };
+        else if (['pre-agents', 'post-agents', 'companions'].includes(snapshot.generation.phase)) snapshot.generation = { phase: 'idle', location: 'unknown' };
+    }
+    function scheduleFlush() {
+        dirty = true;
+        if (flushTimer !== null || typeof setTimeout !== 'function') return;
+        flushTimer = setTimeout(() => { flushTimer = null; flushActivity(); }, Math.max(0, 5000 - (Date.now() - lastWrite)));
+    }
+    function noteActivity(type) {
+        if (!EVENTS.includes(type)) return;
+        events.push({ at: Date.now(), type });
+        if (events.length > 12) events.shift();
+        scheduleFlush();
+    }
+    function updateActivity(patch) {
+        const next = validateActivity(patch);
+        for (const key of ['view', 'mode', 'chat', 'dom', 'generation', 'extensions']) if (own(patch, key) !== undefined) snapshot[key] = next[key];
+        if (own(own(patch, 'agents'), 'enabledCount') !== undefined) snapshot.agents.enabledCount = next.agents.enabledCount;
+        refreshAgents();
+        scheduleFlush();
+    }
+    function flushActivity(reason = 'scheduled') {
+        const now = Date.now();
+        if (reason === 'scheduled' && ((!dirty && now - lastWrite < 30000) || now - lastWrite < 5000)) return;
+        snapshot.at = now;
+        snapshot.uptimeMs = Math.min(2592000000, now - startedAt);
+        snapshot.visibility = document.visibilityState === 'visible' ? 'visible' : 'hidden';
+        try {
+            const memory = performance.memory;
+            if (memory) snapshot.heap = { usedBytes: counter(memory.usedJSHeapSize, 1099511627776), totalBytes: counter(memory.totalJSHeapSize, 1099511627776), limitBytes: counter(memory.jsHeapSizeLimit, 1099511627776) };
+            const entry = { schema: 1, documentId, state, startedAt, heartbeatAt: now, visibility: snapshot.visibility, ready: snapshot.ready, snapshot, events, fatalReportId: api.fatalReportId || null };
+            const text = JSON.stringify(entry);
+            if (new TextEncoder().encode(text).length <= 8192) localStorage.setItem(SESSION_PREFIX + tabId, text);
+        } catch { storageError = 'Browser storage is unavailable; activity cannot be retained after this page closes.'; }
+        try {
+            const text = JSON.stringify({ snapshot, events });
+            if (nativeToken && new TextEncoder().encode(text).length <= 4096) globalThis.NeconyanDiagnostics?.recordActivity(nativeToken, text);
+        } catch { /* Native recording is optional and cannot block application work. */ }
+        lastWrite = now; dirty = false;
+    }
+    function heartbeat() {
+        if (heartbeatTimer !== null) clearTimeout(heartbeatTimer);
+        heartbeatTimer = null;
+        if (document.visibilityState !== 'visible' || state !== 'running' || typeof setTimeout !== 'function') return;
+        heartbeatTimer = setTimeout(() => { heartbeatTimer = null; flushActivity(); heartbeat(); }, 30000);
+    }
+    function guarded(callback) { return (...args) => { try { return callback(...args); } catch { return null; } }; }
+    Object.assign(api, {
+        updateActivity: guarded(updateActivity), noteActivity: guarded(noteActivity), flushActivity: guarded(flushActivity),
+        getActivity: guarded(() => ({ snapshot: validateActivity(snapshot), events: validateEvents(events) })),
+        beginAgent: guarded(input => {
+            if (handles.size >= 128) return null;
+            const id = own(input, 'id'), template = api.templateLabel(own(input, 'sourceTemplateId'));
+            if (!template && !customLabels.has(id) && customLabels.size < 128) customLabels.set(id, `Custom agent ${customLabels.size + 1}`);
+            const handle = ++nextHandle;
+            handles.set(handle, { label: own(input, 'synthesis') === true ? 'Combined reply' : template || customLabels.get(id) || 'Custom agent 1', phase: choice(own(input, 'phase'), AGENT_PHASES), location: 'browser' });
+            refreshAgents(); noteActivity('agent-start'); return handle;
+        }),
+        endAgent: guarded((handle, outcome) => { if (!handles.delete(handle)) return; refreshAgents(); noteActivity(outcome === 'error' ? 'agent-error' : outcome === 'cancel' ? 'agent-cancel' : 'agent-end'); }),
+        observeJobActivity: guarded((id, handle, input) => {
+            if (!input) {
+                const old = observedJobs.get(id); old?.observers.delete(handle);
+                if (!old?.observers.size) observedJobs.delete(id);
+            } else if (observedJobs.has(id) || observedJobs.size < 32) {
+                const agents = validateActivity({ agents: own(input, 'agents') }).agents;
+                const old = observedJobs.get(id) || { observers: new Set() };
+                old.observers.add(handle); old.agents = agents; observedJobs.set(id, old);
+            }
+            refreshAgents(); scheduleFlush();
+        }),
+        markAppReady: guarded(() => { snapshot.ready = true; api.fatalReportId = null; noteActivity('app-ready'); }),
+        setNativeBridgeToken: guarded(token => { if (typeof token !== 'string' || token.length > 100) return; nativeToken = token; scheduleFlush(); }),
+        getPreviousSession: guarded(() => previousSession),
+    });
     try {
         const saved = localStorage.getItem(KEY);
         if (saved && saved.length <= 400000) {
@@ -98,7 +266,7 @@
                 return last;
             }
             const report = {
-                schema: 1, runtime: 'browser', kind, at: new Date().toISOString(), startedAt,
+                schema: 1, id: randomId(), runtime: 'browser', kind, at: new Date().toISOString(), startedAt,
                 error: described, context: where,
                 environment: {
                     userAgent: navigator.userAgent, platform: navigator.platform,
@@ -113,6 +281,7 @@
                     } : 'Not exposed by this browser',
                 },
                 activity: activity.slice(),
+                lastKnownActivity: { snapshot: validateActivity(snapshot), events: validateEvents(events), relationship: 'same-page', ageMs: Math.max(0, Date.now() - (snapshot.at || startedAt)) },
                 limitation: 'An unhandled error does not necessarily stop the page. Browser process kills cannot run JavaScript; their cause is unavailable here.',
             };
             // Bound each report even when nested AggregateErrors have large stacks.
@@ -146,7 +315,15 @@
     }, true);
     window.addEventListener('unhandledrejection', event => capture('unhandled-rejection', event.reason));
     for (const type of ['online', 'offline', 'pageshow', 'pagehide']) window.addEventListener(type, () => breadcrumb(type));
-    window.addEventListener('pagehide', () => { if (unsaved) save(); });
-    document.addEventListener('visibilitychange', () => breadcrumb(`visibility:${document.visibilityState}`));
+    window.addEventListener('pagehide', event => {
+        if (unsaved) save();
+        state = event?.persisted ? 'suspended' : 'closed';
+        noteActivity('pagehide'); flushActivity('pagehide');
+        if (flushTimer !== null) clearTimeout(flushTimer); flushTimer = null;
+        heartbeat();
+    });
+    window.addEventListener('pageshow', event => { if (event?.persisted) { state = 'running'; noteActivity('pageshow'); scheduleFlush(); heartbeat(); } });
+    document.addEventListener('visibilitychange', () => { breadcrumb(`visibility:${document.visibilityState}`); noteActivity('visibility'); flushActivity('visibility'); heartbeat(); });
     breadcrumb('capture-started');
+    scheduleFlush(); heartbeat();
 })();

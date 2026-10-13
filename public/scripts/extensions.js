@@ -562,7 +562,7 @@ function isExternalExtension(externalId) {
     return ['local', 'global'].includes(getExtensionType(externalId));
 }
 
-function areExtensionIdsEqual(left, right) {
+export function areExtensionIdsEqual(left, right) {
     return getExtensionDedupKey(left) === getExtensionDedupKey(right);
 }
 

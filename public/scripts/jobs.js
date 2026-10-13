@@ -160,12 +160,15 @@ export function observeJob(id, { onUpdate, onSnapshot, onDone, onStop, base = ''
     let changes = null;
     let reading = false;
     let dirty = false;
+    const diagnosticHandle = {};
+    const diagnostic = value => { try { globalThis.NeconyanCrashDiagnostics?.observeJobActivity?.(id, diagnosticHandle, value); } catch { /* Optional observation. */ } };
 
     // stop(reason) tells the caller why polling ended; 'missing' means the job
     // record was pruned before a terminal snapshot could be read back.
     const stop = (reason = 'stopped') => {
         if (stopped) return;
         stopped = true;
+        diagnostic(null);
         if (timer) clearTimeout(timer);
         changes?.stop();
         signal?.removeEventListener('abort', onAbort);
@@ -194,6 +197,7 @@ export function observeJob(id, { onUpdate, onSnapshot, onDone, onStop, base = ''
             if (stopped || signal?.aborted) return;
             const job = body?.job ?? null;
             if (job) {
+                diagnostic(body?.diagnostics || null);
                 if (JSON.stringify(job) !== JSON.stringify(previous)) {
                     previous = job;
                     await onUpdate?.(job);
