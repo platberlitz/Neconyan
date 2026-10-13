@@ -40,7 +40,7 @@ import { chooseNote, sessionNoteText } from './notebooks.js';
 import { currentPresetName } from './preset.js';
 import { openAssistantLibrary } from './assistants.js';
 import { sameSourceBucket, sameSourceContext } from './source.js';
-import { observeJob } from '../jobs.js';
+import { observeJob, TERMINAL } from '../jobs.js';
 import * as images from './images.js';
 
 const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261013e-scratchpad-images';
@@ -129,6 +129,8 @@ const app = {
     imageWatchers: new Map(),
     imageJobSignatures: new Map(),
     imageJobs: new Map(),
+    // Image jobs whose prompt review this client asked for and has not shown yet.
+    imageAutoReviews: new Set(),
     imageErrors: new Map(),
     imageAvailability: { image: false, reason: '' },
     imageCheck: 0,
@@ -663,6 +665,12 @@ function syncWatchers() {
             if (app.imageJobSignatures.get(id) === signature) return;
             app.imageJobSignatures.set(id, signature);
             if (app.open) await reload();
+            if (TERMINAL.has(job.state)) app.imageAutoReviews.delete(id);
+            if (app.open && job.result?.approval && app.imageAutoReviews.delete(id)) {
+                const card = imageReviewCard(id);
+                // The reviewer decides in the popup, so the watcher must not wait for it.
+                if (card) void approveImagePrompt(card.session, card.message, card.part);
+            }
         };
         app.imageWatchers.set(id, observeJob(id, { onUpdate: track, onDone: track }));
     }
@@ -1109,7 +1117,7 @@ function renderChangeCard(session, message, part) {
         onGenerate: () => void generateImageProposal(session, message, part), onReview: () => void reviewChange(session, message, part),
         onPromptReview: () => void approveImagePrompt(session, message, part), onDismiss: () => void dismissChange(session, message, part),
         onError: error => { app.imageErrors.set(changeKey(session, message, part), error.message); renderMessages(); },
-        onRetried: () => { if (app.open) void reload(); },
+        onRetried: () => { const jobId = message.images?.[part.index]?.jobId; if (jobId) app.imageAutoReviews.add(jobId); if (app.open) void reload(); },
         onRestore: () => void markChange(session, message, part.index, null) });
     const state = message.proposals?.[String(part.index)] ?? '';
     const card = h('div', { class: `scratchpad-change${state ? ` is-${state}` : ''}` },
@@ -1155,8 +1163,26 @@ async function generateImageProposal(session, message, part) {
         const result = await images.generateProposal({ source: wireSource(source), session, message, part,
             guard: () => imageGuard(source, session, message, part), acknowledge });
         app.imageErrors.delete(key);
-        if (sameSourceBucket(source, app.source)) { app.ticket++; applyBucket(result.bucket); }
+        if (sameSourceBucket(source, app.source)) {
+            if (result.job?.id) app.imageAutoReviews.add(result.job.id);
+            app.ticket++;
+            applyBucket(result.bucket);
+        }
     } catch (error) { app.imageErrors.set(key, error.message); renderMessages(); } finally { busyChanges.delete(key); }
+}
+
+/** The visible image card of a job in the active session, so a prompt review can open on it. */
+function imageReviewCard(jobId) {
+    const session = activeSession();
+    if (!session) return null;
+    for (const message of session.messages) {
+        for (const [index, image] of Object.entries(message.images ?? {})) {
+            if (image?.jobId !== jobId) continue;
+            const part = splitReply(message.text).find(item => item.type === 'change' && String(item.index) === String(index));
+            if (part) return { session, message, part };
+        }
+    }
+    return null;
 }
 
 async function approveImagePrompt(session, message, part) {
