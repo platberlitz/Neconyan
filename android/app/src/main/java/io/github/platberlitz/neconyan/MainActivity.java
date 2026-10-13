@@ -102,7 +102,7 @@ public final class MainActivity extends Activity {
         web.setBackgroundColor(Color.rgb(22, 23, 22));
         web.setVisibility(View.GONE);
         root.addView(web, new LinearLayout.LayoutParams(-1, 0, 1));
-        if (Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(0, this::handleBack);
+        if (Build.VERSION.SDK_INT >= 33) registerBackCallback();
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, false);
         WebSettings settings = web.getSettings();
@@ -220,10 +220,10 @@ public final class MainActivity extends Activity {
             credentials = ServerService.credentials(this);
             origin = "http://127.0.0.1:" + credentials.getInt("port");
             connect();
-            if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
-                requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, 11);
+            if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED)
+                requestPermissions(new String[] { "android.permission.POST_NOTIFICATIONS" }, 11);
         } catch (Exception error) {
-            ActivityBreadcrumbs.WRITER.execute(() -> {
+            ActivityBreadcrumbs.execute(() -> {
                 CrashDiagnostics.Result report = CrashDiagnostics.recordReport(this, "app", "activity-startup-failure", error, "The Android activity could not initialise.", "unknown", ActivityBreadcrumbs.current());
                 offerCrashReport(report.entry, report.saved);
             });
@@ -232,7 +232,7 @@ public final class MainActivity extends Activity {
     }
 
     private void recoverCrashReports() {
-        ActivityBreadcrumbs.WRITER.execute(() -> {
+        ActivityBreadcrumbs.execute(() -> {
             CrashReport.Entry latest = CrashDiagnostics.store(this).newestEntry();
             if (latest != null) offerCrashReport(latest, true);
             CrashDiagnostics.collectExits(this, result -> {
@@ -318,7 +318,7 @@ public final class MainActivity extends Activity {
             status.setText("Neconyan's page stopped\n\n" + explanation + "\n\nCrash diagnostics are being saved. Tap Try again to reopen your workspace.");
             status.setVisibility(View.VISIBLE); actions.setVisibility(View.VISIBLE);
         }
-        ActivityBreadcrumbs.WRITER.execute(() -> {
+        ActivityBreadcrumbs.execute(() -> {
             CrashDiagnostics.Result result = CrashDiagnostics.recordReport(this, "page", kind, null,
                 explanation + " Renderer priority at exit: " + priority + ". Main view: " + mainView + ". Renderer PID unavailable; page sample is not matched renderer memory.", "unknown", frozenActivity, occurredAt);
             runOnUiThread(() -> {
@@ -337,7 +337,7 @@ public final class MainActivity extends Activity {
 
     @JavascriptInterface public void showCrashReports() {
         if (!readingCrashes.compareAndSet(false, true)) return;
-        ActivityBreadcrumbs.WRITER.execute(() -> {
+        ActivityBreadcrumbs.execute(() -> {
             DiagnosticStore store = CrashDiagnostics.store(this);
             List<CrashReport.Entry> entries = store.listEntries();
             String readError = store.readError();
@@ -346,12 +346,12 @@ public final class MainActivity extends Activity {
                 if (!resumed || isFinishing() || isDestroyed()) return;
                 if (entries.isEmpty()) { new AlertDialog.Builder(this).setMessage(readError.isEmpty() ? "No saved Android crash reports." : readError).setPositiveButton("Close", null).show(); return; }
                 String[] labels = entries.stream().map(entry -> (entry.at > 0 ? java.text.DateFormat.getDateTimeInstance().format(new Date(entry.at)) + "\n" : "") + entry.summary).toArray(String[]::new);
-                new AlertDialog.Builder(this).setTitle("Saved crash reports").setItems(labels, (dialog, index) -> ActivityBreadcrumbs.WRITER.execute(() -> {
+                new AlertDialog.Builder(this).setTitle("Saved crash reports").setItems(labels, (dialog, index) -> ActivityBreadcrumbs.execute(() -> {
                     CrashReport.Entry entry = CrashDiagnostics.store(this).readEntry(entries.get(index).id);
                     runOnUiThread(() -> showCrashReport(entry, false, true));
                 })).setPositiveButton("Close", null).show();
             });
-        });
+        }, () -> readingCrashes.set(false));
     }
 
     private boolean checkWebView(LinearLayout root) {
@@ -399,7 +399,7 @@ public final class MainActivity extends Activity {
         worker.execute(() -> {
             try { connectNow(); }
             catch (InterruptedException stopped) { Thread.currentThread().interrupt(); }
-            catch (Exception error) { show("Neconyan is still starting. Open the app again to finish. (" + error.getMessage() + ")"); }
+            catch (Throwable error) { show("Neconyan is still starting. Open the app again to finish. (" + error.getMessage() + ")"); }
             finally { connecting.set(false); }
         });
     }
@@ -454,20 +454,24 @@ public final class MainActivity extends Activity {
         return "Neconyan took more than five minutes to start" + (last == null ? "." : " (" + last.getMessage() + ").");
     }
     private boolean restartAfterStop(String reason) throws InterruptedException {
-        CrashDiagnostics.collectExits(this);
-        int pid = readyMarker().optInt("pid", 0);
-        ApplicationExitInfo exit = lastServerExit(serverStartedAt);
-        if (exit != null) pid = exit.getPid();
-        CrashDiagnostics.Result report = CrashDiagnostics.serverRecovery(this, pid, serverStartedAt, exit == null ? System.currentTimeMillis() : exit.getTimestamp(), reason);
-        serverIncident = report.entry;
-        offerCrashReport(report.entry, report.saved);
+        String reportText = "Diagnostic details could not be collected. No definite cause was available.";
+        try {
+            CrashDiagnostics.collectExits(this);
+            int pid = readyMarker().optInt("pid", 0);
+            ApplicationExitInfo exit = lastServerExit(serverStartedAt);
+            if (exit != null) pid = exit.getPid();
+            CrashDiagnostics.Result report = CrashDiagnostics.serverRecovery(this, pid, serverStartedAt, exit == null ? System.currentTimeMillis() : exit.getTimestamp(), reason);
+            serverIncident = report.entry;
+            offerCrashReport(report.entry, report.saved);
+            reportText = reportSummary(report.entry, report.saved);
+        } catch (Throwable ignored) { }
         long up = healthySince == 0 ? 0 : System.currentTimeMillis() - healthySince;
         healthySince = 0;
         boolean safe;
         if (up >= HEALTHY_MS) {
             autoRestarted = false;
             safe = false;
-            show("The local server stopped. Starting it again.\n\n" + reportSummary(report.entry, report.saved));
+            show("The local server stopped. Starting it again.\n\n" + reportText);
         } else if (!serverSafe && !autoRestarted) {
             autoRestarted = true;
             safe = true;
@@ -481,8 +485,8 @@ public final class MainActivity extends Activity {
         clearStaleMarker();
         startServer(safe);
         // Android attaches the crash record a little after the process dies; look twice.
-        main.postDelayed(() -> worker.execute(this::collectCrashDetails), 5000);
-        main.postDelayed(() -> worker.execute(this::collectCrashDetails), 20000);
+        main.postDelayed(() -> ActivityBreadcrumbs.execute(this::collectCrashDetails), 5000);
+        main.postDelayed(() -> ActivityBreadcrumbs.execute(this::collectCrashDetails), 20000);
         return true;
     }
     private void collectCrashDetails() {
@@ -511,7 +515,7 @@ public final class MainActivity extends Activity {
                     return;
                 }
             }
-        } catch (Exception ignored) { }
+        } catch (Throwable ignored) { }
     }
     private void startServer(boolean safe) {
         serverSafe = safe;
@@ -596,8 +600,42 @@ public final class MainActivity extends Activity {
         } catch (IOException error) { return "Could not read " + file.getName() + ": " + error.getMessage(); }
     }
     private void copyDetails() {
-        if (serverIncident != null) { copyReport(serverIncident); return; }
-        showCrashReports();
+        final CrashReport.Entry selected = visibleReport != null ? visibleReport : serverIncident;
+        ActivityBreadcrumbs.execute(() -> {
+            recordServerCrash();
+            StringBuilder text = new StringBuilder();
+            if (selected != null) text.append("Selected crash report:\n").append(selected.text.substring(0, Math.min(selected.text.length(), 24000))).append("\n\n");
+            text.append("Device, WebView and memory measured when copying:\n").append(CrashDiagnostics.environment(this));
+            try {
+                for (ApplicationExitInfo exit : getSystemService(ActivityManager.class).getHistoricalProcessExitReasons(getPackageName(), 0, 10))
+                    text.append("\nRecent exit: ").append(new Date(exit.getTimestamp())).append(" PID ").append(exit.getPid()).append(' ')
+                        .append(CrashDiagnostics.reasonName(exit.getReason())).append(" status ").append(exit.getStatus())
+                        .append(" PSS KiB ").append(exit.getPss()).append(" RSS KiB ").append(exit.getRss());
+            } catch (Throwable ignored) { text.append("\nRecent exits unavailable."); }
+            for (String name : new String[] { "native-startup.txt", "native-crash.txt", "requests.txt", "requests.previous.txt", "server.log", "server.previous.log" }) {
+                String excerpt = tail(new File(getCacheDir(), name), name.equals("native-startup.txt") ? 4 : 40);
+                text.append("\n\n").append(name).append(":\n").append(excerpt.substring(0, Math.min(excerpt.length(), 5000)));
+            }
+            final String report = DiagnosticStore.redact(text.toString());
+            runOnUiThread(() -> {
+                try { getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("Neconyan bug report details", report));
+                    Toast.makeText(this, "Details copied. Review private text before sharing.", Toast.LENGTH_LONG).show(); }
+                catch (Throwable ignored) { Toast.makeText(this, "Could not copy details. Read or select the current report instead.", Toast.LENGTH_LONG).show(); }
+            });
+        });
+    }
+    private void registerBackCallback() {
+        try {
+            Class<?> callbackType = Class.forName("android.window.OnBackInvokedCallback");
+            Object callback = java.lang.reflect.Proxy.newProxyInstance(callbackType.getClassLoader(), new Class<?>[] { callbackType }, (proxy, method, args) -> {
+                if (method.getName().equals("onBackInvoked")) { handleBack(); return null; }
+                if (method.getName().equals("hashCode")) return System.identityHashCode(proxy);
+                if (method.getName().equals("equals")) return args != null && proxy == args[0];
+                return "Neconyan back callback";
+            });
+            Object dispatcher = Activity.class.getMethod("getOnBackInvokedDispatcher").invoke(this);
+            Class.forName("android.window.OnBackInvokedDispatcher").getMethod("registerOnBackInvokedCallback", int.class, callbackType).invoke(dispatcher, 0, callback);
+        } catch (Throwable ignored) { /* Older platforms retain onBackPressed. */ }
     }
     private void showSafeNotice() {
         if (!resumed || pendingReport != null || crashDialog != null && crashDialog.isShowing()) return;
