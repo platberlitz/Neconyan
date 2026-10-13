@@ -13,6 +13,7 @@ import { isIOSWebKitPlatform, isLegacyIOSWebKitPlatform } from './mobile-send-bu
 import { createPresetApiSyncLifecycle } from './preset-api-sync-lifecycle/index.js';
 import { fetchWithCsrfRetry } from './csrf-token-refresh.js';
 import { hasServerReturnedAfterRestart } from './server-restart-monitor.js';
+import { requestAndroidUpdate } from './android-native-bridge.js';
 import {
     PERSONA_APPENDICES_DEFAULT_SCOPE_KEY,
     PERSONA_APPENDICES_SELECTIONS_KEY,
@@ -510,7 +511,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261013c-crash-review';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261013d-card-scripts';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -13780,7 +13781,7 @@ async function handleServerAdminUpdate() {
             if (typeof window.NeconyanAndroid?.installUpdate !== 'function' || !version) {
                 throw new Error('Open the Neconyan Android app to install this APK update.');
             }
-            window.NeconyanAndroid.installUpdate(version);
+            if (requestAndroidUpdate(version) !== true) throw new Error(t`Android controls are not ready. Reload this page and try again.`);
             setServerAdminMessage(refs.updateNote, 'Follow the Android prompts to download and install the APK. Cancelling leaves your current app and saved data unchanged.');
         } catch (error) {
             setServerAdminMessage(refs.updateNote, error.message || 'Could not open the Android APK updater.', 'danger');

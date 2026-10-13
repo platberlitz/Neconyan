@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import { test } from 'node:test';
 import vm from 'node:vm';
 
-const source = fs.readFileSync(new URL('../android/app/src/main/java/io/github/platberlitz/neconyan/MainActivity.java', import.meta.url), 'utf8');
-const hook = JSON.parse(source.match(/evaluateJavascript\(("if \(!window\.neconyanDownloadHook\).*?"), null\)/)[1]);
+const source = fs.readFileSync(new URL('../public/scripts/android-native-bridge.js', import.meta.url), 'utf8');
+const hook = source.replace(/^import .*;$/gm, '').replace(/export /g, '') + '\ninstallAndroidNativeBridge("a".repeat(64), "http://127.0.0.1:8000");';
 
 function installHook() {
     const live = new Map();
@@ -26,6 +26,10 @@ function installHook() {
         Uint8Array,
         Error,
         String,
+        Event,
+        location: { origin: 'http://127.0.0.1:8000' },
+        dispatchEvent() {},
+        t: strings => strings.join(''),
         document: { addEventListener() {} },
         alert: message => alerts.push(message),
         fetch: async url => {
@@ -35,13 +39,14 @@ function installHook() {
             return { blob: async () => blob };
         },
         NeconyanExport: {
-            beginExport(name, size) { Object.assign(saved, { name, size }); return true; },
-            appendExport(chunk) { saved.chunks.push(chunk); return true; },
-            finishExport() { saved.done = true; },
-            cancelExport() { saved.cancelled = true; },
+            beginExport(token, name, size) { assert.equal(token, 'a'.repeat(64)); Object.assign(saved, { name, size }); return true; },
+            appendExport(token, chunk) { assert.equal(token, 'a'.repeat(64)); saved.chunks.push(chunk); return true; },
+            finishExport(token) { assert.equal(token, 'a'.repeat(64)); saved.done = true; return true; },
+            cancelExport(token) { assert.equal(token, 'a'.repeat(64)); saved.cancelled = true; return true; },
         },
     };
     window.window = window;
+    window.top = window;
     vm.runInNewContext(hook, window);
     let next = 0;
     const blobUrl = blob => { const url = `blob:http://127.0.0.1:8000/${++next}`; live.set(url, blob); return url; };

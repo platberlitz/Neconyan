@@ -20,6 +20,7 @@ public final class ApkUpdater {
     private static final long MAX_BYTES = 1024L * 1024 * 1024;
     private final Activity activity;
     private final BooleanSupplier workspaceVisible;
+    private final BridgeCallerGate bridgeGate;
     private final PendingApkUpdate pendingUpdate;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private volatile boolean cancelled;
@@ -30,14 +31,19 @@ public final class ApkUpdater {
     private String pendingVersion;
     private ProgressDialog progress;
 
-    ApkUpdater(Activity activity, BooleanSupplier workspaceVisible) {
+    ApkUpdater(Activity activity, BooleanSupplier workspaceVisible, BridgeCallerGate bridgeGate) {
         this.activity = activity;
         this.workspaceVisible = workspaceVisible;
+        this.bridgeGate = bridgeGate;
         this.pendingUpdate = new PendingApkUpdate(UpdateApkProvider.apkFile(activity));
     }
 
-    @JavascriptInterface public void installUpdate(String version) {
+    @JavascriptInterface public boolean bridgeRequiresToken() { return true; }
+
+    @JavascriptInterface public boolean installUpdate(String token, String version) {
+        if (!bridgeGate.accepts(token)) return false;
         activity.runOnUiThread(() -> {
+            if (!bridgeGate.accepts(token)) return;
             if (!isActivityAlive() || busy || !workspaceVisible.getAsBoolean()) return;
             try {
                 if (ApkUpdatePolicy.versionCode(version) <= installed().getLongVersionCode()) throw new IOException("This APK is not newer than the installed app.");
@@ -48,9 +54,10 @@ public final class ApkUpdater {
                     .setMessage("Download the official APK from GitHub? It may use several hundred MB. Android will ask you to approve installation. Your saved data stays on this device.")
                     .setNegativeButton("Cancel", (dialog, which) -> busy = false)
                     .setOnCancelListener(dialog -> busy = false)
-                    .setPositiveButton("Download APK", (dialog, which) -> download(version, url)).show();
+                    .setPositiveButton("Download APK", (dialog, which) -> { if (bridgeGate.accepts(token)) download(version, url); else busy = false; }).show();
             } catch (Exception error) { fail(error); }
         });
+        return true;
     }
 
     private String architecture() throws IOException {

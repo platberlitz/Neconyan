@@ -398,8 +398,10 @@ import {
     hasCardScriptToastBeenShown,
     markCardScriptHtml,
     markCardScriptToastShown,
+    protectCardScriptBlocks,
+    forgetCardScript,
 } from './scripts/card-script-detection.js';
-import { configureCardScriptRuntime, initCardScriptRuntime } from './scripts/card-script-runtime.js';
+import { configureCardScriptRuntime, initCardScriptRuntime, resetCardScriptSession, scheduleCardScriptReconcile, setCardScriptMessageStreaming, destroySandbox, getCardScriptChatScope } from './scripts/card-script-runtime.js';
 import { bindPortraitUrls } from './scripts/portrait-urls.js';
 import { installToastMinimumDuration } from './scripts/toast-duration.js';
 
@@ -1299,11 +1301,14 @@ async function firstLoadInit() {
         addShowdownPatch(showdown);
         addDOMPurifyHooks();
         // Neconyan: card script detection - see #94.
-        eventSource.on(event_types.CHAT_CHANGED, forgetAllCardScripts);
         eventSource.on(event_types.CHAT_CHANGED, () => { recoverHeldGenerations().catch(error => console.warn('Held generation recovery failed', error)); });
         configureCardScriptRuntime({
             getPowerUser: () => power_user,
             executeSlashCommandsWithOptions,
+            getMessage: id => chat[id],
+            isMessageStreaming: id => Number(streamingProcessor?.messageId) === id && !streamingProcessor?.isFinished,
+            isMessageEditing: id => this_edit_mes_id !== undefined && Number(this_edit_mes_id) === id,
+            refreshRenderedCardScriptMessages,
         });
         initCardScriptRuntime();
         reloadMarkdownProcessor();
@@ -2692,6 +2697,7 @@ function applyStreamingVisibleWrite(messageId, {
 }, { isFinal = false } = {}) {
     if (isCurrent && !isCurrent()) return false;
     if (messageDom instanceof HTMLElement && (!messageDom.isConnected || messageDom.getAttribute('mesid') !== String(messageId))) return false;
+    if (message === chat[messageId] && messageDom?.querySelector('.mes_text') === messageTextDom) setCardScriptMessageStreaming(messageId, !isFinal);
     if (shouldRefreshTokenCount && messageTokenCounterDom instanceof HTMLElement) {
         messageTokenCounterDom.textContent = `${currentTokenCount}t`;
     }
@@ -2713,6 +2719,7 @@ function applyStreamingVisibleWrite(messageId, {
         messageTimerDom.title = timePassed.timerTitle;
     }
 
+    if (isFinal && message === chat[messageId]) scheduleCardScriptReconcile(messageId);
     return isFinal;
 }
 
@@ -3743,6 +3750,7 @@ function rememberQueuedChatIntegrity(integrityKey, integrity) {
  */
 export async function clearChat({ clearData = false, navigationGuard = () => true } = {}) {
     if (!navigationGuard()) return;
+    resetCardScriptSession({ clearSnapshots: true });
     dismissUndo();
     cancelDebouncedChatSave();
     cancelDebouncedMetadataSave();
@@ -4667,16 +4675,19 @@ function sanitizeMessageHtml(mes, sanitizerOverrides = {}) {
  * @returns {string} HTML string
  */
 export function messageFormatting(mes, ch_name, isSystem, isUser, messageId, sanitizerOverrides = {}, isReasoning = false, updateGreeting = true, messageContext = null) {
+    const captureCardScripts = !isReasoning && !messageContext && updateGreeting && !power_user.encode_tags;
     if (!mes) {
+        if (captureCardScripts) forgetCardScript(messageId);
         return '';
     }
 
-    const originalMessageHtml = mes;
     const oocBlocks = [];
     const preparedMessage = prepareMessageDisplayText(mes, ch_name, isSystem, isUser, messageId, isReasoning, updateGreeting, messageContext);
     mes = preparedMessage.mes;
     isSystem = preparedMessage.isSystem;
     mesForShowdownParse = preparedMessage.showdownSource;
+    const protectedScripts = captureCardScripts ? protectCardScriptBlocks(mes) : null;
+    if (protectedScripts) mes = protectedScripts.text;
 
     if (power_user.auto_fix_generated_markdown) {
         mes = fixMarkdown(mes, true);
@@ -4766,11 +4777,15 @@ export function messageFormatting(mes, ch_name, isSystem, isUser, messageId, san
 
     mes = restoreOocBlocksForDisplay(mes, oocBlocks);
     // Neconyan: card script detection - see #94.
-    mes = markCardScriptHtml(mes, messageId, originalMessageHtml);
+    if (protectedScripts) {
+        mes = protectedScripts.restore(mes);
+        mes = markCardScriptHtml(mes, messageId, { scopeKey: getCardScriptChatScope(), fencedPages: protectedScripts.fencedPages });
+    }
     return sanitizeMessageHtml(mes, sanitizerOverrides);
 }
 
 function notifyCardScriptStripped(messageElement, messageId) {
+    if (power_user.allow_card_scripts) return;
     const normalizedMessageId = Number(messageId);
 
     if (!Number.isInteger(normalizedMessageId) || normalizedMessageId < 0) {
@@ -4804,7 +4819,7 @@ function notifyCardScriptStripped(messageElement, messageId) {
     }
 
     markCardScriptToastShown(toastKey);
-    toastr.warning(t`This message contains card scripts. Neconyan does not run them by default.`, t`Card scripts blocked`, { timeOut: 6000, preventDuplicates: true });
+    toastr.warning(t`Card scripts are off. Enable 'Allow card scripts' in Settings to use this message's interactive content.`, t`Card scripts are off`, { timeOut: 6000, preventDuplicates: true });
 }
 
 /**
@@ -5020,6 +5035,7 @@ function applyMessageBlockUpdate(messageId, message, { rerenderMessage = true } 
         const text = message?.extra?.display_text ?? message.mes;
         messageElement.find('.mes_text').html(messageFormatting(text, message.name, message.is_system, message.is_user, messageId, {}, false));
         notifyCardScriptStripped(messageElement, messageId);
+        scheduleCardScriptReconcile(messageId);
     }
     updateMessageMetaBadges(messageElement, message);
 
@@ -5031,6 +5047,14 @@ function applyMessageBlockUpdate(messageId, message, { rerenderMessage = true } 
     if (shouldPinMobileBottom) {
         pinMobileChatToBottom({ waitForFrame: true, settle: true });
     }
+}
+
+function refreshRenderedCardScriptMessages() {
+    forgetAllCardScripts();
+    chatElement.find('.mes[mesid]').each((_, element) => {
+        const id = Number(element.getAttribute('mesid'));
+        if (chat[id]) applyMessageBlockUpdate(id, chat[id]);
+    });
 }
 
 /**
@@ -5920,6 +5944,7 @@ export function updateMessageElement(mes, { messageId = chat.length - 1, message
     if (isPreview) applyStreamDomPatch(messageElement.find('.mes_text')[0], messageHTML);
     else messageElement.find('.mes_text').html(messageHTML);
     if (!isPreview) notifyCardScriptStripped(messageElement, messageId);
+    if (!isPreview) scheduleCardScriptReconcile(messageId);
     addCopyToCodeBlocks(messageElement);
     if (!isPreview) prepareNeconyanMessageActions(messageElement);
 
@@ -7302,6 +7327,7 @@ class StreamingProcessor {
             const saving = saveReply({ type: this.type, getMessage: text, fromStreaming: true, isCurrent: () => this.#isCurrent() });
             messageId = chat.length - 1;
             this.messageId = messageId;
+            setCardScriptMessageStreaming(messageId, true);
             this.message = chat[messageId];
             this.swipeId = this.message?.swipe_id;
             await saving;
@@ -14431,6 +14457,7 @@ export async function messageEdit(editMessageId) {
     }
 
     this_edit_mes_id = editMessageId;
+    destroySandbox(editMessageId, { reason: 'edit' });
     this_edit_mes_chname = editMessage.name || (editMessage.is_user ? name1 : name2);
 
     refreshSwipeButtons();
@@ -14532,6 +14559,7 @@ async function messageEditCancel(messageId = this_edit_mes_id) {
     await eventSource.emit(event_types.MESSAGE_UPDATED, messageId);
     if (messageId == this_edit_mes_id) {
         this_edit_mes_id = undefined;
+        scheduleCardScriptReconcile(messageId);
     } else {
         console.warn(`The message editor was closed on message #${messageId} while #${this_edit_mes_id} is being edited.`);
     }
@@ -14629,8 +14657,10 @@ async function messageEditDone(div) {
     }
 
     await eventSource.emit(event_types.MESSAGE_UPDATED, this_edit_mes_id);
+    setCardScriptMessageStreaming(this_edit_mes_id, false);
     this_edit_mes_id = undefined;
     await saveChatConditional();
+    scheduleCardScriptReconcile();
     showSwipeButtons();
 }
 

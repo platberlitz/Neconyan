@@ -46,7 +46,7 @@ public class ApkPolicyTest {
 
 test('APK updates require confirmation, a newer matching package and matching signing certificates', () => {
     const source = read('ApkUpdater.java');
-    assert.match(source, /@JavascriptInterface public void installUpdate\(String version\)/);
+    assert.match(source, /@JavascriptInterface public boolean installUpdate\(String token, String version\)/);
     assert.match(source, /!workspaceVisible\.getAsBoolean\(\)/);
     assert.match(source, /setPositiveButton\("Download APK"/);
     assert.match(source, /current\.packageName\.equals\(update\.packageName\)/);

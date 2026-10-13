@@ -1,4 +1,4 @@
-const NN_SW_CACHE_VERSION = 'neconyan-cache-v20261013c-crash-review';
+const NN_SW_CACHE_VERSION = 'neconyan-cache-v20261013d-card-scripts';
 const NN_CACHE_PREFIX = 'neconyan-cache-';
 const NN_STATIC_CACHE = `${NN_SW_CACHE_VERSION}-static`;
 const NN_SHELL_CACHE = `${NN_SW_CACHE_VERSION}-shell`;
@@ -165,6 +165,8 @@ self.addEventListener('fetch', (event) => {
     }
 
     const url = new URL(request.url);
+    // Security policy must come from a fresh server response, never an offline or reconstructed response.
+    if (url.pathname === '/sandbox/card-script' || url.pathname.startsWith('/sandbox/card-script/')) return;
 
     // Documents must reach the server so an offline cache cannot undo logout.
     if (request.mode === 'navigate' || url.pathname === '/' || url.pathname.endsWith('.html')) return;

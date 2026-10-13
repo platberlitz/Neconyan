@@ -58,6 +58,8 @@ import getResponseCompressionMiddleware from './middleware/response-compression.
 import basicAuthMiddleware from './middleware/basicAuth.js';
 import { createImageReferenceHandler } from './generation/image-reference-links.js';
 import { renderRegisteredDocsPage } from './docs-reader.js';
+import { serveCardScriptSandbox } from './card-script-sandbox.js';
+import { CARD_SCRIPT_SANDBOX_PATH } from '../public/scripts/card-script-sandbox/policy.js';
 import requireHttpsMiddleware from './middleware/requireHttps.js';
 import authRouter, { setAuthRouterBasicAuthMode } from './endpoints/auth.js';
 import { createSession, destroySession, validateCredentials, isSessionAuthEnabled } from './middleware/sessionAuth.js';
@@ -406,6 +408,8 @@ if (!cliArgs.disableCsrf) {
         });
     });
 }
+
+app.get(CARD_SCRIPT_SANDBOX_PATH, requireLoginMiddleware, serveCardScriptSandbox);
 
 // Static files. Neconyan is the full Neconyan runtime at the canonical root;
 // the old server-rendered subset remains addressable only through redirects so

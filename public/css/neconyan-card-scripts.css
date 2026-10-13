@@ -1,0 +1,9 @@
+#chat .mes_text[data-card-script-active] { display: block; width: 100%; min-width: 0; }
+#chat .card-script-sandbox-slot { width: 100%; min-width: 0; }
+#chat .card-script-sandbox-frame { display: block; width: 100%; min-height: 48px; border: 0; border-radius: 8px; }
+#chat .mes_run_card_scripts.script-running { opacity: 1; color: var(--neco-ink); background: color-mix(in srgb, var(--neco-ginger) 15%, var(--neco-surface)); }
+#chat .card-script-sandbox-frame:focus-visible { outline: 2px solid var(--neco-ginger); outline-offset: 2px; }
+#chat .card-script-isolation-notice { margin: 12px 0; padding: 12px; border: 1px solid var(--neco-border); border-radius: 8px; background: var(--neco-surface); color: var(--neco-ink); }
+#chat .card-script-isolation-notice p { margin: 0 0 10px; }
+#chat .card-script-isolation-notice .card-script-run-anyway { min-height: 44px; padding: 8px 12px; border: 1px solid var(--neco-ginger); background: var(--neco-ginger); color: var(--neco-on-accent); font: inherit; }
+#chat .card-script-run-anyway:hover, #chat .card-script-run-anyway:focus-visible { border-color: var(--neco-ginger-hover); outline: 2px solid var(--neco-ginger); outline-offset: 2px; }
