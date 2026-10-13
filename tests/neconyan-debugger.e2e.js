@@ -40,6 +40,9 @@ test.beforeEach(async ({ page }) => {
     await page.route('http://sbdbg.test/**', route => {
         const url = new URL(route.request().url());
         const extensionPrefix = '/scripts/extensions/neconyan-debugger/';
+        if (url.pathname === '/scripts/crash-report-reader.js') {
+            return route.fulfill({ contentType: 'text/javascript', path: fileURLToPath(new URL('../public/scripts/crash-report-reader.js', import.meta.url)) });
+        }
         if (url.pathname.startsWith(extensionPrefix)) {
             let relativePath;
             try {

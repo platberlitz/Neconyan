@@ -1,4 +1,4 @@
-/* global window, getComputedStyle */
+/* global window, getComputedStyle, CSSTransition */
 import { expect, test } from '@playwright/test';
 
 const status = {
@@ -63,6 +63,10 @@ for (const phone of [false, true]) {
                 await page.locator('#quote-color-picker').evaluate((element, colour) => {
                     element.dispatchEvent(new CustomEvent('change', { bubbles: true, detail: { rgba: colour } }));
                 }, accent);
+                await button.evaluate(async element => {
+                    await Promise.all(element.getAnimations().filter(animation => animation instanceof CSSTransition)
+                        .map(animation => animation.finished.catch(() => {})));
+                });
                 const contrast = await button.evaluate(element => {
                     const style = getComputedStyle(element);
                     const canvas = window.document.createElement('canvas');

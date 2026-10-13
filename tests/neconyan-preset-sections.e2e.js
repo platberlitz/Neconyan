@@ -115,7 +115,11 @@ for (const phone of [false, true]) {
         await header.locator('b').click();
         await expect(list).toBeVisible();
         await expect(page.locator('.bpt-section-row')).toHaveCount(4);
-        await list.scrollIntoViewIfNeeded();
+        // The prompt manager can replace its list while the selected chat finishes rendering.
+        await expect(async () => {
+            await list.scrollIntoViewIfNeeded();
+            await expect(list).toBeInViewport();
+        }).toPass({ timeout: 10000 });
         await capture(page, `${viewport}-preset-sections`);
         const geometry = await lockGeometry(page);
         console.log('SECTION_LOCK_GEOMETRY ' + JSON.stringify({ viewport, geometry }));

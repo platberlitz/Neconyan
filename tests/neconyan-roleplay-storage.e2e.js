@@ -566,6 +566,11 @@ for (const phone of [false, true]) {
         await app.restart();
         expect(app.processes[0].signal).toBe('SIGKILL');
         page = await account.open({ workspace: false });
+        // This test deliberately kills the server; acknowledge its retained report before editing.
+        const crashNotice = page.getByRole('status', { name: 'A saved server crash report is available', exact: true });
+        await expect(crashNotice).toBeVisible();
+        await crashNotice.getByRole('button', { name: 'Dismiss', exact: true }).click();
+        await expect(crashNotice).toBeHidden();
         await openEditor();
         if (phone) await expect(page.locator('#group_favorite_button')).toHaveClass(/fav_on/);
         else await expect(page.locator('#rm_button_selected_ch h2')).toHaveText('Saved from the group editor');
