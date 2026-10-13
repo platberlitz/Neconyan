@@ -17,6 +17,9 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     let childId = null;
     let startedAt = null;
     let stopped = false;
+    const diagnosticHandle = {};
+    let diagnosticStage = null;
+    const diagnostic = phase => { try { globalThis.NeconyanCrashDiagnostics?.observePhase?.(diagnosticHandle, phase); } catch { /* Optional diagnostics. */ } };
     let restoreReplacement = () => {};
     const remove = () => { node?.remove(); node = null; rendered = null; };
     const render = () => {
@@ -110,8 +113,15 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
                             const value = JSON.parse(event.slice(6));
                             // Use the regular display formatter at a bounded cadence, rather
                             // than rebuilding a growing Markdown message for every token.
-                            if (value.preview) { latest = value.preview; receivedAt = Date.now(); if (!node) render(); }
-                            if (value.state) { onTerminal(value); return; }
+                            if (value.preview) {
+                                latest = value.preview; receivedAt = Date.now();
+                                if (latest.stage !== diagnosticStage && isCurrent()) {
+                                    diagnosticStage = latest.stage;
+                                    diagnostic(({ preparing: 'preparing', generating: 'generating', agents: 'post-agents', companions: 'companions', review: 'waiting-review', saving: 'saving' })[diagnosticStage] || 'unknown');
+                                }
+                                if (!node) render();
+                            }
+                            if (value.state) { diagnostic(null); onTerminal(value); return; }
                         }
                     }
                 } finally { await reader.cancel().catch(() => {}); }
@@ -122,6 +132,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     void run();
     return () => {
         stopped = true;
+        diagnostic(null);
         attempt?.abort();
         document.removeEventListener('visibilitychange', onVisible);
         globalThis.removeEventListener?.('pageshow', reconnect);

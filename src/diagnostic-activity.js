@@ -27,6 +27,7 @@ export function beginDiagnosticAgent(context, descriptor = {}) {
         if (!jobs.has(key) && jobs.size >= 128) return null;
         const job = jobs.get(key) || { owner, root, leaves: new Set(), running: new Map(), events: [], labels: new Map(), at: now, notifiedAt: 0 };
         if (job.running.size >= 128) return null;
+        if (!job.leaves.has(leaf) && job.leaves.size >= 128) return null;
         job.leaves.add(leaf);
         if (!job.labels.has(descriptor.id) && job.labels.size < 128) job.labels.set(descriptor.id, `Custom agent ${job.labels.size + 1}`);
         const label = descriptor.synthesis ? 'Combined reply' : templateLabel(descriptor.sourceTemplateId) || job.labels.get(descriptor.id) || 'Custom agent 1';

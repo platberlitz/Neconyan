@@ -15,6 +15,6 @@ public final class NeconyanApplication extends Application {
             }
         });
     }
-    @Override public void onTrimMemory(int level) { super.onTrimMemory(level); ActivityBreadcrumbs.pressure(level); }
-    @Override public void onLowMemory() { super.onLowMemory(); ActivityBreadcrumbs.pressure(-1); }
+    @Override public void onTrimMemory(int level) { super.onTrimMemory(level); try { ActivityBreadcrumbs.pressure(level); } catch (Throwable ignored) { } }
+    @Override public void onLowMemory() { super.onLowMemory(); try { ActivityBreadcrumbs.pressure(-1); } catch (Throwable ignored) { } }
 }

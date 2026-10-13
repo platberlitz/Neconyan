@@ -16,10 +16,13 @@ export function observeNativeConversationPreview(jobId, account) {
     const entry = { account, participants: [] };
     previews.set(jobId, entry);
     let stopped = false;
+    let diagnosticRunning = false;
+    const diagnostic = phase => { try { globalThis.NeconyanCrashDiagnostics?.observePhase?.(entry, phase); } catch { /* Optional diagnostics. */ } };
     const current = () => !stopped && account === getCurrentUserHandle();
     const update = participants => {
         if (!current()) return;
         entry.participants = participants;
+        if (Boolean(participants.length) !== diagnosticRunning) { diagnosticRunning = Boolean(participants.length); diagnostic(diagnosticRunning ? 'generating' : null); }
         scheduleInterfaceRefresh({ syncControls: false });
     };
     const run = async () => {
@@ -55,6 +58,7 @@ export function observeNativeConversationPreview(jobId, account) {
         }
     };
     const clear = () => {
+        diagnostic(null);
         if (previews.get(jobId) !== entry) return;
         previews.delete(jobId);
         scheduleInterfaceRefresh({ syncControls: false });

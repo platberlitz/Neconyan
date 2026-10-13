@@ -58,7 +58,7 @@ export function createServerCrashObserver({ isAdmin, getAccount, getRequestHeade
     const resume = () => { if (active) void poll(); };
     const visibility = () => { if (document.visibilityState === 'visible') resume(); else { clearTimeout(timer); timer = null; } };
     globalThis.addEventListener?.('online', resume); document.addEventListener('visibilitychange', visibility);
-    return { start: () => { if (isAdmin()) { active = true; void poll(); } }, stop, recovered: resume };
+    return { start: () => { if (isAdmin()) { active = true; void poll(); } }, stop, recovered: () => { disconnected = true; resume(); } };
 }
 
 export function initialiseCrashActivity({ eventSource, event_types, getChat, getExtensionCount, isAdmin, getAccount, getRequestHeaders, refreshCsrfToken }) {
@@ -68,11 +68,13 @@ export function initialiseCrashActivity({ eventSource, event_types, getChat, get
     const update = patch => api.updateActivity?.(patch);
     const server = isAdmin && getAccount ? createServerCrashObserver({ isAdmin, getAccount, getRequestHeaders, refreshCsrfToken }) : null;
     api.serverRecovered = safe(() => server?.recovered());
-    let revision = 0, lengths = [], total = 0;
+    let revision = 0, lengths = [], total = 0, idleHandle = null, alternativesComplete = true;
+    const cancelMeasurement = () => { if (idleHandle !== null) { if (globalThis.cancelIdleCallback) cancelIdleCallback(idleHandle); else clearTimeout(idleHandle); idleHandle = null; } };
     const textLength = message => {
         const mes = typeof message?.mes === 'string' ? message.mes : '';
         let length = mes.length + (typeof message?.extra?.reasoning === 'string' ? message.extra.reasoning.length : 0);
         const swipes = message?.swipes;
+        if (Array.isArray(swipes) && swipes.length > 1000) alternativesComplete = false;
         if (Array.isArray(swipes)) for (let index = 0; index < Math.min(swipes.length, 1000); index++) {
             const text = swipes[index];
             if (typeof text === 'string' && (index !== message.swipe_id || text !== mes)) length += text.length;
@@ -82,12 +84,13 @@ export function initialiseCrashActivity({ eventSource, event_types, getChat, get
         return Math.min(1099511627776, length * 2);
     };
     const publish = (count, sampled, complete) => {
-        update({ chat: { messageCount: count, estimatedTextBytes: total, sampledMessages: sampled, complete, measuredAt: Date.now() },
+        update({ chat: { messageCount: count, estimatedTextBytes: count === null ? null : total, sampledMessages: sampled, complete: complete && alternativesComplete, measuredAt: count === null ? null : Date.now() },
             dom: { renderedChildren: document.getElementById('chat')?.childElementCount ?? null, measuredAt: Date.now() } });
     };
     const rebuild = safe(() => {
+        cancelMeasurement();
         const current = ++revision, chat = getChat();
-        lengths = []; total = 0;
+        lengths = []; total = 0; alternativesComplete = true;
         if (!Array.isArray(chat) || !['unknown', 'roleplay'].includes(api.getActivity?.()?.snapshot.mode)) { publish(null, null, false); return; }
         let index = 0;
         const limit = Math.min(chat.length, 5000);
@@ -104,8 +107,13 @@ export function initialiseCrashActivity({ eventSource, event_types, getChat, get
         schedule(chunk);
         api.noteActivity?.('chat-open');
     });
-    const schedule = callback => globalThis.requestIdleCallback ? requestIdleCallback(callback, { timeout: 1000 }) : setTimeout(callback, 0);
+    const schedule = callback => {
+        cancelMeasurement();
+        const run = () => { idleHandle = null; callback(); };
+        idleHandle = globalThis.requestIdleCallback ? requestIdleCallback(run, { timeout: 1000 }) : setTimeout(run, 0);
+    };
     const changed = safe(index => {
+        if (!['unknown', 'roleplay'].includes(api.getActivity?.()?.snapshot.mode)) { publish(null, null, false); return; }
         const chat = getChat();
         if (!Number.isInteger(index) || index < 0 || index >= 5000 || lengths.length < Math.min(chat.length - 1, 5000)) { rebuild(); return; }
         const length = textLength(chat[index]); total += length - (lengths[index] || 0); lengths[index] = length;
@@ -122,12 +130,16 @@ export function initialiseCrashActivity({ eventSource, event_types, getChat, get
     on('MAIN_GENERATION_OUTPUT_READY', () => update({ generation: { phase: 'rendering', location: 'browser' } }));
     on('GENERATION_ENDED', () => { update({ generation: { phase: 'idle', location: 'unknown' } }); api.noteActivity?.('generation-end'); });
     on('GENERATION_STOPPED', () => { update({ generation: { phase: 'idle', location: 'unknown' } }); api.noteActivity?.('generation-stop'); });
-    on('APP_READY', () => { api.markAppReady?.(); counts(); rebuild(); server?.start(); });
+    on('APP_READY', () => { api.markAppReady?.(); counts(); rebuild(); if (!globalThis.NeconyanDiagnostics) server?.start(); });
     for (const type of ['EXTENSIONS_FIRST_LOAD', 'EXTENSION_DISABLED', 'SETTINGS_UPDATED']) on(type, counts);
     document.addEventListener('sb:shell-tab-activated', safe(event => {
-        const tab = event.detail?.tab;
-        update({ view: tab === 'home' ? 'home' : tab === 'chat' ? 'chat' : ['settings', 'model', 'customise'].includes(tab) ? 'settings' : 'tool' });
+        const tab = event.detail?.shellKey;
+        update({ view: tab === 'home' ? 'home' : tab === 'chat' ? 'chat' : ['settings', 'model', 'customise', 'characters'].includes(tab) ? 'settings' : 'tool' });
     }));
-    document.addEventListener('visibilitychange', safe(() => { if (document.visibilityState === 'visible') rebuild(); else revision++; }));
-    globalThis.addEventListener?.('pagehide', () => { revision++; });
+    document.addEventListener('sb:conversation-workspace-state-changed', safe(() => {
+        const mode = document.documentElement?.dataset.neconyanChatMode || 'unknown';
+        update({ mode, view: mode === 'conversation' ? 'chat' : 'unknown', ...(mode !== 'roleplay' ? { chat: { messageCount: null } } : {}) });
+    }));
+    document.addEventListener('visibilitychange', safe(() => { if (document.visibilityState === 'visible') rebuild(); else { revision++; cancelMeasurement(); } }));
+    globalThis.addEventListener?.('pagehide', () => { revision++; cancelMeasurement(); });
 }

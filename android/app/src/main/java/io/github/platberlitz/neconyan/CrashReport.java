@@ -8,6 +8,7 @@ final class CrashReport {
         final String id, incident, component, event, status, summary, error, activity, memory, text;
         final long at, processStart, activityAt;
         final int pid, reason;
+        final boolean traceAvailable;
         Entry(String id, Map<String, String> header, String text) {
             this.id = id;
             incident = header.getOrDefault("Incident ID", id);
@@ -15,6 +16,7 @@ final class CrashReport {
             at = number(header.get("Event timestamp ms")); processStart = number(header.get("Process start ms")); activityAt = number(header.get("Activity timestamp ms"));
             pid = (int) number(header.get("Process PID")); reason = header.containsKey("Reason code") ? (int) number(header.get("Reason code")) : -1;
             status = header.getOrDefault("Status", "unknown");
+            traceAvailable = "available".equals(header.get("Trace status"));
             summary = header.getOrDefault("Summary", "Saved report from an earlier Neconyan version. Read the details for its recorded evidence.");
             error = header.getOrDefault("Error", "Android did not supply an error message.");
             activity = header.getOrDefault("Last activity", "No earlier activity sample was available.");
@@ -48,7 +50,9 @@ final class CrashReport {
         if (reason == 3) return "Android closed " + subject + " to free memory.";
         if (event.equals("renderer-crash")) return "The page renderer crashed. Android did not provide an error message.";
         if (event.equals("renderer-closed")) return "Android closed the page renderer. It did not provide a definite cause.";
-        if (event.equals("uncaught-java-exception") || reason == 4) return subject + " stopped because of an application error.";
+        if (Arrays.asList("uncaught-java-exception", "activity-startup-failure", "server-startup-failure").contains(event) || reason == 4) return subject + " stopped because of an application error.";
+        if (event.equals("node-failure")) return subject + " reported an error. Read the recorded error and causes.";
+        if (event.equals("runtime-heap-limit")) return "The local server log reported that its JavaScript memory limit was reached.";
         if (reason == 9) return subject + " stopped after signal " + line(status, 20) + ". Android did not say why the signal was sent.";
         if (reason == 6) return subject + " stopped responding. Read the system trace for the available evidence.";
         return subject + " stopped unexpectedly. No definite cause was available.";
@@ -58,11 +62,39 @@ final class CrashReport {
         String header = "Neconyan crash report v2\nReport ID: " + line(id, 100) + "\nEvent timestamp ms: " + at
             + "\nComponent: " + line(component, 20) + "\nEvent: " + line(event, 80) + "\nProcess PID: " + pid + "\nProcess start ms: " + start
             + "\nIncident ID: " + line(incident, 100) + "\nReason code: " + reason + "\nStatus: " + line(status, 40)
-            + "\nSummary: " + summary(component, event, reason, status) + "\nError: " + line(error, 1000)
+            + "\nSummary: " + summary(component, event, reason, status) + "\nError: " + line(error, 400)
             + "\nActivity timestamp ms: " + activityAt + "\nLast activity: " + line(activity, 450) + "\nMemory sample: " + line(memory, 450);
         return parse(id + ".txt", header + "\n\nDetails:\n" + DiagnosticStore.redact(details));
     }
     static boolean shouldOffer(Entry entry, String seenBoundary, Set<String> incidents) {
         return entry != null && entry.id.compareTo(seenBoundary == null ? "" : seenBoundary) > 0 && !incidents.contains(entry.incident);
+    }
+    static String firstTraceError(String text) {
+        for (String line : text.substring(0, Math.min(24000, text.length())).split("\n")) {
+            if (line.startsWith("Abort message: ") || line.startsWith("Cause: ")) return line(line, 400);
+        }
+        return "";
+    }
+    static boolean matchesNode(int expectedPid, long nativeStart, long observedAt, long stoppedAt, int pid, long at, long nodeStart) {
+        return expectedPid > 0 && pid == expectedPid && at >= (nativeStart > 0 ? nativeStart : observedAt) && at <= stoppedAt + 1000
+            && nodeStart <= at && (nativeStart <= 0 || nodeStart >= nativeStart - 1000);
+    }
+    static String fatalRuntimeLines(String text) {
+        StringBuilder out = new StringBuilder(); int lines = 0; boolean fatal = false;
+        for (String line : text.split("\n")) {
+            String clean = line.trim();
+            if (clean.startsWith("FATAL ERROR: ")) fatal = true;
+            else if (!fatal || !clean.matches("[0-9]+: 0x[0-9a-fA-F]+.*")) continue;
+            String next = DiagnosticStore.redact(clean) + "\n";
+            if (++lines > 20 || (out + next).getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 4096) break;
+            out.append(next);
+        }
+        return out.toString();
+    }
+    static String displayText(Entry entry, boolean saved) {
+        return entry.summary + "\n\nStopped: " + (entry.at > 0 ? java.text.DateFormat.getDateTimeInstance().format(new Date(entry.at)) : "Time unavailable")
+            + "\n\n" + entry.error + "\n\n" + entry.activity + "\n\n" + entry.memory
+            + (saved ? "" : "\n\nThe report could not be saved. Copy or share it before closing this screen.")
+            + "\n\nReports stay on this device. Error messages and system traces may contain private text. Review before sharing.";
     }
 }

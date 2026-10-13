@@ -41,36 +41,46 @@ function download(text) {
 }
 export function openCrashReportReader({ browserReports = globalThis.NeconyanCrashDiagnostics?.getReports?.() ?? { reports: [] }, selectedReportId,
     popup = showRetainedReportPopup, loadServerReports, nativeReader = globalThis.NeconyanExport?.showCrashReports?.bind(globalThis.NeconyanExport) } = {}) {
+    const stylesheet = document.querySelector('link[href^="css/neconyan-crash-reports.css"]');
+    if (stylesheet) stylesheet.rel = 'stylesheet';
     const content = element('div', '', 'neconyan-crash-report sbdbg-report');
     content.append(element('h3', 'Saved crash reports'), element('p', 'Reports stay on this device or your server. Error messages and system traces may contain private text. Review before sharing.'));
     if (browserReports.storageError) content.append(element('p', browserReports.storageError));
-    const reports = (browserReports.reports ?? []).slice(-5).reverse();
+    const reports = [...(browserReports.reports ?? []).slice(-5).reverse(), ...(browserReports.retainedActivities ?? []).slice(0, 8)];
     const select = element('select', '', 'text_pole'); select.setAttribute('aria-label', 'Select a crash report');
     const summary = element('p'); summary.setAttribute('role', 'status');
+    const activity = element('p');
     const textarea = element('textarea', '', 'text_pole sbdbg-report-text');
     textarea.readOnly = true; textarea.setAttribute('aria-label', 'Saved crash reports');
     textarea.wrap = 'soft'; textarea.rows = 12;
     const actions = element('div', '', 'sbdbg-actions');
     let selected = null;
+    let selectionTouched = false;
     const render = () => {
         selected = reports[Number(select.value)] ?? null;
         textarea.value = selected ? redact(JSON.stringify(selected, null, 2)) : 'No saved browser crash reports.';
-        summary.textContent = selected ? redact(selected.summary || selected.error?.message || 'Saved crash report') : 'No saved browser crash reports.';
+        summary.textContent = selected ? redact([selected.summary, selected.error?.message].filter(Boolean).join('\n') || 'Saved crash report').slice(0, 400) : 'No saved browser crash reports.';
+        const sample = selected?.lastKnownActivity?.snapshot;
+        const safe = sample && globalThis.NeconyanCrashDiagnostics?.validateActivity?.(sample);
+        activity.textContent = safe ? `Last known activity: ${safe.mode}${safe.chat.messageCount !== null ? `, ${safe.chat.messageCount} messages` : ''}.`
+            + (safe.agents.running.length ? ` Running ${safe.agents.running.map(agent => agent.label).join(' and ')}.` : '')
+            + (safe.at ? ` Last activity recorded at ${new Date(safe.at).toLocaleString()}.` : '') : 'No earlier activity sample was available.';
     };
     const populate = () => {
+        const previous = selected;
         select.replaceChildren();
         reports.forEach((report, index) => {
             const option = element('option', `${report.runtime === 'server' ? 'Server' : 'Browser'}: ${report.at || 'Time unavailable'} - ${report.kind || 'Error'}`);
             option.value = String(index); select.append(option);
-            if (report.id === selectedReportId) select.value = String(index);
+            if (selectionTouched ? report === previous : selectedReportId !== undefined && report.id === selectedReportId) select.value = String(index);
         });
         render();
     };
-    select.addEventListener('change', render);
+    select.addEventListener('change', () => { selectionTouched = true; render(); });
     const copyButton = action('Copy report', async () => { copyButton.textContent = await copy(textarea.value) ? 'Copied' : 'Copy failed. Select the text below'; }, true);
     actions.append(copyButton, action('Download report', () => download(textarea.value)));
     if (nativeReader) actions.append(action('Android crash reports', () => { try { nativeReader(); } catch { /* Keep the browser reader available. */ } }));
-    content.append(select, summary, actions, textarea);
+    content.append(select, summary, activity, actions, textarea);
     const serverStatus = element('p', 'Server reports have not been loaded'); serverStatus.setAttribute('role', 'status'); content.append(serverStatus);
     const load = async () => {
         if (!loadServerReports) return;

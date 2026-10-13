@@ -62,3 +62,12 @@ test('application counts text without serialising messages and ignores auxiliary
     listeners.get('GENERATION_STARTED')('normal', {}, false);
     expect(noteActivity).toHaveBeenCalledWith('generation-start');
 });
+
+test('a dormant Roleplay chat is not measured as the current Conversation', () => {
+    const listeners = new Map(), updateActivity = jest.fn(), getChat = jest.fn();
+    globalThis.NeconyanCrashDiagnostics = { updateActivity, getActivity: () => ({ snapshot: { mode: 'conversation' } }) };
+    initialiseCrashActivity({ eventSource: { on: (name, fn) => listeners.set(name, fn) }, event_types: { MESSAGE_UPDATED: 'updated' }, getChat });
+    listeners.get('updated')(0);
+    expect(getChat).not.toHaveBeenCalled();
+    expect(updateActivity).toHaveBeenCalledWith(expect.objectContaining({ chat: expect.objectContaining({ messageCount: null, estimatedTextBytes: null }) }));
+});
