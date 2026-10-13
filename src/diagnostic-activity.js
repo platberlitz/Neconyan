@@ -10,10 +10,13 @@ function prune(now) {
     for (const [key, job] of jobs) if (!job.running.size && now - job.at > 60000) jobs.delete(key);
 }
 function hint(job) {
-    const now = Date.now();
-    if (now - job.notifiedAt < 250) return;
-    job.notifiedAt = now;
-    try { notifyJobsChanged({ owner: job.owner, id: job.root }); } catch { /* Observational only. */ }
+    if (job.hintTimer) return;
+    job.hintTimer = setTimeout(() => {
+        job.hintTimer = null;
+        job.notifiedAt = Date.now();
+        try { notifyJobsChanged({ owner: job.owner, id: job.root, diagnosticOnly: true }); } catch { /* Observational only. */ }
+    }, Math.max(25, 1000 - (Date.now() - job.notifiedAt)));
+    job.hintTimer.unref?.();
 }
 
 /** Internal identities select a private record. They never enter an exposed sample. */
@@ -29,14 +32,16 @@ export function beginDiagnosticAgent(context, descriptor = {}) {
         if (job.running.size >= 128) return null;
         if (!job.leaves.has(leaf) && job.leaves.size >= 128) return null;
         job.leaves.add(leaf);
-        if (!job.labels.has(descriptor.id) && job.labels.size < 128) job.labels.set(descriptor.id, `Custom agent ${job.labels.size + 1}`);
-        const label = descriptor.synthesis ? 'Combined reply' : templateLabel(descriptor.sourceTemplateId) || job.labels.get(descriptor.id) || 'Custom agent 1';
+        const builtIn = descriptor.synthesis ? 'Combined reply' : templateLabel(descriptor.sourceTemplateId);
+        if (!builtIn && !job.labels.has(descriptor.id) && job.labels.size < 128) job.labels.set(descriptor.id, `Custom agent ${job.labels.size + 1}`);
+        const label = builtIn || job.labels.get(descriptor.id) || 'Custom agent 1';
         const handle = randomUUID();
         const phase = phases.has(descriptor.phase) ? descriptor.phase : 'unknown';
         job.running.set(handle, { label: safeAgentLabel(label), phase, location: 'server' });
         job.events.push({ at: now, type: 'agent-start', agentLabel: safeAgentLabel(label) });
         job.events = job.events.slice(-12); job.at = now;
-        jobs.set(key, job); hint(job);
+        jobs.set(key, job);
+        if (phase !== 'regex') hint(job);
         return { key, handle };
     } catch { return null; }
 }
@@ -47,7 +52,8 @@ export function endDiagnosticAgent(handle, outcome = 'done') {
         if (!item) return;
         job.running.delete(handle.handle); job.at = Date.now();
         job.events.push({ at: job.at, type: outcome === 'cancel' ? 'agent-cancel' : outcome === 'error' ? 'agent-error' : 'agent-end', agentLabel: item.label });
-        job.events = job.events.slice(-12); hint(job);
+        job.events = job.events.slice(-12);
+        if (item.phase !== 'regex') hint(job);
     } catch { /* Diagnostics must not affect a paid request. */ }
 }
 

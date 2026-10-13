@@ -68,7 +68,12 @@ router.get('/events', (request, response) => {
             try { response.write(text); response.flush?.(); } catch { response.end(); }
         };
         const unsubscribe = subscribeJobsChanged(change => {
-            if (change.owner !== owner || pending) return;
+            if (change.owner !== owner) return;
+            if (change.diagnosticOnly) {
+                send(`data: ${JSON.stringify({ diagnostics: { id: change.id, activity: getDiagnosticJobActivity(owner, change.id) } })}\n\n`);
+                return;
+            }
+            if (pending) return;
             pending = setTimeout(() => { pending = null; send('data: {}\n\n'); }, 25);
         });
         const keepalive = setInterval(() => send(': keepalive\n\n'), 15000);
@@ -140,7 +145,7 @@ router.get('/:id/preview', (request, response) => {
         // re-read only after a job change, with a slow fallback, and send a cheap
         // keepalive every second so the reader can tell the stream is still open.
         let changed = false, lastCheck = 0;
-        const unsubscribeJobs = subscribeJobsChanged(change => { if (change.owner === owner) changed = true; });
+        const unsubscribeJobs = subscribeJobsChanged(change => { if (change.owner === owner && !change.diagnosticOnly) changed = true; });
         const check = () => {
             changed = false;
             lastCheck = Date.now();
