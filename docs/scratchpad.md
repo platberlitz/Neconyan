@@ -8,12 +8,14 @@ All assistants can do the same things in Scratchpad. The included three keep the
 
 ## Opening it
 
-- **Anywhere**: choose **Scratchpad** in the desktop sidebar or the phone menu, just under **Notes**.
+- **Anywhere, including Home**: choose **Scratchpad** in the desktop sidebar or the phone menu, just under **Notebooks**. You don't need an open chat.
 - **Roleplay**: press the clipboard button labelled **Scratchpad** in the bottom chat bar, or open **Chat tools** (the menu beside the message box) and choose **Scratchpad**.
 - **Conversation**: press **Scratchpad** in the quick tools row.
 - **Notes**: open a note and press **Ask Scratchpad**. Choose the whole note or selected text, review what will be shared and press **Open Scratchpad**.
 
-On desktop Scratchpad opens beside the chat. Drag its left edge (or focus the edge and use the arrow keys) to change its width, and use **Full width** or **Beside chat** to switch layouts. On a phone it fills the screen; **Back to chat** returns to the conversation. Opening Notebooks closes Scratchpad, and opening Scratchpad closes Notebooks.
+On desktop Scratchpad opens beside the workspace. Drag its left edge (or focus the edge and use the arrow keys) to change its width, and use **Full width** or **Beside chat** to switch layouts. On a phone it fills the screen. **Back to chat** returns to an open conversation; **Close** leaves General Scratchpad. Opening Notebooks closes Scratchpad, and opening Scratchpad closes Notebooks.
+
+Without a visible chat, you get **General Scratchpad**: one session list for your account, separate from every chat and note. General is one list, so you don't have to remember which character you selected before asking an everyday question. Home always uses General, even if a chat is still loaded underneath. Selecting a card or persona changes the reference material, not where General sessions are saved.
 
 Roleplay sessions are shared across all chats for the same character. Conversation sessions are shared across branches for the same character or group within the active persona, separately from Roleplay sessions and other personas. Groups keep their own Roleplay list, separate from their members' solo sessions. Switching chats changes the context Scratchpad reads, not the saved sessions. Existing chat-specific sessions appear together automatically, including replies already in progress. Sessions stay private in your account's Scratchpad storage; exporting a character card does not include them.
 
@@ -35,13 +37,13 @@ You can save up to 24 of your own assistants; delete one to make room. They have
 
 Under **Context → Global user instructions → Edit user instructions**, save preferences that apply across every Scratchpad in your account. Choose **All assistants**, or **Selected assistants** and tick the ones you want. Your text accompanies each chosen assistant's prompt in existing and new sessions, including round tables and note discussions. It is saved on the server, so it follows your account across devices. Leave the text blank and press **Save instructions** to turn it off. Replies already in progress keep their original instructions. Session exports do not include these account-wide preferences.
 
-Under **Context → Assistant prompts**, choose an assistant's **View or edit** button to read and edit the complete instructions, including personality and change-card formats. **Save prompt** applies your text to that assistant in the current session. New sessions for the same character, group or note inherit your choices. **Reset to default**, followed by **Save prompt**, restores the instructions for their saved personality. App-reference knowledge and the Notebook permissions contract are appended automatically. Defaults reflect the current chat and round-table selection; saved custom text is otherwise used as written.
+Under **Context → Assistant prompts**, choose an assistant's **View or edit** button to read and edit the complete instructions, including personality and change-card formats. **Save prompt** applies your text to that assistant in the current session. New sessions in the same list inherit your choices. **Reset to default**, followed by **Save prompt**, restores the instructions for their saved personality. App-reference knowledge and the Notebook permissions contract are appended automatically. Defaults reflect the current context and round-table selection; saved custom text is otherwise used as written.
 
-Pick who you are talking to under **Talking with**, type in the box at the bottom and press **Send** (or Enter on desktop; Shift+Enter adds a new line). **Quick prompts** fill the box with a ready-made request you can edit before sending: **Read the scene**, **Plot ideas**, **Catch me up**, **Continuity check** and **Lore gaps**.
+Pick who you are talking to under **Talking with**, type in the box at the bottom and press **Send** (or Enter on desktop; Shift+Enter adds a new line). **Quick prompts** fill the box with a request you can edit before sending. General offers **Brainstorm**, **Help me decide** and **Create a character**. Chat sessions offer **Read the scene**, **Plot ideas**, **Catch me up**, **Continuity check** and **Lore gaps**.
 
 The input starts one line high and grows as you add lines, up to a few lines, so the whole message stays readable. Longer drafts scroll inside it, and pasted text keeps its line breaks.
 
-Press **New session** at the top of Scratchpad to start a fresh conversation for the current character, group or note.
+Press **New session** at the top of Scratchpad to start a fresh conversation in the current list, including General.
 
 Turn on **Round table** to ask up to three assistants together. Press their portraits to include or exclude them; keep at least one selected. **Ask 2** or **Ask 3** sends one question to everyone selected, using each assistant's own connection profile and personality. Each answer is labelled and saved separately in the same session. The reply limit applies to each assistant.
 
@@ -60,7 +62,7 @@ Each message has a few buttons:
 - **Copy** copies the text.
 - **Save selection or message to note** saves a selected passage or the message to a new Inbox note or an existing note. Replies omit change cards; reasoning is never copied. The quotation keeps its Scratchpad speaker and date.
 - **Edit message** lets you correct either side of the conversation. The assistant sees the edited text next time.
-- **Use as draft in the chat box** copies an assistant reply (without any change cards) into the story's message box. Nothing is sent; you decide what to do with it.
+- **Use as draft in the chat box**, only with a visible Roleplay or Conversation chat, copies an assistant reply (without any change cards) into the story's message box. Nothing is sent; you decide what to do with it. General never writes into a chat hidden beneath Home.
 - **Try again** asks that assistant for a new version of its answer to your latest message. In a round table it keeps the other assistants' answers.
 - **Delete** removes the message from Scratchpad. The story is not affected.
 
@@ -68,7 +70,9 @@ When you ask how something in Neconyan works, the assistant also gets the same h
 
 ## What Scratchpad reads
 
-Scratchpad rebuilds the story context from the open chat every time you send, so it always reads the chat as it is now. You need that chat open to send. The **Context** tab controls what is shared:
+Scratchpad rebuilds the reference material every time you send. With a visible chat it reads that chat as it is now. General shares no story messages, swipes, chat metadata, Author's Note, preset or lorebook text. Your active persona can be shared; a deliberately selected card without a chat can also be shared. Home includes no hidden character card. A Conversation card without a branch uses its Conversation persona, never the underlying Roleplay card. **Character cards** and **Your persona** still control those optional references, and **Show preview** shows exactly what will go with your next message.
+
+On Home and in Roleplay, General uses your account persona's base description, without additions selected for a hidden chat. Only the user and character name placeholders are filled in; other macros stay as text rather than reading a hidden story. General keeps saved notes, assistant connections, prompts, streaming and reply limits. **Current connection** uses your current model settings, or choose a saved profile for each assistant. Message and lore controls are hidden because there is nothing to share. In a chat, the **Context** tab also offers:
 
 - **Recent messages to read**: how many of the latest messages to share (15 to start with). Use 0 to share none. Hidden messages are skipped unless you turn on **Include hidden messages**.
 - **Pick specific messages and swipes**: tick particular messages instead. For Roleplay messages with several swipes, expand **Swipes** and tick the versions you want to compare. Each version is labelled with its message and swipe number, and the current version is marked. This does not change the selected swipe in the story. Picked messages and swipes replace the recent messages setting until you press **Clear picks**.
@@ -84,7 +88,7 @@ Scratchpad rebuilds the story context from the open chat every time you send, so
 
 Saved-note text and permissions are read again on the server for every send. If they change while a reply is being prepared, send again with the new version. Unavailable, private or expired notes show **Not shared** without their text. Links do not expand access. Notebook text is reference material, not instructions. Removing a reference or revoking access cannot withdraw text already sent to a model.
 
-Context settings belong to the session, and a new session starts with the settings of the one you were using (without picked messages or temporary note grants). Picked messages stay tied to their original chat. In another chat, Scratchpad shares none of those messages and does not substitute recent messages; clear the picks or choose messages there.
+Context settings belong to the session, and a new session starts with the settings of the one you were using (without picked messages or temporary note grants). Picked messages stay tied to their original chat. In another chat, Scratchpad shares none of those messages and does not substitute recent messages; clear the picks or choose messages there. Switching between General and a chat restores each list's unsent draft while the page stays open. Drafts don't survive a browser reload. Accepted replies keep running in their original list.
 
 ## Macros in drafts
 
@@ -102,12 +106,13 @@ Scratchpad can suggest:
 
 - **Lorebooks**: new entries (with title, keywords and text), edits to an entry's title, keywords or text, and deleting an entry.
 - **Characters**: rewriting a field on a character in this chat, including group members. The fields are description, personality, scenario, first message, example messages, creator's notes, system prompt, post-history instructions, alternate greetings and tags.
+- **New character cards**: draft a new character, including from General or a note discussion, then review and save it yourself.
 - **Messages** (Roleplay only): rewriting a message, adding a message after another, hiding a message, showing a hidden message again and deleting a message.
 - **Notebook**: creating a note, appending text, replacing a heading section or an explicitly shared selection, updating properties and suggesting publication as lore. Current Notebook read/edit permissions and temporary grants still apply. Publishing needs the separate lore permission.
 
 Press **Review** on a card to see what is there **Now** next to the **Proposed text**. You can edit the proposed text before pressing **Save change**. **Not now** closes the review without saving, and the card stays so you can come back to it. **Dismiss** marks a card you do not want; **Undo** brings it back.
 
-Message-change cards and **Try again** need the chat where the reply was written. Opening another chat for the same character cannot redirect a suggested message edit there.
+Message-change cards and **Try again** need the chat where the reply was written. Opening another chat for the same character cannot redirect a suggested message edit there. General has no message or lorebook edits. It can change only its selected card when that card was shared for the suggestion and is still selected and shared at review. Changing General's card or persona prevents redoing an old reply against the new context; send a new message instead.
 
 Notebook cards show the exact, read-only change and also appear in **Notebooks → Assistant changes** when the reply finishes. Save or decline from either place; Scratchpad reflects that decision when reopened. They always need review, even when Notebook's requested-edit saving is enabled. **Dismiss** permanently declines an already registered Notebook proposal. Stale note revisions, changed permissions and expired grants prevent saving. To adjust a Notebook proposal, ask for a new suggestion rather than editing the review.
 
@@ -119,14 +124,14 @@ Conversation mode does not offer message changes. Lorebook and character changes
 
 ## Sessions
 
-The **Sessions** tab lists the sessions for the current character, group or note. Each list allows up to 40 new and existing sessions, and each session holds up to 400 messages. If combining your older chat-specific lists brings the total above 40, every session stays available and editable; delete enough sessions before creating another.
+The **Sessions** tab lists General sessions or the sessions for the current character, group or note. General is one account-wide list and never merges into a chat's list. Each list allows up to 40 new and existing sessions, and each session holds up to 400 messages. If combining your older chat-specific lists brings the total above 40, every session stays available and editable; delete enough sessions before creating another.
 
 - **New session** starts a fresh conversation. **Temporary session** starts one that disappears when you open or start another session.
 - **Open** switches to a session, **Rename** changes its name, **Clear messages** empties it but keeps its context settings, and **Delete session** removes it.
 - **Search sessions** filters by session name and message text.
 - **Export current** downloads the open session as a file. **Import** adds a session from one of those files to the current character, group or note.
 - **Save session to note** saves the completed conversation as a quotation in a new or existing note. It leaves out reasoning, unfinished replies and change-card instructions.
-- **Delete old sessions automatically** is one setting shared across your account, off by default. Set **Sessions to keep per character, group or note** (1 to 40, 10 by default) to keep the most recently used sessions in each list. Changing it here changes it everywhere. Cleanup runs in the current list when you save the setting, and in other lists when their Scratchpad is next saved, including when a reply finishes. Older sessions are deleted for good. The open session, the one that just got a reply and any session with a reply in progress are never deleted. Enabling cleanup or lowering the limit while it is on asks you to confirm the account-wide change.
+- **Delete old sessions automatically** is one setting shared across your account, off by default. Set **Sessions to keep per list** (1 to 40, 10 by default) to keep the most recently used sessions in each list, including General. Changing it here changes it everywhere. Cleanup runs in the current list when you save the setting, and in other lists when their Scratchpad is next saved, including when a reply finishes. Older sessions are deleted for good. The open session, the one that just got a reply and any session with a reply in progress are never deleted. Enabling cleanup or lowering the limit while it is on asks you to confirm the account-wide change.
 
 Earlier cleanup choices are switched off when moving to character-shared sessions. Enable cleanup again in Sessions to confirm the new scope before any combined sessions are deleted.
 

@@ -1,3 +1,4 @@
+/* global globalThis */
 import { beforeEach, describe, expect, jest, test } from '@jest/globals';
 
 const characters = [
@@ -9,7 +10,11 @@ const conversationState = { conversationWorkspaceOpen: true };
 const branch = { id: 'main', messages: [] };
 const conversationSettings = { lorebook_override: 'Conversation lore', connection_profile: 'conversation-profile' };
 const power_user = { persona_description: 'Roleplay persona', persona_description_lorebook: 'Persona lore' };
+const persona = { id: 'User.png' };
+const home = { visible: false };
+globalThis.document = { body: { classList: { contains: () => home.visible } } };
 const chat = [];
+const chatMetadata = { world_info: 'Chat lore' };
 const books = new Map();
 let avatar = 'Nova.png';
 let groupId = '';
@@ -24,8 +29,9 @@ const unshallowCharacter = jest.fn(async index => {
 const originalCharacters = structuredClone(characters);
 
 jest.unstable_mockModule('../public/script.js', () => ({
-    characters, chat, chat_metadata: { world_info: 'Chat lore' }, this_chid: 0, name1: 'Roleplay user', getCurrentChatId: () => chatId,
-    substituteParams: (text, options = {}) => text.replaceAll('{{char}}', options.name2Override || 'Roleplay').replaceAll('{{user}}', options.name1Override || 'Roleplay user'),
+    characters, chat, chat_metadata: chatMetadata, this_chid: 0, name1: 'Roleplay user', getCurrentChatId: () => chatId,
+    substituteParams: (text, options = {}) => text.replaceAll('{{char}}', options.name2Override || 'Roleplay').replaceAll('{{user}}', options.name1Override || 'Roleplay user')
+        .replaceAll('{{lastMessage}}', chat.at(-1)?.mes || ''),
     unshallowCharacter,
 }));
 jest.unstable_mockModule('../public/scripts/group-chats.js', () => ({ getGroupMembers: () => characters.slice(1), groups: [], selected_group: null }));
@@ -41,6 +47,8 @@ jest.unstable_mockModule('../public/scripts/neconyan-conversation/personas.js', 
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/settings-store.js', () => ({ getSettings: () => conversationSettings }));
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/state.js', () => ({ conversationState }));
 jest.unstable_mockModule('../public/scripts/power-user.js', () => ({ power_user }));
+jest.unstable_mockModule('../public/scripts/personas.js', () => ({ get user_avatar() { return persona.id; } }));
+jest.unstable_mockModule('../public/scripts/i18n.js', () => ({ t: (parts, ...values) => parts.reduce((text, part, index) => text + part + (values[index] ?? ''), '') }));
 jest.unstable_mockModule('../public/scripts/roleplay-save-chain.js', () => ({ getRoleplaySourceId }));
 jest.unstable_mockModule('../public/scripts/tokenizers.js', () => ({ getTokenCountAsync: async () => 1 }));
 jest.unstable_mockModule('../public/scripts/world-info.js', () => ({
@@ -59,13 +67,21 @@ const presetSnapshot = {
 const readCurrentPreset = jest.fn(() => presetSnapshot);
 jest.unstable_mockModule('../public/scripts/scratchpad/preset.js', () => ({ readCurrentPreset, currentPresetName: () => presetSnapshot.name }));
 
-const { buildContext, collectLore, currentSource, formatPreset, isCurrentSource, wireSource, sourceMessages, sourceCharacters, setNotebookSource } = await import('../public/scripts/scratchpad/context.js');
+const { buildContext, collectLore, currentSource, formatPreset, isCurrentSource, wireSource, sameChat, sourceMessages, sourceCharacters, setNotebookSource } = await import('../public/scripts/scratchpad/context.js');
 const settings = { depth: 15, include: { lore: true, card: true, persona: true } };
 
 beforeEach(() => {
     setNotebookSource(null);
     conversationState.conversationWorkspaceOpen = true;
     avatar = 'Nova.png';
+    Object.defineProperty(conversationState, 'conversationSelectedAvatar', { configurable: true, get: () => avatar });
+    home.visible = false;
+    power_user.persona_description = 'Roleplay persona';
+    delete power_user.persona_descriptions;
+    delete power_user.default_persona;
+    delete power_user.personas;
+    delete chatMetadata.persona;
+    branch.id = 'main';
     groupId = '';
     chatId = 'chat';
     getRoleplaySourceId.mockReset().mockReturnValue(null);
@@ -271,13 +287,147 @@ describe('Scratchpad source context', () => {
     test('refuses a context whose source changed while lore was loading', async () => {
         const source = currentSource();
         loadWorldInfo.mockImplementationOnce(async name => { avatar = 'Kit.png'; return books.get(name); });
-        await expect(buildContext({ source, settings })).rejects.toThrow('Open the chat');
+        await expect(buildContext({ source, settings })).rejects.toThrow('context changed');
     });
 
     test('bounds non-Latin context by the server byte limit', async () => {
         branch.messages = Array.from({ length: 200 }, (_, index) => ({ id: String(index), role: 'user', mes: '猫'.repeat(16000) }));
         const result = await buildContext({ source: currentSource(), settings: { depth: 200 } });
         expect(Buffer.byteLength(result.text, 'utf8')).toBeLessThanOrEqual(1536 * 1024);
+    });
+});
+
+describe('General Scratchpad context', () => {
+    test.each(['chat', 'character'])('Home replaces a hidden %s-locked persona with the account default, including when sharing is off', async lock => {
+        home.visible = true;
+        power_user.default_persona = 'Default.png';
+        power_user.personas = { 'User.png': 'Roleplay user', 'Default.png': 'Account default' };
+        power_user.persona_descriptions = { 'User.png': { description: 'HIDDEN-LOCKED-PERSONA', connections: lock === 'character' ? [{ type: 'character', id: 'Roleplay.png' }] : [] },
+            'Default.png': { description: 'ACCOUNT-DEFAULT-PERSONA' } };
+        power_user.persona_description = 'HIDDEN-LOCKED-PERSONA';
+        if (lock === 'chat') chatMetadata.persona = 'User.png';
+        const source = currentSource();
+        expect(source.personaId).toBe('Default.png');
+        const shared = await buildContext({ source, settings });
+        expect(shared.text).toContain('ACCOUNT-DEFAULT-PERSONA');
+        expect(shared.names.user).toBe('Account default');
+        expect(shared.text).not.toMatch(/HIDDEN-LOCKED|Roleplay user/);
+        const unshared = await buildContext({ source, settings: { ...settings, include: { ...settings.include, persona: false } } });
+        expect(unshared.text).not.toMatch(/HIDDEN-LOCKED|Roleplay user|ACCOUNT-DEFAULT-PERSONA/);
+    });
+
+    test.each(['chat', 'character'])('Home omits a hidden %s-locked persona when no default exists, without changing no-chat or chat-list behaviour', async lock => {
+        home.visible = true;
+        conversationState.conversationWorkspaceOpen = false;
+        power_user.persona_descriptions = { 'User.png': { description: 'HIDDEN-LOCKED-PERSONA', connections: lock === 'character' ? [{ type: 'character', id: 'Roleplay.png' }] : [] } };
+        power_user.persona_description = 'HIDDEN-LOCKED-PERSONA';
+        if (lock === 'chat') chatMetadata.persona = 'User.png';
+        const source = currentSource();
+        expect(source.personaId).toBe('');
+        const hidden = await buildContext({ source, settings });
+        expect(hidden.names.user).toBe('User');
+        expect(hidden.text).not.toMatch(/HIDDEN-LOCKED|Roleplay user/);
+        chatId = '';
+        const empty = await buildContext({ source: currentSource(), settings });
+        expect(currentSource().personaId).toBe('User.png');
+        expect(empty.names.user).toBe('Roleplay user');
+        expect(empty.text).toContain('HIDDEN-LOCKED-PERSONA');
+        home.visible = false;
+        chatId = 'chat';
+        const inChat = await buildContext({ source: currentSource(), settings });
+        expect(inChat.names.user).toBe('Roleplay user');
+        expect(inChat.text).toContain('HIDDEN-LOCKED-PERSONA');
+    });
+    test.each(['ACCOUNT-PERSONA', undefined])('General uses only the base persona, description=%s, without hidden chat appendices', async description => {
+        home.visible = true;
+        power_user.persona_descriptions = { 'User.png': { description } };
+        power_user.persona_description = 'ACCOUNT-PERSONA\nHIDDEN-METADATA-APPENDIX';
+        const result = await buildContext({ source: currentSource(), settings });
+        expect(result.text.includes('ACCOUNT-PERSONA')).toBe(Boolean(description));
+        expect(result.text).not.toContain('HIDDEN-METADATA-APPENDIX');
+    });
+    test('General persona substitution cannot read hidden messages through a macro', async () => {
+        home.visible = true;
+        chat.push({ mes: 'HIDDEN-MACRO-STORY' });
+        power_user.persona_description = '{{user}} remembers {{lastMessage}}.';
+        const result = await buildContext({ source: currentSource(), settings });
+        expect(result.text).toContain('Roleplay user remembers {{lastMessage}}.');
+        expect(result.text).not.toContain('HIDDEN-MACRO-STORY');
+    });
+    test('Home excludes the loaded hidden story, card, lore and preset, while sharing the chosen persona', async () => {
+        home.visible = true;
+        chat.push({ name: 'Roleplay', mes: 'HIDDEN-STORY', swipes: ['HIDDEN-SWIPE'] });
+        const source = currentSource();
+        expect(source).toMatchObject({ kind: 'general', key: 'general', contextMode: 'roleplay' });
+        expect(source.avatar).toBeUndefined();
+        const result = await buildContext({ source, settings: { ...settings, picked: ['0'], include: { ...settings.include, authorsNote: true, preset: true, hidden: true } } });
+        expect(result).toMatchObject({ messageCount: 0, swipeCount: 0, totalMessages: 0, picked: false, preset: null,
+            lore: { books: [], entries: [] }, capabilities: { chat: false, character: false, lore: false, members: [] } });
+        expect(result.text).toContain('General Scratchpad: no story chat is open');
+        expect(result.text).toContain('Roleplay persona');
+        expect(result.text).not.toMatch(/HIDDEN-|## Character:|Chat lore|Current preset:|Latest messages|Picked messages/);
+        expect(loadWorldInfo).not.toHaveBeenCalled();
+        expect(sourceMessages(source)).toEqual([]);
+    });
+
+    test('plain no-chat and unselected Conversation never borrow the underlying Roleplay card', async () => {
+        avatar = '';
+        expect(currentSource().avatar).toBeUndefined();
+        const result = await buildContext({ source: currentSource(), settings });
+        expect(result.text).not.toContain('## Character: Roleplay');
+        conversationState.conversationWorkspaceOpen = false;
+        chatId = '';
+        characters[0] = null;
+        expect(currentSource()).toMatchObject({ kind: 'general', key: 'general' });
+        expect(sourceCharacters(currentSource())).toEqual([]);
+    });
+
+    test('an unavailable Conversation selection without a branch cannot fall back to hidden card persona additions', async () => {
+        avatar = 'Deleted.png';
+        branch.id = '';
+        const source = currentSource();
+        expect(source).toMatchObject({ kind: 'general', contextMode: 'roleplay' });
+        expect(source.avatar).toBeUndefined();
+        const result = await buildContext({ source, settings });
+        expect(result.text).not.toMatch(/Conversation persona|## Character: Roleplay/);
+    });
+
+    test.each([true, false])('selected no-chat Roleplay card obeys sharing=%s without messages or lore', async card => {
+        conversationState.conversationWorkspaceOpen = false;
+        chatId = '';
+        const source = currentSource();
+        expect(source.avatar).toBe('Roleplay.png');
+        characters[0].data.description = 'Selected reference.';
+        const result = await buildContext({ source, settings: { ...settings, include: { ...settings.include, card } } });
+        expect(result.text.includes('Selected reference.')).toBe(card);
+        expect(result.capabilities.character).toBe(card);
+        expect(result.messageCount).toBe(0);
+        expect(loadWorldInfo).not.toHaveBeenCalled();
+    });
+
+    test.each([true, false])('Conversation selection without a branch shares only its own persona when enabled=%s', async enabled => {
+        branch.id = '';
+        const source = currentSource();
+        expect(source).toMatchObject({ kind: 'general', avatar: 'Nova.png', contextMode: 'conversation', personaId: 'persona.png' });
+        const result = await buildContext({ source, settings: { ...settings, include: { ...settings.include, persona: enabled } } });
+        expect(result.names.user).toBe('Conversation user');
+        expect(result.text.includes('Conversation user is a Conversation persona with Nova.')).toBe(enabled);
+        expect(result.text).not.toMatch(/Roleplay persona|Roleplay lore|A lighthouse/);
+    });
+
+    test('wire identity preserves General context, and a changed selection invalidates asynchronous card loading', async () => {
+        branch.id = '';
+        const source = currentSource();
+        expect(wireSource(source)).toEqual(source);
+        expect(sameChat(source, { ...source, label: 'Different label' })).toBe(true);
+        for (const changed of [{ avatar: 'Kit.png' }, { contextMode: 'roleplay' }, { personaId: 'Other.png' }]) {
+            expect(sameChat(source, { ...source, ...changed })).toBe(false);
+        }
+        characters[1].shallow = true;
+        unshallowCharacter.mockImplementationOnce(async () => { avatar = 'Kit.png'; });
+        await expect(buildContext({ source, settings })).rejects.toThrow('context changed');
+        expect(isCurrentSource(source)).toBe(false);
+        expect(currentSource().key).toBe('general');
     });
 });
 

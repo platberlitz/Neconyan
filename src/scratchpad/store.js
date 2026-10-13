@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 
 import { AUTHORING_FILE_LIMIT, readAuthoringFileLocked, writeAuthoringFileLocked, deleteAuthoringFileLocked } from '../authoring-store.js';
-import { roleplayAccountBase, roleplayAccountStamp, roleplayLease, withRoleplayAccount } from '../roleplay-store.js';
+import { roleplayAccountBase, roleplayAccountStamp, roleplayLease, validRoleplayAvatar, withRoleplayAccount } from '../roleplay-store.js';
 import { MAX_GENERATION_TEXT_BYTES } from '../generation/stream-limits.js';
 import { BUILTIN_ASSISTANT_IDS, isAssistantId, orderedAssistants, normaliseAssistantSnapshots } from './assistant-profiles.js';
 import { readSharedBucketLocked, writeSharedBucketLocked } from './shared-sessions.js';
@@ -11,7 +11,7 @@ import { readSharedBucketLocked, writeSharedBucketLocked } from './shared-sessio
 export const SCRATCHPAD_SCHEMA = 1;
 export const ASSISTANT_IDS = BUILTIN_ASSISTANT_IDS;
 export const ASSISTANT_GENDERS = Object.freeze(['male', 'female', 'neutral']);
-export const SOURCE_KINDS = Object.freeze(['roleplay', 'conversation', 'notebook']);
+export const SOURCE_KINDS = Object.freeze(['roleplay', 'conversation', 'notebook', 'general']);
 export const MAX_SESSIONS = 40;
 export const MAX_MESSAGES = 400;
 export const MAX_MESSAGE_BYTES = MAX_GENERATION_TEXT_BYTES;
@@ -70,12 +70,31 @@ export function requireId(value, label = 'item') {
     return value;
 }
 
-/** The chat a Scratchpad belongs to. The key comes from the page; it is hashed before it reaches a path. */
+/** The session list and request context. Only kind/key determine the hashed file path. */
 export function normaliseSource(input, { allowInternalKeys = false } = {}) {
-    if (!isPlainObject(input)) throw fail('SCRATCHPAD_SOURCE_INVALID', 'Open a chat before using Scratchpad.');
+    if (!isPlainObject(input)) throw fail('SCRATCHPAD_SOURCE_INVALID', 'Choose a Scratchpad context before continuing.');
     const kind = SOURCE_KINDS.includes(input.kind) ? input.kind : null;
     const key = typeof input.key === 'string' ? input.key : '';
-    if (!kind || !key || key.length > 1024) throw fail('SCRATCHPAD_SOURCE_INVALID', 'Open a chat before using Scratchpad.');
+    if (!kind || !key || key.length > 1024) throw fail('SCRATCHPAD_SOURCE_INVALID', 'Choose a Scratchpad context before continuing.');
+    if (kind === 'general') {
+        const invalid = () => fail('SCRATCHPAD_SOURCE_INVALID', 'This General Scratchpad context is invalid. Reopen Scratchpad.');
+        if (key !== 'general' || input.scope !== undefined || input.legacyKey !== undefined) throw invalid();
+        const source = { kind, key, label: 'General Scratchpad' };
+        if (input.avatar !== undefined) {
+            if (!validRoleplayAvatar(input.avatar) || /[\r\n]/.test(input.avatar)) throw invalid();
+            source.avatar = input.avatar;
+        }
+        if (input.contextMode !== undefined) {
+            if (!['roleplay', 'conversation'].includes(input.contextMode)) throw invalid();
+            source.contextMode = input.contextMode;
+        }
+        if (input.personaId !== undefined) {
+            if (typeof input.personaId !== 'string' || input.personaId.length > 256 || /[\0\r\n/\\]/.test(input.personaId)
+                || ['.', '..'].includes(input.personaId)) throw invalid();
+            source.personaId = input.personaId;
+        }
+        return source;
+    }
     if (!allowInternalKeys && kind === 'roleplay' && (key.startsWith('shared:') || key.startsWith('selection:'))) {
         throw fail('SCRATCHPAD_SOURCE_INVALID', 'This Scratchpad chat identity is invalid. Reload the chat.');
     }
@@ -276,6 +295,7 @@ function normaliseMessage(input, { allowInternalKeys = false } = {}) {
     }
     if (input.edited === true) message.edited = true;
     if (input.contextSource) message.contextSource = normaliseSource(input.contextSource, { allowInternalKeys });
+    if (message.contextSource?.kind === 'general' && typeof input.sharedAvatar === 'string' && input.sharedAvatar === message.contextSource.avatar) message.sharedAvatar = input.sharedAvatar;
     return message;
 }
 
@@ -397,7 +417,7 @@ function readStoredBucketLocked(lease, source) {
         throw fail('SCRATCHPAD_DAMAGED', 'This Scratchpad file could not be read.', 500);
     }
     if (parsed?.source?.kind !== source.kind || parsed?.source?.key !== source.key) {
-        throw fail('SCRATCHPAD_DAMAGED', 'This Scratchpad file belongs to another chat.', 500);
+        throw fail('SCRATCHPAD_DAMAGED', 'This Scratchpad file belongs to another session list.', 500);
     }
     return parsed;
 }
@@ -523,8 +543,8 @@ export function writeChatBucketLocked(lease, bucket, { cleanupApplied = false } 
     } catch (error) {
         if (error?.code !== 'AUTHORING_FILE_TOO_LARGE') throw error;
         throw fail('SCRATCHPAD_STORAGE_FULL', cleanup.enabled
-            ? 'Scratchpad is full for this chat. Delete long replies from the open session, then try again.'
-            : 'Scratchpad is full for this chat. Delete old sessions or long replies, or turn on automatic cleanup in Sessions, then try again.', 413);
+            ? 'Scratchpad is full for this session list. Delete long replies from the open session, then try again.'
+            : 'Scratchpad is full for this session list. Delete old sessions or long replies, or turn on automatic cleanup in Sessions, then try again.', 413);
     }
 }
 
@@ -607,8 +627,9 @@ export function createSession(bucket, input = {}) {
         messages: [],
     };
     if (Array.isArray(input.messages)) {
+        const contextSource = Object.fromEntries(Object.entries(normaliseSource(bucket.source)).filter(([key]) => key !== 'scope'));
         session.messages = input.messages.map(item => normaliseMessage({ ...item, id: undefined, state: 'done', jobId: undefined, proposals: undefined, notebookProposals: undefined,
-            contextSource: { kind: bucket.source.kind, key: bucket.source.key, label: bucket.source.label } }))
+            sharedAvatar: undefined, contextSource }))
             .filter(Boolean).slice(-MAX_MESSAGES);
     }
     bucket.sessions.unshift(session);

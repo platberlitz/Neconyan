@@ -16,6 +16,7 @@ import {
 } from '../../script.js';
 import { hideChatMessageRange } from '../chats.js';
 import { event_types, eventSource } from '../events.js';
+import { t } from '../i18n.js';
 import { saveCharacterDraft } from '../neconyan-character-create.js';
 import { normaliseCharacterDraft } from '../neconyan-character-draft.js';
 import { user_avatar } from '../personas.js';
@@ -139,9 +140,11 @@ function readCharacterField(character, field) {
 
 function findCharacter(source, name) {
     const wanted = name.trim().toLowerCase();
-    const match = sourceCharacters(source).find(item => String(item?.name ?? '').trim().toLowerCase() === wanted);
-    if (!match) fail(`Scratchpad can only change characters in this chat, and '${name}' is not one of them.`);
-    return match;
+    const matches = sourceCharacters(source).filter(item => String(item?.name ?? '').trim().toLowerCase() === wanted);
+    if (matches.length > 1) fail(t`More than one shared character is called '${name}'. Choose an unambiguous target.`);
+    if (!matches.length) fail(source.kind === 'general' ? t`Scratchpad can only change the selected, shared character, and '${name}' is not that character.`
+        : `Scratchpad can only change characters in this chat, and '${name}' is not one of them.`);
+    return matches[0];
 }
 
 async function characterPlan(change, source) {
@@ -170,6 +173,7 @@ async function characterPlan(change, source) {
             : change.field === 'alternate_greetings' ? 'Separate greetings with a line containing only ---.' : change.field === 'tags' ? 'Separate tags with commas.' : '',
         async commit(edited) {
             requireSource(source);
+            if (findCharacter(source, change.character).avatar !== avatar) conflict();
             const proposed = parseField(change.field, edited);
             if (append && !proposed.length) fail('This addition has no new greetings.');
             const value = append ? [...current, ...proposed] : proposed;
@@ -321,8 +325,8 @@ function chatPlan(change, source) {
  * Reads the live value a change would replace and returns everything the
  * review needs. Nothing is written until commit() is called.
  */
-export async function prepareChange(change, source) {
-    if (!isCurrentSource(source)) fail('Open the chat this Scratchpad belongs to before applying changes.');
+export async function prepareChange(change, source, { sharedAvatar = '' } = {}) {
+    if (!isCurrentSource(source)) fail(t`Return to this Scratchpad context before applying changes.`);
     change = normaliseChange(change);
     if (change.type === 'character' && change.action === 'create') {
         const draft = normaliseCharacterDraft(change);
@@ -350,7 +354,13 @@ export async function prepareChange(change, source) {
             },
         };
     }
-    if (change.type === 'lorebook') return lorebookPlan(change, source);
-    if (change.type === 'character') return characterPlan(change, source);
+    if (change.type === 'lorebook') {
+        if (source.kind === 'general') fail(t`General Scratchpad does not share lorebooks, so lorebook changes are unavailable.`);
+        return lorebookPlan(change, source);
+    }
+    if (change.type === 'character') {
+        if (source.kind === 'general' && (!source.avatar || sharedAvatar !== source.avatar)) fail(t`Share the selected character card before requesting a change.`);
+        return characterPlan(change, source);
+    }
     return chatPlan(change, source);
 }
