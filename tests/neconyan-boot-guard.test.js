@@ -168,7 +168,7 @@ function createFakeXMLHttpRequest() {
     };
 }
 
-function createBootGuardHarness({ userAgent = IOS_WEBKIT_USER_AGENT, platform = 'iPhone', maxTouchPoints = 5 } = {}) {
+function createBootGuardHarness({ userAgent = IOS_WEBKIT_USER_AGENT, platform = 'iPhone', maxTouchPoints = 5, diagnostics } = {}) {
     const document = new FakeDocument();
     const timers = [];
     const listeners = new Map();
@@ -186,6 +186,9 @@ function createBootGuardHarness({ userAgent = IOS_WEBKIT_USER_AGENT, platform = 
         },
         XMLHttpRequest: createFakeXMLHttpRequest(),
     };
+    if (diagnostics) {
+        window.NeconyanCrashDiagnostics = diagnostics;
+    }
 
     vm.runInNewContext(bootGuardSource, {
         console,
@@ -436,5 +439,42 @@ describe('Neconyan boot guard', () => {
         timers.slice(initialTimerCount).forEach(timer => timer.callback());
 
         expect(preloader.querySelector('pre').textContent).toContain('extensionId: quick-reply');
+    });
+
+    test('offers an outlined Read report only when the crash reader is available', () => {
+        const openReports = jest.fn();
+        const diagnostics = { redact: value => value, capture: () => ({ id: 'saved-1' }), openReports };
+        const { document, window } = createBootGuardHarness({ diagnostics });
+        addPreloader(document);
+        document.appendChild(new FakeElement('div', { id: 'neconyan-crash-notice' }));
+
+        window.NeconyanBootGuard.showFailure('boom');
+
+        // A browser recovery notice would otherwise sit above this panel on a phone (z-index 110000 vs 99999).
+        expect(document.getElementById('neconyan-crash-notice')).toBeNull();
+        const reportButton = document.getElementById('preloader')
+            .querySelectorAll('button').find(button => button.textContent === 'Read report');
+        expect(reportButton).toBeDefined();
+        // Outlined and accent-aware like 'Continue anyway', not a second filled primary button.
+        expect(reportButton.className).toBe('menu_button');
+        expect(reportButton.className).not.toContain('menu_button_primary');
+        expect(reportButton.style.cssText).toContain('background:transparent');
+        expect(reportButton.style.cssText).toContain('font-weight:600');
+        expect(reportButton.style.cssText).toContain('font-size:15px');
+        expect(reportButton.style.cssText).toContain('var(--neco-ginger, currentColor)');
+        expect(reportButton.style.cssText).not.toMatch(/#[0-9a-fA-F]{3,8}/);
+        reportButton.listeners.get('click')();
+        expect(openReports).toHaveBeenCalledWith('saved-1');
+    });
+
+    test('hides the Read report button when the crash reader is unavailable', () => {
+        const { document, window } = createBootGuardHarness();
+        addPreloader(document);
+
+        window.NeconyanBootGuard.showFailure('boom');
+
+        const labels = document.getElementById('preloader').querySelectorAll('button').map(button => button.textContent);
+        expect(labels).not.toContain('Read report');
+        expect(labels).toContain('Continue anyway');
     });
 });
