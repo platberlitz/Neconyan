@@ -630,7 +630,7 @@ async function processManualAgentRunQueue(queue) {
             notifyAgentGenerationStateChanged();
 
             try {
-                const result = await executeManualAgentRun(queuedRun.agentId, queuedRun.target, queuedRun.cancelRevision);
+                const result = await queuedRun.operation();
                 queuedRun.resolve(result);
             } catch (error) {
                 queuedRun.reject(error);
@@ -677,15 +677,27 @@ function enqueueManualAgentRun(agentId, target) {
     target.composer = submitted?.composer ?? (target.kind === 'composer' ? document.querySelector('#send_textarea') : null);
     target.composerText = submitted?.composerText ?? target.composer?.value;
     target.isCurrent = typeof submitted?.isCurrent === 'function' ? submitted.isCurrent : () => true;
-    const wasAlreadyActive = isAgentGenerationActive();
+    target.acceptWrite = submitted?.acceptWrite;
+    target.queueNotice = submitted?.queueNotice;
+    if (target.kind === 'companion' && typeof submitted?.isCurrent !== 'function' && companionRuntime?.captureCompanionResultTarget) {
+        let isCurrent = companionRuntime.captureCompanionResultTarget(target.messageIndex, target.companionAgentId);
+        target.isCurrent = () => isCurrent();
+        target.acceptWrite = () => { isCurrent = companionRuntime.captureCompanionResultTarget(target.messageIndex, target.companionAgentId); };
+    }
     const queue = manualAgentRunQueues[isCompanionAgent(getAgentById(agentId)) ? 1 : 0];
+    const cancelRevision = agentGenerationCancelRevision;
+    return enqueueManualOperation(queue, target, () => executeManualAgentRun(agentId, target, cancelRevision), cancelRevision);
+}
+
+function enqueueManualOperation(queue, target, operation, cancelRevision) {
+    if (agentGenerationCancelRevision !== cancelRevision) return Promise.resolve(null);
+    const wasAlreadyActive = isAgentGenerationActive();
     queue.cancelRequested = false;
     if (!isGenerationInProgress) {
         generationStopRequested = false;
     }
 
-    const executionMode = getGlobalSettings().appendAgentsExecutionMode === 'sequential' ? 'sequential' : 'parallel';
-    const cancelRevision = agentGenerationCancelRevision;
+    const executionMode = queue.companion && getGlobalSettings().appendAgentsExecutionMode !== 'sequential' ? 'parallel' : 'sequential';
 
     if (executionMode === 'parallel') {
         if (wasAlreadyActive) {
@@ -697,7 +709,7 @@ function enqueueManualAgentRun(agentId, target) {
 
         return (async () => {
             try {
-                return await executeManualAgentRun(agentId, target, cancelRevision);
+                return await operation();
             } finally {
                 parallelManualRunCount = Math.max(0, parallelManualRunCount - 1);
                 notifyAgentGenerationStateChanged();
@@ -708,20 +720,47 @@ function enqueueManualAgentRun(agentId, target) {
     return new Promise((resolve, reject) => {
         const mustWait = queue.processing || !isPromptTransformIdle(queue.companion);
         queue.runs.push({
-            agentId,
             target,
-            cancelRevision,
+            operation,
             resolve,
             reject,
         });
 
-        if (mustWait) {
+        if (mustWait && !target.queueNotice?.shown) {
             toastr.info('Queued agent run.');
+            if (target.queueNotice) target.queueNotice.shown = true;
         }
 
         notifyAgentGenerationStateChanged();
         void processManualAgentRunQueue(queue);
     });
+}
+
+// Only an accepted manual write can advance a waiting target. Check every guard
+// before writing, so a user edit or replaced target is never made current again.
+function applyManualTargetWrite(target, write) {
+    const pendingTargets = manualAgentRunQueues[0].runs.map(run => run.target).filter(pending => {
+        try {
+            if (!pending.isCurrent()) return false;
+        } catch {
+            return false;
+        }
+        if (target.kind === 'composer') {
+            return pending.kind === 'composer' && pending.composer === target.composer
+                && pending.composerText === target.composer.value
+                && pending.state.chatId === getCurrentSnapshotChatId() && pending.state.chatLoadRevision === chatLoadRevision;
+        }
+        if (pending.message !== target.message || !isMessageTargetCurrent(pending.message, pending.state, pending.messageIndex)) return false;
+        return target.kind === 'message' || (pending.kind === 'companion' && pending.companionAgentId === target.companionAgentId);
+    });
+    const result = write();
+    if (result === false) return result;
+    for (const pending of pendingTargets) {
+        if (pending.kind === 'composer') pending.composerText = pending.composer.value;
+        else pending.state.mes = pending.message.mes;
+        pending.acceptWrite?.();
+    }
+    return result;
 }
 
 function isPathfinderToolAgent(agent) {
@@ -4109,14 +4148,12 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
     }
 }
 
-async function runPromptTransformAppendBatch(agents, message, generationType, messageTextOverride = null, messageIndex = null, { cancelRevision = null, runtimeAgents = [], recentChatEndIndex = null } = {}) {
+async function runPromptTransformAppendBatch(agents, message, generationType, messageTextOverride = null, messageIndex = null, { cancelRevision = null, runtimeAgents = [], recentChatEndIndex = null, executionMode = getGlobalSettings().appendAgentsExecutionMode } = {}) {
     const targetState = captureMessageTargetState(message);
     const currentMessageText = unwrapAssistantResponseWrapper(
         messageTextOverride !== null ? messageTextOverride : message?.mes,
     );
     const isCancelled = () => (cancelRevision !== null && agentGenerationCancelRevision !== cancelRevision) || !runtimeAgents.every(isAgentRuntimeAllowed);
-    const globalSettings = getGlobalSettings();
-    const executionMode = globalSettings.appendAgentsExecutionMode === 'sequential' ? 'sequential' : 'parallel';
 
     let results = [];
 
@@ -4208,7 +4245,7 @@ async function runPromptTransformAppendBatch(agents, message, generationType, me
  * cleaned of echoed text and duplicates, then joined around the finished body.
  * With Run together every agent request starts together.
  */
-async function runPromptTransformPasses(agents, message, generationType, text, messageIndex = null, { cancelRevision = null, runtimeAgents = [], stopOnFailure = false, isCurrent = () => true, recentChatEndIndex = null } = {}) {
+async function runPromptTransformPasses(agents, message, generationType, text, messageIndex = null, { cancelRevision = null, runtimeAgents = [], stopOnFailure = false, isCurrent = () => true, recentChatEndIndex = null, executionMode = getGlobalSettings().appendAgentsExecutionMode } = {}) {
     const promptRuns = [];
     const outcome = { cancelled: false, staleTarget: false, failed: false };
     const initialText = unwrapAssistantResponseWrapper(text);
@@ -4227,7 +4264,7 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
     const { draft } = await runPromptTransformStages({
         agents,
         text: initialText,
-        parallel: getGlobalSettings().appendAgentsExecutionMode !== 'sequential',
+        parallel: executionMode !== 'sequential',
         isAppend: agent => getPromptTransformMode(agent) === 'append',
         isPrepend: shouldPrependPromptTransformOutput,
         isAgentAllowed: isAgentRuntimeAllowed,
@@ -4266,7 +4303,7 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
             return { text: result.nextMessageText };
         },
         runAppend: async (batchAgents, body) => {
-            const batch = await runPromptTransformAppendBatch(batchAgents, message, generationType, body, messageIndex, { cancelRevision, runtimeAgents, recentChatEndIndex });
+            const batch = await runPromptTransformAppendBatch(batchAgents, message, generationType, body, messageIndex, { cancelRevision, runtimeAgents, recentChatEndIndex, executionMode });
             promptRuns.push(...batch.results);
             if (batch.cancelled || isCancelled()) {
                 outcome.cancelled = true;
@@ -4544,6 +4581,10 @@ function onGenerationStopped(generationContext) {
 
     generationStopRequested = true;
     agentGenerationCancelRevision++;
+    for (const queue of manualAgentRunQueues) {
+        queue.cancelRequested = true;
+        clearManualAgentRunQueue(queue);
+    }
     invalidateToolApprovals();
     abortActiveAgentRequests();
     releaseToolAgentRegistrations();
@@ -5067,7 +5108,7 @@ async function onMessageEdited(messageIndex) {
     if (changed || historyLinked) scheduleMessageRefresh(messageIndex, message);
 }
 
-async function runPromptTransformAgentsForText(promptTransformAgents, initialText, generationType, { messageContext = {}, cancelRevision = null, stopOnFailure = false, runtimeAgents = [], recentChatEndIndex = null } = {}) {
+async function runPromptTransformAgentsForText(promptTransformAgents, initialText, generationType, { messageContext = {}, cancelRevision = null, stopOnFailure = false, runtimeAgents = [], recentChatEndIndex = null, executionMode = getGlobalSettings().appendAgentsExecutionMode } = {}) {
     const message = {
         mes: initialText,
         name: getUserMessageName(),
@@ -5096,6 +5137,7 @@ async function runPromptTransformAgentsForText(promptTransformAgents, initialTex
         runtimeAgents,
         stopOnFailure,
         recentChatEndIndex,
+        executionMode,
     });
     promptRuns.push(...result.promptRuns);
     if (result.cancelled || isCancelled()) {
@@ -6138,7 +6180,7 @@ export async function runSingleAgentPostPassesOnText(agent, text, generationType
     let promptRuns = [];
 
     if (String(agent?.prompt ?? '').trim()) {
-        const promptResult = await runPromptTransformAgentsForText([agent], currentText, generationType, { messageContext, runtimeAgents, cancelRevision, recentChatEndIndex });
+        const promptResult = await runPromptTransformAgentsForText([agent], currentText, generationType, { messageContext, runtimeAgents, cancelRevision, recentChatEndIndex, executionMode: 'sequential' });
         promptRuns = promptResult.promptRuns ?? [];
         currentText = promptResult.text;
         changed = changed || promptResult.changed;
@@ -6196,9 +6238,14 @@ async function executeManualComposerAgentRun(agent, cancelRevision, target) {
         return null;
     }
 
-    textarea.value = result.text;
+    applyManualTargetWrite(target, () => { textarea.value = result.text; });
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
     return result;
+}
+
+function warnManualAgentTargetChanged(agent) {
+    toastr.warning(`The text changed before "${agent.name}" started, so it was skipped.`);
+    return null;
 }
 
 async function executeManualAgentRun(agentId, target, cancelRevision = agentGenerationCancelRevision) {
@@ -6208,17 +6255,18 @@ async function executeManualAgentRun(agentId, target, cancelRevision = agentGene
         toastr.error('Agent not found.');
         return null;
     }
-    if (!isAgentRuntimeAllowed(agent) || agentGenerationCancelRevision !== cancelRevision || !target.isCurrent()) {
+    if (!isAgentRuntimeAllowed(agent) || agentGenerationCancelRevision !== cancelRevision) {
         return null;
     }
+    if (!target.isCurrent()) return warnManualAgentTargetChanged(agent);
 
     if (runTarget.kind === 'composer') {
         if (target.state.chatId !== getCurrentSnapshotChatId() || target.state.chatLoadRevision !== chatLoadRevision
-            || document.querySelector('#send_textarea') !== target.composer || target.composer?.value !== target.composerText) return null;
+            || document.querySelector('#send_textarea') !== target.composer || target.composer?.value !== target.composerText) return warnManualAgentTargetChanged(agent);
         return await executeManualComposerAgentRun(agent, cancelRevision, target);
     }
 
-    if (!isMessageTargetCurrent(target.message, target.state, runTarget.messageIndex, { text: false })) return null;
+    if (!isMessageTargetCurrent(target.message, target.state, runTarget.messageIndex, { text: false })) return warnManualAgentTargetChanged(agent);
 
     if (runTarget.kind === 'companion') {
         if (isCompanionAgent(agent)) {
@@ -6231,17 +6279,20 @@ async function executeManualAgentRun(agentId, target, cancelRevision = agentGene
             return null;
         }
 
-        return await companionRuntime.applyAgentPostPassesToCompanionResult(agent.id, runTarget.messageIndex, runTarget.companionAgentId, { cancelRevision });
+        return await companionRuntime.applyAgentPostPassesToCompanionResult(agent.id, runTarget.messageIndex, runTarget.companionAgentId, {
+            cancelRevision,
+            applyWrite: write => applyManualTargetWrite(target, write),
+        });
     }
 
     const messageIndex = runTarget.messageIndex;
     await commitOpenEditorForMessage(messageIndex);
 
     // A queued run whose Stop arrived while it waited must not send a request.
-    if (!isAgentRuntimeAllowed(agent) || agentGenerationCancelRevision !== cancelRevision
-        || !isMessageTargetCurrent(target.message, target.state, messageIndex, { text: false, revision: false })) {
+    if (!isAgentRuntimeAllowed(agent) || agentGenerationCancelRevision !== cancelRevision) {
         return null;
     }
+    if (!isMessageTargetCurrent(target.message, target.state, messageIndex, { text: false, revision: false })) return warnManualAgentTargetChanged(agent);
     const message = chat[messageIndex];
     if (!message || message.is_user || message.is_system) {
         return null;
@@ -6285,7 +6336,7 @@ async function executeManualAgentRun(agentId, target, cancelRevision = agentGene
     }
     if (result.changed) {
         // Companions share accepted agent rewrites, but still reject edits and swipe changes.
-        if (!setPostProcessingText(message, result.nextMessageText, postProcessingTarget)) return null;
+        if (!applyManualTargetWrite(target, () => setPostProcessingText(message, result.nextMessageText, postProcessingTarget))) return null;
         recordAppliedTransformation(message, beforeText, [result]);
         reconcileTrackerMetadata();
         if (!await syncPromptTransformMessageStateAsync(message, messageIndex)) return null;
@@ -6360,20 +6411,26 @@ function inspectTrackerRepairState(agent, text, characterOverride) {
 }
 
 export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = agentGenerationCancelRevision } = {}) {
-    resetChatBackupSequence();
     if (!areAgentsGloballyEnabled()) {
         toastr.warning('In-Chat Agents are disabled.');
-        return;
+        return null;
     }
 
     const message = chat[messageIndex];
     if (!message || message.is_user || message.is_system) {
-        return;
+        return null;
     }
-    const submittedTarget = captureMessageTargetState(message);
-    if (agentGenerationCancelRevision !== cancelRevision) return;
+    const target = { kind: 'message', messageIndex, message, state: captureMessageTargetState(message), isCurrent: () => true };
+    return await enqueueManualOperation(manualAgentRunQueues[0], target, () => executeTrackerFixOnMessage(target, cancelRevision), cancelRevision);
+}
+
+async function executeTrackerFixOnMessage(submittedTarget, cancelRevision) {
+    const { message, messageIndex } = submittedTarget;
+    if (!areAgentsGloballyEnabled() || agentGenerationCancelRevision !== cancelRevision
+        || !isMessageTargetCurrent(message, submittedTarget.state, messageIndex, { text: false })) return null;
+    resetChatBackupSequence();
     await commitOpenEditorForMessage(messageIndex);
-    if (!isMessageTargetCurrent(message, submittedTarget, messageIndex, { text: false, revision: false })) return;
+    if (!isMessageTargetCurrent(message, submittedTarget.state, messageIndex, { text: false, revision: false })) return null;
 
     const generationType = 'normal';
     const beforeText = message.mes;
@@ -6381,13 +6438,13 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     const fixCancelRevision = cancelRevision;
     const isFixCancelled = () => agentGenerationCancelRevision !== fixCancelRevision;
     const isFixTargetCurrent = () => !isFixCancelled() && isMessageTargetCurrent(message, target, messageIndex);
-    if (!isFixTargetCurrent()) return;
+    if (!isFixTargetCurrent()) return null;
     const enabledAgents = getEnabledAgents();
     const trackerAgents = enabledAgents.filter(agent => !isCompanionAgent(agent) && isTrackerFixAgent(agent));
 
     if (trackerAgents.length === 0) {
         toastr.info('No enabled tracker agents found.');
-        return;
+        return null;
     }
 
     const trackerExtractAgents = trackerAgents.filter(agent =>
@@ -6425,8 +6482,9 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     const promptTransformResult = await runPromptTransformPasses(trackerTransformAgents.map(markTrackerRepairRunAgent), message, generationType, currentPromptTransformText, messageIndex, {
         cancelRevision: fixCancelRevision,
         isCurrent: isFixTargetCurrent,
+        executionMode: 'sequential',
     });
-    if (!isFixTargetCurrent() || promptTransformResult.staleTarget) return;
+    if (!isFixTargetCurrent() || promptTransformResult.staleTarget) return null;
     promptRuns.push(...promptTransformResult.promptRuns);
     if (promptTransformResult.changed) {
         currentPromptTransformText = promptTransformResult.text;
@@ -6437,7 +6495,7 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     // Neconyan divergence: Fix Trackers repairs the raw tracker block and then
     // derives metadata from that validated text instead of discarding model output.
     for (const agent of trackerExtractAgents) {
-        if (!isFixTargetCurrent()) return;
+        if (!isFixTargetCurrent()) return null;
         if (!isAgentRuntimeAllowed(agent)) continue;
 
         const inspection = inspectTrackerRepairState(agent, currentPromptTransformText, message.name);
@@ -6478,7 +6536,7 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
                 applyToMessage: false,
                 cancelRevision: fixCancelRevision,
             });
-            if (!isFixTargetCurrent() || result.status === 'stale-target') return;
+            if (!isFixTargetCurrent() || result.status === 'stale-target') return null;
             const repaired = inspectTrackerRepairState(agent, result.outputText, message.name);
             if (!String(result.outputText ?? '').trim() || ['error', 'cancelled', 'truncated'].includes(result.status)
                 || repaired.status !== 'valid' || repaired.payloads.length < inspection.blocks.length) {
@@ -6505,7 +6563,7 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     }
 
     if (!isFixTargetCurrent()) {
-        return;
+        return null;
     }
 
     const utilityAgents = trackerAgents.filter(agent =>
@@ -6538,9 +6596,9 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     currentPromptTransformText = applyAgentRegexScriptsToText(trackerAgents, currentPromptTransformText, {
         characterOverride: message.name, includeDisplay: false,
     });
-    if (!isFixTargetCurrent()) return;
+    if (!isFixTargetCurrent()) return null;
     const textChanged = currentPromptTransformText !== message.mes;
-    message.mes = currentPromptTransformText;
+    if (!applyManualTargetWrite(submittedTarget, () => setPostProcessingText(message, currentPromptTransformText, getAgentPostProcessingTarget(message)))) return null;
     target.mes = currentPromptTransformText;
     const trackerMetadataUpdates = reconcileTrackerMetadata(trackerExtractAgents);
     if (trackerMetadataUpdates) chatStateChanged = true;
@@ -6556,10 +6614,10 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     if (textChanged) {
         chatStateChanged = true;
         messageDisplayChanged = true;
-        if (!await syncPromptTransformMessageStateAsync(message, messageIndex)) return;
+        if (!await syncPromptTransformMessageStateAsync(message, messageIndex)) return null;
     }
     if (!isFixTargetCurrent()) {
-        return;
+        return null;
     }
 
     if (chatStateChanged || regexSnapshotChanged) {
@@ -6592,4 +6650,5 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     } else {
         toastr.info('No tracker changes were needed.', 'Trackers checked');
     }
+    return null;
 }

@@ -2517,10 +2517,10 @@ export async function runTrackerCompanionsOnMessage(messageIndex, { cancelRevisi
  * @param {string} transformerAgentId Inline agent whose post passes should run
  * @param {number} messageIndex Message hosting the companion result
  * @param {string} companionAgentId Companion whose note is the target
- * @param {{ cancelRevision?: number }} [options]
+ * @param {{ cancelRevision?: number, applyWrite?: function }} [options]
  * @returns {Promise<{ text: string, changed: boolean } | null>}
  */
-export async function applyAgentPostPassesToCompanionResult(transformerAgentId, messageIndex, companionAgentId, { cancelRevision = getAgentGenerationCancelRevision() } = {}) {
+export async function applyAgentPostPassesToCompanionResult(transformerAgentId, messageIndex, companionAgentId, { cancelRevision = getAgentGenerationCancelRevision(), applyWrite = write => write() } = {}) {
     if (!areAgentsGloballyEnabled() || getAgentGenerationCancelRevision() !== cancelRevision) return null;
     const transformer = getAgentById(transformerAgentId);
     const message = chat[messageIndex];
@@ -2562,7 +2562,7 @@ export async function applyAgentPostPassesToCompanionResult(transformerAgentId, 
         return passResult;
     }
 
-    updateCompanionResult(message, companionAgentId, { content: capResultContent(passResult.text) });
+    applyWrite(() => updateCompanionResult(message, companionAgentId, { content: capResultContent(passResult.text) }));
     await emitCompanionResultsUpdated(messageIndex, companionAgentId);
     saveChatDebounced({ deferBackup: false });
     return passResult;
@@ -2910,6 +2910,7 @@ export function initCompanionRunner() {
         stripAuxiliaryTrackerEchoes,
         runCompanionAgentOnMessage,
         applyAgentPostPassesToCompanionResult,
+        captureCompanionResultTarget,
     });
 
     if (event_types.MESSAGE_SWIPED) {

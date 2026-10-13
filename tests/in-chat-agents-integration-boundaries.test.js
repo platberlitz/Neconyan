@@ -65,3 +65,33 @@ test.each(['message', 'companion', 'composer'])('the manual picker rejects a cha
     expect(await context.pickManualAgentRunTargets({ name: 'Agent' })).toBeNull();
     expect(context.toastr.warning).toHaveBeenCalledTimes(1);
 });
+
+test.each(['message', 'companion', 'composer'])('accepted queued edits advance a picker %s target, but user edits do not', async kind => {
+    const chat = [{ mes: 'Original reply', swipe_id: 0, is_user: false }];
+    const composer = { value: 'Original draft' };
+    let result = { status: 'done', content: 'Original note', agentName: 'Note' };
+    const selected = kind === 'message' ? 'message' : kind === 'companion' ? 'companion:note' : 'composer';
+    const picker = { append() {}, find(selector) { return selector.includes('message-range') ? { val: () => '0' } : { map: () => ({ get: () => [selected] }) }; } };
+    const queue = { runs: [] };
+    const context = vm.createContext({ chat, chatLoadRevision: 1, messageEditRevisions: new WeakMap(), postProcessingTargets: new WeakMap(), manualAgentRunQueues: [queue],
+        getCurrentSnapshotChatId: () => 'chat-a', getChatGeneration: () => 1, getAgentPostProcessingTarget: () => null, getLastAssistantMessageIndex: () => 0,
+        getCompanionResults: () => ({ note: result }), document: { getElementById: () => composer }, escapeHtml: String, $: () => picker,
+        toastr: { warning: jest.fn(), info: jest.fn() }, POPUP_TYPE: { CONFIRM: 1 }, POPUP_RESULT: { AFFIRMATIVE: 1 }, Popup: class { async show() { return 1; } } });
+    load(context, '../public/scripts/extensions/in-chat-agents/agent-runner.js', ['captureMessageTargetState', 'isDialogueColourOnlyChange', 'isMessageTargetCurrent', 'applyManualTargetWrite']);
+    load(context, '../public/scripts/extensions/in-chat-agents/companion/companion-runner.js', ['captureCompanionTarget', 'captureCompanionResultTarget']);
+    load(context, '../public/scripts/extensions/in-chat-agents/index.js', ['getManualAgentRunMessageIndices', 'pickManualAgentRunTargets']);
+    const [picked] = await context.pickManualAgentRunTargets({ name: 'Agent' });
+    const pending = { ...picked };
+    queue.runs.push({ target: pending });
+    const write = text => { if (kind === 'composer') composer.value = text; else if (kind === 'companion') result = { ...result, content: text, updatedAt: text }; else chat[0].mes = text; };
+    context.applyManualTargetWrite(picked, () => write('Accepted edit'));
+    expect(pending.isCurrent()).toBe(true);
+    expect(kind === 'composer' ? pending.composerText : pending.state.mes).toBe(kind === 'companion' ? 'Original reply' : 'Accepted edit');
+
+    // A user edit must not become valid again when another agent write arrives.
+    write('User edit');
+    expect(pending.isCurrent()).toBe(false);
+    context.applyManualTargetWrite(picked, () => write('Later agent edit'));
+    expect(pending.isCurrent()).toBe(false);
+    expect(kind === 'composer' ? pending.composerText : pending.state.mes).toBe(kind === 'companion' ? 'Original reply' : 'Accepted edit');
+});

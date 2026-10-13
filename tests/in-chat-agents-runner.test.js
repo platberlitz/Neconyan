@@ -7044,27 +7044,29 @@ describe('in-chat agent post-processing runner', () => {
         expect(chat[0].mes).toBe('Original reply');
     });
 
-    test('a queued manual run that was stopped before it started sends nothing', async () => {
+    test.each(['parallel', 'sequential'].flatMap(mode => ['cancel', 'generation-stopped'].map(stop => [mode, stop])))('a queued manual run stopped before it starts sends nothing with %s configured via %s', async (mode, stop) => {
         useManualTransformAgents();
-        globalSettings.appendAgentsExecutionMode = 'sequential';
+        globalSettings.appendAgentsExecutionMode = mode;
         const quietResolvers = [];
         generateQuietPrompt.mockImplementation(async () => await new Promise(resolve => quietResolvers.push(resolve)));
         chat.push({ name: 'Assistant', mes: 'Original reply', is_user: false, is_system: false, extra: {} });
 
-        const { initAgentRunner, runAgentOnMessage } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const { cancelAgentGeneration, initAgentRunner, runAgentOnMessage } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
         initAgentRunner();
 
         const first = runAgentOnMessage('agent-manual-a', 0);
         await waitFor(() => quietResolvers.length === 1);
         const second = runAgentOnMessage('agent-manual-b', 0);
-        await eventSource.emit(eventTypes.GENERATION_STOPPED);
+        if (stop === 'cancel') cancelAgentGeneration();
+        else await eventSource.emit(eventTypes.GENERATION_STOPPED);
+        await expect(second).resolves.toBeNull();
         quietResolvers.shift()('First rewrite');
         await first;
-        await second;
         await new Promise(resolve => setTimeout(resolve, 5));
 
         expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
         expect(chat[0].mes).toBe('Original reply');
+        expect(globalThis.toastr.warning).not.toHaveBeenCalledWith('The text changed before "Manual B" started, so it was skipped.');
     });
 
     test.each(['post', 'pre'].flatMap(phase => ['automatic', 'manual'].map(trigger => [phase, trigger])))(
@@ -7134,9 +7136,9 @@ describe('in-chat agent post-processing runner', () => {
         expect(runner.isAgentGenerationActive()).toBe(false);
     });
 
-    test('queues manual agent runs while another manual agent is active in sequential mode', async () => {
+    test.each(['parallel', 'sequential'])('queues manual agent runs and shares the accepted result with %s configured', async mode => {
         useManualTransformAgents();
-        globalSettings.appendAgentsExecutionMode = 'sequential';
+        globalSettings.appendAgentsExecutionMode = mode;
         const quietResolvers = [];
         generateQuietPrompt.mockImplementation(async () => await new Promise(resolve => quietResolvers.push(resolve)));
         chat.push({
@@ -7169,6 +7171,8 @@ describe('in-chat agent post-processing runner', () => {
         await waitFor(() => generateQuietPrompt.mock.calls.length === 2);
 
         expect(generateQuietPrompt).toHaveBeenCalledTimes(2);
+        expect(generateQuietPrompt.mock.calls[1][0].quietPrompt).toContain('First rewrite');
+        expect(generateQuietPrompt.mock.calls[1][0].quietPrompt).not.toContain('Original reply');
         expect(isAgentGenerationActive()).toBe(true);
 
         quietResolvers.shift()('Second rewrite');
@@ -7253,9 +7257,10 @@ describe('in-chat agent post-processing runner', () => {
         await waitFor(() => eventSource.emit.mock.calls.some(([event]) => event === eventTypes.MESSAGE_UPDATED));
     });
 
-    test('starts manual agent runs immediately in parallel mode', async () => {
+    test('Companion manual runs still overlap in parallel mode', async () => {
         useManualTransformAgents();
         globalSettings.appendAgentsExecutionMode = 'parallel';
+        enabledAgents.push(createCompanionAgent({ id: 'companion-a' }), createCompanionAgent({ id: 'companion-b' }));
         const quietResolvers = [];
         generateQuietPrompt.mockImplementation(async () => await new Promise(resolve => quietResolvers.push(resolve)));
         chat.push({
@@ -7267,10 +7272,12 @@ describe('in-chat agent post-processing runner', () => {
         });
 
         const { isAgentGenerationActive, runAgentOnMessage } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const runtime = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        runtime.initCompanionRunner();
 
-        const firstRun = runAgentOnMessage('agent-manual-a', 0);
+        const firstRun = runAgentOnMessage('companion-a', 0);
         await waitFor(() => generateQuietPrompt.mock.calls.length === 1);
-        const secondRun = runAgentOnMessage('agent-manual-b', 0);
+        const secondRun = runAgentOnMessage('companion-b', 0);
         await waitFor(() => generateQuietPrompt.mock.calls.length === 2);
 
         expect(quietResolvers).toHaveLength(2);
@@ -7278,17 +7285,236 @@ describe('in-chat agent post-processing runner', () => {
         expect(globalThis.toastr.info).not.toHaveBeenCalledWith('Queued agent run.');
         expect(isAgentGenerationActive()).toBe(true);
 
-        quietResolvers.shift()('First rewrite');
+        quietResolvers.shift()('First note');
         const firstResult = await firstRun;
-        quietResolvers.shift()('Second rewrite');
+        expect(isAgentGenerationActive()).toBe(true);
+        quietResolvers.shift()('Second note');
         const secondResult = await secondRun;
 
-        expect(firstResult.status).toBe('changed');
-        // The second rewrite was produced from the original text, which the first rewrite already replaced.
-        expect(secondResult).toBeNull();
-        expect(globalThis.toastr.warning).toHaveBeenCalledWith('The message changed while the agent was running, so its result was discarded.');
-        expect(chat[0].mes).toBe('First rewrite');
+        expect(firstResult).toMatchObject({ status: 'done', content: 'First note' });
+        expect(secondResult).toMatchObject({ status: 'done', content: 'Second note' });
+        expect(chat[0].mes).toBe('Original reply');
         expect(isAgentGenerationActive()).toBe(false);
+    });
+
+    test.each(['composer', 'companion'])('queued manual %s transforms use the preceding accepted edit in parallel mode', async kind => {
+        useManualTransformAgents();
+        globalSettings.appendAgentsExecutionMode = 'parallel';
+        const textarea = { value: 'Original draft', dispatchEvent: jest.fn() };
+        document.querySelector = jest.fn(selector => selector === '#send_textarea' ? textarea : null);
+        enabledAgents.push(createCompanionAgent());
+        chat.push({ name: 'Assistant', mes: 'Original reply', is_user: false, is_system: false, extra: {} });
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const runtime = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        runtime.initCompanionRunner();
+        runtime.setCompanionResult(chat[0], enabledAgents[2], { status: 'done', content: 'Original note' });
+        const responses = [];
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => responses.push(resolve)));
+        const target = { kind, messageIndex: 0, companionAgentId: 'agent-companion' };
+        const first = runner.runAgentOnTarget('agent-manual-a', target);
+        await waitFor(() => responses.length === 1);
+        const second = runner.runAgentOnTarget('agent-manual-b', target);
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        responses.shift()('First edit');
+        await expect(first).resolves.toMatchObject({ changed: true });
+        await waitFor(() => responses.length === 1);
+        expect(generateQuietPrompt.mock.calls[1][0].quietPrompt).toContain('First edit');
+        responses.shift()('Second edit');
+        await expect(second).resolves.toMatchObject({ changed: true });
+        expect(kind === 'composer' ? textarea.value : runtime.getCompanionResults(chat[0])['agent-companion'].content).toBe('Second edit');
+        expect(runner.isAgentGenerationActive()).toBe(false);
+    });
+
+    test('a user composer edit after an accepted write still rejects the queued target', async () => {
+        useManualTransformAgents();
+        const textarea = { value: 'Original draft', dispatchEvent: jest.fn(() => { textarea.value = 'User draft'; }) };
+        document.querySelector = jest.fn(selector => selector === '#send_textarea' ? textarea : null);
+        const responses = [];
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => responses.push(resolve)));
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const first = runner.runAgentOnTarget('agent-manual-a', { kind: 'composer' });
+        await waitFor(() => responses.length === 1);
+        const second = runner.runAgentOnTarget('agent-manual-b', { kind: 'composer' });
+        responses.shift()('First edit');
+        await first;
+        await expect(second).resolves.toBeNull();
+        expect(globalThis.toastr.warning).toHaveBeenCalledWith('The text changed before "Manual B" started, so it was skipped.');
+        expect(textarea.value).toBe('User draft');
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(runner.isAgentGenerationActive()).toBe(false);
+    });
+
+    test('a thrown manual operation does not leave the queue stuck', async () => {
+        useManualTransformAgents();
+        chat.push({ name: 'Assistant', mes: 'Original reply', is_user: false, is_system: false, extra: {} });
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const broken = runner.runAgentOnTarget('agent-manual-a', { kind: 'message', messageIndex: 0, isCurrent: () => { throw new Error('Target failed'); } });
+        const rejected = expect(broken).rejects.toThrow('Target failed');
+        generateQuietPrompt.mockResolvedValue('Next edit');
+        const next = runner.runAgentOnMessage('agent-manual-b', 0);
+        await rejected;
+        await expect(next).resolves.toMatchObject({ status: 'changed' });
+        expect(chat[0].mes).toBe('Next edit');
+        expect(runner.isAgentGenerationActive()).toBe(false);
+    });
+
+    test.each(['message', 'composer', 'companion'])('a changed queued %s target explains why its run was skipped', async kind => {
+        useManualTransformAgents();
+        const companion = createCompanionAgent();
+        enabledAgents.push(companion);
+        const textarea = { value: 'Original draft', dispatchEvent: jest.fn() };
+        document.querySelector = jest.fn(selector => selector === '#send_textarea' ? textarea : null);
+        chat.push({ name: 'Assistant', mes: 'Holding reply', is_user: false, is_system: false, extra: {} },
+            { name: 'Assistant', mes: 'Selected reply', is_user: false, is_system: false, extra: {} });
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+        const runtime = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        runtime.initCompanionRunner();
+        runtime.setCompanionResult(chat[1], companion, { status: 'done', content: 'Original note' });
+        const responses = [];
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => responses.push(resolve)));
+        const first = runner.runAgentOnMessage('agent-manual-a', 0);
+        await waitFor(() => responses.length === 1);
+        const queued = runner.runAgentOnTarget('agent-manual-b', { kind, messageIndex: 1, companionAgentId: companion.id });
+        if (kind === 'composer') textarea.value = 'User draft';
+        else if (kind === 'companion') runtime.updateCompanionResult(chat[1], companion.id, { content: 'User note' });
+        else {
+            chat[1].mes = 'User reply';
+            await eventSource.emit(eventTypes.MESSAGE_EDITED, 1);
+        }
+        responses.shift()('Holding edit');
+        await first;
+        await expect(queued).resolves.toBeNull();
+        expect(globalThis.toastr.warning).toHaveBeenCalledWith('The text changed before "Manual B" started, so it was skipped.');
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(runner.isAgentGenerationActive()).toBe(false);
+        await new Promise(resolve => setTimeout(resolve, 5));
+    });
+
+    test('a throwing pending target check cannot prevent an earlier accepted write', async () => {
+        useManualTransformAgents();
+        chat.push({ name: 'Assistant', mes: 'Original reply', is_user: false, is_system: false, extra: {} });
+        const responses = [];
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => responses.push(resolve)));
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const first = runner.runAgentOnMessage('agent-manual-a', 0);
+        await waitFor(() => responses.length === 1);
+        const broken = runner.runAgentOnTarget('agent-manual-b', { kind: 'message', messageIndex: 0, isCurrent: () => { throw new Error('Target failed'); } });
+        const rejected = expect(broken).rejects.toThrow('Target failed');
+        const last = runner.runAgentOnMessage('agent-manual-b', 0);
+        responses.shift()('First accepted edit');
+        await expect(first).resolves.toMatchObject({ status: 'changed' });
+        await rejected;
+        await waitFor(() => responses.length === 1);
+        expect(chat[0].mes).toBe('First accepted edit');
+        expect(generateQuietPrompt.mock.calls[1][0].quietPrompt).toContain('First accepted edit');
+        responses.shift()('Last accepted edit');
+        await expect(last).resolves.toMatchObject({ status: 'changed' });
+        expect(chat[0].mes).toBe('Last accepted edit');
+        expect(runner.isAgentGenerationActive()).toBe(false);
+    });
+
+    test('a batch of manual targets shows the queued notification only once', async () => {
+        useManualTransformAgents();
+        chat.push(...['First reply', 'Second reply', 'Third reply'].map(mes => ({ name: 'Assistant', mes, is_user: false, is_system: false, extra: {} })));
+        const responses = [];
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => responses.push(resolve)));
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const queueNotice = { shown: false };
+        const runs = chat.map((_, messageIndex) => runner.runAgentOnTarget('agent-manual-a', { kind: 'message', messageIndex, queueNotice }));
+        expect(globalThis.toastr.info.mock.calls.filter(([text]) => text === 'Queued agent run.')).toHaveLength(1);
+        for (const run of runs) {
+            await waitFor(() => responses.length === 1);
+            responses.shift()('Accepted edit');
+            await run;
+        }
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(3);
+        expect(runner.isAgentGenerationActive()).toBe(false);
+    });
+
+    test.each(['rewrite', 'append'])('tracker repair queues with manual runs and executes %s agents sequentially under parallel mode', async mode => {
+        useManualTransformAgents();
+        const trackers = enabledAgents.map((agent, index) => ({ ...structuredClone(agent), id: `tracker-${index}`, category: 'tracker',
+            postProcess: { ...agent.postProcess, promptTransformMode: mode } }));
+        enabledAgents.push(...trackers);
+        chat.push({ name: 'Assistant', mes: 'Original reply', is_user: false, is_system: false, extra: {} });
+        const responses = [];
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => responses.push(resolve)));
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const first = runner.runAgentOnMessage('agent-manual-a', 0);
+        await waitFor(() => responses.length === 1);
+        const repair = runner.runTrackerFixOnMessage(0, { cancelRevision: runner.getAgentGenerationCancelRevision() });
+        const last = runner.runAgentOnMessage('agent-manual-b', 0);
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        responses.shift()('Manual edit');
+        await first;
+        await waitFor(() => generateQuietPrompt.mock.calls.length === 2);
+        expect(generateQuietPrompt.mock.calls[1][0].quietPrompt).toContain('Manual edit');
+        expect(responses).toHaveLength(1);
+        responses.shift()('Tracker first');
+        await waitFor(() => generateQuietPrompt.mock.calls.length === 3);
+        expect(responses).toHaveLength(1);
+        if (mode === 'rewrite') expect(generateQuietPrompt.mock.calls[2][0].quietPrompt).toContain('Tracker first');
+        responses.shift()('Tracker second');
+        await repair;
+        await waitFor(() => generateQuietPrompt.mock.calls.length === 4);
+        expect(generateQuietPrompt.mock.calls[3][0].quietPrompt).toContain('Tracker second');
+        responses.shift()('Final edit');
+        await expect(last).resolves.toMatchObject({ status: 'changed' });
+        expect(chat[0].mes).toBe('Final edit');
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(4);
+        expect(runner.isAgentGenerationActive()).toBe(false);
+    });
+
+    test.each(['stop', 'edit', 'swipe', 'replacement'])('a queued tracker repair rejects a %s before sending a request', async change => {
+        useManualTransformAgents();
+        enabledAgents[1].category = 'tracker';
+        chat.push({ name: 'Assistant', mes: 'Original reply', is_user: false, is_system: false, swipe_id: 0, extra: {} });
+        const responses = [];
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => responses.push(resolve)));
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        runner.initAgentRunner();
+        const first = runner.runAgentOnMessage('agent-manual-a', 0);
+        await waitFor(() => responses.length === 1);
+        const cancelRevision = runner.getAgentGenerationCancelRevision();
+        const repair = runner.runTrackerFixOnMessage(0, { cancelRevision });
+        if (change === 'stop') {
+            runner.cancelAgentGeneration();
+            await expect(repair).resolves.toBeNull();
+        } else if (change === 'edit') {
+            chat[0].mes = 'User edit';
+            await eventSource.emit(eventTypes.MESSAGE_EDITED, 0);
+        } else if (change === 'swipe') chat[0].swipe_id = 1;
+        else chat[0] = { ...chat[0], mes: 'Replacement reply' };
+        responses.shift()('Late edit');
+        await first;
+        await expect(repair).resolves.toBeNull();
+        if (change === 'stop') await expect(runner.runTrackerFixOnMessage(0, { cancelRevision })).resolves.toBeNull();
+        expect(generateQuietPrompt).toHaveBeenCalledTimes(1);
+        expect(runner.isAgentGenerationActive()).toBe(false);
+    });
+
+    test('a queued tracker repair uses the latest text after an accepted automatic edit', async () => {
+        useManualTransformAgents();
+        enabledAgents[1].category = 'tracker';
+        chat.push({ name: 'Assistant', mes: 'Holding reply', is_user: false, is_system: false, extra: {} },
+            { name: 'Assistant', mes: 'Original tracker reply', is_user: false, is_system: false, extra: {} });
+        const responses = [];
+        generateQuietPrompt.mockImplementation(() => new Promise(resolve => responses.push(resolve)));
+        const runner = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        const first = runner.runAgentOnMessage('agent-manual-a', 0);
+        await waitFor(() => responses.length === 1);
+        const repair = runner.runTrackerFixOnMessage(1);
+        // Automatic acceptance changes text without signalling a user edit.
+        chat[1].mes = 'Accepted automatic edit';
+        responses.shift()('Holding edit');
+        await first;
+        await waitFor(() => responses.length === 1);
+        expect(generateQuietPrompt.mock.calls[1][0].quietPrompt).toContain('Accepted automatic edit');
+        responses.shift()('Repaired tracker reply');
+        await expect(repair).resolves.toBeNull();
+        expect(chat[1].mes).toBe('Repaired tracker reply');
+        expect(runner.isAgentGenerationActive()).toBe(false);
     });
 
     test('defers enabled post-processing agents until the main generation is idle', async () => {

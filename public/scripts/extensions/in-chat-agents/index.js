@@ -1080,17 +1080,21 @@ async function pickManualAgentRunTargets(agent) {
 
     const targets = selected.flatMap(value => {
         if (value === 'composer') {
-            return [{ kind: 'composer', state: scopeState, composer, composerText: composerValue,
-                isCurrent: () => isMessageTargetCurrent(scope, scopeState) && document.getElementById('send_textarea') === composer && composer?.value === composerValue }];
+            const target = { kind: 'composer', state: scopeState, composer, composerText: composerValue };
+            target.isCurrent = () => isMessageTargetCurrent(scope, scopeState) && document.getElementById('send_textarea') === composer && composer?.value === target.composerText;
+            target.acceptWrite = () => { target.composerText = composer.value; };
+            return [target];
         }
 
         if (value.startsWith('companion:')) {
+            const companionAgentId = value.slice('companion:'.length);
             return [{
                 kind: 'companion',
                 messageIndex: lastAssistantIndex,
-                companionAgentId: value.slice('companion:'.length),
+                companionAgentId,
                 ...messageTargets[lastAssistantIndex],
-                isCurrent: noteTargets.get(value.slice('companion:'.length)) ?? (() => false),
+                isCurrent: () => noteTargets.get(companionAgentId)?.() ?? false,
+                acceptWrite: () => noteTargets.set(companionAgentId, captureCompanionResultTarget(lastAssistantIndex, companionAgentId)),
             }];
         }
 
@@ -1108,6 +1112,8 @@ async function pickManualAgentRunTargets(agent) {
         toastr.warning('A selected message or note changed while the picker was open. Please choose the targets again.');
         return null;
     }
+    const queueNotice = { shown: false };
+    for (const target of targets) target.queueNotice = queueNotice;
     return targets;
 }
 
