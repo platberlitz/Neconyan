@@ -116,7 +116,7 @@ export async function reviewImagePrompt(job, { guard, popup, type, affirmative }
     const content = h('div', { class: 'scratchpad-review' }, h('h3', { text: t`Processed image prompt` }),
         h('pre', { class: 'scratchpad-image-prompt', text: approval.proposal.prompt, 'data-i18n-ignore': '' }),
         h('p', { text: t`Exclude: ${approval.proposal.negative || ''}` }));
-    const choice = await popup(content, type, '', { wide: true, okButton: t`Generate reviewed image`, cancelButton: t`Stop image` });
+    const choice = await popup(content, type, '', { wide: true, okButton: t`Generate reviewed image`, cancelButton: t`Cancel` });
     guard();
     return decideJobApproval(job.id, { ...approval, decision: choice === affirmative ? 'allow' : 'deny' });
 }
