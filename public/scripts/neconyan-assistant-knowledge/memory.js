@@ -5,6 +5,16 @@ const mewmoryUi = 'public/scripts/mewmory/ui.js';
 
 export default [
     {
+        id: 'agents.manual-queue', title: 'Manually started after-reply Agents wait their turn', keys: ['manual agent queue', 'Queued agent run', 'manual after-reply', 'manual rewrite waiting'],
+        sources: [agents + 'agent-runner.js'], anchors: ['Queued agent run.', 'clearManualAgentRunQueue'],
+        content: 'Manually started after-reply Agents run one at a time, even when automatic After-reply agents use Run together. Each later rewrite reads the saved result of the earlier rewrite. Queued agent run means the request is waiting. Manual message rewrites have a separate queue from Companions, so they do not wait behind a slow Companion. Stop cancels active work and clears waiting runs. This does not change the separate automatic rewrite or Companion scheduling choices.',
+    },
+    {
+        id: 'agents.versions', title: 'Versions beside Agent and library template names', keys: ['agent version', 'template version', 'version beside agent name', 'installed agent version'],
+        sources: [agents + 'index.js'], anchors: ['getAgentVersionValue', 'getTemplateVersionValue'],
+        content: 'Manage agents shows the installed Agent version beside its name. Browse library shows the available template version beside its name. Compare the two when checking for a template update; the library version does not mean your customised installed Agent has already been replaced. Unchanged bundled copies can update automatically; customised copies retain their edits and offer Update.',
+    },
+    {
         id: 'lorebooks.tour', title: 'Nori’s guided Lorebook tour', keys: ['lorebook tour', 'Nori tour', 'learn lorebooks', 'one fact one entry'],
         sources: ['public/scripts/neconyan-lorebook-tour.js'], anchors: ['One fact, one entry', 'Primary Keywords', 'Character Lore', 'Advanced entry settings'],
         content: 'Open Lorebooks and use Tour for Nori\'s walkthrough. Back and Next cover the library, books, entries, Primary Keywords, Content, Normal versus Constant, Health and token footprint. Advanced entry settings are opened and explained: Activation rules, Inclusion and timing, Additional matching sources, recursion, per-entry overrides, timing and book-wide budgets. Keep one fact per entry so keywords and retrieval stay precise. A book needs an active global, character, chat or persona attachment for normal Roleplay use; Character Lore is one route. The tour opens and explains controls without writing lore or making model requests.',
