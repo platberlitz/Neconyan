@@ -14,6 +14,7 @@ describe('companion tracker panel', () => {
     let accountStorage;
     let hiddenAgentIds;
     let powerUser;
+    let translatedKeys;
 
     function createEventSource() {
         const handlers = new Map();
@@ -48,6 +49,14 @@ describe('companion tracker panel', () => {
 
         await jest.unstable_mockModule('../public/scripts/power-user.js', () => ({
             power_user: powerUser,
+        }));
+
+        // The real i18n.js needs more of power-user.js than this suite provides. This one records each key and returns the English text.
+        await jest.unstable_mockModule('../public/scripts/i18n.js', () => ({
+            t: (strings, ...values) => {
+                translatedKeys.push(strings.reduce((key, part, index) => key + part + (index < values.length ? `\${${index}}` : ''), ''));
+                return strings.reduce((text, part, index) => text + part + (index < values.length ? values[index] : ''), '');
+            },
         }));
 
         await jest.unstable_mockModule('../public/scripts/util/AccountStorage.js', () => ({
@@ -153,6 +162,7 @@ describe('companion tracker panel', () => {
     }
 
     beforeEach(() => {
+        translatedKeys = [];
         chat = [];
         eventSource = createEventSource();
         agents = [];
@@ -1160,6 +1170,57 @@ describe('companion tracker panel', () => {
         expect(runner.runCompanionAgentOnMessage).toHaveBeenCalledWith('relationship-lens', 1);
         expect(button.prop).toHaveBeenCalledWith('disabled', true);
         expect(button.prop).toHaveBeenCalledWith('disabled', false);
+    });
+
+    test('the retry button says how many companions failed again, one or several, with a key for each', async () => {
+        agents = [{ id: 'relationship-lens', name: 'Relationship Lens', execution: 'companion', enabled: true, companion: { trigger: 'manual' } }];
+        chat.push({ is_user: true, mes: 'hello' }, { is_user: false, is_system: false, mes: 'latest reply' });
+        retryableCompanionAgents = [agents[0]];
+        const panel = await importPanel();
+        const runner = await import('../public/scripts/extensions/in-chat-agents/companion/companion-runner.js');
+        const panelElement = { on: jest.fn(() => panelElement), html: jest.fn(() => panelElement), toggle: jest.fn(() => panelElement), attr: jest.fn(() => panelElement), addClass: jest.fn(() => panelElement) };
+        const handleElement = { on: jest.fn(() => handleElement), toggle: jest.fn(() => handleElement) };
+        const button = { prop: jest.fn() };
+        const actionButton = {};
+        globalThis.$ = jest.fn(arg => {
+            if (arg === globalThis.document.body) {
+                return { append: jest.fn() };
+            }
+            if (arg === '#ica--tracker-panel') {
+                return panelElement;
+            }
+            if (arg === '#ica--tracker-panel-handle') {
+                return handleElement;
+            }
+            if (arg === '#ica_tracker_panel_wand_item') {
+                return { length: 1 };
+            }
+            if (arg === actionButton) {
+                return {
+                    attr: jest.fn(name => (name === 'data-action' ? 'panel-retry-failed' : undefined)),
+                    closest: jest.fn(() => ({ attr: jest.fn() })),
+                    prop: button.prop,
+                };
+            }
+            return { length: 0, on: jest.fn(), append: jest.fn(), html: jest.fn(), toggle: jest.fn() };
+        });
+
+        panel.buildPanelHtml();
+        panel.initCompanionPanel();
+        const actionHandler = panelElement.on.mock.calls.find(([, selector]) => selector === '[data-action]')[2];
+
+        runner.retryFailedCompanionsOnMessage.mockResolvedValueOnce([{ status: 'error' }]);
+        await actionHandler({ preventDefault: jest.fn(), stopPropagation: jest.fn(), currentTarget: actionButton });
+        expect(globalThis.toastr.warning).toHaveBeenLastCalledWith('1 companion failed again. Check your connection, then try again.');
+
+        runner.retryFailedCompanionsOnMessage.mockResolvedValueOnce([{ status: 'error' }, { status: 'done', lastRunError: 'x' }, { status: 'error' }]);
+        await actionHandler({ preventDefault: jest.fn(), stopPropagation: jest.fn(), currentTarget: actionButton });
+        expect(globalThis.toastr.warning).toHaveBeenLastCalledWith('3 companions failed again. Check your connection, then try again.');
+
+        expect(translatedKeys).toEqual(expect.arrayContaining([
+            '1 companion failed again. Check your connection, then try again.',
+            '${0} companions failed again. Check your connection, then try again.',
+        ]));
     });
 
     test.each([true, false])('sends Chat Only input privately and clears it only on success (success=%s)', async succeeds => {

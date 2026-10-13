@@ -38,7 +38,7 @@ import { MiniMaxTtsProvider } from './minimax.js';
 import { ElectronHubTtsProvider } from './electronhub.js';
 import { ChutesTtsProvider } from './chutes.js';
 import { VolcengineTtsProvider } from './volcengine.js';
-import { applyLocale, t } from '/scripts/i18n.js';
+import { applyLocale, localizeMessage, t } from '/scripts/i18n.js';
 import { registerExtensionCapability } from '../../neconyan-conversation/extension-capabilities.js';
 
 const UPDATE_INTERVAL = 1000;
@@ -862,6 +862,20 @@ async function tts(text, voiceId, char, voiceMapKey = null) {
     }
 }
 
+/**
+ * The narration queue's failure toast: the error's own message, without the 'Error: ' prefix, so a known message can
+ * be translated. In 'HTTP <status>: <body>' the status stays as written and only a body the dictionary knows is
+ * translated; any other provider wording is shown as written. Thrown strings are shown as before.
+ * @param {unknown} error
+ * @returns {string}
+ */
+function getTtsQueueErrorMessage(error) {
+    if (!(error instanceof Error)) return String(error);
+    const http = /^HTTP (\d+): ([\s\S]+)$/.exec(error.message);
+    if (http) return `HTTP ${http[1]}: ${localizeMessage(http[2])}`;
+    return error.message || String(error);
+}
+
 async function processTtsQueue() {
     // Called each moduleWorker iteration to pull chat messages from queue
     if (currentTtsJob || ttsJobQueue.length <= 0 || audioPaused) {
@@ -925,7 +939,7 @@ async function processTtsQueue() {
             // Pass the full voiceMapKey (e.g., "User ("Quotes")") as well with character name
             await tts(segmentText, voiceId, char, voiceMapKey);
         } catch (error) {
-            toastr.error(error.toString());
+            toastr.error(getTtsQueueErrorMessage(error));
             console.error(error);
             currentTtsJob = null;
             scheduleTtsQueueWakeup();
@@ -1028,7 +1042,7 @@ async function processTtsQueue() {
         currentTtsJob = null;
         scheduleTtsQueueWakeup();
     } catch (error) {
-        toastr.error(error.toString());
+        toastr.error(getTtsQueueErrorMessage(error));
         console.error(error);
         currentTtsJob = null;
         scheduleTtsQueueWakeup();

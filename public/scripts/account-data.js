@@ -2,6 +2,7 @@ import { getCurrentChatId, saveChatConditional, saveSettings } from '../script.j
 import { getCurrentUserHandle } from './user.js';
 import { getOperationClient, mountOperationRecovery } from './operations-client.js';
 import { createAccountResetClient } from './account-reset-client.js';
+import { t } from './i18n.js';
 
 export async function resetAccountData(credentials, options) {
     const client = await getOperationClient();
@@ -91,7 +92,7 @@ export async function mountAccountDataWork(container, { signal } = {}) {
         resets.disabled = true;
         try {
             const record = await client.observe(await client.read(resets.value), { signal });
-            resetStatus.textContent = record.result.reset ? 'The account reset is complete.' : 'The account reset is not complete. Contact the server owner for help.';
+            resetStatus.textContent = record.result.reset ? t`The account reset is complete.` : t`The account reset is not complete. Contact the server owner for help.`;
             reload.style.display = record.result.reset ? '' : 'none';
         } catch (error) { resetStatus.textContent = error.message; } finally { resets.disabled = false; }
     });

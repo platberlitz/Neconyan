@@ -13580,7 +13580,7 @@ async function handleServerAdminSaveConfig({ restart = false } = {}) {
         }
     } catch (error) {
         console.error('Failed to save config.yaml.', error);
-        setServerAdminMessage(refs.configNote, error.message || 'Failed to save config.yaml.', 'danger');
+        setServerAdminMessage(refs.configNote, error.message || 'Could not save config.yaml.', 'danger');
         toastr.error(error.message || 'Could not save config.yaml.', 'Server config');
     } finally {
         if (!state.restarting) {
@@ -13624,7 +13624,7 @@ async function handleServerThumbnailSave({ clearCache = false } = {}) {
         renderServerAdminConfig(await requestServerAdmin('/api/server-admin/config/get'), { overwrite: true });
     } catch (error) {
         console.error('Failed to save thumbnail settings.', error);
-        setServerAdminMessage(refs.thumbnailNote, error.message || 'Failed to save thumbnail settings.', 'danger');
+        setServerAdminMessage(refs.thumbnailNote, error.message || 'Could not save thumbnail settings.', 'danger');
         toastr.error(error.message || 'Could not save thumbnail settings.', 'Thumbnails');
     } finally {
         state.busy = false;
@@ -13654,7 +13654,7 @@ async function handleServerThumbnailClearCache() {
         toastr.success(result?.message || 'Thumbnail cache cleared.', 'Thumbnails');
     } catch (error) {
         console.error('Failed to clear thumbnail cache.', error);
-        setServerAdminMessage(refs.thumbnailNote, error.message || 'Failed to clear thumbnail cache.', 'danger');
+        setServerAdminMessage(refs.thumbnailNote, error.message || 'Could not clear thumbnail cache.', 'danger');
         toastr.error(error.message || 'Could not clear thumbnail cache.', 'Thumbnails');
     } finally {
         state.busy = false;
@@ -13760,7 +13760,7 @@ async function handleServerAdminRestart() {
         console.error('Failed to restart Neconyan.', error);
         state.busy = false;
         updateServerAdminInteractivity();
-        setServerAdminMessage(refs.updateNote, error.message || 'Failed to restart Neconyan.', 'danger');
+        setServerAdminMessage(refs.updateNote, error.message || 'Could not restart Neconyan.', 'danger');
         toastr.error(error.message || 'Could not restart Neconyan.', 'Server');
     }
 }
@@ -13857,7 +13857,9 @@ async function handleServerAdminUpdate() {
         if (stashMessage) {
             toastr.warning(stashMessage, 'Auto-stash warning', { timeOut: 10000 });
         }
-        setServerAdminMessage(refs.updateNote, [error.message || 'Failed to update Neconyan.', stashMessage].filter(Boolean).join('\n'), 'danger');
+        setServerAdminMessage(refs.updateNote, error.message || 'Could not update Neconyan.', 'danger');
+        // The auto-stash warning goes on the next line as its own text, so each text can be matched against its key.
+        if (stashMessage && refs.updateNote instanceof HTMLElement) refs.updateNote.append('\n', stashMessage);
         toastr.error(error.message || 'Could not update Neconyan.', 'Server update');
     } finally {
         setServerAdminButtonLabel(refs.updateButton, false, 'Updating…');
@@ -13920,7 +13922,7 @@ async function handleServerAdminZipUpdate() {
     } catch (error) {
         console.error('Failed to update Neconyan from release ZIP.', error);
         state.busy = false;
-        setServerAdminMessage(refs.updateNote, error.message || 'Failed to update Neconyan from release ZIP.', 'danger');
+        setServerAdminMessage(refs.updateNote, error.message || 'Could not update Neconyan from release ZIP.', 'danger');
         toastr.error(error.message || 'Could not update Neconyan from release ZIP.', 'Server update');
     } finally {
         setServerAdminButtonLabel(refs.updateButton, false, 'Updating…');
@@ -14839,7 +14841,7 @@ async function handleSillyTavernFolderImport() {
         location.reload();
     } catch (error) {
         console.error('Failed to import SillyTavern folder.', error);
-        setServerAdminMessage(refs.note, error.message || 'Failed to import from that folder path.', 'danger');
+        setServerAdminMessage(refs.note, error.message || 'Could not import from that folder path.', 'danger');
         toastr.error(error.message || 'Could not import from that folder path.', 'Import SillyTavern');
     } finally {
         setSillyTavernImportBusy(false);
@@ -14896,7 +14898,7 @@ async function handleSillyTavernExtensionSync() {
         }
     } catch (error) {
         console.error('Failed to sync SillyTavern third-party extensions.', error);
-        setServerAdminMessage(refs.note, error.message || 'Failed to sync third-party extensions from that folder.', 'danger');
+        setServerAdminMessage(refs.note, error.message || 'Could not sync third-party extensions from that folder.', 'danger');
         toastr.error(error.message || 'Could not sync third-party extensions from that folder.', 'Sync Extensions');
     } finally {
         setSillyTavernImportBusy(false);
@@ -14939,7 +14941,7 @@ async function handleSillyTavernZipImport(file) {
         location.reload();
     } catch (error) {
         console.error('Failed to import SillyTavern backup ZIP.', error);
-        setServerAdminMessage(refs.note, error.message || 'Failed to import that backup ZIP.', 'danger');
+        setServerAdminMessage(refs.note, error.message || 'Could not import that backup ZIP.', 'danger');
         toastr.error(error.message || 'Could not import that backup ZIP.', 'Import SillyTavern');
     } finally {
         if (refs.zipFileInput instanceof HTMLInputElement) {

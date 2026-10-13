@@ -3,8 +3,11 @@ import { describe, expect, jest, test } from '@jest/globals';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { PUBLIC_DIRECTORIES } from '../src/constants.js';
 import { NECONYAN_NATIVE_EXTENSIONS } from '../src/neconyan-native-extensions.js';
+
+const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 const clone = jest.fn(() => { throw new Error('Unexpected remote clone'); });
 jest.unstable_mockModule('../src/git/client.js', () => ({ createGitClient: () => ({ clone }) }));
@@ -49,6 +52,58 @@ describe('bundled third-party extensions', () => {
         expect(rejectBundledThirdPartyExtension('chatcompletiontabs', response, 'deleted')).toBe(true);
         expect(response.status).toHaveBeenCalledWith(400);
         expect(response.send).toHaveBeenCalledWith(expect.stringContaining('chatcompletiontabs comes with Neconyan'));
+    });
+
+    // Characterisation: the server already sends these sentences, so this passes before the change too. It shows the
+    // English sent for each refused action is the same whole sentence.
+    test.each([
+        ['installed', 'ChatCompletionTabs comes with Neconyan, so it cannot be installed from the extension updater.'],
+        ['updated', 'ChatCompletionTabs comes with Neconyan, so it cannot be updated from the extension updater.'],
+        ['managed', 'ChatCompletionTabs comes with Neconyan, so it cannot be managed from the extension updater.'],
+        ['switched', 'ChatCompletionTabs comes with Neconyan, so it cannot be switched from the extension updater.'],
+        ['moved', 'ChatCompletionTabs comes with Neconyan, so it cannot be moved from the extension updater.'],
+        ['deleted', 'ChatCompletionTabs comes with Neconyan, so it cannot be deleted from the extension updater.'],
+    ])('sends one whole sentence when %s is refused', (action, sentence) => {
+        const response = {
+            status: jest.fn(() => response),
+            send: jest.fn(),
+        };
+
+        expect(rejectBundledThirdPartyExtension('ChatCompletionTabs', response, action)).toBe(true);
+        expect(response.status).toHaveBeenCalledWith(400);
+        expect(response.send).toHaveBeenCalledTimes(1);
+        expect(response.send).toHaveBeenCalledWith(sentence);
+
+        const other = { status: jest.fn(() => other), send: jest.fn() };
+        expect(rejectBundledThirdPartyExtension('CommunityExtension', other, action)).toBe(false);
+        expect(other.status).not.toHaveBeenCalled();
+        expect(other.send).not.toHaveBeenCalled();
+    });
+
+    test('names one of the six actions at every call and never inserts the action into a shared sentence', () => {
+        const source = fs.readFileSync(path.join(repositoryRoot, 'src/endpoints/extensions.js'), 'utf8');
+        const actions = [...source.matchAll(/rejectBundledThirdPartyExtension\(\w+, response, '(\w+)'\)/g)].map(match => match[1]);
+
+        expect(actions).toHaveLength(6);
+        expect([...new Set(actions)].sort()).toEqual(['deleted', 'installed', 'managed', 'moved', 'switched', 'updated']);
+        expect(source).not.toContain('cannot be ${');
+    });
+
+    test('no locale file has the combined refusal key', () => {
+        const combined = '${0} comes with Neconyan, so it cannot be ${1} from the extension updater.';
+        let checked = 0;
+        const withCombinedKey = [];
+        for (const directory of ['public/locales', 'public/locales/neconyan']) {
+            for (const file of fs.readdirSync(path.join(repositoryRoot, directory)).filter(name => name.endsWith('.json'))) {
+                const data = JSON.parse(fs.readFileSync(path.join(repositoryRoot, directory, file), 'utf8'));
+                checked++;
+                if (data && typeof data === 'object' && !Array.isArray(data) && Object.hasOwn(data, combined)) {
+                    withCombinedKey.push(path.join(directory, file));
+                }
+            }
+        }
+        expect(checked).toBeGreaterThan(16);
+        expect(withCombinedKey).toEqual([]);
     });
 });
 
@@ -98,6 +153,7 @@ test('native discovery owns aliases once, protects every mutation, and preserves
         expect(withManifests.find(entry => entry.name === 'third-party/CustomTool').manifest).toEqual({ version: 'local' });
         expect(withManifests.find(entry => entry.name === 'neconyan-debugger').manifest).toEqual({ version: 'core' });
         expect(withManifests.find(entry => entry.name === 'third-party/Neconyan-Time-Machine').manifest).toBeUndefined();
+        const refusalMismatches = [];
         for (const extension of NECONYAN_NATIVE_EXTENSIONS) {
             const extensionName = extension.directory.toLowerCase();
             for (const route of ['/install', '/update', '/branches', '/switch', '/move', '/delete', '/sync']) {
@@ -106,8 +162,21 @@ test('native discovery owns aliases once, protects every mutation, and preserves
                     url: `https://example.invalid/${extensionName}.git`,
                 });
                 expect(result.status).toBe(400);
+                // The whole sentence each route sends, written out in full (/sync treats bundled extensions differently).
+                const refusals = {
+                    '/install': `${extensionName} comes with Neconyan, so it cannot be installed from the extension updater.`,
+                    '/update': `${extensionName} comes with Neconyan, so it cannot be updated from the extension updater.`,
+                    '/branches': `${extensionName} comes with Neconyan, so it cannot be managed from the extension updater.`,
+                    '/switch': `${extensionName} comes with Neconyan, so it cannot be switched from the extension updater.`,
+                    '/move': `${extensionName} comes with Neconyan, so it cannot be moved from the extension updater.`,
+                    '/delete': `${extensionName} comes with Neconyan, so it cannot be deleted from the extension updater.`,
+                };
+                if (route !== '/sync' && result.body !== refusals[route]) {
+                    refusalMismatches.push({ extensionName, route, body: result.body });
+                }
             }
         }
+        expect(refusalMismatches).toEqual([]);
         expect(clone).not.toHaveBeenCalled();
         const moved = await request('post', '/move', { extensionName: 'CustomTool', source: 'local', destination: 'global' });
         expect(moved.status).toBe(204);

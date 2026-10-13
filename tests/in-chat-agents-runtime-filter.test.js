@@ -159,6 +159,10 @@ beforeEach(async () => {
     jest.unstable_mockModule('../public/scripts/world-info.js', () => ({ getWorldInfoPrompt }));
     jest.unstable_mockModule('../public/scripts/reasoning.js', () => ({ removeReasoningFromString: value => value }));
     jest.unstable_mockModule('../public/scripts/power-user.js', () => ({ power_user: {} }));
+    // The real i18n.js needs more of power-user.js than this suite provides.
+    jest.unstable_mockModule('../public/scripts/i18n.js', () => ({
+        t: (strings, ...values) => strings.reduce((text, part, index) => text + part + (index < values.length ? values[index] : ''), ''),
+    }));
     jest.unstable_mockModule('../public/scripts/extensions/in-chat-agents/profile-utils.js', () => ({
         getConnectionProfileDisplayName: id => id,
         getConnectionProfileModelName: () => '',

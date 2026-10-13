@@ -1484,7 +1484,7 @@ export async function getSanitizedFilename(fileName) {
         const responseData = await result.json();
         return responseData.fileName;
     } catch (error) {
-        toastr.error(String(error), 'Could not prepare the file name');
+        toastr.error(error?.message || String(error), 'Could not prepare the file name');
         console.error('Could not sanitize fileName', error);
         throw error;
     }

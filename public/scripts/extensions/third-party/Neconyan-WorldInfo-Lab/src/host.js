@@ -15,6 +15,32 @@ export function getContext() {
     return globalThis.SillyTavern?.getContext?.() ?? null;
 }
 
+/**
+ * The host's t`` when Neconyan provides one, so a message is built in the reader's language with its values (names,
+ * code names) put in as written; otherwise the English text, exactly as the template literal gave it.
+ * @param {TemplateStringsArray} strings
+ * @param {...unknown} values
+ * @returns {string}
+ */
+export function hostT(strings, ...values) {
+    const translate = getContext()?.t;
+    if (typeof translate === 'function') return translate(strings, ...values);
+    return strings.reduce((text, part, index) => text + part + (index < values.length ? values[index] : ''), '');
+}
+
+/**
+ * A message from the server or the browser, about to go into a hostT frame where the page's localiser cannot reach it:
+ * in the reader's language when Neconyan's dictionary has it as a whole (its exact key); otherwise the text exactly as
+ * it came. Exact keys only, so a message is never half-translated through a shorter ${n} key.
+ * @param {unknown} text
+ * @returns {string}
+ */
+export function hostMessage(text) {
+    const translate = getContext()?.translate;
+    const message = String(text ?? '');
+    return typeof translate === 'function' ? translate(message) : message;
+}
+
 function missing(module, exports) {
     return exports.filter(name => module?.[name] === undefined);
 }
@@ -56,7 +82,7 @@ export async function loadHost() {
                 if (required.length) {
                     return {
                         ok: false,
-                        reason: `World Info Lab does not work with this version of Neconyan. Missing parts: ${required.join(', ')}. Update Neconyan to use it.`,
+                        reason: hostT`World Info Lab does not work with this version of Neconyan. Missing parts: ${required.join(', ')}. Update Neconyan to use it.`,
                     };
                 }
                 loaded = {
@@ -75,7 +101,7 @@ export async function loadHost() {
                 console.error('World Info Lab could not load the Neconyan lorebook tools it needs.', error);
                 return {
                     ok: false,
-                    reason: 'World Info Lab could not load the Neconyan lorebook tools it needs. Reload Neconyan and try again.',
+                    reason: hostT`World Info Lab could not load the Neconyan lorebook tools it needs. Reload Neconyan and try again.`,
                 };
             }
         })();

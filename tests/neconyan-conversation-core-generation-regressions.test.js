@@ -1,5 +1,5 @@
 /* global globalThis */
-import { beforeEach, describe, expect, jest, test } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 
 const appendConversationMessage = jest.fn();
 const addConversationReminder = jest.fn();
@@ -67,8 +67,19 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/typing.j
     withTypingParticipant: (_participant, task) => task(),
 }));
 
+// Behaves like the real t over a test dictionary (exact keys only), and like localizeMessage for a whole message.
+const dictionary = new Map();
+await jest.unstable_mockModule('../public/scripts/i18n.js', () => ({
+    t: (strings, ...values) => {
+        const key = strings.reduce((text, part, index) => text + part + (index < values.length ? `\${${index}}` : ''), '');
+        return (dictionary.get(key) ?? key).replace(/\$\{(\d+)\}/g, (_, index) => values[index]);
+    },
+    localizeMessage: text => dictionary.get(text) ?? text,
+}));
+
 const {
     editConversationMessage,
+    reportConversationGenerationError,
     requestConversationSelfie,
 } = await import('../public/scripts/neconyan-conversation/generation.js');
 
@@ -80,6 +91,7 @@ describe('Conversation core generated reply regressions', () => {
         addConversationReminder.mockClear();
         updateConversationThreadMessage.mockClear();
         runtimeStatusOverrides.clear();
+        dictionary.clear();
         delete globalThis.document;
         delete globalThis.confirm;
     });
@@ -131,6 +143,88 @@ describe('Conversation core generated reply regressions', () => {
         await expect(requestConversationSelfie({ avatar: 'char.png' })).resolves.toBe(true);
         expect(toastr.info.mock.calls[0][0]).toContain('still being made on the server');
         delete globalThis.toastr;
+    });
+
+    describe('failure toasts are built whole for the translator', () => {
+        const longWording = 'Server-side text rules for AI replies must use plain find-and-replace. Macros (placeholders such as {{user}}) and capture groups only work in the browser, so remove them or use a rule that only changes the prompt.';
+        const toastr = { warning: jest.fn(), error: jest.fn() };
+        let warn;
+        let error;
+
+        beforeEach(() => {
+            toastr.warning.mockClear();
+            toastr.error.mockClear();
+            globalThis.toastr = toastr;
+            warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+            error = jest.spyOn(console, 'error').mockImplementation(() => {});
+        });
+
+        afterEach(() => {
+            warn.mockRestore();
+            error.mockRestore();
+            delete globalThis.toastr;
+        });
+
+        test('a refused selfie shows the translated frame around the translated detail', () => {
+            dictionary.set('Conversation selfie failed: ${0}', 'Selfie da conversa falhou: ${0}');
+            dictionary.set('The selfie speaker is no longer available in this group.', 'O falante do selfie não está mais disponível neste grupo.');
+
+            reportConversationGenerationError('selfie', new Error('The selfie speaker is no longer available in this group.'), { level: 'warning' });
+
+            expect(toastr.warning).toHaveBeenCalledWith('Selfie da conversa falhou: O falante do selfie não está mais disponível neste grupo.', '', { escapeHtml: true });
+            expect(warn).toHaveBeenCalledWith('Conversation selfie failed: The selfie speaker is no longer available in this group.', expect.any(Error));
+        });
+
+        test('with no dictionary the English toast is the same as before', () => {
+            reportConversationGenerationError('selfie', new Error('The selfie speaker is no longer available in this group.'), { level: 'warning' });
+            expect(toastr.warning).toHaveBeenLastCalledWith('Conversation selfie failed: The selfie speaker is no longer available in this group.', '', { escapeHtml: true });
+
+            reportConversationGenerationError('selfie', '');
+            expect(toastr.error).toHaveBeenLastCalledWith('Conversation selfie failed. Check the browser console for details.', '', { escapeHtml: true });
+
+            reportConversationGenerationError('regenerate', { code: 5 }, { level: 'warning' });
+            expect(toastr.warning).toHaveBeenLastCalledWith('Conversation regenerate failed: {"code":5}', '', { escapeHtml: true });
+
+            reportConversationGenerationError('regenerate', null);
+            expect(toastr.error).toHaveBeenLastCalledWith('Conversation regenerate failed. Check the browser console for details.', '', { escapeHtml: true });
+        });
+
+        test('a translated frame is used when the error has no text', () => {
+            dictionary.set('Conversation regenerate failed. Check the browser console for details.', 'A nova resposta da conversa falhou. Veja o console do navegador.');
+
+            reportConversationGenerationError('regenerate', '');
+
+            expect(toastr.error).toHaveBeenCalledWith('A nova resposta da conversa falhou. Veja o console do navegador.', '', { escapeHtml: true });
+        });
+
+        test('a detail longer than the limit is found by its whole key and shown whole', () => {
+            const translation = 'No servidor, as regras de texto para respostas da IA só podem usar localizar e substituir simples. Macros (marcadores como {{user}}) e grupos de captura só funcionam no navegador, então remova-os ou use uma regra que altere apenas o prompt.';
+            dictionary.set('Conversation regenerate failed: ${0}', 'A nova resposta da conversa falhou: ${0}');
+            dictionary.set(longWording, translation);
+
+            reportConversationGenerationError('regenerate', new Error(longWording), { level: 'warning' });
+
+            expect(longWording.length).toBeGreaterThan(180);
+            expect(translation.length).toBeGreaterThan(180);
+            expect(toastr.warning).toHaveBeenCalledWith(`A nova resposta da conversa falhou: ${translation}`, '', { escapeHtml: true });
+            expect(warn).toHaveBeenCalledWith(`Conversation regenerate failed: ${longWording.slice(0, 180)}`, expect.any(Error));
+        });
+
+        test('a detail the dictionary does not know keeps the 180-character limit', () => {
+            reportConversationGenerationError('regenerate', new Error(longWording), { level: 'warning' });
+
+            expect(toastr.warning).toHaveBeenCalledWith(`Conversation regenerate failed: ${longWording.slice(0, 180)}`, '', { escapeHtml: true });
+            expect(warn).toHaveBeenCalledWith(`Conversation regenerate failed: ${longWording.slice(0, 180)}`, expect.any(Error));
+        });
+
+        test('any other context keeps its English text even when the detail has a dictionary entry', () => {
+            dictionary.set('Conversation summary failed: ${0}', 'Resumo da conversa falhou: ${0}');
+            dictionary.set('The summary service is busy.', 'O serviço de resumo está ocupado.');
+
+            reportConversationGenerationError('summary', new Error('The summary service is busy.'));
+
+            expect(toastr.error).toHaveBeenCalledWith('Conversation summary failed: The summary service is busy.', '', { escapeHtml: true });
+        });
     });
 
     test('saves only changed content and closes the editor in all cases', () => {

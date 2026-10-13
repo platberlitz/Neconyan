@@ -20,6 +20,7 @@ import {
     updateMessageTokenAccounting,
 } from '../../../script.js';
 import { extension_settings, getContext } from '../../extensions.js';
+import { t } from '../../i18n.js';
 import { eventSource, event_types } from '../../events.js';
 import { is_group_generating } from '../../group-chats.js';
 import { POPUP_RESULT, POPUP_TYPE, callGenericPopup } from '../../popup.js';
@@ -6574,18 +6575,26 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     const failedRuns = promptRuns.filter(r => r.status === 'error');
     const postProcessRuns = utilityAgents.length + trackerMetadataUpdates;
     const errorRuns = failedRuns.length + trackerRepairErrors;
+    // Each part is a whole phrase for the translator, with its own singular and plural; the error count and its advice
+    // are one text, so no key ever has to match the joined summary.
     const parts = [];
-    if (trackerRepairs > 0) parts.push(`${trackerRepairs} tracker${trackerRepairs > 1 ? 's' : ''} repaired`);
-    if (changedRuns.length > 0) parts.push(`${changedRuns.length} prompt transform${changedRuns.length > 1 ? 's' : ''} applied`);
-    if (postProcessRuns > 0) parts.push(`${postProcessRuns} post-process${postProcessRuns > 1 ? 'es' : ''} run`);
-    if (regexSnapshotChanged) parts.push('regex snapshot updated');
-    if (errorRuns > 0) parts.push(`${errorRuns} error${errorRuns > 1 ? 's' : ''}`);
+    if (trackerRepairs > 0) parts.push(trackerRepairs > 1 ? t`${trackerRepairs} trackers repaired` : t`1 tracker repaired`);
+    if (changedRuns.length > 0) parts.push(changedRuns.length > 1 ? t`${changedRuns.length} prompt transforms applied` : t`1 prompt transform applied`);
+    if (postProcessRuns > 0) parts.push(postProcessRuns > 1 ? t`${postProcessRuns} post-processes run` : t`1 post-process run`);
+    if (regexSnapshotChanged) parts.push(t`regex snapshot updated`);
 
     if (errorRuns > 0) {
-        const detail = unsafeTrackerRepairs > 0
-            ? ' A broken tracker has no clear start or end. Check that it has both a start marker and an end marker in the message, then try again.'
-            : ' Some trackers could not be repaired. Check the connection the agent uses, then try again.';
-        toastr.warning(parts.join(', ') + '.' + detail, 'Tracker repair incomplete');
+        let errors;
+        if (unsafeTrackerRepairs > 0) {
+            errors = errorRuns > 1
+                ? t`${errorRuns} errors. A broken tracker has no clear start or end. Check that it has both a start marker and an end marker in the message, then try again.`
+                : t`1 error. A broken tracker has no clear start or end. Check that it has both a start marker and an end marker in the message, then try again.`;
+        } else {
+            errors = errorRuns > 1
+                ? t`${errorRuns} errors. Some trackers could not be repaired. Check the connection the agent uses, then try again.`
+                : t`1 error. Some trackers could not be repaired. Check the connection the agent uses, then try again.`;
+        }
+        toastr.warning([...parts, errors].join(', '), 'Tracker repair incomplete');
     } else if (parts.length > 0) {
         toastr.success(parts.join(', '), 'Trackers fixed');
     } else {

@@ -1,5 +1,6 @@
 import { chat } from '../../../../script.js';
 import { hideChatMessageRange } from '../../../chats.js';
+import { t } from '../../../i18n.js';
 import { captureVisibleMessageAnchor, restoreVisibleMessageAnchor } from '../../../chat-render-lifecycle/anchor.js';
 import { eventSource, event_types } from '../../../events.js';
 import { Popup, POPUP_RESULT, POPUP_TYPE } from '../../../popup.js';
@@ -1184,7 +1185,9 @@ async function handlePanelAction(event) {
             if (!results.length) {
                 toastr.info('The chat changed before the retry finished.');
             } else if (failedAgain > 0) {
-                toastr.warning(`${failedAgain} companion${failedAgain === 1 ? '' : 's'} failed again. Check your connection, then try again.`);
+                toastr.warning(failedAgain === 1
+                    ? t`1 companion failed again. Check your connection, then try again.`
+                    : t`${failedAgain} companions failed again. Check your connection, then try again.`);
             } else {
                 toastr.success(`Retried ${results.length} companion${results.length === 1 ? '' : 's'}.`);
             }

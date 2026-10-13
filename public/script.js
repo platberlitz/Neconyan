@@ -16728,7 +16728,7 @@ export async function sendChatImport(formData, { target, group, refresh = true, 
         }
         if (failure?.code === 'ROLEPLAY_IMPORT_ORIGIN_CHANGED') throw new Error(t`This chat no longer matches its recorded origin or seal. To adopt a separate copy, explicitly choose 'Import as new instance'.`);
         if (failure?.code === 'ROLEPLAY_SOURCE_CHANGED') throw new Error(t`The character changed while the chats were importing. Reload the character list, then try again.`);
-        throw new Error('The chat could not be imported. Check that the file is a valid chat export, then try again.');
+        throw new Error(t`The chat could not be imported. Check that the file is a valid chat export, then try again.`);
     }
     const result = await response.json();
     if (!result.res || !Array.isArray(result.fileNames)) throw new Error('The chat import response was incomplete.');
@@ -17636,7 +17636,7 @@ export async function swipe(event, direction, { source, repeated, message = chat
         }
         //Limit swipe_id to swipes.
         if (newSwipeId > chat[mesId].swipes.length - 1) {
-            toastr.warning(`The reply number for message #${mesId} was ${newSwipeId}, which is not valid. It has been reset to ${chat[mesId].swipes.length - 1}.`);
+            toastr.warning(t`The reply number for message #${mesId} was ${newSwipeId}, which is not valid. It has been reset to ${chat[mesId].swipes.length - 1}.`);
             chat[mesId].swipe_id = chat[mesId].swipes.length - 1;
             await endSwipe();
             return;
@@ -17650,7 +17650,7 @@ export async function swipe(event, direction, { source, repeated, message = chat
 
         //Minimum of zero.
         if (newSwipeId < 0) {
-            toastr.warning(`The reply number for message #${mesId} was ${newSwipeId}, which is not valid. It has been reset to the first reply.`);
+            toastr.warning(t`The reply number for message #${mesId} was ${newSwipeId}, which is not valid. It has been reset to the first reply.`);
             chat[mesId].swipe_id = 0;
             await endSwipe();
             return;
@@ -20218,7 +20218,7 @@ jQuery(async function () {
                     $(masterElement).val($(this).val()).trigger('input', { forced: true });
                 } else {
                     //if value not ok, warn and reset to last known valid value
-                    toastr.warning(`Value must be between ${$(this).attr('min')} and ${$(this).attr('max')}.`);
+                    toastr.warning(t`Value must be between ${$(this).attr('min')} and ${$(this).attr('max')}.`);
                     //newSlider.val(valueBeforeManualInput)
                     $(this).val(valueBeforeManualInput);
                 }
@@ -20244,7 +20244,7 @@ jQuery(async function () {
                 $(masterElement).val($(this).val()).trigger('input', { forced: true });
             } else {
                 //if value not ok, warn and reset to last known valid value
-                toastr.warning(`Value must be between ${$(this).attr('min')} and ${$(this).attr('max')}.`);
+                toastr.warning(t`Value must be between ${$(this).attr('min')} and ${$(this).attr('max')}.`);
                 $(this).val(valueBeforeManualInput);
             }
         }
