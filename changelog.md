@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.3.2
+
+### Merged Staging PRs
+- PR #156 (2026-10-13) `fix(meower): make Windows saves work`
+
 ## v1.3.1
 
 ### Highlights
