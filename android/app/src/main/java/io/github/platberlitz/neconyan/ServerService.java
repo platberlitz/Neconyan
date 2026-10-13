@@ -78,10 +78,11 @@ public final class ServerService extends Service {
                     int exit = startNode(new String[] { "node", "--max-old-space-size=" + heapMegabytes(this), "--disable-wasm-trap-handler", "--icu-data-dir=" + new File(runtime, "icu").getPath(), "--import", new File(runtime, "file-stats.mjs").getPath(), new File(runtime, "server-bootstrap.mjs").getPath(),
                         getFilesDir().getPath(), credentials.getString("port"), credentials.getString("password"), safe ? "safe" : "normal" }, getCacheDir().getPath());
                     status("Neconyan stopped (" + exit + "). Reopen the app to start it again.");
-                    if (exit != 0) CrashDiagnostics.recordReport(this, "server", "native-runtime-exit", null, "Local server returned exit code " + exit + ". No Java exception was supplied.", String.valueOf(exit), ActivityBreadcrumbs.current());
+                    // Diagnostic writes must never stop the service from closing cleanly.
+                    if (exit != 0) try { CrashDiagnostics.recordReport(this, "server", "native-runtime-exit", null, "Local server returned exit code " + exit + ". No Java exception was supplied.", String.valueOf(exit), ActivityBreadcrumbs.current()); } catch (Throwable ignored) { }
                     stopSelf();
                 } catch (Throwable error) {
-                    CrashDiagnostics.record(this, "server-startup-failure", error, "The Android server service could not start the workspace.");
+                    try { CrashDiagnostics.record(this, "server-startup-failure", error, "The Android server service could not start the workspace."); } catch (Throwable ignored) { }
                     try { status("Could not start Neconyan: " + error.getMessage() + ". Your saved data has been kept. Reopen the app to try again."); } catch (Exception ignored) { }
                     stopSelf();
                 }
@@ -204,7 +205,7 @@ public final class ServerService extends Service {
         if (wake != null && wake.isHeld()) wake.release();
         if (nodeStarted) {
             // Node handles SIGTERM through Neconyan's existing orderly shutdown.
-            CrashDiagnostics.markServerStopping(this);
+            try { CrashDiagnostics.markServerStopping(this); } catch (Throwable ignored) { }
             new Handler(Looper.getMainLooper()).postDelayed(() -> android.os.Process.killProcess(android.os.Process.myPid()), 10000);
             android.os.Process.sendSignal(android.os.Process.myPid(), 15);
         }
