@@ -73,9 +73,9 @@
             uptimeMs: counter(own(input, 'uptimeMs'), 2592000000), ready: own(input, 'ready') === true,
             view: choice(own(input, 'view'), ['startup', 'home', 'chat', 'settings', 'tool', 'unknown']),
             mode: choice(own(input, 'mode'), ['roleplay', 'conversation', 'meower', 'story', 'unknown']),
-            visibility: choice(own(input, 'visibility'), ['visible', 'hidden'], 'hidden') };
+            visibility: choice(own(input, 'visibility'), ['visible', 'hidden', 'unknown']) };
         for (const [section, fields] of Object.entries({
-            chat: ['messageCount', 'estimatedTextBytes', 'sampledMessages', 'measuredAt'],
+            chat: ['messageCount', 'estimatedTextBytes', 'sampledMessages', 'agentHistoryEntries', 'measuredAt'],
             dom: ['renderedChildren', 'measuredAt'], heap: ['usedBytes', 'totalBytes', 'limitBytes'],
         })) {
             const source = own(input, section);
@@ -122,6 +122,8 @@
     const activity = [];
     const startedAt = Date.now();
     const SESSION_PREFIX = 'neconyan.crash-session.v1:';
+    const RECOVERY_KEY = 'neconyan.crash-recoveries.v1';
+    let recoveries = [];
     const TAB_KEY = 'neconyan.crash-tab.v1';
     const randomId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     function legacyId(report) {
@@ -145,16 +147,25 @@
             const entry = JSON.parse(text);
             if (entry?.schema === 1 && safeId(entry.documentId)) previousSession = entry;
         }
-        const retained = [];
-        for (let index = 0; index < localStorage.length && retained.length < 8; index++) {
+        const keys = [];
+        for (let index = 0; index < localStorage.length; index++) {
             const key = localStorage.key(index);
-            if (!key?.startsWith(SESSION_PREFIX) || key === SESSION_PREFIX + tabId) continue;
+            if (key?.startsWith(SESSION_PREFIX) && key !== SESSION_PREFIX + tabId) keys.push(key);
+        }
+        const retained = [];
+        for (const key of keys) {
             const value = localStorage.getItem(key);
             if (value?.length > 8192) { localStorage.removeItem(key); continue; }
-            try { const entry = JSON.parse(value); retained.push({ key, entry }); } catch { localStorage.removeItem(key); }
+            try {
+                const entry = JSON.parse(value);
+                if (entry?.schema !== 1 || !Number.isSafeInteger(entry.heartbeatAt) || Date.now() - entry.heartbeatAt > 604800000) localStorage.removeItem(key);
+                else retained.push({ key, entry });
+            } catch { localStorage.removeItem(key); }
         }
-        for (const item of retained.filter(item => ['closed', 'recovered'].includes(item.entry?.state)).sort((a, b) => a.entry.heartbeatAt - b.entry.heartbeatAt).slice(0, Math.max(0, retained.length - 6))) localStorage.removeItem(item.key);
-        for (const item of retained.slice(0, 8)) {
+        retained.sort((a, b) => b.entry.heartbeatAt - a.entry.heartbeatAt);
+        for (const item of retained.slice(7)) localStorage.removeItem(item.key);
+        if (previousSession && Date.now() - previousSession.heartbeatAt > 604800000) previousSession = null;
+        for (const item of retained.slice(0, 7)) {
             if (item.entry?.schema === 1 && item.entry.snapshot) retainedActivities.push({ schema: 1, id: 'activity:' + safeId(item.entry.documentId), runtime: 'browser', kind: 'retained-page-activity',
                 at: Number.isSafeInteger(item.entry.heartbeatAt) ? new Date(item.entry.heartbeatAt).toISOString() : null,
                 lastKnownActivity: { snapshot: validateActivity(item.entry.snapshot), events: validateEvents(item.entry.events) },
@@ -227,7 +238,7 @@
         getActivity: guarded(() => ({ snapshot: validateActivity(snapshot), events: validateEvents(events) })),
         beginAgent: guarded(input => {
             if (handles.size >= 128) return null;
-            const id = own(input, 'id'), template = api.templateLabel(own(input, 'sourceTemplateId'));
+            const id = own(input, 'id'), template = own(input, 'synthesis') === true ? 'Combined reply' : api.templateLabel(own(input, 'sourceTemplateId'));
             if (!template && !customLabels.has(id) && customLabels.size < 128) customLabels.set(id, `Custom agent ${customLabels.size + 1}`);
             const handle = ++nextHandle;
             handles.set(handle, { label: own(input, 'synthesis') === true ? 'Combined reply' : template || customLabels.get(id) || 'Custom agent 1', phase: choice(own(input, 'phase'), AGENT_PHASES), location: 'browser' });
@@ -253,7 +264,7 @@
             }
             refreshAgents(); scheduleFlush();
         }),
-        observePhase: guarded((handle, phase) => { if (PHASES.includes(phase) && phases.size < 32) phases.set(handle, phase); else { phases.delete(handle); if (!phases.size) snapshot.generation = { phase: 'idle', location: 'unknown' }; } refreshAgents(); scheduleFlush(); }),
+        observePhase: guarded((handle, phase) => { if (PHASES.includes(phase) && (phases.has(handle) || phases.size < 32)) phases.set(handle, phase); else if (!PHASES.includes(phase)) { phases.delete(handle); if (!phases.size) snapshot.generation = { phase: 'idle', location: 'unknown' }; } refreshAgents(); scheduleFlush(); }),
         markAppReady: guarded(() => { snapshot.ready = true; api.fatalReportId = null; noteActivity('app-ready'); if (currentStartupNotice) dismissNotice(currentStartupNotice); }),
         setNativeBridgeToken: guarded(token => { if (typeof token !== 'string' || token.length > 100) return; nativeToken = token; scheduleFlush(); }),
     });
@@ -262,6 +273,11 @@
         if (saved && saved.length <= 400000) {
             const parsed = JSON.parse(saved);
             if (Array.isArray(parsed)) reports = parsed.filter(report => report?.schema === 1).slice(-5).map(report => ({ ...report, id: safeId(report.id) || legacyId(report) }));
+        }
+        const recoveryText = localStorage.getItem(RECOVERY_KEY);
+        if (recoveryText && recoveryText.length <= 65536) {
+            const parsed = JSON.parse(recoveryText);
+            if (Array.isArray(parsed)) recoveries = parsed.filter(report => report?.schema === 1 && safeId(report.id)).slice(-8);
         }
     } catch { storageError = 'Browser storage is unavailable; reports last only until this page closes.'; }
 
@@ -322,11 +338,12 @@
     }
 
     api.capture = capture;
-    api.getReports = () => JSON.parse(JSON.stringify({ reports, storageError, retainedActivities }));
+    api.getReports = () => JSON.parse(JSON.stringify({ reports, recoveries, storageError, retainedActivities }));
     api.clear = () => {
         reports = [];
+        recoveries = [];
         unsaved = false;
-        try { localStorage.removeItem(KEY); storageError = ''; return true; } catch { return false; }
+        try { localStorage.removeItem(KEY); localStorage.removeItem(RECOVERY_KEY); storageError = ''; return true; } catch { return false; }
     };
     const SEEN_KEY = 'neconyan.crash-notice-seen.v1';
     let seen = [], pendingRecovery = null, currentStartupNotice = null;
@@ -352,7 +369,7 @@
         for (const node of dialog.querySelectorAll('.popup-crop-wrap, .popup-input, .popup-inputs, .popup-button-close')) node.remove();
         const content = dialog.querySelector('.popup-content'); content.replaceChildren();
         const textarea = document.createElement('textarea'); textarea.className = 'text_pole'; textarea.rows = 14; textarea.readOnly = true;
-        textarea.value = redact(JSON.stringify(reports.find(report => report.id === id) || reports.at(-1) || 'No saved report', null, 2), 60000);
+        textarea.value = redact(JSON.stringify(reports.find(report => report.id === id) || recoveries.find(report => report.id === id) || reports.at(-1) || recoveries.at(-1) || 'No saved report', null, 2), 60000);
         textarea.setAttribute('aria-label', 'Saved crash reports'); content.append(textarea);
         const controls = dialog.querySelector('.popup-controls'); controls.replaceChildren();
         for (const label of ['Copy report', 'Close']) {
@@ -375,20 +392,13 @@
             const button = document.createElement('button'); button.type = 'button'; button.className = 'menu_button' + (label === 'Read report' ? ' menu_button_primary' : ''); button.textContent = label; button.dataset.i18n = label;
             button.dataset.crashAction = label === 'Read report' ? 'read' : 'dismiss'; actions.append(button);
         }
+        const existing = document.getElementById('neconyan-crash-notice'); existing?.remove();
         let notice;
         const dismiss = () => { markSeen(id); onDismiss?.(); dismissNotice(notice); };
-        if (globalThis.toastr?.warning) {
-            const heading = document.createElement('span'); heading.textContent = typeof title === 'string' ? redact(title, 200) : 'Crash report';
-            notice = globalThis.toastr.warning(content.outerHTML, heading.innerHTML, { timeOut: 0, extendedTimeOut: 0, closeButton: true, escapeHtml: false, positionClass: 'toast-top-center', onHidden: () => { markSeen(id); onDismiss?.(); } });
-            const node = notice?.[0];
-            node?.querySelector('[data-crash-action="read"]')?.addEventListener('click', event => { event.stopPropagation(); markSeen(id); if (onRead) onRead(); else api.openReports(id); });
-            node?.querySelector('[data-crash-action="dismiss"]')?.addEventListener('click', event => { event.stopPropagation(); dismiss(); });
-        } else {
-            notice = document.createElement('aside'); notice.id = 'neconyan-crash-notice'; notice.setAttribute('aria-label', title);
-            const heading = document.createElement('strong'); heading.textContent = title; notice.append(heading, content); document.body.append(notice);
-            actions.querySelector('[data-crash-action="read"]').addEventListener('click', () => { markSeen(id); if (onRead) onRead(); else api.openReports(id); });
-            actions.querySelector('[data-crash-action="dismiss"]').addEventListener('click', dismiss);
-        }
+        notice = document.createElement('aside'); notice.id = 'neconyan-crash-notice'; notice.setAttribute('aria-label', title); notice.setAttribute('role', 'status');
+        const heading = document.createElement('strong'); heading.textContent = typeof title === 'string' ? redact(title, 200) : 'Crash report'; notice.append(heading, content); document.body.append(notice);
+        actions.querySelector('[data-crash-action="read"]').addEventListener('click', () => { markSeen(id); if (onRead) onRead(); else api.openReports(id); });
+        actions.querySelector('[data-crash-action="dismiss"]').addEventListener('click', dismiss);
         if (!notice || !(notice[0] || notice).isConnected) return null;
         markSeen(id);
         return notice;
@@ -397,18 +407,19 @@
         const discarded = document.wasDiscarded === true;
         if (!discarded && (previousSession?.state !== 'running' || !safeId(previousSession.documentId))) return;
         const id = discarded && !safeId(previousSession?.documentId) ? 'discarded:' + documentId : 'unclean:' + previousSession.documentId;
-        if (seen.some(item => item.id === id) || reports.some(report => report.id === id)) return;
+        if (seen.some(item => item.id === id) || recoveries.some(report => report.id === id)) return;
         const previous = validateActivity(previousSession?.snapshot);
-        const report = capture(discarded ? 'discarded-previous-page' : 'unclean-previous-page', 'Your browser did not provide a definite cause. A missing normal-close event does not prove a crash.');
-        if (!report) return;
-        report.id = id;
+        const report = { schema: 1, id, runtime: 'browser', kind: discarded ? 'discarded-previous-page' : 'unclean-previous-page', at: new Date().toISOString(),
+            error: { message: 'Your browser did not provide a definite cause. A missing normal-close event does not prove a crash.' } };
         report.summary = discarded ? 'Your browser discarded the previous page' : 'The previous page did not close cleanly';
-        report.environment = { measuredOnRecovery: report.environment };
         const heartbeatAt = counter(previousSession?.heartbeatAt, Number.MAX_SAFE_INTEGER);
         report.lastKnownActivity = { snapshot: previous, events: validateEvents(previousSession?.events), relationship: previous.at ? 'same-tab-previous-page' : 'unavailable',
             ageMs: previous.at && heartbeatAt >= previous.at ? heartbeatAt - previous.at : null };
         report.limitation = 'The time and cause of the stop are unknown. Backgrounding does not imply a crash; a normal pagehide prevents this observation. Other tabs are never automatically diagnosed.';
-        pendingRecovery = report; if (previousSession) previousSession.state = 'recovered'; save();
+        recoveries.push(report); recoveries = recoveries.slice(-8);
+        if (previousSession?.visibility === 'visible') pendingRecovery = report;
+        if (previousSession) previousSession.state = 'recovered';
+        try { localStorage.setItem(RECOVERY_KEY, JSON.stringify(recoveries)); } catch { storageError = 'Could not save recovery activity. Copy it before closing this page.'; }
     }
     recoverPrevious();
     function showPendingNotice() {
@@ -419,9 +430,10 @@
         if (!report || seen.some(item => item.id === (report.noticeId || report.id))) return;
         const sample = report.lastKnownActivity?.snapshot;
         const labels = sample?.agents?.running?.map(item => item.label).join(' and ');
+        const timing = sample?.generation?.phase === 'pre-agents' ? 'before a reply' : sample?.generation?.phase === 'post-agents' ? 'after a reply' : sample?.generation?.phase === 'companions' ? 'as Companions' : 'during the last observed activity';
         const message = (report.error?.message || 'Your browser did not provide a definite cause.')
             + (sample?.chat?.messageCount != null ? ` Last known activity: ${sample.chat.messageCount} messages.` : '')
-            + (labels ? ` Running ${labels} after a reply.` : '')
+            + (labels ? ` Running ${labels} ${timing}.` : '')
             + (sample?.at ? ` Last activity recorded at ${new Date(sample.at).toLocaleTimeString()}.` : '')
             + (storageError ? ` ${storageError}` : '');
         const notice = api.showNotice({ id: report.noticeId || report.id, title: report.summary || 'Neconyan could not finish loading', message, onRead: () => api.openReports(report.id) });

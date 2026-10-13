@@ -75,7 +75,7 @@ test('same-tab unexpected stop offers the old activity and dismisses once', asyn
     await page.addInitScript(() => {
         if (sessionStorage.getItem('fixture-seeded')) return;
         sessionStorage.setItem('fixture-seeded', 'yes'); sessionStorage.setItem('neconyan.crash-tab.v1', 'fixture-tab');
-        localStorage.setItem('neconyan.crash-session.v1:fixture-tab', JSON.stringify({ schema: 1, documentId: 'old-document', state: 'running', heartbeatAt: Date.now(),
+        localStorage.setItem('neconyan.crash-session.v1:fixture-tab', JSON.stringify({ schema: 1, documentId: 'old-document', state: 'running', visibility: 'visible', heartbeatAt: Date.now(),
             snapshot: { schema: 1, pageSessionId: 'old-document', at: Date.now() - 4000, mode: 'roleplay', chat: { messageCount: 58 },
                 agents: { running: [{ label: 'Format Fixer', phase: 'post', location: 'server' }, { label: 'Proofreader', phase: 'post', location: 'server' }] } }, events: [] }));
     });
@@ -130,7 +130,7 @@ test('a disposable Chromium renderer crash retains the old sample on reload', as
         restoredBrowser = await chromium.connectOverCDP(`http://127.0.0.1:${debugPort}`);
         const restored = restoredBrowser.contexts()[0].pages()[0];
         await expect(restored.getByRole('button', { name: 'Read report', exact: true })).toBeVisible();
-        expect(await restored.evaluate(() => globalThis.NeconyanCrashDiagnostics.getReports().reports.at(-1).lastKnownActivity.snapshot.chat.messageCount)).toBe(58);
+        expect(await restored.evaluate(() => globalThis.NeconyanCrashDiagnostics.getReports().recoveries.at(-1).lastKnownActivity.snapshot.chat.messageCount)).toBe(58);
     } finally {
         await restoredBrowser?.close();
         await context.close().catch(() => {});
@@ -147,4 +147,40 @@ test('critical startup failure is readable, then suppressed if the document reac
     expect(await page.evaluate(() => globalThis.NeconyanCrashDiagnostics.getReports().reports.at(-1).kind)).toBe('critical-startup-load-failure');
     await page.evaluate(() => globalThis.NeconyanCrashDiagnostics.markAppReady());
     await expect(page.getByRole('button', { name: 'Read report', exact: true })).toHaveCount(0);
+});
+
+test('background discard is manual-only and does not replace saved errors', async ({ page }) => {
+    await page.addInitScript(() => {
+        sessionStorage.setItem('neconyan.crash-tab.v1', 'background-tab');
+        localStorage.setItem('neconyan.crash-session.v1:background-tab', JSON.stringify({ schema: 1, documentId: 'background-document', state: 'running', visibility: 'hidden', heartbeatAt: Date.now(), snapshot: { pageSessionId: 'background-document', visibility: 'hidden', at: Date.now(), mode: 'roleplay' } }));
+        localStorage.setItem('neconyan.crash-reports.v1', JSON.stringify(Array.from({ length: 5 }, (_, index) => ({ schema: 1, id: `real-${index}`, runtime: 'browser', kind: 'error', error: { message: `Real error ${index}` } }))));
+    });
+    await page.reload();
+    await expect(page.locator('#neconyan-crash-notice')).toHaveCount(0);
+    expect(await page.evaluate(() => globalThis.NeconyanCrashDiagnostics.getReports().reports.length)).toBe(5);
+    expect(await page.evaluate(() => globalThis.NeconyanCrashDiagnostics.getReports().recoveries.length)).toBe(1);
+    await openReader(page);
+    const options = page.getByRole('combobox', { name: 'Select a crash report' }).locator('option');
+    await expect(options.filter({ hasText: /- error$/ })).toHaveCount(5);
+    await expect(options.filter({ hasText: 'unclean-previous-page' })).toHaveCount(1);
+});
+
+test('server report reloads deduplicate the picker', async ({ page }) => {
+    await page.route('**/api/server-admin/crash-reports', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ reports: [{ schema: 1, id: 'server-one', runtime: 'server', kind: 'test', error: { message: 'Server error' } }] }) }));
+    await openReader(page);
+    const options = page.getByRole('combobox', { name: 'Select a crash report' }).locator('option');
+    await expect(options).toHaveCount(1);
+    await page.getByRole('button', { name: 'Load server reports' }).click();
+    await expect(page.getByText('1 saved server reports')).toBeVisible();
+    await expect(options).toHaveCount(1);
+});
+
+test('recovery wording reflects a before-reply Agent phase', async ({ page }) => {
+    await page.addInitScript(() => {
+        sessionStorage.setItem('neconyan.crash-tab.v1', 'pre-tab');
+        localStorage.setItem('neconyan.crash-session.v1:pre-tab', JSON.stringify({ schema: 1, documentId: 'pre-document', state: 'running', visibility: 'visible', heartbeatAt: Date.now(), snapshot: { pageSessionId: 'pre-document', at: Date.now(), generation: { phase: 'pre-agents' }, agents: { running: [{ label: 'Format Fixer', phase: 'pre', location: 'server' }] } } }));
+    });
+    await page.reload();
+    await expect(page.locator('#neconyan-crash-notice')).toContainText('before a reply');
+    await expect(page.locator('#neconyan-crash-notice')).not.toContainText('after a reply');
 });

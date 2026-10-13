@@ -1,4 +1,4 @@
-.sbdbg-report .sbdbg-actions,
+.neconyan-crash-report .sbdbg-actions,
 .neconyan-crash-notice .sbdbg-actions {
     display: flex;
     flex-wrap: wrap;
@@ -12,7 +12,7 @@
     max-width: 100%;
     white-space: normal;
 }
-.sbdbg-report-text {
+.neconyan-crash-report .sbdbg-report-text {
     width: 100%;
     height: 40vh;
     min-height: 120px;
@@ -31,13 +31,6 @@ body.neconyan dialog.neconyan-crash-popup {
     background: var(--neco-surface);
     color: var(--neco-ink);
 }
-body #toast-container:has(.neconyan-crash-notice) {
-    top: calc(env(safe-area-inset-top, 0px) + 50px);
-    bottom: auto;
-    max-height: 40vh;
-    overflow-y: auto;
-    z-index: 110000;
-}
 #neconyan-crash-notice {
     position: fixed;
     inset: calc(env(safe-area-inset-top, 0px) + 50px) 12px auto;
@@ -49,4 +42,6 @@ body #toast-container:has(.neconyan-crash-notice) {
     border-radius: 12px;
     background: var(--neco-surface);
     color: var(--neco-ink);
+    max-width: 480px;
+    margin-inline: auto;
 }

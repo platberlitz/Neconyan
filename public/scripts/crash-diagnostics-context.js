@@ -68,7 +68,7 @@ export function initialiseCrashActivity({ eventSource, event_types, getChat, get
     const update = patch => api.updateActivity?.(patch);
     const server = isAdmin && getAccount ? createServerCrashObserver({ isAdmin, getAccount, getRequestHeaders, refreshCsrfToken }) : null;
     api.serverRecovered = safe(() => server?.recovered());
-    let revision = 0, lengths = [], total = 0, idleHandle = null, alternativesComplete = true;
+    let revision = 0, lengths = [], historyCounts = [], total = 0, totalHistory = 0, idleHandle = null, alternativesComplete = true;
     const cancelMeasurement = () => { if (idleHandle !== null) { if (globalThis.cancelIdleCallback) cancelIdleCallback(idleHandle); else clearTimeout(idleHandle); idleHandle = null; } };
     const textLength = message => {
         const mes = typeof message?.mes === 'string' ? message.mes : '';
@@ -83,14 +83,30 @@ export function initialiseCrashActivity({ eventSource, event_types, getChat, get
         }
         return Math.min(1099511627776, length * 2);
     };
+    const historyCount = message => {
+        let count = 0;
+        for (const key of ['inChatAgentPromptRuns', 'inChatAgentTransformHistory']) {
+            const entries = message?.extra?.[key];
+            if (Array.isArray(entries)) count += Math.min(entries.length, 1000000);
+        }
+        const swipes = message?.swipe_info;
+        if (Array.isArray(swipes)) for (let index = 0; index < Math.min(swipes.length, 1000); index++) {
+            if (index === message.swipe_id || swipes[index]?.extra === message.extra) continue;
+            for (const key of ['inChatAgentPromptRuns', 'inChatAgentTransformHistory']) {
+                const entries = swipes[index]?.extra?.[key];
+                if (Array.isArray(entries)) count += Math.min(entries.length, 1000000);
+            }
+        }
+        return Math.min(count, 1000000);
+    };
     const publish = (count, sampled, complete) => {
-        update({ chat: { messageCount: count, estimatedTextBytes: count === null ? null : total, sampledMessages: sampled, complete: complete && alternativesComplete, measuredAt: count === null ? null : Date.now() },
+        update({ chat: { messageCount: count, estimatedTextBytes: count === null ? null : total, sampledMessages: sampled, agentHistoryEntries: count === null ? null : Math.min(totalHistory, 1000000), complete: complete && alternativesComplete, measuredAt: count === null ? null : Date.now() },
             dom: { renderedChildren: document.getElementById('chat')?.childElementCount ?? null, measuredAt: Date.now() } });
     };
-    const rebuild = safe(() => {
+    const rebuild = safe((opened = false) => {
         cancelMeasurement();
         const current = ++revision, chat = getChat();
-        lengths = []; total = 0; alternativesComplete = true;
+        lengths = []; historyCounts = []; total = 0; totalHistory = 0; alternativesComplete = true;
         if (!Array.isArray(chat) || !['unknown', 'roleplay'].includes(api.getActivity?.()?.snapshot.mode)) { publish(null, null, false); return; }
         let index = 0;
         const limit = Math.min(chat.length, 5000);
@@ -99,13 +115,14 @@ export function initialiseCrashActivity({ eventSource, event_types, getChat, get
             const start = performance.now();
             let count = 0;
             while (index < limit && count++ < 128 && performance.now() - start < 1) {
-                const length = textLength(chat[index]); lengths[index++] = length; total += length;
+                const length = textLength(chat[index]), history = historyCount(chat[index]);
+                lengths[index] = length; historyCounts[index++] = history; total += length; totalHistory += history;
             }
             publish(chat.length, index, index === chat.length);
             if (index < limit) schedule(chunk);
         });
         schedule(chunk);
-        api.noteActivity?.('chat-open');
+        if (opened) api.noteActivity?.('chat-open');
     });
     const schedule = callback => {
         cancelMeasurement();
@@ -117,11 +134,13 @@ export function initialiseCrashActivity({ eventSource, event_types, getChat, get
         const chat = getChat();
         if (!Number.isInteger(index) || index < 0 || index >= 5000 || lengths.length < Math.min(chat.length - 1, 5000)) { rebuild(); return; }
         const length = textLength(chat[index]); total += length - (lengths[index] || 0); lengths[index] = length;
+        const history = historyCount(chat[index]); totalHistory += history - (historyCounts[index] || 0); historyCounts[index] = history;
         publish(chat.length, lengths.length, lengths.length === chat.length);
     });
     const counts = safe(() => update({ extensions: { enabledCount: getExtensionCount?.() ?? null } }));
     const on = (type, callback) => { if (event_types[type]) eventSource.on(event_types[type], safe(callback)); };
-    for (const type of ['CHAT_CHANGED', 'CHAT_LOADED', 'MESSAGE_DELETED']) on(type, rebuild);
+    on('CHAT_CHANGED', () => rebuild(true));
+    for (const type of ['CHAT_LOADED', 'MESSAGE_DELETED']) on(type, () => rebuild());
     for (const type of ['MESSAGE_RECEIVED', 'MESSAGE_SENT', 'MESSAGE_EDITED', 'MESSAGE_UPDATED', 'MESSAGE_SWIPED']) on(type, index => { changed(index); if (type === 'MESSAGE_SWIPED') api.noteActivity?.('swipe'); });
     on('GENERATION_STARTED', (type, options, dryRun) => {
         if (dryRun || options?.isAuxiliaryGeneration || type === 'quiet') return;

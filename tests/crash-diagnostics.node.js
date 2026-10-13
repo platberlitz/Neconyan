@@ -246,16 +246,16 @@ test('same-tab recovery retains the old sample, while clean reload and other tab
     first.api.beginAgent({ id: 'a', sourceTemplateId: 'tpl-proofreader', phase: 'post' });
     first.api.flushActivity('test');
     const second = browser(storage, false, session);
-    const report = second.api.getReports().reports.at(-1);
+    const report = second.api.getReports().recoveries.at(-1);
     assert.equal(report.kind, 'unclean-previous-page');
     assert.equal(report.lastKnownActivity.snapshot.chat.messageCount, 58);
     assert.equal(report.lastKnownActivity.snapshot.agents.running[0].label, 'Proofreader');
     assert.match(report.error.message, /did not provide a definite cause/);
-    const count = second.api.getReports().reports.length;
+    const count = second.api.getReports().recoveries.length;
     second.listeners.get('pagehide')({ persisted: false });
     const third = browser(storage, false, session);
-    assert.equal(third.api.getReports().reports.length, count);
-    assert.equal(browser(storage).api.getReports().reports.length, count);
+    assert.equal(third.api.getReports().recoveries.length, count);
+    assert.equal(browser(storage).api.getReports().recoveries.length, count);
 });
 
 test('BFCache suspends the marker and reactivates the same document without a recovery report', () => {
@@ -273,10 +273,46 @@ test('BFCache suspends the marker and reactivates the same document without a re
 test('legacy reports receive stable IDs and discard evidence works without a previous marker', () => {
     const storage = new Map([['neconyan.crash-reports.v1', JSON.stringify([{ schema: 1, runtime: 'browser', kind: 'old', at: '2026-10-13', startedAt: 1, error: { message: 'Legacy error' } }])]]);
     assert.equal(browser(storage).api.getReports().reports[0].id, browser(storage).api.getReports().reports[0].id);
-    const discarded = browser(new Map(), false, new Map(), { discarded: true }).api.getReports().reports[0];
+    const discarded = browser(new Map(), false, new Map(), { discarded: true }).api.getReports().recoveries[0];
     assert.equal(discarded.kind, 'discarded-previous-page');
     assert.equal(discarded.lastKnownActivity.snapshot.at, null);
     assert.equal(discarded.lastKnownActivity.relationship, 'unavailable');
+});
+
+test('forty unclean launches retain no more than eight newest tab records', () => {
+    const storage = new Map();
+    for (let index = 0; index < 40; index++) browser(storage).api.flushActivity('fixture');
+    assert.ok(Array.from(storage.keys()).filter(key => key.startsWith('neconyan.crash-session.v1:')).length <= 8);
+    storage.set('neconyan.crash-session.v1:expired', JSON.stringify({ schema: 1, documentId: 'expired', state: 'running', heartbeatAt: Date.now() - 8 * 86400000 }));
+    browser(storage);
+    assert.equal(storage.has('neconyan.crash-session.v1:expired'), false);
+});
+
+test('background recovery stays separate from five retained real errors', () => {
+    const storage = new Map(), session = new Map();
+    const first = browser(storage, false, session);
+    for (let index = 0; index < 5; index++) first.api.capture('error', new Error(`real error ${index}`));
+    first.context.document.visibilityState = 'hidden'; first.api.flushActivity('fixture');
+    const next = browser(storage, false, session);
+    assert.equal(next.api.getReports().reports.length, 5);
+    assert.equal(next.api.getReports().reports[0].error.message, 'real error 0');
+    assert.equal(next.api.getReports().recoveries.length, 1);
+    assert.equal(next.api.getReports().recoveries[0].lastKnownActivity.snapshot.visibility, 'hidden');
+});
+
+test('JS visibility and custom Agent numbering agree with the native validator', () => {
+    const { api } = browser(new Map());
+    assert.equal(api.validateActivity({}).visibility, 'unknown');
+    api.beginAgent({ id: 'builtin', sourceTemplateId: 'tpl-proofreader', phase: 'post' });
+    api.beginAgent({ id: 'combined', synthesis: true, phase: 'synthesis' });
+    api.beginAgent({ id: 'private-custom', phase: 'post' });
+    assert.equal(api.getActivity().snapshot.agents.running.at(-1).label, 'Custom agent 1');
+    const phases = browser(new Map()).api;
+    for (let index = 0; index < 32; index++) phases.observePhase(index, 'generating');
+    phases.observePhase(31, 'saving');
+    assert.equal(phases.getActivity().snapshot.generation.phase, 'saving');
+    phases.observePhase(32, 'generating');
+    assert.equal(phases.getActivity().snapshot.generation.phase, 'saving');
 });
 
 test('job observers deduplicate peers and main generation end cannot clear a running post Agent', () => {

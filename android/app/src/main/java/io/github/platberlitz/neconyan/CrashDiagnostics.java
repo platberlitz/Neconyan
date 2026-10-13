@@ -66,6 +66,7 @@ final class CrashDiagnostics {
                 JSONObject chat = snapshot.optJSONObject("chat"), agents = snapshot.optJSONObject("agents");
                 result.activity = "Last known activity, recorded " + Math.max(0, (stoppedAt - result.at) / 1000) + " seconds before the stop (" + relationship + "): " + snapshot.optString("mode", "unknown")
                     + (chat == null || chat.isNull("messageCount") ? ". Message count unavailable." : ", " + chat.optLong("messageCount") + " messages.");
+                if (chat != null && chat.has("agentHistoryEntries") && !chat.isNull("agentHistoryEntries")) result.activity += " Agent history: " + chat.optLong("agentHistoryEntries") + " entries.";
                 JSONArray running = agents == null ? null : agents.optJSONArray("running");
                 List<String> labels = new ArrayList<>();
                 if (running != null) for (int i = 0; i < Math.min(8, running.length()); i++) labels.add(running.getJSONObject(i).optString("label", "Custom agent 1"));

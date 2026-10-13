@@ -46,7 +46,7 @@ export function openCrashReportReader({ browserReports = globalThis.NeconyanCras
     const content = element('div', '', 'neconyan-crash-report sbdbg-report');
     content.append(element('h3', 'Saved crash reports'), element('p', 'Reports stay on this device or your server. Error messages and system traces may contain private text. Review before sharing.'));
     if (browserReports.storageError) content.append(element('p', browserReports.storageError));
-    const reports = [...(browserReports.reports ?? []).slice(-5).reverse(), ...(browserReports.retainedActivities ?? []).slice(0, 8)];
+    const reports = [...(browserReports.reports ?? []).slice(-5).reverse(), ...(browserReports.recoveries ?? []).slice(-8).reverse(), ...(browserReports.retainedActivities ?? []).slice(0, 8)];
     const select = element('select', '', 'text_pole'); select.setAttribute('aria-label', 'Select a crash report');
     const summary = element('p'); summary.setAttribute('role', 'status');
     const activity = element('p');
@@ -64,6 +64,7 @@ export function openCrashReportReader({ browserReports = globalThis.NeconyanCras
         const safe = sample && globalThis.NeconyanCrashDiagnostics?.validateActivity?.(sample);
         activity.textContent = safe ? `Last known activity: ${safe.mode}${safe.chat.messageCount !== null ? `, ${safe.chat.messageCount} messages` : ''}.`
             + (safe.agents.running.length ? ` Running ${safe.agents.running.map(agent => agent.label).join(' and ')}.` : '')
+            + (safe.chat.agentHistoryEntries !== null ? ` Agent history: ${safe.chat.agentHistoryEntries} entries.` : '')
             + (safe.at ? ` Last activity recorded at ${new Date(safe.at).toLocaleString()}.` : '') : 'No earlier activity sample was available.';
     };
     const populate = () => {
@@ -82,18 +83,25 @@ export function openCrashReportReader({ browserReports = globalThis.NeconyanCras
     if (nativeReader) actions.append(action('Android crash reports', () => { try { nativeReader(); } catch { /* Keep the browser reader available. */ } }));
     content.append(select, summary, activity, actions, textarea);
     const serverStatus = element('p', 'Server reports have not been loaded'); serverStatus.setAttribute('role', 'status'); content.append(serverStatus);
+    let loading = false;
     const load = async () => {
-        if (!loadServerReports) return;
+        if (!loadServerReports || loading) return;
+        loading = true;
         serverStatus.textContent = 'Loading server reports';
         try {
             const result = await loadServerReports();
             if (result?.unavailable) serverStatus.textContent = result.unavailable;
             else {
-                reports.push(...(result?.reports ?? []).slice(0, 10));
-                serverStatus.textContent = `${result?.reports?.length || 0} saved server reports`;
+                const unique = new Map();
+                for (const report of (result?.reports ?? []).slice(0, 10)) unique.set(report.id || `server:${report.at}:${report.kind}`, report);
+                const oldId = selected?.id;
+                for (let index = reports.length - 1; index >= 0; index--) if (reports[index].runtime === 'server') reports.splice(index, 1);
+                reports.push(...unique.values());
+                if (selectionTouched && oldId) selected = reports.find(report => report.id === oldId) || selected;
+                serverStatus.textContent = `${unique.size} saved server reports`;
                 populate();
             }
-        } catch { serverStatus.textContent = 'The server could not be reached. Saved browser reports are still available.'; }
+        } catch { serverStatus.textContent = 'The server could not be reached. Saved browser reports are still available.'; } finally { loading = false; }
     };
     if (loadServerReports) actions.append(action('Load server reports', () => void load()));
     populate();
