@@ -270,7 +270,7 @@ export async function runRoleplayAgentInterceptors(context, options) {
         if (approval.decision === null) return { waiting: true, approval };
         if (approval.decision === 'skip') return savePhase(context, snapshot.account, name, { identity, value, runs: [], skipped: true });
     }
-    if (selected.some(agent => usesAgentMacro(agent.prompt, SECRETS_TRACKER_MACRO))) {
+    if (selected.some(agent => [TRACKER_STATE_MACRO, SECRETS_TRACKER_MACRO].some(macro => usesAgentMacro(agent.prompt, macro)))) {
         options = { ...options, agentReference: { ...options.agentReference, agents: readRoleplayAgents(base, snapshot), records: options.metadataRecords ?? options.records } };
     }
     let current = structuredClone(value);

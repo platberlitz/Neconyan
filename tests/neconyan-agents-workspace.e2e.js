@@ -375,7 +375,7 @@ test.describe('Agents navigation with an open chat', () => {
                     await library.locator('.ica--template-search').fill('Grounded Prose');
                     const groundedProseCard = library.locator('.ica--template-card[data-id="tpl-grounded-prose"]');
                     await expect(groundedProseCard).toHaveCount(1);
-                    await expect(groundedProseCard.locator('.ica--template-card-name')).toHaveText('Grounded Prose');
+                    await expect(groundedProseCard.locator('.ica--template-card-name')).toHaveText(/^Grounded Prose v\d+$/);
                     await capture(page, info, 'library');
                     const templateId = 'tpl-grounded-prose';
                     let addedPayload;
