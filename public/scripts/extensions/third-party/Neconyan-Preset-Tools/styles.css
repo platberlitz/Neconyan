@@ -357,10 +357,6 @@ body.bpt-animated-bg-active #bg1 {
     margin-top: -2px;
 }
 
-#bpt-settings .inline-drawer-content {
-    padding-top: 0;
-}
-
 .bpt-settings-body {
     display: flex;
     flex-direction: column;
