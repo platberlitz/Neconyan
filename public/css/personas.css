@@ -24,8 +24,9 @@ body.neconyan #PersonaManagement #persona-management-block {
 
 #persona-management-block {
     display: grid;
-    grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+    grid-template-columns: minmax(308px, 368px) minmax(0, 1fr);
     align-items: start;
+    gap: 18px;
     width: 100%;
     min-width: 0;
 }
@@ -38,13 +39,15 @@ body.neconyan #PersonaManagement #persona-management-block {
 }
 
 #PersonaManagement .persona-browse-pane {
-    padding-inline-end: 18px;
-    border-inline-end: 1px solid var(--neco-border);
+    padding: 14px;
+    border: 1px solid var(--neco-border);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--neco-raised) 50%, var(--neco-surface));
 }
 
 #PersonaManagement .persona-edit-pane {
     container: persona-editor / inline-size;
-    padding-inline-start: 18px;
+    padding-inline-start: 0;
 }
 
 /* Tab rows: Browse / Edit (narrow only) and the editor sections. */
@@ -58,11 +61,10 @@ body.neconyan #PersonaManagement #persona-management-block {
     height: auto;
     max-height: none;
     margin: 0;
-    padding: 0;
-    border: 0;
-    border-bottom: 1px solid var(--neco-border);
-    border-radius: 0;
-    background: transparent;
+    padding: 4px;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--neco-raised) 65%, var(--neco-canvas));
     overflow: hidden;
 }
 
@@ -71,41 +73,37 @@ body.neconyan #PersonaManagement #persona-management-block {
 }
 
 #right-nav-panel #PersonaManagement :is(.persona-workspace-tabs, .persona-editor-tabs) .sb-shell-tab {
-    flex: 0 0 auto;
+    flex: 1 1 0;
     flex-direction: row;
     justify-content: center;
     gap: 6px;
     width: auto;
     min-width: 0;
-    min-height: 40px;
+    min-height: 38px;
     margin: 0;
-    padding: 8px 12px;
-    border: 0;
+    padding: 7px 12px;
+    border: 1px solid transparent;
     position: relative;
-    border-radius: 6px 6px 0 0;
+    border-radius: 8px;
     background: transparent;
     box-shadow: none;
     color: var(--neco-muted);
     font-size: 13px;
 }
 
-#right-nav-panel #PersonaManagement :is(.persona-workspace-tabs, .persona-editor-tabs) .sb-shell-tab.is-active::after {
-    content: '';
-    position: absolute;
-    inset: auto 8px 0;
-    height: 2px;
-    border-radius: 999px;
-    background: var(--neco-ginger);
+#right-nav-panel #PersonaManagement :is(.persona-workspace-tabs, .persona-editor-tabs) .sb-shell-tab::after {
+    display: none;
 }
 
 #right-nav-panel #PersonaManagement :is(.persona-workspace-tabs, .persona-editor-tabs) .sb-shell-tab:hover {
-    background: color-mix(in srgb, var(--neco-ginger) 8%, transparent);
+    background: color-mix(in srgb, var(--neco-ginger) 10%, transparent);
     color: var(--neco-ink);
 }
 
 #right-nav-panel #PersonaManagement :is(.persona-workspace-tabs, .persona-editor-tabs) .sb-shell-tab.is-active {
-    background: transparent;
-    box-shadow: none;
+    border-color: color-mix(in srgb, var(--neco-ginger) 38%, var(--neco-border));
+    background: var(--neco-surface);
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--neco-ink) 10%, transparent);
     color: var(--neco-ink);
 }
 
@@ -135,7 +133,7 @@ body.neconyan #PersonaManagement #persona-management-block {
 
 #PersonaManagement .persona-pane-title {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 8px;
     margin: 0;
     font-family: var(--sb-font-display);
@@ -145,8 +143,16 @@ body.neconyan #PersonaManagement #persona-management-block {
 }
 
 #PersonaManagement .persona-library-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 20px;
+    padding: 1px 8px;
+    border: 1px solid var(--neco-border);
+    border-radius: 999px;
+    background: var(--neco-surface);
     font-family: var(--mainFontFamily);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     color: var(--neco-muted);
 }
@@ -237,26 +243,28 @@ body.neconyan #PersonaManagement #persona-management-block {
     display: flex;
     flex-direction: column;
     justify-content: flex-start;
-    gap: 2px;
+    gap: 4px;
     width: 100%;
     padding: 0;
 }
 
 #PersonaManagement #user_avatar_block .avatar-container {
     margin: 0;
-    border: 0;
+    border: 1px solid transparent;
     outline: 0;
     background: transparent;
     cursor: pointer;
 }
 
 #PersonaManagement #user_avatar_block .avatar-container:hover {
-    background: color-mix(in srgb, var(--neco-ginger) 8%, transparent);
+    border-color: color-mix(in srgb, var(--neco-ginger) 28%, var(--neco-border));
+    background: color-mix(in srgb, var(--neco-ginger) 8%, var(--neco-surface));
 }
 
 #PersonaManagement #user_avatar_block .avatar-container.selected {
-    background: color-mix(in srgb, var(--neco-ginger) 16%, var(--neco-surface));
-    box-shadow: inset 3px 0 0 var(--neco-ginger);
+    border-color: color-mix(in srgb, var(--neco-ginger) 62%, var(--neco-border));
+    background: color-mix(in srgb, var(--neco-ginger) 14%, var(--neco-raised));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--neco-ginger) 24%, transparent);
 }
 
 #PersonaManagement #user_avatar_block:not(.gridView) .avatar-container.selected :is(.ch_description, .ch_additional_info),
@@ -267,7 +275,7 @@ body.neconyan #PersonaManagement #persona-management-block {
 #PersonaManagement #user_avatar_block .avatar-container .avatar {
     flex: none;
     margin: 0;
-    border-radius: 999px;
+    border-radius: 12px;
     outline: 0;
     box-shadow: 0 0 0 1px var(--neco-border);
 }
@@ -284,16 +292,19 @@ body.neconyan #PersonaManagement #persona-management-block {
 }
 
 #PersonaManagement #user_avatar_block .avatar-container .ch_name {
+    flex: 0 0 auto;
+    max-width: 100%;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 15px;
+    font-size: 14.5px;
     font-weight: 700;
     color: var(--neco-ink);
 }
 
 #PersonaManagement #user_avatar_block .avatar-container .ch_additional_info {
+    flex: 0 9999 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -304,22 +315,22 @@ body.neconyan #PersonaManagement #persona-management-block {
 
 #PersonaManagement #user_avatar_block:not(.gridView) .avatar-container {
     display: grid;
-    grid-template-columns: 40px minmax(0, 1fr);
+    grid-template-columns: 44px minmax(0, 1fr);
     align-items: center;
     gap: 10px;
     width: 100%;
     min-width: 0;
-    min-height: 52px;
-    padding: 6px 8px;
-    border-radius: 8px;
+    min-height: 58px;
+    padding: 8px 10px;
+    border-radius: 10px;
 }
 
 #PersonaManagement #user_avatar_block:not(.gridView) .avatar-container .avatar,
 #PersonaManagement #user_avatar_block:not(.gridView) .avatar-container .avatar img {
-    width: 40px;
-    min-width: 40px;
-    height: 40px;
-    min-height: 40px;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
 }
 
 #PersonaManagement #user_avatar_block:not(.gridView) .avatar-container .character_select_container {
@@ -411,6 +422,7 @@ body.neconyan #PersonaManagement #persona-management-block {
     margin: 0;
     padding: 0;
     border: 0;
+    border-radius: 8px;
     background: transparent;
     box-shadow: none;
     color: var(--neco-muted);
@@ -436,7 +448,7 @@ body.neconyan #PersonaManagement #persona-management-block {
 #PersonaManagement #user_avatar_block.gridView {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-    gap: 6px;
+    gap: 8px;
 }
 
 #PersonaManagement #user_avatar_block.gridView .avatar-container {
@@ -447,8 +459,8 @@ body.neconyan #PersonaManagement #persona-management-block {
     width: auto;
     max-width: none;
     height: auto;
-    padding: 10px 6px 8px;
-    border-radius: 8px;
+    padding: 10px 8px;
+    border-radius: 10px;
     text-align: center;
 }
 
@@ -561,22 +573,29 @@ body.neconyan #PersonaManagement #persona-management-block {
 
 #PersonaManagement .persona-selected-masthead {
     display: grid;
-    grid-template-columns: 64px minmax(0, 1fr);
+    grid-template-columns: 68px minmax(0, 1fr);
     align-items: center;
-    gap: 14px;
+    gap: 10px 16px;
     min-width: 0;
+    padding: 14px 16px;
+    border: 1px solid color-mix(in srgb, var(--neco-ginger) 26%, var(--neco-border));
+    border-radius: 14px;
+    background:
+        linear-gradient(135deg, color-mix(in srgb, var(--neco-ginger) 9%, transparent), transparent 65%),
+        var(--neco-raised);
 }
 
 #PersonaManagement .persona-selected-avatar {
-    width: 64px;
-    min-width: 64px;
-    max-width: 64px;
-    height: 64px;
-    min-height: 64px;
-    max-height: 64px;
-    border-radius: 999px;
+    grid-row: 1 / span 2;
+    width: 68px;
+    min-width: 68px;
+    max-width: 68px;
+    height: 68px;
+    min-height: 68px;
+    max-height: 68px;
+    border-radius: 16px;
     object-fit: cover;
-    box-shadow: 0 0 0 2px var(--neco-border);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--neco-ginger) 45%, var(--neco-border));
 }
 
 #PersonaManagement .persona-selected-avatar[hidden] {
@@ -650,7 +669,7 @@ body.neconyan #PersonaManagement #persona-management-block {
     padding: 1px 8px;
     border: 1px solid var(--neco-border);
     border-radius: 999px;
-    background: var(--neco-raised);
+    background: var(--neco-surface);
     color: var(--neco-muted);
     font-size: 11px;
     font-weight: 700;
@@ -683,7 +702,7 @@ body.neconyan #PersonaManagement #persona-management-block {
 #PersonaManagement .persona-editor-panel {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 12px;
     min-width: 0;
 }
 
@@ -713,12 +732,17 @@ body.neconyan #PersonaManagement #persona-management-block {
 
 #PersonaManagement .persona-field-head .extension_token_counter {
     flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
     width: auto;
+    min-height: 20px;
     margin: 0;
-    padding: 0;
-    border: 0;
-    background: none;
+    padding: 1px 8px;
+    border: 1px solid var(--neco-border);
+    border-radius: 999px;
+    background: var(--neco-raised);
     font-size: 11px;
+    font-weight: 700;
     color: var(--neco-muted);
     white-space: nowrap;
 }
@@ -733,7 +757,7 @@ body.neconyan #PersonaManagement #persona-management-block {
     min-height: 32px;
     margin: 0;
     padding: 0;
-    border-radius: 6px;
+    border-radius: 8px;
     color: var(--neco-muted);
 }
 
@@ -745,7 +769,9 @@ body.neconyan #PersonaManagement #persona-management-block {
 #PersonaManagement #persona_description {
     width: 100%;
     min-height: 14rem;
-    margin: -6px 0 0;
+    margin: -4px 0 0;
+    padding: 10px 12px;
+    border-radius: 10px;
     resize: vertical;
     font-size: 15px;
     line-height: 1.5;
@@ -753,12 +779,14 @@ body.neconyan #PersonaManagement #persona-management-block {
 
 #PersonaManagement .persona-setting-row {
     display: grid;
-    grid-template-columns: 88px minmax(0, 1fr);
+    grid-template-columns: 92px minmax(0, 1fr);
     align-items: center;
     gap: 8px 12px;
     min-width: 0;
-    padding-top: 12px;
-    border-top: 1px solid var(--neco-border);
+    padding: 12px 14px;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--neco-raised) 45%, var(--neco-surface));
 }
 
 #PersonaManagement .me-persona-pronouns {
@@ -766,8 +794,10 @@ body.neconyan #PersonaManagement #persona-management-block {
     flex-direction: column;
     gap: 8px;
     min-width: 0;
-    padding-top: 12px;
-    border-top: 1px solid var(--neco-border);
+    padding: 12px 14px;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--neco-raised) 45%, var(--neco-surface));
     font-size: 13px;
 }
 
@@ -782,9 +812,25 @@ body.neconyan #PersonaManagement #persona-management-block {
     margin: 0;
 }
 
+#PersonaManagement .me-persona-pronouns .me-pronoun-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+#PersonaManagement .me-persona-pronouns .me-pronoun-preset {
+    min-height: 32px;
+    margin: 0;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
 #PersonaManagement .me-persona-pronouns .me-drawer-hint {
     color: var(--neco-muted);
     font-size: 12px;
+    line-height: 1.4;
 }
 
 #PersonaManagement .persona_management_description_position_container {
@@ -851,21 +897,48 @@ body.neconyan #PersonaManagement #persona-management-block {
 #PersonaManagement .persona-appendices-block {
     container: persona-scenario-notes / inline-size;
     min-width: 0;
-    padding-top: 12px;
-    border-top: 1px solid var(--neco-border);
+    padding: 4px 14px;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--neco-raised) 45%, var(--neco-surface));
+}
+
+#PersonaManagement .persona-appendices-block[open] {
+    padding-bottom: 14px;
 }
 
 #PersonaManagement .persona-appendices-block > summary {
-    display: list-item;
-    min-height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 40px;
     margin: 0;
     padding: 6px 0;
     border: 0;
     background: none;
+    list-style: none;
     font-size: 12px;
     font-weight: 700;
     color: var(--neco-ink);
     cursor: pointer;
+}
+
+#PersonaManagement .persona-appendices-block > summary::-webkit-details-marker {
+    display: none;
+}
+
+#PersonaManagement .persona-appendices-block > summary::after {
+    content: '\f078';
+    font-family: 'Font Awesome 6 Free';
+    font-weight: 900;
+    font-size: 11px;
+    color: var(--neco-muted);
+}
+
+#PersonaManagement .persona-appendices-block[open] > summary::after {
+    content: '\f077';
+    color: var(--neco-ginger);
 }
 
 #PersonaManagement .persona-appendices-content {
@@ -873,7 +946,8 @@ body.neconyan #PersonaManagement #persona-management-block {
     flex-direction: column;
     gap: 10px;
     min-width: 0;
-    padding-top: 6px;
+    padding-top: 8px;
+    border-top: 1px solid color-mix(in srgb, var(--neco-border) 70%, transparent);
 }
 
 #PersonaManagement .persona-appendices-help {
@@ -907,10 +981,10 @@ body.neconyan #PersonaManagement #persona-management-block {
     align-items: start;
     gap: 4px 8px;
     min-width: 0;
-    padding: 4px 6px;
+    padding: 6px 8px;
     border: 1px solid var(--neco-border);
-    border-radius: 8px;
-    background: var(--neco-raised);
+    border-radius: 10px;
+    background: var(--neco-surface);
 }
 
 #PersonaManagement .persona-appendix-toggle-row {
@@ -990,7 +1064,7 @@ body.neconyan #PersonaManagement #persona-management-block {
 
 #PersonaManagement .persona-effective-preview {
     border: 1px solid var(--neco-border);
-    border-radius: 8px;
+    border-radius: 10px;
     background: var(--neco-canvas);
 }
 
@@ -1022,22 +1096,22 @@ body.neconyan #PersonaManagement #persona-management-block {
 #PersonaManagement #persona_connections_buttons {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
     margin: 0;
 }
 
 #PersonaManagement #persona_connections_buttons > .persona-lock-button {
     display: grid;
-    grid-template-columns: 32px minmax(0, 1fr);
+    grid-template-columns: 36px minmax(0, 1fr);
     align-items: center;
     justify-content: stretch;
     gap: 12px;
     width: 100%;
-    min-height: 56px;
+    min-height: 58px;
     margin: 0;
-    padding: 8px 12px;
+    padding: 10px 14px;
     border: 1px solid var(--neco-border);
-    border-radius: 8px;
+    border-radius: 12px;
     background: var(--neco-raised);
     box-shadow: none;
     color: var(--neco-ink);
@@ -1051,9 +1125,9 @@ body.neconyan #PersonaManagement #persona-management-block {
 }
 
 #PersonaManagement #persona_connections_buttons > .persona-lock-button > .icon {
-    width: 32px;
-    height: 32px;
-    border-radius: 999px;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
     background: var(--neco-surface);
     color: var(--neco-muted);
     font-size: 13px;
@@ -1099,7 +1173,7 @@ body.neconyan #PersonaManagement #persona-management-block {
 
 #PersonaManagement #persona_connections_list {
     min-height: 0;
-    margin: -6px 0 0;
+    margin: -4px 0 0;
     padding: 0;
     font-size: 13px;
 }
@@ -1108,18 +1182,13 @@ body.neconyan #PersonaManagement #persona-management-block {
 #PersonaManagement .persona-tool-group {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
     min-width: 0;
-    padding: 12px 0 0;
-    border: 0;
-    border-top: 1px solid var(--neco-border);
-    background: none;
+    padding: 14px;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--neco-raised) 45%, var(--neco-surface));
     box-shadow: none;
-}
-
-#PersonaManagement .persona-tool-group:first-child {
-    padding-top: 0;
-    border-top: 0;
 }
 
 #PersonaManagement .persona-group-title {
@@ -1185,7 +1254,8 @@ body.neconyan #PersonaManagement #persona-management-block {
 
     #PersonaManagement :is(.menu_button, select, input[type='search'], input[type='number']),
     #PersonaManagement .persona-management-browser > :is(#persona_search_bar, #persona_sort_order),
-    #PersonaManagement .persona-field-head .editor_maximize {
+    #PersonaManagement .persona-field-head .editor_maximize,
+    #PersonaManagement .me-persona-pronouns .me-pronoun-preset {
         min-height: 44px;
     }
 
@@ -1232,8 +1302,10 @@ body.neconyan #PersonaManagement #persona-management-block {
     }
 
     #PersonaManagement .persona-browse-pane {
-        padding-inline-end: 0;
-        border-inline-end: 0;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
     }
 
     #PersonaManagement .persona-edit-pane {
@@ -1264,20 +1336,25 @@ body.neconyan #PersonaManagement #persona-management-block {
 
     #PersonaManagement .persona-selected-masthead {
         grid-template-columns: 56px minmax(0, 1fr);
-        gap: 12px;
+        gap: 10px 12px;
+        padding: 12px;
     }
 
     #PersonaManagement .persona-selected-avatar {
+        grid-row: auto;
         width: 56px;
         min-width: 56px;
         max-width: 56px;
         height: 56px;
         min-height: 56px;
         max-height: 56px;
+        border-radius: 14px;
     }
 
     #PersonaManagement #persona_controls {
         grid-column: 1 / -1;
+        padding-top: 6px;
+        border-top: 1px solid color-mix(in srgb, var(--neco-border) 70%, transparent);
     }
 }
 
