@@ -8,8 +8,9 @@ import { normalizeRegistryIdentityName } from './group-profiles.js';
 import { saveHistory } from './history.js';
 import { callLLMWithProfile, classifyLlmRequestError } from './llm.js';
 import { getNarratorVisual } from './narrator-style.js';
+import { isExcludedSpeakerName } from './speaker-exclusions.js';
 import { applyThemeReadabilityAndBrightness, getBaseColor, getEntryEffectiveColor, invalidateThemeCache, syncAllEffectiveColors } from './palettes.js';
-import { buildLLMColorizeRules, buildThoughtSymbolColorPromptRule, filterPromptCharacterEntries, formatColorBlockPair, getEffectivePromptMode, getThoughtDelimiterSymbols, injectPrompt } from './prompts.js';
+import { buildExcludedSpeakerPromptRule, buildLLMColorizeRules, buildThoughtSymbolColorPromptRule, filterPromptCharacterEntries, formatColorBlockPair, getEffectivePromptMode, getThoughtDelimiterSymbols, injectPrompt } from './prompts.js';
 import { generateQuietPrompt, getContext } from './st-api.js';
 import { COLOR_STATE_SAVE_DELAY_MS, LIVE_CHAT_SAVE_DELAY_MS, attributionChatGeneration, characterColors, colorStateSaveTimer, isAutoColorizing, isColorizing, isDomEngine, isRecoloring, lastProcessedMessageSignature, liveChatSaveTimer, pendingColorStateHistory, pendingColorStateInjectPrompt, pendingColorStateSaveData, pendingColorStateUpdateList, setColorStateSaveTimer, setIsAutoColorizing, setIsColorizing, setIsRecoloring, setLastProcessedMessageSignature, setLiveChatSaveTimer, setPendingColorStateHistory, setPendingColorStateInjectPrompt, setPendingColorStateSaveData, setPendingColorStateUpdateList, setPendingLiveChatSave, settings } from './state.js';
 import { getStorageKey, saveData } from './storage.js';
@@ -1407,6 +1408,7 @@ export function shouldUseLocalColorizeFallback(llmResult) {
 // identical messages by different speakers submit the same prompt and the
 // model cannot tell which author goes with which quote.
 function buildDefaultSpeakerPair(trimmedSpeaker) {
+    if (isExcludedSpeakerName(trimmedSpeaker)) return '';
     for (const entry of filterPromptCharacterEntries(Object.values(characterColors))) {
         const safeEntryName = normalizeRegistryIdentityName(entry.name);
         if (safeEntryName && safeEntryName.toLowerCase() === trimmedSpeaker.toLowerCase()) {
@@ -1444,6 +1446,8 @@ export async function colorizeMessageWithLLM(rawText, messageSpeakerName = '') {
     lines.push(`Known speakers and colors: ${charList.join(', ')}`);
     if (thoughtSymbols.length) lines.push(`- ${buildThoughtSymbolColorPromptRule(thoughtSymbols)}`);
     if (narratorColor) lines.push(`- Narrator text: <font color="${narratorColor}">...</font>.`);
+    const excludedSpeakerRule = buildExcludedSpeakerPromptRule();
+    if (excludedSpeakerRule) lines.push(`- ${excludedSpeakerRule}`);
     const defaultSpeakerPair = buildDefaultSpeakerPair(trimmedSpeaker);
     if (defaultSpeakerPair) lines.push(`- Default speaker (message author): ${defaultSpeakerPair}.`);
     lines.push('');
@@ -1536,6 +1540,8 @@ export async function colorizeMultipleMessagesWithLLM(messageBatch) {
     lines.push(`Known speakers and colors: ${charList.join(', ')}`);
     if (thoughtSymbols.length) lines.push(`- ${buildThoughtSymbolColorPromptRule(thoughtSymbols)}`);
     if (narratorColor) lines.push(`- Narrator text: <font color="${narratorColor}">...</font>.`);
+    const excludedSpeakerRule = buildExcludedSpeakerPromptRule();
+    if (excludedSpeakerRule) lines.push(`- ${excludedSpeakerRule}`);
     lines.push('');
 
     // Add all messages with markers

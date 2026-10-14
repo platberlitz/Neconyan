@@ -3,6 +3,7 @@ import { resolveCharacterKeyByNameOrAlias } from './color-blocks.js';
 import { normalizeRegistryIdentity, normalizeRegistryIdentityName } from './group-profiles.js';
 import { applyThemeReadabilityAndBrightness, getBrightnessOffset, getBrightnessTargetLightnessRange, getCustomPaletteMeta, getCustomPalettes, getEntryEffectiveColor, getPersonaName, getThemeLightnessBounds } from './palettes.js';
 import { getNarratorVisual } from './narrator-style.js';
+import { getPromptExcludedSpeakerNames, isExcludedCharacterEntry } from './speaker-exclusions.js';
 import { escapeHtml, extension_prompt_roles, extension_prompt_types, extension_settings, getContext, power_user, promptManager, setExtensionPrompt } from './st-api.js';
 import { MODULE_NAME, characterColors, isDomEngine, settings } from './state.js';
 import { normalizeAliases, normalizeHexColor } from './utils.js';
@@ -136,6 +137,7 @@ function getPromptPersonaIdentities() {
 }
 
 export function filterPromptCharacterEntries(entries = Object.values(characterColors)) {
+    entries = entries.filter(entry => !isExcludedCharacterEntry(entry));
     const personaState = getPromptPersonaIdentities();
     if (!personaState?.inactiveIdentities.size) return entries;
 
@@ -174,6 +176,14 @@ export function buildColorMetadataPromptLines(options = {}) {
         ? 'Append one final [COLORS:Name=#RRGGBB,...] line only for speakers not already listed in Known colors; omit it if none.'
         : `If any ${coloredContent} is colored, append one final [COLORS:Name=#RRGGBB,...] line listing every colored speaker, including known speakers; otherwise omit it.`);
     return lines;
+}
+
+// Quoted with JSON.stringify so a name such as "Leonard | Actor" stays one literal.
+export function buildExcludedSpeakerPromptRule() {
+    const narratorStyled = !!getNarratorVisual(settings, applyThemeReadabilityAndBrightness);
+    const names = getPromptExcludedSpeakerNames({ narratorStyled });
+    if (!names.length) return '';
+    return `Not characters (never color their dialogue and never list them in [COLORS:]): ${names.map(name => JSON.stringify(name)).join(', ')}.`;
 }
 
 export function buildLLMColorizeRules(extraRule = '') {
@@ -281,6 +291,8 @@ export function buildMinimalPromptInstruction() {
     if (settings.highlightMode) {
         parts.push('- Add a subtle background highlight to colored spans when it improves readability.');
     }
+    const excludedSpeakerRule = buildExcludedSpeakerPromptRule();
+    if (excludedSpeakerRule) parts.push(`- ${excludedSpeakerRule}`);
 
     parts.push(...buildColorMetadataPromptLines());
     return parts.join('\n');
@@ -298,6 +310,8 @@ export function buildDomStealthColorsInstruction() {
         'Write the reply normally. Do not add visible <font> tags, CSS color formatting, or color commentary in the reply text.',
     ];
     parts.push(...buildColorMetadataPromptLines({ usageBlockMode: 'new' }));
+    const excludedSpeakerRule = buildExcludedSpeakerPromptRule();
+    if (excludedSpeakerRule) parts.push(`- ${excludedSpeakerRule}`);
     parts.push(
         mode === 'dark'
             ? `- Use dark-background colors (${minLightness}-${maxLightness}% lightness) when choosing new colors.`
