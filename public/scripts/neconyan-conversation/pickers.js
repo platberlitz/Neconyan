@@ -2,7 +2,7 @@ import {
     characters,
     default_avatar,
     default_user_avatar,
-    getThumbnailUrl,
+    getThumbnailUrlForViewport,
     name1,
 } from '../../script.js';
 import { user_avatar } from '../personas.js';
@@ -143,7 +143,8 @@ export function updateUserFooter() {
 
     if (avatarEl instanceof HTMLImageElement) {
         const activeAvatar = typeof user_avatar === 'string' ? user_avatar : null;
-        avatarEl.src = activeAvatar ? getThumbnailUrl('persona', activeAvatar) : (default_user_avatar || '');
+        avatarEl.decoding = 'async';
+        avatarEl.src = activeAvatar ? getThumbnailUrlForViewport('persona', activeAvatar) : (default_user_avatar || '');
         avatarEl.alt = personaName;
     }
     if (nameEl instanceof HTMLElement) {
@@ -196,8 +197,9 @@ export function renderConversationPersonaPicker(picker) {
         btn.setAttribute('aria-selected', String(avatarId === user_avatar));
 
         const img = document.createElement('img');
-        img.src = getThumbnailUrl('persona', avatarId);
+        img.src = getThumbnailUrlForViewport('persona', avatarId);
         img.alt = '';
+        img.decoding = 'async';
         img.loading = 'lazy';
 
         const name = document.createElement('span');
@@ -343,10 +345,10 @@ export function toggleAddDmPicker() {
             const name = character.name || 'Character';
             if (query && !name.toLowerCase().includes(query)) return;
 
-            const thumb = getThumbnailUrl('avatar', character.avatar);
+            const thumb = getThumbnailUrlForViewport('avatar', character.avatar);
             rows.push(`
                 <button type="button" class="sb-conversation-add-dm-option" data-sb-conversation-action="add-character-dm" data-character-index="${idx}" style="display: flex; align-items: center; gap: 8px; inline-size: 100%; background: none; border: none; padding: 6px; border-radius: var(--sb-radius-sm); text-align: left; cursor: pointer; color: inherit;">
-                    <img src="${escapeHtmlAttribute(thumb)}" alt="" style="inline-size: 24px; block-size: 24px; border-radius: 50%; object-fit: cover;" loading="lazy" />
+                    <img src="${escapeHtmlAttribute(thumb)}" alt="" style="inline-size: 24px; block-size: 24px; border-radius: 50%; object-fit: cover;" loading="lazy" decoding="async" />
                     <span${character.name ? ' translate="no"' : ''} style="font-size: var(--sb-type-caption);">${escapeHtmlText(name)}</span>
                 </button>
             `);
@@ -586,11 +588,11 @@ export function toggleConversationGroupPicker({ sourceAvatar = '', sourceGroupId
 
             const checked = selectedMembers.has(character.avatar) ? ' checked' : '';
             const disabled = lockedMembers.has(character.avatar) ? ' disabled' : '';
-            const thumb = getThumbnailUrl('avatar', character.avatar);
+            const thumb = getThumbnailUrlForViewport('avatar', character.avatar);
             rows.push(`
                 <label class="sb-conversation-add-dm-option sb-conversation-group-member-option">
                     <input type="checkbox" class="sb-conversation-group-member-checkbox" value="${escapeHtmlAttribute(character.avatar)}"${checked}${disabled} />
-                    <img src="${escapeHtmlAttribute(thumb)}" alt="" class="sb-conversation-group-member-avatar" width="24" height="24" loading="lazy" />
+                    <img src="${escapeHtmlAttribute(thumb)}" alt="" class="sb-conversation-group-member-avatar" width="24" height="24" loading="lazy" decoding="async" />
                     <span class="sb-conversation-group-member-name">${escapeHtmlText(name)}</span>
                 </label>
             `);

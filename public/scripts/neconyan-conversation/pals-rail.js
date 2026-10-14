@@ -1,7 +1,7 @@
 import {
     characters,
     default_user_avatar,
-    getThumbnailUrl,
+    getThumbnailUrlForViewport,
 } from '../../script.js';
 import { selected_group } from '../group-chats.js';
 import { user_avatar } from '../personas.js';
@@ -188,19 +188,19 @@ export function getScheduleEditorTargets(baseAvatar = getCurrentCharAvatar()) {
 export function getConversationMessageAvatar(message, avatar = getCurrentCharAvatar()) {
     if (message.role === 'user') {
         return (typeof user_avatar === 'string' && user_avatar)
-            ? getThumbnailUrl('persona', user_avatar) || default_user_avatar
+            ? getThumbnailUrlForViewport('persona', user_avatar) || default_user_avatar
             : default_user_avatar;
     }
 
     if (message.role === 'partner' || message.role === 'system') {
         const partnerAvatar = message.extra?.partner_avatar;
         if (partnerAvatar) {
-            return getThumbnailUrl('avatar', partnerAvatar);
+            return getThumbnailUrlForViewport('avatar', partnerAvatar);
         }
     }
 
     if (avatar) {
-        return getThumbnailUrl('avatar', avatar);
+        return getThumbnailUrlForViewport('avatar', avatar);
     }
 
     return default_user_avatar;

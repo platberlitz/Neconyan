@@ -1,7 +1,7 @@
 import {
     characters,
     default_user_avatar,
-    getThumbnailUrl,
+    getThumbnailUrlForViewport,
     messageFormatting,
     name1,
 } from '../../script.js';
@@ -348,6 +348,7 @@ function createConversationMessageElement(message, { avatar, groupId, settings, 
     }
     const image = document.createElement('img');
     image.alt = '';
+    image.decoding = 'async';
     image.loading = index > 8 ? 'lazy' : 'eager';
     image.src = getConversationMessageAvatar(message, avatar);
     avatarWrap.appendChild(image);
@@ -798,7 +799,8 @@ export function renderConversationTimeline() {
         typingAvatarWrap.className = 'sb-conversation-message-avatar';
         const typingImage = document.createElement('img');
         typingImage.alt = '';
-        typingImage.src = getThumbnailUrl('avatar', typingParticipants[0]?.avatar) || default_user_avatar;
+        typingImage.decoding = 'async';
+        typingImage.src = getThumbnailUrlForViewport('avatar', typingParticipants[0]?.avatar) || default_user_avatar;
         typingAvatarWrap.appendChild(typingImage);
 
         const typingBubble = document.createElement('div');
@@ -828,7 +830,8 @@ export function renderConversationTimeline() {
             typingAvatarWrap.className = 'sb-conversation-message-avatar';
             const typingImage = document.createElement('img');
             typingImage.alt = '';
-            typingImage.src = getThumbnailUrl('avatar', typingAvatar) || default_user_avatar;
+            typingImage.decoding = 'async';
+            typingImage.src = getThumbnailUrlForViewport('avatar', typingAvatar) || default_user_avatar;
             typingAvatarWrap.appendChild(typingImage);
 
             const typingBubble = document.createElement('div');
@@ -862,7 +865,8 @@ export function renderConversationTimeline() {
         imageAvatarWrap.className = 'sb-conversation-message-avatar';
         const pendingImage = document.createElement('img');
         pendingImage.alt = '';
-        pendingImage.src = getThumbnailUrl('avatar', pendingAvatar) || default_user_avatar;
+        pendingImage.decoding = 'async';
+        pendingImage.src = getThumbnailUrlForViewport('avatar', pendingAvatar) || default_user_avatar;
         imageAvatarWrap.appendChild(pendingImage);
         const imageBubble = document.createElement('div');
         imageBubble.className = 'sb-conversation-message-bubble';
@@ -923,12 +927,12 @@ export function buildPartnerOptions(selectedNames, emptyText = 'Enable more char
         const charName = character.name || 'Character';
         const charAvatar = character.avatar;
         const checked = selectedSet.has(charAvatar) ? ' checked' : '';
-        const thumbUrl = getThumbnailUrl('avatar', charAvatar);
+        const thumbUrl = getThumbnailUrlForViewport('avatar', charAvatar);
         rows.push(`
             <div class="sb-conversation-partner-option" data-char-name="${escapeHtmlAttribute(charName.toLowerCase())}">
                 <label class="sb-conversation-partner-pick">
                     <input type="checkbox" class="sb-conversation-partner-checkbox" value="${escapeHtmlAttribute(charAvatar)}"${checked} />
-                    <img class="sb-conversation-partner-avatar" src="${escapeHtmlAttribute(thumbUrl)}" alt="${escapeHtmlAttribute(charName)}" width="24" height="24" loading="lazy" />
+                    <img class="sb-conversation-partner-avatar" src="${escapeHtmlAttribute(thumbUrl)}" alt="${escapeHtmlAttribute(charName)}" width="24" height="24" loading="lazy" decoding="async" />
                     <span class="sb-conversation-partner-name"${character.name ? ' translate="no"' : ''}>${escapeHtmlText(charName)}</span>
                 </label>
             </div>

@@ -28,6 +28,7 @@ await jest.unstable_mockModule('../public/script.js', () => ({
     characters: [{ avatar: 'char.png', name: 'Aster' }],
     default_user_avatar: 'default.png',
     getThumbnailUrl: () => '',
+    getThumbnailUrlForViewport: () => '',
     messageFormatting: value => value,
     name1: 'User',
 }));

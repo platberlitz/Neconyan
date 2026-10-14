@@ -1,4 +1,4 @@
-import { characters, default_user_avatar, getThumbnailUrl } from '../../script.js';
+import { characters, default_user_avatar, getThumbnailUrlForViewport } from '../../script.js';
 import { t, translate } from '../i18n.js';
 import { DEFAULT_SETTINGS, MAX_STACKED_PARTICIPANT_AVATARS } from './constants.js';
 import {
@@ -101,6 +101,7 @@ export function renderConversationParticipantStack(container, participants, {
         fallbackItem.dataset.primary = 'true';
         const fallbackImage = document.createElement('img');
         fallbackImage.alt = '';
+        fallbackImage.decoding = 'async';
         fallbackImage.loading = 'lazy';
         // Intrinsic size so the avatar cannot paint at the card's natural resolution before the
         // conversation stylesheet loads.
@@ -146,10 +147,11 @@ export function renderConversationParticipantStack(container, participants, {
 
         const image = document.createElement('img');
         image.alt = '';
+        image.decoding = 'async';
         image.loading = index > 0 ? 'lazy' : 'eager';
         image.width = 44;
         image.height = 44;
-        image.src = getThumbnailUrl('avatar', participant.avatar) || default_user_avatar;
+        image.src = getThumbnailUrlForViewport('avatar', participant.avatar) || default_user_avatar;
         avatarItem.appendChild(image);
 
         const statusDot = document.createElement('span');
