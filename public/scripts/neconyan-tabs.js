@@ -37,7 +37,7 @@ import { copyText, flashHighlight, showFontAwesomePicker } from './utils.js';
 import { characters, chat, flushCharacterSaveDebounced, flushPendingChatSavesForNavigation, getChatGeneration, getCurrentChatId, getGeneratingModel, getOneCharacter, getShortModelName, getThumbnailUrl, is_send_press, parseAvatarSource, refreshCsrfToken, saveSettingsDebounced, scrollReopenedChatToBottom, selectCharacterById, selectRightMenuWithAnimation, this_chid } from '../script.js';
 import { is_group_generating, selected_group } from './group-chats.js';
 import { eventSource, event_types } from './events.js';
-import { extensionNames, findExtension, getExtensionManifest, getExtensionType } from './extensions.js';
+import { extension_settings, extensionNames, findExtension, getExtensionManifest, getExtensionType } from './extensions.js';
 import { getCurrentUserHandle } from './user.js';
 import { bindClearJobHistoryButton } from './job-history-cleanup.js';
 import { getAssistantIconSrc } from './neconyan-assistant-art.js';
@@ -572,7 +572,7 @@ const NN_SAMPLING_SUBTITLE_HTML = 'Adjust randomness, reply length and other gen
  */
 const NECONYAN_NATIVE_TOOL_DEFINITIONS = Object.freeze([
     { id: 'third-party/Neconyan-Preset-Tools', label: 'Preset Tools', icon: 'fa-sliders', actions: ['settings'], unit: '#bpt-settings' },
-    { id: 'third-party/ChatCompletionTabs', label: 'Chat Completion Tabs', icon: 'fa-table-columns', actions: ['settings'], unit: '#ChatCompletionTabs-drawer' },
+    { id: 'third-party/ChatCompletionTabs', label: 'Chat Completion Tabs', icon: 'fa-table-columns', actions: ['toggle', 'settings'], unit: '#ChatCompletionTabs-drawer', toggle: '#ChatCompletionTabs-enabled', settingsKey: 'ChatCompletionTabs' },
     { id: 'third-party/sillytavern-character-colors', label: 'Dialogue Colors', icon: 'fa-palette', actions: ['settings'], unit: '#dc-ext' },
     { id: 'third-party/Neconyan-Terminal-UI', label: 'Termeownal UI', icon: 'fa-terminal', actions: ['settings'], unit: '#sbterm-settings-drawer' },
     { id: 'third-party/Neconyan-BotSearcher', label: 'BotSearcher', icon: 'fa-binoculars', actions: ['open', 'settings'], open: 'botsearcher', unit: '#sbbs_settings' },
@@ -2788,8 +2788,29 @@ function resolveNeconyanNativeTool(definition) {
         type: getExtensionType(canonicalName),
         present,
         enabled,
+        switchedOn: enabled && isNeconyanNativeToolSwitchedOn(definition),
         manifest,
     };
+}
+
+// Tools with a `toggle` keep an on/off switch of their own inside a running extension.
+function isNeconyanNativeToolSwitchedOn(definition) {
+    if (!definition.toggle) return true;
+    const checkbox = document.querySelector(definition.toggle);
+    if (checkbox instanceof HTMLInputElement) return checkbox.checked;
+    return extension_settings?.[definition.settingsKey]?.enabled !== false;
+}
+
+function toggleNeconyanNativeTool(tool) {
+    const checkbox = document.querySelector(tool.toggle);
+    if (!(checkbox instanceof HTMLInputElement)) {
+        void openNeconyanNativeExtensionSettings(tool);
+        return false;
+    }
+    checkbox.checked = !checkbox.checked;
+    checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+    mountNeconyanNativeTools();
+    return true;
 }
 
 function getNeconyanNativeTools() {
@@ -3123,12 +3144,14 @@ function findNeconyanNativeTool(id) {
     return definition ? resolveNeconyanNativeTool(definition) : null;
 }
 
-// Switched-off tools go to their row in Extensions, tools with their own window open it, the rest open their settings page.
+// Switched-off tools go to their row in Extensions, on/off tools flip in place, tools with their own window open it, the rest open their settings page.
 function activateNeconyanRailTool(id) {
     const tool = findNeconyanNativeTool(id);
     if (!tool) return false;
     if (!tool.enabled) {
         void openNeconyanNativeManage(tool.label);
+    } else if (tool.actions.includes('toggle')) {
+        toggleNeconyanNativeTool(tool);
     } else if (tool.actions.includes('open')) {
         void openNeconyanNativeTool(tool);
     } else {
@@ -3141,10 +3164,17 @@ function mountNeconyanNativeTools() {
     for (const button of document.querySelectorAll('#neconyan-workspace-rail [data-neconyan-rail-tool]')) {
         const tool = findNeconyanNativeTool(button.dataset.neconyanRailTool);
         const label = button.querySelector('span')?.textContent || tool?.label || '';
-        const off = Boolean(tool?.present && !tool.enabled);
+        const isToggle = Boolean(tool?.enabled && tool.actions?.includes('toggle'));
+        const off = Boolean(tool?.present && (!tool.enabled || (isToggle && !tool.switchedOn)));
         button.hidden = !tool?.present;
         button.classList.toggle('is-off', off);
-        button.title = off ? `${label} is switched off. Opens Extensions to turn it on.` : label;
+        if (isToggle) {
+            button.setAttribute('aria-pressed', String(!off));
+            button.title = off ? t`${label} is off. Press to turn it on.` : t`${label} is on. Press to turn it off.`;
+        } else {
+            button.removeAttribute('aria-pressed');
+            button.title = off ? `${label} is switched off. Opens Extensions to turn it on.` : label;
+        }
         button.setAttribute('aria-label', off ? `${label} (off)` : label);
         let badge = button.querySelector('.neconyan-rail-tool-off');
         if (off && !badge) {
@@ -3168,6 +3198,12 @@ function bindNeconyanNativeToolEvents() {
     for (const eventName of [event_types.APP_READY, event_types.EXTENSION_SETTINGS_LOADED, event_types.EXTENSION_DISABLED]) {
         if (eventName) eventSource.on(eventName, refresh);
     }
+    const toggleSelectors = NECONYAN_NATIVE_TOOL_DEFINITIONS.map(definition => definition.toggle).filter(Boolean).join(', ');
+    if (toggleSelectors) {
+        document.addEventListener('change', event => {
+            if (event.target instanceof Element && event.target.matches(toggleSelectors)) refresh();
+        });
+    }
     globalThis.NeconyanNativeTools = {
         mount: mountNeconyanNativeTools,
         refresh,
@@ -3175,6 +3211,10 @@ function bindNeconyanNativeToolEvents() {
         getTools: getNeconyanNativeTools,
         openSettings: tool => openNeconyanNativeExtensionSettings(tool),
         activate: activateNeconyanRailTool,
+        toggle: id => {
+            const tool = findNeconyanNativeTool(id);
+            return Boolean(tool?.enabled && tool.toggle && toggleNeconyanNativeTool(tool));
+        },
     };
     refresh();
 }

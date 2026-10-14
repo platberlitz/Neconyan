@@ -679,7 +679,7 @@ describe('Neconyan workspace rail behavior', () => {
         ]);
     });
 
-    test('switched-off tools open Extensions, open-able tools launch, the rest open settings', () => {
+    test('switched-off tools open Extensions, on/off tools flip in place, open-able tools launch, the rest open settings', () => {
         const calls = [];
         const definitionsSource = tabsSource.match(/const NECONYAN_NATIVE_TOOL_DEFINITIONS = Object\.freeze\(\[[\s\S]*?\n\]\);/)[0];
         const definitions = vm.runInNewContext(`${definitionsSource}\nNECONYAN_NATIVE_TOOL_DEFINITIONS;`);
@@ -696,6 +696,7 @@ describe('Neconyan workspace rail behavior', () => {
             openNeconyanNativeManage: label => calls.push(['manage', label]),
             openNeconyanNativeTool: tool => calls.push(['open', tool.label]),
             openNeconyanNativeExtensionSettings: tool => calls.push(['settings', tool.label]),
+            toggleNeconyanNativeTool: tool => calls.push(['toggle', tool.label]),
         });
         vm.runInContext(tabsSource.match(/^function activateNeconyanRailTool\([\s\S]*?^}/m)[0], context);
         expect(Object.keys(tools).map(id => context.activateNeconyanRailTool(id))).toEqual([true, true, true, true, true]);
@@ -705,8 +706,11 @@ describe('Neconyan workspace rail behavior', () => {
             ['manage', 'Termeownal UI'],
             ['settings', 'Prompt Tags'],
             ['settings', 'Preset Tools'],
-            ['settings', 'Chat Completion Tabs'],
+            ['toggle', 'Chat Completion Tabs'],
         ]);
+        expect(byId['third-party/ChatCompletionTabs']).toMatchObject({ toggle: '#ChatCompletionTabs-enabled', unit: '#ChatCompletionTabs-drawer' });
+        expect(byId['third-party/ChatCompletionTabs'].actions).toEqual(['toggle', 'settings']);
+        expect(byId['third-party/Neconyan-Preset-Tools'].actions).toEqual(['settings']);
         expect(tabsSource).toContain('dedupeKey: `tool::${tool.id}`, action: () => activateNeconyanRailTool(tool.id)');
     });
 
@@ -720,22 +724,36 @@ describe('Neconyan workspace rail behavior', () => {
                 hidden: true,
                 classList: { toggle: (name, on) => (on ? classes.add(name) : classes.delete(name)), contains: name => classes.has(name) },
                 setAttribute: (name, value) => { attributes[name] = value; },
+                removeAttribute: name => { delete attributes[name]; },
                 attributes,
                 querySelector: selector => (selector === 'span' ? labelSpan : selector === '.neconyan-rail-tool-off' ? button.badge ?? null : null),
             };
             return button;
         };
-        const buttons = [makeButton('on', 'Debugger'), makeButton('off', 'Termeownal UI'), makeButton('gone', 'Prompt Tags')];
-        const tools = { on: { present: true, enabled: true }, off: { present: true, enabled: false }, gone: { present: false, enabled: false } };
+        const buttons = [makeButton('on', 'Debugger'), makeButton('off', 'Termeownal UI'), makeButton('gone', 'Prompt Tags'), makeButton('tabs-on', 'Chat Completion Tabs'), makeButton('tabs-off', 'Chat Completion Tabs')];
+        const tools = {
+            on: { present: true, enabled: true, actions: ['open'] },
+            off: { present: true, enabled: false, actions: ['open'] },
+            gone: { present: false, enabled: false },
+            'tabs-on': { present: true, enabled: true, switchedOn: true, actions: ['toggle', 'settings'] },
+            'tabs-off': { present: true, enabled: true, switchedOn: false, actions: ['toggle', 'settings'] },
+        };
         const context = vm.createContext({
             document: { querySelectorAll: () => buttons },
             findNeconyanNativeTool: id => tools[id],
             createElement: (_tag, options) => ({ ...options, remove() {} }),
-            t: strings => strings[0],
+            t: (strings, ...values) => strings.reduce((text, part, index) => text + part + (values[index] ?? ''), ''),
         });
         vm.runInContext(tabsSource.match(/^function mountNeconyanNativeTools\([\s\S]*?^}/m)[0], context);
         context.mountNeconyanNativeTools();
-        expect(buttons.map(button => button.hidden)).toEqual([false, false, true]);
+        expect(buttons.map(button => button.hidden)).toEqual([false, false, true, false, false]);
+        expect(buttons[3].classList.contains('is-off')).toBe(false);
+        expect(buttons[3].attributes['aria-pressed']).toBe('true');
+        expect(buttons[4].classList.contains('is-off')).toBe(true);
+        expect(buttons[4].attributes['aria-pressed']).toBe('false');
+        expect(buttons[4].attributes['aria-label']).toBe('Chat Completion Tabs (off)');
+        expect(buttons[4].title).toBe('Chat Completion Tabs is off. Press to turn it on.');
+        expect(buttons[0].attributes['aria-pressed']).toBeUndefined();
         expect(buttons[1].classList.contains('is-off')).toBe(true);
         expect(buttons[1].badge.className).toBe('neconyan-rail-tool-off');
         expect(buttons[1].attributes['aria-label']).toBe('Termeownal UI (off)');
