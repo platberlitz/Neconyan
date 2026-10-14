@@ -1705,6 +1705,23 @@ body.neconyan #WorldInfo .world_popup_action_group_label {
     opacity: 1;
 }
 
+/* The Entry tools summary is dressed as a button beside Add entry, including
+   the wide cat-control chrome. Undo the plain label row treatment for it only;
+   the Library actions summary keeps the label look. */
+body.neconyan #WorldInfo .world_popup_action_group_label.menu_button {
+    min-height: 48px;
+    padding-block: 6px;
+    font-size: var(--sb-type-control);
+    font-weight: var(--sb-weight-control);
+}
+
+/* Two cat controls side by side tangle whiskers at the default group gap;
+   give Add entry breathing room on the side facing Entry tools. Inline-end
+   margin stays invisible when the group stacks on narrow viewports. */
+body.neconyan #WorldInfo #world_popup_new {
+    margin-inline-end: 16px;
+}
+
 body.neconyan #WorldInfo .world_popup_action_group_contents {
     display: flex;
     flex-wrap: wrap;

@@ -34,6 +34,9 @@ import { CharXParser, persistCharXAssets } from '../charx.js';
 import { getSuspiciousEmptyCharacterDefinitionFields } from '../character-save-guard.js';
 import { serverDirectory } from '../server-directory.js';
 import { forgetSharedScratchpadsLocked, moveSharedScratchpadsLocked } from '../scratchpad/shared-sessions.js';
+import { assertScratchpadAvatarWriteLocked } from '../scratchpad/images.js';
+import { scratchpadAccountBase, withScratchpad } from '../scratchpad/store.js';
+import { decodeServerImage } from '../media-codecs.js';
 import { createEntityDateAdded, ensureEntityDateAdded, prepareEntityDateAddedMove, reconcileEntityDateAdded, removeEntityDateAdded, ENTITY_DATE_ADDED_FILE } from '../entity-date-added.js';
 import { getEntityLastChat, prepareEntityLastChatMove, readEntityLastChats, removeEntityLastChat, setEntityLastChat, ENTITY_LAST_CHAT_FILE } from '../entity-last-chat.js';
 import {
@@ -735,11 +738,18 @@ function assertExpectedCardRevision(request, filename) {
     }
 }
 
+function assertCharacterWriteLocked(lease, request, avatar, filename) {
+    assertNativeMediaTargetIdle(lease, { kind: 'character', id: avatar });
+    if (request.body?.scratchpad_avatar_review !== undefined) {
+        try { assertScratchpadAvatarWriteLocked(lease, request.body.scratchpad_avatar_review, avatar, request.body.expected_revision); } catch (error) { throw roleplayError('ROLEPLAY_SCRATCHPAD_AVATAR_CHANGED', error.message, [400, 409].includes(error.status) ? error.status : 409); }
+    }
+    assertExpectedCardRevision(request, filename);
+}
+
 function publishCharacterCard(request, avatar, bytes, legacyWrite) {
     const filename = path.join(request.user.directories.characters, avatar);
     return withRoleplayAccount(characterBase(request), null, lease => {
-        assertNativeMediaTargetIdle(lease, { kind: 'character', id: avatar });
-        assertExpectedCardRevision(request, filename);
+        assertCharacterWriteLocked(lease, request, avatar, filename);
         let valid = true;
         try {
             roleplayEntityContent('character', avatar, bytes, { storage: true });
@@ -785,10 +795,10 @@ function publishCharacterCard(request, avatar, bytes, legacyWrite) {
  * @param {string} outputFile - Target image file name, with or without a PNG extension
  * @param {import('express').Request} request - Express request obejct
  * @param {Crop|undefined} crop - Crop parameters
- * @param {{preserveDateAdded?: boolean, preserveFileIdentity?: boolean}} [writeOptions]
+ * @param {{preserveDateAdded?: boolean, preserveFileIdentity?: boolean, requireDecodable?: boolean}} [writeOptions]
  * @returns {Promise<boolean>} - True if the operation was successful
  */
-async function writeCharacterData(inputFile, data, outputFile, request, crop = undefined, { preserveDateAdded = false, preserveFileIdentity = false } = {}) {
+async function writeCharacterData(inputFile, data, outputFile, request, crop = undefined, { preserveDateAdded = false, preserveFileIdentity = false, requireDecodable = false } = {}) {
     try {
         const outputImageName = getPngFileName(outputFile);
         const outputImagePath = path.join(request.user.directories.characters, outputImageName);
@@ -834,6 +844,8 @@ async function writeCharacterData(inputFile, data, outputFile, request, crop = u
 
                 return await tryReadImage(inputFile, crop);
             } catch (error) {
+                // A reviewed Scratchpad picture must be refused, never silently replaced by the default avatar.
+                if (requireDecodable) throw error;
                 const message = Buffer.isBuffer(inputFile) ? 'Failed to read image buffer.' : `Failed to read image: ${inputFile}.`;
                 console.warn(message, 'Using a fallback image.', error);
                 return await fs.promises.readFile(DEFAULT_AVATAR_PATH);
@@ -849,7 +861,11 @@ async function writeCharacterData(inputFile, data, outputFile, request, crop = u
 
         if (preserveFileIdentity) {
             if (fs.readFileSync(outputImagePath).equals(outputImage)) {
-                return true;
+                const unchanged = withRoleplayAccount(characterBase(request), null, lease => {
+                    assertCharacterWriteLocked(lease, request, outputImageName, outputImagePath);
+                    return fs.readFileSync(outputImagePath).equals(outputImage);
+                });
+                if (unchanged) return true;
             }
         }
 
@@ -2118,17 +2134,25 @@ router.post('/edit', validateAvatarUrlMiddleware, async function (request, respo
 });
 
 router.post('/edit-avatar', validateAvatarUrlMiddleware, async function (request, response) {
+    const uploadPath = request.file ? path.join(request.file.destination, request.file.filename) : null;
     try {
-        if (!request.file) {
-            return response.status(400).send('Error: no file uploaded');
-        }
-
         if (!request.body || !request.body.avatar_url) {
             return response.status(400).send('Error: no avatar_url in request body');
         }
 
-        const uploadPath = path.join(request.file.destination, request.file.filename);
-        if (!fs.existsSync(uploadPath)) {
+        // A Scratchpad avatar review installs the server's own saved picture, never bytes sent by the browser.
+        const review = request.body.scratchpad_avatar_review;
+        let sourceInput = uploadPath;
+        if (review !== undefined) {
+            const bytes = withScratchpad(scratchpadAccountBase(request), lease =>
+                assertScratchpadAvatarWriteLocked(lease, review, request.body.avatar_url, request.body.expected_revision));
+            try { await decodeServerImage(bytes); } catch {
+                return response.status(409).json({ message: 'The saved avatar picture could not be used. Review it again.' });
+            }
+            sourceInput = bytes;
+        } else if (!request.file) {
+            return response.status(400).send('Error: no file uploaded');
+        } else if (!fs.existsSync(sourceInput)) {
             return response.status(400).send('Error: uploaded file does not exist');
         }
         const characterPath = path.join(request.user.directories.characters, request.body.avatar_url);
@@ -2142,10 +2166,9 @@ router.post('/edit-avatar', validateAvatarUrlMiddleware, async function (request
 
         const crop = tryParse(request.query.crop);
         const fileName = request.body.avatar_url;
-        const writeSucceeded = await writeCharacterData(uploadPath, data, fileName, request, crop, { preserveFileIdentity: true });
+        const writeSucceeded = await writeCharacterData(sourceInput, data, fileName, request, crop,
+            { preserveFileIdentity: true, requireDecodable: review !== undefined });
 
-        // Remove uploaded temp file
-        fs.unlinkSync(uploadPath);
         if (!writeSucceeded) throw new Error('Failed to write character avatar data.');
 
         // Reset thumbnail cache
@@ -2154,7 +2177,14 @@ router.post('/edit-avatar', validateAvatarUrlMiddleware, async function (request
         return response.sendStatus(200);
     } catch (err) {
         console.error('An error occurred while editing avatar', err);
-        return response.sendStatus(500);
+        const status = [400, 409].includes(err?.status) ? err.status : 500;
+        return response.status(status).json({ message: status === 500 ? 'The character avatar could not be saved.' : err.message });
+    } finally {
+        if (uploadPath) {
+            try { fs.unlinkSync(uploadPath); } catch (error) {
+                if (error.code !== 'ENOENT') console.warn('Could not remove the temporary avatar upload.', error);
+            }
+        }
     }
 });
 

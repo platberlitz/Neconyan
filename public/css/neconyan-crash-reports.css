@@ -1,0 +1,47 @@
+.neconyan-crash-report .sbdbg-actions,
+.neconyan-crash-notice .sbdbg-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 12px 0;
+}
+.neconyan-crash-report .menu_button,
+.neconyan-crash-popup .menu_button,
+.neconyan-crash-notice .menu_button {
+    min-height: 44px;
+    max-width: 100%;
+    white-space: normal;
+}
+.neconyan-crash-report .sbdbg-report-text {
+    width: 100%;
+    height: 40vh;
+    min-height: 120px;
+    font-family: monospace;
+    font-size: 0.85em;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    box-sizing: border-box;
+}
+.neconyan-crash-report {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    text-align: left;
+}
+body.neconyan dialog.neconyan-crash-popup {
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+}
+#neconyan-crash-notice {
+    position: fixed;
+    inset: calc(env(safe-area-inset-top, 0px) + 50px) 12px auto;
+    z-index: 110000;
+    max-height: 40vh;
+    overflow-y: auto;
+    padding: 12px;
+    border: 1px solid var(--neco-ginger);
+    border-radius: 12px;
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    max-width: 480px;
+    margin-inline: auto;
+}

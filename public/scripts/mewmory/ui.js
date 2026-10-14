@@ -749,7 +749,10 @@ function renderHealth(root) {
     health.append(actions);
     if (view.operationsError) health.append(node('p', 'mewmory-caption', view.operationsError));
     for (const job of view.operations || []) {
-        health.append(node('p', 'mewmory-caption', job.label + ' · ' + job.state + (job.error?.message ? ': ' + job.error.message : job.warning ? ': ' + job.warning : '')));
+        const jobMessage = job.error?.message || job.warning || '';
+        const jobLine = node('p', 'mewmory-caption', job.label + ' · ' + job.state);
+        if (jobMessage) jobLine.append(': ', node('span', '', jobMessage));
+        health.append(jobLine);
         if (['failed', 'interrupted'].includes(job.state)) health.append(button('Retry ' + job.label.toLocaleLowerCase(), () => act(() => retryJob(job.id))));
         if (['failed', 'interrupted', 'completed', 'cancelled'].includes(job.state)) health.append(button('Dismiss ' + job.label.toLocaleLowerCase(), () => act(() => dismissJob(job.id))));
     }

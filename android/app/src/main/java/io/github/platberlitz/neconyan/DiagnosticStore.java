@@ -1,0 +1,140 @@
+package io.github.platberlitz.neconyan;
+
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.util.*;
+
+/** Small private reports, independent of Android so persistence can be exercised on the host. */
+final class DiagnosticStore {
+    static final int MAX_CHARS = 60000;
+    private static final Object WRITE_LOCK = new Object();
+    private final File directory;
+    private String readError = "";
+    DiagnosticStore(File directory) { this.directory = directory; }
+
+    static String redact(String text) {
+        if (text == null) return "";
+        return text.substring(0, Math.min(text.length(), MAX_CHARS))
+            .replaceAll("(?i)\\b(Bearer|Basic)\\s+[^\\s,;\"']+", "$1 [redacted]")
+            .replaceAll("(?i)((?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|authorization|password|passwd|secret|cookie)\\s*[\"']?\\s*[:=]\\s*)(?:\"[^\"]*(?:\"|$)|'[^']*(?:'|$)|[^\\s,;}]+)", "$1[redacted]")
+            .replaceAll("\\b(?:sk|sess)-[a-zA-Z0-9_-]{12,}", "[redacted]")
+            .replaceAll("(https?://)[^\\s/@]+:[^\\s/@]+@", "$1[redacted]@")
+            .replaceAll("((?:https?|file)://[^\\s?#)]+)[?#][^\\s)]*", "$1?[redacted]")
+            .replaceAll("(/[\\w/.-]+)\\?[^\\s)]*", "$1?[redacted]");
+    }
+
+    /** False when the saved report already holds a trace, or retention would delete it straight away. */
+    boolean needsExit(String id, String missingTraceText) {
+        synchronized (WRITE_LOCK) {
+            if (!id.matches("[a-zA-Z0-9-]+")) return false;
+            File existing = new File(directory, id + ".txt");
+            if (!existing.isFile()) {
+                File[] files = files();
+                return files.length < 10 || (id + ".txt").compareTo(files[files.length - 10].getName()) > 0;
+            }
+            try {
+                if (existing.length() > MAX_CHARS * 4L) return false;
+                String text = new String(Files.readAllBytes(existing.toPath()), StandardCharsets.UTF_8);
+                int boundary = text.indexOf("\n\nDetails:\n");
+                if (boundary > 0 && boundary <= CrashReport.MAX_HEADER_BYTES && text.substring(0, boundary).contains("\nTrace status: available")) return false;
+                return text.contains(missingTraceText);
+            } catch (IOException error) { return true; }
+        }
+    }
+
+    boolean saveExit(String id, String report, boolean hasTrace) {
+        // Android can remove a trace after making it available. Never replace richer evidence with that absence.
+        synchronized (WRITE_LOCK) {
+            if (!id.matches("[a-zA-Z0-9-]+")) return false;
+            if (!hasTrace && new File(directory, id + ".txt").isFile()) return true;
+            if (report.startsWith("Neconyan crash report v2\n")) report = report.replaceFirst("\n\nDetails:\n", "\nTrace status: " + (hasTrace ? "available" : "pending") + "\n\nDetails:\n");
+            return saveLocked(id, report);
+        }
+    }
+
+    boolean save(String id, String report) {
+        synchronized (WRITE_LOCK) { return saveLocked(id, report); }
+    }
+
+    private boolean saveLocked(String id, String report) {
+        if (!id.matches("[a-zA-Z0-9-]+")) return false;
+        File temporary = null;
+        try {
+            Files.createDirectories(directory.toPath());
+            temporary = File.createTempFile("pending-", ".tmp", directory);
+            try (FileOutputStream output = new FileOutputStream(temporary)) {
+                output.write(redact(report).getBytes(StandardCharsets.UTF_8));
+                output.getFD().sync();
+            }
+            Files.move(temporary.toPath(), new File(directory, id + ".txt").toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            File[] files = files();
+            for (int i = 0; i < files.length - 10; i++) Files.deleteIfExists(files[i].toPath());
+            return true;
+        } catch (Exception error) { return false; }
+        finally { if (temporary != null) temporary.delete(); }
+    }
+
+    File[] files() {
+        readError = "";
+        File[] files = directory.listFiles((dir, name) -> name.matches("[a-zA-Z0-9-]+\\.txt"));
+        if (files == null) { if (directory.exists()) readError = "Saved crash reports could not be read. Check storage and use the current report's Copy or Share action if available."; return new File[0]; }
+        Arrays.sort(files, Comparator.comparing(File::getName));
+        return files;
+    }
+    String readError() { return readError; }
+
+    CrashReport.Entry readEntry(String id) {
+        if (id == null || !id.matches("[a-zA-Z0-9-]+\\.txt")) return null;
+        File file = new File(directory, id);
+        try {
+            if (!file.isFile() || file.length() > MAX_CHARS * 4L) return null;
+            return CrashReport.parse(id, new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
+        } catch (Throwable ignored) { return null; }
+    }
+    List<CrashReport.Entry> listEntries() {
+        List<CrashReport.Entry> entries = new ArrayList<>();
+        File[] files = files();
+        for (int i = files.length - 1; i >= Math.max(0, files.length - 10); i--) {
+            try (InputStream input = new FileInputStream(files[i])) {
+                byte[] bytes = new byte[CrashReport.MAX_HEADER_BYTES];
+                int length = 0;
+                while (length < bytes.length) {
+                    int count = input.read(bytes, length, bytes.length - length);
+                    if (count < 0) break;
+                    if (count == 0) continue;
+                    length += count;
+                }
+                String header = new String(bytes, 0, length, StandardCharsets.UTF_8);
+                CrashReport.Entry entry = CrashReport.parse(files[i].getName(), header);
+                if (entry != null) entries.add(entry);
+            } catch (Throwable ignored) { readError = "A saved crash report could not be read. Select another report or copy the current report before closing."; }
+        }
+        return entries;
+    }
+    CrashReport.Entry newestEntry() {
+        File[] files = files();
+        for (int i = files.length - 1; i >= Math.max(0, files.length - 10); i--) {
+            CrashReport.Entry entry = readEntry(files[i].getName());
+            if (entry != null) return entry;
+        }
+        return null;
+    }
+
+    String readAll() {
+        return readNewest(10);
+    }
+
+    String readNewest(int maximum) {
+        StringBuilder result = new StringBuilder();
+        File[] files = files();
+        for (int i = files.length - 1; i >= Math.max(0, files.length - maximum); i--) {
+            try {
+                if (files[i].length() > MAX_CHARS * 4L) continue;
+                result.append("\n\n=== ").append(files[i].getName()).append(" ===\n")
+                    .append(new String(Files.readAllBytes(files[i].toPath()), StandardCharsets.UTF_8));
+            } catch (IOException error) { result.append("\nReport could not be read: ").append(error.getClass().getSimpleName()); }
+        }
+        return result.length() == 0 ? "No saved Android crash reports." : result.toString();
+    }
+}

@@ -9,6 +9,7 @@ import http.cookiejar
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
+import re
 import subprocess
 import time
 import threading
@@ -55,6 +56,31 @@ def window_labels():
         return {node.get('text', '') for node in ET.fromstring(screen).iter('node')}
     except (subprocess.SubprocessError, ET.ParseError):
         return set()
+
+
+def check_crash_report():
+    # UI Automator only includes the visible part of this native ScrollView.
+    # Keep the labels encountered while scrolling, rather than requiring the
+    # summary, both actions and the full report to fit on a small screen at once.
+    labels = set()
+    for _ in range(12):
+        adb('shell', 'uiautomator', 'dump', '/data/local/tmp/neconyan-window.xml')
+        screen = adb('shell', 'cat', '/data/local/tmp/neconyan-window.xml')
+        Path('android-window.xml').write_text(screen)
+        tree = ET.fromstring(screen)
+        labels.update(node.get('text', '') for node in tree.iter('node'))
+        actions = {'copy report', 'share report'}.issubset({label.casefold() for label in labels})
+        server = any('Component: server\n' in label for label in labels)
+        if actions and server:
+            print('The crashed server shows an individual report with Copy and Share actions.', flush=True)
+            return
+        scroll = next((node for node in tree.iter('node') if node.get('scrollable') == 'true'), None)
+        assert scroll is not None, 'The crash report has no scrollable details: ' + repr(labels)
+        left, top, right, bottom = map(int, re.findall(r'\d+', scroll.get('bounds', '')))
+        x = str((left + right) // 2)
+        inset = max(1, (bottom - top) // 5)
+        adb('shell', 'input', 'swipe', x, str(bottom - inset), x, str(top + inset), '400')
+    raise AssertionError('The saved report did not expose both actions and the server details: ' + repr(labels))
 
 
 def wait_for_workspace():
@@ -251,7 +277,24 @@ request, token, port, origin = connect()
 try:
     assert json.loads(private('cat', 'files/android-ready.json')).get('safe') is True, 'The restart after an early stop was not in safe mode'
     deadline = time.monotonic() + 60
-    while time.monotonic() < deadline and 'Neconyan is in safe mode' not in window_labels():
+    labels = set()
+    while time.monotonic() < deadline:
+        labels = window_labels()
+        if 'Crash report' in labels:
+            break
+        time.sleep(1)
+    assert 'Crash report' in labels, 'The crashed server did not show its saved report'
+    check_crash_report()
+    adb('shell', 'input', 'keyevent', '4')
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        labels = window_labels()
+        if 'Neconyan is in safe mode' in labels:
+            break
+        if 'Crash report' in labels:
+            # Node and Android can retain separate reports for the same stop.
+            check_crash_report()
+            adb('shell', 'input', 'keyevent', '4')
         time.sleep(1)
     assert 'Neconyan is in safe mode' in window_labels(), 'The safe-mode notice did not appear'
     adb('shell', 'input', 'keyevent', '4')

@@ -1,5 +1,6 @@
 import { EXTENSION_LABEL, EXTENSION_NAME, TAB, TAB_LABEL, TAB_META } from '../constants.js';
 import { button, element, replace } from '../dom.js';
+import { hostT } from '../host.js';
 import { createLedger } from '../ledger.js';
 import { createAbTab } from './ab-tab.js';
 import { createCasesTab } from './cases-tab.js';
@@ -57,6 +58,14 @@ export function mountRuntimeUi({ signal = null } = {}) {
     const modalBackground = new Map();
     let disposed = false;
     let workbench = null;
+    let pendingRefreshReason = null;
+
+    function isWorkbenchVisible() {
+        if (page && !page.hidden) {
+            return true;
+        }
+        return Boolean(drawerIcon && !drawerIcon.classList.contains('down'));
+    }
 
     /** A small labelled pill for the workspace header. */
     function pill(text, { variant = '', title = '' } = {}) {
@@ -119,7 +128,7 @@ export function mountRuntimeUi({ signal = null } = {}) {
             drawerStatus.textContent = 'Prompting Lab cannot run with this Neconyan version. Update Neconyan or Prompting Lab, then reload.';
             drawerStatus.className = 'sbpl-settings-status sbpl-settings-error';
             if (state.availability.reason) {
-                drawerStatus.title = `Technical details: ${state.availability.reason}`;
+                drawerStatus.title = hostT`Technical details: ${state.availability.reason}`;
             }
         } else {
             drawerStatus.hidden = false;
@@ -209,6 +218,11 @@ export function mountRuntimeUi({ signal = null } = {}) {
         const expanded = Boolean(drawerIcon && !drawerIcon.classList.contains('down'));
         drawerToggle?.setAttribute('aria-expanded', String(expanded));
         drawerContent?.setAttribute('aria-hidden', String(!expanded));
+        if (expanded && pendingRefreshReason) {
+            const reason = pendingRefreshReason;
+            pendingRefreshReason = null;
+            workbench.refresh(reason);
+        }
     }
 
     /* ---------------------------------------------------- full-page mode */
@@ -405,6 +419,11 @@ export function mountRuntimeUi({ signal = null } = {}) {
         pageOpener = opener instanceof HTMLElement ? opener : null;
         page.hidden = false;
         workbench.mount(pageMount, { layout: 'page' });
+        if (pendingRefreshReason) {
+            const reason = pendingRefreshReason;
+            pendingRefreshReason = null;
+            workbench.refresh(reason);
+        }
         activatePageModal();
         updatePageStatus();
         requestAnimationFrame(() => {
@@ -572,7 +591,12 @@ export function mountRuntimeUi({ signal = null } = {}) {
                 return;
             }
             ensureEntrypoints();
-            workbench.refresh(reason);
+            if (isWorkbenchVisible()) {
+                pendingRefreshReason = null;
+                workbench.refresh(reason);
+            } else {
+                pendingRefreshReason = reason;
+            }
             updateDrawer();
         },
         setAvailability(value) {

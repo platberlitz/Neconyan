@@ -157,3 +157,68 @@ test('automatic Dialogue Colors scans stay quiet while manual scans still report
     expect(info).toHaveBeenCalledWith('Found 0 characters');
     expect(fs.readFileSync(path.join(directory, 'main.js'), 'utf8')).toContain('scanAllMessages({ notify: false })');
 });
+
+test('World Info Lab aligns Health panel padding and Scan surface tokens with the Neconyan shell', () => {
+    const css = fs.readFileSync(path.join(runtimeRoot, 'Neconyan-WorldInfo-Lab/style.css'), 'utf8');
+
+    expect(css).toMatch(/\.sbwil-panel-trace,\s*\.sbwil-panel-tests,\s*\.sbwil-panel-batch,\s*\.sbwil-panel-health\s*\{\s*padding:\s*20px;/);
+    expect(css).toMatch(/\.sbwil-scan-output,\s*\.sbwil-panel-trace,\s*\.sbwil-panel-tests,\s*\.sbwil-panel-batch,\s*\.sbwil-panel-health\s*\{\s*padding:\s*24px 28px 32px;/);
+    expect(css).toMatch(/\.sbwil-scan-controls,\s*\.sbwil-scan-output,\s*\.sbwil-panel-trace,\s*\.sbwil-panel-tests,\s*\.sbwil-panel-batch,\s*\.sbwil-panel-health\s*\{\s*padding:\s*16px 14px 22px;/);
+    expect(css).toMatch(/\.sbwil-scan-form,\s*\.sbwil-batch-form,\s*\.sbwil-health-form\s*\{\s*display:\s*grid;\s*gap:\s*17px;/);
+
+    expect(css).toContain('--sbwil-bg: var(--neco-surface,');
+    expect(css).toContain('--sbwil-input-bg: var(--sb-input-bg, var(--neco-canvas, var(--sbwil-bg-alt)));');
+    expect(css).toMatch(/\.sbwil-scan-controls\s*\{[^}]*background:\s*var\(--sbwil-bg\);/);
+    expect(css).toMatch(/\.sbwil-scan-output\s*\{[^}]*background:\s*var\(--sbwil-bg\);/);
+    expect(css).toMatch(/#sbwil-workbench\.sbwil-workbench h3:not\(#chat h3\)\s*\{[^}]*padding:\s*0;[^}]*border:\s*0;[^}]*background:\s*none;/);
+});
+
+test('styles BotSearcher with Neconyan tokens, circular controls, and safe client rendering', () => {
+    const botSearcherRoot = path.join(runtimeRoot, 'Neconyan-BotSearcher');
+    const browserHtml = fs.readFileSync(path.join(botSearcherRoot, 'templates/browser.html'), 'utf8');
+    const styleCss = fs.readFileSync(path.join(botSearcherRoot, 'style.css'), 'utf8');
+    const detailJs = fs.readFileSync(path.join(botSearcherRoot, 'client/detail.js'), 'utf8');
+    const intakeJs = fs.readFileSync(path.join(botSearcherRoot, 'client/intake.js'), 'utf8');
+
+    expect(browserHtml).toContain('class="sbbs-masthead"');
+    expect(browserHtml).toContain('class="sbbs-utility-row"');
+    expect(browserHtml).toContain('id="sbbs_go" class="menu_button menu_button_primary sbbs-go"');
+    expect(browserHtml).toContain('id="sbbs_import_selected" class="menu_button menu_button_primary sbbs-selection-action sbbs-import"');
+    expect(browserHtml).not.toMatch(/id="sbbs_file_actions"[^>]*\bopen\b/);
+
+    expect(detailJs).toContain('menu_button menu_button_primary sbbs-import');
+    expect(intakeJs).toContain('menu_button menu_button_primary sbbs-import');
+    expect(intakeJs).toContain('menu_button menu_button_primary sbbs-open-character');
+    expect(intakeJs).toContain('menu_button menu_button_primary sbbs-bulk-start');
+
+    for (const token of [
+        '--neco-canvas',
+        '--neco-surface',
+        '--neco-raised',
+        '--neco-rail',
+        '--neco-ink',
+        '--neco-muted',
+        '--neco-ginger',
+        '--neco-ginger-hover',
+        '--neco-on-accent',
+        '--neco-border',
+        '--neco-user',
+    ]) {
+        expect(styleCss).toContain(token);
+    }
+    expect(styleCss).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    expect(styleCss).toContain('input:is([type="checkbox"], [type="radio"])');
+    expect(styleCss).toContain('--neconyan-control-radius: 999px;');
+    expect(styleCss).toContain('#sbbs_search_form #sbbs_go.sbbs-go.menu_button');
+    expect(styleCss).toContain('.sbbs-card-img:has(img) .sbbs-card-initial');
+    expect(styleCss).toContain('.neconyan-included-tool-page #sbbs_settings > .inline-drawer > .sbbs-settings-toggle');
+    expect(styleCss).toContain('@media (prefers-reduced-motion: reduce)');
+
+    const clientFiles = walk(path.join(botSearcherRoot, 'client')).filter(file => file.endsWith('.js'));
+    for (const file of clientFiles) {
+        const content = fs.readFileSync(file, 'utf8')
+            .replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
+        expect(content).not.toMatch(/https?:\/\//i);
+        expect(content).not.toMatch(/\binnerHTML\b|\binsertAdjacentHTML\b|\.html\s*\(/);
+    }
+});

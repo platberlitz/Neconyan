@@ -1,5 +1,15 @@
 // Questions and distinguishing facts shared by Node and real-browser retrieval checks.
 export const refreshedKnowledgeCases = [
+    ['How do I open General Scratchpad from Home?', 'scratchpad.start', 'one account-owned list separate from chats and notes'],
+    ['Does General Scratchpad secretly share chat messages?', 'scratchpad.context', 'General shares no messages, swipes, lore'],
+    ['How do Scratchpad images use Review avatar?', 'scratchpad.images', 'Review avatar'],
+    ['What does Previous avatar in Scratchpad mean?', 'scratchpad.images', 'not one-click undo'],
+    ['Where are Saved crash reports when the server is offline?', 'recovery.crash-reports', 'without enabling live debugging'],
+    ['Can anyone read a server crash report?', 'recovery.crash-reports', 'require an administrator account'],
+    ['Why do card scripts ask me to Run anyway?', 'tools.card-scripts', 'each card needs Run anyway'],
+    ['Why is my manual after-reply Agent queued?', 'agents.manual-queue', 'run one at a time'],
+    ['What does the installed agent version beside its name mean?', 'agents.versions', 'installed Agent version'],
+    ['Does Knowledge Guard rerun the Secrets Tracker?', 'agents.knowledge-guard', 'without running a tracker or making a model request'],
     ['How do I use Continuity Corrector?', 'agents.continuity-corrector', '12 recent messages'],
     ['Does Continuity Corrector start a fresh memory search?', 'agents.continuity-corrector', 'does not start a fresh memory search'],
     ['What does the Companion model label mean?', 'agents.model-labels', 'that completed run'],

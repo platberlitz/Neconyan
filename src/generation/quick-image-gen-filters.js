@@ -23,11 +23,12 @@ function activeFilters(settings, snapshot) {
     const charPools = settings._backupActiveFilterPoolIdsByChar;
     const globalPools = settings._backupActiveFilterPoolIdsGlobal;
     const pools = new Set(ids(globalPools === undefined ? [DEFAULT_POOL] : globalPools));
+    const global = snapshot.quickImageGenCharacterScope?.kind === 'global';
     if (cardPools && typeof cardPools !== 'object') invalid('The saved card filter pools are invalid.');
     if (charPools && typeof charPools !== 'object') invalid('The saved character filter pools are invalid.');
-    for (const id of ids(cardPools?.[avatar])) pools.add(id);
+    if (!global) for (const id of ids(cardPools?.[avatar])) pools.add(id);
     const savedCharId = snapshot.quickImageGenCharacterId;
-    if (savedCharId !== undefined && savedCharId !== null) {
+    if (!global && savedCharId !== undefined && savedCharId !== null) {
         for (const id of ids(charPools?.[String(savedCharId)])) pools.add(id);
     }
     return sortImageFilters(records.filter(filter => {
@@ -35,6 +36,7 @@ function activeFilters(settings, snapshot) {
         if (filter.enabled === false) return false;
         const scope = filter.scope || 'global';
         if (!Object.hasOwn(SCOPE_RANK, scope)) invalid('A saved image filter has an unknown scope.');
+        if (global && scope !== 'global') return false;
         if (scope === 'card') {
             if (!filter.cardKey || typeof filter.cardKey !== 'string') invalid('A saved card filter has no card identity.');
             if (filter.cardKey.trim().toLowerCase() !== avatar) return false;

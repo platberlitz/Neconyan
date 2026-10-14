@@ -7,6 +7,7 @@ import { SETTINGS_KEY } from '../src/core.js';
 import { checkMeowerReceipts } from './job-receipts.js';
 import { MAX_STORE_BYTES, HOST_STORE_NAME, HOST_PLUGIN_MARKER, encodedLimit, migrateLegacy, parseBytes, sizeOf, storeFrom } from '../src/storage-format.js';
 import { withRoleplayAccount } from '../../../../../../src/roleplay-store.js';
+import { fsyncDirectorySync } from '../../../../../../src/util.js';
 
 export const info = { id: 'hopper', name: 'Meower', description: 'Private, revision-checked storage for Meower timelines.' };
 
@@ -93,23 +94,20 @@ function temporaryFile(directory, bytes) {
 }
 
 function markServerStorage(directory) {
-    const folder = syncFs.openSync(directory, constants.O_RDONLY | constants.O_DIRECTORY);
     let pending;
     try {
         pending = temporaryFile(directory, '{"format":1,"storage":"server"}\n');
         syncFs.renameSync(pending, path.join(directory, HOST_PLUGIN_MARKER));
         pending = null;
         // Keep the marker on failure, and sync it again on retry, even if already visible.
-        syncFs.fsyncSync(folder);
+        fsyncDirectorySync(directory);
     } finally {
         if (pending) syncFs.rmSync(pending, { force: true });
-        syncFs.closeSync(folder);
     }
 }
 
 function saveStore(directory, store, previous) {
     const bytes = `${sizeOf(store, MAX_STORE_BYTES - 1, 'The Meower store (128 MiB limit)')}\n`;
-    const folder = syncFs.openSync(directory, constants.O_RDONLY | constants.O_DIRECTORY);
     const current = path.join(directory, 'store.json');
     let pending;
     let backup;
@@ -121,11 +119,11 @@ function saveStore(directory, store, previous) {
             syncFs.renameSync(backup, path.join(directory, 'store.previous.json'));
             backup = null;
         }
-        syncFs.fsyncSync(folder);
+        fsyncDirectorySync(directory);
         syncFs.renameSync(pending, current);
         pending = null;
         try {
-            syncFs.fsyncSync(folder);
+            fsyncDirectorySync(directory);
         } catch (error) {
             // A failed directory sync must not leave a newer visible revision after a failed save.
             if (previous !== null) {
@@ -135,14 +133,13 @@ function saveStore(directory, store, previous) {
             } else {
                 syncFs.unlinkSync(current);
             }
-            syncFs.fsyncSync(folder);
+            fsyncDirectorySync(directory);
             throw error;
         }
     } finally {
         for (const file of [pending, backup, restored].filter(Boolean)) {
             try { syncFs.rmSync(file, { force: true }); } catch { /* Keep failed-write evidence. */ }
         }
-        syncFs.closeSync(folder);
     }
     return bytes;
 }
@@ -155,8 +152,7 @@ async function writeLocked(directories, account, stamp, produce) {
         try { syncFs.mkdirSync(directory, { mode: 0o700 }); } catch (error) { if (error.code !== 'EEXIST') throw error; }
         const stat = syncFs.lstatSync(directory);
         if (!stat.isDirectory() || stat.isSymbolicLink()) fail(500, 'The private Meower storage directory is invalid.');
-        const parent = syncFs.openSync(directories.root, constants.O_RDONLY | constants.O_DIRECTORY);
-        try { syncFs.fsyncSync(parent); } finally { syncFs.closeSync(parent); }
+        fsyncDirectorySync(directories.root);
         try {
             syncFs.mkdirSync(lock, { mode: 0o700 });
         } catch (error) {

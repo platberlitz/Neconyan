@@ -1,6 +1,6 @@
 import { appendHelperPrefillMessages } from '../../public/scripts/extensions/helper-prefill.js';
 import { buildPromptTransformRecentChat, getAgentLengthTarget } from '../../public/scripts/extensions/in-chat-agents/prompt-transform-context.js';
-import { ACTIVE_LORE_MACRO, buildAgentContextMacros, captureTrackerState, TRACKER_STATE_MACRO, usesAgentMacro } from '../../public/scripts/extensions/in-chat-agents/agent-context-macros.js';
+import { ACTIVE_LORE_MACRO, buildAgentContextMacros, captureSecretsTrackerState, captureTrackerState, SECRETS_TRACKER_MACRO, TRACKER_STATE_MACRO, usesAgentMacro } from '../../public/scripts/extensions/in-chat-agents/agent-context-macros.js';
 import { applyRegexScriptList } from '../../public/scripts/extensions/in-chat-agents/regex-scripts.js';
 import { buildRegexScriptRefsForAgent } from '../../public/scripts/extensions/in-chat-agents/regex-snapshot-store.js';
 import { inspectTrackerState, mergeTrackerRepairPayload, TRACKER_REPAIR_INSTRUCTION } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
@@ -20,6 +20,7 @@ import { requireJobApproval } from './job-approvals.js';
 import { captureRoleplayWorldInfo, prepareRoleplayWorldInfo } from './world-info.js';
 import { activeRoleplayAuthorNote } from './roleplay-prompt.js';
 import { agentMessageExtra, agentTransformHistory, reconcileAgentTrackerMetadata } from './agent-message-state.js';
+import { beginDiagnosticAgent, endDiagnosticAgent } from '../diagnostic-activity.js';
 
 const fail = message => roleplayError('ROLEPLAY_AGENT_RECOVERY', message, 409);
 const join = (left, right) => !left ? right : !right ? left : left + (/\n\n$/.test(left) ? '' : /\n$/.test(left) ? '\n' : '\n\n') + right;
@@ -88,7 +89,8 @@ function savedAuthorsNote(snapshot) {
 function agentContextMacros(snapshot, mewmory = null, reference = null) {
     return buildAgentContextMacros({ mewmory, groupCards: snapshot.groupCards, userName: snapshot.speakerNames?.user,
         charName: snapshot.speakerNames?.character, lore: reference?.lore, authorsNote: savedAuthorsNote(snapshot),
-        trackers: reference ? captureTrackerState(reference.agents, reference.records?.[0]?.chat_metadata) : null });
+        trackers: reference ? captureTrackerState(reference.agents, reference.records?.[0]?.chat_metadata) : null,
+        secretsTrackers: reference ? captureSecretsTrackerState(reference.agents, reference.records?.[0]?.chat_metadata) : null });
 }
 
 /** The lore the main reply was built with, so Agents check the reply against the same entries. */
@@ -141,7 +143,7 @@ export function prepareRoleplayAgentContributions(context, { base, snapshot, rec
     const history = { scripts: captureAgentHistoryScripts(records, historyAgents), policies: captureCompanionHistoryPolicies(policyRecords) };
     const extensions = active.filter(agent => inline(agent) && ['pre', 'both'].includes(agent.phase)
         && agent.preProcess.mode !== 'intercept' && agent.prompt.trim()).map(agent => ({
-        key: `inchat_agent_${agent.id}`, content: evaluate(aliases(environment, agent, '', generationType, snapshot.speakerNames?.character || '', agentContextMacros(snapshot)), agent.prompt, snapshot),
+        key: `inchat_agent_${agent.id}`, content: evaluate(aliases(environment, agent, '', generationType, snapshot.speakerNames?.character || '', agentContextMacros(snapshot, null, { agents, records })), agent.prompt, snapshot),
         position: agent.injection.position, depth: agent.injection.depth, role: ['system', 'user', 'assistant'][agent.injection.role], scan: agent.injection.scan,
     }));
     const feedback = prepareCompanionFeedback(active, historyAgents, records, snapshot, environment, history.policies, generationType);
@@ -209,6 +211,8 @@ async function modelRun(context, options, agent, text, name, intercept = false, 
         ? source.message.index + 1 : records.length;
     const recentChat = intercept ? '' : buildPromptTransformRecentChat(records.slice(1, endIndex), agent.postProcess.promptTransformContextMessages, unwrap);
     const result = await runAgentModelStep(context, { base, account: snapshot.account, name,
+        diagnostic: { id: agent.id, sourceTemplateId: agent.sourceTemplateId, synthesis: Boolean(options.synthesisMessages),
+            phase: options.synthesisMessages ? 'synthesis' : name.includes(':repair:') ? 'repair' : intercept && agent.preProcess.interceptTiming !== 'post-main-generation' ? 'pre' : 'post' },
         identity: roleplayHash({ intent: context.job.intent, agent: snapshot.agents.agents.find(item => item.id === agent.id), text, intercept, format, generationType,
             ...(options.synthesisMessages ? { synthesisMessages: options.synthesisMessages } : {}) }),
         binding: agent.binding || options.binding, modelOverride: agent.binding ? agent.modelOverride : '', fallbacks: agent.fallbacks,
@@ -268,6 +272,9 @@ export async function runRoleplayAgentInterceptors(context, options) {
             proposal: { title: 'Review the main reply before its configured interceptors', response: value, agents: selected.map(agent => ({ id: agent.id, name: agent.name })) } });
         if (approval.decision === null) return { waiting: true, approval };
         if (approval.decision === 'skip') return savePhase(context, snapshot.account, name, { identity, value, runs: [], skipped: true });
+    }
+    if (selected.some(agent => [TRACKER_STATE_MACRO, SECRETS_TRACKER_MACRO].some(macro => usesAgentMacro(agent.prompt, macro)))) {
+        options = { ...options, agentReference: { ...options.agentReference, agents: readRoleplayAgents(base, snapshot), records: options.metadataRecords ?? options.records } };
     }
     let current = structuredClone(value);
     const runs = [];
@@ -350,7 +357,7 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     const baseline = companionOutput || manual ? value : roleplayAgentOutputBaseline(value, pre);
     const modelName = id => `${options.namespace ? options.namespace + ':' : ''}post:${id}`;
     const version = postprocessingPlan(context, snapshot.account, phaseName, identity, selected, modelName);
-    const usesTrackers = selected.some(agent => usesAgentMacro(agent.prompt, TRACKER_STATE_MACRO));
+    const usesTrackers = selected.some(agent => [TRACKER_STATE_MACRO, SECRETS_TRACKER_MACRO].some(macro => usesAgentMacro(agent.prompt, macro)));
     options = { ...options, agentReference: { lore: options.activeLore ?? await scannedAgentLoreText(context, options, selected, identity),
         agents: usesTrackers ? readRoleplayAgents(base, snapshot) : [], records: options.metadataRecords ?? records } };
     let postFailed = false;
@@ -424,14 +431,18 @@ export async function runRoleplayAgentPostprocessing(context, options) {
         }
     }
     for (const agent of agents.filter(agent => manual || inline(agent))) {
-        aliases(environment, agent, text, generationType, options.assistantName, agentContextMacros(snapshot, options.mewmory, options.agentReference));
-        const regexOptions = { isMarkdown: false, isPrompt: false,
-            substituteParamsFn: (input, extra = {}) => environment.evaluate(input, { legacy: !snapshot.experimentalMacroEngine,
-                strictCapabilities: true, postProcess: extra.postProcessFn }),
-            substituteParamsExtendedFn: (input, _extra, postProcess) => environment.evaluate(input, { legacy: !snapshot.experimentalMacroEngine,
-                strictCapabilities: true, postProcess }) };
-        if (companionOutput || options.includeDisplayRegex) text = applyRegexScriptList(text, agent.regexScripts, 2, { ...regexOptions, isMarkdown: true });
-        text = applyRegexScriptList(text, agent.regexScripts, 2, regexOptions);
+        const activity = beginDiagnosticAgent(context, { id: agent.id, sourceTemplateId: agent.sourceTemplateId, phase: 'regex' });
+        let outcome = 'done';
+        try {
+            aliases(environment, agent, text, generationType, options.assistantName, agentContextMacros(snapshot, options.mewmory, options.agentReference));
+            const regexOptions = { isMarkdown: false, isPrompt: false,
+                substituteParamsFn: (input, extra = {}) => environment.evaluate(input, { legacy: !snapshot.experimentalMacroEngine,
+                    strictCapabilities: true, postProcess: extra.postProcessFn }),
+                substituteParamsExtendedFn: (input, _extra, postProcess) => environment.evaluate(input, { legacy: !snapshot.experimentalMacroEngine,
+                    strictCapabilities: true, postProcess }) };
+            if (companionOutput || options.includeDisplayRegex) text = applyRegexScriptList(text, agent.regexScripts, 2, { ...regexOptions, isMarkdown: true });
+            text = applyRegexScriptList(text, agent.regexScripts, 2, regexOptions);
+        } catch (error) { outcome = 'error'; throw error; } finally { endDiagnosticAgent(activity, outcome); }
     }
     if (companionOutput) return savePhase(context, snapshot.account, phaseName, { identity, text, extra: {}, metadata: {}, runs });
     const trackerRecords = structuredClone(options.metadataRecords ?? records);

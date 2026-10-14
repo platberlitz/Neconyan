@@ -384,6 +384,17 @@
         }
 
         failureShown = true;
+        // A blocked core script can leave the browser recovery notice sitting above this
+        // panel on a phone. This panel carries its own Read report, so remove the notice.
+        try { document.getElementById('neconyan-crash-notice')?.remove(); } catch (_error) { /* The panel still follows. */ }
+        var savedReport = null;
+        var recordedDetails = details || lastFailure || 'Startup timed out before Neconyan removed the loading screen.';
+        try {
+            if (window.NeconyanCrashDiagnostics?.openReports) {
+                recordedDetails = window.NeconyanCrashDiagnostics.redact(recordedDetails);
+                savedReport = window.NeconyanCrashDiagnostics.capture('startup-failure', recordedDetails);
+            }
+        } catch (_error) { /* The existing failure screen remains available. */ }
         removeStartupLoaderArtifacts();
         preloader.hidden = false;
         preloader.innerHTML = '';
@@ -421,6 +432,20 @@
             removeElement(preloader);
         });
 
+        var reportButton = null;
+        if (window.NeconyanCrashDiagnostics?.openReports) {
+            reportButton = document.createElement('button');
+            reportButton.type = 'button';
+            reportButton.className = 'menu_button';
+            reportButton.textContent = 'Read report';
+            reportButton.setAttribute('data-i18n', 'Read report');
+            // Outlined and accent-aware like 'Continue anyway', so the panel is not two filled primary buttons.
+            reportButton.style.cssText = 'width:100%;margin-top:10px;border:1px solid var(--neco-ginger, currentColor);border-radius:12px;background:transparent;color:var(--neco-ink, inherit);font-weight:600;font-size:15px;padding:11px 14px;min-height:44px;cursor:pointer;';
+            reportButton.addEventListener('click', function () {
+                window.NeconyanCrashDiagnostics?.openReports?.(savedReport?.id || window.NeconyanCrashDiagnostics.fatalReportId);
+            });
+        }
+
         var hint = document.createElement('p');
         hint.textContent = 'If this keeps happening, clear this site\'s Safari/Chrome website data and reload.';
         hint.style.cssText = 'margin:14px 0 0;color:#beb1a1;font-size:14px;';
@@ -432,7 +457,7 @@
         summaryTitle.textContent = 'Startup error details';
 
         var pre = document.createElement('pre');
-        pre.textContent = details || lastFailure || 'Startup timed out before Neconyan removed the loading screen.';
+        pre.textContent = recordedDetails;
         pre.style.cssText = 'white-space:pre-wrap;word-break:break-word;margin:10px 0 0;padding:12px;border-radius:10px;background:#141514;color:#f4ebdb;font-size:12px;';
 
         summary.appendChild(summaryTitle);
@@ -441,6 +466,9 @@
         panel.appendChild(message);
         panel.appendChild(button);
         panel.appendChild(dismissButton);
+        if (reportButton) {
+            panel.appendChild(reportButton);
+        }
         panel.appendChild(hint);
         panel.appendChild(summary);
         preloader.appendChild(panel);
@@ -449,6 +477,7 @@
     const neconyanBootGuard = {
         bootCompleted: function () {
             bootCompleted = true;
+            try { window.NeconyanCrashDiagnostics?.markAppReady?.(); } catch (_error) { /* Diagnostics cannot block startup. */ }
             if (timeoutId) {
                 window.clearTimeout(timeoutId);
             }

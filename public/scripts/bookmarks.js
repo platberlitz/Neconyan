@@ -492,7 +492,7 @@ function registerBookmarksSlashCommands() {
             return false;
         }
         if (!chat[mesId]) {
-            toastr.warning(`Could not find message ${mesId}.`, context);
+            toastr.warning(t`Could not find message ${mesId}.`, context);
             return false;
         }
         return true;

@@ -20,6 +20,7 @@ import {
     updateMessageTokenAccounting,
 } from '../../../script.js';
 import { extension_settings, getContext } from '../../extensions.js';
+import { t } from '../../i18n.js';
 import { eventSource, event_types } from '../../events.js';
 import { is_group_generating } from '../../group-chats.js';
 import { POPUP_RESULT, POPUP_TYPE, callGenericPopup } from '../../popup.js';
@@ -55,7 +56,7 @@ import { resolveExpressionsAgentProfile } from '../expressions/expressions-agent
 import { buildFallbackPromptText, extractProfileResponseText } from './llm-utils.js';
 import { buildPromptTransformRecentChat } from './prompt-transform-context.js';
 import { getTrackerRepairConnectionProfile, getTrackerRepairTimeoutMs, isTrackerRepairRunAgent, markTrackerRepairRunAgent } from './tracker-repair-run.js';
-import { buildAgentContextMacros, captureGroupCards, captureTrackerState, getPreparedActiveLore, getPreparedMewmoryContext, setPreparedActiveLore, TRACKER_STATE_MACRO, usesAgentMacro, usesGroupCardsMacro } from './agent-context-macros.js';
+import { buildAgentContextMacros, captureGroupCards, captureSecretsTrackerState, captureTrackerState, getPreparedActiveLore, getPreparedMewmoryContext, SECRETS_TRACKER_MACRO, setPreparedActiveLore, TRACKER_STATE_MACRO, usesAgentMacro, usesGroupCardsMacro } from './agent-context-macros.js';
 import { getConnectionProfileDisplayName, getConnectionProfileModelName } from './profile-utils.js';
 import { describeAgentRunModel } from './model-label.js';
 import {
@@ -630,7 +631,7 @@ async function processManualAgentRunQueue(queue) {
             notifyAgentGenerationStateChanged();
 
             try {
-                const result = await executeManualAgentRun(queuedRun.agentId, queuedRun.target, queuedRun.cancelRevision);
+                const result = await queuedRun.operation();
                 queuedRun.resolve(result);
             } catch (error) {
                 queuedRun.reject(error);
@@ -677,15 +678,27 @@ function enqueueManualAgentRun(agentId, target) {
     target.composer = submitted?.composer ?? (target.kind === 'composer' ? document.querySelector('#send_textarea') : null);
     target.composerText = submitted?.composerText ?? target.composer?.value;
     target.isCurrent = typeof submitted?.isCurrent === 'function' ? submitted.isCurrent : () => true;
-    const wasAlreadyActive = isAgentGenerationActive();
+    target.acceptWrite = submitted?.acceptWrite;
+    target.queueNotice = submitted?.queueNotice;
+    if (target.kind === 'companion' && typeof submitted?.isCurrent !== 'function' && companionRuntime?.captureCompanionResultTarget) {
+        let isCurrent = companionRuntime.captureCompanionResultTarget(target.messageIndex, target.companionAgentId);
+        target.isCurrent = () => isCurrent();
+        target.acceptWrite = () => { isCurrent = companionRuntime.captureCompanionResultTarget(target.messageIndex, target.companionAgentId); };
+    }
     const queue = manualAgentRunQueues[isCompanionAgent(getAgentById(agentId)) ? 1 : 0];
+    const cancelRevision = agentGenerationCancelRevision;
+    return enqueueManualOperation(queue, target, () => executeManualAgentRun(agentId, target, cancelRevision), cancelRevision);
+}
+
+function enqueueManualOperation(queue, target, operation, cancelRevision) {
+    if (agentGenerationCancelRevision !== cancelRevision) return Promise.resolve(null);
+    const wasAlreadyActive = isAgentGenerationActive();
     queue.cancelRequested = false;
     if (!isGenerationInProgress) {
         generationStopRequested = false;
     }
 
-    const executionMode = getGlobalSettings().appendAgentsExecutionMode === 'sequential' ? 'sequential' : 'parallel';
-    const cancelRevision = agentGenerationCancelRevision;
+    const executionMode = queue.companion && getGlobalSettings().appendAgentsExecutionMode !== 'sequential' ? 'parallel' : 'sequential';
 
     if (executionMode === 'parallel') {
         if (wasAlreadyActive) {
@@ -697,7 +710,7 @@ function enqueueManualAgentRun(agentId, target) {
 
         return (async () => {
             try {
-                return await executeManualAgentRun(agentId, target, cancelRevision);
+                return await operation();
             } finally {
                 parallelManualRunCount = Math.max(0, parallelManualRunCount - 1);
                 notifyAgentGenerationStateChanged();
@@ -708,20 +721,47 @@ function enqueueManualAgentRun(agentId, target) {
     return new Promise((resolve, reject) => {
         const mustWait = queue.processing || !isPromptTransformIdle(queue.companion);
         queue.runs.push({
-            agentId,
             target,
-            cancelRevision,
+            operation,
             resolve,
             reject,
         });
 
-        if (mustWait) {
+        if (mustWait && !target.queueNotice?.shown) {
             toastr.info('Queued agent run.');
+            if (target.queueNotice) target.queueNotice.shown = true;
         }
 
         notifyAgentGenerationStateChanged();
         void processManualAgentRunQueue(queue);
     });
+}
+
+// Only an accepted manual write can advance a waiting target. Check every guard
+// before writing, so a user edit or replaced target is never made current again.
+function applyManualTargetWrite(target, write) {
+    const pendingTargets = manualAgentRunQueues[0].runs.map(run => run.target).filter(pending => {
+        try {
+            if (!pending.isCurrent()) return false;
+        } catch {
+            return false;
+        }
+        if (target.kind === 'composer') {
+            return pending.kind === 'composer' && pending.composer === target.composer
+                && pending.composerText === target.composer.value
+                && pending.state.chatId === getCurrentSnapshotChatId() && pending.state.chatLoadRevision === chatLoadRevision;
+        }
+        if (pending.message !== target.message || !isMessageTargetCurrent(pending.message, pending.state, pending.messageIndex)) return false;
+        return target.kind === 'message' || (pending.kind === 'companion' && pending.companionAgentId === target.companionAgentId);
+    });
+    const result = write();
+    if (result === false) return result;
+    for (const pending of pendingTargets) {
+        if (pending.kind === 'composer') pending.composerText = pending.composer.value;
+        else pending.state.mes = pending.message.mes;
+        pending.acceptWrite?.();
+    }
+    return result;
 }
 
 function isPathfinderToolAgent(agent) {
@@ -890,6 +930,7 @@ export async function syncPathfinderAgentLorebooksForCurrentChat(agent = getPath
  * Unregisters tools from disabled agents, registers tools from enabled ones.
  */
 export function syncToolAgentRegistrations() {
+    try { globalThis.NeconyanCrashDiagnostics?.updateActivity?.({ agents: { enabledCount: areAgentsGloballyEnabled() ? new Set([...getEnabledAgents(), ...getEnabledToolAgents()].map(agent => agent.id)).size : 0 } }); } catch { /* Optional diagnostics. */ }
     invalidateToolApprovals();
     if (pathfinderRetrievalRun && !pathfinderRetrievalRun.isCurrent()) {
         abortActivePathfinderRetrieval();
@@ -2246,8 +2287,9 @@ function buildBrowserAgentContextMacros(agent) {
         : null;
     const chatId = getCurrentChatId();
     const trackers = usesAgentMacro(agent?.prompt, TRACKER_STATE_MACRO) ? captureTrackerState(getEnabledAgents(), chat_metadata) : null;
+    const secretsTrackers = usesAgentMacro(agent?.prompt, SECRETS_TRACKER_MACRO) ? captureSecretsTrackerState(getEnabledAgents(), chat_metadata) : null;
     return buildAgentContextMacros({ mewmory: getPreparedMewmoryContext(chatId), groupCards, userName: context.name1, charName: context.name2,
-        lore: getPreparedActiveLore(chatId), authorsNote: context.extensionPrompts?.[AUTHORS_NOTE_PROMPT_KEY]?.value, trackers });
+        lore: getPreparedActiveLore(chatId), authorsNote: context.extensionPrompts?.[AUTHORS_NOTE_PROMPT_KEY]?.value, trackers, secretsTrackers });
 }
 
 function updateMessageRegexSnapshot(message, activeAgents, generationType) {
@@ -2532,8 +2574,12 @@ function applyAgentRegexScriptsToText(agents, text, { characterOverride = '', in
             continue;
         }
 
-        if (includeDisplay) output = applyRegexScriptList(output, scripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, { ...baseOptions, isMarkdown: true });
-        output = applyRegexScriptList(output, scripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, baseOptions);
+        let diagnosticHandle = null;
+        try { diagnosticHandle = globalThis.NeconyanCrashDiagnostics?.beginAgent?.({ id: agent.id, sourceTemplateId: agent.sourceTemplateId, phase: 'regex' }); } catch { /* Optional diagnostics. */ }
+        try {
+            if (includeDisplay) output = applyRegexScriptList(output, scripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, { ...baseOptions, isMarkdown: true });
+            output = applyRegexScriptList(output, scripts, AGENT_REGEX_PLACEMENT.AI_OUTPUT, baseOptions);
+        } finally { try { globalThis.NeconyanCrashDiagnostics?.endAgent?.(diagnosticHandle); } catch { /* Optional diagnostics. */ } }
     }
 
     return output;
@@ -3693,137 +3739,148 @@ export async function runAsInternalPromptTransform(requestFn, signal = null, { c
 }
 
 export async function requestPromptTransform(agent, promptMessages, maxTokens, options = {}) {
-    const isRequestCurrent = () => !options.signal?.aborted
+    const diagnosticHandles = [];
+    let diagnosticOutcome = 'done';
+    try {
+        if (options.diagnosticHandle == null) {
+            for (const item of (options.runtimeAgents?.length ? options.runtimeAgents : [agent]).slice(0, 8)) {
+                diagnosticHandles.push(globalThis.NeconyanCrashDiagnostics?.beginAgent?.({ id: item.id, sourceTemplateId: item.sourceTemplateId, phase: isCompanionAgent(item) ? 'companions' : 'post' }));
+            }
+        }
+    } catch { /* Optional diagnostics. */ }
+    try {
+        const isRequestCurrent = () => !options.signal?.aborted
         && (!options.isCurrent || options.isCurrent())
         && (options.cancelRevision === undefined || options.cancelRevision === agentGenerationCancelRevision);
-    const isRuntimeAllowed = () => isRequestCurrent()
+        const isRuntimeAllowed = () => isRequestCurrent()
         && isAgentRuntimeAllowed(agent) && (options.runtimeAgents ?? []).every(isAgentRuntimeAllowed);
-    if (!isRuntimeAllowed()) {
-        throw new DOMException('', 'AbortError');
-    }
-    const profileId = resolveAgentConnectionProfile(agent);
-    const isTrackerRepair = isTrackerRepairRunAgent(agent);
-    // A saved tracker repair connection uses its own model, like a fallback does.
-    const modelOverride = typeof agent.modelOverride === 'string' && !(isTrackerRepair && getTrackerRepairConnectionProfile(getGlobalSettings()))
-        ? agent.modelOverride.trim()
-        : '';
-    const attemptTimeoutMs = isTrackerRepair ? getTrackerRepairTimeoutMs(getGlobalSettings()) : 0;
-    const context = getContext();
-    const CMRS = context?.ConnectionManagerRequestService;
-    const requestAbortController = new AbortController();
-    const abortFromCaller = () => requestAbortController.abort();
-    const runAllowedRequest = (requestFn, signal) => runAsInternalPromptTransform(() => {
-        if (!isRuntimeAllowed()) throw new DOMException('', 'AbortError');
-        return requestFn();
-    }, signal, {
-        companion: isCompanionAgent(agent) || (options.runtimeAgents ?? []).some(isCompanionAgent),
-    });
-    activeAgentRequestAbortControllers.add(requestAbortController);
-    options.signal?.addEventListener('abort', abortFromCaller, { once: true });
+        if (!isRuntimeAllowed()) {
+            throw new DOMException('', 'AbortError');
+        }
+        const profileId = resolveAgentConnectionProfile(agent);
+        const isTrackerRepair = isTrackerRepairRunAgent(agent);
+        // A saved tracker repair connection uses its own model, like a fallback does.
+        const modelOverride = typeof agent.modelOverride === 'string' && !(isTrackerRepair && getTrackerRepairConnectionProfile(getGlobalSettings()))
+            ? agent.modelOverride.trim()
+            : '';
+        const attemptTimeoutMs = isTrackerRepair ? getTrackerRepairTimeoutMs(getGlobalSettings()) : 0;
+        const context = getContext();
+        const CMRS = context?.ConnectionManagerRequestService;
+        const requestAbortController = new AbortController();
+        const abortFromCaller = () => requestAbortController.abort();
+        const runAllowedRequest = (requestFn, signal) => runAsInternalPromptTransform(() => {
+            if (!isRuntimeAllowed()) throw new DOMException('', 'AbortError');
+            return requestFn();
+        }, signal, {
+            companion: isCompanionAgent(agent) || (options.runtimeAgents ?? []).some(isCompanionAgent),
+        });
+        activeAgentRequestAbortControllers.add(requestAbortController);
+        options.signal?.addEventListener('abort', abortFromCaller, { once: true });
 
-    const requestConnection = (attemptProfileId, attemptModelOverride, signal) => {
-        if (attemptProfileId) {
-            if (!CMRS || typeof CMRS.sendRequest !== 'function') {
-                throw new Error(`${describePromptTransformTarget(attemptProfileId, 'profile')} is set, but Connection Manager is unavailable.`);
+        const requestConnection = (attemptProfileId, attemptModelOverride, signal) => {
+            if (attemptProfileId) {
+                if (!CMRS || typeof CMRS.sendRequest !== 'function') {
+                    throw new Error(`${describePromptTransformTarget(attemptProfileId, 'profile')} is set, but Connection Manager is unavailable.`);
+                }
+
+                return runAllowedRequest(
+                    () => requestProfilePromptTransform(isRuntimeAllowed, CMRS, attemptProfileId, promptMessages, maxTokens, attemptModelOverride, signal),
+                    signal,
+                );
             }
-
             return runAllowedRequest(
-                () => requestProfilePromptTransform(isRuntimeAllowed, CMRS, attemptProfileId, promptMessages, maxTokens, attemptModelOverride, signal),
+                () => requestMainModelPromptTransform(context, promptMessages, maxTokens, options, signal),
                 signal,
             );
-        }
-        return runAllowedRequest(
-            () => requestMainModelPromptTransform(context, promptMessages, maxTokens, options, signal),
-            signal,
-        );
-    };
-    // Each attempt stops waiting as soon as it is cancelled or runs out of time, even when the
-    // connection ignores the abort, so a stalled request cannot keep Agents marked as running.
-    const runAttempt = async (attemptProfileId, attemptModelOverride) => {
-        const attemptAbortController = new AbortController();
-        const abortAttempt = () => attemptAbortController.abort();
-        let timedOut = false;
-        const timer = attemptTimeoutMs > 0
-            ? setTimeout(() => { timedOut = true; abortAttempt(); }, attemptTimeoutMs)
-            : null;
-        requestAbortController.signal.addEventListener('abort', abortAttempt, { once: true });
-        if (requestAbortController.signal.aborted) abortAttempt();
-        try {
-            return await new Promise((resolve, reject) => {
-                const rejectOnAbort = () => reject(new DOMException('', 'AbortError'));
-                if (attemptAbortController.signal.aborted) return rejectOnAbort();
-                attemptAbortController.signal.addEventListener('abort', rejectOnAbort, { once: true });
-                let pending;
-                try {
-                    pending = Promise.resolve(requestConnection(attemptProfileId, attemptModelOverride, attemptAbortController.signal));
-                } catch (error) {
-                    pending = Promise.reject(error);
-                }
-                pending
-                    .then(resolve, reject)
-                    .finally(() => attemptAbortController.signal.removeEventListener('abort', rejectOnAbort));
-            });
-        } catch (error) {
-            if (timedOut && !requestAbortController.signal.aborted) {
-                throw new Error(`${describePromptTransformTarget(attemptProfileId, attemptProfileId ? 'profile' : 'main')} did not answer within ${Math.round(attemptTimeoutMs / 1000)} seconds.`);
-            }
-            throw error;
-        } finally {
-            if (timer) clearTimeout(timer);
-            requestAbortController.signal.removeEventListener('abort', abortAttempt);
-        }
-    };
-    // Saved fallback connections are tried in order when the Agent's own connection fails or
-    // returns nothing. They use their own model, never the Agent's model override.
-    const attempts = [
-        { profileId, modelOverride },
-        ...getAgentConnectionFallbacks(agent, profileId).map(fallbackId => ({ profileId: fallbackId, modelOverride: '' })),
-    ];
-
-    // A combined response can still serve its remaining allowed members. Each caller
-    // checks eligibility before applying its part; ownership cancellation rejects all.
-    const settle = response => {
-        if (!isRequestCurrent() || requestAbortController.signal.aborted) throw new DOMException('', 'AbortError');
-        return response;
-    };
-
-    try {
-        let emptyResponse = null;
-        let lastError = null;
-        for (const [index, attempt] of attempts.entries()) {
-            const target = describePromptTransformTarget(attempt.profileId, attempt.profileId ? 'profile' : 'main');
-            let response;
+        };
+        // Each attempt stops waiting as soon as it is cancelled or runs out of time, even when the
+        // connection ignores the abort, so a stalled request cannot keep Agents marked as running.
+        const runAttempt = async (attemptProfileId, attemptModelOverride) => {
+            const attemptAbortController = new AbortController();
+            const abortAttempt = () => attemptAbortController.abort();
+            let timedOut = false;
+            const timer = attemptTimeoutMs > 0
+                ? setTimeout(() => { timedOut = true; abortAttempt(); }, attemptTimeoutMs)
+                : null;
+            requestAbortController.signal.addEventListener('abort', abortAttempt, { once: true });
+            if (requestAbortController.signal.aborted) abortAttempt();
             try {
-                response = await runAttempt(attempt.profileId, attempt.modelOverride);
-                response = {
-                    ...response,
-                    model: String(response?.model ?? '').trim() || getPromptTransformRequestModel(attempt.profileId, attempt.modelOverride),
-                };
+                return await new Promise((resolve, reject) => {
+                    const rejectOnAbort = () => reject(new DOMException('', 'AbortError'));
+                    if (attemptAbortController.signal.aborted) return rejectOnAbort();
+                    attemptAbortController.signal.addEventListener('abort', rejectOnAbort, { once: true });
+                    let pending;
+                    try {
+                        pending = Promise.resolve(requestConnection(attemptProfileId, attemptModelOverride, attemptAbortController.signal));
+                    } catch (error) {
+                        pending = Promise.reject(error);
+                    }
+                    pending
+                        .then(resolve, reject)
+                        .finally(() => attemptAbortController.signal.removeEventListener('abort', rejectOnAbort));
+                });
             } catch (error) {
-                if (isAbortSignalTriggered(error, requestAbortController.signal) || !isRequestCurrent()) throw error;
-                lastError = error;
-                if (index < attempts.length - 1) {
-                    console.warn(`[InChatAgents] ${agent?.name || 'Agent'} failed on ${target}; trying the next fallback connection.`, error);
+                if (timedOut && !requestAbortController.signal.aborted) {
+                    throw new Error(`${describePromptTransformTarget(attemptProfileId, attemptProfileId ? 'profile' : 'main')} did not answer within ${Math.round(attemptTimeoutMs / 1000)} seconds.`);
                 }
-                continue;
+                throw error;
+            } finally {
+                if (timer) clearTimeout(timer);
+                requestAbortController.signal.removeEventListener('abort', abortAttempt);
             }
-            if (index > 0) {
-                response = { ...response, fallbackIndex: index, fallbackFrom: profileId };
+        };
+        // Saved fallback connections are tried in order when the Agent's own connection fails or
+        // returns nothing. They use their own model, never the Agent's model override.
+        const attempts = [
+            { profileId, modelOverride },
+            ...getAgentConnectionFallbacks(agent, profileId).map(fallbackId => ({ profileId: fallbackId, modelOverride: '' })),
+        ];
+
+        // A combined response can still serve its remaining allowed members. Each caller
+        // checks eligibility before applying its part; ownership cancellation rejects all.
+        const settle = response => {
+            if (!isRequestCurrent() || requestAbortController.signal.aborted) throw new DOMException('', 'AbortError');
+            return response;
+        };
+
+        try {
+            let emptyResponse = null;
+            let lastError = null;
+            for (const [index, attempt] of attempts.entries()) {
+                const target = describePromptTransformTarget(attempt.profileId, attempt.profileId ? 'profile' : 'main');
+                let response;
+                try {
+                    response = await runAttempt(attempt.profileId, attempt.modelOverride);
+                    response = {
+                        ...response,
+                        model: String(response?.model ?? '').trim() || getPromptTransformRequestModel(attempt.profileId, attempt.modelOverride),
+                    };
+                } catch (error) {
+                    if (isAbortSignalTriggered(error, requestAbortController.signal) || !isRequestCurrent()) throw error;
+                    lastError = error;
+                    if (index < attempts.length - 1) {
+                        console.warn(`[InChatAgents] ${agent?.name || 'Agent'} failed on ${target}; trying the next fallback connection.`, error);
+                    }
+                    continue;
+                }
+                if (index > 0) {
+                    response = { ...response, fallbackIndex: index, fallbackFrom: profileId };
+                }
+                if (String(response?.output ?? '').trim() || response?.lengthLimited) {
+                    return settle(response);
+                }
+                emptyResponse ??= response;
+                if (index < attempts.length - 1) {
+                    console.warn(`[InChatAgents] ${agent?.name || 'Agent'} returned nothing from ${target}; trying the next fallback connection.`);
+                }
             }
-            if (String(response?.output ?? '').trim() || response?.lengthLimited) {
-                return settle(response);
-            }
-            emptyResponse ??= response;
-            if (index < attempts.length - 1) {
-                console.warn(`[InChatAgents] ${agent?.name || 'Agent'} returned nothing from ${target}; trying the next fallback connection.`);
-            }
+            if (emptyResponse) return settle(emptyResponse);
+            throw lastError;
+        } finally {
+            options.signal?.removeEventListener('abort', abortFromCaller);
+            activeAgentRequestAbortControllers.delete(requestAbortController);
         }
-        if (emptyResponse) return settle(emptyResponse);
-        throw lastError;
-    } finally {
-        options.signal?.removeEventListener('abort', abortFromCaller);
-        activeAgentRequestAbortControllers.delete(requestAbortController);
-    }
+    } catch (error) { diagnosticOutcome = error?.name === 'AbortError' ? 'cancel' : 'error'; throw error; } finally { try { for (const handle of diagnosticHandles) globalThis.NeconyanCrashDiagnostics?.endAgent?.(handle, diagnosticOutcome); } catch { /* Optional diagnostics. */ } }
 }
 
 function substitutePrefillCandidate(value, message) {
@@ -3888,102 +3945,213 @@ function stripEchoedPartialPrefill(outputText, protectedPartialPrefill) {
 }
 
 async function runPromptTransformAgent(agent, message, generationType, messageTextOverride = null, messageIndex = null, options = {}) {
-    const applyToMessage = options.applyToMessage !== false;
-    const cancelRevision = Number.isInteger(options.cancelRevision) ? options.cancelRevision : agentGenerationCancelRevision;
-    const targetState = captureMessageTargetState(message);
-    const currentMessageText = unwrapAssistantResponseWrapper(
-        messageTextOverride !== null ? messageTextOverride : message?.mes,
-    );
-    const protectedPartialPrefill = getProtectedKimiPartialPrefill(message, messageIndex, currentMessageText);
-    const transformMessageText = currentMessageText.slice(protectedPartialPrefill.length);
-    const normalizedGenerationType = normalizeGenerationType(generationType);
-    const promptTransformMode = getPromptTransformMode(agent);
-    const profileId = resolveAgentConnectionProfile(agent);
-    const runMetadata = getPromptTransformRunMetadata(agent, profileId);
-    const showNotifications = shouldShowPromptTransformNotifications(agent);
-
-    const isRuntimeAllowed = () => isAgentRuntimeAllowed(agent) && (options.runtimeAgents ?? []).every(isAgentRuntimeAllowed);
-    const runtimeAllowed = isRuntimeAllowed();
-    if (cancelRevision !== agentGenerationCancelRevision || !runtimeAllowed || !transformMessageText.trim()) {
-        const result = {
-            agentId: agent.id,
-            agentName: agent.name,
-            changed: false,
-            status: cancelRevision !== agentGenerationCancelRevision ? 'cancelled' : runtimeAllowed ? 'skipped-empty-message' : 'skipped-runtime-filter',
-            mode: promptTransformMode,
-            profileId,
-            ...runMetadata,
-            runner: 'none',
-            timestamp: new Date().toISOString(),
-            outputText: '',
-            nextMessageText: currentMessageText,
-            beforeText: currentMessageText,
-        };
-
-        return result;
-    }
-
-    const expandedPrompt = substituteParams(agent.prompt, {
-        name2Override: String(message?.name ?? '').trim(),
-        original: transformMessageText,
-        dynamicMacros: buildPromptDynamicMacros(transformMessageText, message, agent, normalizedGenerationType),
-    }).trim();
-
-    if (!expandedPrompt) {
-        const result = {
-            agentId: agent.id,
-            agentName: agent.name,
-            changed: false,
-            status: 'skipped-empty-prompt',
-            mode: promptTransformMode,
-            profileId,
-            ...runMetadata,
-            runner: 'none',
-            timestamp: new Date().toISOString(),
-            outputText: '',
-            nextMessageText: currentMessageText,
-            beforeText: currentMessageText,
-        };
-
-        return result;
-    }
-
-    const helperRequest = appendConfiguredHelperPrefillMessages(options.promptMessages ?? buildPromptTransformMessages(
-        expandedPrompt,
-        transformMessageText,
-        String(message?.name ?? '').trim(),
-        normalizedGenerationType,
-        promptTransformMode,
-        getPromptTransformRecentChat(agent, message, options.recentChatEndIndex ?? messageIndex),
-    ));
-    const runningToast = showNotifications
-        ? showPromptTransformRunningToast(agent, promptTransformMode, profileId)
-        : null;
-
+    let diagnosticHandle = null, diagnosticOutcome = 'done';
+    try { diagnosticHandle = globalThis.NeconyanCrashDiagnostics?.beginAgent?.({ id: agent.id, sourceTemplateId: agent.sourceTemplateId, phase: 'post' }); } catch { /* Optional diagnostics. */ }
     try {
-        const maxTokens = normalizePromptTransformMaxTokens(agent.postProcess?.promptTransformMaxTokens);
-        const response = await requestPromptTransform(
-            agent,
-            helperRequest.promptMessages,
-            maxTokens,
-            { allowAssistantPrefillTail: helperRequest.allowAssistantPrefillTail, runtimeAgents: options.runtimeAgents },
+        const applyToMessage = options.applyToMessage !== false;
+        const cancelRevision = Number.isInteger(options.cancelRevision) ? options.cancelRevision : agentGenerationCancelRevision;
+        const targetState = captureMessageTargetState(message);
+        const currentMessageText = unwrapAssistantResponseWrapper(
+            messageTextOverride !== null ? messageTextOverride : message?.mes,
         );
-        const promptOutputText = stripEchoedPartialPrefill(
-            unwrapAssistantResponseWrapper(response.output).trim(),
-            promptTransformMode === 'append' ? '' : protectedPartialPrefill,
-        );
+        const protectedPartialPrefill = getProtectedKimiPartialPrefill(message, messageIndex, currentMessageText);
+        const transformMessageText = currentMessageText.slice(protectedPartialPrefill.length);
+        const normalizedGenerationType = normalizeGenerationType(generationType);
+        const promptTransformMode = getPromptTransformMode(agent);
+        const profileId = resolveAgentConnectionProfile(agent);
+        const runMetadata = getPromptTransformRunMetadata(agent, profileId);
+        const showNotifications = shouldShowPromptTransformNotifications(agent);
 
-        if (!promptOutputText) {
-            console.warn(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" returned an empty response.`);
+        const isRuntimeAllowed = () => isAgentRuntimeAllowed(agent) && (options.runtimeAgents ?? []).every(isAgentRuntimeAllowed);
+        const runtimeAllowed = isRuntimeAllowed();
+        if (cancelRevision !== agentGenerationCancelRevision || !runtimeAllowed || !transformMessageText.trim()) {
             const result = {
                 agentId: agent.id,
                 agentName: agent.name,
                 changed: false,
-                status: 'empty-response',
+                status: cancelRevision !== agentGenerationCancelRevision ? 'cancelled' : runtimeAllowed ? 'skipped-empty-message' : 'skipped-runtime-filter',
+                mode: promptTransformMode,
+                profileId,
+                ...runMetadata,
+                runner: 'none',
+                timestamp: new Date().toISOString(),
+                outputText: '',
+                nextMessageText: currentMessageText,
+                beforeText: currentMessageText,
+            };
+
+            return result;
+        }
+
+        const expandedPrompt = substituteParams(agent.prompt, {
+            name2Override: String(message?.name ?? '').trim(),
+            original: transformMessageText,
+            dynamicMacros: buildPromptDynamicMacros(transformMessageText, message, agent, normalizedGenerationType),
+        }).trim();
+
+        if (!expandedPrompt) {
+            const result = {
+                agentId: agent.id,
+                agentName: agent.name,
+                changed: false,
+                status: 'skipped-empty-prompt',
+                mode: promptTransformMode,
+                profileId,
+                ...runMetadata,
+                runner: 'none',
+                timestamp: new Date().toISOString(),
+                outputText: '',
+                nextMessageText: currentMessageText,
+                beforeText: currentMessageText,
+            };
+
+            return result;
+        }
+
+        const helperRequest = appendConfiguredHelperPrefillMessages(options.promptMessages ?? buildPromptTransformMessages(
+            expandedPrompt,
+            transformMessageText,
+            String(message?.name ?? '').trim(),
+            normalizedGenerationType,
+            promptTransformMode,
+            getPromptTransformRecentChat(agent, message, options.recentChatEndIndex ?? messageIndex),
+        ));
+        const runningToast = showNotifications
+            ? showPromptTransformRunningToast(agent, promptTransformMode, profileId)
+            : null;
+
+        try {
+            const maxTokens = normalizePromptTransformMaxTokens(agent.postProcess?.promptTransformMaxTokens);
+            const response = await requestPromptTransform(
+                agent,
+                helperRequest.promptMessages,
+                maxTokens,
+                { allowAssistantPrefillTail: helperRequest.allowAssistantPrefillTail, runtimeAgents: options.runtimeAgents, diagnosticHandle },
+            );
+            const promptOutputText = stripEchoedPartialPrefill(
+                unwrapAssistantResponseWrapper(response.output).trim(),
+                promptTransformMode === 'append' ? '' : protectedPartialPrefill,
+            );
+
+            if (!promptOutputText) {
+                console.warn(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" returned an empty response.`);
+                const result = {
+                    agentId: agent.id,
+                    agentName: agent.name,
+                    changed: false,
+                    status: 'empty-response',
+                    mode: promptTransformMode,
+                    profileId: response.profileId,
+                    ...getPromptTransformRunMetadata(agent, response.profileId, response.model),
+                    runner: response.runner,
+                    timestamp: new Date().toISOString(),
+                    outputText: '',
+                    nextMessageText: currentMessageText,
+                    beforeText: currentMessageText,
+                };
+
+                if (showNotifications) {
+                    showPromptTransformResultToast(agent, result);
+                }
+
+                return result;
+            }
+
+            const transformedMessageText = promptTransformMode === 'append'
+                ? appendPromptTransformOutput(transformMessageText, promptOutputText)
+                : promptOutputText;
+            const nextMessageText = protectedPartialPrefill + transformedMessageText;
+            const staleTarget = !isMessageTargetCurrent(message, targetState, messageIndex);
+            // A rewrite the provider cut short at its output limit must not replace the complete original.
+            const truncatedRewrite = response.lengthLimited === true;
+            const refusedRewrite = !truncatedRewrite && isGuardedRefusal(promptOutputText, transformMessageText);
+            if (staleTarget || truncatedRewrite || refusedRewrite || agentGenerationCancelRevision !== cancelRevision || !isRuntimeAllowed()) {
+                if (staleTarget) {
+                    console.info(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" finished after the message changed; result discarded.`);
+                } else if (truncatedRewrite) {
+                    console.warn(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" hit its output limit; the original text was kept.`);
+                    if (showNotifications) {
+                        toastr.warning(`${escapeToastHtml(agent.name)} ran out of room for its answer, so the original text was kept. Raise its reply length limit in the agent settings and try again.`);
+                    }
+                } else if (refusedRewrite) {
+                    console.warn(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" refused; the original text was kept.`);
+                    if (showNotifications) {
+                        toastr.warning(`${escapeToastHtml(agent.name)} refused, so the original text was kept.`);
+                    }
+                }
+                return {
+                    agentId: agent.id,
+                    agentName: agent.name,
+                    changed: false,
+                    status: staleTarget ? 'stale-target' : truncatedRewrite ? 'truncated' : refusedRewrite ? 'refused' : agentGenerationCancelRevision !== cancelRevision ? 'cancelled' : 'skipped-runtime-filter',
+                    mode: promptTransformMode,
+                    profileId: response.profileId,
+                    ...getPromptTransformRunMetadata(agent, response.profileId, response.model),
+                    runner: response.runner,
+                    timestamp: new Date().toISOString(),
+                    outputText: '',
+                    nextMessageText: currentMessageText,
+                    beforeText: currentMessageText,
+                };
+            }
+
+            const changed = nextMessageText !== currentMessageText;
+            if (changed && applyToMessage) {
+                setPostProcessingText(message, nextMessageText, options.postProcessingTarget);
+                await syncPromptTransformMessageStateAsync(message, messageIndex);
+            }
+
+            console.info(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" ran via ${describePromptTransformTarget(response.profileId, response.runner)}${changed ? ' and changed the message.' : ' with no text change.'}`);
+
+            const result = {
+                agentId: agent.id,
+                agentName: agent.name,
+                changed,
+                status: changed ? 'changed' : 'unchanged',
                 mode: promptTransformMode,
                 profileId: response.profileId,
                 ...getPromptTransformRunMetadata(agent, response.profileId, response.model),
                 runner: response.runner,
+                timestamp: new Date().toISOString(),
+                outputText: promptOutputText,
+                nextMessageText,
+                beforeText: currentMessageText,
+            };
+
+            if (showNotifications) {
+                showPromptTransformResultToast(agent, result);
+            }
+
+            return result;
+        } catch (error) {
+            if (agentGenerationCancelRevision !== cancelRevision || generationStopRequested || isAbortSignalTriggered(error)) {
+                return {
+                    agentId: agent.id,
+                    agentName: agent.name,
+                    changed: false,
+                    status: 'cancelled',
+                    mode: promptTransformMode,
+                    profileId,
+                    ...runMetadata,
+                    runner: 'cancelled',
+                    timestamp: new Date().toISOString(),
+                    outputText: '',
+                    nextMessageText: currentMessageText,
+                    beforeText: currentMessageText,
+                };
+            }
+
+            console.warn(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} failed in agent "${agent.name}":`, error);
+            const result = {
+                agentId: agent.id,
+                agentName: agent.name,
+                changed: false,
+                status: 'error',
+                mode: promptTransformMode,
+                error: describeAgentError(error),
+                profileId,
+                ...runMetadata,
+                runner: 'error',
                 timestamp: new Date().toISOString(),
                 outputText: '',
                 nextMessageText: currentMessageText,
@@ -3995,127 +4163,18 @@ async function runPromptTransformAgent(agent, message, generationType, messageTe
             }
 
             return result;
+        } finally {
+            clearPromptTransformRunningToast(runningToast);
         }
-
-        const transformedMessageText = promptTransformMode === 'append'
-            ? appendPromptTransformOutput(transformMessageText, promptOutputText)
-            : promptOutputText;
-        const nextMessageText = protectedPartialPrefill + transformedMessageText;
-        const staleTarget = !isMessageTargetCurrent(message, targetState, messageIndex);
-        // A rewrite the provider cut short at its output limit must not replace the complete original.
-        const truncatedRewrite = response.lengthLimited === true;
-        const refusedRewrite = !truncatedRewrite && isGuardedRefusal(promptOutputText, transformMessageText);
-        if (staleTarget || truncatedRewrite || refusedRewrite || agentGenerationCancelRevision !== cancelRevision || !isRuntimeAllowed()) {
-            if (staleTarget) {
-                console.info(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" finished after the message changed; result discarded.`);
-            } else if (truncatedRewrite) {
-                console.warn(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" hit its output limit; the original text was kept.`);
-                if (showNotifications) {
-                    toastr.warning(`${escapeToastHtml(agent.name)} ran out of room for its answer, so the original text was kept. Raise its reply length limit in the agent settings and try again.`);
-                }
-            } else if (refusedRewrite) {
-                console.warn(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" refused; the original text was kept.`);
-                if (showNotifications) {
-                    toastr.warning(`${escapeToastHtml(agent.name)} refused, so the original text was kept.`);
-                }
-            }
-            return {
-                agentId: agent.id,
-                agentName: agent.name,
-                changed: false,
-                status: staleTarget ? 'stale-target' : truncatedRewrite ? 'truncated' : refusedRewrite ? 'refused' : agentGenerationCancelRevision !== cancelRevision ? 'cancelled' : 'skipped-runtime-filter',
-                mode: promptTransformMode,
-                profileId: response.profileId,
-                ...getPromptTransformRunMetadata(agent, response.profileId, response.model),
-                runner: response.runner,
-                timestamp: new Date().toISOString(),
-                outputText: '',
-                nextMessageText: currentMessageText,
-                beforeText: currentMessageText,
-            };
-        }
-
-        const changed = nextMessageText !== currentMessageText;
-        if (changed && applyToMessage) {
-            setPostProcessingText(message, nextMessageText, options.postProcessingTarget);
-            await syncPromptTransformMessageStateAsync(message, messageIndex);
-        }
-
-        console.info(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} agent "${agent.name}" ran via ${describePromptTransformTarget(response.profileId, response.runner)}${changed ? ' and changed the message.' : ' with no text change.'}`);
-
-        const result = {
-            agentId: agent.id,
-            agentName: agent.name,
-            changed,
-            status: changed ? 'changed' : 'unchanged',
-            mode: promptTransformMode,
-            profileId: response.profileId,
-            ...getPromptTransformRunMetadata(agent, response.profileId, response.model),
-            runner: response.runner,
-            timestamp: new Date().toISOString(),
-            outputText: promptOutputText,
-            nextMessageText,
-            beforeText: currentMessageText,
-        };
-
-        if (showNotifications) {
-            showPromptTransformResultToast(agent, result);
-        }
-
-        return result;
-    } catch (error) {
-        if (agentGenerationCancelRevision !== cancelRevision || generationStopRequested || isAbortSignalTriggered(error)) {
-            return {
-                agentId: agent.id,
-                agentName: agent.name,
-                changed: false,
-                status: 'cancelled',
-                mode: promptTransformMode,
-                profileId,
-                ...runMetadata,
-                runner: 'cancelled',
-                timestamp: new Date().toISOString(),
-                outputText: '',
-                nextMessageText: currentMessageText,
-                beforeText: currentMessageText,
-            };
-        }
-
-        console.warn(`[InChatAgents] ${describePromptTransformMode(promptTransformMode)} failed in agent "${agent.name}":`, error);
-        const result = {
-            agentId: agent.id,
-            agentName: agent.name,
-            changed: false,
-            status: 'error',
-            mode: promptTransformMode,
-            error: describeAgentError(error),
-            profileId,
-            ...runMetadata,
-            runner: 'error',
-            timestamp: new Date().toISOString(),
-            outputText: '',
-            nextMessageText: currentMessageText,
-            beforeText: currentMessageText,
-        };
-
-        if (showNotifications) {
-            showPromptTransformResultToast(agent, result);
-        }
-
-        return result;
-    } finally {
-        clearPromptTransformRunningToast(runningToast);
-    }
+    } catch (error) { diagnosticOutcome = error?.name === 'AbortError' ? 'cancel' : 'error'; throw error; } finally { try { globalThis.NeconyanCrashDiagnostics?.endAgent?.(diagnosticHandle, diagnosticOutcome); } catch { /* Optional diagnostics. */ } }
 }
 
-async function runPromptTransformAppendBatch(agents, message, generationType, messageTextOverride = null, messageIndex = null, { cancelRevision = null, runtimeAgents = [], recentChatEndIndex = null } = {}) {
+async function runPromptTransformAppendBatch(agents, message, generationType, messageTextOverride = null, messageIndex = null, { cancelRevision = null, runtimeAgents = [], recentChatEndIndex = null, executionMode = getGlobalSettings().appendAgentsExecutionMode } = {}) {
     const targetState = captureMessageTargetState(message);
     const currentMessageText = unwrapAssistantResponseWrapper(
         messageTextOverride !== null ? messageTextOverride : message?.mes,
     );
     const isCancelled = () => (cancelRevision !== null && agentGenerationCancelRevision !== cancelRevision) || !runtimeAgents.every(isAgentRuntimeAllowed);
-    const globalSettings = getGlobalSettings();
-    const executionMode = globalSettings.appendAgentsExecutionMode === 'sequential' ? 'sequential' : 'parallel';
 
     let results = [];
 
@@ -4207,7 +4266,7 @@ async function runPromptTransformAppendBatch(agents, message, generationType, me
  * cleaned of echoed text and duplicates, then joined around the finished body.
  * With Run together every agent request starts together.
  */
-async function runPromptTransformPasses(agents, message, generationType, text, messageIndex = null, { cancelRevision = null, runtimeAgents = [], stopOnFailure = false, isCurrent = () => true, recentChatEndIndex = null } = {}) {
+async function runPromptTransformPasses(agents, message, generationType, text, messageIndex = null, { cancelRevision = null, runtimeAgents = [], stopOnFailure = false, isCurrent = () => true, recentChatEndIndex = null, executionMode = getGlobalSettings().appendAgentsExecutionMode } = {}) {
     const promptRuns = [];
     const outcome = { cancelled: false, staleTarget: false, failed: false };
     const initialText = unwrapAssistantResponseWrapper(text);
@@ -4226,7 +4285,7 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
     const { draft } = await runPromptTransformStages({
         agents,
         text: initialText,
-        parallel: getGlobalSettings().appendAgentsExecutionMode !== 'sequential',
+        parallel: executionMode !== 'sequential',
         isAppend: agent => getPromptTransformMode(agent) === 'append',
         isPrepend: shouldPrependPromptTransformOutput,
         isAgentAllowed: isAgentRuntimeAllowed,
@@ -4265,7 +4324,7 @@ async function runPromptTransformPasses(agents, message, generationType, text, m
             return { text: result.nextMessageText };
         },
         runAppend: async (batchAgents, body) => {
-            const batch = await runPromptTransformAppendBatch(batchAgents, message, generationType, body, messageIndex, { cancelRevision, runtimeAgents, recentChatEndIndex });
+            const batch = await runPromptTransformAppendBatch(batchAgents, message, generationType, body, messageIndex, { cancelRevision, runtimeAgents, recentChatEndIndex, executionMode });
             promptRuns.push(...batch.results);
             if (batch.cancelled || isCancelled()) {
                 outcome.cancelled = true;
@@ -4543,6 +4602,10 @@ function onGenerationStopped(generationContext) {
 
     generationStopRequested = true;
     agentGenerationCancelRevision++;
+    for (const queue of manualAgentRunQueues) {
+        queue.cancelRequested = true;
+        clearManualAgentRunQueue(queue);
+    }
     invalidateToolApprovals();
     abortActiveAgentRequests();
     releaseToolAgentRegistrations();
@@ -5066,7 +5129,7 @@ async function onMessageEdited(messageIndex) {
     if (changed || historyLinked) scheduleMessageRefresh(messageIndex, message);
 }
 
-async function runPromptTransformAgentsForText(promptTransformAgents, initialText, generationType, { messageContext = {}, cancelRevision = null, stopOnFailure = false, runtimeAgents = [], recentChatEndIndex = null } = {}) {
+async function runPromptTransformAgentsForText(promptTransformAgents, initialText, generationType, { messageContext = {}, cancelRevision = null, stopOnFailure = false, runtimeAgents = [], recentChatEndIndex = null, executionMode = getGlobalSettings().appendAgentsExecutionMode } = {}) {
     const message = {
         mes: initialText,
         name: getUserMessageName(),
@@ -5095,6 +5158,7 @@ async function runPromptTransformAgentsForText(promptTransformAgents, initialTex
         runtimeAgents,
         stopOnFailure,
         recentChatEndIndex,
+        executionMode,
     });
     promptRuns.push(...result.promptRuns);
     if (result.cancelled || isCancelled()) {
@@ -5185,116 +5249,120 @@ export async function runCompanionOutputPostPasses(companionAgent, initialText, 
 }
 
 async function runContextInterceptAgent(agent, currentContextText, generationType, contextFormat, options = {}) {
-    const timing = options.timing === POST_MAIN_GENERATION_INTERCEPT_TIMING
-        ? POST_MAIN_GENERATION_INTERCEPT_TIMING
-        : PRE_GENERATION_INTERCEPT_TIMING;
-    const beforeText = normalizeContentText(currentContextText);
-    const applyMode = ['wrap', 'patch'].includes(String(agent?.preProcess?.applyMode))
-        ? String(agent.preProcess.applyMode)
-        : 'replace';
-    const profileId = resolveAgentConnectionProfile(agent);
-    const baseResult = {
-        agentId: agent.id,
-        agentName: agent.name,
-        applyMode,
-        timing,
-        contextFormat,
-        changed: false,
-        beforeText,
-        afterText: beforeText,
-        outputText: '',
-        profileId: '',
-        runner: 'none',
-        timestamp: new Date().toISOString(),
-    };
-    const expandedPrompt = substituteParams(agent.prompt, {
-        original: currentContextText,
-        dynamicMacros: buildPromptDynamicMacros(currentContextText, null, agent, generationType),
-    }).trim();
-
-    const runtimeAllowed = isAgentRuntimeAllowed(agent);
-    if (!runtimeAllowed || !expandedPrompt || !currentContextText.trim()) {
-        return {
-            ...baseResult,
-            status: runtimeAllowed ? 'skipped-empty-prompt' : 'skipped-runtime-filter',
-        };
-    }
-
-    const helperRequest = appendConfiguredHelperPrefillMessages(
-        buildContextInterceptMessages(expandedPrompt, currentContextText, generationType, contextFormat, timing, applyMode),
-    );
-    const cancelRevision = agentGenerationCancelRevision;
-    const skipChanges = timing === POST_MAIN_GENERATION_INTERCEPT_TIMING && Boolean(options?.skipChanges);
-    const showRunningToast = skipChanges || shouldShowPreInterceptNotifications(agent);
-    const runningToast = showRunningToast
-        ? showPromptTransformRunningToast(agent, applyMode, profileId, {
-            kind: timing === POST_MAIN_GENERATION_INTERCEPT_TIMING ? 'postMainIntercept' : 'preIntercept',
-            applyMode,
-            skipChanges,
-            onCancel: skipChanges ? options?.onCancel : null,
-        })
-        : null;
-
+    let diagnosticHandle = null, diagnosticOutcome = 'done';
+    try { diagnosticHandle = globalThis.NeconyanCrashDiagnostics?.beginAgent?.({ id: agent.id, sourceTemplateId: agent.sourceTemplateId, phase: options.timing === POST_MAIN_GENERATION_INTERCEPT_TIMING ? 'post' : 'pre' }); } catch { /* Optional diagnostics. */ }
     try {
-        const response = await requestPromptTransform(
-            agent,
-            helperRequest.promptMessages,
-            normalizePreProcessMaxTokens(agent.preProcess?.maxTokens),
-            { allowAssistantPrefillTail: helperRequest.allowAssistantPrefillTail },
-        );
-
-        if (agentGenerationCancelRevision !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
-            return {
-                ...baseResult,
-                status: agentGenerationCancelRevision !== cancelRevision ? 'cancelled' : 'skipped-runtime-filter',
-                profileId: response.profileId,
-                runner: response.runner,
-            };
-        }
-
-        if (response.lengthLimited) {
-            return { ...baseResult, status: 'truncated', profileId: response.profileId, runner: response.runner };
-        }
-
-        const outputText = unwrapContextInterceptOutput(response.output).trim();
-
-        if (isGuardedRefusal(outputText, currentContextText)) {
-            console.warn(`[InChatAgents] intercept agent "${agent.name}" refused; the original text was kept.`);
-            return { ...baseResult, status: 'refused', profileId: response.profileId, runner: response.runner };
-        }
-
-        if (!outputText) {
-            console.warn(`[InChatAgents] pre-generation intercept agent "${agent.name}" returned an empty response.`);
-            return {
-                ...baseResult,
-                status: 'empty-response',
-                profileId: response.profileId,
-                runner: response.runner,
-            };
-        }
-
-        return {
-            ...baseResult,
-            status: 'changed',
-            changed: true,
-            outputText,
-            profileId: response.profileId,
-            runner: response.runner,
+        const timing = options.timing === POST_MAIN_GENERATION_INTERCEPT_TIMING
+            ? POST_MAIN_GENERATION_INTERCEPT_TIMING
+            : PRE_GENERATION_INTERCEPT_TIMING;
+        const beforeText = normalizeContentText(currentContextText);
+        const applyMode = ['wrap', 'patch'].includes(String(agent?.preProcess?.applyMode))
+            ? String(agent.preProcess.applyMode)
+            : 'replace';
+        const profileId = resolveAgentConnectionProfile(agent);
+        const baseResult = {
+            agentId: agent.id,
+            agentName: agent.name,
+            applyMode,
+            timing,
+            contextFormat,
+            changed: false,
+            beforeText,
+            afterText: beforeText,
+            outputText: '',
+            profileId: '',
+            runner: 'none',
+            timestamp: new Date().toISOString(),
         };
-    } catch (error) {
-        if (agentGenerationCancelRevision !== cancelRevision || generationStopRequested || isAbortSignalTriggered(error)) {
+        const expandedPrompt = substituteParams(agent.prompt, {
+            original: currentContextText,
+            dynamicMacros: buildPromptDynamicMacros(currentContextText, null, agent, generationType),
+        }).trim();
+
+        const runtimeAllowed = isAgentRuntimeAllowed(agent);
+        if (!runtimeAllowed || !expandedPrompt || !currentContextText.trim()) {
             return {
                 ...baseResult,
-                status: 'cancelled',
-                profileId,
-                runner: 'cancelled',
+                status: runtimeAllowed ? 'skipped-empty-prompt' : 'skipped-runtime-filter',
             };
         }
 
-        throw error;
-    } finally {
-        clearPromptTransformRunningToast(runningToast);
-    }
+        const helperRequest = appendConfiguredHelperPrefillMessages(
+            buildContextInterceptMessages(expandedPrompt, currentContextText, generationType, contextFormat, timing, applyMode),
+        );
+        const cancelRevision = agentGenerationCancelRevision;
+        const skipChanges = timing === POST_MAIN_GENERATION_INTERCEPT_TIMING && Boolean(options?.skipChanges);
+        const showRunningToast = skipChanges || shouldShowPreInterceptNotifications(agent);
+        const runningToast = showRunningToast
+            ? showPromptTransformRunningToast(agent, applyMode, profileId, {
+                kind: timing === POST_MAIN_GENERATION_INTERCEPT_TIMING ? 'postMainIntercept' : 'preIntercept',
+                applyMode,
+                skipChanges,
+                onCancel: skipChanges ? options?.onCancel : null,
+            })
+            : null;
+
+        try {
+            const response = await requestPromptTransform(
+                agent,
+                helperRequest.promptMessages,
+                normalizePreProcessMaxTokens(agent.preProcess?.maxTokens),
+                { allowAssistantPrefillTail: helperRequest.allowAssistantPrefillTail, diagnosticHandle },
+            );
+
+            if (agentGenerationCancelRevision !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
+                return {
+                    ...baseResult,
+                    status: agentGenerationCancelRevision !== cancelRevision ? 'cancelled' : 'skipped-runtime-filter',
+                    profileId: response.profileId,
+                    runner: response.runner,
+                };
+            }
+
+            if (response.lengthLimited) {
+                return { ...baseResult, status: 'truncated', profileId: response.profileId, runner: response.runner };
+            }
+
+            const outputText = unwrapContextInterceptOutput(response.output).trim();
+
+            if (isGuardedRefusal(outputText, currentContextText)) {
+                console.warn(`[InChatAgents] intercept agent "${agent.name}" refused; the original text was kept.`);
+                return { ...baseResult, status: 'refused', profileId: response.profileId, runner: response.runner };
+            }
+
+            if (!outputText) {
+                console.warn(`[InChatAgents] pre-generation intercept agent "${agent.name}" returned an empty response.`);
+                return {
+                    ...baseResult,
+                    status: 'empty-response',
+                    profileId: response.profileId,
+                    runner: response.runner,
+                };
+            }
+
+            return {
+                ...baseResult,
+                status: 'changed',
+                changed: true,
+                outputText,
+                profileId: response.profileId,
+                runner: response.runner,
+            };
+        } catch (error) {
+            if (agentGenerationCancelRevision !== cancelRevision || generationStopRequested || isAbortSignalTriggered(error)) {
+                return {
+                    ...baseResult,
+                    status: 'cancelled',
+                    profileId,
+                    runner: 'cancelled',
+                };
+            }
+
+            throw error;
+        } finally {
+            clearPromptTransformRunningToast(runningToast);
+        }
+    } catch (error) { diagnosticOutcome = error?.name === 'AbortError' ? 'cancel' : 'error'; throw error; } finally { try { globalThis.NeconyanCrashDiagnostics?.endAgent?.(diagnosticHandle, diagnosticOutcome); } catch { /* Optional diagnostics. */ } }
 }
 
 function getGenerationContextSnapshot(generationType = null) {
@@ -6137,7 +6205,7 @@ export async function runSingleAgentPostPassesOnText(agent, text, generationType
     let promptRuns = [];
 
     if (String(agent?.prompt ?? '').trim()) {
-        const promptResult = await runPromptTransformAgentsForText([agent], currentText, generationType, { messageContext, runtimeAgents, cancelRevision, recentChatEndIndex });
+        const promptResult = await runPromptTransformAgentsForText([agent], currentText, generationType, { messageContext, runtimeAgents, cancelRevision, recentChatEndIndex, executionMode: 'sequential' });
         promptRuns = promptResult.promptRuns ?? [];
         currentText = promptResult.text;
         changed = changed || promptResult.changed;
@@ -6195,9 +6263,14 @@ async function executeManualComposerAgentRun(agent, cancelRevision, target) {
         return null;
     }
 
-    textarea.value = result.text;
+    applyManualTargetWrite(target, () => { textarea.value = result.text; });
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
     return result;
+}
+
+function warnManualAgentTargetChanged(agent) {
+    toastr.warning(`The text changed before "${agent.name}" started, so it was skipped.`);
+    return null;
 }
 
 async function executeManualAgentRun(agentId, target, cancelRevision = agentGenerationCancelRevision) {
@@ -6207,17 +6280,18 @@ async function executeManualAgentRun(agentId, target, cancelRevision = agentGene
         toastr.error('Agent not found.');
         return null;
     }
-    if (!isAgentRuntimeAllowed(agent) || agentGenerationCancelRevision !== cancelRevision || !target.isCurrent()) {
+    if (!isAgentRuntimeAllowed(agent) || agentGenerationCancelRevision !== cancelRevision) {
         return null;
     }
+    if (!target.isCurrent()) return warnManualAgentTargetChanged(agent);
 
     if (runTarget.kind === 'composer') {
         if (target.state.chatId !== getCurrentSnapshotChatId() || target.state.chatLoadRevision !== chatLoadRevision
-            || document.querySelector('#send_textarea') !== target.composer || target.composer?.value !== target.composerText) return null;
+            || document.querySelector('#send_textarea') !== target.composer || target.composer?.value !== target.composerText) return warnManualAgentTargetChanged(agent);
         return await executeManualComposerAgentRun(agent, cancelRevision, target);
     }
 
-    if (!isMessageTargetCurrent(target.message, target.state, runTarget.messageIndex, { text: false })) return null;
+    if (!isMessageTargetCurrent(target.message, target.state, runTarget.messageIndex, { text: false })) return warnManualAgentTargetChanged(agent);
 
     if (runTarget.kind === 'companion') {
         if (isCompanionAgent(agent)) {
@@ -6230,17 +6304,20 @@ async function executeManualAgentRun(agentId, target, cancelRevision = agentGene
             return null;
         }
 
-        return await companionRuntime.applyAgentPostPassesToCompanionResult(agent.id, runTarget.messageIndex, runTarget.companionAgentId, { cancelRevision });
+        return await companionRuntime.applyAgentPostPassesToCompanionResult(agent.id, runTarget.messageIndex, runTarget.companionAgentId, {
+            cancelRevision,
+            applyWrite: write => applyManualTargetWrite(target, write),
+        });
     }
 
     const messageIndex = runTarget.messageIndex;
     await commitOpenEditorForMessage(messageIndex);
 
     // A queued run whose Stop arrived while it waited must not send a request.
-    if (!isAgentRuntimeAllowed(agent) || agentGenerationCancelRevision !== cancelRevision
-        || !isMessageTargetCurrent(target.message, target.state, messageIndex, { text: false, revision: false })) {
+    if (!isAgentRuntimeAllowed(agent) || agentGenerationCancelRevision !== cancelRevision) {
         return null;
     }
+    if (!isMessageTargetCurrent(target.message, target.state, messageIndex, { text: false, revision: false })) return warnManualAgentTargetChanged(agent);
     const message = chat[messageIndex];
     if (!message || message.is_user || message.is_system) {
         return null;
@@ -6284,7 +6361,7 @@ async function executeManualAgentRun(agentId, target, cancelRevision = agentGene
     }
     if (result.changed) {
         // Companions share accepted agent rewrites, but still reject edits and swipe changes.
-        if (!setPostProcessingText(message, result.nextMessageText, postProcessingTarget)) return null;
+        if (!applyManualTargetWrite(target, () => setPostProcessingText(message, result.nextMessageText, postProcessingTarget))) return null;
         recordAppliedTransformation(message, beforeText, [result]);
         reconcileTrackerMetadata();
         if (!await syncPromptTransformMessageStateAsync(message, messageIndex)) return null;
@@ -6359,20 +6436,26 @@ function inspectTrackerRepairState(agent, text, characterOverride) {
 }
 
 export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = agentGenerationCancelRevision } = {}) {
-    resetChatBackupSequence();
     if (!areAgentsGloballyEnabled()) {
         toastr.warning('In-Chat Agents are disabled.');
-        return;
+        return null;
     }
 
     const message = chat[messageIndex];
     if (!message || message.is_user || message.is_system) {
-        return;
+        return null;
     }
-    const submittedTarget = captureMessageTargetState(message);
-    if (agentGenerationCancelRevision !== cancelRevision) return;
+    const target = { kind: 'message', messageIndex, message, state: captureMessageTargetState(message), isCurrent: () => true };
+    return await enqueueManualOperation(manualAgentRunQueues[0], target, () => executeTrackerFixOnMessage(target, cancelRevision), cancelRevision);
+}
+
+async function executeTrackerFixOnMessage(submittedTarget, cancelRevision) {
+    const { message, messageIndex } = submittedTarget;
+    if (!areAgentsGloballyEnabled() || agentGenerationCancelRevision !== cancelRevision
+        || !isMessageTargetCurrent(message, submittedTarget.state, messageIndex, { text: false })) return null;
+    resetChatBackupSequence();
     await commitOpenEditorForMessage(messageIndex);
-    if (!isMessageTargetCurrent(message, submittedTarget, messageIndex, { text: false, revision: false })) return;
+    if (!isMessageTargetCurrent(message, submittedTarget.state, messageIndex, { text: false, revision: false })) return null;
 
     const generationType = 'normal';
     const beforeText = message.mes;
@@ -6380,13 +6463,13 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     const fixCancelRevision = cancelRevision;
     const isFixCancelled = () => agentGenerationCancelRevision !== fixCancelRevision;
     const isFixTargetCurrent = () => !isFixCancelled() && isMessageTargetCurrent(message, target, messageIndex);
-    if (!isFixTargetCurrent()) return;
+    if (!isFixTargetCurrent()) return null;
     const enabledAgents = getEnabledAgents();
     const trackerAgents = enabledAgents.filter(agent => !isCompanionAgent(agent) && isTrackerFixAgent(agent));
 
     if (trackerAgents.length === 0) {
         toastr.info('No enabled tracker agents found.');
-        return;
+        return null;
     }
 
     const trackerExtractAgents = trackerAgents.filter(agent =>
@@ -6424,8 +6507,9 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     const promptTransformResult = await runPromptTransformPasses(trackerTransformAgents.map(markTrackerRepairRunAgent), message, generationType, currentPromptTransformText, messageIndex, {
         cancelRevision: fixCancelRevision,
         isCurrent: isFixTargetCurrent,
+        executionMode: 'sequential',
     });
-    if (!isFixTargetCurrent() || promptTransformResult.staleTarget) return;
+    if (!isFixTargetCurrent() || promptTransformResult.staleTarget) return null;
     promptRuns.push(...promptTransformResult.promptRuns);
     if (promptTransformResult.changed) {
         currentPromptTransformText = promptTransformResult.text;
@@ -6436,7 +6520,7 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     // Neconyan divergence: Fix Trackers repairs the raw tracker block and then
     // derives metadata from that validated text instead of discarding model output.
     for (const agent of trackerExtractAgents) {
-        if (!isFixTargetCurrent()) return;
+        if (!isFixTargetCurrent()) return null;
         if (!isAgentRuntimeAllowed(agent)) continue;
 
         const inspection = inspectTrackerRepairState(agent, currentPromptTransformText, message.name);
@@ -6477,7 +6561,7 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
                 applyToMessage: false,
                 cancelRevision: fixCancelRevision,
             });
-            if (!isFixTargetCurrent() || result.status === 'stale-target') return;
+            if (!isFixTargetCurrent() || result.status === 'stale-target') return null;
             const repaired = inspectTrackerRepairState(agent, result.outputText, message.name);
             if (!String(result.outputText ?? '').trim() || ['error', 'cancelled', 'truncated'].includes(result.status)
                 || repaired.status !== 'valid' || repaired.payloads.length < inspection.blocks.length) {
@@ -6504,7 +6588,7 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     }
 
     if (!isFixTargetCurrent()) {
-        return;
+        return null;
     }
 
     const utilityAgents = trackerAgents.filter(agent =>
@@ -6537,9 +6621,9 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     currentPromptTransformText = applyAgentRegexScriptsToText(trackerAgents, currentPromptTransformText, {
         characterOverride: message.name, includeDisplay: false,
     });
-    if (!isFixTargetCurrent()) return;
+    if (!isFixTargetCurrent()) return null;
     const textChanged = currentPromptTransformText !== message.mes;
-    message.mes = currentPromptTransformText;
+    if (!applyManualTargetWrite(submittedTarget, () => setPostProcessingText(message, currentPromptTransformText, getAgentPostProcessingTarget(message)))) return null;
     target.mes = currentPromptTransformText;
     const trackerMetadataUpdates = reconcileTrackerMetadata(trackerExtractAgents);
     if (trackerMetadataUpdates) chatStateChanged = true;
@@ -6555,10 +6639,10 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     if (textChanged) {
         chatStateChanged = true;
         messageDisplayChanged = true;
-        if (!await syncPromptTransformMessageStateAsync(message, messageIndex)) return;
+        if (!await syncPromptTransformMessageStateAsync(message, messageIndex)) return null;
     }
     if (!isFixTargetCurrent()) {
-        return;
+        return null;
     }
 
     if (chatStateChanged || regexSnapshotChanged) {
@@ -6574,21 +6658,30 @@ export async function runTrackerFixOnMessage(messageIndex, { cancelRevision = ag
     const failedRuns = promptRuns.filter(r => r.status === 'error');
     const postProcessRuns = utilityAgents.length + trackerMetadataUpdates;
     const errorRuns = failedRuns.length + trackerRepairErrors;
+    // Each part is a whole phrase for the translator, with its own singular and plural; the error count and its advice
+    // are one text, so no key ever has to match the joined summary.
     const parts = [];
-    if (trackerRepairs > 0) parts.push(`${trackerRepairs} tracker${trackerRepairs > 1 ? 's' : ''} repaired`);
-    if (changedRuns.length > 0) parts.push(`${changedRuns.length} prompt transform${changedRuns.length > 1 ? 's' : ''} applied`);
-    if (postProcessRuns > 0) parts.push(`${postProcessRuns} post-process${postProcessRuns > 1 ? 'es' : ''} run`);
-    if (regexSnapshotChanged) parts.push('regex snapshot updated');
-    if (errorRuns > 0) parts.push(`${errorRuns} error${errorRuns > 1 ? 's' : ''}`);
+    if (trackerRepairs > 0) parts.push(trackerRepairs > 1 ? t`${trackerRepairs} trackers repaired` : t`1 tracker repaired`);
+    if (changedRuns.length > 0) parts.push(changedRuns.length > 1 ? t`${changedRuns.length} prompt transforms applied` : t`1 prompt transform applied`);
+    if (postProcessRuns > 0) parts.push(postProcessRuns > 1 ? t`${postProcessRuns} post-processes run` : t`1 post-process run`);
+    if (regexSnapshotChanged) parts.push(t`regex snapshot updated`);
 
     if (errorRuns > 0) {
-        const detail = unsafeTrackerRepairs > 0
-            ? ' A broken tracker has no clear start or end. Check that it has both a start marker and an end marker in the message, then try again.'
-            : ' Some trackers could not be repaired. Check the connection the agent uses, then try again.';
-        toastr.warning(parts.join(', ') + '.' + detail, 'Tracker repair incomplete');
+        let errors;
+        if (unsafeTrackerRepairs > 0) {
+            errors = errorRuns > 1
+                ? t`${errorRuns} errors. A broken tracker has no clear start or end. Check that it has both a start marker and an end marker in the message, then try again.`
+                : t`1 error. A broken tracker has no clear start or end. Check that it has both a start marker and an end marker in the message, then try again.`;
+        } else {
+            errors = errorRuns > 1
+                ? t`${errorRuns} errors. Some trackers could not be repaired. Check the connection the agent uses, then try again.`
+                : t`1 error. Some trackers could not be repaired. Check the connection the agent uses, then try again.`;
+        }
+        toastr.warning([...parts, errors].join(', '), 'Tracker repair incomplete');
     } else if (parts.length > 0) {
         toastr.success(parts.join(', '), 'Trackers fixed');
     } else {
         toastr.info('No tracker changes were needed.', 'Trackers checked');
     }
+    return null;
 }

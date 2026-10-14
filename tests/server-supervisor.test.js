@@ -1,4 +1,8 @@
 import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { getCrashReports } from '../src/crash-diagnostics.js';
 
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals';
 
@@ -117,6 +121,31 @@ describe('server supervisor', () => {
         expect(options.env[SERVER_PLUGIN_UPDATE_SUPERVISOR_API_ENV]).toBe(SERVER_PLUGIN_UPDATE_SUPERVISOR_API_VERSION);
         expect(options.env.NECONYAN_SKIP_BROWSER_AUTO_LAUNCH).toBeUndefined();
         expect(exitFn).toHaveBeenCalledWith(0);
+    });
+
+    test.each([
+        [false, 'SIGKILL', null, true],
+        [true, 'SIGKILL', null, true],
+        [false, null, 2, true],
+        [false, null, 2, false],
+    ])('handles a stopped child without duplicate reports (requested: %s, signal: %s, code: %s, marker: %s)', async (requested, signal, code, markerPresent) => {
+        const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neconyan-supervisor-crash-'));
+        try {
+            const { children, spawnFn } = createSpawnPlan(['manual']);
+            const exitFn = jest.fn();
+            const run = runSupervisor({ argv: ['node', 'server.js'], execArgv: [], spawnFn, exitFn });
+            await tick();
+            children[0].pid = 123456;
+            if (markerPresent) fs.writeFileSync(path.join(directory, 'running-123456.json'), '{}');
+            children[0].emit('message', { type: 'neconyan:crash-directory', directory });
+            if (requested) process.emit('SIGTERM');
+            children[0].emit('exit', code, signal);
+            await run;
+            expect(exitFn).toHaveBeenCalledWith(signal ? 1 : code);
+            expect(getCrashReports(directory)).toHaveLength(requested || !markerPresent ? 0 : 1);
+            expect(getCrashReports(directory).map(report => report.child)).toEqual(requested || !markerPresent ? [] : [{ pid: 123456, signal, exitCode: code }]);
+            expect(fs.existsSync(path.join(directory, 'running-123456.json'))).toBe(false);
+        } finally { fs.rmSync(directory, { recursive: true, force: true }); }
     });
 
     test('recovers interrupted plugin transactions before launching the server', async () => {

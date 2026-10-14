@@ -14,7 +14,7 @@
     opacity: 0.75;
 }
 
-.sbdbg-report-text {
+.sbdbg-report:not(.neconyan-crash-report) .sbdbg-report-text {
     width: 100%;
     min-height: 40vh;
     font-family: monospace;

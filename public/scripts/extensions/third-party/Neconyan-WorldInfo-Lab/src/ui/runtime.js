@@ -1,6 +1,7 @@
 import { getSettings, updateSettings } from '../settings.js';
 import { pruneHistory } from '../history.js';
 import { element, field, replace } from './dom.js';
+import { hostT } from '../host.js';
 import { createWorkbench } from './workbench.js';
 
 const TABBABLE_SELECTOR = [
@@ -100,7 +101,7 @@ export function mountRuntimeUi({ signal = null } = {}) {
             drawerStatus.textContent = 'Lorebook scanning is unavailable. Update Neconyan or World Info Lab, then reload.';
             drawerStatus.className = 'sbwil-settings-status sbwil-settings-error';
             if (state.availability.reason) {
-                drawerStatus.title = `Technical details: ${state.availability.reason}`;
+                drawerStatus.title = hostT`Technical details: ${state.availability.reason}`;
             }
         } else {
             drawerStatus.textContent = 'Checking compatibility with Neconyan...';

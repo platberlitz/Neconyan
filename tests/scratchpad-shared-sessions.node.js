@@ -25,6 +25,21 @@ const mutate = (f, source, change) => withRoleplayAccountLock(f.scope, lease => 
 const seed = (f, source, name) => mutate(f, source, bucket => store.createSession(bucket, { name,
     settings: { picked: ['0'], depth: 7 }, messages: [{ role: 'user', text: 'A saved thought.' }] }).id);
 
+test('General never merges into chat, group, Conversation or Notebook lists, even with a selected card', t => {
+    const f = fixture(t);
+    const general = { kind: 'general', key: 'general', label: 'General Scratchpad', avatar: 'Nova.png', contextMode: 'roleplay', personaId: 'User.png' };
+    const id = seed(f, general, 'General ideas');
+    for (const source of [shared('Source'), { kind: 'conversation', key: 'conversation:Nova.png:main', scope: { kind: 'character', id: 'Nova.png' } },
+        { kind: 'roleplay', key: 'group:group:Other', scope: { kind: 'group', id: 'group' } }, { kind: 'notebook', key: 'notebook:book:note' }]) {
+        assert.equal(read(f, source).sessions.length, 0);
+        seed(f, source, 'Other ideas');
+        assert.equal(read(f, source).sessions.some(session => session.id === id), false);
+    }
+    const plain = { kind: 'general', key: 'general' };
+    assert.deepEqual(read(f, plain).sessions.map(session => session.id), [id]);
+    assert.deepEqual(read(f, { ...general, avatar: 'Kit.png' }).sessions.map(session => session.id), [id]);
+});
+
 test('Roleplay and Conversation sessions share only within their own character and persona space', t => {
     const f = fixture(t);
     const first = seed(f, legacy('First'), 'First ideas');

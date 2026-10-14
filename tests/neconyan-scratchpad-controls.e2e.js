@@ -160,7 +160,7 @@ for (const phone of [false, true]) {
         if (phone) await applyIOSOnlyCss(page);
         await page.getByRole('tab', { name: 'Sessions', exact: true }).click();
         const enabled = page.getByRole('checkbox', { name: 'Delete old sessions automatically' });
-        const keep = page.getByLabel('Sessions to keep per character, group or note');
+        const keep = page.getByLabel('Sessions to keep per list');
         await expect(enabled).not.toBeChecked();
         await expect(keep).toHaveValue('10');
         await expect(keep).toBeDisabled();
@@ -174,7 +174,7 @@ for (const phone of [false, true]) {
         await expect(enabled).not.toBeChecked();
         expect((await account.post('/api/scratchpad/bucket', { source: other })).bucket.cleanup.enabled).toBe(false);
         await enabled.check();
-        await popup.getByText('Apply to all chats', { exact: true }).click();
+        await popup.getByText('Apply to all session lists', { exact: true }).click();
         await expect(enabled).toBeChecked();
         await expect(keep).toBeEnabled();
         await expect.poll(async () => (await account.post('/api/scratchpad/bucket', { source })).bucket.cleanup).toEqual({ enabled: true, keep: 10 });
@@ -192,7 +192,7 @@ for (const phone of [false, true]) {
 
         await keep.fill('2');
         await keep.blur();
-        await popup.getByText('Apply to all chats', { exact: true }).click();
+        await popup.getByText('Apply to all session lists', { exact: true }).click();
         // The typed value shows before the save; the whole Sessions panel is rebuilt once the server answers.
         await expect(page.locator('.scratchpad-sessions .scratchpad-session')).toHaveCount(2);
         await expect(keep).toHaveValue('2');
@@ -229,6 +229,6 @@ for (const phone of [false, true]) {
         if (phone) await applyIOSOnlyCss(reopened);
         await reopened.getByRole('tab', { name: 'Sessions', exact: true }).click();
         await expect(reopened.getByRole('checkbox', { name: 'Delete old sessions automatically' })).not.toBeChecked();
-        await expect(reopened.getByLabel('Sessions to keep per character, group or note', { exact: true })).toHaveValue('2');
+        await expect(reopened.getByLabel('Sessions to keep per list', { exact: true })).toHaveValue('2');
     });
 }

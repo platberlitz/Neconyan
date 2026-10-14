@@ -94,6 +94,7 @@ function installExtensionModuleMocks() {
     jest.unstable_mockModule('../public/scripts/i18n.js', () => ({
         addLocaleData: jest.fn(),
         getCurrentLocale: jest.fn(() => 'en'),
+        localizeMessage: jest.fn(text => text),
         t: jest.fn(strings => Array.isArray(strings) ? strings.join('') : String(strings ?? '')),
     }));
 

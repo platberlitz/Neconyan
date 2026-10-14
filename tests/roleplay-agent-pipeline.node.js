@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { getDiagnosticServerActivity } from '../src/diagnostic-activity.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import test, { after } from 'node:test';
@@ -121,6 +122,47 @@ test('native Agent prompts, lore, complete-context interception and postprocessi
     assert.equal(f.saved().length, 4);
 });
 
+test('prompt contributions and interceptors can use saved tracker macros before generation', async t => {
+    const f = prepared(t, [
+        { id: 'prompt', phase: 'pre', prompt: 'SAVED_SECRETS {{secrets-tracker}}', injection: { position: 1, depth: 1, role: 0 } },
+        { id: 'before', phase: 'pre', prompt: 'CHECK_SECRETS {{secrets-tracker}}',
+            preProcess: { mode: 'intercept', applyMode: 'wrap', wrapPosition: 'before', maxTokens: 64 } },
+        { id: 'state', phase: 'pre', prompt: 'CHECK_STATE {{tracker-state}}',
+            preProcess: { mode: 'intercept', applyMode: 'wrap', wrapPosition: 'before', maxTokens: 64 } },
+        { id: 'secrets', phase: 'post', sourceTemplateId: 'tpl-secrets-tracker',
+            postProcess: { enabled: true, type: 'extract', extractVariable: 'secret_data', extractPattern: '\\[SECRET\\|[^\\]]*\\]' } },
+    ], { configure: records => { records[0].chat_metadata = { variables: { agent_secret_data: '[SECRET|Nova|Hidden name|Nobody]' } }; } });
+    let calls = 0;
+    await f.run({ generate: paid('main', ({ messages }) => {
+        const prompt = messages.map(message => message.content).join('\n');
+        assert.match(prompt, /SAVED_SECRETS <tracker name="secrets">\n\[SECRET\|Nova\|Hidden name\|Nobody\]/);
+        assert.doesNotMatch(prompt, /\{\{secrets-tracker\}\}/);
+        return 'Main output';
+    }), generateAgent: paid('before', ({ messages }) => {
+        calls++;
+        const label = messages[0].content.startsWith('CHECK_STATE') ? 'CHECK_STATE' : 'CHECK_SECRETS';
+        assert.match(messages[0].content, new RegExp(`^${label} <tracker name="secrets">\\n\\[SECRET\\|Nova\\|Hidden name\\|Nobody\\]`));
+        return 'Keep knowledge private';
+    }) });
+    assert.equal(calls, 2);
+});
+
+test('before-reply interceptors fill tracker state without the secrets macro', async t => {
+    const f = prepared(t, [
+        { id: 'state', phase: 'pre', prompt: 'CHECK_STATE {{tracker-state}}',
+            preProcess: { mode: 'intercept', applyMode: 'wrap', wrapPosition: 'before', maxTokens: 64 } },
+        { id: 'scene', name: 'Scene Tracker', phase: 'post',
+            postProcess: { enabled: true, type: 'extract', extractVariable: 'scene', extractPattern: '\\[SCENE\\][\\s\\S]*?\\[/SCENE\\]' } },
+    ], { configure: records => { records[0].chat_metadata = { variables: { agent_scene: '[SCENE]Hangar[/SCENE]' } }; } });
+    let calls = 0;
+    await f.run({ generate: paid('main', () => 'Main output'), generateAgent: paid('before', ({ messages }) => {
+        calls++;
+        assert.match(messages[0].content, /^CHECK_STATE <tracker name="Scene Tracker">\n\[SCENE\]Hangar\[\/SCENE\]/);
+        return 'Keep the scene';
+    }) });
+    assert.equal(calls, 1);
+});
+
 test('server reply rewrites see the saved trackers, the lore activated for the reply and the Author\'s Note', async t => {
     const f = prepared(t, [
         { id: 'continuity', phase: 'post', prompt: 'REWRITE<t>{{tracker-state}}</t><l>{{active-lore}}</l><n>{{active-authors-note}}</n>', injection: { order: 3 },
@@ -160,6 +202,10 @@ for (const effect of ['append', 'continue', 'swipe', 'replace']) {
         const calls = [];
         await f.run({ generate: paid('main', () => 'Main output'), generateAgent: paid('rewrite', ({ messages }) => {
             const agent = agents[calls.length];
+            if (['tpl-format-fixer', 'tpl-proofreader'].includes(agent.id)) {
+                const label = agent.id === 'tpl-format-fixer' ? 'Format Fixer' : 'Proofreader';
+                assert.ok(getDiagnosticServerActivity().agents.running.some(item => item.label === label && item.phase === 'post' && item.location === 'server'));
+            }
             calls.push(agent.id);
             const context = messages[1].content.match(/<recent_chat>\n([\s\S]*?)\n<\/recent_chat>/)?.[1];
             if (agent.postProcess.promptTransformContextMessages) {
@@ -174,6 +220,9 @@ for (const effect of ['append', 'continue', 'swipe', 'replace']) {
             }
             if (agent.id === 'tpl-character-authenticity') {
                 assert.doesNotMatch(messages[0].content, /\{\{(group-cards|mewmory-facts|mewmory-interview|mesExamplesRaw|description)\}\}/i);
+            }
+            if (agent.id === 'tpl-knowledge-guard') {
+                assert.doesNotMatch(messages[0].content, /\{\{(secrets-tracker|active-lore|active-authors-note|persona)\}\}/i);
             }
             if (calls.length > 1) assert.match(messages[1].content, new RegExp(`<assistant_response>\\nPass ${calls.length - 1}\\n`));
             return `Pass ${calls.length}`;

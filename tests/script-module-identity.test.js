@@ -29,7 +29,7 @@ describe('frontend module identity', () => {
     // frontend-assets middleware serving JS with Cache-Control: no-cache.
     test('script.js loads under its bare URL so module identity matches bare imports', () => {
         expect(indexHtml).toContain('<link rel="modulepreload" href="script.js">');
-        expect(indexHtml).toContain('<script type="module" src="script.js"></script>');
+        expect(indexHtml).toContain('<script type="module" src="script.js" data-neconyan-core-script></script>');
         expect(indexHtml).not.toMatch(/(?:src|href)="script\.js\?/);
     });
 

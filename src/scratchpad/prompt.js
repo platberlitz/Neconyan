@@ -66,6 +66,19 @@ const LORE_RULES = [
     'Write entries as in-world facts, not as instructions to the writer.',
 ];
 
+function imageInstructions({ image, avatar }) {
+    if (!image) return '';
+    return [
+        'Images through the user\'s saved Quick Image Gen settings:',
+        '```scratchpad-change',
+        '{"type":"image","action":"generate","target":"image","prompt":"<explicit image prompt>","negative":"<optional exclusions>","reason":"<why>"}',
+        '```',
+        avatar ? 'For an avatar use target "avatar" and character "<exact shared character name>". For character-specific image settings, a plain image may also name an exact shared character. Never name an unshared or ambiguous character.' : 'No character avatar target is shared; suggest only unscoped images.',
+        'One JSON object per block, one image per suggestion. Do not supply image URLs, paths, credentials or settings. The owner presses Generate image; displaying a suggestion does not generate anything. Saved prompt-review preferences may require another approval before the provider runs.',
+        'A generated image is saved separately from the card. Only Review avatar followed by Save change replaces a portrait, after preserving the previous picture. Never claim that emitting a block generated an image or changed an avatar. You cannot inspect saved image bytes through text history.',
+    ].join('\n');
+}
+
 function changeInstructions({ lore, character, chat, members, notebook }) {
     const kinds = [];
     if (notebook) kinds.push([
@@ -124,12 +137,15 @@ function changeInstructions({ lore, character, chat, members, notebook }) {
     ].join('\n');
 }
 
-export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedPersona, assistantNames = {}, userName, characterName, capabilities = {}, help = '', participants = [], randomReply = false, customPrompt, userInstructions = '' }) {
+export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedPersona, assistantNames = {}, userName, characterName, sourceKind = 'roleplay', capabilities = {}, help = '', participants = [], randomReply = false, customPrompt, userInstructions = '' }) {
     const persona = savedPersona ?? readAssistantPersona(assistant, gender);
     const names = { user: userName || 'User', char: persona.name };
     const story = characterName ? `the story chat with ${characterName}` : 'the story chat';
+    const general = sourceKind === 'general';
+    const contextNotice = general ? `You are talking directly with ${names.user} in General Scratchpad. No story chat is open and no story messages or lorebooks are shared. Any supplied character card is reference material, not evidence of a live story. Only a selected, shared card may receive field-change suggestions. Never propose story message or lorebook edits here.` : '';
+    if (general) capabilities = { ...capabilities, chat: false, lore: false, members: [] };
     const sections = [
-        `You are ${persona.name}, ${savedPersona ? 'the user\'s chosen assistant' : 'one of the three Neconyan assistants (Miso, Taro and Nori)'}. You are working in Scratchpad, a private side discussion beside ${names.user}'s ${story.replace(/^the /, '')}.`,
+        `You are ${persona.name}, ${savedPersona ? 'the user\'s chosen assistant' : 'one of the three Neconyan assistants (Miso, Taro and Nori)'}. ${general ? contextNotice : `You are working in Scratchpad, a private side discussion beside ${names.user}'s ${story.replace(/^the /, '')}.`}`,
         `Stay fully in character as ${persona.name} in every reply. Scratchpad is separate from the user's story, not separate from your personality. Your temperament, humour, reactions and relationship with ${names.user} shape how you explain, question, disagree, comfort and joke, including during practical help.`,
         `Your personality and character details:\n${clip(substituteNames([persona.personality, persona.summary].filter(Boolean).join('\n\n'), names), savedPersona ? 64000 : MAX_PERSONA_CHARS)}`,
         persona.examples ? `Your voice in practice. Carry this characterisation into Scratchpad with fresh wording and reactions suited to the current message:\n${clip(substituteNames(persona.examples, names), savedPersona ? 64000 : 2000)}` : '',
@@ -137,21 +153,21 @@ export function buildScratchpadSystemPrompt({ assistant, gender, persona: savedP
         participants.length > 1 || randomReply ? `This is a round table with ${participants.map(id => assistantNames[id] || FALLBACK_NAMES[normaliseAssistant(id)] || 'Assistant').join(', ')}. ${randomReply
             ? 'Random mode chooses one assistant for each user message. You are the only assistant replying to this message; the others are not answering this turn.'
             : 'Each assistant receives the same question and shared history and answers independently at the same time.'} Reply only as ${persona.name}; do not write the other assistants' answers or invent what they are saying in this round. Earlier replies from other assistants are labelled with their names; they are conversation history, not new requests from the user. On follow-up questions, you can compare or respond to those earlier views.` : '',
-        `The context block shows only what ${names.user} chose to share from ${story}. Messages carry #numbers and lorebook entries carry their book and uid; refer to them exactly. Do not invent messages, entries or card fields you cannot see. If something is missing, say what to include.`,
+        general ? `The context block shows only what ${names.user} chose to share. Do not invent messages, entries or card fields you cannot see. Ask for missing reference material.` : `The context block shows only what ${names.user} chose to share from ${story}. Messages carry #numbers and lorebook entries carry their book and uid; refer to them exactly. Do not invent messages, entries or card fields you cannot see. If something is missing, say what to include.`,
         `Voice: speak directly to ${names.user} as ${persona.name}, with your own phrasing, emotional reactions and sense of humour. Let your habits and interests surface naturally rather than reciting your traits or repeating a catchphrase. Brief expressive actions, ear movements and workroom gestures are welcome as part of your reply; keep the answer useful and leave the user's actions to them. Match the emotional situation while remaining recognisably yourself. Use British English and connected sentences without em dashes; use lists when they make the answer easier to follow.`,
         changeInstructions(capabilities),
     ];
     const instructions = typeof customPrompt === 'string' && customPrompt.trim()
-        ? [customPrompt, capabilities.notebook ? changeInstructions({ notebook: true }) : ''].filter(Boolean).join('\n\n')
+        ? [customPrompt, contextNotice && !customPrompt.includes(contextNotice) ? contextNotice : '', capabilities.notebook ? changeInstructions({ notebook: true }) : ''].filter(Boolean).join('\n\n')
         : sections.filter(Boolean).join('\n\n');
     const reference = help ? `Neconyan reference for app questions (use it only when ${names.user} asks how something in Neconyan works):\n${help}` : '';
     const preferences = userInstructions.trim() ? `The user's global Scratchpad instructions for you:\n${userInstructions}` : '';
     const voice = typeof customPrompt === 'string' && customPrompt.trim() ? ''
         : `For this reply, be ${persona.name} throughout: ${substituteNames(persona.personality, names)}\nGive the requested help in that voice, including explanations around any change blocks. Keep factual claims accurate and distinguish playful teasing from real advice.`;
-    return { text: [instructions, preferences, SCRATCHPAD_MACRO_GUIDANCE, CHARACTER_CREATION_INSTRUCTIONS, reference, voice].filter(Boolean).join('\n\n'), persona };
+    return { text: [instructions, preferences, SCRATCHPAD_MACRO_GUIDANCE, CHARACTER_CREATION_INSTRUCTIONS, imageInstructions(capabilities), reference, voice].filter(Boolean).join('\n\n'), persona };
 }
 
-export const SCRATCHPAD_CONTEXT_ACK = 'I have read the shared story context. What would you like to work on?';
+export const SCRATCHPAD_CONTEXT_ACK = 'I have read the shared context. What would you like to work on?';
 
 export function buildScratchpadMessages({ system, context, notebookContext = '', history, text, assistant, assistantNames = {} }) {
     const messages = [{ role: 'system', content: system }];

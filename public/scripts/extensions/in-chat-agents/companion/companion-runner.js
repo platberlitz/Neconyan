@@ -1782,96 +1782,100 @@ async function cleanUpCompanionTrackerOutput(agent, attempt, generate, extraCont
     return { ...attempt, rawContent: payload };
 }
 
-async function runSingleCompanionAgent(agent, messageIndex, generationType, cancelRevision, { repair = false, extraContextSections = [], allowUserMessage = false, previousContent = null, previousResult = null, run = null, initialOutput = null } = {}) {
-    const message = chat[messageIndex];
-    if (!isValidCompanionTargetMessage(message, { allowUserMessage })) {
-        return { agentId: agent.id, changed: false, result: null };
-    }
-
-    const companion = getCompanionConfig(agent);
-    const previous = previousContent ?? getCompanionResultContent(message, agent.id);
-    const isMessageCurrent = captureCompanionTarget(messageIndex);
-    const isTargetCurrent = () => isMessageCurrent() && (!run || run.isCurrent());
-    const generate = async ({ repair: repairPass, extraContextSections: sections }) => {
-        const contextCapture = getCompanionReferenceIds(agent).includes(MEMORY_SHARD_TEMPLATE_ID) ? {} : null;
-        const promptMessages = await buildCompanionPromptMessages(agent, messageIndex, generationType, { repair: repairPass, extraContextSections: sections, contextCapture });
-        if (!areAgentsGloballyEnabled() || !isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
-            throw new DOMException('Companion run cancelled.', 'AbortError');
-        }
-        const response = await requestPromptTransform(repair ? markTrackerRepairRunAgent(agent) : agent, promptMessages, companion.maxTokens).catch(markCompanionConnectionFailure);
-
-        if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
-            throw new DOMException('Companion run cancelled.', 'AbortError');
-        }
-
-        if (response.lengthLimited) throw new Error('The reply reached its output limit. Increase the limit and try again.');
-        const rawContent = capResultContent(response.output);
-        // Token usage reflects the companion's own generation; post passes run after counting.
-        const tokenUsage = await buildCompanionTokenUsage(promptMessages, rawContent);
-        if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
-            throw new DOMException('Companion target changed.', 'AbortError');
-        }
-        return { rawContent, tokenUsage, profileId: response.profileId, model: response.model, contextCoverage: contextCapture?.coverage };
-    };
-
+async function runSingleCompanionAgent(agent, messageIndex, generationType, cancelRevision, { repair = false, extraContextSections = [], allowUserMessage = false, previousContent = null, previousResult = null, run = null, initialOutput = null, diagnosticParent = null } = {}) {
+    let diagnosticHandle = diagnosticParent, diagnosticOutcome = 'done';
+    try { if (!diagnosticParent) diagnosticHandle = globalThis.NeconyanCrashDiagnostics?.beginAgent?.({ id: agent.id, sourceTemplateId: agent.sourceTemplateId, phase: repair ? 'repair' : 'companions' }); } catch { /* Optional diagnostics. */ }
     try {
-        if (!areAgentsGloballyEnabled() || !isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
-            throw new DOMException('Companion run cancelled.', 'AbortError');
-        }
-
-        let attempt = initialOutput ?? await generate({ repair, extraContextSections });
-        if (!repair && agent.category === 'tracker') {
-            attempt = await cleanUpCompanionTrackerOutput(agent, attempt, generate, extraContextSections);
-        }
-        const { rawContent, tokenUsage } = attempt;
-        let content = await applyCompanionOutputPostPassesToContent(agent, rawContent, messageIndex, cancelRevision);
-        if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
-            throw new DOMException('Companion run cancelled.', 'AbortError');
-        }
-        // An empty-output sentinel yields no payload here, which is deliberate: repair is the manual
-        // fix for a malformed block, so "nothing changed" must roll back to the stored tracker state
-        // rather than overwrite it with a sentinel that renders as nothing.
-        if (repair && agent.category === 'tracker') {
-            const payload = normalizeCompanionTrackerRepairPayload(agent, content).payload;
-            if (!payload) {
-                throw new Error('Tracker repair returned invalid output.');
-            }
-            content = payload;
-        } else if (!content.trim()) {
-            // Blank output is a failed run, not a finished note; the sentinel lines are non-blank.
-            throw new Error('Companion returned no output.');
-        }
-        setCompanionResult(message, agent, {
-            status: 'done',
-            content,
-            error: '',
-            tokenUsage,
-            profileId: attempt.profileId,
-            profileLabel: getProfileLabel(agent, attempt.profileId),
-            modelLabel: getModelLabel(agent),
-            model: String(attempt.model ?? '').trim(),
-            contextCoverage: attempt.contextCoverage,
-        });
-    } catch (error) {
-        if (!isAgentRuntimeAllowed(agent)) {
+        const message = chat[messageIndex];
+        if (!isValidCompanionTargetMessage(message, { allowUserMessage })) {
             return { agentId: agent.id, changed: false, result: null };
         }
-        const targetChanged = !isTargetCurrent();
-        if (targetChanged) return { agentId: agent.id, changed: false, result: null };
-        const cancelled = targetChanged || getAgentGenerationCancelRevision() !== cancelRevision || error?.name === 'AbortError';
-        const restoreResult = previousResult ?? run?.previousResult ?? null;
-        if (repair) {
-            restoreCompanionResult(message, agent.id, restoreResult);
-        } else {
-            settleFailedCompanionRun(message, agent, restoreResult, { cancelled, error });
-        }
-    }
 
-    await emitCompanionResultsUpdated(messageIndex, agent.id);
-    if (!isTargetCurrent()) return { agentId: agent.id, changed: false, result: null };
-    const result = getCompanionResults(message)[agent.id];
-    const changed = result?.status === 'done' && previous !== getCompanionResultContent(message, agent.id);
-    return { agentId: agent.id, changed, result };
+        const companion = getCompanionConfig(agent);
+        const previous = previousContent ?? getCompanionResultContent(message, agent.id);
+        const isMessageCurrent = captureCompanionTarget(messageIndex);
+        const isTargetCurrent = () => isMessageCurrent() && (!run || run.isCurrent());
+        const generate = async ({ repair: repairPass, extraContextSections: sections }) => {
+            const contextCapture = getCompanionReferenceIds(agent).includes(MEMORY_SHARD_TEMPLATE_ID) ? {} : null;
+            const promptMessages = await buildCompanionPromptMessages(agent, messageIndex, generationType, { repair: repairPass, extraContextSections: sections, contextCapture });
+            if (!areAgentsGloballyEnabled() || !isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
+                throw new DOMException('Companion run cancelled.', 'AbortError');
+            }
+            const response = await requestPromptTransform(repair ? markTrackerRepairRunAgent(agent) : agent, promptMessages, companion.maxTokens, { diagnosticHandle }).catch(markCompanionConnectionFailure);
+
+            if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
+                throw new DOMException('Companion run cancelled.', 'AbortError');
+            }
+
+            if (response.lengthLimited) throw new Error('The reply reached its output limit. Increase the limit and try again.');
+            const rawContent = capResultContent(response.output);
+            // Token usage reflects the companion's own generation; post passes run after counting.
+            const tokenUsage = await buildCompanionTokenUsage(promptMessages, rawContent);
+            if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
+                throw new DOMException('Companion target changed.', 'AbortError');
+            }
+            return { rawContent, tokenUsage, profileId: response.profileId, model: response.model, contextCoverage: contextCapture?.coverage };
+        };
+
+        try {
+            if (!areAgentsGloballyEnabled() || !isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
+                throw new DOMException('Companion run cancelled.', 'AbortError');
+            }
+
+            let attempt = initialOutput ?? await generate({ repair, extraContextSections });
+            if (!repair && agent.category === 'tracker') {
+                attempt = await cleanUpCompanionTrackerOutput(agent, attempt, generate, extraContextSections);
+            }
+            const { rawContent, tokenUsage } = attempt;
+            let content = await applyCompanionOutputPostPassesToContent(agent, rawContent, messageIndex, cancelRevision);
+            if (!isTargetCurrent() || getAgentGenerationCancelRevision() !== cancelRevision || !isAgentRuntimeAllowed(agent)) {
+                throw new DOMException('Companion run cancelled.', 'AbortError');
+            }
+            // An empty-output sentinel yields no payload here, which is deliberate: repair is the manual
+            // fix for a malformed block, so "nothing changed" must roll back to the stored tracker state
+            // rather than overwrite it with a sentinel that renders as nothing.
+            if (repair && agent.category === 'tracker') {
+                const payload = normalizeCompanionTrackerRepairPayload(agent, content).payload;
+                if (!payload) {
+                    throw new Error('Tracker repair returned invalid output.');
+                }
+                content = payload;
+            } else if (!content.trim()) {
+            // Blank output is a failed run, not a finished note; the sentinel lines are non-blank.
+                throw new Error('Companion returned no output.');
+            }
+            setCompanionResult(message, agent, {
+                status: 'done',
+                content,
+                error: '',
+                tokenUsage,
+                profileId: attempt.profileId,
+                profileLabel: getProfileLabel(agent, attempt.profileId),
+                modelLabel: getModelLabel(agent),
+                model: String(attempt.model ?? '').trim(),
+                contextCoverage: attempt.contextCoverage,
+            });
+        } catch (error) {
+            if (!isAgentRuntimeAllowed(agent)) {
+                return { agentId: agent.id, changed: false, result: null };
+            }
+            const targetChanged = !isTargetCurrent();
+            if (targetChanged) return { agentId: agent.id, changed: false, result: null };
+            const cancelled = targetChanged || getAgentGenerationCancelRevision() !== cancelRevision || error?.name === 'AbortError';
+            const restoreResult = previousResult ?? run?.previousResult ?? null;
+            if (repair) {
+                restoreCompanionResult(message, agent.id, restoreResult);
+            } else {
+                settleFailedCompanionRun(message, agent, restoreResult, { cancelled, error });
+            }
+        }
+
+        await emitCompanionResultsUpdated(messageIndex, agent.id);
+        if (!isTargetCurrent()) return { agentId: agent.id, changed: false, result: null };
+        const result = getCompanionResults(message)[agent.id];
+        const changed = result?.status === 'done' && previous !== getCompanionResultContent(message, agent.id);
+        return { agentId: agent.id, changed, result };
+    } catch (error) { diagnosticOutcome = error?.name === 'AbortError' ? 'cancel' : 'error'; throw error; } finally { try { if (!diagnosticParent) globalThis.NeconyanCrashDiagnostics?.endAgent?.(diagnosticHandle, getAgentGenerationCancelRevision() !== cancelRevision ? 'cancel' : diagnosticOutcome); } catch { /* Optional diagnostics. */ } }
 }
 
 function buildBatchAgentTask(agent, messageIndex, generationType) {
@@ -1946,168 +1950,173 @@ async function cancelCompanionAgentResults(message, agents, messageIndex, profil
 }
 
 async function runBatchCompanionAgents(agents, messageIndex, generationType, cancelRevision, { allowUserMessage = false, previousContents = null, extraContextSectionsByAgentId = null, runs = null } = {}) {
-    const isTargetCurrent = captureCompanionTarget(messageIndex);
-    const isAgentCurrent = agent => !runs || runs.get(agent.id)?.isCurrent();
-    agents = agents.filter(agent => isAgentRuntimeAllowed(agent) && isAgentCurrent(agent));
-    if (!agents.length) return [];
-    const message = chat[messageIndex];
-    if (!isValidCompanionTargetMessage(message, { allowUserMessage })) {
-        return agents.map(agent => ({ agentId: agent.id, changed: false, result: null }));
-    }
-
-    const previousMap = previousContents ?? new Map(agents.map(agent => [agent.id, getCompanionResultContent(message, agent.id)]));
-    const getResults = () => agents.map(agent => {
-        if (!isTargetCurrent() || !isAgentCurrent(agent)) return { agentId: agent.id, changed: false, result: null };
-        const result = getCompanionResults(message)[agent.id];
-        const changed = result?.status === 'done' && previousMap.get(agent.id) !== getCompanionResultContent(message, agent.id);
-        return { agentId: agent.id, changed, result };
-    });
-
+    const diagnosticHandles = new Map();
+    let diagnosticOutcome = 'done';
+    try { for (const agent of agents.slice(0, 8)) diagnosticHandles.set(agent.id, globalThis.NeconyanCrashDiagnostics?.beginAgent?.({ id: agent.id, sourceTemplateId: agent.sourceTemplateId, phase: 'companions' })); } catch { /* Optional diagnostics. */ }
     try {
-        if (!areAgentsGloballyEnabled() || getAgentGenerationCancelRevision() !== cancelRevision) {
-            await cancelCompanionAgentResults(message, agents, messageIndex, '', runs);
-            return getResults();
+        const isTargetCurrent = captureCompanionTarget(messageIndex);
+        const isAgentCurrent = agent => !runs || runs.get(agent.id)?.isCurrent();
+        agents = agents.filter(agent => isAgentRuntimeAllowed(agent) && isAgentCurrent(agent));
+        if (!agents.length) return [];
+        const message = chat[messageIndex];
+        if (!isValidCompanionTargetMessage(message, { allowUserMessage })) {
+            return agents.map(agent => ({ agentId: agent.id, changed: false, result: null }));
         }
 
-        const extraContextSections = getUnitExtraContextSections(agents, extraContextSectionsByAgentId);
-        const { promptMessages, taskPayloads, contextCapture } = await buildBatchPromptPayload(agents, messageIndex, generationType, { extraContextSections });
-        if (!isTargetCurrent()) return getResults();
-        if (!areAgentsGloballyEnabled() || getAgentGenerationCancelRevision() !== cancelRevision) {
-            await cancelCompanionAgentResults(message, agents, messageIndex, '', runs);
-            return getResults();
-        }
-        if (agents.some(agent => !isAgentCurrent(agent) || !isAgentRuntimeAllowed(agent))) {
-            throw new DOMException('A batch companion became unavailable.', 'AbortError');
-        }
-        const maxTokens = Math.min(MAX_AGENT_MAX_TOKENS, agents.reduce((sum, agent) => sum + getCompanionConfig(agent).maxTokens, 0));
-        const response = await requestPromptTransform(agents[0], promptMessages, maxTokens, { runtimeAgents: agents }).catch(markCompanionConnectionFailure);
-        if (!isTargetCurrent()) return getResults();
+        const previousMap = previousContents ?? new Map(agents.map(agent => [agent.id, getCompanionResultContent(message, agent.id)]));
+        const getResults = () => agents.map(agent => {
+            if (!isTargetCurrent() || !isAgentCurrent(agent)) return { agentId: agent.id, changed: false, result: null };
+            const result = getCompanionResults(message)[agent.id];
+            const changed = result?.status === 'done' && previousMap.get(agent.id) !== getCompanionResultContent(message, agent.id);
+            return { agentId: agent.id, changed, result };
+        });
 
-        if (getAgentGenerationCancelRevision() !== cancelRevision) {
-            await cancelCompanionAgentResults(message, agents, messageIndex, response.profileId, runs);
-            return getResults();
-        }
-
-        if (response.lengthLimited) {
-            for (const agent of agents) {
-                if (!isTargetCurrent() || !isAgentCurrent(agent)) continue;
-                settleFailedCompanionRun(message, agent, runs?.get(agent.id)?.previousResult, {
-                    error: 'The reply reached its output limit. Increase the limit and try again.',
-                });
-                await emitCompanionResultsUpdated(messageIndex, agent.id);
-            }
-            return getResults();
-        }
-
-        const inputTokensByAgentId = await buildBatchInputTokenUsage(promptMessages, taskPayloads);
-        if (!isTargetCurrent()) return getResults();
-        const parsed = parseBatchResponse(response.output);
-        const missingAgents = [];
-        const cleanupAgents = [];
-        for (const agent of agents) {
-            if (!isTargetCurrent()) return getResults();
-            if (getAgentGenerationCancelRevision() !== cancelRevision) {
-                await cancelCompanionAgentResults(message, agents, messageIndex, response.profileId, runs);
-                return getResults();
-            }
-            if (!isAgentRuntimeAllowed(agent) || !isAgentCurrent(agent)) continue;
-            if (!parsed.has(agent.id)) {
-                missingAgents.push(agent);
-                continue;
-            }
-
-            const rawContent = capResultContent(parsed.get(agent.id));
-            if (!rawContent.trim()) {
-                missingAgents.push(agent);
-                continue;
-            }
-            const outputTokens = await countCompanionTokens({ role: 'assistant', content: rawContent });
-            if (!isTargetCurrent()) return getResults();
-            if (getAgentGenerationCancelRevision() !== cancelRevision) {
-                await cancelCompanionAgentResults(message, agents, messageIndex, response.profileId, runs);
-                return getResults();
-            }
-            if (!isAgentRuntimeAllowed(agent) || !isAgentCurrent(agent)) continue;
-            const trackerCheck = inspectCompanionTrackerOutput(agent, rawContent);
-            if (trackerCheck.action !== 'keep') {
-                cleanupAgents.push({
-                    agent,
-                    initialOutput: {
-                        rawContent,
-                        tokenUsage: { inputTokens: inputTokensByAgentId.get(agent.id) ?? 0, outputTokens },
-                        profileId: response.profileId,
-                        model: response.model,
-                        contextCoverage: getCompanionReferenceIds(agent).includes(MEMORY_SHARD_TEMPLATE_ID) ? contextCapture?.coverage : undefined,
-                    },
-                });
-                continue;
-            }
-            const content = await applyCompanionOutputPostPassesToContent(agent, trackerCheck.content, messageIndex, cancelRevision);
-            if (!isTargetCurrent()) return getResults();
-            if (getAgentGenerationCancelRevision() !== cancelRevision) {
-                await cancelCompanionAgentResults(message, agents, messageIndex, response.profileId, runs);
-                return getResults();
-            }
-            if (!isAgentRuntimeAllowed(agent) || !isAgentCurrent(agent)) continue;
-            setCompanionResult(message, agent, {
-                status: 'done',
-                content,
-                error: '',
-                tokenUsage: {
-                    inputTokens: inputTokensByAgentId.get(agent.id) ?? 0,
-                    outputTokens,
-                },
-                profileId: response.profileId,
-                profileLabel: getProfileLabel(agent, response.profileId),
-                modelLabel: getModelLabel(agent),
-                model: String(response.model ?? '').trim(),
-                contextCoverage: getCompanionReferenceIds(agent).includes(MEMORY_SHARD_TEMPLATE_ID) ? contextCapture?.coverage : undefined,
-            });
-            await emitCompanionResultsUpdated(messageIndex, agent.id);
-        }
-
-        for (const { agent, initialOutput = null } of [...missingAgents.map(agent => ({ agent })), ...cleanupAgents]) {
-            if (!isTargetCurrent()) return getResults();
-            if (getAgentGenerationCancelRevision() !== cancelRevision) {
-                await cancelCompanionAgentResults(message, agents, messageIndex, response.profileId, runs);
-                return getResults();
-            }
-
-            await runSingleCompanionAgent(agent, messageIndex, generationType, cancelRevision, {
-                run: runs?.get(agent.id),
-                allowUserMessage,
-                previousContent: previousMap.get(agent.id),
-                extraContextSections: extraContextSectionsByAgentId?.get(agent.id) ?? [],
-                initialOutput,
-            });
-        }
-    } catch (error) {
-        if (!isTargetCurrent()) return getResults();
-        const lostMember = agents.some(agent => !isAgentCurrent(agent) || !isAgentRuntimeAllowed(agent));
-        if ((error?.name === 'AbortError' && !lostMember) || getAgentGenerationCancelRevision() !== cancelRevision) {
-            await cancelCompanionAgentResults(message, agents, messageIndex, '', runs);
-            return getResults();
-        }
-
-        console.warn('[InChatAgents] Companion batch failed, falling back to individual runs:', error);
-        for (const agent of agents) {
-            if (!isTargetCurrent()) return getResults();
-            if (!isAgentCurrent(agent) || getCompanionResults(message)[agent.id]?.status !== 'pending') continue;
-            if (getAgentGenerationCancelRevision() !== cancelRevision) {
+        try {
+            if (!areAgentsGloballyEnabled() || getAgentGenerationCancelRevision() !== cancelRevision) {
                 await cancelCompanionAgentResults(message, agents, messageIndex, '', runs);
                 return getResults();
             }
 
-            await runSingleCompanionAgent(agent, messageIndex, generationType, cancelRevision, {
-                run: runs?.get(agent.id),
-                allowUserMessage,
-                previousContent: previousMap.get(agent.id),
-                extraContextSections: extraContextSectionsByAgentId?.get(agent.id) ?? [],
-            });
-        }
-    }
+            const extraContextSections = getUnitExtraContextSections(agents, extraContextSectionsByAgentId);
+            const { promptMessages, taskPayloads, contextCapture } = await buildBatchPromptPayload(agents, messageIndex, generationType, { extraContextSections });
+            if (!isTargetCurrent()) return getResults();
+            if (!areAgentsGloballyEnabled() || getAgentGenerationCancelRevision() !== cancelRevision) {
+                await cancelCompanionAgentResults(message, agents, messageIndex, '', runs);
+                return getResults();
+            }
+            if (agents.some(agent => !isAgentCurrent(agent) || !isAgentRuntimeAllowed(agent))) {
+                throw new DOMException('A batch companion became unavailable.', 'AbortError');
+            }
+            const maxTokens = Math.min(MAX_AGENT_MAX_TOKENS, agents.reduce((sum, agent) => sum + getCompanionConfig(agent).maxTokens, 0));
+            const response = await requestPromptTransform(agents[0], promptMessages, maxTokens, { runtimeAgents: agents, diagnosticHandle: diagnosticHandles.get(agents[0].id) }).catch(markCompanionConnectionFailure);
+            if (!isTargetCurrent()) return getResults();
 
-    return getResults();
+            if (getAgentGenerationCancelRevision() !== cancelRevision) {
+                await cancelCompanionAgentResults(message, agents, messageIndex, response.profileId, runs);
+                return getResults();
+            }
+
+            if (response.lengthLimited) {
+                for (const agent of agents) {
+                    if (!isTargetCurrent() || !isAgentCurrent(agent)) continue;
+                    settleFailedCompanionRun(message, agent, runs?.get(agent.id)?.previousResult, {
+                        error: 'The reply reached its output limit. Increase the limit and try again.',
+                    });
+                    await emitCompanionResultsUpdated(messageIndex, agent.id);
+                }
+                return getResults();
+            }
+
+            const inputTokensByAgentId = await buildBatchInputTokenUsage(promptMessages, taskPayloads);
+            if (!isTargetCurrent()) return getResults();
+            const parsed = parseBatchResponse(response.output);
+            const missingAgents = [];
+            const cleanupAgents = [];
+            for (const agent of agents) {
+                if (!isTargetCurrent()) return getResults();
+                if (getAgentGenerationCancelRevision() !== cancelRevision) {
+                    await cancelCompanionAgentResults(message, agents, messageIndex, response.profileId, runs);
+                    return getResults();
+                }
+                if (!isAgentRuntimeAllowed(agent) || !isAgentCurrent(agent)) continue;
+                if (!parsed.has(agent.id)) {
+                    missingAgents.push(agent);
+                    continue;
+                }
+
+                const rawContent = capResultContent(parsed.get(agent.id));
+                if (!rawContent.trim()) {
+                    missingAgents.push(agent);
+                    continue;
+                }
+                const outputTokens = await countCompanionTokens({ role: 'assistant', content: rawContent });
+                if (!isTargetCurrent()) return getResults();
+                if (getAgentGenerationCancelRevision() !== cancelRevision) {
+                    await cancelCompanionAgentResults(message, agents, messageIndex, response.profileId, runs);
+                    return getResults();
+                }
+                if (!isAgentRuntimeAllowed(agent) || !isAgentCurrent(agent)) continue;
+                const trackerCheck = inspectCompanionTrackerOutput(agent, rawContent);
+                if (trackerCheck.action !== 'keep') {
+                    cleanupAgents.push({
+                        agent,
+                        initialOutput: {
+                            rawContent,
+                            tokenUsage: { inputTokens: inputTokensByAgentId.get(agent.id) ?? 0, outputTokens },
+                            profileId: response.profileId,
+                            model: response.model,
+                            contextCoverage: getCompanionReferenceIds(agent).includes(MEMORY_SHARD_TEMPLATE_ID) ? contextCapture?.coverage : undefined,
+                        },
+                    });
+                    continue;
+                }
+                const content = await applyCompanionOutputPostPassesToContent(agent, trackerCheck.content, messageIndex, cancelRevision);
+                if (!isTargetCurrent()) return getResults();
+                if (getAgentGenerationCancelRevision() !== cancelRevision) {
+                    await cancelCompanionAgentResults(message, agents, messageIndex, response.profileId, runs);
+                    return getResults();
+                }
+                if (!isAgentRuntimeAllowed(agent) || !isAgentCurrent(agent)) continue;
+                setCompanionResult(message, agent, {
+                    status: 'done',
+                    content,
+                    error: '',
+                    tokenUsage: {
+                        inputTokens: inputTokensByAgentId.get(agent.id) ?? 0,
+                        outputTokens,
+                    },
+                    profileId: response.profileId,
+                    profileLabel: getProfileLabel(agent, response.profileId),
+                    modelLabel: getModelLabel(agent),
+                    model: String(response.model ?? '').trim(),
+                    contextCoverage: getCompanionReferenceIds(agent).includes(MEMORY_SHARD_TEMPLATE_ID) ? contextCapture?.coverage : undefined,
+                });
+                await emitCompanionResultsUpdated(messageIndex, agent.id);
+            }
+
+            for (const { agent, initialOutput = null } of [...missingAgents.map(agent => ({ agent })), ...cleanupAgents]) {
+                if (!isTargetCurrent()) return getResults();
+                if (getAgentGenerationCancelRevision() !== cancelRevision) {
+                    await cancelCompanionAgentResults(message, agents, messageIndex, response.profileId, runs);
+                    return getResults();
+                }
+
+                await runSingleCompanionAgent(agent, messageIndex, generationType, cancelRevision, {
+                    run: runs?.get(agent.id),
+                    allowUserMessage,
+                    previousContent: previousMap.get(agent.id),
+                    extraContextSections: extraContextSectionsByAgentId?.get(agent.id) ?? [],
+                    initialOutput,
+                });
+            }
+        } catch (error) {
+            if (!isTargetCurrent()) return getResults();
+            const lostMember = agents.some(agent => !isAgentCurrent(agent) || !isAgentRuntimeAllowed(agent));
+            if ((error?.name === 'AbortError' && !lostMember) || getAgentGenerationCancelRevision() !== cancelRevision) {
+                await cancelCompanionAgentResults(message, agents, messageIndex, '', runs);
+                return getResults();
+            }
+
+            console.warn('[InChatAgents] Companion batch failed, falling back to individual runs:', error);
+            for (const agent of agents) {
+                if (!isTargetCurrent()) return getResults();
+                if (!isAgentCurrent(agent) || getCompanionResults(message)[agent.id]?.status !== 'pending') continue;
+                if (getAgentGenerationCancelRevision() !== cancelRevision) {
+                    await cancelCompanionAgentResults(message, agents, messageIndex, '', runs);
+                    return getResults();
+                }
+
+                await runSingleCompanionAgent(agent, messageIndex, generationType, cancelRevision, {
+                    run: runs?.get(agent.id),
+                    allowUserMessage,
+                    previousContent: previousMap.get(agent.id),
+                    extraContextSections: extraContextSectionsByAgentId?.get(agent.id) ?? [],
+                });
+            }
+        }
+
+        return getResults();
+    } catch (error) { diagnosticOutcome = error?.name === 'AbortError' ? 'cancel' : 'error'; throw error; } finally { try { for (const handle of diagnosticHandles.values()) globalThis.NeconyanCrashDiagnostics?.endAgent?.(handle, getAgentGenerationCancelRevision() !== cancelRevision ? 'cancel' : diagnosticOutcome); } catch { /* Optional diagnostics. */ } }
 }
 
 async function runCompanionUnit(unit, messageIndex, generationType, cancelRevision, { allowUserMessage = false, previousContents = null, extraContextSectionsByAgentId = null, runs = null } = {}) {
@@ -2517,10 +2526,10 @@ export async function runTrackerCompanionsOnMessage(messageIndex, { cancelRevisi
  * @param {string} transformerAgentId Inline agent whose post passes should run
  * @param {number} messageIndex Message hosting the companion result
  * @param {string} companionAgentId Companion whose note is the target
- * @param {{ cancelRevision?: number }} [options]
+ * @param {{ cancelRevision?: number, applyWrite?: function }} [options]
  * @returns {Promise<{ text: string, changed: boolean } | null>}
  */
-export async function applyAgentPostPassesToCompanionResult(transformerAgentId, messageIndex, companionAgentId, { cancelRevision = getAgentGenerationCancelRevision() } = {}) {
+export async function applyAgentPostPassesToCompanionResult(transformerAgentId, messageIndex, companionAgentId, { cancelRevision = getAgentGenerationCancelRevision(), applyWrite = write => write() } = {}) {
     if (!areAgentsGloballyEnabled() || getAgentGenerationCancelRevision() !== cancelRevision) return null;
     const transformer = getAgentById(transformerAgentId);
     const message = chat[messageIndex];
@@ -2562,7 +2571,7 @@ export async function applyAgentPostPassesToCompanionResult(transformerAgentId, 
         return passResult;
     }
 
-    updateCompanionResult(message, companionAgentId, { content: capResultContent(passResult.text) });
+    applyWrite(() => updateCompanionResult(message, companionAgentId, { content: capResultContent(passResult.text) }));
     await emitCompanionResultsUpdated(messageIndex, companionAgentId);
     saveChatDebounced({ deferBackup: false });
     return passResult;
@@ -2910,6 +2919,7 @@ export function initCompanionRunner() {
         stripAuxiliaryTrackerEchoes,
         runCompanionAgentOnMessage,
         applyAgentPostPassesToCompanionResult,
+        captureCompanionResultTarget,
     });
 
     if (event_types.MESSAGE_SWIPED) {

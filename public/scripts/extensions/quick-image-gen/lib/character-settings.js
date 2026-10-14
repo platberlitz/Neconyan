@@ -24,6 +24,11 @@ function apply(settings, state) {
 export function resolveCharacterImageSettings(base, scope) {
     if (!record(base)) throw invalid();
     if (scope === undefined) return base;
+    if (record(scope) && scope.kind === 'global' && scope.avatar === undefined && scope.characterId === undefined) {
+        const settings = { ...base };
+        if (base._charSettingsBaseState != null) apply(settings, base._charSettingsBaseState);
+        return settings;
+    }
     if (!record(scope) || typeof scope.avatar !== 'string' || !scope.avatar || scope.avatar === '.' || scope.avatar === '..'
         || /[\\/\0]/.test(scope.avatar) || scope.characterId !== undefined && (typeof scope.characterId !== 'string' || !scope.characterId)) throw invalid();
     const keys = [...new Set([`card:${scope.avatar.trim().toLowerCase()}`, scope.avatar, scope.characterId].filter(Boolean))];

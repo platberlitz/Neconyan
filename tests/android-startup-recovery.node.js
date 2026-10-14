@@ -8,6 +8,27 @@ const activity = read(`${app}MainActivity.java`);
 const service = read(`${app}ServerService.java`);
 const bootstrap = read('android/server-bootstrap.mjs');
 
+test('Java crashes are captured in both Android processes before Android terminates them', () => {
+    const application = read(`${app}NeconyanApplication.java`);
+    assert.match(read('android/app/src/main/AndroidManifest.xml'), /android:name="\.NeconyanApplication"/);
+    assert.match(application, /Thread\.setDefaultUncaughtExceptionHandler/);
+    assert.ok(application.indexOf('CrashDiagnostics.record') < application.indexOf('previous.uncaughtException'));
+    assert.match(read(`${app}CrashDiagnostics.java`), /getNoBackupFilesDir/);
+});
+
+test('renderer loss is handled for both main and popup WebViews and offers an explicit restart', () => {
+    assert.equal((activity.match(/onRenderProcessGone\(WebView view/g) || []).length, 2);
+    const renderer = block(activity, 'private void rendererGone', '@JavascriptInterface public boolean bridgeRequiresToken');
+    assert.match(renderer, /view\.destroy\(\)/);
+    assert.match(renderer, /web = null/);
+    assert.match(renderer, /CrashDiagnostics\.record/);
+    assert.match(activity, /if \(web == null\) \{ ActivityBreadcrumbs.state\("recreating"\); recreate\(\); return; \}/);
+    const restart = block(activity, 'private boolean restartAfterStop', 'private void recordServerCrash');
+    assert.ok(restart.indexOf('CrashDiagnostics.serverRecovery') < restart.indexOf('stopService'));
+    assert.ok(renderer.indexOf('frozenActivity') < renderer.indexOf('view.destroy'));
+    assert.ok(renderer.indexOf('recordReport') < renderer.indexOf('Copy report'));
+});
+
 function block(source, start, end) {
     const from = source.indexOf(start);
     assert.notEqual(from, -1, `missing ${start}`);
@@ -65,15 +86,40 @@ test('a native crash leaves Android a crash record that the bug report details i
     assert.match(record, /info\.getTraceInputStream\(\)/);
     assert.match(record, /Tombstone\.describe\(trace\)/);
     assert.match(record, /"native-crash\.txt"/);
-    assert.match(block(activity, 'private boolean restartAfterStop', 'private void recordServerCrash'), /worker\.execute\(this::recordServerCrash\), 20000\)/);
+    assert.match(block(activity, 'private boolean restartAfterStop', 'private void recordServerCrash'), /ActivityBreadcrumbs\.execute\(this::collectCrashDetails\), 20000\)/);
     const details = block(activity, 'private void copyDetails()', 'private void showSafeNotice');
-    assert.match(details, /recordServerCrash\(\);\s*text\.append\("\\nCrash record:\\n"\)\.append\(tail\(new File\(getCacheDir\(\), "native-crash\.txt"\), 80\)\)/);
-    assert.match(details, /"requests\.txt"/);
-    assert.match(details, /"requests\.previous\.txt"/);
+    assert.match(details, /visibleReport != null \? visibleReport : serverIncident/);
+    assert.match(details, /DiagnosticStore\.redact\(text\.toString\(\)\)/);
+    assert.match(details, /server\.log|server\.previous\.log/);
+    assert.match(details, /native-startup\.txt|native-crash\.txt|requests\.previous\.txt/);
     assert.match(bootstrap, /process\.env\.NECONYAN_REQUEST_TRACE = path\.join\(process\.env\.TMPDIR, 'requests\.txt'\);/);
-    assert.match(main, /if \(process\.env\.NECONYAN_REQUEST_TRACE\) \{\s*app\.use\(createRequestTrace\(process\.env\.NECONYAN_REQUEST_TRACE\)\);/);
+    assert.match(main, /app\.use\(createRequestTrace\(process\.env\.NECONYAN_REQUEST_TRACE\)\);/);
     // Four-part hotfix versions such as 1.2.4.1 still produce a version code above every older release.
     assert.match(gradle, /versionCode numbers\[0\] \* 1000000 \+ numbers\[1\] \* 10000 \+ numbers\[2\] \* 100 \+ \(numbers\.size\(\) > 3 \? numbers\[3\] : 0\)/);
+});
+
+test('native report presentation is early, resumed and acknowledged only after showing', () => {
+    assert.ok(activity.indexOf('recoverCrashReports();') < activity.indexOf('if (!checkWebView(root))'));
+    const reader = block(activity, 'private boolean showCrashReport', 'private void copyReport');
+    assert.ok(reader.indexOf('crashDialog.show();') < reader.indexOf('acknowledgeReport(entry)'));
+    assert.match(reader, /!resumed/);
+    assert.match(reader, /setOnClickListener/);
+    assert.match(activity, /Intent.ACTION_SEND/);
+    assert.doesNotMatch(activity, /logMentionsMemory|phone ran out of memory/);
+    const bridge = read(`${app}NeconyanDiagnostics.java`);
+    assert.match(bridge, /!local \|\| nonce.isEmpty\(\) \|\| !nonce.equals\(token\)/);
+    assert.match(bridge, /json.length\(\) > 4096/);
+    assert.doesNotMatch(bridge, /Files\.|FileOutputStream/);
+    assert.match(read(`${app}NeconyanApplication.java`), /onTrimMemory/);
+    assert.match(read(`${app}NeconyanApplication.java`), /onLowMemory/);
+});
+
+test('the activity bridge admits a hidden or pagehide sample quickly', () => {
+    const bridge = read(`${app}NeconyanDiagnostics.java`);
+    const gate = Number(bridge.match(/now - receivedAt < (\d+)/)?.[1]);
+    assert.ok(gate > 0 && gate <= 500, `the ${gate} ms gate must not drop the final pagehide sample`);
+    assert.match(bridge, /json\.length\(\) > 4096/);
+    assert.match(bridge, /!local \|\| nonce\.isEmpty\(\) \|\| !nonce\.equals\(token\)/);
 });
 
 test('the Android server loads full ICU data so word splitting cannot crash it', () => {

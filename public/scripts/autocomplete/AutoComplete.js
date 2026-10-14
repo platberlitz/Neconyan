@@ -166,7 +166,11 @@ export class AutoComplete {
         });
         textarea.addEventListener('blur', () => this.hide());
         if (isFloating) {
-            textarea.addEventListener('scroll', () => this.updateFloatingPositionDebounced());
+            textarea.addEventListener('scroll', () => {
+                if (this.isActive) {
+                    this.updateFloatingPositionDebounced();
+                }
+            });
         }
         // Character/editor surfaces replace their textareas in place. Retire
         // the resize callback once its input leaves the document so viewport
@@ -175,6 +179,9 @@ export class AutoComplete {
             if (!this.getLayer()) {
                 window.removeEventListener('resize', this.windowResizeHandler);
                 this.hide();
+                return;
+            }
+            if (!this.isActive) {
                 return;
             }
             this.updatePositionDebounced();
@@ -535,8 +542,12 @@ export class AutoComplete {
      */
     hide() {
         this.showRequest++;
-        this.domWrap?.remove();
-        this.detailsWrap?.remove();
+        if (this.domWrap?.isConnected) {
+            this.domWrap.remove();
+        }
+        if (this.detailsWrap?.isConnected) {
+            this.detailsWrap.remove();
+        }
         this.isActive = false;
         this.isShowingDetails = false;
         this.wasForced = false;
@@ -599,6 +610,9 @@ export class AutoComplete {
      * Update position of DOM.
      */
     updatePosition() {
+        if (!this.isActive) {
+            return;
+        }
         const layer = this.getLayer();
         if (!layer) {
             return this.hide();
@@ -629,6 +643,9 @@ export class AutoComplete {
      * Update position of details DOM.
      */
     updateDetailsPosition(layer = this.getLayer()) {
+        if (!this.isActive) {
+            return;
+        }
         if (!layer) {
             return this.hide();
         }
@@ -988,15 +1005,28 @@ export class AutoComplete {
                 break;
             }
         }
-        if (['Control', 'Shift', 'Alt'].includes(evt.key)) {
-            // ignore keydown on modifier keys
+        if (['Control', 'Shift', 'Alt'].includes(evt.key) || this.isComposing || evt.isComposing) {
+            // ignore keydown on modifier keys and IME composition
             return;
         }
         // await keyup to see if cursor position or text has changed
         const oldText = this.textarea.value;
-        await new Promise(resolve => {
-            window.addEventListener('keyup', resolve, { once: true });
+        this.pendingKeyUpCleanup?.();
+        const didFireKeyUp = await new Promise(resolve => {
+            const onKeyUp = () => {
+                this.pendingKeyUpCleanup = null;
+                resolve(true);
+            };
+            this.pendingKeyUpCleanup = () => {
+                window.removeEventListener('keyup', onKeyUp);
+                this.pendingKeyUpCleanup = null;
+                resolve(false);
+            };
+            window.addEventListener('keyup', onKeyUp, { once: true });
         });
+        if (!didFireKeyUp) {
+            return;
+        }
         if (this.selectionStart != this.textarea.selectionStart) {
             this.selectionStart = this.textarea.selectionStart;
             this.show(this.isReplaceable || oldText != this.textarea.value);

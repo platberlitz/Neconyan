@@ -686,10 +686,10 @@ function updateSettings({ saveExtensionSettings = true } = {}) {
     setFloatingPrompt();
 }
 
-const setMainPromptTokenCounterDebounced = debounce(async (value) => $('#extension_floating_prompt_token_counter').text(await getTokenCountAsync(value)), debounce_timeout.relaxed);
-const setCharaPromptTokenCounterDebounced = debounce(async (value) => $('#extension_floating_chara_token_counter').text(await getTokenCountAsync(value)), debounce_timeout.relaxed);
-const setPersonaPromptTokenCounterDebounced = debounce(async (value) => $('#extension_floating_persona_token_counter').text(await getTokenCountAsync(value)), debounce_timeout.relaxed);
-const setDefaultPromptTokenCounterDebounced = debounce(async (value) => $('#extension_floating_default_token_counter').text(await getTokenCountAsync(value)), debounce_timeout.relaxed);
+const setMainPromptTokenCounterDebounced = debounce(async (value) => $('#extension_floating_prompt_token_counter').text(await getTokenCountAsync(value)), debounce_timeout.short);
+const setCharaPromptTokenCounterDebounced = debounce(async (value) => $('#extension_floating_chara_token_counter').text(await getTokenCountAsync(value)), debounce_timeout.short);
+const setPersonaPromptTokenCounterDebounced = debounce(async (value) => $('#extension_floating_persona_token_counter').text(await getTokenCountAsync(value)), debounce_timeout.short);
+const setDefaultPromptTokenCounterDebounced = debounce(async (value) => $('#extension_floating_default_token_counter').text(await getTokenCountAsync(value)), debounce_timeout.short);
 
 async function onExtensionFloatingPromptInput() {
     chat_metadata[metadata_keys.prompt] = $(this).val();

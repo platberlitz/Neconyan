@@ -1265,7 +1265,25 @@ export function renderSettings() {
         }
     }
 
+    let viewOnScreen = typeof IntersectionObserver !== 'function';
+    let viewRenderPending = false;
+    const viewVisibilityObserver = viewOnScreen
+        ? null
+        : new IntersectionObserver((entries) => {
+            viewOnScreen = entries[entries.length - 1].isIntersecting;
+            if (viewOnScreen && viewRenderPending) {
+                viewRenderPending = false;
+                refresh();
+            }
+        }, { rootMargin: '200px' });
+    viewVisibilityObserver?.observe(drawer);
+
     function refresh() {
+        if (!viewOnScreen && drawer.isConnected && !drawer.contains(document.activeElement)) {
+            viewRenderPending = true;
+            return;
+        }
+        viewRenderPending = false;
         ensureEditingProfile();
         const settings = getSettings();
         const ctx = SillyTavern.getContext();
@@ -1644,6 +1662,7 @@ export function renderSettings() {
         unsubscribePresetWriteState();
         drawer.removeEventListener('inline-drawer-toggle', handleHostDrawerToggle);
         drawerStateObserver.disconnect();
+        viewVisibilityObserver?.disconnect();
     };
 
     refresh();

@@ -347,3 +347,45 @@ test('a protected element keeps the captions the code translated, and English on
     expect(result.english).toEqual(['Character', 'Show full picture for Bob']);
     expect(result.options).toEqual(['Default', '-- Selecione um conjunto de QR --', 'Summary']);
 });
+
+async function openWithLocalizeString(page, markup) {
+    const source = await readFile(new URL('../public/scripts/ui-localization.js', import.meta.url), 'utf8');
+    await page.setContent(`<main id="root">${markup}</main>`);
+    await page.addScriptTag({ type: 'module', content: `${source}\nwindow.localizeControls = localizeControls; window.localizeString = localizeString;` });
+    await page.waitForFunction(() => typeof window.localizeControls === 'function' && typeof window.localizeString === 'function');
+}
+
+test('the lookup option for whole messages changed nothing on screen: a hole that is a key is still translated by the localiser, and kept by localizeString', async ({ page }) => {
+    await openWithLocalizeString(page, '<p id="open">Open Home</p>');
+    const result = await page.evaluate(() => {
+        const dictionary = { 'Open ${0}': 'Abrir ${0}', Home: 'Início' };
+        const message = window.localizeString('Open Home', dictionary);
+        window.localizeControls(document.getElementById('root'), dictionary);
+        return { onScreen: document.getElementById('open').textContent, message };
+    });
+    expect(result).toEqual({ onScreen: 'Abrir Início', message: 'Abrir Home' });
+});
+
+// Characterisation: this passes on the code before the change too (the localiser already finds the six sentences through
+// their own keys when the keys exist). It pins what the extension updater toasts rely on.
+test('the six extension updater refusals are translated whole by the localiser, folder name as written', async ({ page }) => {
+    const verbs = ['installed', 'updated', 'managed', 'switched', 'moved', 'deleted'];
+    await openWithLocalizeString(page, verbs.map(verb => `<p id="${verb}">ChatCompletionTabs comes with Neconyan, so it cannot be ${verb} from the extension updater.</p>`).join(''));
+    const result = await page.evaluate(verbs => {
+        const values = { installed: 'instalada', updated: 'atualizada', managed: 'gerenciada', switched: 'trocada', moved: 'movida', deleted: 'excluída' };
+        const dictionary = {};
+        for (const verb of [...verbs].reverse()) {
+            dictionary[`\${0} comes with Neconyan, so it cannot be ${verb} from the extension updater.`] = `\${0} vem com o Neconyan e não pode ser ${values[verb]} pelo atualizador.`;
+        }
+        window.localizeControls(document.getElementById('root'), dictionary);
+        return verbs.map(verb => document.getElementById(verb).textContent);
+    }, verbs);
+    expect(result).toEqual([
+        'ChatCompletionTabs vem com o Neconyan e não pode ser instalada pelo atualizador.',
+        'ChatCompletionTabs vem com o Neconyan e não pode ser atualizada pelo atualizador.',
+        'ChatCompletionTabs vem com o Neconyan e não pode ser gerenciada pelo atualizador.',
+        'ChatCompletionTabs vem com o Neconyan e não pode ser trocada pelo atualizador.',
+        'ChatCompletionTabs vem com o Neconyan e não pode ser movida pelo atualizador.',
+        'ChatCompletionTabs vem com o Neconyan e não pode ser excluída pelo atualizador.',
+    ]);
+});

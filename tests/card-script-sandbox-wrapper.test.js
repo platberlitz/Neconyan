@@ -1,70 +1,53 @@
-import { describe, expect, test } from '@jest/globals';
-import { MESSAGE_TYPE, MESSAGE_VERSION } from '../public/scripts/card-script-sandbox/messages.js';
-import { buildSandboxDocument, CARD_SCRIPT_SANDBOX_CSP } from '../public/scripts/card-script-sandbox/wrapper.js';
+import { beforeEach, describe, expect, jest, test } from '@jest/globals';
+import { installCardScriptTestDom } from './card-script-dom.js';
+jest.unstable_mockModule('../public/scripts/i18n.js', () => ({ t: strings => strings.join('') }));
+const { buildCardDocument, prepareSandboxHtml, sanitiseSandboxTheme, CARD_SCRIPT_SANDBOX_CSP, CARD_SCRIPT_PERMISSIONS } = await import('../public/scripts/card-script-sandbox/wrapper.js');
+const { buildTrustedOuterDocument } = await import('../public/scripts/card-script-sandbox/outer.js');
 
-describe('card script sandbox wrapper', () => {
-    test('builds a complete iframe srcdoc with the locked-down CSP', () => {
-        const srcdoc = buildSandboxDocument({ html: '<p>Hello</p>', messageId: 12, nonce: 'nonce-12' });
+beforeEach(() => installCardScriptTestDom());
 
-        expect(srcdoc.startsWith('<!doctype html>')).toBe(true);
-        expect(srcdoc).toContain('<html>');
-        expect(srcdoc).toContain('<meta charset="utf-8">');
-        expect(srcdoc).toContain(`<meta http-equiv="Content-Security-Policy" content="${CARD_SCRIPT_SANDBOX_CSP}">`);
-        expect(CARD_SCRIPT_SANDBOX_CSP).toContain('img-src data: blob:');
-        expect(CARD_SCRIPT_SANDBOX_CSP).toContain('media-src data: blob:');
-        expect(CARD_SCRIPT_SANDBOX_CSP).toContain('font-src data:');
-        expect(CARD_SCRIPT_SANDBOX_CSP).not.toContain('https:');
-        expect(CARD_SCRIPT_SANDBOX_CSP).not.toContain('http:');
-        expect(CARD_SCRIPT_SANDBOX_CSP).not.toContain('frame-ancestors');
-        expect(CARD_SCRIPT_SANDBOX_CSP).not.toContain('files.catbox.moe');
-        expect(srcdoc).toContain('<p>Hello</p>');
+describe('two-frame card sandbox', () => {
+    test('installs the first policy before any card code, with no remote sources', () => {
+        const card = buildCardDocument({ html: '<script>run()</script>', messageId: 1, nonce: 'inner' });
+        const outer = buildTrustedOuterDocument();
+        expect(card.indexOf('Content-Security-Policy')).toBeLessThan(card.indexOf('<script>'));
+        expect(card.indexOf('window.triggerSlash')).toBeLessThan(card.indexOf('run()'));
+        expect(outer).not.toContain('<script>run()</script>');
+        expect(CARD_SCRIPT_SANDBOX_CSP).toContain('frame-src \'none\'; child-src \'none\'; worker-src \'none\'; object-src \'none\'');
+        expect(outer).toContain('frame.setAttribute(\'sandbox\', \'allow-scripts\')');
+        expect(outer).toContain('frame.setAttribute(\'referrerpolicy\', \'no-referrer\')');
+        expect(CARD_SCRIPT_PERMISSIONS).toContain('camera \'none\'; clipboard-read \'none\'');
+        expect(outer).not.toContain('allow-same-origin');
     });
-
-    test('installs only a sandbox-local triggerSlash postMessage bridge', () => {
-        const srcdoc = buildSandboxDocument({
-            html: '<script>triggerSlash("/echo hello")</script>',
-            messageId: 42,
-            nonce: 'nonce-42',
-        });
-
-        expect(srcdoc).toContain('window["triggerSlash"] = function triggerSlash(input)');
-        expect(srcdoc).toContain('window.parent.postMessage({');
-        expect(srcdoc).toContain(`"type":"${MESSAGE_TYPE}"`);
-        expect(srcdoc).toContain(`"version":${MESSAGE_VERSION}`);
-        expect(srcdoc).toContain('"messageId":42');
-        expect(srcdoc).toContain('"nonce":"nonce-42"');
-        expect(srcdoc).toContain('command: String(input ?? \'\')');
+    test('escapes JSON script terminators and exposes no host helpers', () => {
+        const outer = buildTrustedOuterDocument();
+        expect(outer.match(/<script>/g)).toHaveLength(1);
+        expect(outer.match(/<\/script>/g)).toHaveLength(1);
+        for (const name of ['SillyTavern', 'getContext', 'localStorage', 'sessionStorage', 'document.cookie']) expect(outer).not.toContain(name);
+        expect(outer).toContain('event.source !== child');
+        expect(outer).toContain('data.nonce !== cardNonce');
+        expect(outer).toContain('event.source !== parent');
     });
-
-    test('does not expose parent-page state helpers or same-origin sandbox assumptions', () => {
-        const srcdoc = buildSandboxDocument({ html: '<p>Safe</p>', messageId: 1, nonce: 'nonce-1' });
-
-        expect(srcdoc).not.toContain('SillyTavern');
-        expect(srcdoc).not.toContain('getContext');
-        expect(srcdoc).not.toContain('localStorage');
-        expect(srcdoc).not.toContain('sessionStorage');
-        expect(srcdoc).not.toContain('document.cookie');
-        expect(srcdoc).not.toContain('allow-same-origin');
+    test('removes refresh, base, resource hints, objects and nested embeds inertly', () => {
+        const { html } = prepareSandboxHtml('<base href="https://bad"><meta http-equiv="refresh" content="0;url=https://bad"><link rel="prefetch" href="https://bad"><object>object</object><embed src="https://bad"><iframe src="https://bad"></iframe><script>run()</script>');
+        expect(html).not.toMatch(/<(base|meta|link|object|embed|iframe)/i);
+        expect(html).toContain('Embedded frames are unavailable');
+        expect(html).toContain('<script>run()</script>');
     });
-
-    test('keeps script-breaking metadata out of executable script literals', () => {
-        const rawNonce = 'nonce</script><script>window.evil = true</script>';
-        const srcdoc = buildSandboxDocument({ html: '', messageId: 7, nonce: rawNonce });
-
-        expect(srcdoc).not.toContain(rawNonce);
-        expect(srcdoc).toContain('nonce\\u003c/script\\u003e\\u003cscript\\u003ewindow.evil = true\\u003c/script\\u003e');
-        expect(srcdoc.match(/<script>/g)).toHaveLength(1);
-        expect(srcdoc.match(/<\/script>/g)).toHaveLength(1);
+    test('unwraps a sole inline-srcdoc card without fetching its src', () => {
+        const { html } = prepareSandboxHtml('<iframe src="https://bad" srcdoc="&lt;p&gt;Inline&lt;/p&gt;&lt;script&gt;run()&lt;/script&gt;"></iframe>');
+        expect(html).toBe('<p>Inline</p><script>run()</script>');
     });
-
-    test('preserves card scripts for the future iframe runtime without adding parent wiring', () => {
-        const sample = '<script>triggerSlash("/audioselect voice=bell | /audiomode narrator | /audioplay")</script>';
-        const srcdoc = buildSandboxDocument({ html: sample, messageId: 99, nonce: 'nonce-99' });
-
-        expect(srcdoc).toContain(sample);
-        expect(srcdoc).toContain('/audioselect voice=bell | /audiomode narrator | /audioplay');
-        expect(srcdoc.indexOf('window["triggerSlash"] = function triggerSlash(input)')).toBeLessThan(srcdoc.indexOf(sample));
-        expect(srcdoc.match(/<script>/g)).toHaveLength(2);
-        expect(srcdoc.match(/<\/script>/g)).toHaveLength(2);
+    test.each(['preconnect', 'dns-prefetch', 'prefetch', 'preload'])('strips %s hints including inert nested templates', rel => {
+        const { html } = prepareSandboxHtml(`<link rel="${rel}" href="https://bad"><template><link rel="${rel}" href="https://bad"><template><link rel="${rel}" href="https://bad"></template></template>`);
+        expect(html).not.toContain('<link');
+    });
+    test('theme accepts only bounded CSS values and measurements can shrink', () => {
+        expect(sanitiseSandboxTheme({ color: '<script>', fontSize: '500px', fontFamily: 'url(https://bad)', backgroundColor: 'invalid', extra: 'red', linkColor: 'rgb(1, 2, 3)' })).toEqual({ linkColor: 'rgb(1, 2, 3)' });
+        const card = buildCardDocument({ html: '<p>Hello</p>', theme: { color: 'rgb(20, 30, 40)', fontSize: '16px' } });
+        expect(card).toContain('const bounds = root.getBoundingClientRect()');
+        expect(card).toContain('document.getElementById(\'neconyan-card-content\') || document.body');
+        expect(card).not.toContain('document.documentElement.scrollHeight');
+        expect(card).toContain('new ResizeObserver(schedule)');
     });
 });

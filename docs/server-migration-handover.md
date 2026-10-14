@@ -69,6 +69,64 @@ the PR against staging and validate the resulting APK on the reporting device.
 
 ## Release preparation: 1.0.0
 
+### 13 October: 1.3.2 release, staging starts 1.3.3
+
+I refreshed the handbook for General Scratchpad, image and portrait reviews,
+saved crash reports, Agent versions and manual queues, card-script isolation and
+preset controls. The update is published from `neconyan-docs` commit
+`2b41e89d2fc7a7f901acb65df6b8af47b959b0db`. Strict build, all 53 page link and
+asset checks, and phone and desktop browser checks passed. Pages run
+`38391117519` published it; all six changed pages were checked on the live site.
+The shared assistant reference is now revision 25, with ten new retrieval cases
+and 144 shared cases in total. Changelog highlights were added before promotion.
+
+`main` was fast-forwarded to `308ac115743bc70dd016ae53091843215add7370`.
+Neconyan 1.3.2 is published at
+https://github.com/platberlitz/Neconyan/releases/tag/v1.3.2 with annotated tag
+`v1.3.2` and nine assets. Signed Android run `38406336667` passed the Android 11,
+13 and 15 emulator lifecycle and native checks on this exact commit. Both APK
+signatures match the existing official signing identity. Their embedded commit,
+version, frontend files and native 16 KiB alignment were independently checked,
+along with all eight listed checksums. All 3,960 source files match `git archive`,
+including its line-ending conversion rules. All nine published assets were
+downloaded again and matched the verified build files byte for byte; GitHub's
+SHA-256 checksums also matched. Physical phones were not tested.
+
+The first Android run caught a real false-positive crash notice: routine cleanup
+of an unused isolated browser process was reported as an app crash. Commit
+`7d5251a8` excludes only the known reason-13, zero-status cleanup descriptions;
+regression checks retain real and unknown failures. All three Android versions
+then passed normal force-stop and reopening. The smoke test was updated to scroll
+through the new native crash report and inspect both actions and the server
+details after an intentional crash. An earlier Android 13 attempt lost its adb
+connection before installing the app and passed unchanged on a job-only retry;
+the final signed run passed all three versions on its first attempt.
+
+Full local checks passed: 478 unit suites (6,351 tests, three skipped), 2,252 server
+tests, 91 dedicated Mewmory tests, root and test lint, frontend budgets and the
+production build. The later Android fix passed all 39 Android host tests. Both
+focused assistant browser checks passed across all nine variants on phone and
+desktop. Corrected browser fixtures and timing checks passed locally, including
+real WebKit, before their affected CI groups were rerun.
+
+Every browser failure was resolved and verified before publication. Combined
+coverage is 1,640 passed and 23 existing skips across all 16 groups. Ten unaffected
+passing groups were retained from run `38390292984` at `89a85865`. Run
+`38399306747` at `0a9095e9` passed groups 7, 8, 14, 15 and 16: 498 passed and 21
+skipped. Those corrections cover crash-status and reader fixtures, the expected
+notice after a deliberate server kill, settled accent and prompt controls, and
+installing WebKit. The workflow now accepts a manual list of groups while keeping
+the normal 16-group split.
+
+Group 1 twice stalled before the application recovery assertions because
+Chromium never dispatched its induced crash event on the Ubuntu 24.04 runner.
+Playwright 1.60 documents the same platform issue in its own crash-event tests.
+Only group 1 now uses Ubuntu 22.04. Run `38400917454` at `308ac115` passed all 104
+tests, including the real renderer crash and recovery, with no weakened or skipped
+assertions. Duplicate full runs were cancelled; passing groups were preserved.
+The six project-boundary tests and changed-test lint passed for the 1.3.3 staging
+version bump.
+
 ### 12 October: 1.3.1 release, staging starts 1.3.2
 
 The handbook now covers Continuity Corrector, tracker repair connections and time

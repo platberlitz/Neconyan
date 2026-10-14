@@ -1,4 +1,4 @@
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, jest, test } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -369,7 +369,7 @@ test('composer post passes preserve provider failure metadata without changing d
     const source = runner.match(/^export async function runSingleAgentPostPassesOnText\([\s\S]*?^}/m)[0].replace('export ', '');
     const runtime = vm.createContext({
         agentGenerationCancelRevision: 0,
-        runPromptTransformAgentsForText: async () => ({ text: 'draft', changed: false, promptRuns: [{ status: 'error', error: 'Provider unavailable' }] }),
+        runPromptTransformAgentsForText: jest.fn(async () => ({ text: 'draft', changed: false, promptRuns: [{ status: 'error', error: 'Provider unavailable' }] })),
         isAgentRuntimeAllowed: () => true,
         getAgentRegexScripts: () => [],
     });
@@ -378,4 +378,5 @@ test('composer post passes preserve provider failure metadata without changing d
     expect(result.text).toBe('draft');
     expect(result.changed).toBe(false);
     expect(result.promptRuns).toEqual([{ status: 'error', error: 'Provider unavailable' }]);
+    expect(runtime.runPromptTransformAgentsForText.mock.calls[0][3]).toMatchObject({ executionMode: 'sequential' });
 });

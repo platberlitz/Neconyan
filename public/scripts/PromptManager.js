@@ -13,7 +13,6 @@ import { Popup } from './popup.js';
 import { isUiClosing, setUiVisibility } from './ui-motion.js';
 import { t } from './i18n.js';
 import { isMobile } from './RossAscends-mods.js';
-import { accountStorage } from './util/AccountStorage.js';
 import { getPromptDisplayTokenCounts, getPromptSourceTokenCounts, isCommentOnlyPromptContent, mergePromptTokenCounts } from './prompt-token-counts.js';
 import { getRenderedMarkerPrompt } from './prompt-manager-marker-preview.js';
 import { getPromptPreview } from './prompt-preview.js';
@@ -477,80 +476,6 @@ class PromptManager {
         this.renderDebounced = debounce(this.render.bind(this), debounce_timeout.relaxed);
     }
 
-    getDrawerStorageKey() {
-        const scope = String(this.configuration.containerIdentifier || this.configuration.prefix || 'default').trim() || 'default';
-        return `PromptManager_DrawerExpanded_${scope}`;
-    }
-
-    getStoredDrawerExpanded() {
-        const storedValue = accountStorage.getItem(this.getDrawerStorageKey());
-        return storedValue === null ? false : storedValue === 'true';
-    }
-
-    setStoredDrawerExpanded(expanded) {
-        accountStorage.setItem(this.getDrawerStorageKey(), String(Boolean(expanded)));
-    }
-
-    applyDrawerExpandedState(drawer, expanded) {
-        if (!(drawer instanceof HTMLElement)) {
-            return;
-        }
-
-        const icon = drawer.querySelector(':scope > .inline-drawer-header .inline-drawer-icon');
-        const content = drawer.querySelector(':scope > .inline-drawer-content');
-
-        if (!(icon instanceof HTMLElement) || !(content instanceof HTMLElement)) {
-            return;
-        }
-
-        icon.classList.toggle('down', !expanded);
-        icon.classList.toggle('fa-circle-chevron-down', !expanded);
-        icon.classList.toggle('up', expanded);
-        icon.classList.toggle('fa-circle-chevron-up', expanded);
-        content.style.display = expanded ? 'block' : 'none';
-    }
-
-    getPromptManagerDrawer() {
-        return this.containerElement?.querySelector(`#${this.configuration.prefix}prompt_manager_drawer`) ?? null;
-    }
-
-    getDrawerExpandedState(drawer = this.getPromptManagerDrawer()) {
-        if (!(drawer instanceof HTMLElement)) {
-            return this.getStoredDrawerExpanded();
-        }
-
-        const icon = drawer.querySelector(':scope > .inline-drawer-header .inline-drawer-icon');
-        const content = drawer.querySelector(':scope > .inline-drawer-content');
-
-        if (icon instanceof HTMLElement) {
-            return icon.classList.contains('up');
-        }
-
-        if (content instanceof HTMLElement) {
-            return getComputedStyle(content).display !== 'none';
-        }
-
-        return this.getStoredDrawerExpanded();
-    }
-
-    bindDrawerPersistence() {
-        const drawer = this.getPromptManagerDrawer();
-        if (!(drawer instanceof HTMLElement)) {
-            return;
-        }
-
-        this.applyDrawerExpandedState(drawer, this.getStoredDrawerExpanded());
-
-        drawer.addEventListener('inline-drawer-toggle', () => {
-            const icon = drawer.querySelector(':scope > .inline-drawer-header .inline-drawer-icon');
-            if (!(icon instanceof HTMLElement)) {
-                return;
-            }
-
-            this.setStoredDrawerExpanded(icon.classList.contains('up'));
-        });
-    }
-
     getPopupElement() {
         return document.getElementById(this.configuration.prefix + 'prompt_manager_popup');
     }
@@ -651,11 +576,9 @@ class PromptManager {
         const prompt = this.getPromptById(identifier);
         const entry = this.getPromptOrderEntry(this.activeCharacter, identifier);
         if (!prompt || !entry || identifier === RUNTIME_AGENTS_IDENTIFIER || (!allowRestricted && !this.isPromptToggleAllowed(prompt)) || Boolean(entry.enabled) === enabled) return false;
-        const expanded = this.getDrawerExpandedState();
         this.tokenHandler.getCounts()[identifier] = null;
         entry.enabled = enabled;
         if (!enabled && prompt.content) clearPromptSetVariables(prompt.content);
-        this.setStoredDrawerExpanded(expanded);
         for (const row of this.listElement?.querySelectorAll('[data-pm-identifier]') ?? []) {
             if (row.dataset.pmIdentifier !== identifier) continue;
             row.classList.toggle(`${this.configuration.prefix}prompt_manager_prompt_disabled`, !enabled);
@@ -2278,6 +2201,12 @@ class PromptManager {
                 return prepared;
             });
 
+        await this.tokenHandler.primeAsync?.(
+            prompts
+                .filter(prompt => prompt?.identifier && !prompt?.marker && typeof prompt.content === 'string' && prompt.content.trim())
+                .map(prompt => ({ role: prompt.role || 'system', content: prompt.content.trim() })),
+        );
+
         this.sourcePromptTokenCounts = await getPromptSourceTokenCounts(prompts, message => this.tokenHandler.countUntrackedAsync(message));
         // Raw-content fallbacks are display-only: their text reaches the request through
         // whichever prompt reads the variable, and is counted there.
@@ -2374,7 +2303,6 @@ class PromptManager {
 
             const footerDiv = promptManagerDiv.querySelector(`.${this.configuration.prefix}prompt_manager_footer`);
             if (!(footerDiv instanceof HTMLElement)) {
-                this.bindDrawerPersistence();
                 this.bindDragLockButton();
                 return true;
             }
@@ -2390,7 +2318,6 @@ class PromptManager {
             footerDiv.querySelector('#prompt-manager-export').addEventListener('click', this.handleFullExport);
         }
 
-        this.bindDrawerPersistence();
         this.bindDragLockButton();
         this.syncPopupPlacement();
         this.syncEditorPaneState();

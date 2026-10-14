@@ -87,6 +87,7 @@ describe('browser jobs observer snapshot callbacks', () => {
 
     afterEach(() => {
         globalThis.fetch = nativeFetch;
+        delete globalThis.NeconyanCrashDiagnostics;
     });
 
     test('onSnapshot runs on every poll while onUpdate runs only when the job JSON changes', async () => {
@@ -206,5 +207,40 @@ describe('browser jobs observer snapshot callbacks', () => {
         expect(onDone).not.toHaveBeenCalled();
         expect(onStop).toHaveBeenCalledTimes(1);
         expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    test('a diagnostic-only change updates crash activity without re-reading the job', async () => {
+        let feed;
+        let jobReads = 0;
+        const body = new ReadableStream({ start(controller) { feed = controller; } });
+        const observeJobActivity = jest.fn();
+        globalThis.NeconyanCrashDiagnostics = { observeJobActivity };
+        globalThis.fetch = jest.fn(async url => {
+            if (url.endsWith('/events')) return { ok: true, headers: new Map([['content-type', 'text/event-stream']]), body };
+            jobReads += 1;
+            return jsonResponse({ job: { id: 'job-1', state: 'running' } });
+        });
+        const { observeJob } = await import('../public/scripts/jobs.js');
+        const stop = observeJob('job-1', { intervalMs: 60_000, onSnapshot: () => {} });
+        try {
+            await wait(20);
+            expect(jobReads).toBe(1);
+            // The first successful poll clears this observer's contribution by passing null.
+            expect(observeJobActivity).toHaveBeenCalledTimes(1);
+            expect(observeJobActivity.mock.calls[0][2]).toBeNull();
+            observeJobActivity.mockClear();
+            const activity = { schema: 1, agents: { running: [{ label: 'Proofreader', phase: 'post', location: 'server' }] } };
+            feed.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ diagnostics: { id: 'job-1', activity } })}\n\n`));
+            await wait(20);
+            // The hint reaches the recorder as evidence, and is not a reason to re-read 55-166 KB of job JSON.
+            expect(observeJobActivity).toHaveBeenCalledTimes(1);
+            expect(observeJobActivity.mock.calls[0][0]).toBe('job-1');
+            expect(observeJobActivity.mock.calls[0][2]).toMatchObject({ agents: { running: [{ label: 'Proofreader' }] } });
+            expect(jobReads).toBe(1);
+            // A normal change frame still reads the saved job.
+            feed.enqueue(new TextEncoder().encode('data: {}\n\n'));
+            await wait(20);
+            expect(jobReads).toBe(2);
+        } finally { stop(); feed.close(); }
     });
 });

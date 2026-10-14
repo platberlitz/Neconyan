@@ -6,6 +6,7 @@ import {
     name1,
 } from '../../script.js';
 import { user_avatar } from '../personas.js';
+import { power_user } from '../power-user.js';
 import { selectConversationThread } from './chrome.js';
 import { AVAILABILITY_COPY, CHROME_IDS, DEFAULT_BRANCH_ID, WEEKDAY_LABELS } from './constants.js';
 import {
@@ -488,9 +489,13 @@ export async function createAndOpenConversationGroup(memberAvatars, { sourceAvat
     });
     if (opened) {
         schedulePalsRailRender();
-        setTimeout(() => {
-            document.getElementById(CHROME_IDS.input)?.focus?.({ preventScroll: true });
-        }, 100);
+        if (typeof power_user === 'undefined' || power_user?.auto_focus_chat_input !== false) {
+            setTimeout(() => {
+                if (typeof power_user === 'undefined' || power_user?.auto_focus_chat_input !== false) {
+                    document.getElementById(CHROME_IDS.input)?.focus?.({ preventScroll: true });
+                }
+            }, 100);
+        }
         toastr.success(`Opened group Conversation for ${group.name || 'this group'}.`);
     }
 

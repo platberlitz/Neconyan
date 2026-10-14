@@ -2,8 +2,8 @@
     {{#if error}}
         {{{errorDiv}}}
     {{/if}}
-    <div id="{{prefix}}prompt_manager_drawer" class="inline-drawer wide100p flexFlowColumn sb-openai-settings-subdrawer {{prefix}}prompt_manager_drawer">
-        <div class="inline-drawer-toggle inline-drawer-header">
+    <div id="{{prefix}}prompt_manager_drawer" class="wide100p flexFlowColumn sb-openai-settings-subdrawer {{prefix}}prompt_manager_drawer">
+        <div class="inline-drawer-header" style="cursor:default;">
             <div class="flex-container flexFlowColumn">
                 <b data-i18n="Prompts">Prompts</b>
                 <small class="sb-group-meta"><span data-i18n="Inspect, reorder, toggle, and edit injected prompts">Inspect, reorder, toggle, and edit injected prompts</span> &middot; <span data-i18n="Total Tokens:">Total Tokens:</span> {{totalActiveTokens}}{{#if totalAgentTokens}} &middot; <span data-i18n="Agent Tokens:">Agent Tokens:</span> {{totalAgentTokens}}{{/if}}</small>
@@ -14,9 +14,8 @@
                     <i class="fa-solid fa-fw {{#if dragLocked}}fa-lock{{else}}fa-unlock{{/if}}" aria-hidden="true"></i>
                 </button>
             </div>
-            <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
         </div>
-        <div class="inline-drawer-content {{prefix}}prompt_manager_drawer_content" style="display:none;">
+        <div class="{{prefix}}prompt_manager_drawer_content">
             <div class="{{prefix}}prompt_manager_workspace sb-workspace-split">
                 <div class="{{prefix}}prompt_manager_list_pane sb-workspace-pane sb-workspace-list-pane">
                     <ul id="{{prefix}}prompt_manager_list" class="text_pole"></ul>

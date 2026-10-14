@@ -14,6 +14,7 @@ describe('companion dashboard', () => {
     let batchGroups;
     let runner;
     let changeSelectedCompanionLinksMock;
+    let translatedKeys;
 
     class PopupMock {
         constructor(content, type, header, options) {
@@ -142,10 +143,19 @@ describe('companion dashboard', () => {
             openCompanionPanel: openCompanionPanelMock,
         }));
 
+        // The real i18n.js needs more of power-user.js than this suite provides. This one records each key and returns the English text.
+        await jest.unstable_mockModule('../public/scripts/i18n.js', () => ({
+            t: (strings, ...values) => {
+                translatedKeys.push(strings.reduce((key, part, index) => key + part + (index < values.length ? `\${${index}}` : ''), ''));
+                return strings.reduce((text, part, index) => text + part + (index < values.length ? values[index] : ''), '');
+            },
+        }));
+
         return await import('../public/scripts/extensions/in-chat-agents/companion/companion-dashboard.js');
     }
 
     beforeEach(() => {
+        translatedKeys = [];
         chat = [];
         eventSource = createEventSource();
         agents = [];
@@ -630,11 +640,17 @@ describe('companion dashboard', () => {
         runner.retryFailedCompanionsOnMessage.mockResolvedValueOnce([{ status: 'error', error: 'Request failed' }]);
         await view.click('retry-failed');
         expect(globalThis.toastr.warning).toHaveBeenLastCalledWith('1 companion failed again. Check your connection, then try again.');
+        expect(translatedKeys).toContain('1 companion failed again. Check your connection, then try again.');
+
+        runner.retryFailedCompanionsOnMessage.mockResolvedValueOnce([{ status: 'error' }, { status: 'error' }]);
+        await view.click('retry-failed');
+        expect(globalThis.toastr.warning).toHaveBeenLastCalledWith('2 companions failed again. Check your connection, then try again.');
+        expect(translatedKeys).toContain('${0} companions failed again. Check your connection, then try again.');
 
         retryableCompanionAgents = [];
         await view.click('retry-failed');
         expect(globalThis.toastr.info).toHaveBeenLastCalledWith('Nothing to retry on the latest message.');
-        expect(runner.retryFailedCompanionsOnMessage).toHaveBeenCalledTimes(2);
+        expect(runner.retryFailedCompanionsOnMessage).toHaveBeenCalledTimes(3);
 
         await view.close();
     });

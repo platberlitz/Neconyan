@@ -1,6 +1,6 @@
 /**
- * Scratchpad: a private planning chat with your chosen assistants beside
- * the story. Nothing written here goes into the chat unless the user presses
+ * Scratchpad: a private discussion with your chosen assistants, with or without
+ * a story chat. Nothing written here goes into the chat unless the user presses
  * Save change on a reviewed suggestion.
  */
 import { getActiveGenerationAcknowledgement, messageFormatting, saveSettings } from '../../script.js';
@@ -29,6 +29,7 @@ import {
     loreOverrideKey,
     loreScanText,
     sourceConnectionProfile,
+    sourceCharacters,
     sourceMessages,
     sourceUserName,
     setNotebookSource,
@@ -38,8 +39,11 @@ import { describeChange, splitReply } from './proposals.js';
 import { chooseNote, sessionNoteText } from './notebooks.js';
 import { currentPresetName } from './preset.js';
 import { openAssistantLibrary } from './assistants.js';
+import { sameSourceBucket, sameSourceContext } from './source.js';
+import { observeJob, TERMINAL } from '../jobs.js';
+import * as images from './images.js';
 
-const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261011b-scratchpad-assistants';
+const STYLESHEET = 'css/neconyan-scratchpad.css?v=20261013e-scratchpad-images';
 const PHONE_QUERY = '(max-width: 768px)';
 const PREFS_KEY = 'neconyanScratchpad';
 const DEFAULT_WIDTH = 420;
@@ -62,11 +66,19 @@ function assistantRole(id) {
 }
 
 function quickPrompts() {
+    const image = app.imageAvailability?.image ? [{ label: t`Image idea`, text: t`Suggest an image based on my idea, using my Quick Image Gen settings. Ask what I want to depict first.` }] : [];
+    if (app.source?.kind === 'general') return [
+        { label: t`Brainstorm`, text: t`Help me brainstorm some ideas. Ask what I am working on first.` },
+        { label: t`Help me decide`, text: t`Help me think through a decision. Ask me about the options and what matters to me.` },
+        { label: t`Create a character`, text: t`Help me create a character. Ask about the idea, then propose a new character card for me to review.` },
+        ...image,
+    ];
     if (app.source?.kind === 'notebook') return [
         { label: t`Summarise note`, text: t`Summarise the shared note, keeping its important details.` },
         { label: t`Develop ideas`, text: t`Suggest three ways to develop the ideas in the shared note.` },
         { label: t`Check consistency`, text: t`Check the shared note for contradictions, missing details and unclear passages.` },
         { label: t`Suggest edits`, text: t`Suggest focused improvements to the shared note. Propose changes only where the shared permissions allow them.` },
+        ...image,
     ];
     return [
         { label: t`Read the scene`, text: t`Read the current scene and tell me what each character wants and what is driving them right now.` },
@@ -74,6 +86,7 @@ function quickPrompts() {
         { label: t`Catch me up`, text: t`Summarise what has happened so far in a few short paragraphs.` },
         { label: t`Continuity check`, text: t`Check the recent messages for contradictions, slipped details or anything that does not match the characters or lore.` },
         { label: t`Lore gaps`, text: t`Which people, places or things in this chat deserve a lorebook entry that they do not have yet? Suggest the entries.` },
+        ...image,
     ];
 }
 
@@ -113,6 +126,14 @@ const app = {
     previews: new Map(),
     foldedThinking: new Set(),
     watchers: new Map(),
+    imageWatchers: new Map(),
+    imageJobSignatures: new Map(),
+    imageJobs: new Map(),
+    // Image jobs whose prompt review this client asked for and has not shown yet.
+    imageAutoReviews: new Set(),
+    imageErrors: new Map(),
+    imageAvailability: { image: false, reason: '' },
+    imageCheck: 0,
     pickLimit: PICK_PAGE,
     sessionQuery: '',
     contextKey: '',
@@ -380,7 +401,14 @@ function build() {
         eventSource.on(event, () => app.open && render());
     }
     globalThis.addEventListener('sb:conversation-workspace-state-changed', () => app.open && checkSource());
+    wireHomeSourceEvents();
     globalThis.addEventListener('neconyan:assistant-gender-changed', () => app.open && render());
+}
+
+function wireHomeSourceEvents() {
+    for (const event of ['neconyan:navigate-home', 'neconyan:home-hidden']) {
+        globalThis.addEventListener(event, () => queueMicrotask(() => app.open && checkSource()));
+    }
 }
 
 function buildChatPanel() {
@@ -458,7 +486,7 @@ function selectTab(key) {
 
 function applyBucket(bucket, { ticket = null } = {}) {
     if (ticket !== null && ticket !== app.ticket) return;
-    if (!bucket || bucket.source?.key !== app.source?.key) return;
+    if (!sameSourceBucket(bucket?.source, app.source)) return;
     const firstSession = app.bucket?.sessions.length === 0 && bucket.sessions.length > 0;
     app.bucket = bucket;
     syncDraft({ carry: firstSession });
@@ -481,9 +509,9 @@ function syncDraft({ carry = false } = {}) {
 }
 
 function requireScope(source, sessionId) {
-    if (!source || source.key !== app.source?.key || !isCurrentSource(source)
+    if (!sameSourceContext(source, app.source) || !isCurrentSource(source)
         || (sessionId !== undefined && activeSession()?.id !== sessionId)) {
-        throw new Error(t`The chat or Scratchpad session changed. Return to it and try again.`);
+        throw new Error(t`The context or Scratchpad session changed. Return to it and try again.`);
     }
 }
 
@@ -497,22 +525,22 @@ async function reload() {
     }
     try {
         const result = await api.readBucket(wireSource(source));
-        if (source.key === app.source?.key) applyBucket(result.bucket, { ticket });
+        if (sameSourceBucket(source, app.source)) applyBucket(result.bucket, { ticket });
     } catch (error) {
         if (ticket === app.ticket) reportError(error, t`Scratchpad could not load.`);
     }
 }
 
 function checkSource() {
+    if (app.open && Date.now() - app.imageCheck > 10000) void refreshImageAvailability();
     const next = currentSource();
-    if ((next?.key ?? '') === (app.source?.key ?? '')) {
+    if (sameSourceBucket(next, app.source)) {
         if (next) {
-            const renamed = next.label !== app.source?.label;
+            const changed = next.label !== app.source?.label || !sameSourceContext(next, app.source);
             app.source = next;
-            if (renamed) {
-                renderHeader();
+            if (changed) {
                 app.contextKey = '';
-                if (app.tab === 'context') renderContext();
+                render();
             }
         }
         return;
@@ -533,7 +561,7 @@ function change(operation, fallback, source = app.source) {
         try {
             requireScope(source);
             const result = await operation(wireSource(source));
-            if (result?.bucket && source.key === app.source?.key) {
+            if (result?.bucket && sameSourceBucket(source, app.source)) {
                 app.ticket += 1;
                 applyBucket(result.bucket);
             }
@@ -581,7 +609,7 @@ async function updateSettings(patch, { rerenderContext = false } = {}) {
             throw error;
         }
     }, t`Scratchpad could not save that setting.`, source);
-    if (rerenderContext && source?.key === app.source?.key) renderContext();
+    if (rerenderContext && sameSourceBucket(source, app.source)) renderContext();
     return result;
 }
 
@@ -624,12 +652,52 @@ function syncWatchers() {
         });
         app.watchers.set(jobId, stop);
     }
+    const imageJobs = new Set((app.bucket?.sessions ?? []).flatMap(session => session.messages.flatMap(message => Object.values(message.images ?? {})
+        .filter(image => image.state === 'pending' && image.jobId).map(image => image.jobId))));
+    for (const [id, stop] of app.imageWatchers) if (!imageJobs.has(id)) { stop(); app.imageWatchers.delete(id); app.imageJobSignatures.delete(id); }
+    for (const id of imageJobs) {
+        if (app.imageWatchers.has(id)) continue;
+        // onUpdate fires only when the job record changes. onSnapshot also fires on every poll (1.5 s),
+        // which reloaded the bucket and redrew the thread while an image generated.
+        const track = async job => {
+            app.imageJobs.set(id, job);
+            const signature = `${job.state}|${job.stage ?? ''}|${job.result?.approval?.id ?? ''}`;
+            if (app.imageJobSignatures.get(id) === signature) return;
+            app.imageJobSignatures.set(id, signature);
+            if (app.open) await reload();
+            if (TERMINAL.has(job.state)) app.imageAutoReviews.delete(id);
+            if (app.open && job.result?.approval && app.imageAutoReviews.has(id)) {
+                const card = imageReviewCard(id);
+                // The reviewer decides in the popup, so the watcher must not wait for it.
+                if (card) {
+                    app.imageAutoReviews.delete(id);
+                    void approveImagePrompt(card.session, card.message, card.part);
+                }
+            }
+        };
+        app.imageWatchers.set(id, observeJob(id, { onUpdate: track, onDone: track }));
+    }
 }
 
 function stopWatchers() {
     for (const stop of app.watchers.values()) stop();
     app.watchers.clear();
     app.previews.clear();
+    for (const stop of app.imageWatchers.values()) stop();
+    app.imageWatchers.clear();
+    app.imageJobSignatures.clear();
+    app.imageJobs.clear();
+}
+
+async function refreshImageAvailability() {
+    app.imageCheck = Date.now();
+    const owner = getCurrentUserHandle();
+    try {
+        const result = await images.imageAvailability();
+        if (owner !== getCurrentUserHandle()) return;
+        app.imageAvailability = result;
+        if (app.open) renderHeader();
+    } catch { app.imageAvailability = { image: false, reason: t`Quick Image Gen availability could not be checked.` }; }
 }
 
 async function acknowledge() {
@@ -654,7 +722,7 @@ async function send({ regenerate = '' } = {}) {
     const source = app.source;
     if (!source) return;
     if (!isCurrentSource(source)) {
-        toastr.warning(t`Open the chat this Scratchpad belongs to before sending.`);
+        toastr.warning(t`The Scratchpad context changed. Return to it before sending.`);
         return;
     }
     const draft = app.el.composer.value;
@@ -677,13 +745,14 @@ async function send({ regenerate = '' } = {}) {
         const chatProfileId = sourceConnectionProfile(source);
         const lastUser = [...session.messages].reverse().find(item => item.role === 'user');
         const retried = regenerate ? session.messages.find(message => message.id === regenerate) : null;
-        if (retried && source.scope && !sameChat(retried.contextSource, source)) {
-            throw new Error(t`Open the original chat before trying this reply again.`);
+        if (retried && (source.scope || source.kind === 'general') && !sameChat(retried.contextSource, source)) {
+            throw new Error(source.kind === 'general' ? t`Return to the original Scratchpad context before trying this reply again.` : t`Open the original chat before trying this reply again.`);
         }
         const assistants = retried ? [retried.assistant || session.assistant] : sessionAssistants(session);
         const genders = Object.fromEntries(ASSISTANTS.map(item => [item.id, getAssistantGender(item.id)]));
         const query = regenerate ? (lastUser?.text ?? '') : text;
         const context = await buildContext({ source, settings, pendingText: query, sessionText: sessionText(session) });
+        await refreshImageAvailability();
         const help = [...new Set(await Promise.all(assistants.map(assistant => buildHelp({ assistant, gender: genders[assistant], text: query }))))].filter(Boolean).join('\n\n');
         requireScope(source, session.id);
         const acknowledgement = chatProfileId || assistants.every(assistant => assistantConnection(settings, assistant).kind === 'profile') ? undefined : await acknowledge();
@@ -700,17 +769,18 @@ async function send({ regenerate = '' } = {}) {
             text,
             context: context.text,
             help,
-            capabilities: context.capabilities,
+            capabilities: { ...context.capabilities, image: app.imageAvailability.image },
+            targets: context.targets,
             names: context.names,
             chatProfileId,
             genders,
             acknowledgement,
         });
         if (!regenerate) {
-            if ((app.draftKey === draftKey || (source.key === app.source?.key && activeSession()?.id === session.id)) && app.el.composer.value === draft) app.el.composer.value = '';
+            if ((app.draftKey === draftKey || (sameSourceBucket(source, app.source) && activeSession()?.id === session.id)) && app.el.composer.value === draft) app.el.composer.value = '';
             else if (app.drafts.get(draftKey) === draft) app.drafts.set(draftKey, '');
         }
-        if (source.key === app.source?.key && activeSession()?.id === session.id) {
+        if (sameSourceBucket(source, app.source) && activeSession()?.id === session.id) {
             app.ticket += 1;
             applyBucket(result.bucket);
             scrollMessages(true);
@@ -771,8 +841,9 @@ function render() {
 
 function renderHeader() {
     const sourceKind = app.source?.kind || '';
-    if (app.el.quick.dataset.sourceKind !== sourceKind) {
+    if (app.el.quick.dataset.sourceKind !== sourceKind || app.el.quick.dataset.imagesAvailable !== String(app.imageAvailability.image)) {
         app.el.quick.dataset.sourceKind = sourceKind;
+        app.el.quick.dataset.imagesAvailable = String(app.imageAvailability.image);
         app.el.quick.replaceChildren(...quickPrompts().map(prompt => iconButton(prompt.label, () => usePrompt(prompt.text), { className: 'scratchpad-chip' })));
     }
     const session = activeSession();
@@ -780,7 +851,7 @@ function renderHeader() {
     app.el.portrait.src = assistantPortrait(assistant);
     app.el.sourceLabel.textContent = app.source ? app.source.label : t`No chat open`;
     app.el.newSession.disabled = !app.source;
-    app.el.close.querySelector('span').textContent = app.source?.kind === 'notebook' ? t`Back to Notes` : t`Back to chat`;
+    app.el.close.querySelector('span').textContent = app.source?.kind === 'notebook' ? t`Back to Notes` : app.source?.kind === 'general' ? t`Close` : t`Back to chat`;
     const participants = sessionAssistants(session);
     const roundTable = session?.settings.roundTable === true;
     app.el.roundTable.setAttribute('aria-pressed', String(roundTable));
@@ -828,6 +899,7 @@ async function chooseAssistant(id) {
 
 function contextSummary(settings) {
     const notes = settings.notes?.length || 0;
+    if (app.source?.kind === 'general') return notes ? t`No chat messages shared; ${notes} saved notes or sections shared` : t`No chat messages shared`;
     if (notes) return t`${notes} saved notes or sections shared`;
     if (settings.picked?.length) return picksMatchSource(settings, app.source)
         ? t`Reading ${settings.picked.length} picked messages` : t`Not reading any chat messages`;
@@ -918,7 +990,8 @@ function renderMessages() {
             h('p', { text: t`Ask ${names} anything. Nothing you write here goes into the story.` }),
             h('p', { text: app.source?.kind === 'notebook'
                 ? t`Suggested note changes appear as cards you can review before anything is saved.`
-                : t`Suggested changes to notes, lorebooks, characters or messages appear as cards you can review before anything is saved.` })));
+                : app.source?.kind === 'general' ? t`Discuss ideas or create a character. Suggested note and character changes need your review before saving.`
+                    : t`Suggested changes to notes, lorebooks, characters or messages appear as cards you can review before anything is saved.` })));
         return;
     }
     const lastUserIndex = session.messages.findLastIndex(item => item.role === 'user');
@@ -1042,6 +1115,13 @@ function renderChangeCard(session, message, part) {
             h('p', { class: 'scratchpad-change-title', text: t`A suggested change could not be read` }),
             h('p', { class: 'scratchpad-change-reason', text: part.error }));
     }
+    if (part.change.type === 'image') return images.renderImageCard({ session, message, part, button: iconButton,
+        availability: app.imageAvailability, job: app.imageJobs.get(message.images?.[part.index]?.jobId), error: app.imageErrors.get(changeKey(session, message, part)),
+        onGenerate: () => void generateImageProposal(session, message, part), onReview: () => void reviewChange(session, message, part),
+        onPromptReview: () => void approveImagePrompt(session, message, part), onDismiss: () => void dismissChange(session, message, part),
+        onError: error => { app.imageErrors.set(changeKey(session, message, part), error.message); renderMessages(); },
+        onRetried: () => { const jobId = message.images?.[part.index]?.jobId; if (jobId) app.imageAutoReviews.add(jobId); if (app.open) void reload(); },
+        onRestore: () => void markChange(session, message, part.index, null) });
     const state = message.proposals?.[String(part.index)] ?? '';
     const card = h('div', { class: `scratchpad-change${state ? ` is-${state}` : ''}` },
         h('p', { class: 'scratchpad-change-title' }, h('i', { class: 'fa-solid fa-wand-magic-sparkles', 'aria-hidden': 'true' }), h('span', { text: describeChange(part.change) })),
@@ -1063,6 +1143,70 @@ function renderChangeCard(session, message, part) {
         iconButton(busy ? t`Saving…` : t`Review`, () => void reviewChange(session, message, part), { icon: 'fa-eye', primary: true, disabled: busy }),
         iconButton(t`Dismiss`, () => void dismissChange(session, message, part), { icon: 'fa-xmark', disabled: busy })));
     return card;
+}
+
+function imageGuard(source, session, message, part) {
+    requireScope(source, session.id);
+    if (part.change.character) {
+        const target = message.targets?.filter(target => target.name.toLowerCase() === part.change.character.toLowerCase());
+        if (target?.length !== 1 || !currentSettings().include.card || !sourceCharacters(source).some(card => card.avatar === target[0].avatar)
+            || source.kind === 'general' && (!sameChat(message.contextSource, source) || message.sharedAvatar !== source.avatar)) {
+            throw new Error(t`Keep the original character selected and shared before using this image suggestion.`);
+        }
+    }
+}
+
+async function generateImageProposal(session, message, part) {
+    const source = app.source;
+    const key = changeKey(session, message, part);
+    if (busyChanges.has(key)) return;
+    busyChanges.add(key);
+    try {
+        await app.queue;
+        const result = await images.generateProposal({ source: wireSource(source), session, message, part,
+            guard: () => imageGuard(source, session, message, part), acknowledge });
+        app.imageErrors.delete(key);
+        if (sameSourceBucket(source, app.source)) {
+            if (result.job?.id) {
+                app.imageJobs.set(result.job.id, result.job);
+                app.imageAutoReviews.add(result.job.id);
+            }
+            app.ticket++;
+            applyBucket(result.bucket);
+        }
+    } catch (error) { app.imageErrors.set(key, error.message); renderMessages(); } finally { busyChanges.delete(key); }
+}
+
+/** The visible image card of a job in the active session, so a prompt review can open on it. */
+function imageReviewCard(jobId) {
+    const session = activeSession();
+    if (!session) return null;
+    for (const message of session.messages) {
+        for (const [index, image] of Object.entries(message.images ?? {})) {
+            if (image?.jobId !== jobId) continue;
+            const part = splitReply(message.text).find(item => item.type === 'change' && String(item.index) === String(index));
+            if (part) return { session, message, part };
+        }
+    }
+    return null;
+}
+
+async function approveImagePrompt(session, message, part) {
+    const source = app.source;
+    const key = changeKey(session, message, part);
+    if (busyChanges.has(key)) return;
+    busyChanges.add(key);
+    try {
+        const job = app.imageJobs.get(message.images?.[part.index]?.jobId);
+        if (!job?.result?.approval) return;
+        const decided = await images.reviewImagePrompt(job, { guard: () => imageGuard(source, session, message, part), popup: callGenericPopup,
+            type: POPUP_TYPE.CONFIRM, affirmative: POPUP_RESULT.AFFIRMATIVE });
+        app.imageErrors.delete(key);
+        if (sameSourceBucket(source, app.source)) {
+            if (decided?.job) app.imageJobs.set(job.id, decided.job);
+            if (app.open) void reload();
+        }
+    } catch (error) { app.imageErrors.set(key, error.message); renderMessages(); } finally { busyChanges.delete(key); }
 }
 
 // A suggestion stays busy from Review until it is marked saved, so repeated clicks cannot save it twice.
@@ -1126,11 +1270,19 @@ async function reviewAndSaveChange(session, message, part, key) {
     const source = app.source;
     let plan;
     try {
+        await app.queue;
+        requireScope(source, session.id);
         if (part.change.type === 'chat' && source.scope && !sameChat(message.contextSource, source)) {
             throw new Error(t`Open the original chat before reviewing this message change.`);
         }
-        plan = await prepareChange(part.change, source);
+        if (source.kind === 'general' && part.change.type === 'character' && part.change.action !== 'create'
+            && (!sameChat(message.contextSource, source) || !currentSettings().include.card)) {
+            throw new Error(t`Return to the original context and share the selected card before reviewing this change.`);
+        }
+        plan = part.change.type === 'image' ? await images.prepareAvatarChange({ source: wireSource(source), session, message, part,
+            guard: () => imageGuard(source, session, message, part) }) : await prepareChange(part.change, source, { sharedAvatar: message.sharedAvatar });
         requireScope(source, session.id);
+        if (plan.bucket) applyBucket(plan.bucket);
     } catch (error) {
         reportError(error, t`That change cannot be reviewed right now.`);
         return;
@@ -1138,24 +1290,29 @@ async function reviewAndSaveChange(session, message, part, key) {
     const editor = plan.editable
         ? h('textarea', { class: 'text_pole scratchpad-review-editor', rows: '12', value: plan.after, 'aria-label': plan.afterLabel || t`Proposed text` })
         : null;
-    const content = h('div', { class: 'neconyan-assistant-review scratchpad-review' },
+    const content = h('div', { class: `neconyan-assistant-review scratchpad-review${plan.visual ? ' scratchpad-picture-review' : ''}` },
         h('p', { text: plan.editable ? t`Check this change before it is saved. You can edit the proposed text first.` : t`Check this change before it is saved.` }),
         h('p', {}, h('strong', { text: t`Where: ` }), plan.target),
         h('p', {}, h('strong', { text: t`What: ` }), plan.field),
-        changeDiff(plan, editor),
+        plan.visual || changeDiff(plan, editor),
         editor ? h('strong', { text: plan.afterLabel || t`Proposed` }) : null,
         editor,
         plan.hint ? h('p', { class: 'scratchpad-review-hint', text: plan.hint }) : null);
     const result = await callGenericPopup(content, POPUP_TYPE.CONFIRM, '', {
         wide: true,
-        large: true,
+        large: !plan.visual,
         okButton: t`Save change`,
         cancelButton: t`Not now`,
     });
     if (result !== POPUP_RESULT.AFFIRMATIVE) return;
     try {
+        await app.queue;
         requireScope(source, session.id);
-        await plan.commit(editor ? editor.value : plan.after);
+        if (source.kind === 'general' && part.change.type === 'character' && part.change.action !== 'create' && !currentSettings().include.card) {
+            throw new Error(t`Share the selected character card before saving this change.`);
+        }
+        const saved = await plan.commit(editor ? editor.value : plan.after);
+        if (saved?.refreshFailed) toastr.info(t`The avatar was saved. Refresh this view to reload its picture.`);
     } catch (error) {
         reportError(error, t`That change could not be saved.`);
         return;
@@ -1222,10 +1379,10 @@ function replyDraft(text) {
 }
 
 function useAsDraft(message) {
+    if (!['roleplay', 'conversation'].includes(app.source?.kind) || !isCurrentSource(app.source)) return;
     const draft = replyDraft(message.text);
     if (!draft) return;
-    const conversation = document.body.classList.contains('neconyan-conversation-active');
-    const target = document.querySelector(conversation ? '#sb_conversation_input' : '#send_textarea') ?? document.querySelector('#send_textarea');
+    const target = document.querySelector(app.source.kind === 'conversation' ? '#sb_conversation_input' : '#send_textarea');
     if (!target) return;
     target.value = draft;
     target.dispatchEvent(new Event('input', { bubbles: true }));
@@ -1259,7 +1416,7 @@ function renderMessageActions(session, message, { latest }) {
         app.editing = message.id;
         renderMessages();
     }, { icon: 'fa-pen', title: t`Edit`, disabled: busy }));
-    if (message.role === 'assistant' && message.text && app.source?.kind !== 'notebook') {
+    if (message.role === 'assistant' && message.text && ['roleplay', 'conversation'].includes(app.source?.kind)) {
         actions.append(iconButton('', () => useAsDraft(message), { icon: 'fa-reply', title: t`Use as draft in the chat box` }));
     }
     if (latest && message.role === 'assistant') {
@@ -1390,7 +1547,7 @@ async function editAssistantPrompt(assistant) {
         const previous = session.settings.assistantPrompts?.[assistant.id];
         const context = await buildContext({ source, settings: session.settings });
         const defaults = await api.readPrompt({ source, sessionId: session.id, assistant: assistant.id, gender: getAssistantGender(assistant.id),
-            names: context.names, capabilities: { ...context.capabilities, notebook: true }, participants: sessionAssistants(session), randomReply: randomReplyEnabled() });
+            names: context.names, targets: context.targets, capabilities: { ...context.capabilities, image: app.imageAvailability.image, notebook: true }, participants: sessionAssistants(session), randomReply: randomReplyEnabled() });
         requireScope(source, session.id);
         const editor = h('textarea', { class: 'text_pole scratchpad-review-editor', rows: '16', value: previous ?? defaults.text, 'aria-label': t`Assistant prompt` });
         const initialPrompt = editor.value;
@@ -1398,7 +1555,7 @@ async function editAssistantPrompt(assistant) {
         editor.addEventListener('input', () => { reset = false; });
         const content = h('div', { class: 'scratchpad-review' },
             h('h3', { text: t`${assistant.name}'s prompt` }),
-            h('p', { text: t`These instructions are saved for this session and inherited by new sessions in this chat. App reference is added automatically. The default reflects the current chat and round-table selection.` }),
+            h('p', { text: t`These instructions are saved for this session and inherited by new sessions in this list. App reference is added automatically. The default reflects the current context and round-table selection.` }),
             editor,
             iconButton(t`Reset to default`, () => { editor.value = defaults.text; reset = true; }, { icon: 'fa-rotate-left' }));
         const result = await callGenericPopup(content, POPUP_TYPE.CONFIRM, '', { wide: true, large: true, okButton: t`Save prompt`, cancelButton: t`Cancel` });
@@ -1414,7 +1571,7 @@ async function editAssistantPrompt(assistant) {
 }
 
 function contextKey() {
-    return JSON.stringify([app.source?.key ?? '', activeSession()?.id ?? '', currentSettings().notes, currentPresetName()]);
+    return JSON.stringify([wireSource(app.source), activeSession()?.id ?? '', currentSettings().notes, app.source?.kind === 'roleplay' ? currentPresetName() : '']);
 }
 
 function renderContext({ force = true } = {}) {
@@ -1435,6 +1592,7 @@ function renderContext({ force = true } = {}) {
     const limits = app.bucket?.limits ?? { depth: 200, maxTokens: 32000 };
     const roleplay = app.source.kind === 'roleplay';
     const notebook = app.source.kind === 'notebook';
+    const general = app.source.kind === 'general';
 
     const depth = h('input', {
         type: 'number', class: 'text_pole', min: '0', max: String(limits.depth), step: '1', value: String(settings.depth),
@@ -1459,7 +1617,7 @@ function renderContext({ force = true } = {}) {
                 writePrefs();
                 void updateSettings({ assistantConnections: { [assistant.id]: profileId ? { kind: 'profile', profileId } : { kind: 'current' } } });
             },
-        }, h('option', { value: '', text: t`Same connection as the chat` }),
+        }, h('option', { value: '', text: general ? t`Current connection` : t`Same connection as the chat` }),
         profiles.map(profile => h('option', { value: profile.id, text: [profile.name || profile.id, profile.model].filter(Boolean).join(' · ') })));
         if (value && !profiles.some(profile => profile.id === value)) {
             connection.append(h('option', { value, text: t`Unavailable profile: ${value}` }));
@@ -1473,7 +1631,9 @@ function renderContext({ force = true } = {}) {
 
     append(panel, [
         renderNotes(settings),
-        notebook ? h('section', { class: 'scratchpad-section' },
+        general ? h('section', { class: 'scratchpad-section' },
+            h('h3', { class: 'scratchpad-section-title', text: t`General Scratchpad` }),
+            h('p', { class: 'scratchpad-muted', text: t`No story chat is open. Chat messages, lorebooks, Author's Note and presets are not shared. You can share your persona, a selected card and saved notes.` })) : notebook ? h('section', { class: 'scratchpad-section' },
             h('h3', { class: 'scratchpad-section-title', text: t`Note discussion` }),
             h('p', { class: 'scratchpad-muted', text: t`This Scratchpad belongs to the note, not the open chat. Story messages, characters, your persona and lorebooks are not included.` })) : h('section', { class: 'scratchpad-section' },
             h('h3', { class: 'scratchpad-section-title', text: t`Chat messages` }),
@@ -1484,10 +1644,10 @@ function renderContext({ force = true } = {}) {
             checkbox(t`Include hidden messages`, include.hidden, value => setInclude('hidden', value))),
         notebook ? null : h('section', { class: 'scratchpad-section' },
             h('h3', { class: 'scratchpad-section-title', text: t`Also share` }),
-            checkbox(t`Character cards`, include.card, value => setInclude('card', value)),
+            !general || app.source.avatar ? checkbox(t`Character cards`, include.card, value => setInclude('card', value)) : null,
             checkbox(t`Your persona`, include.persona, value => setInclude('persona', value)),
             roleplay ? checkbox(t`Author's Note`, include.authorsNote, value => setInclude('authorsNote', value)) : null,
-            checkbox(t`Lorebook entries`, include.lore, value => setInclude('lore', value), t`Entries are shared when their keywords appear, or when you set them to Always below.`),
+            general ? null : checkbox(t`Lorebook entries`, include.lore, value => setInclude('lore', value), t`Entries are shared when their keywords appear, or when you set them to Always below.`),
             roleplay ? presetCheckbox(include.preset, value => setInclude('preset', value)) : null),
         h('section', { class: 'scratchpad-section' },
             h('h3', { class: 'scratchpad-section-title', text: t`Assistant connections` }),
@@ -1498,8 +1658,8 @@ function renderContext({ force = true } = {}) {
             checkbox(t`Stream replies`, settings.stream !== false, value => void updateSettings({ stream: value }),
                 t`Show the reply and any thinking as they arrive. Turn off to wait for the finished reply.`),
             h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-max-tokens', text: t`Longest reply (tokens)` }), maxTokens)),
-        notebook ? null : renderPicks(settings),
-        notebook ? null : renderLore(settings),
+        notebook || general ? null : renderPicks(settings),
+        notebook || general ? null : renderLore(settings),
         renderPreview(),
     ]);
 }
@@ -1507,7 +1667,7 @@ function renderContext({ force = true } = {}) {
 function renderNotes(settings) {
     const source = app.source;
     const sessionId = activeSession()?.id;
-    const isCurrent = () => app.open && isCurrentSource(source) && app.source?.key === source.key && activeSession()?.id === sessionId;
+    const isCurrent = () => app.open && isCurrentSource(source) && sameSourceContext(app.source, source) && activeSession()?.id === sessionId;
     const list = h('div', { class: 'scratchpad-notes-list', 'aria-live': 'polite' });
     const section = h('section', { class: 'scratchpad-section scratchpad-notes' },
         h('h3', { class: 'scratchpad-section-title', text: t`Saved notes` }),
@@ -1779,8 +1939,8 @@ async function updateCleanup(patch) {
     const previous = app.bucket?.cleanup ?? { enabled: false, keep: 10 };
     const next = { ...previous, ...patch };
     if (next.enabled && (!previous.enabled || next.keep < previous.keep)) {
-        const ok = await callGenericPopup(t`This sets automatic cleanup for your account. Older sessions are deleted for this character, group or note now, and for others when their Scratchpad is next saved. Open sessions and replies in progress stay. Deletions cannot be undone.`,
-            POPUP_TYPE.CONFIRM, '', { okButton: t`Apply to all chats`, cancelButton: t`Cancel` });
+        const ok = await callGenericPopup(t`This sets automatic cleanup for your account. Older sessions are deleted from this list now, and from other lists when their Scratchpad is next saved. Open sessions and replies in progress stay. Deletions cannot be undone.`,
+            POPUP_TYPE.CONFIRM, '', { okButton: t`Apply to all session lists`, cancelButton: t`Cancel` });
         if (ok !== POPUP_RESULT.AFFIRMATIVE) {
             renderSessions();
             return;
@@ -1799,8 +1959,8 @@ function renderCleanup() {
     });
     return h('section', { class: 'scratchpad-section scratchpad-cleanup' },
         checkbox(t`Delete old sessions automatically`, cleanup.enabled, value => void updateCleanup({ enabled: value }),
-            t`Shared across your account. Keeps the newest sessions per character, group or note and deletes older ones for good when its Scratchpad is saved. The open session and replies in progress are never deleted.`),
-        h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-cleanup-keep', text: t`Sessions to keep per character, group or note` }), keep));
+            t`Shared across your account. Keeps the newest sessions per list, including General, and deletes older ones for good when its Scratchpad is saved. The open session and replies in progress are never deleted.`),
+        h('div', { class: 'scratchpad-field' }, h('label', { for: 'scratchpad-cleanup-keep', text: t`Sessions to keep per list` }), keep));
 }
 
 function exportSession(session) {
@@ -1868,7 +2028,7 @@ function renderSessions() {
         },
     });
     append(panel, [
-        h('p', { class: 'scratchpad-muted', text: app.source.kind === 'notebook' ? t`Sessions belong to this note. Temporary sessions disappear when you open another one.`
+        h('p', { class: 'scratchpad-muted', text: app.source.kind === 'general' ? t`General sessions belong to your account, separately from chats and notes. Temporary sessions disappear when you open another one.` : app.source.kind === 'notebook' ? t`Sessions belong to this note. Temporary sessions disappear when you open another one.`
             : app.source.scope?.kind === 'group' ? t`Sessions are shared across this group's chats. Temporary sessions disappear when you open another one.`
                 : t`Sessions are shared across this character's chats. Temporary sessions disappear when you open another one.` }),
         h('div', { class: 'scratchpad-session-tools' },
@@ -1936,7 +2096,7 @@ export async function openScratchpad({ tab = '', note = null } = {}) {
     applyLayout();
     selectTab(tab || app.tab);
     const next = currentSource();
-    if ((next?.key ?? '') !== (app.source?.key ?? '') || !app.bucket) {
+    if (!sameSourceBucket(next, app.source) || !app.bucket) {
         stopWatchers();
         app.source = next;
         app.bucket = null;
@@ -1958,6 +2118,7 @@ export async function openScratchpad({ tab = '', note = null } = {}) {
         selectTab('context');
     }
     if (!isPhone()) app.el.composer.focus({ preventScroll: true });
+    void refreshImageAvailability();
 }
 
 export function hideScratchpad() {

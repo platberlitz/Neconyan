@@ -1,5 +1,6 @@
 import { buildAssistantKnowledge, getAssistantKnowledgeBudget, isNeconyanAssistant } from '../neconyan-assistant-knowledge.js';
 import { getCurrentUserHandle } from '../user.js';
+import { localizeMessage, t } from '../i18n.js';
 import { preflightConversationBinding, requestConversationBinding } from './bindings.js';
 import { CONVERSATION_ERROR_DETAIL_MAX_LENGTH, SAFE_TOAST_OPTIONS } from './constants.js';
 import { getConversationGroupIdForAvatar, getConversationPersonaId, getConversationThreadStore, getCurrentCharAvatar } from './context.js';
@@ -234,7 +235,7 @@ export function editConversationMessage(messageId) {
     textarea.focus({ preventScroll: true });
 }
 
-export function getConversationErrorDetail(error) {
+export function getConversationErrorDetail(error, { localize = false } = {}) {
     let detail = '';
     if (typeof error === 'string') {
         detail = error;
@@ -254,10 +255,13 @@ export function getConversationErrorDetail(error) {
         }
     }
 
-    return String(detail || '')
+    const text = String(detail || '')
         .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, CONVERSATION_ERROR_DETAIL_MAX_LENGTH);
+        .trim();
+    // Look up the whole text, so a message longer than the limit still finds its key. A message the dictionary knows
+    // is shown whole; any other text (server, provider or browser wording) keeps the limit, as before.
+    const localized = localize ? localizeMessage(text) : text;
+    return localized !== text ? localized : text.slice(0, CONVERSATION_ERROR_DETAIL_MAX_LENGTH);
 }
 
 export function reportConversationGenerationError(context, error, { toast = true, level = 'error' } = {}) {
@@ -270,7 +274,17 @@ export function reportConversationGenerationError(context, error, { toast = true
         return;
     }
 
-    const message = `${label} failed${detail ? `: ${detail}` : '. Check the browser console for details.'}`;
+    // Whole sentences for the translator, built with t: on screen the shorter key 'Conversation ${0}' would capture the
+    // English text. The inserted detail is already in the reader's language where the dictionary knows it.
+    const shown = getConversationErrorDetail(error, { localize: true });
+    let message;
+    if (context === 'selfie') {
+        message = shown ? t`Conversation selfie failed: ${shown}` : t`Conversation selfie failed. Check the browser console for details.`;
+    } else if (context === 'regenerate') {
+        message = shown ? t`Conversation regenerate failed: ${shown}` : t`Conversation regenerate failed. Check the browser console for details.`;
+    } else {
+        message = `${label} failed${detail ? `: ${detail}` : '. Check the browser console for details.'}`;
+    }
     if (level === 'warning') {
         globalThis.toastr?.warning?.(message, '', SAFE_TOAST_OPTIONS);
     } else {

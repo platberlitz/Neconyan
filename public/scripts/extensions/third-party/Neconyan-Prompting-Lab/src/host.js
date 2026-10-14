@@ -12,6 +12,19 @@ export function getContext() {
 }
 
 /**
+ * The host's t`` when Neconyan provides one, so a message is built in the reader's language with its values (names,
+ * code names) put in as written; otherwise the English text, exactly as the template literal gave it.
+ * @param {TemplateStringsArray} strings
+ * @param {...unknown} values
+ * @returns {string}
+ */
+export function hostT(strings, ...values) {
+    const translate = getContext()?.t;
+    if (typeof translate === 'function') return translate(strings, ...values);
+    return strings.reduce((text, part, index) => text + part + (index < values.length ? values[index] : ''), '');
+}
+
+/**
  * Resolves a host reference to a usable context.
  *
  * Neconyan builds a fresh context object on every getContext() call and
@@ -61,7 +74,7 @@ export async function loadHost() {
                 if (required.length) {
                     return {
                         ok: false,
-                        reason: `${EXTENSION_LABEL} does not work with this version of Neconyan. Missing parts: ${required.join(', ')}. Update Neconyan to use it.`,
+                        reason: hostT`${EXTENSION_LABEL} does not work with this version of Neconyan. Missing parts: ${required.join(', ')}. Update Neconyan to use it.`,
                     };
                 }
                 const warnings = [];
@@ -80,7 +93,7 @@ export async function loadHost() {
                 console.error(`${EXTENSION_LABEL} could not load the Neconyan prompt tools it needs.`, error);
                 return {
                     ok: false,
-                    reason: `${EXTENSION_LABEL} could not load the Neconyan prompt tools it needs. Reload Neconyan and try again.`,
+                    reason: hostT`${EXTENSION_LABEL} could not load the Neconyan prompt tools it needs. Reload Neconyan and try again.`,
                 };
             }
         })();

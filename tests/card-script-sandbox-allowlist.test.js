@@ -43,6 +43,12 @@ const malformedInputCases = [
 ];
 
 describe('card script sandbox allowlist', () => {
+    test.each(['/echo {: /send hidden :}()', '/echo {: /send hidden :}', '/echo {{setvar::x::yes}}', '/echo "{hidden}"', '/echo \\{hidden\\}', '/echo hello\n/send hidden', '/echo onClick=run hi', '/echo escapeHtml=false hi', '/echo raw=true hi', '/echo cssClass=x hi', '/echo unknown=x hi', '/echo timeout=0 hi', '/echo extendedTimeout=999999 hi'])('rejects unsafe syntax or options: %s', raw => {
+        expect(parseSlashCommandRequest(raw, allowlistPolicy)).toMatchObject({ ok: false });
+    });
+    test('permits bounded plain echo options', () => {
+        expect(parseSlashCommandRequest('/echo title="Card status" severity=info timeout=5000 extendedTimeout=1000 preventDuplicates=true Hello', allowlistPolicy)).toMatchObject({ ok: true });
+    });
     test('keeps the initial safe command set explicit', () => {
         expect(DEFAULT_ALLOWLIST).toEqual([
             '/audioselect',
@@ -119,17 +125,21 @@ describe('card script sandbox allowlist', () => {
         });
     });
 
-    test('treats quoted or escaped pipes as command arguments', () => {
-        expect(parseSlashCommandRequest('/echo "a|b" | /getchatname', allowlistPolicy)).toEqual({
+    test('treats quoted option values or escaped pipes as command arguments', () => {
+        expect(parseSlashCommandRequest('/echo title="a|b" hi | /getchatname', allowlistPolicy)).toEqual({
             ok: true,
-            command: '/echo "a|b"|/getchatname',
-            commands: ['/echo "a|b"', '/getchatname'],
+            command: '/echo title="a|b" hi|/getchatname',
+            commands: ['/echo title="a|b" hi', '/getchatname'],
         });
         expect(parseSlashCommandRequest('/echo a\\|b | /getchatname', allowlistPolicy)).toEqual({
             ok: true,
             command: '/echo a\\|b|/getchatname',
             commands: ['/echo a\\|b', '/getchatname'],
         });
+    });
+
+    test.each(['/echo "a|b" | /getchatname', '/echo a"b | /send x"', '/getchatname x"y | /send z"', '/echo title="t" a"|/send b"', '/audioplay foo=a"b | /send c"', '/audioselect "a | /send b"'])('rejects pipes hidden in quotes the slash parser does not honour: %s', raw => {
+        expect(parseSlashCommandRequest(raw, allowlistPolicy)).toEqual({ ok: false, reason: 'unsafe_syntax' });
     });
 
     test('fails closed for disabled or unknown policy modes', () => {

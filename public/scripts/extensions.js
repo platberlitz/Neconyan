@@ -6,7 +6,7 @@ import { POPUP_RESULT, POPUP_TYPE, Popup, callGenericPopup } from './popup.js';
 import { renderTemplate, renderTemplateAsync } from './templates.js';
 import { delay, deleteValueByPath, equalsIgnoreCaseAndAccents, escapeHtml, sanitizeSelector, setValueByPath, versionCompare } from './utils.js';
 import { isAdmin } from './user.js';
-import { addLocaleData, getCurrentLocale, t } from './i18n.js';
+import { addLocaleData, getCurrentLocale, localizeMessage, t } from './i18n.js';
 import { debounce_timeout } from './constants.js';
 import { accountStorage } from './util/AccountStorage.js';
 import { SimpleMutex } from './util/SimpleMutex.js';
@@ -562,7 +562,7 @@ function isExternalExtension(externalId) {
     return ['local', 'global'].includes(getExtensionType(externalId));
 }
 
-function areExtensionIdsEqual(left, right) {
+export function areExtensionIdsEqual(left, right) {
     return getExtensionDedupKey(left) === getExtensionDedupKey(right);
 }
 
@@ -1880,7 +1880,7 @@ async function onReinstallClick() {
         delay(1000).then(() => location.reload());
     } catch (error) {
         console.error('Reinstall failed:', error);
-        toastr.error(t`Could not reinstall ${extensionName}: ${error.message}`, t`Could not reinstall`);
+        toastr.error(t`Could not reinstall ${extensionName}: ${localizeMessage(error.message)}`, t`Could not reinstall`);
     }
 }
 

@@ -13,6 +13,7 @@ import { isIOSWebKitPlatform, isLegacyIOSWebKitPlatform } from './mobile-send-bu
 import { createPresetApiSyncLifecycle } from './preset-api-sync-lifecycle/index.js';
 import { fetchWithCsrfRetry } from './csrf-token-refresh.js';
 import { hasServerReturnedAfterRestart } from './server-restart-monitor.js';
+import { requestAndroidUpdate } from './android-native-bridge.js';
 import {
     PERSONA_APPENDICES_DEFAULT_SCOPE_KEY,
     PERSONA_APPENDICES_SELECTIONS_KEY,
@@ -162,7 +163,7 @@ const NN_SHORTCUT_LABELS = Object.freeze({
 });
 const NN_PANEL_STYLESHEETS = Object.freeze({
     'characters:world-info': [
-        { href: 'css/world-info.css?v=20261006-notebook-feedback1', id: 'deferred-world-info-css' },
+        { href: 'css/world-info.css?v=20261013-language-choice6', id: 'deferred-world-info-css' },
     ],
     'characters:persona': [
         { href: 'css/personas.css?v=20261006-personaui1', id: 'deferred-personas-css' },
@@ -510,7 +511,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261013-language-choice5';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261013-language-choice6';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -711,6 +712,7 @@ function isNeconyanModeExtensionEnabled(definition) {
 
 function syncNeconyanModeControls() {
     const activeMode = getActualNeconyanMode();
+    try { globalThis.NeconyanCrashDiagnostics?.updateActivity?.({ mode: activeMode, ...(!['roleplay'].includes(activeMode) ? { chat: { messageCount: null } } : {}) }); } catch { /* Optional diagnostics. */ }
     const definition = getNeconyanModeDefinition(activeMode);
     document.documentElement.dataset.neconyanChatMode = activeMode;
     if (document.body?.dataset.neconyanChatMode !== activeMode) {
@@ -912,7 +914,9 @@ async function activateNeconyanMode(mode) {
             }
             globalThis.NeconyanWelcome?.concealHome?.();
             globalThis.document?.body?.classList.remove('neconyan-home-visible');
-            document.getElementById('send_textarea')?.focus?.({ preventScroll: false });
+            if (typeof power_user === 'undefined' || power_user?.auto_focus_chat_input !== false) {
+                document.getElementById('send_textarea')?.focus?.({ preventScroll: false });
+            }
             queueNeconyanModeSync();
             return true;
         }
@@ -928,7 +932,9 @@ async function activateNeconyanMode(mode) {
 
         let activated = false;
         if (targetMode === 'roleplay') {
-            document.getElementById('send_textarea')?.focus?.({ preventScroll: false });
+            if (typeof power_user === 'undefined' || power_user?.auto_focus_chat_input !== false) {
+                document.getElementById('send_textarea')?.focus?.({ preventScroll: false });
+            }
             activated = true;
         } else if (targetMode === 'conversation') {
             const conversationModule = await import('./neconyan-conversation.js');
@@ -1025,12 +1031,21 @@ function bindNeconyanModeStateEvents() {
                 queueNeconyanModeSync();
             }
         });
-        neconyanModeObserver.observe(document.body, {
+        const modeObserverOptions = {
             attributes: true,
-            attributeFilter: ['class', 'data-generating'],
+            attributeFilter: ['class', 'data-generating', 'data-sbtw-mode', 'data-sb-conversation-mode', 'data-menu-type'],
             attributeOldValue: true,
-            subtree: true,
-        });
+        };
+        for (const target of [
+            document.body,
+            document.getElementById('sheld'),
+            document.getElementById('right-nav-panel'),
+            document.getElementById('send_form'),
+        ]) {
+            if (target instanceof HTMLElement) {
+                neconyanModeObserver.observe(target, modeObserverOptions);
+            }
+        }
     } else {
         neconyanModeObserver = {};
     }
@@ -1306,7 +1321,7 @@ const NN_UNIVERSAL_SEARCH_PAGE_LIMIT = 3;
 const NN_SEARCH_PAGES = Object.freeze([
     { route: 'home', label: 'Home', description: 'Recent chats, characters and quick starts.', keywords: ['start', 'dashboard', 'welcome'] },
     { route: 'notes', label: 'Notebooks', description: 'Your notes, folders, properties and linked pages.', keywords: ['notes', 'notebook', 'markdown', 'writing', 'knowledge base'] },
-    { route: 'scratchpad', label: 'Scratchpad', description: 'Temporary writing sessions with model help.', keywords: ['scratch pad', 'drafts', 'sessions', 'writing'] },
+    { route: 'scratchpad', label: 'Scratchpad', description: 'Discuss ideas with an assistant, with or without a chat.', keywords: ['scratch pad', 'drafts', 'sessions', 'writing'] },
     { route: 'new-chat', label: 'New chat', description: 'Start a fresh chat.', keywords: ['temporary chat', 'start chat'] },
     { route: 'characters', label: 'Characters', description: 'Browse, create and import characters.', keywords: ['bots', 'character cards', 'groups'], covers: ['characters::characters::characters'] },
     { route: 'model', label: 'Connections', description: 'Choose the service, API key and model that write the replies.', keywords: ['api', 'api key', 'provider', 'model', 'backend', 'connect', 'proxy', 'endpoint', 'connection profiles'] },
@@ -13580,7 +13595,7 @@ async function handleServerAdminSaveConfig({ restart = false } = {}) {
         }
     } catch (error) {
         console.error('Failed to save config.yaml.', error);
-        setServerAdminMessage(refs.configNote, error.message || 'Failed to save config.yaml.', 'danger');
+        setServerAdminMessage(refs.configNote, error.message || 'Could not save config.yaml.', 'danger');
         toastr.error(error.message || 'Could not save config.yaml.', 'Server config');
     } finally {
         if (!state.restarting) {
@@ -13624,7 +13639,7 @@ async function handleServerThumbnailSave({ clearCache = false } = {}) {
         renderServerAdminConfig(await requestServerAdmin('/api/server-admin/config/get'), { overwrite: true });
     } catch (error) {
         console.error('Failed to save thumbnail settings.', error);
-        setServerAdminMessage(refs.thumbnailNote, error.message || 'Failed to save thumbnail settings.', 'danger');
+        setServerAdminMessage(refs.thumbnailNote, error.message || 'Could not save thumbnail settings.', 'danger');
         toastr.error(error.message || 'Could not save thumbnail settings.', 'Thumbnails');
     } finally {
         state.busy = false;
@@ -13654,7 +13669,7 @@ async function handleServerThumbnailClearCache() {
         toastr.success(result?.message || 'Thumbnail cache cleared.', 'Thumbnails');
     } catch (error) {
         console.error('Failed to clear thumbnail cache.', error);
-        setServerAdminMessage(refs.thumbnailNote, error.message || 'Failed to clear thumbnail cache.', 'danger');
+        setServerAdminMessage(refs.thumbnailNote, error.message || 'Could not clear thumbnail cache.', 'danger');
         toastr.error(error.message || 'Could not clear thumbnail cache.', 'Thumbnails');
     } finally {
         state.busy = false;
@@ -13760,7 +13775,7 @@ async function handleServerAdminRestart() {
         console.error('Failed to restart Neconyan.', error);
         state.busy = false;
         updateServerAdminInteractivity();
-        setServerAdminMessage(refs.updateNote, error.message || 'Failed to restart Neconyan.', 'danger');
+        setServerAdminMessage(refs.updateNote, error.message || 'Could not restart Neconyan.', 'danger');
         toastr.error(error.message || 'Could not restart Neconyan.', 'Server');
     }
 }
@@ -13779,7 +13794,7 @@ async function handleServerAdminUpdate() {
             if (typeof window.NeconyanAndroid?.installUpdate !== 'function' || !version) {
                 throw new Error('Open the Neconyan Android app to install this APK update.');
             }
-            window.NeconyanAndroid.installUpdate(version);
+            if (requestAndroidUpdate(version) !== true) throw new Error(t`Android controls are not ready. Reload this page and try again.`);
             setServerAdminMessage(refs.updateNote, 'Follow the Android prompts to download and install the APK. Cancelling leaves your current app and saved data unchanged.');
         } catch (error) {
             setServerAdminMessage(refs.updateNote, error.message || 'Could not open the Android APK updater.', 'danger');
@@ -13857,7 +13872,9 @@ async function handleServerAdminUpdate() {
         if (stashMessage) {
             toastr.warning(stashMessage, 'Auto-stash warning', { timeOut: 10000 });
         }
-        setServerAdminMessage(refs.updateNote, [error.message || 'Failed to update Neconyan.', stashMessage].filter(Boolean).join('\n'), 'danger');
+        setServerAdminMessage(refs.updateNote, error.message || 'Could not update Neconyan.', 'danger');
+        // The auto-stash warning goes on the next line as its own text, so each text can be matched against its key.
+        if (stashMessage && refs.updateNote instanceof HTMLElement) refs.updateNote.append('\n', stashMessage);
         toastr.error(error.message || 'Could not update Neconyan.', 'Server update');
     } finally {
         setServerAdminButtonLabel(refs.updateButton, false, 'Updating…');
@@ -13920,7 +13937,7 @@ async function handleServerAdminZipUpdate() {
     } catch (error) {
         console.error('Failed to update Neconyan from release ZIP.', error);
         state.busy = false;
-        setServerAdminMessage(refs.updateNote, error.message || 'Failed to update Neconyan from release ZIP.', 'danger');
+        setServerAdminMessage(refs.updateNote, error.message || 'Could not update Neconyan from release ZIP.', 'danger');
         toastr.error(error.message || 'Could not update Neconyan from release ZIP.', 'Server update');
     } finally {
         setServerAdminButtonLabel(refs.updateButton, false, 'Updating…');
@@ -14839,7 +14856,7 @@ async function handleSillyTavernFolderImport() {
         location.reload();
     } catch (error) {
         console.error('Failed to import SillyTavern folder.', error);
-        setServerAdminMessage(refs.note, error.message || 'Failed to import from that folder path.', 'danger');
+        setServerAdminMessage(refs.note, error.message || 'Could not import from that folder path.', 'danger');
         toastr.error(error.message || 'Could not import from that folder path.', 'Import SillyTavern');
     } finally {
         setSillyTavernImportBusy(false);
@@ -14896,7 +14913,7 @@ async function handleSillyTavernExtensionSync() {
         }
     } catch (error) {
         console.error('Failed to sync SillyTavern third-party extensions.', error);
-        setServerAdminMessage(refs.note, error.message || 'Failed to sync third-party extensions from that folder.', 'danger');
+        setServerAdminMessage(refs.note, error.message || 'Could not sync third-party extensions from that folder.', 'danger');
         toastr.error(error.message || 'Could not sync third-party extensions from that folder.', 'Sync Extensions');
     } finally {
         setSillyTavernImportBusy(false);
@@ -14939,7 +14956,7 @@ async function handleSillyTavernZipImport(file) {
         location.reload();
     } catch (error) {
         console.error('Failed to import SillyTavern backup ZIP.', error);
-        setServerAdminMessage(refs.note, error.message || 'Failed to import that backup ZIP.', 'danger');
+        setServerAdminMessage(refs.note, error.message || 'Could not import that backup ZIP.', 'danger');
         toastr.error(error.message || 'Could not import that backup ZIP.', 'Import SillyTavern');
     } finally {
         if (refs.zipFileInput instanceof HTMLInputElement) {

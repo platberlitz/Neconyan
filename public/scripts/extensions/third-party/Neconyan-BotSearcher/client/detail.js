@@ -291,7 +291,7 @@ function insidePanel(inside) {
 function actionBar(card, source, onIntake, skipReview) {
     const bar = el('div', 'sbbs-detail-actions');
 
-    const button = el('button', 'menu_button sbbs-import');
+    const button = el('button', 'menu_button menu_button_primary sbbs-import');
     button.type = 'button';
     setText(button, skipReview ? 'Import' : 'Review and import');
     button.addEventListener('click', () => onIntake?.({ card, source }));

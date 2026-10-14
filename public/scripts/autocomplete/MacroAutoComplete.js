@@ -83,6 +83,9 @@ function shouldActivateMacroAutocomplete(text, cursorPos, { isForced = false, au
     // ALWAYS mode: always show, DEFAULT mode: respect global setting
     const alwaysShow = autocompleteMode === MACRO_AUTOCOMPLETE_MODE.ALWAYS;
     const shouldShowNormally = isForced || alwaysShow || power_user.stscript.autocomplete.showInAllMacroFields;
+    if (!shouldShowNormally || typeof text !== 'string' || !text.includes('{{')) {
+        return false;
+    }
 
     // Whether setting says autocomplete should only activate after typing {{ and two characters after that
     // Ctrl+Space (isForced) overrides this restriction

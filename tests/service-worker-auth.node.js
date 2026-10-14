@@ -24,6 +24,12 @@ test('the service worker never serves cached documents or stores sign-in respons
             respondWith: () => assert.fail('Account navigation requests must never use a service-worker cache'),
         });
     }
+    for (const mode of ['navigate', 'cors', 'same-origin']) {
+        for (const pathname of ['/sandbox/card-script?v=2', '/sandbox/card-script/extra.js']) listeners.fetch({
+            request: { method: 'GET', mode, url: `https://example.test${pathname}` },
+            respondWith: () => assert.fail('Reserved sandbox responses must always reach the server'),
+        });
+    }
     const stored = [];
     const cache = { put: async (request, response) => stored.push([request, response]) };
     const response = { ok: true, type: 'basic', redirected: false, headers: { get: () => '' }, clone: () => 'asset' };

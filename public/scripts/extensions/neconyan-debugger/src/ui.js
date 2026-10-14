@@ -6,6 +6,7 @@
 import { button, copyToClipboard, el, flashButtonText } from './dom.js';
 import { getCounters, getEntries, getRequests } from './capture.js';
 import { buildReport, formatLayoutRows } from './report.js';
+import { openCrashReportReader } from '../../../crash-report-reader.js';
 
 const DRAWER_ID = 'sbdbg-settings';
 const DRAWER_CONTENT_ID = 'sbdbg-settings-content';
@@ -453,6 +454,13 @@ async function copyLayoutSnapshot() {
     textPopup(content);
 }
 
+export async function showCrashReports() {
+    return openCrashReportReader({ popup: textPopup, loadServerReports: async () => {
+        const response = await fetchWithTimeout('/api/server-admin/crash-reports', { method: 'POST', headers: ctx().getRequestHeaders() });
+        return response.ok ? response.json() : { unavailable: response.status === 403 ? 'Server reports require an administrator account.' : `Server reports could not be loaded (HTTP ${response.status}).` };
+    } });
+}
+
 // --- mounting ------------------------------------------------------------------
 
 function ensureDrawer() {
@@ -478,6 +486,7 @@ function ensureDrawer() {
     const actions = el('div', 'sbdbg-actions');
     actions.appendChild(button('menu_button', 'Open debugger', () => openDebugger()));
     actions.appendChild(button('menu_button', 'Diagnostic report', () => void showReportPopup()));
+    actions.appendChild(button('menu_button', 'Saved crash reports', () => void showCrashReports()));
     actions.appendChild(button('menu_button', 'Copy layout snapshot', () => void copyLayoutSnapshot()));
     content.appendChild(actions);
 

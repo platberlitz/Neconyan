@@ -334,7 +334,7 @@ export async function uploadFileAttachment(fileName, base64Data, { account } = {
         const responseData = await result.json();
         return responseData.path;
     } catch (error) {
-        toastr.error(String(error), t`Could not upload file`);
+        toastr.error(error?.message || String(error), t`Could not upload file`);
         console.error('Could not upload file', error);
     }
 }
@@ -1161,7 +1161,7 @@ export async function deleteMediaFromServer(url, silent = false) {
         await eventSource.emit(event_types.MEDIA_ATTACHMENT_DELETED, url);
         return true;
     } catch (error) {
-        toastr.error(String(error), t`Could not delete image`);
+        toastr.error(error?.message || String(error), t`Could not delete image`);
         console.error('Could not delete image', error);
         return false;
     }
@@ -1192,7 +1192,7 @@ export async function deleteFileFromServer(url, silent = false) {
         await eventSource.emit(event_types.FILE_ATTACHMENT_DELETED, url);
         return true;
     } catch (error) {
-        toastr.error(String(error), t`Could not delete file`);
+        toastr.error(error?.message || String(error), t`Could not delete file`);
         console.error('Could not delete file', error);
         return false;
     }

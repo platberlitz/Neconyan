@@ -930,12 +930,12 @@ test.describe('S4 the app chooses its language from ordinary browser settings', 
         }
     });
 
-    test('C8-S4-8 choosing Default in Settings removes the stored choice, and the browser decides again', async ({ browser }) => {
+    test('C8-S4-8 choosing Follow browser in Settings records the choice and follows the browser', async ({ browser }) => {
         const { page, close } = await openApp(browser, app, { locale: 'de', stored: 'it-it' });
         expect(await languageState(page)).toEqual({ locale: 'it-it', lang: 'it-it' });
         expect(await languageLabel(page)).toBe(squash(expected('it-it', 'UI Language')));
         await chooseInPicker(page, '');
-        expect(await storedChoice(page)).toBeNull();
+        expect(await storedChoice(page)).toBe('browser');
         expect(await languageState(page)).toEqual({ locale: 'de-de', lang: 'de-de' });
         expect(await languageLabel(page)).toBe(squash(expected('de-de', 'UI Language')));
         await close();

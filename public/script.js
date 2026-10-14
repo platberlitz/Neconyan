@@ -242,7 +242,8 @@ import {
 } from './scripts/tooling-ui-hydration/index.js';
 import { debounce_timeout, GENERATION_TYPE_TRIGGERS, IGNORE_SYMBOL, inject_ids, MEDIA_DISPLAY, MEDIA_SOURCE, MEDIA_TYPE, OVERSWIPE_BEHAVIOR, SCROLL_BEHAVIOR, SWIPE_DIRECTION, SWIPE_SOURCE, SWIPE_STATE } from './scripts/constants.js';
 
-import { cancelDebouncedMetadataSave, doDailyExtensionUpdatesCheck, extension_settings, initExtensions, loadExtensionSettings, runGenerationInterceptors } from './scripts/extensions.js';
+import { areExtensionIdsEqual, cancelDebouncedMetadataSave, doDailyExtensionUpdatesCheck, extension_settings, extensionNames, initExtensions, loadExtensionSettings, runGenerationInterceptors } from './scripts/extensions.js';
+import { initialiseCrashActivity } from './scripts/crash-diagnostics-context.js';
 import { CONVERSATION_STORE_KEY } from './scripts/neconyan-conversation/constants.js';
 import { COMMENT_NAME_DEFAULT, CONNECT_API_MAP, executeSlashCommandsOnChatInput, executeSlashCommandsWithOptions, initDefaultSlashCommands, initSlashCommandAutoComplete, isExecutingCommandsFromChatInput, pauseScriptExecution, stopScriptExecution, UNIQUE_APIS } from './scripts/slash-commands.js';
 import { isSlashCommandText } from './scripts/slash-commands/SlashCommandRuntimeUtils.js';
@@ -312,7 +313,7 @@ import { initTextGenModels } from './scripts/textgen-models.js';
 import { appendFileContent, hasPendingFileAttachment, populateFileAttachment, decodeStyleTags, encodeStyleTags, isExternalMediaAllowed, preserveNeutralChat, restoreNeutralChat, formatCreatorNotes, initChatUtilities, addDOMPurifyHooks } from './scripts/chats.js';
 import { getPresetManager, initPresetManager } from './scripts/preset-manager.js';
 import { evaluateMacros, getLastMessageId, initMacros } from './scripts/macros.js';
-import { getCurrentUserHandle, setUserControls } from './scripts/user.js';
+import { getCurrentUserHandle, isAdmin, setUserControls } from './scripts/user.js';
 import { POPUP_RESULT, POPUP_TYPE, Popup, callGenericPopup, fixToastrForDialogs } from './scripts/popup.js';
 import { renderTemplate, renderTemplateAsync } from './scripts/templates.js';
 import { initScrapers } from './scripts/scrapers.js';
@@ -397,8 +398,10 @@ import {
     hasCardScriptToastBeenShown,
     markCardScriptHtml,
     markCardScriptToastShown,
+    protectCardScriptBlocks,
+    forgetCardScript,
 } from './scripts/card-script-detection.js';
-import { configureCardScriptRuntime, initCardScriptRuntime } from './scripts/card-script-runtime.js';
+import { configureCardScriptRuntime, initCardScriptRuntime, resetCardScriptSession, scheduleCardScriptReconcile, setCardScriptMessageStreaming, destroySandbox, getCardScriptChatScope } from './scripts/card-script-runtime.js';
 import { bindPortraitUrls } from './scripts/portrait-urls.js';
 import { installToastMinimumDuration } from './scripts/toast-duration.js';
 
@@ -765,8 +768,13 @@ function setCharacterSaveStatus(status, revision = characterSaveRevision) {
     }
 
     const normalizedStatus = CHARACTER_SAVE_STATUS_COPY[status] ? status : 'saved';
-    element.dataset.saveStatus = normalizedStatus;
-    element.textContent = CHARACTER_SAVE_STATUS_COPY[normalizedStatus];
+    const nextCopy = CHARACTER_SAVE_STATUS_COPY[normalizedStatus];
+    if (element.dataset.saveStatus !== normalizedStatus) {
+        element.dataset.saveStatus = normalizedStatus;
+    }
+    if (element.textContent !== nextCopy) {
+        element.textContent = nextCopy;
+    }
 }
 
 function markCharacterSaveDirty() {
@@ -1236,6 +1244,11 @@ function scheduleDeferredStartupStylesheets() {
 
 //MARK: firstLoadInit
 async function firstLoadInit() {
+    try {
+        initialiseCrashActivity({ eventSource, event_types, getChat: () => chat,
+            getExtensionCount: () => extensionNames.filter(name => !extension_settings.disabledExtensions.some(disabled => areExtensionIdsEqual(name, disabled))).length,
+            getRequestHeaders, refreshCsrfToken, isAdmin, getAccount: getCurrentUserHandle });
+    } catch { /* Diagnostics must never prevent application startup. */ }
     setChatNavigationBlocked(true);
     const scheduleStartupLoaderCleanup = (reason) => {
         cleanupActionLoaderArtifacts({ removePreloader: true, reason });
@@ -1293,11 +1306,14 @@ async function firstLoadInit() {
         addShowdownPatch(showdown);
         addDOMPurifyHooks();
         // Neconyan: card script detection - see #94.
-        eventSource.on(event_types.CHAT_CHANGED, forgetAllCardScripts);
         eventSource.on(event_types.CHAT_CHANGED, () => { recoverHeldGenerations().catch(error => console.warn('Held generation recovery failed', error)); });
         configureCardScriptRuntime({
             getPowerUser: () => power_user,
             executeSlashCommandsWithOptions,
+            getMessage: id => chat[id],
+            isMessageStreaming: id => Number(streamingProcessor?.messageId) === id && !streamingProcessor?.isFinished,
+            isMessageEditing: id => this_edit_mes_id !== undefined && Number(this_edit_mes_id) === id,
+            refreshRenderedCardScriptMessages,
         });
         initCardScriptRuntime();
         reloadMarkdownProcessor();
@@ -2688,6 +2704,7 @@ function applyStreamingVisibleWrite(messageId, {
 }, { isFinal = false } = {}) {
     if (isCurrent && !isCurrent()) return false;
     if (messageDom instanceof HTMLElement && (!messageDom.isConnected || messageDom.getAttribute('mesid') !== String(messageId))) return false;
+    if (message === chat[messageId] && messageDom?.querySelector('.mes_text') === messageTextDom) setCardScriptMessageStreaming(messageId, !isFinal);
     if (shouldRefreshTokenCount && messageTokenCounterDom instanceof HTMLElement) {
         messageTokenCounterDom.textContent = `${currentTokenCount}t`;
     }
@@ -2709,6 +2726,7 @@ function applyStreamingVisibleWrite(messageId, {
         messageTimerDom.title = timePassed.timerTitle;
     }
 
+    if (isFinal && message === chat[messageId]) scheduleCardScriptReconcile(messageId);
     return isFinal;
 }
 
@@ -3739,6 +3757,7 @@ function rememberQueuedChatIntegrity(integrityKey, integrity) {
  */
 export async function clearChat({ clearData = false, navigationGuard = () => true } = {}) {
     if (!navigationGuard()) return;
+    resetCardScriptSession({ clearSnapshots: true });
     dismissUndo();
     cancelDebouncedChatSave();
     cancelDebouncedMetadataSave();
@@ -4663,16 +4682,19 @@ function sanitizeMessageHtml(mes, sanitizerOverrides = {}) {
  * @returns {string} HTML string
  */
 export function messageFormatting(mes, ch_name, isSystem, isUser, messageId, sanitizerOverrides = {}, isReasoning = false, updateGreeting = true, messageContext = null) {
+    const captureCardScripts = !isReasoning && !messageContext && updateGreeting && !power_user.encode_tags;
     if (!mes) {
+        if (captureCardScripts) forgetCardScript(messageId);
         return '';
     }
 
-    const originalMessageHtml = mes;
     const oocBlocks = [];
     const preparedMessage = prepareMessageDisplayText(mes, ch_name, isSystem, isUser, messageId, isReasoning, updateGreeting, messageContext);
     mes = preparedMessage.mes;
     isSystem = preparedMessage.isSystem;
     mesForShowdownParse = preparedMessage.showdownSource;
+    const protectedScripts = captureCardScripts ? protectCardScriptBlocks(mes) : null;
+    if (protectedScripts) mes = protectedScripts.text;
 
     if (power_user.auto_fix_generated_markdown) {
         mes = fixMarkdown(mes, true);
@@ -4762,11 +4784,15 @@ export function messageFormatting(mes, ch_name, isSystem, isUser, messageId, san
 
     mes = restoreOocBlocksForDisplay(mes, oocBlocks);
     // Neconyan: card script detection - see #94.
-    mes = markCardScriptHtml(mes, messageId, originalMessageHtml);
+    if (protectedScripts) {
+        mes = protectedScripts.restore(mes);
+        mes = markCardScriptHtml(mes, messageId, { scopeKey: getCardScriptChatScope(), fencedPages: protectedScripts.fencedPages });
+    }
     return sanitizeMessageHtml(mes, sanitizerOverrides);
 }
 
 function notifyCardScriptStripped(messageElement, messageId) {
+    if (power_user.allow_card_scripts) return;
     const normalizedMessageId = Number(messageId);
 
     if (!Number.isInteger(normalizedMessageId) || normalizedMessageId < 0) {
@@ -4800,7 +4826,7 @@ function notifyCardScriptStripped(messageElement, messageId) {
     }
 
     markCardScriptToastShown(toastKey);
-    toastr.warning(t`This message contains card scripts. Neconyan does not run them by default.`, t`Card scripts blocked`, { timeOut: 6000, preventDuplicates: true });
+    toastr.warning(t`Card scripts are off. Enable 'Allow card scripts' in Settings to use this message's interactive content.`, t`Card scripts are off`, { timeOut: 6000, preventDuplicates: true });
 }
 
 /**
@@ -5016,6 +5042,7 @@ function applyMessageBlockUpdate(messageId, message, { rerenderMessage = true } 
         const text = message?.extra?.display_text ?? message.mes;
         messageElement.find('.mes_text').html(messageFormatting(text, message.name, message.is_system, message.is_user, messageId, {}, false));
         notifyCardScriptStripped(messageElement, messageId);
+        scheduleCardScriptReconcile(messageId);
     }
     updateMessageMetaBadges(messageElement, message);
 
@@ -5027,6 +5054,14 @@ function applyMessageBlockUpdate(messageId, message, { rerenderMessage = true } 
     if (shouldPinMobileBottom) {
         pinMobileChatToBottom({ waitForFrame: true, settle: true });
     }
+}
+
+function refreshRenderedCardScriptMessages() {
+    forgetAllCardScripts();
+    chatElement.find('.mes[mesid]').each((_, element) => {
+        const id = Number(element.getAttribute('mesid'));
+        if (chat[id]) applyMessageBlockUpdate(id, chat[id]);
+    });
 }
 
 /**
@@ -5916,6 +5951,7 @@ export function updateMessageElement(mes, { messageId = chat.length - 1, message
     if (isPreview) applyStreamDomPatch(messageElement.find('.mes_text')[0], messageHTML);
     else messageElement.find('.mes_text').html(messageHTML);
     if (!isPreview) notifyCardScriptStripped(messageElement, messageId);
+    if (!isPreview) scheduleCardScriptReconcile(messageId);
     addCopyToCodeBlocks(messageElement);
     if (!isPreview) prepareNeconyanMessageActions(messageElement);
 
@@ -7298,6 +7334,7 @@ class StreamingProcessor {
             const saving = saveReply({ type: this.type, getMessage: text, fromStreaming: true, isCurrent: () => this.#isCurrent() });
             messageId = chat.length - 1;
             this.messageId = messageId;
+            setCardScriptMessageStreaming(messageId, true);
             this.message = chat[messageId];
             this.swipeId = this.message?.swipe_id;
             await saving;
@@ -9278,7 +9315,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         // Estimate how many unpinned example messages fit in the context
         tokenCount = await getMessagesTokenCount();
         let count_exm_add = 0;
-        if (!power_user.pin_examples) {
+        if (!power_user.pin_examples && main_api !== 'openai') {
             for (let example of mesExamplesArray) {
                 tokenCount += await getTokenCountAsync(example.replace(/\r/gm, ''));
                 examplesString += example;
@@ -12737,8 +12774,8 @@ export async function getChat({ allowMissingPersisted = false, switchMenu = true
         eventSource.emit(event_types.CHAT_LOADED, { detail: { id: this_chid, character: characters[this_chid] } });
 
         // Focus on the textarea if not already focused on a visible text input
-        if (!exactChat) delay(debounce_timeout.short).then(() => {
-            if ($(document.activeElement).is('input:visible, textarea:visible')) {
+        if (!exactChat && power_user.auto_focus_chat_input !== false) delay(debounce_timeout.short).then(() => {
+            if (power_user.auto_focus_chat_input === false || $(document.activeElement).is('input:visible, textarea:visible')) {
                 return;
             }
             $('#send_textarea').trigger('click').trigger('focus');
@@ -14431,6 +14468,7 @@ export async function messageEdit(editMessageId) {
     }
 
     this_edit_mes_id = editMessageId;
+    destroySandbox(editMessageId, { reason: 'edit' });
     this_edit_mes_chname = editMessage.name || (editMessage.is_user ? name1 : name2);
 
     refreshSwipeButtons();
@@ -14532,6 +14570,7 @@ async function messageEditCancel(messageId = this_edit_mes_id) {
     await eventSource.emit(event_types.MESSAGE_UPDATED, messageId);
     if (messageId == this_edit_mes_id) {
         this_edit_mes_id = undefined;
+        scheduleCardScriptReconcile(messageId);
     } else {
         console.warn(`The message editor was closed on message #${messageId} while #${this_edit_mes_id} is being edited.`);
     }
@@ -14629,8 +14668,10 @@ async function messageEditDone(div) {
     }
 
     await eventSource.emit(event_types.MESSAGE_UPDATED, this_edit_mes_id);
+    setCardScriptMessageStreaming(this_edit_mes_id, false);
     this_edit_mes_id = undefined;
     await saveChatConditional();
+    scheduleCardScriptReconcile();
     showSwipeButtons();
 }
 
@@ -16734,7 +16775,7 @@ export async function sendChatImport(formData, { target, group, refresh = true, 
         }
         if (failure?.code === 'ROLEPLAY_IMPORT_ORIGIN_CHANGED') throw new Error(t`This chat no longer matches its recorded origin or seal. To adopt a separate copy, explicitly choose 'Import as new instance'.`);
         if (failure?.code === 'ROLEPLAY_SOURCE_CHANGED') throw new Error(t`The character changed while the chats were importing. Reload the character list, then try again.`);
-        throw new Error('The chat could not be imported. Check that the file is a valid chat export, then try again.');
+        throw new Error(t`The chat could not be imported. Check that the file is a valid chat export, then try again.`);
     }
     const result = await response.json();
     if (!result.res || !Array.isArray(result.fileNames)) throw new Error('The chat import response was incomplete.');
@@ -17642,7 +17683,7 @@ export async function swipe(event, direction, { source, repeated, message = chat
         }
         //Limit swipe_id to swipes.
         if (newSwipeId > chat[mesId].swipes.length - 1) {
-            toastr.warning(`The reply number for message #${mesId} was ${newSwipeId}, which is not valid. It has been reset to ${chat[mesId].swipes.length - 1}.`);
+            toastr.warning(t`The reply number for message #${mesId} was ${newSwipeId}, which is not valid. It has been reset to ${chat[mesId].swipes.length - 1}.`);
             chat[mesId].swipe_id = chat[mesId].swipes.length - 1;
             await endSwipe();
             return;
@@ -17656,7 +17697,7 @@ export async function swipe(event, direction, { source, repeated, message = chat
 
         //Minimum of zero.
         if (newSwipeId < 0) {
-            toastr.warning(`The reply number for message #${mesId} was ${newSwipeId}, which is not valid. It has been reset to the first reply.`);
+            toastr.warning(t`The reply number for message #${mesId} was ${newSwipeId}, which is not valid. It has been reset to the first reply.`);
             chat[mesId].swipe_id = 0;
             await endSwipe();
             return;
@@ -19857,6 +19898,7 @@ jQuery(async function () {
             '.ui-widget',
             '.text_pole',
             '#toast-container',
+            '#neconyan-crash-notice',
             '.select2-results',
         ];
 
@@ -20224,7 +20266,7 @@ jQuery(async function () {
                     $(masterElement).val($(this).val()).trigger('input', { forced: true });
                 } else {
                     //if value not ok, warn and reset to last known valid value
-                    toastr.warning(`Value must be between ${$(this).attr('min')} and ${$(this).attr('max')}.`);
+                    toastr.warning(t`Value must be between ${$(this).attr('min')} and ${$(this).attr('max')}.`);
                     //newSlider.val(valueBeforeManualInput)
                     $(this).val(valueBeforeManualInput);
                 }
@@ -20250,7 +20292,7 @@ jQuery(async function () {
                 $(masterElement).val($(this).val()).trigger('input', { forced: true });
             } else {
                 //if value not ok, warn and reset to last known valid value
-                toastr.warning(`Value must be between ${$(this).attr('min')} and ${$(this).attr('max')}.`);
+                toastr.warning(t`Value must be between ${$(this).attr('min')} and ${$(this).attr('max')}.`);
                 $(this).val(valueBeforeManualInput);
             }
         }

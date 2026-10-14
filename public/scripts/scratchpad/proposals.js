@@ -70,6 +70,15 @@ export function stringList(value) {
 export function normaliseChange(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) fail('This change is not a JSON object.');
     const reason = text(value.reason, 1000).trim();
+    if (value.type === 'image') {
+        if (value.action !== 'generate' || !['image', 'avatar'].includes(value.target)) fail('This image suggestion needs a valid action and target.');
+        if (typeof value.prompt !== 'string' || !value.prompt.trim() || value.prompt.length > 10_000) fail('Write an image prompt between 1 and 10000 characters.');
+        if (value.negative !== undefined && (typeof value.negative !== 'string' || value.negative.length > 10_000)) fail('The negative image prompt must be text up to 10000 characters.');
+        if (value.character !== undefined && (typeof value.character !== 'string' || !value.character.trim() || value.character.length > 200)) fail('This image suggestion needs an unambiguous shared character name.');
+        if (value.target === 'avatar' && !value.character?.trim()) fail('An avatar suggestion must name a shared character.');
+        return { type: 'image', action: 'generate', target: value.target, prompt: value.prompt.trim(), negative: value.negative?.trim() || '',
+            ...(value.character ? { character: value.character.trim() } : {}), reason };
+    }
     if (value.type === 'notebook') {
         const definition = Object.values(NOTE_TOOL_DEFINITIONS).find(item => item.kind === value.action && NOTE_MUTATING_KINDS.includes(item.kind));
         if (!definition) fail('This note change has an unknown action.');
@@ -195,6 +204,7 @@ export function splitReply(reply) {
 }
 
 export function describeChange(change) {
+    if (change.type === 'image') return change.target === 'avatar' ? `New avatar for ${change.character}` : 'Generate an image';
     if (change.type === 'notebook') {
         const label = Object.values(NOTE_TOOL_DEFINITIONS).find(item => item.kind === change.action)?.displayName || 'Change note';
         return `${label}${change.args.title ? ` '${change.args.title}'` : ''}`;

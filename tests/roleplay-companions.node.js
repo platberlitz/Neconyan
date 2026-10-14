@@ -69,6 +69,26 @@ function paid(label, callback) {
     };
 }
 
+test('companion prompts expand the separate saved secrets macro', async t => {
+    const f = prepared(t, [
+        { ...companion('reader'), prompt: 'READ_SECRETS {{secrets-tracker}}' },
+        { id: 'secrets', name: 'Private ledger', enabled: true, phase: 'post', sourceTemplateId: 'tpl-secrets-tracker',
+            postProcess: { enabled: true, type: 'extract', extractVariable: 'private', extractPattern: '\\[SECRET\\|[^\\]]*\\]' } },
+    ], { changeRecords: records => {
+        records[0].chat_metadata = { variables: { agent_private: '[SECRET|Nova|Hidden name|Nobody]', agent_scene: 'UNRELATED_SCENE' } };
+    } });
+    let calls = 0;
+    await f.run({ generate: paid('main', 'Main reply'), generateAgent: paid('secrets', ({ messages }) => {
+        calls++;
+        const prompt = messages.map(message => message.content).join('\n');
+        assert.match(prompt, /<tracker name="Private ledger">\n\[SECRET\|Nova\|Hidden name\|Nobody\]\n<\/tracker>/);
+        assert.doesNotMatch(prompt, /\{\{secrets-tracker\}\}|UNRELATED_SCENE/);
+        return { text: 'Checked knowledge boundaries' };
+    }) });
+    assert.equal(calls, 1);
+    assert.equal(f.rows().at(-1).extra.inChatAgentCompanionResults.reader.content, 'Checked knowledge boundaries');
+});
+
 test('an oversized bound Companion set refuses admission before any model or chat change', t => {
     const agents = Array.from({ length: 27 }, (_, index) => companion(`capacity-${index}`));
     assert.throws(() => prepared(t, agents), { code: 'ROLEPLAY_COMPANION_CAPACITY', status: 507 });

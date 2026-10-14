@@ -639,6 +639,7 @@ export const power_user = {
         },
     },
     restore_user_input: true,
+    auto_focus_chat_input: true,
     reduced_motion: false,
     compact_input_area: true,
     show_swipe_num_all_messages: false,
@@ -2815,6 +2816,7 @@ export async function loadPowerUserSettings(settings, data) {
     document.querySelector('#stscript_autocomplete_width_right')?.dispatchEvent(new Event('input', { bubbles: true }));
 
     $('#restore_user_input').prop('checked', power_user.restore_user_input);
+    $('#auto_focus_chat_input').prop('checked', power_user.auto_focus_chat_input !== false);
 
     $('#chat_truncation').val(power_user.chat_truncation);
     $('#chat_truncation_counter').val(power_user.chat_truncation);
@@ -5267,6 +5269,11 @@ jQuery(async () => {
 
     $('#restore_user_input').on('input', function () {
         power_user.restore_user_input = !!$(this).prop('checked');
+        saveSettingsDebounced();
+    });
+
+    $('#auto_focus_chat_input').on('input', function () {
+        power_user.auto_focus_chat_input = !!$(this).prop('checked');
         saveSettingsDebounced();
     });
 

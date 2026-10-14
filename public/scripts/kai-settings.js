@@ -486,14 +486,18 @@ export async function getStatusKobold() {
 }
 
 export function initKoboldSettings() {
-    sliders.forEach(slider => {
-        $(document).on('input', slider.sliderId, function () {
-            const value = $(this).val();
-            const formattedValue = slider.format(value);
-            slider.setValue(value);
-            $(slider.counterId).val(formattedValue);
-            saveSettingsDebounced();
-        });
+    const sliderById = new Map(sliders.map(slider => [slider.sliderId.replace(/^#/, ''), slider]));
+    $(document).on('input', function (event) {
+        const target = event.target;
+        const slider = target instanceof HTMLElement && target.id ? sliderById.get(target.id) : null;
+        if (!slider) {
+            return;
+        }
+        const value = $(target).val();
+        const formattedValue = slider.format(value);
+        slider.setValue(value);
+        $(slider.counterId).val(formattedValue);
+        saveSettingsDebounced();
     });
 
     $('#api_button').on('click', function (e) {

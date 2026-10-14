@@ -13,6 +13,8 @@ import { closeUnstartedRoleplayWorkflow } from '../generation/roleplay-workflow-
 import { readRoleplayPreview, subscribeRoleplayPreview } from '../generation/roleplay-preview.js';
 import { readConversationPreview, subscribeConversationPreview } from '../generation/conversation-preview.js';
 import { subscribeJobsChanged } from '../jobs/notifications.js';
+import { getDiagnosticJobActivity } from '../diagnostic-activity.js';
+import { assertScratchpadImageRetry } from '../scratchpad/images.js';
 
 export const router = express.Router();
 
@@ -67,7 +69,12 @@ router.get('/events', (request, response) => {
             try { response.write(text); response.flush?.(); } catch { response.end(); }
         };
         const unsubscribe = subscribeJobsChanged(change => {
-            if (change.owner !== owner || pending) return;
+            if (change.owner !== owner) return;
+            if (change.diagnosticOnly) {
+                send(`data: ${JSON.stringify({ diagnostics: { id: change.id, activity: getDiagnosticJobActivity(owner, change.id) } })}\n\n`);
+                return;
+            }
+            if (pending) return;
             pending = setTimeout(() => { pending = null; send('data: {}\n\n'); }, 25);
         });
         const keepalive = setInterval(() => send(': keepalive\n\n'), 15000);
@@ -87,7 +94,7 @@ router.get('/:id', (request, response) => {
         if (job && job.owner !== owner) return response.status(404).json({ error: 'That job could not be found.' });
         if (!job) return response.status(404).json({ error: 'That job could not be found.' });
         response.set('X-Neconyan-Job', job.id);
-        return response.json({ job });
+        return response.json({ job, diagnostics: getDiagnosticJobActivity(owner, job.id) });
     } catch (error) {
         return fail(response, error);
     }
@@ -139,7 +146,7 @@ router.get('/:id/preview', (request, response) => {
         // re-read only after a job change, with a slow fallback, and send a cheap
         // keepalive every second so the reader can tell the stream is still open.
         let changed = false, lastCheck = 0;
-        const unsubscribeJobs = subscribeJobsChanged(change => { if (change.owner === owner) changed = true; });
+        const unsubscribeJobs = subscribeJobsChanged(change => { if (change.owner === owner && !change.diagnosticOnly) changed = true; });
         const check = () => {
             changed = false;
             lastCheck = Date.now();
@@ -213,7 +220,7 @@ router.post('/:id/approval/:approval', (request, response) => {
 // Source-bound work needs native preparation and permanent acceptance receipts.
 // The generic route cannot create that authority from browser-supplied intent.
 const RESERVED_JOB_TYPES = new Set(['conversation.reply', 'conversation.participant', 'conversation.summary', 'conversation.schedule',
-    'conversation.rewrite', 'conversation.selfie', 'meower.refresh', 'meower.profile', 'scratchpad.reply']);
+    'conversation.rewrite', 'conversation.selfie', 'meower.refresh', 'meower.profile', 'scratchpad.reply', 'scratchpad.image']);
 
 router.post('/submit', (request, response) => {
     try {
@@ -296,6 +303,7 @@ router.post('/:id/retry', async (request, response) => {
         const job = getJob(directories, request.params.id);
         if (!job || job.owner !== owner) return response.status(404).json({ error: 'That job could not be found.' });
         if (!['failed', 'interrupted'].includes(job.state)) return response.status(409).json({ error: 'Only jobs that failed or were interrupted can be tried again.' });
+        assertScratchpadImageRetry(directories, job);
         if (job.type === 'conversation.reply' && (job.children ?? []).length) {
             return response.json({ job: retryConversationFamily(directories, job.id).job });
         }

@@ -24,6 +24,8 @@ public final class MainActivity extends Activity {
     private static final int MIN_WEBVIEW_MAJOR = 124;
     private WebView web;
     private ApkUpdater apkUpdater;
+    private final BridgeCallerGate bridgeGate = new BridgeCallerGate();
+    private String bridgeToken;
     private TextView status;
     private String origin;
     private JSONObject credentials;
@@ -35,6 +37,7 @@ public final class MainActivity extends Activity {
     private long exportBytes;
     private String exportName;
     private final java.util.concurrent.atomic.AtomicBoolean connecting = new java.util.concurrent.atomic.AtomicBoolean();
+    private final java.util.concurrent.atomic.AtomicBoolean readingCrashes = new java.util.concurrent.atomic.AtomicBoolean();
     // A server that stays up this long has started properly; a later stop is not a startup failure.
     private static final long HEALTHY_MS = 120000;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -52,6 +55,13 @@ public final class MainActivity extends Activity {
     private boolean safeNoticeShown;
     private boolean resumed;
     private boolean backupKeys;
+    private final NeconyanDiagnostics diagnosticsBridge = new NeconyanDiagnostics();
+    private long navigationGeneration;
+    private CrashReport.Entry pendingReport, visibleReport;
+    private AlertDialog crashDialog;
+    private TextView crashSummary, crashDetails;
+    private boolean pendingSaved = true;
+    private CrashReport.Entry serverIncident;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -69,12 +79,14 @@ public final class MainActivity extends Activity {
         status.setPadding(24, 32, 24, 32);
         root.addView(status);
         setContentView(root);
+        recoverCrashReports();
         if (!checkWebView(root)) return;
         actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.VERTICAL);
         actions.setPadding(24, 0, 24, 24);
         actions.setVisibility(View.GONE);
         addAction("Try again", view -> {
+            if (web == null) { ActivityBreadcrumbs.state("recreating"); recreate(); return; }
             failed = false;
             autoRestarted = false;
             healthySince = 0;
@@ -85,13 +97,14 @@ public final class MainActivity extends Activity {
         });
         addAction("Save a backup of my data", view -> offerBackup());
         addAction("Copy details for a bug report", view -> copyDetails());
-        addAction("Close Neconyan", view -> { stopService(new Intent(this, ServerService.class)); finish(); });
+        addAction("Saved crash reports", view -> showCrashReports());
+        addAction("Close Neconyan", view -> { ActivityBreadcrumbs.state("closed"); stopService(new Intent(this, ServerService.class)); finish(); });
         root.addView(actions);
         web = new WebView(this);
         web.setBackgroundColor(Color.rgb(22, 23, 22));
         web.setVisibility(View.GONE);
         root.addView(web, new LinearLayout.LayoutParams(-1, 0, 1));
-        if (Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(0, this::handleBack);
+        if (Build.VERSION.SDK_INT >= 33) registerBackCallback();
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, false);
         WebSettings settings = web.getSettings();
@@ -104,9 +117,21 @@ public final class MainActivity extends Activity {
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
         web.addJavascriptInterface(this, "NeconyanExport");
-        apkUpdater = new ApkUpdater(this, () -> web != null && web.getUrl() != null && local(Uri.parse(web.getUrl())));
+        web.addJavascriptInterface(diagnosticsBridge, "NeconyanDiagnostics");
+        apkUpdater = new ApkUpdater(this, () -> web != null && web.getUrl() != null && local(Uri.parse(web.getUrl())), bridgeGate);
         web.addJavascriptInterface(apkUpdater, "NeconyanAndroid");
         web.setWebViewClient(new WebViewClient() {
+            @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap icon) {
+                navigationGeneration++;
+                diagnosticsBridge.invalidate();
+                bridgeGate.clear();
+                bridgeToken = null;
+                cancelExport();
+            }
+            @Override public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                rendererGone(view, detail);
+                return true;
+            }
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
                 if (local(uri)) return false;
@@ -126,18 +151,29 @@ public final class MainActivity extends Activity {
             }
             @Override public void onPageFinished(WebView view, String url) {
                 if (!local(Uri.parse(url)) || loadFailed || failed) return;
+                String nonce = UUID.randomUUID().toString();
+                long generation = navigationGeneration;
+                view.evaluateJavascript("window.NeconyanCrashDiagnostics?.getActivity?.()?.snapshot?.pageSessionId || ''", value -> {
+                    try {
+                        String session = new org.json.JSONArray("[" + value + "]").getString(0);
+                        if (generation != navigationGeneration || web != view || !local(Uri.parse(view.getUrl())) || !session.matches("[a-zA-Z0-9:-]{1,100}")) return;
+                        diagnosticsBridge.allow(nonce, session);
+                        view.evaluateJavascript("window.NeconyanCrashDiagnostics?.setNativeBridgeToken?.(" + JSONObject.quote(nonce) + ")", null);
+                    } catch (Exception ignored) { }
+                });
                 if (Uri.parse(url).getPath().equals("/login")) { connect(); return; }
                 loadFailures = 0;
                 if (healthySince == 0) healthySince = System.currentTimeMillis();
                 status.setVisibility(View.GONE);
                 web.setVisibility(View.VISIBLE);
                 if (serverSafe && !safeNoticeShown) showSafeNotice();
-                // The host creates blob links for cards and backups. Stream chunks across the
-                // bridge so a large export never needs a second whole-file base64 copy in memory.
-                // Most exports click a link that was never added to the page and revoke its blob
-                // straight after, so those clicks never reach the document listener and the
-                // download listener would read a revoked blob. Start the read inside click().
-                view.evaluateJavascript("if (!window.neconyanDownloadHook) { window.neconyanDownloadHook = true; document.addEventListener('click', e => { const a = e.target.closest('a[download]'); if (a && a.href.startsWith('blob:')) { e.preventDefault(); window.neconyanSaveBlob(a.href, a.download); } }, true); const click = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { if (!this.isConnected && this.hasAttribute('download') && this.href.startsWith('blob:')) { window.neconyanSaveBlob(this.href, this.download); return; } return click.call(this); }; window.neconyanSaveBlob = async (url, name) => { try { const blob = await (await fetch(url)).blob(); if (!NeconyanExport.beginExport(name || 'Neconyan-export', blob.size)) throw new Error('Another export is open, or the file exceeds 1 GiB.'); for (let at = 0; at < blob.size; at += 49152) { const bytes = new Uint8Array(await blob.slice(at, at + 49152).arrayBuffer()); if (!NeconyanExport.appendExport(btoa(String.fromCharCode(...bytes)))) throw new Error('Could not save the export. Check free storage.'); } NeconyanExport.finishExport(); } catch (e) { NeconyanExport.cancelExport(); alert(e.message); } }; }", null);
+                // Hand the per-load caller secret (and the blob export hook) to the main page only;
+                // evaluateJavascript targets the displayed main frame, so it must be the local workspace.
+                String current = view.getUrl();
+                if (current == null || !local(Uri.parse(current))) return;
+                if (bridgeToken == null) bridgeToken = bridgeGate.issue();
+                view.evaluateJavascript("import('/scripts/android-native-bridge.js').then(module => module.installAndroidNativeBridge("
+                    + JSONObject.quote(bridgeToken) + "," + JSONObject.quote(origin) + "))", null);
             }
         });
         web.setWebChromeClient(new WebChromeClient() {
@@ -168,8 +204,12 @@ public final class MainActivity extends Activity {
                 if (!gesture) return false;
                 WebView popup = new WebView(MainActivity.this);
                 popup.setWebViewClient(new WebViewClient() {
+                    @Override public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                        rendererGone(view, detail);
+                        return true;
+                    }
                     @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                        if (local(request.getUrl())) web.loadUrl(request.getUrl().toString()); else external(request.getUrl());
+                        if (local(request.getUrl())) { if (web != null) web.loadUrl(request.getUrl().toString()); } else external(request.getUrl());
                         popup.destroy(); return true;
                     }
                 });
@@ -189,9 +229,151 @@ public final class MainActivity extends Activity {
             credentials = ServerService.credentials(this);
             origin = "http://127.0.0.1:" + credentials.getInt("port");
             connect();
-            if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
-                requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, 11);
-        } catch (Exception error) { status.setText("Could not start Neconyan: " + error.getMessage()); }
+            if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED)
+                requestPermissions(new String[] { "android.permission.POST_NOTIFICATIONS" }, 11);
+        } catch (Exception error) {
+            ActivityBreadcrumbs.execute(() -> {
+                CrashDiagnostics.Result report = CrashDiagnostics.recordReport(this, "app", "activity-startup-failure", error, "The Android activity could not initialise.", "unknown", ActivityBreadcrumbs.current());
+                offerCrashReport(report.entry, report.saved);
+            });
+            showFailure("Could not start Neconyan: " + error.getMessage());
+        }
+    }
+
+    private void recoverCrashReports() {
+        ActivityBreadcrumbs.execute(() -> {
+            CrashReport.Entry latest = CrashDiagnostics.store(this).newestEntry();
+            if (latest != null) offerCrashReport(latest, true);
+            CrashDiagnostics.collectExits(this, result -> {
+                CrashReport.Entry entry = result.entry;
+                CrashReport.Entry newest = CrashDiagnostics.store(this).newestEntry();
+                if (!result.saved || newest != null && newest.id.equals(entry.id)) offerCrashReport(entry, result.saved);
+            });
+        });
+    }
+    private void offerCrashReport(CrashReport.Entry entry, boolean saved) {
+        runOnUiThread(() -> {
+            if (isFinishing() || isDestroyed()) return;
+            if (crashDialog != null && crashDialog.isShowing() && visibleReport != null && visibleReport.id.equals(entry.id)) {
+                visibleReport = entry; crashSummary.setText(reportSummary(entry, saved)); crashDetails.setText(entry.text); return;
+            }
+            SharedPreferences preferences = getSharedPreferences("crash-diagnostics", MODE_PRIVATE);
+            if (!CrashReport.shouldOffer(entry, preferences.getString("seen", ""), preferences.getStringSet("seen-incidents-v1", Collections.emptySet()))) return;
+            if (pendingReport == null || entry.id.compareTo(pendingReport.id) >= 0) { pendingReport = entry; pendingSaved = saved; }
+            presentPendingReport();
+        });
+    }
+    private void presentPendingReport() {
+        if (!resumed || pendingReport == null || isFinishing() || isDestroyed() || crashDialog != null && crashDialog.isShowing()) return;
+        CrashReport.Entry entry = pendingReport;
+        if (showCrashReport(entry, true, pendingSaved)) pendingReport = null;
+    }
+    private String reportSummary(CrashReport.Entry entry, boolean saved) {
+        return CrashReport.displayText(entry, saved);
+    }
+    private void acknowledgeReport(CrashReport.Entry entry) {
+        SharedPreferences preferences = getSharedPreferences("crash-diagnostics", MODE_PRIVATE);
+        List<String> incidents = new ArrayList<>(preferences.getStringSet("seen-incidents-v1", Collections.emptySet()));
+        incidents.remove(entry.incident); incidents.add(entry.incident);
+        while (incidents.size() > 20) incidents.remove(0);
+        String boundary = preferences.getString("seen", "");
+        preferences.edit().putString("seen", entry.id.compareTo(boundary) > 0 ? entry.id : boundary).putStringSet("seen-incidents-v1", new LinkedHashSet<>(incidents)).apply();
+    }
+    private boolean showCrashReport(CrashReport.Entry entry, boolean acknowledge, boolean saved) {
+        if (!resumed || isFinishing() || isDestroyed() || entry == null) return false;
+        try {
+            LinearLayout content = new LinearLayout(this); content.setOrientation(LinearLayout.VERTICAL); content.setPadding(24, 24, 24, 24);
+            crashSummary = new TextView(this); crashSummary.setText(reportSummary(entry, saved)); crashSummary.setTextIsSelectable(true); content.addView(crashSummary);
+            Button copy = new Button(this); copy.setText("Copy report"); copy.setMinHeight(Math.round(48 * getResources().getDisplayMetrics().density));
+            copy.setOnClickListener(view -> copyReport(visibleReport)); content.addView(copy);
+            Button share = new Button(this); share.setText("Share report"); share.setMinHeight(Math.round(48 * getResources().getDisplayMetrics().density));
+            share.setOnClickListener(view -> shareReport(visibleReport)); content.addView(share);
+            crashDetails = new TextView(this); crashDetails.setText(entry.text); crashDetails.setTextIsSelectable(true); content.addView(crashDetails);
+            ScrollView scroll = new ScrollView(this); scroll.addView(content);
+            crashDialog = new AlertDialog.Builder(this).setTitle("Crash report").setView(scroll).setPositiveButton("Close", null).create();
+            visibleReport = entry;
+            crashDialog.setOnDismissListener(dialog -> { crashDialog = null; visibleReport = null; if (pendingReport != null) presentPendingReport(); else if (serverSafe && !safeNoticeShown) showSafeNotice(); });
+            crashDialog.show();
+            if (acknowledge) acknowledgeReport(entry);
+            return true;
+        } catch (RuntimeException error) { crashDialog = null; return false; }
+    }
+    private void copyReport(CrashReport.Entry entry) {
+        if (entry == null) return;
+        try {
+            getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("Neconyan crash report", DiagnosticStore.redact(entry.text)));
+            Toast.makeText(this, "Report copied. Review it before sharing.", Toast.LENGTH_LONG).show();
+        } catch (RuntimeException error) { Toast.makeText(this, "Could not copy the report. Select its text instead.", Toast.LENGTH_LONG).show(); }
+    }
+    private void shareReport(CrashReport.Entry entry) {
+        if (entry == null) return;
+        try { startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, DiagnosticStore.redact(entry.text)), "Share crash report")); }
+        catch (RuntimeException error) { Toast.makeText(this, "Could not share the report. Select its text instead.", Toast.LENGTH_LONG).show(); }
+    }
+
+    private void rendererGone(WebView view, RenderProcessGoneDetail detail) {
+        long occurredAt = System.currentTimeMillis();
+        String kind = detail.didCrash() ? "renderer-crash" : "renderer-closed";
+        String explanation = CrashReport.summary("page", kind, -1, "unknown");
+        int priority = detail.rendererPriorityAtExit();
+        boolean mainView = view == web;
+        String frozenActivity = ActivityBreadcrumbs.current();
+        if (mainView) diagnosticsBridge.invalidate();
+        if (view.getParent() instanceof ViewGroup) ((ViewGroup) view.getParent()).removeView(view);
+        view.destroy();
+        if (mainView) {
+            bridgeGate.clear();
+            bridgeToken = null;
+            web = null;
+            failed = true;
+            status.setText("Neconyan's page stopped\n\n" + explanation + "\n\nCrash diagnostics are being saved. Tap Try again to reopen your workspace.");
+            status.setVisibility(View.VISIBLE); actions.setVisibility(View.VISIBLE);
+        }
+        ActivityBreadcrumbs.execute(() -> {
+            CrashDiagnostics.Result result = CrashDiagnostics.recordReport(this, "page", kind, null,
+                explanation + " Renderer priority at exit: " + priority + ". Main view: " + mainView + ". Renderer PID unavailable; page sample is not matched renderer memory.", "unknown", frozenActivity, occurredAt);
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                if (mainView) {
+                    status.setText(reportSummary(result.entry, result.saved) + "\n\nTap Try again to reopen your workspace.");
+                    addAction("Copy report", button -> copyReport(result.entry));
+                    addAction("Share report", button -> shareReport(result.entry));
+                    addAction("Full details", button -> showCrashReport(result.entry, false, result.saved));
+                    if (resumed) acknowledgeReport(result.entry);
+                    else { pendingReport = result.entry; pendingSaved = result.saved; }
+                } else offerCrashReport(result.entry, result.saved);
+            });
+        });
+    }
+
+    @JavascriptInterface public boolean bridgeRequiresToken() { return true; }
+
+    @JavascriptInterface public boolean showCrashReports(String token) {
+        if (!bridgeGate.accepts(token)) return false;
+        showCrashReportsInternal(token);
+        return true;
+    }
+
+    private void showCrashReports() { showCrashReportsInternal(null); }
+
+    private void showCrashReportsInternal(String token) {
+        if (!readingCrashes.compareAndSet(false, true)) return;
+        ActivityBreadcrumbs.execute(() -> {
+            DiagnosticStore store = CrashDiagnostics.store(this);
+            List<CrashReport.Entry> entries = store.listEntries();
+            String readError = store.readError();
+            runOnUiThread(() -> {
+                readingCrashes.set(false);
+                if (token != null && !bridgeGate.accepts(token)) return;
+                if (!resumed || isFinishing() || isDestroyed()) return;
+                if (entries.isEmpty()) { new AlertDialog.Builder(this).setMessage(readError.isEmpty() ? "No saved Android crash reports." : readError).setPositiveButton("Close", null).show(); return; }
+                String[] labels = entries.stream().map(entry -> (entry.at > 0 ? java.text.DateFormat.getDateTimeInstance().format(new Date(entry.at)) + "\n" : "") + entry.summary).toArray(String[]::new);
+                new AlertDialog.Builder(this).setTitle("Saved crash reports").setItems(labels, (dialog, index) -> ActivityBreadcrumbs.execute(() -> {
+                    CrashReport.Entry entry = CrashDiagnostics.store(this).readEntry(entries.get(index).id);
+                    runOnUiThread(() -> showCrashReport(entry, false, true));
+                })).setPositiveButton("Close", null).show();
+            });
+        }, () -> readingCrashes.set(false));
     }
 
     private boolean checkWebView(LinearLayout root) {
@@ -214,6 +396,7 @@ public final class MainActivity extends Activity {
             }
         });
         root.addView(settings);
+        Button reports = new Button(this); reports.setText("Saved crash reports"); reports.setMinHeight(Math.round(48 * getResources().getDisplayMetrics().density)); reports.setOnClickListener(view -> showCrashReports()); root.addView(reports);
         Button close = new Button(this);
         close.setText("Close Neconyan");
         close.setMinHeight(Math.round(48 * getResources().getDisplayMetrics().density));
@@ -238,7 +421,7 @@ public final class MainActivity extends Activity {
         worker.execute(() -> {
             try { connectNow(); }
             catch (InterruptedException stopped) { Thread.currentThread().interrupt(); }
-            catch (Exception error) { show("Neconyan is still starting. Open the app again to finish. (" + error.getMessage() + ")"); }
+            catch (Throwable error) { show("Neconyan is still starting. Open the app again to finish. (" + error.getMessage() + ")"); }
             finally { connecting.set(false); }
         });
     }
@@ -275,7 +458,7 @@ public final class MainActivity extends Activity {
                 JSONObject login = new JSONObject().put("username", "neconyan").put("password", credentials.getString("password")).put("remember", true);
                 request("/api/auth/browser/login", login.toString(), token.getString("token"));
                 CookieManager.getInstance().flush();
-                runOnUiThread(() -> { loadFailed = false; web.loadUrl(origin); });
+                runOnUiThread(() -> { if (web == null || failed || isDestroyed()) return; loadFailed = false; web.loadUrl(origin); });
                 return null;
             } catch (Exception error) {
                 last = error;
@@ -293,13 +476,24 @@ public final class MainActivity extends Activity {
         return "Neconyan took more than five minutes to start" + (last == null ? "." : " (" + last.getMessage() + ").");
     }
     private boolean restartAfterStop(String reason) throws InterruptedException {
+        String reportText = "Diagnostic details could not be collected. No definite cause was available.";
+        try {
+            CrashDiagnostics.collectExits(this);
+            int pid = readyMarker().optInt("pid", 0);
+            ApplicationExitInfo exit = lastServerExit(serverStartedAt);
+            if (exit != null) pid = exit.getPid();
+            CrashDiagnostics.Result report = CrashDiagnostics.serverRecovery(this, pid, serverStartedAt, exit == null ? System.currentTimeMillis() : exit.getTimestamp(), reason);
+            serverIncident = report.entry;
+            offerCrashReport(report.entry, report.saved);
+            reportText = reportSummary(report.entry, report.saved);
+        } catch (Throwable ignored) { }
         long up = healthySince == 0 ? 0 : System.currentTimeMillis() - healthySince;
         healthySince = 0;
         boolean safe;
         if (up >= HEALTHY_MS) {
             autoRestarted = false;
             safe = false;
-            show("Neconyan stopped. Starting it again…");
+            show("The local server stopped. Starting it again.\n\n" + reportText);
         } else if (!serverSafe && !autoRestarted) {
             autoRestarted = true;
             safe = true;
@@ -313,9 +507,19 @@ public final class MainActivity extends Activity {
         clearStaleMarker();
         startServer(safe);
         // Android attaches the crash record a little after the process dies; look twice.
-        main.postDelayed(() -> worker.execute(this::recordServerCrash), 5000);
-        main.postDelayed(() -> worker.execute(this::recordServerCrash), 20000);
+        main.postDelayed(() -> ActivityBreadcrumbs.execute(this::collectCrashDetails), 5000);
+        main.postDelayed(() -> ActivityBreadcrumbs.execute(this::collectCrashDetails), 20000);
         return true;
+    }
+    private void collectCrashDetails() {
+        CrashDiagnostics.collectExits(this, result -> {
+            CrashReport.Entry entry = result.entry;
+            if (serverIncident == null) return;
+            CrashDiagnostics.Result enriched = CrashDiagnostics.enrichServer(this, serverIncident, entry);
+            if (enriched != null) { serverIncident = enriched.entry; offerCrashReport(enriched.entry, enriched.saved); }
+            else if (entry.id.equals(serverIncident.id)) { serverIncident = entry; offerCrashReport(entry, result.saved); }
+        });
+        recordServerCrash();
     }
     // Keeps the newest crash record for the server process as readable text, so the details copied
     // for a bug report show which native code failed instead of a bare 'signal 11'.
@@ -333,7 +537,7 @@ public final class MainActivity extends Activity {
                     return;
                 }
             }
-        } catch (Exception ignored) { }
+        } catch (Throwable ignored) { }
     }
     private void startServer(boolean safe) {
         serverSafe = safe;
@@ -359,7 +563,7 @@ public final class MainActivity extends Activity {
         if (!serverProcessRunning()) new File(getFilesDir(), "android-ready.json").delete();
     }
     private void show(String text) {
-        runOnUiThread(() -> { if (!failed) status.setText(text); });
+        runOnUiThread(() -> { if (!failed) status.setText(DiagnosticStore.redact(text)); });
     }
     private void showFailure(String reason) {
         failed = true;
@@ -374,9 +578,10 @@ public final class MainActivity extends Activity {
     private String failureSummary(String reason) {
         String cause;
         ApplicationExitInfo exit = lastServerExit(firstStartAt);
-        if ((exit != null && exit.getReason() == ApplicationExitInfo.REASON_LOW_MEMORY) || logMentionsMemory())
-            cause = "Your phone ran out of memory while Neconyan was loading your data.";
-        else if (reason != null && !reason.isEmpty()) cause = reason;
+        if (serverIncident != null) cause = serverIncident.summary + "\n" + serverIncident.error;
+        else if (exit != null && exit.getReason() == ApplicationExitInfo.REASON_LOW_MEMORY)
+            cause = "Android closed Neconyan's local server to free memory.";
+        else if (reason != null && !reason.isEmpty()) cause = DiagnosticStore.redact(reason);
         else if (exit != null) cause = "The local server stopped unexpectedly (" + exitReason(exit) + ").";
         else cause = "The local server stopped unexpectedly.";
         return "Neconyan could not start\n\n" + cause
@@ -405,13 +610,6 @@ public final class MainActivity extends Activity {
             default: return "reason " + info.getReason();
         }
     }
-    private boolean logMentionsMemory() {
-        for (String name : new String[] { "server.log", "server.previous.log" }) {
-            String log = tail(new File(getCacheDir(), name), 200);
-            if (log.contains("heap out of memory") || log.contains("Allocation failed") || log.contains("OutOfMemory")) return true;
-        }
-        return false;
-    }
     private static String tail(File file, int lines) {
         if (!file.isFile()) return "";
         try (RandomAccessFile input = new RandomAccessFile(file, "r")) {
@@ -424,35 +622,45 @@ public final class MainActivity extends Activity {
         } catch (IOException error) { return "Could not read " + file.getName() + ": " + error.getMessage(); }
     }
     private void copyDetails() {
-        StringBuilder text = new StringBuilder("Neconyan ");
-        try { text.append(getPackageManager().getPackageInfo(getPackageName(), 0).versionName); } catch (Exception ignored) { text.append("(unknown version)"); }
-        text.append(" on ").append(Build.MANUFACTURER).append(' ').append(Build.MODEL)
-            .append(", Android ").append(Build.VERSION.RELEASE).append(" (API ").append(Build.VERSION.SDK_INT).append(")\n");
-        android.content.pm.PackageInfo provider = WebView.getCurrentWebViewPackage();
-        text.append("WebView: ").append(provider == null ? "unavailable" : provider.packageName + " " + provider.versionName).append('\n');
-        ActivityManager.MemoryInfo memory = new ActivityManager.MemoryInfo();
-        getSystemService(ActivityManager.class).getMemoryInfo(memory);
-        text.append("Phone memory: ").append(memory.totalMem / (1024 * 1024)).append(" MB, server heap limit: ").append(ServerService.heapMegabytes(this))
-            .append(" MB, last start: ").append(serverSafe ? "safe mode" : "normal").append("\n\n").append(status.getText()).append("\n\nRecent server exits:\n");
-        try {
-            for (ApplicationExitInfo info : getSystemService(ActivityManager.class).getHistoricalProcessExitReasons(getPackageName(), 0, 10)) {
-                if (info.getProcessName() == null || !info.getProcessName().endsWith(":server")) continue;
-                text.append(new Date(info.getTimestamp())).append(": ").append(exitReason(info))
-                    .append(info.getDescription() == null ? "" : ", " + info.getDescription())
-                    .append(", memory ").append(info.getPss() / 1024).append(" MB\n");
+        final CrashReport.Entry selected = visibleReport != null ? visibleReport : serverIncident;
+        ActivityBreadcrumbs.execute(() -> {
+            recordServerCrash();
+            StringBuilder text = new StringBuilder();
+            if (selected != null) text.append("Selected crash report:\n").append(selected.text.substring(0, Math.min(selected.text.length(), 24000))).append("\n\n");
+            text.append("Device, WebView and memory measured when copying:\n").append(CrashDiagnostics.environment(this));
+            try {
+                for (ApplicationExitInfo exit : getSystemService(ActivityManager.class).getHistoricalProcessExitReasons(getPackageName(), 0, 10))
+                    text.append("\nRecent exit: ").append(new Date(exit.getTimestamp())).append(" PID ").append(exit.getPid()).append(' ')
+                        .append(CrashDiagnostics.reasonName(exit.getReason())).append(" status ").append(exit.getStatus())
+                        .append(" PSS KiB ").append(exit.getPss()).append(" RSS KiB ").append(exit.getRss());
+            } catch (Throwable ignored) { text.append("\nRecent exits unavailable."); }
+            for (String name : new String[] { "native-startup.txt", "native-crash.txt", "requests.txt", "requests.previous.txt", "server.log", "server.previous.log" }) {
+                String excerpt = tail(new File(getCacheDir(), name), name.equals("native-startup.txt") ? 4 : 40);
+                text.append("\n\n").append(name).append(":\n").append(excerpt.substring(0, Math.min(excerpt.length(), 5000)));
             }
-        } catch (Exception error) { text.append("Unavailable: ").append(error.getMessage()).append('\n'); }
-        text.append("\nNative runtime:\n").append(tail(new File(getCacheDir(), "native-startup.txt"), 4));
-        recordServerCrash();
-        text.append("\nCrash record:\n").append(tail(new File(getCacheDir(), "native-crash.txt"), 80));
-        text.append("\n\nRecent requests (this start):\n").append(tail(new File(getCacheDir(), "requests.txt"), 40))
-            .append("\n\nRecent requests (previous start):\n").append(tail(new File(getCacheDir(), "requests.previous.txt"), 40));
-        text.append("\n\nServer log (this start):\n").append(tail(new File(getCacheDir(), "server.log"), 40))
-            .append("\n\nServer log (previous start):\n").append(tail(new File(getCacheDir(), "server.previous.log"), 40));
-        getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("Neconyan details", text.toString()));
-        Toast.makeText(this, "Details copied. Paste them into your bug report.", Toast.LENGTH_LONG).show();
+            final String report = DiagnosticStore.redact(text.toString());
+            runOnUiThread(() -> {
+                try { getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("Neconyan bug report details", report));
+                    Toast.makeText(this, "Details copied. Review private text before sharing.", Toast.LENGTH_LONG).show(); }
+                catch (Throwable ignored) { Toast.makeText(this, "Could not copy details. Read or select the current report instead.", Toast.LENGTH_LONG).show(); }
+            });
+        });
+    }
+    private void registerBackCallback() {
+        try {
+            Class<?> callbackType = Class.forName("android.window.OnBackInvokedCallback");
+            Object callback = java.lang.reflect.Proxy.newProxyInstance(callbackType.getClassLoader(), new Class<?>[] { callbackType }, (proxy, method, args) -> {
+                if (method.getName().equals("onBackInvoked")) { handleBack(); return null; }
+                if (method.getName().equals("hashCode")) return System.identityHashCode(proxy);
+                if (method.getName().equals("equals")) return args != null && proxy == args[0];
+                return "Neconyan back callback";
+            });
+            Object dispatcher = Activity.class.getMethod("getOnBackInvokedDispatcher").invoke(this);
+            Class.forName("android.window.OnBackInvokedDispatcher").getMethod("registerOnBackInvokedCallback", int.class, callbackType).invoke(dispatcher, 0, callback);
+        } catch (Throwable ignored) { /* Older platforms retain onBackPressed. */ }
     }
     private void showSafeNotice() {
+        if (!resumed || pendingReport != null || crashDialog != null && crashDialog.isShowing()) return;
         safeNoticeShown = true;
         new AlertDialog.Builder(this).setTitle("Neconyan is in safe mode")
             .setMessage("Neconyan stopped while starting, so it started again with background tasks paused: automatic memory updates and automatic messages are off, and replies or jobs that were interrupted are paused so you can retry them.\n\nYour chats are safe. Safe mode ends when you stop Neconyan and open it again.")
@@ -506,7 +714,10 @@ public final class MainActivity extends Activity {
     }
     @Override public void onResume() {
         super.onResume();
+        ActivityBreadcrumbs.foreground(true);
         resumed = true;
+        presentPendingReport();
+        if (serverSafe && !safeNoticeShown) showSafeNotice();
         if (apkUpdater != null) apkUpdater.onResume();
         if (credentials == null || web == null || failed) return;
         if (status.getVisibility() == View.VISIBLE) connect();
@@ -514,6 +725,7 @@ public final class MainActivity extends Activity {
         main.post(watchdog);
     }
     @Override public void onPause() {
+        ActivityBreadcrumbs.foreground(false);
         resumed = false;
         main.removeCallbacks(watchdog);
         super.onPause();
@@ -553,7 +765,11 @@ public final class MainActivity extends Activity {
         } finally { connection.disconnect(); }
     }
 
-    @JavascriptInterface public synchronized boolean beginExport(String name, long size) {
+    @JavascriptInterface public synchronized boolean beginExport(String token, String name, long size) {
+        if (!bridgeGate.accepts(token)) return false;
+        return beginExport(name, size);
+    }
+    private synchronized boolean beginExport(String name, long size) {
         if (export != null || size < 0 || size > 1024L * 1024 * 1024) return false;
         try {
             export = File.createTempFile("neconyan-export-", ".tmp", getCacheDir());
@@ -563,7 +779,11 @@ public final class MainActivity extends Activity {
             return true;
         } catch (IOException error) { cancelExport(); return false; }
     }
-    @JavascriptInterface public synchronized boolean appendExport(String base64) {
+    @JavascriptInterface public synchronized boolean appendExport(String token, String base64) {
+        if (!bridgeGate.accepts(token)) return false;
+        return appendExport(base64);
+    }
+    private synchronized boolean appendExport(String base64) {
         try {
             if (exportStream == null || base64.length() > 100000) return false;
             byte[] bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT);
@@ -572,15 +792,27 @@ public final class MainActivity extends Activity {
             exportStream.write(bytes); return true;
         } catch (Exception error) { cancelExport(); return false; }
     }
-    @JavascriptInterface public synchronized void finishExport() {
+    @JavascriptInterface public synchronized boolean finishExport(String token) {
+        if (!bridgeGate.accepts(token)) return false;
+        finishExportInternal(token);
+        return true;
+    }
+    private void finishExport() { finishExportInternal(null); }
+    private synchronized void finishExportInternal(String token) {
         if (exportStream == null) return;
         try { exportStream.close(); exportStream = null; } catch (IOException error) { cancelExport(); return; }
         runOnUiThread(() -> {
+            if (token != null && !bridgeGate.accepts(token)) return;
             Intent save = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/octet-stream").putExtra(Intent.EXTRA_TITLE, exportName);
             try { startActivityForResult(save, 13); } catch (ActivityNotFoundException error) { cancelExport(); Toast.makeText(this, "Install a file manager to save exports.", Toast.LENGTH_LONG).show(); }
         });
     }
-    @JavascriptInterface public synchronized void cancelExport() {
+    @JavascriptInterface public synchronized boolean cancelExport(String token) {
+        if (!bridgeGate.accepts(token)) return false;
+        cancelExport();
+        return true;
+    }
+    private synchronized void cancelExport() {
         try { if (exportStream != null) exportStream.close(); } catch (IOException ignored) { }
         exportStream = null;
         if (export != null) export.delete();
@@ -661,9 +893,12 @@ public final class MainActivity extends Activity {
         if (web.canGoBack()) { web.goBack(); return; }
         new AlertDialog.Builder(this).setMessage("Keep Neconyan running in the background?")
             .setPositiveButton("Keep running", (dialog, which) -> moveTaskToBack(true))
-            .setNegativeButton("Stop and close", (dialog, which) -> { stopService(new Intent(this, ServerService.class)); finish(); }).show();
+            .setNegativeButton("Stop and close", (dialog, which) -> { ActivityBreadcrumbs.state("closed"); stopService(new Intent(this, ServerService.class)); finish(); }).show();
     }
     @Override public void onDestroy() {
+        navigationGeneration++; diagnosticsBridge.invalidate();
+        bridgeGate.clear();
+        bridgeToken = null;
         main.removeCallbacksAndMessages(null);
         worker.shutdownNow();
         if (chooser != null) chooser.onReceiveValue(null);

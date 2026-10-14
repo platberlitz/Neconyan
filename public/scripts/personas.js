@@ -1100,7 +1100,7 @@ const countPersonaDescriptionTokens = debounce(async () => {
     const description = String(power_user.persona_description ?? $('#persona_description').val());
     const count = await getTokenCountAsync(description);
     $('#persona_description_token_count').text(String(count));
-}, debounce_timeout.relaxed);
+}, debounce_timeout.short);
 
 /**
  * Updates the UI for the Persona Management page with the current persona values

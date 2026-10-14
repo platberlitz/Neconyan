@@ -12,6 +12,25 @@ import {
 const fence = value => `\`\`\`scratchpad-change\n${JSON.stringify(value)}\n\`\`\``;
 
 describe('Scratchpad reply parsing', () => {
+    test('accepts image and avatar suggestions while removing model URLs, credentials and settings', () => {
+        expect(normaliseChange({ type: 'image', action: 'generate', target: 'image', prompt: '  An observatory. ', url: 'https://bad.invalid/pic.png', settings: { key: 'secret' } }))
+            .toEqual({ type: 'image', action: 'generate', target: 'image', prompt: 'An observatory.', negative: '', reason: '' });
+        const avatar = normaliseChange({ type: 'image', action: 'generate', target: 'avatar', character: 'Nova', prompt: 'Portrait.', negative: 'words' });
+        expect(describeChange(avatar)).toBe('New avatar for Nova');
+        expect(describeChange({ ...avatar, target: 'image' })).toBe('Generate an image');
+    });
+    test.each([{ prompt: '' }, { prompt: ' ' }, { prompt: 'x'.repeat(10001) }, { negative: [] }, { negative: 'x'.repeat(10001) },
+        { action: 'save' }, { target: 'url' }, { target: 'avatar' }, { character: [] }])('rejects malformed image suggestions: %j', extra => {
+        expect(() => normaliseChange({ type: 'image', action: 'generate', target: 'image', prompt: 'A scene.', ...extra })).toThrow();
+    });
+    test('keeps stable indexed mixed proposals and caps suggestions at 24', () => {
+        const reply = Array.from({ length: 27 }, (_, index) => fence(index % 2 ? { type: 'character', action: 'create', character: { name: 'Nova' } }
+            : { type: 'image', action: 'generate', target: 'image', prompt: `Scene ${index}` })).join('\n');
+        const changes = splitReply(reply).filter(part => part.type === 'change');
+        expect(changes).toHaveLength(24);
+        expect(changes.map(part => part.index)).toEqual(Array.from({ length: 24 }, (_, index) => index));
+        expect(changes.every(part => part.change)).toBe(true);
+    });
     test('keeps text and changes in reply order', () => {
         const reply = [
             'Here is an idea.',

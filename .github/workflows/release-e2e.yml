@@ -2,6 +2,11 @@ name: Release E2E Validation
 
 on:
   workflow_dispatch:
+    inputs:
+      shards:
+        description: 'JSON array of test groups to run, keeping the normal 16-group split'
+        type: string
+        default: '[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]'
   pull_request:
     branches:
       - main
@@ -33,13 +38,17 @@ concurrency:
 jobs:
   run-release-e2e:
     name: Run Chromium E2E suite
-    runs-on: ubuntu-latest
+    # Group 1 exercises a real renderer crash. Playwright 1.60 skips crash events
+    # on Ubuntu 24.04 because Chromium never delivers them there; keep our check.
+    # https://github.com/microsoft/playwright/blob/v1.60.0/tests/library/page-event-crash.spec.ts
+    runs-on: ${{ matrix.shard == 1 && 'ubuntu-22.04' || 'ubuntu-latest' }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        shard: ${{ fromJSON(inputs.shards || '[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]') }}
     env:
+      RELEASE_E2E_SHARD: ${{ matrix.shard }}
       RELEASE_E2E_SHARD_TOTAL: 16
       CI: 'true'
       PLAYWRIGHT_HTML_OPEN: never
@@ -78,9 +87,9 @@ jobs:
           NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc
         run: npm ci --ignore-scripts --prefix tests
 
-      - name: Install Chromium
+      - name: Install test browsers
         working-directory: tests
-        run: npx --no-install playwright install --with-deps chromium firefox
+        run: npx --no-install playwright install --with-deps chromium firefox webkit
 
       - name: Initialize server state
         run: |
@@ -122,7 +131,7 @@ jobs:
           done
 
           node tests/prepare-release-fixture.js
-          npm run test:e2e --prefix tests -- --workers=1 --shard=${{ matrix.shard }}/$RELEASE_E2E_SHARD_TOTAL --reporter=line,html
+          npm run test:e2e --prefix tests -- --workers=1 --shard="$RELEASE_E2E_SHARD/$RELEASE_E2E_SHARD_TOTAL" --reporter=line,html
 
       - name: Print server log on failure
         if: failure()

@@ -879,7 +879,7 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
         assertMemory();
     };
     if (request.worldInfo?.agents) {
-        const intercepted = await runRoleplayAgentInterceptors(context, { base, snapshot: request.worldInfo, binding: request.binding,
+        const intercepted = await runRoleplayAgentInterceptors(context, { base, snapshot: request.worldInfo, records: initialRecords, binding: request.binding,
             mewmory: memory ?? null, macros: acceptedMacros, generationType: request.worldInfo.global.trigger, assistantName: request.characterName,
             assertCurrent: beforeDispatch, generate: generateAgent, timing: 'pre-generation', format: countText ? 'text' : 'chat',
             value: countText ? preparedText : messages });

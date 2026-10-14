@@ -58,6 +58,8 @@ import getResponseCompressionMiddleware from './middleware/response-compression.
 import basicAuthMiddleware from './middleware/basicAuth.js';
 import { createImageReferenceHandler } from './generation/image-reference-links.js';
 import { renderRegisteredDocsPage } from './docs-reader.js';
+import { serveCardScriptSandbox } from './card-script-sandbox.js';
+import { CARD_SCRIPT_SANDBOX_PATH } from '../public/scripts/card-script-sandbox/policy.js';
 import requireHttpsMiddleware from './middleware/requireHttps.js';
 import authRouter, { setAuthRouterBasicAuthMode } from './endpoints/auth.js';
 import { createSession, destroySession, validateCredentials, isSessionAuthEnabled } from './middleware/sessionAuth.js';
@@ -83,7 +85,9 @@ import {
     setWindowTitle,
     getConfigValue,
 } from './util.js';
-import { isBenignStreamAbort } from './stream-disconnect-guard.js';
+import { setCrashContext } from './crash-diagnostics.js';
+import { getDiagnosticServerActivity } from './diagnostic-activity.js';
+import { getRecentRequests } from './request-trace.js';
 import { UPLOADS_DIRECTORY } from './constants.js';
 
 // Routers
@@ -125,9 +129,8 @@ app.use(helmet({
 }));
 app.use(getResponseCompressionMiddleware());
 app.use(responseTime());
-if (process.env.NECONYAN_REQUEST_TRACE) {
-    app.use(createRequestTrace(process.env.NECONYAN_REQUEST_TRACE));
-}
+app.use(createRequestTrace(process.env.NECONYAN_REQUEST_TRACE));
+setCrashContext({ requests: getRecentRequests, activity: getDiagnosticServerActivity });
 
 app.use('/api/auth', express.json({ limit: '32kb' }), express.urlencoded({ extended: false, limit: '32kb' }));
 app.use('/api/in-chat-agents', express.json({ limit: AGENT_STORAGE_LIMITS.presetBytes }), express.urlencoded({ extended: false, limit: AGENT_STORAGE_LIMITS.presetBytes }));
@@ -407,6 +410,8 @@ if (!cliArgs.disableCsrf) {
     });
 }
 
+app.get(CARD_SCRIPT_SANDBOX_PATH, requireLoginMiddleware, serveCardScriptSandbox);
+
 // Static files. Neconyan is the full Neconyan runtime at the canonical root;
 // the old server-rendered subset remains addressable only through redirects so
 // saved links still land in the corresponding native workspace.
@@ -558,6 +563,7 @@ setupPrivateEndpoints(app);
  */
 async function preSetupTasks() {
     const version = await getVersion();
+    setCrashContext({ appVersion: { version: version.pkgVersion, branch: version.gitBranch, revision: version.gitRevision, commitDate: version.commitDate } });
 
     // Print formatted header
     console.log();
@@ -606,7 +612,7 @@ async function preSetupTasks() {
         }
         diskCache.dispose();
         setWindowTitle(consoleTitle);
-        process.exit(exitCode);
+        process.exit(process.exitCode === 1 ? 1 : exitCode);
     };
 
     registerGracefulShutdown(exitProcess);
@@ -637,26 +643,7 @@ async function preSetupTasks() {
             process.on('disconnect', exitAfterSupervisorDisconnect);
         }
     }
-    process.on('uncaughtException', (err) => {
-        // Neconyan: ignore expected stream disconnects from cancelled generations.
-        if (isBenignStreamAbort(err)) {
-            console.warn('Ignored streaming disconnect error:', err?.message ?? err);
-            return;
-        }
-
-        console.error('Uncaught exception:', err);
-        exitProcess();
-    });
-    process.on('unhandledRejection', (reason) => {
-        // Neconyan: ignore expected stream disconnects from cancelled generations.
-        if (isBenignStreamAbort(reason)) {
-            console.warn('Ignored streaming disconnect rejection:', reason?.message ?? reason);
-            return;
-        }
-
-        console.error('Unhandled rejection:', reason);
-        exitProcess();
-    });
+    setCrashContext({ shutdown: exitProcess });
 
     // Add private request filter.
     const requestFilterOptions = {
@@ -820,6 +807,7 @@ async function postSetupTasks(result) {
     const { finalizeOperation } = await import('./operations/store.js');
     const { finalizeBrowserWork } = await import('./operations/browser-work.js');
     const { finalizeScratchpadSubmission } = await import('./scratchpad/jobs.js');
+    const { finalizeScratchpadImageSubmission } = await import('./scratchpad/images.js');
     await import('./operations/translation.js');
     await import('./operations/vectors.js');
     await import('./operations/vector-purge.js');
@@ -853,6 +841,7 @@ async function postSetupTasks(result) {
             finalizeOperation(context);
             finalizeBrowserWork(context);
             finalizeScratchpadSubmission(context);
+            finalizeScratchpadImageSubmission(context);
         },
         holdRecovered: safeStart,
     });

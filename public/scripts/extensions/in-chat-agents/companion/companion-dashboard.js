@@ -2,6 +2,7 @@ import { chat } from '../../../../script.js';
 import { eventSource } from '../../../events.js';
 import { Popup, POPUP_RESULT, POPUP_TYPE, fixToastrForDialogs } from '../../../popup.js';
 import { escapeHtml } from '../../../utils.js';
+import { t } from '../../../i18n.js';
 import { captureMessageTargetState, isMessageTargetCurrent } from '../agent-runner.js';
 import { changeSelectedCompanionLinks } from '../quick-settings.js';
 import { replaceCompanionView, runCompanionViewAction } from './view-state.js';
@@ -517,7 +518,9 @@ function reportRetryOutcome(results = []) {
 
     const failedAgain = results.filter(result => result?.status !== 'done' || result?.lastRunError).length;
     if (failedAgain > 0) {
-        toastr.warning(`${countLabel(failedAgain, 'companion')} failed again. Check your connection, then try again.`);
+        toastr.warning(failedAgain === 1
+            ? t`1 companion failed again. Check your connection, then try again.`
+            : t`${failedAgain} companions failed again. Check your connection, then try again.`);
     } else {
         toastr.success(`Retried ${countLabel(results.length, 'companion')}.`);
     }

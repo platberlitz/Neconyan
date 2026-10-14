@@ -38,7 +38,7 @@ import {
 } from './secrets.js';
 import { debounce, getStringHash, isValidUrl } from './utils.js';
 import { chat_completion_sources, oai_settings } from './openai.js';
-import { getTokenCountAsync } from './tokenizers.js';
+import { getTokenCountAsync, primeOpenAITokenCache } from './tokenizers.js';
 import { textgen_types, textgenerationwebui_settings as textgen_settings, getTextGenServer } from './textgen-settings.js';
 import { debounce_timeout, SWIPE_SOURCE } from './constants.js';
 
@@ -127,7 +127,7 @@ function openWorldInfoCharacterTab() {
 }
 
 const observerConfig = { childList: true, subtree: true };
-const countTokensDebounced = debounce(RA_CountCharTokens, debounce_timeout.relaxed);
+const countTokensDebounced = debounce(RA_CountCharTokens, debounce_timeout.short);
 const countTokensShortDebounced = debounce(RA_CountCharTokens, debounce_timeout.short);
 const checkStatusDebounced = debounce(RA_checkOnlineStatus, debounce_timeout.short);
 
@@ -274,15 +274,38 @@ export async function RA_CountCharTokens() {
     let permanent_tokens = 0;
 
     const tokenCounters = document.querySelectorAll('[data-token-counter]');
-    for (const tokenCounter of tokenCounters) {
-        if (counterNonceLocal !== counterNonce) {
-            return;
-        }
+    const entries = [];
+    const messagesToPrime = [];
 
+    for (const tokenCounter of tokenCounters) {
         const counter = $(tokenCounter);
         const input = $(document.getElementById(counter.data('token-counter')));
         const isPermanent = counter.data('token-permanent') === true;
-        const value = String(input.val());
+        const value = input.length === 0 ? '' : String(input.val());
+        const valueHash = value ? getStringHash(value) : '';
+        const isCached = Boolean(value && input.data('last-value-hash') === valueHash);
+        const valueToCount = !value || isCached
+            ? ''
+            : (menu_type === 'create' ? value : substituteParams(value));
+
+        if (valueToCount && main_api === 'openai') {
+            messagesToPrime.push({ role: 'system', content: valueToCount });
+        }
+
+        entries.push({ counter, input, isPermanent, value, valueHash, isCached, valueToCount });
+    }
+
+    if (messagesToPrime.length > 1) {
+        await primeOpenAITokenCache(messagesToPrime);
+        if (counterNonceLocal !== counterNonce) {
+            return;
+        }
+    }
+
+    for (const { counter, input, isPermanent, value, valueHash, isCached, valueToCount } of entries) {
+        if (counterNonceLocal !== counterNonce) {
+            return;
+        }
 
         if (input.length === 0) {
             counter.text('Invalid input reference');
@@ -295,14 +318,10 @@ export async function RA_CountCharTokens() {
             continue;
         }
 
-        const valueHash = getStringHash(value);
-
-        if (input.data('last-value-hash') === valueHash) {
+        if (isCached) {
             total_tokens += Number(counter.text());
             permanent_tokens += isPermanent ? Number(counter.text()) : 0;
         } else {
-            // We substitute macro for existing characters, but not for the character being created
-            const valueToCount = menu_type === 'create' ? value : substituteParams(value);
             const tokens = await getTokenCountAsync(valueToCount);
 
             if (counterNonceLocal !== counterNonce) {
@@ -952,20 +971,39 @@ export function initRossMods() {
         chatBlockResizeObserver.observe(chatBlock);
     }
 
+    let lastSendTextAreaLength = sendTextArea?.value?.length ?? 0;
     sendTextArea.addEventListener('input', () => {
         saveUserInputDebounced();
 
         if (cssAutofit) {
             // Unset modifications made with a manual resize
-            sendTextArea.style.height = 'auto';
+            if (sendTextArea.style.height && sendTextArea.style.height !== 'auto') {
+                sendTextArea.style.height = 'auto';
+            }
             return;
         }
 
+        const currentLength = sendTextArea.value.length;
+        const didShrink = currentLength < lastSendTextAreaLength;
+        lastSendTextAreaLength = currentLength;
+
         requestAnimationFrame(() => {
             const hasContent = sendTextArea.value !== '';
-            const fitsCurrentSize = sendTextArea.scrollHeight <= sendTextArea.offsetHeight;
+            const offsetHeight = sendTextArea.offsetHeight;
+            const scrollHeight = sendTextArea.scrollHeight;
+            if (hasContent && !didShrink) {
+                if (scrollHeight > offsetHeight) {
+                    const originalScrollBottom = chatBlock.scrollHeight - (chatBlock.scrollTop + chatBlock.offsetHeight);
+                    sendTextArea.style.height = `${scrollHeight}px`;
+                    if (!isFirefox) {
+                        chatBlock.scrollTop = chatBlock.scrollHeight - (chatBlock.offsetHeight + originalScrollBottom);
+                    }
+                }
+                return;
+            }
+            const fitsCurrentSize = scrollHeight <= offsetHeight;
             const isScrollbarShown = sendTextArea.clientWidth < sendTextArea.offsetWidth;
-            const isHalfScreenHeight = sendTextArea.offsetHeight >= window.innerHeight / 2;
+            const isHalfScreenHeight = offsetHeight >= window.innerHeight / 2;
             const needsDebounce = hasContent && (fitsCurrentSize || (isScrollbarShown && isHalfScreenHeight));
             if (needsDebounce) autoFitSendTextAreaDebounced();
             else autoFitSendTextArea();

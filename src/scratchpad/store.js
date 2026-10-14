@@ -3,15 +3,16 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 
 import { AUTHORING_FILE_LIMIT, readAuthoringFileLocked, writeAuthoringFileLocked, deleteAuthoringFileLocked } from '../authoring-store.js';
-import { roleplayAccountBase, roleplayAccountStamp, roleplayLease, withRoleplayAccount } from '../roleplay-store.js';
+import { roleplayAccountBase, roleplayAccountStamp, roleplayLease, validRoleplayAvatar, withRoleplayAccount } from '../roleplay-store.js';
 import { MAX_GENERATION_TEXT_BYTES } from '../generation/stream-limits.js';
 import { BUILTIN_ASSISTANT_IDS, isAssistantId, orderedAssistants, normaliseAssistantSnapshots } from './assistant-profiles.js';
 import { readSharedBucketLocked, writeSharedBucketLocked } from './shared-sessions.js';
+import { hasPendingImages, imagePart, imageChangeHash, normaliseStoredImages } from './image-state.js';
 
 export const SCRATCHPAD_SCHEMA = 1;
 export const ASSISTANT_IDS = BUILTIN_ASSISTANT_IDS;
 export const ASSISTANT_GENDERS = Object.freeze(['male', 'female', 'neutral']);
-export const SOURCE_KINDS = Object.freeze(['roleplay', 'conversation', 'notebook']);
+export const SOURCE_KINDS = Object.freeze(['roleplay', 'conversation', 'notebook', 'general']);
 export const MAX_SESSIONS = 40;
 export const MAX_MESSAGES = 400;
 export const MAX_MESSAGE_BYTES = MAX_GENERATION_TEXT_BYTES;
@@ -70,12 +71,31 @@ export function requireId(value, label = 'item') {
     return value;
 }
 
-/** The chat a Scratchpad belongs to. The key comes from the page; it is hashed before it reaches a path. */
+/** The session list and request context. Only kind/key determine the hashed file path. */
 export function normaliseSource(input, { allowInternalKeys = false } = {}) {
-    if (!isPlainObject(input)) throw fail('SCRATCHPAD_SOURCE_INVALID', 'Open a chat before using Scratchpad.');
+    if (!isPlainObject(input)) throw fail('SCRATCHPAD_SOURCE_INVALID', 'Choose a Scratchpad context before continuing.');
     const kind = SOURCE_KINDS.includes(input.kind) ? input.kind : null;
     const key = typeof input.key === 'string' ? input.key : '';
-    if (!kind || !key || key.length > 1024) throw fail('SCRATCHPAD_SOURCE_INVALID', 'Open a chat before using Scratchpad.');
+    if (!kind || !key || key.length > 1024) throw fail('SCRATCHPAD_SOURCE_INVALID', 'Choose a Scratchpad context before continuing.');
+    if (kind === 'general') {
+        const invalid = () => fail('SCRATCHPAD_SOURCE_INVALID', 'This General Scratchpad context is invalid. Reopen Scratchpad.');
+        if (key !== 'general' || input.scope !== undefined || input.legacyKey !== undefined) throw invalid();
+        const source = { kind, key, label: 'General Scratchpad' };
+        if (input.avatar !== undefined) {
+            if (!validRoleplayAvatar(input.avatar) || /[\r\n]/.test(input.avatar)) throw invalid();
+            source.avatar = input.avatar;
+        }
+        if (input.contextMode !== undefined) {
+            if (!['roleplay', 'conversation'].includes(input.contextMode)) throw invalid();
+            source.contextMode = input.contextMode;
+        }
+        if (input.personaId !== undefined) {
+            if (typeof input.personaId !== 'string' || input.personaId.length > 256 || /[\0\r\n/\\]/.test(input.personaId)
+                || ['.', '..'].includes(input.personaId)) throw invalid();
+            source.personaId = input.personaId;
+        }
+        return source;
+    }
     if (!allowInternalKeys && kind === 'roleplay' && (key.startsWith('shared:') || key.startsWith('selection:'))) {
         throw fail('SCRATCHPAD_SOURCE_INVALID', 'This Scratchpad chat identity is invalid. Reload the chat.');
     }
@@ -268,6 +288,14 @@ function normaliseMessage(input, { allowInternalKeys = false } = {}) {
         if (typeof input.gender === 'string') message.gender = normaliseGender(input.gender);
         const proposals = normaliseProposals(input.proposals);
         if (Object.keys(proposals).length) message.proposals = proposals;
+        if (allowInternalKeys) {
+            const images = normaliseStoredImages(input.images);
+            if (Object.keys(images).length) message.images = images;
+            if (Array.isArray(input.targets)) message.targets = input.targets.filter(target => target && validRoleplayAvatar(target.avatar)
+                && typeof target.name === 'string' && target.name.trim() && target.name.length <= 200).slice(0, 200).map(target => ({ avatar: target.avatar, name: target.name }));
+            if (input.imageNames && typeof input.imageNames.user === 'string') message.imageNames = { user: input.imageNames.user.slice(0, 100), character: boundedString(input.imageNames.character, 200) };
+            if (typeof input.imagePersonaId === 'string') message.imagePersonaId = input.imagePersonaId.slice(0, 256);
+        }
         if (isPlainObject(input.notebookProposals)) {
             const refs = Object.fromEntries(Object.entries(input.notebookProposals).filter(([key, value]) => /^\d{1,3}$/.test(key)
                 && isPlainObject(value) && /^p_[a-f0-9]{24}$/.test(value.id) && /^[a-f0-9]{64}$/.test(value.changeHash)).slice(0, 24));
@@ -276,6 +304,7 @@ function normaliseMessage(input, { allowInternalKeys = false } = {}) {
     }
     if (input.edited === true) message.edited = true;
     if (input.contextSource) message.contextSource = normaliseSource(input.contextSource, { allowInternalKeys });
+    if (message.contextSource?.kind === 'general' && typeof input.sharedAvatar === 'string' && input.sharedAvatar === message.contextSource.avatar) message.sharedAvatar = input.sharedAvatar;
     return message;
 }
 
@@ -361,7 +390,7 @@ export function cleanupCandidates(bucket) {
     const newest = [...bucket.sessions].sort(byUpdated).at(-1)?.id;
     return bucket.sessions
         .filter(session => session.id !== bucket.activeSessionId && session.id !== newest
-            && !session.messages.some(message => message.state === 'pending'))
+            && !session.messages.some(message => message.state === 'pending' || hasPendingImages(message)))
         .sort(byUpdated);
 }
 
@@ -397,7 +426,7 @@ function readStoredBucketLocked(lease, source) {
         throw fail('SCRATCHPAD_DAMAGED', 'This Scratchpad file could not be read.', 500);
     }
     if (parsed?.source?.kind !== source.kind || parsed?.source?.key !== source.key) {
-        throw fail('SCRATCHPAD_DAMAGED', 'This Scratchpad file belongs to another chat.', 500);
+        throw fail('SCRATCHPAD_DAMAGED', 'This Scratchpad file belongs to another session list.', 500);
     }
     return parsed;
 }
@@ -523,8 +552,8 @@ export function writeChatBucketLocked(lease, bucket, { cleanupApplied = false } 
     } catch (error) {
         if (error?.code !== 'AUTHORING_FILE_TOO_LARGE') throw error;
         throw fail('SCRATCHPAD_STORAGE_FULL', cleanup.enabled
-            ? 'Scratchpad is full for this chat. Delete long replies from the open session, then try again.'
-            : 'Scratchpad is full for this chat. Delete old sessions or long replies, or turn on automatic cleanup in Sessions, then try again.', 413);
+            ? 'Scratchpad is full for this session list. Delete long replies from the open session, then try again.'
+            : 'Scratchpad is full for this session list. Delete old sessions or long replies, or turn on automatic cleanup in Sessions, then try again.', 413);
     }
 }
 
@@ -572,7 +601,7 @@ function touch(session) {
 /** Temporary sessions last until another session is opened. */
 function dropTemporary(bucket, keepId) {
     bucket.sessions = bucket.sessions.filter(session => !session.temporary || session.id === keepId
-        || session.messages.some(message => message.state === 'pending'));
+        || session.messages.some(message => message.state === 'pending' || hasPendingImages(message)));
 }
 
 function nextName(bucket, assistant, excludeId, settings) {
@@ -607,8 +636,9 @@ export function createSession(bucket, input = {}) {
         messages: [],
     };
     if (Array.isArray(input.messages)) {
+        const contextSource = Object.fromEntries(Object.entries(normaliseSource(bucket.source)).filter(([key]) => key !== 'scope'));
         session.messages = input.messages.map(item => normaliseMessage({ ...item, id: undefined, state: 'done', jobId: undefined, proposals: undefined, notebookProposals: undefined,
-            contextSource: { kind: bucket.source.kind, key: bucket.source.key, label: bucket.source.label } }))
+            sharedAvatar: undefined, images: undefined, targets: undefined, contextSource }))
             .filter(Boolean).slice(-MAX_MESSAGES);
     }
     bucket.sessions.unshift(session);
@@ -641,7 +671,7 @@ export function updateSession(bucket, sessionId, input = {}) {
 
 export function deleteSession(bucket, sessionId) {
     const session = findSession(bucket, sessionId);
-    if (session.messages.some(message => message.state === 'pending')) {
+    if (session.messages.some(message => message.state === 'pending' || hasPendingImages(message))) {
         throw fail('SCRATCHPAD_REPLY_PENDING', 'Stop the reply in progress before deleting this session.', 409);
     }
     bucket.sessions = bucket.sessions.filter(item => item.id !== sessionId);
@@ -656,7 +686,7 @@ export function activateSession(bucket, sessionId) {
 
 export function clearSession(bucket, sessionId) {
     const session = findSession(bucket, sessionId);
-    if (session.messages.some(message => message.state === 'pending')) {
+    if (session.messages.some(message => message.state === 'pending' || hasPendingImages(message))) {
         throw fail('SCRATCHPAD_REPLY_PENDING', 'Stop the reply in progress before clearing this session.', 409);
     }
     session.messages = [];
@@ -666,16 +696,21 @@ export function clearSession(bucket, sessionId) {
 export function updateMessage(bucket, sessionId, messageId, text) {
     const session = findSession(bucket, sessionId);
     const message = findMessage(session, messageId);
-    if (message.state === 'pending') throw fail('SCRATCHPAD_REPLY_PENDING', 'Wait for the reply to finish before editing it.', 409);
+    if (message.state === 'pending' || hasPendingImages(message)) throw fail('SCRATCHPAD_REPLY_PENDING', 'Wait for the reply or image to finish before editing it.', 409);
     if (typeof text !== 'string' || !text.trim()) throw fail('SCRATCHPAD_TEXT_REQUIRED', 'A message needs some text.');
     if (byteLength(text) > (message.role === 'user' ? MAX_INPUT_BYTES : MAX_MESSAGE_BYTES)) throw fail('SCRATCHPAD_TEXT_TOO_LARGE', 'That message is too long.', 413);
+    for (const [index, image] of Object.entries(message.images ?? {})) {
+        const part = imagePart(text, index);
+        if (!part || imageChangeHash(part.change) !== image.changeHash) throw fail('SCRATCHPAD_IMAGE_CHANGED', 'Keep generated image suggestions in their original order and unchanged when editing the reply. Send a new message for a different image.', 409);
+    }
     message.text = text;
     delete message.token_count;
     message.edited = true;
     if (message.role === 'assistant') {
         message.state = 'done';
         delete message.error;
-        delete message.proposals;
+        message.proposals = Object.fromEntries(Object.entries(message.proposals ?? {}).filter(([index]) => message.images?.[index]));
+        if (!Object.keys(message.proposals).length) delete message.proposals;
         delete message.notebookProposals;
     }
     touch(session);
@@ -685,7 +720,7 @@ export function updateMessage(bucket, sessionId, messageId, text) {
 export function deleteMessage(bucket, sessionId, messageId) {
     const session = findSession(bucket, sessionId);
     const message = findMessage(session, messageId);
-    if (message.state === 'pending') throw fail('SCRATCHPAD_REPLY_PENDING', 'Stop the reply before deleting it.', 409);
+    if (message.state === 'pending' || hasPendingImages(message)) throw fail('SCRATCHPAD_REPLY_PENDING', 'Stop the reply or image before deleting it.', 409);
     session.messages = session.messages.filter(item => item.id !== messageId);
     touch(session);
 }
@@ -717,6 +752,24 @@ export function projectPending(bucket, readJob) {
             } else if (['cancelled', 'failed', 'interrupted', 'conflict'].includes(job.state)) {
                 Object.assign(message, { state: 'failed', error: job.state === 'cancelled' ? 'Stopped.' : (job.error?.message || 'This reply stopped before it finished.') });
             }
+        }
+    }
+    return projectPendingImages(bucket, readJob);
+}
+
+export function projectPendingImages(bucket, readJob) {
+    for (const session of bucket.sessions) for (const message of session.messages) for (const image of Object.values(message.images ?? {})) {
+        if (image.url) continue;
+        const job = image.jobId && readJob(image.jobId);
+        if (job && ['queued', 'running', 'waiting'].includes(job.state)) {
+            image.state = 'pending';
+            if (image.review && job.stage === 'approved') image.review = false;
+            continue;
+        }
+        if (image.state !== 'pending') continue;
+        if (!job || ['completed', 'cancelled', 'failed', 'interrupted', 'conflict'].includes(job.state)) {
+            image.state = job?.state === 'cancelled' ? 'cancelled' : 'failed';
+            image.error = job?.state === 'cancelled' ? 'Image stopped.' : job?.error?.message || 'This image did not finish saving. Open its job before retrying.';
         }
     }
     return bucket;

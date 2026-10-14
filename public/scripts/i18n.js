@@ -1,7 +1,7 @@
 import { addLanguageOptions, browserLanguages, initialLanguageChoice, isNewLanguageInstallation, readLanguageChoice, saveLanguagePreference, storedLanguage, writeLanguageChoice, BROWSER_LANGUAGE } from './page-locale.js';
 import { registerDebugFunction } from './power-user.js';
 import { updateSecretDisplay } from './secrets.js';
-import { localizeControls } from './ui-localization.js';
+import { localizeControls, localizeString } from './ui-localization.js';
 
 let localeFile = 'en';
 var langs;
@@ -126,6 +126,18 @@ export function translate(text, key = null) {
         trackMissingDynamicTranslate.add(translationKey);
     }
     return localeData?.[translationKey] || text;
+}
+
+/**
+ * Translates a whole message that is about to be put into a t`` frame, where the run-time localiser cannot reach it:
+ * a server, provider or browser message. Exact key first, then a ${n} key, as the localiser does; the values in the
+ * holes stay as written. Unknown text, and text that is already translated, comes back unchanged. Missing keys are not
+ * tracked, because the text is not from the code and may be provider wording.
+ * @param {string} text
+ * @returns {string}
+ */
+export function localizeMessage(text) {
+    return localeData ? localizeString(text, localeData) : String(text ?? '');
 }
 
 /**
@@ -265,7 +277,7 @@ async function getMissingTranslations() {
         console.log(trackMissingDynamicTranslateMap);
     }
 
-    toastr.success(`Found ${uniqueMissingData.length} missing translations. Their full list is in the developer console (press F12 to open it).`);
+    toastr.success(t`Found ${uniqueMissingData.length} missing translations. Their full list is in the developer console (press F12 to open it).`);
 }
 
 /**

@@ -1,59 +1,42 @@
 /*
- * Neconyan-BotSearcher.
+ * Neconyan BotSearcher — Native Workspace Stylesheet
  *
- * Everything is namespaced .sbbs-*. Colours, radii and spacing come from the
- * fork's own tokens (public/css/neconyan-theme.css, public/css/spacing-system.css)
- * so the dialog tracks the user's theme without any per-theme work. The
- * "Find cards online" button deliberately has no rules here; it borrows
- * .sb-character-import-action from the fork.
- *
- * This sheet is injected at extension activation, i.e. after every core sheet,
- * so plain specificity is enough and no !important is needed.
+ * Uses Neconyan's semantic surface, elevation, typography and accent tokens
+ * (--neco-canvas, --neco-surface, --neco-raised, --neco-rail, --neco-ink,
+ * --neco-muted, --neco-ginger, --neco-ginger-hover, --neco-on-accent,
+ * --neco-border, --neco-user) with SmartTheme fallbacks so the browser modal,
+ * card catalogue, detail sheet, intake review and settings panel adapt to
+ * Calico Dark, Calico Light, Paper, custom Accent Profiles and every Shell Style.
  */
 
-/*
- * Popup's own `wide` option only sets `min-width: var(--sheldWidth)`
- * (public/style.css:4097), which lands around 750px — too narrow for a card
- * grid. `large` supplies height: 90vh and a 90vw cap, so we only need to claim
- * the width. Scoped by :has() so no other popup is affected.
- */
-.popup:has(.sbbs-root) {
-    width: min(1400px, 90vw);
+/* --- Tokens & Modal Root --- */
+.sbbs-root,
+#sbbs_settings {
+    --sbbs-canvas: var(--neco-canvas, var(--SmartThemeBlurTintColor));
+    --sbbs-surface: var(--neco-surface, var(--SmartThemeChatTintColor));
+    --sbbs-raised: var(--neco-raised, color-mix(in oklch, var(--sbbs-surface) 88%, var(--SmartThemeBodyColor)));
+    --sbbs-rail: var(--neco-rail, var(--sbbs-surface));
+    --sbbs-ink: var(--neco-ink, var(--SmartThemeBodyColor));
+    --sbbs-muted: var(--neco-muted, var(--SmartThemeEmColor));
+    --sbbs-accent: var(--neco-ginger, var(--SmartThemeQuoteColor));
+    --sbbs-accent-hover: var(--neco-ginger-hover, var(--SmartThemeUnderlineColor, var(--sbbs-accent)));
+    --sbbs-on-accent: var(--neco-on-accent, var(--neco-accent-ink, var(--sbbs-canvas)));
+    --sbbs-border: var(--neco-border, var(--SmartThemeBorderColor));
+    --sbbs-border-subtle: color-mix(in oklch, var(--sbbs-border) 55%, transparent);
+    --sbbs-tint: var(--neco-user, color-mix(in oklch, var(--sbbs-accent) 14%, var(--sbbs-surface)));
+    --sbbs-tint-strong: color-mix(in oklch, var(--sbbs-accent) 22%, var(--sbbs-raised));
+    --sbbs-font-body: var(--mainFontFamily, 'Nunito', sans-serif);
+    --sbbs-font-display: var(--sb-font-display, var(--mainFontFamily, sans-serif));
+    --sbbs-radius-xs: var(--sb-radius-xs, 4px);
+    --sbbs-radius-sm: var(--sb-radius-sm, 6px);
+    --sbbs-radius-md: var(--sb-radius-md, 8px);
+    --sbbs-radius-lg: var(--sb-radius-lg, 12px);
+    --sbbs-radius-pill: var(--sb-radius-pill, 999px);
 }
 
-/*
- * Core positions a popup close button just beyond the rounded corner. That is
- * useful for text dialogs, but crowds this dialog's first control row. Keep it
- * in a small, deliberate top rail instead.
- */
-.popup:has(.sbbs-root) .popup-content {
-    margin-top: calc(24px + var(--spacing-sm, 8px));
-}
-
-.popup:has(.sbbs-root) .popup-button-close {
-    inset-block-start: var(--spacing-sm, 8px);
-    inset-inline-end: var(--spacing-sm, 8px);
-}
-
-.sbbs-root {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-md, 12px);
-    height: 100%;
-    min-height: 0;
-    min-width: 0;
-    position: relative;
-    line-height: 1.5;
-    /*
-     * The dialog's only scroller: the whole page (controls, results, cards)
-     * scrolls here as one, with .sbbs-bar-sticky staying put at the top.
-     * Nothing else in this view is a scroll box. Header and body clip
-     * sideways overflow before it can reach this scroller, so focusing a
-     * control can never shift the page sideways with no way back.
-     */
-    overflow-y: auto;
-    overflow-x: hidden;
-    overscroll-behavior: contain;
+.sbbs-root [hidden],
+#sbbs_settings [hidden] {
+    display: none !important;
 }
 
 .sbbs-visually-hidden {
@@ -68,296 +51,564 @@
     border: 0;
 }
 
-/*
- * `.menu_button` sets `display: flex` (public/style.css:4215), which beats the
- * UA stylesheet's `[hidden] { display: none }` — so a hidden .menu_button stays
- * visible. Doubled attribute selector raises specificity above the class
- * without introducing an !important, matching the fork's house rule.
- */
-.sbbs-root [hidden][hidden] {
+dialog.popup:has(.sbbs-root) {
+    width: min(1160px, 95vw);
+    max-width: 1160px;
+}
+
+dialog.popup:has(.sbbs-root) .popup-body {
+    overflow: hidden;
+}
+
+dialog.popup:has(.sbbs-root) .popup-content {
+    margin: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    padding-right: 2px;
+}
+
+body.neconyan .sbbs-root,
+.sbbs-root {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 62vh;
+    color: var(--sbbs-ink);
+    font-family: var(--sbbs-font-body);
+    font-size: 0.9375rem;
+    line-height: 1.45;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    padding: 2px 0 6px;
+}
+
+/* View switching: grid vs detail vs intake */
+.sbbs-root[data-view="detail"] > header,
+.sbbs-root[data-view="detail"] > .sbbs-body,
+.sbbs-root[data-view="detail"] > .sbbs-intake,
+.sbbs-root[data-view="intake"] > header,
+.sbbs-root[data-view="intake"] > .sbbs-body,
+.sbbs-root[data-view="intake"] > .sbbs-detail {
     display: none;
 }
 
-/* ---- search bar ---- */
-
-.sbbs-root > header:has(.sbbs-bar) {
-    /* The search controls stay fully exposed above the results. They are
-       never their own scroll box; .sbbs-root is the page scroller and only
-       .sbbs-bar-sticky stays put. Horizontal overflow is clipped (not
-       hidden) so this never becomes a scroll container that could trap the
-       sticky rows or feed sideways overflow to the page. */
-    flex: 0 0 auto;
-    min-height: 0;
-    max-height: none;
-    overflow-y: visible;
-    overflow-x: clip;
+.sbbs-root[data-view="grid"] > .sbbs-detail,
+.sbbs-root[data-view="grid"] > .sbbs-intake {
+    display: none;
 }
 
+.sbbs-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* --- Focus Rings --- */
+.sbbs-root :is(button, a, summary, [tabindex], input[type="checkbox"], input[type="radio"]):focus-visible,
+#sbbs_settings :is(button, a, summary, [tabindex], input[type="checkbox"], input[type="radio"]):focus-visible {
+    outline: 2px solid var(--sbbs-accent);
+    outline-offset: 2px;
+}
+
+.sbbs-root :is(input:not([type="checkbox"], [type="radio"]), select, textarea):focus-visible,
+#sbbs_settings :is(input:not([type="checkbox"], [type="radio"]), select, textarea):focus-visible {
+    outline: 2px solid var(--sbbs-accent);
+    outline-offset: -2px;
+    border-color: var(--sbbs-accent);
+}
+
+/* --- Circular Radio-Style Checkboxes & Radio Inputs --- */
+body.neconyan #sbbs_search_form input:is([type="checkbox"], [type="radio"]),
+body.neconyan .sbbs-root input:is([type="checkbox"], [type="radio"]),
+body.neconyan #sbbs_settings input:is([type="checkbox"], [type="radio"]),
+.sbbs-root input:is([type="checkbox"], [type="radio"]),
+#sbbs_settings input:is([type="checkbox"], [type="radio"]) {
+    --sbbs-check-size: 18px;
+    --neconyan-control-radius: 999px;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    position: relative;
+    flex: 0 0 var(--sbbs-check-size);
+    width: var(--sbbs-check-size);
+    inline-size: var(--sbbs-check-size);
+    height: var(--sbbs-check-size);
+    block-size: var(--sbbs-check-size);
+    min-width: var(--sbbs-check-size);
+    min-inline-size: var(--sbbs-check-size);
+    min-height: var(--sbbs-check-size);
+    min-block-size: var(--sbbs-check-size);
+    max-width: var(--sbbs-check-size);
+    max-inline-size: var(--sbbs-check-size);
+    max-height: var(--sbbs-check-size);
+    max-block-size: var(--sbbs-check-size);
+    aspect-ratio: 1 / 1;
+    margin: 0;
+    padding: 0;
+    border-radius: 999px;
+    border: 1.5px solid var(--sbbs-border);
+    background: var(--sbbs-canvas);
+    box-shadow: inset 0 1px 2px color-mix(in oklch, var(--sbbs-canvas) 40%, transparent);
+    display: inline-grid;
+    place-content: center;
+    align-self: center;
+    cursor: pointer;
+    overflow: hidden;
+    transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+
+body.neconyan #sbbs_search_form input:is([type="checkbox"], [type="radio"])::before,
+body.neconyan .sbbs-root input:is([type="checkbox"], [type="radio"])::before,
+body.neconyan #sbbs_settings input:is([type="checkbox"], [type="radio"])::before,
+.sbbs-root input:is([type="checkbox"], [type="radio"])::before,
+#sbbs_settings input:is([type="checkbox"], [type="radio"])::before {
+    content: "";
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
+    background: var(--sbbs-accent);
+    transform: scale(0);
+    transition: transform 140ms ease, background-color 140ms ease;
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--sbbs-accent) 20%, transparent);
+}
+
+body.neconyan #sbbs_search_form input:is([type="checkbox"], [type="radio"]):checked,
+body.neconyan .sbbs-root input:is([type="checkbox"], [type="radio"]):checked,
+body.neconyan #sbbs_settings input:is([type="checkbox"], [type="radio"]):checked,
+.sbbs-root input:is([type="checkbox"], [type="radio"]):checked,
+#sbbs_settings input:is([type="checkbox"], [type="radio"]):checked {
+    border-color: var(--sbbs-accent);
+    background: color-mix(in oklch, var(--sbbs-accent) 16%, var(--sbbs-canvas));
+}
+
+body.neconyan #sbbs_search_form input:is([type="checkbox"], [type="radio"]):checked::before,
+body.neconyan .sbbs-root input:is([type="checkbox"], [type="radio"]):checked::before,
+body.neconyan #sbbs_settings input:is([type="checkbox"], [type="radio"]):checked::before,
+.sbbs-root input:is([type="checkbox"], [type="radio"]):checked::before,
+#sbbs_settings input:is([type="checkbox"], [type="radio"]):checked::before {
+    transform: scale(1);
+}
+
+body.neconyan #sbbs_search_form input:is([type="checkbox"], [type="radio"]):hover:not(:disabled),
+body.neconyan .sbbs-root input:is([type="checkbox"], [type="radio"]):hover:not(:disabled),
+body.neconyan #sbbs_settings input:is([type="checkbox"], [type="radio"]):hover:not(:disabled),
+.sbbs-root input:is([type="checkbox"], [type="radio"]):hover:not(:disabled),
+#sbbs_settings input:is([type="checkbox"], [type="radio"]):hover:not(:disabled) {
+    border-color: color-mix(in oklch, var(--sbbs-accent) 65%, var(--sbbs-border));
+}
+
+/* --- Accent-Aware Primary & Secondary Buttons --- */
+body.neconyan .sbbs-root button.menu_button,
+body.neconyan #sbbs_settings button.menu_button,
+.sbbs-root button.menu_button,
+#sbbs_settings button.menu_button {
+    --neconyan-control-radius: 999px;
+    border-radius: var(--sbbs-radius-pill);
+}
+
+body.neconyan #sbbs_search_form #sbbs_go.sbbs-go.menu_button.menu_button_primary,
+body.neconyan .sbbs-root button.menu_button.menu_button_primary,
+body.neconyan #sbbs_settings button.menu_button.menu_button_primary,
+#sbbs_search_form #sbbs_go.sbbs-go.menu_button.menu_button_primary,
+.sbbs-root button.menu_button.menu_button_primary,
+#sbbs_settings button.menu_button.menu_button_primary {
+    background: var(--sbbs-accent);
+    color: var(--sbbs-on-accent);
+    border: 1px solid color-mix(in oklch, var(--sbbs-accent) 78%, var(--sbbs-ink));
+    font-weight: 700;
+    box-shadow: 0 1px 2px color-mix(in oklch, var(--sbbs-canvas) 35%, transparent);
+}
+
+body.neconyan #sbbs_search_form #sbbs_go.sbbs-go.menu_button.menu_button_primary:hover:not(:disabled),
+body.neconyan .sbbs-root button.menu_button.menu_button_primary:hover:not(:disabled),
+body.neconyan #sbbs_settings button.menu_button.menu_button_primary:hover:not(:disabled),
+#sbbs_search_form #sbbs_go.sbbs-go.menu_button.menu_button_primary:hover:not(:disabled),
+.sbbs-root button.menu_button.menu_button_primary:hover:not(:disabled),
+#sbbs_settings button.menu_button.menu_button_primary:hover:not(:disabled) {
+    background: var(--sbbs-accent-hover);
+    color: var(--sbbs-on-accent);
+    border-color: var(--sbbs-accent-hover);
+}
+
+body.neconyan .sbbs-root button.menu_button:not(.menu_button_primary),
+body.neconyan #sbbs_settings button.menu_button:not(.menu_button_primary),
+.sbbs-root button.menu_button:not(.menu_button_primary),
+#sbbs_settings button.menu_button:not(.menu_button_primary) {
+    background: var(--sbbs-raised);
+    color: var(--sbbs-ink);
+    border: 1px solid var(--sbbs-border);
+    font-weight: 600;
+}
+
+body.neconyan .sbbs-root button.menu_button:not(.menu_button_primary):hover:not(:disabled),
+body.neconyan #sbbs_settings button.menu_button:not(.menu_button_primary):hover:not(:disabled),
+.sbbs-root button.menu_button:not(.menu_button_primary):hover:not(:disabled),
+#sbbs_settings button.menu_button:not(.menu_button_primary):hover:not(:disabled) {
+    background: color-mix(in oklch, var(--sbbs-accent) 16%, var(--sbbs-raised));
+    border-color: color-mix(in oklch, var(--sbbs-accent) 62%, var(--sbbs-border));
+    color: var(--sbbs-ink);
+}
+
+body.neconyan .sbbs-root button.menu_button[aria-pressed="true"]:not(.menu_button_primary),
+.sbbs-root button.menu_button[aria-pressed="true"]:not(.menu_button_primary) {
+    background: var(--sbbs-tint-strong);
+    border-color: var(--sbbs-accent);
+    color: var(--sbbs-ink);
+    font-weight: 700;
+}
+
+.sbbs-root button.menu_button:disabled,
+#sbbs_settings button.menu_button:disabled {
+    opacity: 0.48;
+    cursor: not-allowed;
+}
+
+/* --- Masthead & Search Toolbar --- */
 .sbbs-bar {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-sm, 8px);
-    flex: 0 0 auto;
+    gap: 10px;
 }
 
-/*
- * The only sticky part of the dialog: query, source, sort, Filters and the
- * selection row stay put while the rest of the page scrolls. Opaque theme
- * background, so results sliding underneath never show through the row gap.
- */
+.sbbs-masthead {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px 16px;
+    padding: 2px 2px 4px;
+}
+
+.sbbs-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.sbbs-brand-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--sbbs-radius-pill);
+    background: var(--sbbs-tint);
+    border: 1px solid color-mix(in oklch, var(--sbbs-accent) 42%, var(--sbbs-border));
+    color: var(--sbbs-accent);
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+
+.sbbs-brand-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.sbbs-brand-title {
+    font-family: var(--sbbs-font-display);
+    font-size: 1.15rem;
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: 0.01em;
+    color: var(--sbbs-ink);
+}
+
+.sbbs-brand-subtitle {
+    font-size: 0.78rem;
+    color: var(--sbbs-muted);
+    line-height: 1.25;
+}
+
 .sbbs-bar-sticky {
     position: sticky;
     top: 0;
     z-index: 5;
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-sm, 8px);
-    overflow-x: clip;
-    background: var(--sb-shell-surface, var(--SmartThemeBlurTintColor, rgba(0, 0, 0, 0.72)));
+    gap: 8px;
+    padding: 12px;
+    border-radius: var(--sbbs-radius-lg);
+    background: var(--sbbs-rail);
+    border: 1px solid var(--sbbs-border);
+    box-shadow: 0 4px 14px color-mix(in oklch, var(--sbbs-canvas) 35%, transparent);
 }
 
 .sbbs-bar-row {
     display: flex;
     flex-wrap: wrap;
+    gap: 8px;
     align-items: center;
-    gap: var(--spacing-sm, 8px);
 }
 
-.sbbs-bar-sticky,
-.sbbs-bar details,
-.sbbs-bar-row > * {
-    min-width: 0;
-    max-width: 100%;
-}
-
-.sbbs-root .menu_button,
-.sbbs-settings .menu_button,
-.sbbs-install .menu_button {
-    /* Host min-content sizing must not collapse labels into individual letters. */
-    width: auto;
-    max-width: 100%;
-    flex: 0 0 auto;
-    min-height: max(38px, var(--sb-control-min-height, 38px));
-    padding: 10px 14px;
-    white-space: normal;
-    word-break: normal;
-    overflow-wrap: break-word;
-}
-
-@media (pointer: coarse), (max-width: 768px) {
-    .sbbs-root .menu_button,
-    .sbbs-settings .menu_button,
-    .sbbs-install .menu_button {
-        min-height: var(--sb-mobile-touch-target, 44px);
-    }
-}
-
-.sbbs-root summary {
-    white-space: normal;
-    overflow-wrap: anywhere;
-}
-
-.sbbs-root details > summary {
-    cursor: pointer;
-}
-
-.sbbs-root summary:focus-visible {
-    outline: 2px solid var(--sb-focus-ring, currentColor);
-    outline-offset: -2px;
-}
-
-.sbbs-named-controls {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--spacing-xs, 4px);
-}
-
-/*
- * One collapsed line like Named searches. Plain block layout, not flex: flex
- * on a details element hides the disclosure triangle in some browsers.
- */
-.sbbs-file-actions[open] > summary {
-    margin-bottom: var(--spacing-xs, 4px);
-}
-
-.sbbs-named-controls .text_pole {
-    min-width: 0;
-    max-width: 100%;
-}
-
-.sbbs-named-searches,
-.sbbs-shortlist {
-    min-width: 0;
-    overflow-wrap: anywhere;
-}
-
-.sbbs-shortlist-items {
-    list-style: none;
-    margin: var(--spacing-sm, 8px) 0;
-    padding: 0;
-}
-
-.sbbs-shortlist-item {
-    display: flex;
-    flex-wrap: wrap;
+.sbbs-bar-row-search {
+    flex-wrap: nowrap;
     align-items: center;
-    gap: var(--spacing-xs, 4px) var(--spacing-sm, 8px);
-    margin-block: var(--spacing-sm, 8px);
+    gap: 8px;
 }
 
-.sbbs-shortlist-item > * {
-    min-width: 0;
-    max-width: 100%;
-}
-
-.sbbs-shortlist-item > span {
-    flex: 1 1 100%;
-}
-
-.sbbs-root .sbbs-shortlist-toggle {
-    align-self: flex-start;
-    margin: 0 var(--spacing-sm, 8px) var(--spacing-sm, 8px);
-    max-width: calc(100% - 2 * var(--spacing-sm, 8px));
-}
-
-/*
- * .text_pole is width:100% in the host stylesheet, so a select in a flex row
- * stretches to fill. Both pickers size to their content instead.
- */
-.sbbs-bar .sbbs-source,
-.sbbs-bar .sbbs-sort {
-    flex: 0 0 auto;
+body.neconyan .sbbs-root input.sbbs-query.text_pole,
+.sbbs-query.text_pole {
+    --neconyan-control-radius: 999px;
+    flex: 1 1 0%;
     width: auto;
-    min-width: 9rem;
-    max-width: 14rem;
-}
-
-.sbbs-query {
-    flex: 1 1 auto;
     min-width: 0;
-    width: auto;
-}
-
-.sbbs-go {
-    flex: 0 0 auto;
-}
-
-.sbbs-sfw {
+    height: 40px;
     margin: 0;
+    padding: 0 16px;
+    font-size: 0.9375rem;
+    border-radius: var(--sbbs-radius-pill);
+    background: var(--sbbs-canvas);
+    color: var(--sbbs-ink);
+    border: 1px solid var(--sbbs-border);
 }
 
-/* Both describe the results, so both sit above the grid rather than in the bar. */
-.sbbs-count {
-    color: var(--sb-muted-fg, currentColor);
-    font-size: 0.9em;
+.sbbs-query.text_pole::placeholder {
+    color: var(--sbbs-muted);
+    opacity: 0.82;
 }
 
-.sbbs-control-note {
-    color: var(--sb-muted-fg, currentColor);
-    font-size: 0.85em;
+body.neconyan .sbbs-root select.sbbs-source.text_pole,
+body.neconyan .sbbs-root select.sbbs-sort.text_pole,
+.sbbs-source.text_pole,
+.sbbs-sort.text_pole {
+    --neconyan-control-radius: 999px;
+    flex: 0 1 auto;
+    width: auto;
+    min-width: 148px;
+    max-width: 240px;
+    height: 36px;
+    margin: 0;
+    padding: 0 28px 0 12px;
+    font-size: 0.84rem;
+    font-weight: 600;
+    border-radius: var(--sbbs-radius-pill);
+    background: var(--sbbs-surface);
+    color: var(--sbbs-ink);
+    border: 1px solid var(--sbbs-border);
 }
 
-.sbbs-count:empty,
-.sbbs-control-note:empty {
-    display: none;
+body.neconyan #sbbs_search_form #sbbs_go.sbbs-go.menu_button,
+#sbbs_search_form #sbbs_go.sbbs-go.menu_button,
+body.neconyan .sbbs-root button.sbbs-go.menu_button,
+.sbbs-go.menu_button {
+    --neconyan-control-radius: 999px;
+    flex: 0 0 40px;
+    width: 40px;
+    inline-size: 40px;
+    height: 40px;
+    block-size: 40px;
+    min-width: 40px;
+    min-inline-size: 40px;
+    min-height: 40px;
+    min-block-size: 40px;
+    max-width: 40px;
+    max-inline-size: 40px;
+    max-height: 40px;
+    max-block-size: 40px;
+    margin: 0;
+    padding: 0;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    line-height: 1;
+    white-space: nowrap;
 }
 
-/* ---- filters ---- */
-
-.sbbs-filters-toggle {
+.sbbs-filters-toggle.menu_button,
+.sbbs-refresh.menu_button,
+.sbbs-filters-clear.menu_button,
+.sbbs-reload-source.menu_button,
+.sbbs-retry-source.menu_button {
+    flex: 0 0 auto;
+    width: auto;
+    min-height: 36px;
+    margin: 0;
+    padding: 0 12px;
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    flex: 0 0 auto;
+    font-size: 0.8125rem;
+    white-space: nowrap;
+}
+
+.sbbs-filters-toggle[aria-expanded="true"] {
+    background: var(--sbbs-tint-strong);
+    border-color: var(--sbbs-accent);
+    color: var(--sbbs-ink);
 }
 
 .sbbs-filters-badge {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 1.4em;
-    height: 1.4em;
-    padding: 0 0.35em;
-    border-radius: 999px;
-    background: var(--sb-accent, currentColor);
-    color: var(--sb-accent-fg, canvas);
-    font-size: 0.8em;
-    font-variant-numeric: tabular-nums;
+    min-width: 19px;
+    height: 19px;
+    padding: 0 6px;
+    border-radius: var(--sbbs-radius-pill);
+    background: var(--sbbs-accent);
+    color: var(--sbbs-on-accent);
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
 }
 
+.sbbs-bar-row-secondary {
+    justify-content: space-between;
+    gap: 8px 12px;
+}
+
+.sbbs-bar-row-actions {
+    margin-left: auto;
+    gap: 8px;
+}
+
+.sbbs-selection {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.sbbs-select-toggle.menu_button,
+.sbbs-selection-action.menu_button {
+    width: auto;
+    margin: 0;
+    padding: 0 12px;
+    min-height: 36px;
+    font-size: 0.8125rem;
+    white-space: nowrap;
+}
+
+.sbbs-selection-count {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--sbbs-muted);
+    padding: 0 4px;
+}
+
+/* Content restriction pills (SFW only, Hide AI) */
+.sbbs-content-controls {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-left: auto;
+}
+
+.sbbs-sfw,
+.sbbs-hide-ai {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0;
+    min-height: 36px;
+    padding: 4px 11px;
+    border-radius: var(--sbbs-radius-pill);
+    background: var(--sbbs-surface);
+    border: 1px solid var(--sbbs-border);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--sbbs-ink);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+}
+
+.sbbs-sfw:has(input:checked),
+.sbbs-hide-ai:has(input:checked) {
+    background: var(--sbbs-tint);
+    border-color: color-mix(in oklch, var(--sbbs-accent) 60%, var(--sbbs-border));
+}
+
+.sbbs-sfw input,
+.sbbs-hide-ai input {
+    margin: 0;
+    accent-color: var(--sbbs-accent);
+}
+
+.sbbs-sfw:has(input:disabled) {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* --- Source Filter Drawer --- */
 .sbbs-filters {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-sm, 8px);
-    padding: var(--spacing-md, 12px) 0 0;
-}
-
-/*
- * Content controls. These apply to every source and survive a source change, so
- * they are kept visually apart from the per-source fields under them.
- */
-.sbbs-filter-group {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--spacing-xs, 4px) var(--spacing-md, 12px);
-}
-
-/* Only a divider when there is something under it to divide from. */
-.sbbs-filter-group:has(+ .sbbs-filter-fields:not(:empty)) {
-    padding-bottom: var(--spacing-sm, 8px);
-    border-bottom: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.12));
-}
-
-.sbbs-filter-fields:empty {
-    display: none;
+    gap: 12px;
+    padding: 14px;
+    border-radius: var(--sbbs-radius-lg);
+    background: var(--sbbs-surface);
+    border: 1px solid var(--sbbs-border);
 }
 
 .sbbs-filter-fields {
     display: grid;
-    /* Wide enough for a tag list, narrow enough that two fit side by side. */
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: var(--spacing-sm, 8px) var(--spacing-md, 12px);
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 10px 14px;
+    align-items: start;
 }
 
 .sbbs-filter {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 5px;
     min-width: 0;
 }
 
-.sbbs-filter-label {
-    font-size: 0.85em;
-    color: var(--sb-muted-fg, currentColor);
-}
-
-.sbbs-filter input {
-    min-width: 0;
-    width: 100%;
+.sbbs-filter-tags {
+    grid-column: 1 / -1;
 }
 
 .sbbs-filter-boolean {
-    justify-content: center;
+    justify-content: flex-end;
+    align-self: end;
+}
+
+.sbbs-filter-label {
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: var(--sbbs-muted);
+    letter-spacing: 0.01em;
+}
+
+.sbbs-filter input.text_pole {
+    width: 100%;
+    height: 36px;
+    margin: 0;
+    padding: 0 10px;
+    font-size: 0.84rem;
+    border-radius: var(--sbbs-radius-sm);
+    background: var(--sbbs-canvas);
+    border: 1px solid var(--sbbs-border);
 }
 
 .sbbs-filter-checkbox {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 6px;
-    min-height: var(--input-height, 36px);
-}
-
-.sbbs-filter-checkbox input {
-    flex: 0 0 auto;
-    width: auto;
+    gap: 8px;
+    min-height: 36px;
+    margin: 0;
+    padding: 4px 10px;
+    border-radius: var(--sbbs-radius-sm);
+    background: var(--sbbs-raised);
+    border: 1px solid var(--sbbs-border);
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
 }
 
 .sbbs-filter-chips {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: 6px;
 }
 
 .sbbs-filter-chips:empty {
@@ -367,99 +618,302 @@
 .sbbs-filter-chip {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 2px 4px 2px 8px;
-    border-radius: 999px;
-    border: 1px solid var(--sb-border, currentColor);
-    font-size: 0.85em;
-    max-width: 100%;
-    overflow-wrap: anywhere;
+    gap: 5px;
+    padding: 3px 6px 3px 10px;
+    border-radius: var(--sbbs-radius-pill);
+    background: var(--sbbs-tint);
+    border: 1px solid color-mix(in oklch, var(--sbbs-accent) 45%, var(--sbbs-border));
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--sbbs-ink);
 }
 
-.sbbs-filter-chip-remove {
+.sbbs-filter-chip-exclude {
+    background: color-mix(in oklch, var(--sbbs-ink) 8%, var(--sbbs-raised));
+    border-style: dashed;
+}
+
+body.neconyan .sbbs-root .sbbs-filter-chip button.sbbs-filter-chip-remove,
+.sbbs-root .sbbs-filter-chip button.sbbs-filter-chip-remove {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    /* A real 24px target: these sit close together and are used on phones. */
-    min-width: 24px;
-    min-height: 24px;
+    width: 20px;
+    height: 20px;
+    min-height: 20px;
     padding: 0;
     border: 0;
-    border-radius: 999px;
-    background: none;
-    color: inherit;
-    font-size: 1.1em;
-    line-height: 1;
+    border-radius: var(--sbbs-radius-pill);
+    background: transparent;
+    color: var(--sbbs-muted);
     cursor: pointer;
+    font-size: 0.72rem;
 }
 
-.sbbs-filter-chip-remove:hover,
-.sbbs-filter-chip-remove:focus-visible {
-    background: var(--sb-hover-bg, rgb(128 128 128 / 25%));
+.sbbs-root .sbbs-filter-chip button.sbbs-filter-chip-remove:hover {
+    background: color-mix(in oklch, var(--sbbs-ink) 16%, transparent);
+    color: var(--sbbs-ink);
 }
 
 .sbbs-filter-actions {
     display: flex;
     justify-content: flex-end;
+    padding-top: 4px;
+    border-top: 1px solid var(--sbbs-border-subtle);
 }
 
-/* ---- body ---- */
+/* --- Compact Utility Drawers (Inspect file, Named searches, Shortlist) --- */
+.sbbs-utility-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 8px;
+    align-items: start;
+}
 
-.sbbs-body {
-    /*
-     * In normal flow with the page: .sbbs-root is the scroller, so this
-     * column needs neither its own scroll box nor a reserved floor. `clip`
-     * (not `hidden`) keeps wide children inside without becoming a scroll
-     * container, which would trap the page scroll again.
-     */
-    flex: 0 0 auto;
-    min-height: 0;
-    overflow: clip;
+.sbbs-file-actions,
+.sbbs-named-searches,
+.sbbs-shortlist,
+.sbbs-inside,
+.sbbs-detail-tags {
+    border-radius: var(--sbbs-radius-md);
+    background: var(--sbbs-surface);
+    border: 1px solid var(--sbbs-border);
+    overflow: hidden;
+}
+
+body.neconyan .sbbs-root :is(.sbbs-file-actions, .sbbs-named-searches, .sbbs-shortlist, .sbbs-inside, .sbbs-detail-tags) > summary,
+.sbbs-root :is(.sbbs-file-actions, .sbbs-named-searches, .sbbs-shortlist, .sbbs-inside, .sbbs-detail-tags) > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 38px;
+    padding: 7px 12px;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--sbbs-ink);
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    border-radius: 0;
+}
+
+.sbbs-root :is(.sbbs-file-actions, .sbbs-named-searches, .sbbs-shortlist, .sbbs-inside, .sbbs-detail-tags) > summary::-webkit-details-marker {
+    display: none;
+}
+
+.sbbs-root :is(.sbbs-file-actions, .sbbs-named-searches, .sbbs-shortlist, .sbbs-inside, .sbbs-detail-tags) > summary::after {
+    content: '\f078';
+    font-family: 'Font Awesome 6 Free';
+    font-weight: 900;
+    font-size: 0.72rem;
+    color: var(--sbbs-muted);
+    transition: transform 0.16s ease;
+}
+
+.sbbs-root :is(.sbbs-file-actions, .sbbs-named-searches, .sbbs-shortlist, .sbbs-inside, .sbbs-detail-tags)[open] > summary {
+    border-bottom: 1px solid var(--sbbs-border-subtle);
+    background: var(--sbbs-raised);
+}
+
+.sbbs-root :is(.sbbs-file-actions, .sbbs-named-searches, .sbbs-shortlist, .sbbs-inside, .sbbs-detail-tags)[open] > summary::after {
+    transform: rotate(180deg);
+}
+
+.sbbs-file-actions-body,
+.sbbs-named-body,
+.sbbs-shortlist-body {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-md, 12px);
+    gap: 8px;
+    padding: 10px 12px;
+}
+
+.sbbs-file-actions-body {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.sbbs-inspect-file.menu_button {
+    width: auto;
+    margin: 0;
+    padding: 0 12px;
+    font-size: 0.8125rem;
+}
+
+.sbbs-named-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.sbbs-named-controls .text_pole {
+    flex: 1 1 150px;
+    min-width: 120px;
+    height: 36px;
+    margin: 0;
+    padding: 0 10px;
+    font-size: 0.82rem;
+}
+
+.sbbs-named-controls .menu_button,
+.sbbs-shortlist-actions .menu_button {
+    width: auto;
+    margin: 0;
+    padding: 0 12px;
+    font-size: 0.8125rem;
+}
+
+.sbbs-shortlist-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.sbbs-shortlist-items {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.sbbs-shortlist-items:empty {
+    display: none;
+}
+
+.sbbs-shortlist-item {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    border-radius: var(--sbbs-radius-sm);
+    background: var(--sbbs-raised);
+    border: 1px solid var(--sbbs-border-subtle);
+    font-size: 0.82rem;
+}
+
+.sbbs-shortlist-item > span {
+    flex: 1 1 180px;
+    min-width: 0;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sbbs-shortlist-review.menu_button,
+.sbbs-shortlist-remove.menu_button {
+    width: auto;
+    margin: 0;
+    padding: 0 10px;
+    min-height: 30px;
+    font-size: 0.76rem;
+}
+
+/* --- Meta Bar, Status & Notices --- */
+.sbbs-meta-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px 14px;
+    padding: 0 4px;
+}
+
+.sbbs-meta-bar:not(:has(.sbbs-count:not(:empty), .sbbs-control-note:not(:empty))) {
+    display: none;
+}
+
+.sbbs-count {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--sbbs-ink);
+}
+
+.sbbs-control-note {
+    font-size: 0.76rem;
+    color: var(--sbbs-muted);
+}
+
+.sbbs-count:empty,
+.sbbs-control-note:empty {
+    display: none;
 }
 
 .sbbs-state {
-    color: var(--sb-muted-fg, currentColor);
-    padding: var(--spacing-md, 12px) 0;
+    padding: 28px 16px;
+    text-align: center;
+    color: var(--sbbs-muted);
+    font-size: 0.9rem;
+    border-radius: var(--sbbs-radius-md);
+    background: color-mix(in oklch, var(--sbbs-surface) 70%, transparent);
+    border: 1px dashed var(--sbbs-border-subtle);
 }
 
 .sbbs-state:empty {
     display: none;
-    padding: 0;
 }
 
-/*
- * Requests for this source now leave from the browser rather than the server.
- * Deliberately persistent rather than a toast: it describes an ongoing state,
- * not an event, and it is the user's only on-screen sign that their own address
- * is reaching the card site until they dismiss it.
- */
+.sbbs-partial,
+.sbbs-recovered-sources {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 12px;
+    border-radius: var(--sbbs-radius-md);
+    background: var(--sbbs-raised);
+    border: 1px solid var(--sbbs-border);
+    font-size: 0.8125rem;
+    color: var(--sbbs-muted);
+}
+
+.sbbs-partial-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.sbbs-reload {
+    display: flex;
+    justify-content: center;
+}
+
 .sbbs-direct-notice {
     display: flex;
     align-items: flex-start;
-    gap: var(--spacing-sm, 8px);
-    padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
-    border: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.12));
-    border-radius: var(--sb-radius-sm, 6px);
-    color: var(--sb-muted-fg, currentColor);
-    font-size: 0.9em;
-    line-height: 1.45;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 9px 12px;
+    border-radius: var(--sbbs-radius-md);
+    background: var(--sbbs-tint);
+    border: 1px solid color-mix(in oklch, var(--sbbs-accent) 45%, var(--sbbs-border));
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: var(--sbbs-ink);
 }
 
-.sbbs-direct-notice.sbbs-janny-notice {
+.sbbs-janny-notice {
     display: block;
 }
 
 .sbbs-janny-notice > summary {
-    min-height: 32px;
     cursor: pointer;
-    font-weight: 600;
+    font-weight: 700;
+    color: var(--sbbs-ink);
 }
 
 .sbbs-janny-notice-text {
-    margin: var(--spacing-sm, 8px) 0;
+    margin: 6px 0 8px;
+    color: var(--sbbs-muted);
 }
 
 .sbbs-direct-notice-text {
@@ -467,37 +921,34 @@
     min-width: 0;
 }
 
-.sbbs-direct-notice-dismiss {
-    flex: 0 0 auto;
-    width: 32px;
-    height: 32px;
+body.neconyan .sbbs-root .sbbs-direct-notice button.sbbs-direct-notice-dismiss,
+.sbbs-root .sbbs-direct-notice button.sbbs-direct-notice-dismiss {
+    flex: 0 0 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    min-height: 28px;
     padding: 0;
     border: 0;
+    border-radius: var(--sbbs-radius-pill);
     background: transparent;
-    color: inherit;
-    font: inherit;
-    line-height: 1;
+    color: var(--sbbs-muted);
     cursor: pointer;
-    opacity: 0.7;
-    display: grid;
-    place-items: center;
 }
 
-.sbbs-direct-notice-dismiss:hover {
-    opacity: 1;
+.sbbs-root .sbbs-direct-notice button.sbbs-direct-notice-dismiss:hover {
+    color: var(--sbbs-ink);
+    background: color-mix(in oklch, var(--sbbs-ink) 12%, transparent);
 }
 
-.sbbs-direct-notice-dismiss:focus-visible {
-    outline: 2px solid var(--sb-focus-ring, currentColor);
-    outline-offset: 2px;
-}
-
-/* ---- grid ---- */
-
+/* --- Character Card Grid --- */
 .sbbs-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: var(--spacing-md, 12px);
+    grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
+    gap: 14px;
     list-style: none;
     margin: 0;
     padding: 0;
@@ -507,1389 +958,1228 @@
     display: none;
 }
 
-/*
- * The card is a container, not a button: the tags inside it are their own
- * buttons and a button inside a button is neither valid nor keyboard-reachable.
- * `.sbbs-card-open` is the primary action and fills everything above the tags.
- */
-/*
- * The positioning context for the rating and source chips. They live in the
- * card's footer row in the DOM, because the narrow list layout has no room for
- * them on its thumbnail; here they are lifted back over the artwork. Anchoring
- * to the card rather than to .sbbs-card-img works because the image is the
- * card's first content, so the card's top corners are the image's top corners.
- */
+.sbbs-grid > li {
+    display: flex;
+    min-width: 0;
+}
+
 .sbbs-card {
     position: relative;
-    background: var(--sb-card-bg, rgba(255, 255, 255, 0.04));
-    border: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.12));
-    border-radius: var(--sb-radius-md, 10px);
-    overflow: hidden;
     display: flex;
     flex-direction: column;
-    height: 100%;
-    transition:
-        transform var(--sb-transition-fast, 120ms) ease,
-        border-color var(--sb-transition-fast, 120ms) ease;
+    width: 100%;
+    min-width: 0;
+    border-radius: var(--sbbs-radius-lg);
+    background: var(--sbbs-surface);
+    border: 1px solid var(--sbbs-border);
+    overflow: hidden;
+    transition: border-color 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
 }
 
-.sbbs-card-open {
-    cursor: pointer;
-    text-align: start;
+.sbbs-card:hover,
+.sbbs-card:focus-within {
+    border-color: color-mix(in oklch, var(--sbbs-accent) 68%, var(--sbbs-border));
+    box-shadow: 0 6px 18px color-mix(in oklch, var(--sbbs-canvas) 45%, transparent);
+}
+
+.sbbs-root[data-selecting="true"] .sbbs-card:has(.sbbs-card-open[aria-pressed="true"]) {
+    border-color: var(--sbbs-accent);
+    box-shadow: 0 0 0 2px var(--sbbs-accent);
+    background: var(--sbbs-tint);
+}
+
+body.neconyan .sbbs-root .sbbs-card button.sbbs-card-open,
+.sbbs-root .sbbs-card button.sbbs-card-open {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    width: 100%;
+    min-height: 0;
     padding: 0;
-    margin: 0;
     border: 0;
-    background: none;
+    border-radius: 0;
+    background: transparent;
     color: inherit;
     font: inherit;
-    width: 100%;
-    /*
-     * Column flex rather than block: a <button> taller than its content centres
-     * that content vertically, so cards with fewer tags pushed their thumbnail
-     * down and the row of artwork came out ragged.
-     */
+    text-align: left;
+    cursor: pointer;
+}
+
+body.neconyan .sbbs-root .sbbs-card button.sbbs-card-open:focus-visible,
+.sbbs-root .sbbs-card button.sbbs-card-open:focus-visible {
+    outline: 2px solid var(--sbbs-accent);
+    outline-offset: -2px;
+}
+
+.sbbs-root[data-selecting="true"] .sbbs-card-open::after {
+    content: '';
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 3;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--sbbs-radius-pill);
+    background: color-mix(in oklch, var(--sbbs-canvas) 78%, transparent);
+    border: 2px solid var(--sbbs-ink);
+}
+
+.sbbs-root[data-selecting="true"] .sbbs-card-open[aria-pressed="true"]::after {
+    content: '\f00c';
+    font-family: 'Font Awesome 6 Free';
+    font-weight: 900;
+    font-size: 0.72rem;
     display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+    background: var(--sbbs-accent);
+    border-color: var(--sbbs-accent);
+    color: var(--sbbs-on-accent);
 }
 
-@media (hover: hover) {
-    .sbbs-card:has(.sbbs-card-open:hover) {
-        transform: translateY(-2px);
-        border-color: var(--sb-accent, currentColor);
-    }
-}
-
-/* The ring goes on the card, so it frames the whole thing rather than the
-   inner button's edge. */
-.sbbs-card:has(.sbbs-card-open:focus-visible) {
-    border-color: var(--sb-accent, currentColor);
-    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--sb-focus-ring, currentColor) 58%, transparent);
-}
-
-.sbbs-card-open:focus-visible {
-    outline: none;
-}
-
-/* :has() is widely supported, but a browser without it must still show focus. */
-@supports not selector(:has(*)) {
-    .sbbs-card-open:focus-visible {
-        outline: 2px solid var(--sb-focus-ring, currentColor);
-        outline-offset: -2px;
-    }
-}
-
-/*
- * Fixed ratio so the grid never reflows as thumbnails arrive.
- *
- * min-height:0 is what makes that true. This is a grid container, so its
- * automatic minimum size is the thumbnail's own min-content height — a portrait
- * image taller than the ratio pushes the box past it and the row grows. The
- * image is cropped by object-fit: cover instead, which is the intent.
- */
 .sbbs-card-img {
-    /* Anchors the selection mark. */
     position: relative;
-    aspect-ratio: 2 / 3;
-    min-height: 0;
+    width: 100%;
+    aspect-ratio: 3 / 4;
+    background: linear-gradient(
+        160deg,
+        var(--sbbs-raised) 0%,
+        color-mix(in oklch, var(--sbbs-accent) 14%, var(--sbbs-canvas)) 100%
+    );
     overflow: hidden;
-    background: var(--sb-surface-highlight, rgba(255, 255, 255, 0.06));
-    display: grid;
-    place-items: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sbbs-card-initial {
+    font-family: var(--sbbs-font-display);
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: color-mix(in oklch, var(--sbbs-muted) 65%, transparent);
+    user-select: none;
+    transition: opacity 0.15s ease;
+}
+
+/* Hide fallback initial when a portrait image is present so transparent avatars never bleed through */
+.sbbs-card-img:has(img) .sbbs-card-initial {
+    opacity: 0;
 }
 
 .sbbs-card-img img {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
-    /* Sits above the initial, which shows through when no image loads. */
-    grid-area: 1 / 1;
 }
 
-.sbbs-card-initial {
-    grid-area: 1 / 1;
-    font-size: 2.5rem;
-    font-weight: 600;
-    opacity: 0.35;
-    user-select: none;
-}
-
-.sbbs-rating {
-    position: absolute;
-    inset-block-start: var(--spacing-xs, 4px);
-    inset-inline-end: var(--spacing-xs, 4px);
-    z-index: 2;
-    border: 1px solid var(--sb-shell-border, currentColor);
-    border-radius: 999px;
-    background: var(--sb-shell-surface, rgba(0, 0, 0, 0.72));
-    color: inherit;
-    padding: 2px 7px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    line-height: 1.35;
-}
-
-/* Only rendered when results come from more than one site. */
-.sbbs-card-source {
-    position: absolute;
-    inset-block-start: var(--spacing-xs, 4px);
-    inset-inline-start: var(--spacing-xs, 4px);
-    z-index: 2;
-    max-width: calc(100% - 5.5rem);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    border-radius: 999px;
-    background: var(--sb-shell-surface, rgba(0, 0, 0, 0.72));
-    border: 1px solid var(--sb-shell-border, currentColor);
-    padding: 2px 7px;
-    font-size: 0.72rem;
-    line-height: 1.35;
-}
-
-.sbbs-partial {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    color: var(--sb-muted-fg, currentColor);
-    font-size: 0.85em;
-}
-
-/*
- * Offers a failed source another try. Aligned to the start rather than centred
- * so it reads as a continuation of the message above it.
- */
-.sbbs-reload {
-    display: flex;
-    justify-content: flex-start;
-}
-
-.sbbs-reload-source {
-    flex: 0 0 auto;
-}
-
-.sbbs-rating-sensitive {
-    border-color: var(--sb-color-warning, var(--sb-accent, currentColor));
-}
-
-.sbbs-rating-unknown {
-    border-style: dashed;
+.sbbs-card-img.sbbs-blurred img,
+.sbbs-detail-image.sbbs-blurred img {
+    filter: blur(20px) scale(1.08);
 }
 
 .sbbs-card-meta {
-    padding: var(--spacing-sm, 8px);
-    display: grid;
-    gap: 2px;
-}
-
-.sbbs-card-name,
-.sbbs-card-sub {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.sbbs-card-sub {
-    color: var(--sb-muted-fg, currentColor);
-    font-size: 0.85em;
-}
-
-/*
- * The source's own summary line. Clamped to two lines so a long tagline cannot
- * push cards to different heights across the grid; the full text is in the
- * detail pane, which is where reading it belongs.
- */
-.sbbs-card-tagline {
-    color: var(--sb-muted-fg, currentColor);
-    font-size: 0.8em;
-    line-height: 1.35;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    overflow: hidden;
-}
-
-/*
- * The card's last line. On a wide screen the rating and source chips are lifted
- * out of it onto the artwork, so only the popularity figures remain in flow.
- * min-width:0 because it is a grid item wrapping non-wrapping text.
- */
-.sbbs-card-footer {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    gap: 4px;
+    padding: 10px 12px 8px;
     min-width: 0;
 }
 
-.sbbs-card-stats {
-    color: var(--sb-muted-fg, currentColor);
-    font-size: 0.78em;
-    font-variant-numeric: tabular-nums;
+.sbbs-card-name {
+    font-family: var(--sbbs-font-body);
+    font-weight: 700;
+    font-size: 0.9375rem;
+    line-height: 1.25;
+    color: var(--sbbs-ink);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.sbbs-card-sub {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--sbbs-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sbbs-card-sub:empty {
+    display: none;
+}
+
+.sbbs-card-tagline {
+    font-size: 0.78rem;
+    line-height: 1.35;
+    color: color-mix(in oklch, var(--sbbs-ink) 84%, var(--sbbs-muted));
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    margin-top: 2px;
+}
+
+.sbbs-card-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px 8px;
+    margin-top: auto;
+    padding-top: 4px;
+}
+
+.sbbs-card-stats {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--sbbs-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Lift source and content rating badges onto the portrait corners on desktop */
+.sbbs-card-source {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 2;
+    max-width: calc(100% - 68px);
+    padding: 2px 8px;
+    border-radius: var(--sbbs-radius-pill);
+    background: color-mix(in oklch, var(--sbbs-canvas) 82%, transparent);
+    border: 1px solid color-mix(in oklch, var(--sbbs-border) 70%, transparent);
+    backdrop-filter: blur(6px);
+    color: var(--sbbs-ink);
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sbbs-root[data-selecting="true"] .sbbs-card-source {
+    left: 38px;
+}
+
+.sbbs-rating {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border-radius: var(--sbbs-radius-pill);
+    font-size: 0.66rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    line-height: 1.35;
+    text-transform: uppercase;
+    background: var(--sbbs-raised);
+    color: var(--sbbs-muted);
+    border: 1px solid var(--sbbs-border);
+}
+
+.sbbs-card .sbbs-rating {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 2;
+    background: color-mix(in oklch, var(--sbbs-canvas) 84%, transparent);
+    backdrop-filter: blur(6px);
+}
+
+.sbbs-rating-sensitive {
+    color: var(--sbbs-accent);
+    border-color: color-mix(in oklch, var(--sbbs-accent) 65%, var(--sbbs-border));
+}
+
+.sbbs-rating-sfw {
+    color: var(--sbbs-ink);
 }
 
 .sbbs-card-tags {
     display: flex;
     flex-wrap: wrap;
-    gap: 3px;
-    padding: 0 var(--spacing-sm, 8px) var(--spacing-sm, 8px);
+    gap: 4px;
+    padding: 0 12px 8px;
 }
 
-.sbbs-card-tag {
-    border: 1px solid var(--sb-shell-border, currentColor);
-    border-radius: 999px;
-    padding: 1px 7px;
-    font-size: 0.72em;
-    color: var(--sb-muted-fg, currentColor);
+.sbbs-card-tag,
+body.neconyan .sbbs-root .sbbs-card-tags button.sbbs-card-tag-button,
+.sbbs-root .sbbs-card-tags button.sbbs-card-tag-button {
+    display: inline-flex;
+    align-items: center;
     max-width: 100%;
+    min-height: 22px;
+    padding: 2px 8px;
+    border-radius: var(--sbbs-radius-pill);
+    background: var(--sbbs-raised);
+    border: 1px solid var(--sbbs-border-subtle);
+    color: var(--sbbs-muted);
+    font-family: inherit;
+    font-size: 0.7rem;
+    font-weight: 600;
+    line-height: 1.25;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.sbbs-card-tag-button {
-    background: none;
-    font-family: inherit;
+body.neconyan .sbbs-root .sbbs-card-tags button.sbbs-card-tag-button,
+.sbbs-root .sbbs-card-tags button.sbbs-card-tag-button {
     cursor: pointer;
 }
 
-@media (hover: hover) {
-    .sbbs-card-tag-button:hover {
-        border-color: var(--sb-accent, currentColor);
-        color: inherit;
-    }
+.sbbs-root .sbbs-card-tags button.sbbs-card-tag-button:hover {
+    background: var(--sbbs-tint);
+    border-color: color-mix(in oklch, var(--sbbs-accent) 55%, var(--sbbs-border));
+    color: var(--sbbs-ink);
 }
 
-.sbbs-card-tag-button:focus-visible {
-    outline: 2px solid var(--sb-focus-ring, currentColor);
-    outline-offset: 1px;
-}
-
-/* ---- selecting cards ---- */
-
-/*
- * Beside Refresh results, under the sticky search rows: the mode toggle
- * alone when off, the count and the actions beside it when on. Zero basis
- * with growth, so the toggle shares Refresh's line and only the overflow
- * wraps inside this group rather than pushing the whole group down.
- */
-.sbbs-selection {
-    flex: 1 1 0;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--spacing-sm, 8px);
-    padding-block: var(--spacing-xs, 4px);
-    background: var(--sb-shell-surface, var(--SmartThemeBlurTintColor, rgba(0, 0, 0, 0.72)));
-}
-
-.sbbs-selection[hidden] {
-    display: none;
-}
-
-.sbbs-select-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-xs, 4px);
-}
-
-.sbbs-selection-count {
-    color: var(--sb-muted-fg, currentColor);
-    font-size: 0.9em;
-    margin-inline-start: auto;
-}
-
-.sbbs-selection-count:empty {
-    display: none;
-}
-
-/*
- * The mark sits on the thumbnail's bottom corner: the top corners already
- * carry the rating and source chips. An empty ring on every card says the
- * mode is on; a filled one says this card is in.
- */
-.sbbs-root[data-selecting="true"] .sbbs-card-img::after {
-    content: '';
-    position: absolute;
-    inset-block-end: var(--spacing-xs, 4px);
-    inset-inline-end: var(--spacing-xs, 4px);
-    z-index: 2;
-    width: 1.35rem;
-    height: 1.35rem;
-    border-radius: 50%;
-    border: 2px solid var(--sb-shell-border, currentColor);
-    background: var(--sb-shell-surface, rgba(0, 0, 0, 0.72));
-    /* Same pairing as the filter-count badge, so the mark reads on any theme. */
-    color: var(--sb-accent-fg, canvas);
-    font-size: 0.9rem;
+body.neconyan .sbbs-root .sbbs-card button.sbbs-shortlist-toggle.menu_button,
+.sbbs-root .sbbs-card button.sbbs-shortlist-toggle.menu_button {
+    width: calc(100% - 16px);
+    min-height: 30px;
+    margin: 0 8px 8px;
+    padding: 4px 12px;
+    border-radius: var(--sbbs-radius-pill);
+    font-size: 0.76rem;
     font-weight: 700;
-    line-height: 1.15rem;
-    text-align: center;
+    justify-content: center;
 }
 
-.sbbs-root[data-selecting="true"] .sbbs-card-selected .sbbs-card-img::after {
-    content: '\2713';
-    border-color: var(--sb-accent, currentColor);
-    background: var(--sb-accent, currentColor);
-}
-
-.sbbs-root[data-selecting="true"] .sbbs-card-selected {
-    border-color: var(--sb-accent, currentColor);
-}
-
-.sbbs-more {
+.sbbs-more.menu_button {
     align-self: center;
-    flex: 0 0 auto;
+    width: auto;
+    min-width: 160px;
+    min-height: 38px;
+    margin: 6px 0 2px;
+    padding: 0 20px;
+    font-size: 0.85rem;
 }
 
-/* Loading placeholders keep the grid from jumping as results arrive. */
+/* Skeleton placeholders */
+.sbbs-skeleton {
+    border-radius: var(--sbbs-radius-lg);
+    overflow: hidden;
+    border: 1px solid var(--sbbs-border-subtle);
+    background: var(--sbbs-surface);
+}
+
 .sbbs-skeleton .sbbs-card-img {
-    border-radius: var(--sb-radius-md, 10px);
-    animation: sbbs-shimmer 1.4s ease-in-out infinite;
+    width: 100%;
+    aspect-ratio: 3 / 4;
+    animation: sbbs-pulse 1.5s ease-in-out infinite;
 }
 
-@keyframes sbbs-shimmer {
-    0%, 100% { opacity: 0.35; }
-    50% { opacity: 0.7; }
+@keyframes sbbs-pulse {
+    0%, 100% { opacity: 0.45; }
+    50% { opacity: 0.85; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-    .sbbs-root *,
-    .sbbs-root *::before,
-    .sbbs-root *::after {
-        animation-duration: 0.01ms;
-        animation-iteration-count: 1;
-        transition-duration: 0.01ms;
-    }
-
-    .sbbs-skeleton .sbbs-card-img {
-        animation: none;
-        opacity: 0.4;
-    }
-}
-
-.sbbs-blurred img {
-    filter: blur(18px);
-}
-
-.sbbs-detail .sbbs-blurred {
-    cursor: pointer;
-}
-
-/* ---- detail ---- */
-
-/*
- * Column layout with its own scroller, so the action bar can pin to the bottom.
- * Card descriptions run to thousands of characters; without this the Import
- * button lands far below the fold, which buries the one action people came for.
- */
-.sbbs-detail {
-    flex: 1 1 auto;
-    min-height: 0;
+/* --- Detail & Intake Views --- */
+.sbbs-detail,
+.sbbs-intake {
     display: flex;
     flex-direction: column;
-    overflow-y: auto;
-}
-
-.sbbs-detail-body {
-    flex: 1 1 auto;
-    min-height: var(--sb-mobile-touch-target, 44px);
-    overflow-y: auto;
-}
-
-.sbbs-root[data-view="detail"] .sbbs-bar,
-.sbbs-root[data-view="detail"] > header:has(.sbbs-bar),
-.sbbs-root[data-view="detail"] .sbbs-body,
-.sbbs-root[data-view="intake"] .sbbs-bar,
-.sbbs-root[data-view="intake"] > header:has(.sbbs-bar),
-.sbbs-root[data-view="intake"] .sbbs-body {
-    display: none;
-}
-
-.sbbs-root[data-view="grid"] .sbbs-detail,
-.sbbs-root[data-view="intake"] .sbbs-detail {
-    display: none;
-}
-
-/* Owned by data-view alone, like .sbbs-detail; never given a `hidden` attribute. */
-.sbbs-root[data-view="grid"] .sbbs-intake,
-.sbbs-root[data-view="detail"] .sbbs-intake {
-    display: none;
+    gap: 14px;
 }
 
 .sbbs-detail-header {
-    flex: 0 0 auto;
-    margin-bottom: var(--spacing-sm, 8px);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--sbbs-border-subtle);
+}
+
+.sbbs-back.menu_button,
+.sbbs-intake-back.menu_button {
+    width: auto;
+    min-height: 36px;
+    margin: 0;
+    padding: 0 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.82rem;
 }
 
 .sbbs-detail-body {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    grid-auto-rows: max-content;
-    align-content: start;
-    gap: var(--spacing-lg, 16px);
-    align-items: flex-start;
-    padding-right: var(--spacing-xs, 4px);
+    grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
+    grid-template-areas:
+        "image identity"
+        "image main";
+    gap: 16px 22px;
+    align-items: start;
 }
 
-.sbbs-detail-body:has(.sbbs-detail-image) {
-    grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
-}
-
-.sbbs-detail-body:has(.sbbs-detail-image) > .sbbs-detail-identity,
-.sbbs-detail-body:has(.sbbs-detail-image) > .sbbs-detail-main {
-    grid-column: 2;
+.sbbs-detail-identity {
+    grid-area: identity;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    padding: 14px 16px;
+    border-radius: var(--sbbs-radius-lg);
+    background: var(--sbbs-surface);
+    border: 1px solid var(--sbbs-border);
 }
 
 .sbbs-detail-image {
-    grid-column: 1;
-    grid-row: 1 / span 2;
-    width: 100%;
-    border-radius: var(--sb-radius-md, 10px);
+    grid-area: image;
+    position: relative;
+    border-radius: var(--sbbs-radius-lg);
     overflow: hidden;
-    background: var(--sb-surface-highlight, rgba(255, 255, 255, 0.06));
+    aspect-ratio: 3 / 4;
+    background: var(--sbbs-raised);
+    border: 1px solid var(--sbbs-border);
+    box-shadow: 0 6px 18px color-mix(in oklch, var(--sbbs-canvas) 40%, transparent);
 }
 
 .sbbs-detail-image img {
     width: 100%;
-    height: auto;
+    height: 100%;
+    object-fit: cover;
     display: block;
 }
 
-.sbbs-detail-main,
-.sbbs-detail-identity {
-    min-width: 0;
+body.neconyan .sbbs-root .sbbs-detail-image button.sbbs-reveal,
+.sbbs-root .sbbs-detail-image button.sbbs-reveal {
+    position: absolute;
+    inset: auto 12px 12px 12px;
+    z-index: 2;
+    min-height: 36px;
+    padding: 6px 12px;
+    border-radius: var(--sbbs-radius-sm);
+    border: 1px solid var(--sbbs-border);
+    background: color-mix(in oklch, var(--sbbs-canvas) 86%, transparent);
+    backdrop-filter: blur(6px);
+    color: var(--sbbs-ink);
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.sbbs-detail-main {
+    grid-area: main;
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-sm, 8px);
+    gap: 12px;
+    min-width: 0;
+}
+
+.sbbs-detail-name,
+.sbbs-intake-title {
+    margin: 0;
+    font-family: var(--sbbs-font-display);
+    font-size: 1.35rem;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--sbbs-ink);
     overflow-wrap: anywhere;
 }
 
 .sbbs-detail-intro {
     margin: 0;
-    max-width: 70ch;
-    color: var(--sb-muted-fg, currentColor);
+    font-size: 0.9rem;
+    line-height: 1.45;
+    color: color-mix(in oklch, var(--sbbs-ink) 88%, var(--sbbs-muted));
+    overflow-wrap: anywhere;
 }
 
-.sbbs-detail-tags > .sbbs-tags {
-    margin-top: var(--spacing-sm, 8px);
-}
-
-.sbbs-detail-name {
-    margin: 0;
+.sbbs-detail-stats {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--sbbs-muted);
 }
 
 .sbbs-detail-meta,
 .sbbs-tags {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--spacing-xs, 4px);
+    gap: 6px;
+    align-items: center;
+}
+
+.sbbs-detail-tags .sbbs-tags {
+    padding: 10px 12px;
 }
 
 .sbbs-chip,
-.sbbs-tag {
-    min-width: 0;
-    max-width: 100%;
-    overflow-wrap: anywhere;
-    border: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.12));
-    border-radius: var(--sb-radius-sm, 6px);
-    padding: 1px 8px;
-    font-size: 0.85em;
+.sbbs-tag,
+body.neconyan .sbbs-root button.sbbs-tag-button,
+.sbbs-root button.sbbs-tag-button {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    padding: 3px 10px;
+    border-radius: var(--sbbs-radius-pill);
+    background: var(--sbbs-raised);
+    border: 1px solid var(--sbbs-border);
+    font-family: inherit;
+    font-size: 0.76rem;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--sbbs-ink);
 }
 
 .sbbs-chip-link {
+    color: var(--sbbs-accent);
     text-decoration: none;
+    border-color: color-mix(in oklch, var(--sbbs-accent) 50%, var(--sbbs-border));
 }
 
-.sbbs-tag-button {
-    background: none;
-    color: inherit;
-    font-family: inherit;
-    line-height: inherit;
-    /* Comfortable to hit on a phone without changing how the row reads. */
-    min-height: 28px;
+.sbbs-chip-link:hover {
+    background: var(--sbbs-tint);
+    text-decoration: underline;
+}
+
+body.neconyan .sbbs-root button.sbbs-tag-button,
+.sbbs-root button.sbbs-tag-button {
     cursor: pointer;
 }
 
-@media (hover: hover) {
-    .sbbs-tag-button:hover {
-        border-color: var(--sb-accent, currentColor);
-    }
-}
-
-.sbbs-tag-button:focus-visible {
-    outline: 2px solid var(--sb-focus-ring, currentColor);
-    outline-offset: 1px;
-}
-
-.sbbs-detail-stats {
-    color: var(--sb-muted-fg, currentColor);
-    font-size: 0.9em;
+.sbbs-root button.sbbs-tag-button:hover {
+    background: var(--sbbs-tint);
+    border-color: var(--sbbs-accent);
 }
 
 .sbbs-detail-subhead {
-    margin: var(--spacing-sm, 8px) 0 0;
-    font-size: 1em;
-    color: var(--sb-muted-fg, currentColor);
+    margin: 4px 0 0;
+    font-family: var(--sbbs-font-display);
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: var(--sbbs-ink);
 }
 
-/* Untrusted description text: preserve the author's line breaks, never parse it. */
 .sbbs-description {
-    max-width: 70ch;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+    font-size: 0.875rem;
+    line-height: 1.55;
+    max-height: 36vh;
+    overflow-y: auto;
+    padding: 12px 14px;
+    border-radius: var(--sbbs-radius-md);
+    background: var(--sbbs-surface);
+    border: 1px solid var(--sbbs-border);
+    color: var(--sbbs-ink);
 }
 
-/* ---- card contents ---- */
-
-.sbbs-inside {
-    border: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.12));
-    border-radius: var(--sb-radius-md, 10px);
-    padding: var(--spacing-sm, 8px);
-    background: color-mix(in srgb, var(--sb-accent, currentColor) 6%, transparent);
-}
-
-.sbbs-inside > summary {
-    cursor: pointer;
-    font-weight: 600;
-}
-
-.sbbs-inside-list {
+.sbbs-inside-list,
+.sbbs-intake-list,
+.sbbs-intake-origin {
     display: grid;
-    grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
-    gap: 2px var(--spacing-md, 12px);
-    margin: var(--spacing-sm, 8px) 0 0;
-}
-
-.sbbs-inside-list dt {
-    color: var(--sb-muted-fg, currentColor);
-}
-
-.sbbs-inside-list dd {
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 6px 14px;
     margin: 0;
+    padding: 10px 12px;
+    font-size: 0.8125rem;
+}
+
+.sbbs-inside-list dt,
+.sbbs-intake-list dt,
+.sbbs-intake-origin dt {
+    color: var(--sbbs-muted);
+    font-weight: 700;
+}
+
+.sbbs-inside-list dd,
+.sbbs-intake-list dd,
+.sbbs-intake-origin dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    color: var(--sbbs-ink);
 }
 
 .sbbs-inside-empty {
-    margin: var(--spacing-sm, 8px) 0 0;
-    color: var(--sb-muted-fg, currentColor);
-}
-
-/* ---- detail actions ---- */
-
-/* Pinned, so Import is reachable without scrolling past the description. */
-.sbbs-detail-actions {
-    flex: 0 0 auto;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--spacing-sm, 8px);
-    padding-top: var(--spacing-md, 12px);
-    margin-top: var(--spacing-md, 12px);
-    border-top: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.12));
-    min-height: 0;
-    max-height: 50%;
-    overflow-y: auto;
-    overflow-wrap: anywhere;
-}
-
-.sbbs-detail-actions > * {
-    min-width: 0;
-    max-width: 100%;
-}
-
-.sbbs-trust-note {
-    flex: 1 0 100%;
     margin: 0;
-    color: var(--sb-muted-fg, currentColor);
-    font-size: 0.85em;
+    padding: 10px 12px;
+    font-size: 0.8125rem;
+    color: var(--sbbs-muted);
 }
 
-.sbbs-import-status {
-    color: var(--sb-muted-fg, currentColor);
-    font-size: 0.9em;
-}
-
-/* ---- settings drawer ---- */
-
-.sbbs-settings {
+/* Intake review sheet */
+.sbbs-intake-body,
+.sbbs-bulk {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-sm, 8px);
-}
-
-.sbbs-settings [hidden][hidden] {
-    display: none;
-}
-
-.sbbs-settings-toggle {
-    width: 100%;
-    border: 0;
-    background: none;
-    color: inherit;
-    font: inherit;
-    text-align: start;
-}
-
-.sbbs-settings-toggle:focus-visible,
-.sbbs-reveal:focus-visible,
-#sbbs_wand_item:focus-visible {
-    outline: 2px solid var(--sb-focus-ring, currentColor);
-    outline-offset: 2px;
-}
-
-#sbbs_wand_item {
-    box-sizing: border-box;
-    display: flex;
-    align-items: baseline;
     gap: 10px;
-    width: 100%;
-    margin: 0;
-    padding: 5px;
-    border: 0;
-    border-radius: 0;
-    appearance: none;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    text-align: start;
-    cursor: pointer;
-    opacity: 0.5;
-}
-
-#sbbs_wand_item:hover {
-    opacity: 1;
-}
-
-.sbbs-setting-select {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-/*
- * A checkbox with an explanation under it.
- *
- * The note is a SIBLING of .checkbox_label, never a child: that class is one of
- * Neconyan's own and is a flex row with no flex-wrap, so a full-width child
- * takes the row's width and collapses the label text to one character per line.
- */
-.sbbs-setting-noted {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-/* Explains what a setting costs, on its own line under the control. */
-.sbbs-setting-note {
-    display: block;
-    color: var(--sb-muted-fg, currentColor);
-    font-size: 0.85em;
-    line-height: 1.4;
-}
-
-/*
- * Only under a checkbox: clears the box itself so the sentence lines up with
- * the label rather than with the control. Other settings have no box to clear.
- */
-.sbbs-setting-noted > .sbbs-setting-note {
-    padding-inline-start: calc(1em + 10px);
-}
-
-.sbbs-setting-plugin {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-xs, 4px);
-    padding-bottom: var(--spacing-sm, 8px);
-    border-bottom: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.12));
-}
-
-.sbbs-setting-account {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-xs, 4px);
-    padding-bottom: var(--spacing-sm, 8px);
-    border-bottom: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.12));
-}
-
-.sbbs-account-status {
-    color: var(--sb-muted-fg, currentColor);
-}
-
-.sbbs-account-login,
-.sbbs-account-signed-in,
-.sbbs-account-field {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-xs, 4px);
-}
-
-.sbbs-account-fields {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: var(--spacing-sm, 8px);
-}
-
-.sbbs-account-field .text_pole {
-    width: 100%;
-    min-width: 0;
-    margin-block: 0;
-}
-
-/* Standalone setting actions are rows, rather than compact toolbar buttons. */
-.sbbs-setting-account > .menu_button,
-.sbbs-account-login > .menu_button,
-.sbbs-account-signed-in > .menu_button,
-.sbbs-setting-select > .menu_button,
-.sbbs-plugin-update-actions > .menu_button {
-    align-self: stretch;
-    width: 100%;
-    white-space: normal;
-}
-
-.sbbs-account-nsfw {
-    margin: 0;
-}
-
-.sbbs-plugin-update-actions,
-.sbbs-install-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--spacing-sm, 8px);
-}
-
-.sbbs-plugin-update-commands {
-    font-size: 0.8em;
-}
-
-/* ---- install panel ---- */
-
-.sbbs-install {
-    max-width: 60ch;
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-md, 12px);
-}
-
-.sbbs-install [hidden][hidden] {
-    display: none;
-}
-
-.sbbs-install-steps {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-md, 12px);
-    margin: 0;
-    padding-inline-start: 1.5em;
-}
-
-.sbbs-install-code {
-    background: var(--sb-input-bg, rgba(0, 0, 0, 0.25));
-    border: 1px solid var(--sb-input-border, rgba(255, 255, 255, 0.12));
-    border-radius: var(--sb-radius-sm, 6px);
-    padding: var(--spacing-sm, 8px);
-    margin: var(--spacing-xs, 4px) 0 0;
-}
-
-/*
- * The host theme gives every <code> its own background box. Inside a <pre> that
- * means a wrapped command renders as several boxes and reads as several
- * commands. Let the block own the background and the code just be text.
- */
-.sbbs-install-code code {
-    background: none;
-    border: none;
-    padding: 0;
-    display: block;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-}
-
-.sbbs-install-note {
-    color: var(--sb-muted-fg, currentColor);
-    font-size: 0.9em;
-}
-
-.sbbs-install-update-status {
-    margin: 0;
-    color: var(--sb-muted-fg, currentColor);
-    font-size: 0.9em;
-}
-
-/* ---- mobile ---- */
-
-@media screen and (max-width: 768px) {
-    /*
-     * A full-bleed sheet, following the fork's own contract for modal drawers
-     * (public/css/neconyan-mobile-shell.css:1, :204). Without this the dialog
-     * loses about a quarter of a phone's width before any content: 10vw to
-     * `large`'s 90vw cap, 40px to .popup's padding (public/css/popup.css:14)
-     * and 16px to .popup-content's (:66).
-     *
-     * !important is needed here and nowhere else in this sheet: the width and
-     * height come from .large_dialogue_popup (public/style.css:4090), which
-     * declares them !important, so load order alone cannot win. Do not "tidy"
-     * these away.
-     *
-     * --sb-shell-viewport-height is kept in sync with the visual viewport by
-     * public/scripts/neconyan-tabs.js:2750, so the sheet contracts when the
-     * software keyboard opens. dvh does not do that reliably on Android Chrome.
-     */
-    .popup:has(.sbbs-root) {
-        width: 100dvw !important;
-        max-width: 100dvw !important;
-        height: var(--sb-shell-viewport-height, 100dvh) !important;
-        max-height: var(--sb-shell-viewport-height, 100dvh) !important;
-        border-radius: 0 !important;
-        border-width: 0 !important;
-        padding:
-            calc(var(--spacing-sm, 8px) + env(safe-area-inset-top, 0px))
-            var(--spacing-sm, 8px)
-            calc(var(--spacing-sm, 8px) + env(safe-area-inset-bottom, 0px));
-    }
-
-    .popup:has(.sbbs-root) .popup-content {
-        margin-top: 0;
-        padding: 0;
-        /* The 44px close target gets its own row above the search controls. */
-        padding-block-start: calc(var(--sb-mobile-touch-target, 44px) + var(--spacing-sm, 8px));
-    }
-
-    .popup:has(.sbbs-root) .popup-body {
-        max-height: none;
-    }
-
-    /*
-     * The close button is parked just outside the dialog's corner
-     * (public/css/popup.css:220), which on a full-bleed sheet is off-screen.
-     * Bring it inside and give it a real touch target.
-     */
-    .popup:has(.sbbs-root) .popup-button-close {
-        inset-block-start: calc(var(--spacing-xs, 4px) + env(safe-area-inset-top, 0px));
-        inset-inline-end: var(--spacing-xs, 4px);
-        width: var(--sb-mobile-touch-target, 44px);
-        height: var(--sb-mobile-touch-target, 44px);
-        padding: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        opacity: 1;
-    }
-
-    /* Sticky behaviour itself lives on .sbbs-bar-sticky in the base rules;
-       nothing mobile-specific is needed for it. */
-
-    /* .text_pole's own 5px block margins add ~20px across two rows. */
-    .sbbs-source,
-    .sbbs-sort,
-    .sbbs-query {
-        margin-block: 0;
-    }
-
-    .sbbs-query {
-        flex: 1 1 0;
-        width: auto;
-        min-height: var(--sb-mobile-touch-target, 44px);
-    }
-
-    /* Wrap before the extra toolbar actions squeeze the pickers to arrows. */
-    .sbbs-bar .sbbs-source,
-    .sbbs-bar .sbbs-sort {
-        flex: 1 1 7rem;
-        min-width: 0;
-        max-width: none;
-    }
-
-    .sbbs-filters-toggle {
-        flex: 0 0 auto;
-        padding-inline: 10px;
-    }
-
-    .sbbs-go,
-    .sbbs-more,
-    .sbbs-back,
-    .sbbs-import,
-    .sbbs-open-character,
-    .sbbs-reveal {
-        min-width: var(--sb-mobile-touch-target, 44px);
-        min-height: var(--sb-mobile-touch-target, 44px);
-    }
-
-    .sbbs-direct-notice-dismiss {
-        width: var(--sb-mobile-touch-target, 44px);
-        height: var(--sb-mobile-touch-target, 44px);
-    }
-
-    .sbbs-janny-notice > summary {
-        min-height: var(--sb-mobile-touch-target, 44px);
-        padding-block: 12px;
-        box-sizing: border-box;
-    }
-
-    .sbbs-filter-group {
-        gap: var(--spacing-xs, 4px) var(--spacing-md, 12px);
-    }
-
-    /* Ten BotBooru fields become one readable column. Keep that expanded panel
-       independently scrollable so its last controls remain reachable on short
-       screens and while the software keyboard reduces the visual viewport. */
-    .sbbs-filters {
-        min-height: 0;
-        max-height: calc(var(--sb-shell-viewport-height, 100dvh) - 11rem);
-        overflow-y: auto;
-        overscroll-behavior: contain;
-        padding-inline-end: var(--spacing-xs, 4px);
-    }
-
-    .sbbs-filter-fields {
-        grid-template-columns: minmax(0, 1fr);
-    }
-
-    .sbbs-filter .text_pole,
-    .sbbs-filter-checkbox {
-        margin-block: 0;
-    }
-
-    .sbbs-filter-boolean {
-        justify-content: flex-start;
-    }
-
-    .sbbs-account-fields {
-        grid-template-columns: minmax(0, 1fr);
-    }
-
-    /* Chips sit close together and are removed with thumbs. A full 44px pad
-       would double every chip's height, so this is the size the pill absorbs. */
-    .sbbs-filter-chip-remove {
-        min-width: 34px;
-        min-height: 34px;
-    }
-
-    .sbbs-body {
-        gap: var(--spacing-sm, 8px);
-    }
-
-    /*
-     * Results become full-width rows: thumbnail left, text right. A two-column
-     * grid on a phone leaves each card about 135px wide, at which point every
-     * line of card text ellipsizes into a fragment.
-     */
-    .sbbs-grid {
-        grid-template-columns: 1fr;
-        gap: var(--spacing-sm, 8px);
-    }
-
-    .sbbs-card {
-        height: auto;
-    }
-
-    .sbbs-card-open {
-        flex-direction: row;
-        align-items: flex-start;
-        gap: var(--spacing-sm, 8px);
-        padding: var(--spacing-sm, 8px);
-    }
-
-    /* 2/3 is a poster ratio; in a row it just costs height. */
-    .sbbs-card-img {
-        flex: 0 0 72px;
-        aspect-ratio: 3 / 4;
-        border-radius: var(--sb-radius-sm, 6px);
-    }
-
-    .sbbs-card-initial {
-        font-size: 1.75rem;
-    }
-
-    .sbbs-card-meta {
-        flex: 1 1 auto;
-        min-width: 0;
-        padding: 0;
-    }
-
-    /* There is room to wrap now, and a truncated name identifies nothing. */
-    .sbbs-card-name {
-        white-space: normal;
-        display: -webkit-box;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
-        line-clamp: 2;
-    }
-
-    .sbbs-card-sub {
-        white-space: normal;
-    }
-
-    /*
-     * Back into the flow as one metadata line: a 72px thumbnail cannot carry
-     * either chip legibly, and the content rating has to stay readable.
-     *
-     * It gets a whole row rather than sharing the creator's. Sharing squeezes
-     * the creator into whatever the chips leave — around 24px on a 360px phone,
-     * which wraps it to one character per line. The row is free anyway: the
-     * 96px thumbnail, not the text, sets the height of a typical result.
-     */
-    .sbbs-card-footer {
-        display: flex;
-        align-items: center;
-        flex-wrap: nowrap;
-        gap: var(--spacing-xs, 4px);
-    }
-
-    .sbbs-rating,
-    .sbbs-card-source {
-        position: static;
-    }
-
-    /* One line, and the popularity figures give way first: the rating is a
-       safety signal and must never be clipped, the source name identifies the
-       result, and the download count is the least of the three. */
-    .sbbs-rating {
-        flex: 0 0 auto;
-    }
-
-    /*
-     * Source labels are a single word, so shrinking one saves a few pixels and
-     * costs the whole name — "Chub" became "Ch…". The stats absorb all of it.
-     * The cap is only a guard against an unreasonably long label;
-     * calc(100% - 5.5rem) was sized for a poster card and leaves ~47px here.
-     */
-    .sbbs-card-source {
-        flex: 0 0 auto;
-        max-width: 50%;
-    }
-
-    .sbbs-card-stats {
-        flex: 0 1 auto;
-        min-width: 0;
-    }
-
-    /*
-     * A tag row costs ~40px on every result — about a third of a row — to
-     * repeat what the detail pane already lists and what the Filters panel can
-     * already search on. Off the card, three more results fit on screen.
-     */
-    .sbbs-card-tags {
-        display: none;
-    }
-
-    /* Skeletons are bare .sbbs-card-img nodes with no card around them, so
-       they need the row shape spelled out or the loading state shows twelve
-       posters where rows are about to appear. */
-    .sbbs-skeleton .sbbs-card-img {
-        aspect-ratio: auto;
-        height: 88px;
-        width: 100%;
-    }
-
-    .sbbs-detail {
-        position: absolute;
-        inset: 0;
-        background: var(--sb-shell-surface, transparent);
-    }
-
-    .sbbs-detail-body:has(.sbbs-detail-image) {
-        grid-template-columns: minmax(0, 1fr);
-    }
-
-    .sbbs-detail-body:has(.sbbs-detail-image) > .sbbs-detail-identity,
-    .sbbs-detail-body:has(.sbbs-detail-image) > .sbbs-detail-main,
-    .sbbs-detail-image {
-        grid-column: 1;
-        grid-row: auto;
-    }
-
-    /* Capped by height, not width: a portrait preview sized to 60% of the
-       column pushed the name and the Import button below the fold. */
-    .sbbs-detail-image {
-        width: auto;
-        min-width: min(12rem, 100%);
-        max-width: 100%;
-        max-height: 34dvh;
-        justify-self: center;
-    }
-
-    .sbbs-detail-image img {
-        width: auto;
-        margin-inline: auto;
-        max-width: 100%;
-        max-height: 34dvh;
-    }
-
-    .sbbs-detail-actions {
-        background: var(--sb-shell-surface, transparent);
-        padding-bottom: env(safe-area-inset-bottom, 0px);
-    }
-}
-
-.sbbs-setting-sources {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding-bottom: var(--spacing-xs, 4px);
-    border-bottom: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.12));
-}
-
-.sbbs-source-row {
-    margin: 0;
-}
-
-.sbbs-source-note {
-    color: var(--sb-muted-fg, currentColor);
-    font-size: 0.8em;
-}
-
-/* Keyboard-reachable reveal for a blurred sensitive preview. */
-.sbbs-detail-image {
-    position: relative;
-}
-
-.sbbs-reveal {
-    position: absolute;
-    inset-inline-start: 50%;
-    inset-block-start: 50%;
-    transform: translate(-50%, -50%);
-    z-index: 1;
-    background: var(--sb-button-bg, rgba(0, 0, 0, 0.6));
-    border: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.2));
-    border-radius: var(--sb-radius-button, 14px);
-    color: inherit;
-    width: max-content;
-    max-width: calc(100% - 8px);
-    min-height: 44px;
-    padding: 6px 10px;
-    line-height: 1.25;
-    cursor: pointer;
-}
-
-/* ---- card intake ---- */
-
-.sbbs-intake {
-    flex: 1 1 auto;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    overflow-y: auto;
-}
-
-.sbbs-bulk,
-.sbbs-bulk-review {
-    display: flex;
-    flex-direction: column;
-    flex: 1 1 auto;
-    min-height: 0;
-    min-width: 0;
-    overflow-y: auto;
-}
-
-.sbbs-bulk > .sbbs-trust-note,
-.sbbs-bulk > .sbbs-state,
-.sbbs-intake-title {
-    flex: 0 0 auto;
-}
-
-.sbbs-intake-body {
-    flex: 1 1 auto;
-    min-height: min(6rem, 20dvh);
-    overflow-y: auto;
-    padding-right: var(--spacing-xs, 4px);
-}
-
-.sbbs-intake-title {
-    margin: 0 0 var(--spacing-sm, 8px);
-    font-size: 1.1em;
-    opacity: 0.75;
+    padding: 14px 16px;
+    border-radius: var(--sbbs-radius-lg);
+    background: var(--sbbs-surface);
+    border: 1px solid var(--sbbs-border);
 }
 
 .sbbs-intake-name {
     margin: 0;
-    font-size: 1.3em;
+    font-family: var(--sbbs-font-display);
+    font-size: 1.15rem;
+    color: var(--sbbs-ink);
 }
 
-/* One line per card in a batch: name, site, then what happened to it. */
-.sbbs-bulk-list {
-    flex: 1 1 auto;
-    min-height: min(8rem, 25dvh);
-    overflow-y: auto;
+.sbbs-intake-identity,
+.sbbs-intake-tokens {
     margin: 0;
-    padding-inline-start: 1.5em;
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: var(--sbbs-muted);
+}
+
+.sbbs-intake-origin,
+.sbbs-intake-list {
+    padding: 10px 12px;
+    border-radius: var(--sbbs-radius-md);
+    background: var(--sbbs-raised);
+    border: 1px solid var(--sbbs-border-subtle);
+}
+
+.sbbs-intake-section {
+    margin: 6px 0 0;
+    font-family: var(--sbbs-font-display);
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--sbbs-ink);
+}
+
+.sbbs-intake-warn {
+    color: var(--sbbs-accent);
+    font-weight: 700;
+}
+
+p.sbbs-intake-warn,
+.sbbs-intake-undisclosed {
+    margin: 0;
+    padding: 8px 12px;
+    border-radius: var(--sbbs-radius-sm);
+    background: var(--sbbs-tint);
+    border: 1px solid color-mix(in oklch, var(--sbbs-accent) 55%, var(--sbbs-border));
+    font-size: 0.82rem;
+}
+
+.sbbs-intake-choice {
+    width: 100%;
+    margin: 0;
+    padding: 10px 12px;
+    border-radius: var(--sbbs-radius-md);
+    background: var(--sbbs-surface);
+    border: 1px solid var(--sbbs-border);
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-xs, 4px);
+    gap: 8px;
+}
+
+.sbbs-intake-choice legend {
+    padding: 0 6px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--sbbs-muted);
+}
+
+.sbbs-intake-clean-note {
+    width: 100%;
+    font-size: 0.8rem;
+    color: var(--sbbs-muted);
+}
+
+/* Sticky action bar for Detail & Intake */
+.sbbs-detail-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 4;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+    padding: 12px 14px;
+    border-radius: var(--sbbs-radius-lg);
+    background: var(--sbbs-rail);
+    border: 1px solid var(--sbbs-border);
+    box-shadow: 0 -4px 14px color-mix(in oklch, var(--sbbs-canvas) 35%, transparent);
+}
+
+.sbbs-import.menu_button,
+.sbbs-import-clean.menu_button,
+.sbbs-open-character.menu_button,
+.sbbs-undo-import.menu_button,
+.sbbs-bulk-start.menu_button,
+.sbbs-bulk-retry.menu_button {
+    width: auto;
+    min-height: 38px;
+    margin: 0;
+    padding: 0 18px;
+    font-size: 0.875rem;
+}
+
+.sbbs-import-status {
+    font-size: 0.84rem;
+    font-weight: 700;
+    color: var(--sbbs-ink);
+}
+
+.sbbs-trust-note {
+    margin: 0;
+    flex: 1 1 240px;
+    font-size: 0.76rem;
+    line-height: 1.4;
+    color: var(--sbbs-muted);
+}
+
+/* Bulk import list */
+.sbbs-bulk-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
 }
 
 .sbbs-bulk-row {
     display: flex;
     flex-wrap: wrap;
-    align-items: baseline;
-    gap: var(--spacing-xs, 4px) var(--spacing-sm, 8px);
-    overflow-wrap: anywhere;
-}
-
-.sbbs-bulk-row > * {
-    min-width: 0;
-    max-width: 100%;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 8px 12px;
+    border-radius: var(--sbbs-radius-sm);
+    background: var(--sbbs-raised);
+    border: 1px solid var(--sbbs-border-subtle);
+    font-size: 0.82rem;
 }
 
 .sbbs-bulk-name {
-    font-weight: 600;
+    font-weight: 700;
+    color: var(--sbbs-ink);
 }
 
-.sbbs-bulk-source,
+.sbbs-bulk-source {
+    font-size: 0.75rem;
+    color: var(--sbbs-muted);
+}
+
 .sbbs-bulk-outcome {
-    color: var(--sb-muted-fg, currentColor);
-    font-size: 0.9em;
-}
-
-.sbbs-bulk-outcome {
-    flex: 1 1 100%;
-}
-
-.sbbs-intake-identity {
-    margin-top: var(--spacing-xs, 4px);
-    font-size: 0.85em;
-    opacity: 0.7;
-    /* A hash has no spaces to break at, and must not widen the dialog. */
-    overflow-wrap: anywhere;
-}
-
-.sbbs-intake-origin,
-.sbbs-intake-list {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: var(--spacing-xs, 4px) var(--spacing-md, 12px);
-    margin: var(--spacing-sm, 8px) 0;
-    overflow-wrap: anywhere;
-}
-
-.sbbs-intake-origin dt,
-.sbbs-intake-list dt {
-    opacity: 0.75;
-}
-
-.sbbs-intake-origin dd,
-.sbbs-intake-list dd {
-    margin: 0;
-    overflow-wrap: anywhere;
-}
-
-.sbbs-intake-section {
-    margin: var(--spacing-lg, 16px) 0 0;
-    padding-bottom: var(--spacing-xs, 4px);
-    border-bottom: 1px solid var(--sb-border, rgba(128, 128, 128, 0.3));
-    font-size: 0.95em;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    opacity: 0.65;
-}
-
-/*
- * Findings are marked with weight and a leading glyph as well as colour, so the
- * distinction survives a monochrome theme and does not depend on colour alone.
- */
-.sbbs-intake-list dt.sbbs-intake-warn {
+    margin-left: auto;
+    font-size: 0.78rem;
     font-weight: 600;
-    opacity: 1;
-    color: var(--sb-warning-fg, currentColor);
+    color: var(--sbbs-muted);
 }
 
-.sbbs-intake-list dt.sbbs-intake-warn::before {
-    content: "\26A0\FE0E ";
+.sbbs-bulk-row[data-state="failed"] .sbbs-bulk-outcome,
+.sbbs-bulk-row[data-state="attention"] .sbbs-bulk-outcome {
+    color: var(--sbbs-accent);
 }
 
-.sbbs-intake-list dt.sbbs-intake-note::before {
-    content: "\2022 ";
-}
-
-.sbbs-intake-duplicate {
-    margin: var(--spacing-sm, 8px) 0;
-}
-
-.sbbs-intake-warn {
-    color: var(--sb-warning-fg, currentColor);
-}
-
-p.sbbs-intake-warn {
-    font-weight: 600;
-}
-
-.sbbs-intake-tokens,
-.sbbs-intake-empty {
-    margin: var(--spacing-sm, 8px) 0;
-    opacity: 0.8;
-}
-
-.sbbs-intake-clean-note {
-    flex-basis: 100%;
-    font-size: 0.9em;
-    opacity: 0.8;
-}
-
-.sbbs-intake-clean-note p {
-    margin: var(--spacing-xs, 4px) 0 0;
-}
-
-.sbbs-intake-replace {
-    flex-basis: 100%;
-}
-
-.sbbs-intake-choice {
-    flex: 1 1 100%;
+.sbbs-bulk-review-card.menu_button {
+    width: auto;
+    min-height: 30px;
     margin: 0;
-    border: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.12));
-    border-radius: var(--sb-radius-sm, 6px);
-    padding: var(--spacing-sm, 8px);
+    padding: 0 10px;
+    font-size: 0.76rem;
 }
 
-.sbbs-intake-choice,
-.sbbs-intake-match,
-.sbbs-intake-filename,
-.sbbs-intake-replace-note,
-.sbbs-intake-scan-warning,
-.sbbs-intake-name {
-    min-width: 0;
-    max-width: 100%;
-    overflow-wrap: anywhere;
-}
-
-.sbbs-intake-match {
-    width: 100%;
-}
-
-.sbbs-intake-entry {
+/* --- Native Plugin Missing Prompt --- */
+.sbbs-install {
+    display: flex;
     flex-direction: column;
-    align-items: flex-start;
+    gap: 10px;
+    max-width: 540px;
+    margin: 24px auto;
+    padding: 20px 22px;
+    border-radius: var(--sbbs-radius-lg);
+    background: var(--sbbs-surface);
+    border: 1px solid var(--sbbs-border);
 }
 
-/* Drop feedback for a card file dragged onto the dialog. */
-.sbbs-root.sbbs-dragging {
-    outline: 2px dashed var(--sb-accent, currentColor);
-    outline-offset: -4px;
+.sbbs-install-title {
+    margin: 0;
+    font-family: var(--sbbs-font-display);
+    font-size: 1.15rem;
+    color: var(--sbbs-ink);
 }
 
-@media (prefers-reduced-motion: no-preference) {
+.sbbs-install-lead,
+.sbbs-install-guidance {
+    margin: 0;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: var(--sbbs-muted);
+}
+
+.sbbs-install-actions {
+    display: flex;
+    margin-top: 4px;
+}
+
+.sbbs-install-actions .menu_button {
+    width: auto;
+    margin: 0;
+    padding: 0 16px;
+}
+
+/* --- Settings Panel & Included Tool Page --- */
+#sbbs_settings,
+#sbbs_settings > .inline-drawer {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.neconyan-included-tool-page #sbbs_settings > .inline-drawer > .sbbs-settings-toggle {
+    display: none;
+}
+
+.neconyan-included-tool-page #sbbs_settings .sbbs-settings {
+    display: flex !important;
+}
+
+.sbbs-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 8px 0 4px;
+    color: var(--sbbs-ink);
+}
+
+.sbbs-settings > label:not(.checkbox_label) {
+    font-family: var(--sbbs-font-display);
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--sbbs-ink);
+    margin: 2px 0;
+}
+
+.sbbs-setting {
+    margin: 0;
+    padding: 10px 12px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    border-radius: var(--sbbs-radius-md);
+    background: var(--sbbs-raised);
+    border: 1px solid var(--sbbs-border-subtle);
+}
+
+.sbbs-setting.checkbox_label,
+.sbbs-setting > .checkbox_label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    min-width: 0;
+    font-family: var(--sbbs-font-body);
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sbbs-ink);
+    cursor: pointer;
+}
+
+.sbbs-setting.checkbox_label span,
+.sbbs-setting > .checkbox_label span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
+.sbbs-setting-noted {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.sbbs-setting-note {
+    margin: 0;
+    max-width: 100%;
+    font-size: 0.78rem;
+    line-height: 1.4;
+    color: var(--sbbs-muted);
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.sbbs-setting-select {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 12px;
+}
+
+.sbbs-setting-select > label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--sbbs-ink);
+}
+
+.sbbs-setting-select > select.text_pole {
+    width: auto;
+    min-width: 170px;
+    max-width: 100%;
+    height: 36px;
+    margin: 0;
+    padding: 0 28px 0 10px;
+}
+
+.sbbs-setting-sources {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.sbbs-setting-sources > label {
+    font-family: var(--sbbs-font-display);
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--sbbs-ink);
+}
+
+.sbbs-source-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 8px;
+    padding: 6px 8px;
+    border-radius: var(--sbbs-radius-sm);
+    background: var(--sbbs-surface);
+    border: 1px solid var(--sbbs-border-subtle);
+    margin: 0;
+}
+
+.sbbs-source-note {
+    font-size: 0.75rem;
+    color: var(--sbbs-muted);
+}
+
+.sbbs-account-details {
+    border-radius: var(--sbbs-radius-md);
+    background: var(--sbbs-raised);
+    border: 1px solid var(--sbbs-border);
+    overflow: hidden;
+}
+
+.sbbs-account-details > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--sbbs-ink);
+    list-style: none;
+}
+
+.sbbs-account-details > summary::-webkit-details-marker {
+    display: none;
+}
+
+.sbbs-account-details > summary::after {
+    content: '\f078';
+    font-family: 'Font Awesome 6 Free';
+    font-weight: 900;
+    font-size: 0.72rem;
+    color: var(--sbbs-muted);
+}
+
+.sbbs-account-details[open] > summary {
+    border-bottom: 1px solid var(--sbbs-border-subtle);
+}
+
+.sbbs-account-details[open] > summary::after {
+    transform: rotate(180deg);
+}
+
+.sbbs-account-details > .sbbs-setting-account {
+    border: 0;
+    border-radius: 0;
+    background: var(--sbbs-surface);
+}
+
+.sbbs-setting-account,
+.sbbs-setting-plugin {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.sbbs-account-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 380px;
+}
+
+.sbbs-account-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+}
+
+.sbbs-account-field .text_pole {
+    margin: 0;
+    height: 36px;
+}
+
+.sbbs-account-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.sbbs-account-actions .menu_button,
+.sbbs-clear-history.menu_button,
+.sbbs-plugin-recheck.menu_button {
+    width: auto;
+    margin: 0;
+    padding: 0 12px;
+    min-height: 36px;
+    font-size: 0.8125rem;
+}
+
+.sbbs-account-status {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--sbbs-muted);
+}
+
+/* --- Phone Layout (<= 768px) --- */
+@media (max-width: 768px) {
+    dialog.popup:has(.sbbs-root) {
+        width: 100vw;
+        max-width: 100vw;
+    }
+
+    body.neconyan .sbbs-root,
     .sbbs-root {
-        transition: outline-color 120ms ease;
+        gap: 8px;
+    }
+
+    .sbbs-masthead {
+        gap: 8px;
+        padding: 0;
+    }
+
+    .sbbs-brand-icon {
+        width: 32px;
+        height: 32px;
+        font-size: 0.9rem;
+    }
+
+    .sbbs-brand-title {
+        font-size: 1.02rem;
+    }
+
+    .sbbs-brand-subtitle {
+        display: none;
+    }
+
+    .sbbs-bar-sticky {
+        position: static;
+        padding: 10px;
+        gap: 8px;
+    }
+
+    body.neconyan .sbbs-root input.sbbs-query.text_pole,
+    .sbbs-query.text_pole {
+        min-height: 44px;
+        height: 44px;
+        font-size: 1rem;
+    }
+
+    body.neconyan #sbbs_search_form #sbbs_go.sbbs-go.menu_button,
+    #sbbs_search_form #sbbs_go.sbbs-go.menu_button,
+    body.neconyan .sbbs-root button.sbbs-go.menu_button,
+    .sbbs-go.menu_button {
+        flex: 0 0 44px;
+        width: 44px;
+        inline-size: 44px;
+        height: 44px;
+        block-size: 44px;
+        min-width: 44px;
+        min-inline-size: 44px;
+        min-height: 44px;
+        min-block-size: 44px;
+        max-width: 44px;
+        max-inline-size: 44px;
+        max-height: 44px;
+        max-block-size: 44px;
+        padding: 0;
+        border-radius: 999px;
+    }
+
+    .sbbs-bar-row-secondary {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+    }
+
+    body.neconyan .sbbs-root select.sbbs-source.text_pole,
+    body.neconyan .sbbs-root select.sbbs-sort.text_pole,
+    .sbbs-source.text_pole,
+    .sbbs-sort.text_pole {
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+        min-height: 40px;
+    }
+
+    .sbbs-filters-toggle.menu_button {
+        grid-column: 1 / -1;
+        justify-content: center;
+        min-height: 40px;
+    }
+
+    .sbbs-content-controls {
+        grid-column: 1 / -1;
+        margin-left: 0;
+        width: 100%;
+    }
+
+    .sbbs-sfw,
+    .sbbs-hide-ai {
+        flex: 1 1 auto;
+        justify-content: center;
+        min-height: 38px;
+    }
+
+    .sbbs-utility-row {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+
+    /* Compact horizontal card rows on phone so multiple results fit above the fold */
+    .sbbs-grid {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+
+    body.neconyan .sbbs-root .sbbs-card button.sbbs-card-open,
+    .sbbs-root .sbbs-card button.sbbs-card-open {
+        display: grid;
+        grid-template-columns: 82px minmax(0, 1fr);
+        gap: 10px;
+        padding: 10px;
+        align-items: start;
+    }
+
+    .sbbs-card-img {
+        width: 82px;
+        aspect-ratio: 3 / 4;
+        border-radius: var(--sbbs-radius-md);
+    }
+
+    .sbbs-card-initial {
+        font-size: 1.65rem;
+    }
+
+    .sbbs-card-meta {
+        padding: 0;
+        gap: 3px;
+    }
+
+    .sbbs-card-source,
+    .sbbs-card .sbbs-rating {
+        position: static;
+        max-width: none;
+        backdrop-filter: none;
+        background: var(--sbbs-raised);
+    }
+
+    .sbbs-card-footer {
+        justify-content: flex-start;
+        padding-top: 4px;
+    }
+
+    .sbbs-card-tags {
+        padding: 0 10px 8px;
+    }
+
+    body.neconyan .sbbs-root .sbbs-card button.sbbs-shortlist-toggle.menu_button,
+    .sbbs-root .sbbs-card button.sbbs-shortlist-toggle.menu_button {
+        width: calc(100% - 20px);
+        min-height: 34px;
+        margin: 0 10px 10px;
+    }
+
+    /* Single-column detail view on phone */
+    .sbbs-detail-body {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+            "identity"
+            "image"
+            "main";
+        gap: 12px;
+    }
+
+    .sbbs-detail-image {
+        max-width: 200px;
+        margin: 0 auto;
+    }
+
+    .sbbs-description {
+        max-height: none;
+    }
+
+    .sbbs-inside-list,
+    .sbbs-intake-list,
+    .sbbs-intake-origin {
+        grid-template-columns: 1fr;
+        gap: 2px;
+    }
+
+    .sbbs-inside-list dd,
+    .sbbs-intake-list dd,
+    .sbbs-intake-origin dd {
+        margin-bottom: 6px;
+    }
+
+    .sbbs-detail-actions {
+        padding: 10px;
+        gap: 8px;
+    }
+
+    .sbbs-detail-actions .menu_button {
+        flex: 1 1 auto;
+        justify-content: center;
+        min-height: 42px;
+    }
+
+    .sbbs-trust-note {
+        flex-basis: 100%;
     }
 }
 
-.sbbs-intake-undisclosed {
-    margin: var(--spacing-sm, 8px) 0;
-    font-weight: 600;
-    color: var(--sb-warning-fg, currentColor);
+/* --- Reduced Motion Compliance --- */
+@media (prefers-reduced-motion: reduce) {
+    .sbbs-card,
+    .sbbs-card-initial,
+    .sbbs-root :is(.sbbs-file-actions, .sbbs-named-searches, .sbbs-shortlist, .sbbs-inside, .sbbs-detail-tags) > summary::after,
+    .sbbs-root input:is([type="checkbox"], [type="radio"]),
+    .sbbs-root input:is([type="checkbox"], [type="radio"])::before,
+    #sbbs_settings input:is([type="checkbox"], [type="radio"]),
+    #sbbs_settings input:is([type="checkbox"], [type="radio"])::before {
+        transition: none !important;
+    }
+
+    .sbbs-skeleton .sbbs-card-img {
+        animation: none !important;
+    }
 }
 
-/*
- * An account section embedded in the intake error screen rather than in the
- * settings drawer: its own bordered box on a full row, so the login does not
- * read as one more action button.
- */
-.sbbs-detail-actions .sbbs-setting-account {
-    flex: 1 0 100%;
-    max-width: 32rem;
-    padding: var(--spacing-sm, 8px);
-    border: 1px solid var(--sb-shell-border, rgba(255, 255, 255, 0.12));
-    border-radius: var(--sb-radius-md, 10px);
-}

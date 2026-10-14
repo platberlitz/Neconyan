@@ -28,11 +28,13 @@ const { commitRoleplayLifecycleLocked } = await import('../src/roleplay-lifecycl
 const { roleplayNativeHost } = await import('../src/endpoints/chats.js');
 const { splitReply } = await import('../public/scripts/scratchpad/proposals.js');
 const { characterToolReply, scratchpadCharacterTools } = await import('../src/scratchpad/character-tools.js');
+const { runChatProfile } = await import('../src/generation/service.js');
 
 after(() => cancelAutoSaves());
 
 const SOURCE = { kind: 'roleplay', key: 'Nova.png::Source', label: 'Nova' };
 const OTHER = { kind: 'conversation', key: 'Nova.png::main', label: 'Nova' };
+const GENERAL = { kind: 'general', key: 'general', label: 'General Scratchpad', contextMode: 'roleplay', personaId: 'User.png' };
 let counter = 0;
 
 function account(t, { oai = {}, model = 'gpt-4o' } = {}) {
@@ -82,6 +84,180 @@ function saveInstructions(a, text, assistants = null) {
 function saveAssistant(a, input, revision) {
     return store.withScratchpad(a.base, lease => saveAssistantLocked(lease, input, revision ?? readAssistantsLocked(lease).revision));
 }
+
+test('General with no card clamps a forged character capability and records no shared avatar', async t => {
+    const a = account(t);
+    const source = { kind: 'general', key: 'general', label: 'General Scratchpad' };
+    const session = a.mutate(source, bucket => store.createSession(bucket, { settings: { connection: { kind: 'profile', profileId: 'saved' } } }));
+    registerScratchpadJobs({ generate: async () => ({ text: 'A general answer.' }) });
+    const body = sendBody(session, { source, capabilities: { character: true }, sharedAvatar: 'Nova.png' });
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    await runJob(getJob(a.directories, accepted.job.id));
+    assert.equal(a.read(source).sessions[0].messages.at(-1).sharedAvatar, undefined);
+});
+
+test('stored General origins refuse forged shared-avatar authority for another context card', () => {
+    const input = { role: 'assistant', text: 'A suggestion.', contextSource: { kind: 'general', key: 'general', avatar: 'Nova.png' }, sharedAvatar: 'Kit.png' };
+    assert.equal(store.testExports.normaliseMessage(input, { allowInternalKeys: true }).sharedAvatar, undefined);
+    assert.equal(store.testExports.normaliseMessage({ ...input, sharedAvatar: 'Nova.png' }, { allowInternalKeys: true }).sharedAvatar, 'Nova.png');
+});
+
+test('chat message origins and imported origins omit storage scope while retaining exact chat identity', async t => {
+    const a = account(t);
+    const source = { kind: 'roleplay', key: 'character:Nova.png:Source', label: 'Nova', scope: { kind: 'character', id: 'Nova.png' } };
+    const session = a.mutate(source, bucket => store.createSession(bucket, { settings: { connection: { kind: 'profile', profileId: 'saved' } } }));
+    registerScratchpadJobs({ generate: async () => ({ text: 'A scoped answer.' }) });
+    const body = sendBody(session, { source });
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    await runJob(getJob(a.directories, accepted.job.id));
+    for (const message of a.read(source).sessions[0].messages) {
+        assert.equal(message.contextSource.scope, undefined);
+        assert.equal(message.contextSource.key, source.key);
+    }
+    const imported = a.mutate(source, bucket => store.createSession(bucket, { messages: [{ role: 'assistant', text: 'Imported.' }] }));
+    assert.equal(imported.messages[0].contextSource.scope, undefined);
+    assert.equal(imported.messages[0].contextSource.key, source.key);
+});
+
+test('a custom prompt saved from General defaults does not duplicate its context notice', () => {
+    const options = { assistant: 'miso', sourceKind: 'general', userName: 'User', capabilities: {} };
+    const defaults = buildScratchpadSystemPrompt(options).text;
+    const saved = buildScratchpadSystemPrompt({ ...options, customPrompt: defaults }).text;
+    assert.equal(saved.match(/No story chat is open/g)?.length, 1);
+});
+
+test('an ordinary text reply survives an invalid shared image target', async t => {
+    const a = account(t);
+    const session = startSession(a);
+    registerScratchpadJobs({ generate: async () => ({ text: 'A plain answer.' }) });
+    // A very long name is shortened and a malformed avatar is dropped, so neither fails the send.
+    const body = sendBody(session, { targets: [{ avatar: 'Nova.png', name: 'N'.repeat(500) }, { avatar: '../bad.png', name: 'Bad' }] });
+    const request = jobs.normaliseReplyRequest(body);
+    assert.deepEqual(request.targets, [{ avatar: 'Nova.png', name: 'N'.repeat(200) }]);
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    await runJob(getJob(a.directories, accepted.job.id));
+    assert.equal(getJob(a.directories, accepted.job.id).state, 'completed');
+});
+
+test('General sources strictly validate their one storage key and optional context', () => {
+    assert.deepEqual(store.normaliseSource({ ...GENERAL, avatar: 'Nova.png', unexpected: 'ignored' }), { ...GENERAL, avatar: 'Nova.png' });
+    for (const changed of [{ key: 'other' }, { key: 'shared:character:Nova.png' }, { scope: { kind: 'character', id: 'Nova.png' } },
+        { legacyKey: 'character:Nova.png:chat' }, { avatar: '../Nova.png' }, { avatar: 'Nova.txt' }, { avatar: 'N\n.png' },
+        { avatar: 'n'.repeat(256) + '.png' }, { contextMode: 'home' }, { personaId: '../User.png' }, { personaId: 'u'.repeat(257) }]) {
+        assert.throws(() => store.normaliseSource({ ...GENERAL, ...changed }), { code: 'SCRATCHPAD_SOURCE_INVALID' });
+        assert.throws(() => store.normaliseSource({ ...GENERAL, ...changed }, { allowInternalKeys: true }), { code: 'SCRATCHPAD_SOURCE_INVALID' });
+    }
+});
+
+test('General keeps one account-owned list, context origins and ordinary session limits and cleanup', t => {
+    const a = account(t), b = account(t);
+    const selected = { ...GENERAL, avatar: 'Nova.png' };
+    const session = a.mutate(selected, bucket => store.createSession(bucket, { name: 'General ideas', messages: [{ role: 'user', text: 'An idea.' }] }));
+    assert.equal(a.read(GENERAL).sessions[0].id, session.id);
+    assert.deepEqual(a.read(GENERAL).sessions[0].messages[0].contextSource, selected);
+    assert.equal(b.read(GENERAL).sessions.length, 0);
+    const file = JSON.parse(fs.readFileSync(store.scratchpadFile(a.directories.root, GENERAL), 'utf8'));
+    assert.deepEqual(file.source, { kind: 'general', key: 'general', label: 'General Scratchpad' });
+    a.mutate(GENERAL, bucket => {
+        for (let i = 1; i < store.MAX_SESSIONS; i++) store.createSession(bucket);
+        bucket.sessions.forEach((item, index) => { item.updated = new Date(1700000000000 - index * 1000).toISOString(); });
+        assert.throws(() => store.createSession(bucket), { code: 'SCRATCHPAD_SESSION_LIMIT' });
+    });
+    store.withScratchpad(a.base, lease => store.updateCleanupLocked(lease, { enabled: true, keep: 1 }));
+    a.mutate(GENERAL, () => {});
+    assert.equal(a.read(GENERAL).sessions.length, 1);
+    assert.equal(b.read(GENERAL).cleanup.enabled, false);
+});
+
+test('General prompts and custom prompts describe no story and disable chat and lore changes', () => {
+    for (const customPrompt of [undefined, 'MY-CUSTOM-VOICE']) {
+        const result = buildScratchpadSystemPrompt({ assistant: 'miso', gender: 'neutral', sourceKind: 'general', userName: 'Kris',
+            customPrompt, capabilities: { chat: true, lore: true } });
+        assert.match(result.text, /General Scratchpad/);
+        assert.match(result.text, /No story chat is open/);
+        assert.doesNotMatch(result.text, /Story chat messages \(use|Lorebook entries \(only/);
+        if (customPrompt) assert.ok(result.text.startsWith(customPrompt));
+        assert.match(result.text, /create-character|new character/i);
+    }
+    const messages = buildScratchpadMessages({ system: 'System', context: 'No chat.', history: [], text: 'Help.' });
+    assert.equal(messages[2].content, 'I have read the shared context. What would you like to work on?');
+});
+
+for (const roundTable of [false, true]) {
+    test(`General replies complete and reopen without chat files, round table=${roundTable}`, async t => {
+        const a = account(t);
+        fs.rmSync(a.directories.chats, { recursive: true, force: true });
+        const source = { ...GENERAL, avatar: 'Nova.png' };
+        const session = a.mutate(source, bucket => store.createSession(bucket, { settings: { roundTable, connection: { kind: 'profile', profileId: 'saved' } } }));
+        const seen = [];
+        registerScratchpadJobs({ generate: async options => { seen.push(options); return { text: 'General answer.' }; } });
+        const body = sendBody(session, { source, context: 'General Scratchpad: no story chat is open.', text: 'Help me decide.' });
+        const input = jobs.normaliseReplyRequest(body);
+        assert.equal(input.capabilities.chat, false);
+        assert.equal(input.capabilities.lore, false);
+        assert.deepEqual(input.capabilities.members, []);
+        const accepted = await acceptScratchpadReply(a.request(body), body);
+        await runJob(getJob(a.directories, accepted.job.id));
+        assert.equal(getJob(a.directories, accepted.job.id).state, 'completed');
+        assert.equal(seen.length, roundTable ? 3 : 1);
+        assert.ok(seen.every(options => options.binding.kind === 'profile' && options.messages[0].content.includes('General Scratchpad')));
+        const saved = a.read(GENERAL).sessions[0];
+        const reply = saved.messages.at(-1);
+        assert.deepEqual(reply.contextSource, source);
+        assert.equal(reply.sharedAvatar, 'Nova.png');
+        assert.equal(reply.state, 'done');
+        for (const changed of [{ avatar: 'Kit.png' }, { personaId: 'Other.png' }, { contextMode: 'conversation' }]) {
+            await assert.rejects(acceptScratchpadReply(a.request({}), sendBody(session, { source: { ...source, ...changed }, regenerate: reply.id })), { code: 'SCRATCHPAD_REGENERATE_INVALID' });
+        }
+        const again = await acceptScratchpadReply(a.request({}), sendBody(session, { source, regenerate: reply.id }));
+        await runJob(getJob(a.directories, again.job.id));
+        assert.equal(a.read(GENERAL).sessions[0].messages.length, saved.messages.length);
+    });
+}
+
+test('General cancellation remains in its original list and a new context may start a new message', async t => {
+    const a = account(t);
+    const session = a.mutate(GENERAL, bucket => store.createSession(bucket, { settings: { connection: { kind: 'profile', profileId: 'saved' } } }));
+    const accepted = await acceptScratchpadReply(a.request({}), sendBody(session, { source: GENERAL }));
+    requestCancellation(a.directories, accepted.job.id, { reason: 'user' });
+    const projected = store.projectPending(a.read(GENERAL), id => getJob(a.directories, id));
+    assert.equal(projected.sessions[0].messages.at(-1).state, 'failed');
+    assert.equal(a.read(SOURCE).sessions.length, 0);
+    const changed = { ...GENERAL, personaId: 'Other.png' };
+    const next = await acceptScratchpadReply(a.request({}), sendBody(session, { source: changed }));
+    registerScratchpadJobs({ generate: async () => ({ text: 'New context.' }) });
+    await runJob(getJob(a.directories, next.job.id));
+    assert.equal(a.read(GENERAL).sessions[0].messages.at(-1).contextSource.personaId, 'Other.png');
+});
+
+test('General uses a saved Text Completion profile and builds the real provider prompt without a chat file', async t => {
+    const a = account(t);
+    fs.rmSync(a.directories.chats, { recursive: true, force: true });
+    const filename = path.join(a.directories.root, SETTINGS_FILE);
+    const settings = JSON.parse(fs.readFileSync(filename, 'utf8'));
+    settings.extension_settings.connectionManager.profiles = [{ id: 'text', api: 'llamacpp', mode: 'tc', 'api-url': 'http://127.0.0.1:6000' }];
+    settings.textgenerationwebui_settings = { type: 'llamacpp', banned_tokens: '', global_banned_tokens: '', dry_sequence_breakers: '[]' };
+    settings.power_user = { instruct: { enabled: false }, custom_stopping_strings: '[]' };
+    settings.max_context = 8192;
+    fs.writeFileSync(filename, JSON.stringify(settings));
+    const session = a.mutate(GENERAL, bucket => store.createSession(bucket, { settings: { maxTokens: 256, stream: false, connection: { kind: 'profile', profileId: 'text' } } }));
+    let calls = 0;
+    registerScratchpadJobs({ generate: options => runChatProfile({ ...options, fetch: async (_url, request) => {
+        calls++;
+        const body = JSON.parse(request.body);
+        assert.match(body.prompt, /General Scratchpad/);
+        assert.match(body.prompt, /No story chat is open/);
+        assert.match(body.prompt, /TEXT-GENERAL-QUESTION/);
+        assert.equal(body.n_predict, 256);
+        return new Response(JSON.stringify({ choices: [{ text: 'General TC answer.' }] }));
+    } }) });
+    const body = sendBody(session, { source: GENERAL, text: 'TEXT-GENERAL-QUESTION', context: 'General Scratchpad: no story chat is open.' });
+    const accepted = await acceptScratchpadReply(a.request(body), body);
+    await runJob(getJob(a.directories, accepted.job.id));
+    assert.equal(getJob(a.directories, accepted.job.id).state, 'completed', JSON.stringify(getJob(a.directories, accepted.job.id).error));
+    assert.equal(calls, 1);
+    assert.equal(a.read(GENERAL).sessions[0].messages.at(-1).text, 'General TC answer.');
+});
 
 test('assistant libraries are account-owned, validate profiles and reject stale saves without losing edits', t => {
     const a = account(t), b = account(t);
@@ -1219,6 +1395,9 @@ test('the endpoint checks the account and answers with the saved Scratchpad', as
     assert.equal((await post('/instructions/update', payload, 'someone-else')).status, 409);
     const defaults = await (await post('/prompt', { assistant: 'miso' })).json();
     assert.doesNotMatch(defaults.text, /ENDPOINT-GLOBAL/, 'editing a base prompt must not bake in global text');
+    const generalPrompt = await (await post('/prompt', { source: GENERAL, assistant: 'miso', capabilities: { chat: true, lore: true } })).json();
+    assert.match(generalPrompt.text, /No story chat is open/);
+    assert.doesNotMatch(generalPrompt.text, /Story chat messages \(use|Lorebook entries \(only/);
 
     const profile = { name: 'Jun', personality: 'ENDPOINT-PERSONALITY' };
     const saved = await post('/assistants/save', { assistant: profile, expectedRevision: 0 });

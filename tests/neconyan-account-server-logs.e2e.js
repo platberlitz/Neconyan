@@ -105,6 +105,10 @@ async function installFailClosedRoutes(page, { light = false, delayLogs = false,
     let failNextStatus = false;
     await page.route('**/api/server-admin/**', async route => {
         const endpoint = new URL(route.request().url()).pathname;
+        if (endpoint === '/api/server-admin/crash-reports/status') {
+            await route.fulfill({ json: { latest: null } });
+            return;
+        }
         if (endpoint === '/api/server-admin/status') {
             // The startup update notice must not consume a panel's planned failure.
             if (!serverPanelRequested.has(page)) {

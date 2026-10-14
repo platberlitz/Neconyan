@@ -1080,17 +1080,21 @@ async function pickManualAgentRunTargets(agent) {
 
     const targets = selected.flatMap(value => {
         if (value === 'composer') {
-            return [{ kind: 'composer', state: scopeState, composer, composerText: composerValue,
-                isCurrent: () => isMessageTargetCurrent(scope, scopeState) && document.getElementById('send_textarea') === composer && composer?.value === composerValue }];
+            const target = { kind: 'composer', state: scopeState, composer, composerText: composerValue };
+            target.isCurrent = () => isMessageTargetCurrent(scope, scopeState) && document.getElementById('send_textarea') === composer && composer?.value === target.composerText;
+            target.acceptWrite = () => { target.composerText = composer.value; };
+            return [target];
         }
 
         if (value.startsWith('companion:')) {
+            const companionAgentId = value.slice('companion:'.length);
             return [{
                 kind: 'companion',
                 messageIndex: lastAssistantIndex,
-                companionAgentId: value.slice('companion:'.length),
+                companionAgentId,
                 ...messageTargets[lastAssistantIndex],
-                isCurrent: noteTargets.get(value.slice('companion:'.length)) ?? (() => false),
+                isCurrent: () => noteTargets.get(companionAgentId)?.() ?? false,
+                acceptWrite: () => noteTargets.set(companionAgentId, captureCompanionResultTarget(lastAssistantIndex, companionAgentId)),
             }];
         }
 
@@ -1108,6 +1112,8 @@ async function pickManualAgentRunTargets(agent) {
         toastr.warning('A selected message or note changed while the picker was open. Please choose the targets again.');
         return null;
     }
+    const queueNotice = { shown: false };
+    for (const target of targets) target.queueNotice = queueNotice;
     return targets;
 }
 
@@ -3304,7 +3310,7 @@ function renderAgentList() {
                     <div class="ica--card-header">
                         ${selectModeActive ? `<input type="checkbox" class="ica--card-select" title="Select agent" ${selectedAgentIds.has(agent.id) ? 'checked' : ''} />` : `<button type="button" class="ica--card-toggle ${toggleClass}" aria-pressed="${agentEnabled}" aria-label="${escapeHtml(agentEnabled ? t`Disable ${agent.name}` : t`Enable ${agent.name}`)}" title="${agentEnabled ? 'Disable' : 'Enable'}"></button>`}
                         <div class="ica--card-identity">
-                            <span class="ica--card-name">${escapeHtml(agent.name)}</span>
+                            <span class="ica--card-name">${escapeHtml(agent.name)} <span class="ica--card-pill ica--card-pill--version">v${escapeHtml(getAgentVersionValue(agent))}</span></span>
                             <span class="ica--card-mobile-phase">${escapeHtml(getAgentCardPhaseLabel(agent))}${companionExecution ? ' · Companion' : ''}</span>
                             <span class="ica--card-desc">${escapeHtml(desc)}</span>
                         </div>
@@ -4980,12 +4986,11 @@ async function openTemplateBrowser() {
         const card = $(`
             <div class="ica--template-card${alreadyAdded ? ' ica--template-card--added' : ''}" data-id="${escapeHtml(tpl.id)}">
                 <div class="ica--template-card-header">
-                    <span class="ica--template-card-name">${escapeHtml(tpl.name)}</span>
+                    <span class="ica--template-card-name">${escapeHtml(tpl.name)} <span class="ica--card-pill ica--card-pill--version">v${escapeHtml(getTemplateVersionValue(tpl))}</span></span>
                     <span class="ica--template-card-category"><i class="fa-solid ${catInfo.icon}"></i> ${escapeHtml(catInfo.label)}</span>
                 </div>
                 <div class="ica--template-card-description">${escapeHtml(tpl.description)}</div>
                 <div class="ica--template-card-badges">
-                    <span class="ica--card-pill ica--card-pill--version">v${escapeHtml(getTemplateVersionValue(tpl))}</span>
                     ${addedBadge}
                     ${trackerBadge}
                     ${regexCount > 0 ? `<span class="ica--card-pill"><i class="fa-solid fa-wand-magic-sparkles fa-xs"></i> ${buildRegexTemplateLabel(regexCount)}</span>` : ''}

@@ -1026,30 +1026,38 @@ export function initTextGenSettings() {
 
     for (const i of setting_names) {
         $(`#${i}_textgenerationwebui`).attr('x-setting-id', i);
-        $(document).on('input', `#${i}_textgenerationwebui`, function () {
-            const isCheckbox = $(this).attr('type') == 'checkbox';
-            const isText = $(this).attr('type') == 'text' || $(this).is('textarea');
-            const id = $(this).attr('x-setting-id');
-
-            if (isCheckbox) {
-                const value = $(this).prop('checked');
-                textgenerationwebui_settings[id] = value;
-            } else if (isText) {
-                const value = $(this).val();
-                textgenerationwebui_settings[id] = value;
-            } else {
-                const value = Number($(this).val());
-                $(`#${id}_counter_textgenerationwebui`).val(value);
-                textgenerationwebui_settings[id] = value;
-                //special handling for vLLM/Aphrodite using -1 as disabled instead of 0
-                if ($(this).attr('id') === 'top_k_textgenerationwebui' && [INFERMATICAI, APHRODITE, VLLM].includes(textgenerationwebui_settings.type) && value === 0) {
-                    textgenerationwebui_settings[id] = -1;
-                    $(this).val(-1);
-                }
-            }
-            saveSettingsDebounced();
-        });
     }
+    $(document).on('input', function (event) {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) {
+            return;
+        }
+        const id = target.getAttribute('x-setting-id');
+        if (!id || !setting_names.includes(id) || target.id !== `${id}_textgenerationwebui`) {
+            return;
+        }
+        const $target = $(target);
+        const isCheckbox = $target.attr('type') == 'checkbox';
+        const isText = $target.attr('type') == 'text' || $target.is('textarea');
+
+        if (isCheckbox) {
+            const value = $target.prop('checked');
+            textgenerationwebui_settings[id] = value;
+        } else if (isText) {
+            const value = $target.val();
+            textgenerationwebui_settings[id] = value;
+        } else {
+            const value = Number($target.val());
+            $(`#${id}_counter_textgenerationwebui`).val(value);
+            textgenerationwebui_settings[id] = value;
+            //special handling for vLLM/Aphrodite using -1 as disabled instead of 0
+            if ($target.attr('id') === 'top_k_textgenerationwebui' && [INFERMATICAI, APHRODITE, VLLM].includes(textgenerationwebui_settings.type) && value === 0) {
+                textgenerationwebui_settings[id] = -1;
+                $target.val(-1);
+            }
+        }
+        saveSettingsDebounced();
+    });
 
     $('#textgen_logit_bias_new_entry').on('click', () => createNewLogitBiasEntry(textgenerationwebui_settings.logit_bias, BIAS_KEY));
 

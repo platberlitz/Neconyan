@@ -7,16 +7,18 @@ import {
     getConversationGroupIdForAvatar,
     getConversationPersonaId,
     getConversationThreadKey,
-    getCurrentCharAvatar,
 } from '../neconyan-conversation/context.js';
 import { composeConversationPersonaDescription, getConversationPersonaName } from '../neconyan-conversation/personas.js';
 import { getSettings as getConversationSettings } from '../neconyan-conversation/settings-store.js';
 import { conversationState } from '../neconyan-conversation/state.js';
 import { power_user } from '../power-user.js';
+import { user_avatar } from '../personas.js';
+import { t } from '../i18n.js';
 import { getRoleplaySourceId } from '../roleplay-save-chain.js';
 import { getTokenCountAsync } from '../tokenizers.js';
 import { loadWorldInfo, selected_world_info, world_info } from '../world-info.js';
 import { readCurrentPreset } from './preset.js';
+import { sameSourceContext } from './source.js';
 
 const MAX_CONTEXT_BYTES = 1_400_000;
 const MAX_MESSAGE_CHARS = 16_000;
@@ -58,17 +60,19 @@ function characterByAvatar(avatar) {
 }
 
 /**
- * Describes the chat that is open right now, or null when no chat is open.
+ * Describes the visible chat, or General when no story chat is visible.
  * The key guards live context; the scope shares sessions across a character's chats.
  */
 export function currentSource() {
     if (notebookSource) return notebookSource;
+    if (globalThis.document?.body?.classList.contains('neconyan-home-visible')) return generalSource({ personaId: homePersonaIsLocked() ? power_user.default_persona || '' : user_avatar || '' });
     if (conversationState.conversationWorkspaceOpen) {
-        const avatar = getCurrentCharAvatar();
-        if (!avatar) return null;
+        const avatar = conversationState.conversationSelectedAvatar || '';
+        if (!avatar) return generalSource();
         const groupId = getConversationGroupIdForAvatar(avatar) || '';
         const branch = getActiveConversationBranch(avatar, { create: false, groupId });
-        if (!branch?.id) return null;
+        if (!branch?.id) return characterByAvatar(avatar)
+            ? generalSource({ avatar, contextMode: 'conversation', personaId: getConversationPersonaId() }) : generalSource();
         const group = groupId ? getConversationGroupById(groupId) : null;
         const name = group?.name || characterByAvatar(avatar)?.name || 'Conversation';
         return {
@@ -84,7 +88,8 @@ export function currentSource() {
     }
 
     const chatId = getCurrentChatId();
-    if (!chatId) return null;
+    const character = characters[this_chid];
+    if (!chatId) return generalSource({ avatar: selected_group ? '' : character?.avatar });
     if (selected_group) {
         const group = groups.find(item => item.id === selected_group);
         const id = getRoleplaySourceId({ group: true, chat: chatId });
@@ -99,8 +104,7 @@ export function currentSource() {
             scope: { kind: 'group', id: String(selected_group) },
         };
     }
-    const character = characters[this_chid];
-    if (!character?.avatar) return null;
+    if (!character?.avatar) return generalSource();
     const id = getRoleplaySourceId({ group: false, avatar: character.avatar, chat: chatId });
     const legacyKey = `character:${character.avatar}:${chatId}`;
     return {
@@ -114,13 +118,26 @@ export function currentSource() {
     };
 }
 
+function generalSource({ avatar = '', contextMode = 'roleplay', personaId = user_avatar || '' } = {}) {
+    return { kind: 'general', key: 'general', label: t`General Scratchpad`, contextMode, personaId,
+        ...(characterByAvatar(avatar) ? { avatar } : {}) };
+}
+
+function homePersonaIsLocked() {
+    if (!globalThis.document?.body?.classList.contains('neconyan-home-visible') || !user_avatar || (!getCurrentChatId() && !chat.length)) return false;
+    if (chat_metadata.persona === user_avatar) return true;
+    const character = characters[this_chid]?.avatar;
+    return power_user.persona_descriptions?.[user_avatar]?.connections?.some(connection =>
+        connection.type === 'character' && connection.id === character || connection.type === 'group' && String(connection.id) === String(selected_group)) || false;
+}
+
 export function wireSource(source) {
-    return source ? { kind: source.kind, key: source.key, label: source.label, ...(source.legacyKey ? { legacyKey: source.legacyKey } : {}), ...(source.scope ? { scope: source.scope } : {}) } : null;
+    return source ? { kind: source.kind, key: source.key, label: source.label, ...(source.legacyKey ? { legacyKey: source.legacyKey } : {}), ...(source.scope ? { scope: source.scope } : {}),
+        ...(source.kind === 'general' ? Object.fromEntries(['avatar', 'contextMode', 'personaId'].filter(field => source[field] !== undefined).map(field => [field, source[field]])) : {}) } : null;
 }
 
 export function sameChat(source, other) {
-    return Boolean(source && other && source.kind === other.kind
-        && (source.key === other.key || source.legacyKey === other.key || source.key === other.legacyKey));
+    return sameSourceContext(source, other);
 }
 
 export function picksMatchSource(settings, source) {
@@ -129,15 +146,24 @@ export function picksMatchSource(settings, source) {
 
 export function isCurrentSource(source) {
     const live = currentSource();
-    return Boolean(source && live && live.kind === source.kind && live.key === source.key);
+    return sameSourceContext(source, live);
 }
 
 function requireCurrentSource(source) {
-    if (!isCurrentSource(source)) throw new Error('Open the chat this Scratchpad belongs to before sending.');
+    if (!isCurrentSource(source)) throw new Error(t`The Scratchpad context changed. Return to it before sending.`);
 }
 
 export function sourceUserName(source) {
-    return source?.kind === 'conversation' ? getConversationPersonaName(source.personaId, name1) : name1;
+    if (source?.kind === 'general' && source.contextMode !== 'conversation' && homePersonaIsLocked()) return String(power_user.personas?.[source.personaId] || 'User');
+    return source?.kind === 'conversation' || source?.contextMode === 'conversation' ? getConversationPersonaName(source.personaId, name1) : name1;
+}
+
+function sourcePersonaDescription(source) {
+    if (source.kind === 'conversation' || source.contextMode === 'conversation') return composeConversationPersonaDescription(source.personaId, source);
+    if (source.kind !== 'general') return power_user.persona_description;
+    const descriptor = power_user.persona_descriptions?.[source.personaId];
+    if (homePersonaIsLocked()) return descriptor?.description || '';
+    return descriptor ? descriptor.description ?? '' : power_user.persona_description;
 }
 
 /** An empty name means the chat uses the active connection rather than a saved profile. */
@@ -150,6 +176,7 @@ export function sourceConnectionProfile(source) {
 /** Characters taking part in the source chat, as full character objects. */
 export function sourceCharacters(source) {
     if (!source || source.kind === 'notebook') return [];
+    if (source.kind === 'general') return [characterByAvatar(source.avatar)].filter(Boolean);
     if (source.kind === 'conversation') {
         if (source.groupId) {
             const members = getConversationGroupById(source.groupId)?.members || [];
@@ -163,7 +190,7 @@ export function sourceCharacters(source) {
 
 /** The live message list of the source chat, numbered the way Scratchpad shows them. */
 export function sourceMessages(source) {
-    if (!source || source.kind === 'notebook') return [];
+    if (!source || source.kind === 'notebook' || source.kind === 'general') return [];
     if (source.kind === 'conversation') {
         const branch = getActiveConversationBranch(source.avatar, { ...source, create: false });
         const list = Array.isArray(branch?.messages) ? branch.messages : [];
@@ -231,6 +258,7 @@ export function loreOverrideKey(entry) {
 }
 
 function sourceLorebooks(source) {
+    if (source?.kind === 'general') return [];
     const books = [];
     for (const character of sourceCharacters(source)) {
         books.push(character?.data?.extensions?.world);
@@ -260,7 +288,7 @@ export function loreScanText({ source, settings, pendingText = '', sessionText =
  */
 export async function collectLore({ source, settings, scanText = '' }) {
     requireCurrentSource(source);
-    if (source.kind === 'notebook') return { books: [], entries: [] };
+    if (source.kind === 'notebook' || source.kind === 'general') return { books: [], entries: [] };
     const loaded = await Promise.all(sourceLorebooks(source).map(async world => {
         try {
             const data = await loadWorldInfo(world);
@@ -435,8 +463,8 @@ async function loadSourceCharacters(source) {
 }
 
 /**
- * Builds the story context Scratchpad sends with a message. Nothing here is
- * saved; the text is rebuilt from the open chat each time.
+ * Builds the reference material for a message from the visible workspace.
+ * Nothing here is saved; General never borrows a hidden story.
  */
 export async function buildContext({ source, settings, pendingText = '', sessionText = '' }) {
     requireCurrentSource(source);
@@ -444,26 +472,29 @@ export async function buildContext({ source, settings, pendingText = '', session
         text: `Notebook discussion: ${source.label}\nOnly the explicitly shared notes are included. No story messages, persona, character cards or lorebooks are shared.`,
         names: { user: name1, character: '' }, lore: { books: [], entries: [] }, messageCount: 0, swipeCount: 0, totalMessages: 0, picked: false, preset: null,
         capabilities: { lore: false, character: false, chat: false, members: [] },
+        targets: [],
     };
     const include = settings?.include || {};
+    const general = source.kind === 'general';
     const all = sourceMessages(source);
-    const selection = selectMessages(all, settings, source);
+    const selection = general ? { messages: [], picked: false } : selectMessages(all, settings, source);
     const people = include.card ? await loadSourceCharacters(source) : sourceCharacters(source);
     const names = { user: sourceUserName(source), character: people.map(item => item.name).filter(Boolean).join(', ') };
     const macros = { name1Override: names.user, name2Override: names.character, replaceCharacterCard: false };
     const sections = [];
 
     sections.push([
-        `Chat: ${source.label}`,
-        `Mode: ${source.kind === 'conversation' ? 'Conversation (messaging-style chat)' : 'Roleplay'}`,
+        general ? 'General Scratchpad: no story chat is open. No story messages, Author\'s Note, chat metadata, preset or lorebook text is shared. Any selected character card is reference material, not a live story.' : `Chat: ${source.label}`,
+        ...(general ? [] : [`Mode: ${source.kind === 'conversation' ? 'Conversation (messaging-style chat)' : 'Roleplay'}`]),
         `User: ${names.user}`,
     ].join('\n'));
 
     if (include.persona) {
-        const description = source.kind === 'conversation'
-            ? composeConversationPersonaDescription(source.personaId, source)
-            : power_user.persona_description;
-        const persona = substituteParams(String(description ?? '').trim(), macros);
+        const description = sourcePersonaDescription(source);
+        const raw = String(description ?? '').trim();
+        // General may substitute names, never macros that can read the hidden story.
+        const persona = general ? raw.replace(/\{\{\s*user\s*\}\}/gi, () => names.user).replace(/\{\{\s*char\s*\}\}/gi, () => names.character)
+            : substituteParams(raw, macros);
         if (persona) sections.push(`## ${names.user} (the user's persona)\n${persona}`);
     }
 
@@ -478,7 +509,7 @@ export async function buildContext({ source, settings, pendingText = '', session
     }
 
     let lore = { books: [], entries: [] };
-    if (include.lore) {
+    if (include.lore && !general) {
         const scanText = loreScanText({ source, settings, sessionText, pendingText });
         lore = await collectLore({ source, settings, scanText });
         const text = formatLore(lore, macros);
@@ -502,7 +533,7 @@ export async function buildContext({ source, settings, pendingText = '', session
         const swipe = item.swipe ? ` [swipe ${item.swipe} of ${item.swipeCount}; ${item.current ? 'current' : 'alternative'}]` : '';
         return `#${item.number} ${item.name}${swipe}${item.hidden ? ' (hidden)' : ''}:\n${clip(item.text, MAX_MESSAGE_CHARS)}`;
     });
-    sections.push([heading, ...(swipeCount ? ['Swipes are alternative versions of the same message, shared for comparison. Only the current version belongs to the active story; do not treat alternatives as consecutive events.'] : []), ...lines].join('\n\n'));
+    if (!general) sections.push([heading, ...(swipeCount ? ['Swipes are alternative versions of the same message, shared for comparison. Only the current version belongs to the active story; do not treat alternatives as consecutive events.'] : []), ...lines].join('\n\n'));
 
     let text = sections.join('\n\n');
     const encoded = new TextEncoder().encode(text);
@@ -519,9 +550,10 @@ export async function buildContext({ source, settings, pendingText = '', session
         totalMessages: all.length,
         picked: selection.picked,
         preset,
+        targets: include.card ? people.map(item => ({ avatar: item.avatar, name: item.name })) : [],
         capabilities: {
             lore: loreBooks.length > 0,
-            character: people.length > 0,
+            character: people.length > 0 && (!general || include.card === true),
             chat: source.kind === 'roleplay',
             members: source.groupId ? people.map(item => item.name).filter(Boolean) : [],
         },

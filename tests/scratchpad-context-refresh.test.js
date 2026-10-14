@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
-import { describe, expect, test } from '@jest/globals';
+import { describe, expect, jest, test } from '@jest/globals';
+import { sameSourceBucket, sameSourceContext } from '../public/scripts/scratchpad/source.js';
 
 const source = fs.readFileSync(new URL('../public/scripts/scratchpad/index.js', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
-const functions = ['activeSession', 'allAssistants', 'currentSettings', 'applyBucket', 'render', 'contextKey', 'renderContext', 'renderNotes'];
+const functions = ['activeSession', 'allAssistants', 'currentSettings', 'applyBucket', 'render', 'contextKey', 'renderContext', 'renderNotes', 'checkSource'];
 const code = functions.map(name => source.match(new RegExp(`^function ${name}\\([\\s\\S]*?^}`, 'm'))[0]).join('\n');
 const defaults = { notes: [], picked: [], include: {}, assistantConnections: {}, depth: 15, maxTokens: 16000 };
 const ref = id => ({ notebookId: 'book', noteId: id });
@@ -55,7 +56,8 @@ function fixture() {
         checkbox: () => h('label'), presetCheckbox: () => h('label', { text: `Current preset: ${preset.name}` }),
         currentPresetName: () => preset.name, renderPicks: () => h('section'), renderLore: () => h('section'), renderPreview: () => h('section'),
         iconButton: (text, onclick) => h('button', { text, onclick }), wireSource: value => value,
-        isCurrentSource: value => value.key === app.source?.key,
+        sameSourceBucket, sameSourceContext, currentSource: () => app.source, stopWatchers() {},
+        isCurrentSource: value => sameSourceContext(value, app.source),
         api: { readNotebookContext: (_source, sessionId) => new Promise((resolve, reject) => requests.push({ sessionId, resolve, reject })) },
     });
     vm.runInContext(code, runtime);
@@ -68,7 +70,135 @@ function fixture() {
     return { app, panel, preset, requests, runtime, apply, rows, settle, reply };
 }
 
+function imageJobFixture({ markers = [], card } = {}) {
+    const observers = [];
+    const reload = jest.fn(async () => {});
+    const approveImagePrompt = jest.fn();
+    const app = {
+        open: true, foldedThinking: new Set(), watchers: new Map(), previews: new Map(), imageWatchers: new Map(),
+        imageJobs: new Map(), imageJobSignatures: new Map(), imageAutoReviews: new Set(markers),
+        bucket: { sessions: [{ messages: [{ role: 'assistant', state: 'done', images: { 0: { state: 'pending', jobId: 'image-job' } } }] }] },
+    };
+    const runtime = vm.createContext({ app, reload, updateStream: jest.fn(),
+        TERMINAL: new Set(['completed', 'cancelled', 'failed', 'interrupted', 'conflict']),
+        imageReviewCard: () => card, approveImagePrompt,
+        observeJob: (id, options) => { observers.push({ id, options }); return () => {}; }, api: { watchReply: () => () => {} } });
+    vm.runInContext(source.match(/^function syncWatchers\([\s\S]*?^}/m)[0], runtime);
+    runtime.syncWatchers();
+    return { app, observers, reload, approveImagePrompt };
+}
+
 describe('Scratchpad Context refresh lifecycle', () => {
+    test('both Home visibility events check the live source after visibility changes, only while open', () => {
+        const listeners = new Map();
+        const tasks = [];
+        const checkSource = jest.fn();
+        const app = { open: true };
+        const runtime = vm.createContext({ app, checkSource, queueMicrotask: task => tasks.push(task),
+            globalThis: { addEventListener: (name, listener) => listeners.set(name, listener) } });
+        vm.runInContext(source.match(/^function wireHomeSourceEvents\([\s\S]*?^}/m)[0], runtime);
+        runtime.wireHomeSourceEvents();
+        expect([...listeners.keys()]).toEqual(['neconyan:navigate-home', 'neconyan:home-hidden']);
+        for (const listener of listeners.values()) listener();
+        expect(checkSource).not.toHaveBeenCalled();
+        for (const task of tasks.splice(0)) task();
+        expect(checkSource).toHaveBeenCalledTimes(2);
+        app.open = false;
+        for (const listener of listeners.values()) listener();
+        for (const task of tasks) task();
+        expect(checkSource).toHaveBeenCalledTimes(2);
+    });
+    test('an unchanged image job poll does not redraw the thread', async () => {
+        const { observers, reload } = imageJobFixture();
+        expect(observers).toHaveLength(1);
+        // onSnapshot fires on every poll; only onUpdate and onDone may redraw.
+        expect(observers[0].options.onSnapshot).toBeUndefined();
+        const job = { id: 'image-job', state: 'running', stage: 'generating' };
+        await observers[0].options.onUpdate(job);
+        expect(reload).toHaveBeenCalledTimes(1);
+        await observers[0].options.onUpdate({ ...job });
+        expect(reload).toHaveBeenCalledTimes(1);
+        await observers[0].options.onUpdate({ ...job, stage: 'approval', result: { approval: { id: 'a1' } } });
+        expect(reload).toHaveBeenCalledTimes(2);
+        await observers[0].options.onDone({ ...job, state: 'completed' });
+        expect(reload).toHaveBeenCalledTimes(3);
+    });
+    test('a requested prompt review opens when its approval appears, and only once', async () => {
+        const card = { session: { id: 'session' }, message: { id: 'reply' }, part: { index: 0 } };
+        const { app, observers, approveImagePrompt } = imageJobFixture({ markers: ['image-job'], card });
+        await observers[0].options.onUpdate({ id: 'image-job', state: 'running', stage: 'generating' });
+        expect(approveImagePrompt).not.toHaveBeenCalled();
+        expect(app.imageAutoReviews.has('image-job')).toBe(true);
+        const waiting = { id: 'image-job', state: 'waiting', stage: 'approval', result: { approval: { id: 'a1' } } };
+        await observers[0].options.onUpdate(waiting);
+        expect(approveImagePrompt).toHaveBeenCalledTimes(1);
+        expect(approveImagePrompt).toHaveBeenCalledWith(card.session, card.message, card.part);
+        expect(app.imageAutoReviews.has('image-job')).toBe(false);
+        await observers[0].options.onUpdate({ ...waiting });
+        expect(approveImagePrompt).toHaveBeenCalledTimes(1);
+    });
+    test('an approval this client never asked to review stays manual', async () => {
+        const card = { session: { id: 'session' }, message: { id: 'reply' }, part: { index: 0 } };
+        const { observers, approveImagePrompt } = imageJobFixture({ card });
+        await observers[0].options.onUpdate({ id: 'image-job', state: 'waiting', stage: 'approval', result: { approval: { id: 'a1' } } });
+        expect(approveImagePrompt).not.toHaveBeenCalled();
+        const inactive = imageJobFixture({ markers: ['image-job'], card: null });
+        await inactive.observers[0].options.onUpdate({ id: 'image-job', state: 'waiting', stage: 'approval', result: { approval: { id: 'a1' } } });
+        expect(inactive.approveImagePrompt).not.toHaveBeenCalled();
+        expect(inactive.app.imageAutoReviews.has('image-job')).toBe(true);
+    });
+    test('rapid General/chat/General switching restores drafts and ignores a delayed chat bucket', async () => {
+        const general = { kind: 'general', key: 'general', personaId: 'User.png' };
+        const chat = { kind: 'roleplay', key: 'chat' };
+        const bucket = (source, id) => ({ source, activeSessionId: id, sessions: [{ id, messages: [] }] });
+        const app = { source: general, bucket: bucket(general, 'general-session'), ticket: 0, contextKey: '', tab: 'chat',
+            drafts: new Map(), draftKey: JSON.stringify(['general', 'general', 'general-session']), el: { composer: { value: 'GENERAL-DRAFT' } } };
+        let live = general;
+        const requests = [];
+        const runtime = vm.createContext({ app, sameSourceBucket, sameSourceContext, PICK_PAGE: 30,
+            currentSource: () => live, stopWatchers() {}, syncWatchers() {}, reportError: error => { throw error; },
+            t: parts => parts.join(''), api: { readBucket: source => new Promise(resolve => requests.push({ source, resolve })) }, wireSource: value => value,
+            render() { runtime.syncDraft(); },
+        });
+        const names = ['activeSession', 'syncDraft', 'applyBucket', 'checkSource', 'reload'];
+        vm.runInContext(names.map(name => source.match(new RegExp(`^(?:async )?function ${name}\\([\\s\\S]*?^}`, 'm'))[0]).join('\n'), runtime);
+        live = chat;
+        runtime.checkSource();
+        expect(app.el.composer.value).toBe('');
+        live = general;
+        runtime.checkSource();
+        requests[0].resolve({ bucket: bucket(chat, 'chat-session') });
+        for (let i = 0; i < 6; i++) await Promise.resolve();
+        expect(app.bucket).toBeNull();
+        requests[1].resolve({ bucket: bucket(general, 'general-session') });
+        for (let i = 0; i < 6; i++) await Promise.resolve();
+        expect(app.el.composer.value).toBe('GENERAL-DRAFT');
+        expect(app.bucket.source.kind).toBe('general');
+        live = { ...general, avatar: 'Nova.png', personaId: 'Other.png' };
+        runtime.checkSource();
+        expect(app.el.composer.value).toBe('GENERAL-DRAFT');
+        expect(app.bucket.activeSessionId).toBe('general-session');
+        expect(app.source).toBe(live);
+    });
+    test('General card and persona changes redraw context without replacing its list or draft, rejecting delayed old notes', async () => {
+        const f = fixture();
+        f.app.source = { kind: 'general', key: 'general', avatar: 'Nova.png', personaId: 'User.png' };
+        f.runtime.applyBucket({ source: f.app.source, activeSessionId: 'one', limits: { notes: 12 }, sessions: [{ id: 'one', settings: { ...defaults, notes: [ref('old')] }, messages: [] }] });
+        const bucket = f.app.bucket;
+        const stale = f.requests[0];
+        const original = f.panel.children[1];
+        f.app.source = { ...f.app.source, avatar: 'Kit.png', personaId: 'Other.png' };
+        f.runtime.render();
+        expect(f.panel.children[1]).not.toBe(original);
+        expect(f.app.bucket).toBe(bucket);
+        expect(f.panel.textContent).toContain('No story chat is open');
+        expect(f.panel.textContent).not.toContain('Current preset:');
+        f.reply(f.requests[1], [ref('current')]);
+        f.reply(stale, [ref('obsolete')]);
+        await f.settle();
+        expect(f.panel.textContent).toContain('current');
+        expect(f.panel.textContent).not.toContain('obsolete');
+    });
     test.each(['session first', 'notes first'])('redraws changed shared notes with %s', async order => {
         const f = fixture();
         f.apply([ref('old')]);
