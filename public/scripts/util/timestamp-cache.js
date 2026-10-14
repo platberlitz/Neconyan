@@ -7,6 +7,7 @@ export function isCacheableScalarTimestamp(timestamp) {
 
 export function createTimestampCache({
     moment,
+    getMoment = () => moment,
     parseTimestamp,
     getCurrentLocale = () => 'en',
     maxEntries = TIMESTAMP_CACHE_MAX_ENTRIES,
@@ -30,8 +31,9 @@ export function createTimestampCache({
             return cached;
         }
 
+        const momentFn = getMoment();
         const iso8601 = parseTimestamp(timestamp);
-        const objMoment = iso8601 ? moment(iso8601).locale(locale) : moment.invalid();
+        const objMoment = iso8601 ? momentFn(iso8601).locale(locale) : momentFn.invalid();
 
         if (canCache) {
             while (cache.size >= bound) {

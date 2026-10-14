@@ -16,17 +16,19 @@ const moment = require('moment');
 
 function loadUtilsTimestampHelper(getLocale = () => 'en') {
     const utilsSource = fs.readFileSync(path.join(repoRoot, 'public', 'scripts', 'utils.js'), 'utf8');
+    expect(utilsSource).toContain('import { createTimestampCache } from \'./util/timestamp-cache.js\';');
     const dateSource = utilsSource.slice(
-        utilsSource.indexOf('const dateCache = new Map();'),
+        utilsSource.indexOf('const dateCache = createTimestampCache({'),
         utilsSource.indexOf('/** Split string to parts'),
     );
     const factory = new Function(
+        'createTimestampCache',
         'moment',
         'parseTimestamp',
         'getCurrentLocale',
-        `${dateSource.replace('export function', 'function')}\nreturn { read: timestampToMoment, size: () => dateCache.size, keys: () => Array.from(dateCache.keys()), clear: () => dateCache.clear() };`,
+        `${dateSource.replace('export function', 'function')}\nreturn { read: timestampToMoment, size: () => dateCache.size(), keys: () => dateCache.keys(), clear: () => dateCache.clear() };`,
     );
-    return factory(moment, parseTimestamp, getLocale);
+    return factory(createTimestampCache, moment, parseTimestamp, getLocale);
 }
 
 describe('bounded timestampToMoment cache', () => {
