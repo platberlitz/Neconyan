@@ -7,6 +7,7 @@
 - PR #162 (2026-10-13) `fix(i18n): translate the rewritten error messages into Portuguese`
 - PR #163 (2026-10-13) `fix(i18n): translate the rewritten error messages into Italian`
 - PR #164 (2026-10-13) `fix(i18n): translate the rewritten error messages into German`
+- PR #170 (2026-10-14) `fix(agents): update the companion lock cue in place`
 
 ## v1.3.2
 
