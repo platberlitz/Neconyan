@@ -56,7 +56,10 @@ beforeEach(() => {
         ? { config, stories: [] } : { locator: JSON.parse(body).locator, enabled: false, revision: 1 }));
     Object.assign(mewmory, { view: null, config: null, stories: [], error: '', loading: false, busy: false, backfilling: false });
 });
-afterEach(() => jest.restoreAllMocks());
+afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+});
 
 test('status labels are translated without changing the state used by the interface', () => {
     const button = { dataset: {}, setAttribute: jest.fn(), querySelector: () => null };
@@ -296,9 +299,253 @@ test('a new chat without a greeting turns Mewmory on with the first message', as
         return response({ locator: JSON.parse(body).locator, ...state });
     });
     chat.splice(0, chat.length, { is_user: true, mes: 'Hi' });
-    listeners.get('MESSAGE_SENT')();
-    await settle();
+    await Promise.all(listeners.get('MESSAGE_SENT')());
     expect(enabledCalls()).toHaveLength(1);
     expect(mewmory.view.enabled).toBe(true);
     expect(chatMetadata.mewmory_new_chat).toBe(true);
+});
+
+test('generation, first-message and prompt preparation wait for a delayed new-chat enable while chat-created events do not block', async () => {
+    initMewmory();
+    const delayedEnable = Promise.withResolvers();
+    const delayedSave = Promise.withResolvers();
+    let state = { enabled: false, revision: 1 };
+    saveMetadata.mockImplementationOnce(() => delayedSave.promise);
+    fetch.mockImplementation(async (url, { body }) => {
+        if (url.endsWith('config/get')) return response({ config: { ...config, enableNewChats: true }, stories: [] });
+        if (url.endsWith('/enabled')) {
+            await delayedEnable.promise;
+            state = { enabled: true, revision: 2 };
+        }
+        if (url.endsWith('/prepare')) return response({ excludedIndices: [], npcText: '', memoryText: 'Remembered', inspection: {} });
+        return response({ locator: JSON.parse(body).locator, ...state });
+    });
+    chat.splice(0, chat.length, { is_user: false, mes: 'Hello there' });
+    expect(listeners.get('CHAT_CREATED')()).toEqual([undefined]);
+    expect(listeners.get('GENERATION_STARTED')('normal', {}, true)).toEqual([undefined]);
+    await settle();
+    expect(enabledCalls()).toHaveLength(1);
+    expect(chatMetadata.mewmory_new_chat).toBeUndefined();
+
+    chat.push({ is_user: true, mes: 'First turn' });
+    let generationResolved = false;
+    let messageResolved = false;
+    let preparedResolved = false;
+    const started = Promise.all(listeners.get('GENERATION_STARTED')()).then(() => { generationResolved = true; });
+    const sent = Promise.all(listeners.get('MESSAGE_SENT')()).then(() => { messageResolved = true; });
+    const prepared = prepareMewmoryGeneration([{ mes: 'First turn', mewmorySourceIndex: 0 }]).then(result => {
+        preparedResolved = true;
+        return result;
+    });
+    await settle();
+    expect(generationResolved).toBe(false);
+    expect(messageResolved).toBe(false);
+    expect(preparedResolved).toBe(false);
+    expect(enabledCalls()).toHaveLength(1);
+
+    delayedEnable.resolve();
+    await settle();
+    expect(chatMetadata.mewmory_new_chat).toBe(true);
+    expect(saveMetadata).toHaveBeenCalledTimes(1);
+    expect(generationResolved).toBe(false);
+    expect(messageResolved).toBe(false);
+    expect(preparedResolved).toBe(false);
+
+    delayedSave.resolve(true);
+    const [, , preparedResult] = await Promise.all([started, sent, prepared]);
+    expect(generationResolved).toBe(true);
+    expect(messageResolved).toBe(true);
+    expect(preparedResolved).toBe(true);
+    expect(preparedResult.memoryText).toBe('Remembered');
+    expect(mewmory.view.enabled).toBe(true);
+    expect(enabledCalls()).toHaveLength(1);
+
+    chatId = 'group-first';
+    generation++;
+    delete chatMetadata.mewmory_new_chat;
+    state = { enabled: false, revision: 1 };
+    const delayedGroupEnable = Promise.withResolvers();
+    fetch.mockImplementation(async (url, { body }) => {
+        if (url.endsWith('config/get')) return response({ config: { ...config, enableNewChats: true }, stories: [] });
+        if (url.endsWith('/enabled')) {
+            await delayedGroupEnable.promise;
+            state = { enabled: true, revision: 2 };
+        }
+        return response({ locator: JSON.parse(body).locator, ...state });
+    });
+    chat.splice(0, chat.length, { is_user: false, mes: 'Group greeting' });
+    expect(listeners.get('GROUP_CHAT_CREATED')()).toEqual([undefined]);
+    let groupGenerationResolved = false;
+    const groupStarted = Promise.all(listeners.get('GENERATION_STARTED')()).then(() => { groupGenerationResolved = true; });
+    await settle();
+    expect(groupGenerationResolved).toBe(false);
+    delayedGroupEnable.resolve();
+    await groupStarted;
+    expect(mewmory.view.enabled).toBe(true);
+    expect(chatMetadata.mewmory_new_chat).toBe(true);
+});
+
+test('a failed new-chat enable leaves no marker and retries on a later event, including after a 409 conflict', async () => {
+    initMewmory();
+    let attempts = 0;
+    let state = { enabled: false, revision: 1 };
+    fetch.mockImplementation(async (url, { body }) => {
+        if (url.endsWith('config/get')) return response({ config: { ...config, enableNewChats: true }, stories: [] });
+        if (url.endsWith('/enabled')) {
+            attempts++;
+            if (attempts === 1) return { ok: false, status: 500, json: async () => ({ error: 'Temporary failure' }) };
+            if (attempts === 2) {
+                state = { enabled: false, revision: 3 };
+                return { ok: false, status: 409, json: async () => ({ error: 'Mewmory changed somewhere else.' }) };
+            }
+            state = { enabled: true, revision: state.revision + 1 };
+        }
+        return response({ locator: JSON.parse(body).locator, ...state });
+    });
+    chat.splice(0, chat.length, { is_user: false, mes: 'Greeting' });
+    expect(listeners.get('CHAT_CREATED')()).toEqual([undefined]);
+    await settle();
+    expect(enabledCalls()).toHaveLength(1);
+    expect(mewmory.view.enabled).toBe(false);
+    expect(mewmory.error).toBe('Temporary failure');
+    expect(chatMetadata.mewmory_new_chat).toBeUndefined();
+    expect(saveMetadata).not.toHaveBeenCalled();
+
+    chat.push({ is_user: true, mes: 'Try again' });
+    await Promise.all(listeners.get('MESSAGE_SENT')());
+    expect(enabledCalls()).toHaveLength(3);
+    expect(JSON.parse(enabledCalls()[1][1].body).revision).toBe(1);
+    expect(JSON.parse(enabledCalls()[2][1].body).revision).toBe(3);
+    expect(mewmory.view.enabled).toBe(true);
+    expect(mewmory.error).toBe('');
+    expect(chatMetadata.mewmory_new_chat).toBe(true);
+    expect(saveMetadata).toHaveBeenCalledTimes(1);
+});
+
+test('stopping generation, aborting a request signal, or timing out ends the wait without cancelling the enable', async () => {
+    initMewmory();
+    let delayedEnable = Promise.withResolvers();
+    let state = { enabled: false, revision: 1 };
+    fetch.mockImplementation(async (url, { body }) => {
+        if (url.endsWith('config/get')) return response({ config: { ...config, enableNewChats: true }, stories: [] });
+        if (url.endsWith('/enabled')) {
+            const outcome = await delayedEnable.promise;
+            if (outcome?.error) return { ok: false, status: 500, json: async () => ({ error: outcome.error }) };
+            state = { enabled: true, revision: 2 };
+        }
+        return response({ locator: JSON.parse(body).locator, ...state });
+    });
+
+    chat.splice(0, chat.length, { is_user: false, mes: 'Greeting' });
+    expect(listeners.get('CHAT_CREATED')()).toEqual([undefined]);
+    const abortController = new AbortController();
+    const signalWait = Promise.all(listeners.get('GENERATION_STARTED')('normal', { signal: abortController.signal }));
+    abortController.abort();
+    await signalWait;
+    expect(chatMetadata.mewmory_new_chat).toBeUndefined();
+
+    const stopWait = Promise.all(listeners.get('GENERATION_STARTED')());
+    listeners.get('GENERATION_STOPPED')();
+    await stopWait;
+    expect(chatMetadata.mewmory_new_chat).toBeUndefined();
+
+    delayedEnable.resolve();
+    await settle();
+    expect(mewmory.view.enabled).toBe(true);
+    expect(chatMetadata.mewmory_new_chat).toBe(true);
+
+    chatId = 'timeout-chat';
+    generation++;
+    delete chatMetadata.mewmory_new_chat;
+    state = { enabled: false, revision: 1 };
+    delayedEnable = Promise.withResolvers();
+    jest.useFakeTimers();
+    expect(listeners.get('CHAT_CREATED')()).toEqual([undefined]);
+    let timedOutResolved = false;
+    const timedOutWait = Promise.all(listeners.get('GENERATION_STARTED')()).then(() => { timedOutResolved = true; });
+    await jest.advanceTimersByTimeAsync(15000);
+    await timedOutWait;
+    expect(timedOutResolved).toBe(true);
+    expect(chatMetadata.mewmory_new_chat).toBeUndefined();
+    expect(listeners.get('GENERATION_STARTED')()).toEqual([undefined]);
+    jest.useRealTimers();
+
+    delayedEnable.resolve();
+    await settle();
+    expect(mewmory.view.enabled).toBe(true);
+    expect(chatMetadata.mewmory_new_chat).toBe(true);
+
+    chatId = 'timeout-error-chat';
+    generation++;
+    delete chatMetadata.mewmory_new_chat;
+    state = { enabled: false, revision: 1 };
+    delayedEnable = Promise.withResolvers();
+    jest.useFakeTimers();
+    expect(listeners.get('CHAT_CREATED')()).toEqual([undefined]);
+    const failingTimeoutWait = Promise.all(listeners.get('GENERATION_STARTED')());
+    await jest.advanceTimersByTimeAsync(15000);
+    await failingTimeoutWait;
+    jest.useRealTimers();
+
+    delayedEnable.resolve({ error: 'Late failure after timeout' });
+    await settle();
+    expect(mewmory.error).toBe('Late failure after timeout');
+    expect(chatMetadata.mewmory_new_chat).toBeUndefined();
+});
+
+test('switching chats while new-chat enable is pending leaves the new chat and its metadata untouched', async () => {
+    initMewmory();
+    const delayedEnable = Promise.withResolvers();
+    fetch.mockImplementation(async (url, { body }) => {
+        const locator = JSON.parse(body || '{}').locator;
+        if (url.endsWith('config/get')) return response({ config: { ...config, enableNewChats: true }, stories: [] });
+        if (url.endsWith('/enabled')) {
+            await delayedEnable.promise;
+            return response({ locator, enabled: true, revision: 2 });
+        }
+        return response({ locator, enabled: false, revision: 1 });
+    });
+    chat.splice(0, chat.length, { is_user: false, mes: 'Greeting' });
+    expect(listeners.get('CHAT_CREATED')()).toEqual([undefined]);
+    await settle();
+    expect(enabledCalls()).toHaveLength(1);
+
+    const started = Promise.all(listeners.get('GENERATION_STARTED')());
+    chatId = 'second';
+    generation++;
+    listeners.get('CHAT_CHANGED')();
+    await started;
+    await refreshMewmory();
+
+    delayedEnable.resolve();
+    await settle();
+    expect(mewmory.view.locator.chat).toBe('second');
+    expect(mewmory.view.enabled).toBe(false);
+    expect(chatMetadata.mewmory_new_chat).toBeUndefined();
+    expect(saveMetadata).not.toHaveBeenCalled();
+    expect(mewmory.error).toBe('');
+});
+
+test('explicitly disabled chats, disabled auto-enable and normal sends add no requests or waiting', async () => {
+    initMewmory();
+    chat.splice(0, chat.length, { is_user: true, mes: 'Hi' });
+    mewmory.config = { ...config, enableNewChats: false };
+    mewmory.view = { locator: { chat: 'first' }, enabled: false, revision: 1 };
+    fetch.mockClear();
+    expect(listeners.get('GENERATION_STARTED')()).toEqual([undefined]);
+    await Promise.all(listeners.get('MESSAGE_SENT')());
+    expect(fetch).not.toHaveBeenCalled();
+    expect(chatMetadata.mewmory_new_chat).toBeUndefined();
+
+    mewmory.config = { ...config, enableNewChats: true };
+    chatMetadata.mewmory_new_chat = true;
+    expect(listeners.get('GENERATION_STARTED')()).toEqual([undefined]);
+    await Promise.all(listeners.get('MESSAGE_SENT')());
+    expect(fetch).not.toHaveBeenCalled();
+    expect(mewmory.view.enabled).toBe(false);
+
+    mewmory.view = { locator: { chat: 'first' }, enabled: true, revision: 2 };
+    expect(listeners.get('GENERATION_STARTED')()).toEqual([undefined]);
+    await Promise.all(listeners.get('MESSAGE_SENT')());
+    expect(fetch).not.toHaveBeenCalled();
 });
