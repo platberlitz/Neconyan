@@ -69,10 +69,36 @@ final class CrashReport {
         return parse(id + ".txt", header + "\n\nDetails:\n" + DiagnosticStore.redact(details));
     }
     static boolean isRoutineIsolatedExit(int reason, int status, String description) {
-        // Android records unused WebView processes as REASON_OTHER (13), not USER_REQUESTED.
+        // Android and OEM task managers record routine WebView and Recents cleanups as REASON_OTHER (13), not USER_REQUESTED.
         if (reason != 13 || status != 0 || description == null) return false;
         String detail = description.trim();
-        return detail.equalsIgnoreCase("isolated not needed") || detail.equalsIgnoreCase("[ISOLATED NOT NEEDED] isolated not needed");
+        if (detail.startsWith("[")) {
+            int close = detail.indexOf(']');
+            if (close > 1) {
+                String subreason = detail.substring(1, close).trim();
+                if (subreason.equalsIgnoreCase("ISOLATED NOT NEEDED") || subreason.equalsIgnoreCase("REMOVE TASK")) return true;
+                detail = detail.substring(close + 1).trim();
+            }
+        }
+        return detail.equalsIgnoreCase("isolated not needed")
+            || detail.equalsIgnoreCase("remove task")
+            || detail.equalsIgnoreCase("SwipeUpClean")
+            || detail.equalsIgnoreCase("OneKeyClean")
+            || detail.equalsIgnoreCase("ForceClean")
+            || detail.equalsIgnoreCase("GarbageClean")
+            || detail.equalsIgnoreCase("LockScreenClean")
+            || detail.equalsIgnoreCase("GameClean")
+            || detail.equalsIgnoreCase("OptimizationClean");
+    }
+    static boolean isRoutineExitReport(Entry entry) {
+        if (entry == null || !"android-process-exit".equals(entry.event) || entry.reason != 13 || !"0".equals(entry.status) || entry.text == null) return false;
+        int detailsIndex = entry.text.indexOf("\n\nDetails:\n");
+        if (detailsIndex < 0) return false;
+        for (String line : entry.text.substring(detailsIndex + 11).split("\n")) {
+            if (line.startsWith("Description: ")) return isRoutineIsolatedExit(entry.reason, 0, line.substring("Description: ".length()));
+            if (line.startsWith("System trace:") || line.startsWith("Device details captured")) break;
+        }
+        return false;
     }
     static boolean shouldOffer(Entry entry, String seenBoundary, Set<String> incidents) {
         return entry != null && entry.id.compareTo(seenBoundary == null ? "" : seenBoundary) > 0 && !incidents.contains(entry.incident);

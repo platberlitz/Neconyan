@@ -89,13 +89,18 @@ final class DiagnosticStore {
         File file = new File(directory, id);
         try {
             if (!file.isFile() || file.length() > MAX_CHARS * 4L) return null;
-            return CrashReport.parse(id, new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
+            CrashReport.Entry entry = CrashReport.parse(id, new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
+            if (CrashReport.isRoutineExitReport(entry)) {
+                synchronized (WRITE_LOCK) { Files.deleteIfExists(file.toPath()); }
+                return null;
+            }
+            return entry;
         } catch (Throwable ignored) { return null; }
     }
     List<CrashReport.Entry> listEntries() {
         List<CrashReport.Entry> entries = new ArrayList<>();
         File[] files = files();
-        for (int i = files.length - 1; i >= Math.max(0, files.length - 10); i--) {
+        for (int i = files.length - 1; i >= 0 && entries.size() < 10; i--) {
             try (InputStream input = new FileInputStream(files[i])) {
                 byte[] bytes = new byte[CrashReport.MAX_HEADER_BYTES];
                 int length = 0;
@@ -107,6 +112,10 @@ final class DiagnosticStore {
                 }
                 String header = new String(bytes, 0, length, StandardCharsets.UTF_8);
                 CrashReport.Entry entry = CrashReport.parse(files[i].getName(), header);
+                if (CrashReport.isRoutineExitReport(entry)) {
+                    synchronized (WRITE_LOCK) { Files.deleteIfExists(files[i].toPath()); }
+                    continue;
+                }
                 if (entry != null) entries.add(entry);
             } catch (Throwable ignored) { readError = "A saved crash report could not be read. Select another report or copy the current report before closing."; }
         }
@@ -114,7 +123,7 @@ final class DiagnosticStore {
     }
     CrashReport.Entry newestEntry() {
         File[] files = files();
-        for (int i = files.length - 1; i >= Math.max(0, files.length - 10); i--) {
+        for (int i = files.length - 1; i >= 0; i--) {
             CrashReport.Entry entry = readEntry(files[i].getName());
             if (entry != null) return entry;
         }
@@ -128,11 +137,17 @@ final class DiagnosticStore {
     String readNewest(int maximum) {
         StringBuilder result = new StringBuilder();
         File[] files = files();
-        for (int i = files.length - 1; i >= Math.max(0, files.length - maximum); i--) {
+        int count = 0;
+        for (int i = files.length - 1; i >= 0 && count < maximum; i--) {
             try {
                 if (files[i].length() > MAX_CHARS * 4L) continue;
-                result.append("\n\n=== ").append(files[i].getName()).append(" ===\n")
-                    .append(new String(Files.readAllBytes(files[i].toPath()), StandardCharsets.UTF_8));
+                String text = new String(Files.readAllBytes(files[i].toPath()), StandardCharsets.UTF_8);
+                if (CrashReport.isRoutineExitReport(CrashReport.parse(files[i].getName(), text))) {
+                    synchronized (WRITE_LOCK) { Files.deleteIfExists(files[i].toPath()); }
+                    continue;
+                }
+                count++;
+                result.append("\n\n=== ").append(files[i].getName()).append(" ===\n").append(text);
             } catch (IOException error) { result.append("\nReport could not be read: ").append(error.getClass().getSimpleName()); }
         }
         return result.length() == 0 ? "No saved Android crash reports." : result.toString();
