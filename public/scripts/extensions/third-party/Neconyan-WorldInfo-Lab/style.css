@@ -1,13 +1,14 @@
 #sbwil-workbench,
 #sbwil-settings,
 #sbwil-page {
-    --sbwil-bg: var(--sb-surface-primary, var(--SmartThemeBlurTintColor, #202628));
-    --sbwil-bg-alt: var(--sb-surface-secondary, var(--SmartThemeChatTintColor, #282f31));
-    --sbwil-bg-raised: var(--sb-surface-raised, var(--SmartThemeBotMesBlurTintColor, #30383a));
-    --sbwil-text: var(--color-text-primary, var(--SmartThemeBodyColor, #e4e9e7));
-    --sbwil-muted: var(--color-text-secondary, var(--SmartThemeEmColor, #aeb9b5));
-    --sbwil-border: var(--color-border, var(--SmartThemeBorderColor, #596462));
-    --sbwil-accent: var(--color-accent, var(--SmartThemeQuoteColor, #91b9a8));
+    --sbwil-bg: var(--neco-surface, var(--sb-surface-primary, var(--SmartThemeChatTintColor, #202628)));
+    --sbwil-bg-alt: var(--neco-rail, var(--sb-surface-secondary, var(--SmartThemeBlurTintColor, #282f31)));
+    --sbwil-bg-raised: var(--neco-raised, var(--sb-surface-raised, var(--SmartThemeBotMesBlurTintColor, #30383a)));
+    --sbwil-input-bg: var(--sb-input-bg, var(--neco-canvas, var(--sbwil-bg-alt)));
+    --sbwil-text: var(--neco-ink, var(--color-text-primary, var(--SmartThemeBodyColor, #e4e9e7)));
+    --sbwil-muted: var(--neco-muted, var(--color-text-secondary, var(--SmartThemeEmColor, #aeb9b5)));
+    --sbwil-border: var(--neco-border, var(--color-border, var(--SmartThemeBorderColor, #596462)));
+    --sbwil-accent: var(--neco-ginger, var(--color-accent, var(--SmartThemeQuoteColor, #91b9a8)));
     --sbwil-danger: var(--color-danger, #d17b73);
     --sbwil-warning: var(--color-warning, #d4ad67);
     --sbwil-radius-sm: var(--sb-radius-sm, 6px);
@@ -218,8 +219,13 @@
     line-height: 1.1;
 }
 
-#sbwil-workbench h3 {
+#sbwil-workbench h3,
+#sbwil-workbench.sbwil-workbench h3:not(#chat h3) {
     margin-bottom: 12px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
     font-size: 1.2rem;
     font-weight: 680;
     line-height: 1.25;
@@ -249,7 +255,9 @@
     margin-bottom: 0;
 }
 
-.sbwil-kicker {
+.sbwil-kicker,
+#sbwil-workbench h3.sbwil-kicker,
+#sbwil-workbench.sbwil-workbench h3.sbwil-kicker:not(#chat h3) {
     margin-bottom: 5px;
     color: var(--sbwil-accent);
     font-size: 0.69rem;
@@ -458,13 +466,14 @@
     padding: 20px;
     overflow: visible;
     border-bottom: 1px solid var(--sbwil-border);
-    background: var(--sbwil-bg-alt);
+    background: var(--sbwil-bg);
 }
 
 .sbwil-scan-output {
     min-width: 0;
     padding: 20px;
     overflow: visible;
+    background: var(--sbwil-bg);
 }
 
 .sbwil-scan-form,
@@ -505,13 +514,13 @@
     padding: 8px 10px;
     border: 1px solid var(--sbwil-border);
     border-radius: var(--sbwil-radius-sm);
-    background: var(--sbwil-bg);
+    background: var(--sbwil-input-bg);
     cursor: pointer;
 }
 
 .sbwil-mode-option:has(input:checked) {
     border-color: var(--sbwil-accent);
-    background: color-mix(in srgb, var(--sbwil-accent) 12%, var(--sbwil-bg));
+    background: color-mix(in srgb, var(--sbwil-accent) 12%, var(--sbwil-input-bg));
 }
 
 .sbwil-mode-option input,
@@ -546,7 +555,7 @@
     margin: 0;
     border: 1px solid var(--sbwil-border);
     border-radius: var(--sbwil-radius-sm);
-    background: var(--sbwil-bg);
+    background: var(--sbwil-input-bg);
     color: var(--sbwil-text);
     font-family: inherit;
 }

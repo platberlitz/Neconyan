@@ -165,4 +165,10 @@ test('World Info Lab aligns Health panel padding and Scan surface tokens with th
     expect(css).toMatch(/\.sbwil-scan-output,\s*\.sbwil-panel-trace,\s*\.sbwil-panel-tests,\s*\.sbwil-panel-batch,\s*\.sbwil-panel-health\s*\{\s*padding:\s*24px 28px 32px;/);
     expect(css).toMatch(/\.sbwil-scan-controls,\s*\.sbwil-scan-output,\s*\.sbwil-panel-trace,\s*\.sbwil-panel-tests,\s*\.sbwil-panel-batch,\s*\.sbwil-panel-health\s*\{\s*padding:\s*16px 14px 22px;/);
     expect(css).toMatch(/\.sbwil-scan-form,\s*\.sbwil-batch-form,\s*\.sbwil-health-form\s*\{\s*display:\s*grid;\s*gap:\s*17px;/);
+
+    expect(css).toContain('--sbwil-bg: var(--neco-surface,');
+    expect(css).toContain('--sbwil-input-bg: var(--sb-input-bg, var(--neco-canvas, var(--sbwil-bg-alt)));');
+    expect(css).toMatch(/\.sbwil-scan-controls\s*\{[^}]*background:\s*var\(--sbwil-bg\);/);
+    expect(css).toMatch(/\.sbwil-scan-output\s*\{[^}]*background:\s*var\(--sbwil-bg\);/);
+    expect(css).toMatch(/#sbwil-workbench\.sbwil-workbench h3:not\(#chat h3\)\s*\{[^}]*padding:\s*0;[^}]*border:\s*0;[^}]*background:\s*none;/);
 });
