@@ -1107,8 +1107,15 @@ export function isCompanionPanelLocked() {
 export function setCompanionPanelLocked(locked) {
     panelLocked = Boolean(locked);
     storePanelLocked(panelLocked);
-    if (panelOpen) {
-        renderPanel();
+    const button = document.querySelector('#ica--tracker-panel [data-action="panel-lock"]');
+    if (button) {
+        button.classList.toggle('is-active', panelLocked);
+        button.setAttribute('title', panelLocked ? t`Unlock panel auto-close` : t`Keep panel open until unlocked`);
+        button.setAttribute('aria-label', panelLocked ? t`Unlock panel` : t`Lock panel`);
+        button.setAttribute('aria-pressed', String(panelLocked));
+        const icon = button.querySelector('i');
+        icon?.classList.toggle('fa-lock', panelLocked);
+        icon?.classList.toggle('fa-lock-open', !panelLocked);
     }
     return panelLocked;
 }
