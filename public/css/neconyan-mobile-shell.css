@@ -3469,6 +3469,8 @@ body.neconyan :is(#left-nav-panel, #user-settings-block).openDrawer .sb-shell-he
     line-height: 1.4;
     color: var(--neco-muted);
 }
+/* A tool page is not the Settings overview, so the Settings blurb stays out of its header. */
+body.neconyan #user-settings-block.openDrawer[data-sb-active-tab='included-tool'] .sb-shell-header .sb-shell-description { display: none; }
 
 /* Conversation DM settings: phones get the section buttons as a scrolling row, not the dropdown. */
 body.neconyan #sheld .sb-conversation-settings-mobile-select { display: none; }

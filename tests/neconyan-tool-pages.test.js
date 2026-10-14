@@ -309,6 +309,14 @@ describe('settings pages open as Neconyan pages with an assistant tour', () => {
         expect(css).toContain('#left-nav-panel[data-neconyan-native-page=\'connections\'] .neconyan-model-provider-stack');
     });
 
+    test('a tool page without its own blurb keeps the Settings blurb out of its phone header', () => {
+        expect(read('../public/css/neconyan-mobile-shell.css')).toContain('body.neconyan #user-settings-block.openDrawer[data-sb-active-tab=\'included-tool\'] .sb-shell-header .sb-shell-description { display: none; }');
+    });
+
+    test('the Calico top-right paw sits behind the first full-width card in settings panels', () => {
+        expect(read('../public/css/neconyan-calico.css')).toContain(':root[data-neconyan-palette=\'calico\'] body.neconyan .sb-shell-panel-scroller { background-position: right 18px top 18px, 92% 24%, left 4px bottom 18px, 76% 97%, 0 0; }');
+    });
+
     test('the Tour chip and the collapsed blurb stay one line tall but keep a 44px touch area', () => {
         const chip = css.match(/\n\.neconyan-tool-page-intro \.neconyan-tool-tour-button \{([^}]*)\}/)?.[1] ?? '';
         expect(chip).toContain('min-height: 28px;');

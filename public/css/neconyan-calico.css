@@ -108,6 +108,8 @@ body.neconyan ::selection {
 :root[data-neconyan-palette='calico'] body.neconyan #right-nav-panel > :is(.scrollableInner, .scrollableInnerFull) {
     background: var(--neco-canvas-gradient);
 }
+/* Settings panels pad 18px, so the top-right paw sits behind a full-width first card instead of poking out beside it. */
+:root[data-neconyan-palette='calico'] body.neconyan .sb-shell-panel-scroller { background-position: right 18px top 18px, 92% 24%, left 4px bottom 18px, 76% 97%, 0 0; }
 
 :root[data-neconyan-palette='calico'] body.neconyan #neconyan-workspace-rail {
     background: linear-gradient(155deg, color-mix(in oklch, var(--neco-ginger) 10%, var(--neco-rail)), var(--neco-rail) 55%, color-mix(in oklch, var(--neco-cream) 5%, var(--neco-rail)));
