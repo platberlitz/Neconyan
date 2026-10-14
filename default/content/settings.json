@@ -101,6 +101,10 @@
         "show_user_prompt_bias": true,
         "markdown_escape_strings": "",
         "fast_ui_mode": false,
+        "low_memory_preferences": {
+            "version": 1,
+            "explicit": {}
+        },
         "avatar_style": 0,
         "chat_display": 0,
         "chat_width": 80,

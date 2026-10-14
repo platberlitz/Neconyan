@@ -5802,7 +5802,7 @@
                                         </label>
                                         <div class="nn-cw-field nn-cw-slider">
                                             <div class="nn-cw-slider-head">
-                                                <label for="chat_truncation" class="nn-vt-text"><small class="nn-vt-name" data-i18n="# Messages to Load">Messages to load</small><span class="nn-vt-desc">How many recent messages load when a chat opens. 0 loads them all; a lower number opens long chats faster.</span></label>
+                                                <label for="chat_truncation" class="nn-vt-text"><small class="nn-vt-name" data-i18n="# Messages to Load">Messages to load</small><span class="nn-vt-desc" data-i18n="How many recent messages appear when a chat opens. Older messages stay available. Low-memory mode may use a smaller window.">How many recent messages appear when a chat opens. Older messages stay available. Low-memory mode may use a smaller window.</span></label>
                                                 <input class="neo-range-input" type="number" min="0" max="1000" step="5" data-for="chat_truncation" id="chat_truncation_counter" />
                                             </div>
                                             <input class="neo-range-slider" type="range" id="chat_truncation" name="chat_truncation" min="0" max="1000" step="5" />
@@ -6353,22 +6353,61 @@
                                     <small data-i18n="Skip Android fade-in segmentation">Skip Android fade-in segmentation</small>
                                 </label>
                             </div>
-                            <!-- Neconyan: aggressive DOM unloading for low-memory devices -->
-                            <div name="AggressiveDomUnloadToggles">
-                                <h4><span data-i18n="Aggressive DOM Unloading">Aggressive DOM Unloading</span></h4>
-                                <small data-i18n="Aggressive DOM Unloading_desc">Drastically reduces rendered messages to prevent crashes on low-memory devices during long streams.</small>
-                                <label class="checkbox_label" for="aggressive_dom_unload" title="Enable aggressive DOM unloading to keep only a minimal number of messages rendered. Useful for devices that crash during long streaming generations." data-i18n="[title]Enable aggressive DOM unloading to keep only a minimal number of messages rendered. Useful for devices that crash during long streaming generations.">
-                                    <input id="aggressive_dom_unload" type="checkbox" />
-                                    <small data-i18n="Enable aggressive unloading">Enable aggressive unloading</small>
-                                </label>
-                                <div class="alignitemscenter flex-container flexFlowColumn flexBasis48p flexGrow flexShrink gap0">
-                                    <small>
-                                        <span data-i18n="Messages to keep">Messages to keep</span>
-                                        <div class="fa-solid fa-circle-info opacity50p" data-i18n="[title]Number of messages to keep rendered when aggressive unloading is enabled. Lower values use less memory." title="Number of messages to keep rendered when aggressive unloading is enabled. Lower values use less memory."></div>
-                                    </small>
-                                    <input class="neo-range-slider" type="range" id="aggressive_dom_window_size" name="aggressive_dom_window_size" min="1" max="25" step="1">
-                                    <input class="neo-range-input" type="number" min="1" max="25" step="1" data-for="aggressive_dom_window_size" id="aggressive_dom_window_size_counter">
-                                </div>
+                            <!-- Neconyan: memory and performance controls for low-memory devices -->
+                            <div name="AggressiveDomUnloadToggles" class="nn-vt">
+                                <section class="nn-vt-group" aria-labelledby="nn-memory-performance-title">
+                                    <div class="nn-vt-group-head">
+                                        <i class="fa-solid fa-memory nn-vt-group-icon" aria-hidden="true"></i>
+                                        <div class="nn-vt-group-copy">
+                                            <h4 id="nn-memory-performance-title" class="nn-vt-group-title" data-i18n="Memory and performance">Memory and performance</h4>
+                                            <p class="nn-vt-group-hint" data-i18n="Uses lighter display settings on devices with very little memory. Your saved choices are kept.">Uses lighter display settings on devices with very little memory. Your saved choices are kept.</p>
+                                        </div>
+                                    </div>
+                                    <div class="nn-cw-field nn-cw-field-stacked">
+                                        <label for="low_memory_mode" class="nn-vt-text">
+                                            <small class="nn-vt-name" data-i18n="Low-memory mode">Low-memory mode</small>
+                                            <span class="nn-vt-desc" data-i18n="This choice applies to this browser on this device.">This choice applies to this browser on this device.</span>
+                                        </label>
+                                        <div class="nn-cw-control">
+                                            <select id="low_memory_mode" class="text_pole" aria-describedby="low_memory_mode_status">
+                                                <option value="auto" data-i18n="Auto">Auto</option>
+                                                <option value="on" data-i18n="On">On</option>
+                                                <option value="off" data-i18n="Off">Off</option>
+                                            </select>
+                                        </div>
+                                        <p id="low_memory_mode_status" class="nn-vt-desc" role="status" aria-live="polite" data-i18n-ignore></p>
+                                    </div>
+                                    <button id="low_memory_use_recommendations" type="button" class="nn-vt-action">
+                                        <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+                                        <span data-i18n="Use automatic recommendations">Use automatic recommendations</span>
+                                    </button>
+                                </section>
+                                <section class="nn-vt-group" aria-labelledby="nn-aggressive-dom-unload-title">
+                                    <div class="nn-vt-group-head">
+                                        <i class="fa-solid fa-broom nn-vt-group-icon" aria-hidden="true"></i>
+                                        <div class="nn-vt-group-copy">
+                                            <h4 id="nn-aggressive-dom-unload-title" class="nn-vt-group-title" data-i18n="Aggressive DOM Unloading">Aggressive DOM Unloading</h4>
+                                            <p class="nn-vt-group-hint" data-i18n="Aggressive DOM Unloading_desc">Drastically reduces rendered messages to prevent crashes on low-memory devices during long streams.</p>
+                                        </div>
+                                    </div>
+                                    <label class="checkbox_label nn-vt-row" for="aggressive_dom_unload" title="Enable aggressive DOM unloading to keep only a minimal number of messages rendered. Useful for devices that crash during long streaming generations." data-i18n="[title]Enable aggressive DOM unloading to keep only a minimal number of messages rendered. Useful for devices that crash during long streaming generations.">
+                                        <span class="nn-vt-text">
+                                            <small class="nn-vt-name" data-i18n="Enable aggressive unloading">Enable aggressive unloading</small>
+                                            <span class="nn-vt-desc" data-i18n="Keep only a minimal number of messages rendered during long chats and streams.">Keep only a minimal number of messages rendered during long chats and streams.</span>
+                                        </span>
+                                        <input id="aggressive_dom_unload" type="checkbox" />
+                                    </label>
+                                    <div class="nn-cw-field nn-cw-slider">
+                                        <div class="nn-cw-slider-head">
+                                            <label for="aggressive_dom_window_size" class="nn-vt-text">
+                                                <small class="nn-vt-name" data-i18n="Messages to keep">Messages to keep</small>
+                                                <span class="nn-vt-desc" data-i18n="Number of messages to keep rendered when aggressive unloading is enabled. Lower values use less memory.">Number of messages to keep rendered when aggressive unloading is enabled. Lower values use less memory.</span>
+                                            </label>
+                                            <input class="neo-range-input" type="number" min="1" max="25" step="1" data-for="aggressive_dom_window_size" id="aggressive_dom_window_size_counter">
+                                        </div>
+                                        <input class="neo-range-slider" type="range" id="aggressive_dom_window_size" name="aggressive_dom_window_size" min="1" max="25" step="1">
+                                    </div>
+                                </section>
                             </div>
                             <div class="inline-drawer wide100p flexFlowColumn sb-settings-subdrawer sb-desktop-setting" id="DesktopSection">
                                 <div class="inline-drawer-toggle inline-drawer-header userSettingsInnerExpandable">

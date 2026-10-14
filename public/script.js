@@ -121,6 +121,7 @@ import {
     applyPowerUserSettings,
     generatedTextFiltered,
     applyStylePins,
+    getEffectiveLowMemoryPolicy,
 } from './scripts/power-user.js';
 
 import {
@@ -375,11 +376,12 @@ import {
     getChatHistoryPageSize,
     getChatRenderWindowStartIndex,
     getNonSystemMessageDepth,
-    normalizeChatRenderWindowSize,
     renderMessagesInBatches,
     resolveChatBottomScrollAction,
     resolveChatRenderLifecycleRollout,
+    resolveChatRenderWindowPolicy,
     resolveChatScrollAction,
+    resolvePagedChatRenderWindowSize,
     restoreVisibleMessageAnchor,
     settleVisibleMessageAnchor,
     shouldApplyChatBottomScrollAction,
@@ -3107,23 +3109,30 @@ const CHAT_HISTORY_OLDER_BUTTON_ID = 'show_more_messages';
 const CHAT_HISTORY_NEWER_BUTTON_ID = 'show_newer_messages';
 const CHAT_HISTORY_WINDOW_CONTROL_SELECTOR = `#${CHAT_HISTORY_OLDER_BUTTON_ID}, #${CHAT_HISTORY_NEWER_BUTTON_ID}`;
 
+function getChatRenderWindowPolicyOptions() {
+    const lowMemoryPolicy = getEffectiveLowMemoryPolicy();
+    return {
+        chatTruncation: power_user.chat_truncation,
+        aggressiveUnload: power_user.aggressive_dom_unload,
+        aggressiveWindowSize: power_user.aggressive_dom_window_size,
+        lowMemoryActive: lowMemoryPolicy.active,
+        historyExplicit: lowMemoryPolicy.roleplayWindowPreserved,
+    };
+}
+
 function getChatRenderWindowSize(requestedSize = power_user.chat_truncation) {
-    // Neconyan: aggressive DOM unloading for low-memory devices (e.g., iPhones crashing on long streams)
-    if (power_user.aggressive_dom_unload) {
-        const aggressiveSize = power_user.aggressive_dom_window_size || 5;
-        return normalizeChatRenderWindowSize(aggressiveSize, { maxSize: aggressiveSize });
-    }
-    // Neconyan: prevent long chats from using 0/huge truncation values to render every message into the DOM.
-    return normalizeChatRenderWindowSize(requestedSize);
+    return resolveChatRenderWindowPolicy({
+        ...getChatRenderWindowPolicyOptions(),
+        requestedSize,
+    }).initialSize;
 }
 
 function getPagedChatRenderWindowSize(requestedSize, renderedMessageCount) {
-    const pageSize = getChatRenderWindowSize(requestedSize);
-    if (power_user.aggressive_dom_unload) {
-        return pageSize;
-    }
-
-    return normalizeChatRenderWindowSize(renderedMessageCount + pageSize);
+    return resolvePagedChatRenderWindowSize(
+        requestedSize,
+        renderedMessageCount,
+        getChatRenderWindowPolicyOptions(),
+    );
 }
 
 function getRenderedChatMessageElements() {
@@ -3188,6 +3197,33 @@ function syncChatHistoryWindowControls() {
     }
 }
 
+function isProtectedRenderedChatMessage(element) {
+    if (!(element instanceof HTMLElement)) {
+        return false;
+    }
+    if (element.querySelector('#curEditTextarea, .reasoning_edit_textarea')) {
+        return true;
+    }
+    if (streamingProcessor && !streamingProcessor.isFinished) {
+        const messageId = Number(element.getAttribute('mesid'));
+        if (Number.isInteger(messageId) && messageId === Number(streamingProcessor.messageId)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function selectPrunableChatMessages(renderedMessages, excessMessageCount, pruneFrom) {
+    if (pruneFrom === 'end') {
+        const candidates = renderedMessages.slice(-excessMessageCount);
+        const lastProtectedIndex = candidates.findLastIndex(isProtectedRenderedChatMessage);
+        return lastProtectedIndex >= 0 ? candidates.slice(lastProtectedIndex + 1) : candidates;
+    }
+    const candidates = renderedMessages.slice(0, excessMessageCount);
+    const firstProtectedIndex = candidates.findIndex(isProtectedRenderedChatMessage);
+    return firstProtectedIndex >= 0 ? candidates.slice(0, firstProtectedIndex) : candidates;
+}
+
 function pruneRenderedChatMessagesToWindow({ windowSize, pruneFrom }) {
     const renderedMessages = getRenderedChatMessageElements();
     const excessMessageCount = renderedMessages.length - windowSize;
@@ -3199,9 +3235,10 @@ function pruneRenderedChatMessagesToWindow({ windowSize, pruneFrom }) {
     // Neconyan: pin the first visible message so a top prune cannot shift the view.
     const anchor = pruneFrom === 'start' ? captureVisibleChatMessageAnchor() : null;
 
-    const removedMessages = pruneFrom === 'end'
-        ? renderedMessages.slice(-excessMessageCount)
-        : renderedMessages.slice(0, excessMessageCount);
+    const removedMessages = selectPrunableChatMessages(renderedMessages, excessMessageCount, pruneFrom);
+    if (removedMessages.length === 0) {
+        return;
+    }
     const removedMessageElements = $(removedMessages);
 
     unobserveChatMessageResize(removedMessageElements);

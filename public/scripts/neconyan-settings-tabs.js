@@ -246,15 +246,15 @@ import { t } from './i18n.js';
             col2.appendChild(androidDrawer);
         }
 
-        // Wrap Aggressive DOM Unloading in its own inline-drawer
+        // Wrap Memory and performance in its own inline-drawer
         const domUnloadBlock = document.querySelector('[name="AggressiveDomUnloadToggles"]');
         if (domUnloadBlock && col2 && !document.getElementById('sb-aggressive-dom-unload-drawer')) {
             const domUnloadDrawer = document.createElement('div');
             domUnloadDrawer.id = 'sb-aggressive-dom-unload-drawer';
-            domUnloadDrawer.className = 'inline-drawer wide100p flexFlowColumn sb-settings-subdrawer';
+            domUnloadDrawer.className = 'inline-drawer wide100p flexFlowColumn sb-settings-subdrawer nn-settings-cards';
             domUnloadDrawer.innerHTML = `
-                <div class="inline-drawer-toggle inline-drawer-header userSettingsInnerExpandable" title="Drastically reduces rendered messages to prevent crashes on low-memory devices during long streams.">
-                    <b><i class="fa-solid fa-memory"></i> <span>Aggressive DOM Unloading</span></b>
+                <div class="inline-drawer-toggle inline-drawer-header userSettingsInnerExpandable" title="Uses lighter display settings on devices with very little memory. Your saved choices are kept." data-i18n="[title]Uses lighter display settings on devices with very little memory. Your saved choices are kept.">
+                    <b><i class="fa-solid fa-memory"></i> <span data-i18n="Memory and performance">Memory and performance</span></b>
                     <div class="fa-solid fa-circle-chevron-down inline-drawer-icon down"></div>
                 </div>
                 <div class="inline-drawer-content sb-settings-subdrawer-body" style="display:none">

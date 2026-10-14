@@ -58,4 +58,58 @@ describe('module-private Android caller capability', () => {
         expect(await bridge.saveAndroidBlob('blob:http://127.0.0.1:8000/x', 'file')).toBe(false);
         expect(globalThis.NeconyanExport.cancelExport).toHaveBeenCalledWith(secret);
     });
+
+    test('hands optional Android memory profile to low-memory mode only after origin and token validation', async () => {
+        const lowMemory = await import('../public/scripts/low-memory-mode.js');
+        lowMemory.resetLowMemoryRuntimeForTests({
+            navigatorRef: { deviceMemory: 8 },
+            storageRef: { getItem: () => null, setItem: () => {} },
+            windowRef: window,
+            globalRef: globalThis,
+        });
+
+        // Wrong origin or bad token must not install the native memory profile.
+        expect(bridge.installAndroidNativeBridge(secret, 'https://wrong.example', {
+            schema: 1,
+            totalMemoryMiB: 2048,
+            isLowRamDevice: true,
+        })).toBe(false);
+        expect(lowMemory.getLowMemoryState().classification.source).toBe('browser');
+        expect(lowMemory.getLowMemoryState().active).toBe(false);
+
+        expect(bridge.installAndroidNativeBridge('wrong', window.location.origin, {
+            schema: 1,
+            totalMemoryMiB: 2048,
+            isLowRamDevice: true,
+        })).toBe(false);
+        expect(lowMemory.getLowMemoryState().classification.source).toBe('browser');
+
+        // Old two-argument callers keep working and fall back to browser classification.
+        expect(bridge.installAndroidNativeBridge(secret, window.location.origin)).toBe(true);
+        expect(lowMemory.getLowMemoryState().classification.source).toBe('browser');
+        expect(lowMemory.getLowMemoryState().active).toBe(false);
+
+        // Invalid third-argument payload is ignored without breaking bridge installation.
+        expect(bridge.installAndroidNativeBridge(secret, window.location.origin, {
+            schema: 99,
+            totalMemoryMiB: -1,
+        })).toBe(true);
+        expect(lowMemory.getLowMemoryState().classification.source).toBe('browser');
+
+        // Valid third-argument profile activates native low-memory classification.
+        expect(bridge.installAndroidNativeBridge(secret, window.location.origin, {
+            schema: 1,
+            totalMemoryMiB: 3072,
+            isLowRamDevice: false,
+        })).toBe(true);
+        expect(lowMemory.getLowMemoryState().classification).toEqual({
+            lowMemory: true,
+            source: 'native',
+            reason: 'native-total-memory-low',
+            deviceMemoryGb: 8,
+            totalMemoryMiB: 3072,
+            isLowRamDevice: false,
+        });
+        expect(lowMemory.getLowMemoryState().active).toBe(true);
+    });
 });

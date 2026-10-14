@@ -1,4 +1,5 @@
 import { t } from './i18n.js';
+import { acceptAndroidMemoryProfile } from './low-memory-mode.js';
 
 let callerToken = null;
 let installed = false;
@@ -14,9 +15,10 @@ function invoke(bridge, method, args = [], token = callerToken) {
     return target[method](token, ...args);
 }
 
-export function installAndroidNativeBridge(token, expectedOrigin) {
+export function installAndroidNativeBridge(token, expectedOrigin, memoryProfile) {
     if (!isMainPage() || globalThis.window.location.origin !== expectedOrigin || typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) return false;
     callerToken = token;
+    if (typeof acceptAndroidMemoryProfile === 'function') acceptAndroidMemoryProfile(memoryProfile);
     if (!installed) {
         installed = true;
         globalThis.document.addEventListener('click', event => {
