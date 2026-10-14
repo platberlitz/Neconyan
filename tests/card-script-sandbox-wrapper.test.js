@@ -50,4 +50,8 @@ describe('two-frame card sandbox', () => {
         expect(card).not.toContain('document.documentElement.scrollHeight');
         expect(card).toContain('new ResizeObserver(schedule)');
     });
+    test('quoted dialogue keeps only its literal quotation marks', () => {
+        const card = buildCardDocument({ html: '<q>"Hello."</q>' });
+        expect(card).toContain('q{quotes:none}q::before,q::after{content:\'\'}');
+    });
 });
