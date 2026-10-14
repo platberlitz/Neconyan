@@ -166,6 +166,23 @@ describe('visible card script runtime', () => {
         runtime.destroySandbox(0);
         expect(message.querySelectorAll('pre')).toHaveLength(2);
     });
+    test('an inline widget script sandboxes only its widget and leaves the prose in the chat', async () => {
+        const { add, buildCardDocument } = setup();
+        const widget = '<div style="padding:16px"><div id="dadcall">ringing</div></div><script>document.getElementById(\'dadcall\').textContent = \'ringing.\';</script>';
+        const message = add(0, `<p><q>"All of it."</q> Leonard nudges the bridge.</p>${widget}<p><q>"It's your dining room."</q></p>`);
+        await runtime.createSandbox(0);
+        expect(runtime.getActiveSandboxCount()).toBe(1);
+        const text = message.querySelector('.mes_text');
+        expect(text.textContent).toContain('Leonard nudges the bridge.');
+        expect(text.textContent).toContain('It\'s your dining room.');
+        expect(text.querySelectorAll('.card-script-sandbox-slot')).toHaveLength(1);
+        const sandboxed = buildCardDocument.mock.calls.at(-1)[0].html;
+        expect(sandboxed).toContain('dadcall');
+        expect(sandboxed).not.toContain('Leonard');
+        runtime.destroySandbox(0);
+        expect(text.textContent).toContain('ringing');
+        expect(text.querySelectorAll('.card-script-sandbox-slot')).toHaveLength(0);
+    });
     test('a visible candidate replaces a nearby frame and offscreen frames stop', async () => {
         const { add } = setup(); const messages = Array.from({ length: 6 }, () => add());
         messages[0].bounds = { top: -400, bottom: -100 };

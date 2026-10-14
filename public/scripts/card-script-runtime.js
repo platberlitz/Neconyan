@@ -260,7 +260,7 @@ async function startMessage(id, manual, allowUnprotected) {
     const count = revision.snapshot.blocks.length || 1;
     if (existing && isCurrent(existing) && getRecords(id).length === count) return existing;
     const targets = revision.snapshot.blocks.length
-        ? revision.snapshot.blocks.map((block, index) => ({ html: block.html, target: revision.textElement.querySelector(`pre[data-card-script-block="${index}"]`), index }))
+        ? revision.snapshot.blocks.map((block, index) => ({ html: block.html, target: revision.textElement.querySelector(`[data-card-script-block="${index}"]`), index }))
         : [{ html: revision.snapshot.html, target: revision.textElement, index: 0 }];
     for (const item of targets) {
         const key = `${id}:${item.index}`;
