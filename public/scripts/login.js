@@ -11,9 +11,12 @@ const pageTranslation = import('./page-locale.js')
         const selector = document.getElementById('loginLanguage');
         let generation = 0;
         let requestedPreference = effectiveLanguagePreference() || 'browser';
+        // One request serves the selector and every dictionary lookup.
+        const languageList = fetch('/locales/lang.json', { credentials: 'same-origin' })
+            .then(response => response.ok ? response.json() : []);
         async function changeLanguage(preference) {
             const current = ++generation;
-            const result = await loadPageDictionary(preference);
+            const result = await loadPageDictionary(preference, languageList);
             if (current !== generation) return;
             restoreEnglish();
             // Applying only after the generation check prevents a late dictionary from undoing a newer choice.
@@ -31,8 +34,7 @@ const pageTranslation = import('./page-locale.js')
             void changeLanguage(requestedPreference);
         });
         // The selector itself remains usable even if its list or a dictionary cannot be fetched.
-        const list = fetch('/locales/lang.json', { credentials: 'same-origin' })
-            .then(response => response.ok ? response.json() : [])
+        const list = languageList
             .then(languages => {
                 addLanguageOptions(selector, languages);
                 selector.value = [...selector.options].some(option => option.value === requestedPreference) ? requestedPreference : 'en';

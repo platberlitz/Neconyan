@@ -203,21 +203,28 @@ async function readJson(url, failures) {
     }
 }
 
+async function fetchLanguageList() {
+    const response = await fetch('/locales/lang.json', { credentials: 'same-origin', priority: 'low' });
+    if (!response.ok) throw new Error(`lang.json answered ${response.status}`);
+    return response.json();
+}
+
 /**
  * Loads the dictionary for this browser's language: the same two files the app reads. The language is the stored
  * choice, else the browser's languages in order, by the shared rule above.
  * English needs no file. Any failure leaves English and logs one warning.
+ * @param {string|null} [preference] Stored or chosen language
+ * @param {Promise<{lang: string}[]>|{lang: string}[]|null} [languageList] The language list when the page already
+ * fetched it, so lang.json is requested once
  * @returns {Promise<{locale: string, dictionary: Record<string, string>}>} Language used and its dictionary
  */
-export async function loadPageDictionary(preference = effectiveLanguagePreference()) {
+export async function loadPageDictionary(preference = effectiveLanguagePreference(), languageList = null) {
     const english = { locale: 'en', dictionary: {} };
     if (preference && isEnglish(String(preference).toLowerCase())) return english;
     if ((!preference || preference === BROWSER_LANGUAGE) && isEnglish(String(browserLanguages()[0]).toLowerCase())) return english;
     const failures = [];
     try {
-        const response = await fetch('/locales/lang.json', { credentials: 'same-origin', priority: 'low' });
-        if (!response.ok) throw new Error(`lang.json answered ${response.status}`);
-        const languages = await response.json();
+        const languages = await (languageList ?? fetchLanguageList());
         const codes = languages.map(language => language.lang);
         const locale = chooseBrowserLocale(preference, browserLanguages(), codes);
         if (locale === 'en') return english;
