@@ -19122,5 +19122,10 @@
   "Pick a ready-made layout for this window size, or save your own.": "Wähle ein fertiges Layout für diese Fenstergröße oder speichere dein eigenes.",
   "The layout applied to this window size.": "Das Layout, das für diese Fenstergröße gilt.",
   "Save this layout": "Dieses Layout speichern",
-  "Saves how your panels sit right now as a new layout.": "Speichert die aktuelle Anordnung deiner Panels als neues Layout."
+  "Saves how your panels sit right now as a new layout.": "Speichert die aktuelle Anordnung deiner Panels als neues Layout.",
+  "Follow browser": "Browsersprache verwenden",
+  "Choose your language": "Sprache auswählen",
+  "Neconyan can now match more browser languages. Keep English, or choose another language. You can change this later in Settings.": "Neconyan erkennt jetzt mehr Browsersprachen. Behalten Sie Englisch bei oder wählen Sie eine andere Sprache. Sie können dies später in den Einstellungen ändern.",
+  "Choose another language": "Andere Sprache auswählen",
+  "Keep English": "Englisch beibehalten"
 }

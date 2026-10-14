@@ -13,7 +13,7 @@
     <link rel="manifest" crossorigin="use-credentials" href="manifest.json">
     <link rel="stylesheet" href="webfonts/FredokaOne/stylesheet.css?v=20260913g">
     <link rel="stylesheet" href="webfonts/Nunito/stylesheet.css?v=20260913g">
-    <link rel="stylesheet" href="css/login.css?v=20260916j">
+    <link rel="stylesheet" href="css/login.css?v=20261013-language-choice5">
 </head>
 <body class="login">
     <main id="shadow_popup">
@@ -70,11 +70,18 @@
                     </div>
                 </div>
             </section>
+            <div id="loginLanguageBlock">
+                <label for="loginLanguage" data-i18n="Language">Language</label>
+                <select id="loginLanguage" autocomplete="off">
+                    <option value="browser">Follow browser</option>
+                    <option value="en">English</option>
+                </select>
+            </div>
             <p id="errorMessage" role="alert"></p>
             <noscript>Enable JavaScript to sign in to Neconyan.</noscript>
         </div>
     </main>
     <script src="lib/jquery-3.5.1.min.js"></script>
-    <script src="scripts/login.js?v=20261012c5" type="module"></script>
+    <script src="scripts/login.js?v=20261013-language-choice5" type="module"></script>
 </body>
 </html>

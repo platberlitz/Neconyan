@@ -20,7 +20,8 @@
     "Recovery code",
     "New password",
     "Reset password",
-    "Cancel"
+    "Cancel",
+    "Language"
   ],
   "default/content/errors/invalid-csrf.html": [
     "Session expired",

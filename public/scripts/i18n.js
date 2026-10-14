@@ -1,33 +1,17 @@
-import { browserLanguages, chooseBrowserLocale } from './page-locale.js';
+import { addLanguageOptions, browserLanguages, initialLanguageChoice, isNewLanguageInstallation, readLanguageChoice, saveLanguagePreference, storedLanguage, writeLanguageChoice, BROWSER_LANGUAGE } from './page-locale.js';
 import { registerDebugFunction } from './power-user.js';
 import { updateSecretDisplay } from './secrets.js';
 import { localizeControls } from './ui-localization.js';
 
-const storageKey = 'language';
-const overrideLanguage = getStoredLanguage();
-// The requested language until initLocales has read lang.json; then the language chosen there (page-locale.js).
-let localeFile = String(overrideLanguage || navigator.language || navigator.userLanguage || 'en').toLowerCase();
+let localeFile = 'en';
 var langs;
 // Don't change to let/const! It will break module loading.
 var localeData;
 let hasLocaleData = false;
-
-function getStoredLanguage() {
-    try {
-        return localStorage.getItem(storageKey);
-    } catch (error) {
-        // Neconyan: iOS WebKit can throw on localStorage before the boot UI exists.
-        console.warn('Unable to read stored language override.', error);
-        return null;
-    }
-}
+let initialChoice;
 
 function safeSetLocalStorageItem(key, value) {
-    try {
-        localStorage.setItem(key, value);
-    } catch {
-        // Ignore storage write failures in Safari Private Browsing.
-    }
+    try { localStorage.setItem(key, value); } catch { /* Keep debug controls usable when storage is blocked. */ }
 }
 
 function safeGetLocalStorageItem(key) {
@@ -35,14 +19,6 @@ function safeGetLocalStorageItem(key) {
         return localStorage.getItem(key);
     } catch {
         return null;
-    }
-}
-
-function safeRemoveLocalStorageItem(key) {
-    try {
-        localStorage.removeItem(key);
-    } catch {
-        // Ignore storage write failures in Safari Private Browsing.
     }
 }
 
@@ -316,41 +292,47 @@ export function applyLocale(root = document) {
 }
 
 function addLanguagesToDropdown() {
-    const uiLanguageSelects = $('#ui_language_select, #onboarding_ui_language_select');
-    for (const langObj of langs) { // Set the value to the language code
-        const option = document.createElement('option');
-        option.value = langObj.lang; // Set the value to the language code
-        option.innerText = langObj.display; // Set the display text to the language name
-        uiLanguageSelects.append(option);
-    }
-
-    const selectedLanguage = safeGetLocalStorageItem(storageKey);
-    if (selectedLanguage) {
-        uiLanguageSelects.val(selectedLanguage);
+    const selects = document.querySelectorAll('#ui_language_select, #onboarding_ui_language_select');
+    for (const select of selects) {
+        addLanguageOptions(select, langs);
+        const browserOption = select.querySelector('option[value=""]');
+        if (browserOption) {
+            browserOption.dataset.i18n = 'Follow browser';
+            browserOption.textContent = translate('Follow browser');
+        }
+        const stored = storedLanguage();
+        select.value = stored === BROWSER_LANGUAGE || initialChoice.record?.mode === 'browser' ? '' : (stored || localeFile);
     }
 }
 
-export async function initLocales() {
-    langs = await fetch('/locales/lang.json').then(response => response.json());
-    // A bare or regional browser language uses its language's dictionary; when English is shown the requested tag stays.
-    const chosenLocale = chooseBrowserLocale(overrideLanguage, browserLanguages(), langs.map(language => language.lang));
-    if (chosenLocale !== 'en') localeFile = chosenLocale;
-    localeData = await getLocaleData(localeFile);
+export async function initLocales(installationData) {
+    try {
+        const response = await fetch('/locales/lang.json');
+        if (!response.ok) throw new Error('Language list unavailable');
+        langs = await response.json();
+        if (!Array.isArray(langs) || langs.some(language => typeof language.lang !== 'string' || typeof language.display !== 'string')) throw new Error('Invalid language list');
+    } catch (error) {
+        console.warn('Language list unavailable; using English.', error);
+        langs = [];
+    }
+    initialChoice = initialLanguageChoice(storedLanguage(), browserLanguages(), langs.map(language => language.lang), {
+        record: readLanguageChoice(), newInstallation: isNewLanguageInstallation(installationData),
+    });
+    if (langs.length && initialChoice.record) writeLanguageChoice(initialChoice.record);
+    localeFile = initialChoice.locale;
+    try { localeData = await getLocaleData(localeFile); } catch (error) {
+        console.warn('Dictionary unavailable; using English.', error);
+        localeData = {};
+    }
     hasLocaleData = Object.keys(localeData).length > 0;
+    if (localeFile !== 'en' && !hasLocaleData) localeFile = 'en';
     document.documentElement.lang = localeFile;
     applyLocale();
     addLanguagesToDropdown();
     updateSecretDisplay();
 
-    $('#ui_language_select, #onboarding_ui_language_select').on('change', async function () {
-        const language = String($(this).val());
-
-        if (language) {
-            safeSetLocalStorageItem(storageKey, language);
-        } else {
-            safeRemoveLocalStorageItem(storageKey);
-        }
-
+    $('#ui_language_select, #onboarding_ui_language_select').on('change', function () {
+        saveLanguagePreference(String($(this).val()));
         location.reload();
     });
 
@@ -388,4 +370,45 @@ export async function initLocales() {
             }
         });
     registerDebugFunction('applyLocale', 'Apply locale', 'Reapplies the currently selected locale to the page.', applyLocale);
+}
+
+/** Offered after startup; cancelling is a persistent decision to retain the previous effective language. */
+export async function showLanguageChoicePrompt() {
+    if (!initialChoice?.prompt) return;
+    const { Popup, POPUP_TYPE } = await import('./popup.js');
+    const content = document.createElement('div');
+    content.id = 'language-choice-prompt';
+    const heading = document.createElement('h3');
+    heading.textContent = t`Choose your language`;
+    const explanation = document.createElement('p');
+    explanation.textContent = t`Neconyan can now match more browser languages. Keep English, or choose another language. You can change this later in Settings.`;
+    const label = document.createElement('label');
+    label.htmlFor = 'language-choice-select';
+    label.textContent = t`Choose another language`;
+    const select = document.createElement('select');
+    select.id = label.htmlFor;
+    select.className = 'text_pole';
+    for (const [value, text] of [[BROWSER_LANGUAGE, t`Follow browser`], ['en', 'English']]) {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = text;
+        select.append(option);
+    }
+    addLanguageOptions(select, langs);
+    select.value = initialChoice.suggested;
+    content.append(heading, explanation, label, select);
+    const suggestedName = langs.find(language => language.lang === initialChoice.suggested)?.display || initialChoice.suggested;
+    const popup = new Popup(content, POPUP_TYPE.CONFIRM, '', {
+        okButton: t`Use ${suggestedName}`, cancelButton: t`Keep English`, allowVerticalScrolling: true,
+    });
+    popup.dlg.classList.add('language-choice-popup');
+    select.addEventListener('change', () => {
+        const name = select.selectedOptions[0].textContent;
+        popup.okButton.textContent = select.value === BROWSER_LANGUAGE ? t`Follow browser` : t`Use ${name}`;
+    });
+    const result = await popup.show();
+    const choice = result ? select.value : initialChoice.locale;
+    saveLanguagePreference(choice);
+    initialChoice.prompt = false;
+    if (choice !== initialChoice.locale) location.reload();
 }

@@ -108,7 +108,7 @@ export function pickStoredLocale(stored, supportedCodes) {
  * @returns {string} A supported code, or 'en'
  */
 export function chooseBrowserLocale(stored, languages, supportedCodes) {
-    return stored ? pickStoredLocale(stored, supportedCodes) : pickLocale(languages, supportedCodes);
+    return stored && stored !== BROWSER_LANGUAGE ? pickStoredLocale(stored, supportedCodes) : pickLocale(languages, supportedCodes);
 }
 
 function plainObject(value) {
@@ -209,17 +209,17 @@ async function readJson(url, failures) {
  * English needs no file. Any failure leaves English and logs one warning.
  * @returns {Promise<{locale: string, dictionary: Record<string, string>}>} Language used and its dictionary
  */
-export async function loadPageDictionary() {
+export async function loadPageDictionary(preference = effectiveLanguagePreference()) {
     const english = { locale: 'en', dictionary: {} };
-    const requested = requestedLocale();
-    if (isEnglish(requested)) return english;
+    if (preference && isEnglish(String(preference).toLowerCase())) return english;
+    if ((!preference || preference === BROWSER_LANGUAGE) && isEnglish(String(browserLanguages()[0]).toLowerCase())) return english;
     const failures = [];
     try {
         const response = await fetch('/locales/lang.json', { credentials: 'same-origin', priority: 'low' });
         if (!response.ok) throw new Error(`lang.json answered ${response.status}`);
         const languages = await response.json();
         const codes = languages.map(language => language.lang);
-        const locale = chooseBrowserLocale(storedLanguage(), browserLanguages(), codes);
+        const locale = chooseBrowserLocale(preference, browserLanguages(), codes);
         if (locale === 'en') return english;
         const [base, supplement] = await Promise.all([
             readJson(`/locales/${locale}.json`, failures),
@@ -333,14 +333,99 @@ export function translateText(dictionary, text) {
  * Loads the dictionary, translates the page and sets its language. Never rejects, hides or disables anything.
  * @returns {Promise<{locale: string, dictionary: Record<string, string>}>} Language used and its dictionary
  */
-export async function startPageLocale() {
+export async function startPageLocale(preference) {
     let result = { locale: 'en', dictionary: {} };
     try {
-        result = await loadPageDictionary();
+        result = await loadPageDictionary(preference);
         localisePage(document, result.dictionary);
         document.documentElement.lang = result.locale;
     } catch (error) {
         console.warn('page-locale: the page could not be translated', error);
     }
     return result;
+}
+
+// Choices are local to this browser and origin, as the existing language preference is.
+export const BROWSER_LANGUAGE = 'browser';
+export const LANGUAGE_CHOICE_KEY = 'NeconyanLanguageChoice.v1';
+export const NEW_LANGUAGE_POLICY_KEY = 'NeconyanLanguagePolicy.v1';
+
+export function readLanguageChoice() {
+    try {
+        const record = JSON.parse(localStorage.getItem(LANGUAGE_CHOICE_KEY));
+        return record && ['legacy', 'browser', 'fixed'].includes(record.mode)
+            && typeof record.locale === 'string' && typeof record.handled === 'boolean' ? record : null;
+    } catch {
+        return null;
+    }
+}
+
+export function writeLanguageChoice(record) {
+    try { localStorage.setItem(LANGUAGE_CHOICE_KEY, JSON.stringify(record)); } catch { /* Keep this visit usable. */ }
+}
+
+export function saveLanguagePreference(language) {
+    const value = language || BROWSER_LANGUAGE;
+    // Each write is independent: an acknowledgement can survive when the preference write fails.
+    try { localStorage.setItem(STORAGE_KEY, value); } catch { /* Storage must never block sign-in. */ }
+    writeLanguageChoice({ mode: value === BROWSER_LANGUAGE ? 'browser' : 'fixed', locale: value, handled: true });
+}
+
+export function effectiveLanguagePreference() {
+    const stored = storedLanguage();
+    if (stored) return stored;
+    const record = readLanguageChoice();
+    return record ? (record.mode === 'browser' ? BROWSER_LANGUAGE : record.locale) : stored;
+}
+
+/** Positive evidence created only with fresh default settings; onboarding absence is never evidence of newness. */
+export function isNewLanguageInstallation(data) {
+    try {
+        const settings = typeof data?.settings === 'string' ? JSON.parse(data.settings) : data?.settings;
+        return settings?.accountStorage?.[NEW_LANGUAGE_POLICY_KEY] === BROWSER_LANGUAGE;
+    } catch {
+        return false;
+    }
+}
+
+/** Pure migration rule. Existing/ambiguous profiles retain the pre-C8 exact match of the first browser language. */
+export function initialLanguageChoice(stored, languages, codes, { record = null, newInstallation = false } = {}) {
+    const suggested = pickLocale(languages, codes);
+    if (stored) return { locale: chooseBrowserLocale(stored, languages, codes), suggested, prompt: false, record: null };
+    if (record?.mode === 'browser') return { locale: suggested, suggested, prompt: false, record };
+    if (record && ['fixed', 'legacy'].includes(record.mode)) {
+        const locale = pickStoredLocale(record.locale, codes);
+        return { locale, suggested, prompt: !record.handled && locale === 'en' && suggested !== 'en', record };
+    }
+    if (newInstallation) return { locale: suggested, suggested, prompt: false, record: { mode: 'browser', locale: suggested, handled: true } };
+    const locale = pickStoredLocale(languages[0] || 'en', codes);
+    return { locale, suggested, prompt: locale === 'en' && suggested !== 'en', record: { mode: 'legacy', locale, handled: locale !== 'en' } };
+}
+
+export function addLanguageOptions(select, languages) {
+    for (const language of languages) {
+        const option = select.ownerDocument.createElement('option');
+        option.value = language.lang;
+        option.textContent = language.display;
+        select.append(option);
+    }
+}
+
+/** Restores original marked captions before a language switch, without rebuilding any field or moving focus. */
+export function rememberPageCaptions(root) {
+    const captions = [];
+    for (const element of root.querySelectorAll('[data-i18n]')) {
+        if (element.matches(FORM_CONTROL_SELECTOR)) continue;
+        for (const spec of element.getAttribute('data-i18n').split(';')) {
+            const { attribute } = attributeKeyOf(spec);
+            if (attribute && ATTRIBUTE_NAMES.has(attribute)) {
+                const value = element.getAttribute(attribute);
+                captions.push(() => element.setAttribute(attribute, value));
+            } else if (!attribute && !element.children.length) {
+                const value = element.textContent;
+                captions.push(() => { element.textContent = value; });
+            }
+        }
+    }
+    return () => captions.forEach(restore => restore());
 }

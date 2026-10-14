@@ -321,7 +321,9 @@ for (const { name, phone } of VIEWPORTS) {
             await expect(english.page.locator('h1')).toHaveText('Meowlcome back');
             await expect(english.page.locator('label[for="workspaceUsername"]')).toHaveText('Username');
             expect(english.state.requests).toContain('GET /scripts/page-locale.js');
-            expect(english.state.requests.filter(request => request.includes('/locales/'))).toEqual([]);
+            // English fetches the included-language index for the selector, but no translation dictionary.
+            await expect(english.page.locator('#loginLanguage option[value="de-de"]')).toHaveCount(1);
+            expect(english.state.requests.filter(request => request.includes('/locales/'))).toEqual(['GET /locales/lang.json']);
             await english.context.close();
 
             const german = await openLogin(browser, { phone, locale: 'de-DE' });
