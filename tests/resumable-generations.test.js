@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, jest, test } from '@jest/globals';
 import { EventEmitter } from 'node:events';
+import http from 'node:http';
 import { PassThrough } from 'node:stream';
 import express from 'express';
 import { Response } from 'node-fetch';
@@ -15,14 +16,14 @@ import { forwardFetchResponse } from '../src/util.js';
 
 function createMockRequest(id = 'test-generation-1') {
     const headers = { 'x-generation-id': id };
-    return {
+    return Object.assign(new EventEmitter(), {
         headers,
         socket: new EventEmitter(),
         user: { profile: { handle: 'tester' } },
         get(name) {
             return headers[String(name).toLowerCase()];
         },
-    };
+    });
 }
 
 function createMockResponse() {
@@ -273,6 +274,150 @@ describe('resumable generation registry', () => {
         await expect(late.promise).resolves.toBeUndefined();
         expect(generation.headerWaiters).toHaveLength(0);
     });
+
+    test('request aborted without response close detaches the generation while keeping provider work and retained bytes intact', async () => {
+        const { request, response, generation } = registerGeneration('request-aborted-only');
+        const cancelHook = jest.fn();
+        generation.onCancel(cancelHook);
+
+        expect(generation.attached).toBe(true);
+        response.write('before-abort ');
+        request.emit('aborted');
+        expect(generation.attached).toBe(false);
+        expect(generation.cancelled).toBe(false);
+        expect(cancelHook).not.toHaveBeenCalled();
+
+        // Provider continues writing and finishes after the client request aborted.
+        response.write('after-abort ');
+        response.end('complete');
+        // Repeated disconnect/completion signals are harmless.
+        request.emit('aborted');
+        response.emit('finish');
+        response.emit('close');
+
+        expect(generation.attached).toBe(false);
+        expect(generation.done).toBe(true);
+        expect(generation.cancelled).toBe(false);
+        expect(cancelHook).not.toHaveBeenCalled();
+        await expect(collect(generation, 0)).resolves.toBe('before-abort after-abort complete');
+        await expect(collect(generation, 13)).resolves.toBe('after-abort complete');
+    });
+
+    test('abandoned pre-header and live /resume requests release waiters and subscriptions on request aborted', async () => {
+        const { response: originResponse, generation } = registerGeneration('resume-request-aborted');
+        const cancelHook = jest.fn();
+        generation.onCancel(cancelHook);
+        const resumeHandler = router.stack.find(layer => layer.route?.path === '/resume').route.stack[0].handle;
+
+        // 1. Pre-header resume abandoned via request 'aborted' only.
+        const preReq = Object.assign(new EventEmitter(), {
+            user: { profile: { handle: 'tester' } },
+            body: { id: 'resume-request-aborted', offset: 0 },
+        });
+        const preWrites = [];
+        const preRes = Object.assign(new EventEmitter(), {
+            status: () => preRes,
+            setHeader() {},
+            flushHeaders() {},
+            sendStatus: jest.fn(),
+            write: chunk => preWrites.push(chunk),
+            end() { this.writableEnded = true; },
+            destroy() { this.destroyed = true; },
+        });
+        const prePromise = resumeHandler(preReq, preRes);
+        expect(generation.headerWaiters).toHaveLength(1);
+        preReq.emit('aborted');
+        await prePromise;
+        expect(generation.headerWaiters).toHaveLength(0);
+        expect(generation.subscribers.size).toBe(0);
+        expect(preRes.sendStatus).not.toHaveBeenCalled();
+
+        // 2. Headers arrive and first chunk is written; live resume attaches and then aborts via request 'aborted' only.
+        originResponse.write('chunk-1 ');
+        expect(preWrites).toHaveLength(0);
+
+        const liveReq = Object.assign(new EventEmitter(), {
+            user: { profile: { handle: 'tester' } },
+            body: { id: 'resume-request-aborted', offset: 0 },
+        });
+        const liveWrites = [];
+        const liveRes = Object.assign(new EventEmitter(), {
+            status: () => liveRes,
+            setHeader() {},
+            flushHeaders() {},
+            sendStatus: jest.fn(),
+            write: chunk => liveWrites.push(chunk),
+            end() { this.writableEnded = true; },
+            destroy() { this.destroyed = true; },
+        });
+        await resumeHandler(liveReq, liveRes);
+        expect(generation.subscribers.size).toBe(1);
+        expect(Buffer.concat(liveWrites).toString('utf8')).toBe('chunk-1 ');
+
+        liveReq.emit('aborted');
+        liveReq.emit('aborted');
+        liveRes.emit('finish');
+        liveRes.emit('close');
+        expect(generation.subscribers.size).toBe(0);
+        expect(generation.cancelled).toBe(false);
+        expect(cancelHook).not.toHaveBeenCalled();
+
+        // Further provider writes are retained on the generation without writing to the abandoned resume response.
+        originResponse.end('chunk-2');
+        expect(Buffer.concat(liveWrites).toString('utf8')).toBe('chunk-1 ');
+        await expect(collect(generation, 0)).resolves.toBe('chunk-1 chunk-2');
+    });
+
+    test('Bun native handle onabort rebinds after request close, detaches generation, releases resume reader, and runs original callback once', async () => {
+        const handleSymbol = Symbol('handle');
+        const originOriginalOnAbort = jest.fn();
+        const originHandle = { aborted: false, onabort: originOriginalOnAbort };
+        const originReq = createMockRequest('bun-handle-abort');
+        const originRes = createMockResponse();
+        originRes[handleSymbol] = originHandle;
+        resumableGenerationMiddleware(originReq, originRes, jest.fn());
+        const generation = originReq.resumableGeneration;
+
+        // Simulate Bun's IncomingMessage._destroy clearing handle.onabort right before request 'close'.
+        originHandle.onabort = undefined;
+        originReq.emit('close');
+        expect(typeof originHandle.onabort).toBe('function');
+
+        originRes.write('live-part ');
+        const resumeHandler = router.stack.find(layer => layer.route?.path === '/resume').route.stack[0].handle;
+        const resumeOriginalOnAbort = jest.fn();
+        const resumeHandle = { aborted: false, onabort: resumeOriginalOnAbort };
+        const resumeReq = Object.assign(new EventEmitter(), {
+            user: { profile: { handle: 'tester' } },
+            body: { id: 'bun-handle-abort', offset: 0 },
+        });
+        const resumeRes = Object.assign(new EventEmitter(), {
+            [Symbol('handle')]: resumeHandle,
+            status: () => resumeRes,
+            setHeader() {},
+            flushHeaders() {},
+            sendStatus: jest.fn(),
+            write() {},
+            end() { this.writableEnded = true; },
+            destroy() { this.destroyed = true; },
+        });
+        await resumeHandler(resumeReq, resumeRes);
+        expect(generation.subscribers.size).toBe(1);
+
+        resumeHandle.onabort = undefined;
+        resumeReq.emit('close');
+        expect(typeof resumeHandle.onabort).toBe('function');
+
+        originHandle.onabort();
+        expect(generation.attached).toBe(false);
+        expect(originOriginalOnAbort).toHaveBeenCalledTimes(1);
+        expect(originHandle.onabort).toBe(originOriginalOnAbort);
+
+        resumeHandle.onabort();
+        expect(generation.subscribers.size).toBe(0);
+        expect(resumeOriginalOnAbort).toHaveBeenCalledTimes(1);
+        expect(resumeHandle.onabort).toBe(resumeOriginalOnAbort);
+    });
 });
 
 describe('registry capacity', () => {
@@ -507,8 +652,15 @@ describe('resumable generation routes', () => {
     });
 
     afterAll(async () => {
+        server.closeAllConnections?.();
         await new Promise(resolve => server.close(resolve));
     });
+
+    async function waitUntil(check) {
+        for (let attempt = 0; attempt < 200 && !check(); attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 10));
+        }
+    }
 
     function postJson(path, body, init = {}) {
         return fetch(`${baseUrl}${path}`, {
@@ -716,5 +868,83 @@ describe('resumable generation routes', () => {
 
         const listed = await (await postJson('/api/resumable-generations/list', {})).json();
         expect(listed.jobs.map(entry => entry.id)).toEqual(expect.not.arrayContaining([cancelledId, 'route-ctx-bad', 'route-ctx-big', 'route-ctx-array']));
+    });
+
+    test('real HTTP disconnects before headers and during live resume release waiters, subscriptions and attachment', async () => {
+        const id = 'route-http-disconnect-probe';
+        const port = server.address().port;
+        const context = { v: 1, chatId: 'chat-probe', type: 'normal' };
+
+        const origReq = http.request({
+            host: '127.0.0.1',
+            port,
+            path: '/generate?hold=1',
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Generation-Id': id,
+                'X-Generation-Context': encodeContext(context),
+            },
+        });
+        origReq.on('error', () => {});
+        origReq.end('{}');
+        await waitUntil(() => testExports.generations.has(`route-tester:${id}`));
+
+        const generation = testExports.generations.get(`route-tester:${id}`);
+        expect(generation).toBeDefined();
+        origReq.destroy();
+        await waitUntil(() => !generation.attached);
+        expect(generation.attached).toBe(false);
+        expect(generation.cancelled).toBe(false);
+
+        const abandonedPreHeader = http.request({
+            host: '127.0.0.1',
+            port,
+            path: '/api/resumable-generations/resume',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        abandonedPreHeader.on('error', () => {});
+        abandonedPreHeader.end(JSON.stringify({ id, offset: 0 }));
+        await waitUntil(() => generation.headerWaiters.length === 1);
+        expect(generation.headerWaiters).toHaveLength(1);
+        abandonedPreHeader.destroy();
+        await waitUntil(() => generation.headerWaiters.length === 0);
+        expect(generation.headerWaiters).toHaveLength(0);
+
+        heldReleases.get(id)();
+        const abandonedLive = http.request({
+            host: '127.0.0.1',
+            port,
+            path: '/api/resumable-generations/resume',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+        });
+        abandonedLive.on('error', () => {});
+        abandonedLive.end(JSON.stringify({ id, offset: 0 }));
+        await waitUntil(() => generation.subscribers.size === 1);
+        expect(generation.subscribers.size).toBe(1);
+        abandonedLive.destroy();
+        await waitUntil(() => generation.subscribers.size === 0);
+        expect(generation.subscribers.size).toBe(0);
+
+        pendingHandlers.get(id)();
+        await waitUntil(() => generation.done);
+        expect(generation.done).toBe(true);
+        expect(generation.attached).toBe(false);
+        expect(generation.cancelled).toBe(false);
+
+        const listed = await (await postJson('/api/resumable-generations/list', {})).json();
+        expect(listed.jobs.find(entry => entry.id === id)).toMatchObject({
+            id,
+            status: 'finished',
+            attached: false,
+            size: 'first-second-done'.length,
+        });
+
+        const fullReplay = await postJson('/api/resumable-generations/resume', { id, offset: 0 });
+        await expect(fullReplay.text()).resolves.toBe('first-second-done');
+        const offsetReplay = await postJson('/api/resumable-generations/resume', { id, offset: 6 });
+        await expect(offsetReplay.text()).resolves.toBe('second-done');
     });
 });
