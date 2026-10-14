@@ -22,6 +22,7 @@ import { SlashCommandClosure } from './slash-commands/SlashCommandClosure.js';
 import { getTagsList } from './tags.js';
 import { groups, selected_group } from './group-chats.js';
 import { getCurrentLocale, t } from './i18n.js';
+import { createTimestampCache } from './util/timestamp-cache.js';
 import { importWorldInfo } from './world-info.js';
 
 export const shiftUpByOne = (e, i, a) => a[i] = e + 1;
@@ -991,14 +992,11 @@ export function sortMoments(a, b) {
     }
 }
 
-const dateCache = new Map();
-const TIMESTAMP_CACHE_MAX_ENTRIES = 2048;
-let dateCacheLocale = null;
-
-function isCacheableScalarTimestamp(timestamp) {
-    return typeof timestamp === 'string'
-        || (typeof timestamp === 'number' && Number.isFinite(timestamp));
-}
+const dateCache = createTimestampCache({
+    getMoment: () => moment,
+    parseTimestamp: timestamp => parseTimestamp(timestamp),
+    getCurrentLocale: () => getCurrentLocale(),
+});
 
 /**
  * Cached version of moment() to avoid re-parsing the same date strings.
@@ -1007,31 +1005,7 @@ function isCacheableScalarTimestamp(timestamp) {
  * @returns {import('moment').Moment} Moment object
  */
 export function timestampToMoment(timestamp) {
-    const locale = String(getCurrentLocale() || '');
-    if (dateCacheLocale !== locale) {
-        dateCache.clear();
-        dateCacheLocale = locale;
-    }
-
-    const canCache = isCacheableScalarTimestamp(timestamp);
-    if (canCache && dateCache.has(timestamp)) {
-        const cached = dateCache.get(timestamp);
-        dateCache.delete(timestamp);
-        dateCache.set(timestamp, cached);
-        return cached;
-    }
-
-    const iso8601 = parseTimestamp(timestamp);
-    const objMoment = iso8601 ? moment(iso8601).locale(locale) : moment.invalid();
-
-    if (canCache) {
-        while (dateCache.size >= TIMESTAMP_CACHE_MAX_ENTRIES) {
-            const oldestKey = dateCache.keys().next().value;
-            dateCache.delete(oldestKey);
-        }
-        dateCache.set(timestamp, objMoment);
-    }
-    return objMoment;
+    return dateCache.read(timestamp);
 }
 
 /** Split string to parts no more than length in size.
