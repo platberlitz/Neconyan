@@ -144,4 +144,9 @@ export const refreshedKnowledgeCases = [
     ['JannyAI login needed on the server when importing a link', 'tools.janny-import-errors', 'logging in from your own browser does not count'],
     ['Termux recovery: how does start-termux-import.sh find my Termux import folder?', 'start.termux-recovery', '~/.neconyan-import-folder on port 5534'],
     ['Do the Turn on Mewmory in every new chat switches need Save configuration?', 'mewmory.new-chats', 'save as soon as you change them'],
+    ['How do I stop Dialogue Colors from colouring a scenario card or Narrator?', 'appearance.dialogue-exclusions', 'Add this card\'s name'],
+    ['How do I clean [COLORS: ...] lines and colour tags from messages?', 'appearance.dialogue-clean', 'Color lines and tags'],
+    ['What does Low-memory mode change and how does Use automatic recommendations work?', 'settings.device', 'Use automatic recommendations'],
+    ['How do I switch Chat Completion Tabs on or off from the sidebar?', 'tools.completion-tabs', 'switches Chat Completion Tabs on and off directly'],
+    ['How do I make the keyboard open automatically when a chat opens?', 'settings.writing', 'Open keyboard when a chat opens'],
 ];
