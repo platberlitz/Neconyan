@@ -431,15 +431,95 @@ export function getResumableGeneration(request) {
 }
 
 /**
+ * @param {import('express').Response} response Express response
+ * @returns {{ aborted?: boolean, onabort?: (() => void) }|null}
+ */
+function getBunResponseHandle(response) {
+    if (!response || typeof response !== 'object') {
+        return null;
+    }
+    const symbol = Object.getOwnPropertySymbols(response).find(entry => entry.description === 'handle');
+    return (symbol && response[symbol]) || null;
+}
+
+/**
+ * Invokes `onDisconnect` once on `request` `'aborted'` or `response` `'close'`/`'finish'`,
+ * and repairs Bun 1.3's POST-body EOF clearing of the native response `onabort` callback.
+ * @param {import('express').Request|null|undefined} request Express request
+ * @param {import('express').Response} response Express response
+ * @param {() => void} onDisconnect Callback invoked at most once
+ * @returns {() => void} Idempotent cleanup
+ */
+function observeResponseDisconnect(request, response, onDisconnect) {
+    let done = false;
+    const handle = getBunResponseHandle(response);
+    let previousOnAbort = handle?.onabort;
+    const onHandleAbort = function () {
+        if (typeof previousOnAbort === 'function' && previousOnAbort !== onHandleAbort) {
+            try {
+                previousOnAbort.apply(this, arguments);
+            } catch {
+                // Ignore native callback errors after disconnect.
+            }
+        }
+        cleanup();
+    };
+    const bindHandleAbort = () => {
+        if (done || !handle) {
+            return;
+        }
+        if (handle.aborted) {
+            cleanup();
+            return;
+        }
+        if (handle.onabort !== onHandleAbort) {
+            if (typeof handle.onabort === 'function') {
+                previousOnAbort = handle.onabort;
+            }
+            try {
+                handle.onabort = onHandleAbort;
+            } catch {
+                // Ignore non-writable handle properties.
+            }
+        }
+    };
+    const cleanup = () => {
+        if (done) {
+            return;
+        }
+        done = true;
+        request?.off?.('aborted', cleanup);
+        request?.off?.('close', bindHandleAbort);
+        response.off?.('close', cleanup);
+        response.off?.('finish', cleanup);
+        if (handle && handle.onabort === onHandleAbort) {
+            try {
+                handle.onabort = previousOnAbort;
+            } catch {
+                // Ignore non-writable handle properties.
+            }
+        }
+        onDisconnect();
+    };
+    request?.once?.('aborted', cleanup);
+    request?.once?.('close', bindHandleAbort);
+    response.once('close', cleanup);
+    response.once('finish', cleanup);
+    bindHandleAbort();
+    return cleanup;
+}
+
+/**
  * Mirrors every write to the generation, and keeps writes after the client is gone from throwing.
+ * @param {import('express').Request} request Express request
  * @param {import('express').Response} response Express response
  * @param {ResumableGeneration} generation Generation to mirror into
  */
-function attachResponse(response, generation) {
+function attachResponse(request, response, generation) {
     const write = response.write;
     const end = response.end;
     generation.attached = true;
-    response.on('close', () => {
+    const detach = observeResponseDisconnect(request, response, () => {
         generation.attached = false;
     });
 
@@ -482,6 +562,7 @@ function attachResponse(response, generation) {
             return this;
         }
         generation.end();
+        detach();
         try {
             return end.call(this, chunk, encoding, callback);
         } catch (error) {
@@ -508,7 +589,7 @@ export function resumableGenerationMiddleware(request, response, next) {
     }
     generation.context = parseContextHeader(request.get?.(RESUMABLE_GENERATION_CONTEXT_HEADER));
     request.resumableGeneration = generation;
-    attachResponse(response, generation);
+    attachResponse(request, response, generation);
     return next();
 }
 
@@ -565,19 +646,29 @@ router.post('/resume', async (request, response) => {
     }
 
     const wait = generation.waitForHeaders();
-    response.on('close', () => wait.cancel());
+    let disconnected = false;
+    let unsubscribe = () => undefined;
+    const cleanup = observeResponseDisconnect(request, response, () => {
+        disconnected = true;
+        wait.cancel();
+        unsubscribe();
+    });
     await wait.promise;
 
-    if (response.destroyed || response.writableEnded) {
+    if (disconnected || response.destroyed || response.writableEnded) {
+        cleanup();
         return;
     }
     if (!generation.headersReady) {
+        cleanup();
         return response.sendStatus(410);
     }
     if (offset > generation.size) {
+        cleanup();
         return response.sendStatus(416);
     }
     if (generation.subscribers.size >= MAX_RESUME_CLIENTS) {
+        cleanup();
         return response.sendStatus(429);
     }
 
@@ -593,16 +684,15 @@ router.post('/resume', async (request, response) => {
     }
     response.flushHeaders();
 
-    let unsubscribe = () => undefined;
-    unsubscribe = generation.subscribe(offset, {
+    const unsub = generation.subscribe(offset, {
         onChunk: chunk => {
-            if (response.writableEnded || response.destroyed) {
+            if (disconnected || response.writableEnded || response.destroyed) {
                 return;
             }
             response.write(chunk);
             if (response.writableLength > MAX_RESUME_BACKLOG_BYTES) {
                 // This reader stopped draining; drop it instead of buffering the reply into RAM.
-                unsubscribe();
+                cleanup();
                 response.destroy();
             }
         },
@@ -613,7 +703,12 @@ router.post('/resume', async (request, response) => {
         },
         onFail: () => response.destroy(),
     });
-    response.on('close', unsubscribe);
+    if (unsub) {
+        unsubscribe = unsub;
+        if (disconnected) {
+            unsubscribe();
+        }
+    }
 });
 
 router.post('/cancel', (request, response) => {
