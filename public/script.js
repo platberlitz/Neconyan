@@ -9308,7 +9308,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         // Estimate how many unpinned example messages fit in the context
         tokenCount = await getMessagesTokenCount();
         let count_exm_add = 0;
-        if (!power_user.pin_examples) {
+        if (!power_user.pin_examples && main_api !== 'openai') {
             for (let example of mesExamplesArray) {
                 tokenCount += await getTokenCountAsync(example.replace(/\r/gm, ''));
                 examplesString += example;

@@ -15,6 +15,7 @@ import { SentencePieceProcessor } from '@agnai/sentencepiece-js';
 import tiktoken from 'tiktoken';
 
 import { convertClaudePrompt } from '../prompt-converters.js';
+import { createTextTokenCache } from '../generation/token-count-cache.js';
 import { TEXTGEN_TYPES } from '../constants.js';
 import { setAdditionalHeaders } from '../additional-headers.js';
 import { getConfigValue, isValidUrl } from '../util.js';
@@ -543,13 +544,14 @@ async function countSentencepieceArrayTokens(tokenizer, array) {
     return result.count;
 }
 
-async function getTiktokenChunks(tokenizer, ids) {
+function getTiktokenChunks(tokenizer, ids) {
     const decoder = new TextDecoder();
     const chunks = [];
+    const singleId = new Uint32Array(1);
 
     for (let i = 0; i < ids.length; i++) {
-        const id = ids[i];
-        const chunkTextBytes = await tokenizer.decode(new Uint32Array([id]));
+        singleId[0] = ids[i];
+        const chunkTextBytes = tokenizer.decode(singleId);
         const chunkText = decoder.decode(chunkTextBytes);
         chunks.push(chunkText);
     }
@@ -697,7 +699,7 @@ export function getTiktokenTokenizer(model) {
  * @param {object[]} messages Array of messages
  * @returns {number} Number of tokens
  */
-export function countWebTokenizerTokens(tokenizer, messages) {
+export function countWebTokenizerTokens(tokenizer, messages, countText = null) {
     // Should be fine if we use the old conversion method instead of the messages API one i think?
     const convertedPrompt = convertClaudePrompt(messages, false, '', false, false, '', false);
 
@@ -706,7 +708,7 @@ export function countWebTokenizerTokens(tokenizer, messages) {
         return guesstimate(convertedPrompt);
     }
 
-    const count = tokenizer.encode(convertedPrompt).length;
+    const count = countText ? countText(convertedPrompt, tokenizer) : tokenizer.encode(convertedPrompt).length;
     return count;
 }
 
@@ -728,8 +730,12 @@ function createSentencepieceEncodingHandler(tokenizer) {
             }
 
             const text = request.body.text || '';
-            const instance = await tokenizer?.get();
+            const countOnly = request.body.countOnly === true || request.query?.count === '1';
             const { ids, count } = await countSentencepieceTokens(tokenizer, text);
+            if (countOnly) {
+                return response.send({ ids, count, chunks: [] });
+            }
+            const instance = await tokenizer?.get();
             const chunks = instance?.encodePieces(text);
             return response.send({ ids, count, chunks });
         } catch (error) {
@@ -788,9 +794,14 @@ function createTiktokenEncodingHandler(modelId) {
             }
 
             const text = request.body.text || '';
+            const countOnly = request.body.countOnly === true || request.query?.count === '1';
             const tokenizer = getTiktokenTokenizer(modelId);
-            const tokens = Object.values(tokenizer.encode(text));
-            const chunks = await getTiktokenChunks(tokenizer, tokens);
+            const encoded = tokenizer.encode(text);
+            if (countOnly) {
+                return response.send({ ids: [], count: encoded.length, chunks: [] });
+            }
+            const tokens = Array.from(encoded);
+            const chunks = getTiktokenChunks(tokenizer, tokens);
             return response.send({ ids: tokens, count: tokens.length, chunks });
         } catch (error) {
             console.error(error);
@@ -846,9 +857,14 @@ function createWebTokenizerEncodingHandler(tokenizer) {
             }
 
             const text = request.body.text || '';
+            const countOnly = request.body.countOnly === true || request.query?.count === '1';
             const instance = await tokenizer?.get();
             if (!instance) throw new Error('Failed to load the Web tokenizer');
-            const tokens = Array.from(instance.encode(text));
+            const encoded = instance.encode(text);
+            if (countOnly) {
+                return response.send({ ids: [], count: encoded.length, chunks: [] });
+            }
+            const tokens = Array.from(encoded);
             const chunks = getWebTokenizersChunks(instance, tokens);
             return response.send({ ids: tokens, count: tokens.length, chunks });
         } catch (error) {
@@ -1111,13 +1127,13 @@ export async function countOpenAIChatTokens(model, queryModel, messages, { stric
     if (model === 'claude') {
         const instance = await claude_tokenizer.get();
         if (!instance) throw new Error('Failed to load the Claude tokenizer');
-        return countWebTokenizerTokens(instance, messages);
+        return countWebTokenizerTokens(instance, messages, countText);
     }
 
     if (model === 'llama3' || model === 'llama-3') {
         const instance = await llama3_tokenizer.get();
         if (!instance) throw new Error('Failed to load the Llama3 tokenizer');
-        return countWebTokenizerTokens(instance, messages);
+        return countWebTokenizerTokens(instance, messages, countText);
     }
 
     if (model === 'llama') {
@@ -1143,31 +1159,31 @@ export async function countOpenAIChatTokens(model, queryModel, messages, { stric
     if (model === 'qwen2') {
         const instance = await qwen2Tokenizer.get();
         if (!instance) throw new Error('Failed to load the Qwen2 tokenizer');
-        return countWebTokenizerTokens(instance, messages);
+        return countWebTokenizerTokens(instance, messages, countText);
     }
 
     if (model === 'command-r') {
         const instance = await commandRTokenizer.get();
         if (!instance) throw new Error('Failed to load the Command-R tokenizer');
-        return countWebTokenizerTokens(instance, messages);
+        return countWebTokenizerTokens(instance, messages, countText);
     }
 
     if (model === 'command-a') {
         const instance = await commandATokenizer.get();
         if (!instance) throw new Error('Failed to load the Command-A tokenizer');
-        return countWebTokenizerTokens(instance, messages);
+        return countWebTokenizerTokens(instance, messages, countText);
     }
 
     if (model === 'nemo') {
         const instance = await nemoTokenizer.get();
         if (!instance) throw new Error('Failed to load the Nemo tokenizer');
-        return countWebTokenizerTokens(instance, messages);
+        return countWebTokenizerTokens(instance, messages, countText);
     }
 
     if (model === 'deepseek') {
         const instance = await deepseekTokenizer.get();
         if (!instance) throw new Error('Failed to load the DeepSeek tokenizer');
-        return countWebTokenizerTokens(instance, messages);
+        return countWebTokenizerTokens(instance, messages, countText);
     }
 
     const tokensPerName = queryModel.includes('gpt-3.5-turbo-0301') ? -1 : 1;
@@ -1212,6 +1228,7 @@ router.post('/openai/count', async function (req, res) {
 
         const queryModel = String(req.query.model || '');
         const model = getTokenizerModel(queryModel);
+        const countText = createTextTokenCache();
 
         // Neconyan divergence from upstream: `per_message=1` answers with one count per
         // message instead of a single total, so a caller that would otherwise count a chat
@@ -1221,12 +1238,12 @@ router.post('/openai/count', async function (req, res) {
         if (req.query.per_message) {
             const token_counts = [];
             for (const message of req.body) {
-                token_counts.push(await countOpenAIChatTokens(model, queryModel, [message]));
+                token_counts.push(await countOpenAIChatTokens(model, queryModel, [message], { countText }));
             }
             return res.send({ 'token_counts': token_counts });
         }
 
-        const num_tokens = await countOpenAIChatTokens(model, queryModel, req.body);
+        const num_tokens = await countOpenAIChatTokens(model, queryModel, req.body, { countText });
         res.send({ 'token_count': num_tokens });
     } catch (error) {
         console.error('An error counting tokens, using fallback estimation method', error);
