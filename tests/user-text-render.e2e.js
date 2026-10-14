@@ -72,7 +72,7 @@ async function openRender(page) {
         scope.translate = (text, key = null) => dictionary[key || text] || text;
         scope.t = (strings, ...values) => scope.translate(strings.reduce((result, string, i) => result + string + (values[i] !== undefined ? `\${${i}}` : ''), ''))
             .replace(/\$\{(\d+)\}/g, (_match, index) => values[index]);
-        Object.assign(scope, { DEFAULT_BRANCH_ID: 'main', MAX_STACKED_PARTICIPANT_AVATARS: 4, default_user_avatar: '', getThumbnailUrl: () => '', getSettings: () => ({}),
+        Object.assign(scope, { DEFAULT_BRANCH_ID: 'main', MAX_STACKED_PARTICIPANT_AVATARS: 4, default_user_avatar: '', getThumbnailUrl: () => '', getThumbnailUrlForViewport: () => '', getSettings: () => ({}),
             getEffectiveConversationStatus: () => 'online', getConversationPersonaId: () => 'persona', getConversationGroupIdForAvatar: () => '', getCurrentCharAvatar: () => '',
             getConversationAttachmentLabels: () => [], parsePositiveInt: (value, fallback, min = 1) => { const number = Number.parseInt(value, 10); return Number.isFinite(number) && number >= min ? number : fallback; } });
         const localise = () => window.localizeControls(document.getElementById('root'), dictionary);

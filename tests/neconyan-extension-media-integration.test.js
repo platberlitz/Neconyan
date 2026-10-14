@@ -85,6 +85,7 @@ async function importConversationMedia({ characters, currentAvatar, state, rende
         characters,
         default_user_avatar: 'user.png',
         getThumbnailUrl: jest.fn((_type, avatar) => avatar),
+        getThumbnailUrlForViewport: jest.fn((_type, avatar) => avatar),
     }));
     await jest.unstable_mockModule('../public/scripts/neconyan-conversation/constants.js', () => ({
         DEFAULT_SETTINGS: { image_gen_prompt_template: '{{char}} in {{scene}}: {{appearance}}' },

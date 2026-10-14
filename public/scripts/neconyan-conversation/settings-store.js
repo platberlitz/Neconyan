@@ -1,5 +1,5 @@
 import { normalizeChatroomPromptSettings } from './shared-helpers.js';
-import { characters, getThumbnailUrl } from '../../script.js';
+import { characters, getThumbnailUrlForViewport } from '../../script.js';
 import {
     AUTO_CHAT_LAST_SENT_MARKER,
     CHARACTER_CONVERSATION_SETTINGS_KEYS,
@@ -220,7 +220,7 @@ export function getConversationWelcomeChats({ max = Infinity } = {}) {
             avatar,
             group: groupId,
             char_name: groupName || character.name || 'Character',
-            char_thumbnail: getThumbnailUrl('avatar', avatar),
+            char_thumbnail: getThumbnailUrlForViewport('avatar', avatar),
             chat_name: groupName ? `${character.name || 'Character'} · ${branchName}` : branchName,
             file_name: groupName ? `${groupName} · ${character.name || 'Character'}` : branchName,
             mes: branch?.preview || getConversationMessagePreviewText(messages[messages.length - 1]) || 'Conversation ready',
