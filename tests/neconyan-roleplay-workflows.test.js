@@ -1,14 +1,21 @@
 /* global globalThis */
+import fs from 'node:fs';
+import vm from 'node:vm';
+import { parse } from 'acorn';
 import { beforeEach, expect, jest, test } from '@jest/globals';
+import { event_types, eventSource } from '../public/scripts/events.js';
 
 let account = 'alice';
 const chat = [];
+let currentChatId = 'roleplay';
+let currentAvatar = 'nova.png';
 let nativeEligible = true;
 let accountStamp = { accountId: 'a-1', dataEpoch: 1 };
 let settingsRevision = 4;
 let submitHandler = null;
 let receiptHandler = null;
 let chatSaveHandler = null;
+let reloadHandler = null;
 const requests = [];
 const observers = new Map();
 const previews = new Map();
@@ -17,6 +24,7 @@ const reloads = [];
 const activations = [];
 let settingsPending = false;
 let generating = false;
+let chatSaving = false;
 const saveSettings = jest.fn(async () => {
     settingsPending = false;
     settingsRevision += 1;
@@ -32,7 +40,12 @@ const restoreDisplay = jest.fn();
 const beginRoleplayReplacement = jest.fn(() => restoreDisplay);
 jest.unstable_mockModule('../public/scripts/neconyan-conversation/roleplay-replacement.js', () => ({ beginRoleplayReplacement }));
 
-globalThis.dispatchEvent = jest.fn();
+const globalEvents = new EventTarget();
+globalThis.addEventListener = globalEvents.addEventListener.bind(globalEvents);
+globalThis.removeEventListener = globalEvents.removeEventListener.bind(globalEvents);
+globalThis.dispatchEvent = jest.fn(event => globalEvents.dispatchEvent(event));
+globalThis.document = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+jest.unstable_mockModule('../public/scripts/events.js', () => ({ event_types, eventSource }));
 
 jest.unstable_mockModule('../public/scripts/extensions.js', () => ({
     activeGenerationInterceptors: () => interceptors,
@@ -70,12 +83,12 @@ jest.unstable_mockModule('../public/scripts/roleplay-save-chain.js', () => ({
         return { account: accountStamp };
     },
 }));
-jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.js', () => ({ getCurrentCharAvatar: () => 'nova.png' }));
+jest.unstable_mockModule('../public/scripts/neconyan-conversation/context.js', () => ({ getCurrentCharAvatar: () => currentAvatar }));
 jest.unstable_mockModule('../public/script.js', () => ({
     chat,
     extension_prompts: extensionPrompts,
     substituteParams: value => String(value).replaceAll('{{user}}', 'Alice'),
-    getCurrentChatId: () => 'roleplay',
+    getCurrentChatId: () => currentChatId,
     getRequestHeaders: () => ({ 'X-Csrf-Token': 'token' }),
     getActiveGenerationAcknowledgement: () => {
         if (settingsPending) throw new Error('Save the active connection settings before generating a reply.');
@@ -83,9 +96,9 @@ jest.unstable_mockModule('../public/script.js', () => ({
     },
     saveChatConditional: async options => { saved.push(options); await chatSaveHandler?.(); return true; },
     saveSettings,
-    reloadCurrentChat: async () => { reloads.push(chat.length); },
+    reloadCurrentChat: async () => { reloads.push(chat.length); await reloadHandler?.(); },
     isGenerating: () => generating,
-    isChatSaving: false,
+    get isChatSaving() { return chatSaving; },
     deactivateSendButtons: () => activations.push('busy'),
     activateSendButtons: () => activations.push('idle'),
     willRunNativeRoleplayWorkflow: (type, options = {}) => nativeEligible && !options.skipNativeRoleplay,
@@ -93,9 +106,9 @@ jest.unstable_mockModule('../public/script.js', () => ({
 
 globalThis.fetch = async (url, options = {}) => {
     const body = options.body ? JSON.parse(options.body) : null;
-    requests.push({ url, body, method: options.method || 'GET' });
+    requests.push({ url, body, method: options.method || 'GET', signal: options.signal ?? null });
     if (url.endsWith('/workflow/submit') || url.endsWith('/group/submit')) return submitHandler(body, requests.length);
-    if (url.includes('/workflow/receipt')) return receiptHandler(requests.length);
+    if (url.includes('/workflow/receipt')) return receiptHandler(requests.length, options);
     throw new Error(`unexpected fetch ${url}`);
 };
 
@@ -113,11 +126,16 @@ beforeEach(() => {
         { name: 'Nova', mes: 'Answer', swipes: ['Answer', 'Other'], swipe_id: 0 },
     );
     nativeEligible = true;
+    currentChatId = 'roleplay';
+    currentAvatar = 'nova.png';
     accountStamp = { accountId: 'a-1', dataEpoch: 1 };
     settingsRevision = 4;
     settingsPending = false;
     chatSaveHandler = null;
+    reloadHandler = null;
     generating = false;
+    chatSaving = false;
+    globalThis.document.visibilityState = 'visible';
     for (const key of Object.keys(extensionPrompts)) delete extensionPrompts[key];
     for (const key of Object.keys(extensionSettings)) delete extensionSettings[key];
     interceptors.length = 0;
@@ -498,6 +516,273 @@ test('a call site the host will not serve keeps the browser path', async () => {
     expect(requests).toHaveLength(0);
 });
 
+test('chat-open discovery after idempotent init attaches to a running workflow, skips completed jobs and empty chats, and ignores own completion reloads', async () => {
+    workflows.initNativeRoleplayWorkflows();
+    workflows.initNativeRoleplayWorkflows();
+    await settle();
+    expect(listJobs).toHaveBeenCalledTimes(1);
+
+    currentChatId = '';
+    await eventSource.emit(event_types.CHAT_CHANGED);
+    await settle();
+    expect(listJobs).toHaveBeenCalledTimes(1);
+
+    currentChatId = 'later-chat';
+    listJobs.mockResolvedValueOnce([
+        {
+            id: 'running-on-open', type: 'media.roleplay-workflow', state: 'running',
+            intent: {
+                media: { operationKey: 'key-open-chat' },
+                source: { locator: { chat: 'later-chat', avatar: 'nova.png', group: false }, message: { index: 1 } },
+                request: { named: { name: 'roleplay.reply' } },
+            },
+        },
+        {
+            id: 'completed-on-open', type: 'media.roleplay-workflow', state: 'completed',
+            intent: {
+                media: { operationKey: 'key-already-completed' },
+                source: { locator: { chat: 'later-chat', avatar: 'nova.png', group: false } },
+                request: { named: { name: 'roleplay.reply' } },
+            },
+        },
+    ]);
+    await eventSource.emit(event_types.CHAT_CHANGED);
+    await waitFor(() => observers.has('running-on-open'));
+    expect(listJobs).toHaveBeenCalledTimes(2);
+    expect(requests.filter(entry => entry.url.includes('/workflow/receipt'))).toHaveLength(0);
+    expect(reloads).toEqual([]);
+
+    // The completion reload emits CHAT_CHANGED itself; discovery must not run redundantly during that reload.
+    receiptHandler = () => response(200, { key: 'key-open-chat', accepted: true, state: 'closed', jobId: 'running-on-open', result: {} });
+    reloadHandler = async () => {
+        await eventSource.emit(event_types.CHAT_CHANGED);
+    };
+    await observers.get('running-on-open').onStop('done');
+    expect(reloads).toEqual([2]);
+    expect(listJobs).toHaveBeenCalledTimes(2);
+
+    // An account change while listJobs is in flight stops discovery before attaching or reading back.
+    listJobs.mockImplementationOnce(async () => {
+        account = 'bob';
+        return [{
+            id: 'stale-account-job', type: 'media.roleplay-workflow', state: 'running',
+            intent: {
+                media: { operationKey: 'key-stale-account' },
+                source: { locator: { chat: 'later-chat', avatar: 'nova.png', group: false } },
+                request: { named: { name: 'roleplay.reply' } },
+            },
+        }];
+    });
+    await workflows.resumeNativeRoleplayWorkflowObservation();
+    expect(observers.has('stale-account-job')).toBe(false);
+});
+
+test('a hanging receipt honours its abort signal on return and resolves the original generation without resubmitting', async () => {
+    workflows.initNativeRoleplayWorkflows();
+    await settle();
+    listJobs.mockClear();
+
+    let firstSignal = null;
+    let receiptCalls = 0;
+    receiptHandler = (_count, options) => {
+        receiptCalls += 1;
+        if (receiptCalls === 1) {
+            firstSignal = options.signal;
+            return new Promise((_resolve, reject) => {
+                options.signal.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')), { once: true });
+            });
+        }
+        return response(200, { key: 'k', accepted: true, state: 'closed', jobId: 'job-1', result: { named: { appended: true } } });
+    };
+
+    const pending = workflows.runNativeRoleplayGeneration('normal');
+    await settle();
+    const donePromise = observers.get('job-1').onStop('done');
+    await waitFor(() => firstSignal !== null);
+    expect(firstSignal.aborted).toBe(false);
+    expect(activations).toEqual(['busy']);
+
+    // Passive chat-open or plain discovery does not abort an in-flight receipt read.
+    await workflows.resumeNativeRoleplayWorkflowObservation();
+    expect(firstSignal.aborted).toBe(false);
+    expect(receiptCalls).toBe(1);
+
+    // Returning to the page aborts only the hanging receipt connection and retries it.
+    globalThis.document.dispatchEvent(new Event('visibilitychange'));
+    await donePromise;
+    const outcome = await pending;
+    expect(firstSignal.aborted).toBe(true);
+    expect(receiptCalls).toBe(2);
+    expect(outcome).toMatchObject({ native: true, name: 'roleplay.reply', jobId: 'job-1', state: 'closed' });
+    expect(requests.filter(entry => entry.url.endsWith('/workflow/submit'))).toHaveLength(1);
+    expect(cancelJob).not.toHaveBeenCalled();
+    expect(reloads).toEqual([2]);
+    expect(activations).toEqual(['busy', 'idle']);
+});
+
+test('concurrent return events and late receipt responses reload the chat once', async () => {
+    workflows.initNativeRoleplayWorkflows();
+    await settle();
+    listJobs.mockClear();
+
+    let resolveLateFirst = null;
+    let resolveSecond = null;
+    const signals = [];
+    receiptHandler = (_count, options) => {
+        signals.push(options.signal);
+        if (signals.length === 1) {
+            // Simulates a socket whose promise resolves late even after abort.
+            return new Promise(resolve => {
+                resolveLateFirst = () => resolve(response(200, { key: 'k', accepted: true, state: 'closed', jobId: 'job-1', result: { named: { attempt: 1 } } }));
+            });
+        }
+        return new Promise(resolve => {
+            resolveSecond = () => resolve(response(200, { key: 'k', accepted: true, state: 'closed', jobId: 'job-1', result: { named: { attempt: 2 } } }));
+        });
+    };
+
+    const pending = workflows.runNativeRoleplayGeneration('normal');
+    await settle();
+    const donePromise = observers.get('job-1').onStop('done');
+    await waitFor(() => signals.length === 1);
+
+    // A non-persisted pageshow is ignored; persisted pageshow, visibilitychange and online coalesce into one reconnect.
+    globalThis.dispatchEvent(new Event('pageshow'));
+    expect(signals).toHaveLength(1);
+    expect(signals[0].aborted).toBe(false);
+
+    globalThis.document.dispatchEvent(new Event('visibilitychange'));
+    globalThis.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }));
+    globalThis.dispatchEvent(new Event('online'));
+    await waitFor(() => signals.length === 2);
+    expect(signals[0].aborted).toBe(true);
+    expect(signals[1].aborted).toBe(false);
+    expect(listJobs).toHaveBeenCalledTimes(1);
+
+    resolveLateFirst();
+    resolveSecond();
+    await donePromise;
+    const outcome = await pending;
+    expect(outcome.result).toEqual({ named: { attempt: 2 } });
+    expect(reloads).toEqual([2]);
+    expect(cancelJob).not.toHaveBeenCalled();
+});
+
+test('explicit Stop still cancels the running workflow once after a return event', async () => {
+    workflows.initNativeRoleplayWorkflows();
+    await settle();
+    const controller = new AbortController();
+    const pending = workflows.runNativeRoleplayGeneration('normal', { signal: controller.signal });
+    await settle();
+
+    globalThis.dispatchEvent(new Event('online'));
+    await settle();
+    expect(cancelJob).not.toHaveBeenCalled();
+
+    controller.abort();
+    controller.abort();
+    expect(cancelJob).toHaveBeenCalledTimes(1);
+    expect(cancelJob).toHaveBeenCalledWith('job-1', { reason: 'user_cancelled' });
+    await observers.get('job-1').onStop('cancelled');
+    await pending;
+});
+
+test('passive readback respects pending saves and unrelated generation across reconnects', async () => {
+    listJobs.mockResolvedValue([{
+        id: 'done-save-guard', type: 'media.roleplay-workflow', state: 'completed',
+        intent: {
+            media: { operationKey: 'key-save-guard' },
+            source: { locator: { chat: 'roleplay', avatar: 'nova.png', group: false } },
+            request: { named: { name: 'roleplay.reply' } },
+        },
+    }]);
+    let calls = 0;
+    receiptHandler = () => {
+        calls += 1;
+        if (calls === 1) return new Promise(() => {});
+        return response(200, { key: 'key-save-guard', accepted: true, state: 'closed', jobId: 'done-save-guard', result: {} });
+    };
+
+    const initial = workflows.resumeNativeRoleplayWorkflowObservation();
+    await waitFor(() => calls === 1);
+    generating = true;
+    await workflows.resumeNativeRoleplayWorkflowObservation({ reconnect: true });
+    await initial;
+    expect(calls).toBe(2);
+    expect(reloads).toEqual([]);
+
+    generating = false;
+    await workflows.resumeNativeRoleplayWorkflowObservation();
+    expect(reloads).toEqual([2]);
+
+    jest.resetModules();
+    chatSaving = true;
+    const savingWorkflows = await import('../public/scripts/neconyan-conversation/roleplay-workflows.js');
+    await savingWorkflows.resumeNativeRoleplayWorkflowObservation({ reconnect: true });
+    expect(reloads).toEqual([2]);
+});
+
+test('group send submits without awaiting requestAnimationFrame in a hidden tab', async () => {
+    // rAF never resolves here, so a regression that awaits a frame before submit fails by timing out.
+    const groupSource = fs.readFileSync(new URL('../public/scripts/group-chats.js', import.meta.url), 'utf8');
+    const ast = parse(groupSource, { ecmaVersion: 'latest', sourceType: 'module' });
+    const node = ast.body.map(row => row.declaration ?? row).find(row => row.id?.name === 'generateGroupWrapper');
+    const wrapperCode = groupSource.slice(node.start, node.end)
+        .replace('await import(\'./neconyan-conversation/roleplay-workflows.js\')', '__workflowsModule')
+        .replace('await import(\'./roleplay-save-chain.js\')', '__saveChainModule');
+
+    const rAF = jest.fn(() => 0);
+    const submitRoleplayGroupTurn = jest.fn(async () => ({ accepted: true, state: 'closed' }));
+    const sendMessageAsUser = jest.fn(async () => {});
+    const textarea = { dispatchEvent: jest.fn() };
+    const runtime = vm.createContext({
+        AbortSignal, Event, Promise, Map, Error, Date, console,
+        requestAnimationFrame: rAF,
+        online_status: 'connected',
+        is_group_generating: false,
+        menu_type: 'group_edit',
+        selected_group: 'group-1',
+        groups: [{ id: 'group-1', members: ['nova.png'], activation_strategy: 0 }],
+        characters: [{ name: 'Nova', avatar: 'nova.png' }],
+        chat: [{ name: 'User', is_user: true, mes: 'Hi' }],
+        group_generation_id: 0,
+        group_activation_strategy: { NATURAL: 0, LIST: 1, MANUAL: 2, POOLED: 3 },
+        system_message_types: { EMPTY: 'empty', GENERIC: 'generic' },
+        power_user: { show_group_chat_queue: false },
+        hideSwipeButtons: () => {},
+        showSwipeButtons: () => {},
+        setSendButtonState: () => {},
+        setCharacterName: () => {},
+        setCharacterId: () => {},
+        getGroupEnabledMembers: () => ['nova.png'],
+        getSelectedGroupSpeakerChid: () => 0,
+        findDirectlyAddressedMember: () => -1,
+        isAddressedToEntireGroup: () => false,
+        limitGroupSpeakersForControl: members => members,
+        getBiasStrings: () => ({ messageBias: '' }),
+        sendMessageAsUser,
+        getCurrentChatId: () => 'roleplay',
+        deactivateSendButtons: () => {},
+        activateSendButtons: () => {},
+        setGroupTypingIndicator: () => {},
+        clearSelectedGroupSpeaker: () => {},
+        event_types: { GROUP_WRAPPER_STARTED: 'group_wrapper_started' },
+        eventSource: { emit: async () => {} },
+        $: () => ({ 0: textarea, val: () => ({ 0: textarea, toString: () => 'Hello group' }) }),
+        __workflowsModule: { submitRoleplayGroupTurn },
+        __saveChainModule: { roleplayAccountStamp: () => ({ account: accountStamp }) },
+    });
+    vm.runInContext(wrapperCode, runtime);
+    const result = await runtime.generateGroupWrapper(false, 'normal', {});
+    expect(rAF).not.toHaveBeenCalled();
+    expect(sendMessageAsUser).toHaveBeenCalledTimes(1);
+    expect(submitRoleplayGroupTurn).toHaveBeenCalledWith(expect.objectContaining({
+        groupId: 'group-1',
+        forcedAvatars: ['nova.png'],
+    }));
+    expect(result).toEqual({ accepted: true, state: 'closed' });
+});
+
 test.each([
     ['group-1', true],
     ['another-group', false],
@@ -514,4 +799,45 @@ test.each([
     await observers.get('job-1').onStop('done');
     expect(await pending).toMatchObject({ accepted: true, state: 'closed' });
     expect(reloads).toEqual(shouldReload ? [2] : []);
+});
+
+test.each([
+    ['group-1', true],
+    ['another-group', false],
+    [null, false],
+])('group workflow discovery matches chat and groupId (%s) on chat switch and return', async (selectedGroup, shouldMatch) => {
+    jest.resetModules();
+    jest.unstable_mockModule('../public/scripts/group-chats.js', () => ({ selected_group: selectedGroup }));
+    const groupWorkflows = await import('../public/scripts/neconyan-conversation/roleplay-workflows.js');
+
+    const groupJobs = [
+        {
+            id: 'group-running', type: 'media.roleplay-workflow', state: 'running',
+            intent: {
+                media: { operationKey: 'key-group-running' },
+                source: { locator: { chat: 'roleplay', avatar: '', group: true }, groupId: 'group-1' },
+                request: {},
+            },
+        },
+        {
+            id: 'group-done', type: 'media.roleplay-workflow', state: 'completed',
+            intent: {
+                media: { operationKey: 'key-group-done' },
+                source: { locator: { chat: 'roleplay', avatar: '', group: true }, groupId: 'group-1' },
+                request: {},
+            },
+        },
+    ];
+    listJobs.mockResolvedValue(groupJobs);
+    receiptHandler = () => response(200, { key: 'key-group-done', accepted: true, state: 'closed', jobId: 'group-done', result: { status: 'completed' } });
+
+    // Chat switch attaches only to the running group job and skips finished-job readback.
+    await groupWorkflows.resumeNativeRoleplayWorkflowObservation({ attachOnly: true });
+    expect(observers.has('group-running')).toBe(shouldMatch);
+    expect(requests.filter(entry => entry.url.includes('/workflow/receipt'))).toHaveLength(0);
+    expect(reloads).toEqual([]);
+
+    // Visible/return discovery reads back the finished group job for the matching group.
+    await groupWorkflows.resumeNativeRoleplayWorkflowObservation({ reconnect: true });
+    expect(reloads).toEqual(shouldMatch ? [2] : []);
 });
