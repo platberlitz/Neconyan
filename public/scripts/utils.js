@@ -992,6 +992,13 @@ export function sortMoments(a, b) {
 }
 
 const dateCache = new Map();
+const TIMESTAMP_CACHE_MAX_ENTRIES = 2048;
+let dateCacheLocale = null;
+
+function isCacheableScalarTimestamp(timestamp) {
+    return typeof timestamp === 'string'
+        || (typeof timestamp === 'number' && Number.isFinite(timestamp));
+}
 
 /**
  * Cached version of moment() to avoid re-parsing the same date strings.
@@ -1000,14 +1007,30 @@ const dateCache = new Map();
  * @returns {import('moment').Moment} Moment object
  */
 export function timestampToMoment(timestamp) {
-    if (dateCache.has(timestamp)) {
-        return dateCache.get(timestamp);
+    const locale = String(getCurrentLocale() || '');
+    if (dateCacheLocale !== locale) {
+        dateCache.clear();
+        dateCacheLocale = locale;
+    }
+
+    const canCache = isCacheableScalarTimestamp(timestamp);
+    if (canCache && dateCache.has(timestamp)) {
+        const cached = dateCache.get(timestamp);
+        dateCache.delete(timestamp);
+        dateCache.set(timestamp, cached);
+        return cached;
     }
 
     const iso8601 = parseTimestamp(timestamp);
-    const objMoment = iso8601 ? moment(iso8601).locale(getCurrentLocale()) : moment.invalid();
+    const objMoment = iso8601 ? moment(iso8601).locale(locale) : moment.invalid();
 
-    dateCache.set(timestamp, objMoment);
+    if (canCache) {
+        while (dateCache.size >= TIMESTAMP_CACHE_MAX_ENTRIES) {
+            const oldestKey = dateCache.keys().next().value;
+            dateCache.delete(oldestKey);
+        }
+        dateCache.set(timestamp, objMoment);
+    }
     return objMoment;
 }
 
