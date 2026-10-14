@@ -681,10 +681,15 @@ describe('Neconyan workspace rail behavior', () => {
 
     test('switched-off tools open Extensions, open-able tools launch, the rest open settings', () => {
         const calls = [];
+        const definitionsSource = tabsSource.match(/const NECONYAN_NATIVE_TOOL_DEFINITIONS = Object\.freeze\(\[[\s\S]*?\n\]\);/)[0];
+        const definitions = vm.runInNewContext(`${definitionsSource}\nNECONYAN_NATIVE_TOOL_DEFINITIONS;`);
+        const byId = Object.fromEntries(definitions.map(definition => [definition.id, { ...definition, present: true, enabled: true }]));
         const tools = {
-            'neconyan-debugger': { label: 'Debugger', present: true, enabled: true, actions: ['open', 'settings'] },
-            'third-party/Neconyan-Terminal-UI': { label: 'Termeownal UI', present: true, enabled: false, actions: ['settings'] },
-            'third-party/Neconyan-PromptTags': { label: 'Prompt Tags', present: true, enabled: true, actions: ['settings'] },
+            'neconyan-debugger': byId['neconyan-debugger'],
+            'third-party/Neconyan-Terminal-UI': { ...byId['third-party/Neconyan-Terminal-UI'], enabled: false },
+            'third-party/Neconyan-PromptTags': byId['third-party/Neconyan-PromptTags'],
+            'third-party/Neconyan-Preset-Tools': byId['third-party/Neconyan-Preset-Tools'],
+            'third-party/ChatCompletionTabs': byId['third-party/ChatCompletionTabs'],
         };
         const context = vm.createContext({
             findNeconyanNativeTool: id => tools[id] ?? null,
@@ -693,9 +698,16 @@ describe('Neconyan workspace rail behavior', () => {
             openNeconyanNativeExtensionSettings: tool => calls.push(['settings', tool.label]),
         });
         vm.runInContext(tabsSource.match(/^function activateNeconyanRailTool\([\s\S]*?^}/m)[0], context);
-        expect(Object.keys(tools).map(id => context.activateNeconyanRailTool(id))).toEqual([true, true, true]);
+        expect(Object.keys(tools).map(id => context.activateNeconyanRailTool(id))).toEqual([true, true, true, true, true]);
         expect(context.activateNeconyanRailTool('missing')).toBe(false);
-        expect(calls).toEqual([['open', 'Debugger'], ['manage', 'Termeownal UI'], ['settings', 'Prompt Tags']]);
+        expect(calls).toEqual([
+            ['open', 'Debugger'],
+            ['manage', 'Termeownal UI'],
+            ['settings', 'Prompt Tags'],
+            ['settings', 'Preset Tools'],
+            ['settings', 'Chat Completion Tabs'],
+        ]);
+        expect(tabsSource).toContain('dedupeKey: `tool::${tool.id}`, action: () => activateNeconyanRailTool(tool.id)');
     });
 
     test('mounting marks switched-off tools and hides missing ones', () => {

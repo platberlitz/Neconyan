@@ -571,8 +571,8 @@ const NN_SAMPLING_SUBTITLE_HTML = 'Adjust randomness, reply length and other gen
  * `unit` selects that drawer by id or class, because its heading may be translated.
  */
 const NECONYAN_NATIVE_TOOL_DEFINITIONS = Object.freeze([
-    { id: 'third-party/Neconyan-Preset-Tools', label: 'Preset Tools', icon: 'fa-sliders', actions: ['open', 'settings'], open: 'presets', unit: '#bpt-settings' },
-    { id: 'third-party/ChatCompletionTabs', label: 'Chat Completion Tabs', icon: 'fa-table-columns', actions: ['open', 'settings'], open: 'presets', unit: '#ChatCompletionTabs-drawer' },
+    { id: 'third-party/Neconyan-Preset-Tools', label: 'Preset Tools', icon: 'fa-sliders', actions: ['settings'], unit: '#bpt-settings' },
+    { id: 'third-party/ChatCompletionTabs', label: 'Chat Completion Tabs', icon: 'fa-table-columns', actions: ['settings'], unit: '#ChatCompletionTabs-drawer' },
     { id: 'third-party/sillytavern-character-colors', label: 'Dialogue Colors', icon: 'fa-palette', actions: ['settings'], unit: '#dc-ext' },
     { id: 'third-party/Neconyan-Terminal-UI', label: 'Termeownal UI', icon: 'fa-terminal', actions: ['settings'], unit: '#sbterm-settings-drawer' },
     { id: 'third-party/Neconyan-BotSearcher', label: 'BotSearcher', icon: 'fa-binoculars', actions: ['open', 'settings'], open: 'botsearcher', unit: '#sbbs_settings' },
@@ -16729,7 +16729,7 @@ function getSearchPageEntries() {
     const tools = getNeconyanNativeTools().filter(tool => !pages.some(page => page.displayText === tool.label))
         .map(tool => ({ displayText: tool.label, searchText: `${tool.label} ${tool.id} ${tool.description || ''}`,
             detail: tool.description || 'Open this included tool.', kind: 'page', groupLabel: 'Tools',
-            dedupeKey: `tool::${tool.id}`, action: () => openNeconyanNativeTool(tool) }));
+            dedupeKey: `tool::${tool.id}`, action: () => activateNeconyanRailTool(tool.id) }));
     const modes = NECONYAN_MODE_DEFINITIONS.map(mode => ({ displayText: mode.label,
         searchText: `${mode.label} mode`, detail: 'Switch the current chat mode.', kind: 'page', groupLabel: 'Modes',
         dedupeKey: `mode::${mode.id}`, action: () => activateNeconyanMode(mode.id) }));
