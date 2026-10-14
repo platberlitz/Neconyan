@@ -131,6 +131,39 @@ describe('opening a chat skips work for panels that are not on screen', () => {
         expect(drawers).not.toContain('querySelectorAll(');
     });
 
+    test('Prompt Tags and Prompting Lab skip background refreshes while their panels are hidden', () => {
+        const promptTagsUiJs = read('public/scripts/extensions/third-party/Neconyan-PromptTags/src/ui.js');
+        expect(promptTagsUiJs).toContain('new IntersectionObserver(');
+        expect(promptTagsUiJs).toContain('if (!viewOnScreen && drawer.isConnected && !drawer.contains(document.activeElement))');
+        expect(promptTagsUiJs).toContain('viewVisibilityObserver?.disconnect();');
+
+        const promptingLabRuntimeJs = read('public/scripts/extensions/third-party/Neconyan-Prompting-Lab/src/ui/runtime.js');
+        expect(promptingLabRuntimeJs).toContain('function isWorkbenchVisible()');
+        expect(promptingLabRuntimeJs).toContain('if (isWorkbenchVisible())');
+        expect(promptingLabRuntimeJs).toContain('pendingRefreshReason = reason;');
+    });
+
+    test('typing avoids Sizzle selector cache eviction, redundant macro parsing and inactive autocomplete layout', () => {
+        const browserFixesJs = read('public/scripts/browser-fixes.js');
+        expect(browserFixesJs).toContain('window.jQuery.expr.cacheLength = 2048;');
+
+        const textgenJs = read('public/scripts/textgen-settings.js');
+        expect(textgenJs).not.toContain('$(document).on(\'input\', `#${i}_textgenerationwebui`');
+
+        const kaiJs = read('public/scripts/kai-settings.js');
+        expect(kaiJs).not.toContain('$(document).on(\'input\', slider.sliderId');
+
+        const naiJs = read('public/scripts/nai-settings.js');
+        expect(naiJs).not.toContain('$(document).on(\'input\', slider.sliderId');
+
+        const macroAcJs = read('public/scripts/autocomplete/MacroAutoComplete.js');
+        const shouldActivate = functionBody(macroAcJs, 'function shouldActivateMacroAutocomplete(');
+        expect(shouldActivate).toContain('if (!shouldShowNormally || typeof text !== \'string\' || !text.includes(\'{{\'))');
+
+        const acJs = read('public/scripts/autocomplete/AutoComplete.js');
+        expect(acJs).toContain('if (!this.isActive) {\n            return;\n        }');
+    });
+
     test('token counting batches prompt and character card requests and encodes asynchronously in Token Counter', () => {
         const promptManagerJs = read('public/scripts/PromptManager.js');
         expect(promptManagerJs).toContain('await this.tokenHandler.primeAsync?.(');

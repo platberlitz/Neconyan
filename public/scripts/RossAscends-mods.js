@@ -971,20 +971,39 @@ export function initRossMods() {
         chatBlockResizeObserver.observe(chatBlock);
     }
 
+    let lastSendTextAreaLength = sendTextArea?.value?.length ?? 0;
     sendTextArea.addEventListener('input', () => {
         saveUserInputDebounced();
 
         if (cssAutofit) {
             // Unset modifications made with a manual resize
-            sendTextArea.style.height = 'auto';
+            if (sendTextArea.style.height && sendTextArea.style.height !== 'auto') {
+                sendTextArea.style.height = 'auto';
+            }
             return;
         }
 
+        const currentLength = sendTextArea.value.length;
+        const didShrink = currentLength < lastSendTextAreaLength;
+        lastSendTextAreaLength = currentLength;
+
         requestAnimationFrame(() => {
             const hasContent = sendTextArea.value !== '';
-            const fitsCurrentSize = sendTextArea.scrollHeight <= sendTextArea.offsetHeight;
+            const offsetHeight = sendTextArea.offsetHeight;
+            const scrollHeight = sendTextArea.scrollHeight;
+            if (hasContent && !didShrink) {
+                if (scrollHeight > offsetHeight) {
+                    const originalScrollBottom = chatBlock.scrollHeight - (chatBlock.scrollTop + chatBlock.offsetHeight);
+                    sendTextArea.style.height = `${scrollHeight}px`;
+                    if (!isFirefox) {
+                        chatBlock.scrollTop = chatBlock.scrollHeight - (chatBlock.offsetHeight + originalScrollBottom);
+                    }
+                }
+                return;
+            }
+            const fitsCurrentSize = scrollHeight <= offsetHeight;
             const isScrollbarShown = sendTextArea.clientWidth < sendTextArea.offsetWidth;
-            const isHalfScreenHeight = sendTextArea.offsetHeight >= window.innerHeight / 2;
+            const isHalfScreenHeight = offsetHeight >= window.innerHeight / 2;
             const needsDebounce = hasContent && (fitsCurrentSize || (isScrollbarShown && isHalfScreenHeight));
             if (needsDebounce) autoFitSendTextAreaDebounced();
             else autoFitSendTextArea();

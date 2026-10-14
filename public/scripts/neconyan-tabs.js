@@ -1031,12 +1031,21 @@ function bindNeconyanModeStateEvents() {
                 queueNeconyanModeSync();
             }
         });
-        neconyanModeObserver.observe(document.body, {
+        const modeObserverOptions = {
             attributes: true,
-            attributeFilter: ['class', 'data-generating'],
+            attributeFilter: ['class', 'data-generating', 'data-sbtw-mode', 'data-sb-conversation-mode', 'data-menu-type'],
             attributeOldValue: true,
-            subtree: true,
-        });
+        };
+        for (const target of [
+            document.body,
+            document.getElementById('sheld'),
+            document.getElementById('right-nav-panel'),
+            document.getElementById('send_form'),
+        ]) {
+            if (target instanceof HTMLElement) {
+                neconyanModeObserver.observe(target, modeObserverOptions);
+            }
+        }
     } else {
         neconyanModeObserver = {};
     }

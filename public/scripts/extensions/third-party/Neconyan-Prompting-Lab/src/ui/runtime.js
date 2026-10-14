@@ -58,6 +58,14 @@ export function mountRuntimeUi({ signal = null } = {}) {
     const modalBackground = new Map();
     let disposed = false;
     let workbench = null;
+    let pendingRefreshReason = null;
+
+    function isWorkbenchVisible() {
+        if (page && !page.hidden) {
+            return true;
+        }
+        return Boolean(drawerIcon && !drawerIcon.classList.contains('down'));
+    }
 
     /** A small labelled pill for the workspace header. */
     function pill(text, { variant = '', title = '' } = {}) {
@@ -210,6 +218,11 @@ export function mountRuntimeUi({ signal = null } = {}) {
         const expanded = Boolean(drawerIcon && !drawerIcon.classList.contains('down'));
         drawerToggle?.setAttribute('aria-expanded', String(expanded));
         drawerContent?.setAttribute('aria-hidden', String(!expanded));
+        if (expanded && pendingRefreshReason) {
+            const reason = pendingRefreshReason;
+            pendingRefreshReason = null;
+            workbench.refresh(reason);
+        }
     }
 
     /* ---------------------------------------------------- full-page mode */
@@ -406,6 +419,11 @@ export function mountRuntimeUi({ signal = null } = {}) {
         pageOpener = opener instanceof HTMLElement ? opener : null;
         page.hidden = false;
         workbench.mount(pageMount, { layout: 'page' });
+        if (pendingRefreshReason) {
+            const reason = pendingRefreshReason;
+            pendingRefreshReason = null;
+            workbench.refresh(reason);
+        }
         activatePageModal();
         updatePageStatus();
         requestAnimationFrame(() => {
@@ -573,7 +591,12 @@ export function mountRuntimeUi({ signal = null } = {}) {
                 return;
             }
             ensureEntrypoints();
-            workbench.refresh(reason);
+            if (isWorkbenchVisible()) {
+                pendingRefreshReason = null;
+                workbench.refresh(reason);
+            } else {
+                pendingRefreshReason = reason;
+            }
             updateDrawer();
         },
         setAvailability(value) {

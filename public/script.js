@@ -768,8 +768,13 @@ function setCharacterSaveStatus(status, revision = characterSaveRevision) {
     }
 
     const normalizedStatus = CHARACTER_SAVE_STATUS_COPY[status] ? status : 'saved';
-    element.dataset.saveStatus = normalizedStatus;
-    element.textContent = CHARACTER_SAVE_STATUS_COPY[normalizedStatus];
+    const nextCopy = CHARACTER_SAVE_STATUS_COPY[normalizedStatus];
+    if (element.dataset.saveStatus !== normalizedStatus) {
+        element.dataset.saveStatus = normalizedStatus;
+    }
+    if (element.textContent !== nextCopy) {
+        element.textContent = nextCopy;
+    }
 }
 
 function markCharacterSaveDirty() {

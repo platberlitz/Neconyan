@@ -214,8 +214,15 @@ function waitForSettingsUpdate(timeout = 500) {
 }
 
 /** Saves settings and resolves only after the module's commit token is read back. */
-export function commitSettings() {
-    return enqueueMutation(commitNow);
+export function commitSettings({ pruneAfter = false } = {}) {
+    return enqueueMutation(async () => {
+        await commitNow();
+        if (pruneAfter) {
+            await pruneNow().catch(error => {
+                console.error('[Time Machine] snapshot saved, but retention failed', error);
+            });
+        }
+    });
 }
 
 async function commitNow() {
@@ -309,7 +316,7 @@ export function save(request, options = {}) {
     return enqueueMutation(() => saveNow(request, options));
 }
 
-async function saveNow({ kind, target, label, data, extra = {} }, { skipPrune = false, protectedIds = [] } = {}) {
+async function saveNow({ kind, target, label, data, extra = {} }, { deferCommit = false, skipPrune = false, protectedIds = [] } = {}) {
     if (!KINDS.has(kind) || typeof target !== 'string' || !target || typeof label !== 'string'
         || !isPlainObject(data) || !isPlainObject(extra)) {
         throw new TypeError('Invalid snapshot request');
@@ -319,14 +326,16 @@ async function saveNow({ kind, target, label, data, extra = {} }, { skipPrune = 
         throw new TypeError('Snapshot extras contain a reserved field');
     }
 
-    await assertCurrentIndex();
+    if (!deferCommit) {
+        await assertCurrentIndex();
+    }
     const content = { data: structuredClone(data), ...structuredClone(extra) };
     const hash = await hashOf(content);
     const previous = newestRow(kind, target);
     if (hash && previous?.hash === hash) {
         try {
             await load(previous, { forgetMissing: false });
-            if (!skipPrune) {
+            if (!skipPrune && !deferCommit) {
                 await pruneNow({ protectedIds });
             }
             return null;
@@ -361,6 +370,9 @@ async function saveNow({ kind, target, label, data, extra = {} }, { skipPrune = 
     await upload(name, text);
     settings.snapshots.push(row);
     registerAttachment(row);
+    if (deferCommit) {
+        return row;
+    }
     try {
         await commitNow();
     } catch (error) {
