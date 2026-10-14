@@ -80,6 +80,7 @@ import {
     deleteConversationMessage,
     generateConversationSelfieFromMessageCommand,
     ensureConversationChrome,
+    navigateConversationTimelineWindow,
     quickConversationReminder,
     quickConversationSelfie,
     quickConversationSummarize,
@@ -798,6 +799,15 @@ export function bindConversationChromeControls(sheld) {
             }
             case 'set-channel':
                 setConversationTimelineChannel(target.dataset.channel);
+                break;
+            case 'timeline-older':
+                navigateConversationTimelineWindow('older');
+                break;
+            case 'timeline-newer':
+                navigateConversationTimelineWindow('newer');
+                break;
+            case 'timeline-latest':
+                navigateConversationTimelineWindow('latest');
                 break;
             case 'weekly-add':
                 addWeeklyScheduleRow();

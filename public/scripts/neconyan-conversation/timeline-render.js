@@ -6,6 +6,7 @@ import {
     name1,
 } from '../../script.js';
 import { t } from '../i18n.js';
+import { isLowMemoryModeActive, subscribeLowMemoryState } from '../low-memory-mode.js';
 import { user_avatar } from '../personas.js';
 import { updateMessageTokenCounts } from '../message-token-counts.js';
 import { revealUi } from '../ui-motion.js';
@@ -53,6 +54,11 @@ import {
     regenerationBusyKeys,
 } from './state.js';
 import { getConversationTimelineMessages } from './timeline-search.js';
+import {
+    buildConversationTimelineWindowIdentity,
+    pageConversationTimelineWindow,
+    selectConversationTimelineWindow,
+} from './timeline-window.js';
 import { narrateConversationMessage } from './tts.js';
 import {
     addConversationReminder,
@@ -84,7 +90,17 @@ function buildConversationRenderThreadKey(avatar, groupId, branchId, personaId) 
     return [personaId || '', avatar || '', groupId || '', branchId || ''].join('\u001f');
 }
 
-function buildTimelineFingerprint({ avatar, groupId, branchId, personaId, settings, allMessages, messages }) {
+subscribeLowMemoryState(() => {
+    if (
+        conversationState.conversationWorkspaceOpen
+        && typeof document !== 'undefined'
+        && !document.querySelector?.('#sb_conversation_timeline .sb-conversation-message.is-editing')
+    ) {
+        scheduleTimelineRender();
+    }
+});
+
+function buildTimelineFingerprint({ avatar, groupId, branchId, personaId, settings, allMessages, messages, windowDescriptor }) {
     const activeTyping = getActiveTypingParticipants(avatar, { branchId, groupId, personaId });
     const statusAvatars = new Set([avatar]);
     for (const participant of activeTyping) {
@@ -122,6 +138,15 @@ function buildTimelineFingerprint({ avatar, groupId, branchId, personaId, settin
         settings?.prose_polisher ? '1' : '0',
         settings?.streaming ? '1' : '0',
     ].join(':');
+    const windowPart = [
+        windowDescriptor?.identityKey || '',
+        windowDescriptor?.followingLatest === false ? 'history' : 'latest',
+        windowDescriptor?.startIndex ?? 0,
+        windowDescriptor?.endIndex ?? messages.length,
+        windowDescriptor?.windowSize ?? messages.length,
+        windowDescriptor?.hasOlder ? '1' : '0',
+        windowDescriptor?.hasNewer ? '1' : '0',
+    ].join(':');
 
     return hashConversationRenderFingerprint([
         personaId || '',
@@ -132,6 +157,7 @@ function buildTimelineFingerprint({ avatar, groupId, branchId, personaId, settin
         conversationState.conversationTimelineSearchQuery || '',
         allMessages.length,
         messages.length,
+        windowPart,
         conversationState.generationActive ? '1' : '0',
         conversationState.imageGenerationActive ? '1' : '0',
         getConversationSeenAt(avatar, { groupId, personaId }),
@@ -533,7 +559,21 @@ function createConversationMessageElement(message, { avatar, groupId, settings, 
 }
 
 function removeTimelineTransientNodes(timeline) {
-    timeline.querySelectorAll('.sb-conversation-thread-empty, .sb-conversation-typing-indicator, .sb-conversation-image-pending').forEach(node => node.remove());
+    if (typeof timeline?.querySelectorAll === 'function') {
+        timeline.querySelectorAll('.sb-conversation-thread-empty, .sb-conversation-typing-indicator, .sb-conversation-image-pending').forEach(node => node.remove());
+    }
+    if (Array.isArray(timeline?.children)) {
+        for (let i = timeline.children.length - 1; i >= 0; i--) {
+            const child = timeline.children[i];
+            if (
+                child?.classList?.contains?.('sb-conversation-thread-empty')
+                || child?.classList?.contains?.('sb-conversation-typing-indicator')
+                || child?.classList?.contains?.('sb-conversation-image-pending')
+            ) {
+                timeline.children.splice(i, 1);
+            }
+        }
+    }
 }
 
 function requestConversationFrame(callback) {
@@ -547,6 +587,11 @@ function requestConversationFrame(callback) {
 
 let timelineBottomScrollToken = 0;
 
+export function cancelConversationTimelineBottomScroll() {
+    timelineBottomScrollToken++;
+    conversationState.timelineBottomScrollPending = false;
+}
+
 function scrollConversationTimelineToBottom(timeline) {
     timeline.scrollTop = Math.max(0, timeline.scrollHeight - timeline.clientHeight);
 }
@@ -554,18 +599,19 @@ function scrollConversationTimelineToBottom(timeline) {
 function anchorConversationTimelineToBottom(timeline, renderThreadKey) {
     if (!timeline.dataset.sbConversationScrollBound) {
         timeline.dataset.sbConversationScrollBound = 'true';
-        const cancelBottomScroll = () => {
-            timelineBottomScrollToken++;
-            conversationState.timelineBottomScrollPending = false;
-        };
         for (const event of ['touchstart', 'wheel', 'pointerdown', 'keydown']) {
-            timeline.addEventListener(event, cancelBottomScroll, { passive: true });
+            timeline.addEventListener?.(event, cancelConversationTimelineBottomScroll, { passive: true });
         }
     }
 
     const token = ++timelineBottomScrollToken;
     const applyScroll = () => {
-        if (token !== timelineBottomScrollToken || !timeline.isConnected || conversationState.lastRenderedThreadKey !== renderThreadKey) {
+        if (
+            token !== timelineBottomScrollToken
+            || !timeline.isConnected
+            || conversationState.lastRenderedThreadKey !== renderThreadKey
+            || conversationState.timelineWindowDescriptor?.followingLatest === false
+        ) {
             return false;
         }
 
@@ -585,35 +631,181 @@ function anchorConversationTimelineToBottom(timeline, renderThreadKey) {
     setTimeout(applyScroll, 250);
 }
 
-function reconcileConversationMessageNodes(timeline, messages, { avatar, groupId, personaId, settings }) {
-    const existingNodes = new Map();
-    timeline.querySelectorAll('.sb-conversation-message[data-message-id]').forEach((node) => {
-        if (node instanceof HTMLElement && !node.classList.contains('sb-conversation-typing-indicator') && !node.classList.contains('sb-conversation-image-pending')) {
-            existingNodes.set(node.dataset.messageId || '', node);
+function isPersistedConversationMessageNode(node) {
+    if (!(node instanceof HTMLElement)) {
+        return false;
+    }
+    if (node.dataset?.sbConversationHistoryNav || node.dataset?.sbConversationAction) {
+        return false;
+    }
+    if (typeof node.classList?.contains === 'function') {
+        if (
+            node.classList.contains('sb-conversation-history-controls')
+            || node.classList.contains('sb-conversation-typing-indicator')
+            || node.classList.contains('sb-conversation-image-pending')
+            || node.classList.contains('sb-conversation-thread-empty')
+        ) {
+            return false;
         }
+        return node.classList.contains('sb-conversation-message') && Boolean(node.dataset?.messageId);
+    }
+    if (typeof node.className === 'string' && node.className.length > 0) {
+        if (
+            node.className.includes('sb-conversation-history-controls')
+            || node.className.includes('sb-conversation-typing-indicator')
+            || node.className.includes('sb-conversation-image-pending')
+            || node.className.includes('sb-conversation-thread-empty')
+        ) {
+            return false;
+        }
+        if (node.className.includes('sb-conversation-message')) {
+            return Boolean(node.dataset?.messageId);
+        }
+    }
+    return true;
+}
+
+function getPersistedConversationMessageNodes(timeline) {
+    return Array.from(timeline?.children || []).filter(isPersistedConversationMessageNode);
+}
+
+function collectProtectedTimelineMessageIds(timeline) {
+    return getPersistedConversationMessageNodes(timeline)
+        .filter(node => node.classList?.contains?.('is-editing') || (typeof node.className === 'string' && node.className.includes('is-editing')))
+        .map(node => String(node.dataset?.messageId || ''))
+        .filter(Boolean);
+}
+
+function removeTimelineChildNode(timeline, node) {
+    if (!node) {
+        return;
+    }
+    if (typeof node.remove === 'function') {
+        node.remove();
+    }
+    if (Array.isArray(timeline?.children)) {
+        const idx = timeline.children.indexOf(node);
+        if (idx >= 0) {
+            timeline.children.splice(idx, 1);
+        }
+    }
+}
+
+function placeTimelineChildAfter(timeline, node, previousNode) {
+    if (typeof timeline.insertBefore === 'function' && !Array.isArray(timeline.children)) {
+        const referenceNode = previousNode ? previousNode.nextSibling : timeline.firstChild;
+        if (node !== referenceNode) {
+            timeline.insertBefore(node, referenceNode);
+        }
+        return;
+    }
+    if (Array.isArray(timeline.children)) {
+        const existingIdx = timeline.children.indexOf(node);
+        const expectedPrevIdx = previousNode ? timeline.children.indexOf(previousNode) : -1;
+        if (existingIdx >= 0 && existingIdx === expectedPrevIdx + 1) {
+            return;
+        }
+        if (existingIdx >= 0) {
+            timeline.children.splice(existingIdx, 1);
+        }
+        const targetIdx = previousNode ? timeline.children.indexOf(previousNode) + 1 : 0;
+        timeline.children.splice(Math.max(0, targetIdx), 0, node);
+        return;
+    }
+    timeline.appendChild?.(node);
+}
+
+function findTimelineHistoryControl(timeline, navKind) {
+    return Array.from(timeline?.children || []).find(
+        node => node instanceof HTMLElement && node.dataset?.sbConversationHistoryNav === navKind,
+    ) || null;
+}
+
+function createTimelineHistoryControlButton(action, labelText, i18nKey) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'menu_button sb-conversation-selfie-action sb-conversation-history-button';
+    button.dataset.sbConversationAction = action;
+    button.setAttribute?.('data-i18n', i18nKey);
+    button.textContent = labelText;
+    return button;
+}
+
+function syncConversationTimelineHistoryControls(timeline, windowDescriptor) {
+    const existingOlder = findTimelineHistoryControl(timeline, 'older');
+    if (windowDescriptor?.hasOlder) {
+        const olderControl = existingOlder || (() => {
+            const container = document.createElement('div');
+            container.className = 'sb-conversation-selfie-actions char-button-group-utility sb-conversation-history-controls sb-conversation-history-controls-top';
+            container.dataset.sbConversationHistoryNav = 'older';
+            container.appendChild(createTimelineHistoryControlButton('timeline-older', t`Older messages`, 'Older messages'));
+            return container;
+        })();
+        placeTimelineChildAfter(timeline, olderControl, null);
+    } else if (existingOlder) {
+        removeTimelineChildNode(timeline, existingOlder);
+    }
+
+    const existingNewer = findTimelineHistoryControl(timeline, 'newer');
+    if (existingNewer) {
+        removeTimelineChildNode(timeline, existingNewer);
+    }
+    if (windowDescriptor?.hasNewer) {
+        const container = document.createElement('div');
+        container.className = 'sb-conversation-selfie-actions char-button-group-utility sb-conversation-history-controls sb-conversation-history-controls-bottom';
+        container.dataset.sbConversationHistoryNav = 'newer';
+        container.appendChild(createTimelineHistoryControlButton('timeline-newer', t`Newer messages`, 'Newer messages'));
+        container.appendChild(createTimelineHistoryControlButton('timeline-latest', t`Latest messages`, 'Latest messages'));
+        timeline.appendChild(container);
+    }
+}
+
+function reconcileConversationMessageNodes(timeline, messages, { avatar, groupId, personaId, settings, windowDescriptor }) {
+    syncConversationTimelineHistoryControls(timeline, { hasOlder: Boolean(windowDescriptor?.hasOlder), hasNewer: false });
+
+    const existingNodes = new Map();
+    getPersistedConversationMessageNodes(timeline).forEach((node) => {
+        existingNodes.set(String(node.dataset?.messageId || ''), node);
     });
 
+    let previousNode = findTimelineHistoryControl(timeline, 'older');
     messages.forEach((message, index) => {
         const messageId = String(message?.id || '');
         const fingerprint = buildConversationMessageFingerprint(message, { avatar, groupId, personaId, settings, index });
         const currentNode = existingNodes.get(messageId) || null;
+        const isEditing = Boolean(
+            currentNode?.classList?.contains?.('is-editing')
+            || (typeof currentNode?.className === 'string' && currentNode.className.includes('is-editing')),
+        );
         let nextNode = currentNode;
-        if (!nextNode || nextNode.dataset.sbConversationMessageFingerprint !== fingerprint) {
+        if (!nextNode || (!isEditing && nextNode.dataset?.sbConversationMessageFingerprint !== fingerprint)) {
             nextNode = createConversationMessageElement(message, { avatar, groupId, settings, index, fingerprint });
             if (currentNode) {
-                currentNode.replaceWith(nextNode);
+                if (typeof currentNode.replaceWith === 'function' && !Array.isArray(timeline.children)) {
+                    currentNode.replaceWith(nextNode);
+                } else {
+                    removeTimelineChildNode(timeline, currentNode);
+                }
             }
         }
 
         existingNodes.delete(messageId);
-        const referenceNode = timeline.children[index] || null;
-        if (nextNode !== referenceNode) {
-            timeline.insertBefore(nextNode, referenceNode);
+        placeTimelineChildAfter(timeline, nextNode, previousNode);
+        previousNode = nextNode;
+    });
+
+    existingNodes.forEach((node) => {
+        const isEditing = Boolean(
+            node?.classList?.contains?.('is-editing')
+            || (typeof node?.className === 'string' && node.className.includes('is-editing')),
+        );
+        if (!isEditing) {
+            removeTimelineChildNode(timeline, node);
         }
     });
 
-    existingNodes.forEach(node => node.remove());
     markConversationMessageRuns(timeline, messages);
+    syncConversationTimelineHistoryControls(timeline, windowDescriptor);
 }
 
 const CONVERSATION_RUN_GAP_MS = 10 * 60 * 1000;
@@ -639,7 +831,7 @@ function getConversationDayLabel(sentAt) {
  * group bubbles the way messaging apps do.
  */
 export function markConversationMessageRuns(timeline, messages) {
-    const nodes = Array.from(timeline.children).slice(0, messages.length);
+    const nodes = getPersistedConversationMessageNodes(timeline).slice(0, messages.length);
     const moments = messages.map(message => timestampToMoment(message?.send_date));
     const joinsPrevious = messages.map((message, index) => {
         if (index === 0) return false;
@@ -666,6 +858,61 @@ export function markConversationMessageRuns(timeline, messages) {
             delete node.dataset.sbDayLabel;
         }
     });
+}
+
+export function moveConversationTimelineWindowToLatest() {
+    if (conversationState.timelineWindowDescriptor) {
+        conversationState.timelineWindowDescriptor = Object.freeze({
+            ...conversationState.timelineWindowDescriptor,
+            followingLatest: true,
+        });
+    }
+    conversationState.timelineBottomScrollPending = true;
+}
+
+export function navigateConversationTimelineWindow(direction = 'latest') {
+    const timeline = document.getElementById(CHROME_IDS.timeline);
+    const avatar = getCurrentCharAvatar();
+    if (!avatar) {
+        return null;
+    }
+    const groupId = getConversationGroupIdForAvatar(avatar);
+    const personaId = getConversationPersonaId();
+    const branchId = getConversationRenderBranchId(avatar, groupId, personaId);
+    const account = getCurrentUserHandle();
+    const identityKey = buildConversationTimelineWindowIdentity({
+        account,
+        personaId,
+        avatar,
+        groupId,
+        branchId,
+        channel: conversationState.conversationTimelineChannel,
+        query: conversationState.conversationTimelineSearchQuery,
+    });
+    const allMessages = getConversationThread(avatar, { groupId, personaId });
+    const filteredMessages = getConversationTimelineMessages(allMessages);
+    const protectedMessageIds = timeline instanceof HTMLElement ? collectProtectedTimelineMessageIds(timeline) : [];
+
+    const { descriptor } = pageConversationTimelineWindow(
+        filteredMessages,
+        conversationState.timelineWindowDescriptor,
+        direction,
+        {
+            identityKey,
+            lowMemoryActive: isLowMemoryModeActive(),
+            protectedMessageIds,
+        },
+    );
+    conversationState.timelineWindowDescriptor = descriptor;
+
+    if (direction === 'latest' || descriptor.followingLatest) {
+        conversationState.timelineBottomScrollPending = true;
+    } else {
+        cancelConversationTimelineBottomScroll();
+    }
+
+    renderConversationTimeline();
+    return descriptor;
 }
 
 export function renderConversationTimeline() {
@@ -708,6 +955,7 @@ export function renderConversationTimeline() {
         conversationState.lastRenderedAvatar = null;
         conversationState.lastRenderedThreadKey = '';
         conversationState.lastRenderedMessageCount = 0;
+        conversationState.timelineWindowDescriptor = null;
         conversationState.timelineBottomScrollPending = false;
         updateConversationToolsState();
         return;
@@ -716,19 +964,54 @@ export function renderConversationTimeline() {
     const groupId = getConversationGroupIdForAvatar(avatar);
     const settings = getSettings(avatar, { groupId, personaId });
     const allMessages = getConversationThread(avatar, { groupId, personaId });
-    const messages = getConversationTimelineMessages(allMessages);
+    const filteredMessages = getConversationTimelineMessages(allMessages);
     const branchId = getConversationRenderBranchId(avatar, groupId, personaId);
     const renderThreadKey = buildConversationRenderThreadKey(avatar, groupId, branchId, personaId);
+    const windowIdentityKey = buildConversationTimelineWindowIdentity({
+        account: getCurrentUserHandle(),
+        personaId,
+        avatar,
+        groupId,
+        branchId,
+        channel: conversationState.conversationTimelineChannel,
+        query: conversationState.conversationTimelineSearchQuery,
+    });
+    const protectedMessageIds = collectProtectedTimelineMessageIds(timeline);
+    const {
+        messages: windowMessages,
+        descriptor: windowDescriptor,
+    } = selectConversationTimelineWindow(
+        filteredMessages,
+        conversationState.timelineWindowDescriptor,
+        {
+            identityKey: windowIdentityKey,
+            lowMemoryActive: isLowMemoryModeActive(),
+            protectedMessageIds,
+        },
+    );
+    conversationState.timelineWindowDescriptor = windowDescriptor;
+
     const contextChanged = previousThreadKey !== renderThreadKey;
     const messagesAdded = allMessages.length > previousMessageCount;
     const isNearBottom = previousScrollBottom <= 150;
     const needsBottomScroll = Boolean(conversationState.timelineBottomScrollPending);
-    const fingerprint = buildTimelineFingerprint({ avatar, groupId, branchId, personaId, settings, allMessages, messages });
+    const fingerprint = buildTimelineFingerprint({
+        avatar,
+        groupId,
+        branchId,
+        personaId,
+        settings,
+        allMessages,
+        messages: windowMessages,
+        windowDescriptor,
+    });
     if (!contextChanged && fingerprint === conversationState.lastTimelineFingerprint && timeline.dataset.sbConversationFingerprint === fingerprint) {
         updateConversationToolsState();
-        if (needsBottomScroll) {
+        if (needsBottomScroll && windowDescriptor.followingLatest) {
             conversationState.timelineBottomScrollPending = false;
             anchorConversationTimelineToBottom(timeline, renderThreadKey);
+        } else if (needsBottomScroll) {
+            conversationState.timelineBottomScrollPending = false;
         }
         return;
     }
@@ -737,6 +1020,9 @@ export function renderConversationTimeline() {
     timeline.dataset.sbConversationFingerprint = fingerprint;
     if (contextChanged) {
         timeline.textContent = '';
+        if (Array.isArray(timeline.children)) {
+            timeline.children.length = 0;
+        }
         revealUi(timeline);
     } else {
         removeTimelineTransientNodes(timeline);
@@ -745,6 +1031,9 @@ export function renderConversationTimeline() {
     const typingParticipants = getActiveTypingParticipants(avatar, { branchId, groupId, personaId });
     if (!allMessages.length && !typingParticipants.length) {
         timeline.textContent = '';
+        if (Array.isArray(timeline.children)) {
+            timeline.children.length = 0;
+        }
         const empty = document.createElement('div');
         empty.className = 'sb-conversation-thread-empty neconyan-cat-panel';
         empty.innerHTML = `
@@ -768,8 +1057,11 @@ export function renderConversationTimeline() {
         return;
     }
 
-    if (!messages.length && allMessages.length) {
+    if (!filteredMessages.length && allMessages.length) {
         timeline.textContent = '';
+        if (Array.isArray(timeline.children)) {
+            timeline.children.length = 0;
+        }
         const empty = document.createElement('div');
         empty.className = 'sb-conversation-thread-empty neconyan-cat-panel';
         empty.innerHTML = `
@@ -788,99 +1080,107 @@ export function renderConversationTimeline() {
         return;
     }
 
-    reconcileConversationMessageNodes(timeline, messages, { avatar, groupId, personaId, settings });
+    reconcileConversationMessageNodes(timeline, windowMessages, {
+        avatar,
+        groupId,
+        personaId,
+        settings,
+        windowDescriptor,
+    });
 
-    if (typingParticipants.length > 2 && !typingParticipants.some(participant => participant.token_count !== undefined)) {
-        const typingItem = document.createElement('div');
-        typingItem.className = 'sb-conversation-message sb-conversation-typing-indicator';
-        typingItem.dataset.role = 'partner';
-
-        const typingAvatarWrap = document.createElement('div');
-        typingAvatarWrap.className = 'sb-conversation-message-avatar';
-        const typingImage = document.createElement('img');
-        typingImage.alt = '';
-        typingImage.decoding = 'async';
-        typingImage.src = getThumbnailUrlForViewport('avatar', typingParticipants[0]?.avatar) || default_user_avatar;
-        typingAvatarWrap.appendChild(typingImage);
-
-        const typingBubble = document.createElement('div');
-        typingBubble.className = 'sb-conversation-message-bubble';
-        typingBubble.innerHTML = `
-            <div class="sb-conversation-message-meta">
-                <span class="sb-conversation-message-name">Several people</span>
-            </div>
-            <div class="sb-conversation-message-text" style="font-style: italic; opacity: 0.8; display: flex; align-items: center; gap: 8px;">
-                <span>Several people are typing</span>
-                <span class="sb-conversation-typing-dots">
-                    <span></span><span></span><span></span>
-                </span>
-            </div>
-        `;
-        typingItem.append(typingAvatarWrap, typingBubble);
-        timeline.appendChild(typingItem);
-    } else {
-        for (const typingParticipant of typingParticipants) {
-            const typingAvatar = typingParticipant?.avatar || getCurrentCharAvatar();
-            const typingName = typingParticipant?.name || getCurrentCharName();
+    if (windowDescriptor.followingLatest) {
+        if (typingParticipants.length > 2 && !typingParticipants.some(participant => participant.token_count !== undefined)) {
             const typingItem = document.createElement('div');
             typingItem.className = 'sb-conversation-message sb-conversation-typing-indicator';
-            typingItem.dataset.role = typingAvatar !== getCurrentCharAvatar() ? 'partner' : 'character';
+            typingItem.dataset.role = 'partner';
 
             const typingAvatarWrap = document.createElement('div');
             typingAvatarWrap.className = 'sb-conversation-message-avatar';
             const typingImage = document.createElement('img');
             typingImage.alt = '';
             typingImage.decoding = 'async';
-            typingImage.src = getThumbnailUrlForViewport('avatar', typingAvatar) || default_user_avatar;
+            typingImage.src = getThumbnailUrlForViewport('avatar', typingParticipants[0]?.avatar) || default_user_avatar;
             typingAvatarWrap.appendChild(typingImage);
 
             const typingBubble = document.createElement('div');
             typingBubble.className = 'sb-conversation-message-bubble';
             typingBubble.innerHTML = `
                 <div class="sb-conversation-message-meta">
-                    <span class="sb-conversation-message-name">${escapeHtmlText(typingName)}</span>
+                    <span class="sb-conversation-message-name">Several people</span>
+                </div>
+                <div class="sb-conversation-message-text" style="font-style: italic; opacity: 0.8; display: flex; align-items: center; gap: 8px;">
+                    <span>Several people are typing</span>
+                    <span class="sb-conversation-typing-dots">
+                        <span></span><span></span><span></span>
+                    </span>
+                </div>
+            `;
+            typingItem.append(typingAvatarWrap, typingBubble);
+            timeline.appendChild(typingItem);
+        } else {
+            for (const typingParticipant of typingParticipants) {
+                const typingAvatar = typingParticipant?.avatar || getCurrentCharAvatar();
+                const typingName = typingParticipant?.name || getCurrentCharName();
+                const typingItem = document.createElement('div');
+                typingItem.className = 'sb-conversation-message sb-conversation-typing-indicator';
+                typingItem.dataset.role = typingAvatar !== getCurrentCharAvatar() ? 'partner' : 'character';
+
+                const typingAvatarWrap = document.createElement('div');
+                typingAvatarWrap.className = 'sb-conversation-message-avatar';
+                const typingImage = document.createElement('img');
+                typingImage.alt = '';
+                typingImage.decoding = 'async';
+                typingImage.src = getThumbnailUrlForViewport('avatar', typingAvatar) || default_user_avatar;
+                typingAvatarWrap.appendChild(typingImage);
+
+                const typingBubble = document.createElement('div');
+                typingBubble.className = 'sb-conversation-message-bubble';
+                typingBubble.innerHTML = `
+                    <div class="sb-conversation-message-meta">
+                        <span class="sb-conversation-message-name">${escapeHtmlText(typingName)}</span>
+                    </div>
+                    <div class="sb-conversation-message-text sb-conversation-typing-dots">
+                        <span></span><span></span><span></span>
+                    </div>
+                `;
+                if (typingParticipant.token_count !== undefined) updateMessageTokenCounts(typingBubble.querySelector('.sb-conversation-message-meta'), typingParticipant, { pending: true });
+                if (settings.streaming && typingParticipant.text) {
+                    const text = typingBubble.querySelector('.sb-conversation-message-text');
+                    text.className = 'sb-conversation-message-text sb-conversation-live-text';
+                    text.textContent = typingParticipant.text;
+                }
+                typingItem.append(typingAvatarWrap, typingBubble);
+                timeline.appendChild(typingItem);
+            }
+        }
+
+        if (conversationState.imageGenerationActive) {
+            const pendingParticipant = getPrimaryTypingParticipant(avatar, { branchId, groupId, personaId });
+            const pendingAvatar = pendingParticipant?.avatar || getCurrentCharAvatar();
+            const imageItem = document.createElement('div');
+            imageItem.className = 'sb-conversation-message sb-conversation-image-pending';
+            imageItem.dataset.role = pendingParticipant && pendingAvatar !== getCurrentCharAvatar() ? 'partner' : 'character';
+            const imageAvatarWrap = document.createElement('div');
+            imageAvatarWrap.className = 'sb-conversation-message-avatar';
+            const pendingImage = document.createElement('img');
+            pendingImage.alt = '';
+            pendingImage.decoding = 'async';
+            pendingImage.src = getThumbnailUrlForViewport('avatar', pendingAvatar) || default_user_avatar;
+            imageAvatarWrap.appendChild(pendingImage);
+            const imageBubble = document.createElement('div');
+            imageBubble.className = 'sb-conversation-message-bubble';
+            imageBubble.innerHTML = `
+                <div class="sb-conversation-message-meta">
+                    <span class="sb-conversation-message-name">Image generation</span>
+                    <button type="button" class="sb-conversation-stop-image" data-sb-conversation-action="stop-image-generation">Stop</button>
                 </div>
                 <div class="sb-conversation-message-text sb-conversation-typing-dots">
                     <span></span><span></span><span></span>
                 </div>
             `;
-            if (typingParticipant.token_count !== undefined) updateMessageTokenCounts(typingBubble.querySelector('.sb-conversation-message-meta'), typingParticipant, { pending: true });
-            if (settings.streaming && typingParticipant.text) {
-                const text = typingBubble.querySelector('.sb-conversation-message-text');
-                text.className = 'sb-conversation-message-text sb-conversation-live-text';
-                text.textContent = typingParticipant.text;
-            }
-            typingItem.append(typingAvatarWrap, typingBubble);
-            timeline.appendChild(typingItem);
+            imageItem.append(imageAvatarWrap, imageBubble);
+            timeline.appendChild(imageItem);
         }
-    }
-
-    if (conversationState.imageGenerationActive) {
-        const pendingParticipant = getPrimaryTypingParticipant(avatar, { branchId, groupId, personaId });
-        const pendingAvatar = pendingParticipant?.avatar || getCurrentCharAvatar();
-        const imageItem = document.createElement('div');
-        imageItem.className = 'sb-conversation-message sb-conversation-image-pending';
-        imageItem.dataset.role = pendingParticipant && pendingAvatar !== getCurrentCharAvatar() ? 'partner' : 'character';
-        const imageAvatarWrap = document.createElement('div');
-        imageAvatarWrap.className = 'sb-conversation-message-avatar';
-        const pendingImage = document.createElement('img');
-        pendingImage.alt = '';
-        pendingImage.decoding = 'async';
-        pendingImage.src = getThumbnailUrlForViewport('avatar', pendingAvatar) || default_user_avatar;
-        imageAvatarWrap.appendChild(pendingImage);
-        const imageBubble = document.createElement('div');
-        imageBubble.className = 'sb-conversation-message-bubble';
-        imageBubble.innerHTML = `
-            <div class="sb-conversation-message-meta">
-                <span class="sb-conversation-message-name">Image generation</span>
-                <button type="button" class="sb-conversation-stop-image" data-sb-conversation-action="stop-image-generation">Stop</button>
-            </div>
-            <div class="sb-conversation-message-text sb-conversation-typing-dots">
-                <span></span><span></span><span></span>
-            </div>
-        `;
-        imageItem.append(imageAvatarWrap, imageBubble);
-        timeline.appendChild(imageItem);
     }
 
     conversationState.lastRenderedAvatar = avatar;
@@ -888,7 +1188,7 @@ export function renderConversationTimeline() {
     conversationState.lastRenderedMessageCount = allMessages.length;
     conversationState.timelineBottomScrollPending = false;
     updateConversationToolsState();
-    if (contextChanged || messagesAdded || isNearBottom || needsBottomScroll) {
+    if (windowDescriptor.followingLatest && (contextChanged || messagesAdded || isNearBottom || needsBottomScroll)) {
         anchorConversationTimelineToBottom(timeline, renderThreadKey);
     } else {
         timeline.scrollTop = previousScrollTop;

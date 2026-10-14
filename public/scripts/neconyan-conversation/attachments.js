@@ -412,6 +412,8 @@ async function submitAcceptedSend({ avatar, branchId, groupId, personaId, text, 
             // read rather than the user resending and duplicating the message.
         }
         if (account !== getCurrentUserHandle()) return;
+        conversationState.timelineWindowDescriptor = null;
+        conversationState.timelineBottomScrollPending = true;
         scheduleInterfaceRefresh({ syncControls: false });
         clearConversationComposer(input, text, { hadAttachments: pendingFiles.length > 0, fileSignature });
         pendingSubmission = null;

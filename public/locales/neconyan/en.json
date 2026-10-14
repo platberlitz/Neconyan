@@ -4553,6 +4553,8 @@
   "Low-memory mode currently limits rendered Roleplay messages to ${0}.": "Low-memory mode currently limits rendered Roleplay messages to ${0}.",
   "How many recent messages appear when a chat opens. Older messages stay available. Low-memory mode may use a smaller window.": "How many recent messages appear when a chat opens. Older messages stay available. Low-memory mode may use a smaller window.",
   "Keep only a minimal number of messages rendered during long chats and streams.": "Keep only a minimal number of messages rendered during long chats and streams.",
+  "Older messages": "Older messages",
+  "Newer messages": "Newer messages",
   "Aggressive DOM Unloading": "Aggressive DOM Unloading",
   "Aggressive DOM Unloading_desc": "Drastically reduces rendered messages to prevent crashes on low-memory devices during long streams.",
   "Enable aggressive DOM unloading to keep only a minimal number of messages rendered. Useful for devices that crash during long streaming generations.": "Enable aggressive DOM unloading to keep only a minimal number of messages rendered. Useful for devices that crash during long streaming generations.",
