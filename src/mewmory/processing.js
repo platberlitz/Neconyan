@@ -17,6 +17,11 @@ function processingFingerprint(state, sourceCount) {
         state.enabled, state.activeNpcIds, state.sceneNpcIds, state.castHistory, state.records, state.audit, state.overrides]);
 }
 
+const memoryFingerprint = state => hash([state.enabled, state.activeNpcIds, state.sceneNpcIds, state.castHistory, state.records, state.audit, state.overrides]);
+
+/** True when a batch was discarded only because its chat text changed (an agent or the user rewrote a message), so it can run again straight away. */
+export const isStaleSourceError = error => error?.staleSource === true;
+
 export function pendingSources(state, config, { checkpoint = false, through = Infinity } = {}) {
     const policy = processingVersion(config);
     const coverage = checkpoint ? state.checkpoints : state.coverage;
@@ -295,8 +300,10 @@ async function runBatch(directories, locator, options, call) {
         current.jobs.push({ id: jobId, status: 'processing', checkpoint: Boolean(options.checkpoint),
             from: sourceAt(current, refs[0]).sequence, through: asOf, startedAt: Date.now(), policy });
     }, state.revision);
-    const sourceCount = state.timeline.length;
+    // Extraction reads only up to its newest message, so later replies (and agents rewriting them) cannot make it stale.
+    const sourceCount = Math.min(state.timeline.length, asOf + 1);
     const snapshotFingerprint = processingFingerprint(state, sourceCount);
+    const snapshotMemory = memoryFingerprint(state);
     const auditLength = state.audit.length;
     const usage = [];
     const skipped = [];
@@ -340,7 +347,10 @@ async function runBatch(directories, locator, options, call) {
         if (options.signal?.aborted) fail('Mewmory request cancelled.', 499);
         return mutateState(directories, locator, current => {
             if (processingFingerprint(current, sourceCount) !== snapshotFingerprint || processingVersion(readConfig(directories)) !== policy) {
-                fail('The chat, Mewmory settings, or a memory you edited changed while this was running, so this result was discarded. It will be tried again.', 409);
+                const error = new Error('The chat, Mewmory settings, or a memory you edited changed while this was running, so this result was discarded. It will be tried again.');
+                error.status = 409;
+                error.staleSource = memoryFingerprint(current) === snapshotMemory && processingVersion(readConfig(directories)) === policy;
+                throw error;
             }
             // Keep appended sources, concurrent recall, indexing and usage; this batch owns only its memory changes.
             current.records = state.records;
@@ -360,7 +370,9 @@ async function runBatch(directories, locator, options, call) {
         mutateState(directories, locator, current => {
             const job = current.jobs.find(item => item.id === jobId);
             if (!job || current.branchId !== state.branchId) return;
-            Object.assign(job, { status: 'failed', error: error.message, finishedAt: Date.now(), usage });
+            Object.assign(job, isStaleSourceError(error)
+                ? { status: 'superseded', finishedAt: Date.now(), usage }
+                : { status: 'failed', error: error.message, finishedAt: Date.now(), usage });
             addUsage(current, usage);
         }, undefined, { existingOnly: true });
         throw error;

@@ -1812,7 +1812,62 @@ test('processing is idempotent and never changes saved chat; a source edit durin
     state = readState(directories, locator);
     assert.equal(eligibleRecords(state).some(record => record.id === 'event:accepted'), false);
     assert.ok(pendingSources(state, defaultConfig()).length > 0);
-    assert.equal(state.jobs.at(-1).status, 'failed');
+    assert.equal(state.jobs.at(-1).status, 'superseded', 'a chat edit restarts the update instead of reporting a failure');
+    assert.equal(state.jobs.at(-1).error, undefined);
+});
+
+test('an agent rewriting the newest reply mid-extraction restarts the update quietly with the new text', async t => {
+    const messages = structuredClone(fixture.messages.slice(0, 3));
+    const { directories, write } = disk(t, messages);
+    const config = defaultConfig();
+    Object.assign(config.roles.extractor, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'test' });
+    config.roles.pawspective.enabled = false;
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    const seen = [];
+    const call = async (_directories, _config, role, _contract, input) => {
+        const chat = input.sources.filter(source => source.type === 'chat');
+        seen.push(chat.at(-1).text);
+        if (seen.length === 1) {
+            messages[2].mes = 'Mara accepts the gift, rewritten by a post-generation agent.';
+            write(messages);
+        }
+        return { value: { records: [{ id: 'event:accepted', kind: 'event', text: 'The gift was accepted.', subjectIds: ['gift'],
+            refs: [{ id: chat.at(-1).id, revision: chat.at(-1).revision }], evidenceStatus: 'established' }], interviews: [], activeNpcIds: [] },
+        usage: { role } };
+    };
+    await startProcessing(directories, locator, { all: true }, call);
+    const state = await waitForProcessing(directories, locator);
+    assert.equal(state.processing.status, 'complete');
+    assert.equal(state.processing.error, '');
+    assert.equal(seen.length, 2);
+    assert.match(seen[1], /rewritten by a post-generation agent/);
+    assert.deepEqual(state.jobs.map(job => job.status), ['superseded', 'complete']);
+    assert.equal(pendingSources(state, readConfig(directories)).length, 0);
+    assert.equal(eligibleRecords(state).filter(record => record.id === 'event:accepted').length, 1);
+});
+
+test('a reply rewritten after the batch range does not discard the batch', async t => {
+    const messages = structuredClone(fixture.messages.slice(0, 3));
+    const { directories, write } = disk(t, messages);
+    const config = defaultConfig();
+    config.batchMessages = 2;
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; });
+    const state = await processBatch(directories, locator, {}, async (_directories, _config, role, _contract, input) => {
+        const chat = input.sources.filter(source => source.type === 'chat');
+        assert.equal(chat.length, 2);
+        messages[2].mes = 'A later reply rewritten while the earlier messages were being read.';
+        write(messages);
+        return { value: { records: [{ id: 'event:gift', kind: 'event', text: 'The player brought a gift.', subjectIds: ['gift'],
+            refs: [{ id: chat.at(-1).id, revision: chat.at(-1).revision }], evidenceStatus: 'established' }], interviews: [], activeNpcIds: [] },
+        usage: { role } };
+    });
+    assert.equal(state.jobs.at(-1).status, 'complete');
+    assert.equal(eligibleRecords(state).filter(record => record.id === 'event:gift').length, 1);
+    assert.equal(pendingSources(state, readConfig(directories)).length, 1);
 });
 
 test('a failed checkpoint leaves coverage and existing valid memory intact', async t => {
@@ -2229,6 +2284,65 @@ test('local recall overlaps embeddings and selection, reuses completed IDs and r
             return { value: { status: 'complete', selections: [], rejections: [], needsEvidence: [] }, usage: {} };
         },
     }), /changed while memories were being picked/);
+});
+
+test('background recall survives an agent rewriting a reply after the messages it read, and the next reply reuses its picks', async t => {
+    const messages = structuredClone(fixture.messages);
+    const { directories, write } = disk(t, messages);
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base';
+    Object.assign(config.roles.selector, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'selector' });
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; event(state); });
+    const asOf = messages.length - 2;
+    let calls = 0;
+    const call = async (_directories, _config, role, _contract, input) => {
+        calls++;
+        messages.at(-1).mes = 'You kept it? (rewritten by a post-generation agent, pass ' + calls + ')';
+        write(messages);
+        const candidate = input.candidates.find(candidate => candidate.recordId === 'event:gift');
+        return { value: { status: 'complete', selections: [{ recordId: candidate.recordId, relevanceType: 'direct',
+            currentCueRefs: [input.scene.at(-1).id], memoryEvidenceRefs: [candidate.sourceRefs[0]], justification: 'The gift comes up.' }],
+        rejections: [], needsEvidence: [] }, usage: { role } };
+    };
+    await recallInBackground(directories, locator, { asOf }, { call });
+    assert.equal(calls, 1, 'a rewrite after asOf must not force another pick');
+    const state = readState(directories, locator);
+    assert.ok(state.recalls.at(-1).background);
+    assert.equal(state.recalls.at(-1).sourceCount, asOf + 1);
+    const next = await recall(directories, locator, { asOf, local: true }, { call, scheduleBackground: false });
+    assert.equal(next.inspection.selections[0]?.recordId, 'event:gift');
+    assert.ok(next.memoryText.includes('Mara accepted the gift.'));
+});
+
+test('background recall picks again once when a message it read changes mid-pick', async t => {
+    const messages = structuredClone(fixture.messages);
+    const { directories, write } = disk(t, messages);
+    const config = defaultConfig();
+    config.writerTokenizer = 'cl100k_base';
+    Object.assign(config.roles.selector, { enabled: true, endpoint: 'http://127.0.0.1:1/v1', model: 'selector' });
+    saveConfig(directories, config);
+    await loadCurrentState(directories, locator);
+    mutateState(directories, locator, state => { state.enabled = true; event(state); });
+    const scenes = [];
+    const call = async (_directories, _config, role, _contract, input) => {
+        scenes.push(input.scene.at(-1).text);
+        if (scenes.length === 1) {
+            messages.at(-1).mes = 'You kept it all this time?';
+            write(messages);
+        }
+        const candidate = input.candidates.find(candidate => candidate.recordId === 'event:gift');
+        return { value: { status: 'complete', selections: [{ recordId: candidate.recordId, relevanceType: 'direct',
+            currentCueRefs: [input.scene.at(-1).id], memoryEvidenceRefs: [candidate.sourceRefs[0]], justification: 'The gift comes up.' }],
+        rejections: [], needsEvidence: [] }, usage: { role } };
+    };
+    await recallInBackground(directories, locator, {}, { call });
+    assert.equal(scenes.length, 2);
+    assert.match(scenes[1], /all this time/);
+    const state = readState(directories, locator);
+    assert.equal(state.recalls.at(-1).status, 'complete');
+    assert.equal(state.recalls.at(-1).selections[0].recordId, 'event:gift');
 });
 
 test('HTTP preparation uses only completed preservation and accepts automatic progress before final validation', async t => {

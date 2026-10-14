@@ -18,7 +18,9 @@ const running = new Map();
 export function recallInBackground(directories, locator, options = {}, dependencies = {}) {
     const key = statePath(directories, locator);
     if (running.has(key)) return running.get(key);
-    const job = recall(directories, locator, { ...options, local: false, background: true, signal: undefined }, dependencies)
+    const run = () => recall(directories, locator, { ...options, local: false, background: true, signal: undefined }, dependencies);
+    // A message rewritten mid-pick (for example by a post-generation agent) gets one fresh attempt instead of leaving no memories.
+    const job = run().catch(error => error?.status === 409 ? run() : Promise.reject(error))
         .finally(() => running.delete(key));
     running.set(key, job);
     job.catch(error => console.warn('Mewmory background recall:', error.message));
@@ -159,8 +161,10 @@ export async function recall(directories, locator, {
     const state = await loadState(directories, locator);
     if (!state.enabled) return { enabled: false, npcText: '', memoryText: '', tokens: { npc: 0, memory: 0 } };
     const fingerprint = assemblyFingerprint(state, config);
-    const validationFingerprint = generationFingerprint(state, config);
-    const sourceCount = state.timeline.length;
+    const timelineLength = state.timeline.length;
+    // Background picks read only messages up to asOf; a reply after it (and agents rewriting that reply) must not discard them.
+    const sourceCount = background && Number.isFinite(asOf) ? Math.max(0, Math.min(timelineLength, Math.floor(asOf) + 1)) : timelineLength;
+    const validationFingerprint = background ? recallFingerprint(state, config, sourceCount) : generationFingerprint(state, config);
     const indexSnapshot = hash(state.index);
     const counter = await getCounter(config.writerTokenizer, tokenizer);
     const usage = [];
@@ -239,9 +243,9 @@ export async function recall(directories, locator, {
         if ((background ? recallFingerprint(current, currentConfig, sourceCount) : generationFingerprint(current, currentConfig)) !== validationFingerprint) {
             fail('The chat, Mewmory settings, or a memory you edited changed while memories were being picked. Send or regenerate again.', 409);
         }
-        const indexState = background ? { ...current, timeline: current.timeline.slice(0, sourceCount) } : current;
+        const indexState = background ? { ...current, timeline: current.timeline.slice(0, timelineLength) } : current;
         if (!local && assemblyFingerprint(indexState, config) === fingerprint && hash(current.index) === indexSnapshot) {
-            current.index = { ...state.index, pending: state.index.pending || current.timeline.length > sourceCount };
+            current.index = { ...state.index, pending: state.index.pending || current.timeline.length > timelineLength };
         }
         if (operationId && current.recallReceipts?.includes(operationId)) return;
         if (operationId) current.recallReceipts = [...(current.recallReceipts || []).filter(id => retainedJobs.has(id)), operationId];
@@ -249,6 +253,6 @@ export async function recall(directories, locator, {
         if (!background) current.preview = { ...assembly, fingerprint };
         addUsage(current, usage);
     });
-    if (local && scheduleBackground) recallInBackground(directories, locator, { asOf: Math.min(asOf, sourceCount - 1), query: manualQuery, tokenizer }, { call, embedFn });
+    if (local && scheduleBackground) recallInBackground(directories, locator, { asOf: Math.min(asOf, timelineLength - 1), query: manualQuery, tokenizer }, { call, embedFn });
     return { enabled: true, ...assembly, inspection, fingerprint, validationFingerprint };
 }

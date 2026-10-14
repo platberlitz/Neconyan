@@ -760,7 +760,7 @@ function renderHealth(root) {
     for (const job of view.health.jobs.slice(-5).reverse()) {
         health.append(node('p', 'mewmory-caption', (job.checkpoint ? 'Missed-details check' : 'Memory update') + ', messages '
             + (job.from + 1) + ' to ' + (job.through + 1) + ': '
-            + ({ processing: 'running', complete: 'done', failed: 'didn’t finish' }[job.status] || job.status)
+            + ({ processing: 'running', complete: 'done', failed: 'didn’t finish', superseded: 'restarted with the newer message text' }[job.status] || job.status)
             + (job.error ? '. ' + job.error : '')
             + (job.skipped ? '. ' + job.skipped + (job.skipped === 1 ? ' detail the model got wrong was' : ' details the model got wrong were')
                 + ' left out' + (job.skippedReasons?.length ? ', for example: ' + job.skippedReasons[0] : '.') : '')));

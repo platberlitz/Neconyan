@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { fail, hash, sourceFingerprint } from './core.js';
 import { readConfig } from './models.js';
-import { pendingSources, processBatch, processingVersion } from './processing.js';
+import { isStaleSourceError, pendingSources, processBatch, processingVersion } from './processing.js';
 import { loadCurrentState } from './sources.js';
 import { listStories, mutateState, readStateShared, statePath } from './store.js';
 
 const running = new Map();
 const MAX_RUNNING = 4;
+const STALE_SOURCE_RETRIES = 3;
 let wake = () => {};
 const atCapacity = (directories, automatic) => running.size >= MAX_RUNNING
     || (automatic && (running.size >= MAX_RUNNING - 1
@@ -51,13 +52,21 @@ async function run(directories, locator, branchId, job, signal, call) {
         Object.assign(current.processing, { status, error, errorStatus, finishedAt: Date.now() });
     }, undefined, { existingOnly: true });
     try {
-        do {
+        for (let staleRetries = 0; ;) {
             const current = readStateShared(directories, locator);
             if (signal.aborted || current.branchId !== branchId || current.processing?.id !== job.id) return;
             if (!current.enabled || (job.automatic && !readConfig(directories).autoUpdate)) break;
-            const state = await processBatch(directories, locator, { checkpoint: job.checkpoint, signal }, call);
-            if (!pendingSources(state, readConfig(directories), job).length) break;
-        } while (job.all && !signal.aborted);
+            let state;
+            try {
+                state = await processBatch(directories, locator, { checkpoint: job.checkpoint, signal }, call);
+                staleRetries = 0;
+            } catch (error) {
+                // Post-generation agents and trackers rewrite the reply just after it is saved; read the new text and go again.
+                if (signal.aborted || !isStaleSourceError(error) || ++staleRetries > STALE_SOURCE_RETRIES) throw error;
+                continue;
+            }
+            if (!job.all || signal.aborted || !pendingSources(state, readConfig(directories), job).length) break;
+        }
         finish(signal.aborted ? 'cancelled' : 'complete');
     } catch (error) {
         try {
