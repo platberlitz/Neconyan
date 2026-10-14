@@ -9,6 +9,7 @@ import { callLLMWithProfile } from './llm.js';
 import { injectPrompt } from './prompts.js';
 import { createPerceptualConflictReport } from './perceptual-conflicts.js';
 import { NARRATOR_VISUAL_ID, getNarratorVisual, setNarratorStyle } from './narrator-style.js';
+import { isExcludedSpeakerName } from './speaker-exclusions.js';
 import { GRADIENT_GENERATOR_ALGORITHM, advanceGradientGenerator, generateSeededGradient, normalizeGradientGenerator } from './seeded-gradient-generator.js';
 import { escapeHtml, generateQuietPrompt, getContext, power_user } from './st-api.js';
 import { characterColors, expandedCharacterRows, groupProfiles, setCharacterColors, setExpandedCharacterRows, setGroupProfiles, setSwapMode, settings, swapMode } from './state.js';
@@ -1998,7 +1999,7 @@ export function buildCharacterEntry(name, options = {}) {
     // Key on the same normalized identity the registry uses, otherwise the entry is
     // re-keyed or dropped by normalizeCharacterColors and recreated on the next pass.
     const trimmedName = normalizeRegistryIdentityName(String(name ?? ''));
-    if (!trimmedName || isReservedCharacterIdentity(trimmedName)) return { key: '', entry: null, remapped: false };
+    if (!trimmedName || isReservedCharacterIdentity(trimmedName) || isExcludedSpeakerName(trimmedName)) return { key: '', entry: null, remapped: false };
 
     const key = normalizeRegistryIdentity(trimmedName);
     const colorMode = options.colorMode === 'effective' ? 'effective' : 'base';

@@ -6,6 +6,7 @@ import { commit, repaintDomAfterCharacterDataChange } from './live-colors.js';
 import { applyThemeReadabilityAndBrightness, buildCharacterEntry, checkColorConflicts, deriveBaseColorFromEffectiveColor, getEntryEffectiveColor, setEntryFromEffectiveColor } from './palettes.js';
 import { NARRATOR_VISUAL_ID, getNarratorVisual, setTransientNarratorCount } from './narrator-style.js';
 import { getThoughtDelimiterSymbols } from './prompts.js';
+import { isExcludedCharacterEntry, isExcludedSpeakerName } from './speaker-exclusions.js';
 import { escapeHtml, escapeRegex, getContext } from './st-api.js';
 import { characterColors, isDomEngine, settings } from './state.js';
 import { HTML_RAW_OR_CODE_ELEMENTS, findHtmlTagRanges, isCompositeSpeakerLabel, normalizeAliases, normalizeGoogleFontName, normalizeHexColor, parseNameWithNicknames, splitCompositeSpeakerName, toast } from './utils.js';
@@ -259,6 +260,7 @@ export function processColorPairs(pairsString) {
             narratorSeen = true;
             continue;
         }
+        if (isExcludedSpeakerName(name)) continue;
         const existingKey = resolveCharacterKeyByNameOrAlias(name);
         const key = existingKey || nameKey;
         const canonicalName = existingKey ? characterColors[existingKey].name : name;
@@ -645,12 +647,12 @@ export function registerLookupAssignment(lookup, name, color, aliases = [], pres
     const normalizedName = normalizeRegistryIdentityName(name);
     const normalizedColor = normalizeHexColor(color, null);
     const canonicalKey = normalizeRegistryIdentity(normalizedName);
-    if (!canonicalKey || !normalizedColor) return;
+    if (!canonicalKey || !normalizedColor || isExcludedSpeakerName(normalizedName)) return;
     const assignment = { key: canonicalKey, name: normalizedName, color: normalizedColor, font: normalizeGoogleFontName(font) };
     const lookupNames = [normalizedName, ...normalizeAliases(aliases)];
     for (const lookupName of lookupNames) {
         const lookupKey = normalizeRegistryIdentity(lookupName);
-        if (!lookupKey) continue;
+        if (!lookupKey || isExcludedSpeakerName(lookupKey)) continue;
         if (preserveExisting && lookup.has(lookupKey)) continue;
         lookup.set(lookupKey, assignment);
     }
@@ -693,6 +695,12 @@ export function buildColorRenderingLookup(rawText = '') {
         }
         const [nameKey] = Array.from(names);
         const narrator = nameKey === 'narrator' ? getNarratorVisual(settings, applyThemeReadabilityAndBrightness) : null;
+        // The model may still colour a name the user marked as not a character;
+        // flag the colour so its font tags render in the surrounding text colour.
+        if (!narrator && isExcludedSpeakerName(nameKey)) {
+            colorToRendering.set(normalizedColor, { key: '', entry: null, excluded: true });
+            continue;
+        }
         const key = narrator ? NARRATOR_VISUAL_ID : resolveCharacterKeyByNameOrAlias(nameKey);
         const entry = narrator || (key && hasOwn(characterColors, key) ? characterColors[key] : null);
         if (entry) colorToRendering.set(normalizedColor, { key, entry });
@@ -703,6 +711,7 @@ export function buildColorRenderingLookup(rawText = '') {
     const narrator = getNarratorVisual(settings, applyThemeReadabilityAndBrightness);
     if (narrator) currentEntries.push([NARRATOR_VISUAL_ID, narrator]);
     for (const [key, entry] of currentEntries) {
+        if (key !== NARRATOR_VISUAL_ID && isExcludedCharacterEntry(entry)) continue;
         const color = normalizeHexColor(getEntryEffectiveColor(entry), null);
         if (!color || lockedColors.has(color) || ambiguousColors.has(color)) continue;
         const existing = colorToRendering.get(color);

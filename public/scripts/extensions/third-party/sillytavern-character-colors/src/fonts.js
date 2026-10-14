@@ -290,6 +290,8 @@ export function applyCustomFontsToFontTags(mesText, rawText = '') {
         if (rendering?.entry) {
             const displayColor = getVisualRenderState(rendering.entry, { target: 'chat' }).fallbackColor;
             if (applyOwnedStyle(fontEl, 'color', displayColor, PREVIEW_COLOR_STATE_ATTRIBUTE)) changed = true;
+        } else if (rendering?.excluded) {
+            if (applyOwnedStyle(fontEl, 'color', 'inherit', PREVIEW_COLOR_STATE_ATTRIBUTE)) changed = true;
         } else if (clearOwnedStyle(fontEl, 'color', PREVIEW_COLOR_STATE_ATTRIBUTE)) {
             changed = true;
         }
