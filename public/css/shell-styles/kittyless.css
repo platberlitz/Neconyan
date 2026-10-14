@@ -67,7 +67,7 @@
 :root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-home-actions { gap: 10px; margin-top: 16px; }
 
 :root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-home-actions > button,
-:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-cat-control:not(.neconyan-home-primary) {
+:root[data-sb-theme='kittyless'] body.neconyan:not(.sbterm) .neconyan-cat-control:not(.neconyan-home-primary, .menu_button_primary) {
     background: transparent;
     border: 1px solid var(--kittyless-line);
     box-shadow: none;

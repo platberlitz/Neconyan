@@ -1787,10 +1787,13 @@ body.neconyan #right-nav-panel .sb-character-library-secondary-actions {
     min-width: 0;
 }
 body.neconyan #right-nav-panel .sb-character-library-primary-actions {
-    padding: 0 0 10px;
-    border-bottom: 1px solid var(--neco-border);
+    grid-column: 2;
+    grid-row: 1;
+    padding: 0;
+    border: 0;
+    gap: 6px;
 }
-body.neconyan #right-nav-panel .sb-character-library-secondary-actions { padding-top: 10px; }
+body.neconyan #right-nav-panel .sb-character-library-secondary-actions { padding-top: 8px; }
 body.neconyan #right-nav-panel .sb-character-library-primary-actions > :is(#rm_button_create, #character_import_button, #rm_button_group_chats) {
     display: inline-flex;
     align-items: center;
@@ -1805,7 +1808,7 @@ body.neconyan #right-nav-panel .sb-character-library-primary-actions > :is(#rm_b
 }
 body.neconyan #right-nav-panel .sb-character-library-primary-actions > :is(#rm_button_create, #character_import_button, #rm_button_group_chats)[hidden] { display: none !important; }
 body.neconyan #right-nav-panel .sb-character-library-primary-actions > :is(#rm_button_create, #character_import_button, #rm_button_group_chats)::before { margin: 0; }
-body.neconyan #right-nav-panel .sb-character-library-primary-actions > :is(#rm_button_create, #character_import_button, #rm_button_group_chats) > span { display: inline; font-family: var(--mainFontFamily); font-size: 12px; font-weight: 500; }
+body.neconyan #right-nav-panel .sb-character-library-primary-actions > :is(#rm_button_create, #character_import_button, #rm_button_group_chats) > span { display: inline; font-family: var(--mainFontFamily); font-size: 12px; font-weight: 600; }
 body.neconyan #right-nav-panel .sb-character-library-primary-actions > #character_import_button {
     position: relative !important;
     width: auto !important;
@@ -1873,14 +1876,18 @@ body.neconyan #right-nav-panel #form_character_search_form {
 body.neconyan #right-nav-panel #character_search_bar { width: 100%; min-height: 44px; }
 body.neconyan #right-nav-panel #rm_print_characters_pagination {
     display: flex;
+    flex: 0 1 auto;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
-    margin: 10px 0;
+    gap: 6px;
+    min-width: 0;
+    max-width: 100%;
+    margin: 0;
     padding: 0;
 }
 body.neconyan #right-nav-panel #rm_print_characters_pagination > .paginationjs[hidden] { display: none !important; }
 body.neconyan #right-nav-panel #rm_print_characters_block {
+    container: character-list / inline-size;
     min-width: 0;
     overflow-x: hidden;
     overflow-y: auto;
@@ -1892,12 +1899,13 @@ body.neconyan #right-nav-panel #rm_characters_block {
     min-width: 0;
     min-height: 0;
     overflow: hidden;
+    background: var(--neco-surface);
 }
 body.neconyan #right-nav-panel #neconyan-character-library {
     flex: 0 0 auto;
     min-width: 0;
-    padding: 10px 12px;
-    border-radius: 12px;
+    padding: 8px 12px;
+    border-radius: 0;
     background: var(--neco-surface);
 }
 body.neconyan #right-nav-panel #rm_characters_block > #rm_print_characters_block {
@@ -2098,12 +2106,6 @@ body.neconyan #right-nav-panel #rm_group_chats_block .group_member_icon [data-ac
 body.neconyan #right-nav-panel #rm_group_chats_block #rm_group_top_bar .avatar,
 body.neconyan #right-nav-panel #rm_group_chats_block #rm_group_top_bar .avatar img { width: 64px !important; min-width: 64px !important; max-width: 64px !important; height: 64px !important; min-height: 64px !important; max-height: 64px !important; }
 
-@media (max-width: 768px) {
-    body.neconyan #right-nav-panel .sb-character-library-primary-actions { gap: 6px; }
-    body.neconyan #right-nav-panel .sb-character-library-primary-actions > :is(#rm_button_create, #character_import_button, #rm_button_group_chats) { flex: 1 1 auto; justify-content: center; }
-    body.neconyan #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) { padding: 8px; }
-    body.neconyan #right-nav-panel .sb-entity-action { flex: 1 1 10rem; justify-content: center; }
-}
 /* Use the bar width so pinned panels get compact controls too. */
 @container (max-width: 560px) {
     body.neconyan #right-nav-panel :is(.sb-character-commit-actions, .sb-group-commit-actions) { flex: 1 1 auto; flex-wrap: nowrap; }
@@ -3071,7 +3073,6 @@ body.neconyan #WorldInfo #sbwil-lorebooks-button { min-height: 44px; align-self:
 body.neconyan #neconyan-lorebook-library .neconyan-legacy-book-picker[hidden],
 body.neconyan #neconyan-lorebook-library[data-view='book'] .world_popup_action_group--select { display: none !important; }
 
-body.neconyan #right-nav-panel #rm_characters_block { background: var(--neco-surface); }
 body.neconyan .neconyan-tour-step-copy { padding: 12px 14px; border: 1px solid var(--neco-border); border-radius: 16px 16px 16px 4px; background: var(--neco-raised); }
 body.neconyan .neconyan-tour-step-copy p { margin: 8px 0 0; }
 body.neconyan .neconyan-tour-step-copy .neconyan-tour-speaker { margin: 0 0 6px; }
@@ -3086,7 +3087,6 @@ body.neconyan #neconyan-tour-coachmark.neconyan-tour-ending .neconyan-tour-coach
 body.neconyan #neconyan-tour-coachmark.neconyan-tour-ending .neconyan-tour-step-copy { position: relative; padding-right: 48px; }
 body.neconyan #rm_characters_block > .neconyan-native-page-heading { margin-bottom: 0; }
 body.neconyan #neconyan-character-library #character_search_bar { margin-top: 0; }
-body.neconyan #right-nav-panel #neconyan-character-library { padding: 8px 12px; border-radius: 0; }
 body.neconyan #right-nav-panel #neconyan-character-library #charListFixedTop {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -3094,17 +3094,15 @@ body.neconyan #right-nav-panel #neconyan-character-library #charListFixedTop {
     gap: 8px;
 }
 body.neconyan #right-nav-panel #neconyan-character-library #form_character_search_form { grid-column: 1; grid-row: 1; margin: 0; }
-body.neconyan #right-nav-panel #neconyan-character-library .sb-character-library-primary-actions { grid-column: 2; grid-row: 1; padding: 0; border: 0; gap: 6px; }
-body.neconyan #right-nav-panel #neconyan-character-library .sb-character-library-primary-actions > .neconyan-cat-control { padding: 8px 12px !important; min-height: 44px; border-radius: var(--neconyan-control-radius, 10px) !important; }
-body.neconyan #right-nav-panel #neconyan-character-library .sb-character-library-primary-actions > .neconyan-cat-control::before,
+body.neconyan #right-nav-panel #neconyan-character-library .sb-character-library-primary-actions > .neconyan-cat-control { padding: 8px 14px !important; min-height: 44px; border-radius: var(--neconyan-control-radius, 10px) !important; }
 body.neconyan #right-nav-panel #neconyan-character-library .sb-character-library-primary-actions > .neconyan-cat-control::after,
 body.neconyan #right-nav-panel #neconyan-character-library .sb-character-library-primary-actions .neconyan-whiskers { display: none; }
 /* Wrap so a wide pagination widget (hundreds of characters) drops under the filter summary instead of riding over it. */
-body.neconyan #right-nav-panel .neconyan-character-library-footer { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
-body.neconyan #right-nav-panel .neconyan-character-filters { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; }
-body.neconyan #right-nav-panel .neconyan-character-filters > summary { min-height: 44px; padding: 8px 0; }
+body.neconyan #right-nav-panel .neconyan-character-library-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+body.neconyan #right-nav-panel .neconyan-character-filters { flex: 1 1 auto; min-width: 0; padding: 0; border: 0; background: transparent; }
+body.neconyan #right-nav-panel .neconyan-character-filters[open] { flex: 1 1 100%; }
+body.neconyan #right-nav-panel .neconyan-character-filters > summary { min-height: 44px; padding: 8px 10px; }
 body.neconyan #right-nav-panel #neconyan-character-library .neconyan-native-library-hint { display: none; }
-body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination { flex: 0 1 auto; min-width: 0; max-width: 100%; margin: 0; gap: 6px; }
 body.neconyan #right-nav-panel #neconyan-character-library .rm_tag_controls { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 6px; }
 body.neconyan #right-nav-panel #neconyan-character-library .rm_tag_controls .tag {
     min-width: 44px; min-height: 44px; border: 1px solid var(--neco-border) !important;
@@ -3145,7 +3143,6 @@ body.neconyan #user-settings-block[data-sb-active-tab='included-tool'] .sb-shell
         gap: 6px;
         white-space: nowrap;
     }
-    body.neconyan #right-nav-panel .neconyan-character-library-footer .sb-character-library-primary-actions > :is(#rm_button_create, #character_import_button, #rm_button_group_chats)::before { display: inline-block; margin: 0; }
     body.neconyan #right-nav-panel .neconyan-character-library-footer .sb-character-library-primary-actions > :is(#rm_button_create, #character_import_button, #rm_button_group_chats) > span { display: inline; }
     body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination { display: contents; }
     body.neconyan #right-nav-panel #neconyan-character-library #rm_print_characters_pagination > .paginationjs { order: 0; flex: 0 0 auto; flex-wrap: nowrap; justify-content: flex-start; }

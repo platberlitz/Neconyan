@@ -124,7 +124,7 @@
     box-shadow: none;
 }
 
-:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) .neconyan-cat-control:not(.neconyan-home-primary) {
+:root[data-sb-theme='clean-minimal'] body.neconyan:not(.sbterm) .neconyan-cat-control:not(.neconyan-home-primary, .menu_button_primary) {
     background: var(--neco-surface);
     border: 1px solid var(--clean-line);
     box-shadow: none;

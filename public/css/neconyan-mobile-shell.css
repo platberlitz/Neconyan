@@ -2767,10 +2767,10 @@ html.sb-ios-keyboard-inset-active #right-nav-panel.openDrawer > .scrollableInner
     }
 
     #right-nav-panel.openDrawer #rm_print_characters_block :is(.character_name_block, .group_name_block) {
-        display: grid !important;
-        grid-template-columns: minmax(0, 1fr);
+        display: flex !important;
+        flex-wrap: nowrap;
         align-items: center;
-        gap: 1px;
+        gap: 6px;
         min-width: 0;
         margin: 0;
     }
