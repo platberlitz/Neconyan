@@ -7,7 +7,35 @@ export function isEchoMessage(message, windowRef = window, documentRef = documen
 }
 
 const properties = ['cat-top', 'cat-left', 'plate-top', 'plate-left', 'plate-width', 'plate-height', 'clearance'];
-let headerObserver;
+let headerObserver, rowObserver, scrollChat = null, scrollFrame = 0;
+const visibleRows = new Set();
+// A scroll can carry the header sentinel from above the chat to below it without the
+// sentinel observer seeing a crossing, so rows on screen are rechecked once per scrolled frame.
+function onEchoChatScroll() {
+    if (scrollFrame) return;
+    scrollFrame = requestAnimationFrame(() => {
+        scrollFrame = 0;
+        for (const row of visibleRows) refreshEchoHeader(row);
+    });
+}
+function watchEchoRow(message) {
+    const chat = document.getElementById('chat');
+    if (!rowObserver) rowObserver = new IntersectionObserver(entries => {
+        for (const entry of entries) {
+            if (!entry.isIntersecting) { visibleRows.delete(entry.target); continue; }
+            visibleRows.add(entry.target); refreshEchoHeader(entry.target);
+        }
+    }, { root: chat, threshold: 0 });
+    if (chat && scrollChat !== chat) {
+        scrollChat?.removeEventListener('scroll', onEchoChatScroll);
+        scrollChat = chat; chat.addEventListener('scroll', onEchoChatScroll, { passive: true });
+    }
+    rowObserver.observe(message);
+}
+function unwatchEchoRow(message) {
+    rowObserver?.unobserve(message);
+    visibleRows.delete(message);
+}
 export function refreshEchoHeader(message) {
     if (!message?.isConnected) return;
     const sentinel = message.querySelector(':scope > .nn-echo-header-bottom');
@@ -31,6 +59,7 @@ export function clearEchoMessage(message) {
     message.querySelector(':scope > .nn-echo-header-plate')?.remove();
     const sentinel = message.querySelector(':scope > .nn-echo-header-bottom');
     if (sentinel) { headerObserver?.unobserve(sentinel); sentinel.remove(); }
+    unwatchEchoRow(message);
     clearEchoFooter(message);
 }
 function clearEchoFooter(message) {
@@ -88,6 +117,9 @@ function measureEchoFooter(message, text, windowRef, enabled) {
 export function disposeEchoLayout(chat) {
     for (const message of chat.querySelectorAll?.(':scope > .mes.nn-echo-layout') || []) clearEchoMessage(message);
     headerObserver?.disconnect(); headerObserver = null;
+    rowObserver?.disconnect(); rowObserver = null; visibleRows.clear();
+    scrollChat?.removeEventListener('scroll', onEchoChatScroll); scrollChat = null;
+    if (scrollFrame) { cancelAnimationFrame(scrollFrame); scrollFrame = 0; }
 }
 export function measureEchoMessage(message) {
     if (!message) return;
@@ -107,6 +139,7 @@ export function measureEchoMessage(message) {
         message.querySelector(':scope > .nn-echo-header-plate')?.remove();
         const sentinel = message.querySelector(':scope > .nn-echo-header-bottom');
         if (sentinel) { headerObserver?.unobserve(sentinel); sentinel.remove(); }
+        unwatchEchoRow(message);
     }
     const text = message.querySelector(':scope > .mes_block > .mes_text');
     if (!text) return;
@@ -142,6 +175,7 @@ export function measureEchoMessage(message) {
             sentinel = document.createElement('span'); sentinel.className = 'nn-echo-header-bottom';
             sentinel.setAttribute('aria-hidden', 'true'); message.append(sentinel); headerObserver.observe(sentinel);
         }
+        watchEchoRow(message);
         refreshEchoHeader(message);
     }
 }
