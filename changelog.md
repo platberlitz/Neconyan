@@ -3,6 +3,7 @@
 ## v1.3.3
 
 ### Merged Staging PRs
+- PR #160 (2026-10-14) `fix(i18n): translate error pages and improve language selection`
 - PR #161 (2026-10-13) `fix(i18n): translate composed error messages`
 - PR #162 (2026-10-13) `fix(i18n): translate the rewritten error messages into Portuguese`
 - PR #163 (2026-10-13) `fix(i18n): translate the rewritten error messages into Italian`
