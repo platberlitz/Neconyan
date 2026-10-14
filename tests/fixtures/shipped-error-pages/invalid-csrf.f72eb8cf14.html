@@ -4,7 +4,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Unauthorized</title>
+    <title>Session expired</title>
     <style>
         :root { color-scheme: dark; }
         * { box-sizing: border-box; }
@@ -77,15 +77,15 @@
         <div class="stage">
             <img class="flip" src="/img/neconyan-pixel-cat.webp" alt="A pixel cat doing a backflip" width="208" height="192">
         </div>
-        <h1>Unauthorized</h1>
-        <p class="lead">This Neconyan is behind a login. Here is how to get back in.</p>
+        <h1>Session expired</h1>
+        <p class="lead">Neconyan sent back an invalid CSRF token, so the page's saved token went stale. Reloading usually fixes it; the steps below cover the rest.</p>
         <ol>
-            <li><b>1</b><span>When the browser asks, enter the username and password from <code>basicAuthUser</code> in <code>config.yaml</code>. Cancel the prompt to see this page.</span></li>
-            <li><b>2</b><span>Still refused? Re-type them. Both values are case sensitive and may contain spaces or symbols.</span></li>
-            <li><b>3</b><span>Forgot them? On the server, edit <code>config.yaml</code>, set new values, then run <code>sudo systemctl restart neconyan</code>.</span></li>
-            <li><b>4</b><span>Stuck in a loop or seeing an old page? Clear this site's cookies and cached data, or try a private window.</span></li>
-            <li><b>5</b><span>Wrong address? Open the exact URL you normally use, for example <code>https://neconyan.purabunny.cc</code>.</span></li>
-            <li><b>6</b><span>Several wrong tries in a row? Wait a minute for the rate limit to reset, then try again.</span></li>
+            <li><b>1</b><span>Reload the page first. Neconyan repairs a stale token by itself, so a plain refresh often lands you right back in.</span></li>
+            <li><b>2</b><span>Still refused after reloading? Close this tab and open the site again: a long-lived tab can keep an old token, reported to the server as <code>Invalid CSRF token</code>.</span></li>
+            <li><b>3</b><span>Every page failing? Clear this site's cookies and cached data, or try a private window, then log in again.</span></li>
+            <li><b>4</b><span>Still failing in every browser? On the server, run <code>sudo systemctl restart neconyan</code> to mint fresh server state.</span></li>
+            <li><b>5</b><span>Old bookmark? Open the exact URL you normally use, for example <code>https://neconyan.purabunny.cc</code>.</span></li>
+            <li><b>6</b><span>An extension or script blocking requests? Disable it for this site and reload once more.</span></li>
         </ol>
         <footer>Neconyan</footer>
     </main>

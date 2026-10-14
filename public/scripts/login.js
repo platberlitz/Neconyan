@@ -1,8 +1,60 @@
 /**
+ * Starts loading the translation of this page at once, in parallel with the page's own requests. It is loaded with a
+ * dynamic import so that a missing script or dictionary can never stop sign-in. Whatever happens, this resolves to a
+ * function that translates a message, and only displayError waits for it.
+ * @type {Promise<(message: string) => string>}
+ */
+let activeTranslation = message => message;
+const pageTranslation = import('./page-locale.js')
+    .then(async ({ translateText, rememberPageCaptions, addLanguageOptions, effectiveLanguagePreference, saveLanguagePreference, loadPageDictionary, localisePage }) => {
+        const restoreEnglish = rememberPageCaptions(document);
+        const selector = document.getElementById('loginLanguage');
+        let generation = 0;
+        let requestedPreference = effectiveLanguagePreference() || 'browser';
+        async function changeLanguage(preference) {
+            const current = ++generation;
+            const result = await loadPageDictionary(preference);
+            if (current !== generation) return;
+            restoreEnglish();
+            // Applying only after the generation check prevents a late dictionary from undoing a newer choice.
+            localisePage(document, result.dictionary);
+            document.documentElement.lang = result.locale;
+            activeTranslation = message => translateText(result.dictionary, message);
+            $('#errorMessage').text(activeTranslation(shownError));
+            const browserOption = selector.querySelector('option[value="browser"]');
+            browserOption.textContent = activeTranslation('Follow browser');
+        }
+        selector.value = ['browser', 'en'].includes(requestedPreference) ? requestedPreference : 'browser';
+        selector.addEventListener('change', () => {
+            requestedPreference = selector.value;
+            saveLanguagePreference(requestedPreference);
+            void changeLanguage(requestedPreference);
+        });
+        // The selector itself remains usable even if its list or a dictionary cannot be fetched.
+        const list = fetch('/locales/lang.json', { credentials: 'same-origin' })
+            .then(response => response.ok ? response.json() : [])
+            .then(languages => {
+                addLanguageOptions(selector, languages);
+                selector.value = [...selector.options].some(option => option.value === requestedPreference) ? requestedPreference : 'en';
+            }).catch(error => console.warn('Sign-in language list unavailable:', error));
+        await changeLanguage(requestedPreference);
+        await list;
+        return message => activeTranslation(message);
+    })
+    .catch(error => {
+        console.warn('Sign-in page translation unavailable:', error);
+        return message => message;
+    });
+
+const ACCOUNTS_ERROR = 'Could not load your accounts. Refresh to try again.';
+const SIGN_IN_PAGE_ERROR = 'Could not load the sign-in page. Refresh to try again.';
+
+/**
  * CRSF token for requests.
  */
 let csrfToken = '';
 let discreetLogin = false;
+let shownError = '';
 
 /**
  * Gets a CSRF token from the server.
@@ -36,7 +88,7 @@ async function getUserList() {
 
     if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Could not load your accounts. Refresh to try again.');
+        throw new Error(errorData.error || ACCOUNTS_ERROR);
     }
 
     if (response.status === 204) {
@@ -59,7 +111,7 @@ async function getAuthStatus() {
         credentials: 'same-origin',
     });
     if (!response.ok) {
-        throw new Error('Could not load the sign-in page. Refresh to try again.');
+        throw new Error(SIGN_IN_PAGE_ERROR);
     }
     return response.json();
 }
@@ -154,7 +206,7 @@ async function performLogin(handle, password) {
         }
     } catch (error) {
         console.error('Error logging in:', error);
-        displayError(String(error));
+        displayError('Could not reach the server. Refresh to try again.');
     }
 }
 
@@ -321,11 +373,19 @@ async function onUserSelected(user) {
 }
 
 /**
- * Displays an error message to the user.
+ * Displays an error message to the user at once, then in the page's language when its dictionary is there.
  * @param {string} message Error message
  */
 function displayError(message) {
+    shownError = message;
     $('#errorMessage').text(message);
+    if (!message) return;
+    pageTranslation.then(translate => {
+        const translated = translate(message);
+        if (shownError === message && translated !== message) {
+            $('#errorMessage').text(translated);
+        }
+    });
 }
 
 /**

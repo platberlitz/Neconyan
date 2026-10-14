@@ -1,0 +1,8 @@
+{
+    "Forbidden": "«de» Verboten",
+    "If you run this Neconyan, add your IP address (the number that identifies your internet connection) to the allowed list, or turn the allowed list off, by editing ${0} in the main Neconyan folder. The allowed list is called the whitelist in that file.": "«de» Bearbeiten Sie ${0} im Hauptordner von Neconyan, um Ihre IP-Adresse in die Liste der erlaubten Adressen aufzunehmen oder die Liste auszuschalten.",
+    "This connection from ${0} was blocked. The attempt was logged.": "«de» Die Verbindung von ${0} wurde blockiert.",
+    "This connection from ${0} (forwarded from ${1}) was blocked. The attempt was logged.": "«de» Von ${1} weitergeleitet: die Verbindung von ${0} wurde blockiert.",
+    "If you run this Neconyan, add the address you typed to open it (the hostname, such as a site name) to the allowed host list in ${0}, or turn host checking off there. The file is in the main Neconyan folder.": "«de» Dieser Wert hat sein Loch verloren.",
+    "This connection is not secure, so Neconyan cannot be opened from another computer yet. Ask the person running Neconyan to turn on HTTPS (the secure, padlock address) in config.yaml, then reload.": "«de» Diese Verbindung ist nicht sicher. Bitte HTTPS in config.yaml einschalten, dann neu laden."
+}

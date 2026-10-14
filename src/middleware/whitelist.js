@@ -2,12 +2,12 @@ import path from 'node:path';
 import fs from 'node:fs';
 import process from 'node:process';
 import dns from 'node:dns';
-import Handlebars from 'handlebars';
 import ipMatching from 'ip-matching';
 import isDocker from 'is-docker';
 
 import { filterValidIpPatterns, getIpFromRequest, getRealOrForwardedIp } from '../express-common.js';
-import { color, getConfigValue, safeReadFileSync } from '../util.js';
+import { color, getConfigValue } from '../util.js';
+import { sendBlockedPage } from '../error-pages.js';
 
 const whitelistPath = path.join(process.cwd(), './whitelist.txt');
 const enableForwardedWhitelist = !!getConfigValue('enableForwardedWhitelist', false, 'boolean');
@@ -55,10 +55,6 @@ async function addDockerHostsToWhitelist() {
  * @returns {Promise<import('express').RequestHandler>} Promise that resolves to the middleware function
  */
 export default async function getWhitelistMiddleware() {
-    const forbiddenWebpage = Handlebars.compile(
-        safeReadFileSync(path.join(globalThis.DATA_ROOT, '_errors', 'forbidden-by-whitelist.html')) ?? '',
-    );
-
     const noLogPaths = [
         '/favicon.ico',
     ];
@@ -97,7 +93,7 @@ export default async function getWhitelistMiddleware() {
                 );
             }
 
-            return res.status(403).send(forbiddenWebpage({ ipDetails }));
+            return sendBlockedPage(req, res, 'forbidden-by-whitelist.html', { ipDetails, clientIp, forwardedIp: forwardedIp || '' });
         }
         next();
     };

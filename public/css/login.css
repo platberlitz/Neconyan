@@ -52,7 +52,7 @@ p { line-height: 1.5; color: var(--login-muted); }
 
 #userList { display: grid; gap: 10px; padding: 0; list-style: none; }
 
-button, input, label { font: inherit; }
+button, input, select, label { font: inherit; }
 
 button {
     min-height: 44px;
@@ -71,7 +71,7 @@ button:active { filter: brightness(0.92); }
 
 button:disabled { opacity: 0.6; cursor: wait; }
 
-button:focus-visible, input:focus-visible {
+button:focus-visible, input:focus-visible, select:focus-visible {
     outline: 3px solid var(--login-ginger);
     outline-offset: 3px;
 }
@@ -112,7 +112,7 @@ label {
     margin: 18px 0 8px;
 }
 
-input {
+input, select {
     display: block;
     width: 100%;
     min-height: 48px;

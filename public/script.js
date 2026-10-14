@@ -293,7 +293,7 @@ import {
     formatInstructModeStoryString,
     getInstructStoppingSequences,
 } from './scripts/instruct-mode.js';
-import { initLocales, t } from './scripts/i18n.js';
+import { initLocales, showLanguageChoicePrompt, t } from './scripts/i18n.js';
 import { getFriendlyTokenizerName, getTokenCount, getTokenCountAsync, initTokenizers, saveTokenCache } from './scripts/tokenizers.js';
 import {
     user_avatar,
@@ -1321,7 +1321,8 @@ async function firstLoadInit() {
         await getClientVersion();
         await initSecrets();
         await readSecretState();
-        await initLocales();
+        const initialSettingsData = await requestSettingsData();
+        await initLocales(initialSettingsData);
         // The top bar was first built before the translations loaded, and its title is protected from the localiser, so rebuild its label now.
         globalThis.NeconyanShell?.refreshTopBarLabel?.();
         initChatUtilities();
@@ -1339,7 +1340,7 @@ async function firstLoadInit() {
         await initSystemMessages();
         // Settings and extensions count prompts during startup. Load their saved cache first.
         await initTokenizers();
-        await getSettings(initLoaderHandle);
+        await getSettings(initLoaderHandle, initialSettingsData);
         await checkOpenRouterAuth();
         initKeyboard();
         initDynamicStyles();
@@ -1379,6 +1380,7 @@ async function firstLoadInit() {
         await eventSource.emit(event_types.APP_INITIALIZED);
         await fixViewport();
         await eventSource.emit(event_types.APP_READY);
+        void showLanguageChoicePrompt().catch(error => console.warn('Language choice unavailable.', error));
         const { initChatNavigation } = await import('./scripts/chat-navigation.js');
         await initChatNavigation();
         initMewmory();
@@ -13082,7 +13084,7 @@ async function promptSettingsConflictReload() {
 
 //MARK: getSettings()
 ///////////////////////////////////////////
-export async function getSettings(initLoaderHandle = null) {
+async function requestSettingsData() {
     const response = await fetch('/api/settings/get', {
         method: 'POST',
         headers: getRequestHeaders(),
@@ -13096,7 +13098,11 @@ export async function getSettings(initLoaderHandle = null) {
         throw new Error('Error getting settings');
     }
 
-    const data = await response.json();
+    return response.json();
+}
+
+export async function getSettings(initLoaderHandle = null, initialData = null) {
+    const data = initialData ?? await requestSettingsData();
     if (data.result != 'file not find' && data.settings) {
         const conversationSync = await import('./scripts/neconyan-conversation/store-sync.js');
         conversationSync.bindConversationAccount(data.inChatAgentAccount);

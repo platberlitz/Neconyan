@@ -4,7 +4,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Session expired</title>
+    <title data-i18n="Session expired">Session expired</title>
     <style>
         :root { color-scheme: dark; }
         * { box-sizing: border-box; }
@@ -70,22 +70,23 @@
             .flip { animation: none; }
         }
     </style>
+    <script type="module">import { startPageLocale } from '/scripts/page-locale.js'; startPageLocale();</script>
 </head>
 
 <body>
     <main>
         <div class="stage">
-            <img class="flip" src="/img/neconyan-pixel-cat.webp" alt="A pixel cat doing a backflip" width="208" height="192">
+            <img class="flip" src="/img/neconyan-pixel-cat.webp" alt="A pixel cat doing a backflip" data-i18n="[alt]A pixel cat doing a backflip" width="208" height="192">
         </div>
-        <h1>Session expired</h1>
-        <p class="lead">This page is holding an old security code (a token that proves a request came from you), so Neconyan turned the request away. Reloading usually fixes it; the steps below cover the rest.</p>
+        <h1 data-i18n="Session expired">Session expired</h1>
+        <p class="lead" data-i18n-compose="This page is holding an old security code (a token that proves a request came from you), so Neconyan turned the request away. Reloading usually fixes it; the steps below cover the rest.">This page is holding an old security code (a token that proves a request came from you), so Neconyan turned the request away. Reloading usually fixes it; the steps below cover the rest.</p>
         <ol>
-            <li><b>1</b><span>Reload the page first. Neconyan replaces the old code by itself, so a plain refresh often gets you straight back in.</span></li>
-            <li><b>2</b><span>Still refused after reloading? Close this tab and open the site again. A tab that has been open for a long time can keep the old code, and the server reports that as <code>Invalid CSRF token</code>.</span></li>
-            <li><b>3</b><span>Every page failing? Clear this site's cookies and cached data, or try a private window, then log in again.</span></li>
-            <li><b>4</b><span>Still failing in every browser? On the server, run <code>sudo systemctl restart neconyan</code> to restart Neconyan.</span></li>
-            <li><b>5</b><span>Old bookmark? Open the exact URL you normally use, for example <code>https://neconyan.purabunny.cc</code>.</span></li>
-            <li><b>6</b><span>An extension or script blocking requests? Disable it for this site and reload once more.</span></li>
+            <li><b>1</b><span data-i18n="Reload the page first. Neconyan replaces the old code by itself, so a plain refresh often gets you straight back in.">Reload the page first. Neconyan replaces the old code by itself, so a plain refresh often gets you straight back in.</span></li>
+            <li><b>2</b><span data-i18n-compose="Still refused after reloading? Close this tab and open the site again. A tab that has been open for a long time can keep the old code, and the server reports that as ${0}.">Still refused after reloading? Close this tab and open the site again. A tab that has been open for a long time can keep the old code, and the server reports that as <code>Invalid CSRF token</code>.</span></li>
+            <li><b>3</b><span data-i18n="Every page failing? Clear this site's cookies and cached data, or try a private window, then log in again.">Every page failing? Clear this site's cookies and cached data, or try a private window, then log in again.</span></li>
+            <li><b>4</b><span data-i18n-compose="Still failing in every browser? On the server, run ${0} to restart Neconyan.">Still failing in every browser? On the server, run <code>sudo systemctl restart neconyan</code> to restart Neconyan.</span></li>
+            <li><b>5</b><span data-i18n-compose="Old bookmark? Open the exact URL you normally use, for example ${0}.">Old bookmark? Open the exact URL you normally use, for example <code>https://neconyan.purabunny.cc</code>.</span></li>
+            <li><b>6</b><span data-i18n="An extension or script blocking requests? Disable it for this site and reload once more.">An extension or script blocking requests? Disable it for this site and reload once more.</span></li>
         </ol>
         <footer>Neconyan</footer>
     </main>
