@@ -895,15 +895,17 @@ test.describe('S4 the app chooses its language from ordinary browser settings', 
         await english.close();
 
         const unknown = await openApp(browser, app, { locale: 'de', stored: 'xx-yy' });
-        expect(await languageState(unknown.page)).toEqual({ locale: 'xx-yy', lang: 'xx-yy' });
+        // An unknown stored value falls back to English, the rule tests/language-choice.node.js pins.
+        expect(await languageState(unknown.page)).toEqual({ locale: 'en', lang: 'en' });
         expect(await languageLabel(unknown.page)).toBe('Language:');
         await unknown.close();
     });
 
-    test('C8-S4-6 English and unsupported browser languages keep English and the requested tag', async ({ browser }) => {
-        for (const [locale, tag] of [['en-GB', 'en-gb'], ['nb-NO', 'nb-no']]) {
+    test('C8-S4-6 English and unsupported browser languages keep English', async ({ browser }) => {
+        // Tags without a dictionary use English, as tests/language-choice.node.js pins.
+        for (const locale of ['en-GB', 'nb-NO']) {
             const { page, close, requests } = await openApp(browser, app, { locale });
-            expect(await languageState(page), locale).toEqual({ locale: tag, lang: tag });
+            expect(await languageState(page), locale).toEqual({ locale: 'en', lang: 'en' });
             expect(await languageLabel(page), locale).toBe('Language:');
             expect(dictionaryFiles(requests), `${locale}: no dictionary file requested`).toEqual([]);
             await close();
@@ -912,7 +914,7 @@ test.describe('S4 the app chooses its language from ordinary browser settings', 
         for (const channel of await profileChannels()) {
             const { page, close, requests, response } = await openApp(browser, app, { profileLanguages: list, channel });
             await expectMeasuredBrowser(page, response, list, channel);
-            expect(await languageState(page), channel).toEqual({ locale: 'en-gb', lang: 'en-gb' });
+            expect(await languageState(page), channel).toEqual({ locale: 'en', lang: 'en' });
             expect(await languageLabel(page), channel).toBe('Language:');
             expect(dictionaryFiles(requests), `${channel}: no dictionary file requested`).toEqual([]);
             await close();
