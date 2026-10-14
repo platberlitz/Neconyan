@@ -5,6 +5,7 @@ import path from 'node:path';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const promptManagerSource = readFileSync(path.join(repoRoot, 'public', 'scripts', 'PromptManager.js'), 'utf8');
+const openaiSource = readFileSync(path.join(repoRoot, 'public', 'scripts', 'openai.js'), 'utf8');
 
 function getMethodSource(name) {
     const markers = [`\n    ${name}(`, `\n    async ${name}(`];
@@ -124,5 +125,14 @@ describe('prompt manager lifecycle wiring', () => {
         expect(promptListClearIndex).toBeGreaterThan(promptListGuardIndex);
         expect(promptListRenderSource).toContain('return false;');
         expect(promptListRenderSource).toContain('return true;');
+    });
+
+    test('renders the Chat Completion prompt manager after initial setup', () => {
+        const setupSource = openaiSource.match(/^function setupChatCompletionPromptManager\([\s\S]*?^}/m)?.[0] || '';
+        const initIndex = setupSource.indexOf('promptManager.init(configuration, openAiSettings);');
+        const initialRenderIndex = setupSource.indexOf('promptManager.render(false);', initIndex);
+
+        expect(initIndex).toBeGreaterThanOrEqual(0);
+        expect(initialRenderIndex).toBeGreaterThan(initIndex);
     });
 });

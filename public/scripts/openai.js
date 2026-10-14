@@ -830,6 +830,7 @@ function setupChatCompletionPromptManager(openAiSettings) {
     promptManager.tokenHandler = tokenHandler;
 
     promptManager.init(configuration, openAiSettings);
+    promptManager.render(false);
 
     return promptManager;
 }
