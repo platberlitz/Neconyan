@@ -148,8 +148,8 @@ export function createRestoreSnapshot() {
     return restore;
 }
 
-export function showUndoToast(message, restoreFn) {
-    if (settings.disableToasts) return;
+export function showUndoToast(message, restoreFn, { always = false } = {}) {
+    if (settings.disableToasts && !always) return;
     if (!toastr?.info) return;
     restoreFn?.capture?.();
     toastr.info(`${message} Click this toast to undo.`, 'Undo Available', {

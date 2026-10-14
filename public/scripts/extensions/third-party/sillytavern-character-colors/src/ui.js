@@ -11,6 +11,7 @@ import { getColorVisionSimulationForTarget, getGradientRenderState, getVisualRen
 import { BUILTIN_GRADIENT_PRESETS, DEFAULT_GRADIENT_ANGLE, DEFAULT_GRADIENT_DURATION, DEFAULT_GRADIENT_POSITION, GRADIENT_TYPES, MAX_GRADIENT_STOPS, cloneGradient, getBuiltInGradientPreset, getGradientSignature, normalizeGradient, normalizeGradientPresetName } from './gradients.js';
 import { GROUP_PROFILE_AUTOMATION_KEYS, deleteGroupProfile, getGroupProfile, isReservedCharacterIdentity, normalizeGroupKey, normalizeGroupName, normalizeRegistryIdentity, normalizeRegistryIdentityName, renameGroupProfile, setGroupProfile } from './group-profiles.js';
 import { createRestoreSnapshot, redo, saveHistory, showUndoToast, undo } from './history.js';
+import { applyChatColorMarkupCleanup } from './message-cleanup.js';
 import { applyFastColorUiUpdates, applyLiveColorChangesFromSnapshot, applyToolCallMessageRepair, areChatBindingsEqual, captureChatBinding, captureEffectiveColorSnapshot, colorizeMessages, commit, flushChatSave, flushColorStateSave, queueColorStateSave, recolorAllMessages, repaintDomAfterCharacterDataChange } from './live-colors.js';
 import { populateProfileDropdown } from './llm.js';
 import { getTransientNarratorCount, getNarratorVisual, normalizeNarratorStyle, setNarratorStyle } from './narrator-style.js';
@@ -4654,6 +4655,7 @@ function buildSettingsPanelHtml() {
                     <div class="dc-action-block dc-dom-only" style="display:none;"><span><strong>Review suggestions</strong><small>Review verifier changes one dialogue segment at a time.</small></span><div class="dc-action-control"><button id="dc-review-attr" class="menu_button">Review suggestions (0)</button><span id="dc-review-attr-status" class="dc-visually-hidden" role="status" aria-live="polite">0 review suggestions.</span></div></div>
                     <div class="dc-action-block"><span><strong class="dc-llm-only">Recolor saved tags</strong><strong class="dc-dom-only" style="display:none;">Refresh local colors</strong><small class="dc-llm-only">Rewrite existing color tags across the entire chat.</small><small class="dc-dom-only" style="display:none;">Reapply current styles to rendered dialogue.</small></span><button id="dc-recolor" class="menu_button dc-primary-button">Recolor entire chat</button></div>
                     <div class="dc-action-block"><span><strong>Repair tool calls</strong><small>Undo color tags older versions added to tool-call messages.</small></span><button id="dc-repair-tool-calls" class="menu_button dc-primary-button">Repair</button></div>
+                    <div class="dc-action-block"><span><strong>Clean messages</strong><small>Remove [COLORS] lines from every message and swipe, and optionally the color tags too. You can undo it.</small></span><div class="dc-action-control"><select id="dc-clean-target" class="text_pole" aria-label="What to remove"><option value="lines">Color lines</option><option value="all">Color lines and tags</option></select><button id="dc-clean-messages" class="menu_button dc-primary-button">Clean</button></div></div>
                     <div class="dc-action-block"><span><strong>List tools</strong><small>Inspect activity or clear every unpinned entry.</small></span><div class="dc-action-control"><button id="dc-stats" class="menu_button">Statistics</button><button id="dc-clear" class="menu_button dc-danger-button">Clear unpinned</button></div></div>
                 </div>
             </details>
@@ -5512,6 +5514,41 @@ function bindSettingsPanelControls($) {
         } finally {
             // Recompute from aria-busy + enabled state so the shared refresh
             // keeps the button disabled while the extension is off.
+            button.removeAttribute('aria-busy');
+            syncProcessControlState();
+        }
+    };
+    $('dc-clean-messages').onclick = async e => {
+        const button = e.currentTarget;
+        const fontTags = $('dc-clean-target').value === 'all';
+        const chatBinding = captureChatBinding();
+        const confirmed = await confirmReviewedAction({
+            title: fontTags ? 'Remove color lines and color tags from every message?' : 'Remove color lines from every message?',
+            description: fontTags
+                ? 'Every [COLORS] line and every font color tag is removed from character messages and their swipes. The words stay the same. You can undo this from the toast that follows.'
+                : 'Every [COLORS] line is removed from character messages and their swipes. Color tags around dialogue stay. You can undo this from the toast that follows.',
+            confirmLabel: fontTags ? 'Remove lines and tags' : 'Remove lines',
+            danger: true,
+            opener: button,
+        });
+        if (!confirmed) return;
+        if (!isUiChatBindingCurrent(chatBinding)) {
+            notifyUiContextChanged('The active chat changed. Review the cleanup again.');
+            return;
+        }
+        button.setAttribute('aria-busy', 'true');
+        syncProcessControlState();
+        try {
+            const report = await applyChatColorMarkupCleanup({ fontTags });
+            if (report.undo) {
+                const swipeText = report.swipeCount ? ` (${report.swipeCount} swipe${report.swipeCount === 1 ? '' : 's'})` : '';
+                // Whole-chat edits keep their undo even when routine toasts are reduced.
+                showUndoToast(`Cleaned ${report.messageCount} message${report.messageCount === 1 ? '' : 's'}${swipeText}.`, () => { void report.undo(); }, { always: true });
+            }
+        } catch (error) {
+            console.error('[Dialogue Colors] Message cleanup failed:', error);
+            toast.error('Could not clean the messages. See the browser console for details.');
+        } finally {
             button.removeAttribute('aria-busy');
             syncProcessControlState();
         }
