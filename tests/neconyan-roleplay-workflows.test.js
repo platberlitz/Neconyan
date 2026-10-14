@@ -21,6 +21,7 @@ const observers = new Map();
 const previews = new Map();
 const saved = [];
 const reloads = [];
+const readingAnchors = [];
 const activations = [];
 let settingsPending = false;
 let generating = false;
@@ -96,6 +97,7 @@ jest.unstable_mockModule('../public/script.js', () => ({
     },
     saveChatConditional: async options => { saved.push(options); await chatSaveHandler?.(); return true; },
     saveSettings,
+    keepChatReadingPositionOnNextLoad: anchor => { readingAnchors.push(anchor); },
     reloadCurrentChat: async () => { reloads.push(chat.length); await reloadHandler?.(); },
     isGenerating: () => generating,
     get isChatSaving() { return chatSaving; },
@@ -143,6 +145,7 @@ beforeEach(() => {
     requests.length = 0;
     saved.length = 0;
     reloads.length = 0;
+    readingAnchors.length = 0;
     activations.length = 0;
     observers.clear();
     previews.clear();
@@ -232,6 +235,19 @@ test('a named continuation anchors the last block, saves the chat first and reso
     expect(outcome).toMatchObject({ native: true, name: 'roleplay.continue', jobId: 'job-1', state: 'closed' });
     expect(reloads).toEqual([2]);
     expect(activations).toEqual(['busy', 'idle']);
+});
+
+test('a finished reply hands the reader\'s place to the reload and clears it afterwards', async () => {
+    let anchorsDuringReload = null;
+    reloadHandler = () => { anchorsDuringReload = [...readingAnchors]; };
+    const pending = workflows.runNativeRoleplayGeneration('continue', { maxOutputTokens: 240 });
+    await settle();
+    await observers.get('job-1').onStop('done');
+    await pending;
+    // Without a page there is no live reply to hold, so the reload keeps its usual landing.
+    expect(anchorsDuringReload).toEqual([null]);
+    expect(readingAnchors).toEqual([null, null]);
+    expect(reloads).toEqual([2]);
 });
 
 test('a reply anchors the whole chat, so the user message just written is the one the server answers', async () => {

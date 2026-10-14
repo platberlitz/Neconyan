@@ -2665,6 +2665,53 @@ function restoreVisibleChatMessageAnchor(anchor) {
     restoreVisibleMessageAnchor(chatElement[0], anchor);
 }
 
+let chatReloadReadingAnchor = null;
+
+/**
+ * Keep the reader's place through the next rebuild of this chat, instead of landing at the newest message.
+ * A finished reply is saved and the chat rebuilt, and that rebuild must not move the page.
+ * @param {{messageId: string|number, offsetTop: number}|null} anchor Message and its offset from the top of the chat.
+ */
+export function keepChatReadingPositionOnNextLoad(anchor) {
+    chatReloadReadingAnchor = anchor && Number.isFinite(anchor.offsetTop)
+        ? { messageId: String(anchor.messageId), offsetTop: anchor.offsetTop, chatId: getCurrentChatId() }
+        : null;
+}
+
+function takeChatReloadReadingAnchor() {
+    const anchor = chatReloadReadingAnchor;
+    chatReloadReadingAnchor = null;
+    return anchor && anchor.chatId === getCurrentChatId() ? anchor : null;
+}
+
+function holdChatReloadReadingAnchor(anchor, isCurrent) {
+    const chatNode = chatElement[0];
+    if (!isCurrent() || !chatNode?.querySelector(`.mes[mesid="${anchor.messageId}"]`)) return false;
+    clearChatLoadBottomLock();
+    mobileChatBottomPinUntil = 0;
+    restoreVisibleChatMessageAnchor(anchor);
+    // Companion cards and media settle after the rebuild; hold the place until the reader moves or sends.
+    const inputs = ['wheel', 'touchstart', 'pointerdown', 'keydown'];
+    let released = false;
+    const release = () => {
+        if (released) return;
+        released = true;
+        for (const type of inputs) chatNode.removeEventListener(type, release);
+    };
+    const hold = () => {
+        if (released) return;
+        if (!isCurrent() || is_send_press || isChatLoadBottomLockActive()) { release(); return; }
+        restoreVisibleChatMessageAnchor(anchor);
+    };
+    for (const type of inputs) chatNode.addEventListener(type, release, { passive: true });
+    let frames = 8;
+    const holdFrame = () => { hold(); if (!released && --frames > 0) requestAnimationFrame(holdFrame); };
+    requestAnimationFrame(holdFrame);
+    for (const delayMs of CHAT_LOAD_SCROLL_SETTLE_DELAYS_MS) setTimeout(hold, delayMs);
+    setTimeout(release, Math.max(...CHAT_LOAD_SCROLL_SETTLE_DELAYS_MS) + 1);
+    return true;
+}
+
 async function settleVisibleChatMessageAnchor(anchor, frames = 8, isCurrent = () => true) {
     const scrollVersion = chatScrollVersion;
     await settleVisibleMessageAnchor(chatElement[0], anchor, {
@@ -3508,6 +3555,7 @@ function captureChatRenderValidity() {
 
 export async function printMessages() {
     const isCurrent = captureChatRenderValidity();
+    const readingAnchor = takeChatReloadReadingAnchor();
     const count = getChatRenderWindowSize(power_user.chat_truncation);
     const startIndex = getChatRenderWindowStartIndex(chat.length, count);
 
@@ -3516,6 +3564,8 @@ export async function printMessages() {
     await redisplayChat({ startIndex, fade: false, pinBottomDuringRender: true, isCurrent });
     if (!isCurrent()) return;
     syncChatHistoryWindowControls();
+    // Restore before the next paint, so a rebuilt finished reply never shows the bottom first.
+    if (readingAnchor && holdChatReloadReadingAnchor(readingAnchor, isCurrent)) return;
 
     // Wait for next frame to ensure batch rendering completes
     const isHidden = typeof document !== 'undefined' && (document.hidden === true || document.visibilityState === 'hidden');

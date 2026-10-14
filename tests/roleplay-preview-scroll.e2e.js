@@ -17,17 +17,48 @@ async function installPreview(page) {
             : originalFetch(input, options);
         const { observeRoleplayPreview } = await import('/scripts/neconyan-conversation/roleplay-preview.js');
         const stop = observeRoleplayPreview('scroll-regression', { account: 'scroll-test', isCurrent: () => true, onTerminal: () => {} });
+        window.scrollPreviewStop = stop;
         window.stopScrollPreview = () => { stop(); window.fetch = originalFetch; };
     });
 }
 
-async function updatePreview(page, { stage = 'generating', lines = 1 } = {}) {
-    await page.evaluate(({ stage, lines }) => window.sendScrollPreview({
-        childId: 'reply', name: 'Miso', stage, updatedAt: Date.now(),
-        text: `A live reply.\n\n${'More words in the reply.\n\n'.repeat(lines)}`,
-    }), { stage, lines });
-    await expect(page.locator('#neconyan-roleplay-preview [role="status"]')).toHaveText(stage === 'agents' ? 'Running Agents…' : 'Writing reply…');
-    await expect(page.locator('#neconyan-roleplay-preview .mes_text')).toHaveText(`A live reply.\n\n${'More words in the reply.\n\n'.repeat(lines)}`);
+const STAGE_LABELS = { agents: 'Running Agents…', companions: 'Running Companions…', saving: 'Saving reply…' };
+const replyText = (lines, agentLines = 0) => `A live reply.\n\n${'More words in the reply.\n\n'.repeat(lines)}${'Agent tracker line.\n\n'.repeat(agentLines)}`;
+
+async function updatePreview(page, { stage = 'generating', lines = 1, agentLines = 0 } = {}) {
+    const text = replyText(lines, agentLines);
+    await page.evaluate(({ stage, text }) => window.sendScrollPreview({
+        childId: 'reply', name: 'Miso', stage, updatedAt: Date.now(), text,
+    }), { stage, text });
+    await expect(page.locator('#neconyan-roleplay-preview [role="status"]')).toHaveText(STAGE_LABELS[stage] || 'Writing reply…');
+    await expect(page.locator('#neconyan-roleplay-preview .mes_text')).toHaveText(text);
+}
+
+// Mirrors the workflow's readback: freeze the preview, hand its place to the
+// reload, save the reply and rebuild the chat as reloadCurrentChat() does.
+async function finishReply(page, text) {
+    const finished = await page.evaluate(async (text) => {
+        const chat = document.querySelector('#chat');
+        const previewTop = chat.querySelector('#neconyan-roleplay-preview').getBoundingClientRect().top - chat.getBoundingClientRect().top;
+        const { keepChatReadingPositionOnNextLoad, printMessages } = await import('/script.js');
+        const { finishedReplyReadingAnchor } = await import('/scripts/neconyan-conversation/roleplay-workflows.js');
+        window.scrollPreviewStop.freeze();
+        keepChatReadingPositionOnNextLoad(finishedReplyReadingAnchor());
+        const context = window.SillyTavern.getContext();
+        context.chat.push({ name: 'Miso', is_user: false, is_system: false, send_date: new Date().toISOString(), mes: text, extra: {} });
+        window.jQuery(chat).children().remove();
+        await printMessages();
+        window.stopScrollPreview();
+        return { previewTop, messageId: String(context.chat.length - 1) };
+    }, text);
+    // Outlast every chat-load settle pin.
+    // eslint-disable-next-line playwright/no-wait-for-timeout
+    await page.waitForTimeout(2800);
+    const savedTop = await page.evaluate((messageId) => {
+        const chat = document.querySelector('#chat');
+        return chat.querySelector(`.mes[mesid="${messageId}"]`).getBoundingClientRect().top - chat.getBoundingClientRect().top;
+    }, finished.messageId);
+    return { ...finished, savedTop };
 }
 
 for (const phone of [false, true]) {
@@ -113,6 +144,34 @@ for (const phone of [false, true]) {
             const after = await getChatScrollSnapshot(page);
             expect(Math.abs(after.scrollTop - before.scrollTop)).toBeLessThanOrEqual(3);
             expect(after.bottomDelta).toBeGreaterThan(120);
+        });
+
+        test('finishing a reply keeps the reader where they were reading it', async ({ page }) => {
+            await updatePreview(page, { lines: 12 });
+            await updatePreview(page, { stage: 'agents', lines: 18 });
+            await waitForAnimationFrames(page, 4);
+            await markManualMobileScroll(page, (await getChatScrollSnapshot(page)).scrollTop - 250);
+            const finished = await finishReply(page, replyText(18, 10));
+            expect(Math.abs(finished.savedTop - finished.previewTop)).toBeLessThanOrEqual(4);
+            expect((await getChatScrollSnapshot(page)).bottomDelta).toBeGreaterThan(120);
+        });
+
+        test('Agent output after the reply lands below the reader, and saving does not jump to it', async ({ page }) => {
+            await updatePreview(page, { lines: 12 });
+            await updatePreview(page, { stage: 'agents', lines: 18 });
+            await waitForAnimationFrames(page, 4);
+            const following = await getChatScrollSnapshot(page);
+            expect(following.bottomDelta).toBeLessThanOrEqual(3);
+            for (const stage of ['companions', 'saving']) {
+                await updatePreview(page, { stage, lines: 18, agentLines: 14 });
+                await waitForAnimationFrames(page, 12);
+                const after = await getChatScrollSnapshot(page);
+                expect(Math.abs(after.scrollTop - following.scrollTop)).toBeLessThanOrEqual(3);
+                expect(after.bottomDelta).toBeGreaterThan(120);
+            }
+            const finished = await finishReply(page, replyText(18, 14));
+            expect(Math.abs(finished.savedTop - finished.previewTop)).toBeLessThanOrEqual(4);
+            expect((await getChatScrollSnapshot(page)).bottomDelta).toBeGreaterThan(120);
         });
     });
 }

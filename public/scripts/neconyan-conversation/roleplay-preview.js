@@ -7,6 +7,7 @@ const labels = {
     translating: 'Translating reply…', speech: 'Preparing speech…', saving: 'Saving reply…',
 };
 const PREVIEW_SILENCE_MS = 5000;
+const FOLLOWED_STAGES = new Set(['preparing', 'generating', 'agents']);
 
 /** Display only: partial output never enters the chat array or a chat save. */
 export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, name, messageIndex }) {
@@ -17,12 +18,14 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
     let childId = null;
     let startedAt = null;
     let stopped = false;
+    let frozen = false;
     const diagnosticHandle = {};
     let diagnosticStage = null;
     const diagnostic = phase => { try { globalThis.NeconyanCrashDiagnostics?.observePhase?.(diagnosticHandle, phase); } catch { /* Optional diagnostics. */ } };
     let restoreReplacement = () => {};
     const remove = () => { node?.remove(); node = null; rendered = null; };
     const render = () => {
+        if (frozen) return;
         if (!isCurrent()) { remove(); restoreReplacement(); return; }
         if (!latest) return;
         const chat = document.querySelector('#chat');
@@ -32,7 +35,10 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         }
         const thinking = latest.stage === 'generating' && latest.reasoning && !latest.reasoning_finished;
         if (node?.isConnected && latest === rendered && !thinking) return;
-        const nearBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 120;
+        // Follow the reply while it is written; Agent and Companion output added after
+        // that lands below the reader instead of pulling the page down to it.
+        const nearBottom = FOLLOWED_STAGES.has(latest.stage || 'preparing')
+            && chat.scrollHeight - chat.scrollTop - chat.clientHeight < 120;
         if (childId !== latest.childId) {
             remove();
             childId = latest.childId;
@@ -130,7 +136,7 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         }
     };
     void run();
-    return () => {
+    const stop = () => {
         stopped = true;
         diagnostic(null);
         attempt?.abort();
@@ -139,4 +145,9 @@ export function observeRoleplayPreview(jobId, { account, isCurrent, onTerminal, 
         globalThis.removeEventListener?.('online', reconnect);
         clearInterval(timer); remove(); restoreReplacement();
     };
+    // The finished reply is about to be saved and the chat rebuilt. Stop redrawing,
+    // so the preview stays where the reader sees it and cannot reappear in the
+    // emptied chat ahead of the saved messages.
+    stop.freeze = () => { frozen = true; clearInterval(timer); };
+    return stop;
 }

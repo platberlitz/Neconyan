@@ -44,7 +44,7 @@ for (const lifecycle of [false, true]) for (const peek of [false, true]) {
             eventSource: { emit: async () => {} }, event_types: {}, getCurrentChatId: () => runtime.selected_group,
             toastr: { error: no }, t: strings => strings.join(''), power_user: {},
             getChatRenderWindowSize: () => 50, getChatRenderWindowStartIndex: () => 0,
-            removeRenderedChatMessages: () => { rows = []; }, beginChatLoadBottomLock: no,
+            removeRenderedChatMessages: () => { rows = []; }, beginChatLoadBottomLock: no, takeChatReloadReadingAnchor: () => null,
             syncChatHistoryWindowControls: no, requestAnimationFrame: callback => queueMicrotask(callback),
             scrollLoadedChatToBottomThroughLifecycle: scroll, delay: async () => {}, debounce_timeout: { short: 0 }, scrollOnMediaLoad: scroll,
             getRenderedChatMessageWindow: () => ({ renderedMessageCount: rows.length, firstMessageId: rows[0]?.id, lastMessageId: rows.at(-1)?.id }),

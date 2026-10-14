@@ -11,7 +11,7 @@
  * instead of paying twice, and a reopened page reattaches to the accepted job and
  * reads its permanent receipt back rather than submitting anything again.
  */
-import { activateSendButtons, chat, deactivateSendButtons, extension_prompts, getActiveGenerationAcknowledgement, getCurrentChatId, getRequestHeaders, isChatSaving, isGenerating, reloadCurrentChat, saveChatConditional, saveSettings, substituteParams, willRunNativeRoleplayWorkflow } from '../../script.js';
+import { activateSendButtons, chat, deactivateSendButtons, extension_prompts, getActiveGenerationAcknowledgement, getCurrentChatId, getRequestHeaders, isChatSaving, isGenerating, keepChatReadingPositionOnNextLoad, reloadCurrentChat, saveChatConditional, saveSettings, substituteParams, willRunNativeRoleplayWorkflow } from '../../script.js';
 import { event_types, eventSource } from '../events.js';
 import { activeGenerationInterceptors } from '../extensions.js';
 import { COMPANION_HISTORY_PROMPT_KEY_PREFIX } from '../extensions/in-chat-agents/companion/companion-shared.js';
@@ -345,6 +345,27 @@ function readback(key, name, options) {
     return shared.promise;
 }
 
+/**
+ * Where the live reply sits on screen, so saving it does not move the page.
+ * The saved message just above the reply keeps its place through the save, whether
+ * the reply is new, a swipe or a continuation, so it holds the view.
+ * @returns {{messageId: string|number, offsetTop: number}|null}
+ */
+export function finishedReplyReadingAnchor() {
+    const chatNode = globalThis.document?.querySelector?.('#chat');
+    const preview = chatNode?.querySelector('#neconyan-roleplay-preview');
+    if (!preview) return null;
+    const chatTop = chatNode.getBoundingClientRect().top;
+    let above = preview.previousElementSibling;
+    while (above && !above.matches('.mes[mesid]')) above = above.previousElementSibling;
+    if (above) {
+        return { messageId: above.getAttribute('mesid'), offsetTop: above.getBoundingClientRect().top - chatTop };
+    }
+    const replacement = chatNode.querySelector('[data-roleplay-replacement]');
+    const messageId = replacement ? Number(replacement.dataset.roleplayReplacement) : chat.length;
+    return { messageId, offsetTop: preview.getBoundingClientRect().top - chatTop };
+}
+
 async function readbackReceipt(key, name, shared, id) {
     const { options } = shared;
     const { locator, account } = options;
@@ -392,7 +413,15 @@ async function readbackReceipt(key, name, shared, id) {
         if (matchesCurrentWorkflowLocator(locator) && !adopted.has(id)) {
             adopted.set(id, receipt);
             if (!activeReload) {
-                activeReload = Promise.resolve().then(() => reloadCurrentChat()).finally(() => { activeReload = null; });
+                activeReload = Promise.resolve()
+                    .then(() => {
+                        keepChatReadingPositionOnNextLoad(finishedReplyReadingAnchor());
+                        return reloadCurrentChat();
+                    })
+                    .finally(() => {
+                        keepChatReadingPositionOnNextLoad(null);
+                        activeReload = null;
+                    });
             }
             try {
                 await activeReload;
@@ -458,6 +487,7 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
                 settleFinished(key, null);
                 return;
             }
+            stopPreview.freeze?.();
             try {
                 await readback(key, name, { locator, account });
             } catch {
