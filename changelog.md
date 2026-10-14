@@ -2,6 +2,15 @@
 
 ## v1.3.3
 
+### Highlights
+- Placed the bundled tools directly inside **Workspace**, **Fine-tuning**, **Characters & Lore**, **Appearance** and **Troubleshooting** in the sidebar instead of a separate **Included tools** list. Switched-off tools show an **Off** pill and open **Manage extensions**, **Chat Completion Tabs** can be switched on and off straight from the sidebar, and **Preset Tools** and **Chat Completion Tabs** open their settings directly without an inner drawer.
+- Added **Don't color a Narrator card**, a **Not characters** list and **Clean messages** to **Dialogue Colors**. Scenario cards and titled names marked as not characters leave the speaker list and stay in the normal text colour; **Clean messages** strips `[COLORS: ...]` lines and optional colour tags from character messages and swipes with a one-click undo toast.
+- Added **Low-memory mode** under **Settings → System & Device → Memory and performance**, with automatic detection on low-RAM phones and browsers, a 25-message rendering window for Roleplay and Conversation, and **Use automatic recommendations** when you want to reset manual overrides. Conversation now renders a bounded window of recent messages, keeps your reading position when loading older history, and requests phone-sized portraits on phones.
+- Roleplay replies and post-reply Agents now start and finish while the browser tab is hidden or in the background, and rebuilding the chat after a server-run reply keeps your reading position instead of jumping to the bottom. Mewmory keeps background memory work going when after-reply Agents rewrite a reply and keeps new chats enabled when the first reply races setup.
+- Card scripts now sandbox only the interactive widget a script drives instead of replacing surrounding message prose, and slash commands inside the sandbox no longer double quotation marks.
+- Polished the character library, grid cards, import panel and Persona workspace, restyled BotSearcher and World Info Lab controls, added an **Open keyboard when a chat opens** setting, and opened Scratchpad's image prompt review straight from **Generate image**.
+- Translated the sign-in page, server error pages and composed error messages into German, Italian and Portuguese, and refreshed the official handbook and assistant product help for this release.
+
 ### Merged Staging PRs
 - PR #160 (2026-10-14) `fix(i18n): translate error pages and improve language selection`
 - PR #161 (2026-10-13) `fix(i18n): translate composed error messages`
