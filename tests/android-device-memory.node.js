@@ -106,6 +106,9 @@ public class DeviceMemoryProfileTest {
         check("{\\"schema\\":1,\\"totalMemoryMiB\\":2048,\\"isLowRamDevice\\":true}".equals(lowRamJson), "2 GiB low-RAM profile mismatch: " + lowRamJson);
         check(!lowRamJson.contains("availMem"), "available memory must not be exposed");
 
+        String fourGbPhoneJson = DeviceMemoryProfile.readJson(new Context(new ActivityManager(3750L * 1024L * 1024L, false, false), false));
+        check("{\\"schema\\":1,\\"totalMemoryMiB\\":3750,\\"isLowRamDevice\\":false}".equals(fourGbPhoneJson), "4 GB handset (~3.66 GiB) profile mismatch: " + fourGbPhoneJson);
+
         String highRamJson = DeviceMemoryProfile.readJson(new Context(new ActivityManager(8192L * 1024L * 1024L, false, false), false));
         check("{\\"schema\\":1,\\"totalMemoryMiB\\":8192,\\"isLowRamDevice\\":false}".equals(highRamJson), "8 GiB profile mismatch: " + highRamJson);
     }

@@ -6,7 +6,7 @@ export const LOW_MEMORY_MODES = Object.freeze({
 });
 export const RECOGNISED_BROWSER_MEMORY_BUCKETS = Object.freeze([0.25, 0.5, 1, 2, 4, 8]);
 export const LOW_MEMORY_BROWSER_MAX_GB = 2;
-export const LOW_MEMORY_NATIVE_MAX_MIB = 4096;
+export const LOW_MEMORY_NATIVE_MAX_MIB = 3072;
 export const LOW_MEMORY_ROLEPLAY_WINDOW_SIZE = 25;
 export const LOW_MEMORY_CONVERSATION_WINDOW_SIZE = 25;
 export const NORMAL_CONVERSATION_WINDOW_SIZE = 200;
@@ -32,7 +32,6 @@ export const LOW_MEMORY_SHIPPED_DEFAULTS = Object.freeze({
     aggressive_dom_unload: false,
     aggressive_dom_window_size: 5,
 });
-export const NATIVE_MEMORY_WAIT_TIMEOUT_MS = 500;
 
 const MAX_VALID_NATIVE_MEMORY_MIB = 1048576;
 const observedBaseByTarget = new WeakMap();
@@ -439,6 +438,28 @@ export function resolveLowMemoryPreferences(savedValues = {}, explicitChoices = 
     });
 }
 
+export function didRoleplayRenderWindowPolicyChange(previousPolicy, nextPolicy) {
+    if (!previousPolicy || !nextPolicy) {
+        return false;
+    }
+    return previousPolicy.roleplayWindowSize !== nextPolicy.roleplayWindowSize
+        || previousPolicy.roleplayFixedWindow !== nextPolicy.roleplayFixedWindow;
+}
+
+export function shouldRequireRoleplayChatReopen({
+    previousPolicy = null,
+    nextPolicy = null,
+    chatWindowChanged = didRoleplayRenderWindowPolicyChange(previousPolicy, nextPolicy),
+    hasMountedRoleplayMessages = false,
+    isConversationMode = false,
+    previouslyRequired = false,
+} = {}) {
+    if (!hasMountedRoleplayMessages || isConversationMode) {
+        return false;
+    }
+    return Boolean(previouslyRequired || chatWindowChanged);
+}
+
 function safeReadModeFromStorage(storage) {
     if (!storage || typeof storage.getItem !== 'function') {
         return LOW_MEMORY_MODES.AUTO;
@@ -467,8 +488,6 @@ export function createLowMemoryRuntime({
     storageRef,
     windowRef,
     globalRef,
-    setTimeoutRef,
-    clearTimeoutRef,
     preferencesProvider = null,
 } = {}) {
     const getGlobal = () => globalRef ?? globalThis;
@@ -484,17 +503,10 @@ export function createLowMemoryRuntime({
             return null;
         }
     };
-    const scheduleTimeout = setTimeoutRef ?? ((fn, ms) => getGlobal().setTimeout(fn, ms));
-    const cancelTimeout = clearTimeoutRef ?? (id => getGlobal().clearTimeout(id));
 
     let currentMode = safeReadModeFromStorage(getStorage());
     let nativeMemory = null;
-    let nativeProfileSettled = false;
-    let nativeTimedOut = false;
     let nativeProfileStatus = 'pending';
-    let pendingWaitPromise = null;
-    let resolvePendingWait = null;
-    let pendingWaitTimer = null;
     let currentPreferencesProvider = typeof preferencesProvider === 'function' ? preferencesProvider : null;
     const listeners = new Set();
 
@@ -575,19 +587,6 @@ export function createLowMemoryRuntime({
         return nextState;
     }
 
-    function clearPendingWait() {
-        if (pendingWaitTimer !== null) {
-            cancelTimeout(pendingWaitTimer);
-            pendingWaitTimer = null;
-        }
-        const resolver = resolvePendingWait;
-        pendingWaitPromise = null;
-        resolvePendingWait = null;
-        if (typeof resolver === 'function') {
-            resolver(computeState());
-        }
-    }
-
     function getLowMemoryState() {
         return computeState();
     }
@@ -619,56 +618,14 @@ export function createLowMemoryRuntime({
 
     function acceptAndroidMemoryProfile(profile) {
         const validProfile = validateAndroidMemoryProfile(profile);
-        nativeProfileSettled = true;
         if (validProfile) {
             nativeMemory = validProfile;
-            nativeProfileStatus = nativeTimedOut ? 'late' : 'received';
+            nativeProfileStatus = 'received';
         } else if (!nativeMemory) {
             nativeProfileStatus = profile === undefined || profile === null ? 'unavailable' : 'invalid';
         }
-        clearPendingWait();
         notifyIfChanged();
         return Boolean(validProfile);
-    }
-
-    function waitForAndroidMemoryProfile({ timeoutMs = NATIVE_MEMORY_WAIT_TIMEOUT_MS } = {}) {
-        if (nativeProfileSettled || nativeTimedOut) {
-            return Promise.resolve(computeState());
-        }
-        if (!hasNativeBridgeHost()) {
-            if (nativeProfileStatus === 'pending') {
-                nativeProfileStatus = 'not-applicable';
-            }
-            return Promise.resolve(computeState());
-        }
-        if (pendingWaitPromise) {
-            return pendingWaitPromise;
-        }
-        const boundedTimeoutMs = Math.max(
-            0,
-            Math.min(
-                Number.isFinite(Number(timeoutMs)) ? Math.floor(Number(timeoutMs)) : NATIVE_MEMORY_WAIT_TIMEOUT_MS,
-                NATIVE_MEMORY_WAIT_TIMEOUT_MS,
-            ),
-        );
-        pendingWaitPromise = new Promise(resolve => {
-            resolvePendingWait = resolve;
-            pendingWaitTimer = scheduleTimeout(() => {
-                pendingWaitTimer = null;
-                if (!nativeProfileSettled) {
-                    nativeTimedOut = true;
-                    nativeProfileStatus = 'timeout';
-                }
-                const resolver = resolvePendingWait;
-                pendingWaitPromise = null;
-                resolvePendingWait = null;
-                const state = notifyIfChanged();
-                if (typeof resolver === 'function') {
-                    resolver(state);
-                }
-            }, boundedTimeoutMs);
-        });
-        return pendingWaitPromise;
     }
 
     function setLowMemoryPreferencesProvider(provider) {
@@ -702,7 +659,6 @@ export function createLowMemoryRuntime({
         setLowMemoryMode,
         subscribeLowMemoryState,
         acceptAndroidMemoryProfile,
-        waitForAndroidMemoryProfile,
         setLowMemoryPreferencesProvider,
         notifyIfChanged,
     });
@@ -732,10 +688,6 @@ export function subscribeLowMemoryState(listener) {
 
 export function acceptAndroidMemoryProfile(profile) {
     return defaultRuntime.acceptAndroidMemoryProfile(profile);
-}
-
-export function waitForAndroidMemoryProfile(options) {
-    return defaultRuntime.waitForAndroidMemoryProfile(options);
 }
 
 export function setLowMemoryPreferencesProvider(provider) {

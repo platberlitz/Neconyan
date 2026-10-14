@@ -4,7 +4,6 @@ import {
     LOW_MEMORY_MODE_STORAGE_KEY,
     LOW_MEMORY_MODES,
     LOW_MEMORY_NATIVE_MAX_MIB,
-    NATIVE_MEMORY_WAIT_TIMEOUT_MS,
     RECOGNISED_BROWSER_MEMORY_BUCKETS,
     classifyDeviceMemory,
     createLowMemoryRuntime,
@@ -78,8 +77,8 @@ describe('low-memory mode classification and runtime', () => {
         }
     });
 
-    test('validates native Android profiles and enforces native threshold boundaries and low-RAM flag', () => {
-        expect(LOW_MEMORY_NATIVE_MAX_MIB).toBe(4096);
+    test('validates native Android profiles and enforces native <= 3072 MiB threshold boundaries and low-RAM flag', () => {
+        expect(LOW_MEMORY_NATIVE_MAX_MIB).toBe(3072);
 
         expect(validateAndroidMemoryProfile(null)).toBeNull();
         expect(validateAndroidMemoryProfile(undefined)).toBeNull();
@@ -87,28 +86,40 @@ describe('low-memory mode classification and runtime', () => {
         expect(validateAndroidMemoryProfile({ schema: 2, totalMemoryMiB: 2048, isLowRamDevice: true })).toBeNull();
         expect(validateAndroidMemoryProfile({ schema: 1, totalMemoryMiB: 0, isLowRamDevice: false })).toBeNull();
         expect(validateAndroidMemoryProfile({ schema: 1, totalMemoryMiB: -2048, isLowRamDevice: false })).toBeNull();
-        expect(validateAndroidMemoryProfile({ schema: 1, totalMemoryMiB: '4096', isLowRamDevice: false })).toBeNull();
-        expect(validateAndroidMemoryProfile({ schema: 1, totalMemoryMiB: 4096, isLowRamDevice: 'false' })).toBeNull();
+        expect(validateAndroidMemoryProfile({ schema: 1, totalMemoryMiB: '3072', isLowRamDevice: false })).toBeNull();
+        expect(validateAndroidMemoryProfile({ schema: 1, totalMemoryMiB: 3072, isLowRamDevice: 'false' })).toBeNull();
 
         expect(classifyDeviceMemory({
-            nativeMemory: { schema: 1, totalMemoryMiB: 4096, isLowRamDevice: false },
+            nativeMemory: { schema: 1, totalMemoryMiB: 3072, isLowRamDevice: false },
         })).toEqual({
             lowMemory: true,
             source: 'native',
             reason: 'native-total-memory-low',
             deviceMemoryGb: null,
-            totalMemoryMiB: 4096,
+            totalMemoryMiB: 3072,
             isLowRamDevice: false,
         });
 
         expect(classifyDeviceMemory({
-            nativeMemory: { schema: 1, totalMemoryMiB: 4097, isLowRamDevice: false },
+            nativeMemory: { schema: 1, totalMemoryMiB: 3073, isLowRamDevice: false },
         })).toEqual({
             lowMemory: false,
             source: 'native',
             reason: 'native-total-memory-sufficient',
             deviceMemoryGb: null,
-            totalMemoryMiB: 4097,
+            totalMemoryMiB: 3073,
+            isLowRamDevice: false,
+        });
+
+        // 4 GB phones typically report ~3.6-3.8 GiB (3686-3891 MiB) and stay inactive unless isLowRamDevice is true.
+        expect(classifyDeviceMemory({
+            nativeMemory: { schema: 1, totalMemoryMiB: 3686, isLowRamDevice: false },
+        })).toEqual({
+            lowMemory: false,
+            source: 'native',
+            reason: 'native-total-memory-sufficient',
+            deviceMemoryGb: null,
+            totalMemoryMiB: 3686,
             isLowRamDevice: false,
         });
 
@@ -127,25 +138,25 @@ describe('low-memory mode classification and runtime', () => {
     test('gives valid native Android profiles authority over coarse browser deviceMemory buckets', () => {
         expect(classifyDeviceMemory({
             deviceMemory: 2,
-            nativeMemory: { schema: 1, totalMemoryMiB: 6144, isLowRamDevice: false },
+            nativeMemory: { schema: 1, totalMemoryMiB: 3686, isLowRamDevice: false },
         })).toEqual({
             lowMemory: false,
             source: 'native',
             reason: 'native-total-memory-sufficient',
             deviceMemoryGb: 2,
-            totalMemoryMiB: 6144,
+            totalMemoryMiB: 3686,
             isLowRamDevice: false,
         });
 
         expect(classifyDeviceMemory({
             deviceMemory: 4,
-            nativeMemory: { schema: 1, totalMemoryMiB: 4096, isLowRamDevice: false },
+            nativeMemory: { schema: 1, totalMemoryMiB: 3072, isLowRamDevice: false },
         })).toEqual({
             lowMemory: true,
             source: 'native',
             reason: 'native-total-memory-low',
             deviceMemoryGb: 4,
-            totalMemoryMiB: 4096,
+            totalMemoryMiB: 3072,
             isLowRamDevice: false,
         });
 
@@ -256,46 +267,29 @@ describe('low-memory mode classification and runtime', () => {
         expect(listener).toHaveBeenCalledTimes(1);
     });
 
-    test('does not wait on non-Android browsers and bounds the Android profile wait to 500 ms', async () => {
-        const scheduleTimeout = jest.fn();
+    test('applies late Android profiles through the subscriber without any startup wait timer', () => {
         const browserRuntime = createLowMemoryRuntime({
             navigatorRef: { deviceMemory: 2 },
             storageRef: { getItem: () => null, setItem: () => {} },
             windowRef: new EventTarget(),
             globalRef: {},
-            setTimeoutRef: scheduleTimeout,
         });
 
-        const browserState = await browserRuntime.waitForAndroidMemoryProfile();
-        expect(scheduleTimeout).not.toHaveBeenCalled();
+        const browserState = browserRuntime.getLowMemoryState();
         expect(browserState.active).toBe(true);
         expect(browserState.nativeProfileStatus).toBe('not-applicable');
 
-        let timeoutCallback = null;
-        let scheduledDelay = null;
         const androidRuntime = createLowMemoryRuntime({
             navigatorRef: { deviceMemory: 4 },
             storageRef: { getItem: () => null, setItem: () => {} },
             windowRef: new EventTarget(),
             globalRef: { NeconyanAndroid: {} },
-            setTimeoutRef: (fn, delayMs) => {
-                timeoutCallback = fn;
-                scheduledDelay = delayMs;
-                return 99;
-            },
-            clearTimeoutRef: () => {},
         });
 
-        const waitPromise = androidRuntime.waitForAndroidMemoryProfile({ timeoutMs: 5000 });
-        expect(scheduledDelay).toBe(NATIVE_MEMORY_WAIT_TIMEOUT_MS);
+        expect(androidRuntime.getLowMemoryState().nativeProfileStatus).toBe('pending');
+        expect(androidRuntime.getLowMemoryState().classification.source).toBe('browser');
+        expect(androidRuntime.getLowMemoryState().active).toBe(false);
 
-        timeoutCallback();
-        const timedOutState = await waitPromise;
-        expect(timedOutState.nativeProfileStatus).toBe('timeout');
-        expect(timedOutState.classification.source).toBe('browser');
-        expect(timedOutState.active).toBe(false);
-
-        // A late native profile still updates the policy once without reloading.
         const listener = jest.fn();
         androidRuntime.subscribeLowMemoryState(listener);
         expect(androidRuntime.acceptAndroidMemoryProfile({
@@ -304,29 +298,24 @@ describe('low-memory mode classification and runtime', () => {
             isLowRamDevice: false,
         })).toBe(true);
 
-        const lateState = androidRuntime.getLowMemoryState();
-        expect(lateState.nativeProfileStatus).toBe('late');
-        expect(lateState.classification.source).toBe('native');
-        expect(lateState.active).toBe(true);
+        const updatedState = androidRuntime.getLowMemoryState();
+        expect(updatedState.nativeProfileStatus).toBe('received');
+        expect(updatedState.classification.source).toBe('native');
+        expect(updatedState.active).toBe(true);
         expect(listener).toHaveBeenCalledTimes(1);
     });
 
-    test('resolves pending Android wait immediately when old 2-argument bridge install passes no profile', async () => {
-        const clearTimeoutRef = jest.fn();
+    test('falls back to browser classification when old 2-argument bridge install passes no profile', () => {
         const androidRuntime = createLowMemoryRuntime({
             navigatorRef: { deviceMemory: 2 },
             storageRef: { getItem: () => null, setItem: () => {} },
             windowRef: new EventTarget(),
             globalRef: { NeconyanAndroid: {} },
-            setTimeoutRef: () => 42,
-            clearTimeoutRef,
         });
 
-        const waitPromise = androidRuntime.waitForAndroidMemoryProfile();
         expect(androidRuntime.acceptAndroidMemoryProfile(undefined)).toBe(false);
-        const state = await waitPromise;
+        const state = androidRuntime.getLowMemoryState();
 
-        expect(clearTimeoutRef).toHaveBeenCalledWith(42);
         expect(state.nativeProfileStatus).toBe('unavailable');
         expect(state.classification.source).toBe('browser');
         expect(state.active).toBe(true);
