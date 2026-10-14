@@ -1883,7 +1883,6 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
             }
             didRenderUserMessage = true;
             $('#send_textarea').val('')[0].dispatchEvent(new Event('input', { bubbles: true }));
-            await new Promise(resolve => requestAnimationFrame(resolve));
         }
 
         if (activatedMembers.length === 0) {

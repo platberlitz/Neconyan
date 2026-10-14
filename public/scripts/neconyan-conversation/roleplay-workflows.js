@@ -12,6 +12,7 @@
  * reads its permanent receipt back rather than submitting anything again.
  */
 import { activateSendButtons, chat, deactivateSendButtons, extension_prompts, getActiveGenerationAcknowledgement, getCurrentChatId, getRequestHeaders, isChatSaving, isGenerating, reloadCurrentChat, saveChatConditional, saveSettings, substituteParams, willRunNativeRoleplayWorkflow } from '../../script.js';
+import { event_types, eventSource } from '../events.js';
 import { activeGenerationInterceptors } from '../extensions.js';
 import { COMPANION_HISTORY_PROMPT_KEY_PREFIX } from '../extensions/in-chat-agents/companion/companion-shared.js';
 import { selected_group } from '../group-chats.js';
@@ -23,6 +24,7 @@ import { getRoleplaySourceMessageRevision } from './roleplay-source.js';
 import { beginRoleplayReplacement } from './roleplay-replacement.js';
 
 const WORKFLOW_EVENT = 'neconyan:roleplay-workflow-finished';
+const RECONNECT_REASON = Symbol('roleplay-receipt-reconnect');
 const STORY_RULES_KEY = 'sbstory_rules';
 const STORY_DIRECTION_KEY = 'sbstory_direction';
 const STORY_RULES_DEPTH = 1;
@@ -35,6 +37,8 @@ const adopted = new Map();
 const reading = new Map();
 let busyName = null;
 let currentJobId = null;
+let activeReload = null;
+let activeDiscovery = null;
 
 /**
  * One DEBUG line per accepted submission, naming the workflow the server owns.
@@ -274,12 +278,35 @@ async function postSubmission(payload, account, url = '/api/roleplay/workflow/su
     return body;
 }
 
-async function readReceipt(key, account) {
-    const response = await fetch(`/api/roleplay/workflow/receipt?key=${encodeURIComponent(key)}`, {
+async function withAbortSignal(promise, signal) {
+    if (!signal) return promise;
+    signal.throwIfAborted();
+    let onAbort;
+    const aborted = new Promise((_, reject) => {
+        onAbort = () => reject(signal.reason ?? new DOMException('The operation was aborted.', 'AbortError'));
+        signal.addEventListener('abort', onAbort, { once: true });
+    });
+    try {
+        return await Promise.race([promise, aborted]);
+    } finally {
+        signal.removeEventListener('abort', onAbort);
+    }
+}
+
+async function readReceipt(key, account, signal) {
+    const response = await withAbortSignal(fetch(`/api/roleplay/workflow/receipt?key=${encodeURIComponent(key)}`, {
         credentials: 'same-origin',
         headers: { ...getRequestHeaders(), 'X-Neconyan-Account': account },
-    });
-    const body = await response.json().catch(() => null);
+        signal,
+    }), signal);
+    const body = await withAbortSignal(
+        response.json().catch(error => {
+            if (signal?.aborted) throw signal.reason ?? error;
+            return null;
+        }),
+        signal,
+    );
+    signal?.throwIfAborted();
     if (account !== getCurrentUserHandle()) throw new Error('account_changed');
     if (!response.ok) throw Object.assign(new Error(body?.error || 'The workflow receipt could not be read.'), { status: response.status, body });
     return body;
@@ -287,6 +314,11 @@ async function readReceipt(key, account) {
 
 function announce(detail) {
     globalThis.dispatchEvent(new CustomEvent(WORKFLOW_EVENT, { detail }));
+}
+
+function reconnectReading(entry) {
+    if (!entry || entry.settled || !entry.controller || entry.controller.signal.aborted) return;
+    entry.controller.abort(RECONNECT_REASON);
 }
 
 /**
@@ -304,22 +336,48 @@ function readback(key, name, options) {
     const existing = reading.get(id);
     if (existing) {
         if (!options.passive) existing.options.passive = false;
+        if (options.reconnect) reconnectReading(existing);
         return existing.promise;
     }
-    const shared = { options: { ...options } };
-    shared.promise = readbackReceipt(key, name, shared.options, id).finally(() => reading.delete(id));
+    const shared = { options: { ...options }, controller: null, settled: false };
+    shared.promise = readbackReceipt(key, name, shared, id).finally(() => reading.delete(id));
     reading.set(id, shared);
     return shared.promise;
 }
 
-async function readbackReceipt(key, name, options, id) {
+async function readbackReceipt(key, name, shared, id) {
+    const { options } = shared;
     const { locator, account } = options;
     for (let attempt = 0; attempt < 12; attempt += 1) {
-        const receipt = await readReceipt(key, account);
-        if (receipt.accepted && receipt.state !== 'closed') {
-            await new Promise(resolve => setTimeout(resolve, Math.min(2000, 250 * (attempt + 1))));
-            continue;
+        if (account !== getCurrentUserHandle()) {
+            shared.settled = true;
+            settleFinished(key, null);
+            return null;
         }
+        const controller = new AbortController();
+        shared.controller = controller;
+        let receipt;
+        try {
+            receipt = await readReceipt(key, account, controller.signal);
+            if (receipt.accepted && receipt.state !== 'closed') {
+                await withAbortSignal(
+                    new Promise(resolve => setTimeout(resolve, Math.min(2000, 250 * (attempt + 1)))),
+                    controller.signal,
+                );
+                continue;
+            }
+        } catch (error) {
+            if (error === RECONNECT_REASON || controller.signal.reason === RECONNECT_REASON) {
+                attempt = -1;
+                continue;
+            }
+            shared.settled = true;
+            settleFinished(key, null);
+            throw error;
+        } finally {
+            if (shared.controller === controller) shared.controller = null;
+        }
+        shared.settled = true;
         if (!receipt.accepted) {
             settleFinished(key, null);
             return null;
@@ -331,14 +389,23 @@ async function readbackReceipt(key, name, options, id) {
             return null;
         }
         if (options.passive && (busyName || isGenerating() || isChatSaving)) return null;
-        if (matchesCurrentWorkflowLocator(locator)) {
-            await reloadCurrentChat();
+        if (matchesCurrentWorkflowLocator(locator) && !adopted.has(id)) {
             adopted.set(id, receipt);
+            if (!activeReload) {
+                activeReload = Promise.resolve().then(() => reloadCurrentChat()).finally(() => { activeReload = null; });
+            }
+            try {
+                await activeReload;
+            } catch (error) {
+                adopted.delete(id);
+                throw error;
+            }
         }
         announce({ key, name, state: receipt.state, result: receipt.result ?? null, jobId: receipt.jobId });
         settleFinished(key, receipt);
         return receipt;
     }
+    shared.settled = true;
     settleFinished(key, null);
     return null;
 }
@@ -621,36 +688,68 @@ export async function runNativeRoleplayGeneration(type, { committed = false, pag
 }
 
 /** Reattach to accepted workflows and read finished ones back, without submitting again. */
-export async function resumeNativeRoleplayWorkflowObservation() {
+export async function resumeNativeRoleplayWorkflowObservation({ reconnect = false, attachOnly = false } = {}) {
     const account = getCurrentUserHandle();
     for (const entry of [...observed.values()]) {
         if (entry.account !== account) entry.stop();
     }
-    let jobs = [];
-    try {
-        jobs = await listJobs({ includeDismissed: false, account });
-    } catch {
-        return;
-    }
-    const locator = currentLocator();
-    let finished = null;
-    for (const job of jobs) {
-        if (job?.type !== 'media.roleplay-workflow' || job.parentId) continue;
-        const key = job.intent?.media?.operationKey;
-        const source = job.intent?.source?.locator;
-        if (!key || source?.group !== false) continue;
-        if (source.chat !== locator?.chat || source.avatar !== locator?.avatar) continue;
-        const name = job.intent?.request?.named?.name ?? null;
-        if (!TERMINAL.has(job.state)) {
-            observeRoleplayWorkflowJob(job.id, { key, name, locator, account,
-                messageIndex: job.intent?.source?.message?.index ?? job.intent?.source?.range?.start });
-        } else if (!finished) {
-            finished = { key, name, locator };
+    const reconnected = new Set();
+    if (reconnect) {
+        for (const entry of reading.values()) {
+            if (entry.options.account === account) {
+                reconnected.add(entry.promise);
+                if (!activeDiscovery || activeDiscovery.account !== account || !activeDiscovery.reconnected) {
+                    reconnectReading(entry);
+                }
+            }
+        }
+        if (activeDiscovery && activeDiscovery.account === account) {
+            activeDiscovery.reconnected = true;
+            for (const promise of reconnected) activeDiscovery.reconnectedPromises.add(promise);
         }
     }
-    if (finished && !busyName && !isGenerating() && !isChatSaving) {
-        await readback(finished.key, finished.name, { locator, account, passive: true }).catch(() => {});
+    if (activeDiscovery && activeDiscovery.account === account) {
+        if (!attachOnly) activeDiscovery.attachOnly = false;
+        return activeDiscovery.promise;
     }
+    const cycle = { account, reconnected: Boolean(reconnect), attachOnly: Boolean(attachOnly), reconnectedPromises: reconnected, promise: null };
+    cycle.promise = (async () => {
+        let jobs = [];
+        try {
+            jobs = await listJobs({ includeDismissed: false, account });
+        } catch {
+            return;
+        } finally {
+            if (activeDiscovery === cycle) activeDiscovery = null;
+        }
+        if (account !== getCurrentUserHandle()) return;
+        let finished = null;
+        for (const job of jobs) {
+            if (job?.type !== 'media.roleplay-workflow' || job.parentId) continue;
+            const key = job.intent?.media?.operationKey;
+            const source = job.intent?.source?.locator;
+            if (!key || typeof source?.group !== 'boolean') continue;
+            const locator = source.group
+                ? { ...source, groupId: String(job.intent?.source?.groupId ?? source.groupId ?? '') }
+                : source;
+            if (!matchesCurrentWorkflowLocator(locator)) continue;
+            const name = source.group ? 'group.reply' : (job.intent?.request?.named?.name ?? null);
+            if (!TERMINAL.has(job.state)) {
+                observeRoleplayWorkflowJob(job.id, { key, name, locator, account,
+                    messageIndex: job.intent?.source?.message?.index ?? job.intent?.source?.range?.start });
+            } else if (!cycle.attachOnly && !finished) {
+                finished = { key, name, locator };
+            }
+        }
+        if (!cycle.attachOnly && finished && !busyName && !isGenerating() && !isChatSaving && !activeReload) {
+            await readback(finished.key, finished.name, { locator: finished.locator, account, passive: true }).catch(() => {});
+        }
+        if (cycle.reconnectedPromises.size) {
+            await Promise.allSettled([...cycle.reconnectedPromises]);
+        }
+    })();
+    activeDiscovery = cycle;
+    return cycle.promise;
 }
 
 let initialised = false;
@@ -664,11 +763,26 @@ let initialised = false;
 export function initNativeRoleplayWorkflows() {
     if (initialised) return;
     initialised = true;
+    const isVisible = () => typeof document === 'undefined' || document.visibilityState === 'visible';
     const resume = () => {
-        if (document.visibilityState === 'visible') void resumeNativeRoleplayWorkflowObservation();
+        if (isVisible()) void resumeNativeRoleplayWorkflowObservation();
+    };
+    const reconnect = () => {
+        void resumeNativeRoleplayWorkflowObservation({ reconnect: true });
     };
     resume();
-    document.addEventListener('visibilitychange', resume);
+    document?.addEventListener?.('visibilitychange', () => {
+        if (isVisible()) reconnect();
+    });
+    globalThis.addEventListener?.('pageshow', event => {
+        if (event?.persisted) reconnect();
+    });
+    globalThis.addEventListener?.('online', reconnect);
     // The account binding arrives after the first paint, so discovery retries then.
     globalThis.addEventListener?.('sb:roleplay-account-bound', resume);
+    eventSource.on(event_types.CHAT_CHANGED, () => {
+        if (isVisible() && getCurrentChatId() && !busyName && !isGenerating() && !activeReload) {
+            void resumeNativeRoleplayWorkflowObservation({ attachOnly: true });
+        }
+    });
 }
