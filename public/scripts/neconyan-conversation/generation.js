@@ -9,6 +9,7 @@ import { createConversationMessageAnchors, createConversationSubmissionKey } fro
 import { cancelNativeConversationJob, waitForNativeConversationJob } from './native-jobs.js';
 import { scheduleTimelineRender } from './render-scheduler.js';
 import { conversationState } from './state.js';
+import { syncConversationHistoryButtonsForEditState } from './timeline-window.js';
 
 let activeConversationEditor = null;
 
@@ -184,6 +185,7 @@ export function editConversationMessage(messageId) {
     textElement.append(textarea, buttonContainer);
     messageElement.classList.add('is-editing');
     messageElement.querySelector('.sb-conversation-message-actions')?.classList.remove('open');
+    syncConversationHistoryButtonsForEditState(messageElement.parentElement);
 
     const closeEditor = () => {
         if (textElement.isConnected) {
@@ -191,6 +193,7 @@ export function editConversationMessage(messageId) {
         }
         messageElement.classList.remove('is-editing');
         messageElement.querySelector('.sb-conversation-message-actions')?.classList.remove('open');
+        syncConversationHistoryButtonsForEditState(messageElement.parentElement);
         if (activeConversationEditor?.messageElement === messageElement) {
             activeConversationEditor = null;
         }

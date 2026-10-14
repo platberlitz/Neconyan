@@ -80,6 +80,7 @@ import {
     deleteConversationMessage,
     generateConversationSelfieFromMessageCommand,
     ensureConversationChrome,
+    moveConversationTimelineWindowToLatest,
     navigateConversationTimelineWindow,
     quickConversationReminder,
     quickConversationSelfie,
@@ -1100,7 +1101,7 @@ export function openConversationWorkspaceForAvatar(avatar, { branchId = '', grou
         conversationState.conversationTimelineChannel = 'main';
         conversationState.conversationTimelineSearchQuery = '';
     }
-    conversationState.timelineBottomScrollPending = true;
+    moveConversationTimelineWindowToLatest();
     ensureConversationStylesheet();
 
     if (!targetAvatar) {

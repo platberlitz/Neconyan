@@ -56,6 +56,7 @@ import {
 import { getConversationTimelineMessages } from './timeline-search.js';
 import {
     buildConversationTimelineWindowIdentity,
+    moveConversationTimelineWindowToLatest as resetTimelineWindowToLatest,
     pageConversationTimelineWindow,
     selectConversationTimelineWindow,
 } from './timeline-window.js';
@@ -168,7 +169,7 @@ function buildTimelineFingerprint({ avatar, groupId, branchId, personaId, settin
     ].join('\u001d'));
 }
 
-function buildConversationMessageFingerprint(message, { avatar, groupId, personaId, settings, index }) {
+function buildConversationMessageFingerprint(message, { avatar, groupId, personaId, settings }) {
     const speakerAvatar = message?.role === 'partner' ? message.extra?.partner_avatar : avatar;
     const speakerStatus = speakerAvatar && message?.role !== 'user' && message?.role !== 'system'
         ? getEffectiveConversationStatus(speakerAvatar, getSettings(speakerAvatar, { groupId, personaId }))
@@ -188,7 +189,6 @@ function buildConversationMessageFingerprint(message, { avatar, groupId, persona
         settings?.editable_messages ? '1' : '0',
         settings?.prose_polisher ? '1' : '0',
         speakerStatus,
-        index > 8 ? 'lazy' : 'eager',
     ].join('\u001f'));
 }
 
@@ -559,21 +559,7 @@ function createConversationMessageElement(message, { avatar, groupId, settings, 
 }
 
 function removeTimelineTransientNodes(timeline) {
-    if (typeof timeline?.querySelectorAll === 'function') {
-        timeline.querySelectorAll('.sb-conversation-thread-empty, .sb-conversation-typing-indicator, .sb-conversation-image-pending').forEach(node => node.remove());
-    }
-    if (Array.isArray(timeline?.children)) {
-        for (let i = timeline.children.length - 1; i >= 0; i--) {
-            const child = timeline.children[i];
-            if (
-                child?.classList?.contains?.('sb-conversation-thread-empty')
-                || child?.classList?.contains?.('sb-conversation-typing-indicator')
-                || child?.classList?.contains?.('sb-conversation-image-pending')
-            ) {
-                timeline.children.splice(i, 1);
-            }
-        }
-    }
+    timeline.querySelectorAll('.sb-conversation-thread-empty, .sb-conversation-typing-indicator, .sb-conversation-image-pending').forEach(node => node.remove());
 }
 
 function requestConversationFrame(callback) {
@@ -586,13 +572,22 @@ function requestConversationFrame(callback) {
 }
 
 let timelineBottomScrollToken = 0;
+let pendingTimelinePagingAnchor = null;
 
 export function cancelConversationTimelineBottomScroll() {
     timelineBottomScrollToken++;
     conversationState.timelineBottomScrollPending = false;
 }
 
+function clearTimelineAnchorPadding(timeline) {
+    if (timeline?.style) {
+        timeline.style.paddingTop = '';
+        timeline.style.paddingBottom = '';
+    }
+}
+
 function scrollConversationTimelineToBottom(timeline) {
+    clearTimelineAnchorPadding(timeline);
     timeline.scrollTop = Math.max(0, timeline.scrollHeight - timeline.clientHeight);
 }
 
@@ -632,87 +627,149 @@ function anchorConversationTimelineToBottom(timeline, renderThreadKey) {
 }
 
 function isPersistedConversationMessageNode(node) {
-    if (!(node instanceof HTMLElement)) {
-        return false;
-    }
-    if (node.dataset?.sbConversationHistoryNav || node.dataset?.sbConversationAction) {
-        return false;
-    }
-    if (typeof node.classList?.contains === 'function') {
-        if (
-            node.classList.contains('sb-conversation-history-controls')
-            || node.classList.contains('sb-conversation-typing-indicator')
-            || node.classList.contains('sb-conversation-image-pending')
-            || node.classList.contains('sb-conversation-thread-empty')
-        ) {
-            return false;
-        }
-        return node.classList.contains('sb-conversation-message') && Boolean(node.dataset?.messageId);
-    }
-    if (typeof node.className === 'string' && node.className.length > 0) {
-        if (
-            node.className.includes('sb-conversation-history-controls')
-            || node.className.includes('sb-conversation-typing-indicator')
-            || node.className.includes('sb-conversation-image-pending')
-            || node.className.includes('sb-conversation-thread-empty')
-        ) {
-            return false;
-        }
-        if (node.className.includes('sb-conversation-message')) {
-            return Boolean(node.dataset?.messageId);
-        }
-    }
-    return true;
+    return node instanceof HTMLElement
+        && Boolean(node.classList?.contains('sb-conversation-message'))
+        && Boolean(node.dataset?.messageId)
+        && !node.classList.contains('sb-conversation-typing-indicator')
+        && !node.classList.contains('sb-conversation-image-pending');
 }
 
 function getPersistedConversationMessageNodes(timeline) {
     return Array.from(timeline?.children || []).filter(isPersistedConversationMessageNode);
 }
 
-function collectProtectedTimelineMessageIds(timeline) {
-    return getPersistedConversationMessageNodes(timeline)
-        .filter(node => node.classList?.contains?.('is-editing') || (typeof node.className === 'string' && node.className.includes('is-editing')))
-        .map(node => String(node.dataset?.messageId || ''))
-        .filter(Boolean);
+function hasActiveTimelineMessageEdit(timeline) {
+    if (!(timeline instanceof HTMLElement)) {
+        return false;
+    }
+    return getPersistedConversationMessageNodes(timeline).some(node => node.classList.contains('is-editing'));
 }
 
-function removeTimelineChildNode(timeline, node) {
-    if (!node) {
+export function syncConversationTimelineHistoryControlsDisabledState(timeline = document.getElementById(CHROME_IDS.timeline)) {
+    if (!(timeline instanceof HTMLElement)) {
         return;
     }
-    if (typeof node.remove === 'function') {
-        node.remove();
+    const disabled = hasActiveTimelineMessageEdit(timeline);
+    timeline.querySelectorAll('.sb-conversation-history-button').forEach((button) => {
+        if (button instanceof HTMLElement) {
+            button.disabled = disabled;
+            button.setAttribute('aria-disabled', String(disabled));
+        }
+    });
+}
+
+function getTimelineNodeViewportOffset(timeline, node) {
+    if (!(timeline instanceof HTMLElement) || !(node instanceof HTMLElement)) {
+        return null;
     }
-    if (Array.isArray(timeline?.children)) {
-        const idx = timeline.children.indexOf(node);
-        if (idx >= 0) {
-            timeline.children.splice(idx, 1);
+    if (typeof node.getBoundingClientRect === 'function' && typeof timeline.getBoundingClientRect === 'function') {
+        const nodeRect = node.getBoundingClientRect();
+        const timelineRect = timeline.getBoundingClientRect();
+        if (
+            Number.isFinite(nodeRect?.top)
+            && Number.isFinite(timelineRect?.top)
+            && (nodeRect.top !== 0 || timelineRect.top !== 0 || !Number.isFinite(node.offsetTop))
+        ) {
+            return nodeRect.top - timelineRect.top;
         }
     }
+    if (Number.isFinite(node.offsetTop)) {
+        return node.offsetTop - (Number(timeline.scrollTop) || 0);
+    }
+    return null;
+}
+
+function captureTimelinePagingAnchor(timeline, direction, currentDescriptor) {
+    if (!(timeline instanceof HTMLElement) || (direction !== 'older' && direction !== 'newer')) {
+        return null;
+    }
+    const nodes = getPersistedConversationMessageNodes(timeline);
+    if (!nodes.length) {
+        return null;
+    }
+    const targetId = direction === 'older'
+        ? currentDescriptor?.startMessageId
+        : currentDescriptor?.endMessageId;
+    const anchorNode = (targetId && nodes.find(node => String(node.dataset.messageId || '') === targetId))
+        || (direction === 'older' ? nodes[0] : nodes.at(-1));
+    if (!anchorNode) {
+        return null;
+    }
+    const messageId = String(anchorNode.dataset.messageId || '');
+    const viewportOffset = getTimelineNodeViewportOffset(timeline, anchorNode);
+    if (!messageId || !Number.isFinite(viewportOffset)) {
+        return null;
+    }
+    return { messageId, viewportOffset };
+}
+
+function applyTimelinePagingAnchorOnce(timeline, anchor) {
+    const targetNode = getPersistedConversationMessageNodes(timeline).find(
+        node => String(node.dataset.messageId || '') === anchor.messageId,
+    );
+    if (!targetNode) {
+        return false;
+    }
+    const currentOffset = getTimelineNodeViewportOffset(timeline, targetNode);
+    if (!Number.isFinite(currentOffset)) {
+        return false;
+    }
+    const desiredScrollTop = (Number(timeline.scrollTop) || 0) + (currentOffset - anchor.viewportOffset);
+    if (desiredScrollTop < 0 && timeline.style && typeof targetNode.getBoundingClientRect === 'function') {
+        timeline.scrollTop = 0;
+        const offsetAtTop = getTimelineNodeViewportOffset(timeline, targetNode);
+        if (Number.isFinite(offsetAtTop) && offsetAtTop < anchor.viewportOffset) {
+            const basePaddingTop = typeof getComputedStyle === 'function'
+                ? (parseFloat(getComputedStyle(timeline).paddingTop) || 0)
+                : 0;
+            const nextPaddingTop = basePaddingTop + (anchor.viewportOffset - offsetAtTop);
+            timeline.style.paddingTop = `${nextPaddingTop}px`;
+            const afterPaddingOffset = getTimelineNodeViewportOffset(timeline, targetNode);
+            if (Number.isFinite(afterPaddingOffset) && Math.abs(afterPaddingOffset - anchor.viewportOffset) > 0.1) {
+                timeline.style.paddingTop = `${Math.max(0, nextPaddingTop + (anchor.viewportOffset - afterPaddingOffset))}px`;
+            }
+        }
+        return true;
+    }
+    timeline.scrollTop = Math.max(0, desiredScrollTop);
+    if (timeline.style && typeof targetNode.getBoundingClientRect === 'function') {
+        const settledOffset = getTimelineNodeViewportOffset(timeline, targetNode);
+        if (Number.isFinite(settledOffset) && settledOffset > anchor.viewportOffset + 0.5) {
+            const basePaddingBottom = typeof getComputedStyle === 'function'
+                ? (parseFloat(getComputedStyle(timeline).paddingBottom) || 0)
+                : 0;
+            timeline.style.paddingBottom = `${Math.ceil(basePaddingBottom + settledOffset - anchor.viewportOffset + 16)}px`;
+        }
+        const adjustedOffset = getTimelineNodeViewportOffset(timeline, targetNode);
+        if (Number.isFinite(adjustedOffset) && Math.abs(adjustedOffset - anchor.viewportOffset) > 0.1) {
+            timeline.scrollTop = Math.max(0, timeline.scrollTop + (adjustedOffset - anchor.viewportOffset));
+        }
+    }
+    return true;
+}
+
+function restoreTimelinePagingAnchor(timeline, anchor) {
+    if (!anchor || !(timeline instanceof HTMLElement)) {
+        return false;
+    }
+    clearTimelineAnchorPadding(timeline);
+    const applied = applyTimelinePagingAnchorOnce(timeline, anchor);
+    if (applied) {
+        const token = timelineBottomScrollToken;
+        requestConversationFrame(() => {
+            if (token === timelineBottomScrollToken && timeline.isConnected) {
+                applyTimelinePagingAnchorOnce(timeline, anchor);
+            }
+        });
+    }
+    return applied;
 }
 
 function placeTimelineChildAfter(timeline, node, previousNode) {
-    if (typeof timeline.insertBefore === 'function' && !Array.isArray(timeline.children)) {
-        const referenceNode = previousNode ? previousNode.nextSibling : timeline.firstChild;
-        if (node !== referenceNode) {
-            timeline.insertBefore(node, referenceNode);
-        }
-        return;
+    const referenceNode = previousNode ? previousNode.nextSibling : timeline.firstChild;
+    if (node !== referenceNode) {
+        timeline.insertBefore(node, referenceNode);
     }
-    if (Array.isArray(timeline.children)) {
-        const existingIdx = timeline.children.indexOf(node);
-        const expectedPrevIdx = previousNode ? timeline.children.indexOf(previousNode) : -1;
-        if (existingIdx >= 0 && existingIdx === expectedPrevIdx + 1) {
-            return;
-        }
-        if (existingIdx >= 0) {
-            timeline.children.splice(existingIdx, 1);
-        }
-        const targetIdx = previousNode ? timeline.children.indexOf(previousNode) + 1 : 0;
-        timeline.children.splice(Math.max(0, targetIdx), 0, node);
-        return;
-    }
-    timeline.appendChild?.(node);
 }
 
 function findTimelineHistoryControl(timeline, navKind) {
@@ -726,7 +783,7 @@ function createTimelineHistoryControlButton(action, labelText, i18nKey) {
     button.type = 'button';
     button.className = 'menu_button sb-conversation-selfie-action sb-conversation-history-button';
     button.dataset.sbConversationAction = action;
-    button.setAttribute?.('data-i18n', i18nKey);
+    button.setAttribute('data-i18n', i18nKey);
     button.textContent = labelText;
     return button;
 }
@@ -743,12 +800,12 @@ function syncConversationTimelineHistoryControls(timeline, windowDescriptor) {
         })();
         placeTimelineChildAfter(timeline, olderControl, null);
     } else if (existingOlder) {
-        removeTimelineChildNode(timeline, existingOlder);
+        existingOlder.remove();
     }
 
     const existingNewer = findTimelineHistoryControl(timeline, 'newer');
     if (existingNewer) {
-        removeTimelineChildNode(timeline, existingNewer);
+        existingNewer.remove();
     }
     if (windowDescriptor?.hasNewer) {
         const container = document.createElement('div');
@@ -758,34 +815,34 @@ function syncConversationTimelineHistoryControls(timeline, windowDescriptor) {
         container.appendChild(createTimelineHistoryControlButton('timeline-latest', t`Latest messages`, 'Latest messages'));
         timeline.appendChild(container);
     }
+    syncConversationTimelineHistoryControlsDisabledState(timeline);
 }
 
 function reconcileConversationMessageNodes(timeline, messages, { avatar, groupId, personaId, settings, windowDescriptor }) {
     syncConversationTimelineHistoryControls(timeline, { hasOlder: Boolean(windowDescriptor?.hasOlder), hasNewer: false });
 
+    const retainedIds = new Set(messages.map(message => String(message?.id || '')));
     const existingNodes = new Map();
     getPersistedConversationMessageNodes(timeline).forEach((node) => {
-        existingNodes.set(String(node.dataset?.messageId || ''), node);
+        const messageId = String(node.dataset.messageId || '');
+        if (!retainedIds.has(messageId)) {
+            node.remove();
+            return;
+        }
+        existingNodes.set(messageId, node);
     });
 
     let previousNode = findTimelineHistoryControl(timeline, 'older');
     messages.forEach((message, index) => {
         const messageId = String(message?.id || '');
-        const fingerprint = buildConversationMessageFingerprint(message, { avatar, groupId, personaId, settings, index });
+        const fingerprint = buildConversationMessageFingerprint(message, { avatar, groupId, personaId, settings });
         const currentNode = existingNodes.get(messageId) || null;
-        const isEditing = Boolean(
-            currentNode?.classList?.contains?.('is-editing')
-            || (typeof currentNode?.className === 'string' && currentNode.className.includes('is-editing')),
-        );
+        const isEditing = Boolean(currentNode?.classList.contains('is-editing'));
         let nextNode = currentNode;
-        if (!nextNode || (!isEditing && nextNode.dataset?.sbConversationMessageFingerprint !== fingerprint)) {
+        if (!nextNode || (!isEditing && nextNode.dataset.sbConversationMessageFingerprint !== fingerprint)) {
             nextNode = createConversationMessageElement(message, { avatar, groupId, settings, index, fingerprint });
             if (currentNode) {
-                if (typeof currentNode.replaceWith === 'function' && !Array.isArray(timeline.children)) {
-                    currentNode.replaceWith(nextNode);
-                } else {
-                    removeTimelineChildNode(timeline, currentNode);
-                }
+                currentNode.replaceWith(nextNode);
             }
         }
 
@@ -794,15 +851,7 @@ function reconcileConversationMessageNodes(timeline, messages, { avatar, groupId
         previousNode = nextNode;
     });
 
-    existingNodes.forEach((node) => {
-        const isEditing = Boolean(
-            node?.classList?.contains?.('is-editing')
-            || (typeof node?.className === 'string' && node.className.includes('is-editing')),
-        );
-        if (!isEditing) {
-            removeTimelineChildNode(timeline, node);
-        }
-    });
+    existingNodes.forEach(node => node.remove());
 
     markConversationMessageRuns(timeline, messages);
     syncConversationTimelineHistoryControls(timeline, windowDescriptor);
@@ -860,14 +909,8 @@ export function markConversationMessageRuns(timeline, messages) {
     });
 }
 
-export function moveConversationTimelineWindowToLatest() {
-    if (conversationState.timelineWindowDescriptor) {
-        conversationState.timelineWindowDescriptor = Object.freeze({
-            ...conversationState.timelineWindowDescriptor,
-            followingLatest: true,
-        });
-    }
-    conversationState.timelineBottomScrollPending = true;
+export function moveConversationTimelineWindowToLatest(state = conversationState) {
+    resetTimelineWindowToLatest(state);
 }
 
 export function navigateConversationTimelineWindow(direction = 'latest') {
@@ -875,6 +918,10 @@ export function navigateConversationTimelineWindow(direction = 'latest') {
     const avatar = getCurrentCharAvatar();
     if (!avatar) {
         return null;
+    }
+    if (timeline instanceof HTMLElement && hasActiveTimelineMessageEdit(timeline)) {
+        syncConversationTimelineHistoryControlsDisabledState(timeline);
+        return conversationState.timelineWindowDescriptor;
     }
     const groupId = getConversationGroupIdForAvatar(avatar);
     const personaId = getConversationPersonaId();
@@ -891,7 +938,11 @@ export function navigateConversationTimelineWindow(direction = 'latest') {
     });
     const allMessages = getConversationThread(avatar, { groupId, personaId });
     const filteredMessages = getConversationTimelineMessages(allMessages);
-    const protectedMessageIds = timeline instanceof HTMLElement ? collectProtectedTimelineMessageIds(timeline) : [];
+    pendingTimelinePagingAnchor = captureTimelinePagingAnchor(
+        timeline,
+        direction,
+        conversationState.timelineWindowDescriptor,
+    );
 
     const { descriptor } = pageConversationTimelineWindow(
         filteredMessages,
@@ -900,12 +951,11 @@ export function navigateConversationTimelineWindow(direction = 'latest') {
         {
             identityKey,
             lowMemoryActive: isLowMemoryModeActive(),
-            protectedMessageIds,
         },
     );
     conversationState.timelineWindowDescriptor = descriptor;
 
-    if (direction === 'latest' || descriptor.followingLatest) {
+    if (direction === 'latest') {
         conversationState.timelineBottomScrollPending = true;
     } else {
         cancelConversationTimelineBottomScroll();
@@ -923,6 +973,8 @@ export function renderConversationTimeline() {
         return;
     }
 
+    const pagingAnchor = pendingTimelinePagingAnchor;
+    pendingTimelinePagingAnchor = null;
     const previousScrollTop = timeline.scrollTop;
     const previousScrollBottom = timeline.scrollHeight - previousScrollTop - timeline.clientHeight;
     const previousThreadKey = conversationState.lastRenderedThreadKey || '';
@@ -976,7 +1028,6 @@ export function renderConversationTimeline() {
         channel: conversationState.conversationTimelineChannel,
         query: conversationState.conversationTimelineSearchQuery,
     });
-    const protectedMessageIds = collectProtectedTimelineMessageIds(timeline);
     const {
         messages: windowMessages,
         descriptor: windowDescriptor,
@@ -986,7 +1037,6 @@ export function renderConversationTimeline() {
         {
             identityKey: windowIdentityKey,
             lowMemoryActive: isLowMemoryModeActive(),
-            protectedMessageIds,
         },
     );
     conversationState.timelineWindowDescriptor = windowDescriptor;
@@ -1007,7 +1057,10 @@ export function renderConversationTimeline() {
     });
     if (!contextChanged && fingerprint === conversationState.lastTimelineFingerprint && timeline.dataset.sbConversationFingerprint === fingerprint) {
         updateConversationToolsState();
-        if (needsBottomScroll && windowDescriptor.followingLatest) {
+        syncConversationTimelineHistoryControlsDisabledState(timeline);
+        if (pagingAnchor) {
+            restoreTimelinePagingAnchor(timeline, pagingAnchor);
+        } else if (needsBottomScroll && windowDescriptor.followingLatest) {
             conversationState.timelineBottomScrollPending = false;
             anchorConversationTimelineToBottom(timeline, renderThreadKey);
         } else if (needsBottomScroll) {
@@ -1020,9 +1073,6 @@ export function renderConversationTimeline() {
     timeline.dataset.sbConversationFingerprint = fingerprint;
     if (contextChanged) {
         timeline.textContent = '';
-        if (Array.isArray(timeline.children)) {
-            timeline.children.length = 0;
-        }
         revealUi(timeline);
     } else {
         removeTimelineTransientNodes(timeline);
@@ -1031,9 +1081,6 @@ export function renderConversationTimeline() {
     const typingParticipants = getActiveTypingParticipants(avatar, { branchId, groupId, personaId });
     if (!allMessages.length && !typingParticipants.length) {
         timeline.textContent = '';
-        if (Array.isArray(timeline.children)) {
-            timeline.children.length = 0;
-        }
         const empty = document.createElement('div');
         empty.className = 'sb-conversation-thread-empty neconyan-cat-panel';
         empty.innerHTML = `
@@ -1059,9 +1106,6 @@ export function renderConversationTimeline() {
 
     if (!filteredMessages.length && allMessages.length) {
         timeline.textContent = '';
-        if (Array.isArray(timeline.children)) {
-            timeline.children.length = 0;
-        }
         const empty = document.createElement('div');
         empty.className = 'sb-conversation-thread-empty neconyan-cat-panel';
         empty.innerHTML = `
@@ -1188,7 +1232,11 @@ export function renderConversationTimeline() {
     conversationState.lastRenderedMessageCount = allMessages.length;
     conversationState.timelineBottomScrollPending = false;
     updateConversationToolsState();
-    if (windowDescriptor.followingLatest && (contextChanged || messagesAdded || isNearBottom || needsBottomScroll)) {
+    if (pagingAnchor) {
+        if (!restoreTimelinePagingAnchor(timeline, pagingAnchor)) {
+            timeline.scrollTop = previousScrollTop;
+        }
+    } else if (windowDescriptor.followingLatest && (contextChanged || messagesAdded || isNearBottom || needsBottomScroll)) {
         anchorConversationTimelineToBottom(timeline, renderThreadKey);
     } else {
         timeline.scrollTop = previousScrollTop;
