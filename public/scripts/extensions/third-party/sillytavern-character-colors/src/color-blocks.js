@@ -82,6 +82,26 @@ export function stripTrailingColorMetadata(text) {
     return block ? source.slice(0, block.removeStart) : source;
 }
 
+/** Remove every standalone [COLORS:...] line outside code, not only the final one. */
+export function stripAllColorMetadataLines(text) {
+    const source = String(text ?? '');
+    const pattern = /(^|\r\n?|\n)([ \t]*)\[COLORS?:[^\]\r\n]*\][ \t]*(?=\r\n?|\n|$)/gi;
+    let result = '';
+    let cursor = 0;
+    let match;
+    while ((match = pattern.exec(source))) {
+        const lineStart = match.index + match[1].length;
+        if (/\t| {4}/.test(match[2]) || isInsideMarkdownCode(source, lineStart + match[2].length)) continue;
+        let end = match.index + match[0].length;
+        if (!match[1]) end += (/^(\r\n?|\n)/.exec(source.slice(end))?.[0].length ?? 0);
+        result += source.slice(cursor, match.index);
+        cursor = end;
+    }
+    if (!cursor) return source;
+    result += source.slice(cursor);
+    return result.replace(/(?:\r\n?|\n)[ \t]*$/, '');
+}
+
 function isUserMessageElement(element) {
     return element?.closest?.('.mes')?.getAttribute?.('is_user') === 'true';
 }
