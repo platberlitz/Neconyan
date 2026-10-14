@@ -748,7 +748,7 @@ async function countTokens(inside) {
 }
 
 function openButton(added, screen) {
-    const open = el('button', 'menu_button sbbs-open-character', 'Open character');
+    const open = el('button', 'menu_button menu_button_primary sbbs-open-character', 'Open character');
     open.type = 'button';
     open.addEventListener('click', async () => {
         if (!screen.current()) {
@@ -839,7 +839,7 @@ function actionBar(container, prepared, inside, found, duplicate, onBack, screen
     const keeps = cleanKeeps(inside);
     let canClean = removals.length > 0 && inside.scan?.complete === true;
 
-    const exact = el('button', 'menu_button sbbs-import', 'Import exactly');
+    const exact = el('button', 'menu_button menu_button_primary sbbs-import', 'Import exactly');
     exact.type = 'button';
 
     const clean = el('button', 'menu_button sbbs-import-clean', 'Clean import');
@@ -1108,7 +1108,7 @@ export async function showBulkImport(container, entries, onBack, { signal: exter
     });
 
     const bar = el('div', 'sbbs-detail-actions');
-    const start = el('button', 'menu_button sbbs-bulk-start', INTAKE_COPY.batchStart);
+    const start = el('button', 'menu_button menu_button_primary sbbs-bulk-start', INTAKE_COPY.batchStart);
     const retry = el('button', 'menu_button sbbs-bulk-retry', INTAKE_COPY.batchRetry);
     const undo = el('button', 'menu_button sbbs-undo-import');
     for (const button of [start, retry, undo]) {
