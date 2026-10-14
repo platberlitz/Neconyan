@@ -17,7 +17,7 @@ import {
 import { registerDebugFunction } from '../../power-user.js';
 import { SECRET_KEYS, secret_state } from '../../secrets.js';
 import { getDataBankAttachments, getDataBankAttachmentsForSource } from '../../chats.js';
-import { debounce, getStringHash as calculateHash, onlyUnique, isTrueBoolean } from '../../utils.js';
+import { debounce, getStringHash, onlyUnique, isTrueBoolean } from '../../utils.js';
 import { debounce_timeout } from '../../constants.js';
 import { getSortedEntries } from '../../world-info.js';
 import { SlashCommandParser } from '../../slash-commands/SlashCommandParser.js';
@@ -189,31 +189,6 @@ async function synchronizeChat() {
     } finally {
         syncBlocked = false;
     }
-}
-
-/**
- * @type {Map<string, number>} Cache object for storing hash values
- */
-const hashCache = new Map();
-
-/**
- * Gets the hash value for a given string
- * @param {string} str Input string
- * @returns {number} Hash value
- */
-function getStringHash(str) {
-    // Check if the hash is already in the cache
-    if (hashCache.has(str)) {
-        return hashCache.get(str);
-    }
-
-    // Calculate the hash value
-    const hash = calculateHash(str);
-
-    // Store the hash in the cache
-    hashCache.set(str, hash);
-
-    return hash;
 }
 
 /**
