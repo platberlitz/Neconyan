@@ -79,7 +79,14 @@ const hooks = registerHooks({
 const { buildColorRenderingLookup, processColorPairs } = await import(`${EXTENSION}/color-blocks.js`);
 const { buildCharacterEntry } = await import(`${EXTENSION}/palettes.js`);
 const { buildExcludedSpeakerPromptRule, buildMinimalPromptInstruction, filterPromptCharacterEntries } = await import(`${EXTENSION}/prompts.js`);
-const { isExcludedSpeakerName } = await import(`${EXTENSION}/speaker-exclusions.js`);
+const { attributeDialogueSegments } = await import(`${EXTENSION}/attribution.js`);
+const {
+    addExcludedSpeakerName,
+    getExcludedSpeakerNames,
+    isExcludedSpeakerName,
+    normalizeExcludedSpeakerNames,
+    removeExcludedSpeakerName,
+} = await import(`${EXTENSION}/speaker-exclusions.js`);
 const state = await import(`${EXTENSION}/state.js`);
 const { setCharacterColors, settings } = state;
 const { normalizeHexColor } = await import(`${EXTENSION}/utils.js`);
@@ -151,5 +158,59 @@ test('the colouring prompt tells the model to leave Narrator plain', () => {
 
     withSettings({ skipNarratorCard: false }, () => {
         assert.equal(buildExcludedSpeakerPromptRule(), '');
+    });
+});
+
+const SCENARIO = 'Your Wife Wants To Divorce You';
+const TITLED = 'Leonard | Actor';
+
+test('the not-a-character list is cleaned, deduplicated and leaves Narrator to its own option', () => {
+    const cleaned = normalizeExcludedSpeakerNames([`  ${SCENARIO} `, SCENARIO.toUpperCase(), TITLED, 'Narrator', '', 42, null]);
+    assert.deepEqual(cleaned, [SCENARIO, TITLED]);
+    assert.deepEqual(normalizeExcludedSpeakerNames('not a list'), []);
+});
+
+test('listed names are not characters, whatever their case', () => {
+    withSettings({ excludedSpeakerNames: [SCENARIO, TITLED] }, () => {
+        assert.equal(isExcludedSpeakerName(SCENARIO.toLowerCase()), true);
+        assert.equal(isExcludedSpeakerName(TITLED), true);
+        assert.equal(isExcludedSpeakerName('Leonard'), false);
+        assert.equal(buildCharacterEntry(TITLED, { color: MIRA_GREEN, origin: 'detected' }).entry, null);
+        assert.ok(buildCharacterEntry('Leonard', { color: MIRA_GREEN, origin: 'detected' }).entry);
+    });
+});
+
+test('adding and removing names updates the list and the Narrator option', () => {
+    withSettings({ excludedSpeakerNames: [], skipNarratorCard: true }, () => {
+        assert.equal(addExcludedSpeakerName(SCENARIO), true);
+        assert.equal(addExcludedSpeakerName(SCENARIO.toLowerCase()), false);
+        assert.deepEqual(getExcludedSpeakerNames(), [SCENARIO]);
+        assert.equal(removeExcludedSpeakerName(SCENARIO), true);
+        assert.deepEqual(getExcludedSpeakerNames(), []);
+
+        assert.equal(removeExcludedSpeakerName('Narrator'), true);
+        assert.equal(settings.skipNarratorCard, false);
+        assert.equal(addExcludedSpeakerName('Narrator'), true);
+        assert.equal(settings.skipNarratorCard, true);
+    });
+});
+
+test('a listed card name is never coloured, detected or sent to the model as a character', () => {
+    globalThis.__dcExclusionsContext.name2 = SCENARIO;
+    withSettings({ excludedSpeakerNames: [SCENARIO, TITLED] }, () => {
+        seedMira();
+        const scenarioBlue = '#3355ee';
+        processColorPairs(`${SCENARIO}=${scenarioBlue},${TITLED}=#aa7711,Mira=${MIRA_GREEN}`);
+        assert.deepEqual(Object.values(state.characterColors).map(entry => entry.name), ['Mira']);
+
+        const raw = `<font color="${scenarioBlue}">"Sign here."</font>\n[COLORS:${SCENARIO}=${scenarioBlue},Mira=${MIRA_GREEN}]`;
+        assert.equal(buildColorRenderingLookup(raw).get(normalizeHexColor(scenarioBlue, null))?.excluded, true);
+
+        attributeDialogueSegments('"Sign the papers," she said.', SCENARIO, { autoAddMessageSpeaker: true });
+        assert.deepEqual(Object.values(state.characterColors).map(entry => entry.name), ['Mira']);
+
+        const rule = buildExcludedSpeakerPromptRule();
+        assert.match(rule, new RegExp(SCENARIO));
+        assert.ok(rule.includes(JSON.stringify(TITLED)));
     });
 });

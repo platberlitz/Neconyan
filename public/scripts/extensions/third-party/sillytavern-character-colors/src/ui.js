@@ -16,6 +16,7 @@ import { populateProfileDropdown } from './llm.js';
 import { getTransientNarratorCount, getNarratorVisual, normalizeNarratorStyle, setNarratorStyle } from './narrator-style.js';
 import { applyGradientPreset, applyThemeReadabilityAndBrightness, buildCharacterEntry, collectDuplicateColorKeys, createGradientRandomMasterSeed, createRandomGradient, deleteColorPreset, deleteCustomPalette, detectTheme, flipColorsForTheme, generateCustomPaletteFromWords, getBaseColor, getCustomPaletteMeta, getCustomPalettes, getEntryEffectiveColor, getNextColor, getPerceptualConflictReport, getPersonaName, getPresets, invalidateThemeCache, loadColorPreset, refreshPaletteDropdown, refreshPresetDropdown, regenerateAllColors, regenerateAllGradients, removeCharacterKeys, repairPerceptualConflicts, resolveColorPresetName, saveColorPreset, saveCustomPalette, setEntryFromBaseColor, setEntryGradient, showHarmonyPopup, suggestColorForName, swapEntryColorData, syncAllEffectiveColors } from './palettes.js';
 import { injectPrompt, updateSystemPromptDisplay } from './prompts.js';
+import { addExcludedSpeakerName, getExcludedSpeakerNames, isExcludedCharacterEntry, removeExcludedSpeakerName } from './speaker-exclusions.js';
 import { escapeHtml, eventSource, event_types, getContext } from './st-api.js';
 import { autoRecolorHintShown, characterColors, expandedCharacterRows, groupProfiles, isDomEngine, searchTerm, selectedCharacterKeys, setAutoRecolorHintShown, setCharacterColors, setGroupProfiles, setSearchTerm, setSwapMode, settings, swapMode, synchronizeEnabledLifecycle } from './state.js';
 import { analyzeColorImport, analyzeSettingsImport, analyzeStylePackImport, applyCardData, applyColorImport, applySettingsImport, applyStylePackImport, archiveStoredColorData, deleteCustomGradientPreset, disableAutoSync, enableAutoSync, exportColors, exportSettings, getArchivedColorData, getCurrentStorageScope, getCustomGradientPresets, getLegendPosition, getPinnedPersonaColors, getStorageKey, getStorageKeyForScope, getStorageLabelForKey, getStorageScopeDescriptor, getStoredColorDataFingerprint, getStylePackRegistry, getUserColorDataStore, markCardCharactersKept, markCurrentPersonaKept, normalizeColorDataEntry, normalizeToggleSettings, readCardData, removePinnedCharacterKey, renameCustomGradientPreset, renamePinnedPersonaColor, resolveCustomGradientPresetName, restoreAllSettingsToDefaults, restoreArchivedColorData, restorePinnedPersonaColor, saveCustomGradientPreset, saveData, saveLegendPosition, saveToCard, switchColorStorageScope, syncPinnedPersonaColors, updateAutoSyncUI } from './storage.js';
@@ -41,6 +42,7 @@ export const DYNAMIC_CONTROL_HELP_TEXT = Object.freeze({
     '.dc-rename': 'Change this character’s primary name.',
     '.dc-alias': 'Add an alternate name that maps to this character.',
     '.dc-group': 'Assign this character to a group label.',
+    '.dc-not-character': 'This name is a scenario, a title or a narrator, not a real character. Removes it from the list and stops coloring its lines. Undo it under Automation, Not characters.',
     '.dc-del': 'Delete this character from the list. Turn off Keep first if pinned.',
     '.dc-alias-remove': 'Remove this alias from the character.'
 });
@@ -1859,6 +1861,7 @@ export function buildCharRowHtml(k, v) {
                     <button type="button" class="dc-rename menu_button" data-key="${safeKey}" data-focus-id="rename">Rename</button>
                     <button type="button" class="dc-alias menu_button" data-key="${safeKey}" data-focus-id="alias">Add Alias</button>
                     <button type="button" class="dc-group menu_button" data-key="${safeKey}" data-focus-id="group">${v.group ? 'Edit Group' : 'Set Group'}</button>
+                    <button type="button" class="dc-not-character menu_button" data-key="${safeKey}" data-focus-id="not-character">Not a character</button>
                     <button type="button" class="dc-del menu_button dc-danger-button" data-key="${safeKey}" data-focus-id="delete">Delete</button>
                 </div>
                 ${buildGradientEditorHtml(k, v)}
@@ -1980,6 +1983,70 @@ async function handleDeleteClick(delBtn) {
         if (fallbackKey && characterColors[fallbackKey]) focusCharacterControl(fallbackKey, 'more');
         else requestAnimationFrame(() => document.getElementById('dc-search')?.focus({ preventScroll: true }));
     }
+}
+
+function refreshAfterExcludedSpeakerChange() {
+    saveData();
+    injectPrompt();
+    updateCharList();
+    renderExcludedSpeakerList();
+    const narratorToggle = document.getElementById('dc-skip-narrator-card');
+    if (narratorToggle) narratorToggle.checked = settings.skipNarratorCard !== false;
+    repaintDomAfterCharacterDataChange(0);
+}
+
+// Marks a name as not a character: it leaves the list (even when kept) and its
+// lines stop being colored. One undo restores both the entry and the list.
+function markNameAsNotCharacter(rawName) {
+    const name = normalizeRegistryIdentityName(String(rawName ?? ''));
+    if (!name) {
+        toast.info('Enter the name exactly as it appears on the card or in the chat.');
+        return false;
+    }
+    const restore = createRestoreSnapshot();
+    const previousNames = [...getExcludedSpeakerNames()];
+    const previousSkipNarrator = settings.skipNarratorCard;
+    if (!addExcludedSpeakerName(name)) {
+        toast.info(`${escapeHtml(name)} is already marked as not a character.`);
+        return false;
+    }
+    const removedKeys = Object.keys(characterColors).filter(key => isExcludedCharacterEntry(characterColors[key]));
+    for (const key of removedKeys) {
+        delete characterColors[key];
+        expandedCharacterRows.delete(key);
+        selectedCharacterKeys.delete(key);
+        if (swapMode === key) setSwapMode(null);
+    }
+    if (removedKeys.length) {
+        clearSpeakerRegexCache();
+        saveHistory();
+    }
+    refreshAfterExcludedSpeakerChange();
+    const undoExclusion = () => {
+        settings.excludedSpeakerNames = previousNames;
+        settings.skipNarratorCard = previousSkipNarrator;
+        if (removedKeys.length) restore();
+        refreshAfterExcludedSpeakerChange();
+    };
+    undoExclusion.capture = restore.capture;
+    showUndoToast(`${escapeHtml(name)} is no longer treated as a character${removedKeys.length ? ' and left the list' : ''}.`, undoExclusion);
+    return true;
+}
+
+function handleNotCharacterClick(button) {
+    const name = characterColors[button.dataset.key]?.name;
+    if (!name) return;
+    markNameAsNotCharacter(name);
+    requestAnimationFrame(() => document.getElementById('dc-search')?.focus({ preventScroll: true }));
+}
+
+export function renderExcludedSpeakerList() {
+    const list = document.getElementById('dc-excluded-name-list');
+    if (!list) return;
+    const names = settings.skipNarratorCard !== false ? ['Narrator', ...getExcludedSpeakerNames()] : getExcludedSpeakerNames();
+    list.innerHTML = names.length
+        ? names.map(name => `<span class="dc-alias-chip" role="listitem">${escapeHtml(name)}<button type="button" class="dc-alias-remove dc-excluded-remove" data-name="${escapeAttr(name)}" aria-label="Treat ${escapeAttr(name)} as a character again">&times;</button></span>`).join('')
+        : '<small>No names yet.</small>';
 }
 
 function handleKeepClick(keepBtn) {
@@ -3080,6 +3147,8 @@ function handleCharListClick(e) {
     if (deleteCustomGradientPresetButton) { handleDeleteCustomGradientPreset(deleteCustomGradientPresetButton); return; }
     const moreBtn = t.closest('.dc-more');
     if (moreBtn) { handleMoreClick(moreBtn); return; }
+    const notCharacterBtn = t.closest('.dc-not-character');
+    if (notCharacterBtn) { handleNotCharacterClick(notCharacterBtn); return; }
     const delBtn = t.closest('.dc-del');
     if (delBtn) { handleDeleteClick(delBtn); return; }
     const keepBtn = t.closest('.dc-keep');
@@ -4319,6 +4388,7 @@ export function syncUIWithSettings() {
     if ($('dc-keep-persona')) $('dc-keep-persona').checked = settings.keepPersonaCharacter === true;
     if ($('dc-keep-card-character')) $('dc-keep-card-character').checked = settings.keepCardCharacter !== false;
     if ($('dc-skip-narrator-card')) $('dc-skip-narrator-card').checked = settings.skipNarratorCard !== false;
+    renderExcludedSpeakerList();
     if ($('dc-persist-persona-color')) $('dc-persist-persona-color').checked = settings.persistPersonaColor === true;
     if ($('dc-clear-unpinned-new-chat')) $('dc-clear-unpinned-new-chat').checked = settings.clearUnpinnedOnNewChat === true;
     if ($('dc-auto-random-gradients')) $('dc-auto-random-gradients').checked = settings.autoRandomNpcGradients === true;
@@ -4662,6 +4732,7 @@ function buildSettingsPanelHtml() {
             <details class="dc-section" id="dc-page-automation" data-dc-page="automation" data-dc-disclosure="automation" role="tabpanel" aria-labelledby="dc-tab-automation" tabindex="-1">
                 <summary>Automation</summary>
                 <div class="dc-toggle-grid"><label class="checkbox_label"><input type="checkbox" id="dc-autoscan" data-help="Scans the open chat for speakers when the character list is empty. While it is on, automatic verification can also check the last few messages already in a chat when it opens; turn it off to verify only new or edited messages."><span>Scan when the character list is empty</span></label><label class="checkbox_label"><input type="checkbox" id="dc-autoscan-new"><span>Scan new messages</span></label><label class="checkbox_label"><input type="checkbox" id="dc-auto-lock"><span>Lock new characters</span></label><label class="checkbox_label"><input type="checkbox" id="dc-auto-persona" data-help="Adds your active persona to the character list automatically. Your own dialogue is colored locally when your persona has a color, without an LLM call."><span>Add my persona automatically</span></label><label class="checkbox_label"><input type="checkbox" id="dc-keep-persona" data-help="Marks an already tracked active persona as Keep and marks future manual or automatic persona entries as Kept. It does not add a persona or assign a color by itself."><span>Keep my persona entry</span></label><label class="checkbox_label"><input type="checkbox" id="dc-persist-persona-color" data-help="Every persona you use keeps its own color in every chat, even when colors are stored per chat or per card. Switching personas, or playing several in one chat, keeps each one in its own color, and editing a persona's color anywhere updates it everywhere."><span>Keep each persona's color everywhere</span></label><label class="checkbox_label"><input type="checkbox" id="dc-keep-card-character" data-help="Marks the character on the current card as Keep whenever it is in the list (every member, in a group chat), so it survives clears and follows you into every chat with that card. Turn it off to manage Keep on card characters by hand."><span>Keep the card's character</span></label><label class="checkbox_label"><input type="checkbox" id="dc-skip-narrator-card" data-help="Never colors a character card called Narrator. Its lines stay in the normal text color, even when the model wraps them in a color, and it is never added to the character list. Turn it off to let the colors the model picks show on Narrator lines."><span>Don't color a Narrator card</span></label><label class="checkbox_label"><input type="checkbox" id="dc-clear-unpinned-new-chat" data-help="Clears the character list when a new chat starts. Only characters marked Keep survive."><span>Clear all but Keep characters on new chat</span></label><label class="checkbox_label"><input type="checkbox" id="dc-auto-random-gradients"><span>Random gradients for new NPCs</span></label><label class="checkbox_label"><input type="checkbox" id="dc-auto-random-all-gradients"><span>Random gradients for every new character</span></label><label class="checkbox_label"><input type="checkbox" id="dc-drift-all-gradients"><span>Drift every gradient color</span></label><label class="checkbox_label dc-llm-only"><input type="checkbox" id="dc-auto-colorize"><span>Colorize missing tags automatically</span></label><label class="checkbox_label dc-llm-only"><input type="checkbox" id="dc-complete-partial" data-help="When the model colors only some of a message's dialogue, the uncolored lines are attributed and colored locally. No extra LLM request is made."><span>Complete partly colored messages</span></label><label class="checkbox_label"><input type="checkbox" id="dc-right-click"><span>Manual dialogue reassignment</span></label><label class="checkbox_label"><input type="checkbox" id="dc-disable-toasts"><span>Reduce routine notifications</span></label></div>
+                <details class="dc-subsection" data-dc-disclosure="automation-not-characters" open><summary>Not characters</summary><div class="dc-stack"><p class="dc-section-note">Names that are not real characters, like a scenario card ('Your Wife Wants To Divorce You') or a name with a title ('Leonard | Actor'). They never join the character list and their lines stay in the normal text color.</p><label class="dc-visually-hidden" for="dc-excluded-name-input">Name that is not a character</label><input type="text" id="dc-excluded-name-input" class="text_pole" maxlength="120" autocomplete="off" placeholder="Name exactly as it appears"><div class="dc-field-row dc-field-row-wrap"><button id="dc-excluded-name-add" class="menu_button">Add</button><button id="dc-excluded-current-card" class="menu_button" data-help="Adds the name of the card you are chatting with, for scenario cards and cards whose name carries a title.">Add this card's name</button></div><div id="dc-excluded-name-list" class="dc-button-row" role="list" aria-label="Names that are not characters"></div></div></details>
             </details>
             <details class="dc-section" id="dc-page-library" data-dc-page="library" data-dc-disclosure="library" role="tabpanel" aria-labelledby="dc-tab-library" tabindex="-1">
                 <summary>Style library</summary>
@@ -4710,7 +4781,7 @@ const PANEL_DISCLOSURE_KEY = 'dc_panel_disclosure_v1';
 // Sections that are open on a fresh install. Everything else starts closed so
 // the panel opens short rather than as one long wall of controls.
 const DEFAULT_OPEN_DISCLOSURES = Object.freeze([
-    'setup', 'process', 'characters', 'library-group-profiles', 'library-gradient-presets',
+    'setup', 'process', 'characters', 'automation-not-characters', 'library-group-profiles', 'library-gradient-presets',
 ]);
 
 let panelDisclosureState = null;
@@ -5078,12 +5149,35 @@ function bindSettingsPanelControls($) {
         saveData();
         updateCharList();
     };
+    const addExcludedNameFromInput = () => {
+        const input = $('dc-excluded-name-input');
+        if (markNameAsNotCharacter(input?.value) && input) input.value = '';
+    };
+    $('dc-excluded-name-add').onclick = addExcludedNameFromInput;
+    $('dc-excluded-name-input').onkeydown = e => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        addExcludedNameFromInput();
+    };
+    $('dc-excluded-current-card').onclick = () => {
+        const ctx = getContext();
+        const cardName = ctx?.groupId ? '' : String(ctx?.name2 ?? '').trim();
+        if (!cardName) {
+            toast.info('Open a chat with a single character card first.');
+            return;
+        }
+        markNameAsNotCharacter(cardName);
+    };
+    $('dc-excluded-name-list').onclick = e => {
+        const button = e.target.closest('.dc-excluded-remove');
+        if (!button) return;
+        if (!removeExcludedSpeakerName(button.dataset.name)) return;
+        refreshAfterExcludedSpeakerChange();
+        toast.info(`${escapeHtml(button.dataset.name)} can be colored again. Scan or colorize to bring it back to the list.`);
+    };
     $('dc-skip-narrator-card').onchange = e => {
         settings.skipNarratorCard = e.target.checked;
-        saveData();
-        injectPrompt();
-        updateCharList();
-        repaintDomAfterCharacterDataChange(0);
+        refreshAfterExcludedSpeakerChange();
     };
     $('dc-persist-persona-color').onchange = e => {
         settings.persistPersonaColor = e.target.checked;

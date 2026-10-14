@@ -10,6 +10,7 @@ import { applyLiveColorChangesFromSnapshot, captureEffectiveColorSnapshot, commi
 import { normalizeNarratorStyle, setNarratorStyle } from './narrator-style.js';
 import { COLOR_THEMES, CUSTOM_PALETTE_KEY, CUSTOM_PALETTE_META_KEY, applyThemeReadabilityAndBrightness, buildCharacterEntry, deriveBaseColorFromEffectiveColor, getBaseColor, getCardCharacterNames, getPersonaName, getRepairedBaseLightnessWindow, invalidateThemeCache, normalizeCustomPalettes, syncAllEffectiveColors } from './palettes.js';
 import { injectPrompt } from './prompts.js';
+import { normalizeExcludedSpeakerNames } from './speaker-exclusions.js';
 import { extension_settings, getCharacters, getContext, getRequestHeaders, saveMetadata, saveSettings, saveSettingsDebounced } from './st-api.js';
 import { ACTIVE_SETTING_KEYS, AUTO_SYNC_SAVE_TIMEOUT_MS, COLOR_SCHEMA_VERSION, COLOR_STORAGE_SCOPES, DEFAULT_COLOR_STORAGE_SCOPE, GLOBAL_SETTINGS_V2_KEY, GLOBAL_VISUAL_KEYS, LEGACY_AUTO_SYNC_ENABLED_KEY, LEGACY_GLOBAL_SETTINGS_KEY, LEGEND_POSITION_KEY, MODULE_NAME, PORTABLE_SETTING_KEYS, PRESETS_KEY, TOGGLE_SETTING_DEFAULTS, autoSyncEnabled, autoSyncInterval, autoSyncLastTimestamp, autoSyncLastWriterId, autoSyncPendingRecord, autoSyncSaveTimeout, autoSyncSequence, autoSyncStatusError, characterColors, colorHistory, colorStateSaveTimer, createLatestRequestGate, expandedCharacterRows, getAutoSyncRecordDisposition, groupProfiles, historyIndex, lastCharKey, lastProcessedMessageSignature, pendingColorStateHistory, pendingColorStateInjectPrompt, pendingColorStateSaveData, pendingColorStateUpdateList, preserveLocalRemoteFontConsent, selectedCharacterKeys, setAutoSyncEnabled, setAutoSyncInterval, setAutoSyncLastTimestamp, setAutoSyncLastWriterId, setAutoSyncPendingRecord, setAutoSyncSaveTimeout, setAutoSyncSequence, setAutoSyncStatusError, setCharacterColors, setColorHistory, setExpandedCharacterRows, setGroupProfiles, setHistoryIndex, setLastCharKey, setLastProcessedMessageSignature, setSwapMode, settings, swapMode, synchronizeEnabledLifecycle } from './state.js';
 import { AESTHETIC_APPEARANCE_KEYS, StylePackError, analyzeStylePackConflicts, buildStylePackInstallationPlan, flattenStylePackAssignmentPresets } from './style-packs.js';
@@ -201,6 +202,7 @@ export function normalizeToggleSettings() {
     }
     setNarratorStyle(settings, settings.narratorStyle, applyThemeReadabilityAndBrightness);
     settings.coloringEngine = settings.coloringEngine === 'dom' ? 'dom' : 'llm';
+    settings.excludedSpeakerNames = normalizeExcludedSpeakerNames(settings.excludedSpeakerNames);
     const attributionReviewPolicy = String(settings.attributionReviewPolicy ?? '').trim().toLowerCase();
     settings.attributionReviewPolicy = ['review', 'auto-high', 'legacy-auto'].includes(attributionReviewPolicy)
         ? attributionReviewPolicy
@@ -753,6 +755,7 @@ export function normalizeStoredSettings(source) {
     }
     if (hasOwn(source, 'colorVisionPreviewTarget')) normalized.colorVisionPreviewTarget = ['ui', 'chat', 'all'].includes(source.colorVisionPreviewTarget) ? source.colorVisionPreviewTarget : 'all';
     if (hasOwn(source, 'gradientAnimationMode')) normalized.gradientAnimationMode = GRADIENT_ANIMATION_MODES.includes(source.gradientAnimationMode) ? source.gradientAnimationMode : 'auto';
+    if (hasOwn(source, 'excludedSpeakerNames')) normalized.excludedSpeakerNames = normalizeExcludedSpeakerNames(source.excludedSpeakerNames);
     if (hasOwn(source, 'sortMode')) normalized.sortMode = ['name', 'count', 'group'].includes(source.sortMode) ? source.sortMode : 'name';
     if (hasOwn(source, 'attributionReviewPolicy')) {
         const policy = typeof source.attributionReviewPolicy === 'string'
