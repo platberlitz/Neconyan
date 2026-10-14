@@ -85,6 +85,84 @@ for (const viewport of [{ width: 393, height: 852 }, { width: 1280, height: 900 
             await expect(input).toHaveValue('');
         });
 
+        test('the live panel lock updates immediately in both directions', async ({ page }) => {
+            await page.evaluate(() => {
+                document.getElementById('root').id = 'ica--tracker-panel';
+                window.savedPanelState = new Map();
+                window.panelTranslations = {};
+                window.t = strings => window.panelTranslations[strings[0]] ?? strings[0];
+                window.accountStorage = {
+                    setItem: (key, value) => window.savedPanelState.set(key, value),
+                };
+                window.collectPanelAgentStates = () => [];
+                window.areAgentsGloballyEnabled = () => false;
+            });
+            await page.addScriptTag({ content: [
+                'let panelLocked = false; const panelOpen = true, panelLauncher = "handle";',
+                declarations(`${companionPath}companion-panel.js`, [
+                    'PANEL_LOCK_STORAGE_KEY', 'storePanelLocked', 'isCompanionPanelLocked', 'setCompanionPanelLocked',
+                    'buildPanelRunButtonHtml', 'buildPanelRunButtonsHtml', 'buildPanelHtml', 'handlePanelAction',
+                ]),
+                `window.panelRenders = 0;
+                function renderPanel() {
+                    window.panelRenders++;
+                    window.replaceCompanionView(window.$('#ica--tracker-panel'), buildPanelHtml(), () => true);
+                }
+                renderPanel();
+                window.$('#ica--tracker-panel').on('click', '[data-action]', event => {
+                    window.lockAction = window.runCompanionViewAction(event.currentTarget, () => handlePanelAction(event));
+                });
+                window.panelIsLocked = isCompanionPanelLocked;`,
+            ].join('\n') });
+            await page.evaluate(() => {
+                const panel = document.getElementById('ica--tracker-panel');
+                panel.insertAdjacentHTML('beforeend', '<textarea data-role="aside" aria-label="Unsent aside"></textarea><details><summary>Earlier notes</summary>Saved note</details>');
+                window.originalLockButton = panel.querySelector('[data-action="panel-lock"]');
+            });
+            const aside = page.getByRole('textbox', { name: 'Unsent aside' });
+            await aside.fill('Keep this draft');
+            await page.locator('summary').click();
+            const lock = page.locator('[data-action="panel-lock"]');
+            await lock.focus();
+            await page.keyboard.press('Space');
+            await page.evaluate(() => window.lockAction);
+            await expect(lock).toBeFocused();
+            await expect(lock).toHaveAttribute('aria-pressed', 'true');
+            await expect(lock).toHaveAttribute('aria-label', 'Unlock panel');
+            await expect(lock).toHaveAttribute('title', 'Unlock panel auto-close');
+            await expect(lock).toHaveClass(/is-active/);
+            await expect(lock.locator('i')).toHaveClass('fa-solid fa-lock');
+            expect(await page.evaluate(() => window.panelIsLocked())).toBe(true);
+            expect(await page.evaluate(() => window.savedPanelState.get('ica--tracker-panel-locked'))).toBe('true');
+
+            await lock.click();
+            await page.evaluate(() => window.lockAction);
+            await expect(lock).toBeFocused();
+            await expect(lock).toHaveAttribute('aria-pressed', 'false');
+            await expect(lock).toHaveAttribute('aria-label', 'Lock panel');
+            await expect(lock).toHaveAttribute('title', 'Keep panel open until unlocked');
+            await expect(lock).not.toHaveClass(/is-active/);
+            await expect(lock.locator('i')).toHaveClass('fa-solid fa-lock-open');
+            expect(await page.evaluate(() => window.panelIsLocked())).toBe(false);
+            expect(await page.evaluate(() => window.savedPanelState.get('ica--tracker-panel-locked'))).toBe('false');
+            expect(await lock.evaluate(node => node === window.originalLockButton)).toBe(true);
+            expect(await page.evaluate(() => window.panelRenders)).toBe(1);
+            await expect(lock).not.toHaveAttribute('data-ica-busy', 'true');
+            await expect(aside).toHaveValue('Keep this draft');
+            await expect(page.locator('details')).toHaveAttribute('open', '');
+
+            const translations = JSON.parse(read('../public/locales/neconyan/pt-pt.json'));
+            await page.evaluate(translations => { window.panelTranslations = translations; }, translations);
+            await lock.click();
+            await page.evaluate(() => window.lockAction);
+            await expect(lock).toHaveAttribute('aria-label', translations['Unlock panel']);
+            await expect(lock).toHaveAttribute('title', translations['Unlock panel auto-close']);
+            await lock.click();
+            await page.evaluate(() => window.lockAction);
+            await expect(lock).toHaveAttribute('aria-label', translations['Lock panel']);
+            await expect(lock).toHaveAttribute('title', translations['Keep panel open until unlocked']);
+        });
+
         test('real sanitisation and CSS decoding cannot create actions or executable markup', async ({ page }) => {
             await page.evaluate(() => {
                 window.executed = false;
