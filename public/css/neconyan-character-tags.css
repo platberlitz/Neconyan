@@ -18,3 +18,338 @@ body.neconyan #right-nav-panel #avatar-and-name-block #tagList .tag {
     font-weight: 500;
     padding-inline: 8px;
 }
+
+/* Character & group library filter bar, card anatomy, grid view, and import panel. */
+body.neconyan:not(.sbterm) #right-nav-panel #neconyan-character-library .neconyan-character-filters {
+    padding: 0 12px;
+    border: 1px solid var(--neco-border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--neco-raised) 55%, var(--neco-surface));
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #neconyan-character-library .neconyan-character-filters > summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 44px;
+    padding: 6px 2px;
+    color: var(--neco-ink);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    list-style: none;
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #neconyan-character-library .neconyan-character-filters > summary > i {
+    color: var(--neco-ginger);
+    font-size: 13px;
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #neconyan-character-library .neconyan-character-filters[open] {
+    padding: 2px 12px 12px;
+    border-color: color-mix(in srgb, var(--neco-ginger) 46%, var(--neco-border));
+    background: color-mix(in srgb, var(--neco-raised) 72%, var(--neco-surface));
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #neconyan-character-library .neconyan-character-filters[open] > summary {
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--neco-border);
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #neconyan-character-library .neconyan-character-filters[open] > summary::after {
+    content: '\f077';
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #neconyan-character-library #tagList:empty {
+    display: none;
+}
+
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block :is(.character_name_block, .group_name_block) {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    margin: 0;
+}
+
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block :is(.character_name_block, .group_name_block) > .ch_name {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--neco-ink);
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block :is(.character_version, .group_select_counter):not(:empty) {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    border: 1px solid var(--neco-border);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--neco-surface) 80%, transparent);
+    color: var(--neco-muted);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select).is_fav :is(.character_name_block, .group_name_block) {
+    padding-inline-end: 20px;
+}
+
+body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) :is(.ch_fav_icon, .group_fav_icon) {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: end;
+    align-self: center;
+    order: 0;
+    margin: 0;
+    padding: 0;
+    color: var(--neco-ginger);
+    font-size: 12px;
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block .sb-entity-meta {
+    align-items: center;
+    gap: 6px;
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block :is(.ch_current_chat, .group_current_chat):not(.hidden) {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 8px;
+    border: 1px solid color-mix(in srgb, var(--neco-ginger) 52%, var(--neco-border));
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--neco-ginger) 16%, var(--neco-surface));
+    color: var(--neco-ink);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.35;
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select).is-active-entity > .avatar {
+    border-color: var(--neco-ginger);
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block .sb-entity-action {
+    border: 1px solid var(--neco-border);
+    border-radius: 10px;
+    background: var(--neco-surface);
+    color: var(--neco-ink);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block .sb-entity-action:is(:hover, :focus-visible) {
+    border-color: color-mix(in srgb, var(--neco-ginger) 44%, var(--neco-border));
+    background: var(--neco-raised);
+    color: var(--neco-ink);
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block .sb-entity-action[data-entity-action='open-chat'] {
+    border-color: color-mix(in srgb, var(--neco-ginger) 46%, var(--neco-border));
+    background: color-mix(in srgb, var(--neco-ginger) 16%, var(--neco-raised));
+    color: var(--neco-ink);
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select).is-active-entity .sb-entity-action[data-entity-action='open-chat'],
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block .sb-entity-action[data-entity-action='open-chat']:is(:hover, :focus-visible) {
+    border-color: var(--neco-ginger);
+    background: var(--neco-ginger);
+    color: var(--neco-on-accent);
+}
+
+@container character-list (min-width: 520px) {
+    body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) > :is(.character_select_container, .group_select_container) {
+        grid-template-columns: minmax(0, 1fr) auto;
+        column-gap: 14px;
+        align-items: center;
+    }
+
+    body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) > :is(.character_select_container, .group_select_container) > :is(.character_name_block, .group_name_block, .ch_description, .group_select_block_list, .sb-entity-meta, .tags_inline) {
+        grid-column: 1;
+    }
+
+    body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) > :is(.character_select_container, .group_select_container) > .sb-entity-actions {
+        grid-column: 2;
+        grid-row: 1 / span 4;
+        align-self: center;
+        justify-content: flex-end;
+        flex-wrap: nowrap;
+        margin-top: 0;
+    }
+}
+
+body.neconyan.charListGrid:not(.sbterm) #right-nav-panel #rm_print_characters_block {
+    --neco-char-card-avatar-size: 76px;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 172px), 1fr));
+    gap: 12px;
+}
+
+body.neconyan.charListGrid:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+        'avatar'
+        'body';
+    align-content: start;
+    justify-items: center;
+    row-gap: 8px;
+    height: auto;
+    min-height: 212px;
+    max-height: none;
+    padding: 14px 12px 12px;
+    text-align: center;
+}
+
+body.neconyan.charListGrid:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) > .avatar {
+    margin: 0 auto;
+}
+
+body.neconyan.charListGrid:not(.sbterm) #right-nav-panel #rm_print_characters_block :is(.character_select_container, .group_select_container) {
+    justify-items: center;
+    width: 100%;
+    text-align: center;
+}
+
+body.neconyan.charListGrid:not(.sbterm) #right-nav-panel #rm_print_characters_block :is(.character_name_block, .group_name_block, .sb-entity-meta, .sb-entity-actions) {
+    justify-content: center;
+}
+
+body.neconyan.charListGrid:not(.sbterm) #right-nav-panel #rm_print_characters_block .sb-entity-actions {
+    width: 100%;
+    margin-top: 6px;
+}
+
+body.neconyan.charListGrid:not(.sbterm) #right-nav-panel #rm_print_characters_block .sb-entity-action {
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: 7px 8px;
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #sb_character_import_panel {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 12px;
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #sb_character_import_panel .sb-character-import-intro {
+    display: grid;
+    justify-items: start;
+    gap: 4px;
+    max-width: none;
+    text-align: left;
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #sb_character_import_panel .sb-character-import-intro h3 {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    font-family: var(--sb-font-display);
+    font-size: 17px;
+    font-weight: 400;
+    line-height: 1.25;
+    color: var(--neco-ink);
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #sb_character_import_panel .sb-character-import-intro p {
+    margin: 0;
+    color: var(--neco-muted);
+    font-size: 12.5px;
+    line-height: 1.45;
+    opacity: 1;
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #sb_character_import_panel .sb-character-import-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+    gap: 12px;
+    max-width: none;
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #sb_character_import_panel .sb-character-import-action {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    align-items: center;
+    justify-content: flex-start;
+    gap: 12px;
+    width: 100%;
+    min-height: 82px;
+    padding: 14px 16px;
+    border: 1px solid var(--neco-border);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--neco-raised) 65%, var(--neco-surface));
+    color: var(--neco-ink);
+    text-align: left;
+    white-space: normal;
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #sb_character_import_panel .sb-character-import-action:not(:disabled):is(:hover, :focus-visible) {
+    border-color: color-mix(in srgb, var(--neco-ginger) 58%, var(--neco-border));
+    background: color-mix(in srgb, var(--neco-ginger) 12%, var(--neco-raised));
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #sb_character_import_panel .sb-character-import-action > i {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border: 1px solid color-mix(in srgb, var(--neco-ginger) 36%, var(--neco-border));
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--neco-ginger) 14%, var(--neco-surface));
+    color: var(--neco-ginger);
+    font-size: 16px;
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #sb_character_import_panel #sb_character_chat_import_options {
+    display: grid;
+    justify-items: start;
+    gap: 8px;
+    margin-top: 6px;
+    padding: 16px;
+    border: 1px solid var(--neco-border);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--neco-raised) 45%, var(--neco-surface));
+    text-align: left;
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #sb_character_import_panel #sb_character_chat_import_target {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border: 1px solid color-mix(in srgb, var(--neco-ginger) 42%, var(--neco-border));
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--neco-ginger) 14%, var(--neco-surface));
+    color: var(--neco-ink);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #sb_character_import_panel #sb_character_chat_import_options .checkbox_label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 2px 0 0;
+    padding: 6px 10px;
+    border: 1px solid var(--neco-border);
+    border-radius: 10px;
+    background: var(--neco-surface);
+    font-size: 12.5px;
+    font-weight: 600;
+}
+
+body.neconyan:not(.sbterm) #right-nav-panel #sb_character_import_panel #sb_character_import_new_instance_help {
+    color: var(--neco-muted);
+    font-size: 12px;
+    line-height: 1.45;
+}

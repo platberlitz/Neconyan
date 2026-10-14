@@ -470,15 +470,23 @@ body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header.neconyan-
 body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header.neconyan-cat-panel::after {
     overflow: visible;
 }
+body.neconyan:not(.sbterm) #right-nav-panel .neconyan-tool-page-intro.neconyan-cat-panel::before,
+body.neconyan:not(.sbterm) #right-nav-panel .neconyan-tool-page-intro.neconyan-cat-panel::after {
+    display: none;
+}
 body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) {
     border-color: color-mix(in oklch, var(--neco-pink) 24%, var(--neco-border));
     border-radius: 16px;
-    background: color-mix(in srgb, color-mix(in oklch, var(--neco-cream) 8%, var(--neco-surface)) 90%, transparent);
+    background: color-mix(in srgb, color-mix(in oklch, var(--neco-cream) 8%, var(--neco-surface)) 92%, transparent);
 }
-body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select):hover,
-body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select).is-active-entity {
-    border-color: color-mix(in oklch, var(--neco-ginger) 58%, var(--neco-border));
-    background: color-mix(in srgb, color-mix(in oklch, var(--neco-pink) 16%, var(--neco-raised)) 90%, transparent);
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select):where(:hover) {
+    border-color: color-mix(in oklch, var(--neco-ginger) 52%, var(--neco-border));
+    background: color-mix(in srgb, color-mix(in oklch, var(--neco-pink) 14%, var(--neco-raised)) 94%, transparent);
+}
+body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select):where(.is-active-entity) {
+    border-color: color-mix(in srgb, var(--neco-ginger) 68%, var(--neco-border));
+    background: color-mix(in srgb, var(--neco-ginger) 14%, var(--neco-raised));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--neco-ginger) 26%, transparent);
 }
 
 @media (max-width: 390px) {
@@ -574,10 +582,10 @@ body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.ch
 }
 body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) > .avatar {
     grid-area: avatar;
-    width: 64px !important;
-    min-width: 64px !important;
-    height: 64px !important;
-    min-height: 64px !important;
+    width: var(--neco-char-card-avatar-size, 64px) !important;
+    min-width: var(--neco-char-card-avatar-size, 64px) !important;
+    height: var(--neco-char-card-avatar-size, 64px) !important;
+    min-height: var(--neco-char-card-avatar-size, 64px) !important;
     margin: 0;
     border: 2px solid color-mix(in oklch, var(--neco-ginger) 42%, var(--neco-border));
     border-radius: var(--neco-avatar-radius) !important;
@@ -625,6 +633,11 @@ body.neconyan #right-nav-panel :is(.rm_tag_filter .tag.actionable, #rm_print_cha
 body.neconyan #right-nav-panel .rm_tag_filter .tag.actionable { justify-content: center; padding: 8px; border-radius: 12px; }
 body.neconyan #right-nav-panel #rm_button_bar > select { flex: 1 1 140px; min-width: 0; max-width: 240px; min-height: 44px; }
 
+@media (max-width: 1000px) {
+    body.neconyan #send_form .stih--buttons { gap: 5px; justify-content: flex-start; }
+    body.neconyan #send_form .gg-regular-buttons-container { gap: 5px; justify-content: flex-end; }
+}
+
 @media (max-width: 768px) {
     /* Phones: the header is only its close button (see neconyan.css); the ears move to the tab row. */
     body.neconyan:not(.sbterm) #right-nav-panel.openDrawer > .sb-character-shell-header.neconyan-cat-panel { margin: 0; padding: 0 !important; }
@@ -632,25 +645,18 @@ body.neconyan #right-nav-panel #rm_button_bar > select { flex: 1 1 140px; min-wi
     /* The tab-row wrapper's pseudo-elements double as scroll-fade shadows (opacity 0 in neconyan-tabs.css); the ears need to be seen. */
     body.neconyan:not(.sbterm) #right-nav-panel > .sb-character-shell-nav-wrapper.neconyan-cat-panel::before,
     body.neconyan:not(.sbterm) #right-nav-panel > .sb-character-shell-nav-wrapper.neconyan-cat-panel::after { bottom: auto; opacity: 1; pointer-events: none; z-index: 0; }
-
-/* Tablets: keep the composer helper groups hugging their sides with the same tight gap as
-   phones instead of letting the extensions spread the buttons apart. */
-@media (max-width: 1000px) {
-    body.neconyan #send_form .stih--buttons { gap: 5px; justify-content: flex-start; }
-    body.neconyan #send_form .gg-regular-buttons-container { gap: 5px; justify-content: flex-end; }
-}
     body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header #sb_character_mode_toggle { flex: 1 0 100%; }
     body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header > :is(.sbtw-launch, #sbstory-mode-button) { flex: 1 1 0; }
     body.neconyan:not(.sbterm) #right-nav-panel .sb-character-shell-header > .sbtw-launch { margin-left: 0; }
-    body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) {
+    body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) {
+        --neco-char-card-avatar-size: 44px;
         grid-template-columns: 48px minmax(0, 1fr);
         grid-template-areas: 'avatar body';
         row-gap: 6px;
         padding: 9px;
     }
-    body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block > :is(.character_select, .group_select) > .avatar { width: 44px !important; min-width: 44px !important; height: 44px !important; min-height: 44px !important; }
-    body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block .sb-entity-actions { justify-content: flex-start; }
-    body.neconyan:not(.sbterm) #right-nav-panel #rm_print_characters_block .sb-entity-action { flex: 0 1 auto; }
+    body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block .sb-entity-actions { justify-content: flex-start; }
+    body.neconyan:not(.charListGrid):not(.sbterm) #right-nav-panel #rm_print_characters_block .sb-entity-action { flex: 0 1 auto; }
 }
 
 /* Keep both mobile mode choices readable and give the selected light-theme

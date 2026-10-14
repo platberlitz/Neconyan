@@ -125,7 +125,7 @@
     box-shadow: none;
 }
 
-:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) .neconyan-cat-control:not(.neconyan-home-primary) {
+:root[data-sb-theme='slate-flat'] body.neconyan:not(.sbterm) .neconyan-cat-control:not(.neconyan-home-primary, .menu_button_primary) {
     background: var(--slate-raised);
     box-shadow: none;
 }

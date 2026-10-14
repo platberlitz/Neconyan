@@ -44,4 +44,13 @@ describe('character tags accent styling', () => {
         expect(tagsCss).toMatch(/#rm_print_characters_block \.tags_inline \.tag/);
         expect(tagsCss).toMatch(/#right-nav-panel #avatar-and-name-block #tagList \.tag/);
     });
+
+    test('styles the character library cards, primary actions, grid view, and import panel', () => {
+        expect(indexHtml).toMatch(/id="rm_button_create"[^>]*class="[^"]*menu_button_primary/);
+        expect(indexHtml).toMatch(/id="rm_button_group_chats"[^>]*class="[^"]*menu_button_primary/);
+        expect(tagsCss).toMatch(/\.sb-entity-action\[data-entity-action='open-chat'\]/);
+        expect(tagsCss).toMatch(/@container character-list \(min-width: 520px\)/);
+        expect(tagsCss).toMatch(/body\.neconyan\.charListGrid:not\(\.sbterm\) #right-nav-panel #rm_print_characters_block/);
+        expect(tagsCss).toMatch(/#sb_character_import_panel \.sb-character-import-action/);
+    });
 });

@@ -157,7 +157,7 @@
     box-shadow: 0 0 16px color-mix(in srgb, var(--hypr-a) 45%, transparent), 0 0 28px color-mix(in srgb, var(--hypr-b) 25%, transparent);
 }
 
-:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) .neconyan-cat-control:not(.neconyan-home-primary) {
+:root[data-sb-theme='hypr-glow'] body.neconyan:not(.sbterm) .neconyan-cat-control:not(.neconyan-home-primary, .menu_button_primary) {
     background: var(--neco-raised);
     box-shadow: 0 0 12px color-mix(in srgb, var(--hypr-a) 25%, transparent);
 }
