@@ -7233,8 +7233,13 @@ export async function setSlashCommandAutoComplete(textarea, isFloating = false) 
 export async function initSlashCommandAutoComplete() {
     const sendTextarea = /** @type {HTMLTextAreaElement} */ (document.querySelector('#send_textarea'));
     setSlashCommandAutoComplete(sendTextarea);
+    let lastIsCommand = null;
     const updateCommandInput = () => {
         const isCommand = isSlashCommandText(sendTextarea.value);
+        if (isCommand === lastIsCommand) {
+            return;
+        }
+        lastIsCommand = isCommand;
         document.getElementById('send_form')?.classList.toggle('has-slash-command', isCommand);
         if (isCommand) {
             sendTextarea.style.fontFamily = 'var(--monoFontFamily, monospace)';

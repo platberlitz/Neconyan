@@ -415,6 +415,12 @@ function applyBrowserFixes() {
         document.addEventListener('touchcancel', clearDocumentPanStart, { passive: true, capture: true });
     }
 
+    if (window.jQuery?.expr && typeof window.jQuery.expr.cacheLength === 'number' && window.jQuery.expr.cacheLength < 2048) {
+        // Sizzle's default 50-entry selector cache is smaller than the app's delegated
+        // document listeners, which otherwise evict and recompile selectors on every input/click.
+        window.jQuery.expr.cacheLength = 2048;
+    }
+
     addMacOSPatch();
     addSafariPatch();
     addFirefoxPatch();

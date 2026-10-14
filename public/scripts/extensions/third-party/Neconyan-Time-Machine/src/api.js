@@ -239,6 +239,7 @@ export async function capturePresets({ force = false } = {}) {
         return result;
     }
     const suppressedAtStart = new Set(captureSuppressions.keys());
+    const pending = [];
     for (const { apiId, name, preset } of await readAllPresets()) {
         const key = captureKey('preset', `${apiId}/${name}`);
         if (suppressedAtStart.has(key) || captureSuppressions.has(key)) {
@@ -253,16 +254,40 @@ export async function capturePresets({ force = false } = {}) {
                     continue;
                 }
             }
-            const row = await save({
+            pending.push({ apiId, name, preset });
+        } catch (error) {
+            result.failed++;
+            console.error(`[Time Machine] could not snapshot preset ${apiId}/${name}`, error);
+        }
+    }
+
+    const batchCommit = pending.length > 1;
+    for (const { apiId, name, preset } of pending) {
+        try {
+            const request = {
                 kind: 'preset',
                 target: `${apiId}/${name}`,
                 label: `${name} (${apiId})`,
                 data: preset,
-            });
+            };
+            const row = batchCommit
+                ? await save(request, { deferCommit: true, skipPrune: true })
+                : await save(request);
             result[row ? 'taken' : 'skipped']++;
         } catch (error) {
             result.failed++;
             console.error(`[Time Machine] could not snapshot preset ${apiId}/${name}`, error);
+        }
+    }
+
+    if (batchCommit && result.taken > 0) {
+        try {
+            await commitSettings({ pruneAfter: true });
+        } catch (error) {
+            if (error?.code !== 'COMMIT_UNCONFIRMED') {
+                result.failed++;
+            }
+            console.error('[Time Machine] could not commit preset snapshots', error);
         }
     }
     return result;

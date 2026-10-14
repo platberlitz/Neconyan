@@ -1148,13 +1148,19 @@ export async function initSecrets() {
         }
         await openKeyManagerDialog(key);
     });
-    $(document).on('input', Object.values(INPUT_MAP).join(','), function () {
-        const id = $(this).attr('id');
-        const value = $(this).val();
+    const secretInputSelector = Object.values(INPUT_MAP).join(',');
+    $(document).on('input', function (event) {
+        const target = event.target;
+        if (!(target instanceof HTMLElement) || !target.matches(secretInputSelector)) {
+            return;
+        }
+        const $target = $(target);
+        const id = $target.attr('id');
+        const value = $target.val();
 
         // Find the key based on the entered value
         for (const [key, inputSelector] of Object.entries(INPUT_MAP)) {
-            if (!value || !this.matches(inputSelector)) {
+            if (!value || !target.matches(inputSelector)) {
                 continue;
             }
             const secrets = secret_state[key];
@@ -1163,7 +1169,7 @@ export async function initSecrets() {
             }
             const secretMatch = secrets.find(secret => secret.id === value);
             if (secretMatch) {
-                $(this).val('');
+                $target.val('');
                 return rotateSecret(key, secretMatch.id);
             }
         }

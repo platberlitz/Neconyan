@@ -47,11 +47,27 @@ describe('hasChangedAttributeValue', () => {
 
     test('shell body watchers skip no-op writes and record old values', () => {
         const source = readFileSync(path.join(repoRoot, 'public/scripts/neconyan-tabs.js'), 'utf8');
-        const observers = [...source.matchAll(/new MutationObserver\(records => \{\s*if \(hasChangedAttributeValue\(records\)\) \{[\s\S]*?\.observe\(([^,]+),\s*\{([\s\S]*?)\}\);/g)];
+        const observers = [...source.matchAll(/new MutationObserver\(records => \{\s*if \(hasChangedAttributeValue\(records\)\) \{(?:(?!new MutationObserver)[\s\S])*?\.observe\(([^,]+),\s*\{([\s\S]*?)\}\);/g)];
 
-        expect(observers.map(match => match[1].trim())).toEqual(['document.body', 'document.body', 'document.body']);
+        expect(observers.map(match => match[1].trim())).toEqual(['document.body', 'document.body']);
         for (const [, , options] of observers) {
             expect(options).toContain('attributeOldValue: true');
         }
+    });
+
+    test('mode watcher observes the shell hosts directly instead of the whole page subtree', () => {
+        const source = readFileSync(path.join(repoRoot, 'public/scripts/neconyan-tabs.js'), 'utf8');
+        const start = source.indexOf('neconyanModeObserver = new MutationObserver(records => {');
+        expect(start).toBeGreaterThan(-1);
+        const block = source.slice(start, source.indexOf('syncNeconyanModeControls();', start));
+
+        expect(block).toContain('if (hasChangedAttributeValue(records))');
+        expect(block).toContain('attributeOldValue: true');
+        expect(block).not.toContain('subtree');
+        expect(block).toContain('document.body,');
+        for (const id of ['sheld', 'right-nav-panel', 'send_form']) {
+            expect(block).toContain(`document.getElementById('${id}')`);
+        }
+        expect(block).toContain('neconyanModeObserver.observe(target, modeObserverOptions);');
     });
 });
