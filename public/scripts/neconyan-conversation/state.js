@@ -20,6 +20,7 @@ export const conversationState = {
     lastRenderedThreadKey: '',
     lastRenderedMessageCount: 0,
     lastTimelineFingerprint: '',
+    timelineWindowDescriptor: null,
     timelineBottomScrollPending: false,
     lastPalsRailFingerprint: '',
     originalDocumentTitle: typeof document !== 'undefined' ? document.title : '',

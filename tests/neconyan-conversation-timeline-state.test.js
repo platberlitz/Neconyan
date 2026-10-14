@@ -5,6 +5,8 @@ await jest.unstable_mockModule('../public/scripts/user.js', () => ({ getCurrentU
 
 let currentAvatar = 'char.png';
 let currentPersonaId = 'persona-a.png';
+let lowMemoryActive = false;
+const messageFormattingSpy = jest.fn(value => value);
 const stores = new Map();
 const extractCharacterReplyCommands = jest.fn(rawText => ({ text: String(rawText || '').trim(), selfieRequests: [] }));
 const submitConversationRewrite = jest.fn();
@@ -15,6 +17,10 @@ const saveConversationThread = jest.fn();
 const commitCharacterReplyCommands = jest.fn();
 const revealUi = jest.fn();
 await jest.unstable_mockModule('../public/scripts/ui-motion.js', () => ({ revealUi }));
+await jest.unstable_mockModule('../public/scripts/low-memory-mode.js', () => ({
+    isLowMemoryModeActive: () => lowMemoryActive,
+    subscribeLowMemoryState: () => () => {},
+}));
 
 function storeKey(personaId, avatar, groupId = '') {
     return [personaId, avatar, groupId].join('|');
@@ -29,7 +35,7 @@ await jest.unstable_mockModule('../public/script.js', () => ({
     default_user_avatar: 'default.png',
     getThumbnailUrl: () => '',
     getThumbnailUrlForViewport: () => '',
-    messageFormatting: value => value,
+    messageFormatting: (...args) => messageFormattingSpy(...args),
     name1: 'User',
 }));
 let momentFactory = () => ({ isValid: () => false });
@@ -143,7 +149,9 @@ await jest.unstable_mockModule('../public/scripts/neconyan-conversation/typing.j
 const stateModule = await import('../public/scripts/neconyan-conversation/state.js');
 const {
     getActiveConversationReplyTarget,
+    getConversationMessageById,
     markConversationMessageRuns,
+    navigateConversationTimelineWindow,
     regenerateConversationMessage,
     renderConversationTimeline,
 } = await import('../public/scripts/neconyan-conversation/timeline-render.js');
@@ -315,6 +323,10 @@ describe('conversation timeline operation identity', () => {
                 return child;
             }
 
+            querySelector() {
+                return null;
+            }
+
             querySelectorAll() {
                 return [];
             }
@@ -363,6 +375,7 @@ describe('conversation message runs and day labels', () => {
         return {
             isValid: () => !Number.isNaN(date.getTime()),
             toDate: () => date,
+            toISOString: () => date.toISOString(),
             isSame: (other, unit) => unit === 'day' && sameDay(other),
             diff: other => date.getTime() - other.toDate().getTime(),
             format: pattern => `${pattern}:${date.getDate()}`,
@@ -438,5 +451,166 @@ describe('conversation message runs and day labels', () => {
         ]);
 
         expect(marks).toEqual([{ run: 'start', day: undefined }, { run: 'end', day: undefined }]);
+    });
+
+    test('reconciles a 1,000-message thread to the bounded window, skips history controls in run marking, and protects historical readers from bottom jumps or stale pins', () => {
+        class FakeDomNode extends EventTarget {
+            constructor(tagName = 'div') {
+                super();
+                this.tagName = tagName;
+                this.className = '';
+                this.children = [];
+                this.dataset = {};
+                this.innerHTML = '';
+                this.textContent = '';
+                this.isConnected = true;
+                this.scrollTop = 0;
+                this.scrollHeight = 2000;
+                this.clientHeight = 500;
+                this.attributes = new Map();
+                const classes = new Set();
+                this.classList = {
+                    add: (...names) => names.forEach(n => classes.add(n)),
+                    remove: (...names) => names.forEach(n => classes.delete(n)),
+                    toggle: (name, force) => {
+                        const next = force === undefined ? !classes.has(name) : Boolean(force);
+                        if (next) classes.add(name);
+                        else classes.delete(name);
+                        return next;
+                    },
+                    contains: name => classes.has(name) || this.className.split(/\s+/).includes(name),
+                };
+            }
+
+            getAttribute(name) {
+                return this.attributes.get(name) ?? null;
+            }
+
+            setAttribute(name, value) {
+                this.attributes.set(name, String(value));
+            }
+
+            appendChild(child) {
+                this.children.push(child);
+                return child;
+            }
+
+            append(...nodes) {
+                nodes.forEach(node => this.appendChild(node));
+            }
+
+            prepend(...nodes) {
+                this.children.unshift(...nodes);
+            }
+
+            querySelector() {
+                return null;
+            }
+
+            querySelectorAll() {
+                return [];
+            }
+        }
+
+        const pendingFrames = [];
+        globalThis.HTMLElement = FakeDomNode;
+        globalThis.HTMLInputElement = class HTMLInputElement extends FakeDomNode {};
+        globalThis.requestAnimationFrame = callback => {
+            pendingFrames.push(callback);
+            return pendingFrames.length;
+        };
+        momentFactory = fakeMoment;
+
+        const timeline = new FakeDomNode('div');
+        const elements = new Map([['sb_conversation_timeline', timeline]]);
+        globalThis.document = {
+            createElement: tag => new FakeDomNode(tag),
+            getElementById: id => elements.get(id),
+        };
+
+        const thousandMessages = Array.from({ length: 1000 }, (_, idx) => ({
+            id: `m-${idx}`,
+            role: idx % 2 === 0 ? 'user' : 'character',
+            name: idx % 2 === 0 ? 'User' : 'Aster',
+            mes: `Line ${idx}`,
+            send_date: at(2, 10, idx % 60),
+            created_at: 1000 + idx,
+            extra: {},
+        }));
+
+        currentAvatar = 'char.png';
+        currentPersonaId = 'persona-a.png';
+        lowMemoryActive = true;
+        stores.set(storeKey('persona-a.png', 'char.png'), {
+            activeBranchId: 'branch-a',
+            branches: {
+                'branch-a': {
+                    id: 'branch-a',
+                    messages: thousandMessages,
+                },
+            },
+        });
+
+        stateModule.conversationState.lastRenderedThreadKey = '';
+        stateModule.conversationState.lastRenderedMessageCount = 0;
+        stateModule.conversationState.lastTimelineFingerprint = '';
+        stateModule.conversationState.timelineWindowDescriptor = null;
+        messageFormattingSpy.mockClear();
+
+        renderConversationTimeline();
+
+        // Only the 25-message low-memory window is formatted and mounted.
+        expect(messageFormattingSpy).toHaveBeenCalledTimes(25);
+        const messageNodesAfterOpen = timeline.children.filter(node => node.className === 'sb-conversation-message');
+        const historyControlsAfterOpen = timeline.children.filter(node => node.dataset.sbConversationHistoryNav);
+        expect(messageNodesAfterOpen).toHaveLength(25);
+        expect(messageNodesAfterOpen[0].dataset.messageId).toBe('m-975');
+        expect(messageNodesAfterOpen.at(-1).dataset.messageId).toBe('m-999');
+        expect(historyControlsAfterOpen.map(node => node.dataset.sbConversationHistoryNav)).toEqual(['older']);
+
+        // History button wrapper does not acquire message run or day metadata, while the first mounted message row has a day label.
+        expect(historyControlsAfterOpen[0].dataset.sbRun).toBeUndefined();
+        expect(historyControlsAfterOpen[0].dataset.sbDayLabel).toBeUndefined();
+        expect(messageNodesAfterOpen[0].dataset.sbRun).toBeDefined();
+        expect(messageNodesAfterOpen[0].dataset.sbDayLabel).toBeDefined();
+
+        // Full history remains addressable by ID even for unmounted messages.
+        expect(getConversationMessageById('m-0')?.message.mes).toBe('Line 0');
+        expect(getConversationMessageById('m-500')?.message.mes).toBe('Line 500');
+
+        // Paging upwards cancels already-scheduled bottom pins so delayed frame callbacks cannot jump back to bottom.
+        timeline.scrollTop = 120;
+        navigateConversationTimelineWindow('older');
+        timeline.scrollTop = 120;
+        while (pendingFrames.length) {
+            pendingFrames.shift()();
+        }
+        expect(timeline.scrollTop).toBe(120);
+
+        const messageNodesAfterOlder = timeline.children.filter(node => node.className === 'sb-conversation-message');
+        const historyControlsAfterOlder = timeline.children.filter(node => node.dataset.sbConversationHistoryNav);
+        expect(messageNodesAfterOlder).toHaveLength(25);
+        expect(messageNodesAfterOlder[0].dataset.messageId).toBe('m-951');
+        expect(messageNodesAfterOlder.at(-1).dataset.messageId).toBe('m-975');
+        expect(historyControlsAfterOlder.map(node => node.dataset.sbConversationHistoryNav)).toEqual(['older', 'newer']);
+
+        // When a new reply arrives while reading history, scrollTop stays at 120 and the reader stays on m-951..m-975.
+        thousandMessages.push({
+            id: 'm-1000',
+            role: 'character',
+            name: 'Aster',
+            mes: 'Line 1000',
+            send_date: at(0, 11, 0),
+            created_at: 2000,
+            extra: {},
+        });
+        renderConversationTimeline();
+        expect(timeline.scrollTop).toBe(120);
+        const messageNodesAfterIncoming = timeline.children.filter(node => node.className === 'sb-conversation-message');
+        expect(messageNodesAfterIncoming[0].dataset.messageId).toBe('m-951');
+        expect(messageNodesAfterIncoming.at(-1).dataset.messageId).toBe('m-975');
+
+        delete globalThis.requestAnimationFrame;
+        lowMemoryActive = false;
     });
 });
