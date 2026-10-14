@@ -34,32 +34,37 @@ export function resolveConversationTimelineWindowSize({
         : CONVERSATION_TIMELINE_WINDOW_NORMAL;
 }
 
+export function moveConversationTimelineWindowToLatest(state) {
+    if (!state || typeof state !== 'object') {
+        return;
+    }
+    if (state.timelineWindowDescriptor && typeof state.timelineWindowDescriptor === 'object') {
+        state.timelineWindowDescriptor = Object.freeze({
+            ...state.timelineWindowDescriptor,
+            followingLatest: true,
+        });
+    }
+    state.timelineBottomScrollPending = true;
+}
+
+export function syncConversationHistoryButtonsForEditState(timeline) {
+    if (!timeline || typeof timeline.querySelectorAll !== 'function') {
+        return false;
+    }
+    const disabled = Boolean(timeline.querySelector?.('.sb-conversation-message.is-editing'));
+    timeline.querySelectorAll('.sb-conversation-history-button').forEach((button) => {
+        button.disabled = disabled;
+        button.setAttribute?.('aria-disabled', String(disabled));
+    });
+    return disabled;
+}
+
 function getMessageId(message, index) {
     const rawId = message?.id;
     if (rawId !== undefined && rawId !== null && String(rawId).trim() !== '') {
         return String(rawId);
     }
     return `idx:${index}`;
-}
-
-function expandBoundsForProtectedIds(list, startIndex, endIndex, protectedMessageIds) {
-    if (!Array.isArray(protectedMessageIds) || protectedMessageIds.length === 0) {
-        return { startIndex, endIndex };
-    }
-    const protectedSet = new Set(protectedMessageIds.map(id => String(id || '')).filter(Boolean));
-    if (protectedSet.size === 0) {
-        return { startIndex, endIndex };
-    }
-    let nextStart = startIndex;
-    let nextEnd = endIndex;
-    for (let i = 0; i < list.length; i++) {
-        const id = String(list[i]?.id ?? '');
-        if (id && protectedSet.has(id)) {
-            if (i < nextStart) nextStart = i;
-            if (i >= nextEnd) nextEnd = i + 1;
-        }
-    }
-    return { startIndex: nextStart, endIndex: nextEnd };
 }
 
 function createWindowDescriptor({
@@ -97,7 +102,6 @@ export function selectConversationTimelineWindow(
         identityKey = '',
         lowMemoryActive = false,
         windowSize,
-        protectedMessageIds = [],
     } = {},
 ) {
     const list = Array.isArray(filteredMessages) ? filteredMessages : [];
@@ -127,9 +131,8 @@ export function selectConversationTimelineWindow(
     );
 
     if (!sameIdentity || previousDescriptor.followingLatest !== false) {
-        const rawEnd = total;
-        const rawStart = Math.max(0, rawEnd - cap);
-        const { startIndex, endIndex } = expandBoundsForProtectedIds(list, rawStart, rawEnd, protectedMessageIds);
+        const endIndex = total;
+        const startIndex = Math.max(0, endIndex - cap);
         const descriptor = createWindowDescriptor({
             identityKey: normalizedIdentity,
             followingLatest: true,
@@ -153,28 +156,27 @@ export function selectConversationTimelineWindow(
         ? list.findIndex((item, idx) => getMessageId(item, idx) === endId)
         : -1;
 
-    let rawStart;
-    let rawEnd;
+    let startIndex;
+    let endIndex;
     if (foundStartIndex >= 0) {
-        rawStart = foundStartIndex;
-        rawEnd = Math.min(total, rawStart + cap);
+        startIndex = foundStartIndex;
+        endIndex = Math.min(total, startIndex + cap);
     } else if (foundEndIndex >= 0) {
-        rawEnd = Math.min(total, foundEndIndex + 1);
-        rawStart = Math.max(0, rawEnd - cap);
+        endIndex = Math.min(total, foundEndIndex + 1);
+        startIndex = Math.max(0, endIndex - cap);
     } else {
         const fallbackStart = Number.isInteger(previousDescriptor.startIndex)
             ? previousDescriptor.startIndex
             : 0;
-        rawStart = Math.max(0, Math.min(fallbackStart, Math.max(0, total - cap)));
-        rawEnd = Math.min(total, rawStart + cap);
+        startIndex = Math.max(0, Math.min(fallbackStart, Math.max(0, total - cap)));
+        endIndex = Math.min(total, startIndex + cap);
     }
 
-    if (rawEnd >= total) {
-        rawEnd = total;
-        rawStart = Math.max(0, total - cap);
+    if (endIndex >= total) {
+        endIndex = total;
+        startIndex = Math.max(0, total - cap);
     }
 
-    const { startIndex, endIndex } = expandBoundsForProtectedIds(list, rawStart, rawEnd, protectedMessageIds);
     const descriptor = createWindowDescriptor({
         identityKey: normalizedIdentity,
         followingLatest: endIndex >= total,
@@ -198,7 +200,6 @@ export function pageConversationTimelineWindow(
         identityKey = currentDescriptor?.identityKey || '',
         lowMemoryActive = false,
         windowSize,
-        protectedMessageIds = [],
     } = {},
 ) {
     const list = Array.isArray(filteredMessages) ? filteredMessages : [];
@@ -211,7 +212,6 @@ export function pageConversationTimelineWindow(
             identityKey: normalizedIdentity,
             lowMemoryActive,
             windowSize: cap,
-            protectedMessageIds,
         });
     }
 
@@ -222,28 +222,27 @@ export function pageConversationTimelineWindow(
     }).descriptor;
 
     const step = Math.max(1, cap - 1);
-    let rawStart = settled.startIndex;
-    let rawEnd = settled.endIndex;
+    let startIndex = settled.startIndex;
+    let endIndex = settled.endIndex;
     let followingLatest = settled.followingLatest;
 
     if (direction === 'older') {
-        rawStart = Math.max(0, settled.startIndex - step);
-        rawEnd = Math.min(total, rawStart + cap);
-        followingLatest = rawEnd >= total;
+        startIndex = Math.max(0, settled.startIndex - step);
+        endIndex = Math.min(total, startIndex + cap);
+        followingLatest = endIndex >= total;
     } else if (direction === 'newer') {
         const anchorIndex = Math.max(0, settled.endIndex - 1);
         if (anchorIndex + cap >= total) {
-            rawEnd = total;
-            rawStart = Math.max(0, total - cap);
+            endIndex = total;
+            startIndex = Math.max(0, total - cap);
             followingLatest = true;
         } else {
-            rawStart = anchorIndex;
-            rawEnd = rawStart + cap;
+            startIndex = anchorIndex;
+            endIndex = startIndex + cap;
             followingLatest = false;
         }
     }
 
-    const { startIndex, endIndex } = expandBoundsForProtectedIds(list, rawStart, rawEnd, protectedMessageIds);
     const descriptor = createWindowDescriptor({
         identityKey: normalizedIdentity,
         followingLatest,

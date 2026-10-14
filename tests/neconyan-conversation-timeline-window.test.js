@@ -1,12 +1,19 @@
 import { describe, expect, test } from '@jest/globals';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
     CONVERSATION_TIMELINE_WINDOW_LOW_MEMORY,
     CONVERSATION_TIMELINE_WINDOW_NORMAL,
     buildConversationTimelineWindowIdentity,
+    moveConversationTimelineWindowToLatest,
     pageConversationTimelineWindow,
     resolveConversationTimelineWindowSize,
     selectConversationTimelineWindow,
+    syncConversationHistoryButtonsForEditState,
 } from '../public/scripts/neconyan-conversation/timeline-window.js';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 function makeMessages(count, prefix = 'msg') {
     return Array.from({ length: count }, (_, index) => ({
@@ -198,5 +205,81 @@ describe('Conversation timeline window selection and paging', () => {
             expect(reset.descriptor.startIndex).toBe(75);
             expect(reset.descriptor.endIndex).toBe(100);
         }
+    });
+
+    test('never stretches the window beyond its cap even with 3,000 messages and disables history buttons during an open edit', () => {
+        const messages = makeMessages(3000);
+        const identityKey = 'large-thread';
+        const initial = selectConversationTimelineWindow(messages, null, {
+            identityKey,
+            lowMemoryActive: true,
+        });
+        expect(initial.messages).toHaveLength(25);
+
+        const olderPage = pageConversationTimelineWindow(messages, {
+            identityKey,
+            followingLatest: false,
+            startMessageId: 'msg-40',
+            endMessageId: 'msg-64',
+            startIndex: 40,
+            endIndex: 65,
+            windowSize: 25,
+            totalMessages: 3000,
+            hasOlder: true,
+            hasNewer: true,
+        }, 'latest', {
+            identityKey,
+            lowMemoryActive: true,
+        });
+        expect(olderPage.messages).toHaveLength(25);
+        expect(olderPage.descriptor.startIndex).toBe(2975);
+        expect(olderPage.descriptor.endIndex).toBe(3000);
+
+        const buttons = [
+            { disabled: false, attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } },
+            { disabled: false, attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } },
+        ];
+        let editing = true;
+        const fakeTimeline = {
+            querySelector: () => (editing ? {} : null),
+            querySelectorAll: () => buttons,
+        };
+        expect(syncConversationHistoryButtonsForEditState(fakeTimeline)).toBe(true);
+        expect(buttons.every(b => b.disabled === true && b.attrs['aria-disabled'] === 'true')).toBe(true);
+
+        editing = false;
+        expect(syncConversationHistoryButtonsForEditState(fakeTimeline)).toBe(false);
+        expect(buttons.every(b => b.disabled === false && b.attrs['aria-disabled'] === 'false')).toBe(true);
+    });
+
+    test('moves a historical descriptor back to latest on workspace reopen, tab return and user send', () => {
+        const messages = makeMessages(100);
+        const identityKey = 'reopen-thread';
+        const initial = selectConversationTimelineWindow(messages, null, { identityKey, lowMemoryActive: true });
+        const historical = pageConversationTimelineWindow(messages, initial.descriptor, 'older', { identityKey, lowMemoryActive: true });
+        expect(historical.descriptor.followingLatest).toBe(false);
+
+        const state = {
+            timelineWindowDescriptor: historical.descriptor,
+            timelineBottomScrollPending: false,
+        };
+        moveConversationTimelineWindowToLatest(state);
+        expect(state.timelineWindowDescriptor.followingLatest).toBe(true);
+        expect(state.timelineBottomScrollPending).toBe(true);
+
+        const reopened = selectConversationTimelineWindow(messages, state.timelineWindowDescriptor, {
+            identityKey,
+            lowMemoryActive: true,
+        });
+        expect(reopened.descriptor.followingLatest).toBe(true);
+        expect(reopened.descriptor.startIndex).toBe(75);
+        expect(reopened.descriptor.endIndex).toBe(100);
+
+        const chromeSource = fs.readFileSync(path.join(repoRoot, 'public', 'scripts', 'neconyan-conversation', 'chrome.js'), 'utf8');
+        const tabsSource = fs.readFileSync(path.join(repoRoot, 'public', 'scripts', 'neconyan-tabs.js'), 'utf8');
+        const attachmentsSource = fs.readFileSync(path.join(repoRoot, 'public', 'scripts', 'neconyan-conversation', 'attachments.js'), 'utf8');
+        expect(chromeSource).toContain('moveConversationTimelineWindowToLatest();');
+        expect(tabsSource).toContain('moveConversationTimelineWindowToLatest(conversationState);');
+        expect(attachmentsSource).toContain('moveConversationTimelineWindowToLatest(conversationState);');
     });
 });

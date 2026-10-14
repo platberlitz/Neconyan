@@ -49,6 +49,7 @@ function createWorkspaceContext(characters = []) {
         closeConversationSettings: jest.fn(),
         emitConversationWorkspaceStateChange: jest.fn(),
         ensureConversationStylesheet: jest.fn(),
+        moveConversationTimelineWindowToLatest: jest.fn(),
         scheduleInterfaceRefresh: jest.fn(),
         getSettings: () => ({ enabled: false }),
         saveSettings: jest.fn(),

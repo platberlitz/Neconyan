@@ -19,6 +19,7 @@ import {
     PERSONA_APPENDICES_SELECTIONS_KEY,
 } from './neconyan-conversation/constants.js';
 import { conversationState } from './neconyan-conversation/state.js';
+import { moveConversationTimelineWindowToLatest } from './neconyan-conversation/timeline-window.js';
 import { scheduleTimelineRender } from './neconyan-conversation/render-scheduler.js';
 import {
     resolveCharacterBadgeMirrorPlan,
@@ -790,7 +791,7 @@ function queueReopenedChatBottomScroll() {
 
         const mode = getActualNeconyanMode();
         if (mode === 'conversation') {
-            conversationState.timelineBottomScrollPending = true;
+            moveConversationTimelineWindowToLatest(conversationState);
             scheduleTimelineRender();
         } else if (mode === 'roleplay') {
             void scrollReopenedChatToBottom().catch(error => console.error('Could not scroll the reopened chat.', error));

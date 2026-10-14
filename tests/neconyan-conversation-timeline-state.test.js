@@ -151,9 +151,11 @@ const {
     getActiveConversationReplyTarget,
     getConversationMessageById,
     markConversationMessageRuns,
+    moveConversationTimelineWindowToLatest,
     navigateConversationTimelineWindow,
     regenerateConversationMessage,
     renderConversationTimeline,
+    syncConversationTimelineHistoryControlsDisabledState,
 } = await import('../public/scripts/neconyan-conversation/timeline-render.js');
 
 function makeMessage(id, mes = `message ${id}`) {
@@ -362,8 +364,11 @@ describe('conversation timeline operation identity', () => {
 
 describe('conversation message runs and day labels', () => {
     class FakeNode {
-        constructor() {
-            this.dataset = {};
+        constructor(index = 0) {
+            this.dataset = { messageId: `m-${index}` };
+            this.classList = {
+                contains: name => name === 'sb-conversation-message',
+            };
         }
     }
 
@@ -383,7 +388,7 @@ describe('conversation message runs and day labels', () => {
     }
 
     function markRuns(messages) {
-        const timeline = { children: messages.map(() => new FakeNode()) };
+        const timeline = { children: messages.map((_, index) => new FakeNode(index)) };
         markConversationMessageRuns(timeline, messages);
         return timeline.children.map(node => ({ run: node.dataset.sbRun, day: node.dataset.sbDayLabel }));
     }
@@ -453,19 +458,20 @@ describe('conversation message runs and day labels', () => {
         expect(marks).toEqual([{ run: 'start', day: undefined }, { run: 'end', day: undefined }]);
     });
 
-    test('reconciles a 1,000-message thread to the bounded window, skips history controls in run marking, and protects historical readers from bottom jumps or stale pins', () => {
+    test('reconciles a 1,000-message thread to the bounded window, preserves the overlap message scroll anchor when paging, and blocks paging while an edit is open', () => {
         class FakeDomNode extends EventTarget {
             constructor(tagName = 'div') {
                 super();
                 this.tagName = tagName;
-                this.className = '';
+                this._className = '';
                 this.children = [];
+                this.parentNode = null;
                 this.dataset = {};
                 this.innerHTML = '';
-                this.textContent = '';
+                this._textContent = '';
                 this.isConnected = true;
                 this.scrollTop = 0;
-                this.scrollHeight = 2000;
+                this.scrollHeight = 4000;
                 this.clientHeight = 500;
                 this.attributes = new Map();
                 const classes = new Set();
@@ -478,8 +484,43 @@ describe('conversation message runs and day labels', () => {
                         else classes.delete(name);
                         return next;
                     },
-                    contains: name => classes.has(name) || this.className.split(/\s+/).includes(name),
+                    contains: name => classes.has(name),
                 };
+                Object.defineProperty(this, 'className', {
+                    get: () => [...classes].join(' '),
+                    set: value => {
+                        classes.clear();
+                        String(value || '').split(/\s+/).filter(Boolean).forEach(n => classes.add(n));
+                    },
+                });
+            }
+
+            get textContent() {
+                return this._textContent;
+            }
+
+            set textContent(value) {
+                this._textContent = String(value ?? '');
+                if (this._textContent === '') {
+                    this.children.forEach((child) => { child.parentNode = null; });
+                    this.children.length = 0;
+                }
+            }
+
+            get firstChild() {
+                return this.children[0] || null;
+            }
+
+            get nextSibling() {
+                if (!this.parentNode) return null;
+                const idx = this.parentNode.children.indexOf(this);
+                return idx >= 0 ? (this.parentNode.children[idx + 1] || null) : null;
+            }
+
+            get offsetTop() {
+                if (!this.parentNode) return 0;
+                const idx = this.parentNode.children.indexOf(this);
+                return idx >= 0 ? idx * 80 : 0;
             }
 
             getAttribute(name) {
@@ -491,8 +532,53 @@ describe('conversation message runs and day labels', () => {
             }
 
             appendChild(child) {
+                if (child.parentNode) {
+                    child.remove();
+                }
+                child.parentNode = this;
                 this.children.push(child);
                 return child;
+            }
+
+            insertBefore(newNode, referenceNode) {
+                if (!referenceNode) {
+                    return this.appendChild(newNode);
+                }
+                if (newNode === referenceNode) {
+                    return newNode;
+                }
+                if (newNode.parentNode) {
+                    newNode.remove();
+                }
+                newNode.parentNode = this;
+                const refIdx = this.children.indexOf(referenceNode);
+                if (refIdx < 0) {
+                    this.children.push(newNode);
+                } else {
+                    this.children.splice(refIdx, 0, newNode);
+                }
+                return newNode;
+            }
+
+            replaceWith(nextNode) {
+                if (!this.parentNode) return;
+                const parent = this.parentNode;
+                const idx = parent.children.indexOf(this);
+                if (idx >= 0) {
+                    if (nextNode.parentNode) nextNode.remove();
+                    nextNode.parentNode = parent;
+                    parent.children[idx] = nextNode;
+                    this.parentNode = null;
+                }
+            }
+
+            remove() {
+                if (!this.parentNode) return;
+                const idx = this.parentNode.children.indexOf(this);
+                if (idx >= 0) {
+                    this.parentNode.children.splice(idx, 1);
+                }
+                this.parentNode = null;
             }
 
             append(...nodes) {
@@ -500,14 +586,28 @@ describe('conversation message runs and day labels', () => {
             }
 
             prepend(...nodes) {
-                this.children.unshift(...nodes);
+                for (let i = nodes.length - 1; i >= 0; i--) {
+                    this.insertBefore(nodes[i], this.firstChild);
+                }
             }
 
             querySelector() {
                 return null;
             }
 
-            querySelectorAll() {
+            querySelectorAll(selector) {
+                if (selector === '.sb-conversation-history-button') {
+                    return this.children
+                        .filter(child => child.dataset?.sbConversationHistoryNav)
+                        .flatMap(container => container.children);
+                }
+                if (selector.includes('.sb-conversation-thread-empty')) {
+                    return this.children.filter(child => (
+                        child.classList.contains('sb-conversation-thread-empty')
+                        || child.classList.contains('sb-conversation-typing-indicator')
+                        || child.classList.contains('sb-conversation-image-pending')
+                    ));
+                }
                 return [];
             }
         }
@@ -561,7 +661,7 @@ describe('conversation message runs and day labels', () => {
 
         // Only the 25-message low-memory window is formatted and mounted.
         expect(messageFormattingSpy).toHaveBeenCalledTimes(25);
-        const messageNodesAfterOpen = timeline.children.filter(node => node.className === 'sb-conversation-message');
+        const messageNodesAfterOpen = timeline.children.filter(node => node.classList.contains('sb-conversation-message'));
         const historyControlsAfterOpen = timeline.children.filter(node => node.dataset.sbConversationHistoryNav);
         expect(messageNodesAfterOpen).toHaveLength(25);
         expect(messageNodesAfterOpen[0].dataset.messageId).toBe('m-975');
@@ -578,23 +678,54 @@ describe('conversation message runs and day labels', () => {
         expect(getConversationMessageById('m-0')?.message.mes).toBe('Line 0');
         expect(getConversationMessageById('m-500')?.message.mes).toBe('Line 500');
 
-        // Paging upwards cancels already-scheduled bottom pins so delayed frame callbacks cannot jump back to bottom.
-        timeline.scrollTop = 120;
+        // Paging Older preserves the overlap anchor (m-975) at the same viewport offset and cancels scheduled bottom pins.
+        timeline.scrollTop = 20;
+        const overlapBeforeOlder = messageNodesAfterOpen[0];
+        expect(overlapBeforeOlder.dataset.messageId).toBe('m-975');
+        const offsetBeforeOlder = overlapBeforeOlder.offsetTop - timeline.scrollTop;
+
         navigateConversationTimelineWindow('older');
-        timeline.scrollTop = 120;
         while (pendingFrames.length) {
             pendingFrames.shift()();
         }
-        expect(timeline.scrollTop).toBe(120);
 
-        const messageNodesAfterOlder = timeline.children.filter(node => node.className === 'sb-conversation-message');
+        const messageNodesAfterOlder = timeline.children.filter(node => node.classList.contains('sb-conversation-message'));
         const historyControlsAfterOlder = timeline.children.filter(node => node.dataset.sbConversationHistoryNav);
         expect(messageNodesAfterOlder).toHaveLength(25);
         expect(messageNodesAfterOlder[0].dataset.messageId).toBe('m-951');
         expect(messageNodesAfterOlder.at(-1).dataset.messageId).toBe('m-975');
         expect(historyControlsAfterOlder.map(node => node.dataset.sbConversationHistoryNav)).toEqual(['older', 'newer']);
 
-        // When a new reply arrives while reading history, scrollTop stays at 120 and the reader stays on m-951..m-975.
+        const overlapAfterOlder = messageNodesAfterOlder.find(node => node.dataset.messageId === 'm-975');
+        expect(overlapAfterOlder.offsetTop - timeline.scrollTop).toBe(offsetBeforeOlder);
+
+        // Paging Newer preserves the overlap anchor (m-975, old last message) at the same viewport offset.
+        timeline.scrollTop = 1940;
+        const offsetBeforeNewer = overlapAfterOlder.offsetTop - timeline.scrollTop;
+        navigateConversationTimelineWindow('newer');
+        const messageNodesAfterNewer = timeline.children.filter(node => node.classList.contains('sb-conversation-message'));
+        expect(messageNodesAfterNewer[0].dataset.messageId).toBe('m-975');
+        expect(messageNodesAfterNewer.at(-1).dataset.messageId).toBe('m-999');
+        const overlapAfterNewer = messageNodesAfterNewer.find(node => node.dataset.messageId === 'm-975');
+        expect(overlapAfterNewer.offsetTop - timeline.scrollTop).toBe(offsetBeforeNewer);
+
+        // Page back to m-951..m-975, then open an edit on m-951: paging controls are disabled and cannot page away.
+        navigateConversationTimelineWindow('older');
+        const editedNode = timeline.children.find(node => node.dataset.messageId === 'm-951');
+        editedNode.classList.add('is-editing');
+        syncConversationTimelineHistoryControlsDisabledState(timeline);
+        const historyButtons = timeline.querySelectorAll('.sb-conversation-history-button');
+        expect(historyButtons.length).toBeGreaterThan(0);
+        expect(historyButtons.every(btn => btn.disabled === true && btn.getAttribute('aria-disabled') === 'true')).toBe(true);
+
+        navigateConversationTimelineWindow('latest');
+        expect(stateModule.conversationState.timelineWindowDescriptor.followingLatest).toBe(false);
+        expect(stateModule.conversationState.timelineWindowDescriptor.startMessageId).toBe('m-951');
+
+        // Incoming message while reading history does not stretch the window or jump scrollTop.
+        editedNode.classList.remove('is-editing');
+        syncConversationTimelineHistoryControlsDisabledState(timeline);
+        const scrollBeforeIncoming = timeline.scrollTop;
         thousandMessages.push({
             id: 'm-1000',
             role: 'character',
@@ -605,10 +736,19 @@ describe('conversation message runs and day labels', () => {
             extra: {},
         });
         renderConversationTimeline();
-        expect(timeline.scrollTop).toBe(120);
-        const messageNodesAfterIncoming = timeline.children.filter(node => node.className === 'sb-conversation-message');
+        expect(timeline.scrollTop).toBe(scrollBeforeIncoming);
+        const messageNodesAfterIncoming = timeline.children.filter(node => node.classList.contains('sb-conversation-message'));
+        expect(messageNodesAfterIncoming).toHaveLength(25);
         expect(messageNodesAfterIncoming[0].dataset.messageId).toBe('m-951');
         expect(messageNodesAfterIncoming.at(-1).dataset.messageId).toBe('m-975');
+
+        // Explicitly moving to latest (as on workspace reopen or tab return) lands on m-976..m-1000.
+        moveConversationTimelineWindowToLatest();
+        renderConversationTimeline();
+        const messageNodesAtLatest = timeline.children.filter(node => node.classList.contains('sb-conversation-message'));
+        expect(messageNodesAtLatest).toHaveLength(25);
+        expect(messageNodesAtLatest[0].dataset.messageId).toBe('m-976');
+        expect(messageNodesAtLatest.at(-1).dataset.messageId).toBe('m-1000');
 
         delete globalThis.requestAnimationFrame;
         lowMemoryActive = false;
