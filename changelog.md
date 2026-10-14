@@ -10,6 +10,7 @@
 - PR #164 (2026-10-13) `fix(i18n): translate the rewritten error messages into German`
 - PR #170 (2026-10-14) `fix(agents): update the companion lock cue in place`
 - PR #172 (2026-10-14) `fix(connection-manager): keep saved details readable in narrow panes`
+- PR #182 (2026-10-14) `fix(agents): let the shared agent editor scroll on desktop`
 
 ## v1.3.2
 
