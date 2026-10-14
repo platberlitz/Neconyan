@@ -27,14 +27,14 @@ function owned(app) {
     return { base, account: { accountId, dataEpoch }, directories, scope: { ...base, accountId, dataEpoch } };
 }
 
-async function savedChat(account, name) {
+async function savedChat(account, name, firstMessageExtra = {}) {
     const fields = { avatar_url: account.avatar, file_name: name };
     const source = await account.context.request.post('/api/chats/get', { headers: account.headers, data: { ...fields, allow_create: true } });
     expect(source.ok(), await source.text()).toBe(true);
     const vacancy = JSON.parse(source.headers()['x-neconyan-roleplay']);
     await account.post('/api/chats/save', { ...fields, chat: [
         { user_name: 'User', character_name: 'Durable Nova', chat_metadata: { stage9: true } },
-        { name: 'Durable Nova', is_user: false, mes: 'Retained answer.', extra: {},
+        { name: 'Durable Nova', is_user: false, mes: 'Retained answer.', extra: firstMessageExtra,
             swipes: ['Retained answer.', 'Retained alternative.'], swipe_id: 0 },
         { name: 'User', is_user: true, mes: 'Retained question.', extra: {} },
     ], roleplay: { account: vacancy.account, vacancy: vacancy.vacancy, operationKey: randomUUID() } });
@@ -77,15 +77,42 @@ for (const phone of [false, true]) {
     test(`${viewport} leaving before the first token submits without a paint and finishes with the page frozen`, async ({ app }) => {
         app.provider.mode.hold = 'conversation-fixture';
         app.provider.mode.streamReply = { first: 'The server ', rest: 'wrote this reply.' };
+        app.provider.mode.reply = { choices: [{ message: { content: 'A background Companion note.' }, finish_reason: 'stop' }] };
         const account = await app.account({ phone, activeConnection: true,
             contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {},
-            configureSettings: settings => { settings.oai_settings.stream_openai = true; } });
+            configureSettings: settings => {
+                settings.oai_settings.stream_openai = true;
+                settings.extension_settings.inChatAgents = {
+                    globalSettings: {
+                        enabled: true,
+                        separateRecentChats: false,
+                        connectionProfile: 'durable',
+                        companionConcurrentWithPostGen: true,
+                    },
+                };
+            } });
         if (phone) await installIPhoneSafari(account.context);
         const native = owned(app);
-        const locator = await savedChat(account, `Background send ${viewport}`);
+        await fs.mkdir(native.directories.inChatAgents, { recursive: true });
+        await fs.writeFile(path.join(native.directories.inChatAgents, 'bg-note.json'), JSON.stringify({
+            id: 'bg-note',
+            name: 'Background note',
+            enabled: true,
+            category: 'companion',
+            execution: 'companion',
+            prompt: 'Keep a note.',
+            feedback: { enabled: true },
+        }));
+        const locator = await savedChat(account, `Background send ${viewport}`, {
+            inChatAgentCompanionResults: { 'bg-note': { status: 'done', content: 'Earlier note.' } },
+        });
         const page = await account.open({ workspace: false, readyTimeout: 120000 });
         await openChat(page, locator);
         if (phone) await applyIOSOnlyCss(page);
+        await page.evaluate(async () => {
+            const core = await import('/script.js');
+            await core.Generate('normal', { suppressUserMessage: true }, true);
+        });
         await page.evaluate(() => {
             const context = window.SillyTavern.getContext();
             context.eventSource.once(context.eventTypes.USER_MESSAGE_RENDERED, () => {
@@ -134,10 +161,14 @@ for (const phone of [false, true]) {
             await app.release();
             await expect.poll(() => typeof app.provider.mode.finishStream).toBe('function');
             app.provider.mode.finishStream();
+            await expect.poll(() => app.provider.calls.length, { timeout: 15000,
+                message: 'The Companion agent runs immediately after the main generation ends while hidden' }).toBe(2);
             await account.settled(jobId);
             const records = readRoleplayChat(native.scope, locator).records;
             expect(records.filter(row => row.mes === ANSWER)).toHaveLength(1);
             expect(records.filter(row => row.mes === 'Start my reply even if I leave immediately.')).toHaveLength(1);
+            expect(records.at(-1).extra.inChatAgentCompanionResults['bg-note'].status).toBe('done');
+            expect(records.at(-1).extra.inChatAgentCompanionResults['bg-note'].content).toBe('A background Companion note.');
         } finally {
             app.provider.mode.finishStream?.();
             await client.send('Page.setWebLifecycleState', { state: 'active' });
@@ -148,7 +179,7 @@ for (const phone of [false, true]) {
         }
         await expect(page.locator('#chat .mes').last()).toContainText(ANSWER, { timeout: 30000 });
         await expect.poll(() => page.evaluate(async () => (await import('/script.js')).isGenerating()), { timeout: 30000 }).toBe(false);
-        expect(app.provider.calls).toHaveLength(1);
+        expect(app.provider.calls).toHaveLength(2);
         expect(submissions).toHaveLength(1);
     });
 

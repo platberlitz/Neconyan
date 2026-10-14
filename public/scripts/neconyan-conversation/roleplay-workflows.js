@@ -469,7 +469,7 @@ export function observeRoleplayWorkflowJob(jobId, { key, name, locator, messageI
             }
         },
     });
-    observed.set(jobId, { account, stop });
+    observed.set(jobId, { account, stop, onTerminal });
     void import('./roleplay-preview.js').then(({ observeRoleplayPreview }) => {
         if (ended) return;
         stopPreview = observeRoleplayPreview(jobId, { account, name, messageIndex,
@@ -737,6 +737,8 @@ export async function resumeNativeRoleplayWorkflowObservation({ reconnect = fals
             if (!TERMINAL.has(job.state)) {
                 observeRoleplayWorkflowJob(job.id, { key, name, locator, account,
                     messageIndex: job.intent?.source?.message?.index ?? job.intent?.source?.range?.start });
+            } else if (observed.has(job.id)) {
+                observed.get(job.id)?.onTerminal?.(job);
             } else if (!cycle.attachOnly && !finished) {
                 finished = { key, name, locator };
             }

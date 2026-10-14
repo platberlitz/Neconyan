@@ -2612,7 +2612,8 @@ function setupMobileChatViewportObserver(onViewportChange) {
 }
 
 function shouldDeferMobileMessageUpdates() {
-    return Boolean(shouldBatchMobileChatRendering() && !is_send_press);
+    const isHidden = typeof document !== 'undefined' && (document.hidden === true || document.visibilityState === 'hidden');
+    return Boolean(shouldBatchMobileChatRendering() && !is_send_press && !isHidden);
 }
 
 function getMobileChatRenderBatchSize(messageCount) {
@@ -2624,6 +2625,10 @@ function getMobileChatRenderBatchSize(messageCount) {
 }
 
 function waitForNextFrame() {
+    const isHidden = typeof document !== 'undefined' && (document.hidden === true || document.visibilityState === 'hidden');
+    if (isHidden || typeof requestAnimationFrame !== 'function') {
+        return Promise.resolve();
+    }
     return new Promise(resolve => requestAnimationFrame(() => resolve()));
 }
 
@@ -3513,7 +3518,10 @@ export async function printMessages() {
     syncChatHistoryWindowControls();
 
     // Wait for next frame to ensure batch rendering completes
-    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const isHidden = typeof document !== 'undefined' && (document.hidden === true || document.visibilityState === 'hidden');
+    if (!isHidden && typeof requestAnimationFrame === 'function') {
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }
     if (!isCurrent()) return;
     scrollLoadedChatToBottomThroughLifecycle(isCurrent);
     delay(debounce_timeout.short).then(() => { if (isCurrent()) scrollOnMediaLoad({ force: true, isCurrent }); });
@@ -7771,7 +7779,10 @@ class StreamingProcessor {
     async generate() {
         if (this.messageId == -1) {
             this.messageId = await this.onStartStreaming(this.firstMessageText);
-            await delay(1); // delay for message to be rendered
+            const isHidden = typeof document !== 'undefined' && (document.hidden === true || document.visibilityState === 'hidden');
+            if (!isHidden) {
+                await delay(1); // delay for message to be rendered
+            }
         }
         if (!this.#isCurrent()) { this.isFinished = true; return this.result; }
 
@@ -8529,7 +8540,7 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         // accepted server workflow, and the host's own cleanup in the finally block
         // ends the generation it announced.
         if (nativeRoleplay) {
-            const native = await nativeRoleplay.workflows.runNativeRoleplayGeneration(type, { committed: nativeReplacement,
+            const native = await nativeRoleplay.workflows.runNativeRoleplayGeneration(type, { page: nativeRoleplay.page, committed: nativeReplacement,
                 maxOutputTokens, jsonSchema, force_chid, force_name2, quiet_prompt, depth, cacheScope, suppressUserMessage,
                 preserveLastMessage, signal, skipNativeRoleplay });
             if (native) return native;
@@ -10176,6 +10187,13 @@ export async function Generate(type, { automatic_trigger, force_name2, quiet_pro
         if (isAuxiliaryGeneration && abortController === requestController) {
             abortController = activeGenerationRun?.controller ?? previousAbortController;
         }
+        if (dryRun && !activeGenerationRun && !is_send_press && extension_prompts && typeof extension_prompts === 'object') {
+            for (const key of Object.keys(extension_prompts)) {
+                if ((key.startsWith('inchat_agent_') && !key.startsWith(COMPANION_HISTORY_PROMPT_KEY_PREFIX)) || key.startsWith('pathfinder_')) {
+                    delete extension_prompts[key];
+                }
+            }
+        }
     }
 }
 //MARK: Generate() ends
@@ -10308,6 +10326,13 @@ function unblockGeneration(type, { emitGenerationEnded = true, force = false } =
     }
 
     is_send_press = false;
+    if (extension_prompts && typeof extension_prompts === 'object') {
+        for (const key of Object.keys(extension_prompts)) {
+            if ((key.startsWith('inchat_agent_') && !key.startsWith(COMPANION_HISTORY_PROMPT_KEY_PREFIX)) || key.startsWith('pathfinder_')) {
+                delete extension_prompts[key];
+            }
+        }
+    }
     if (unblockState.shouldActivateSendButtons) {
         activateSendButtons({ emitGenerationEnded });
     }
@@ -11711,16 +11736,16 @@ export function getGeneratingModel(mes) {
 export function activateSendButtons({ emitGenerationEnded = true } = {}) {
     const lockState = resolveGenerationUiLockState({ isGenerating: false });
     is_send_press = false;
+    if (lockState.bodyGeneratingValue === null) {
+        delete document.body.dataset.generating;
+    } else {
+        document.body.dataset.generating = lockState.bodyGeneratingValue;
+    }
     if (!lockState.shouldShowStopButton) {
         hideStopButton({ emitGenerationEnded });
     }
     if (!lockState.shouldHideSwipeButtons) {
         showSwipeButtons();
-    }
-    if (lockState.bodyGeneratingValue === null) {
-        delete document.body.dataset.generating;
-    } else {
-        document.body.dataset.generating = lockState.bodyGeneratingValue;
     }
 }
 

@@ -841,3 +841,30 @@ test.each([
     await groupWorkflows.resumeNativeRoleplayWorkflowObservation({ reconnect: true });
     expect(reloads).toEqual(shouldMatch ? [2] : []);
 });
+
+test('reconnect discovery settles an already-observed workflow whose job finished while hidden', async () => {
+    workflows.initNativeRoleplayWorkflows();
+    await settle();
+    listJobs.mockClear();
+
+    const pending = workflows.runNativeRoleplayGeneration('normal');
+    await settle();
+    expect(observers.has('job-1')).toBe(true);
+    expect(activations).toEqual(['busy']);
+
+    listJobs.mockResolvedValueOnce([{
+        id: 'job-1', type: 'media.roleplay-workflow', state: 'completed',
+        intent: {
+            media: { operationKey: 'k' },
+            source: { locator: { chat: 'roleplay', avatar: 'nova.png', group: false } },
+            request: { named: { name: 'roleplay.reply' } },
+        },
+    }]);
+    receiptHandler = () => response(200, { key: 'k', accepted: true, state: 'closed', jobId: 'job-1', result: { named: { appended: true } } });
+
+    await workflows.resumeNativeRoleplayWorkflowObservation({ reconnect: true });
+    const outcome = await pending;
+    expect(outcome).toMatchObject({ native: true, name: 'roleplay.reply', jobId: 'job-1', state: 'closed' });
+    expect(reloads).toEqual([2]);
+    expect(activations).toEqual(['busy', 'idle']);
+});

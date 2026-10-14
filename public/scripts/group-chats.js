@@ -1786,7 +1786,9 @@ async function generateGroupWrapper(byAutoMode, type = null, params = {}) {
     // Auto-navigate back to group menu
     if (menu_type !== 'group_edit') {
         select_group_chats(selected_group, false);
-        await delay(1);
+        if (typeof document === 'undefined' || (document.hidden !== true && document.visibilityState !== 'hidden')) {
+            await delay(1);
+        }
     }
 
     /** @type {any} Caution: JS war crimes ahead */

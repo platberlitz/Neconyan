@@ -297,7 +297,7 @@ let toolRecursionDepth = 0;
 /** Tracks automatic post-processing per generated message revision so fallback events cannot double-apply agents. */
 const processedPostProcessingRuns = new WeakMap();
 const processedPostProcessingRunsByIndex = new Map();
-const postProcessingInFlightKeys = new Set();
+const postProcessingInFlightKeys = new Map();
 const postProcessingTargets = new WeakMap();
 const messageEditRevisions = new WeakMap();
 const postProcessingInterruptionWarned = new WeakSet();
@@ -1780,69 +1780,77 @@ function isDeferredPostProcessingMessageCurrent(pendingMessage) {
     return isGenerationAssistantCandidate(pendingMessage.messageIndex, message);
 }
 
+async function flushDeferredPostProcessing() {
+    if (deferredPostProcessingTimeout) {
+        clearTimeout(deferredPostProcessingTimeout);
+        deferredPostProcessingTimeout = null;
+    }
+
+    if (deferredPostProcessingQueue.size === 0 || generationStopRequested) {
+        return;
+    }
+
+    if (isGenerationInProgress) {
+        return;
+    }
+
+    if (isBodyGenerationFlagBlocking()) {
+        scheduleDeferredPostProcessingFlush(DEFERRED_POST_PROCESSING_RETRY_MS);
+        return;
+    }
+
+    const pendingMessages = [...deferredPostProcessingQueue.values()]
+        .sort((a, b) => a.messageIndex - b.messageIndex);
+
+    for (const pendingMessage of pendingMessages) {
+        if (!deferredPostProcessingQueue.has(pendingMessage.messageIndex)) {
+            continue;
+        }
+
+        if (!isDeferredPostProcessingMessageCurrent(pendingMessage)) {
+            deferredPostProcessingQueue.delete(pendingMessage.messageIndex);
+            continue;
+        }
+
+        if (pendingMessage.wasStreamingStopped || wasStreamingMessageStopped(pendingMessage.messageIndex)) {
+            deferredPostProcessingQueue.delete(pendingMessage.messageIndex);
+            continue;
+        }
+
+        if (isStreamingMessageStillActive(pendingMessage.messageIndex)) {
+            scheduleDeferredPostProcessingFlush(DEFERRED_POST_PROCESSING_RETRY_MS);
+            return;
+        }
+
+        deferredPostProcessingQueue.delete(pendingMessage.messageIndex);
+        await processReceivedMessage(pendingMessage.messageIndex, pendingMessage.generationType, pendingMessage.activationSnapshot);
+
+        if (generationStopRequested) {
+            clearDeferredPostProcessing();
+            return;
+        }
+
+        if (isMainGenerationStillActive()) {
+            scheduleDeferredPostProcessingFlush(DEFERRED_POST_PROCESSING_RETRY_MS);
+            return;
+        }
+    }
+
+    clearPostGenerationStateAfterCompletion();
+
+    if (deferredPostProcessingQueue.size > 0) {
+        scheduleDeferredPostProcessingFlush();
+    }
+}
+
 function scheduleDeferredPostProcessingFlush(delayMs = 0) {
     if (deferredPostProcessingTimeout) {
         clearTimeout(deferredPostProcessingTimeout);
     }
 
-    deferredPostProcessingTimeout = setTimeout(async () => {
+    deferredPostProcessingTimeout = setTimeout(() => {
         deferredPostProcessingTimeout = null;
-
-        if (deferredPostProcessingQueue.size === 0 || generationStopRequested) {
-            return;
-        }
-
-        if (isGenerationInProgress) {
-            return;
-        }
-
-        if (isBodyGenerationFlagBlocking()) {
-            scheduleDeferredPostProcessingFlush(DEFERRED_POST_PROCESSING_RETRY_MS);
-            return;
-        }
-
-        const pendingMessages = [...deferredPostProcessingQueue.values()]
-            .sort((a, b) => a.messageIndex - b.messageIndex);
-
-        for (const pendingMessage of pendingMessages) {
-            if (!deferredPostProcessingQueue.has(pendingMessage.messageIndex)) {
-                continue;
-            }
-
-            if (!isDeferredPostProcessingMessageCurrent(pendingMessage)) {
-                deferredPostProcessingQueue.delete(pendingMessage.messageIndex);
-                continue;
-            }
-
-            if (pendingMessage.wasStreamingStopped || wasStreamingMessageStopped(pendingMessage.messageIndex)) {
-                deferredPostProcessingQueue.delete(pendingMessage.messageIndex);
-                continue;
-            }
-
-            if (isStreamingMessageStillActive(pendingMessage.messageIndex)) {
-                scheduleDeferredPostProcessingFlush(DEFERRED_POST_PROCESSING_RETRY_MS);
-                return;
-            }
-
-            deferredPostProcessingQueue.delete(pendingMessage.messageIndex);
-            await processReceivedMessage(pendingMessage.messageIndex, pendingMessage.generationType, pendingMessage.activationSnapshot);
-
-            if (generationStopRequested) {
-                clearDeferredPostProcessing();
-                return;
-            }
-
-            if (isMainGenerationStillActive()) {
-                scheduleDeferredPostProcessingFlush(DEFERRED_POST_PROCESSING_RETRY_MS);
-                return;
-            }
-        }
-
-        clearPostGenerationStateAfterCompletion();
-
-        if (deferredPostProcessingQueue.size > 0) {
-            scheduleDeferredPostProcessingFlush();
-        }
+        void flushDeferredPostProcessing();
     }, delayMs);
 }
 
@@ -2022,7 +2030,10 @@ function recoverMissedGenerationEnd(reason = 'fallback') {
     clearMissedGenerationEndRecoveryCheck();
     clearInitialGenerationToast();
     queueLatestAssistantPostProcessingFromSnapshot();
-    scheduleDeferredPostProcessingFlush();
+    void flushDeferredPostProcessing();
+    if (deferredPostProcessingQueue.size > 0) {
+        scheduleDeferredPostProcessingFlush();
+    }
     schedulePostGenerationRecoveryCheck();
     latestAssistantPostProcessingFallbackDeadline = Date.now() + LATEST_ASSISTANT_POST_PROCESSING_FALLBACK_WINDOW_MS;
     scheduleLatestAssistantPostProcessingFallback();
@@ -2209,14 +2220,19 @@ function queueLatestAssistantPostProcessingFromSnapshot() {
         return { queued: false, retry: false };
     }
 
-    const runKey = getPostProcessingRunKey(message, activationSnapshot.generationType, activationSnapshot);
-    const indexRunKey = getPostProcessingIndexRunKey(message, messageIndex, activationSnapshot.generationType, activationSnapshot);
+    const record = claimPendingInterceptRunsForMessage(message);
+    const resolvedSnapshot = record.snapshot
+        ? cloneActivationSnapshot(record.snapshot, record.snapshot.generationType)
+        : activationSnapshot;
+    const runKey = getPostProcessingRunKey(message, resolvedSnapshot.generationType, resolvedSnapshot);
+    const indexRunKey = getPostProcessingIndexRunKey(message, messageIndex, resolvedSnapshot.generationType, resolvedSnapshot);
 
     if (hasProcessedPostProcessingRun(message, runKey, messageIndex, indexRunKey)) {
         return { queued: false, retry: false };
     }
 
-    deferPostProcessing(messageIndex, activationSnapshot.generationType, activationSnapshot);
+    ensureMessageRegexSnapshot(messageIndex, resolvedSnapshot.generationType, resolvedSnapshot);
+    deferPostProcessing(messageIndex, resolvedSnapshot.generationType, resolvedSnapshot);
     return { queued: true, retry: false };
 }
 
@@ -4585,7 +4601,10 @@ function onGenerationEnded(_chatLength, generationContext) {
     // post-processing run can still be waiting on its own request, and its own
     // finally (or an explicit Stop / next generation start) clears the toast.
     queueLatestAssistantPostProcessingFromSnapshot();
-    scheduleDeferredPostProcessingFlush();
+    void flushDeferredPostProcessing();
+    if (deferredPostProcessingQueue.size > 0) {
+        scheduleDeferredPostProcessingFlush();
+    }
     schedulePostGenerationRecoveryCheck();
     latestAssistantPostProcessingFallbackDeadline = Date.now() + LATEST_ASSISTANT_POST_PROCESSING_FALLBACK_WINDOW_MS;
     scheduleLatestAssistantPostProcessingFallback();
@@ -4782,10 +4801,15 @@ async function processReceivedMessage(messageIndex, generationType, activationSn
     const swipeId = Number(message?.swipe_id);
     const inFlightKey = `${messageIndex}:${Number.isInteger(swipeId) ? swipeId : 0}`;
     if (postProcessingInFlightKeys.has(inFlightKey)) {
-        return;
+        return await postProcessingInFlightKeys.get(inFlightKey);
     }
 
-    postProcessingInFlightKeys.add(inFlightKey);
+    const runPromise = runReceivedMessagePostProcessing(messageIndex, message, generationType, activationSnapshot, { retryAttempt, inFlightKey });
+    postProcessingInFlightKeys.set(inFlightKey, runPromise);
+    return await runPromise;
+}
+
+async function runReceivedMessagePostProcessing(messageIndex, message, generationType, activationSnapshot, { retryAttempt = 0, inFlightKey }) {
     const initialText = message.mes;
     const postProcessingTarget = { text: initialText, valid: true, state: captureMessageTargetState(message) };
     const operationCancelRevision = agentGenerationCancelRevision;
