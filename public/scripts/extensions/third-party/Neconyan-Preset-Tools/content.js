@@ -94,9 +94,6 @@ function ensureSettings() {
     if (!settings.openSectionStates || typeof settings.openSectionStates !== 'object') {
         settings.openSectionStates = {};
     }
-    if (typeof settings.settingsPanelExpanded !== 'boolean') {
-        settings.settingsPanelExpanded = false;
-    }
     if (typeof settings.enableAnimatedBackgrounds !== 'boolean') {
         settings.enableAnimatedBackgrounds = true;
     }
@@ -1605,59 +1602,6 @@ function decorateBackgroundCards() {
     });
 }
 
-function setSettingsPanelExpanded(expand) {
-    const panel = document.getElementById('bpt-settings');
-    if (!panel) {
-        return;
-    }
-
-    const header = panel.querySelector(':scope > .inline-drawer-header');
-    const icon = panel.querySelector(':scope > .inline-drawer-header .inline-drawer-icon');
-    const content = panel.querySelector(':scope > .inline-drawer-content');
-    if (!(icon instanceof HTMLElement) || !(content instanceof HTMLElement)) {
-        return;
-    }
-
-    if (header instanceof HTMLElement && header.getAttribute('aria-expanded') !== String(expand)) {
-        header.setAttribute('aria-expanded', String(expand));
-    }
-
-    icon.classList.toggle('down', !expand);
-    icon.classList.toggle('fa-circle-chevron-down', !expand);
-    icon.classList.toggle('up', expand);
-    icon.classList.toggle('fa-circle-chevron-up', expand);
-    const display = expand ? 'block' : 'none';
-    if (content.style.display !== display) {
-        content.style.display = display;
-    }
-    if (panel.dataset.expanded !== String(expand)) {
-        panel.dataset.expanded = String(expand);
-    }
-}
-
-function isSettingsPanelExpanded(panel = document.getElementById('bpt-settings')) {
-    if (!(panel instanceof HTMLElement)) {
-        return false;
-    }
-
-    const content = panel.querySelector(':scope > .inline-drawer-content');
-    if (!(content instanceof HTMLElement)) {
-        return false;
-    }
-
-    return getComputedStyle(content).display !== 'none';
-}
-
-function persistSettingsPanelExpanded(expand) {
-    const settings = ensureSettings();
-    if (settings.settingsPanelExpanded === expand) {
-        return;
-    }
-
-    settings.settingsPanelExpanded = expand;
-    saveSettingsDebounced();
-}
-
 function injectSettingsPanel() {
     watchSettingsContainer();
 
@@ -1669,57 +1613,34 @@ function injectSettingsPanel() {
 
     const panel = document.createElement('div');
     panel.id = 'bpt-settings';
-    panel.className = 'inline-drawer wide100p';
+    panel.className = 'wide100p';
+    panel.dataset.extensionName = 'Preset Tools';
     panel.innerHTML = `
-        <div class="inline-drawer-toggle inline-drawer-header" role="button" tabindex="0" aria-expanded="false">
-            <b><span>Preset Tools</span></b>
-            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-        </div>
-        <div class="inline-drawer-content" style="display:none;">
-            <div class="bpt-settings-body">
-                <div class="bpt-settings-subtitle">Prompt sections and animated backgrounds</div>
-                <div class="bpt-settings-help">Prompt sections are added directly to the prompt manager. Animated background controls live in the Backgrounds drawer.</div>
-                <div class="bpt-settings-row">
-                    <label class="checkbox_label" for="bpt-enable-sections">
-                        <input id="bpt-enable-sections" type="checkbox">
-                        <span>Enable collapsible prompt sections</span>
-                    </label>
-                    <label class="checkbox_label" for="bpt-enable-animated">
-                        <input id="bpt-enable-animated" type="checkbox">
-                        <span>Enable animated backgrounds</span>
-                    </label>
-                </div>
-                <div class="bpt-settings-row">
-                    <input id="bpt-divider-patterns" class="text_pole" type="text" placeholder="Extra divider regex patterns, comma-separated">
-                    <button id="bpt-save-divider-patterns" class="menu_button menu_button_icon" type="button">
-                        <i class="fa-solid fa-save"></i>
-                        <span>Save</span>
-                    </button>
-                </div>
-                <div class="bpt-settings-help">Built-in divider patterns include headings that start with <code>===</code>, <code>---</code>, <code>***</code>, or symbol prefixes like <code>⭐─+</code>, <code>🌱 ━+</code>, and <code>━+</code>.</div>
+        <div class="bpt-settings-body">
+            <div class="bpt-settings-subtitle">Prompt sections and animated backgrounds</div>
+            <div class="bpt-settings-help">Prompt sections are added directly to the prompt manager. Animated background controls live in the Backgrounds drawer.</div>
+            <div class="bpt-settings-row">
+                <label class="checkbox_label" for="bpt-enable-sections">
+                    <input id="bpt-enable-sections" type="checkbox">
+                    <span>Enable collapsible prompt sections</span>
+                </label>
+                <label class="checkbox_label" for="bpt-enable-animated">
+                    <input id="bpt-enable-animated" type="checkbox">
+                    <span>Enable animated backgrounds</span>
+                </label>
             </div>
+            <div class="bpt-settings-row">
+                <input id="bpt-divider-patterns" class="text_pole" type="text" placeholder="Extra divider regex patterns, comma-separated">
+                <button id="bpt-save-divider-patterns" class="menu_button menu_button_icon" type="button">
+                    <i class="fa-solid fa-save"></i>
+                    <span>Save</span>
+                </button>
+            </div>
+            <div class="bpt-settings-help">Built-in divider patterns include headings that start with <code>===</code>, <code>---</code>, <code>***</code>, or symbol prefixes like <code>⭐─+</code>, <code>🌱 ━+</code>, and <code>━+</code>.</div>
         </div>
     `;
 
     settingsContainer.appendChild(panel);
-
-    const header = panel.querySelector(':scope > .inline-drawer-header');
-    if (header instanceof HTMLElement) {
-        const togglePanel = (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            const nextExpanded = !isSettingsPanelExpanded(panel);
-            setSettingsPanelExpanded(nextExpanded);
-            persistSettingsPanelExpanded(nextExpanded);
-        };
-
-        header.addEventListener('click', togglePanel);
-        header.addEventListener('keydown', event => {
-            if (event.key === 'Enter' || event.key === ' ') {
-                togglePanel(event);
-            }
-        });
-    }
 
     panel.querySelector('#bpt-enable-sections').addEventListener('change', event => {
         ensureSettings().enablePromptSections = event.target.checked;
@@ -1753,7 +1674,6 @@ function syncSettingsPanel() {
     panel.querySelector('#bpt-enable-sections').checked = settings.enablePromptSections;
     panel.querySelector('#bpt-enable-animated').checked = settings.enableAnimatedBackgrounds;
     panel.querySelector('#bpt-divider-patterns').value = settings.dividerRegexPattern;
-    setSettingsPanelExpanded(settings.settingsPanelExpanded);
 }
 
 bootstrap();

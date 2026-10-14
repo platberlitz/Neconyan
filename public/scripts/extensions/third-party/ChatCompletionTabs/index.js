@@ -89,36 +89,18 @@ function renderExtensionSettings() {
         return;
     }
 
-    // Find existing settings drawer to avoid duplication
-    let existingDrawer = settingsContainer.querySelector(`#${settingsKey}-drawer`);
-    if (existingDrawer) {
+    // Find existing settings panel to avoid duplication
+    let existingPanel = settingsContainer.querySelector(`#${settingsKey}-drawer`);
+    if (existingPanel) {
         return; // Don't recreate if exists
     }
 
-    // Create settings drawer
-    const inlineDrawer = document.createElement('div');
-    inlineDrawer.id = `${settingsKey}-drawer`;
-    inlineDrawer.classList.add('inline-drawer');
-    settingsContainer.append(inlineDrawer);
-
-    // Create drawer title
-    const inlineDrawerToggle = document.createElement('div');
-    inlineDrawerToggle.classList.add('inline-drawer-toggle', 'inline-drawer-header');
-
-    const extensionNameElement = document.createElement('b');
-    extensionNameElement.textContent = EXTENSION_NAME;
-
-    const inlineDrawerIcon = document.createElement('div');
-    inlineDrawerIcon.classList.add('inline-drawer-icon', 'fa-solid', 'fa-circle-chevron-down', 'down');
-
-    inlineDrawerToggle.append(extensionNameElement, inlineDrawerIcon);
-
-    // Create settings content area
-    const inlineDrawerContent = document.createElement('div');
-    inlineDrawerContent.classList.add('inline-drawer-content');
-
-    // Add to drawer
-    inlineDrawer.append(inlineDrawerToggle, inlineDrawerContent);
+    // Settings sit in the panel directly: one switch needs no collapsible header
+    const settingsPanel = document.createElement('div');
+    settingsPanel.id = `${settingsKey}-drawer`;
+    settingsPanel.classList.add(`${settingsKey}-settings-body`);
+    settingsPanel.dataset.extensionName = EXTENSION_NAME;
+    settingsContainer.append(settingsPanel);
 
     // Get settings
     const settings = context.extensionSettings[settingsKey];
@@ -148,15 +130,7 @@ function renderExtensionSettings() {
     enabledCheckboxText.textContent = t`Enable Chat Completion Tabs`;
 
     enabledCheckboxLabel.append(enabledCheckbox, enabledCheckboxText);
-    inlineDrawerContent.append(enabledCheckboxLabel);
-
-    // Initialize drawer toggle functionality
-    inlineDrawerToggle.addEventListener('click', function () {
-        this.classList.toggle('open');
-        inlineDrawerIcon.classList.toggle('down');
-        inlineDrawerIcon.classList.toggle('up');
-        inlineDrawerContent.classList.toggle('open');
-    });
+    settingsPanel.append(enabledCheckboxLabel);
 }
 // Additional initialization calls with delays to ensure proper loading
 setTimeout(() => {
