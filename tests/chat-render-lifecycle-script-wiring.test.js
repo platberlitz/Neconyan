@@ -744,4 +744,24 @@ describe('chat render lifecycle script wiring', () => {
         expect(scriptSource).toContain('$(window).on(\'beforeunload\', () => {');
         expect(scriptSource).toContain('disposeMobileChatViewportObserver();');
     });
+
+    test('routes Roleplay render window calculation through the low-memory policy and protects active edits or streams when pruning', () => {
+        const policyOptionsSource = getSource(findFunctionDeclaration('getChatRenderWindowPolicyOptions'));
+        expect(policyOptionsSource).toContain('const lowMemoryPolicy = getEffectiveLowMemoryPolicy();');
+        expect(policyOptionsSource).toContain('lowMemoryActive: lowMemoryPolicy.active');
+        expect(policyOptionsSource).toContain('historyExplicit: lowMemoryPolicy.roleplayWindowPreserved');
+
+        const windowSizeSource = getSource(findFunctionDeclaration('getChatRenderWindowSize'));
+        expect(windowSizeSource).toContain('resolveChatRenderWindowPolicy({');
+
+        const pagedSizeSource = getSource(findFunctionDeclaration('getPagedChatRenderWindowSize'));
+        expect(pagedSizeSource).toContain('resolvePagedChatRenderWindowSize(');
+
+        const protectedSource = getSource(findFunctionDeclaration('isProtectedRenderedChatMessage'));
+        expect(protectedSource).toContain('#curEditTextarea, .reasoning_edit_textarea');
+        expect(protectedSource).toContain('streamingProcessor && !streamingProcessor.isFinished');
+
+        const pruneSource = getSource(findFunctionDeclaration('pruneRenderedChatMessagesToWindow'));
+        expect(pruneSource).toContain('selectPrunableChatMessages(renderedMessages, excessMessageCount, pruneFrom)');
+    });
 });

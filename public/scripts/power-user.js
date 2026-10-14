@@ -86,6 +86,22 @@ import { generateCustomCssWithAI, resolveCustomCssAIProfile } from './neconyan-c
 import { populateConnectionProfileSelect } from './extensions/in-chat-agents/profile-utils.js';
 import { resolveMovingUIViewportState, matchesMovingUIViewport } from './moving-ui-viewport.js';
 import { ANDROID_STREAMING_SETTING_DEFAULTS, ANDROID_STREAMING_SETTINGS_INITIALIZED_KEY, initializeAndroidStreamingSettings } from './mobile-streaming.js';
+import {
+    createDefaultLowMemoryPreferences,
+    getLowMemoryState,
+    initializeLowMemoryPreferences,
+    isLowMemoryControlHydrating,
+    isLowMemoryModeActive,
+    notifyLowMemoryPreferencesChanged,
+    releaseLowMemoryPreferencesToAutomatic,
+    resolveLowMemoryPreferences,
+    setLowMemoryManagedSetting,
+    setLowMemoryMode,
+    setLowMemoryPreferencesProvider,
+    subscribeLowMemoryState,
+    waitForAndroidMemoryProfile,
+    withLowMemoryControlHydration,
+} from './low-memory-mode.js';
 
 export const toastPositionClasses = [
     'toast-top-left',
@@ -431,6 +447,7 @@ export const power_user = {
     // Neconyan: aggressive DOM unloading for low-memory devices
     aggressive_dom_unload: false,
     aggressive_dom_window_size: 5,
+    low_memory_preferences: createDefaultLowMemoryPreferences(),
 
     fast_ui_mode: true,
     avatar_style: avatar_styles.ROUND,
@@ -655,6 +672,8 @@ export const power_user = {
     media_display: MEDIA_DISPLAY.LIST,
     image_overswipe: IMAGE_OVERSWIPE.GENERATE,
 };
+
+setLowMemoryPreferencesProvider(active => resolveLowMemoryPreferences(power_user, power_user.low_memory_preferences, active));
 
 setSlashCommandParserSettingsGetter(() => ({
     experimentalMacroEngine: power_user.experimental_macro_engine,
@@ -1333,10 +1352,135 @@ async function CreateZenSliders(elmnt) {
         originalSlider.trigger('change');
     }
 }
+let lowMemoryChatReopenNeeded = false;
+
+export function getEffectiveLowMemoryPolicy() {
+    return resolveLowMemoryPreferences(power_user, power_user.low_memory_preferences, isLowMemoryModeActive());
+}
+
+export function getEffectiveFastUiMode() {
+    return getEffectiveLowMemoryPolicy().fast_ui_mode;
+}
+
+function hasMountedChatMessages() {
+    return Boolean(
+        document.querySelector('#chat .mes[mesid], #sb-conversation-timeline .sb-conversation-message'),
+    );
+}
+
+export function formatLowMemoryStatusText(state, policy, { requiresChatReopen = false } = {}) {
+    const parts = [];
+    if (state.mode === 'on') {
+        parts.push(t`On for this device.`);
+    } else if (state.mode === 'off') {
+        parts.push(t`Off for this device.`);
+    } else if (state.active) {
+        if (state.classification?.source === 'native') {
+            parts.push(t`Active automatically. Android reports limited device memory.`);
+        } else {
+            parts.push(t`Active automatically. Browser reports ${state.classification?.deviceMemoryGb ?? 2} GB.`);
+        }
+    } else if (state.classification?.source === 'unknown') {
+        parts.push(t`Memory information is unavailable. Choose On to use the optimisations.`);
+    } else {
+        parts.push(t`Auto is off on this device.`);
+    }
+
+    if (policy.active) {
+        if (policy.fastUiApplied && policy.roleplayWindowApplied) {
+            parts.push(t`No blur; up to ${policy.roleplayWindowSize} rendered Roleplay messages; up to ${policy.conversationWindowSize} Conversation messages.`);
+        } else if (policy.fastUiApplied) {
+            parts.push(t`No blur; up to ${policy.conversationWindowSize} Conversation messages.`);
+        } else if (policy.roleplayWindowApplied) {
+            parts.push(t`Up to ${policy.roleplayWindowSize} rendered Roleplay messages; up to ${policy.conversationWindowSize} Conversation messages.`);
+        } else {
+            parts.push(t`Up to ${policy.conversationWindowSize} Conversation messages.`);
+        }
+    }
+
+    if (policy.fastUiPreserved && policy.roleplayWindowPreserved) {
+        parts.push(t`Your saved No Blur and Roleplay message limits are kept.`);
+    } else if (policy.fastUiPreserved) {
+        parts.push(t`Your saved No Blur setting is kept.`);
+    } else if (policy.roleplayWindowPreserved) {
+        parts.push(t`Your saved Roleplay message limits are kept.`);
+    }
+
+    if (requiresChatReopen) {
+        parts.push(t`Reopen the chat to apply its new message limit.`);
+    }
+
+    return parts.join(' ');
+}
+
+function syncLowMemoryManagedFieldNotes(policy) {
+    const fastUiTextHost = document.querySelector('label[for="fast_ui_mode"] .nn-vt-text');
+    let fastUiNote = document.getElementById('fast_ui_mode_low_memory_note');
+    if (policy.fastUiApplied && fastUiTextHost instanceof HTMLElement) {
+        if (!(fastUiNote instanceof HTMLElement)) {
+            fastUiNote = document.createElement('span');
+            fastUiNote.id = 'fast_ui_mode_low_memory_note';
+            fastUiNote.className = 'nn-vt-badge';
+            fastUiNote.setAttribute('data-i18n', 'Managed by low-memory mode');
+            fastUiTextHost.appendChild(fastUiNote);
+        }
+        fastUiNote.textContent = t`Managed by low-memory mode`;
+        fastUiNote.hidden = false;
+    } else if (fastUiNote instanceof HTMLElement) {
+        fastUiNote.hidden = true;
+    }
+
+    const truncationLabel = document.querySelector('label[for="chat_truncation"]');
+    let truncationNote = document.getElementById('chat_truncation_low_memory_note');
+    if (policy.roleplayWindowApplied && truncationLabel instanceof HTMLElement) {
+        if (!(truncationNote instanceof HTMLElement)) {
+            truncationNote = document.createElement('span');
+            truncationNote.id = 'chat_truncation_low_memory_note';
+            truncationNote.className = 'nn-vt-desc';
+            truncationNote.setAttribute('data-i18n-ignore', '');
+            truncationLabel.appendChild(truncationNote);
+        }
+        truncationNote.textContent = t`Low-memory mode currently limits rendered Roleplay messages to ${policy.roleplayWindowSize}.`;
+        truncationNote.hidden = false;
+    } else if (truncationNote instanceof HTMLElement) {
+        truncationNote.hidden = true;
+    }
+}
+
+export function syncLowMemorySettingsUi({ chatWindowChanged = false } = {}) {
+    if (chatWindowChanged && hasMountedChatMessages()) {
+        lowMemoryChatReopenNeeded = true;
+    } else if (!hasMountedChatMessages()) {
+        lowMemoryChatReopenNeeded = false;
+    }
+
+    const state = getLowMemoryState();
+    const policy = getEffectiveLowMemoryPolicy();
+
+    withLowMemoryControlHydration(() => {
+        $('#low_memory_mode').val(state.mode);
+    });
+
+    const statusElement = document.getElementById('low_memory_mode_status');
+    if (statusElement instanceof HTMLElement) {
+        const nextStatusText = formatLowMemoryStatusText(state, policy, {
+            requiresChatReopen: lowMemoryChatReopenNeeded,
+        });
+        if (statusElement.textContent !== nextStatusText) {
+            statusElement.textContent = nextStatusText;
+        }
+    }
+
+    syncLowMemoryManagedFieldNotes(policy);
+}
+
 function switchUiMode() {
-    $('body').toggleClass('no-blur', power_user.fast_ui_mode);
-    $('#fast_ui_mode').prop('checked', power_user.fast_ui_mode);
-    if (power_user.fast_ui_mode) {
+    const effectiveFastUiMode = getEffectiveFastUiMode();
+    $('body').toggleClass('no-blur', effectiveFastUiMode);
+    withLowMemoryControlHydration(() => {
+        $('#fast_ui_mode').prop('checked', effectiveFastUiMode);
+    });
+    if (effectiveFastUiMode) {
         $('#blur-strength-block').css('opacity', '0.2');
         $('#blur_strength').prop('disabled', true).attr('title', 'Disabled: Fast UI Mode is on');
     } else {
@@ -2051,7 +2195,7 @@ function applyNeconyanPalettePreset(presetId) {
     saveSettingsDebounced();
     toastr.success(`${preset.label} applied.`, 'Neconyan palette');
 
-    if (power_user.fast_ui_mode && preset.values.blur_strength !== undefined) {
+    if (getEffectiveFastUiMode() && preset.values.blur_strength !== undefined) {
         toastr.warning('Blur effects are disabled while Fast UI Mode is on.', 'Neconyan palette', { timeOut: 5000 });
     }
     if (power_user.noShadows && preset.values.shadow_width !== undefined) {
@@ -2585,7 +2729,15 @@ function getExampleMessagesBehavior() {
 export async function loadPowerUserSettings(settings, data) {
     const defaultStscript = JSON.parse(JSON.stringify(power_user.stscript));
     const hasAccentProfileSeedVersion = settings.power_user !== undefined && Object.hasOwn(settings.power_user, 'sb_accent_profiles_seed_version');
-    const savedPowerUserSettings = settings.power_user && typeof settings.power_user === 'object' ? settings.power_user : {};
+    const savedPowerUserSettings = settings.power_user && typeof settings.power_user === 'object'
+        ? {
+            ...settings.power_user,
+            ...(settings.power_user.low_memory_preferences && typeof settings.power_user.low_memory_preferences === 'object'
+                ? { low_memory_preferences: JSON.parse(JSON.stringify(settings.power_user.low_memory_preferences)) }
+                : {}),
+        }
+        : {};
+    await waitForAndroidMemoryProfile();
     customThemeStyleEntries = settings.extension_settings?.CTSI?.entries && typeof settings.extension_settings.CTSI.entries === 'object'
         ? { ...settings.extension_settings.CTSI.entries }
         : {};
@@ -2614,6 +2766,11 @@ export async function loadPowerUserSettings(settings, data) {
     if (initializeAndroidStreamingSettings(power_user, savedPowerUserSettings)) {
         saveSettingsDebounced();
     }
+
+    if (initializeLowMemoryPreferences(power_user, savedPowerUserSettings)) {
+        saveSettingsDebounced();
+    }
+    notifyLowMemoryPreferencesChanged();
 
     if (power_user.stscript === undefined) {
         power_user.stscript = defaultStscript;
@@ -2748,7 +2905,7 @@ export async function loadPowerUserSettings(settings, data) {
     $('#trim_sentences_checkbox').prop('checked', power_user.trim_sentences);
     $('#disable_group_trimming').prop('checked', power_user.disable_group_trimming);
     $('#markdown_escape_strings').val(power_user.markdown_escape_strings);
-    $('#fast_ui_mode').prop('checked', power_user.fast_ui_mode);
+    switchUiMode();
     $('#waifuMode').prop('checked', power_user.waifuMode);
     $('#movingUImode').prop('checked', power_user.movingUI);
     $('#noShadowsmode').prop('checked', power_user.noShadows);
@@ -2818,8 +2975,10 @@ export async function loadPowerUserSettings(settings, data) {
     $('#restore_user_input').prop('checked', power_user.restore_user_input);
     $('#auto_focus_chat_input').prop('checked', power_user.auto_focus_chat_input !== false);
 
-    $('#chat_truncation').val(power_user.chat_truncation);
-    $('#chat_truncation_counter').val(power_user.chat_truncation);
+    withLowMemoryControlHydration(() => {
+        $('#chat_truncation').val(power_user.chat_truncation);
+        $('#chat_truncation_counter').val(power_user.chat_truncation);
+    });
     $('#ooc_context_depth').val(power_user.ooc_context_depth);
     $('#html_context_depth').val(power_user.html_context_depth);
 
@@ -2840,9 +2999,12 @@ export async function loadPowerUserSettings(settings, data) {
     $('#android_streaming_basic_markdown').prop('checked', power_user.android_streaming_basic_markdown);
     $('#android_disable_smooth_streaming').prop('checked', power_user.android_disable_smooth_streaming);
     $('#android_disable_stream_fade_in').prop('checked', power_user.android_disable_stream_fade_in);
-    $('#aggressive_dom_unload').prop('checked', power_user.aggressive_dom_unload);
-    $('#aggressive_dom_window_size').val(power_user.aggressive_dom_window_size);
-    $('#aggressive_dom_window_size_counter').val(power_user.aggressive_dom_window_size);
+    withLowMemoryControlHydration(() => {
+        $('#aggressive_dom_unload').prop('checked', power_user.aggressive_dom_unload);
+        $('#aggressive_dom_window_size').val(power_user.aggressive_dom_window_size);
+        $('#aggressive_dom_window_size_counter').val(power_user.aggressive_dom_window_size);
+    });
+    syncLowMemorySettingsUi();
 
     $('#font_scale').val(power_user.font_scale);
     $('#font_scale_counter').val(power_user.font_scale);
@@ -4446,8 +4608,13 @@ jQuery(async () => {
     });
 
     $('#fast_ui_mode').on('change', function () {
-        power_user.fast_ui_mode = $(this).prop('checked');
+        if (isLowMemoryControlHydrating()) {
+            return;
+        }
+        setLowMemoryManagedSetting(power_user, 'fast_ui_mode', Boolean($(this).prop('checked')));
+        notifyLowMemoryPreferencesChanged();
         switchUiMode();
+        syncLowMemorySettingsUi();
         saveSettingsDebounced();
     });
 
@@ -4544,8 +4711,13 @@ jQuery(async () => {
     });
 
     $('#chat_truncation').on('input', function () {
-        power_user.chat_truncation = Number($('#chat_truncation').val());
+        if (isLowMemoryControlHydrating()) {
+            return;
+        }
+        setLowMemoryManagedSetting(power_user, 'chat_truncation', Number($('#chat_truncation').val()));
         $('#chat_truncation_counter').val(power_user.chat_truncation);
+        notifyLowMemoryPreferencesChanged();
+        syncLowMemorySettingsUi({ chatWindowChanged: true });
         saveSettingsDebounced();
     });
 
@@ -4634,14 +4806,60 @@ jQuery(async () => {
 
     // Neconyan: aggressive DOM unloading for low-memory devices
     $('#aggressive_dom_unload').on('input', function () {
-        power_user.aggressive_dom_unload = !!$(this).prop('checked');
+        if (isLowMemoryControlHydrating()) {
+            return;
+        }
+        setLowMemoryManagedSetting(power_user, 'aggressive_dom_unload', !!$(this).prop('checked'));
+        notifyLowMemoryPreferencesChanged();
+        syncLowMemorySettingsUi({ chatWindowChanged: true });
         saveSettingsDebounced();
     });
 
     $('#aggressive_dom_window_size').on('input', function () {
-        power_user.aggressive_dom_window_size = Number($(this).val());
+        if (isLowMemoryControlHydrating()) {
+            return;
+        }
+        setLowMemoryManagedSetting(power_user, 'aggressive_dom_window_size', Number($(this).val()));
         $('#aggressive_dom_window_size_counter').val(power_user.aggressive_dom_window_size);
+        notifyLowMemoryPreferencesChanged();
+        syncLowMemorySettingsUi({ chatWindowChanged: true });
         saveSettingsDebounced();
+    });
+
+    $('#low_memory_mode').on('change', function () {
+        if (isLowMemoryControlHydrating()) {
+            return;
+        }
+        const previousPolicy = getEffectiveLowMemoryPolicy();
+        setLowMemoryMode(String($(this).val() ?? 'auto'));
+        const nextPolicy = getEffectiveLowMemoryPolicy();
+        const chatWindowChanged = previousPolicy.roleplayWindowSize !== nextPolicy.roleplayWindowSize
+            || previousPolicy.roleplayFixedWindow !== nextPolicy.roleplayFixedWindow
+            || previousPolicy.conversationWindowSize !== nextPolicy.conversationWindowSize;
+        switchUiMode();
+        syncLowMemorySettingsUi({ chatWindowChanged });
+    });
+
+    $('#low_memory_use_recommendations').on('click', function () {
+        const previousPolicy = getEffectiveLowMemoryPolicy();
+        releaseLowMemoryPreferencesToAutomatic(power_user);
+        notifyLowMemoryPreferencesChanged();
+        const nextPolicy = getEffectiveLowMemoryPolicy();
+        const chatWindowChanged = previousPolicy.roleplayWindowSize !== nextPolicy.roleplayWindowSize
+            || previousPolicy.roleplayFixedWindow !== nextPolicy.roleplayFixedWindow;
+        switchUiMode();
+        syncLowMemorySettingsUi({ chatWindowChanged });
+        saveSettingsDebounced();
+    });
+
+    subscribeLowMemoryState(() => {
+        switchUiMode();
+        syncLowMemorySettingsUi({ chatWindowChanged: true });
+    });
+
+    eventSource.on(event_types.CHAT_CHANGED, () => {
+        lowMemoryChatReopenNeeded = false;
+        syncLowMemorySettingsUi();
     });
 
     $('input[name="font_scale"]').on('input', async function (e, data) {

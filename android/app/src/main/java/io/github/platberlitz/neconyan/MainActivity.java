@@ -173,7 +173,7 @@ public final class MainActivity extends Activity {
                 if (current == null || !local(Uri.parse(current))) return;
                 if (bridgeToken == null) bridgeToken = bridgeGate.issue();
                 view.evaluateJavascript("import('/scripts/android-native-bridge.js').then(module => module.installAndroidNativeBridge("
-                    + JSONObject.quote(bridgeToken) + "," + JSONObject.quote(origin) + "))", null);
+                    + JSONObject.quote(bridgeToken) + "," + JSONObject.quote(origin) + "," + DeviceMemoryProfile.readJson(MainActivity.this) + "))", null);
             }
         });
         web.setWebChromeClient(new WebChromeClient() {

@@ -107,4 +107,19 @@ describe('Neconyan settings theme drawers', () => {
         expect(shellTabsSource).toContain('id: \'sb-topbar-quick-actions\'');
         expect(shellTabsSource).toContain('refreshDesktopTopbarQuickActions');
     });
+
+    test('places Memory and performance in the System & Device drawer while retaining aggressive unloading controls', () => {
+        expect(settingsTabsSource).toContain('domUnloadDrawer.id = \'sb-aggressive-dom-unload-drawer\';');
+        expect(settingsTabsSource).toContain('domUnloadDrawer.className = \'inline-drawer wide100p flexFlowColumn sb-settings-subdrawer nn-settings-cards\';');
+        expect(settingsTabsSource).toContain('<span data-i18n="Memory and performance">Memory and performance</span>');
+        expect(settingsTabsSource).toContain('\'sb-aggressive-dom-unload-drawer\': \'system-device\',');
+
+        expect(indexSource).toContain('id="low_memory_mode"');
+        expect(indexSource).toContain('aria-describedby="low_memory_mode_status"');
+        expect(indexSource).toContain('id="low_memory_mode_status"');
+        expect(indexSource).toContain('id="low_memory_use_recommendations"');
+        expect(indexSource).toContain('id="aggressive_dom_unload"');
+        expect(indexSource).toContain('id="aggressive_dom_window_size"');
+        expect(indexSource).toContain('id="aggressive_dom_window_size_counter"');
+    });
 });

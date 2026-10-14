@@ -2,6 +2,7 @@ export const CHAT_RENDER_WINDOW_DEFAULT = 100;
 export const CHAT_RENDER_WINDOW_MAX = 200;
 // Neconyan: aggressive DOM unloading for low-memory devices (e.g., iPhones crashing on long streams)
 export const CHAT_RENDER_WINDOW_AGGRESSIVE_DEFAULT = 5;
+export const CHAT_RENDER_WINDOW_LOW_MEMORY_MAX = 25;
 
 /**
  * Keeps chat DOM windows bounded even when older settings used 0 as "render everything".
@@ -62,6 +63,95 @@ export function getChatHistoryPageSize(requestedSize, {
     }
 
     return normalizedRequestedSize;
+}
+
+/**
+ * Resolves the effective Roleplay chat render window policy.
+ * @param {object} [options]
+ * @param {number} [options.requestedSize] Caller-requested window size.
+ * @param {number} [options.chatTruncation=CHAT_RENDER_WINDOW_DEFAULT] Saved chat_truncation setting.
+ * @param {boolean} [options.aggressiveUnload=false] Saved aggressive_dom_unload setting.
+ * @param {number} [options.aggressiveWindowSize=CHAT_RENDER_WINDOW_AGGRESSIVE_DEFAULT] Saved aggressive_dom_window_size setting.
+ * @param {boolean} [options.lowMemoryActive=false] Whether low-memory mode is currently active.
+ * @param {boolean} [options.historyExplicit=false] Whether any of the three history settings is explicitly owned by the user.
+ * @returns {{ mode: 'fixed' | 'normal', initialSize: number, maxSize: number }}
+ */
+export function resolveChatRenderWindowPolicy({
+    requestedSize,
+    chatTruncation = CHAT_RENDER_WINDOW_DEFAULT,
+    aggressiveUnload = false,
+    aggressiveWindowSize = CHAT_RENDER_WINDOW_AGGRESSIVE_DEFAULT,
+    lowMemoryActive = false,
+    historyExplicit = false,
+} = {}) {
+    if (aggressiveUnload) {
+        const aggressiveCap = normalizePositiveInteger(aggressiveWindowSize, CHAT_RENDER_WINDOW_AGGRESSIVE_DEFAULT);
+        const boundedAggressiveCap = normalizeChatRenderWindowSize(aggressiveCap, {
+            defaultSize: CHAT_RENDER_WINDOW_AGGRESSIVE_DEFAULT,
+            maxSize: aggressiveCap,
+        });
+        const maxSize = lowMemoryActive && !historyExplicit
+            ? Math.min(boundedAggressiveCap, CHAT_RENDER_WINDOW_LOW_MEMORY_MAX)
+            : boundedAggressiveCap;
+        return Object.freeze({
+            mode: 'fixed',
+            initialSize: maxSize,
+            maxSize,
+        });
+    }
+
+    if (lowMemoryActive && !historyExplicit) {
+        const baseLimit = normalizeChatRenderWindowSize(chatTruncation, {
+            defaultSize: CHAT_RENDER_WINDOW_LOW_MEMORY_MAX,
+            maxSize: CHAT_RENDER_WINDOW_LOW_MEMORY_MAX,
+        });
+        const initialSize = requestedSize !== undefined
+            ? normalizeChatRenderWindowSize(requestedSize, {
+                defaultSize: baseLimit,
+                maxSize: baseLimit,
+            })
+            : baseLimit;
+        return Object.freeze({
+            mode: 'fixed',
+            initialSize,
+            maxSize: baseLimit,
+        });
+    }
+
+    const initialSize = normalizeChatRenderWindowSize(
+        requestedSize !== undefined ? requestedSize : chatTruncation,
+        {
+            defaultSize: CHAT_RENDER_WINDOW_DEFAULT,
+            maxSize: CHAT_RENDER_WINDOW_MAX,
+        },
+    );
+    return Object.freeze({
+        mode: 'normal',
+        initialSize,
+        maxSize: CHAT_RENDER_WINDOW_MAX,
+    });
+}
+
+/**
+ * Resolves the maximum rendered message count allowed after a history paging step.
+ * @param {number} requestedSize Caller-requested or user-configured page size.
+ * @param {number} renderedMessageCount Currently mounted message count.
+ * @param {object} [policyOptions] Policy resolution options.
+ * @returns {number}
+ */
+export function resolvePagedChatRenderWindowSize(requestedSize, renderedMessageCount, policyOptions = {}) {
+    const policy = resolveChatRenderWindowPolicy({
+        ...policyOptions,
+        requestedSize,
+    });
+    if (policy.mode === 'fixed') {
+        return policy.maxSize;
+    }
+    const safeRenderedCount = Math.max(0, Math.floor(Number(renderedMessageCount) || 0));
+    return normalizeChatRenderWindowSize(safeRenderedCount + policy.initialSize, {
+        defaultSize: policy.initialSize,
+        maxSize: policy.maxSize,
+    });
 }
 
 function normalizePositiveInteger(value, fallback) {
