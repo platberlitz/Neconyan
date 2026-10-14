@@ -71,6 +71,7 @@ import initPrivateRequestFilter from './private-request-filter.js';
 import cacheBuster from './middleware/cacheBuster.js';
 import corsProxyMiddleware from './middleware/corsProxy.js';
 import hostWhitelistMiddleware from './middleware/hostWhitelist.js';
+import { syncErrorPages, readErrorPage, readNotFoundPage } from './error-pages.js';
 import userCssMiddleware from './middleware/userCss.js';
 import { createUploadStorage } from './middleware/uploadStorage.js';
 import {
@@ -585,6 +586,7 @@ async function preSetupTasks() {
     await migrateGroupChatsMetadataFormat(startupDirectories);
     await migratePublicOverrides();
     await checkForNewContent(startupDirectories, PRESET_CONTENT_TYPES);
+    syncErrorPages();
     migrateFlatSecrets(startupDirectories);
     cleanUploads();
     migrateAccessLog();
@@ -852,12 +854,12 @@ async function postSetupTasks(result) {
 }
 
 /**
- * Registers a not-found error response if a not-found error page exists. Should only be called after all other middlewares have been registered.
+ * Registers the not-found error response, which serves the not-found page (see src/error-pages.js).
+ * Should only be called after all other middlewares have been registered.
  */
 function apply404Middleware() {
-    const notFoundWebpage = safeReadFileSync(path.join(serverDirectory, 'public/error/url-not-found.html')) ?? '';
     app.use((req, res) => {
-        res.status(404).send(notFoundWebpage);
+        res.status(404).send(readNotFoundPage() ?? '');
     });
 }
 
@@ -867,10 +869,6 @@ function apply404Middleware() {
  * Browser navigations receive the themed HTML page instead.
  */
 function applyHtmlErrorMiddleware() {
-    const pageCandidates = [
-        path.join(globalThis.DATA_ROOT, '_errors', 'invalid-csrf.html'),
-        path.join(serverDirectory, 'default/content/errors/invalid-csrf.html'),
-    ];
     app.use((error, request, response, next) => {
         if (response.headersSent) {
             return next(error);
@@ -885,7 +883,7 @@ function applyHtmlErrorMiddleware() {
             return response.status(403).json({ error: 'Invalid CSRF token. Please refresh the page and try again.', code: 'INVALID_CSRF_TOKEN' });
         }
         if (!request.accepts?.('html')) return next(error);
-        const page = pageCandidates.map(candidate => safeReadFileSync(candidate)).find(Boolean) ?? '';
+        const page = readErrorPage('invalid-csrf.html') ?? '';
         response.set({ 'Cache-Control': 'no-store, no-cache, must-revalidate, private' });
         response.status(403).type('html').send(page);
     });

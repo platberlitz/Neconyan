@@ -1,4 +1,5 @@
 import { getConfigValue } from '../util.js';
+import { sendHttpsRequired } from '../error-pages.js';
 
 const REQUIRE_HTTPS = getConfigValue('requireHttps', false, 'boolean');
 
@@ -25,9 +26,7 @@ const requireHttpsMiddleware = function (request, response, callback) {
     const isHttps = request.secure || request.headers['x-forwarded-proto'] === 'https';
 
     if (!isHttps) {
-        return response.status(403).json({
-            error: 'This connection is not secure, so Neconyan cannot be opened from another computer yet. Ask the person running Neconyan to turn on HTTPS (the secure, padlock address) in config.yaml, then reload.',
-        });
+        return sendHttpsRequired(request, response);
     }
 
     return callback();

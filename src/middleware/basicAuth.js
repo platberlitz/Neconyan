@@ -11,10 +11,13 @@
  * navigations and a plain JSON 401 (no WWW-Authenticate challenge) otherwise.
  */
 import { Buffer } from 'node:buffer';
+import fs from 'node:fs';
+import path from 'node:path';
 import { RateLimiterMemory, RateLimiterRes } from 'rate-limiter-flexible';
 import { getConfigValue } from '../util.js';
 import { validateBrowserSession, validateCredentials, validateSession, isSessionAuthEnabled } from './sessionAuth.js';
 import { getIpAddress, retryAfter } from '../express-common.js';
+import { serverDirectory } from '../server-directory.js';
 
 const PREFER_REAL_IP_HEADER = !!getConfigValue('rateLimiting.preferRealIpHeader', false, 'boolean');
 const BASIC_AUTH_ATTEMPTS = getConfigValue('rateLimiting.basicAuthMaxAttempts', 5, 'number');
@@ -24,13 +27,14 @@ const basicAuthLimiter = new RateLimiterMemory({
     duration: 60,
 });
 
-// The login page, its assets and the anonymous sign-in APIs load before any
+// The login page, its assets and its dictionaries, and the anonymous sign-in APIs load before any
 // credentials exist. Keep this list to exactly what the sign-in flow needs.
 const LOGIN_GET_ROUTES = new Set([
     '/login',
     '/login.html',
     '/css/login.css',
     '/scripts/login.js',
+    '/scripts/page-locale.js',
     '/lib/jquery-3.5.1.min.js',
     '/manifest.json',
     '/favicon.ico',
@@ -38,9 +42,32 @@ const LOGIN_GET_ROUTES = new Set([
     '/img/neconyan-pixel-cat.webp',
     '/img/neconyan.png',
     '/img/neconyan-icon-180.png',
+    '/img/neconyan-icon-192.png',
+    '/img/neconyan-icon-512.png',
     '/csrf-token',
     '/api/auth/status',
 ]);
+
+// The two dictionary files of every language in lang.json, which page-locale.js reads for the sign-in page.
+// An unreadable lang.json leaves the set empty: the sign-in page stays English and nothing extra is exposed.
+const LOGIN_LOCALE_ROUTES = (() => {
+    const routes = new Set();
+    try {
+        const localesRoot = path.join(serverDirectory, 'public', 'locales');
+        const languages = JSON.parse(fs.readFileSync(path.join(localesRoot, 'lang.json'), 'utf8'));
+        routes.add('/locales/lang.json');
+        for (const { lang } of languages) {
+            if (typeof lang === 'string' && /^[a-z]{2,3}(-[a-z0-9]{2,8})*$/.test(lang)) {
+                routes.add(`/locales/${lang}.json`);
+                routes.add(`/locales/neconyan/${lang}.json`);
+            }
+        }
+    } catch (error) {
+        console.warn('Could not read the language list for the sign-in page:', error.message);
+        routes.clear();
+    }
+    return routes;
+})();
 
 const LOGIN_POST_ROUTES = new Set([
     '/api/auth/browser/login',
@@ -60,7 +87,7 @@ const NO_STORE_HEADERS = {
 };
 
 function isLoginRoute(request) {
-    if (request.method === 'GET' && (LOGIN_GET_ROUTES.has(request.path) || LOGIN_FONT_PREFIXES.some(prefix => request.path.startsWith(prefix)))) return true;
+    if (request.method === 'GET' && (LOGIN_GET_ROUTES.has(request.path) || LOGIN_LOCALE_ROUTES.has(request.path) || LOGIN_FONT_PREFIXES.some(prefix => request.path.startsWith(prefix)))) return true;
     if (request.method === 'POST' && LOGIN_POST_ROUTES.has(request.path)) return true;
     return false;
 }

@@ -501,3 +501,16 @@ body.neconyan.reduced-motion .swipe_picker_expand i {
         transition: none;
     }
 }
+
+/* The language decision pairs the selected accent fill with its contrast-aware ink. */
+body.neconyan dialog.language-choice-popup {
+    background: var(--neco-surface);
+    --neco-panel-gradient: var(--neco-surface);
+    --color-primary: var(--neco-ginger);
+    --sb-on-accent: var(--neco-on-accent);
+}
+
+/* Fill and ink must change together when an accent is selected. */
+body.neconyan dialog.language-choice-popup .popup-button-ok {
+    transition: none;
+}

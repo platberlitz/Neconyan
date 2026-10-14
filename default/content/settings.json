@@ -2,6 +2,7 @@
     "firstRun": true,
     "accountStorage": {
         "NeconyanTutorialStatus.v1": "pending",
+        "NeconyanLanguagePolicy.v1": "browser",
         "NeconyanTutorialIndex.v1": "0"
     },
     "username": "User",
