@@ -1,4 +1,4 @@
-/* global document, localStorage, window, RTCPeerConnection */
+/* global document, localStorage, window, RTCPeerConnection, getComputedStyle */
 import { expect, test, webkit } from '@playwright/test';
 import { createServer } from 'node:http';
 import { createSocket } from 'node:dgram';
@@ -48,6 +48,28 @@ test('full-page fences run in place, code examples and prose stay readable', asy
     await expect(secondCard.locator('#entity')).toHaveText('&amp;');
     await card.getByRole('button', { name: 'Try the card' }).click();
     await expect(card.getByRole('button')).toHaveText('Clicked');
+});
+
+test('an inline widget script runs alone while the dialogue stays in the chat, quoted once', async ({ page }) => {
+    const widget = '<div style="padding:16px;text-align:center"><div style="font-size:26px">Dad</div><div>"Pick up," he says.</div><div id="dadcall">ringing</div></div>\n<script>document.getElementById(\'dadcall\').textContent = \'ringing...\';</script>';
+    const id = await seedCardScriptMessage(page, `"All of it. I'm not leaving the room." Leonard nudges the wire bridge back into place.\n\n${widget}\n\n"It's your dining room. You paid for it."`);
+    const { message, outer, card } = cardLocators(page, id);
+    await runCardForBrowser(page, id, { protectedBrowser });
+    await expect(card.locator('#dadcall')).toHaveText('ringing...');
+    await expect(message.locator('iframe.card-script-sandbox-frame')).toHaveCount(1);
+    await expect(card.locator('body')).not.toContainText('Leonard');
+    const text = message.locator('.mes_text');
+    await expect(text).toContainText('Leonard nudges the wire bridge back into place.');
+    await expect(text).toContainText('It\'s your dining room. You paid for it.');
+    const prose = await text.evaluate((element, frame) => {
+        const paragraphs = Array.from(element.querySelectorAll(':scope > p'));
+        return { before: paragraphs[0].getBoundingClientRect().bottom <= frame.getBoundingClientRect().top, after: paragraphs.at(-1).getBoundingClientRect().top >= frame.getBoundingClientRect().bottom };
+    }, await outer.elementHandle());
+    expect(prose).toEqual({ before: true, after: true });
+    const quoteMarks = q => q.evaluateAll(quotes => quotes.map(quote => getComputedStyle(quote, '::before').content));
+    expect((await quoteMarks(text.locator('q'))).filter(content => content === 'open-quote')).toEqual([]);
+    expect(await quoteMarks(card.locator('q'))).not.toContain('open-quote');
+    await expect(card.locator('q')).toHaveCount(1);
 });
 
 test('disabled scripts keep sanitised fallback and show setting guidance', async ({ page }) => {

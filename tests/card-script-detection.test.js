@@ -133,6 +133,54 @@ describe('card script detection', () => {
         expect(getCardScriptSnapshot(1).html).toContain('<pre><code>example()</code></pre>');
     });
 
+    test('an inline widget and the script that drives it form one block, and the prose stays outside', () => {
+        const prose = '<p><font color="#d4a84f"><q>"All of it. I\'m not leaving the room."</q></font> Leonard nudges the wire bridge back.</p>';
+        const widget = '<div style="padding:16px"><div style="font-size:26px">Dad</div><div id="dadcall">ringing</div></div>';
+        const script = '<script>(function(){var e=document.getElementById(\'dadcall\');if(!e)return;e.textContent=\'ringing.\';})();</script>';
+        const marked = markCardScriptHtml(`${prose}${widget}${script}<p><q>"It's your dining room."</q></p>`, 1);
+        const { blocks } = getCardScriptSnapshot(1);
+        expect(blocks).toHaveLength(1);
+        expect(blocks[0].html).toBe(`${widget}${script}`);
+        expect(blocks[0].html).not.toContain('Leonard');
+        expect(marked).toContain(`${prose}<div data-card-script-block="0">${widget}${script}</div>`);
+    });
+
+    test('a script nested inside its widget mounts that widget alone, and separate widgets get separate blocks', () => {
+        const first = '<div class="phone"><span id="clock">10:54</span><script>document.getElementById(\'clock\').textContent=\'10:55\';</script></div>';
+        const card = '<div><b>HARBOR FEDERAL</b></div>';
+        const second = '<div><span class="dots">ringing</span></div><script>document.querySelector(\'.dots\').textContent=\'ringing..\';</script>';
+        markCardScriptHtml(`<p>Before</p>${first}${card}<p>Between</p>${second}<p>After</p>`, 1);
+        const { blocks } = getCardScriptSnapshot(1);
+        expect(blocks.map(block => block.html)).toEqual([first, second]);
+        expect(blocks.map(block => block.index)).toEqual([0, 1]);
+    });
+
+    test('a widget that Markdown split into several pieces stays together with its script', () => {
+        const widget = '<p id="status">Static fallback</p>\n<p><button id="grow">Grow</button></p><div id="panel"></div><p></p>\n';
+        const script = '<script>document.getElementById(\'status\').textContent=\'Ran\';document.getElementById(\'grow\').onclick=()=>{document.getElementById(\'panel\').style.height=\'9px\';};</script>';
+        markCardScriptHtml(`<h3>Card scripts</h3>\n${widget}${script}`, 1);
+        expect(getCardScriptSnapshot(1).blocks.map(block => block.html)).toEqual([`${widget}${script}`]);
+    });
+
+    test('a script that Markdown tucked into a paragraph still brings the earlier elements it names', () => {
+        const widget = '<p id="status">Waiting</p>\n';
+        const button = '<p><button id="go">Go</button><script>document.getElementById(\'go\').onclick=()=>{document.getElementById(\'status\').textContent=\'Gone\';};</script></p>';
+        markCardScriptHtml(`<p>Prose</p>\n${widget}${button}`, 1);
+        expect(getCardScriptSnapshot(1).blocks.map(block => block.html)).toEqual([`${widget}${button}`]);
+    });
+
+    test.each([
+        ['a nested script that reaches for the page', '<p>Prose</p><div id="a">A<script>document.body.dataset.ran = "1";</script></div>'],
+        ['a script whose elements are missing', '<p>Prose</p><script>document.getElementById(\'later\').remove();</script>'],
+        ['an untargeted script', '<p>Prose</p><script>direct()</script>'],
+        ['a script that rewrites the page', '<div id="a">A</div><script>document.body.innerHTML = document.getElementById(\'a\').outerHTML;</script>'],
+        ['a computed selector', '<div id="a">A</div><script>document.getElementById(name).remove();</script>'],
+    ])('%s keeps the whole-message sandbox', (_label, html) => {
+        markCardScriptHtml(html, 1);
+        expect(getCardScriptSnapshot(1).blocks).toEqual([]);
+        expect(getCardScriptSnapshot(1).html).toBe(html);
+    });
+
     test('full-page fences preserve literal entities and identical indented examples stay inert', () => {
         const page = '<body><p>&nbsp;</p><script>const text="&amp;";</script></body>';
         const protectedText = protectCardScriptBlocks(`\`\`\`html\n${page}\n\`\`\``);

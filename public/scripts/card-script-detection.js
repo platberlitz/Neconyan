@@ -66,33 +66,117 @@ export function rememberCardScript(messageId, html, { scopeKey = '', blocks = []
     return snapshot;
 }
 
+const SCRIPT_TARGET_CALL_PATTERN = /\b(getElementById|getElementsByClassName|querySelector(?:All)?)\s*\(\s*(?:(['"])((?:(?!\2)[^\\\n]|\\.)*)\2|`([^`$]*)`)?/g;
+const WHOLE_DOCUMENT_ACCESS_PATTERN = /(?<![\w$.])(?:document\s*\.\s*(?:body|documentElement|write(?:ln)?|getElementsByTagName|forms|images|links)\b|getElementsByTagName\s*\()/;
+
+// Ids and classes a direct script reaches for, or null when it acts on the whole document.
+function readScriptTargets(source) {
+    if (WHOLE_DOCUMENT_ACCESS_PATTERN.test(source)) return null;
+    const targets = new Set();
+    for (const match of source.matchAll(SCRIPT_TARGET_CALL_PATTERN)) {
+        const value = match[3] ?? match[4];
+        if (value === undefined) return null;
+        if (match[1] === 'getElementById') targets.add(`#${value}`);
+        else if (match[1] === 'getElementsByClassName') value.split(/\s+/).filter(Boolean).forEach(name => targets.add(`.${name}`));
+        else for (const part of value.split(',')) {
+            const names = part.match(/[#.][\w-]+/g);
+            if (!names) return null;
+            names.forEach(name => targets.add(name));
+        }
+    }
+    return targets.size ? targets : null;
+}
+
+function containsScriptTarget(node, targets) {
+    if (!node.tagName) return false;
+    return [node, ...Array.from(node.querySelectorAll('[id], [class]'))].some(element => {
+        const id = element.getAttribute('id');
+        if (id && targets.has(`#${id}`)) return true;
+        return String(element.getAttribute('class') ?? '').split(/\s+/).some(name => name && targets.has(`.${name}`));
+    });
+}
+
+// Groups each live script with the widget it drives, so the rest of the message stays in the chat.
+function groupDirectCardScripts(content, allowScripts) {
+    const nodes = Array.from(content.childNodes);
+    const isLive = element => !element.closest('pre, code, template') && (element.tagName !== 'SCRIPT' || allowScripts);
+    const groups = [];
+    for (let index = 0; index < nodes.length; index++) {
+        const node = nodes[index];
+        if (!node.tagName) continue;
+        const ownTag = /^(?:SCRIPT|IFRAME)$/.test(node.tagName);
+        if (ownTag ? !isLive(node) : !Array.from(node.querySelectorAll('script, iframe')).some(isLive)) continue;
+        let targets = new Set();
+        if (node.tagName === 'SCRIPT') {
+            targets = readScriptTargets(node.textContent);
+            if (!targets) return null;
+        } else {
+            // A script inside its widget may only reach that widget, or earlier siblings it names.
+            for (const script of Array.from(node.querySelectorAll('script')).filter(isLive)) {
+                if (WHOLE_DOCUMENT_ACCESS_PATTERN.test(script.textContent)) return null;
+                readScriptTargets(script.textContent)?.forEach(target => targets.add(target));
+            }
+        }
+        const previous = groups[groups.length - 1];
+        const floor = previous ? previous.end + 1 : 0;
+        let start = index;
+        if (targets.size) for (let cursor = index - 1; cursor >= floor; cursor--) {
+            if (containsScriptTarget(nodes[cursor], targets)) start = cursor;
+        }
+        const reachesPrevious = targets.size && previous && nodes.slice(previous.start, previous.end + 1).some(sibling => containsScriptTarget(sibling, targets));
+        if (reachesPrevious) previous.end = index;
+        else if (node.tagName !== 'SCRIPT') groups.push({ start, end: index });
+        else if (start === index) return null;
+        else groups.push({ start, end: index });
+    }
+    return groups.map(({ start, end }) => nodes.slice(start, end + 1));
+}
+
 export function markCardScriptHtml(html, messageId, { scopeKey = '', fencedPages = [] } = {}) {
     let htmlString = String(html ?? '');
     const blocks = [];
     let sandboxHtml = htmlString;
     const directScript = containsEmbeddedCardScript(htmlString);
-    if (fencedPages.length) {
+    let wholeMessage = false;
+    if (fencedPages.length || directScript) {
         const template = document.createElement('template');
         template.innerHTML = htmlString;
-        Array.from(template.content.querySelectorAll('pre')).forEach((pre, index) => {
+        const fences = [];
+        if (fencedPages.length) Array.from(template.content.querySelectorAll('pre')).forEach((pre, index) => {
             const code = pre.querySelector('code');
             if (!code || (code.className && !/^(?:html|language-html)(?:\s|$)/i.test(code.className))) return;
             const source = fencedPages[Number(pre.dataset.cardScriptFenced)];
             if (typeof source !== 'string' || source.replace(/\r\n?/g, '\n').trim() !== code.textContent.trim()) return;
-            blocks.push({ html: source, index });
-            pre.dataset.cardScriptBlock = String(blocks.length - 1);
-            if (directScript) {
+            fences.push({ pre, source, index });
+        });
+        const groups = directScript ? groupDirectCardScripts(template.content, /<\/script\s*>/i.test(htmlString)) : [];
+        wholeMessage = !groups || groups.some(group => fences.some(({ pre }) => group.some(node => node === pre || node.contains?.(pre))));
+        if (wholeMessage) {
+            // Scripts that act on the whole document keep the whole message as their page.
+            fences.forEach(({ pre, source }) => {
                 const page = document.createElement('template');
                 page.innerHTML = source;
                 pre.replaceWith(page.content);
-            }
-        });
-        if (blocks.length) {
-            if (directScript) sandboxHtml = template.innerHTML;
-            else htmlString = sandboxHtml = template.innerHTML;
+            });
+            if (fences.length) sandboxHtml = template.innerHTML;
+        } else {
+            fences.forEach(({ pre, source, index }) => {
+                blocks.push({ html: source, index });
+                pre.dataset.cardScriptBlock = String(blocks.length - 1);
+            });
+            const styles = Array.from(template.content.childNodes).filter(node => node.tagName === 'STYLE').map(node => `<style>${node.textContent}</style>`).join('');
+            groups.forEach(group => {
+                const wrapper = document.createElement('div');
+                group[group.length - 1].after(wrapper);
+                group.forEach(node => wrapper.appendChild(node));
+                blocks.push({ html: styles + wrapper.innerHTML, index: blocks.length });
+                wrapper.dataset.cardScriptBlock = String(blocks.length - 1);
+            });
+            if (blocks.length) htmlString = template.innerHTML;
+            if (fences.length && !groups.length) sandboxHtml = htmlString;
         }
     }
-    const snapshot = rememberCardScript(messageId, sandboxHtml, { scopeKey, blocks: directScript ? [] : blocks });
+    const snapshot = rememberCardScript(messageId, sandboxHtml, { scopeKey, blocks: wholeMessage ? [] : blocks });
 
     if (!snapshot) {
         return htmlString;
