@@ -427,5 +427,5 @@ test('the top bar rebuilds its label with the loaded translations, and the shell
     const script = await read('public/script.js');
     // Defect assertions (structural, as start-up cannot run here; the held start-up is checked on screen).
     expect.soft(tabs, 'defect: the shell exposes the rebuild').toMatch(/refreshTopBarLabel: updateTopBarBrand/);
-    expect.soft(script, 'defect: start-up calls it right after the locales load').toMatch(/await initLocales\(\);\s*(?:\/\/[^\n]*\n\s*)?globalThis\.NeconyanShell\?\.refreshTopBarLabel\?\.\(\);/);
+    expect.soft(script, 'defect: start-up calls it right after the locales load').toMatch(/await initLocales\([^)]*\);\s*(?:\/\/[^\n]*\n\s*)?globalThis\.NeconyanShell\?\.refreshTopBarLabel\?\.\(\);/);
 });
