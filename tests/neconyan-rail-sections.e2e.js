@@ -73,7 +73,7 @@ for (const phone of [false, true]) {
             await shortcut.click();
             await expect(page.locator('#left-nav-panel')).toHaveAttribute('data-sb-active-tab', phone ? 'sampling' : 'presets');
             await openRail(page, phone);
-            for (const name of ['workspace', 'advanced', 'quickActions', 'finer', 'modes', 'recent']) {
+            for (const name of ['workspace', 'advanced', 'lore', 'appearance', 'quickActions', 'finer', 'modes', 'recent']) {
                 const heading = page.locator(toggle(name));
                 await heading.scrollIntoViewIfNeeded();
                 await expect(heading).toHaveAttribute('aria-expanded', 'true');
@@ -96,15 +96,12 @@ for (const phone of [false, true]) {
             expect(headingSizes.every(height => height >= (phone ? 44 : 34))).toBe(true);
             await expect(page.locator('[data-neconyan-open-archive]')).toBeVisible();
             await expect(page.locator('[data-neconyan-refresh-recent]')).toBeVisible();
-            const tools = page.locator('.neconyan-rail-tools');
-            await tools.locator(':scope > summary').click();
-            await expect(tools).toHaveAttribute('open', '');
+            await expect(page.locator('.neconyan-rail-tools')).toHaveCount(0);
             await expect.poll(() => JSON.parse(stored).recent).toBe(true);
-            await expect.poll(() => JSON.parse(stored).tools).toBe(false);
+            await expect.poll(() => JSON.parse(stored).appearance).toBe(true);
             await ready(page);
             await openRail(page, phone);
-            await expect(page.locator('[data-neconyan-section-toggle][aria-expanded="false"]')).toHaveCount(6);
-            await expect(tools).toHaveAttribute('open', '');
+            await expect(page.locator('[data-neconyan-section-toggle][aria-expanded="false"]')).toHaveCount(8);
             await page.locator(toggle('quickActions')).click();
             await expect(shortcut).toBeVisible();
             await page.screenshot({ path: info.outputPath('collapsed-sections.png') });
@@ -126,7 +123,6 @@ for (const phone of [false, true]) {
             await openRail(page, phone);
             await expect(page.locator(`${list} > button`).first()).toBeVisible();
             await expect(page.locator(toggle('advanced'))).toHaveAttribute('aria-expanded', 'false');
-            await tools.locator(':scope > summary').click();
             await page.locator(toggle('workspace')).click();
             await page.screenshot({ path: info.outputPath('sidebar-sections.png') });
             await checkIconSidebar(page, phone);

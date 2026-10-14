@@ -1484,6 +1484,10 @@ body.neconyan .sb-extension-master-row {
     min-width: 0;
 }
 body.neconyan .sb-extension-master-row .sb-extension-master-item { width: 100%; }
+body.neconyan .sb-extensions-tools { display: grid; gap: 6px; }
+body.neconyan .sb-extensions-tools-heading { color: var(--neco-muted); font-size: 12px; font-weight: 600; }
+body.neconyan .sb-extensions-tools-list { display: flex; flex-wrap: wrap; gap: 6px; }
+body.neconyan .sb-extensions-tools-list .sb-extensions-tool { min-height: 44px; margin: 0; }
 body.neconyan .sb-extension-pin {
     display: inline-flex;
     align-items: center;
@@ -2821,111 +2825,22 @@ body.neconyan .neconyan-undo-dismiss:focus-visible { outline: 2px solid var(--ne
 body.neconyan.reduced-motion #toast-container .neconyan-undo-toast,
 body.neconyan.reduced-motion #toast-container .neconyan-undo-toast * { transition-duration: 0s !important; animation-duration: 0s !important; }
 
-/* Included tools stay as independent disclosures. Their panels contain only
-   launch/manage controls, so extension markup remains in its native host. */
-body.neconyan .neconyan-rail-tools {
-    min-width: 0;
-    margin: 0 0 16px;
-}
-body.neconyan .neconyan-native-tools-summary {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    min-height: 44px;
-    margin: 0;
-    padding: 7px 10px;
-    border: 1px solid transparent;
-    border-radius: 9px;
+/* Bundled-tool rail buttons hide until their extension is installed; switched-off ones carry a small Off tag. */
+body.neconyan .neconyan-rail-button.is-off > i { opacity: .55; }
+body.neconyan .neconyan-rail-button .neconyan-rail-tool-off {
+    flex: none;
+    margin-left: auto;
+    padding: 1px 6px;
+    border: 1px solid var(--neco-border);
+    border-radius: 999px;
     color: var(--neco-muted);
-    cursor: pointer;
-    list-style: none;
-}
-body.neconyan .neconyan-native-tools-summary::-webkit-details-marker { display: none; }
-body.neconyan .neconyan-native-tools-summary:hover,
-body.neconyan .neconyan-native-tools-summary:focus-visible { color: var(--neco-ink); background: var(--neco-raised); }
-body.neconyan .neconyan-native-tools-summary .neconyan-native-tools-chevron { font-size: 11px; transition: transform 160ms ease; }
-body.neconyan .neconyan-native-tools-summary .neconyan-native-tools-chevron.is-open { transform: rotate(180deg); }
-body.neconyan .neconyan-native-tool-list { display: grid; gap: 3px; min-width: 0; }
-body.neconyan .neconyan-native-tool {
-    min-width: 0;
-    border: 1px solid transparent;
-    border-radius: 10px;
-    background: transparent;
-}
-body.neconyan .neconyan-native-tool[open] {
-    border-color: color-mix(in oklch, var(--neco-ginger) 35%, var(--neco-border));
-    background: color-mix(in oklch, var(--neco-surface) 62%, transparent);
-}
-body.neconyan .neconyan-native-tool-summary {
-    display: grid;
-    grid-template-columns: 18px minmax(0, 1fr) auto 14px;
-    align-items: center;
-    gap: 7px;
-    min-height: 44px;
-    padding: 7px 8px;
-    border-radius: 9px;
-    color: var(--neco-ink);
-    cursor: pointer;
-    list-style: none;
-}
-body.neconyan .neconyan-native-tool-summary::-webkit-details-marker { display: none; }
-body.neconyan .neconyan-native-tool-summary:hover,
-body.neconyan .neconyan-native-tool-summary:focus-visible { background: var(--neco-raised); }
-body.neconyan .neconyan-native-tool-icon { color: var(--neco-ginger); text-align: center; }
-body.neconyan .neconyan-native-tool-name { min-width: 0; white-space: normal; overflow-wrap: anywhere; font-size: 12px; font-weight: 600; }
-body.neconyan .neconyan-native-tool-state { font-size: 10px; font-weight: 600; letter-spacing: .02em; }
-body.neconyan .neconyan-native-tool-state.is-enabled { color: var(--neco-ginger-hover); }
-body.neconyan .neconyan-native-tool-state.is-disabled,
-body.neconyan .neconyan-native-tool-state[data-state='missing'] { color: var(--neco-muted); }
-body.neconyan .neconyan-native-tool-chevron { color: var(--neco-muted); font-size: 11px; transition: transform 160ms ease; }
-body.neconyan .neconyan-native-tool-chevron.is-open { transform: rotate(180deg); }
-body.neconyan .neconyan-native-tool-panel { padding: 2px 8px 8px 33px; }
-body.neconyan .neconyan-native-tool-actions { display: flex; flex-wrap: wrap; gap: 5px; }
-body.neconyan .neconyan-native-tool-action {
-    min-height: 36px !important;
-    width: auto !important;
-    min-width: 44px !important;
-    flex: 1 1 auto !important;
-    justify-content: center !important;
-    padding: 7px 9px !important;
-    border: 1px solid var(--neco-border) !important;
-    border-radius: 8px !important;
-    background: var(--neco-surface) !important;
-    color: var(--neco-ink) !important;
-    font: inherit;
-    font-size: 11px;
-    cursor: pointer;
-}
-body.neconyan .neconyan-native-tool-action:hover,
-body.neconyan .neconyan-native-tool-action:focus-visible {
-    border-color: var(--neco-ginger) !important;
-    background: var(--neco-raised) !important;
-}
-body.neconyan .neconyan-native-tool-action-manage { color: var(--neco-muted) !important; }
-body.neconyan .neconyan-mobile-native-tools {
-    display: grid;
-    gap: 6px;
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid var(--neco-border);
-}
-body.neconyan .neconyan-mobile-native-tools .neconyan-native-tool-list { max-height: min(48dvh, 460px); overflow-y: auto; }
-body.neconyan .neconyan-mobile-native-tools .neconyan-native-tool-panel { padding-left: 33px; }
-
-@media (min-width: 769px) {
-    :root[data-neconyan-sidebar='closed'] body.neconyan .neconyan-native-tools-summary { justify-content: center; padding-inline: 5px; }
-    :root[data-neconyan-sidebar='closed'] body.neconyan .neconyan-native-tools-summary > span { display: none; }
-    :root[data-neconyan-sidebar='closed'] body.neconyan .neconyan-native-tool-summary { grid-template-columns: 1fr; justify-items: center; padding-inline: 5px; }
-    :root[data-neconyan-sidebar='closed'] body.neconyan .neconyan-native-tool-summary > :is(.neconyan-native-tool-name, .neconyan-native-tool-state, .neconyan-native-tool-chevron) { display: none; }
-    :root[data-neconyan-sidebar='closed'] body.neconyan .neconyan-native-tool-panel { display: none !important; }
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .02em;
 }
 
 @media (max-width: 768px) {
-    body.neconyan .neconyan-rail-tools summary { min-height: 44px; }
     body.neconyan .neconyan-mobile-modes .neconyan-mode-button { min-height: 44px; }
-    body.neconyan .neconyan-native-tool-summary { min-height: 44px; }
-    body.neconyan .neconyan-native-tool-action { min-height: 44px !important; }
 }
 
 /* Opt-in recovery drawer: keep the rows flat and readable at narrow widths. */

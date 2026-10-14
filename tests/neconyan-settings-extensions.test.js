@@ -173,6 +173,31 @@ describe('Neconyan settings and extension controllers', () => {
         expect(context.getIncludedToolDefinition(groups[3]).id).toBe('third-party/Neconyan-Time-Machine');
     });
 
+    test('links bundled tools from the Extensions page to their own settings pages', () => {
+        const dialogueColors = { id: 'third-party/sillytavern-character-colors', label: 'Dialogue Colors', unit: '#dc-ext' };
+        const context = createToolLookupContext([
+            'normalizeExtensionLookup',
+            'getExtensionUnitCandidates',
+            'normalizeIncludedToolLookup',
+            'getNeconyanNativeToolDefinitions',
+            'unitMatchesSelector',
+            'getIncludedToolDefinition',
+            'getIncludedToolGroups',
+        ], [dialogueColors]);
+        const groups = [
+            createExtensionGroup('built-in', 'Dialogue Colors', createDrawerUnit('dc-ext')),
+            createExtensionGroup('third-party', 'Custom Colours', createDrawerUnit('custom-colours')),
+            createExtensionGroup('built-in', 'TTS', createDrawerUnit('tts_container')),
+        ];
+
+        expect(context.getIncludedToolGroups(groups, 'built-in').map(info => info.name)).toEqual(['Dialogue Colors']);
+        expect(context.getIncludedToolGroups(groups, 'third-party')).toEqual([]);
+        expect(source).toContain('master.append(masterHeading, scope, searchInput, mobileSelect, mobilePin, count, tools, list);');
+        expect(source).toContain('const toolGroups = getIncludedToolGroups(state.allGroups, state.scope)');
+        expect(source).toContain('openIncludedToolSettings(state.allGroups.find(group => group.key === button.dataset.extensionId));');
+        expect(source).toContain('tools.hidden = !toolButtons.length;');
+    });
+
     // Jest stops a test at its first failed assertion, so each defect assertion has a test of its own:
     // one run on the old code then shows every one of them.
     describe('treats a translated drawer with a declared selector as an included tool', () => {

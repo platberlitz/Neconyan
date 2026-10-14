@@ -109,7 +109,7 @@ describe('Quick Image Gen opens as a page led by Nori', () => {
         expect(steps.find(step => step.id === 'provider').open).toEqual(expect.arrayContaining(['#qig-setup-toggle', '#qig-section-provider-toggle']));
     });
 
-    test('the rail item and the included tools list both open the page', () => {
+    test('the rail item and the tool definition both open the page', () => {
         expect(shell).toContain('{ id: \'quick-image-gen\', label: \'Quick Image Gen\', icon: \'fa-image\', actions: [\'settings\'], unit: \'#qig-settings\' }');
         expect(shell).toMatch(/NECONYAN_TOOL_PAGE_ROUTES = Object\.freeze\(\{[^}]*'quick-image-gen': 'quick-image-gen'/);
         expect(rail).toContain('shell?.openIncludedTool?.(\'quick-image-gen\')');
@@ -139,7 +139,7 @@ describe('Character Expressions opens as a page led by Miso', () => {
         expect(visible).not.toContain('prompt');
     });
 
-    test('the rail item and the included tools list both open the page', () => {
+    test('the rail item and the tool definition both open the page', () => {
         expect(shell).toContain('{ id: \'expressions\', label: \'Character Expressions\', icon: \'fa-masks-theater\', actions: [\'settings\'], unit: \'#expressions_container\' }');
         expect(shell).toMatch(/NECONYAN_TOOL_PAGE_ROUTES = Object\.freeze\(\{[^}]*expressions: 'expressions'/);
         expect(rail).toMatch(/case 'expressions':\s*case 'regex':\s*if \(shell\?\.openIncludedTool\?\.\(route\)\) break;/);
@@ -169,7 +169,7 @@ describe('Regexes opens as a page led by Taro', () => {
         expect(steps.find(step => step.id === 'editor').body).toContain('Start from a recipe');
     });
 
-    test('the rail item and the included tools list both open the page under one name', () => {
+    test('the rail item and the tool definition both open the page under one name', () => {
         expect(shell).toContain('{ id: \'regex\', label: \'Regexes\', icon: \'fa-code\', actions: [\'settings\'], unit: \'#regex_container\' }');
         expect(shell).toMatch(/NECONYAN_TOOL_PAGE_ROUTES = Object\.freeze\(\{[^}]*regex: 'regex'/);
         expect(manifest.display_name).toBe('Regexes');
@@ -300,7 +300,7 @@ describe('settings pages open as Neconyan pages with an assistant tour', () => {
         expect(source).toContain('!event.isTrusted');
     });
 
-    test('native and included tools mount the blurb below the title and keep invitations in the page', () => {
+    test('native shell pages and tool pages mount the blurb below the title and keep invitations in the page', () => {
         expect(shell).toContain('header.append(closeButton, eyebrow, title, headerIntro, subtitle, shellDescription)');
         expect(shell).toContain('mountToolPage(key, heading, host, headerHeading)');
         expect(shell).toContain('mountToolPage(mounted ? tool.id : \'\', heading, host, shell?.headerIntro)');

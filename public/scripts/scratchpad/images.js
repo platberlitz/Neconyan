@@ -61,7 +61,7 @@ export function renderImageCard({ session, message, part, button, availability, 
     const reason = error || (!image?.url && !availability.image ? availability.reason : '');
     if (reason) card.append(h('p', { class: 'scratchpad-error', role: 'status', text: reason }));
     if (reason || !availability.image) actions.append(button(t`Open Quick Image Gen`, () => {
-        if (!globalThis.NeconyanShell?.openIncludedTool?.('quick-image-gen')) globalThis.toastr?.info?.(t`Quick Image Gen is turned off. Turn it on under Included tools, then try again.`);
+        if (!globalThis.NeconyanShell?.openIncludedTool?.('quick-image-gen')) globalThis.toastr?.info?.(t`Quick Image Gen is turned off. Turn it on in Manage extensions, then try again.`);
     }));
     if (dismissed) actions.append(h('span', { text: t`Dismissed` }), button(t`Undo`, onRestore));
     else if (image?.state !== 'pending' && !applied) actions.append(button(t`Dismiss`, onDismiss));

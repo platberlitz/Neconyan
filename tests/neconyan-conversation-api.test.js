@@ -2686,7 +2686,7 @@ describe('Neconyan Conversation REST API', () => {
         const request = upstreamRequests[0];
         const instructions = request.instructions ?? request.prompt ?? request.messages.filter(message => message.role === 'system').map(message => message.content).join('\n');
         expect(instructions).toContain('[Neconyan help reference');
-        expect(instructions).toContain('Included tools → Dialogue Colors → Settings → Characters');
+        expect(instructions).toContain('Appearance → Dialogue Colors → Characters');
         expect(instructions).toContain('Quote Text');
         expect(request.tools).toBeUndefined();
         expect(JSON.stringify(readConversationStore())).not.toContain('Neconyan help reference');

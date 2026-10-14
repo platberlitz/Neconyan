@@ -94,7 +94,7 @@ The accent is the user's choice, not ginger. `--neco-ginger` reads the theme's q
 ## Component inventory
 
 - Top bar (`#top-bar`, built by `buildTopBar()` in `public/scripts/neconyan-tabs.js`): hamburger, label, edit card, Quick Access shortcuts.
-- Workspace rail / phone drawer (`#neconyan-workspace-rail`, `public/scripts/welcome-screen.js`): New chat, Workspace routes, Modes, Fine-tuning, Included tools, Recent, Search, Settings.
+- Workspace rail / phone drawer (`#neconyan-workspace-rail`, `public/scripts/welcome-screen.js`): New chat, Workspace, Fine-tuning, Characters & Lore, Appearance, Quick Actions, Troubleshooting, Modes, Recent, Search, Settings. Bundled tools are ordinary buttons in those sections; there is no separate tools dropdown.
 - Home (`welcomePanelOnboarding.html`): guide panel, Recent chats box, Chat Archive button.
 - Sheets: Characters/Editor (`#right-nav-panel`), Model and Settings shells, Agents, Lorebooks, Extensions.
 - Bottom chat bar (`#sb-bottom-chat-bar`): persona, chat pill, up/down, Regenerate, chat manager actions.

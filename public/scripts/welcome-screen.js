@@ -1533,7 +1533,10 @@ function initializeNeconyanRailOrder(rail) {
     status.className = 'sr-only';
     status.setAttribute('role', 'status');
     rail.appendChild(status);
-    for (const [name, selector] of Object.entries({ primary: '[data-neconyan-primary-nav]', advanced: '[data-neconyan-advanced-nav]', finer: '[data-neconyan-finer-nav]', modes: '[data-neconyan-mode-nav]' })) {
+    for (const [name, selector] of Object.entries({
+        primary: '[data-neconyan-primary-nav]', advanced: '[data-neconyan-advanced-nav]', lore: '[data-neconyan-lore-nav]',
+        appearance: '[data-neconyan-appearance-nav]', finer: '[data-neconyan-finer-nav]', modes: '[data-neconyan-mode-nav]',
+    })) {
         const host = rail.querySelector(selector);
         const buttons = new Map([...host.children].map(button => [button.dataset.neconyanRoute || button.dataset.neconyanChatMode, button]));
         neconyanRailGroups[name] = { host, buttons };
@@ -1602,6 +1605,7 @@ function initializeNeconyanRailSections(rail) {
     const collapsed = { ...saved };
     for (const [name, selector] of Object.entries({
         workspace: '[data-neconyan-primary-nav]', advanced: '[data-neconyan-advanced-nav]',
+        lore: '[data-neconyan-lore-nav]', appearance: '[data-neconyan-appearance-nav]',
         quickActions: '[data-neconyan-quick-actions]', finer: '[data-neconyan-finer-nav]',
         modes: '[data-neconyan-mode-nav]', recent: '[data-neconyan-recent-list]',
     })) {
@@ -1638,12 +1642,6 @@ function initializeNeconyanRailSections(rail) {
             accountStorage.setItem(NECONYAN_RAIL_SECTIONS_KEY, JSON.stringify(collapsed));
         });
     }
-    const tools = rail.querySelector('.neconyan-rail-tools');
-    tools.open = collapsed.tools === false;
-    tools.addEventListener('toggle', () => {
-        collapsed.tools = !tools.open;
-        accountStorage.setItem(NECONYAN_RAIL_SECTIONS_KEY, JSON.stringify(collapsed));
-    });
 }
 
 function setNeconyanRailCollapsed(collapsed) {
@@ -1656,6 +1654,43 @@ function setNeconyanRailCollapsed(collapsed) {
     if (toggle instanceof HTMLButtonElement) {
         toggle.title = nextCollapsed ? 'Expand sidebar' : 'Collapse sidebar';
         toggle.innerHTML = `<i class="fa-solid ${nextCollapsed ? 'fa-angles-right' : 'fa-angles-left'}" aria-hidden="true"></i>`;
+    }
+}
+
+// Rail routes that open a bundled extension; the shell hides each button until its extension is installed.
+const NECONYAN_RAIL_TOOL_ROUTES = Object.freeze({
+    'chat-archive': 'neconyan-chats-archive',
+    'preset-tools': 'third-party/Neconyan-Preset-Tools',
+    'chat-completion-tabs': 'third-party/ChatCompletionTabs',
+    'prompt-tags': 'third-party/Neconyan-PromptTags',
+    'macro-enhanced': 'third-party/MacroEnhanced',
+    'prompting-lab': 'third-party/Neconyan-Prompting-Lab',
+    'deep-swipe': 'third-party/Neconyan-Deep-Swipe',
+    'botsearcher': 'third-party/Neconyan-BotSearcher',
+    'world-info-lab': 'third-party/Neconyan-WorldInfo-Lab',
+    'lorebook-distiller': 'third-party/Neconyan-Lorebook-Distiller',
+    'time-machine': 'third-party/Neconyan-Time-Machine',
+    'termeownal-ui': 'third-party/Neconyan-Terminal-UI',
+    'css-snippets': 'css-snippets',
+    'regex-agent-themes': 'third-party/Neconyan-Regex-Agent-Themes',
+    'debugger': 'neconyan-debugger',
+});
+
+function appendNeconyanRailButtons(host, routes) {
+    if (!(host instanceof HTMLElement)) return;
+    for (const [route, label, icon] of routes) {
+        const button = createNeconyanRailButton({
+            label,
+            icon,
+            route,
+            onClick: () => activateNeconyanRailRoute(route),
+        });
+        const toolId = NECONYAN_RAIL_TOOL_ROUTES[route];
+        if (toolId) {
+            button.dataset.neconyanRailTool = toolId;
+            button.hidden = true;
+        }
+        host.appendChild(button);
     }
 }
 
@@ -1723,6 +1758,10 @@ function activateNeconyanRailRoute(route) {
     const shell = globalThis.NeconyanShell;
     globalThis.NeconyanNotes?.onRoute?.(route);
     globalThis.NeconyanScratchpad?.onRoute?.(route);
+    if (Object.hasOwn(NECONYAN_RAIL_TOOL_ROUTES, route)) {
+        globalThis.NeconyanNativeTools?.activate?.(NECONYAN_RAIL_TOOL_ROUTES[route]);
+        return;
+    }
     switch (route) {
         case 'notes':
             void import('./notebooks/notes-app.js')
@@ -1917,6 +1956,14 @@ function ensureNeconyanRail() {
                     <div id="neconyan-rail-advanced-title" class="neconyan-rail-section-heading"><span>Fine-tuning</span></div>
                     <div data-neconyan-advanced-nav></div>
                 </section>
+                <section class="neconyan-rail-advanced" aria-labelledby="neconyan-rail-lore-title">
+                    <div id="neconyan-rail-lore-title" class="neconyan-rail-section-heading"><span>Characters &amp; Lore</span></div>
+                    <div data-neconyan-lore-nav></div>
+                </section>
+                <section class="neconyan-rail-advanced" aria-labelledby="neconyan-rail-appearance-title">
+                    <div id="neconyan-rail-appearance-title" class="neconyan-rail-section-heading"><span>Appearance</span></div>
+                    <div data-neconyan-appearance-nav></div>
+                </section>
                 <section class="neconyan-rail-advanced" aria-labelledby="neconyan-rail-quick-actions-title">
                     <div id="neconyan-rail-quick-actions-title" class="neconyan-rail-section-heading"><span>Quick Actions</span><button class="neconyan-rail-icon-button" type="button" data-neconyan-edit-quick-actions aria-label="Edit Quick Actions" title="Edit Quick Actions"><i class="fa-solid fa-pen" aria-hidden="true"></i></button></div>
                     <div data-neconyan-quick-actions></div>
@@ -1928,10 +1975,6 @@ function ensureNeconyanRail() {
                 <div class="neconyan-rail-section-label neconyan-rail-modes-label">Modes</div>
                 <div data-neconyan-mode-nav></div>
             </nav>
-            <details class="neconyan-rail-tools">
-                <summary id="neconyan-rail-tools-title" class="neconyan-native-tools-summary" aria-controls="neconyan-rail-tools-list" aria-expanded="false"><span>Included tools</span><i class="fa-solid fa-chevron-down neconyan-native-tools-chevron" aria-hidden="true"></i></summary>
-                <div id="neconyan-rail-tools-list" class="neconyan-native-tool-list" data-neconyan-native-tool-list></div>
-            </details>
             <div class="neconyan-rail-recent">
                 <div class="neconyan-rail-section-heading"><span>Recent</span><button class="neconyan-rail-icon-button" type="button" data-neconyan-open-archive aria-label="Open Chat Archive" title="Open Chat Archive"><i class="fa-solid fa-box-archive" aria-hidden="true"></i></button><button class="neconyan-rail-icon-button" type="button" data-neconyan-refresh-recent aria-label="Refresh recent chats" title="Refresh recent chats"><i class="fa-solid fa-rotate" aria-hidden="true"></i></button></div>
                 <div data-neconyan-recent-list></div>
@@ -1943,8 +1986,7 @@ function ensureNeconyanRail() {
         </div>
     `;
 
-    const primaryNav = rail.querySelector('[data-neconyan-primary-nav]');
-    const primaryRoutes = [
+    appendNeconyanRailButtons(rail.querySelector('[data-neconyan-primary-nav]'), [
         ['home', 'Home', 'fa-house'],
         ['characters', 'Characters', 'fa-address-card'],
         ['model', 'Connections', 'fa-plug'],
@@ -1953,16 +1995,9 @@ function ensureNeconyanRail() {
         ['lorebooks', 'Lorebooks', 'fa-book-atlas'],
         ['notes', 'Notebooks', 'fa-note-sticky'],
         ['scratchpad', 'Scratchpad', 'fa-clipboard-list'],
+        ['chat-archive', 'Chat Archive', 'fa-box-archive'],
         ['extensions', 'Extensions', 'fa-cubes'],
-    ];
-    for (const [route, label, icon] of primaryRoutes) {
-        primaryNav.appendChild(createNeconyanRailButton({
-            label,
-            icon,
-            route,
-            onClick: () => activateNeconyanRailRoute(route),
-        }));
-    }
+    ]);
 
     const modeNav = rail.querySelector('[data-neconyan-mode-nav]');
     if (modeNav instanceof HTMLElement) {
@@ -1971,41 +2006,44 @@ function ensureNeconyanRail() {
         }
     }
 
-    const advancedNav = rail.querySelector('[data-neconyan-advanced-nav]');
-    const advancedRoutes = [
+    appendNeconyanRailButtons(rail.querySelector('[data-neconyan-advanced-nav]'), [
         ['presets', 'Presets', 'fa-sliders'],
         ['sampling', 'Sampling', 'fa-wave-square'],
         ['formatting', 'Formatting', 'fa-text-height'],
         ['regex', translate('Regexes', 'ext_regex_title'), 'fa-code'],
-        ['expressions', t`Character Expressions`, 'fa-masks-theater'],
+        ['preset-tools', 'Preset Tools', 'fa-toolbox'],
+        ['chat-completion-tabs', 'Chat Completion Tabs', 'fa-table-columns'],
+        ['prompt-tags', 'Prompt Tags', 'fa-tags'],
+        ['macro-enhanced', 'Macro Enhanced', 'fa-wand-magic-sparkles'],
+        ['prompting-lab', 'Prompting Lab', 'fa-flask'],
+        ['deep-swipe', 'Deep Swipe', 'fa-arrows-up-down'],
+    ]);
+
+    appendNeconyanRailButtons(rail.querySelector('[data-neconyan-lore-nav]'), [
         ['persona', 'Persona', 'fa-face-smile'],
-        ['pathfinder', 'Pawthfinder', 'fa-diamond-turn-right'],
-        ['dialogue-colors', 'Dialogue Colors', 'fa-palette'],
+        ['expressions', t`Character Expressions`, 'fa-masks-theater'],
         ['quick-image-gen', 'Quick Image Gen', 'fa-image'],
+        ['botsearcher', 'BotSearcher', 'fa-binoculars'],
+        ['pathfinder', 'Pawthfinder', 'fa-diamond-turn-right'],
+        ['world-info-lab', 'World Info Lab', 'fa-book-open-reader'],
+        ['lorebook-distiller', 'Lorebook Distiller', 'fa-book-medical'],
+        ['time-machine', 'Card & Lorebook Time Machine', 'fa-clock-rotate-left'],
+    ]);
+
+    appendNeconyanRailButtons(rail.querySelector('[data-neconyan-appearance-nav]'), [
         ['background', 'Background', 'fa-panorama'],
-    ];
-    for (const [route, label, icon] of advancedRoutes) {
-        advancedNav.appendChild(createNeconyanRailButton({
-            label,
-            icon,
-            route,
-            onClick: () => activateNeconyanRailRoute(route),
-        }));
-    }
+        ['dialogue-colors', 'Dialogue Colors', 'fa-palette'],
+        ['termeownal-ui', 'Termeownal UI', 'fa-laptop-code'],
+        ['css-snippets', 'CSS Snippets', 'fa-list-check'],
+        ['regex-agent-themes', 'Regex Agent Themes', 'fa-brush'],
+    ]);
 
     const finerNav = rail.querySelector('[data-neconyan-finer-nav]');
-    const finerRoutes = [
+    appendNeconyanRailButtons(finerNav, [
         ['server', 'Server', 'fa-server'],
         ['console-logs', 'Console Logs', 'fa-terminal'],
-    ];
-    for (const [route, label, icon] of finerRoutes) {
-        finerNav.appendChild(createNeconyanRailButton({
-            label,
-            icon,
-            route,
-            onClick: () => activateNeconyanRailRoute(route),
-        }));
-    }
+        ['debugger', 'Debugger', 'fa-bug-slash'],
+    ]);
     const reportIssueButton = createNeconyanRailButton({
         label: 'Report an Issue',
         icon: 'fa-bug',
@@ -2022,12 +2060,6 @@ function ensureNeconyanRail() {
     rail.querySelector('[data-neconyan-refresh-recent]').addEventListener('click', () => void refreshNeconyanRail());
     rail.querySelector('[data-neconyan-open-archive]').addEventListener('click', () => openNeconyanChatArchive());
     rail.querySelector('[data-neconyan-edit-quick-actions]').addEventListener('click', () => globalThis.NeconyanShell?.editQuickActions?.());
-    const toolsDetails = rail.querySelector('.neconyan-rail-tools');
-    const toolsSummary = rail.querySelector('.neconyan-rail-tools > .neconyan-native-tools-summary');
-    toolsDetails?.addEventListener('toggle', () => {
-        toolsSummary?.setAttribute('aria-expanded', String(toolsDetails.open));
-        toolsSummary?.querySelector('.neconyan-native-tools-chevron')?.classList.toggle('is-open', toolsDetails.open);
-    });
     rail.querySelector('#neconyan-sidebar-toggle').addEventListener('click', () => {
         const collapsed = document.documentElement.dataset.neconyanSidebar === 'closed';
         setNeconyanRailCollapsed(!collapsed);

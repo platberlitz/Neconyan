@@ -16,6 +16,10 @@ function getWelcomeFunctionSource(name) {
     return welcomeSource.match(new RegExp(`^(?:async )?function ${name}\\([\\s\\S]*?^}`, 'm'))?.[0] ?? '';
 }
 
+function railRoutesSource() {
+    return welcomeSource.match(/^const NECONYAN_RAIL_TOOL_ROUTES = [\s\S]*?^}\);/m)?.[0] ?? '';
+}
+
 function createWelcomeRuntime(overrides = {}) {
     const actions = [];
     const Textarea = class HTMLTextAreaElement {
@@ -45,6 +49,7 @@ function createWelcomeRuntime(overrides = {}) {
     });
     context.globalThis = context;
     vm.runInContext([
+        railRoutesSource(),
         getWelcomeFunctionSource('focusSendTextarea'),
         getWelcomeFunctionSource('openNeconyanTemporaryChat'),
         getWelcomeFunctionSource('openNeconyanRecentChat'),
@@ -300,7 +305,7 @@ describe('Neconyan workspace rail behavior', () => {
     });
 
     test('section toggles restore saved state, persist independently and keep recent actions outside', () => {
-        const names = ['workspace', 'advanced', 'quickActions', 'finer', 'modes', 'recent'];
+        const names = ['workspace', 'advanced', 'lore', 'appearance', 'quickActions', 'finer', 'modes', 'recent'];
         const panels = names.map(name => {
             const label = { textContent: name, replaceWith(button) { this.button = button; } };
             const heading = {
@@ -312,8 +317,7 @@ describe('Neconyan workspace rail behavior', () => {
             };
             return { previousElementSibling: heading, label, heading };
         });
-        const tools = { open: false, addEventListener(_type, callback) { this.toggle = callback; } };
-        const saved = new Map([['sections', '{"advanced":true,"workspace":false,"tools":false}']]);
+        const saved = new Map([['sections', '{"advanced":true,"workspace":false,"appearance":true}']]);
         const context = vm.createContext({
             NECONYAN_RAIL_SECTIONS_KEY: 'sections',
             accountStorage: { getItem: key => saved.get(key), setItem: (key, value) => saved.set(key, value) },
@@ -327,14 +331,13 @@ describe('Neconyan workspace rail behavior', () => {
         });
         vm.runInContext(getWelcomeFunctionSource('initializeNeconyanRailSections'), context);
         let index = 0;
-        context.initializeNeconyanRailSections({ querySelector: () => panels[index++] || tools });
-        expect(panels.map(panel => panel.hidden)).toEqual([false, true, false, false, false, false]);
-        expect(tools.open).toBe(true);
+        context.initializeNeconyanRailSections({ querySelector: () => panels[index++] });
+        expect(panels.map(panel => panel.hidden)).toEqual([false, true, false, true, false, false, false, false]);
         expect(panels.every(panel => panel.heading.classes.has('neconyan-rail-section-collapsible'))).toBe(true);
-        const quickActionsGroup = panels[2].heading.appended[0];
+        const quickActionsGroup = panels[4].heading.appended[0];
         expect(quickActionsGroup.className).toBe('neconyan-rail-section-actions');
         expect(quickActionsGroup.children).toEqual(['edit']);
-        expect(panels[5].heading.appended[0].children).toEqual(['archive', 'refresh']);
+        expect(panels[7].heading.appended[0].children).toEqual(['archive', 'refresh']);
         expect(panels[0].heading.appended).toEqual([]);
         const css = readSource('public', 'css', 'neconyan.css');
         expect(css).toContain('body.neconyan .neconyan-rail-section-collapsible > * { grid-area: 1 / 1; }');
@@ -343,17 +346,13 @@ describe('Neconyan workspace rail behavior', () => {
         expect(panels[0].hidden).toBe(true);
         expect(panels[0].label.button.attributes['aria-expanded']).toBe('false');
         expect(panels[0].label.button.attributes['aria-controls']).toBe(panels[0].id);
-        expect(JSON.parse(saved.get('sections'))).toEqual({ advanced: true, workspace: true, tools: false });
+        expect(JSON.parse(saved.get('sections'))).toEqual({ advanced: true, workspace: true, appearance: true });
         panels[0].label.button.click();
         expect(panels[0].hidden).toBe(false);
-        tools.open = false;
-        tools.toggle();
-        expect(JSON.parse(saved.get('sections')).tools).toBe(true);
         saved.set('sections', 'invalid');
         index = 0;
-        context.initializeNeconyanRailSections({ querySelector: () => panels[index++] || tools });
+        context.initializeNeconyanRailSections({ querySelector: () => panels[index++] });
         expect(panels.every(panel => !panel.hidden)).toBe(true);
-        expect(tools.open).toBe(false);
     });
 
     test('keeps the old avatar updater as the same callable function', () => {
@@ -368,7 +367,7 @@ describe('Neconyan workspace rail behavior', () => {
         expect(context.window.updateNeconyanChatAvatars).toBe(context.updateChatAvatarVariables);
     });
 
-    test('keeps the native tool list flat, live, and individually expandable', () => {
+    test('keeps the native tool definitions and rail landmarks in place', () => {
         const definitions = tabsSource.match(/const NECONYAN_NATIVE_TOOL_DEFINITIONS = Object\.freeze\(\[[\s\S]*?\n\]\);/)[0];
         const labels = Array.from(definitions.matchAll(/label: '([^']+)'/g)).map(match => match[1]);
         expect(labels).toEqual([
@@ -391,13 +390,13 @@ describe('Neconyan workspace rail behavior', () => {
         expect(welcomeSource).toContain('[\'background\', \'Background\', \'fa-panorama\']');
         expect(tabsSource).toContain('[\'right\', \'extensions\', \'Extensions\', \'fa-cubes\']');
         expect(tabsSource).toContain('[\'left\', \'api\', \'Connections\', \'fa-plug\']');
-        expect(tabsSource).toContain('data-neconyan-native-tool-list');
+        expect(tabsSource).not.toContain('data-neconyan-native-tool-list');
+        expect(welcomeSource).not.toContain('Included tools');
         expect(tabsSource).toContain('id: \'sb-topbar-clock\'');
         expect(tabsSource).toContain('id: \'sb-topbar-edit-card\'');
         expect(tabsSource).toContain('syncTopbarEditCardButton');
         expect(tabsSource).toContain('event_types.EXTENSION_SETTINGS_LOADED');
         expect(tabsSource).toContain('event_types.EXTENSION_DISABLED');
-        expect(tabsSource).toContain('\'aria-controls\': panelId');
     });
 
     test('allowlists mode requests and keeps mode state separate from Advanced state', () => {
@@ -623,6 +622,114 @@ describe('Neconyan workspace rail behavior', () => {
 
         expect(routes).toEqual([['right', 'extensions']]);
         expect(calls).toEqual(['pathfinder', 'focus:Dialogue Colors', 'focus:Quick Image Gen']);
+    });
+
+    test('groups every bundled tool into a named section instead of one Included tools list', () => {
+        const build = getWelcomeFunctionSource('ensureNeconyanRail');
+        const section = (start, end) => build.slice(build.indexOf(start), build.indexOf(end, build.indexOf(start)));
+        const routesIn = text => Array.from(text.matchAll(/\['([a-z-]+)', /g)).map(match => match[1]);
+        const order = ['data-neconyan-primary-nav', 'data-neconyan-advanced-nav', 'data-neconyan-lore-nav', 'data-neconyan-appearance-nav', 'data-neconyan-quick-actions', 'data-neconyan-finer-nav', 'data-neconyan-mode-nav'];
+        for (let index = 1; index < order.length; index++) {
+            expect(build.indexOf(order[index - 1])).toBeLessThan(build.indexOf(order[index]));
+        }
+        expect(build).toContain('>Characters &amp; Lore<');
+        expect(build).toContain('>Appearance<');
+        expect(build).not.toContain('neconyan-rail-tools');
+
+        const appendCalls = build.split('appendNeconyanRailButtons(').slice(1);
+        const groups = Object.fromEntries(appendCalls.map(call => [call.match(/data-neconyan-([a-z]+)-nav|^finerNav/)?.[1] ?? 'finer', routesIn(section(call, '\n    ]);'))]));
+        expect(groups.primary).toContain('chat-archive');
+        expect(groups.advanced).toEqual(['presets', 'sampling', 'formatting', 'regex', 'preset-tools', 'chat-completion-tabs', 'prompt-tags', 'macro-enhanced', 'prompting-lab', 'deep-swipe']);
+        expect(groups.lore).toEqual(['persona', 'expressions', 'quick-image-gen', 'botsearcher', 'pathfinder', 'world-info-lab', 'lorebook-distiller', 'time-machine']);
+        expect(groups.appearance).toEqual(['background', 'dialogue-colors', 'termeownal-ui', 'css-snippets', 'regex-agent-themes']);
+        expect(groups.finer).toEqual(['server', 'console-logs', 'debugger']);
+
+        // Every bundled tool except the two modes has its own rail button.
+        const definitions = tabsSource.match(/const NECONYAN_NATIVE_TOOL_DEFINITIONS = Object\.freeze\(\[[\s\S]*?\n\]\);/)[0];
+        const toolIds = Array.from(definitions.matchAll(/id: '([^']+)'/g)).map(match => match[1]);
+        const railRoutes = railRoutesSource();
+        const pageRoutes = tabsSource.match(/const NECONYAN_TOOL_PAGE_ROUTES = [\s\S]*?\}\);/)[0];
+        const covered = toolIds.filter(id => railRoutes.includes(`'${id}'`) || pageRoutes.includes(id.replace('third-party/', '')));
+        expect(toolIds.filter(id => !covered.includes(id))).toEqual(['third-party/Neconyan-Story-Mode', 'third-party/Neconyan-Hopper']);
+    });
+
+    test('tool buttons hand their extension to the shell and stay hidden until it is found', () => {
+        const calls = [];
+        const runtime = createWelcomeRuntime();
+        runtime.context.NeconyanNativeTools = { activate: id => calls.push(id) };
+        runtime.context.activateNeconyanRailRoute('debugger');
+        runtime.context.activateNeconyanRailRoute('termeownal-ui');
+        expect(calls).toEqual(['neconyan-debugger', 'third-party/Neconyan-Terminal-UI']);
+
+        class HTMLElement {
+            constructor() { this.dataset = {}; this.children = []; }
+            appendChild(child) { this.children.push(child); }
+        }
+        const context = vm.createContext({
+            HTMLElement,
+            createNeconyanRailButton: ({ route }) => Object.assign(new HTMLElement(), { route }),
+            activateNeconyanRailRoute() {},
+        });
+        vm.runInContext([railRoutesSource(), getWelcomeFunctionSource('appendNeconyanRailButtons')].join('\n'), context);
+        const host = new HTMLElement();
+        context.appendNeconyanRailButtons(host, [['server', 'Server', 'fa-server'], ['debugger', 'Debugger', 'fa-bug-slash']]);
+        expect(host.children.map(button => [button.route, button.hidden ?? false, button.dataset.neconyanRailTool])).toEqual([
+            ['server', false, undefined],
+            ['debugger', true, 'neconyan-debugger'],
+        ]);
+    });
+
+    test('switched-off tools open Extensions, open-able tools launch, the rest open settings', () => {
+        const calls = [];
+        const tools = {
+            'neconyan-debugger': { label: 'Debugger', present: true, enabled: true, actions: ['open', 'settings'] },
+            'third-party/Neconyan-Terminal-UI': { label: 'Termeownal UI', present: true, enabled: false, actions: ['settings'] },
+            'third-party/Neconyan-PromptTags': { label: 'Prompt Tags', present: true, enabled: true, actions: ['settings'] },
+        };
+        const context = vm.createContext({
+            findNeconyanNativeTool: id => tools[id] ?? null,
+            openNeconyanNativeManage: label => calls.push(['manage', label]),
+            openNeconyanNativeTool: tool => calls.push(['open', tool.label]),
+            openNeconyanNativeExtensionSettings: tool => calls.push(['settings', tool.label]),
+        });
+        vm.runInContext(tabsSource.match(/^function activateNeconyanRailTool\([\s\S]*?^}/m)[0], context);
+        expect(Object.keys(tools).map(id => context.activateNeconyanRailTool(id))).toEqual([true, true, true]);
+        expect(context.activateNeconyanRailTool('missing')).toBe(false);
+        expect(calls).toEqual([['open', 'Debugger'], ['manage', 'Termeownal UI'], ['settings', 'Prompt Tags']]);
+    });
+
+    test('mounting marks switched-off tools and hides missing ones', () => {
+        const makeButton = (id, label) => {
+            const labelSpan = { textContent: label, after: badge => { button.badge = badge; } };
+            const classes = new Set();
+            const attributes = {};
+            const button = {
+                dataset: { neconyanRailTool: id },
+                hidden: true,
+                classList: { toggle: (name, on) => (on ? classes.add(name) : classes.delete(name)), contains: name => classes.has(name) },
+                setAttribute: (name, value) => { attributes[name] = value; },
+                attributes,
+                querySelector: selector => (selector === 'span' ? labelSpan : selector === '.neconyan-rail-tool-off' ? button.badge ?? null : null),
+            };
+            return button;
+        };
+        const buttons = [makeButton('on', 'Debugger'), makeButton('off', 'Termeownal UI'), makeButton('gone', 'Prompt Tags')];
+        const tools = { on: { present: true, enabled: true }, off: { present: true, enabled: false }, gone: { present: false, enabled: false } };
+        const context = vm.createContext({
+            document: { querySelectorAll: () => buttons },
+            findNeconyanNativeTool: id => tools[id],
+            createElement: (_tag, options) => ({ ...options, remove() {} }),
+            t: strings => strings[0],
+        });
+        vm.runInContext(tabsSource.match(/^function mountNeconyanNativeTools\([\s\S]*?^}/m)[0], context);
+        context.mountNeconyanNativeTools();
+        expect(buttons.map(button => button.hidden)).toEqual([false, false, true]);
+        expect(buttons[1].classList.contains('is-off')).toBe(true);
+        expect(buttons[1].badge.className).toBe('neconyan-rail-tool-off');
+        expect(buttons[1].attributes['aria-label']).toBe('Termeownal UI (off)');
+        expect(buttons[0].classList.contains('is-off')).toBe(false);
+        expect(buttons[0].badge).toBeUndefined();
+        expect(neconyanCss).toContain('body.neconyan #neconyan-workspace-rail [hidden] { display: none; }');
     });
 
     test('recent roleplay and group entries strip the API .jsonl suffix', async () => {

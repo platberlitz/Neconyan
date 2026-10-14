@@ -163,7 +163,7 @@ const NN_SHORTCUT_LABELS = Object.freeze({
 });
 const NN_PANEL_STYLESHEETS = Object.freeze({
     'characters:world-info': [
-        { href: 'css/world-info.css?v=20261013-saved-connection-details1', id: 'deferred-world-info-css' },
+        { href: 'css/world-info.css?v=20261014d-rail-groups', id: 'deferred-world-info-css' },
     ],
     'characters:persona': [
         { href: 'css/personas.css?v=20261006-personaui1', id: 'deferred-personas-css' },
@@ -511,7 +511,7 @@ const NN_SHELL_TOGGLE_GUARD_MS = 260;
 const NN_INIT_RETRY_DELAY_MS = 150;
 const NN_INIT_MAX_RETRIES = 30;
 
-const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261013-saved-connection-details1';
+const NN_SHELL_STYLE_STYLESHEET_VERSION = '20261014d-rail-groups';
 const NN_THEMES = Object.freeze([
     {
         id: 'calico',
@@ -596,8 +596,6 @@ const NECONYAN_NATIVE_TOOL_DEFINITIONS = Object.freeze([
     { id: 'regex', label: 'Regexes', icon: 'fa-code', actions: ['settings'], unit: '#regex_container' },
 ]);
 
-const nativeToolActionLabel = actionName => ({ open: t`Open`, settings: t`Settings`, manage: t`Manage extensions` })[actionName];
-
 const NECONYAN_MODE_DEFINITIONS = Object.freeze([
     { id: 'roleplay', label: 'Roleplay', icon: 'fa-masks-theater' },
     { id: 'conversation', label: 'Conversation', icon: 'fa-comments' },
@@ -607,7 +605,6 @@ const NECONYAN_MODE_DEFINITIONS = Object.freeze([
 const NECONYAN_MODE_IDS = new Set(NECONYAN_MODE_DEFINITIONS.map(mode => mode.id));
 let neconyanNativeToolsBound = false;
 let neconyanNativeToolsRefreshFrame = 0;
-const neconyanNativeToolOpenState = new Map();
 const NECONYAN_INCLUDED_TOOL_STORAGE_KEY = 'NeconyanIncludedTool.v1';
 let neconyanIncludedToolSelection = safeGetItem(NECONYAN_INCLUDED_TOOL_STORAGE_KEY) || '';
 let neconyanIncludedToolRestore = null;
@@ -2825,7 +2822,7 @@ function buildIncludedToolPanel() {
     const host = createElement('div', { className: 'neconyan-included-tool-page' });
     const heading = createElement('div', { className: 'neconyan-included-tool-heading' });
     const title = createElement('h2', { text: 'Included tool' });
-    const state = createElement('p', { className: 'neconyan-included-tool-state', text: 'Choose a tool from Included tools to open its settings here.' });
+    const state = createElement('p', { className: 'neconyan-included-tool-state', text: 'Choose a tool from the sidebar to open its settings here.' });
     heading.append(title, state);
     const content = createElement('div', { className: 'neconyan-included-tool-content' });
     host.append(heading, content);
@@ -2911,7 +2908,10 @@ const NECONYAN_TOOL_PAGE_ROUTES = Object.freeze({
 function getIncludedToolRailRoute() {
     const selected = normalizeNeconyanNativeToolId(neconyanIncludedToolSelection);
     const key = Object.keys(NECONYAN_TOOL_PAGE_ROUTES).find(id => selected === id || selected.endsWith(`/${id}`));
-    return key ? NECONYAN_TOOL_PAGE_ROUTES[key] : 'extensions';
+    if (key) return NECONYAN_TOOL_PAGE_ROUTES[key];
+    const railTool = Array.from(document.querySelectorAll('#neconyan-workspace-rail [data-neconyan-rail-tool]'))
+        .find(button => normalizeNeconyanNativeToolId(button.dataset.neconyanRailTool) === selected);
+    return railTool?.dataset.neconyanRoute || 'extensions';
 }
 
 let neconyanToolTourModule = null;
@@ -2940,7 +2940,7 @@ function withNeconyanToolTour(callback, failure) {
     });
 }
 
-// Shell tabs that get the same introduction and assistant tour as the full-page Included tools.
+// Shell tabs that get the same introduction and assistant tour as the full-page tool settings pages.
 const NN_NATIVE_SHELL_PAGES = Object.freeze({
     'left:api': 'connections',
     'left:presets': 'presets',
@@ -3116,140 +3116,42 @@ async function openNeconyanNativeTool(tool) {
     }
 }
 
-function updateNeconyanNativeToolSummary(details, summary) {
-    summary.setAttribute('aria-expanded', String(details.open));
-    summary.querySelector('.neconyan-native-tool-chevron')?.classList.toggle('is-open', details.open);
+function findNeconyanNativeTool(id) {
+    const wanted = normalizeNeconyanNativeToolId(id);
+    const definition = NECONYAN_NATIVE_TOOL_DEFINITIONS.find(item => normalizeNeconyanNativeToolId(item.id) === wanted);
+    return definition ? resolveNeconyanNativeTool(definition) : null;
 }
 
-function nativeToolKey(tool) {
-    return normalizeNeconyanNativeToolId(tool.id || tool.label).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-}
-
-function renderNeconyanNativeToolList(host, scope = 'rail') {
-    if (!(host instanceof HTMLElement)) return;
-
-    const existingOpen = new Set(Array.from(host.querySelectorAll('details[data-neconyan-native-tool-key]'))
-        .filter(details => details instanceof HTMLDetailsElement && details.open)
-        .map(details => details.getAttribute('data-neconyan-native-tool-key')));
-    existingOpen.forEach(key => neconyanNativeToolOpenState.set(key, true));
-    const previousFocusKey = document.activeElement instanceof HTMLElement
-        ? document.activeElement.closest('[data-neconyan-native-tool-key]')?.getAttribute('data-neconyan-native-tool-key')
-        : '';
-
-    host.replaceChildren();
-    for (const tool of getNeconyanNativeTools()) {
-        const key = nativeToolKey(tool);
-        const summaryId = `neconyan-${scope}-${key}-summary`;
-        const panelId = `neconyan-${scope}-${key}-panel`;
-        const details = createElement('details', {
-            className: 'neconyan-native-tool',
-            attrs: {
-                'data-neconyan-native-tool': 'true',
-                'data-neconyan-native-tool-key': key,
-                'data-neconyan-extension-id': tool.id,
-            },
-        });
-        details.open = neconyanNativeToolOpenState.get(key) ?? existingOpen.has(key);
-
-        const summary = createElement('summary', {
-            id: summaryId,
-            className: 'neconyan-native-tool-summary',
-            attrs: {
-                'aria-controls': panelId,
-                'aria-expanded': String(details.open),
-            },
-        });
-        summary.append(
-            createElement('i', { className: `fa-solid ${tool.icon} neconyan-native-tool-icon`, attrs: { 'aria-hidden': 'true' } }),
-            createElement('span', { className: 'neconyan-native-tool-name', text: tool.label }),
-            createElement('span', {
-                className: `neconyan-native-tool-state ${tool.enabled ? 'is-enabled' : 'is-disabled'}`,
-                text: tool.present ? (tool.enabled ? 'On' : 'Off') : 'Unavailable',
-                attrs: { 'data-state': tool.present ? (tool.enabled ? 'enabled' : 'disabled') : 'missing' },
-            }),
-            createElement('i', { className: 'fa-solid fa-chevron-down neconyan-native-tool-chevron', attrs: { 'aria-hidden': 'true' } }),
-        );
-
-        const panel = createElement('div', {
-            id: panelId,
-            className: 'neconyan-native-tool-panel',
-            attrs: { role: 'group', 'aria-labelledby': summaryId },
-        });
-        const actions = createElement('div', { className: 'neconyan-native-tool-actions' });
-        const actionNames = tool.enabled ? tool.actions : tool.actions.filter(action => action === 'settings');
-        for (const actionName of actionNames) {
-            const button = createElement('button', {
-                className: `neconyan-native-tool-action neconyan-native-tool-action-${actionName}`,
-                text: nativeToolActionLabel(actionName),
-                attrs: {
-                    type: 'button',
-                    'data-neconyan-native-tool-action': actionName,
-                    'aria-label': actionName === 'settings' ? t`Settings ${tool.label}` : t`Open ${tool.label}`,
-                },
-            });
-            button.addEventListener('click', () => {
-                if (button.disabled) return;
-                button.disabled = true;
-                button.setAttribute('aria-busy', 'true');
-                Promise.resolve(actionName === 'settings'
-                    ? openNeconyanNativeExtensionSettings(tool)
-                    : openNeconyanNativeTool(tool))
-                    .catch(error => {
-                        console.error(`Could not run ${actionName} for ${tool.label}.`, error);
-                    })
-                    .finally(() => {
-                        button.disabled = false;
-                        button.removeAttribute('aria-busy');
-                    });
-            });
-            actions.appendChild(button);
-        }
-
-        const manage = createElement('button', {
-            className: 'neconyan-native-tool-action neconyan-native-tool-action-manage',
-            text: nativeToolActionLabel('manage'),
-            attrs: {
-                type: 'button',
-                'data-neconyan-native-tool-action': 'manage',
-                'aria-label': t`Manage extensions for ${tool.label}`,
-            },
-        });
-        manage.addEventListener('click', () => {
-            if (manage.disabled) return;
-            manage.disabled = true;
-            manage.setAttribute('aria-busy', 'true');
-            Promise.resolve(openNeconyanNativeManage())
-                .catch(error => console.error(`Could not manage ${tool.label}.`, error))
-                .finally(() => {
-                    manage.disabled = false;
-                    manage.removeAttribute('aria-busy');
-                });
-        });
-        actions.appendChild(manage);
-        panel.appendChild(actions);
-        details.append(summary, panel);
-
-        summary.addEventListener('click', () => {
-            if (document.documentElement.dataset.neconyanSidebar === 'closed') {
-                document.getElementById('neconyan-sidebar-toggle')?.click();
-            }
-        });
-        details.addEventListener('toggle', () => {
-            neconyanNativeToolOpenState.set(key, details.open);
-            updateNeconyanNativeToolSummary(details, summary);
-        });
-        host.appendChild(details);
+// Switched-off tools go to their row in Extensions, tools with their own window open it, the rest open their settings page.
+function activateNeconyanRailTool(id) {
+    const tool = findNeconyanNativeTool(id);
+    if (!tool) return false;
+    if (!tool.enabled) {
+        void openNeconyanNativeManage(tool.label);
+    } else if (tool.actions.includes('open')) {
+        void openNeconyanNativeTool(tool);
+    } else {
+        void openNeconyanNativeExtensionSettings(tool);
     }
-
-    if (previousFocusKey) {
-        host.querySelector(`[data-neconyan-native-tool-key="${CSS.escape(previousFocusKey)}"] summary`)?.focus({ preventScroll: true });
-    }
+    return true;
 }
 
 function mountNeconyanNativeTools() {
-    document.querySelectorAll('[data-neconyan-native-tool-list]').forEach((host, index) => {
-        renderNeconyanNativeToolList(host, index === 0 ? 'rail' : 'mobile');
-    });
+    for (const button of document.querySelectorAll('#neconyan-workspace-rail [data-neconyan-rail-tool]')) {
+        const tool = findNeconyanNativeTool(button.dataset.neconyanRailTool);
+        const label = button.querySelector('span')?.textContent || tool?.label || '';
+        const off = Boolean(tool?.present && !tool.enabled);
+        button.hidden = !tool?.present;
+        button.classList.toggle('is-off', off);
+        button.title = off ? `${label} is switched off. Opens Extensions to turn it on.` : label;
+        button.setAttribute('aria-label', off ? `${label} (off)` : label);
+        let badge = button.querySelector('.neconyan-rail-tool-off');
+        if (off && !badge) {
+            badge = createElement('span', { className: 'neconyan-rail-tool-off', text: t`Off`, attrs: { 'aria-hidden': 'true' } });
+            button.querySelector('span')?.after(badge);
+        }
+        if (!off) badge?.remove();
+    }
 }
 
 function bindNeconyanNativeToolEvents() {
@@ -3269,7 +3171,9 @@ function bindNeconyanNativeToolEvents() {
         mount: mountNeconyanNativeTools,
         refresh,
         getDefinitions: () => NECONYAN_NATIVE_TOOL_DEFINITIONS,
+        getTools: getNeconyanNativeTools,
         openSettings: tool => openNeconyanNativeExtensionSettings(tool),
+        activate: activateNeconyanRailTool,
     };
     refresh();
 }
@@ -18727,32 +18631,8 @@ function buildMobileNav() {
             createElement('h3', { id: 'sb-mobile-modes-title', className: 'sb-mobile-section-title', text: 'Modes' }),
             ...NECONYAN_MODE_DEFINITIONS.map(mode => createNeconyanModeButton(mode.id, true)),
         );
-        const includedTools = createElement('details', {
-            className: 'neconyan-mobile-native-tools',
-            attrs: { 'aria-labelledby': 'sb-mobile-native-tools-title' },
-        });
-        const includedSummary = createElement('summary', {
-            id: 'sb-mobile-native-tools-title',
-            className: 'neconyan-native-tools-summary',
-            attrs: { 'aria-controls': 'sb-mobile-native-tools-list', 'aria-expanded': 'false' },
-        });
-        includedSummary.append(
-            createElement('span', { text: 'Included tools' }),
-            createElement('i', { className: 'fa-solid fa-chevron-down neconyan-native-tools-chevron', attrs: { 'aria-hidden': 'true' } }),
-        );
-        const includedList = createElement('div', {
-            id: 'sb-mobile-native-tools-list',
-            className: 'neconyan-native-tool-list',
-            attrs: { 'data-neconyan-native-tool-list': '' },
-        });
-        includedTools.append(includedSummary, includedList);
-        includedTools.addEventListener('toggle', () => {
-            includedSummary.setAttribute('aria-expanded', String(includedTools.open));
-            includedSummary.querySelector('.neconyan-native-tools-chevron')?.classList.toggle('is-open', includedTools.open);
-        });
-        workspace.append(sectionBlock, modes, includedTools);
+        workspace.append(sectionBlock, modes);
         content.prepend(workspace);
-        globalThis.NeconyanNativeTools?.mount?.();
     }
     nnState.mobileNav.quickActionContainer = list;
     nnState.mobileNav.quickActionSection = sectionBlock;

@@ -1165,6 +1165,11 @@ import { t } from './i18n.js';
         return groups.filter(info => info.scope === scope && !getIncludedToolDefinition(info));
     }
 
+    // Bundled tools keep their settings on their own page, so the page links to them instead.
+    function getIncludedToolGroups(groups, scope) {
+        return groups.filter(info => info.scope === scope && getIncludedToolDefinition(info));
+    }
+
     function findExtensionGroupForLabel(groups, label) {
         const targetText = normalizeSettingsSearchText(label);
         if (!targetText) {
@@ -1319,12 +1324,23 @@ import { t } from './i18n.js';
         count.setAttribute('aria-live', 'polite');
         const list = markSearchIndexIgnored(document.createElement('div'));
         list.className = 'sb-extensions-list';
+        const tools = markSearchIndexIgnored(document.createElement('div'));
+        tools.className = 'sb-extensions-tools';
+        tools.setAttribute('role', 'group');
+        tools.setAttribute('aria-label', 'Tool settings');
+        tools.hidden = true;
+        const toolsHeading = document.createElement('span');
+        toolsHeading.className = 'sb-extensions-tools-heading';
+        toolsHeading.textContent = 'Tool settings';
+        const toolsList = document.createElement('div');
+        toolsList.className = 'sb-extensions-tools-list';
+        tools.append(toolsHeading, toolsList);
         const detail = document.createElement('section');
         detail.className = 'sb-extension-detail';
         const empty = document.createElement('p');
         empty.className = 'sb-extensions-empty';
 
-        master.append(masterHeading, scope, searchInput, mobileSelect, mobilePin, count, list);
+        master.append(masterHeading, scope, searchInput, mobileSelect, mobilePin, count, tools, list);
         layout.append(master, detail);
         block.insertBefore(layout, firstHost);
         detail.append(firstHost, secondHost, empty);
@@ -1461,6 +1477,26 @@ import { t } from './i18n.js';
             mobilePin.setAttribute('aria-label', state.selectedKey && selectedPinned ? t`Unpin selected extension` : t`Pin selected extension`);
             mobilePin.title = mobilePin.getAttribute('aria-label');
             if (!mobilePin.firstChild) mobilePin.innerHTML = '<i class="fa-solid fa-thumbtack" aria-hidden="true"></i>';
+            const toolGroups = getIncludedToolGroups(state.allGroups, state.scope)
+                .filter(info => !state.query || info.searchText.includes(state.query));
+            const existingTools = new Map(Array.from(toolsList.children, button => [button.dataset.extensionId, button]));
+            const toolButtons = toolGroups.map(info => {
+                let button = existingTools.get(info.key);
+                if (!button) {
+                    button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'menu_button sb-extensions-tool';
+                    button.addEventListener('click', () => {
+                        openIncludedToolSettings(state.allGroups.find(group => group.key === button.dataset.extensionId));
+                    });
+                }
+                button.dataset.extensionId = info.key;
+                if (button.textContent !== info.name) button.textContent = info.name;
+                button.title = t`Opens the ${info.name} settings page`;
+                return button;
+            });
+            if (toolButtons.length !== toolsList.children.length || toolButtons.some((button, index) => toolsList.children[index] !== button)) toolsList.replaceChildren(...toolButtons);
+            tools.hidden = !toolButtons.length;
             count.textContent = `${filtered.length} ${state.scope === 'third-party' ? 'third-party' : 'built-in'} extension${filtered.length === 1 ? '' : 's'}`;
             empty.textContent = infos.length && state.query && !selected
                 ? 'No extensions match that search.'

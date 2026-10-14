@@ -85,7 +85,7 @@ UI work, in short:
 ## Architecture map
 
 - `public/index.html`, `public/script.js`: upstream core (chat, generation, characters). `public/scripts/openai.js`, `textgen-*.js`: backends.
-- `public/scripts/neconyan-tabs.js`: the shell. Top bar, sheets, bottom chat bar, composer control placement, settings drawers, mode switching, Included tools.
+- `public/scripts/neconyan-tabs.js`: the shell. Top bar, sheets, bottom chat bar, composer control placement, settings drawers, mode switching, bundled tool definitions (`NECONYAN_NATIVE_TOOL_DEFINITIONS`) and their sidebar buttons.
 - `public/scripts/welcome-screen.js`: workspace rail (desktop sidebar, phone drawer) and the Home panel.
 - `public/scripts/neconyan-conversation/`: Conversation mode (timeline, chrome, settings drawer, notifications).
 - `public/scripts/mobile-shell-lifecycle/index.js`: DOM-free phone policy (touch guard, drawer bounds, overlay exclusivity).

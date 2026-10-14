@@ -70,10 +70,7 @@ async function rail(page) {
 
 async function dialogue(page) {
     const workspace = await rail(page);
-    const tool = workspace.locator('[data-neconyan-native-tool-key="sillytavern-character-colors"]');
-    if (!await tool.isVisible()) await workspace.getByText('Included tools', { exact: true }).click();
-    if (await tool.getAttribute('open') === null) await tool.locator('summary').click();
-    await tool.getByRole('button', { name: 'Settings Dialogue Colors', exact: true }).click();
+    await workspace.locator('[data-neconyan-appearance-nav] [data-neconyan-route="dialogue-colors"]').click();
     await expect(page.locator('#dc-add-name')).toBeVisible();
 }
 
@@ -273,7 +270,7 @@ for (const phone of [false, true]) {
             }
             return { revision: KNOWLEDGE_REVISION, results };
         }, refreshedKnowledgeCases);
-        expect(references.revision).toBe(25);
+        expect(references.revision).toBe(26);
         expect(references.results).toHaveLength((13 + refreshedKnowledgeCases.length) * 9);
         expect(references.results.filter(result => !result.found)).toEqual([]);
     });
