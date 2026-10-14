@@ -23,6 +23,7 @@ let viewKey = '';
 let selectionVersion = 0;
 let refreshVersion = 0;
 let latestRefresh;
+let pendingEnable;
 let autoHiding = false;
 
 export function getMewmoryLocator() {
@@ -113,10 +114,9 @@ async function refreshCurrentChat(filters, { signal }) {
     }
 }
 
-export async function changeMewmory(route, data = {}) {
+export async function changeMewmory(route, data = {}, { scope = getMewmoryScope(), signal } = {}) {
     const locator = getMewmoryLocator();
-    const scope = getMewmoryScope();
-    const result = await requestMewmory(route, { locator, revision: mewmory.view?.revision, ...data });
+    const result = await requestMewmory(route, { locator, revision: mewmory.view?.revision, ...data }, { scope, signal });
     if (scope === getMewmoryScope()) {
         if (result.locator && (!mewmory.view || result.revision >= mewmory.view.revision)) mewmory.view = result;
         if (result.config && (!mewmory.config || result.config.revision >= mewmory.config.revision)) mewmory.config = result.config;
@@ -220,29 +220,86 @@ export async function hideOverflowAutomatically() {
     }
 }
 
-/**
- * Switches Mewmory on once in a chat the user has just started, when Settings asks for every new chat.
- * The chat keeps a mark, so switching Mewmory off afterwards sticks.
- */
-export async function enableMewmoryForNewChat(view, scope = getMewmoryScope()) {
+function stopPendingEnableWait() {
+    if (!pendingEnable) return;
+    pendingEnable.waitController.abort();
+    pendingEnable.waitController = new AbortController();
+}
+
+function awaitPendingEnable(scope = getMewmoryScope(), signal) {
+    const active = pendingEnable;
+    if (active?.scope !== scope || active.timedOut || signal?.aborted) return Promise.resolve(false);
+    const waitSignal = active.waitController.signal;
+    return new Promise(resolve => {
+        let timerId;
+        const done = (value = false) => {
+            clearTimeout(timerId);
+            waitSignal.removeEventListener('abort', onAbort);
+            signal?.removeEventListener('abort', onAbort);
+            resolve(value);
+        };
+        const onAbort = () => done(false);
+        timerId = setTimeout(() => {
+            active.timedOut = true;
+            stopPendingEnableWait();
+            done(false);
+        }, 15000);
+        timerId.unref?.();
+        waitSignal.addEventListener('abort', onAbort, { once: true });
+        signal?.addEventListener('abort', onAbort, { once: true });
+        active.promise.then(done, () => done(false));
+    });
+}
+
+async function runEnableMewmoryForNewChat(view, scope = getMewmoryScope()) {
+    const current = () => scope === getMewmoryScope();
+    if (!current() || chat_metadata[NEW_CHAT_MARK] || chat.filter(message => message.is_user).length > 1) return false;
+    if (!view) view = await refreshMewmory();
     const metadata = chat_metadata;
-    if (!mewmory.config?.enableNewChats || !view || view.enabled || metadata[NEW_CHAT_MARK]) return false;
-    if (scope !== getMewmoryScope() || chat.filter(message => message.is_user).length > 1) return false;
-    metadata[NEW_CHAT_MARK] = true;
+    if (!current() || !mewmory.config?.enableNewChats || !view || view.enabled || metadata[NEW_CHAT_MARK]
+        || chat.filter(message => message.is_user).length > 1) return false;
     try {
-        await changeMewmory('enabled', { enabled: true });
-        if (scope !== getMewmoryScope()) return false;
-        void saveMetadata();
+        try {
+            await changeMewmory('enabled', { enabled: true, revision: view.revision }, { scope });
+        } catch (error) {
+            if (error?.status !== 409 || !current()) throw error;
+            view = await refreshMewmory();
+            if (!current()) return false;
+            if (!view) throw new Error(mewmory.error || error.message);
+            if (!view.enabled) await changeMewmory('enabled', { enabled: true, revision: view.revision }, { scope });
+        }
+        if (!current()) return false;
+        metadata[NEW_CHAT_MARK] = true;
+        await saveMetadata();
+        if (!current()) return false;
         window.dispatchEvent(new Event('mewmory:configured'));
         return true;
     } catch (error) {
-        delete metadata[NEW_CHAT_MARK];
-        if (scope === getMewmoryScope()) {
+        if (current()) {
             mewmory.error = error.message;
             notifyMewmory();
         }
         return false;
     }
+}
+
+const currentView = () => !mewmory.view?.locator || mewmory.view.locator.chat === getMewmoryLocator()?.chat ? mewmory.view : null;
+
+/**
+ * Switches Mewmory on once in a chat the user has just started, when Settings asks for every new chat.
+ * The chat keeps a mark, so switching Mewmory off afterwards sticks.
+ */
+export async function enableMewmoryForNewChat(view, scope = getMewmoryScope()) {
+    if (pendingEnable?.scope === scope) return awaitPendingEnable(scope);
+    if (scope !== getMewmoryScope() || currentView()?.enabled || chat_metadata[NEW_CHAT_MARK]
+        || mewmory.config?.enableNewChats === false || chat.filter(message => message.is_user).length > 1) {
+        return false;
+    }
+    const promise = runEnableMewmoryForNewChat(view, scope).finally(() => {
+        if (pendingEnable?.promise === promise) pendingEnable = null;
+    });
+    pendingEnable = { scope, promise, waitController: new AbortController(), timedOut: false };
+    return awaitPendingEnable(scope);
 }
 
 export async function processMewmory({ all = false, checkpoint = false } = {}) {
@@ -292,6 +349,8 @@ export function initMewmory() {
     initialized = true;
     const changed = () => {
         selectionVersion++;
+        stopPendingEnableWait();
+        pendingEnable = null;
         mewmory.busy = false;
         mewmory.backfilling = false;
         mewmory.view = null;
@@ -300,10 +359,7 @@ export function initMewmory() {
         void refreshMewmory();
         scheduleUpdate();
     };
-    const created = () => {
-        const scope = getMewmoryScope();
-        void refreshMewmory().then(view => enableMewmoryForNewChat(view, scope));
-    };
+    const created = () => { void enableMewmoryForNewChat(); };
     eventSource.on(event_types.CHAT_CHANGED, changed);
     eventSource.on(event_types.CHAT_RENAMED, changed);
     window.addEventListener('sb:conversation-workspace-state-changed', changed);
@@ -315,13 +371,27 @@ export function initMewmory() {
     ]) {
         eventSource.on(event, () => scheduleUpdate());
     }
+    eventSource.on(event_types.GENERATION_STARTED, (_type, options, dryRun) => {
+        if (!dryRun && pendingEnable?.scope === getMewmoryScope() && !pendingEnable.timedOut) {
+            return awaitPendingEnable(pendingEnable.scope, options?.signal);
+        }
+    });
+    eventSource.on(event_types.GENERATION_STOPPED, stopPendingEnableWait);
     eventSource.on(event_types.GENERATION_ENDED, () => void hideOverflowAutomatically());
     eventSource.on(event_types.CHAT_CREATED, created);
     eventSource.on(event_types.GROUP_CHAT_CREATED, created);
     // Chats without a greeting never announce themselves, so their first message counts as the start.
-    eventSource.on(event_types.MESSAGE_SENT, () => {
-        if (mewmory.view?.enabled || chat_metadata[NEW_CHAT_MARK] || chat.filter(message => message.is_user).length !== 1) return;
-        created();
+    eventSource.on(event_types.MESSAGE_SENT, async () => {
+        const active = pendingEnable?.scope === getMewmoryScope() ? pendingEnable : null;
+        if (active) {
+            if (active.timedOut) return;
+            const waitSignal = active.waitController.signal;
+            await awaitPendingEnable(active.scope);
+            if (active.timedOut || waitSignal.aborted) return;
+        }
+        if (currentView()?.enabled || chat_metadata[NEW_CHAT_MARK] || mewmory.config?.enableNewChats === false
+            || chat.filter(message => message.is_user).length !== 1) return;
+        return enableMewmoryForNewChat();
     });
     window.addEventListener('mewmory:configured', () => { void refreshMewmory(); scheduleUpdate(); });
     scheduleUpdate();
@@ -336,6 +406,7 @@ export async function prepareMewmoryGeneration(messages, { signal } = {}) {
     mewmory.preparing = true;
     notifyMewmory();
     try {
+        if (pendingEnable?.scope === currentKey && !pendingEnable.timedOut) await awaitPendingEnable(currentKey, signal);
         if (!await flushPendingChatSaves({ silent: true })) throw new Error('This chat has unsaved changes. Save it, then send again so Mewmory can add memories.');
         if (getChatGeneration() !== generation || getMewmoryScope() !== currentKey) throw new Error('The active chat changed.');
         const view = await refreshMewmory(undefined, { signal });
