@@ -88,6 +88,7 @@ import { resolveMovingUIViewportState, matchesMovingUIViewport } from './moving-
 import { ANDROID_STREAMING_SETTING_DEFAULTS, ANDROID_STREAMING_SETTINGS_INITIALIZED_KEY, initializeAndroidStreamingSettings } from './mobile-streaming.js';
 import {
     createDefaultLowMemoryPreferences,
+    didRoleplayRenderWindowPolicyChange,
     getLowMemoryState,
     initializeLowMemoryPreferences,
     isLowMemoryControlHydrating,
@@ -98,8 +99,8 @@ import {
     setLowMemoryManagedSetting,
     setLowMemoryMode,
     setLowMemoryPreferencesProvider,
+    shouldRequireRoleplayChatReopen,
     subscribeLowMemoryState,
-    waitForAndroidMemoryProfile,
     withLowMemoryControlHydration,
 } from './low-memory-mode.js';
 
@@ -1353,6 +1354,7 @@ async function CreateZenSliders(elmnt) {
     }
 }
 let lowMemoryChatReopenNeeded = false;
+let lastObservedRoleplayWindowPolicy = null;
 
 export function getEffectiveLowMemoryPolicy() {
     return resolveLowMemoryPreferences(power_user, power_user.low_memory_preferences, isLowMemoryModeActive());
@@ -1362,10 +1364,13 @@ export function getEffectiveFastUiMode() {
     return getEffectiveLowMemoryPolicy().fast_ui_mode;
 }
 
-function hasMountedChatMessages() {
-    return Boolean(
-        document.querySelector('#chat .mes[mesid], #sb-conversation-timeline .sb-conversation-message'),
-    );
+function hasMountedRoleplayMessages() {
+    return Boolean(document.querySelector('#chat .mes[mesid]'));
+}
+
+function isConversationModeActive() {
+    return document.getElementById('sheld')?.dataset?.sbConversationMode === 'on'
+        || Boolean(document.body?.classList?.contains('sb-conversation-mode'));
 }
 
 export function formatLowMemoryStatusText(state, policy, { requiresChatReopen = false } = {}) {
@@ -1448,14 +1453,19 @@ function syncLowMemoryManagedFieldNotes(policy) {
 }
 
 export function syncLowMemorySettingsUi({ chatWindowChanged = false } = {}) {
-    if (chatWindowChanged && hasMountedChatMessages()) {
-        lowMemoryChatReopenNeeded = true;
-    } else if (!hasMountedChatMessages()) {
-        lowMemoryChatReopenNeeded = false;
-    }
-
     const state = getLowMemoryState();
     const policy = getEffectiveLowMemoryPolicy();
+    const policyWindowChanged = lastObservedRoleplayWindowPolicy
+        ? didRoleplayRenderWindowPolicyChange(lastObservedRoleplayWindowPolicy, policy)
+        : false;
+    lastObservedRoleplayWindowPolicy = policy;
+
+    lowMemoryChatReopenNeeded = shouldRequireRoleplayChatReopen({
+        chatWindowChanged: Boolean(chatWindowChanged && policyWindowChanged) || policyWindowChanged,
+        hasMountedRoleplayMessages: hasMountedRoleplayMessages(),
+        isConversationMode: isConversationModeActive(),
+        previouslyRequired: lowMemoryChatReopenNeeded,
+    });
 
     withLowMemoryControlHydration(() => {
         $('#low_memory_mode').val(state.mode);
@@ -2737,7 +2747,6 @@ export async function loadPowerUserSettings(settings, data) {
                 : {}),
         }
         : {};
-    await waitForAndroidMemoryProfile();
     customThemeStyleEntries = settings.extension_settings?.CTSI?.entries && typeof settings.extension_settings.CTSI.entries === 'object'
         ? { ...settings.extension_settings.CTSI.entries }
         : {};
@@ -2770,6 +2779,8 @@ export async function loadPowerUserSettings(settings, data) {
     if (initializeLowMemoryPreferences(power_user, savedPowerUserSettings)) {
         saveSettingsDebounced();
     }
+    lowMemoryChatReopenNeeded = false;
+    lastObservedRoleplayWindowPolicy = getEffectiveLowMemoryPolicy();
     notifyLowMemoryPreferencesChanged();
 
     if (power_user.stscript === undefined) {
@@ -4833,9 +4844,7 @@ jQuery(async () => {
         const previousPolicy = getEffectiveLowMemoryPolicy();
         setLowMemoryMode(String($(this).val() ?? 'auto'));
         const nextPolicy = getEffectiveLowMemoryPolicy();
-        const chatWindowChanged = previousPolicy.roleplayWindowSize !== nextPolicy.roleplayWindowSize
-            || previousPolicy.roleplayFixedWindow !== nextPolicy.roleplayFixedWindow
-            || previousPolicy.conversationWindowSize !== nextPolicy.conversationWindowSize;
+        const chatWindowChanged = didRoleplayRenderWindowPolicyChange(previousPolicy, nextPolicy);
         switchUiMode();
         syncLowMemorySettingsUi({ chatWindowChanged });
     });
@@ -4845,8 +4854,7 @@ jQuery(async () => {
         releaseLowMemoryPreferencesToAutomatic(power_user);
         notifyLowMemoryPreferencesChanged();
         const nextPolicy = getEffectiveLowMemoryPolicy();
-        const chatWindowChanged = previousPolicy.roleplayWindowSize !== nextPolicy.roleplayWindowSize
-            || previousPolicy.roleplayFixedWindow !== nextPolicy.roleplayFixedWindow;
+        const chatWindowChanged = didRoleplayRenderWindowPolicyChange(previousPolicy, nextPolicy);
         switchUiMode();
         syncLowMemorySettingsUi({ chatWindowChanged });
         saveSettingsDebounced();
@@ -4854,11 +4862,16 @@ jQuery(async () => {
 
     subscribeLowMemoryState(() => {
         switchUiMode();
-        syncLowMemorySettingsUi({ chatWindowChanged: true });
+        syncLowMemorySettingsUi();
+    });
+
+    window.addEventListener('sb:conversation-workspace-state-changed', () => {
+        syncLowMemorySettingsUi();
     });
 
     eventSource.on(event_types.CHAT_CHANGED, () => {
         lowMemoryChatReopenNeeded = false;
+        lastObservedRoleplayWindowPolicy = getEffectiveLowMemoryPolicy();
         syncLowMemorySettingsUi();
     });
 

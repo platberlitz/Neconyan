@@ -12,10 +12,12 @@ const {
     LOW_MEMORY_PREFERENCES_VERSION,
     LOW_MEMORY_SHIPPED_DEFAULTS,
     createDefaultLowMemoryPreferences,
+    didRoleplayRenderWindowPolicyChange,
     initializeLowMemoryPreferences,
     releaseLowMemoryPreferencesToAutomatic,
     resolveLowMemoryPreferences,
     setLowMemoryManagedSetting,
+    shouldRequireRoleplayChatReopen,
     withLowMemoryControlHydration,
 } = await import('../public/scripts/low-memory-mode.js');
 
@@ -316,5 +318,51 @@ describe('low-memory preference provenance and resolution', () => {
         const policyAfterImport = resolveLowMemoryPreferences(sharedPowerUser, undefined, true);
         expect(policyAfterImport.fast_ui_mode).toBe(true);
         expect(policyAfterImport.roleplayWindowSize).toBe(25);
+    });
+
+    test('shows the Roleplay reopen notice only when the effective Roleplay window changed with mounted Roleplay messages outside Conversation mode', () => {
+        const target = {
+            ...LOW_MEMORY_SHIPPED_DEFAULTS,
+            low_memory_preferences: createDefaultLowMemoryPreferences(),
+        };
+        initializeLowMemoryPreferences(target, target);
+        const beforeFastUiToggle = resolveLowMemoryPreferences(target, undefined, true);
+
+        // Toggling No Blur while low-memory mode is active does not change the Roleplay render window.
+        setLowMemoryManagedSetting(target, 'fast_ui_mode', false);
+        const afterFastUiToggle = resolveLowMemoryPreferences(target, undefined, true);
+        expect(didRoleplayRenderWindowPolicyChange(beforeFastUiToggle, afterFastUiToggle)).toBe(false);
+        expect(shouldRequireRoleplayChatReopen({
+            previousPolicy: beforeFastUiToggle,
+            nextPolicy: afterFastUiToggle,
+            hasMountedRoleplayMessages: true,
+            isConversationMode: false,
+        })).toBe(false);
+
+        // Changing the effective Roleplay window while in Conversation mode never shows the Roleplay reopen notice.
+        const inactivePolicy = resolveLowMemoryPreferences(target, undefined, false);
+        expect(didRoleplayRenderWindowPolicyChange(afterFastUiToggle, inactivePolicy)).toBe(true);
+        expect(shouldRequireRoleplayChatReopen({
+            previousPolicy: afterFastUiToggle,
+            nextPolicy: inactivePolicy,
+            hasMountedRoleplayMessages: true,
+            isConversationMode: true,
+        })).toBe(false);
+
+        // Changing the effective Roleplay window with no mounted Roleplay messages does not show the notice.
+        expect(shouldRequireRoleplayChatReopen({
+            previousPolicy: afterFastUiToggle,
+            nextPolicy: inactivePolicy,
+            hasMountedRoleplayMessages: false,
+            isConversationMode: false,
+        })).toBe(false);
+
+        // Changing the effective Roleplay window with mounted Roleplay messages in Roleplay mode requires reopen.
+        expect(shouldRequireRoleplayChatReopen({
+            previousPolicy: afterFastUiToggle,
+            nextPolicy: inactivePolicy,
+            hasMountedRoleplayMessages: true,
+            isConversationMode: false,
+        })).toBe(true);
     });
 });
