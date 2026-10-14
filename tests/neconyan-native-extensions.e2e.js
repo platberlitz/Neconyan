@@ -127,34 +127,39 @@ async function expectLoadedFont(page, name, style = 'normal') {
     expect(loaded).toBe(true);
 }
 
-test('Included tools stay closed until opened and keep nineteen keyboard-accessible disclosures', async ({ page }) => {
+test('bundled tools sit in named rail groups on desktop and phones', async ({ page }) => {
     await mockNativeSettings(page);
     await page.setViewportSize({ width: 1280, height: 1000 });
     await safety.navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
     await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 60000 });
 
-    const railTools = page.locator('#neconyan-workspace-rail [data-neconyan-native-tool-list]');
-    await expect(page.locator('#neconyan-workspace-rail .neconyan-rail-tools')).not.toHaveAttribute('open', '');
-    await expect(railTools.locator('details[data-neconyan-native-tool]')).toHaveCount(22);
-    const summaryState = await railTools.locator('summary').evaluateAll(summaries => summaries.map(summary => ({
-        controls: summary.getAttribute('aria-controls'),
-        expanded: summary.getAttribute('aria-expanded'),
-    })));
-    expect(new Set(summaryState.map(item => item.controls)).size).toBe(22);
-    expect(summaryState.every(item => ['true', 'false'].includes(item.expanded))).toBe(true);
-    await page.locator('#neconyan-workspace-rail .neconyan-rail-tools > summary').focus();
+    const rail = page.locator('#neconyan-workspace-rail');
+    await expect(rail.locator('.neconyan-rail-tools, [data-neconyan-native-tool-list]')).toHaveCount(0);
+    await expect(rail.locator('[data-neconyan-rail-tool]:not([hidden])')).toHaveCount(15);
+    for (const [group, route] of [['finer', 'debugger'], ['appearance', 'termeownal-ui'], ['primary', 'chat-archive'],
+        ['lore', 'botsearcher'], ['advanced', 'prompting-lab']]) {
+        await expect(rail.locator(`[data-neconyan-${group}-nav] [data-neconyan-route="${route}"]`)).toBeVisible();
+    }
+
+    // mockNativeSettings switches Time Machine off: the button stays, marked Off, and leads to Extensions.
+    const timeMachine = rail.locator('[data-neconyan-route="time-machine"]');
+    await expect(timeMachine).toHaveClass(/is-off/);
+    await expect(timeMachine).toHaveAttribute('aria-label', 'Card & Lorebook Time Machine (off)');
+    await expect(timeMachine.locator('.neconyan-rail-tool-off')).toBeVisible();
+    await timeMachine.focus();
     await page.keyboard.press('Enter');
-    await expect(page.locator('#neconyan-workspace-rail .neconyan-rail-tools')).toHaveAttribute('open', '');
-    await railTools.locator('summary').first().focus();
-    await page.keyboard.press('Enter');
-    await expect(railTools.locator('details').first()).toHaveAttribute('open', '');
-    await expect(railTools.locator('details').first().locator('.neconyan-native-tool-panel')).toBeVisible();
+    await expect(page.locator('#user-settings-block')).toHaveAttribute('data-sb-active-tab', 'extensions');
+    const manager = page.locator('dialog.popup[open]');
+    await expect(manager.locator('.extensions_info .extension_block').filter({ hasText: /Time Machine/ }).first()).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(manager).toHaveCount(0);
 
     await page.setViewportSize({ width: 390, height: 1000 });
     await page.locator('#sb-hamburger').click();
-    const mobileTools = page.locator('#neconyan-workspace-rail [data-neconyan-native-tool-list]');
-    await expect(mobileTools.locator('details[data-neconyan-native-tool]')).toHaveCount(22);
-    await expect(mobileTools.locator('[data-neconyan-native-tool-action="manage"]')).toHaveCount(22);
+    await expect(page.locator('body')).toHaveClass(/neconyan-rail-drawer-open/);
+    await rail.locator('[data-neconyan-route="debugger"]').scrollIntoViewIfNeeded();
+    await expect(rail.locator('[data-neconyan-finer-nav] [data-neconyan-route="debugger"]')).toBeVisible();
+    await expect(rail.locator('[data-neconyan-rail-tool]:not([hidden])')).toHaveCount(15);
 });
 
 test.describe('Editor surfaces and composer density', () => {
@@ -319,7 +324,7 @@ test('top bar shows the system time and a roleplay-only Edit card shortcut', asy
     await expect(editCard).toBeHidden();
 });
 
-test('Built-in Extensions omits Included Tools while their settings remain searchable', async ({ page }) => {
+test('Built-in Extensions links bundled tools to their own settings pages', async ({ page }) => {
     await mockNativeSettings(page);
     await page.setViewportSize({ width: 1280, height: 900 });
     await safety.navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
@@ -334,7 +339,22 @@ test('Built-in Extensions omits Included Tools while their settings remain searc
     for (const name of ['TTS', 'Quick Reply', 'Vectorization']) {
         await expect(entries.filter({ hasText: new RegExp(`^${name}$`) })).toHaveCount(1);
     }
-    // Pawthfinder keeps its settings page through the Included Tools route.
+    const tools = page.locator('.sb-extensions-tools');
+    await expect(tools).toBeVisible();
+    for (const name of ['TTS', 'Quick Reply', 'Vectorization']) {
+        await expect(tools.getByRole('button', { name, exact: true })).toHaveCount(0);
+    }
+    const promptTags = tools.getByRole('button', { name: 'Prompt Tags', exact: true });
+    await expect(promptTags).toBeVisible();
+    await expect(promptTags).toHaveAttribute('title', 'Opens the Prompt Tags settings page');
+    await promptTags.click();
+    await expect(page.locator('#user-settings-block')).toHaveAttribute('data-sb-active-tab', 'included-tool');
+    await expect(page.locator('#user-settings-block .sb-shell-title')).toHaveText('Prompt Tags');
+    await page.evaluate(() => window.NeconyanShell.openTab('right', 'extensions'));
+    await page.getByRole('button', { name: 'Third-party', exact: true }).click();
+    await expect(tools).toBeHidden();
+    await page.getByRole('button', { name: 'Built-in', exact: true }).click();
+    // Pawthfinder keeps its settings page through the tool settings route.
     await page.evaluate(() => {
         const definition = window.NeconyanNativeTools.getDefinitions().find(tool => tool.id === 'pathfinder');
         window.NeconyanNativeTools.openSettings(definition);
@@ -792,18 +812,18 @@ for (const width of [1280, 390, 320]) {
     });
 }
 
-test('Included tool settings have their own pages and preserve late settings nodes', async ({ page }, info) => {
+test('Tool settings have their own pages and preserve late settings nodes', async ({ page }, info) => {
     page.setDefaultTimeout(20000);
     await mockNativeSettings(page);
     await page.setViewportSize({ width: 1280, height: 900 });
     await safety.navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
     await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 60000 });
-    const tools = page.locator('#neconyan-workspace-rail .neconyan-rail-tools');
+    // Opens a tool's settings page the way the Extensions page does.
     const openTool = async (label, unavailable = false) => {
-        if (!await tools.evaluate(element => element.open)) await tools.locator(':scope > summary').click();
-        const item = tools.locator('details[data-neconyan-native-tool]').filter({ has: page.locator('.neconyan-native-tool-name', { hasText: new RegExp(`^${label}$`) }) });
-        if (!await item.evaluate(element => element.open)) await item.locator('summary').click();
-        await item.getByRole('button', { name: `Settings ${label}`, exact: true }).click();
+        await page.evaluate(name => {
+            const tool = window.NeconyanNativeTools.getTools().find(item => item.label === name);
+            return window.NeconyanNativeTools.openSettings(tool);
+        }, label);
         await expect(page.locator('#user-settings-block')).toHaveAttribute('data-sb-active-tab', 'included-tool');
         await expect(page.locator('#user-settings-block .sb-shell-title')).toHaveText(label);
         if (unavailable) await expect(page.locator('.neconyan-included-tool-unavailable')).toBeVisible({ timeout: 10000 });
@@ -830,11 +850,13 @@ test('Included tool settings have their own pages and preserve late settings nod
     await expect(page.locator('#extensions_settings2 #neconyan-tool-late-probe')).toBeAttached();
     await openTool('Dialogue Colors');
     await expect(page.locator('#neconyan-tool-late-input')).toHaveValue('Keep this draft');
+    // A settings-only tool's own rail button opens the same page.
+    await page.locator('#neconyan-workspace-rail [data-neconyan-route="prompt-tags"]').click();
+    await expect(page.locator('#user-settings-block .sb-shell-title')).toHaveText('Prompt Tags');
     expect(await page.evaluate(() => document.getElementById('neconyan-tool-late-probe') === window.neconyanLateToolUnit)).toBe(true);
-    const enabledLabels = await tools.locator('details[data-neconyan-native-tool]').evaluateAll(items => items
-        .filter(item => item.querySelector('.neconyan-native-tool-state')?.dataset.state === 'enabled'
-            && item.querySelector('[data-neconyan-native-tool-action="settings"]'))
-        .map(item => item.querySelector('.neconyan-native-tool-name').textContent));
+    const enabledLabels = await page.evaluate(() => window.NeconyanNativeTools.getTools()
+        .filter(tool => tool.present && tool.enabled && tool.actions.includes('settings'))
+        .map(tool => tool.label));
     for (const label of enabledLabels) {
         await openTool(label);
         await page.screenshot({ path: info.outputPath(`tool-${label.replace(/[^a-z0-9]+/gi, '-')}.png`) });
@@ -847,23 +869,20 @@ test('Included tool settings have their own pages and preserve late settings nod
     await expect(page.locator('#neconyan-tool-late-probe')).toHaveCount(1);
 });
 
-test('Included tool settings open when the interface is in German', async ({ page }) => {
+test('Tool settings open when the interface is in German', async ({ page }) => {
     page.setDefaultTimeout(20000);
     await mockNativeSettings(page);
     await page.addInitScript(() => localStorage.setItem('language', 'de-de'));
     await page.setViewportSize({ width: 1280, height: 900 });
     await safety.navigate(() => page.goto('/', { waitUntil: 'domcontentloaded' }));
     await expect(page.locator('[data-neconyan-cat]')).toBeVisible({ timeout: 60000 });
-    // The names on screen are German, so nothing here is found by its text. The rail is scoped
-    // because the same list is also rendered in the phone menu.
-    const rail = page.locator('#neconyan-workspace-rail');
-    const tools = rail.locator('.neconyan-rail-tools');
+    // The names on screen are German, so tools are found by their extension id.
     const content = page.locator('.neconyan-included-tool-content');
     const openToolSettings = async extensionId => {
-        if (!await tools.evaluate(element => element.open)) await tools.locator(':scope > summary').click();
-        const item = rail.locator(`details[data-neconyan-extension-id="${extensionId}"]`);
-        if (!await item.evaluate(element => element.open)) await item.locator('summary').click();
-        await item.locator('[data-neconyan-native-tool-action="settings"]').click();
+        await page.evaluate(id => {
+            const tool = window.NeconyanNativeTools.getTools().find(item => item.id === id);
+            return window.NeconyanNativeTools.openSettings(tool);
+        }, extensionId);
     };
     // In this order: the page is the tool page, the declared drawer is inside it, and only then is the
     // missing-settings message checked, because that message appears about four seconds after the page opens.

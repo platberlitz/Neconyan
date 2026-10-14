@@ -1,4 +1,4 @@
-/* Full-page included tools (Pawthfinder and friends) and their assistant tours.
+/* Full-page tool settings (Pawthfinder and friends) and their assistant tours.
    Loaded on demand with the right shell's Included tool page. */
 
 .neconyan-included-tool-page[data-tool-page]:not([data-tool-page='']) {

@@ -634,7 +634,7 @@ function renderSettings(root) {
         hint: 'Native mode follows Vectorization’s saved provider, model, credentials and prefixes. Its server providers work even when Vectorization chat retrieval is off.' }));
     if (native) roleForm.append(node('p', 'mewmory-caption', role.native
         ? 'Saved Vectorization connection: ' + role.native.source + ' · ' + (role.native.model || 'server default')
-        : 'Save this configuration to resolve the current Vectorization connection. Configure its provider and prefixes in Included tools > Vectorization.'));
+        : 'Save this configuration to resolve the current Vectorization connection. Configure its provider and prefixes in Extensions > Built-in > Vectorization.'));
     const profiles = (mewmory.config.profiles || []).filter(profile => ui.role !== 'embedding' || profile.embeddings);
     const selectedProfile = profiles.find(profile => profile.id === role.profileId);
     if (!native) fields.append(field('Connection profile', role.profileId || '', value => {

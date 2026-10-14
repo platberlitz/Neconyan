@@ -48,7 +48,7 @@ test('all nine bundled variants and normalised server cards are recognised, name
         assert.ok(isNeconyanAssistant(character.data));
         const result = await buildAssistantKnowledge({ character, messages: [user('How do I change dialogue colours?')] });
         assert.ok(result.topicIds.includes('appearance.dialogue'));
-        assert.match(result.text, /Included tools → Dialogue Colors → Settings → Characters/);
+        assert.match(result.text, /Appearance → Dialogue Colors → Characters/);
         assert.match(result.text, /Quote Text/);
     }
     for (const character of [{ name: 'Miso' }, { name: 'Nori', assistant: true }, marked('unknown')]) {
