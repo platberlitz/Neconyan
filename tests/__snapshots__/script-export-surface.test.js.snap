@@ -155,6 +155,7 @@ exports[`public/script.js named export surface matches the parser-derived export
   "is_send_press",
   "itemizedParams",
   "itemizedPrompts",
+  "keepChatReadingPositionOnNextLoad",
   "koboldai_setting_names",
   "koboldai_settings",
   "lastSwipeInfo",

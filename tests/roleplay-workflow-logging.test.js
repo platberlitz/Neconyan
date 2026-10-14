@@ -66,6 +66,7 @@ jest.unstable_mockModule('../public/script.js', () => ({
     getActiveGenerationAcknowledgement: () => ({ account, settingsRevision }),
     saveChatConditional: async () => true,
     saveSettings: async () => true,
+    keepChatReadingPositionOnNextLoad: () => {},
     reloadCurrentChat: async () => {},
     isGenerating: () => false,
     isChatSaving: false,

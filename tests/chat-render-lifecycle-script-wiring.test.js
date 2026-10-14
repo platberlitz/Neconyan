@@ -87,6 +87,11 @@ describe('chat render lifecycle script wiring', () => {
         expect(source).toContain('syncChatHistoryWindowControls();');
         expect(source).toContain('scrollLoadedChatToBottomThroughLifecycle(isCurrent);');
         expect(source).toContain('delay(debounce_timeout.short).then(() => { if (isCurrent()) scrollOnMediaLoad({ force: true, isCurrent }); });');
+        // A rebuild after a finished Roleplay reply keeps the reader's place instead of landing at the bottom.
+        expect(source).toContain('const readingAnchor = takeChatReloadReadingAnchor();');
+        expect(source.indexOf('if (readingAnchor && holdChatReloadReadingAnchor(readingAnchor, isCurrent)) return;'))
+            .toBeLessThan(source.indexOf('scrollLoadedChatToBottomThroughLifecycle(isCurrent);'));
+        expect(source).toContain('if (readingAnchor && holdChatReloadReadingAnchor(readingAnchor, isCurrent)) return;');
 
         const lifecycleGate = findFunctionDeclaration('scrollLoadedChatToBottomThroughLifecycle');
         expect(lifecycleGate).toBeTruthy();
