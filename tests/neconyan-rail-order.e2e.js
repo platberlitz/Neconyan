@@ -4,8 +4,11 @@ import { expect, test } from '@playwright/test';
 
 const key = 'NeconyanWorkspaceRailOrder.v1';
 const groups = {
-    primary: ['home', 'characters', 'model', 'agents', 'mewmory', 'lorebooks', 'notes', 'scratchpad', 'extensions'],
-    advanced: ['presets', 'sampling', 'formatting', 'regex', 'expressions', 'persona', 'pathfinder', 'dialogue-colors', 'quick-image-gen', 'background'],
+    primary: ['home', 'characters', 'model', 'agents', 'mewmory', 'lorebooks', 'notes', 'scratchpad', 'chat-archive', 'extensions'],
+    advanced: ['presets', 'sampling', 'formatting', 'regex', 'preset-tools', 'chat-completion-tabs', 'prompt-tags', 'macro-enhanced', 'prompting-lab', 'deep-swipe'],
+    lore: ['persona', 'expressions', 'quick-image-gen', 'botsearcher', 'pathfinder', 'world-info-lab', 'lorebook-distiller', 'time-machine'],
+    appearance: ['background', 'dialogue-colors', 'termeownal-ui', 'css-snippets', 'regex-agent-themes'],
+    finer: ['server', 'console-logs', 'debugger', 'report-issue'],
     modes: ['roleplay', 'conversation', 'meower', 'story'],
 };
 const selector = name => `[data-neconyan-${name === 'modes' ? 'mode' : name}-nav]`;
@@ -105,7 +108,7 @@ for (const phone of [false, true]) {
                 } });
             });
             await ready(page);
-            expect(await order(page, 'primary')).toEqual(['model', 'home', 'characters', 'agents', 'mewmory', 'lorebooks', 'notes', 'scratchpad', 'extensions']);
+            expect(await order(page, 'primary')).toEqual(['model', 'home', 'characters', 'agents', 'mewmory', 'lorebooks', 'notes', 'scratchpad', 'chat-archive', 'extensions']);
             let checkbox = await settings(page, phone);
             const reset = page.locator(`[data-sb-rail-order-reset="${phone ? 'mobile' : 'desktop'}"]`);
             await expect(checkbox).not.toBeChecked();
