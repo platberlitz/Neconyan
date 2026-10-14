@@ -830,7 +830,6 @@ function setupChatCompletionPromptManager(openAiSettings) {
     promptManager.tokenHandler = tokenHandler;
 
     promptManager.init(configuration, openAiSettings);
-    promptManager.render(false);
 
     return promptManager;
 }
@@ -1342,6 +1341,36 @@ async function populateChatCompletion(prompts, chatCompletion, { bias, quietProm
         collection.add(message);
         chatCompletion.add(collection, index);
     };
+
+    const promptsToPrime = [];
+    for (const prompt of prompts.collection) {
+        if (prompt && typeof prompt.content === 'string' && prompt.content.length > 0) {
+            promptsToPrime.push({ role: prompt.role || 'system', content: prompt.content });
+        }
+    }
+    if (mewmoryContext?.enabled) {
+        for (const content of [mewmoryContext.npcText, mewmoryContext.memoryText]) {
+            if (typeof content === 'string' && content.length > 0) {
+                promptsToPrime.push({ role: 'system', content });
+            }
+        }
+    }
+    if (typeof assistantKnowledge?.text === 'string' && assistantKnowledge.text.length > 0) {
+        promptsToPrime.push({ role: 'system', content: assistantKnowledge.text });
+    }
+    if (prompts.has('dialogueExamples') && Array.isArray(messageExamples) && messageExamples.length > 0) {
+        for (const dialogue of messageExamples) {
+            if (!Array.isArray(dialogue)) continue;
+            for (const item of dialogue) {
+                const content = item?.content || '';
+                if (typeof content === 'string' && content.length > 0) {
+                    promptsToPrime.push({ role: 'system', content });
+                }
+                promptsToPrime.push({ role: 'system', content, name: item?.name });
+            }
+        }
+    }
+    await primeOpenAITokenCache(promptsToPrime);
 
     chatCompletion.reserveBudget(3); // every reply is primed with <|start|>assistant<|message|>
     // Character and world information
@@ -5621,9 +5650,11 @@ async function calculateLogitBias() {
 class TokenHandler {
     /**
      * @param {(messages: object[] | object, full?: boolean) => Promise<number>} countTokenAsyncFn Function to count tokens
+     * @param {(messages: object[]) => Promise<void>} [primeTokenCacheFn] Optional function to batch-prime token cache
      */
-    constructor(countTokenAsyncFn) {
+    constructor(countTokenAsyncFn, primeTokenCacheFn = null) {
         this.countTokenAsyncFn = countTokenAsyncFn;
+        this.primeTokenCacheFn = primeTokenCacheFn;
         this.counts = {
             'start_chat': 0,
             'prompt': 0,
@@ -5670,6 +5701,12 @@ class TokenHandler {
         return this.countTokenAsyncFn(messages, full);
     }
 
+    async primeAsync(messages) {
+        if (typeof this.primeTokenCacheFn === 'function') {
+            await this.primeTokenCacheFn(messages);
+        }
+    }
+
     getTokensForIdentifier(identifier) {
         return this.counts[identifier] ?? 0;
     }
@@ -5684,7 +5721,7 @@ class TokenHandler {
 }
 
 
-const tokenHandler = new TokenHandler(countTokensOpenAIAsync);
+const tokenHandler = new TokenHandler(countTokensOpenAIAsync, primeOpenAITokenCache);
 
 // Thrown by ChatCompletion when a requested prompt couldn't be found.
 class IdentifierNotFoundError extends Error {

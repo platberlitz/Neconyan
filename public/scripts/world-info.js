@@ -4383,7 +4383,7 @@ export async function getWorldEntry(name, data, entry, options = {}) {
         const countTokensDebounced = debounce(async function (counter, value) {
             const numberOfTokens = await getTokenCountAsync(value);
             $(counter).text(numberOfTokens);
-        }, debounce_timeout.relaxed);
+        }, debounce_timeout.short);
         const contentInputId = `world_entry_content_${entry.uid}`;
         const contentInput = editTemplate.find('textarea[name="content"]');
         contentInput.data('uid', entry.uid);

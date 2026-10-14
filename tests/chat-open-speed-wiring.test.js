@@ -130,4 +130,23 @@ describe('opening a chat skips work for panels that are not on screen', () => {
         expect(drawers).toContain('document.getElementsByClassName(\'sb-shell-root\')');
         expect(drawers).not.toContain('querySelectorAll(');
     });
+
+    test('token counting batches prompt and character card requests and encodes asynchronously in Token Counter', () => {
+        const promptManagerJs = read('public/scripts/PromptManager.js');
+        expect(promptManagerJs).toContain('await this.tokenHandler.primeAsync?.(');
+
+        const openaiJs = read('public/scripts/openai.js');
+        expect(openaiJs).toContain('await primeOpenAITokenCache(promptsToPrime);');
+        expect(openaiJs).toContain('new TokenHandler(countTokensOpenAIAsync, primeOpenAITokenCache)');
+
+        const rossModsJs = read('public/scripts/RossAscends-mods.js');
+        expect(rossModsJs).toContain('await primeOpenAITokenCache(messagesToPrime);');
+        expect(rossModsJs).toContain('const countTokensDebounced = debounce(RA_CountCharTokens, debounce_timeout.short);');
+
+        const tokenCounterJs = read('public/scripts/extensions/token-counter/index.js');
+        expect(tokenCounterJs).toContain('getTextTokensAsync(');
+        expect(tokenCounterJs).toContain('debounce(runTokenCounter, debounce_timeout.quick)');
+        expect(tokenCounterJs).toContain('document.createDocumentFragment()');
+        expect(tokenCounterJs).toContain('display.replaceChildren(fragment);');
+    });
 });

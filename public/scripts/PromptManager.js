@@ -2201,6 +2201,12 @@ class PromptManager {
                 return prepared;
             });
 
+        await this.tokenHandler.primeAsync?.(
+            prompts
+                .filter(prompt => prompt?.identifier && !prompt?.marker && typeof prompt.content === 'string' && prompt.content.trim())
+                .map(prompt => ({ role: prompt.role || 'system', content: prompt.content.trim() })),
+        );
+
         this.sourcePromptTokenCounts = await getPromptSourceTokenCounts(prompts, message => this.tokenHandler.countUntrackedAsync(message));
         // Raw-content fallbacks are display-only: their text reaches the request through
         // whichever prompt reads the variable, and is counted there.

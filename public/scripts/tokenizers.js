@@ -897,7 +897,7 @@ function countTokensFromServer(endpoint, str, resolve) {
         async: isAsync,
         type: 'POST',
         url: endpoint,
-        data: JSON.stringify({ text: str }),
+        data: JSON.stringify({ text: str, countOnly: true }),
         dataType: 'json',
         contentType: 'application/json',
         success: function (data) {
@@ -907,6 +907,10 @@ function countTokensFromServer(endpoint, str, resolve) {
                 tokenCount = apiFailureTokenCount(str);
             }
 
+            isAsync && resolve(tokenCount);
+        },
+        error: function () {
+            tokenCount = apiFailureTokenCount(str);
             isAsync && resolve(tokenCount);
         },
     });
@@ -1036,6 +1040,9 @@ function getTextTokensFromServer(endpoint, str, resolve) {
 
             isAsync && resolve(ids);
         },
+        error: function () {
+            isAsync && resolve([]);
+        },
     });
     return ids;
 }
@@ -1059,6 +1066,9 @@ function getTextTokensFromTextgenAPI(str, resolve) {
         success: function (data) {
             ids = data.ids;
             isAsync && resolve(ids);
+        },
+        error: function () {
+            isAsync && resolve([]);
         },
     });
     return ids;
@@ -1087,6 +1097,9 @@ function getTextTokensFromKoboldAPI(str, resolve) {
         success: function (data) {
             ids = data.ids;
             isAsync && resolve(ids);
+        },
+        error: function () {
+            isAsync && resolve([]);
         },
     });
 
@@ -1151,6 +1164,44 @@ export function getTextTokens(tokenizerType, str) {
                 endpointUrl += `?model=${getTokenizerModel()}`;
             }
             return getTextTokensFromServer(endpointUrl, str);
+        }
+    }
+}
+
+/**
+ * Encodes a string to tokens asynchronously using the server API.
+ * @param {number} tokenizerType Tokenizer type.
+ * @param {string} str String to tokenize.
+ * @returns {Promise<number[]>} Array of token ids.
+ */
+export function getTextTokensAsync(tokenizerType, str) {
+    if (typeof str !== 'string' || !str.length) {
+        return Promise.resolve([]);
+    }
+    switch (tokenizerType) {
+        case tokenizers.API_CURRENT:
+            return getTextTokensAsync(currentRemoteTokenizerAPI(), str);
+        case tokenizers.API_TEXTGENERATIONWEBUI:
+            return new Promise(resolve => getTextTokensFromTextgenAPI(str, resolve));
+        case tokenizers.API_KOBOLD:
+            return new Promise(resolve => getTextTokensFromKoboldAPI(str, resolve));
+        default: {
+            const tokenizerEndpoints = TOKENIZER_URLS[tokenizerType];
+            if (!tokenizerEndpoints) {
+                apiFailureTokenCount(str);
+                console.warn('Unknown tokenizer type', tokenizerType);
+                return Promise.resolve([]);
+            }
+            let endpointUrl = tokenizerEndpoints.encode;
+            if (!endpointUrl) {
+                apiFailureTokenCount(str);
+                console.warn('This tokenizer type does not support encoding', tokenizerType);
+                return Promise.resolve([]);
+            }
+            if (tokenizerType === tokenizers.OPENAI) {
+                endpointUrl += `?model=${getTokenizerModel()}`;
+            }
+            return new Promise(resolve => getTextTokensFromServer(endpointUrl, str, resolve));
         }
     }
 }

@@ -77,6 +77,7 @@ await jest.unstable_mockModule('../public/scripts/textgen-models.js', () => ({
 const {
     countTokensOpenAI,
     countTokensOpenAIAsync,
+    getTextTokensAsync,
     getTokenCount,
     getTokenCountAsync,
     getTokenizerModel,
@@ -85,6 +86,7 @@ const {
     primeOpenAITokenCache,
     resetTokenCache,
     saveTokenCache,
+    tokenizers,
 } = await import('../public/scripts/tokenizers.js');
 
 /**
@@ -388,5 +390,19 @@ describe('OpenAI token cache priming', () => {
         expect(await pending).toBe(14);
         await saveTokenCache();
         expect(mockStorage.setItem.mock.calls.at(-1)[1]).toEqual({});
+    });
+
+    test('asynchronous token encoding resolves token IDs and chunks without blocking on empty text', async () => {
+        expect(await getTextTokensAsync(tokenizers.OPENAI, '')).toEqual([]);
+        expect(globalThis.jQuery.ajax).not.toHaveBeenCalled();
+
+        globalThis.jQuery.ajax.mockImplementationOnce(({ async: isAsync, success }) => {
+            expect(isAsync).toBe(true);
+            success({ ids: [101, 202], chunks: ['hello', ' world'] });
+        });
+
+        const ids = await getTextTokensAsync(tokenizers.OPENAI, 'hello world');
+        expect(Array.from(ids)).toEqual([101, 202]);
+        expect(ids.chunks).toEqual(['hello', ' world']);
     });
 });
