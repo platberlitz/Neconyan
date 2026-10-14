@@ -157,3 +157,12 @@ test('automatic Dialogue Colors scans stay quiet while manual scans still report
     expect(info).toHaveBeenCalledWith('Found 0 characters');
     expect(fs.readFileSync(path.join(directory, 'main.js'), 'utf8')).toContain('scanAllMessages({ notify: false })');
 });
+
+test('World Info Lab aligns Health panel padding and Scan surface tokens with the Neconyan shell', () => {
+    const css = fs.readFileSync(path.join(runtimeRoot, 'Neconyan-WorldInfo-Lab/style.css'), 'utf8');
+
+    expect(css).toMatch(/\.sbwil-panel-trace,\s*\.sbwil-panel-tests,\s*\.sbwil-panel-batch,\s*\.sbwil-panel-health\s*\{\s*padding:\s*20px;/);
+    expect(css).toMatch(/\.sbwil-scan-output,\s*\.sbwil-panel-trace,\s*\.sbwil-panel-tests,\s*\.sbwil-panel-batch,\s*\.sbwil-panel-health\s*\{\s*padding:\s*24px 28px 32px;/);
+    expect(css).toMatch(/\.sbwil-scan-controls,\s*\.sbwil-scan-output,\s*\.sbwil-panel-trace,\s*\.sbwil-panel-tests,\s*\.sbwil-panel-batch,\s*\.sbwil-panel-health\s*\{\s*padding:\s*16px 14px 22px;/);
+    expect(css).toMatch(/\.sbwil-scan-form,\s*\.sbwil-batch-form,\s*\.sbwil-health-form\s*\{\s*display:\s*grid;\s*gap:\s*17px;/);
+});
