@@ -68,7 +68,19 @@ describe('Persona Management workspace layout', () => {
 
         expect(lockRules).toContain('var(--neco-ginger)');
         expect(selectedRules).toContain('var(--neco-ginger)');
+        expect(selectedRules).not.toContain('inset 3px 0 0');
         expect(personaCss).not.toMatch(/#[0-9a-f]{3,8}\b(?![\w-])/i);
+    });
+
+    test('frames the selected persona masthead, segmented subtabs, and pronoun studio card', () => {
+        const mastheadRules = getRuleBodies(personaCss, '#PersonaManagement .persona-selected-masthead').join('\n');
+        const subtabRules = getRuleBodies(personaCss, '#PersonaManagement :is(.persona-workspace-tabs, .persona-editor-tabs)').join('\n');
+        const pronounRules = getRuleBodies(personaCss, '#PersonaManagement .me-persona-pronouns').join('\n');
+
+        expect(mastheadRules).toContain('border: 1px solid color-mix(in srgb, var(--neco-ginger) 26%, var(--neco-border));');
+        expect(mastheadRules).toContain('border-radius: 14px;');
+        expect(subtabRules).toContain('border-radius: 12px;');
+        expect(pronounRules).toContain('border: 1px solid var(--neco-border);');
     });
 
     test('keeps Delete looking like any other button until it is hovered or focused', () => {
