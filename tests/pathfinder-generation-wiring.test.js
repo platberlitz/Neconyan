@@ -312,6 +312,32 @@ describe('Pathfinder integration with the real extracted host generation flow', 
         expect(host.context.sendGenerationRequest).not.toHaveBeenCalled();
     });
 
+    test('cleans transient agent and pathfinder prompts after an idle dry preview while keeping companion history', async () => {
+        const host = createHost();
+        host.context.buildCompanionChatHistoryBlocks = () => [{
+            key: 'inchat_agent_companion_history_keeper',
+            content: 'kept companion history',
+            position: 0,
+            depth: 0,
+            scan: false,
+            role: 0,
+            name: null,
+        }];
+        host.events.on(event_types.GENERATION_AFTER_COMMANDS, (_type, _options, dryRun) => {
+            if (!dryRun) return;
+            host.context.extension_prompts.inchat_agent_pre = { value: 'transient pre-gen' };
+            host.context.extension_prompts.inchat_agent_companion_tracker = { value: 'transient companion feedback' };
+            host.context.extension_prompts.pathfinder_sidecar_retrieval = { value: 'transient pathfinder' };
+        });
+        await host.generate('normal', {}, true);
+        expect(host.context.extension_prompts.inchat_agent_pre).toBeUndefined();
+        expect(host.context.extension_prompts.inchat_agent_companion_tracker).toBeUndefined();
+        expect(host.context.extension_prompts.pathfinder_sidecar_retrieval).toBeUndefined();
+        expect(host.context.extension_prompts.inchat_agent_companion_history_keeper).toEqual({
+            value: 'kept companion history',
+        });
+    });
+
     test('keeps nested quiet scans untagged and preserves the main controller and terminal lifecycle', async () => {
         const host = createHost();
         const started = deferred();

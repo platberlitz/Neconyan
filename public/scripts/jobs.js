@@ -179,7 +179,10 @@ export function observeJob(id, { onUpdate, onSnapshot, onDone, onStop, base = ''
     const onAbort = () => stop('aborted');
 
     const schedule = () => {
-        if (!stopped && !signal?.aborted) timer = setTimeout(tickOnce, dirty ? 0 : delay);
+        if (!stopped && !signal?.aborted) {
+            if (dirty) void tickOnce();
+            else timer = setTimeout(tickOnce, delay);
+        }
     };
     const changed = value => {
         if (value?.diagnostics) {

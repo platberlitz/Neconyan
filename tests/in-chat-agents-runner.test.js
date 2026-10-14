@@ -10082,4 +10082,40 @@ Helper context.`;
         expect(saveChatDebounced).toHaveBeenCalledTimes(1);
         jest.useRealTimers();
     });
+
+    test('flushes deferred post-processing immediately when generation ends in a hidden tab without advancing timers', async () => {
+        jest.useFakeTimers();
+        useAppendPostAgent();
+
+        const { initAgentRunner } = await import('../public/scripts/extensions/in-chat-agents/agent-runner.js');
+        initAgentRunner();
+
+        document.hidden = true;
+        document.visibilityState = 'hidden';
+
+        await eventSource.emit(eventTypes.GENERATION_STARTED, 'normal', {}, false);
+        await eventSource.emit(eventTypes.GENERATION_AFTER_COMMANDS, 'normal', {}, false);
+        document.body.dataset.generating = 'true';
+
+        chat.push({
+            name: 'Assistant',
+            mes: 'Background reply',
+            is_user: false,
+            is_system: false,
+            extra: {},
+        });
+
+        await eventSource.emit(eventTypes.MESSAGE_RECEIVED, 0, 'normal');
+        expect(chat[0].mes).toBe('Background reply');
+
+        delete document.body.dataset.generating;
+        await eventSource.emit(eventTypes.GENERATION_ENDED, chat.length);
+        for (let i = 0; i < 10; i++) {
+            await Promise.resolve();
+        }
+
+        expect(chat[0].mes).toBe('Background reply\n[post processed]');
+        expect(saveChatDebounced).toHaveBeenCalledTimes(1);
+        jest.useRealTimers();
+    });
 });
