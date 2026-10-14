@@ -4735,6 +4735,7 @@ async function openEditor(agentId = null, { draft = null, autoOpenCompanionMaker
     const popup = new Popup(editorEl, POPUP_TYPE.CONFIRM, '', {
         okButton: 'Save',
         cancelButton: 'Cancel',
+        allowVerticalScrolling: true,
         wide: true,
         // Phones get a full-screen editor from style.css; the large preset would cap it at 90% with !important.
         large: !window.matchMedia?.('(max-width: 768px)').matches,
