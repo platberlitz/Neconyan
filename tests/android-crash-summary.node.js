@@ -22,11 +22,17 @@ public class SummaryTest { public static void main(String[] args) {
     if (!CrashReport.summary("app", "uncaught-java-exception", -1, "unknown").contains("application error")) throw new AssertionError("Java error");
     if (!CrashReport.isRoutineIsolatedExit(13, 0, "isolated not needed")) throw new AssertionError("Android 11/13 routine renderer cleanup");
     if (!CrashReport.isRoutineIsolatedExit(13, 0, "[ISOLATED NOT NEEDED] isolated not needed")) throw new AssertionError("Android 15 routine renderer cleanup");
+    if (!CrashReport.isRoutineIsolatedExit(13, 0, "remove task") || !CrashReport.isRoutineIsolatedExit(13, 0, "[REMOVE TASK] remove task")) throw new AssertionError("Android Recents task removal");
+    for (String clean : new String[] { "SwipeUpClean", "OneKeyClean", "ForceClean", "GarbageClean", "LockScreenClean", "GameClean", "OptimizationClean", "[UNKNOWN] SwipeUpClean" }) {
+        if (!CrashReport.isRoutineIsolatedExit(13, 0, clean)) throw new AssertionError("OEM routine task cleanup: " + clean);
+    }
     for (int reason : new int[] { 0, 2, 3, 4, 5, 6, 9 }) {
         if (CrashReport.isRoutineIsolatedExit(reason, 0, "isolated not needed")) throw new AssertionError("real failure hidden: " + reason);
+        if (CrashReport.isRoutineIsolatedExit(reason, 0, "SwipeUpClean")) throw new AssertionError("real failure hidden: " + reason);
     }
-    if (CrashReport.isRoutineIsolatedExit(13, 11, "isolated not needed")) throw new AssertionError("nonzero exit hidden");
-    if (CrashReport.isRoutineIsolatedExit(13, 0, null) || CrashReport.isRoutineIsolatedExit(13, 0, "unknown system stop")) throw new AssertionError("unknown cause hidden");
+    if (CrashReport.isRoutineIsolatedExit(13, 11, "isolated not needed") || CrashReport.isRoutineIsolatedExit(13, 11, "SwipeUpClean")) throw new AssertionError("nonzero exit hidden");
+    if (CrashReport.isRoutineIsolatedExit(13, 0, null) || CrashReport.isRoutineIsolatedExit(13, 0, "unknown system stop")
+        || CrashReport.isRoutineIsolatedExit(13, 0, "AutoPowerKill") || CrashReport.isRoutineIsolatedExit(13, 0, "AutoThermalKill")) throw new AssertionError("unknown cause hidden");
     if (!CrashReport.matchesNode(42, 100000, 300000, 1000000, 42, 900000, 500000)) throw new AssertionError("payload preparation delay");
     if (!CrashReport.matchesNode(42, 100000, 800000, 1000000, 42, 900000, 100000)) throw new AssertionError("reopened activity with running server");
     if (CrashReport.matchesNode(42, 600000, 800000, 1000000, 42, 900000, 100000)) throw new AssertionError("reused old PID");
@@ -46,6 +52,10 @@ public class SummaryTest { public static void main(String[] args) {
     store.saveExit("300-exit-42", entry.text.replace("\\n\\nDetails:\\n", "\\n\\nDetails:\\nNO TRACE in earlier evidence\\n"), true);
     if (store.needsExit("300-exit-42", "NO TRACE")) throw new AssertionError("same-incident earlier missing trace caused repeated decode");
     if (!store.readEntry("300-exit-42.txt").traceAvailable) throw new AssertionError("trace status not parsed");
+    CrashReport.Entry routine = CrashReport.create("400-exit-20163", 400, "app", "android-process-exit", 20163, 0, "400-exit-20163", 13, "0", "Android did not supply an error message.", 0, "No earlier activity sample was available.", "No earlier memory measurement was available.", "Android process exit at Wed Oct 14 06:45:27 GMT+01:00 2026\\nProcess: com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0 PID 20163\\nReason: Android did not provide a specific cause (13)\\nStatus / signal: 0\\nDescription: SwipeUpClean\\nImportance: 400\\n");
+    if (!CrashReport.isRoutineExitReport(routine) || CrashReport.isRoutineExitReport(entry)) throw new AssertionError("routine exit report detection");
+    store.saveExit("400-exit-20163", routine.text, false);
+    if ("400-exit-20163.txt".equals(store.newestEntry().id) || store.readEntry("400-exit-20163.txt") != null || store.readAll().contains("SwipeUpClean")) throw new AssertionError("saved routine exit was not pruned");
     File blocked = new File(args[0], "blocked");
     try { new FileOutputStream(blocked).close(); } catch (Exception e) { throw new AssertionError(e); }
     DiagnosticStore unreadable = new DiagnosticStore(blocked);
