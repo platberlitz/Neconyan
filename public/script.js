@@ -2,6 +2,7 @@ import { projectBrowserPromptMedia, validatePromptImageCopies } from './scripts/
 import { promptMediaText, promptImageCopyDescriptor } from './scripts/prompt-media-policy.js';
 import { formatRoleplayTextMessage, combineRoleplayTextPrompt } from './scripts/roleplay-text-format.js';
 import { roleplayLoadErrorMessage } from './scripts/roleplay-load-error.js';
+import { withAbortSignal } from './scripts/abort.js';
 import { finishUiMotion, getUiDrawerEdge, getUiSlideOptions, isUiClosing, revealUi, setUiVisibility, slideSwipe } from './scripts/ui-motion.js';
 import {
     showdown,
@@ -1115,23 +1116,23 @@ function roleplayRequestHeaders(stamp) {
     return { ...getRequestHeaders(), 'X-Neconyan-Account': stamp.owner };
 }
 
-function requestRoleplayChat(locator, stamp, allowCreate) {
+function requestRoleplayChat(locator, stamp, allowCreate, signal) {
     return fetchWithCsrfRetry(locator.group ? '/api/chats/group/get' : '/api/chats/get', () => ({
-        method: 'POST', cache: 'no-cache', headers: roleplayRequestHeaders(stamp),
+        method: 'POST', cache: 'no-cache', headers: roleplayRequestHeaders(stamp), signal,
         body: JSON.stringify({ ...(locator.group ? { id: locator.chat } : { file_name: locator.chat, avatar_url: locator.avatar }),
             allow_create: allowCreate, roleplay: { account: stamp.account } }),
     }), { refreshCsrfToken });
 }
 
 /** Read one exact chat and its save authority together, without changing the active chat. */
-export async function loadRoleplayChat(locator, { allowCreate = false } = {}) {
+export async function loadRoleplayChat(locator, { allowCreate = false, signal } = {}) {
     const stamp = roleplayAccountStamp();
-    const response = await requestRoleplayChat(locator, stamp, allowCreate);
+    const response = await withAbortSignal(requestRoleplayChat(locator, stamp, allowCreate, signal), signal);
     if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
+        const error = await withAbortSignal(response.json().catch(() => ({})), signal);
         throw Object.assign(new Error(roleplayLoadErrorMessage(error)), { code: error.code });
     }
-    const records = await response.json();
+    const records = await withAbortSignal(response.json(), signal);
     if (!Array.isArray(records)) throw new Error('Invalid chat data');
     roleplayRequestHeaders(stamp);
     return { records, evidence: parseRoleplayRead(response, locator, stamp) };
@@ -4610,57 +4611,53 @@ export async function reloadCurrentChatUnsafe() {
     refreshSwipeButtons();
 }
 
-const SAVED_CHAT_TAIL_LIMIT = 8;
-
 /**
  * Bring the open chat up to date with its saved copy after the server finished a reply.
- * Only the changed tail is redrawn; anything unusual falls back to a full reload.
+ * Read successfully before touching the screen. Busy or failed reads are retryable,
+ * never a reason to clear the chat or reset its generation identity.
+ * @param {{signal?: AbortSignal}} [options]
  * @returns {Promise<void>}
  */
-export async function refreshCurrentChatFromSaved() {
-    if (reloadChatMutex.isBusy) return;
+export async function refreshCurrentChatFromSaved({ signal } = {}) {
+    if (reloadChatMutex.isBusy) throw new Error('The chat is already being refreshed.');
     reloadChatMutex.isBusy = true;
-    let adopted = false;
     try {
-        adopted = await adoptSavedChatTail();
-    } catch (error) {
-        console.warn('Falling back to a full chat reload.', error);
+        if (!await adoptSavedChatTail(signal)) throw new Error('The saved chat is not ready to display.');
     } finally {
         reloadChatMutex.isBusy = false;
     }
-    if (!adopted) await reloadCurrentChat();
 }
 
-async function adoptSavedChatTail() {
+async function adoptSavedChatTail(signal) {
     const characterId = this_chid;
     const chatId = getCurrentChatId();
-    if (selected_group || characterId === undefined || !chatId || is_delete_mode) return false;
+    if ((!selected_group && characterId === undefined) || !chatId || is_delete_mode) return false;
     if (isChatSaving || hasPendingChatSave() || this_edit_mes_id !== undefined) return false;
     if (chatElement[0]?.querySelector('#curEditTextarea, .reasoning_edit_textarea')) return false;
     const avatar = characters[characterId]?.avatar;
-    if (!avatar) return false;
+    if (!selected_group && !avatar) return false;
 
     const generation = chatGeneration;
     const isCurrent = captureChatRenderValidity();
-    const locator = { group: false, avatar, chat: chatId };
-    const { records, evidence } = await loadRoleplayChat(locator, { allowCreate: false });
+    const locator = selected_group ? { group: true, groupId: String(selected_group), chat: chatId } : { group: false, avatar, chat: chatId };
+    const { records, evidence } = await loadRoleplayChat(locator, { allowCreate: false, signal });
+    signal?.throwIfAborted();
     // Another chat opened while reading: that load owns the screen now.
     if (!isCurrent() || generation !== chatGeneration) return true;
     if (!Array.isArray(records) || records.length < 2) return false;
     if (isChatSaving || hasPendingChatSave() || this_edit_mes_id !== undefined) return false;
 
     const [header, ...saved] = records;
-    if (saved.length < chat.length) return false;
     let first = 0;
-    while (first < chat.length && JSON.stringify(saved[first]) === JSON.stringify(chat[first])) first++;
-    if (saved.length - first > SAVED_CHAT_TAIL_LIMIT) return false;
+    while (first < Math.min(chat.length, saved.length) && JSON.stringify(saved[first]) === JSON.stringify(chat[first])) first++;
 
     const { renderedMessageCount, firstMessageId, lastMessageId } = getRenderedChatMessageWindow();
-    if (!renderedMessageCount || !Number.isInteger(firstMessageId) || !Number.isInteger(lastMessageId)) return false;
+    const rebuildWindow = saved.length < chat.length || !renderedMessageCount
+        || !Number.isInteger(firstMessageId) || !Number.isInteger(lastMessageId)
+        || (first <= lastMessageId && !chatElement[0].querySelector(`.mes[mesid="${Math.max(first, firstMessageId)}"]`));
     // The redraw starts at an element already on screen, or right after the last one.
-    const startIndex = Math.max(first, firstMessageId);
-    const redraw = startIndex <= lastMessageId + 1 && first < saved.length;
-    if (redraw && startIndex <= lastMessageId && !chatElement[0].querySelector(`.mes[mesid="${startIndex}"]`)) return false;
+    const startIndex = rebuildWindow ? Math.max(0, Math.min(firstMessageId || 0, saved.length - getChatRenderWindowSize())) : Math.max(first, firstMessageId);
+    const redraw = rebuildWindow || startIndex <= lastMessageId + 1 && first < saved.length;
     if (!rememberRoleplayRead(locator, evidence)) return false;
 
     const metadata = header?.chat_metadata ?? {};
@@ -4681,6 +4678,7 @@ async function adoptSavedChatTail() {
     if (redraw) {
         // The swipe placeholder stands in for the message being redrawn below.
         chatElement.find('[data-roleplay-replacement]').remove();
+        if (rebuildWindow) removeRenderedChatMessages();
         await redisplayChat({ startIndex, fade: false, isCurrent });
         if (!isCurrent()) return true;
         // The scroll is placed below anyway when holding the reader's place or following the bottom.

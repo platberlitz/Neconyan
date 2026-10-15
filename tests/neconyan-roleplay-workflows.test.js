@@ -98,7 +98,7 @@ jest.unstable_mockModule('../public/script.js', () => ({
     saveChatConditional: async options => { saved.push(options); await chatSaveHandler?.(); return true; },
     saveSettings,
     keepChatReadingPositionOnNextLoad: anchor => { readingAnchors.push(anchor); },
-    refreshCurrentChatFromSaved: async () => { reloads.push(chat.length); await reloadHandler?.(); },
+    refreshCurrentChatFromSaved: async options => { reloads.push(chat.length); await reloadHandler?.(options); },
     isGenerating: () => generating,
     get isChatSaving() { return chatSaving; },
     deactivateSendButtons: () => activations.push('busy'),
@@ -684,6 +684,53 @@ test('concurrent return events and late receipt responses reload the chat once',
     expect(cancelJob).not.toHaveBeenCalled();
 });
 
+test('a failed saved reply read retries before completing and concurrent returns wait for its display', async () => {
+    let release;
+    reloadHandler = async () => {
+        if (reloads.length === 1) throw new Error('The saved chat is not ready to display.');
+        await new Promise(resolve => { release = resolve; });
+    };
+    const pending = workflows.runNativeRoleplayGeneration('normal');
+    await settle();
+    const done = observers.get('job-1').onStop('done');
+    await waitFor(() => release);
+    expect(activations).toEqual(['busy']);
+    expect(previews.get('job-1').stop).not.toHaveBeenCalled();
+    listJobs.mockResolvedValueOnce([{
+        id: 'job-1', type: 'media.roleplay-workflow', state: 'completed',
+        intent: { media: { operationKey: 'k' }, source: { locator: { chat: 'roleplay', avatar: 'nova.png', group: false } },
+            request: { named: { name: 'roleplay.reply' } } },
+    }]);
+    const resumed = workflows.resumeNativeRoleplayWorkflowObservation();
+    await settle();
+    expect(activations).toEqual(['busy']);
+    release();
+    await Promise.all([done, pending, resumed]);
+    expect(reloads).toEqual([2, 2]);
+    expect(activations).toEqual(['busy', 'idle']);
+    expect(requests.filter(entry => entry.url.endsWith('/workflow/submit'))).toHaveLength(1);
+});
+
+test('returning aborts a suspended saved chat read and retries without resubmitting the reply', async () => {
+    let signal;
+    reloadHandler = async options => {
+        if (reloads.length !== 1) return;
+        signal = options.signal;
+        await new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+    };
+    const pending = workflows.runNativeRoleplayGeneration('normal');
+    await settle();
+    const done = observers.get('job-1').onStop('done');
+    await waitFor(() => signal);
+    await workflows.resumeNativeRoleplayWorkflowObservation({ reconnect: true });
+    await done;
+    expect((await pending).state).toBe('closed');
+    expect(signal.aborted).toBe(true);
+    expect(reloads).toEqual([2, 2]);
+    expect(requests.filter(entry => entry.url.endsWith('/workflow/submit'))).toHaveLength(1);
+    expect(cancelJob).not.toHaveBeenCalled();
+});
+
 test('explicit Stop still cancels the running workflow once after a return event', async () => {
     workflows.initNativeRoleplayWorkflows();
     await settle();
@@ -883,4 +930,22 @@ test('reconnect discovery settles an already-observed workflow whose job finishe
     expect(outcome).toMatchObject({ native: true, name: 'roleplay.reply', jobId: 'job-1', state: 'closed' });
     expect(reloads).toEqual([2]);
     expect(activations).toEqual(['busy', 'idle']);
+});
+
+test('returning replaces a suspended discovery request even when it ignores cancellation', async () => {
+    let signal;
+    let releaseStale;
+    listJobs.mockImplementationOnce(options => {
+        signal = options.signal;
+        return new Promise(resolve => { releaseStale = resolve; });
+    }).mockResolvedValueOnce([]);
+    const first = workflows.resumeNativeRoleplayWorkflowObservation();
+    await waitFor(() => releaseStale);
+    const resumed = workflows.resumeNativeRoleplayWorkflowObservation({ reconnect: true });
+    await Promise.all([first, resumed]);
+    expect(signal.aborted).toBe(true);
+    expect(listJobs).toHaveBeenCalledTimes(2);
+    releaseStale([{ id: 'stale', type: 'media.roleplay-workflow', state: 'running' }]);
+    await settle();
+    expect(observers.has('stale')).toBe(false);
 });

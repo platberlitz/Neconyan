@@ -1,4 +1,4 @@
-/* global window, document */
+/* global window, document, getComputedStyle */
 import { expect } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -65,6 +65,11 @@ function noPages(browser) {
     return browser.contexts().flatMap(context => context.pages());
 }
 
+async function dismissTour(page) {
+    const skip = page.locator('#neconyan-tour-coachmark [data-tour-coach-skip]');
+    if (await skip.isVisible()) await skip.click();
+}
+
 async function terminal(account, id) {
     await expect.poll(async () => (await account.job(id)).state, { timeout: 60000 })
         .toMatch(/^(completed|failed|interrupted|cancelled|conflict)$/);
@@ -73,6 +78,70 @@ async function terminal(account, id) {
 
 for (const phone of [false, true]) {
     const viewport = phone ? 'phone' : 'desktop';
+
+    test(`${viewport} returning through a failed saved reply read keeps the chat until recovery`, async ({ app }) => {
+        app.provider.mode.streamReply = { first: 'The server ', rest: 'wrote this reply.' };
+        const account = await app.account({ phone, activeConnection: true,
+            contextOptions: phone ? IPHONE_SAFARI_CONTEXT : {}, configureSettings(settings) {
+                settings.oai_settings.stream_openai = true;
+                settings.extension_settings.inChatAgents = { globalSettings: { enabled: true, separateRecentChats: false,
+                    connectionProfile: 'durable' } };
+            } });
+        const native = owned(app);
+        await fs.mkdir(native.directories.inChatAgents, { recursive: true });
+        await fs.writeFile(path.join(native.directories.inChatAgents, 'return-edit.json'), JSON.stringify({
+            id: 'return-edit', name: 'Return edit', enabled: true, phase: 'post',
+            postProcess: { enabled: true, type: 'append', appendText: '\n\n**The Agent finished.**' },
+        }));
+        if (phone) await installIPhoneSafari(account.context);
+        const locator = await savedChat(account, `Return read failure ${viewport}`);
+        const page = await account.open({ workspace: false, readyTimeout: 120000 });
+        await openChat(page, locator);
+        if (phone) await applyIOSOnlyCss(page);
+        const appearance = () => page.locator('#chat .mes').first().evaluate(node => {
+            const style = getComputedStyle(node);
+            const textStyle = getComputedStyle(node.querySelector('.mes_text'));
+            return { background: style.backgroundColor, radius: style.borderRadius, padding: style.padding,
+                colour: textStyle.color, font: textStyle.fontFamily };
+        });
+        const beforeAppearance = await appearance();
+        const submitted = page.waitForResponse(acceptedSubmission);
+        await page.locator('#send_textarea').fill('Keep the chat while reconnecting.');
+        await page.locator('#send_textarea').press('Enter');
+        const { jobId } = await (await submitted).json();
+        await expect(page.locator('#neconyan-roleplay-preview')).toContainText('The server');
+        let reads = 0;
+        await page.route('**/api/chats/get', route => {
+            reads += 1;
+            return route.fulfill({ status: 503, json: { error: 'Temporary reconnect failure' } });
+        });
+        app.provider.mode.finishStream();
+        await account.settled(jobId);
+        await expect.poll(() => reads).toBeGreaterThan(0);
+        // Let the readback fail, including any destructive fallback.
+        await page.waitForTimeout(1500);
+        await dismissTour(page);
+        await page.screenshot({ path: path.join('..', 'screenshots', `return-read-${viewport}-after.png`) });
+        await expect(page.locator('#chat .mes').first()).toContainText('Retained answer.');
+        expect(await appearance()).toEqual(beforeAppearance);
+        await expect(page.locator('#send_textarea')).toBeVisible();
+        await page.unroute('**/api/chats/get');
+        await page.evaluate(() => window.dispatchEvent(new Event('online')));
+        await expect(page.locator('#chat .mes').last()).toContainText(ANSWER);
+        await expect(page.locator('#chat .mes').last().locator('.mes_text strong')).toHaveText('The Agent finished.');
+        await expect(page.locator('#chat .mes').last().locator('.agent-transform-badge')).toBeVisible();
+        await expect(page.locator('#neconyan-roleplay-preview')).toHaveCount(0);
+        expect(await appearance()).toEqual(beforeAppearance);
+        expect(readRoleplayChat(native.scope, locator).records.at(-1).extra.inChatAgentTransformHistory).toHaveLength(1);
+        // Let the saved reply's reading-position hold settle before inspecting its controls.
+        await page.waitForTimeout(2800);
+        await page.locator('#chat').evaluate(node => { node.scrollTop = node.scrollHeight; node.dispatchEvent(new Event('scroll')); });
+        const bubble = await page.locator('#chat .mes').last().locator('.mes_text').boundingBox();
+        expect(bubble.width).toBeGreaterThan(100);
+        expect(bubble.height).toBeGreaterThan(0);
+        await page.screenshot({ path: path.join('..', 'screenshots', `return-recovered-${viewport}.png`) });
+        expect(app.provider.calls).toHaveLength(1);
+    });
 
     test(`${viewport} stopping Agents saves the completed reply and keeps it after reopening`, async ({ app }) => {
         app.provider.mode.streamReply = { first: 'The server ', rest: 'wrote this reply.' };
@@ -359,10 +428,9 @@ for (const phone of [false, true]) {
                 if (!response.ok || !response.body) return response;
                 const connection = { silent: false };
                 const source = response.body.getReader();
-                const lost = () => new Promise((_, reject) => {
-                    const fail = () => reject(new DOMException('The connection was abandoned.', 'AbortError'));
-                    if (init.signal?.aborted) fail(); else init.signal?.addEventListener('abort', fail, { once: true });
-                });
+                // A suspended reader, including its cancellation, need not settle when
+                // fetch is aborted. The observer must abandon it independently.
+                const lost = () => new Promise(() => {});
                 open.add(connection);
                 const body = new ReadableStream({
                     async pull(controller) {
@@ -373,7 +441,11 @@ for (const phone of [false, true]) {
                             if (chunk.done) { open.delete(connection); controller.close(); } else controller.enqueue(chunk.value);
                         } catch (error) { open.delete(connection); throw error; }
                     },
-                    cancel() { open.delete(connection); return source.cancel(); },
+                    cancel() {
+                        open.delete(connection);
+                        void source.cancel().catch(() => {});
+                        return connection.silent ? lost() : undefined;
+                    },
                 });
                 return new Response(body, { status: response.status, headers: response.headers });
             };
@@ -540,6 +612,7 @@ for (const phone of [false, true]) {
             if (action === 'regenerate') {
                 await page.evaluate(() => document.querySelector('#option_regenerate').click());
             } else {
+                await dismissTour(page);
                 await page.locator('#chat .mes').last().locator('.swipe_right').click();
             }
             try {
@@ -609,6 +682,7 @@ for (const phone of [false, true]) {
         await page.route('**/api/roleplay/workflow/submit', route => route.fulfill({
             status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'Test refusal' }),
         }));
+        await dismissTour(page);
         const refused = page.waitForResponse(acceptedSubmission);
         await page.locator('#chat .mes').last().locator('.swipe_right').click();
         expect((await refused).status()).toBe(400);
@@ -647,6 +721,7 @@ for (const phone of [false, true]) {
         const result = readRoleplayChat(native.scope, locator).records.at(-1);
         expect(Object.keys(result.extra.inChatAgentCompanionResults).sort()).toEqual(agents.slice(0, 9).map(agent => agent.id).sort());
         expect(app.provider.calls).toHaveLength(10);
+        await dismissTour(page);
         const swiped = page.waitForResponse(acceptedSubmission);
         await page.locator('#chat .mes').last().locator('.swipe_right').click();
         const swipeResponse = await swiped;
