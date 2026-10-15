@@ -112,6 +112,7 @@ import {
     normalizeRegexScript,
 } from './regex-scripts.js';
 import { updateRetiredFindPatterns } from './retired-regex-patterns.js';
+import { isRetiredBundledPrompt } from './retired-prompts.js';
 import { initPathfinder, teardownPathfinder } from './pathfinder-init.js';
 import { openPathfinderSettings, closePathfinderSettings, canClosePathfinderSettings, cancelPathfinderSummary, isPathfinderAgent } from './pathfinder-settings-ui.js';
 import { getPathfinderToolDefinitions } from './pathfinder/tool-definitions.js';
@@ -376,6 +377,7 @@ async function finishAgentLibraryInitialization() {
     await migrateBundledRegexScriptsToSavedAgents();
     noteUpdate(await migrateCyoaChoiceRegexCleanupToSavedAgents(), 'CYOA choice regex rule updated', 'CYOA choice regex rules updated');
     noteUpdate(await migrateRetiredRegexFindPatternsToSavedAgents(), 'agent regex rule updated to read more replies', 'agent regex rules updated to read more replies');
+    noteUpdate(await migrateRetiredBundledPromptsToSavedAgents(), 'built-in agent prompt updated', 'built-in agent prompts updated');
     noteUpdate(await migrateBundledTemplateMetadataToSavedAgents(), 'agent credit updated', 'agent credits updated');
     if (await migrateLegacyParallelTrackerPromptToSavedAgents() > 0) {
         startupUpdates.push('Parallel Off-Screen now asks for "Person: what they are doing" lines');
@@ -2279,6 +2281,28 @@ async function migrateRetiredRegexFindPatternsToSavedAgents() {
     }
 
     await saveAgentBatch(changes, 'Retired regex patterns');
+    return changes.length;
+}
+
+/**
+ * Unedited copies of a rewritten bundled prompt take the current wording. An edited prompt
+ * never matches a retired fingerprint, so this runs even for locked agents.
+ */
+async function migrateRetiredBundledPromptsToSavedAgents() {
+    const changes = [];
+
+    for (const agent of getAgents().map(agent => structuredClone(agent))) {
+        const template = findTemplateForAgent(agent);
+        if (!template?.prompt || template.prompt === agent.prompt || !isRetiredBundledPrompt(template.id, agent.prompt)) {
+            continue;
+        }
+
+        agent.prompt = template.prompt;
+        agent.sourceTemplateId = agent.sourceTemplateId || template.id;
+        changes.push(agent);
+    }
+
+    await saveAgentBatch(changes, 'Retired bundled prompts');
     return changes.length;
 }
 

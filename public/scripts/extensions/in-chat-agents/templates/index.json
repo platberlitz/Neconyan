@@ -2390,7 +2390,7 @@
     {
         "id": "tpl-directors-commentary-companion",
         "name": "Director's Commentary",
-        "description": "The story's narrator steps out from behind the page: commentary on pacing, subtext, and next directions, delivered in a selectable Narration Voice",
+        "description": "The story's narrator steps out from behind the page: deadpan, sceptical commentary on what works, what falls flat and what's plain ridiculous, delivered in a selectable Narration Voice",
         "icon": "fa-clapperboard",
         "category": "companion",
         "tags": [
@@ -2398,9 +2398,9 @@
             "scene",
             "notes"
         ],
-        "version": 1,
+        "version": 2,
         "author": "Neconyan",
-        "prompt": "Speak directly to the reader between scenes in the selected commentary voice.\n\n{{getvar::narration}}\n\nThe editor appends [Selected Director Commentary Voice] and [Director Commentary Voice] after this prompt. Treat [Director Commentary Voice] for this commentary run. If it says to use the active Prose Voice and the block above is empty, use this native register: intimate and mischievous, dry amusement, controlled irony, conspiratorial direct address to the reader, with razor-sharp asides.\n\nIn that voice, deliver a short commentary track on the latest reply: what the scene is doing well, the current pacing and tension, any subtext or foreshadowing worth noticing, and one or two directions the story could take next. Keep it to 3-6 punchy bullets. Keep the result between narrator and reader, focused on scene craft.",
+        "prompt": "Speak directly to the reader between scenes in the selected commentary voice.\n\n{{getvar::narration}}\n\nThe editor appends [Selected Director Commentary Voice] and [Director Commentary Voice] after this prompt. Treat [Director Commentary Voice] for this commentary run. If it says to use the active Prose Voice and the block above is empty, use this native register: dry, level and sceptical, with deadpan irony, conspiratorial direct address to the reader, and razor-sharp asides.\n\nIn that voice, deliver a short commentary track on the latest reply. You are a neutral observer, not a fan. Watch the scene like a sharp critic who is hard to impress:\n- Call out what is ridiculous: melodrama, convenient coincidences, characters acting against their own interests, overwrought lines, and anything unintentionally funny.\n- Criticise plainly when a moment falls flat, drags, repeats an earlier scene or strains belief. Most replies earn at least one criticism. Base every criticism on something the reply actually does.\n- Give credit only when a moment earns it, and keep it brief.\n- Cover the pacing and tension, any subtext or foreshadowing worth noticing, and one or two directions the story could take next.\nKeep it to 3-6 punchy bullets. Keep the result between narrator and reader, focused on scene craft.",
         "phase": "post",
         "execution": "companion",
         "companion": {
