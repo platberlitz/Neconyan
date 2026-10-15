@@ -23,6 +23,7 @@ import { captureRoleplayWorldInfo, prepareRoleplayWorldInfo } from './world-info
 import { activeRoleplayAuthorNote } from './roleplay-prompt.js';
 import { agentMessageExtra, agentTransformHistory, reconcileAgentTrackerMetadata } from './agent-message-state.js';
 import { beginDiagnosticAgent, endDiagnosticAgent } from '../diagnostic-activity.js';
+import { isRoleplayAgentStop, roleplayAgentsStopped } from './roleplay-agent-stop.js';
 
 const fail = message => roleplayError('ROLEPLAY_AGENT_RECOVERY', message, 409);
 const join = (left, right) => !left ? right : !right ? left : left + (/\n\n$/.test(left) ? '' : /\n$/.test(left) ? '\n' : '\n\n') + right;
@@ -228,13 +229,16 @@ async function modelRun(context, options, agent, text, name, intercept = false, 
             aliases(environment, agent, text, generationType, options.assistantName, agentContextMacros(snapshot, options.mewmory, options.agentReference));
             const prompt = evaluate(environment, agent.prompt, snapshot);
             return appendHelperPrefillMessages(messagesFor(agent, text, prompt, generationType, options.assistantName, format, intercept, recentChat), snapshot.agents.helperPrefill);
-        } });
+        } }).catch(error => {
+        if (!isRoleplayAgentStop(error)) throw error;
+        return { stopped: true, text: '', model: '', completedAt: Date.now(), hash: null };
+    });
     const outputText = result.lengthLimited ? '' : unwrap(result.text);
     // A refusal never replaces the text it was asked to work on.
     const refused = snapshot.agents.refusalGuard !== false && isLikelyPromptTransformRefusal(outputText, text);
     return { agentId: agent.id, agentName: agent.name, order: agent.injection.order,
         outputText: refused ? '' : outputText,
-        status: result.lengthLimited ? 'length-limited' : refused ? 'refused' : result.text.trim() ? 'done' : 'empty',
+        status: result.stopped ? 'stopped' : result.lengthLimited ? 'length-limited' : refused ? 'refused' : result.text.trim() ? 'done' : 'empty',
         profileLabel: result.fallbackLabel || result.profileId || 'Main model', modelLabel: result.model, timestamp: result.completedAt, modelHash: result.hash };
 }
 
@@ -275,7 +279,7 @@ export async function runRoleplayAgentInterceptors(context, options) {
     const { agents } = activeAgents(context, base, snapshot);
     const selected = agents.filter(agent => inline(agent) && ['pre', 'both'].includes(agent.phase) && agent.preProcess.mode === 'intercept'
         && agent.preProcess.interceptTiming === timing && agent.prompt.trim());
-    if (selected.length && timing === 'post-main-generation' && snapshot.agents.reviewPostMain) {
+    if (selected.length && timing === 'post-main-generation' && snapshot.agents.reviewPostMain && !roleplayAgentsStopped(context)) {
         const approval = requireJobApproval(context, { account: snapshot.account, key: 'post-main-interceptors', choices: ['continue', 'skip'],
             proposal: { title: 'Review the main reply before its configured interceptors', response: value, agents: selected.map(agent => ({ id: agent.id, name: agent.name })) } });
         if (approval.decision === null) return { waiting: true, approval };
@@ -287,6 +291,7 @@ export async function runRoleplayAgentInterceptors(context, options) {
     let current = structuredClone(value);
     const runs = [];
     for (const agent of selected) {
+        if (roleplayAgentsStopped(context)) break;
         const beforeText = format === 'chat' ? JSON.stringify(current) : current;
         const run = await modelRun(context, options, agent, beforeText, `intercept:${timing}:${agent.id}`, true, format);
         current = interceptResult(current, run.outputText, agent, format);
@@ -381,7 +386,7 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     const scope = parallel ? { ...context, providerScope: context.providerScope ?? createProviderScope(context) } : context;
     const runStages = version === 1 ? runLegacyPromptTransformStages : version === 2 ? runOrderedPromptTransformStages : runPromptTransformStages;
     const { draft } = await runStages({
-        agents: selected, text: baseline, parallel, isPrepend: prepend,
+        agents: selected, text: baseline, parallel, isPrepend: prepend, shouldStop: () => roleplayAgentsStopped(context),
         isAppend: agent => agent.postProcess.promptTransformMode === 'append',
         runRewrite: async (agent, body) => {
             const run = await modelRun(scope, options, agent, body, modelName(agent.id));
@@ -413,6 +418,7 @@ export async function runRoleplayAgentPostprocessing(context, options) {
             const run = await modelRun(scope, { ...options, synthesisMessages: buildPromptTransformSynthesisMessages(original, rewrites, draft) },
                 synthesisAgent, original, `${options.namespace ? options.namespace + ':' : ''}post-synthesis`);
             runs.push({ ...run, agentName: 'Combined reply', mode: 'synthesis' });
+            if (run.status === 'stopped') return { stop: true };
             if (run.status !== 'done') throw roleplayError('ROLEPLAY_AGENT_SYNTHESIS', 'The combined Agent reply was empty or cut short. The original reply was kept.', 409);
             return { text: run.outputText };
         },
@@ -420,6 +426,10 @@ export async function runRoleplayAgentPostprocessing(context, options) {
     const agentOrder = new Map(selected.map((agent, index) => [agent.id, index]));
     runs.sort((left, right) => agentOrder.get(left.agentId) - agentOrder.get(right.agentId));
     let text = composePromptTransformDraft(draft, join);
+    if (roleplayAgentsStopped(context)) {
+        return savePhase(context, snapshot.account, phaseName, { identity, baseline, text,
+            extra: { inChatAgentPromptRuns: runs }, metadata: {}, runs, stopped: true });
+    }
     if (companionOutput && postFailed || manual && !options.repairTrackers && runs.some(run => ['length-limited', 'refused'].includes(run.status))) {
         return savePhase(context, snapshot.account, phaseName, { identity, text: value, extra: {}, metadata: {}, runs, failed: true });
     }

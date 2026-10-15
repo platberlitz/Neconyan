@@ -44,6 +44,7 @@ import { stageBoundModelToolCalls } from './roleplay-tool-dispatch.js';
 import { createRoleplayStreamPreview, publishRoleplayPreview } from './roleplay-preview.js';
 import { applyRoleplayVectorFiles, prepareRoleplayVectors } from './roleplay-vectors.js';
 import { prepareRoleplayNoteContext, prepareRoleplayNotebooks } from '../notebooks/context.js';
+import { roleplayAgentsStopped } from './roleplay-agent-stop.js';
 
 const MAX_REPLY_BYTES = 256 * 1024;
 const REQUEST_OVERRIDES = new Set(['temperature', 'top_p', 'top_k', 'min_p', 'seed', 'frequency_penalty',
@@ -239,12 +240,12 @@ export async function runRoleplayReplyJob(context, { generate = runChatProfile, 
             if (preIntercept?.runs?.length || intercepted.runs.length) message.extra.inChatAgentPreGenerationInterceptHistory = [...(preIntercept?.runs ?? []), ...intercepted.runs];
             output.agentProof = { pre: pre.hash, base: baseProof.hash, intercepts: intercepted.hash, post: post.hash, companions: companions.hash };
         }
-        if (request.worldInfo?.translation) {
+        if (request.worldInfo?.translation && !roleplayAgentsStopped(context)) {
             publishRoleplayPreview(context, { stage: 'translating' });
             await translateIncomingRoleplayOutput(context, { base, snapshot: request.worldInfo,
                 effect: { type: effect }, output, assertSource, fetchImpl: translationFetch ?? fetch });
         }
-        if (request.worldInfo?.speech) {
+        if (request.worldInfo?.speech && !roleplayAgentsStopped(context)) {
             publishRoleplayPreview(context, { stage: 'speech' });
             const speechRecords = assertSource().records;
             const message = output.message ?? output.messages?.[0] ?? output;

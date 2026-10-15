@@ -21,6 +21,7 @@ import { assertRoleplayNamedWorkflow, ROLEPLAY_WORKFLOW_NAMES, roleplayWorkflowC
 import { roleplayEffectTrigger } from './roleplay-prompt.js';
 import { registerHandler } from '../jobs/runner.js';
 import { releaseStoppedRoleplayWorkflow } from './roleplay-workflow-cancellation.js';
+import { roleplayAgentsStopped } from './roleplay-agent-stop.js';
 
 const error = (message, code = 'ROLEPLAY_WORKFLOW_RECOVERY') => roleplayError(code, message, 409);
 const CHILD = 'roleplay-workflow-child';
@@ -249,6 +250,7 @@ function combinedCandidateOutput(previous, current, effect) {
 }
 
 async function savedTextDecision(context, job, chosen, turn, output, fullText, decide = decideRoleplayWorkflowCandidate) {
+    if (roleplayAgentsStopped({ ...context, job: chosen.child })) return { kind: 'final' };
     const policy = job.intent.request.automatic;
     if (!policy) return { kind: 'final' };
     const record = { parentIntentHash: roleplayHash(job.intent), childJobId: chosen.child.id,
@@ -502,6 +504,7 @@ async function runGroupWorkflow(context, job, beforePublication, decideCandidate
             completed.push(prior);
             previous = prior;
             turn = prior.turnEnd;
+            if (roleplayAgentsStopped({ ...context, job: getJob(context.directories, prior.childJobId) })) break;
             continue;
         }
         const speakerStart = turn;
@@ -550,6 +553,7 @@ async function runGroupWorkflow(context, job, beforePublication, decideCandidate
         completed.push(done);
         previous = done;
         await beforePublication?.(index);
+        if (roleplayAgentsStopped({ ...context, job: getJob(context.directories, done.childJobId) })) break;
     }
     const result = { status: 'completed', childJobId: completed.at(-1).childJobId,
         candidateHash: completed.at(-1).candidateHash,

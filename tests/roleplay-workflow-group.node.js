@@ -14,6 +14,7 @@ const { captureRoleplayWorkflowRequest, admitRoleplayWorkflowJob, runRoleplayWor
 const { getJob, recoverJobs, releaseJob, requestCancellation, setJobState, updateJob } = await import('../src/jobs/store.js');
 const { readArtifact, providerStep } = await import('../src/jobs/artifacts.js');
 const { roleplayHash } = await import('../src/roleplay-store.js');
+const { requestRoleplayAgentStop } = await import('../src/generation/roleplay-agent-stop.js');
 
 const controls = { prompts: [{ identifier: 'main', role: 'system', content: '', system_prompt: true },
     { identifier: 'chatHistory', marker: true, system_prompt: true }],
@@ -123,6 +124,25 @@ test('saved whole-group turn completes speakers in order and retains each protec
     ]);
     assert.equal(f.records()[2].mes, 'Answer');
     assert.equal(count.value, 2);
+    assert.deepEqual(await runRoleplayWorkflowJob(f.context()), completed);
+});
+
+test('stopping post-reply work in a group saves the current speaker and never starts the next one after recovery', async t => {
+    const f = prepared(t, { pathfinder: true });
+    updateJob(f.dirs, f.jobId, { state: 'running' });
+    await runRoleplayWorkflowJob(f.context());
+    const count = { value: 0 };
+    await f.completeCandidate(0, { avatar: 'Nova.png', name: 'Nova', modelOverride: '', reply: 'Keep this completed reply.' }, count);
+    assert.equal(requestRoleplayAgentStop(f.context()), true);
+    await assert.rejects(runRoleplayWorkflowJob(f.context(), { beforePublication: () => {
+        throw new Error('Lost acknowledgement after saving');
+    } }), /Lost acknowledgement/);
+    assert.equal(f.records().at(-1).mes, 'Keep this completed reply.');
+    const completed = await runRoleplayWorkflowJob(f.context());
+    assert.equal(completed.result.status, 'completed');
+    assert.equal(getJob(f.dirs, f.jobId).children.length, 1);
+    assert.equal(f.records().length, 5);
+    assert.equal(count.value, 1);
     assert.deepEqual(await runRoleplayWorkflowJob(f.context()), completed);
 });
 

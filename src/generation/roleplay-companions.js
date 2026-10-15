@@ -12,6 +12,7 @@ import { companionMessageTokens, previousCompanionNotes, resolveCompanionText, s
 import { classifyCompanionFailureMessage, getActiveCompanionResults, isEmptyOutputSentinel, MEMORY_SHARD_TEMPLATE_ID, normalizeCompanionChatHistoryInjection } from '../../public/scripts/extensions/in-chat-agents/companion/companion-shared.js';
 import { getCompanionTrackerAutoRepairPayload, inspectCompanionTrackerOutput, normalizeCompanionTrackerRepairPayload } from '../../public/scripts/extensions/in-chat-agents/tracker-state.js';
 import { captureCompanionCapacity, MAX_COMPANION_RESULT_BYTES } from './companion-capacity.js';
+import { isRoleplayAgentStop, roleplayAgentsStopped } from './roleplay-agent-stop.js';
 
 const clean = value => String(value ?? '').replace(/\r\n?/g, '\n').trim();
 const content = value => clean(value).replace(/^```[^\n]*\n([\s\S]*?)\n?```$/, '$1').trim().slice(0, 65536);
@@ -183,14 +184,20 @@ export async function runRoleplayCompanions(context, options) {
     const shared = { ...context, providerScope: context.providerScope ?? createProviderScope(context) };
     const isRepairTarget = agent => Boolean(options.repair && (!options.selectedAgentIds || options.selectedAgentIds.some(id => references(agent).includes(id))));
 
+    const remember = result => {
+        completed.set(result.agentId, result);
+        if (result.changed) changed.add(result.agentId);
+        return result;
+    };
+
     const storeResult = (agent, runIdentity, record, success) => {
         const prior = Object.hasOwn(hostResults, agent.id) ? hostResults[agent.id] : null;
-        return persist(context, snapshot.account, `roleplay-companion:${agent.id}`, { identity: runIdentity, agentId: agent.id, record, success,
-            changed: success && clean(prior?.content) !== clean(record.content) });
+        return remember(persist(context, snapshot.account, `roleplay-companion:${agent.id}`, { identity: runIdentity, agentId: agent.id, record, success,
+            changed: success && clean(prior?.content) !== clean(record.content) }));
     };
     const failedResult = (agent, runIdentity, reason, model = null) => {
         const cached = saved(context, snapshot.account, `roleplay-companion:${agent.id}`, runIdentity);
-        if (cached) return cached;
+        if (cached) return remember(cached);
         const prior = Object.hasOwn(hostResults, agent.id) ? hostResults[agent.id] : null;
         const failureKind = classifyCompanionFailureMessage(reason) || 'other';
         const record = prior?.status === 'done' ? { ...prior, lastRunError: reason, lastRunFailureKind: failureKind }
@@ -230,7 +237,7 @@ export async function runRoleplayCompanions(context, options) {
     };
     const finishResult = async (agent, raw, model, prompt, runIdentity, tokenUsage, coverage, sections = [], stepName = `companion:${agent.id}`) => {
         const cached = saved(context, snapshot.account, `roleplay-companion:${agent.id}`, runIdentity);
-        if (cached) return cached;
+        if (cached) return remember(cached);
         if (model.lengthLimited) return failedResult(agent, runIdentity, 'The reply reached its output limit.', model);
         let text = content(raw);
         if (!text) return failedResult(agent, runIdentity, 'Companion returned no output.', model);
@@ -265,7 +272,7 @@ export async function runRoleplayCompanions(context, options) {
     const runSingle = async (agent, sections, suffix = '') => {
         const runIdentity = roleplayHash({ identity, agent: agent.id, sections, suffix });
         const cached = saved(context, snapshot.account, `roleplay-companion:${agent.id}`, runIdentity);
-        if (cached) return cached;
+        if (cached) return remember(cached);
         const prior = Object.hasOwn(hostResults, agent.id) ? hostResults[agent.id] : null;
         if (isRepairTarget(agent) && agent.category === 'tracker' && prior?.content) {
             const normalised = normalizeCompanionTrackerRepairPayload(agent, prior.content).payload;
@@ -318,18 +325,23 @@ export async function runRoleplayCompanions(context, options) {
         }
         const sections = new Map(ready.map(agent => [agent.id, linkedContext(input, agent, sources, index, completed)]));
         const groups = units(ready, sections, binding);
+        const runRemaining = group => runUnit(group, sections).catch(error => {
+            if (!isRoleplayAgentStop(error)) throw error;
+            return [];
+        });
         let results = [];
         if (snapshot.agents.companionMode === 'parallel') {
-            const settled = await Promise.allSettled(groups.map(group => runUnit(group, sections)));
+            const settled = await Promise.allSettled(groups.map(runRemaining));
             const failure = settled.find(item => item.status === 'rejected');
             if (failure) throw failure.reason;
             results = settled.flatMap(item => item.value);
-        } else for (const group of groups) results.push(...await runUnit(group, sections));
+        } else for (const group of groups) results.push(...await runRemaining(group));
         for (const result of results) {
             completed.set(result.agentId, result);
             if (result.changed) changed.add(result.agentId);
         }
         pending = pending.filter(agent => !completed.has(agent.id));
+        if (roleplayAgentsStopped(context)) break;
         if (!pending.length) {
             pending = sources.filter(agent => !visited.has(agent.id) && dependencies(agent, index).some(dependency => changed.has(dependency.id)));
             for (const agent of pending) visited.add(agent.id);

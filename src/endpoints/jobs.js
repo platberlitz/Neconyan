@@ -10,6 +10,7 @@ import { retryConversationRoot } from '../generation/conversation-jobs.js';
 import { retainConversationAutomaticAcceptance } from '../generation/conversation-effects.js';
 import { decideJobApproval, readJobApproval } from '../generation/job-approvals.js';
 import { closeUnstartedRoleplayWorkflow } from '../generation/roleplay-workflow-cancellation.js';
+import { requestRoleplayAgentStop } from '../generation/roleplay-agent-stop.js';
 import { readRoleplayPreview, subscribeRoleplayPreview } from '../generation/roleplay-preview.js';
 import { readConversationPreview, subscribeConversationPreview } from '../generation/conversation-preview.js';
 import { subscribeJobsChanged } from '../jobs/notifications.js';
@@ -269,6 +270,9 @@ router.post('/:id/cancel', async (request, response) => {
         const job = getJob(directories, request.params.id);
         if (!job || job.owner !== owner) return response.status(404).json({ error: 'That job could not be found.' });
         await retainConversationAutomaticAcceptance(request, job);
+        if (requestRoleplayAgentStop({ owner, directories, job: getJob(directories, job.id) })) {
+            return response.json({ job: getJob(directories, job.id) });
+        }
         const requested = requestCancellation(directories, job.id, { reason: request.body?.reason ?? null });
         // A reply may own retrieval work below a workflow child. Stop every
         // owned controller after the complete cancellation is durable.
