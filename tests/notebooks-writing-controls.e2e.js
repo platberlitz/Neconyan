@@ -36,8 +36,9 @@ for (const phone of [false, true]) {
             const normal = await root.boundingBox();
             await root.getByRole('button', { name: 'Full screen', exact: true }).click();
             await expect(root).toHaveAttribute('data-writing-fullscreen', 'true');
-            const expanded = await root.boundingBox();
-            expect(expanded).toEqual({ x: 0, y: 0, width: viewport.width, height: viewport.height });
+            // Reduced motion still gives every element a 0.01 ms transition, and the box only
+            // reports its final size once the next frame has run, so read it until it settles.
+            await expect.poll(() => root.boundingBox()).toEqual({ x: 0, y: 0, width: viewport.width, height: viewport.height });
             await expect(root.locator('.notes-header')).toBeHidden();
             await expect(root.locator('.notes-pane-nav')).toBeHidden();
             await expect(root.locator('.notes-status')).toBeVisible();
@@ -47,7 +48,7 @@ for (const phone of [false, true]) {
             await page.screenshot({ path: info.outputPath('writing-fullscreen.png') });
             await root.getByRole('button', { name: 'Exit full screen', exact: true }).click();
             await expect(root).toHaveAttribute('data-writing-fullscreen', 'false');
-            expect(await root.boundingBox()).toEqual(normal);
+            await expect.poll(() => root.boundingBox()).toEqual(normal);
             await expectSourceText(page, '# Full screen\n\nEdited in full screen.');
             await root.getByRole('button', { name: 'Full screen', exact: true }).click();
             await page.keyboard.press('Escape');
