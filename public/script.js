@@ -3276,7 +3276,7 @@ function selectPrunableChatMessages(renderedMessages, excessMessageCount, pruneF
     return firstProtectedIndex >= 0 ? candidates.slice(0, firstProtectedIndex) : candidates;
 }
 
-function pruneRenderedChatMessagesToWindow({ windowSize, pruneFrom }) {
+function pruneRenderedChatMessagesToWindow({ windowSize, pruneFrom, keepView = true }) {
     const renderedMessages = getRenderedChatMessageElements();
     const excessMessageCount = renderedMessages.length - windowSize;
 
@@ -3285,7 +3285,7 @@ function pruneRenderedChatMessagesToWindow({ windowSize, pruneFrom }) {
     }
 
     // Neconyan: pin the first visible message so a top prune cannot shift the view.
-    const anchor = pruneFrom === 'start' ? captureVisibleChatMessageAnchor() : null;
+    const anchor = pruneFrom === 'start' && keepView ? captureVisibleChatMessageAnchor() : null;
 
     const removedMessages = selectPrunableChatMessages(renderedMessages, excessMessageCount, pruneFrom);
     if (removedMessages.length === 0) {
@@ -4600,6 +4600,97 @@ export async function reloadCurrentChatUnsafe() {
     }
 
     refreshSwipeButtons();
+}
+
+const SAVED_CHAT_TAIL_LIMIT = 8;
+
+/**
+ * Bring the open chat up to date with its saved copy after the server finished a reply.
+ * Only the changed tail is redrawn; anything unusual falls back to a full reload.
+ * @returns {Promise<void>}
+ */
+export async function refreshCurrentChatFromSaved() {
+    if (reloadChatMutex.isBusy) return;
+    reloadChatMutex.isBusy = true;
+    let adopted = false;
+    try {
+        adopted = await adoptSavedChatTail();
+    } catch (error) {
+        console.warn('Falling back to a full chat reload.', error);
+    } finally {
+        reloadChatMutex.isBusy = false;
+    }
+    if (!adopted) await reloadCurrentChat();
+}
+
+async function adoptSavedChatTail() {
+    const characterId = this_chid;
+    const chatId = getCurrentChatId();
+    if (selected_group || characterId === undefined || !chatId || is_delete_mode) return false;
+    if (isChatSaving || hasPendingChatSave() || this_edit_mes_id !== undefined) return false;
+    if (chatElement[0]?.querySelector('#curEditTextarea, .reasoning_edit_textarea')) return false;
+    const avatar = characters[characterId]?.avatar;
+    if (!avatar) return false;
+
+    const generation = chatGeneration;
+    const isCurrent = captureChatRenderValidity();
+    const locator = { group: false, avatar, chat: chatId };
+    const { records, evidence } = await loadRoleplayChat(locator, { allowCreate: false });
+    // Another chat opened while reading: that load owns the screen now.
+    if (!isCurrent() || generation !== chatGeneration) return true;
+    if (!Array.isArray(records) || records.length < 2) return false;
+    if (isChatSaving || hasPendingChatSave() || this_edit_mes_id !== undefined) return false;
+
+    const [header, ...saved] = records;
+    if (saved.length < chat.length) return false;
+    let first = 0;
+    while (first < chat.length && JSON.stringify(saved[first]) === JSON.stringify(chat[first])) first++;
+    if (saved.length - first > SAVED_CHAT_TAIL_LIMIT) return false;
+
+    const { renderedMessageCount, firstMessageId, lastMessageId } = getRenderedChatMessageWindow();
+    if (!renderedMessageCount || !Number.isInteger(firstMessageId) || !Number.isInteger(lastMessageId)) return false;
+    // The redraw starts at an element already on screen, or right after the last one.
+    const startIndex = Math.max(first, firstMessageId);
+    const redraw = startIndex <= lastMessageId + 1 && first < saved.length;
+    if (redraw && startIndex <= lastMessageId && !chatElement[0].querySelector(`.mes[mesid="${startIndex}"]`)) return false;
+    if (!rememberRoleplayRead(locator, evidence)) return false;
+
+    const metadata = header?.chat_metadata ?? {};
+    if (JSON.stringify(metadata) !== JSON.stringify(chat_metadata)) {
+        cancelDebouncedMetadataSave();
+        chat_metadata = metadata;
+    }
+    const adoptedMessages = saved.slice(first);
+    adoptedMessages.forEach(ensureMessageMediaIsArray);
+    chat.splice(first, chat.length - first, ...adoptedMessages);
+    await saveItemizedPrompts(chatId);
+    await loadItemizedPrompts(chatId);
+    if (!isCurrent()) return true;
+
+    const readingAnchor = takeChatReloadReadingAnchor();
+    const wasNearBottom = isChatScrolledNearBottom();
+    chatElement.find('#neconyan-roleplay-preview').remove();
+    if (redraw) {
+        // The swipe placeholder stands in for the message being redrawn below.
+        chatElement.find('[data-roleplay-replacement]').remove();
+        await redisplayChat({ startIndex, fade: false, isCurrent });
+        if (!isCurrent()) return true;
+        // The scroll is placed below anyway when holding the reader's place or following the bottom.
+        const keepView = !readingAnchor && !wasNearBottom;
+        pruneRenderedChatMessagesToWindow({ windowSize: getChatRenderWindowSize(), pruneFrom: 'start', keepView });
+    }
+    syncRenderedChatLastMessageClass();
+    syncChatHistoryWindowControls();
+    refreshSwipeButtons();
+    if (!(readingAnchor && holdChatReloadReadingAnchor(readingAnchor, isCurrent)) && wasNearBottom) {
+        scrollLoadedChatToBottomThroughLifecycle(isCurrent);
+    }
+
+    // A rebuilt chat announced itself; extensions still expect that, but never as a new message.
+    await eventSource.emit(event_types.CHAT_CHANGED, getCurrentChatId());
+    if (!isCurrent()) return true;
+    eventSource.emit(event_types.CHAT_LOADED, { detail: { id: this_chid, character: characters[this_chid] } });
+    return true;
 }
 
 /**
@@ -6033,7 +6124,10 @@ export function updateMessageElement(mes, { messageId = chat.length - 1, message
     updateMessageItemizedPromptButton(mes, { messageId, messageElement });
 
     messageElement.find('.avatar img:not(.neconyan-expression-avatar)').off('load error').on('load', function () {
-        $(this).show().siblings('.missing-avatar').remove();
+        // Only the error handler hides the image, so undo that inline style rather than
+        // calling .show(), which reads computed style and forces a recalc for every avatar.
+        if (this.style.display === 'none') this.style.removeProperty('display');
+        $(this).siblings('.missing-avatar').remove();
     }).on('error', function () {
         $(this).hide();
         if (!$(this).siblings('.missing-avatar').length) {

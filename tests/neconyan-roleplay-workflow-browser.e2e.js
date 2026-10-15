@@ -248,6 +248,7 @@ for (const phone of [false, true]) {
             await page.evaluate(async () => (await import('/scripts/neconyan-conversation/roleplay-workflows.js')).resumeNativeRoleplayWorkflowObservation());
             await expect(preview).toContainText('First words and the finished reply.', { timeout: 30000 });
             expect(app.provider.calls).toHaveLength(2);
+            await page.evaluate(() => { window.retainedMessage = document.querySelector('#chat .mes[mesid="0"]'); });
         } finally {
             app.provider.mode.finishReasoning?.();
             app.provider.mode.finishStream?.();
@@ -256,6 +257,9 @@ for (const phone of [false, true]) {
         await account.settled(jobId);
         await expect(page.locator('#chat .mes').last()).toContainText('First words and the finished reply.', { timeout: 30000 });
         await expect(preview).toHaveCount(0);
+        // The saved reply joins the chat in place: earlier messages are not drawn again.
+        expect(await page.evaluate(() => Boolean(window.retainedMessage?.isConnected)
+            && window.retainedMessage === document.querySelector('#chat .mes[mesid="0"]'))).toBe(true);
         const records = readRoleplayChat(native.scope, locator).records;
         expect(records.filter(row => row.mes === 'First words and the finished reply.')).toHaveLength(1);
         expect(records.at(-1).extra.inChatAgentCompanionResults['live-note'].status).toBe('done');

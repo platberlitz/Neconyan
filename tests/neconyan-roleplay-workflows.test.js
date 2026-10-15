@@ -98,7 +98,7 @@ jest.unstable_mockModule('../public/script.js', () => ({
     saveChatConditional: async options => { saved.push(options); await chatSaveHandler?.(); return true; },
     saveSettings,
     keepChatReadingPositionOnNextLoad: anchor => { readingAnchors.push(anchor); },
-    reloadCurrentChat: async () => { reloads.push(chat.length); await reloadHandler?.(); },
+    refreshCurrentChatFromSaved: async () => { reloads.push(chat.length); await reloadHandler?.(); },
     isGenerating: () => generating,
     get isChatSaving() { return chatSaving; },
     deactivateSendButtons: () => activations.push('busy'),

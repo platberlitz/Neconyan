@@ -11,7 +11,7 @@
  * instead of paying twice, and a reopened page reattaches to the accepted job and
  * reads its permanent receipt back rather than submitting anything again.
  */
-import { activateSendButtons, chat, deactivateSendButtons, extension_prompts, getActiveGenerationAcknowledgement, getCurrentChatId, getRequestHeaders, isChatSaving, isGenerating, keepChatReadingPositionOnNextLoad, reloadCurrentChat, saveChatConditional, saveSettings, substituteParams, willRunNativeRoleplayWorkflow } from '../../script.js';
+import { activateSendButtons, chat, deactivateSendButtons, extension_prompts, getActiveGenerationAcknowledgement, getCurrentChatId, getRequestHeaders, isChatSaving, isGenerating, keepChatReadingPositionOnNextLoad, refreshCurrentChatFromSaved, saveChatConditional, saveSettings, substituteParams, willRunNativeRoleplayWorkflow } from '../../script.js';
 import { event_types, eventSource } from '../events.js';
 import { activeGenerationInterceptors } from '../extensions.js';
 import { COMPANION_HISTORY_PROMPT_KEY_PREFIX } from '../extensions/in-chat-agents/companion/companion-shared.js';
@@ -416,7 +416,7 @@ async function readbackReceipt(key, name, shared, id) {
                 activeReload = Promise.resolve()
                     .then(() => {
                         keepChatReadingPositionOnNextLoad(finishedReplyReadingAnchor());
-                        return reloadCurrentChat();
+                        return refreshCurrentChatFromSaved();
                     })
                     .finally(() => {
                         keepChatReadingPositionOnNextLoad(null);

@@ -1460,6 +1460,7 @@ const nnState = {
     },
     topbarPages: {
         syncFrame: 0,
+        editCardFrame: 0,
         fitFrame: 0,
         brandWidth: 0,
     },
@@ -9332,6 +9333,16 @@ function syncTopbarEditCardButton() {
     if (button.hidden === visible) button.hidden = !visible;
 }
 
+function queueTopbarEditCardSync() {
+    // Body classes flip many times while a chat redraws; checking visibility on each flip
+    // forced a style recalculation every time, so check once per frame instead.
+    if (nnState.topbarPages.editCardFrame) return;
+    nnState.topbarPages.editCardFrame = window.requestAnimationFrame(() => {
+        nnState.topbarPages.editCardFrame = 0;
+        syncTopbarEditCardButton();
+    });
+}
+
 function bindNeconyanTopbarStateEvents() {
     if (neconyanTopbarStateBound || !eventSource?.on) {
         return;
@@ -9344,7 +9355,7 @@ function bindNeconyanTopbarStateEvents() {
     if (typeof MutationObserver !== 'undefined') {
         new MutationObserver(records => {
             if (hasChangedAttributeValue(records)) {
-                syncTopbarEditCardButton();
+                queueTopbarEditCardSync();
             }
         }).observe(document.body, {
             attributes: true,
