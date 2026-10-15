@@ -119,6 +119,51 @@ describe('conservative transparency cleanup', () => {
         removeSpriteBackground(image);
         expect(image.data).toEqual(before);
     });
+
+    test('already-transparent cutouts lose white contamination without losing their soft coverage', () => {
+        const image = bitmap([0, 0, 0, 0], 64);
+        const colours = [[65, 75, 85], [175, 130, 80]];
+        for (let y = 12; y < 52; y++) for (let x = 16; x < 48; x++) paint(image, x, y, [...colours[y < 32 ? 0 : 1], 255]);
+        for (let y = 16; y < 48; y++) {
+            const colour = colours[y < 32 ? 0 : 1];
+            paint(image, 15, y, [...colour.map(c => Math.round(c * 0.5 + 127.5)), 128]);
+            paint(image, 48, y, [...colour, 128]); // Already clean antialiasing.
+        }
+        paint(image, 32, 32, [255, 255, 255, 255]); // Interior white costume detail.
+        removeSpriteBackground(image);
+        expect(pixel(image, 15, 24)).toEqual([...colours[0], 128]);
+        expect(pixel(image, 15, 40)).toEqual([...colours[1], 128]);
+        expect(pixel(image, 48, 24)).toEqual([...colours[0], 128]);
+        expect(pixel(image, 32, 32)).toEqual([255, 255, 255, 255]);
+        const once = image.data.slice();
+        removeSpriteBackground(image);
+        expect(image.data).toEqual(once);
+    });
+
+    test('opaque pale rims on transparent cutouts become soft edges, keeping the solid interior', () => {
+        const image = bitmap([0, 0, 0, 0], 64);
+        for (let y = 16; y < 48; y++) for (let x = 16; x < 48; x++) paint(image, x, y, [70, 90, 110, 255]);
+        for (let y = 20; y < 44; y++) paint(image, 15, y, [163, 173, 183, 255]);
+        removeSpriteBackground(image);
+        expect(pixel(image, 15, 32)[3]).toBeLessThan(140);
+        expect(pixel(image, 15, 32).slice(0, 3)).toEqual([70, 90, 110]);
+        expect(pixel(image, 17, 32)).toEqual([70, 90, 110, 255]);
+    });
+
+    test('soft outer pixels do not expose and erode a shaded solid outline on subsequent cleanup', () => {
+        const image = bitmap([0, 0, 0, 0], 64);
+        for (let y = 16; y < 48; y++) for (let x = 16; x < 48; x++) paint(image, x, y, [70, 90, 110, 255]);
+        for (let y = 20; y < 44; y++) {
+            paint(image, 15, y, [163, 173, 183, 128]);
+            paint(image, 16, y, [140, 150, 160, 255]);
+            paint(image, 17, y, [120, 130, 140, 255]);
+        }
+        for (let pass = 0; pass < 3; pass++) {
+            removeSpriteBackground(image);
+            expect(pixel(image, 16, 32)).toEqual([140, 150, 160, 255]);
+            expect(pixel(image, 17, 32)).toEqual([120, 130, 140, 255]);
+        }
+    });
 });
 
 describe('sprite sheet cropping', () => {
