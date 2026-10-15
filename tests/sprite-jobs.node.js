@@ -152,6 +152,24 @@ test('a saved imported sheet is split without any model request', async t => {
     assert.equal(result.result.outputs.length, 2);
 });
 
+test('cleanup jobs publish recovered soft edges and remove remaining white without losing white detail', async t => {
+    const pixels = bitmap(64, 64, [255, 255, 255, 255]);
+    for (let y = 16; y < 48; y++) for (let x = 17; x < 47; x++) pixels.data.set([35, 55, 75, 255], (y * 64 + x) * 4);
+    for (let y = 18; y < 46; y++) pixels.data.set([145, 155, 165, 255], (y * 64 + 16) * 4);
+    for (let y = 0; y < 10; y++) for (let x = 0; x < 64; x++) pixels.data[(y * 64 + x) * 4 + 3] = 0;
+    pixels.data.set([255, 255, 255, 255], (32 * 64 + 32) * 4);
+    const f = await prepared(t, { mode: 'cleanup', sprites: { 'joy.png': await encodeServerImage(pixels) },
+        settings: { agentSpriteRemoveBackground: true } });
+    await runSpriteJob(f.context(), { fetchImpl: () => assert.fail('cleanup must not generate an image') });
+    const saved = await decodeServerImage(fs.readFileSync(path.join(f.folder, 'joy.png')));
+    const read = (x, y) => [...saved.data.slice((y * 64 + x) * 4, (y * 64 + x) * 4 + 4)];
+    assert.equal(read(0, 63)[3], 0);
+    assert.deepEqual(read(32, 32), [255, 255, 255, 255]);
+    const edge = read(16, 32);
+    assert.ok(edge[3] >= 120 && edge[3] <= 136);
+    assert.deepEqual(edge.slice(0, 3), [35, 55, 75]);
+});
+
 test('sprite cleanup removes edge background and centres retained content without removing enclosed white detail', () => {
     const pixels = bitmap(16, 16, [255, 255, 255, 255]);
     for (let y = 1; y <= 6; y++) for (let x = 1; x <= 6; x++) pixels.data.set([200, 15, 20, 255], (y * 16 + x) * 4);
