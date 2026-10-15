@@ -34,7 +34,7 @@ import { createSearchMatcher } from './util/fuzzy-search.js';
 import { searchSavedContent, openSavedSearchResult } from './account-search.js';
 import { hasChangedAttributeValue } from './util/attribute-mutations.js';
 import { copyText, flashHighlight, showFontAwesomePicker } from './utils.js';
-import { characters, chat, flushCharacterSaveDebounced, flushPendingChatSavesForNavigation, getChatGeneration, getCurrentChatId, getGeneratingModel, getOneCharacter, getShortModelName, getThumbnailUrl, is_send_press, parseAvatarSource, refreshCsrfToken, saveSettingsDebounced, scrollReopenedChatToBottom, selectCharacterById, selectRightMenuWithAnimation, this_chid } from '../script.js';
+import { characters, chat, flushCharacterSaveDebounced, flushPendingChatSavesForNavigation, getChatGeneration, getCurrentChatId, getGeneratingModel, getOneCharacter, getShortModelName, getThumbnailUrl, getThumbnailUrlForViewport, is_send_press, parseAvatarSource, refreshCsrfToken, saveSettingsDebounced, scrollReopenedChatToBottom, selectCharacterById, selectRightMenuWithAnimation, this_chid } from '../script.js';
 import { is_group_generating, selected_group } from './group-chats.js';
 import { eventSource, event_types } from './events.js';
 import { extension_settings, extensionNames, findExtension, getExtensionManifest, getExtensionType } from './extensions.js';
@@ -19955,7 +19955,7 @@ function updatePersonaBubble(bubble) {
 
     const { context, currentAvatarId, currentName } = getCurrentPersonaSelection();
     const avatarUrl = currentAvatarId
-        ? (context?.getThumbnailUrl?.('persona', currentAvatarId) || `/User Avatars/${currentAvatarId}`)
+        ? getThumbnailUrlForViewport('persona', currentAvatarId)
         : '';
 
     if (avatarUrl) {

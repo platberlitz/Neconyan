@@ -1,5 +1,5 @@
 import { initializeNeconyanHome, NECONYAN_WHISKERS } from './neconyan-home.js';
-import { characters, chat, deleteCharacterChatByName, displayVersion, doNewChat, event_types, eventSource, flushCharacterSaveDebounced, getCharacters, getChatGeneration, getCurrentChatId, getRequestHeaders, getThumbnailUrl, is_send_press, newAssistantChat, openCharacterChat, printCharactersDebounced, renameGroupOrCharacterChat, saveSettings, saveSettingsDebounced, selectCharacterById, setActiveCharacter, setActiveGroup, system_avatar, this_chid } from '../script.js';
+import { characters, chat, deleteCharacterChatByName, displayVersion, doNewChat, event_types, eventSource, flushCharacterSaveDebounced, getCharacters, getChatGeneration, getCurrentChatId, getRequestHeaders, getThumbnailUrlForViewport, is_send_press, newAssistantChat, openCharacterChat, printCharactersDebounced, renameGroupOrCharacterChat, saveSettings, saveSettingsDebounced, selectCharacterById, setActiveCharacter, setActiveGroup, system_avatar, this_chid } from '../script.js';
 import { deleteGroupChatByName, getGroupAvatar, groups, is_group_generating, openGroupById, openGroupChat, selected_group } from './group-chats.js';
 import { extension_settings } from './extensions.js';
 import { t, translate } from './i18n.js';
@@ -2660,7 +2660,7 @@ async function getRecentChats() {
         chat.date_short = chatTimestamp.format('l');
         chat.date_long = chatTimestamp.format('LL LT');
         chat.chat_name = chat.file_name.replace('.jsonl', '');
-        chat.char_thumbnail = character ? getThumbnailUrl('avatar', character.avatar) : system_avatar;
+        chat.char_thumbnail = character ? getThumbnailUrlForViewport('avatar', character.avatar) : system_avatar;
         chat.is_group = !!group;
         chat.hidden = false;
         chat.avatar = chat.avatar || '';

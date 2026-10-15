@@ -164,3 +164,13 @@ describe('chat avatar thumbnail urls', () => {
         expect(scriptSource).not.toContain('decodeURIComponent(targetAvatarImg) in power_user.personas');
     });
 });
+
+describe('startup avatars on phones', () => {
+    // Recent chats on Home and the persona button load with the page, so a desktop thumbnail
+    // there costs a phone a couple of megabytes before the app is ready.
+    test('Home recent chats and the persona button use the phone-sized thumbnail', () => {
+        const welcomeSource = fs.readFileSync(path.join(publicRoot, 'scripts', 'welcome-screen.js'), 'utf8');
+        expect(welcomeSource).toContain('chat.char_thumbnail = character ? getThumbnailUrlForViewport(\'avatar\', character.avatar)');
+        expect(getFunctionSource(tabsSource, 'updatePersonaBubble')).toContain('getThumbnailUrlForViewport(\'persona\', currentAvatarId)');
+    });
+});
